@@ -4,6 +4,35 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { defaultPreferences } from '../../../../models/Preferences';
 import { AppearanceSection } from '../AppearanceSection';
 
+vi.mock('#/components/ui/slider', () => ({
+    Slider: ({
+        value,
+        onValueChange,
+        onValueCommit,
+        max,
+        'aria-label': ariaLabel,
+    }: {
+        value: number[];
+        onValueChange: (values: number[]) => void;
+        onValueCommit?: (values: number[]) => void;
+        max?: number;
+        'aria-label'?: string;
+    }) => (
+        <>
+            <input
+                type="range"
+                aria-label={ariaLabel}
+                value={value[0]}
+                max={max}
+                onChange={(event) => onValueChange([Number(event.target.value)])}
+            />
+            <button type="button" onClick={() => onValueCommit?.(value)}>
+                Commit UI Scale
+            </button>
+        </>
+    ),
+}));
+
 describe('AppearanceSection', () => {
     beforeEach(() => {
         document.documentElement.classList.remove('dark', 'light');
@@ -45,13 +74,33 @@ describe('AppearanceSection', () => {
         expect(screen.getByText('125%')).toBeInTheDocument();
     });
 
-    it('calls update with a scale fraction when the UI scale slider changes', () => {
+    it('keeps UI scale changes local until the slider gesture commits', () => {
         const update = vi.fn();
         render(<AppearanceSection prefs={{ ...defaultPreferences, uiScale: 1 }} update={update} />);
 
         const slider = screen.getByRole('slider', { name: 'UI Scale' });
-        fireEvent.keyDown(slider, { key: 'ArrowRight' });
+        fireEvent.change(slider, { target: { value: '125' } });
 
-        expect(update).toHaveBeenCalledWith({ uiScale: expect.any(Number) });
+        expect(screen.getByText('125%')).toBeInTheDocument();
+        expect(update).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Commit UI Scale' }));
+
+        expect(update).toHaveBeenCalledTimes(1);
+        expect(update).toHaveBeenCalledWith({ uiScale: 1.25 });
+    });
+
+    it('syncs the local UI scale draft when preferences change externally', () => {
+        const update = vi.fn();
+        const { rerender } = render(
+            <AppearanceSection prefs={{ ...defaultPreferences, uiScale: 1 }} update={update} />
+        );
+
+        fireEvent.change(screen.getByRole('slider', { name: 'UI Scale' }), { target: { value: '125' } });
+        rerender(<AppearanceSection prefs={{ ...defaultPreferences, uiScale: 1.5 }} update={update} />);
+
+        expect(screen.getByRole('slider', { name: 'UI Scale' })).toHaveValue('150');
+        expect(screen.getByText('150%')).toBeInTheDocument();
+        expect(update).not.toHaveBeenCalled();
     });
 });

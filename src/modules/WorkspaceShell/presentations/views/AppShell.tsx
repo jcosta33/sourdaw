@@ -83,6 +83,7 @@ import { ShortcutCheatSheet } from '../components/ShortcutCheatSheet';
 import { useActiveDevicePanel } from '../hooks/useActiveDevicePanel';
 import { useAppEventHandlers } from '../hooks/useAppEventHandlers';
 import { useAppInitialization } from '../hooks/useAppInitialization';
+import { useNativeApplicationMenu } from '../hooks/useNativeApplicationMenu';
 import { useProjectLoadFailure } from '../hooks/useProjectLoadFailure';
 import { useProjectState } from '../hooks/useProjectState';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
@@ -279,6 +280,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     // flipping these dialogs open.
     useAppInitialization();
     useGlobalKeyboardShortcuts();
+    useNativeApplicationMenu(project);
 
     useAppEventHandlers({
         onOpenExport: () => setExportOpen(true),
@@ -565,7 +567,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     return (
         <>
             <Stack
-                className="h-screen w-screen overflow-hidden bg-surface-app"
+                className="h-full w-full overflow-hidden bg-surface-app"
                 data-testid="app-shell"
                 inert={projectLoadFailure !== null || cheatSheetOpen}
             >

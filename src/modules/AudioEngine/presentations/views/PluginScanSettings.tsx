@@ -11,6 +11,7 @@ import {
     Info,
     Plug,
     Monitor,
+    ShieldAlert,
 } from 'lucide-react';
 
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
@@ -77,6 +78,10 @@ export const PluginScanSettings = (): ReactElement | null => {
 
     const handleScan = () => {
         void startPluginScan();
+    };
+
+    const handleRetryQuarantined = () => {
+        void startPluginScan({ retryQuarantined: true });
     };
 
     const lastScanLabel = state.lastScanTime ? new Date(state.lastScanTime).toLocaleString() : 'Never';
@@ -202,6 +207,46 @@ export const PluginScanSettings = (): ReactElement | null => {
                                 <Info className="size-3 shrink-0 mt-px" aria-hidden="true" />
                                 <span>{notice}</span>
                             </Row>
+                        ))}
+                    </Stack>
+                ) : null}
+
+                {/*
+                 * A quarantined candidate is not an error to render
+                 * destructively: it is the host's own decision not to retry a
+                 * binary whose helper crashed or hung, until the user asks it
+                 * to (#2911). The retry button is the only route back — the
+                 * default scan above never clears a record on its own.
+                 */}
+                {state.quarantined.length > 0 ? (
+                    <Stack
+                        gap={1}
+                        className="rounded-md border border-[var(--color-accent-peach)]/30 bg-[var(--color-accent-peach)]/5 p-2"
+                    >
+                        <Row align="center" gap={1} className="justify-between">
+                            <DawMicroBadge tone="peach">
+                                <ShieldAlert className="size-3" aria-hidden="true" />
+                                <span>{state.quarantined.length} quarantined</span>
+                            </DawMicroBadge>
+                            <Button
+                                variant="outline"
+                                size="xs"
+                                className="gap-1 text-xs"
+                                onClick={handleRetryQuarantined}
+                                disabled={state.isScanning}
+                            >
+                                <RefreshCw className="size-3" aria-hidden="true" />
+                                Retry Quarantined
+                            </Button>
+                        </Row>
+                        {state.quarantined.map((entry) => (
+                            <span
+                                key={entry.path}
+                                className="text-[10px] text-muted-foreground truncate font-mono"
+                                title={entry.reason}
+                            >
+                                {entry.path}
+                            </span>
                         ))}
                     </Stack>
                 ) : null}

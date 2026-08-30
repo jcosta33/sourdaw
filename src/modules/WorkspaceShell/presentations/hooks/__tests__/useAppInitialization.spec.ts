@@ -2,9 +2,10 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
-import { resumeEngine, requestMicPermission } from '#/modules/AudioEngine/useCases';
+import { resumeEngine, requestMicPermission, syncNativeTimelineSamples } from '#/modules/AudioEngine/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
 import { finishProjectLoading, loadProject, saveProject } from '#/modules/Project/useCases';
+import { syncTransportMapsToNativeSession } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { useAppInitialization } from '../useAppInitialization';
@@ -27,12 +28,16 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     setMasterGainValue: vi.fn(),
     resumeEngine: vi.fn(),
     requestMicPermission: vi.fn().mockResolvedValue(undefined),
+    // Returns an unsubscribe, like its two siblings below: the boot sequence
+    // calls it and holds what it returns, so a stub returning `undefined` makes
+    // the whole sequence throw into the catch and every later step — including
+    // `loadProject` — never runs.
+    syncNativeTimelineSamples: vi.fn(() => vi.fn()),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
     initWebMidi: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('#/modules/Knead/useCases', () => ({ syncKneadToEngine: vi.fn() }));
-vi.mock('#/modules/PluginHost/useCases', () => ({ registerProModulationEffects: vi.fn() }));
 vi.mock('#/modules/Project/stores', () => ({
     projectStore: {
         get value(): Record<string, unknown> | null {
@@ -54,6 +59,7 @@ vi.mock('#/modules/Synth/useCases', () => ({ registerProSynthInstruments: vi.fn(
 vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: vi.fn(),
     getTransportState: vi.fn(() => transportStateMock.current),
+    syncTransportMapsToNativeSession: vi.fn(() => vi.fn()),
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 const mockPreferencesValueHolder: { current: Record<string, unknown> | null } = { current: { uiScale: 1 } };
@@ -239,6 +245,41 @@ describe('useAppInitialization — knead engine subscription teardown', () => {
         // it to land before tearing down.
         await waitFor(() => {
             expect(syncKneadToEngine).toHaveBeenCalledTimes(1);
+        });
+        expect(unsubscribe).not.toHaveBeenCalled();
+
+        unmount();
+
+        expect(unsubscribe).toHaveBeenCalledTimes(1);
+    });
+
+    it('unsubscribes the transport-maps→native-session sync on unmount instead of leaking the subscription', async () => {
+        const unsubscribe = vi.fn();
+        vi.mocked(syncTransportMapsToNativeSession).mockReturnValue(unsubscribe);
+
+        const { unmount } = renderHook(() => useAppInitialization());
+
+        await waitFor(() => {
+            expect(syncTransportMapsToNativeSession).toHaveBeenCalledTimes(1);
+        });
+        expect(unsubscribe).not.toHaveBeenCalled();
+
+        unmount();
+
+        expect(unsubscribe).toHaveBeenCalledTimes(1);
+    });
+
+    it('unsubscribes the native timeline sample sync on unmount instead of leaking the subscription', async () => {
+        // The third store subscription the boot sequence opens (#3068). It has
+        // the same shape and the same leak as its two siblings above: the
+        // trackStore subscriber would accumulate on every remount and HMR.
+        const unsubscribe = vi.fn();
+        vi.mocked(syncNativeTimelineSamples).mockReturnValue(unsubscribe);
+
+        const { unmount } = renderHook(() => useAppInitialization());
+
+        await waitFor(() => {
+            expect(syncNativeTimelineSamples).toHaveBeenCalledTimes(1);
         });
         expect(unsubscribe).not.toHaveBeenCalled();
 

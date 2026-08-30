@@ -14,7 +14,7 @@ describe('denoiseAudio', () => {
 
     it('should call the native bridge with default strength and return an owned result', async () => {
         const input_samples = new Float32Array([0.25, -0.5, 0.125]);
-        const native_samples = [0.2, -0.4, 0.1];
+        const native_samples = new Float32Array([0.2, -0.4, 0.1]);
         vi.mocked(denoiseAudioFromNativeBridge).mockResolvedValue({
             samples: native_samples,
             noise_floor_db: -68,
@@ -25,7 +25,7 @@ describe('denoiseAudio', () => {
 
         expect(denoiseAudioFromNativeBridge).toHaveBeenCalledWith(input_samples, 48_000, 2, 0.7);
         expect(result).toEqual({
-            samples: [0.2, -0.4, 0.1],
+            samples: new Float32Array([0.2, -0.4, 0.1]),
             noise_floor_db: -68,
             processing_time_ms: 14,
         });
@@ -35,7 +35,7 @@ describe('denoiseAudio', () => {
     it('should pass explicit strength through to the native bridge', async () => {
         const input_samples = new Float32Array([0.1, 0.05]);
         vi.mocked(denoiseAudioFromNativeBridge).mockResolvedValue({
-            samples: [0.08, 0.04],
+            samples: new Float32Array([0.08, 0.04]),
             noise_floor_db: -72,
             processing_time_ms: 9,
         });

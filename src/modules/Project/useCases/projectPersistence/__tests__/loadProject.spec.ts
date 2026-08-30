@@ -311,6 +311,35 @@ describe('loadProject', () => {
         await expect(loading).resolves.toBe(false);
     });
 
+    it('reports a superseded load rather than a boot failure when a project transition breaks the identity migration', async () => {
+        const migrationGate = Promise.withResolvers<boolean>();
+        mocks.migrateActiveProjectIdentity.mockReturnValueOnce(migrationGate.promise);
+
+        const loading = loadProject();
+        await vi.waitFor(() => expect(mocks.migrateActiveProjectIdentity).toHaveBeenCalledTimes(1));
+
+        // The user picks another legacy project off the LaunchScreen while the
+        // boot restore's migration is persisting. That transition republishes
+        // `projectMeta` wholesale, so the migration finds no canonical identity
+        // and nothing it recognises as a successor, and throws.
+        const newerLoad = runProjectLoadTransaction({ yieldToInFlight: true });
+        await newerLoad.prepare();
+        newerLoad.activate();
+        migrationGate.reject(new Error('Minted project identity did not survive persistence'));
+
+        await expect(loading).resolves.toBe(false);
+        expect(startCrdtAutoSave).not.toHaveBeenCalled();
+    });
+
+    it('fails the load when the identity migration throws and this project is still the current one', async () => {
+        const failure = new Error('Minted project identity did not survive persistence');
+        mocks.migrateActiveProjectIdentity.mockRejectedValueOnce(failure);
+
+        await expect(loadProject()).rejects.toBe(failure);
+
+        expect(startCrdtAutoSave).not.toHaveBeenCalled();
+    });
+
     it('cancels a prepared buffer candidate when a newer project load supersedes it before publication', async () => {
         mocks.prepareCachedAudioBuffersFromIdb.mockImplementationOnce(async () => {
             const newerLoad = runProjectLoadTransaction();

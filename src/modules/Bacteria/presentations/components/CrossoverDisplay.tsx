@@ -139,8 +139,8 @@ export const CrossoverDisplay = ({
             className="relative w-full shrink-0 cursor-pointer select-none"
             style={{
                 height: DISPLAY_HEIGHT,
-                background: 'linear-gradient(180deg, #0a0a0a 0%, #111 100%)',
-                borderBottom: '1px solid rgba(255,255,255,0.05)',
+                background: 'linear-gradient(180deg, var(--surface-base) 0%, var(--surface-default) 100%)',
+                borderBottom: '1px solid rgba(255,249,242,0.05)',
             }}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
@@ -154,7 +154,7 @@ export const CrossoverDisplay = ({
                     <div
                         key={freq}
                         className="absolute top-0 pointer-events-none"
-                        style={{ left: x, width: 1, height: DISPLAY_HEIGHT, background: 'rgba(255,255,255,0.04)' }}
+                        style={{ left: x, width: 1, height: DISPLAY_HEIGHT, background: 'rgba(255,249,242,0.04)' }}
                     >
                         <span className="absolute bottom-0.5 left-1 text-[6px] text-muted-foreground/30 font-mono">
                             {freq >= 1000 ? `${freq / 1000}k` : freq}

@@ -91,10 +91,25 @@ describe('running a scan', () => {
         const { supervisor } = supervisorOver([worker]);
 
         const scan = supervisor.scan({ paths: ['/Library/Audio/Plug-Ins/CLAP'] });
-        expect(worker.sent).toEqual([{ paths: ['/Library/Audio/Plug-Ins/CLAP'] }]);
+        // toStrictEqual, not toEqual: toEqual treats an `undefined`-valued key
+        // as absent, which would let a regression that always sent
+        // `retryQuarantined: undefined` pass here unnoticed.
+        expect(worker.sent).toStrictEqual([{ paths: ['/Library/Audio/Plug-Ins/CLAP'] }]);
+        expect(Object.keys(worker.sent[0] as object)).toStrictEqual(['paths']);
         worker.reply({ ok: true, result: [{ id: 'com.example.synth' }] });
 
         await expect(scan).resolves.toEqual([{ id: 'com.example.synth' }]);
+    });
+
+    it('sends retryQuarantined: true on the wire for a retry scan', async () => {
+        const worker = fakeProcess();
+        const { supervisor } = supervisorOver([worker]);
+
+        const scan = supervisor.scan({ paths: ['/Library/Audio/Plug-Ins/CLAP'], retryQuarantined: true });
+        expect(worker.sent).toStrictEqual([{ paths: ['/Library/Audio/Plug-Ins/CLAP'], retryQuarantined: true }]);
+        worker.reply({ ok: true, result: [] });
+
+        await scan;
     });
 
     it('rejects with the worker error rather than resolving empty', async () => {

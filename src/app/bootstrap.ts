@@ -8,6 +8,7 @@ import {
     failMixAnalysis,
     initializeVoiceInputAvailability,
     recoverInterruptedAgentRuns,
+    recoverRetainedSectionRenderEffects,
     setVoiceToggleEventBus,
 } from '#/modules/AiRuntime/useCases';
 import { persistDeviceParam, resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
@@ -21,7 +22,6 @@ import {
     quantiseDeviceParameterValue,
     cleanupUnusedFreezeFiles,
     runtimeGraphTopology,
-    clampTrackGain,
     setTrackGain as setTrackGainArrangement,
     setTrackPan as setTrackPanArrangement,
     setDeviceParameter,
@@ -38,8 +38,6 @@ import { setMixAnalysisDisplayLifecycle } from '#/modules/AudioAnalysis/useCases
 import {
     updateDeviceParam,
     updateDevicePatch,
-    setTrackGain as engineSetTrackGain,
-    setTrackPan as engineSetTrackPan,
     getAudioContext,
     getCompensationDelay,
     commitPitchEdit,
@@ -225,9 +223,11 @@ configureCollaborationAssetOwner({
 configureDurableAssetCommitProof({
     getDisposition: getVersionedCommandBatchCommitDisposition,
 });
-void recoverInterruptedAgentRuns().catch((error: unknown) => {
-    logger.error(new Error('Interrupted AI runs could not be recovered during startup', { cause: error }));
-});
+void recoverInterruptedAgentRuns()
+    .then(() => recoverRetainedSectionRenderEffects())
+    .catch((error: unknown) => {
+        logger.error(new Error('Interrupted AI runs could not be recovered during startup', { cause: error }));
+    });
 const createOfflineYeastProcessor = () =>
     createOfflineYeastMidiProcessor({
         resolveMusicalPosition: createMusicalPositionProjector(),
@@ -383,12 +383,9 @@ setModulationDependencies({
 });
 
 setMidiLearnDependencies({
-    clampTrackGain,
     setTrackGainArrangement,
     setTrackPanArrangement,
     setDeviceParameter,
-    engineSetTrackGain,
-    engineSetTrackPan,
     setFermenterMappedParam,
     recordAutomationValue,
     getTransportIsPlaying: () => getTransportState()?.isPlaying ?? false,

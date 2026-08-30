@@ -2,6 +2,10 @@ import {
     defaultExternalPluginActivationState,
     externalPluginActivationStore,
 } from '../../stores/externalPluginActivationStore';
+import {
+    defaultExternalPluginParameterState,
+    externalPluginParameterStore,
+} from '../../stores/externalPluginParameterStore';
 
 import { externalLatencyReporters } from './externalLatencyReporters';
 import {
@@ -27,4 +31,6 @@ export function clearLoadedExternalPlugins(): void {
     externalPluginActivationTasks.clear();
     externalPluginActivationOutcomes.clear();
     externalPluginActivationStore.set(defaultExternalPluginActivationState);
+    // The parameter snapshots belong to the outgoing generation's instances.
+    externalPluginParameterStore.set(defaultExternalPluginParameterState);
 }

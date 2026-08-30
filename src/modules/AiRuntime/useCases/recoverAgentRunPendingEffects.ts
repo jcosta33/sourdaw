@@ -1,7 +1,14 @@
+import { logger } from '#/infra/logger/appLogger';
 import {
     executeVersionedCommandBatchEnvelope,
     getVersionedCommandBatchIdempotentReplay,
 } from '#/modules/Command/useCases';
+
+import { type AgentRunPendingEffect } from '../models/AgentRun';
+import {
+    getPendingEffectRecoveryPolicy,
+    MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+} from '../models/GetPendingEffectRecoveryPolicy';
 
 import { agentRunLifecycle } from './agentRunLifecycle';
 
@@ -24,6 +31,38 @@ function getFailureReason(result: Awaited<ReturnType<typeof executeVersionedComm
     return 'The retained pending-effect reconciliation did not return a completed receipt.';
 }
 
+function hasExactPendingReceiptBinding(
+    continuation: NonNullable<ReturnType<typeof agentRunLifecycle.getPendingEffectRecovery>>,
+    receipt: NonNullable<Awaited<ReturnType<typeof getVersionedCommandBatchIdempotentReplay>>>
+): boolean {
+    const expectedPendingIdentity = `${receipt.schemaVersion}:${receipt.runId}:${receipt.batchId}:partially-committed`;
+    if (continuation.receiptIdentity !== expectedPendingIdentity) {
+        return false;
+    }
+    return receipt.pendingEffects.length === 0 || hasExactPendingEffects(continuation.effects, receipt.pendingEffects);
+}
+
+function hasExactPendingEffects(
+    continuationEffects: readonly AgentRunPendingEffect[],
+    receiptEffects: readonly AgentRunPendingEffect[]
+): boolean {
+    return (
+        continuationEffects.length === receiptEffects.length &&
+        continuationEffects.every((effect, index) => {
+            const receiptEffect = receiptEffects[index];
+            return (
+                receiptEffect !== undefined &&
+                effect.commandId === receiptEffect.commandId &&
+                effect.kind === receiptEffect.kind &&
+                effect.operation === receiptEffect.operation &&
+                effect.reason === receiptEffect.reason &&
+                effect.remediation === receiptEffect.remediation &&
+                effect.state === receiptEffect.state
+            );
+        })
+    );
+}
+
 /** Resumes only persisted, receipt-backed effects; it never admits or replays project mutations. */
 export async function recoverAgentRunPendingEffects(input: {
     runId: string;
@@ -33,7 +72,6 @@ export async function recoverAgentRunPendingEffects(input: {
     if (!continuation) {
         return { status: 'missing' };
     }
-
     let priorReceipt: Awaited<ReturnType<typeof getVersionedCommandBatchIdempotentReplay>>;
     try {
         priorReceipt = await getVersionedCommandBatchIdempotentReplay({
@@ -63,6 +101,11 @@ export async function recoverAgentRunPendingEffects(input: {
         agentRunLifecycle.failPendingEffectContinuation({ ...input, reason });
         return { status: 'failed', reason };
     }
+    if (!hasExactPendingReceiptBinding(continuation, priorReceipt)) {
+        const reason = 'The durable project checkpoint does not match the retained pending-effect proof.';
+        agentRunLifecycle.failPendingEffectContinuation({ ...input, reason });
+        return { status: 'failed', reason };
+    }
     if (priorReceipt.pendingEffects.length === 0) {
         agentRunLifecycle.completePendingEffectContinuation({
             ...input,
@@ -71,23 +114,40 @@ export async function recoverAgentRunPendingEffects(input: {
         return { status: 'recovered' };
     }
     if (continuation.checkpoint === 'prepared') {
+        const recoveryPolicy = getPendingEffectRecoveryPolicy(priorReceipt.pendingEffects);
         agentRunLifecycle.recordPendingEffectContinuation({
             runId: input.runId,
             continuation: {
                 authority: continuation.authority,
                 batchId: continuation.batchId,
                 effects: structuredClone(priorReceipt.pendingEffects),
-                lastError: null,
+                lastError: recoveryPolicy.reason,
                 receiptIdentity: getReceiptIdentity(priorReceipt),
-                recovery: priorReceipt.pendingEffects.some(({ remediation }) => remediation === 'manual-repair')
-                    ? 'manual-repair'
-                    : 'reconcile-batch',
+                recovery: recoveryPolicy.recovery,
                 serializedBatch: continuation.serializedBatch,
             },
         });
     }
+    const durableContinuation = agentRunLifecycle.getPendingEffectRecovery(input);
+    if (!durableContinuation || durableContinuation.checkpoint !== 'durable') {
+        return { status: 'failed', reason: 'The durable pending-effect continuation could not be promoted.' };
+    }
+    const recoveryPolicy = getPendingEffectRecoveryPolicy(durableContinuation.effects);
+    if (recoveryPolicy.recovery === 'manual-repair') {
+        const reason = recoveryPolicy.reason ?? 'The retained pending effect requires manual repair.';
+        try {
+            agentRunLifecycle.requirePendingEffectManualRepair({
+                ...input,
+                reason,
+                preserveEffects: reason === MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+            });
+        } catch (error) {
+            logger.error(new Error('Pending-effect manual-repair state could not be persisted', { cause: error }));
+        }
+        return { status: 'failed', reason };
+    }
     if (
-        continuation.recovery === 'manual-repair' ||
+        durableContinuation.recovery === 'manual-repair' ||
         priorReceipt.pendingEffects.some(({ remediation }) => remediation === 'manual-repair')
     ) {
         const reason = 'At least one retained external effect requires manual repair and cannot be retried exactly.';

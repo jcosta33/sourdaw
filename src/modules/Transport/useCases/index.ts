@@ -26,6 +26,7 @@ export { deleteTimelineMapsTimeRange } from './tempoMap/deleteTimelineMapsTimeRa
 export { prepareTimelineMapStateRestore } from './tempoMap/prepareTimelineMapStateRestore';
 export { prepareTimelineMapTimeOperation } from './tempoMap/prepareTimelineMapTimeOperation';
 export { removeTempoChange } from './tempoMap/removeTempoChange';
+export { projectEngineTransportMaps } from './tempoMap/projectEngineTransportMaps';
 export { replaceTempoMap } from './tempoMap/replaceTempoMap';
 export { resolveTempoAtBeat } from './tempoMap/resolveTempoAtBeat';
 export { shiftTimelineMapsAfterBeat } from './tempoMap/shiftTimelineMapsAfterBeat';
@@ -45,6 +46,7 @@ export { createPunchRegionPatch } from './transportControls/punchRegion';
 export { setPunchOut } from './transportControls/setPunchOut';
 export { setPlayback } from './transportControls/setPlayback';
 export { stopPlayback } from './transportControls/stopPlayback';
+export { syncTransportMapsToNativeSession } from './transportControls/syncTransportMapsToNativeSession';
 export { toggleCountIn } from './transportControls/toggleCountIn';
 export { toggleLoop } from './transportControls/toggleLoop';
 export { toggleMetronome } from './transportControls/toggleMetronome';

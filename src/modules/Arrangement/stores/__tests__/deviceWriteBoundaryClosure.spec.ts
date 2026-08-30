@@ -479,10 +479,12 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AiRuntime/useCases/prepareAgentRunPendingEffectContinuation.ts': 2,
         'src/modules/AiRuntime/useCases/recordAgentRunPendingEffectContinuation.ts': 2,
         'src/modules/AiRuntime/useCases/recordAgentRunReceiptSaga.ts': 2,
-        // Count provenance: was 3, measured 5 — `compileAgentActionExecution`
-        // import plus two calls, and `providerProtocol.compileRequest` once.
-        // Command-envelope / provider-request compilers; no device hydration.
-        'src/modules/AiRuntime/useCases/sendChatMessage.ts': 5,
+        // Count provenance: 0 in code, was 5 — prompt plan materialization and
+        // explain-response streaming were extracted to agentRequestOrchestration
+        // (#2973, #2975), taking every `compileAgentActionExecution` and
+        // `providerProtocol.compileRequest` reference with them; those files
+        // are censused below.
+        // 'src/modules/AiRuntime/useCases/sendChatMessage.ts': removed (0),
         // Prompt admission owns immutable action-execution compilation; the import,
         // module path, and call are metadata construction, not hydration.
         'src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts': 3,
@@ -567,9 +569,7 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Levain/useCases/levainParamBridge/loadSamplesForInstrument.ts': 2,
         'src/modules/Levain/useCases/loadPreset.ts': 4,
         'src/modules/Levain/presentations/views/LevainPanel.tsx': 2,
-        'src/modules/PluginHost/useCases/faustEngine/compileAllFaustModules.ts': 4,
         'src/modules/PluginHost/useCases/faustEngine/compileFaustDSP.ts': 1,
-        'src/modules/PluginHost/useCases/faustEngine/registerFaustPluginLoader.ts': 3,
         'src/modules/PluginHost/useCases/index.ts': 2,
         'src/modules/Proof/useCases/proofParamBridge/loadProofPatchWithAudio.ts': 1,
         'src/modules/Proof/presentations/views/ProofPanel.tsx': 3,
@@ -620,6 +620,16 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // pattern matches inside the string). The composer projects immutable
         // agent-run scope metadata; it holds no device write.
         'src/modules/AiRuntime/useCases/agentReference/composeVerifiedProviderProposalScope.ts': 1,
+        // Count provenance: new file entry, measured 4 — prompt plan
+        // materialization moved out of sendChatMessage (#2973): the
+        // `compileAgentActionExecution` named import, its module path in that
+        // same import line, one ReturnType projection, and the one call.
+        // Immutable Command-envelope compilation; no device hydration or write.
+        'src/modules/AiRuntime/useCases/agentRequestOrchestration/materializePromptCommandPlan.ts': 4,
+        // Count provenance: new file entry, measured 1 — the single
+        // `providerProtocol.compileRequest` call, extracted from
+        // sendChatMessage (#2975). Provider-request compilation only.
+        'src/modules/AiRuntime/useCases/agentRequestOrchestration/streamExplainChatResponse.ts': 1,
         'src/modules/AiRuntime/useCases/aiRuntimeQueries/runLocalModelTextCompletion.ts': 1,
         'src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts': 1,
         'src/modules/AiRuntime/useCases/llmOrchestration/inference.ts': 1,
@@ -629,15 +639,28 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AiRuntime/useCases/validateArbitraryCommandListEvidence.ts': 1,
         // Arrangement: compileAddDeviceAction / compileReorderDevicesAction /
         // compileLoadPresetActions / compileTrackStripInitializationSnapshot.
-        // Compilers, barrel re-exports, the loadPreset handler, the file-drop
-        // hook, and projectTrackToLiveStrip all name those compilers; they do
-        // not write stores. Handlers commit through executeAppAction.
+        // Compilers, barrel re-exports, the loadPreset handler, and
+        // projectTrackToLiveStrip all name those compilers; they do not write
+        // stores. Handlers commit through executeAppAction.
         'src/modules/Arrangement/handlers/preset/handleLoadPreset.ts': 3,
-        'src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts': 3,
+        // Count provenance: 0 in code, was 3 — the plugin-drop branch now
+        // dispatches through `executeAddDeviceAction`, which owns the compile
+        // step; the hook no longer names a compiler.
+        // 'src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts': removed (0),
         'src/modules/Arrangement/useCases/compileTrackStripInitializationSnapshot.ts': 1,
         'src/modules/Arrangement/useCases/device/compileAddDeviceAction.ts': 1,
         'src/modules/Arrangement/useCases/device/compileReorderDevicesAction.ts': 1,
-        'src/modules/Arrangement/useCases/index.ts': 6,
+        // Count provenance: new file entry, measured 3 — the
+        // `compileAddDeviceAction` named import, its module path in that same
+        // import line (the family pattern matches inside the string), and the
+        // one compile call in the dispatch door. The compiled action commits
+        // through `executeAppAction`; the file holds no store or engine write.
+        'src/modules/Arrangement/useCases/device/executeAddDeviceAction.ts': 3,
+        // Count provenance: was 6, measured 4 — the `compileAddDeviceAction`
+        // re-export left the barrel with the dispatch-door rewire (#2980);
+        // the compileReorderDevicesAction and compileLoadPresetActions
+        // re-exports remain (identifier + module path each).
+        'src/modules/Arrangement/useCases/index.ts': 4,
         'src/modules/Arrangement/useCases/preset/compileLoadPresetActions.ts': 1,
         'src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts': 3,
         // AudioEngine: compileRuntimeDeviceControl / compileRuntimeGraphDelta /
@@ -678,15 +701,23 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AudioEngine/services/compileRuntimeGraphDelta.ts': 20,
         'src/modules/AudioEngine/services/compileRuntimeGrinderNeuralPatch.ts': 3,
         'src/modules/AudioEngine/useCases/compileRuntimeGraphDelta.ts': 2,
-        // UI: compileAddDeviceAction / compileLoadPresetActions /
-        // compileReorderDevicesAction / compileToasterTrackStackActions in
-        // browser, mixer, inspector, and Knead. They compile then dispatch;
-        // they do not name loadInstrument.
-        'src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx': 4,
+        // UI: compileLoadPresetActions / compileReorderDevicesAction /
+        // compileToasterTrackStackActions in browser, mixer, and inspector.
+        // They compile then dispatch; they do not name loadInstrument. Device
+        // adds compile inside `executeAddDeviceAction` (censused above), so
+        // add-device UI no longer names a compiler.
+        // Count provenance: was 4, measured 2 — the compileAddDeviceAction
+        // import and call moved into the dispatch door (#2980); the
+        // compileLoadPresetActions import + call remain.
+        'src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx': 2,
         'src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx': 4,
-        'src/modules/ContentBrowser/presentations/views/Sidebar/effectsTabHelpers.tsx': 2,
+        // Count provenance: 0 in code, was 2 — addDeviceThroughAction now
+        // delegates to `executeAddDeviceAction`; no compiler named.
+        // 'src/modules/ContentBrowser/presentations/views/Sidebar/effectsTabHelpers.tsx': removed (0),
         'src/modules/MixerConsole/presentations/views/Mixer/DeviceChainSection.tsx': 2,
-        'src/modules/TimelineEditor/presentations/views/ClipView/KneadEditor.tsx': 2,
+        // Count provenance: 0 in code, was 2 — the Enable Pitch Editor button
+        // now dispatches through `executeAddDeviceAction`; no compiler named.
+        // 'src/modules/TimelineEditor/presentations/views/ClipView/KneadEditor.tsx': removed (0),
         'src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx': 2,
         'src/modules/Toaster/useCases/compileToasterTrackStackActions.ts': 3,
         'src/modules/Toaster/useCases/index.ts': 2,
@@ -747,6 +778,12 @@ const DEVICE_DATA_COUNTS = {
         // prepareRemoveDevice is the Arrangement-owned compiler for the
         // registered remove handler.
         'src/modules/Arrangement/useCases/device/prepareRemoveDevice.ts': 2,
+        // Count provenance: new file entry, measured 1 — the shorthand
+        // `devices` on the updater's returned track, counted by the AST half
+        // (no lexical `devices:` match). #2942 narrowed the reorder write to
+        // `{ ...current, devices }`; the handler-private project write behind
+        // the registered reorderDevices action.
+        'src/modules/Arrangement/useCases/device/reorderDevices.ts': 1,
         // Device reconstruction and the shorthand chain replacement are the
         // registered restore action's complete project write.
         'src/modules/Arrangement/useCases/device/restoreDevice.ts': 2,
@@ -952,6 +989,25 @@ function productionSources(root: string): ProductionSource[] {
         }
     }
     visit(join(root, 'src'));
+    return files;
+}
+
+/**
+ * One sweep of `src/`, shared by every case below. Parsing and re-printing the
+ * whole tree costs seconds; doing it once per case put every case in this file
+ * over its timeout. The working tree cannot change mid-run, so one sweep is the
+ * same evidence as fourteen, and each case still composes its own synthetic
+ * file onto a copy.
+ */
+const productionSourcesByRoot = new Map<string, ProductionSource[]>();
+
+function readProductionSources(root: string): ProductionSource[] {
+    const cached = productionSourcesByRoot.get(root);
+    if (cached) {
+        return cached;
+    }
+    const files = productionSources(root);
+    productionSourcesByRoot.set(root, files);
     return files;
 }
 
@@ -1283,7 +1339,7 @@ function assertProductionClosure(files: ReadonlyArray<ProductionSource>): void {
 
 describe('device write boundary closure', () => {
     it('classifies every production sink by family, path, and exact count', () => {
-        const files = productionSources(process.cwd());
+        const files = readProductionSources(process.cwd());
         expect(() => assertProductionClosure(files)).not.toThrow();
     });
 
@@ -1506,7 +1562,7 @@ describe('device write boundary closure', () => {
             source: 'const parameterValues = {}; updateTrack("track", (current) => ({ ...current, parameterValues }));',
         },
     ])('rejects $name through the production closure assertion', ({ path, source }) => {
-        const files = productionSources(process.cwd());
+        const files = readProductionSources(process.cwd());
         expect(() => assertProductionClosure([...files, productionSource(path, source)])).toThrow(
             /sink census changed/
         );

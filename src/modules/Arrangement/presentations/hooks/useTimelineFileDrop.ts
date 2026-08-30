@@ -2,7 +2,6 @@ import { type DragEvent, useState } from 'react';
 
 import { decodeAudioFile, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
-import { executeAppAction } from '#/modules/Command/useCases';
 import { resolveDroppedSampleFile } from '#/modules/SampleLibrary/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -10,7 +9,7 @@ import { trackStore } from '../../stores/trackStore';
 import { addTrack } from '../../useCases/addTrack';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { addClip } from '../../useCases/clip/addClip';
-import { compileAddDeviceAction } from '../../useCases/device/compileAddDeviceAction';
+import { executeAddDeviceAction } from '../../useCases/device/executeAddDeviceAction';
 import { importMidiFile } from '../../useCases/importMidiFile';
 import { hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip/hitTestTrack';
 
@@ -242,10 +241,7 @@ export const useTimelineFileDrop = ({
                 // id. `De-esser`, `LUFS Meter` and `Stereo Widener` each name two
                 // catalog plugins, so a name lookup returns whichever the registry
                 // lists first rather than the card that was dragged.
-                const action = compileAddDeviceAction(targetTrackId, plugin.id);
-                if (action) {
-                    void executeAppAction(action);
-                }
+                void executeAddDeviceAction(targetTrackId, plugin.id);
             } catch {
                 notifyUser('Could not add the dropped plugin — its data was malformed.', 'error');
             }

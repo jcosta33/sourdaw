@@ -20,6 +20,7 @@ export async function loadPlugin(pluginId: string, instanceId: string, sampleRat
             is_active: false,
             latency_samples: 0,
             latency_ms: 0,
+            tail_samples: 0,
             bridge_round_trip_frames: 0,
             engine_plugin_id: null,
         };

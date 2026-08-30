@@ -14,6 +14,7 @@ function Slider({
     defaultValue,
     value,
     onValueChange,
+    onValueCommit,
     min = 0,
     max = 100,
     step = 1,
@@ -43,6 +44,7 @@ function Slider({
             defaultValue={defaultValue}
             value={value}
             onValueChange={onValueChange}
+            onValueCommit={onValueCommit}
             min={min}
             max={max}
             step={step}
@@ -78,6 +80,7 @@ function Slider({
                     max={max}
                     defaultValue={defaultValue}
                     onValueChange={onValueChange}
+                    onValueCommit={onValueCommit}
                     thumbClassName={thumbClassName}
                     ariaLabel={ariaLabel}
                     ariaLabelledBy={ariaLabelledBy}
@@ -94,6 +97,7 @@ function SliderThumbNode({
     max,
     defaultValue,
     onValueChange,
+    onValueCommit,
     thumbClassName,
     ariaLabel,
     ariaLabelledBy,
@@ -104,6 +108,7 @@ function SliderThumbNode({
     max: number;
     defaultValue?: number[];
     onValueChange?: (value: number[]) => void;
+    onValueCommit?: (value: number[]) => void;
     thumbClassName?: string;
     ariaLabel?: string;
     ariaLabelledBy?: string;
@@ -158,6 +163,7 @@ function SliderThumbNode({
                                 const newVals = [...values];
                                 newVals[index] = Math.max(min, Math.min(max, num));
                                 onValueChange(newVals);
+                                onValueCommit?.(newVals);
                             }
                             setIsEditing(false);
                         }

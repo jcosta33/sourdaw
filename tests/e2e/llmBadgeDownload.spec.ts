@@ -1,24 +1,52 @@
 import { test, expect } from '@playwright/test';
 
-import { launch_new_project, setupWebGpuApiPresentWorkspace, setupWorkspace } from './e2eUtils';
+import { probeBrowserWebGpuHardware } from './browserAiHardware';
+import { launch_new_project, setupWorkspace } from './e2eUtils';
 
-// The LlmStatusBadge's model-onboarding affordances have no E2E: the download
-// button's per-model label and the verification blurb are the first AI touch
-// for browser users. This test establishes only the WebGPU API-present UI
-// precondition and asserts the pre-download onboarding interface; it does not
-// assert a usable adapter, runtime capability, provider admission, or download.
+// The LlmStatusBadge is the first AI touch for browser users, and what it may
+// offer is decided by WebGPU admission: model onboarding when a device is
+// admitted, nothing to click when it is not. The expectation is read from
+// Chromium's own adapter, outside Sourdaw's capability detection, so the badge
+// cannot satisfy this spec by agreeing with its own report. The general matrix
+// has no adapter and therefore proves only the withheld branch; the onboarding
+// branch is proven by browserAiAdmittedPresentation.spec.ts on the hardware leg,
+// and runs here as well on a developer machine with a GPU. Per-model labels also
+// have deterministic coverage in the LlmStatusBadge component spec.
 test.describe('LlmStatusBadge — model download affordances', () => {
-    test('withholds download affordances when the WebGPU API is unavailable', async ({ page }) => {
+    test('offers model onboarding only when this browser admits a WebGPU device', async ({ page }, testInfo) => {
         test.setTimeout(120000);
         await setupWorkspace(page);
         await launch_new_project(page);
 
-        const unavailable = page.getByText('AI unavailable', { exact: true });
-        await expect(unavailable).toBeVisible();
-        await expect(unavailable).toHaveAttribute('title', 'No configured AI backend is available');
-        await expect(page.getByRole('button', { name: 'Load AI', exact: true })).toHaveCount(0);
-        await expect(page.getByRole('button', { name: /Download & Load /i })).toHaveCount(0);
+        const hardware = await probeBrowserWebGpuHardware(page);
+        await testInfo.attach('webgpu-hardware-probe', {
+            body: JSON.stringify(hardware),
+            contentType: 'application/json',
+        });
 
+        if (hardware.status === 'unavailable') {
+            const unavailable = page.getByText('AI unavailable', { exact: true });
+            await expect(unavailable).toBeVisible();
+            await expect(unavailable).toHaveAttribute('title', 'No configured AI backend is available');
+            await expect(page.getByRole('button', { name: 'Load AI', exact: true })).toHaveCount(0);
+            await expect(page.getByRole('button', { name: /Download & Load /i })).toHaveCount(0);
+        } else {
+            await page.getByRole('button', { name: 'Load AI', exact: true }).click();
+
+            // Model options are DawChooserCard buttons named "<display>
+            // <description> <params> <sizes>"; each card carries its download
+            // size in GB.
+            const cards = page.getByRole('button').filter({ hasText: /GB/ });
+            await expect(cards.nth(0)).toBeVisible({ timeout: 10_000 });
+            expect(await cards.count()).toBeGreaterThan(1);
+            await expect(page.getByRole('button', { name: /Download & Load /i })).toHaveText(
+                /Download & Load Standard/
+            );
+            await expect(page.getByText(/Downloads and verifies this model/i)).toBeVisible();
+        }
+
+        // Preferences states the privacy boundary of the automatic backend in
+        // both cases: nothing leaves this browser unless a provider is chosen.
         await page.getByTestId('toggle-preferences').click();
         const dialog = page.getByRole('dialog');
         await dialog.getByRole('button', { name: 'AI', exact: true }).click();
@@ -27,37 +55,5 @@ test.describe('LlmStatusBadge — model download affordances', () => {
                 'Automatic uses WebLLM in this browser only. Select a hosted provider explicitly to send prompts remotely.'
             )
         ).toBeVisible();
-    });
-
-    test('shows model onboarding and download affordances when the WebGPU API is present', async ({ page }) => {
-        test.setTimeout(120000);
-        await setupWebGpuApiPresentWorkspace(page);
-        await launch_new_project(page);
-
-        await page.getByRole('button', { name: 'Load AI' }).first().click();
-
-        // Model options are DawChooserCard buttons named "<display> <description>
-        // <params> <sizes>" (the display name is a card heading, not a title
-        // attribute); each card carries its download size in GB.
-        const cards = page.getByRole('button').filter({ hasText: /GB/ });
-        await expect(cards.nth(0)).toBeVisible({ timeout: 10_000 });
-        expect(await cards.count()).toBeGreaterThan(1);
-
-        // Selecting a card changes the download button's label to that
-        // model's display name (Light/Standard/Pro) — the label is the
-        // per-model contract. The default selection is Standard, so the
-        // pre-state is asserted before any click; Pro and Light then prove
-        // the retitling is selection-driven.
-        const downloadButton = page.getByRole('button', { name: /Download & Load /i });
-        await expect(downloadButton).toHaveText(/Download & Load Standard/);
-
-        await cards.filter({ hasText: 'Pro' }).first().click();
-        await expect(downloadButton).toHaveText(/Download & Load Pro/);
-
-        await cards.filter({ hasText: 'Light' }).first().click();
-        await expect(downloadButton).toHaveText(/Download & Load Light/);
-
-        // The privacy blurb states the download-and-verify behavior.
-        await expect(page.getByText(/Downloads and verifies this model/i)).toBeVisible();
     });
 });

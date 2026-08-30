@@ -944,7 +944,7 @@
                 "tracked-set-sha256:580b5d96ccfcaffd876a408f6a9c6dcc31a7f8575956726c6abf601d6bb37c6e:grand-boule-discovery-catalog",
                 "tracked-set-sha256:a4b6f7d5b32d31ed0c0cf027344718219bd87dc3f6a345a2b9bebd90f1f45205:grand-boule-factory-admission",
                 "tracked-set-sha256:f7da3b228ba9f5f5a665bebb82d060ffd8a0cdec72b687e0196ef8a4231fa525:grand-boule-live-runtime",
-                "tracked-set-sha256:c53e1b7e5baa5bd5cf4a7f6cfc2dd1ea53854cdc18f7b2a19d1b70eb7b75ece2:grand-boule-project-state",
+                "tracked-set-sha256:6d662c1d0415575782f398aa1df2f4cc213c029730336b3daaf94ff7ef4c35f4:grand-boule-project-state",
                 "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
                 "tracked-set-sha256:20a0794aece85e0db5570e4320126e0a3b8e5e45b42f5a31a10ad5a302ca60f9:grand-boule-release-proof"
             ],
@@ -1067,7 +1067,7 @@
             ],
             "revisions": ["not-applicable:direct-project-source"],
             "digests": [
-                "sha256:2bf7b626f838702f91e2ebd4b40eb25ba4049c206e33245d675d4ca20b311c25:public/audio/worklets/native-plugin-bridge-processor.js",
+                "sha256:69721a5e12449b11e81b9f9916fa6716ea8fc4f039b2552522c72e4c451107e6:public/audio/worklets/native-plugin-bridge-processor.js",
                 "sha256:35c6845ed329a0c3572d482e74cbf312a87f8216280cdd09905de5271e22f6ff:public/audio/worklets/sidechain-compressor-processor.js"
             ],
             "licenses": ["Apache-2.0"],
@@ -1125,13 +1125,13 @@
                 "derived renditions"
             ],
             "digests": [
-                "sha256:a11dfb76d0788c63eacb88aef860bc972f246d222b4be6c9063dad22bf1bb879:public/favicon.ico",
-                "sha256:0f54e11b49e54017b02886ee6b7ba85404d61363dbd24e29a9f371fc682e2b45:public/icon-192.png",
-                "sha256:19dc2eb9b4f56d719c635fee49cb050122203e681d0172e2a7c9897874b05c47:public/icon-transparent.png",
-                "sha256:6a0a1b002bddf302d0247d3531c1c77159548c14c3a2b5359fca6abfecb1826b:public/icon.png",
-                "sha256:6a0a1b002bddf302d0247d3531c1c77159548c14c3a2b5359fca6abfecb1826b:sourdaw.png",
-                "tree-sha256:7dac68d653c32736b1507d07574e5a288049351ba7d58d8d82fe6602f995cadf:public/logo-parts",
-                "tree-sha256:3e010276cd1d29a68235a79227300c6e8d7ec61484ef9166eaed92bf490b7f14:build/icons"
+                "sha256:517fc1306f4c8efaf3c10ef65745658d014ad68725c5f8218877d36288d64cf4:public/favicon.ico",
+                "sha256:0f5f1435a632f0fac52ed7cf59f60387be55a597235bdee96df2fa2ac1cddbbb:public/icon-192.png",
+                "sha256:c2da95a42f825cc8cb0ed208ae4441bfc4400e84548723c5b1b96526de53eef7:public/icon-transparent.png",
+                "sha256:f0520cf9febf63733577684160316901499a16b89c469fbbfc7a62613376a447:public/icon.png",
+                "sha256:f0520cf9febf63733577684160316901499a16b89c469fbbfc7a62613376a447:sourdaw.png",
+                "tree-sha256:fa5dd4f455fd2a2176fb9c3a166b2a002104ac9528bb94e517aac35910cbebc2:public/logo-parts",
+                "tree-sha256:2192dad880ac845c75c42e8c170185a2e5f3e66e4bcc9203bdf8d5a81b03939f:build/icons"
             ],
             "licenses": ["Apache-2.0"],
             "productSurfaces": ["application icons", "brand logo", "release screenshots"],
@@ -1901,6 +1901,7 @@
                 "src/modules/Arrangement/repositories/presets/faustEffectPresets.ts",
                 "src/modules/Arrangement/repositories/presets/faustInstrumentPresets.ts",
                 "src/modules/PluginHost/useCases/faustEngine/builtinDSP.ts",
+                "src/modules/Project/useCases/projectTemplates/templateFiles/hipHopTrap.ts",
                 "src/modules/TimelineEditor/presentations/views/Inspector/layouts/FaustInstrumentLayout.tsx"
             ]
         },

@@ -2,6 +2,8 @@ import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
 
 import { agentSectionRenderArtifactStore } from '../stores/agentSectionRenderArtifactStore';
 
+import { scheduleAgentSectionRenderArtifactExpiry } from './scheduleAgentSectionRenderArtifactExpiry';
+
 type RemoveAgentProjectSectionArtifactsInput = {
     jobs: readonly RenderProjectSectionJobSnapshot[];
 };
@@ -11,4 +13,5 @@ export function removeAgentProjectSectionArtifacts(input: RemoveAgentProjectSect
     agentSectionRenderArtifactStore.update((state) => ({
         artifacts: (state?.artifacts ?? []).filter((artifact) => !jobIds.has(artifact.jobId)),
     }));
+    scheduleAgentSectionRenderArtifactExpiry();
 }

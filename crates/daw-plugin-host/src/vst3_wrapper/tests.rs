@@ -8,18 +8,23 @@
 //! not the path to it.
 
 use super::*;
+use crate::runtime::HostedRuntime;
+use crate::traits::{
+    take_pending_process_refusal_signal, PluginHostRequest, PROCESS_REFUSAL_HINT_TEST_LOCK,
+};
 use crate::vst3_host::tuid_from_guid;
 use std::ffi::{CStr, CString};
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicPtr, AtomicU32, AtomicU64, Ordering};
 use std::thread::ThreadId;
 use vst3::Steinberg::Vst::{
-    BusInfo, BusTypes_, IComponentHandler, IComponentHandlerTrait, IHostApplication,
-    IHostApplicationTrait, IMessage, IMessageTrait, RestartFlags_, RoutingInfo, SpeakerArr,
-    SpeakerArrangement, TChar,
+    BusInfo, BusTypes_, IComponentHandler, IComponentHandler2, IComponentHandler2Trait,
+    IComponentHandlerTrait, IHostApplication, IHostApplicationTrait, IMessage, IMessageTrait,
+    RestartFlags_, RoutingInfo, SpeakerArr, SpeakerArrangement, TChar,
 };
 use vst3::Steinberg::{
     char16, char8, int16, kNoInterface, kNotImplemented, kResultFalse, kResultTrue, tresult,
-    uint32, FIDString, FUnknown, IPlugFrame, IPlugFrameTrait, IPlugView, IPlugViewTrait,
+    uint32, FIDString, FUnknown, IPlugFrame, IPlugFrameTrait, IPlugView,
+    IPlugViewContentScaleSupport, IPlugViewContentScaleSupportTrait, IPlugViewTrait,
     IPluginFactory2Trait, IPluginFactory3, IPluginFactory3Trait, PClassInfo, PClassInfo2,
     PClassInfoW, PFactoryInfo, TBool, ViewRect,
 };
@@ -28,6 +33,9 @@ use vst3::{uid, ComRef};
 const COMBINED_CID: TUID = uid(0x11111111, 0x22222222, 0x33333333, 0x44444444);
 const SPLIT_COMPONENT_CID: TUID = uid(0xAAAAAAAA, 0xBBBBBBBB, 0xCCCCCCCC, 0xDDDDDDDD);
 const SPLIT_CONTROLLER_CID: TUID = uid(0xAAAAAAAA, 0xBBBBBBBB, 0xCCCCCCCC, 0xEEEEEEEE);
+/// A second combined class, differing from `COMBINED_CID` only in what its
+/// factory row says it is: an instrument rather than an effect.
+const INSTRUMENT_CID: TUID = uid(0x11111111, 0x22222222, 0x33333333, 0x55555555);
 const UNKNOWN_CID: TUID = uid(0x00000000, 0x00000000, 0x00000000, 0x0000BEEF);
 
 const GAIN_PARAM: ParamID = 0;
@@ -67,6 +75,8 @@ struct FakeState {
     controller_gain: AtomicU64,
 
     latency: AtomicU32,
+    /// The processing tail the plugin declares, in frames.
+    tail: AtomicU32,
     event_input_buses: AtomicI32,
     max_block: AtomicI32,
     sample_rate: AtomicU64,
@@ -91,6 +101,9 @@ struct FakeState {
     observed_inputs: Mutex<Vec<ObservedBus>>,
     observed_outputs: Mutex<Vec<ObservedBus>>,
 
+    /// A processor that refuses to render the block it was handed, answering a
+    /// failure tresult without writing an output buffer.
+    refuses_process: AtomicBool,
     /// A processor that refuses the state a project restores into it.
     refuses_set_state: AtomicBool,
     /// A processor that will not report its own state.
@@ -266,6 +279,21 @@ impl FakeState {
         unsafe {
             handler.restartComponent(RestartFlags_::kLatencyChanged as int32);
         }
+    }
+
+    /// The plugin's own editor reporting unsaved state, the way a real one
+    /// does: `setDirty(true)` on the handler the host handed its controller,
+    /// queried for `IComponentHandler2` — the only route VST3 gives it.
+    fn mark_own_state_dirty(&self) {
+        let handler = self.handler.lock().expect("handler mutex");
+        let Some(handler) = handler.as_ref() else {
+            panic!("the host never gave the plugin a component handler");
+        };
+        let Some(handler2) = handler.cast::<IComponentHandler2>() else {
+            panic!("the host's handler answers queryInterface for IComponentHandler2");
+        };
+        // SAFETY: the handler is live for as long as the wrapper is.
+        unsafe { handler2.setDirty(1) };
     }
 }
 
@@ -569,6 +597,12 @@ unsafe fn fake_process(state: &FakeState, data: *mut ProcessData) -> tresult {
         return kInvalidArgument;
     }
     state.process_calls.fetch_add(1, Ordering::AcqRel);
+    if state.refuses_process.load(Ordering::Acquire) {
+        // Before touching a buffer: a processor that answers a failure has told
+        // the host its output means nothing, and one that wrote first would let
+        // a host reading that output pass the test anyway.
+        return kResultFalse;
+    }
     let data = &mut *data;
 
     record_bus_shape(&state.observed_inputs, data.inputs, data.numInputs);
@@ -807,7 +841,7 @@ macro_rules! fake_component_impls {
             }
 
             unsafe fn getTailSamples(&self) -> uint32 {
-                0
+                self.state.tail.load(Ordering::Acquire)
             }
         }
     };
@@ -1065,6 +1099,9 @@ struct FakeEditor {
     view: AtomicPtr<IPlugView>,
     /// The size `getSize` reports.
     size: Mutex<(u32, u32)>,
+    /// The rect this editor occupies at a scale of 1, which is what a stated
+    /// scale is applied to.
+    unscaled_size: Mutex<(u32, u32)>,
     /// An editor that states no size at all, whatever it is asked.
     states_no_size: AtomicBool,
     /// An editor that only knows its size once it can see its parent, which
@@ -1089,6 +1126,15 @@ struct FakeEditor {
     /// Whether `resizeView` had already delivered `onSize` by the time it
     /// returned — the whole of what "synchronous, one callstack" means.
     on_size_arrived_before_resize_view_returned: AtomicBool,
+    /// The size the host's own window is holding right now.
+    host_window_size: Mutex<Option<(u32, u32)>>,
+    /// What that window was holding at the instant `onSize` arrived.
+    ///
+    /// VST3 states the order outright: the host resizes its window, then tells
+    /// the view what it granted. A host whose window seam only *queues* the
+    /// resize reaches `onSize` with the old size still on the window, and this
+    /// is the only field that can tell that apart from a host that applied it.
+    host_window_size_at_on_size: Mutex<Option<(u32, u32)>>,
     /// A size this editor asks for again from *inside* `onSize`. Taken rather
     /// than counted, so a host with no re-entrancy guard fails this test instead
     /// of exhausting the stack.
@@ -1103,6 +1149,8 @@ struct FakeEditor {
     constrained_to: Mutex<Option<(u32, u32)>>,
     /// An editor that refuses every host-initiated size outright.
     refuses_constraints: AtomicBool,
+    /// Every scale factor the host stated, in the order it stated them.
+    content_scales: Mutex<Vec<f32>>,
     create_view_calls: AtomicI32,
 }
 
@@ -1114,6 +1162,7 @@ impl FakeEditor {
             ..Self::default()
         });
         *editor.size.lock().expect("size mutex") = (width, height);
+        *editor.unscaled_size.lock().expect("size mutex") = (width, height);
         editor
     }
 
@@ -1179,6 +1228,10 @@ impl FakeEditor {
             .push(CStr::from_ptr(value).to_string_lossy().into_owned());
     }
 
+    fn content_scales(&self) -> Vec<f32> {
+        self.content_scales.lock().expect("scale mutex").clone()
+    }
+
     fn platform_types(&self) -> Vec<String> {
         self.platform_types
             .lock()
@@ -1215,7 +1268,30 @@ struct FakeView {
 }
 
 impl Class for FakeView {
-    type Interfaces = (IPlugView,);
+    type Interfaces = (IPlugView, IPlugViewContentScaleSupport);
+}
+
+/// A view that lays itself out at the density it is told, the way a real one
+/// does: its `ViewRect` is physical pixels on the platforms that state a scale,
+/// so the same editor occupies twice the rect at twice the scale.
+///
+/// Not recorded in the shared call log. This interface is only reachable on the
+/// platforms whose `ViewRect` is physical, so logging it would make every
+/// order-asserting test read differently on Windows and Linux than on macOS.
+impl IPlugViewContentScaleSupportTrait for FakeView {
+    unsafe fn setContentScaleFactor(&self, scale: f32) -> tresult {
+        self.editor
+            .content_scales
+            .lock()
+            .expect("scale mutex")
+            .push(scale);
+        let (width, height) = *self.editor.unscaled_size.lock().expect("size mutex");
+        *self.editor.size.lock().expect("size mutex") = (
+            (width as f32 * scale) as u32,
+            (height as f32 * scale) as u32,
+        );
+        kResultOk
+    }
 }
 
 impl Drop for FakeView {
@@ -1318,6 +1394,15 @@ impl IPlugViewTrait for FakeView {
             ((*new_size).bottom - (*new_size).top) as u32,
         );
         self.editor.record("onSize");
+        *self
+            .editor
+            .host_window_size_at_on_size
+            .lock()
+            .expect("window size mutex") = *self
+            .editor
+            .host_window_size
+            .lock()
+            .expect("window size mutex");
         *self.editor.on_size_origin.lock().expect("size mutex") =
             Some(((*new_size).left, (*new_size).top));
         if self.editor.refuses_on_size.load(Ordering::Acquire) {
@@ -1415,20 +1500,20 @@ impl IPluginFactoryTrait for FakeFactory {
     }
 
     unsafe fn countClasses(&self) -> int32 {
-        3
+        4
     }
 
     unsafe fn getClassInfo(&self, index: int32, info: *mut PClassInfo) -> tresult {
-        let Some((cid, category, name)) = class_entry(index) else {
+        let Some(entry) = class_entry(index) else {
             return kInvalidArgument;
         };
         if info.is_null() {
             return kInvalidArgument;
         }
-        (*info).cid = cid;
+        (*info).cid = entry.cid;
         (*info).cardinality = 0x7FFF_FFFF;
-        write_char8(&mut (*info).category, category);
-        write_char8(&mut (*info).name, name);
+        write_char8(&mut (*info).category, entry.category);
+        write_char8(&mut (*info).name, entry.name);
         kResultOk
     }
 
@@ -1445,7 +1530,9 @@ impl IPluginFactoryTrait for FakeFactory {
             return kInvalidArgument;
         }
         let state = Arc::clone(&self.state);
-        let pointer = if same_tuid(&cid, &COMBINED_CID) {
+        // The instrument class is the same object as the combined one: only its
+        // factory row differs, which is exactly what the host reads it for.
+        let pointer = if same_tuid(&cid, &COMBINED_CID) || same_tuid(&cid, &INSTRUMENT_CID) {
             ComWrapper::new(FakeCombined { state })
                 .to_com_ptr::<IComponent>()
                 .map(|component| component.into_raw() as *mut std::ffi::c_void)
@@ -1470,19 +1557,19 @@ impl IPluginFactoryTrait for FakeFactory {
 
 impl IPluginFactory2Trait for FakeFactory {
     unsafe fn getClassInfo2(&self, index: int32, info: *mut PClassInfo2) -> tresult {
-        let Some((cid, category, name)) = class_entry(index) else {
+        let Some(entry) = class_entry(index) else {
             return kInvalidArgument;
         };
         if info.is_null() {
             return kInvalidArgument;
         }
-        (*info).cid = cid;
+        (*info).cid = entry.cid;
         (*info).cardinality = 0x7FFF_FFFF;
-        write_char8(&mut (*info).category, category);
-        write_char8(&mut (*info).name, name);
+        write_char8(&mut (*info).category, entry.category);
+        write_char8(&mut (*info).name, entry.name);
         write_char8(&mut (*info).vendor, "Fake Audio");
         write_char8(&mut (*info).version, "3.2.1");
-        write_char8(&mut (*info).subCategories, "Fx|Reverb");
+        write_char8(&mut (*info).subCategories, entry.sub_categories);
         kResultOk
     }
 }
@@ -1497,15 +1584,41 @@ impl IPluginFactory3Trait for FakeFactory {
     }
 }
 
-fn class_entry(index: int32) -> Option<(TUID, &'static str, &'static str)> {
+/// One factory row: the class id, its VST3 category, its name, and the
+/// pipe-separated sub-categories `getClassInfo2` publishes for it.
+struct ClassEntry {
+    cid: TUID,
+    category: &'static str,
+    name: &'static str,
+    sub_categories: &'static str,
+}
+
+fn class_entry(index: int32) -> Option<ClassEntry> {
     match index {
-        0 => Some((COMBINED_CID, "Audio Module Class", "Fake Combined")),
-        1 => Some((SPLIT_COMPONENT_CID, "Audio Module Class", "Fake Split")),
-        2 => Some((
-            SPLIT_CONTROLLER_CID,
-            "Component Controller Class",
-            "Fake Split Controller",
-        )),
+        0 => Some(ClassEntry {
+            cid: COMBINED_CID,
+            category: "Audio Module Class",
+            name: "Fake Combined",
+            sub_categories: "Fx|Reverb",
+        }),
+        1 => Some(ClassEntry {
+            cid: SPLIT_COMPONENT_CID,
+            category: "Audio Module Class",
+            name: "Fake Split",
+            sub_categories: "Fx|Reverb",
+        }),
+        2 => Some(ClassEntry {
+            cid: SPLIT_CONTROLLER_CID,
+            category: "Component Controller Class",
+            name: "Fake Split Controller",
+            sub_categories: "Fx|Reverb",
+        }),
+        3 => Some(ClassEntry {
+            cid: INSTRUMENT_CID,
+            category: "Audio Module Class",
+            name: "Fake Instrument",
+            sub_categories: "Instrument|Synth",
+        }),
         _ => None,
     }
 }
@@ -1568,12 +1681,46 @@ fn recording_window(
     let editor = Arc::clone(editor);
     let resize: EditorWindowResizer = Arc::new(move |width, height| {
         editor.record("resizeWindow");
+        // Applied before the call returns, which is what the production seam
+        // does now: a resizer that only queued the size would leave the old one
+        // readable here, and that is what the handshake test observes.
+        *editor.host_window_size.lock().expect("window size mutex") = Some((width, height));
         recorded
             .lock()
             .expect("window size mutex")
             .push((width, height));
     });
     (resize, sizes)
+}
+
+/// What the engine's output buffer already holds when a block starts — the
+/// previous block, which a host that neither writes nor silences leaves
+/// sounding.
+const STALE_SAMPLE: f32 = -0.5;
+
+/// Render one block into an output bus that already holds the previous block,
+/// and answer both channels of what it carries afterwards.
+///
+/// Separate from [`render`], which zeroes its buffers and is shared by too many
+/// tests to change: a test asserting silence against a buffer it zeroed itself
+/// cannot tell a host that wrote silence from one that wrote nothing, and VST3
+/// zeroes only its own scratch — never the caller's outputs — so "wrote nothing"
+/// is the previous block playing again.
+fn render_over_stale_output(
+    wrapper: &mut Vst3Wrapper,
+    level: f32,
+    frames: usize,
+) -> (Vec<f32>, Vec<f32>) {
+    let left = vec![level; frames];
+    let right = vec![level; frames];
+    let mut out_left = vec![STALE_SAMPLE; frames];
+    let mut out_right = vec![STALE_SAMPLE; frames];
+    {
+        let inputs: [&[f32]; 2] = [&left, &right];
+        let mut out_slices: Vec<&mut [f32]> = vec![&mut out_left, &mut out_right];
+        wrapper.process(&inputs, &mut out_slices, frames);
+    }
+    (out_left, out_right)
 }
 
 /// Hand the plugin one block of a constant signal and read what came back.
@@ -1928,6 +2075,147 @@ fn latency_converts_to_milliseconds_at_the_activation_rate() {
     assert!((wrapper.latency_ms() - 10.0).abs() < 1e-9);
 }
 
+// ── Tail ────────────────────────────────────────────────────────────────
+
+/// The plugin's own answer, asked through `IAudioProcessor::getTailSamples`. A
+/// host that never asks reports every reverb as having no tail at all.
+#[test]
+fn the_declared_tail_is_read_from_the_processor() {
+    let state = FakeState::new();
+    state.tail.store(96_000, Ordering::Release);
+    let wrapper = load(&state, COMBINED_CID);
+
+    assert_eq!(wrapper.tail_samples(), 96_000);
+}
+
+/// `kNoTail` is zero, and it is what a plugin that adds nothing after its input
+/// reports. Pinned so the absent case cannot drift into a sentinel.
+#[test]
+fn a_plugin_declaring_no_tail_reports_zero() {
+    let state = FakeState::new();
+    let wrapper = load(&state, COMBINED_CID);
+
+    assert_eq!(wrapper.tail_samples(), 0);
+}
+
+/// VST3 carries no tail-changed callback, so nothing is ever pending on this
+/// backend — the host asks, the plugin answers, and there is no flag between
+/// them to consume.
+#[test]
+fn a_vst3_plugin_never_has_a_tail_change_pending() {
+    let state = FakeState::new();
+    let mut wrapper = load(&state, COMBINED_CID);
+
+    assert_eq!(wrapper.take_tail_change(), None);
+}
+
+// ── Process refusal ─────────────────────────────────────────────────────
+
+/// A processor answering anything but `kResultOk` wrote no output the host may
+/// use, so the block passes through and the failure is latched. Latching alone
+/// is not enough: the flag lives on the wrapper and nothing reads it on its own,
+/// so the audio thread also raises the process-wide hint the recurring control
+/// visit wakes on. Without that hint the refusal is recorded where no one looks.
+#[test]
+fn a_refused_block_latches_and_wakes_the_control_path() {
+    let _guard = PROCESS_REFUSAL_HINT_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let state = FakeState::new();
+    let mut wrapper = load(&state, COMBINED_CID);
+    state.refuses_process.store(true, Ordering::Release);
+    take_pending_process_refusal_signal();
+
+    let rendered = render(&mut wrapper, 0.5, 64);
+
+    assert_eq!(
+        state.process_calls.load(Ordering::Acquire),
+        1,
+        "the block reached the processor, so its answer is what was read"
+    );
+    assert_eq!(
+        rendered[0], 0.5,
+        "a refused block passes dry rather than the scratch the plugin never wrote"
+    );
+    assert!(
+        wrapper.process_refused,
+        "the refusal is recorded for the control path to report"
+    );
+    assert!(
+        take_pending_process_refusal_signal(),
+        "the refusal wakes the control path, which is the only thread that may report it"
+    );
+}
+
+/// The other leg of DG-003. This class differs from the effect above only in the
+/// sub-categories its factory row publishes, so what changes the answer is the
+/// plugin's own declaration and nothing else. A synth with audio routed into it
+/// would otherwise emit that routed signal at unity out of a voice slot on
+/// refusal — and the CLAP build of the same synth already falls silent.
+#[test]
+fn a_refused_instrument_falls_silent_rather_than_passing_what_was_routed_into_it() {
+    let _guard = PROCESS_REFUSAL_HINT_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let state = FakeState::new();
+    let mut wrapper = load(&state, INSTRUMENT_CID);
+    state.refuses_process.store(true, Ordering::Release);
+    take_pending_process_refusal_signal();
+
+    let (left, right) = render_over_stale_output(&mut wrapper, 0.5, 64);
+
+    assert_eq!(
+        state.process_calls.load(Ordering::Acquire),
+        1,
+        "the block reached the processor, so its answer is what was read"
+    );
+    assert_eq!(
+        (left[0], right[0]),
+        (0.0, 0.0),
+        "a failed instrument has no dry signal to pass, so its slot is silent \
+         — neither the routed signal nor the previous block may reach the bus"
+    );
+    assert!(wrapper.process_refused);
+    assert!(take_pending_process_refusal_signal());
+}
+
+/// The no-dry-input shape the sub-categories miss: a generator classed as an
+/// effect — a test-tone declaring `Fx|Generator` — has no main input bus, so its
+/// own declaration says it consumes no audio. Passing dry on refusal would emit
+/// the routed node signal at unity out of a slot that takes none, and DG-003
+/// puts an effect without a valid dry input at zero alongside the instruments.
+#[test]
+fn a_refused_effect_declaring_no_input_bus_falls_silent_rather_than_passing_dry() {
+    let _guard = PROCESS_REFUSAL_HINT_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let state = FakeState::with_buses(Vec::new(), vec![FakeBus::main(SpeakerArr::kStereo)]);
+    let mut wrapper = load(&state, COMBINED_CID);
+
+    // One accepted block first, so the negotiated layout is observed rather than
+    // assumed: the host handed this plugin no input bus because the plugin
+    // declared none.
+    render(&mut wrapper, 0.5, 64);
+    assert!(
+        state.observed_inputs().is_empty(),
+        "the plugin declared no audio input bus, so it was handed none"
+    );
+
+    state.refuses_process.store(true, Ordering::Release);
+    take_pending_process_refusal_signal();
+
+    let (left, right) = render_over_stale_output(&mut wrapper, 0.5, 64);
+
+    assert_eq!(
+        (left[0], right[0]),
+        (0.0, 0.0),
+        "a generator has no dry input to pass, so its refused slot is silent \
+         — neither the routed signal nor the previous block may reach the bus"
+    );
+    assert!(wrapper.process_refused);
+    assert!(take_pending_process_refusal_signal());
+}
+
 // ── State ───────────────────────────────────────────────────────────────
 
 /// Both chunks must survive a save and load. Keeping only the component's would
@@ -2068,6 +2356,46 @@ fn a_blob_shorter_than_its_header_declares_is_refused() {
 fn an_empty_blob_is_refused_rather_than_read_as_two_empty_chunks() {
     assert!(decode_state(&[]).is_err());
     assert!(decode_state(b"SDV3").is_err());
+}
+
+// ── Plugin-initiated host requests ──────────────────────────────────────
+
+/// #2913: the engine installs the wake on the runtime it is about to own, and
+/// the watcher drains the flag through [`AudioPlugin::take_state_dirty`]. No
+/// test observed that chain at the wrapper level, so any hop back at its
+/// pre-fix form — the runtime arm answering `false`, the wrapper installing
+/// nothing, the flag never drained — left a plugin's own edit recorded where
+/// nothing ever carried it to the project's dirty mark, and
+/// close-without-save lost it. This drives the whole route against a real COM
+/// plugin: install through the runtime the way the engine's loader does,
+/// raise through the handler the fake controller actually holds, and observe
+/// the ask and its flag exactly once.
+#[test]
+fn a_set_dirty_crosses_the_runtime_wake_installation_and_is_consumed_once() {
+    let state = FakeState::new();
+    let mut runtime = HostedRuntime::Vst3(load(&state, COMBINED_CID));
+
+    let requests: Arc<Mutex<Vec<PluginHostRequest>>> = Arc::new(Mutex::new(Vec::new()));
+    let recorded = Arc::clone(&requests);
+    assert!(
+        runtime.set_plugin_host_request_notifier(Box::new(move |request| {
+            recorded.lock().expect("request log").push(request);
+        })),
+        "the runtime accepts the wake the engine's loader installs on it"
+    );
+
+    state.mark_own_state_dirty();
+
+    assert_eq!(
+        requests.lock().expect("request log").as_slice(),
+        [PluginHostRequest::StateDirty],
+        "the wake installed through the runtime is the one the handler fires"
+    );
+    assert!(AudioPlugin::take_state_dirty(&mut runtime));
+    assert!(
+        !AudioPlugin::take_state_dirty(&mut runtime),
+        "one edit marks the project dirty once, not on every later control-path visit"
+    );
 }
 
 // ── Identity ────────────────────────────────────────────────────────────
@@ -2559,11 +2887,10 @@ fn a_view_that_refuses_this_platform_is_not_attached() {
 /// inside `onSize`, and a host that answers it recurses until the stack runs
 /// out — so the second ask is refused rather than served.
 ///
-/// What this pins is the host's own ordering. The resizer here applies the size
-/// synchronously; the production one crosses to the shell as a non-blocking
-/// call, so the window itself takes the size a turn of the shell's loop later.
-/// That seam limitation is tracked separately, and no assertion here observes
-/// it.
+/// The window is part of the contract, not scenery: this drives the same
+/// [`EditorWindowResizer`] seam the shell's window implements, and asserts what
+/// that window was holding at the instant the view was told its size. A host
+/// that granted a size its window had not taken yet fails here.
 #[test]
 fn a_plugins_resize_completes_on_one_callstack_and_a_nested_one_is_refused() {
     let editor = FakeEditor::sized(800, 600);
@@ -2605,6 +2932,14 @@ fn a_plugins_resize_completes_on_one_callstack_and_a_nested_one_is_refused() {
         editor.on_size(),
         Some((1024, 768)),
         "the view must be told the size the host granted"
+    );
+    assert_eq!(
+        *editor
+            .host_window_size_at_on_size
+            .lock()
+            .expect("window size mutex"),
+        Some((1024, 768)),
+        "the host window must already hold the granted size when the view is told it"
     );
     assert_eq!(
         editor.attach_resize_result.load(Ordering::Acquire),
@@ -2778,6 +3113,128 @@ fn a_size_the_view_refuses_outright_stops_the_host_resize() {
         editor.calls()
     );
     assert_eq!(editor.on_size(), None);
+}
+
+/// The shell drags the window; the format seam is the only route from there to
+/// the plugin. A resize that stops at the wrapper leaves the editor drawing at
+/// the size it opened inside a window the user just made a different shape.
+#[test]
+fn a_host_window_resize_crosses_the_format_seam_and_lands_on_the_constrained_size() {
+    let editor = FakeEditor::sized(800, 600);
+    *editor.constrained_to.lock().expect("size mutex") = Some((640, 480));
+    let (window, window_sizes) = recording_window(&editor);
+    let state = state_with_editor(&editor);
+    let mut wrapper = load(&state, COMBINED_CID);
+    wrapper.set_editor_window_resizer(window);
+    wrapper
+        .open_gui(ptr::null_mut())
+        .expect("the fake editor opens");
+
+    let granted = wrapper
+        .request_editor_size(1000, 900)
+        .expect("a resizable editor must accept a constrained size");
+
+    assert_eq!(
+        granted,
+        (640, 480),
+        "the seam must report the size checkSizeConstraint wrote, which is the one the window snaps to"
+    );
+    assert!(
+        editor.position_of("checkSizeConstraint").is_some(),
+        "the request must have been put to the view, got: {:?}",
+        editor.calls()
+    );
+    assert_eq!(
+        window_sizes.lock().expect("window size mutex").last(),
+        Some(&(640, 480)),
+        "the host window must end up at the size the plugin granted"
+    );
+}
+
+/// The window's own resizability follows this answer, so it is read before a
+/// user can drag anything. A wrapper that answers for itself either freezes a
+/// resizable editor's window or offers a drag a fixed-layout editor will refuse.
+#[test]
+fn the_seam_answers_resizability_from_the_open_editors_own_can_resize() {
+    let editor = FakeEditor::sized(800, 600);
+    let state = state_with_editor(&editor);
+    let mut wrapper = load(&state, COMBINED_CID);
+
+    assert!(
+        !wrapper.editor_can_resize(),
+        "a plugin whose editor is not open has no size to accept"
+    );
+    let refusal = wrapper
+        .request_editor_size(1000, 900)
+        .expect_err("a closed editor cannot be resized");
+    assert!(refusal.contains("no open editor"), "got: {refusal}");
+
+    wrapper
+        .open_gui(ptr::null_mut())
+        .expect("the fake editor opens");
+    assert!(wrapper.editor_can_resize());
+
+    editor.fixed_size.store(true, Ordering::Release);
+    assert!(
+        !wrapper.editor_can_resize(),
+        "the answer must be the view's, read when it is asked"
+    );
+}
+
+/// A window dragged to a display of a different density has to tell the editor,
+/// and then find out what the editor became: the rect is worth a different
+/// number of window units at the new scale. Restating one without the other
+/// leaves the editor drawing at one density in a window sized for another.
+#[test]
+fn a_display_scale_change_restates_the_scale_and_renegotiates_the_size() {
+    let editor = FakeEditor::sized(800, 600);
+    let (window, window_sizes) = recording_window(&editor);
+    let state = state_with_editor(&editor);
+    let mut wrapper = load(&state, COMBINED_CID);
+    wrapper.set_editor_window_resizer(window);
+    wrapper
+        .open_gui(ptr::null_mut())
+        .expect("the fake editor opens");
+    let opened = editor.call_count();
+
+    let granted = wrapper
+        .apply_editor_content_scale(2.0)
+        .expect("an open editor must accept the scale of the display it moved to");
+
+    // macOS states its `ViewRect` in the same logical points the window seam
+    // sizes in, so nothing is restated there and the rect does not change.
+    // Windows and X11 state physical pixels: the same editor occupies twice the
+    // rect, and is worth the same number of window units.
+    let view_units = if crate::vst3_editor::platform_states_content_scale() {
+        2
+    } else {
+        1
+    };
+    assert_eq!(
+        editor.content_scales().last(),
+        (view_units == 2).then_some(&2.0),
+        "only a platform whose view rect is physical is told a scale"
+    );
+    assert_eq!(
+        editor.on_size(),
+        Some((800 * view_units, 600 * view_units)),
+        "the view must be renegotiated into the rect it occupies at the new scale"
+    );
+    assert!(
+        editor.calls_since(opened).contains(&"checkSizeConstraint"),
+        "the size must be put back to the view, got: {:?}",
+        editor.calls_since(opened)
+    );
+    assert_eq!(
+        granted,
+        (800, 600),
+        "the window keeps the units it had: it is the density inside them that changed"
+    );
+    assert_eq!(
+        window_sizes.lock().expect("window size mutex").last(),
+        Some(&granted),
+        "the window must be moved to the size the seam reported"
+    );
 }
 
 /// A view is told the rectangle it asked for. A host that normalises the ask to
@@ -3141,6 +3598,17 @@ fn a_timer_registered_through_the_frame_fires_until_it_is_unregistered() {
 
     let editor = FakeEditor::sized(800, 600);
     let state = state_with_editor(&editor);
+
+    // Drop order: the handler must outlive the run-loop registration owned by
+    // `wrapper`, because a panic unwinds locals in reverse declaration order
+    // while a sibling test may still be pumping the global registry —
+    // dropping the handler first would free it while still registered.
+    let timer = ComWrapper::new(CountingTimer::default());
+    let raw = timer
+        .as_com_ref::<ITimerHandler>()
+        .expect("the fake timer implements ITimerHandler")
+        .as_ptr();
+
     let mut wrapper = load(&state, COMBINED_CID);
     wrapper
         .open_gui(ptr::null_mut())
@@ -3154,11 +3622,6 @@ fn a_timer_registered_through_the_frame_fires_until_it_is_unregistered() {
         .cast::<IRunLoop>()
         .expect("a Linux editor must be able to get a run loop from its frame");
 
-    let timer = ComWrapper::new(CountingTimer::default());
-    let raw = timer
-        .as_com_ref::<ITimerHandler>()
-        .expect("the fake timer implements ITimerHandler")
-        .as_ptr();
     // SAFETY: `raw` borrows a live handler this test owns.
     assert_eq!(unsafe { run_loop.registerTimer(raw, 1) }, kResultOk);
 
@@ -3169,9 +3632,9 @@ fn a_timer_registered_through_the_frame_fires_until_it_is_unregistered() {
 
     // SAFETY: the same live handler.
     assert_eq!(unsafe { run_loop.unregisterTimer(raw) }, kResultOk);
-    std::thread::sleep(std::time::Duration::from_millis(100));
+    pump_for(std::time::Duration::from_millis(100));
     let settled = timer.wakes.load(Ordering::Acquire);
-    std::thread::sleep(std::time::Duration::from_millis(100));
+    pump_for(std::time::Duration::from_millis(100));
 
     assert_eq!(
         timer.wakes.load(Ordering::Acquire),
@@ -3211,6 +3674,17 @@ fn an_event_handler_registered_through_the_frame_is_called_on_descriptor_readine
 
     let editor = FakeEditor::sized(800, 600);
     let state = state_with_editor(&editor);
+
+    // Drop order: the handler must outlive the run-loop registration owned by
+    // `wrapper`, because a panic unwinds locals in reverse declaration order
+    // while a sibling test may still be pumping the global registry —
+    // dropping the handler first would free it while still registered.
+    let handler = ComWrapper::new(DrainingEventHandler::default());
+    let raw = handler
+        .as_com_ref::<IEventHandler>()
+        .expect("the fake handler implements IEventHandler")
+        .as_ptr();
+
     let mut wrapper = load(&state, COMBINED_CID);
     wrapper
         .open_gui(ptr::null_mut())
@@ -3229,11 +3703,6 @@ fn an_event_handler_registered_through_the_frame_is_called_on_descriptor_readine
     assert_eq!(unsafe { libc::pipe(ends.as_mut_ptr()) }, 0);
     let (read_end, write_end) = (ends[0], ends[1]);
 
-    let handler = ComWrapper::new(DrainingEventHandler::default());
-    let raw = handler
-        .as_com_ref::<IEventHandler>()
-        .expect("the fake handler implements IEventHandler")
-        .as_ptr();
     // SAFETY: `raw` borrows a live handler this test owns.
     assert_eq!(
         unsafe { run_loop.registerEventHandler(raw, read_end) },
@@ -3263,12 +3732,15 @@ fn an_event_handler_registered_through_the_frame_is_called_on_descriptor_readine
     }
 }
 
-/// Poll for a condition rather than sleeping a fixed time: the service thread
-/// is real, and a fixed sleep is either flaky or slow.
+/// Poll for a condition rather than sleeping a fixed time. Nothing services
+/// the editor run-loop registry in this process on its own: production gets
+/// its pump from Electron's main loop calling `service_editor_run_loops`, and
+/// here the test drives that same call itself, standing in for Electron.
 #[cfg(target_os = "linux")]
 fn wait_until(mut condition: impl FnMut() -> bool) -> bool {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
     while std::time::Instant::now() < deadline {
+        crate::vst3_run_loop::service_editor_run_loops();
         if condition() {
             return true;
         }
@@ -3278,17 +3750,32 @@ fn wait_until(mut condition: impl FnMut() -> bool) -> bool {
 }
 
 /// Long enough for a wrongly-eager service to have fired, short enough not to
-/// dominate the suite.
+/// dominate the suite. Pumps the same way `wait_until` does, so a handler
+/// that should not fire yet is given every chance to fire wrongly.
 #[cfg(target_os = "linux")]
 fn wait_briefly(mut condition: impl FnMut() -> bool) -> bool {
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(100);
     while std::time::Instant::now() < deadline {
+        crate::vst3_run_loop::service_editor_run_loops();
         if condition() {
             return true;
         }
         std::thread::sleep(std::time::Duration::from_millis(2));
     }
     condition()
+}
+
+/// Pumps the editor run-loop registry for roughly `duration`, the way
+/// `wait_until` and `wait_briefly` do, without waiting on any condition.
+/// Used to prove that pumping after an `unregister*` call does not wake a
+/// handler that is no longer registered.
+#[cfg(target_os = "linux")]
+fn pump_for(duration: std::time::Duration) {
+    let deadline = std::time::Instant::now() + duration;
+    while std::time::Instant::now() < deadline {
+        crate::vst3_run_loop::service_editor_run_loops();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
 }
 
 // ── RT-path allocation ──────────────────────────────────────────────────

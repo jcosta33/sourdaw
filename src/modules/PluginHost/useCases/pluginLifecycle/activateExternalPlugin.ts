@@ -4,6 +4,7 @@ import {
     defaultExternalPluginActivationState,
     externalPluginActivationStore,
 } from '../../stores/externalPluginActivationStore';
+import { writeExternalPluginParameterSnapshot } from '../../stores/externalPluginParameterStore';
 
 import { externalLatencyReporters } from './externalLatencyReporters';
 import {
@@ -16,7 +17,10 @@ import { loadedExternalInstances } from './loadedExternalInstances';
 import { loadPlugin } from './loadPlugin';
 import { restorePluginState } from './restorePluginState';
 import { pluginLifecycleScheduler } from './serializePluginLifecycle';
+import { toExternalPluginParameters } from './toExternalPluginParameters';
 import { watchExternalPluginLatency } from './watchExternalPluginLatency';
+import { watchExternalPluginParameterEvents } from './watchExternalPluginParameterEvents';
+import { watchExternalPluginParameterRescan } from './watchExternalPluginParameterRescan';
 
 type ActivateExternalPluginInput = {
     pluginId: string;
@@ -152,6 +156,14 @@ export function activateExternalPlugin({
     loadedExternalInstances.add(instanceId);
     setActivationStatus(instanceId, 'loading');
 
+    // Start before the load, for the same reason the latency sink is registered
+    // before it: a plugin that opens its editor and is ridden during its own
+    // first activation must not edit into a subscription that is not up yet.
+    // Both are unconditional — every hosted plugin can be edited in its own
+    // editor, and both subscriptions are one listener for the whole session.
+    watchExternalPluginParameterEvents();
+    watchExternalPluginParameterRescan();
+
     if (onLatencyMs) {
         // Register before the load so a latency change the plugin flags during
         // its very first activation still finds a sink, and make sure the single
@@ -171,6 +183,15 @@ export function activateExternalPlugin({
                     reason: 'External plugin activation was superseded by a runtime graph rebuild',
                 };
             }
+            // Publish what this instance reports about itself before anything
+            // else reads it. The metadata is in hand here, so the automation
+            // menu is populated without a second round trip; a plugin that
+            // re-declares its parameters later is picked up by
+            // `refreshExternalPluginParameters`.
+            writeExternalPluginParameterSnapshot(instanceId, {
+                engineAttached: instance.engine_plugin_id !== null,
+                parameters: toExternalPluginParameters(instance.parameters),
+            });
             if (instance.engine_plugin_id === null) {
                 // Loaded, but no native engine was running to attach it to, so
                 // it renders nothing. Recorded on the activation entry rather

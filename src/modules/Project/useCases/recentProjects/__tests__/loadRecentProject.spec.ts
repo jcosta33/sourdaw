@@ -6,7 +6,7 @@ import {
     prepareCachedAudioBuffersFromIdb,
     resetAudioGraph,
 } from '#/modules/AudioEngine/useCases';
-import { resetCrdtProjectAuthority, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
+import { compactProject, resetCrdtProjectAuthority, startCrdtAutoSave } from '#/modules/CrdtDocument/useCases';
 import { ensureTrackStrips } from '#/modules/Transport/useCases';
 
 import { CURRENT_PROJECT_VERSION } from '../../../models/ProjectData';
@@ -137,6 +137,27 @@ describe('loadRecentProject', () => {
         expect(importInput?.shouldContinue?.()).toBe(true);
     });
 
+    it('does not replace project truth when discard authority is revoked while its JSON read is pending', async () => {
+        let resolveRead: ((value: string) => void) | undefined;
+        let authorityCurrent = true;
+        vi.mocked(resetCrdtProjectAuthority).mockClear();
+        vi.mocked(hydrateModuleStoresFromProjectData).mockClear();
+        vi.mocked(readNamedProjectJson).mockImplementation(
+            () =>
+                new Promise<string>((resolve) => {
+                    resolveRead = resolve;
+                })
+        );
+
+        const load = loadRecentProject('discarded-project', { shouldProceed: () => authorityCurrent });
+        authorityCurrent = false;
+        resolveRead?.(validProject);
+
+        await expect(load).resolves.toBe('aborted');
+        expect(resetCrdtProjectAuthority).not.toHaveBeenCalled();
+        expect(hydrateModuleStoresFromProjectData).not.toHaveBeenCalled();
+    });
+
     it('keeps the committed project live when post-commit embedded persistence fails', async () => {
         vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
         const persistEmbedded = vi.fn().mockResolvedValue(false);
@@ -161,6 +182,13 @@ describe('loadRecentProject', () => {
         await expect(loadRecentProject('crdt-persist-failure')).resolves.toBe('committed');
 
         expect(startCrdtAutoSave).toHaveBeenCalledOnce();
+    });
+
+    it('rejects a committed load for durability-sensitive recovery when CRDT compaction fails', async () => {
+        vi.mocked(readNamedProjectJson).mockResolvedValue(validProject);
+        vi.mocked(compactProject).mockRejectedValueOnce(new Error('snapshot persistence failed'));
+
+        await expect(loadRecentProject('durability-required', { requireDurable: true })).resolves.toBe('failed');
     });
 
     it('does not falsify a committed load when recent-project publication throws', async () => {

@@ -2329,8 +2329,16 @@ export type HandlerValidationContext = {
     readonly actionIndex: number;
     /** Exact execution cancellation signal for long-running handler-owned follow-up work. */
     readonly signal?: AbortSignal;
+    /** Caller-scoped telemetry for actual deferred work starts; never persisted as project truth. */
+    readonly onDeferredEffectAttempt?: (attempt: HandlerDeferredEffectAttempt) => void;
     /** The same handler is projecting into an isolated CRDT workspace; live runtime effects must stay deferred. */
     readonly executionMode?: 'isolated-preview';
+};
+
+export type HandlerDeferredEffectAttempt = {
+    readonly kind: 'work-attempt';
+    readonly operation: AppActionType;
+    readonly workId: string;
 };
 
 /** One dispatchable action's handler. Built via `createHandler` and merged into a module
@@ -2389,6 +2397,8 @@ export type ExecuteOptions = {
     shouldExecute?: () => boolean;
     /** Exact caller-owned cancellation signal propagated to handler execution and deferred effects. */
     signal?: AbortSignal;
+    /** Observe actual deferred work starts within this exact execution flight. */
+    onDeferredEffectAttempt?: (attempt: HandlerDeferredEffectAttempt) => void;
     source?: 'manual' | 'prompt' | 'voice' | 'ai';
     /**
      * When true, skip pushing an undo entry and action history entry — during

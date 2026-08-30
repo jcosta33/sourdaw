@@ -2,9 +2,7 @@ use daw_plugin_host::scanner::{
     extract_clap_instance_metadata, extract_clap_metadata, ClapDescriptorMetadata, PluginFormat,
     ScannedDescriptor, ScannedInstance,
 };
-use daw_plugin_host::vst3_scanner::{
-    extract_vst3_instance_metadata, extract_vst3_metadata, Vst3DescriptorMetadata,
-};
+use daw_plugin_host::vst3_scanner::{extract_vst3_instance_metadata, extract_vst3_metadata};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -26,6 +24,52 @@ pub const WORKER_ARGUMENT: &str = "--sourdaw-plugin-scan-worker";
 pub const INSTANCE_WORKER_ARGUMENT: &str = "--sourdaw-plugin-instance-scan-worker";
 const WORKER_TIMEOUT: Duration = Duration::from_secs(3);
 const MAX_RESPONSE_BYTES: u64 = 256 * 1024;
+
+/// The refusal `scan_worker` returns when the helper child exited with a
+/// non-zero status, minus the path it is formatted with. See
+/// [`is_process_failure`].
+const HELPER_EXITED_UNSUCCESSFULLY_PREFIX: &str = "Plugin scan helper exited unsuccessfully for ";
+/// The refusal `wait_bounded` returns when the helper child ran past its
+/// bound and was killed.
+const HELPER_TIMED_OUT: &str = "Plugin scan helper timed out";
+
+/// The leaf worker's exit code for a self-diagnosed refusal to write its
+/// response — a malformed payload, the response exceeding
+/// [`MAX_RESPONSE_BYTES`], or the response file itself failing to write.
+///
+/// Distinct from the generic non-zero exit ([`WorkerRole::Malformed`], no
+/// backend for the format) on purpose: those and a crashing plugin all share
+/// exit code 2 and are indistinguishable from here, which is fine because
+/// every one of them is either a genuine process failure or a caller error
+/// that never reaches a real plugin. A response-write refusal is neither — it
+/// can fire for every candidate in one scan on a systemic fault (a full disk,
+/// a read-only temp directory) that has nothing to do with any plugin being
+/// dangerous, and folding it into the same exit code as a crash would
+/// quarantine every binary the process ever touched. See
+/// [`process_failure_message`], which is what keeps it out of
+/// [`is_process_failure`].
+///
+/// The inverse residual is accepted, not closed: a plugin whose own static
+/// initializer happens to call `exit(3)` reads as a self-diagnosed write
+/// refusal and escapes quarantine. That plugin still costs no more than one
+/// bounded spawn per scan — nothing near the deadline-exhausting repeat
+/// spawns an unquarantined *hang* would cost — because a plugin that hangs
+/// instead is still caught by `wait_bounded`'s timeout, which classifies
+/// entirely on elapsed time and never looks at an exit code at all.
+const RESPONSE_WRITE_REFUSAL_EXIT_CODE: i32 = 3;
+
+/// Whether an error from [`scan_descriptor_metadata`] or
+/// [`scan_instance_metadata`] is the process-level failure crash quarantine
+/// exists to catch: the helper child exited unsuccessfully, or ran past its
+/// bound and was killed.
+///
+/// Distinct from a data-level refusal — a malformed response, an oversized
+/// payload, an unregistered format — which says the *read* failed, not that
+/// the binary itself is dangerous to keep re-running. Only a process failure
+/// is evidence worth quarantining a binary over (#2911).
+pub fn is_process_failure(error: &str) -> bool {
+    error.starts_with(HELPER_EXITED_UNSUCCESSFULLY_PREFIX) || error == HELPER_TIMED_OUT
+}
 
 /// Env var a host sets to describe how a leaf worker process is launched.
 ///
@@ -134,11 +178,13 @@ impl Drop for ResponseDirectory {
 /// the worker protocol, the response envelope, and the isolation shape around
 /// them are already written in terms every format shares.
 struct FormatScanBackend {
-    /// Read the plugin's own descriptor. No instance is created.
-    descriptor: fn(&Path) -> Result<ScannedDescriptor, String>,
-    /// Create one live-but-unactivated instance and read its parameter contract
-    /// and capability extensions.
-    instance: fn(&Path) -> Result<ScannedInstance, String>,
+    /// Read every plugin descriptor the file declares — one bundle may hold
+    /// several. No instance is created.
+    descriptor: fn(&Path) -> Result<Vec<ScannedDescriptor>, String>,
+    /// Create one live-but-unactivated instance of the plugin `plugin_id`
+    /// names in the file, and read its parameter contract and capability
+    /// extensions.
+    instance: fn(&Path, plugin_id: &str) -> Result<ScannedInstance, String>,
 }
 
 /// The registered scan backend for a format, or `None` when Sourdaw has none.
@@ -154,15 +200,25 @@ fn scan_backend(format: PluginFormat) -> Option<FormatScanBackend> {
     match format {
         PluginFormat::Clap => Some(FormatScanBackend {
             descriptor: |path| {
-                extract_clap_metadata(path).map(ClapDescriptorMetadata::into_scanned_descriptor)
+                // One CLAP bundle may declare many plugins; each row keeps the
+                // descriptor id the instance pass will be asked to instantiate.
+                extract_clap_metadata(path).map(|bundle| {
+                    bundle
+                        .into_iter()
+                        .map(ClapDescriptorMetadata::into_scanned_descriptor)
+                        .collect()
+                })
             },
             instance: extract_clap_instance_metadata,
         }),
         PluginFormat::Vst3 => Some(FormatScanBackend {
             descriptor: |path| {
-                extract_vst3_metadata(path).map(Vst3DescriptorMetadata::into_scanned_descriptor)
+                extract_vst3_metadata(path).map(|metadata| vec![metadata.into_scanned_descriptor()])
             },
-            instance: extract_vst3_instance_metadata,
+            // VST3's extractor resolves its own class from the bundle, so the
+            // selector adds nothing there — and its descriptor pass declares
+            // exactly one row, so only one instance is ever asked for.
+            instance: |path, _plugin_id| extract_vst3_instance_metadata(path),
         }),
         PluginFormat::Vst2 | PluginFormat::AudioUnit => None,
     }
@@ -179,10 +235,11 @@ pub fn run_from_process_args() -> Option<i32> {
 #[derive(Debug, PartialEq, Eq)]
 enum WorkerRole<'args> {
     /// Extract one plugin's descriptor, or one live instance's parameters and
-    /// capabilities, into a response file.
+    /// capabilities, into a response file. `plugin_id` names the bundle plugin
+    /// an instance inspection instantiates; the descriptor pass has none.
     Extract {
         format: PluginFormat,
-        inspects_instance: bool,
+        plugin_id: Option<&'args str>,
         plugin_path: &'args OsString,
         response_path: &'args OsString,
     },
@@ -199,20 +256,32 @@ enum WorkerRole<'args> {
 /// cannot claim the role.
 ///
 /// Everything strict about the fixed-index form is kept: the marker must be
-/// followed by exactly three arguments and nothing after them, so an invocation
-/// with a stray extra argument is refused rather than half-interpreted.
+/// followed by exactly the arguments its role takes and nothing after them, so
+/// an invocation with a stray extra argument is refused rather than
+/// half-interpreted. The instance marker takes one argument more than the
+/// descriptor marker: the id of the plugin in the bundle to instantiate.
 ///
-/// The first of those three is the plugin's format. It is refused unless it is
-/// UTF-8, names a format Sourdaw recognises, and that format has a registered
+/// The first of those arguments is the plugin's format. It is refused unless it
+/// is UTF-8, names a format Sourdaw recognises, and that format has a registered
 /// scan backend — a worker that guessed the format would load a plugin's entry
 /// point through the wrong extractor, which is exactly the read this process
-/// exists to contain.
+/// exists to contain. The instance marker's plugin id is UTF-8 for the same
+/// reason: it becomes the CString handed to `create_plugin`, and an id the
+/// worker could not decode is one it would be guessing about.
 fn worker_role(args: &[OsString]) -> Option<WorkerRole<'_>> {
     let marker_index = args.iter().skip(1).position(|argument| {
         argument == std::ffi::OsStr::new(WORKER_ARGUMENT)
             || argument == std::ffi::OsStr::new(INSTANCE_WORKER_ARGUMENT)
     })? + 1;
-    if args.len() != marker_index + 4 {
+    let inspects_instance = args[marker_index] == std::ffi::OsStr::new(INSTANCE_WORKER_ARGUMENT);
+    // Format, path, the instance role's plugin id, then the response path.
+    let plugin_id_index = if inspects_instance {
+        Some(marker_index + 3)
+    } else {
+        None
+    };
+    let response_index = plugin_id_index.map_or(marker_index + 3, |index| index + 1);
+    if args.len() != response_index + 1 {
         return Some(WorkerRole::Malformed);
     }
     let Some(format) = args[marker_index + 1]
@@ -222,24 +291,31 @@ fn worker_role(args: &[OsString]) -> Option<WorkerRole<'_>> {
     else {
         return Some(WorkerRole::Malformed);
     };
+    let plugin_id = match plugin_id_index {
+        Some(index) => match args[index].to_str() {
+            Some(plugin_id) => Some(plugin_id),
+            None => return Some(WorkerRole::Malformed),
+        },
+        None => None,
+    };
     Some(WorkerRole::Extract {
         format,
-        inspects_instance: args[marker_index] == std::ffi::OsStr::new(INSTANCE_WORKER_ARGUMENT),
+        plugin_id,
         plugin_path: &args[marker_index + 2],
-        response_path: &args[marker_index + 3],
+        response_path: &args[response_index],
     })
 }
 
 fn run_from_args(args: impl IntoIterator<Item = OsString>) -> Option<i32> {
     let args: Vec<OsString> = args.into_iter().collect();
-    let (format, inspects_instance, plugin_path, response_path) = match worker_role(&args)? {
+    let (format, plugin_id, plugin_path, response_path) = match worker_role(&args)? {
         WorkerRole::Malformed => return Some(2),
         WorkerRole::Extract {
             format,
-            inspects_instance,
+            plugin_id,
             plugin_path,
             response_path,
-        } => (format, inspects_instance, plugin_path, response_path),
+        } => (format, plugin_id, plugin_path, response_path),
     };
     // `worker_role` already refused a format with no backend, so this cannot be
     // `None` — but the dispatch reads from the registry rather than assuming
@@ -247,24 +323,27 @@ fn run_from_args(args: impl IntoIterator<Item = OsString>) -> Option<i32> {
     let Some(backend) = scan_backend(format) else {
         return Some(2);
     };
-    let result = if inspects_instance {
-        write_response(
+    let result = match plugin_id {
+        Some(plugin_id) => write_response(
             Path::new(response_path),
             &WorkerResponse {
                 worker_pid: std::process::id(),
-                result: (backend.instance)(Path::new(plugin_path)),
+                result: (backend.instance)(Path::new(plugin_path), plugin_id),
             },
-        )
-    } else {
-        write_response(
+        ),
+        None => write_response(
             Path::new(response_path),
             &WorkerResponse {
                 worker_pid: std::process::id(),
                 result: (backend.descriptor)(Path::new(plugin_path)),
             },
-        )
+        ),
     };
-    Some(if result.is_ok() { 0 } else { 2 })
+    Some(if result.is_ok() {
+        0
+    } else {
+        RESPONSE_WRITE_REFUSAL_EXIT_CODE
+    })
 }
 fn write_response<T: Serialize>(path: &Path, response: &WorkerResponse<T>) -> Result<(), String> {
     let bytes = serde_json::to_vec(response)
@@ -280,29 +359,56 @@ fn write_response<T: Serialize>(path: &Path, response: &WorkerResponse<T>) -> Re
     file.write_all(&bytes)
         .map_err(|error| format!("Cannot write plugin scan response: {error}"))
 }
-/// Read one plugin's descriptor through that format's registered backend, in a
-/// bounded child process.
+/// Read every plugin descriptor a file declares through that format's
+/// registered backend, in a bounded child process.
 pub fn scan_descriptor_metadata(
     format: PluginFormat,
     path: &Path,
     timeout: Duration,
-) -> Result<ScannedDescriptor, String> {
-    scan_worker(format, path, timeout, WORKER_ARGUMENT)
+) -> Result<Vec<ScannedDescriptor>, String> {
+    scan_worker(format, path, None, timeout, WORKER_ARGUMENT)
 }
 
-/// Inspect one live instance's parameters and capabilities through that
-/// format's registered backend, in a bounded child process.
+/// Inspect one live instance of the plugin `plugin_id` names in the file,
+/// through that format's registered backend, in a bounded child process.
 pub fn scan_instance_metadata(
     format: PluginFormat,
     path: &Path,
+    plugin_id: &str,
     timeout: Duration,
 ) -> Result<ScannedInstance, String> {
-    scan_worker(format, path, timeout, INSTANCE_WORKER_ARGUMENT)
+    scan_worker(
+        format,
+        path,
+        Some(plugin_id),
+        timeout,
+        INSTANCE_WORKER_ARGUMENT,
+    )
+}
+
+/// The refusal `scan_worker` reports for a helper that exited unsuccessfully,
+/// shaped by which of two things that exit code means.
+///
+/// [`RESPONSE_WRITE_REFUSAL_EXIT_CODE`] gets a message that does not match
+/// [`HELPER_EXITED_UNSUCCESSFULLY_PREFIX`] — deliberately, so
+/// [`is_process_failure`] never classifies it as evidence worth quarantining
+/// a binary over. Every other non-zero exit — a crash, `WorkerRole::Malformed`,
+/// no backend for the format — keeps the existing message, which
+/// `is_process_failure` does recognize.
+fn process_failure_message(path: &Path, status: &ExitStatus) -> String {
+    if status.code() == Some(RESPONSE_WRITE_REFUSAL_EXIT_CODE) {
+        return format!(
+            "Plugin scan helper could not write its response for {}",
+            path.display()
+        );
+    }
+    format!("{HELPER_EXITED_UNSUCCESSFULLY_PREFIX}{}", path.display())
 }
 
 fn scan_worker<T: DeserializeOwned>(
     format: PluginFormat,
     path: &Path,
+    plugin_id: Option<&str>,
     timeout: Duration,
     worker_argument: &str,
 ) -> Result<T, String> {
@@ -320,7 +426,13 @@ fn scan_worker<T: DeserializeOwned>(
         .args(&launcher.args)
         .arg(worker_argument)
         .arg(format.wire_name())
-        .arg(path)
+        .arg(path);
+    // The instance marker names which plugin of a multi-plugin bundle to
+    // instantiate; the descriptor marker has no per-plugin argument.
+    if let Some(plugin_id) = plugin_id {
+        command.arg(plugin_id);
+    }
+    command
         .arg(&response_path)
         .envs(&launcher.env)
         .stdin(Stdio::null())
@@ -328,10 +440,7 @@ fn scan_worker<T: DeserializeOwned>(
         .stderr(Stdio::null());
     let status = run_bounded(&mut command, timeout.min(WORKER_TIMEOUT))?;
     if !status.success() {
-        return Err(format!(
-            "Plugin scan helper exited unsuccessfully for {}",
-            path.display()
-        ));
+        return Err(process_failure_message(path, &status));
     }
     let mut bytes = Vec::new();
     OpenOptions::new()
@@ -372,7 +481,7 @@ fn wait_bounded(child: &mut Child, timeout: Duration) -> Result<ExitStatus, Stri
             }
             Ok(None) => {
                 terminate_process_tree(child);
-                return Err("Plugin scan helper timed out".to_string());
+                return Err(HELPER_TIMED_OUT.to_string());
             }
             Err(error) => {
                 terminate_process_tree(child);
@@ -427,7 +536,7 @@ mod tests {
             ])),
             Some(WorkerRole::Extract {
                 format: PluginFormat::Clap,
-                inspects_instance: false,
+                plugin_id: None,
                 plugin_path: &OsString::from("/p.clap"),
                 response_path: &OsString::from("/out.json"),
             })
@@ -446,15 +555,53 @@ mod tests {
                 INSTANCE_WORKER_ARGUMENT,
                 "clap",
                 "/p.clap",
+                "org.example.plugin",
                 "/out.json",
             ])),
             Some(WorkerRole::Extract {
                 format: PluginFormat::Clap,
-                inspects_instance: true,
+                plugin_id: Some("org.example.plugin"),
                 plugin_path: &OsString::from("/p.clap"),
                 response_path: &OsString::from("/out.json"),
             })
         );
+    }
+
+    /// The instance worker without its plugin selector is the invocation a
+    /// stale host would send, and instantiating the bundle's first plugin as a
+    /// guess is exactly the behavior the selector exists to remove.
+    #[test]
+    fn an_instance_worker_invocation_without_a_plugin_id_is_malformed() {
+        assert_eq!(
+            worker_role(&args(&[
+                "/app",
+                INSTANCE_WORKER_ARGUMENT,
+                "clap",
+                "/p.clap",
+                "/out.json"
+            ])),
+            Some(WorkerRole::Malformed)
+        );
+    }
+
+    /// Non-UTF-8 bytes in the plugin id are refused, not lossily decoded: the
+    /// id becomes the CString handed to `create_plugin`, and a lossy decode
+    /// would ask the bundle for a plugin that does not exist.
+    #[cfg(unix)]
+    #[test]
+    fn an_instance_worker_invocation_whose_plugin_id_is_not_utf8_is_malformed() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let arguments = vec![
+            OsString::from("/app"),
+            OsString::from(INSTANCE_WORKER_ARGUMENT),
+            OsString::from("clap"),
+            OsString::from("/p.clap"),
+            OsString::from_vec(vec![0x70, 0x6c, 0x75, 0x67, 0xff, 0x69, 0x6e]),
+            OsString::from("/out.json"),
+        ];
+
+        assert_eq!(worker_role(&arguments), Some(WorkerRole::Malformed));
     }
 
     #[test]
@@ -734,5 +881,79 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             .status()
             .unwrap()
             .success());
+    }
+
+    /// The only two shapes crash quarantine exists to catch.
+    #[test]
+    fn is_process_failure_recognizes_exit_and_timeout_errors() {
+        assert!(is_process_failure(
+            "Plugin scan helper exited unsuccessfully for /plugins/Broken.clap"
+        ));
+        assert!(is_process_failure("Plugin scan helper timed out"));
+    }
+
+    /// A real `ExitStatus` for a process that exited with `code`, obtained
+    /// cheaply through `sh` rather than the real worker binary or a compiled
+    /// hostile CLAP fixture — nothing here depends on what actually crashed.
+    #[cfg(unix)]
+    fn exit_status_for_code(code: i32) -> ExitStatus {
+        Command::new("sh")
+            .args(["-c", &format!("exit {code}")])
+            .status()
+            .expect("sh should run")
+    }
+
+    /// The hardening this exit code exists for (#2911): a systemic fault that
+    /// stops the worker from writing *any* response — a full disk, a
+    /// read-only temp directory — must not read as a crashing plugin, or a
+    /// single bad environment quarantines every candidate the process ever
+    /// touches on one scan.
+    #[cfg(unix)]
+    #[test]
+    fn a_response_write_refusal_is_not_a_process_failure() {
+        let path = Path::new("/plugins/Innocent.clap");
+        let status = exit_status_for_code(RESPONSE_WRITE_REFUSAL_EXIT_CODE);
+
+        let message = process_failure_message(path, &status);
+
+        assert!(
+            !is_process_failure(&message),
+            "a response-write refusal must never be classified as a process failure: {message}"
+        );
+    }
+
+    /// The other half: every other non-zero exit — a crash, `Malformed`, no
+    /// backend — must keep classifying as a process failure exactly as
+    /// before this exit code existed.
+    #[cfg(unix)]
+    #[test]
+    fn any_other_nonzero_exit_still_reads_as_a_process_failure() {
+        let path = Path::new("/plugins/Hostile.clap");
+        let status = exit_status_for_code(2);
+
+        let message = process_failure_message(path, &status);
+
+        assert!(
+            is_process_failure(&message),
+            "a crash's exit code must still quarantine the binary: {message}"
+        );
+    }
+
+    /// A data-level refusal says the read failed, not that the process itself
+    /// crashed or hung — never a reason to quarantine the binary.
+    #[test]
+    fn is_process_failure_rejects_data_level_refusals() {
+        assert!(!is_process_failure(
+            "No plugin scan backend for format vst2"
+        ));
+        assert!(!is_process_failure(
+            "Plugin scan helper response exceeded its byte limit"
+        ));
+        assert!(!is_process_failure(
+            "Plugin scan helper returned invalid metadata: EOF"
+        ));
+        assert!(!is_process_failure(
+            "Cannot start plugin scan helper: denied"
+        ));
     }
 }

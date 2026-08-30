@@ -1,12 +1,26 @@
 /**
  * The quit path (REQ-012).
  *
- * Rust drop order is load bearing — the engine's CPAL stream has to be released
- * before the CLAP runtimes it reads — and Node does not reliably run
- * destructors at process exit. So shutdown is explicit: `before-quit` calls the
- * addon's `shutdown()`, which retires discovery, closes every plugin editor and
- * sweeps the retirement vec in that one correct order, and only then does the
- * process end.
+ * Node does not reliably run destructors at process exit, so shutdown is
+ * explicit: `before-quit` calls the addon's `shutdown()`, which retires
+ * discovery, closes every plugin editor, takes engine-owned runtimes out of the
+ * audio graph and sweeps the retirement vec, in that one correct order, and
+ * only then does the process end.
+ *
+ * The cascade does not release the engine's audio stream, and cannot: taking
+ * runtimes out of the graph is something it asks the running engine to do. No
+ * destructor releases it afterwards either — quit ends at `app.exit()`, so no
+ * Rust `Drop` on the host state runs on this path, whatever `AppState`'s field
+ * order guarantees on the paths where it does. What keeps the still-open stream
+ * off a freed CLAP
+ * runtime is the cascade's own `Arc` discipline
+ * (`crates/sourdaw-native/src/shutdown.rs`): a runtime's removal from the
+ * scheduler is queued first, the runtime is retired, and it is freed only once
+ * every other holder — the scheduler included — has let go of its reference.
+ * One the scheduler never releases inside the waiting budget is retained rather
+ * than freed, and reported as an unreclaimed retirement. Leaking it past exit is
+ * the deliberate trade: the process is ending regardless, and freeing memory a
+ * live audio callback may still read is the worse outcome.
  *
  * The deadline is the other half. A third-party plugin editor that refuses to
  * die must not wedge quit: a musician who asked the app to close and watched
@@ -18,7 +32,9 @@
  * at all.
  */
 
-import type { Timers } from './timers.js';
+import { systemTimers, type Timers } from './timers.js';
+
+import type { RendererSessionQuiesceOutcome } from './channels.js';
 
 /** How long the cascade gets before the shell stops waiting for it. */
 export const SHUTDOWN_DEADLINE_MS = 5_000;
@@ -75,6 +91,41 @@ export const runShutdownWithDeadline = async ({
     }
 };
 
+export type BeforeQuitCascadeInput = {
+    /** Close shell admission for plugin runtime commands. */
+    readonly refusePluginCommands: () => void;
+    /** Kill the out-of-process scan worker, if one is running. */
+    readonly disposeScanSupervisor?: () => void;
+    /** Live native host, or undefined when the addon never loaded. */
+    readonly host: { readonly shutdown: () => unknown } | undefined;
+    readonly timers: Timers;
+    readonly deadlineMs?: number;
+};
+
+/**
+ * The body of `before-quit`: refuse plugin IPC, dispose the scan worker, then
+ * run the native cascade under the deadline.
+ *
+ * Admission must close before `host.shutdown()` so a late `load_plugin` cannot
+ * insert an instance after the drain. The scan worker is disposed next — it
+ * holds its own addon — then the host cascade, or a completed outcome when no
+ * host was loaded.
+ */
+export const runBeforeQuitCascade = async ({
+    refusePluginCommands,
+    disposeScanSupervisor,
+    host,
+    timers,
+    deadlineMs,
+}: BeforeQuitCascadeInput): Promise<ShutdownOutcome> => {
+    refusePluginCommands();
+    disposeScanSupervisor?.();
+    if (host === undefined) {
+        return { status: 'completed', report: undefined };
+    }
+    return runShutdownWithDeadline({ shutdown: () => host.shutdown(), timers, deadlineMs });
+};
+
 /** The one member of `before-quit`'s event the handler uses. */
 export type PreventableEvent = { readonly preventDefault: () => void };
 
@@ -82,6 +133,60 @@ export type QuitDependencies = {
     /** End the process. Called after the cascade settles or the deadline passes. */
     readonly exit: (code: number) => void;
     readonly report: (outcome: ShutdownOutcome) => void;
+    /** Resolves false when a renderer-owned dirty-project prompt was cancelled or save failed. */
+    readonly canQuit?: () => Promise<boolean>;
+    /** Quiesces the approved renderer session before native shutdown drains the host. */
+    /** Rejection means renderer authority changed while quiescing; leave the app open. */
+    readonly beforeRun?: () => Promise<QuitPreparationOutcome>;
+    /** Shared clock so renderer quiescence cannot outlive the shutdown deadline. */
+    readonly timers?: Timers;
+};
+
+export type QuitPreparationOutcome = RendererSessionQuiesceOutcome | 'timed-out';
+
+const runAfterQuiesceWithinDeadline = async (
+    run: () => Promise<ShutdownOutcome>,
+    beforeRun: () => Promise<QuitPreparationOutcome>,
+    timers: Timers
+): Promise<ShutdownOutcome | undefined> => {
+    let expired = false;
+    let deadlineTimer: { readonly cancel: () => void } | undefined;
+    const deadline = new Promise<ShutdownOutcome>((resolve) => {
+        deadlineTimer = timers.setTimer(() => {
+            expired = true;
+            resolve({ status: 'timed-out', deadlineMs: SHUTDOWN_DEADLINE_MS });
+        }, SHUTDOWN_DEADLINE_MS);
+    });
+    const sequence = (async (): Promise<ShutdownOutcome | undefined> => {
+        try {
+            const quiesced = await beforeRun();
+            if (quiesced === 'timed-out') {
+                return { status: 'timed-out', deadlineMs: SHUTDOWN_DEADLINE_MS };
+            }
+            if (quiesced === 'rejected') {
+                return undefined;
+            }
+            // A terminal renderer has already quarantined its project runtime
+            // and cannot be made interactive again. Quit was approved before
+            // this request, so continue into the native cascade under the same
+            // deadline instead of stranding the process behind failed repair.
+        } catch {
+            // The shell's force-destroy fallback failed. The native cascade is
+            // still safer than leaving plugin admission open.
+        }
+        // A late editor teardown must never begin native shutdown after the
+        // deadline has already force-quit the process.
+        if (expired) {
+            return new Promise<ShutdownOutcome>(() => undefined);
+        }
+        return run();
+    })();
+
+    try {
+        return await Promise.race([sequence, deadline]);
+    } finally {
+        deadlineTimer?.cancel();
+    }
 };
 
 /**
@@ -98,19 +203,48 @@ export type QuitDependencies = {
  */
 export const createQuitHandler = (
     run: () => Promise<ShutdownOutcome>,
-    { exit, report }: QuitDependencies
+    {
+        exit,
+        report,
+        canQuit = async () => true,
+        beforeRun = async () => 'success',
+        timers = systemTimers,
+    }: QuitDependencies
 ): ((event: PreventableEvent) => void) => {
     let started = false;
+    let checkingPermission = false;
+    let finalExitAllowed = false;
 
     return (event) => {
-        if (started) {
+        if (finalExitAllowed) {
+            finalExitAllowed = false;
             return;
         }
-        started = true;
         event.preventDefault();
-        void run().then((outcome) => {
-            report(outcome);
-            exit(outcome.status === 'timed-out' ? 1 : 0);
-        });
+        if (started || checkingPermission) {
+            return;
+        }
+        checkingPermission = true;
+        void canQuit()
+            .then((allowed) => {
+                if (allowed) {
+                    started = true;
+                    checkingPermission = false;
+                    void runAfterQuiesceWithinDeadline(run, beforeRun, timers).then((outcome) => {
+                        if (outcome === undefined) {
+                            started = false;
+                            return;
+                        }
+                        report(outcome);
+                        finalExitAllowed = true;
+                        exit(outcome.status === 'timed-out' ? 1 : 0);
+                    });
+                    return;
+                }
+                checkingPermission = false;
+            })
+            .catch(() => {
+                checkingPermission = false;
+            });
     };
 };

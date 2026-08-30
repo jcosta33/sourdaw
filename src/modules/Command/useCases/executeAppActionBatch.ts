@@ -163,6 +163,22 @@ function getPendingPostCommitEffect(
             state: declared.state,
         };
     }
+    if (
+        declared?.kind === 'external-effect' &&
+        declared.state === 'pending' &&
+        typeof declared.reason === 'string' &&
+        declared.reason.trim().length > 0 &&
+        (declared.remediation === 'reconcile' || declared.remediation === 'manual-repair')
+    ) {
+        return {
+            commandId: prepared.envelope.commandId,
+            kind: declared.kind,
+            operation: prepared.action.type,
+            reason: declared.reason,
+            remediation: declared.remediation,
+            state: declared.state,
+        };
+    }
     if (prepared.postCommitEffect?.kind === 'runtime-graph') {
         return {
             commandId: prepared.envelope.commandId,
@@ -251,7 +267,8 @@ async function executeRuntimeAction(
     source: ExecuteOptions['source'] | undefined,
     shouldExecute: ExecuteOptions['shouldExecute'] | undefined,
     authorizeFirstHandler: (() => string | null) | undefined,
-    signal: AbortSignal | undefined
+    signal: AbortSignal | undefined,
+    onDeferredEffectAttempt: ExecuteOptions['onDeferredEffectAttempt'] | undefined
 ): Promise<ExecuteAppActionBatchResult> {
     try {
         assertExecutionAuthorized(shouldExecute);
@@ -267,6 +284,7 @@ async function executeRuntimeAction(
             actions: [prepared.action],
             actionIndex: 0,
             signal,
+            onDeferredEffectAttempt,
         });
         if (result?.status === 'no-write') {
             return { status: 'no-op', actions: [] };
@@ -326,7 +344,8 @@ async function executePreparedBatch(
     attemptedActions: PreparedBatchAction[],
     shouldExecute: ExecuteOptions['shouldExecute'] | undefined,
     authorizeFirstHandler: (() => string | null) | undefined,
-    signal: AbortSignal | undefined
+    signal: AbortSignal | undefined,
+    onDeferredEffectAttempt: ExecuteOptions['onDeferredEffectAttempt'] | undefined
 ): Promise<PreparedBatchAction[]> {
     const executedActions: PreparedBatchAction[] = [];
     let approvalConsumed = false;
@@ -349,6 +368,7 @@ async function executePreparedBatch(
                 actions: preparedActions.map((candidate) => candidate.action),
                 actionIndex,
                 signal,
+                onDeferredEffectAttempt,
             })
         );
         if (result?.status === 'no-write' || result?.status === 'conflict') {
@@ -754,7 +774,8 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     options?.source,
                     options?.shouldExecute,
                     options?.authorizeFirstHandler,
-                    options?.signal
+                    options?.signal,
+                    options?.onDeferredEffectAttempt
                 );
             }
 
@@ -802,7 +823,8 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     attemptedActions,
                     options?.shouldExecute,
                     options?.authorizeFirstHandler,
-                    options?.signal
+                    options?.signal,
+                    options?.onDeferredEffectAttempt
                 )
             );
             storageTransaction.validateCommit(getProjectMutationAdmissionFailure);

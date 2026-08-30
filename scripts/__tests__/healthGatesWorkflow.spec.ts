@@ -36,17 +36,16 @@ const SCOPE_OUTPUT_REFERENCES = {
     code: '${{ steps.scope.outputs.code }}',
 };
 const CODE_CONDITION = "needs.decide.outputs.code == 'true'";
-// An approving review cancels the in-flight push run, so a job that gates on
-// the triggering event alone can never complete on the run that reports. Every
-// Gate member reading a pull request keys off the payload instead.
+// An approving review validates the same pull-request head under a different
+// event, but it must wait behind any in-flight push run instead of cancelling
+// it. Every Gate member reading a pull request keys off the payload instead.
 const PULL_REQUEST_PAYLOAD_CONDITION = 'github.event.pull_request != null';
 const SMOKE_CONDITION = `${PULL_REQUEST_PAYLOAD_CONDITION} && needs.decide.outputs.e2e == 'true'`;
 const EVENT_GATED_SMOKE_CONDITION = "github.event_name == 'pull_request' && needs.decide.outputs.e2e == 'true'";
 const SMOKE_COMMAND = 'pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0';
 const PULL_REQUEST_CONCURRENCY_GROUP =
     "health-gates-${{ (github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved')) && github.event.pull_request.number || github.run_id }}";
-const PULL_REQUEST_CONCURRENCY_CANCELLATION =
-    "${{ github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') }}";
+const PULL_REQUEST_CONCURRENCY_CANCELLATION = "${{ github.event_name == 'pull_request' }}";
 const GATE_CONDITION =
     "${{ !cancelled() && (github.event_name != 'pull_request_review' || github.event.review.state == 'approved') }}";
 const DEPENDENCY_REVIEW_ACTION = 'actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294';
@@ -61,7 +60,11 @@ const BROWSER_AI_WEBGPU_SCRIPT_NAME = 'test:e2e:browser-ai-webgpu-admission';
 const BROWSER_AI_WEBGPU_COMMAND = 'pnpm test:e2e:browser-ai-webgpu-admission';
 const BROWSER_AI_WEBGPU_PACKAGE_SCRIPT =
     'playwright test --config tests/e2e/browserAiWebGpuAdmission.playwright.config.ts';
-const BROWSER_AI_WEBGPU_TEST_MATCH = 'browserAiWebGpuAdmission.spec.ts';
+// Exact, ordered, and length-checked. This leg is the only runner that reaches
+// the admitted side of AI availability — the general matrix has no adapter — so
+// a spec missing from this list has no runner that executes its admitted
+// assertions, and a dropped entry retires that proof without failing anything.
+const BROWSER_AI_WEBGPU_TEST_MATCH = ['browserAiWebGpuAdmission.spec.ts', 'browserAiAdmittedPresentation.spec.ts'];
 const BROWSER_AI_WEBGPU_ORIGIN = 'http://localhost:5188';
 const BROWSER_AI_WEBGPU_SERVER_COMMAND = 'pnpm dev --host 127.0.0.1 --port 5188 --strictPort';
 // Exact rather than a subset: a job added to the Gate without a first observed
@@ -466,8 +469,16 @@ function assertBrowserAiWebGpuProofChain(manifest: UnknownRecord, config: Unknow
     if (scripts[BROWSER_AI_WEBGPU_SCRIPT_NAME] !== BROWSER_AI_WEBGPU_PACKAGE_SCRIPT) {
         throw new Error('Browser AI WebGPU package script must run the dedicated Playwright config');
     }
-    if (config.testMatch !== BROWSER_AI_WEBGPU_TEST_MATCH) {
-        throw new Error('Browser AI WebGPU config must match only the dedicated admission spec');
+    // A bare string is the single-spec form this pin replaced; normalising it
+    // here keeps that regression reported by name rather than as a type error.
+    const testMatch = Array.isArray(config.testMatch) ? config.testMatch : [config.testMatch];
+    if (
+        testMatch.length !== BROWSER_AI_WEBGPU_TEST_MATCH.length ||
+        BROWSER_AI_WEBGPU_TEST_MATCH.some((spec, index) => testMatch[index] !== spec)
+    ) {
+        throw new Error(
+            `Browser AI WebGPU config must match exactly these hardware-required specs, in order: ${BROWSER_AI_WEBGPU_TEST_MATCH.join(', ')}`
+        );
     }
     const projects = arrayAt(config, 'projects');
     if (projects.length !== 1) {
@@ -784,7 +795,8 @@ describe('health gates workflow contract', () => {
 
     it('rejects review-triggered cancellation and changing the pull-request grouping key', () => {
         const cancellingReview = asRecord(structuredClone(workflow), 'cancelling review workflow');
-        recordAt(cancellingReview, 'concurrency')['cancel-in-progress'] = "${{ github.event_name != 'schedule' }}";
+        recordAt(cancellingReview, 'concurrency')['cancel-in-progress'] =
+            "${{ github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') }}";
         expect(() => assertConcurrencyContract(cancellingReview)).toThrow(
             'only a newer pull-request run may cancel in-progress work'
         );
@@ -959,7 +971,7 @@ describe('health gates workflow contract', () => {
         }
     });
 
-    it('gates the dedicated Browser AI WebGPU proof on a standard macOS runner', async () => {
+    it('gates the dedicated Browser AI WebGPU and admitted-presentation proofs on a standard macOS runner', async () => {
         expect(() => assertBrowserAiWebGpuJob(workflow)).not.toThrow();
         expect(() => assertBrowserAiWebGpuProofChain(packageManifest, browserAiWebGpuConfig)).not.toThrow();
 
@@ -998,11 +1010,25 @@ describe('health gates workflow contract', () => {
             'Browser AI WebGPU package script must run the dedicated Playwright config'
         );
 
+        const expectedTestMatch = `Browser AI WebGPU config must match exactly these hardware-required specs, in order: ${BROWSER_AI_WEBGPU_TEST_MATCH.join(', ')}`;
+
         const broadConfig = asRecord(structuredClone(browserAiWebGpuConfig), 'broad Browser AI config');
         broadConfig.testMatch = '*.spec.ts';
-        expect(() => assertBrowserAiWebGpuProofChain(packageManifest, broadConfig)).toThrow(
-            'Browser AI WebGPU config must match only the dedicated admission spec'
-        );
+        expect(() => assertBrowserAiWebGpuProofChain(packageManifest, broadConfig)).toThrow(expectedTestMatch);
+
+        // A hardware-only spec that nobody registers here never runs: the
+        // general matrix has no adapter to reach its admitted assertions.
+        const unregisteredSpec = asRecord(structuredClone(browserAiWebGpuConfig), 'unregistered Browser AI config');
+        unregisteredSpec.testMatch = [...BROWSER_AI_WEBGPU_TEST_MATCH, 'browserAiSomethingElse.spec.ts'];
+        expect(() => assertBrowserAiWebGpuProofChain(packageManifest, unregisteredSpec)).toThrow(expectedTestMatch);
+
+        const droppedSpec = asRecord(structuredClone(browserAiWebGpuConfig), 'dropped-spec Browser AI config');
+        droppedSpec.testMatch = BROWSER_AI_WEBGPU_TEST_MATCH.slice(0, 1);
+        expect(() => assertBrowserAiWebGpuProofChain(packageManifest, droppedSpec)).toThrow(expectedTestMatch);
+
+        const reorderedSpecs = asRecord(structuredClone(browserAiWebGpuConfig), 'reordered Browser AI config');
+        reorderedSpecs.testMatch = [...BROWSER_AI_WEBGPU_TEST_MATCH].reverse();
+        expect(() => assertBrowserAiWebGpuProofChain(packageManifest, reorderedSpecs)).toThrow(expectedTestMatch);
 
         const optionalHardware = asRecord(
             structuredClone(browserAiWebGpuConfig),

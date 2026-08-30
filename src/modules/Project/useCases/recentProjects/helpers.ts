@@ -9,6 +9,7 @@ export type RecentProjectEntry = {
 };
 
 export const recentProjectsStorage = createLocalStorage<RecentProjectEntry[]>(RECENT_PROJECTS_KEY);
+const recentProjectListeners = new Set<() => void>();
 
 function has_recent_project_entry_fields(value: unknown): value is { name: unknown; key: unknown; updatedAt: unknown } {
     return typeof value === 'object' && value !== null && 'name' in value && 'key' in value && 'updatedAt' in value;
@@ -38,3 +39,16 @@ function sanitize_recent_projects(value: unknown): RecentProjectEntry[] {
 export function getRecentProjects(): RecentProjectEntry[] {
     return sanitize_recent_projects(recentProjectsStorage.get());
 }
+
+/** Project-owned reactive surface for recent-project writes. */
+export const recentProjectChanges = {
+    subscribe(listener: () => void): () => void {
+        recentProjectListeners.add(listener);
+        return () => recentProjectListeners.delete(listener);
+    },
+    notify(): void {
+        for (const listener of [...recentProjectListeners]) {
+            listener();
+        }
+    },
+};

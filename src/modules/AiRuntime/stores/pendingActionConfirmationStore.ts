@@ -1,8 +1,10 @@
 import { logger } from '#/infra/logger/appLogger';
 import { createStore } from '#/infra/store/createStore';
 
+import { type AgentRunCommandBatchAuthority } from '../models/AgentRun';
 import { type ChatActionConfirmationStatus, type ChatActionFollowUpStatus } from '../models/Chat';
 import { type ExecutableRuntimeAction } from '../models/ExecutableRuntimeAction';
+import { hasExactAgentCommandBatchAuthority } from '../validators/hasExactAgentCommandBatchAuthority';
 
 export type PendingActionExecution = {
     actionType: string;
@@ -386,6 +388,43 @@ export function getPendingActionConfirmation(confirmationId: string): PendingApp
     return confirmation ? clonePendingActionConfirmation(confirmation) : null;
 }
 
+export function hasRetryableSectionRenderFollowUp(input: {
+    authority: AgentRunCommandBatchAuthority;
+    runId: string;
+    batchId: string;
+    commandId: string;
+    committedRevision: string | null;
+    serializedBatch: string;
+}): boolean {
+    if (input.committedRevision === null) {
+        return false;
+    }
+    return (
+        pendingActionConfirmationStore.value?.confirmations.some(
+            (confirmation) =>
+                (confirmation.status === 'executed' || confirmation.status === 'failed') &&
+                confirmation.runId === input.runId &&
+                confirmation.groupId === input.batchId &&
+                confirmation.followUpStatus === 'retryable' &&
+                confirmation.followUpProjectRevision === input.committedRevision &&
+                confirmation.approvalSnapshot.commandBatch?.serialized === input.serializedBatch &&
+                hasExactAgentCommandBatchAuthority(
+                    input.authority,
+                    confirmation.approvalSnapshot.commandBatch.authority
+                ) &&
+                confirmation.approvalSnapshot.actions.filter((action) => action.type === 'renderProjectSections')
+                    .length === 1 &&
+                confirmation.executedActions.filter(
+                    (execution) =>
+                        execution.actionType === 'renderProjectSections' &&
+                        execution.commandId === input.commandId &&
+                        execution.executionKind === 'project' &&
+                        execution.outcome === 'committed-with-warning'
+                ).length === 1
+        ) ?? false
+    );
+}
+
 type RefreshPendingActionConfirmationApprovalInput = {
     agentApproval: PendingAgentRiskApproval;
     commandBatch: PendingCommandBatch;
@@ -532,7 +571,7 @@ export function updatePendingActionConfirmationStatus(
 type UpdatePendingActionFollowUpInput = {
     confirmationId: string;
     error?: string | null;
-    projectRevision?: string;
+    projectRevision?: string | null;
     status: ChatActionFollowUpStatus;
 };
 
@@ -550,7 +589,8 @@ export function updatePendingActionFollowUp(
     const updated: PendingAppActionConfirmation = {
         ...current,
         error: input.error === undefined ? current.error : input.error,
-        followUpProjectRevision: input.projectRevision ?? current.followUpProjectRevision,
+        followUpProjectRevision:
+            input.projectRevision === undefined ? current.followUpProjectRevision : input.projectRevision,
         followUpStatus: input.status,
     };
     pendingActionConfirmationStore.set({

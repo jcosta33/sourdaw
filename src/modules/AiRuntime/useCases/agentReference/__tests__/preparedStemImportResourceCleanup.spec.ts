@@ -268,6 +268,216 @@ describe('prepared stem import resource cleanup', () => {
         expect(agentRunLifecycle.get('stem-committed')?.temporaryAssets).toEqual([]);
     });
 
+    it('retries one multi-stem and multi-recovery transfer without detaching cleanup owners early', async () => {
+        const runId = 'stem-transfer-persistence-failure';
+        const twoStems = [
+            ...stems,
+            {
+                ...stems[0],
+                audioBufferId: 'decoded-buffer-2',
+                assetHash: 'hash-staged-asset-2',
+                assetLeaseId: 'staged-asset-2',
+                clipId: 'clip-staged-asset-2',
+                stemId: 'stem-staged-asset-2',
+            },
+        ];
+        agentRunLifecycle.create({
+            runId,
+            request: 'Import stems.',
+            mode: 'plan',
+            createdRevision: 'r1',
+        });
+        preparedStemImportResources.register({ runId, stems: twoStems });
+        preparedStemImportResources.protect({
+            runId,
+            stems: [twoStems[0]!],
+            recovery: {
+                batchId: 'batch-transfer-1',
+                commandBatch: createRecoveryCommandBatch(runId, 'batch-transfer-1'),
+            },
+        });
+        preparedStemImportResources.protect({
+            runId,
+            stems: [twoStems[1]!],
+            recovery: {
+                batchId: 'batch-transfer-2',
+                commandBatch: createRecoveryCommandBatch(runId, 'batch-transfer-2'),
+            },
+        });
+        const durableBefore = window.localStorage.getItem('sourdaw-agent-runs');
+        const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
+            throw new Error('prepared stem transfer persistence failed');
+        });
+
+        expect(() => preparedStemImportResources.release({ runId, stems: twoStems })).toThrow(
+            'Agent run state could not be persisted locally'
+        );
+        expect(agentRunLifecycle.get(runId)).toMatchObject({ temporaryAssets: [], preparedStemImports: [] });
+        expect(readAgentRunState().preparedStemImportRecoveryLedger ?? []).toEqual([]);
+        expect(window.localStorage.getItem('sourdaw-agent-runs')).toBe(durableBefore);
+
+        preparedStemImportResources.release({ runId, stems: twoStems });
+        expect(setItem).toHaveBeenCalledTimes(2);
+        expect(window.localStorage.getItem('sourdaw-agent-runs')).not.toBe(durableBefore);
+
+        await expect(preparedStemImportResources.discard({ runId, stems: twoStems })).resolves.toBeUndefined();
+        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+        setItem.mockRestore();
+    });
+
+    it('cleans every registered stem after a refused transfer instead of silently detaching ownership', async () => {
+        const runId = 'stem-transfer-discard-after-refusal';
+        const twoStems = [
+            ...stems,
+            {
+                ...stems[0],
+                audioBufferId: 'decoded-buffer-2',
+                assetHash: 'hash-staged-asset-2',
+                assetLeaseId: 'staged-asset-2',
+                clipId: 'clip-staged-asset-2',
+                stemId: 'stem-staged-asset-2',
+            },
+        ];
+        agentRunLifecycle.create({ runId, request: 'Import stems.', mode: 'plan', createdRevision: 'r1' });
+        preparedStemImportResources.register({ runId, stems: twoStems });
+        const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
+            throw new Error('prepared stem transfer persistence failed');
+        });
+
+        expect(() => preparedStemImportResources.release({ runId, stems: twoStems })).toThrow(
+            'Agent run state could not be persisted locally'
+        );
+        await expect(preparedStemImportResources.discard({ runId, stems: twoStems })).resolves.toBeUndefined();
+        await expect(preparedStemImportResources.discard({ runId, stems: twoStems })).resolves.toBeUndefined();
+
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(2);
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('decoded-buffer-1');
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('decoded-buffer-2');
+        setItem.mockRestore();
+    });
+
+    it('retries interrupted-transfer durability after physical cleanup without releasing a stem twice', async () => {
+        const runId = 'stem-transfer-discard-retry';
+        const twoStems = [
+            ...stems,
+            {
+                ...stems[0],
+                audioBufferId: 'decoded-buffer-2',
+                assetHash: 'hash-staged-asset-2',
+                assetLeaseId: 'staged-asset-2',
+                clipId: 'clip-staged-asset-2',
+                stemId: 'stem-staged-asset-2',
+            },
+        ];
+        agentRunLifecycle.create({ runId, request: 'Import stems.', mode: 'plan', createdRevision: 'r1' });
+        preparedStemImportResources.register({ runId, stems: twoStems });
+        const durableBefore = window.localStorage.getItem('sourdaw-agent-runs');
+        const setItem = vi
+            .spyOn(Storage.prototype, 'setItem')
+            .mockImplementationOnce(() => {
+                throw new Error('initial transfer persistence failed');
+            })
+            .mockImplementationOnce(() => {
+                throw new Error('cleanup retry persistence failed');
+            });
+
+        expect(() => preparedStemImportResources.release({ runId, stems: twoStems })).toThrow(
+            'Agent run state could not be persisted locally'
+        );
+        await expect(preparedStemImportResources.discard({ runId, stems: twoStems })).rejects.toThrow(
+            'Agent run state could not be persisted locally'
+        );
+        expect(window.localStorage.getItem('sourdaw-agent-runs')).toBe(durableBefore);
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-1');
+
+        await expect(preparedStemImportResources.discard({ runId, stems: [twoStems[0]!] })).resolves.toBeUndefined();
+        expect(window.localStorage.getItem('sourdaw-agent-runs')).not.toBe(durableBefore);
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledExactlyOnceWith('decoded-buffer-1');
+        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalledWith('decoded-buffer-2');
+
+        await expect(preparedStemImportResources.discard({ runId, stems: [twoStems[1]!] })).resolves.toBeUndefined();
+        await expect(preparedStemImportResources.discard({ runId, stems: twoStems })).resolves.toBeUndefined();
+
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(2);
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('decoded-buffer-1');
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('decoded-buffer-2');
+        setItem.mockRestore();
+    });
+
+    it('retains a shared prepared-stem recovery until its final stem transfers', () => {
+        const runId = 'stem-partial-recovery-transfer';
+        const batchId = 'batch-partial-recovery-transfer';
+        const twoStems = [
+            ...stems,
+            {
+                ...stems[0],
+                audioBufferId: 'decoded-buffer-2',
+                assetHash: 'hash-staged-asset-2',
+                assetLeaseId: 'staged-asset-2',
+                clipId: 'clip-staged-asset-2',
+                stemId: 'stem-staged-asset-2',
+            },
+        ];
+        agentRunLifecycle.create({ runId, request: 'Import stems.', mode: 'plan', createdRevision: 'r1' });
+        preparedStemImportResources.register({ runId, stems: twoStems });
+        preparedStemImportResources.protect({
+            runId,
+            stems: twoStems,
+            recovery: { batchId, commandBatch: createRecoveryCommandBatch(runId, batchId) },
+        });
+
+        preparedStemImportResources.release({ runId, stems: [twoStems[0]!] });
+        expect(agentRunLifecycle.get(runId)?.preparedStemImports).toEqual([expect.objectContaining({ batchId })]);
+        expect(readAgentRunState().preparedStemImportRecoveryLedger).toEqual([
+            expect.objectContaining({ runId, batchId }),
+        ]);
+
+        preparedStemImportResources.release({ runId, stems: [twoStems[1]!] });
+        expect(agentRunLifecycle.get(runId)?.preparedStemImports).toEqual([]);
+        expect(readAgentRunState().preparedStemImportRecoveryLedger ?? []).toEqual([]);
+    });
+
+    it('discards every stem of a verified noncommit whose run has left run history', async () => {
+        const runId = 'stem-evicted-noncommit-discard';
+        const batchId = 'batch-evicted-noncommit-discard';
+        const twoStems = [
+            ...stems,
+            {
+                ...stems[0],
+                audioBufferId: 'decoded-buffer-2',
+                assetHash: 'hash-staged-asset-2',
+                assetLeaseId: 'staged-asset-2',
+                clipId: 'clip-staged-asset-2',
+                stemId: 'stem-staged-asset-2',
+            },
+        ];
+        agentRunLifecycle.create({ runId, request: 'Import stems.', mode: 'plan', createdRevision: 'r1' });
+        preparedStemImportResources.register({ runId, stems: twoStems });
+        preparedStemImportResources.protect({
+            runId,
+            stems: twoStems,
+            recovery: { batchId, commandBatch: createRecoveryCommandBatch(runId, batchId) },
+        });
+        for (let index = 0; index < 50; index += 1) {
+            agentRunLifecycle.create({
+                runId: `later-evicting-run-${String(index)}`,
+                request: `Later run ${String(index)}`,
+                mode: 'plan',
+                createdRevision: `later-revision-${String(index)}`,
+            });
+        }
+        expect(agentRunLifecycle.get(runId)).toBeNull();
+
+        await expect(
+            preparedStemImportResources.discardAfterVerifiedNoncommit({ runId, stems: twoStems })
+        ).resolves.toBeUndefined();
+
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(2);
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('decoded-buffer-1');
+        expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('decoded-buffer-2');
+        expect(readAgentRunState().preparedStemImportRecoveryLedger ?? []).toEqual([]);
+    });
+
     it('keeps failed confirmation cleanup executable until the durable lease releases', async () => {
         mocks.completeDurableCleanupRecovery
             .mockResolvedValueOnce({ status: 'failed', reason: 'transaction-aborted' })

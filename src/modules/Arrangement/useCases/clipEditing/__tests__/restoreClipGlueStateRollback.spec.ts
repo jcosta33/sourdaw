@@ -64,7 +64,11 @@ describe('restoreClipGlueState satellite rollback', () => {
     });
 
     it('reverts the migrated warp state when the automation transition refuses after it committed', () => {
-        setStretchMode('clip-a', 'repitch');
+        // `complex`, not `defaultWarpState.stretchMode`: `readClipSatelliteEntry`
+        // reports a content-default entry as no satellite at all, so a fixture
+        // written with the default mode plans no migration and there would be
+        // nothing for the rejection below to revert.
+        setStretchMode('clip-a', 'complex');
         const plan = prepareClipGlue({ clipIds: ['clip-a', 'clip-b'] });
         expect(plan).not.toBeNull();
         const { previous, next, targetClipId: gluedId } = plan!;
@@ -96,7 +100,7 @@ describe('restoreClipGlueState satellite rollback', () => {
     });
 
     it('reverts the satellites on the undo direction too, where the migration runs the other way', () => {
-        setStretchMode('clip-a', 'repitch');
+        setStretchMode('clip-a', 'complex');
         const plan = prepareClipGlue({ clipIds: ['clip-a', 'clip-b'] });
         const { previous, next, targetClipId: gluedId } = plan!;
         expect(restoreClipGlueState({ expected: previous, replacement: next })).toBe(true);

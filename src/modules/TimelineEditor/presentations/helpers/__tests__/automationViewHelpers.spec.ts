@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
+import { defaultExternalPluginParameterState, externalPluginParameterStore } from '#/modules/PluginHost/stores';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { type AutomationPoint } from '../../../models/AutomationViewTypes';
@@ -86,6 +87,72 @@ describe('getAutomatableParams', () => {
     ])('filters %s equivalence safely', (_name, devices, lanes, targetId, expected) => {
         const params = getAutomatableParams('track-1', devices, lanes);
         expect(params.some((param) => param.id === targetId)).toBe(expected);
+    });
+
+    describe('external plugin devices', () => {
+        const PLUGIN_DEVICE = {
+            id: 'device-plugin',
+            type: 'external-plugin',
+            name: 'Console',
+            externalInstanceId: 'inst-1',
+        };
+
+        function publishInstance(engineAttached: boolean): void {
+            externalPluginParameterStore.set({
+                byInstanceId: {
+                    'inst-1': {
+                        engineAttached,
+                        parameters: [
+                            {
+                                id: 7,
+                                name: 'Drive',
+                                value: 0,
+                                defaultValue: 0,
+                                minValue: -12,
+                                maxValue: 24,
+                                unit: 'dB',
+                                isAutomatable: true,
+                            },
+                            {
+                                id: 8,
+                                name: 'Program',
+                                value: 0,
+                                defaultValue: 0,
+                                minValue: 0,
+                                maxValue: 127,
+                                unit: '',
+                                isAutomatable: false,
+                            },
+                        ],
+                    },
+                },
+            });
+        }
+
+        afterEach(() => {
+            externalPluginParameterStore.set(defaultExternalPluginParameterState);
+        });
+
+        it("offers the hosted plugin's automatable parameters by name, over its declared range", () => {
+            publishInstance(true);
+
+            expect(getAutomatableParams('track-1', [PLUGIN_DEVICE])).toEqual([
+                { id: 'gain', name: 'Volume', min: 0, max: FADER_MAX_GAIN },
+                { id: 'pan', name: 'Pan', min: -1, max: 1 },
+                // Addressed by the plugin's own parameter id, not by its
+                // position in the published list.
+                { id: 'device-plugin:7', name: 'Console → Drive', min: -12, max: 24 },
+            ]);
+        });
+
+        it('offers nothing for an instance that never attached to the native engine', () => {
+            publishInstance(false);
+
+            expect(getAutomatableParams('track-1', [PLUGIN_DEVICE])).toEqual([
+                { id: 'gain', name: 'Volume', min: 0, max: FADER_MAX_GAIN },
+                { id: 'pan', name: 'Pan', min: -1, max: 1 },
+            ]);
+        });
     });
 });
 

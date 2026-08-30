@@ -52,6 +52,7 @@ describe('drum bus provider plan conformance', () => {
         );
         const hostedRuntime: OpenAiCompatibleCloudRuntime = {
             provider: 'openai-compatible',
+            authentication: 'none',
             session_id: null,
             model: 'fixture-model',
             base_url: 'http://localhost:1234/v1',

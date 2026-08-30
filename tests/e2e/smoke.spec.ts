@@ -172,12 +172,19 @@ async function observeAudioContext(page: Page): Promise<AudioContextTestControl>
     };
 }
 
-async function openNewProject(page: Page): Promise<() => Promise<void>> {
+type OpenNewProjectOptions = {
+    firstPaintTimeoutMs?: number;
+};
+
+async function openNewProject(
+    page: Page,
+    { firstPaintTimeoutMs }: OpenNewProjectOptions = {}
+): Promise<() => Promise<void>> {
     const assertOffline = await blockExternalRequests(page);
     await setupWorkspace(page, {
         localStorage: [{ name: 'sourdaw-preferences', value: MANUAL_SAVE_PREFERENCES }],
     });
-    await launch_new_project(page);
+    await launch_new_project(page, { firstPaintTimeoutMs });
     return assertOffline;
 }
 
@@ -291,7 +298,9 @@ async function openSavedProjectInFreshPage(page: Page, name: string) {
 
 test.describe('Offline project smoke', () => {
     test('launches a new project into the workspace', async ({ page }) => {
-        const assertOffline = await openNewProject(page);
+        // This first offline leg pays the cold first-run application transform.
+        test.setTimeout(150_000);
+        const assertOffline = await openNewProject(page, { firstPaintTimeoutMs: 90_000 });
 
         await expect(page.getByRole('group', { name: 'Playback controls' })).toBeVisible();
         await expect(page.getByText('Add your first track')).toBeVisible();

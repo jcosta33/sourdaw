@@ -21,6 +21,7 @@ import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from 
 import {
     clearUndoHistory,
     commandBatchPreflightPort,
+    commandProjectRevisionPort,
     commandTrackDefaultsPort,
     configureCommandBatchIdempotency,
     getVersionedCommandBatchIdempotentReplay,
@@ -54,6 +55,7 @@ import {
     proposePendingActionConfirmation,
     type PendingAppActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
+import { selectAgentRunPendingEffectRecoveries } from '../../stores/selectAgentRunPendingEffectRecoveries';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage as sendChatMessageUseCase } from '../sendChatMessage';
@@ -1085,6 +1087,7 @@ describe('drum bus prompt workflow', () => {
         await cloudSession.clear();
         await cloudSession.replace_runtime({
             provider: 'openai-compatible',
+            authentication: 'none',
             session_id: null,
             model: 'fixture-model',
             base_url: 'http://localhost:1234/v1',
@@ -1095,6 +1098,7 @@ describe('drum bus prompt workflow', () => {
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
         commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
+        commandProjectRevisionPort.setProvider(captureProjectRevision);
         configureCommandBatchIdempotency({ canExecute: () => true });
         collaborationUseCases.configureCollaborationAssetOwner({
             captureOwnerId: () => 'project:drum-bus-workflow',
@@ -1631,7 +1635,11 @@ describe('drum bus prompt workflow', () => {
             throw new Error('Expected EX-11 confirmation');
         }
         const renderAction = confirmation.actions.find((action) => action.type === 'renderProjectSections');
-        const failedJob = renderAction?.type === 'renderProjectSections' ? renderAction.payload.jobs?.[1] : undefined;
+        if (renderAction?.type !== 'renderProjectSections' || !renderAction.payload.jobs) {
+            throw new Error('Expected materialized EX-11 render jobs');
+        }
+        const approvedRenderJobs = renderAction.payload.jobs;
+        const failedJob = approvedRenderJobs[1];
         if (!failedJob || failedJob.sectionName !== 'Chorus One') {
             throw new Error('Expected the materialized Chorus One render job');
         }
@@ -1658,12 +1666,16 @@ describe('drum bus prompt workflow', () => {
             continuation: {
                 authority: 'authoritative-collaboration-host',
                 idempotency: 'project-checkpoint',
-                kind: 'reconcile-exact-batch',
+                kind: 'manual-repair',
             },
         });
 
         expect(getAgentSectionRenderArtifacts()).toEqual([expect.objectContaining({ sectionId: 'section-verse-one' })]);
-        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(3);
+        // A confirmation spends one render attempt per approved job. The failed
+        // job is left to the explicit retry below, which reserves its own render
+        // budget and re-checks artifact-attachment authority; a silent second
+        // pass inside the confirmation would do neither.
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(approvedRenderJobs.length);
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation.id
         );
@@ -1688,6 +1700,11 @@ describe('drum bus prompt workflow', () => {
                 }),
             ]),
         });
+        expect(
+            selectAgentRunPendingEffectRecoveries(readAgentRunState()).find(
+                ({ runId, batchId }) => runId === confirmation.runId && batchId === confirmation.groupId
+            )
+        ).toBeUndefined();
         const committedConfirmation = getPendingActionConfirmation(confirmation.id);
         if (!committedConfirmation?.followUpProjectRevision) {
             throw new Error('Expected committed render confirmation');
@@ -2179,7 +2196,9 @@ describe('drum bus prompt workflow', () => {
         }
         expect(failedRetry.reason).toContain(failedJob.jobId);
 
-        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(4);
+        // The retry attempts the one missing job exactly once, not the whole
+        // approved set and not the missing job twice.
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(failedRetryCallIndex + 1);
         expect(runtimeMocks.renderOffline.mock.calls[failedRetryCallIndex]?.[0]).toMatchObject({
             durationBeats: failedJob.endBeat - failedJob.startBeat,
             sampleRate: failedJob.sampleRate,
@@ -2194,13 +2213,19 @@ describe('drum bus prompt workflow', () => {
         });
         runtimeMocks.renderOffline.mockResolvedValue(createTestAudioBuffer());
 
-        const successfulRetryCallIndex = runtimeMocks.renderOffline.mock.calls.length;
-        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
-            status: 'executed',
+        const completionPersistence = vi
+            .spyOn(agentRunLifecycle, 'completePendingEffectContinuation')
+            .mockImplementationOnce(() => {
+                throw new Error('continuation persistence unavailable');
+            });
+        const finalizedRetryCallIndex = runtimeMocks.renderOffline.mock.calls.length;
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toMatchObject({
+            status: 'failed',
+            reason: 'continuation persistence unavailable',
         });
 
-        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(5);
-        expect(runtimeMocks.renderOffline.mock.calls[successfulRetryCallIndex]?.[0]).toMatchObject({
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(finalizedRetryCallIndex + 1);
+        expect(runtimeMocks.renderOffline.mock.calls[finalizedRetryCallIndex]?.[0]).toMatchObject({
             durationBeats: failedJob.endBeat - failedJob.startBeat,
             sampleRate: failedJob.sampleRate,
             startBeat: failedJob.startBeat,
@@ -2223,16 +2248,78 @@ describe('drum bus prompt workflow', () => {
         expect(undoStore.value?.past).toHaveLength(9);
         expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
             status: 'executed',
-            followUpStatus: 'complete',
-            error: null,
+            followUpStatus: 'retryable',
+            error: 'continuation persistence unavailable',
         });
+        const finalizedConfirmation = getPendingActionConfirmation(confirmation.id);
+        const finalizedRun = agentRunLifecycle.get(committedConfirmation.runId);
+        const finalizedContinuation = finalizedRun?.pendingEffectContinuations.find(
+            ({ batchId }) => batchId === committedConfirmation.groupId
+        );
+        const finalizedTrackedReceipt = finalizedRun?.receipts.find(
+            ({ workId }) => workId === committedConfirmation.groupId
+        );
+        if (
+            !finalizedConfirmation ||
+            !finalizedRun ||
+            !finalizedContinuation ||
+            !finalizedTrackedReceipt ||
+            finalizedRun.revisions.committed === null
+        ) {
+            throw new Error('Expected finalized receipt and retained continuation');
+        }
+        agentRunLifecycle.recordCommittedWork({
+            runId: committedConfirmation.runId,
+            workId: finalizedTrackedReceipt.workId,
+            receiptIdentity: `${finalizedTrackedReceipt.receiptIdentity}:graft`,
+            revertGroupId: finalizedTrackedReceipt.revertGroupId ?? undefined,
+            committedAt: finalizedTrackedReceipt.committedAt,
+            committedRevision: finalizedRun.revisions.committed,
+            completesRun: false,
+        });
+        agentRunLifecycle.recordPendingEffectContinuation({
+            runId: committedConfirmation.runId,
+            continuation: {
+                ...finalizedContinuation,
+                receiptIdentity: `${finalizedContinuation.receiptIdentity}:graft`,
+            },
+        });
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toMatchObject({
+            status: 'failed',
+        });
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(finalizedRetryCallIndex + 1);
+        expect(trackStore.value?.tracks).toEqual(committedTracks);
+        expect(undoStore.value?.past).toHaveLength(9);
+
+        agentRunLifecycle.recordPendingEffectContinuation({
+            runId: committedConfirmation.runId,
+            continuation: finalizedContinuation,
+        });
+        agentRunLifecycle.recordCommittedWork({
+            runId: committedConfirmation.runId,
+            workId: finalizedTrackedReceipt.workId,
+            receiptIdentity: finalizedTrackedReceipt.receiptIdentity,
+            revertGroupId: finalizedTrackedReceipt.revertGroupId ?? undefined,
+            committedAt: finalizedTrackedReceipt.committedAt,
+            committedRevision: finalizedRun.revisions.committed,
+            completesRun: false,
+        });
+        replacePendingActionConfirmationForTest(finalizedConfirmation);
+        completionPersistence.mockRestore();
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+            status: 'executed',
+        });
+
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(finalizedRetryCallIndex + 1);
+        expect(trackStore.value?.tracks).toEqual(committedTracks);
+        expect(undoStore.value?.past).toHaveLength(9);
         expect(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation.id)
         ).toMatchObject({
             pendingActionConfirmationStatus: 'executed',
             pendingActionFollowUpStatus: 'complete',
             content: expect.stringContaining(
-                'Missing section render artifacts completed without replaying project actions'
+                'All section render artifacts are complete; project actions were not replayed'
             ),
         });
         expect(
@@ -2431,7 +2518,15 @@ describe('drum bus prompt workflow', () => {
         if (!confirmation || !jobs) {
             throw new Error('Expected materialized EX-11 render jobs');
         }
-        await retryAgentProjectSectionRenders({ jobs, sourceRevision: confirmation.projectRevision });
+        const sourceRevision = confirmation.projectRevision;
+        if (sourceRevision === null) {
+            throw new Error('Expected project revision for materialized EX-11 render jobs');
+        }
+        await retryAgentProjectSectionRenders({
+            approvedJobs: jobs,
+            jobs,
+            sourceRevision,
+        });
         expect(getAgentSectionRenderArtifacts()).toEqual(
             jobs.map((job) =>
                 expect.objectContaining({
@@ -2669,9 +2764,14 @@ describe('drum bus prompt workflow', () => {
             pendingActionFollowUpStatus: 'retryable',
         });
         runtimeMocks.renderOffline.mockResolvedValue(createTestAudioBuffer());
+        const sourceRevision = committedConfirmation.followUpProjectRevision;
+        if (sourceRevision === null) {
+            throw new Error('Expected retryable follow-up project revision');
+        }
         await retryAgentProjectSectionRenders({
+            approvedJobs: [missingJob],
             jobs: [missingJob],
-            sourceRevision: committedConfirmation.followUpProjectRevision,
+            sourceRevision,
         });
         const renderCallCount = runtimeMocks.renderOffline.mock.calls.length;
 

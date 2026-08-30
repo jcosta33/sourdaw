@@ -2,7 +2,12 @@ import { type ReactElement, useState } from 'react';
 
 import { Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
-import { compileReorderDevicesAction, getPlatformPlugins, selectTrack } from '#/modules/Arrangement/useCases';
+import {
+    compileReorderDevicesAction,
+    executeAddDeviceAction,
+    getPlatformPlugins,
+    selectTrack,
+} from '#/modules/Arrangement/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { MIDI_EFFECT_FACTORIES } from '#/modules/MIDI/useCases';
 import { openInspector } from '#/modules/WorkspaceShell/useCases';
@@ -107,10 +112,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                             key={param.id}
                             onClick={(event) => {
                                 event.stopPropagation();
-                                void executeAppAction({
-                                    type: 'addDevice',
-                                    payload: { trackId: track.id, deviceType: param.id },
-                                });
+                                void executeAddDeviceAction(track.id, param.id);
                                 setShowAdd(false);
                             }}
                         >
@@ -129,10 +131,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                             tone="accent"
                             onClick={(event) => {
                                 event.stopPropagation();
-                                void executeAppAction({
-                                    type: 'addDevice',
-                                    payload: { trackId: track.id, deviceType: fx.name },
-                                });
+                                void executeAddDeviceAction(track.id, fx.name);
                                 setShowAdd(false);
                             }}
                         >

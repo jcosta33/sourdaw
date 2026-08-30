@@ -8,22 +8,32 @@
 //! the view is released, because releasing an attached view leaves the plugin's
 //! child window parented to a window the host is about to destroy.
 //!
-//! That detach-before-release order is the host's own close path, where the
-//! native window is still alive when the editor is torn down. It does not hold
-//! when the OS ends the window instead: the shell reports that close only after
-//! the platform has already destroyed the window, so `removed` runs against a
-//! parent that is gone. The gap is known, is shared with the CLAP editor path,
-//! and is tracked separately — nothing in this module can close it, because by
-//! the time the report arrives there is nothing left to detach from.
+//! A live parent is what that order needs, and supplying one is the shell's
+//! obligation rather than this module's: a shell stops the platform's own close
+//! of an editor window, reports it while the native window is still standing,
+//! and destroys the window only once the teardown has returned. It bounds that
+//! wait, because an editor a user cannot close is the worse failure — so a
+//! plugin that never lets go loses its parent instead of holding the window
+//! open. Nothing here can check any of it, because a report carries no window,
+//! so it is the shell's to keep like the thread rule below.
 //!
 //! None of this is reachable from the audio thread, and none of it takes a lock
-//! the audio thread holds. What it does run on is a blocking worker of the
-//! host application's executor: an editor command reaches this module through
-//! the runtime owner's control claim, and that claim is what serialises view
-//! lifecycle against every other control call. It is not the platform's UI
-//! thread. `IPlugView` is specified to be driven from the thread that owns the
-//! parent window, and this host does not do that today — a known deviation,
-//! shared with the CLAP editor path, and tracked separately.
+//! the audio thread holds. `IPlugView` is specified to be driven from the thread
+//! that owns the parent window, and the host carries the editor's lifecycle
+//! there: every path that opens or closes an editor — the GUI commands, the
+//! OS-close reset, the exit cascade, and an unload that removes a device while
+//! its editor is open — claims the runtime owner's control gate on its own
+//! worker, which is what serialises view lifecycle against every other control
+//! call, and then hands the view calls themselves to the UI thread and waits.
+//! The claim never travels with them, because a UI thread waiting for a control
+//! gate is a UI thread that cannot answer the call the gate's holder is waiting
+//! on. That is the contract this module is written against, and it is the
+//! caller's to keep: nothing here can check which thread it was entered on.
+//!
+//! Two entries into this file are outside it. The editor-support probe creates
+//! and releases a throwaway view on whatever thread asked, and `Vst3Editor`'s
+//! own `Drop` runs wherever the runtime is finally released. Both are known and
+//! tracked separately; neither is on the open/close path above.
 //!
 //! `ViewRect` is not one unit on every platform. macOS states it in logical
 //! points and the window server applies the backing scale, while Windows and
@@ -35,7 +45,7 @@
 
 use std::ffi::c_void;
 use std::ptr;
-use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -50,7 +60,7 @@ use vst3::{Class, ComPtr, ComRef, ComWrapper};
 use crate::traits::EditorWindowResizer;
 
 #[cfg(target_os = "linux")]
-use crate::vst3_run_loop::{HostRunLoop, RunLoopService};
+use crate::vst3_run_loop::{register_editor_run_loop, EditorRunLoopRegistration, HostRunLoop};
 #[cfg(target_os = "linux")]
 use vst3::Steinberg::Linux::{
     FileDescriptor, IEventHandler, IRunLoop, IRunLoopTrait, ITimerHandler, TimerInterval,
@@ -248,8 +258,18 @@ fn platform_view_type() -> Option<FIDString> {
 
 /// Whether this platform states `ViewRect` in physical pixels, and therefore
 /// needs to be told the scale it is running at.
-fn platform_states_content_scale() -> bool {
-    cfg!(any(target_os = "windows", target_os = "linux"))
+pub(crate) fn platform_states_content_scale() -> bool {
+    states_content_scale(std::env::consts::OS)
+}
+
+/// The rule behind that answer, as a table an operating system is looked up in.
+///
+/// Written for a named platform rather than compiled for this one so that the
+/// whole table is observable wherever the tests run: a `cfg!` here would make
+/// every check of it re-derive the answer it is meant to pin, and the two
+/// branches nobody builds would never be read at all.
+fn states_content_scale(operating_system: &str) -> bool {
+    matches!(operating_system, "windows" | "linux")
 }
 
 /// Everything the frame owns on behalf of one open editor.
@@ -266,10 +286,15 @@ pub struct EditorFrameState {
     view: AtomicPtr<FUnknown>,
     /// How the host resizes the native window the view is drawn into.
     window: Mutex<Option<EditorWindowResizer>>,
-    /// How many `ViewRect` units one logical window unit is worth here. Fixed
-    /// at open: an editor that moves to a display of a different scale is not
-    /// re-scaled, which is tracked separately.
-    view_units_per_logical: f64,
+    /// How many `ViewRect` units one logical window unit is worth here, as
+    /// `f64` bits.
+    ///
+    /// Not fixed at open, and atomic because the frame the plugin calls into
+    /// reads it from whatever thread the plugin called on: an editor whose
+    /// window reaches a display of a different scale is restated through
+    /// [`Vst3Editor::apply_content_scale`], and every size crossing this seam
+    /// afterwards has to convert by the new factor.
+    view_units_per_logical: AtomicU64,
     /// The size the host window is at, in logical units.
     granted_width: AtomicU32,
     granted_height: AtomicU32,
@@ -288,7 +313,9 @@ impl EditorFrameState {
         Self {
             view: AtomicPtr::new(ptr::null_mut()),
             window: Mutex::new(window),
-            view_units_per_logical: view_units_per_logical_unit(scale_factor),
+            view_units_per_logical: AtomicU64::new(
+                view_units_per_logical_unit(scale_factor).to_bits(),
+            ),
             granted_width: AtomicU32::new(0),
             granted_height: AtomicU32::new(0),
             resizing: AtomicBool::new(false),
@@ -383,12 +410,23 @@ impl EditorFrameState {
         }
     }
 
+    fn view_units_per_logical(&self) -> f64 {
+        f64::from_bits(self.view_units_per_logical.load(Ordering::Acquire))
+    }
+
+    /// Restate the conversion every size crossing the window seam uses. Called
+    /// with the new display scale, already reduced to this platform's factor.
+    fn set_view_units_per_logical(&self, units: f64) {
+        self.view_units_per_logical
+            .store(units.to_bits(), Ordering::Release);
+    }
+
     fn to_logical(&self, size: EditorSize) -> EditorSize {
-        size.to_logical(self.view_units_per_logical)
+        size.to_logical(self.view_units_per_logical())
     }
 
     fn to_view_units(&self, size: EditorSize) -> EditorSize {
-        size.to_view_units(self.view_units_per_logical)
+        size.to_view_units(self.view_units_per_logical())
     }
 
     fn granted(&self) -> EditorSize {
@@ -450,12 +488,9 @@ impl IPlugFrameTrait for HostEditorFrame {
     /// window that has already changed, which is the classic "editor content
     /// clipped after a preset change" symptom.
     ///
-    /// The VST3 side of that handshake is synchronous here and the order is the
-    /// one the format states. The window itself is a separate matter: the
-    /// production window seam crosses to the shell as a non-blocking call, so
-    /// the host window is *asked* to resize before `onSize` and applies it a
-    /// turn of the shell's loop later. That seam limitation is shared with the
-    /// CLAP editor path and tracked separately.
+    /// The whole handshake is synchronous here, window included: the host window
+    /// seam does not return until the shell has applied the size, so the window
+    /// has already changed by the time `onSize` is delivered.
     ///
     /// A view that refuses the size it just asked for leaves the host holding a
     /// window it changed for nothing, so the refusal puts the window and the
@@ -549,10 +584,10 @@ pub struct Vst3Editor {
     view: ComPtr<IPlugView>,
     _frame: ComWrapper<HostEditorFrame>,
     state: Arc<EditorFrameState>,
-    /// The thread that services the editor's descriptors and timers, for as long
-    /// as the editor is open.
+    /// This editor's place in the set the host's UI loop services, held for as
+    /// long as the editor is open.
     #[cfg(target_os = "linux")]
-    run_loop_service: Option<RunLoopService>,
+    run_loop_registration: Option<EditorRunLoopRegistration>,
 }
 
 impl Vst3Editor {
@@ -649,28 +684,16 @@ impl Vst3Editor {
         }
 
         // An editor whose descriptors and timers nobody services never draws and
-        // never answers a click, so a service thread that will not start is a
-        // refusal rather than a degraded editor.
+        // never answers a click, so it joins the set the host's UI loop pumps
+        // the moment it is attached.
         #[cfg(target_os = "linux")]
-        let run_loop_service = match RunLoopService::start(Arc::clone(state.run_loop())) {
-            Ok(service) => Some(service),
-            Err(error) => {
-                state.disown();
-                // SAFETY: the view is attached and live; this is the detach the
-                // failure path owes before the frame and the view are released.
-                unsafe {
-                    view.removed();
-                    view.setFrame(ptr::null_mut());
-                }
-                return Err(format!("[VST3] '{plugin_name}': {error}"));
-            }
-        };
+        let run_loop_registration = Some(register_editor_run_loop(Arc::clone(state.run_loop())));
 
         Ok(Self {
             view,
             _frame: frame,
             #[cfg(target_os = "linux")]
-            run_loop_service,
+            run_loop_registration,
             state,
         })
     }
@@ -683,6 +706,54 @@ impl Vst3Editor {
 
     pub fn frame_state(&self) -> &Arc<EditorFrameState> {
         &self.state
+    }
+
+    /// Whether the view accepts a size the host chose.
+    ///
+    /// The host window's own resizability follows this answer: a view that says
+    /// no gets a window the user cannot drag, which is what every established
+    /// host does with a fixed-layout editor.
+    pub fn can_resize(&self) -> bool {
+        // SAFETY: control path only; the view is attached and live.
+        unsafe { self.view.canResize() == kResultTrue }
+    }
+
+    /// Restate the display scale this editor runs at, and report the size its
+    /// host window must take now.
+    ///
+    /// Both halves move together, and neither is optional. The view is told the
+    /// new scale, which on the platforms whose `ViewRect` is physical pixels is
+    /// the only way it can lay itself out at the right density; and the size is
+    /// renegotiated, because the same rect is worth a different number of
+    /// logical window units once the factor changes. A host that applied one
+    /// without the other leaves the editor drawing at one density inside a
+    /// window sized for another.
+    ///
+    /// A fixed-size editor is re-scaled too. Its rect does not change, but what
+    /// that rect is worth to the window seam does, so the window still moves —
+    /// it is only the negotiation that a view refusing `canResize` is spared.
+    pub fn apply_content_scale(&self, scale_factor: f64) -> Result<EditorSize, String> {
+        self.state
+            .set_view_units_per_logical(view_units_per_logical_unit(scale_factor));
+
+        // SAFETY: control path only; the view is live. Unlike the open path's
+        // application this one runs against an attached view, which is the case
+        // the interface exists for — a host tells an editor its scale changed.
+        let stated = unsafe {
+            if platform_states_content_scale() {
+                apply_content_scale(&self.view, self.state.view_units_per_logical() as f32);
+            }
+            read_view_size(&self.view)
+        }
+        .ok_or_else(|| "[VST3] this editor states no size to re-scale".to_string())?;
+
+        let logical = self.state.to_logical(stated);
+        if !self.can_resize() {
+            self.state.resize_host_window(logical);
+            self.state.record_granted(logical);
+            return Ok(logical);
+        }
+        self.request_size(logical)
     }
 
     /// Resize the editor because the *host* wants a different size, stated in
@@ -759,10 +830,11 @@ impl Drop for Vst3Editor {
     /// so giving up at the deadline costs this close its promptness rather than
     /// that call its vtable.
     fn drop(&mut self) {
-        // The service thread calls into handlers the editor registered, so it
-        // stops before anything the editor owns is torn down.
+        // The host's pump calls into handlers the editor registered, so this
+        // editor leaves the pumped set — and waits out a pass already inside it
+        // — before anything the editor owns is torn down.
         #[cfg(target_os = "linux")]
-        drop(self.run_loop_service.take());
+        drop(self.run_loop_registration.take());
 
         self.state.disown();
         let guarded = self.state.acquire_resize_guard_for_teardown();
@@ -805,7 +877,7 @@ unsafe fn attach(
     plugin_name: &str,
 ) -> Result<(), String> {
     if platform_states_content_scale() {
-        apply_content_scale(view, state.view_units_per_logical as f32);
+        apply_content_scale(view, state.view_units_per_logical() as f32);
     }
 
     // A view that states no size yet is not a refusal: plugins exist that only
@@ -860,7 +932,8 @@ unsafe fn read_view_size(view: &ComPtr<IPlugView>) -> Option<EditorSize> {
 }
 
 /// # Safety
-/// The view is live and not yet attached.
+/// The view is live. Attached or not: the interface exists so that a host can
+/// state a scale that changed under an editor that is already on screen.
 unsafe fn apply_content_scale(view: &ComPtr<IPlugView>, scale: f32) {
     // A plugin that does not implement the interface has nothing to be told, and
     // that is not a failure: the scale is advice, and the editor still attaches.
@@ -1003,13 +1076,36 @@ mod tests {
     /// conversion.
     #[test]
     fn only_the_platforms_whose_view_rect_is_physical_convert_by_the_display_scale() {
-        let expected = if cfg!(any(target_os = "windows", target_os = "linux")) {
+        let expected = if platform_states_content_scale() {
             2.0
         } else {
             1.0
         };
 
         assert_eq!(view_units_per_logical_unit(2.0), expected);
+    }
+
+    /// The per-platform truth table behind every conversion in this file, read
+    /// on whatever platform the tests run on.
+    ///
+    /// The VST3 SDK states `ViewRect` in physical pixels on Windows and X11 and
+    /// in logical points on macOS, and `IPlugViewContentScaleSupport` exists for
+    /// exactly the platforms of the first kind. One wrong entry either halves
+    /// every editor on a Retina display or leaves a Windows editor drawing at a
+    /// quarter of its window.
+    #[test]
+    fn the_view_rect_is_physical_on_windows_and_x11_and_logical_everywhere_else() {
+        for physical in ["windows", "linux"] {
+            assert!(states_content_scale(physical), "{physical}");
+        }
+        for logical in ["macos", "ios", "freebsd"] {
+            assert!(!states_content_scale(logical), "{logical}");
+        }
+        assert_eq!(
+            platform_states_content_scale(),
+            states_content_scale(std::env::consts::OS),
+            "the live gate must be that table read for this platform, not a second copy of it"
+        );
     }
 
     /// A scale the shell could not measure must convert nothing. Dividing by

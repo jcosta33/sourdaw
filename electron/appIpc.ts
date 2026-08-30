@@ -25,6 +25,11 @@ import {
     WINDOW_IS_MAXIMIZED_CHANNEL,
     WINDOW_MINIMIZE_CHANNEL,
     WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
+    NATIVE_MENU_PROJECT_STATE_CHANNEL,
+    NATIVE_MENU_SAVE_RESULT_CHANNEL,
+    RENDERER_SESSION_QUIESCED_CHANNEL,
+    RENDERER_SESSION_QUIESCE_STARTED_CHANNEL,
+    type RendererSessionQuiesceResult,
 } from './channels.js';
 import { commandChannel } from './commands.js';
 import { asPositionalArguments, withTrustedSender, withTrustedSenderEvent, type IpcMainLike } from './router.js';
@@ -51,17 +56,31 @@ export type RegisterScanCommandInput = {
     readonly ipcMain: IpcMainLike;
     readonly isTrustedFrameUrl: TrustGuard;
     readonly supervisor: ScanSupervisor;
+    readonly acceptsCommand?: (command: string) => boolean;
 };
 
-export const registerScanCommand = ({ ipcMain, isTrustedFrameUrl, supervisor }: RegisterScanCommandInput): void => {
+export const registerScanCommand = ({
+    ipcMain,
+    isTrustedFrameUrl,
+    supervisor,
+    acceptsCommand,
+}: RegisterScanCommandInput): void => {
     ipcMain.handle(
         commandChannel(SCAN_COMMAND),
         withTrustedSender(SCAN_COMMAND, isTrustedFrameUrl, async (args) => {
-            const [paths] = asPositionalArguments(args);
+            if (acceptsCommand !== undefined && !acceptsCommand(SCAN_COMMAND)) {
+                throw new Error(`${SCAN_COMMAND} rejected: the application is shutting down`);
+            }
+            const [paths, retryQuarantined] = asPositionalArguments(args);
             if (!isStringList(paths)) {
                 throw new TypeError('scan_plugins expects a list of paths');
             }
-            return supervisor.scan({ paths });
+            if (retryQuarantined !== undefined && typeof retryQuarantined !== 'boolean') {
+                throw new TypeError('scan_plugins expects retry_quarantined to be a boolean');
+            }
+            // Omitted rather than sent as `false`/`undefined`: keeps the ordinary
+            // scan call's request shape identical to before this flag existed.
+            return supervisor.scan(retryQuarantined === true ? { paths, retryQuarantined: true } : { paths });
         })
     );
 };
@@ -279,6 +298,151 @@ export const registerWindowControlChannels = ({
             'window.isMaximized',
             isTrustedFrameUrl,
             (event) => windowForSender(event.sender)?.isMaximized() ?? false
+        )
+    );
+};
+
+export type NativeMenuProjectState = {
+    readonly title: string;
+    readonly dirty: boolean;
+    readonly durabilityPending: boolean;
+    readonly projectKey: string;
+    readonly revision: string;
+    /** A recovering renderer may publish its provisional shell state before Project hydration completes. */
+    readonly rendererReady?: boolean;
+    readonly recentProjects: readonly { readonly key: string; readonly name: string }[];
+};
+
+export type NativeMenuSaveResult = {
+    readonly requestId: number;
+    readonly saved: boolean;
+    readonly dirty: boolean;
+    readonly projectKey: string;
+    readonly revision: string;
+};
+
+export type RegisterNativeMenuChannelsInput = {
+    readonly ipcMain: IpcMainLike;
+    readonly isTrustedFrameUrl: TrustGuard;
+    readonly onProjectState: (state: NativeMenuProjectState, sender: unknown) => void;
+    readonly onSaveResult: (result: NativeMenuSaveResult) => void;
+    readonly onSessionQuiesced: (result: RendererSessionQuiesceResult, sender: unknown) => void;
+    readonly onSessionQuiesceStarted: (requestId: number, sender: unknown) => boolean;
+};
+
+const nativeMenuProjectState = (value: unknown): NativeMenuProjectState => {
+    const state = asRecord(value);
+    if (
+        typeof state.title !== 'string' ||
+        typeof state.dirty !== 'boolean' ||
+        typeof state.durabilityPending !== 'boolean' ||
+        typeof state.projectKey !== 'string' ||
+        typeof state.revision !== 'string' ||
+        !Array.isArray(state.recentProjects)
+    ) {
+        throw new TypeError('native menu project state is invalid');
+    }
+    const recentProjects = state.recentProjects.map((entry) => {
+        const project = asRecord(entry);
+        if (typeof project.key !== 'string' || typeof project.name !== 'string') {
+            throw new TypeError('native menu recent project is invalid');
+        }
+        return { key: project.key, name: project.name };
+    });
+    const rendererReady = state.rendererReady;
+    if (rendererReady !== undefined && typeof rendererReady !== 'boolean') {
+        throw new TypeError('native menu renderer readiness is invalid');
+    }
+    return {
+        title: state.title,
+        dirty: state.dirty,
+        durabilityPending: state.durabilityPending,
+        projectKey: state.projectKey,
+        revision: state.revision,
+        rendererReady,
+        recentProjects,
+    };
+};
+
+const nativeMenuSaveResult = (value: unknown): NativeMenuSaveResult => {
+    const result = asRecord(value);
+    if (
+        typeof result.requestId !== 'number' ||
+        !Number.isSafeInteger(result.requestId) ||
+        result.requestId < 1 ||
+        typeof result.saved !== 'boolean' ||
+        typeof result.dirty !== 'boolean' ||
+        typeof result.projectKey !== 'string' ||
+        typeof result.revision !== 'string'
+    ) {
+        throw new TypeError('native menu save result is invalid');
+    }
+    return {
+        requestId: result.requestId,
+        saved: result.saved,
+        dirty: result.dirty,
+        projectKey: result.projectKey,
+        revision: result.revision,
+    };
+};
+
+const rendererSessionQuiesced = (value: unknown): RendererSessionQuiesceResult => {
+    const result = asRecord(value);
+    const keys = Object.keys(result);
+    const outcome = result.outcome;
+    if (
+        keys.length !== 2 ||
+        !keys.includes('requestId') ||
+        !keys.includes('outcome') ||
+        typeof result.requestId !== 'number' ||
+        !Number.isSafeInteger(result.requestId) ||
+        result.requestId < 1 ||
+        (outcome !== 'success' && outcome !== 'rejected' && outcome !== 'terminal')
+    ) {
+        throw new TypeError('renderer session quiesce result is invalid');
+    }
+    return { requestId: result.requestId, outcome };
+};
+
+const rendererSessionRequestId = (value: unknown): number => {
+    const result = asRecord(value);
+    if (typeof result.requestId !== 'number' || !Number.isSafeInteger(result.requestId) || result.requestId < 1) {
+        throw new TypeError('renderer session quiesce start is invalid');
+    }
+    return result.requestId;
+};
+
+/** The entire renderer-facing native menu surface: validated projections and text editing only. */
+export const registerNativeMenuChannels = ({
+    ipcMain,
+    isTrustedFrameUrl,
+    onProjectState,
+    onSaveResult,
+    onSessionQuiesced,
+    onSessionQuiesceStarted,
+}: RegisterNativeMenuChannelsInput): void => {
+    ipcMain.handle(
+        NATIVE_MENU_PROJECT_STATE_CHANNEL,
+        withTrustedSenderEvent('nativeMenu.projectState', isTrustedFrameUrl, (event, value) =>
+            onProjectState(nativeMenuProjectState(value), event.sender)
+        )
+    );
+    ipcMain.handle(
+        RENDERER_SESSION_QUIESCE_STARTED_CHANNEL,
+        withTrustedSenderEvent('rendererSession.quiesceStarted', isTrustedFrameUrl, (event, value) =>
+            onSessionQuiesceStarted(rendererSessionRequestId(value), event.sender)
+        )
+    );
+    ipcMain.handle(
+        RENDERER_SESSION_QUIESCED_CHANNEL,
+        withTrustedSenderEvent('rendererSession.quiesced', isTrustedFrameUrl, (event, value) =>
+            onSessionQuiesced(rendererSessionQuiesced(value), event.sender)
+        )
+    );
+    ipcMain.handle(
+        NATIVE_MENU_SAVE_RESULT_CHANNEL,
+        withTrustedSender('nativeMenu.saveResult', isTrustedFrameUrl, (value) =>
+            onSaveResult(nativeMenuSaveResult(value))
         )
     );
 };

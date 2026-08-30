@@ -14,7 +14,11 @@ export function recoverInterruptedAgentRunState(
         const hasUnsettledLease = run.workLeases.some((lease) => lease.terminalState === null);
         const hasLiveTemporaryAsset = run.temporaryAssets.some((asset) => asset.status === 'live');
         const hasUnsettledSaga = run.saga.steps.some(
-            (step) => step.state === 'pending' || step.state === 'external-pending' || step.state === 'uncompensated'
+            (step) =>
+                step.state === 'pending' ||
+                step.state === 'external-pending' ||
+                step.state === 'uncompensated' ||
+                step.state === 'manual-repair'
         );
         if (
             (TERMINAL_PHASES.has(run.phase) && !hasUnsettledLease && !hasLiveTemporaryAsset && !hasUnsettledSaga) ||

@@ -37,6 +37,7 @@ type CloudStreamEvent =
 type CompatibleStreamInput = {
     runtime: {
         provider: 'openai' | 'openai-compatible';
+        authentication: 'api-key' | 'none';
         session_id: string | null;
         model: string;
         base_url: string;
@@ -104,6 +105,7 @@ describe('streamCloudChatCompletion', () => {
         ]);
         mocks.getCloudProviderRuntime.mockReturnValue({
             provider: 'anthropic',
+            authentication: 'api-key',
             session_id: 'provider-session-00000000000000000000000000000000',
             model: 'test-model',
         });
@@ -236,6 +238,7 @@ describe('streamCloudChatCompletion', () => {
     it('dispatches OpenAI-compatible providers through the fetch stream adapter', async () => {
         const runtime = {
             provider: 'openai-compatible' as const,
+            authentication: 'none' as const,
             session_id: null,
             model: 'local-model',
             base_url: 'http://localhost:1234/v1',
@@ -260,6 +263,7 @@ describe('streamCloudChatCompletion', () => {
     it('aborts a hosted request before its first token when the caller stops', async () => {
         const runtime = {
             provider: 'openai' as const,
+            authentication: 'api-key' as const,
             session_id: 'provider-session-00000000000000000000000000000000',
             model: 'gpt-5.2',
             base_url: 'https://api.openai.com/v1',
@@ -291,6 +295,7 @@ describe('streamCloudChatCompletion', () => {
     it('warns when an OpenAI-compatible stream reaches its token limit', async () => {
         mocks.getCloudProviderRuntime.mockReturnValue({
             provider: 'openai-compatible',
+            authentication: 'none',
             session_id: null,
             model: 'local-model',
             base_url: 'http://localhost:1234/v1',
@@ -306,6 +311,7 @@ describe('streamCloudChatCompletion', () => {
     it('rejects when configuration changes as an OpenAI-compatible stream completes', async () => {
         mocks.getCloudProviderRuntime.mockReturnValue({
             provider: 'openai' as const,
+            authentication: 'api-key' as const,
             session_id: 'provider-session-00000000000000000000000000000000',
             model: 'gpt-5.2',
             base_url: 'https://api.openai.com/v1',

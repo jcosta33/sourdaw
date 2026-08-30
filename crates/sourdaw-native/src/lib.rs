@@ -66,9 +66,11 @@ impl NativeSingletons {
 
     /// Run the process-exit cascade over these singletons.
     ///
-    /// See [`shutdown::shutdown`] for why the three steps are ordered as they
-    /// are. A shell that owns its singletons individually calls that function
-    /// directly; this is the same cascade for a shell that owns them here.
+    /// See [`shutdown::shutdown`] for why its steps are ordered as they are,
+    /// ending in the terminal one that gives every still-loaded plugin the
+    /// termination its format requires. A shell that owns its singletons
+    /// individually calls that function directly; this is the same cascade for
+    /// a shell that owns them here.
     pub fn shutdown(
         &self,
         windows: Option<&dyn host::plugin_window::PluginWindowHost>,

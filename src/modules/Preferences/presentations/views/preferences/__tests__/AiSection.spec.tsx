@@ -3,11 +3,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AiSection } from '../AiSection';
 
+import type { hostedLlmProviderStatusStore } from '#/modules/AiRuntime/stores';
+
+type HostedProviderStatus = typeof hostedLlmProviderStatusStore.value;
+
 const mocks = vi.hoisted(() => ({
     admission: { webLlm: true },
     backendPreference: { value: 'auto' },
     configureCloudProvider: vi.fn(),
-    hostedProvider: { value: null },
+    hostedProvider: {
+        value: null as HostedProviderStatus,
+    },
     isDesktop: true,
     llmStatus: { value: { state: 'idle' } },
     removeCloudProvider: vi.fn(),
@@ -77,19 +83,109 @@ describe('AiSection', () => {
         expect(mocks.setAiBackendPreference).toHaveBeenCalledWith('webllm');
     });
 
-    it('configures an explicitly selected hosted provider without exposing a retired option', async () => {
+    it('passes a desktop API-key draft only to hosted-provider configuration and clears it after connecting', async () => {
         render(<AiSection />);
 
-        fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+        const apiKey = screen.getByLabelText('Hosted AI API key');
+        expect(apiKey).toHaveAttribute('type', 'password');
+        expect(apiKey).toHaveAttribute('autocomplete', 'new-password');
+        expect(screen.getByText(/never saved in Preferences or included in later AI requests/u)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Connect' })).toBeDisabled();
+        fireEvent.change(apiKey, { target: { value: 'sk-test-key' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
 
         await waitFor(() => {
             expect(mocks.configureCloudProvider).toHaveBeenCalledWith({
                 provider: 'anthropic',
                 model: 'claude-sonnet-5',
                 baseUrl: undefined,
+                authentication: 'api-key',
+                apiKey: 'sk-test-key',
             });
         });
+        expect(apiKey).toHaveValue('');
         expect(screen.queryByRole('option', { name: /native/i })).not.toBeInTheDocument();
+    });
+
+    it('preserves an API-key draft when connecting fails', async () => {
+        mocks.configureCloudProvider.mockRejectedValueOnce(new Error('Credential was rejected'));
+        render(<AiSection />);
+
+        const apiKey = screen.getByLabelText('Hosted AI API key');
+        fireEvent.change(apiKey, { target: { value: 'sk-retry-key' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+
+        expect(await screen.findByRole('alert')).toHaveTextContent('Credential was rejected');
+        expect(apiKey).toHaveValue('sk-retry-key');
+    });
+
+    it('clears the API-key draft when changing provider or removing a configured provider', async () => {
+        mocks.hostedProvider.value = {
+            provider: 'anthropic',
+            model: 'claude-sonnet-5',
+            baseUrl: null,
+            authentication: 'api-key',
+        };
+        render(<AiSection />);
+
+        const apiKey = screen.getByLabelText('Hosted AI API key');
+        expect(screen.getByText(/API-key authentication/u)).toBeInTheDocument();
+        fireEvent.change(apiKey, { target: { value: 'sk-provider-change' } });
+        fireEvent.change(screen.getByLabelText('Hosted AI provider'), { target: { value: 'openai' } });
+        expect(apiKey).toHaveValue('');
+
+        fireEvent.change(apiKey, { target: { value: 'sk-remove' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+
+        await waitFor(() => {
+            expect(mocks.removeCloudProvider).toHaveBeenCalledOnce();
+        });
+        expect(apiKey).toHaveValue('');
+    });
+
+    it('requires explicit unauthenticated intent for compatible endpoints and enforces the byte limit', async () => {
+        render(<AiSection />);
+
+        fireEvent.change(screen.getByLabelText('Hosted AI provider'), { target: { value: 'openai-compatible' } });
+        fireEvent.change(screen.getByLabelText('Hosted AI model'), { target: { value: 'local-model' } });
+        fireEvent.change(screen.getByLabelText('OpenAI-compatible base URL'), {
+            target: { value: 'http://localhost:1234/v1' },
+        });
+        const apiKey = screen.getByLabelText('Hosted AI API key');
+        expect(apiKey).toHaveAttribute('maxlength', '16384');
+        fireEvent.change(apiKey, { target: { value: '😀'.repeat(4097) } });
+        expect(apiKey).toHaveValue('');
+        expect(screen.getByRole('button', { name: 'Connect' })).toBeDisabled();
+
+        fireEvent.change(screen.getByLabelText('OpenAI-compatible authentication'), { target: { value: 'none' } });
+        expect(apiKey).toBeDisabled();
+        fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+
+        await waitFor(() => {
+            expect(mocks.configureCloudProvider).toHaveBeenCalledWith({
+                provider: 'openai-compatible',
+                model: 'local-model',
+                baseUrl: 'http://localhost:1234/v1',
+                authentication: 'none',
+                apiKey: '',
+            });
+        });
+    });
+
+    it('preserves explicit unauthenticated compatible configuration without a key draft', () => {
+        mocks.hostedProvider.value = {
+            provider: 'openai-compatible',
+            model: 'local-model',
+            baseUrl: 'http://localhost:1234/v1',
+            authentication: 'none',
+        };
+        render(<AiSection />);
+
+        expect(screen.getByLabelText('OpenAI-compatible authentication')).toHaveValue('none');
+        expect(screen.getByText(/no authentication/u)).toBeInTheDocument();
+        expect(screen.getByLabelText('Hosted AI API key')).toHaveValue('');
+        expect(screen.getByLabelText('Hosted AI API key')).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Connect' })).toBeEnabled();
     });
 
     it('exposes no hosted credential surface in web builds', () => {

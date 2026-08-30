@@ -85,10 +85,12 @@ const {
     prepareOfflineLevainMock,
     initBranchStateMock,
     recoverInterruptedAgentRunsMock,
+    recoverRetainedSectionRenderEffectsMock,
     flushDeferredStorageNoticeMock,
     getAutomationParameterRangeMock,
     setAutomationParameterRangeResolverMock,
-    clampTrackGainMock,
+    setTrackGainMock,
+    setTrackPanMock,
     setMidiLearnDependenciesMock,
     registerCrdtStorageRuntimeMock,
     captureProjectRevisionMock,
@@ -138,15 +140,19 @@ const {
         configureAudioDeviceRuntimeSinkMock: vi.fn<(sink: RuntimeSinkUnderTest) => void>(),
         prepareOfflineLevainMock: vi.fn(() => Promise.resolve()),
         initBranchStateMock: vi.fn(),
-        recoverInterruptedAgentRunsMock: vi.fn(() => Promise.resolve({ recoveredRunIds: [] })),
+        recoverInterruptedAgentRunsMock: vi.fn<() => Promise<{ recoveredRunIds: string[] }>>(() =>
+            Promise.resolve({ recoveredRunIds: [] })
+        ),
+        recoverRetainedSectionRenderEffectsMock: vi.fn(() => Promise.resolve()),
         flushDeferredStorageNoticeMock: vi.fn(),
         getAutomationParameterRangeMock: vi.fn(),
         setAutomationParameterRangeResolverMock: vi.fn(),
-        // Distinguishable from `noop` on purpose: this spec asserts the MIDI
-        // learn seam receives Arrangement's own `clampTrackGain`, so the stand-in
-        // has to be identifiable by reference.
-        clampTrackGainMock: vi.fn<(gain: number) => number>(),
-        setMidiLearnDependenciesMock: vi.fn<(dependencies: { clampTrackGain: unknown }) => void>(),
+        // Distinguishable from the shared noop on purpose: the learned-controls
+        // registration assertion pins these by reference, so rewiring bootstrap
+        // to another barrel's exports has to change what reaches that call.
+        setTrackGainMock: vi.fn(),
+        setTrackPanMock: vi.fn(),
+        setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
         captureProjectRevisionMock: vi.fn<() => string>(() => 'revision-1'),
         agentProjectInspectionSetProviderMock: vi.fn(),
@@ -177,6 +183,7 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
     completeMixAnalysis: noop,
     failMixAnalysis: noop,
     recoverInterruptedAgentRuns: recoverInterruptedAgentRunsMock,
+    recoverRetainedSectionRenderEffects: recoverRetainedSectionRenderEffectsMock,
     getProjectContext: noop,
     getAiOrganizationHandlers: sentinelHandlers('AiOrganization'),
     initializeVoiceInputAvailability: noop,
@@ -201,9 +208,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     getPluginById: noop,
     persistDevicePatch: noop,
     cleanupUnusedFreezeFiles: noop,
-    clampTrackGain: clampTrackGainMock,
-    setTrackGain: noop,
-    setTrackPan: noop,
+    setTrackGain: setTrackGainMock,
+    setTrackPan: setTrackPanMock,
     setDeviceParameter: noop,
     getArrangementHandlers: sentinelHandlers('Arrangement'),
     initStalenessDetection: noop,
@@ -223,8 +229,6 @@ vi.mock('#/modules/AudioAnalysis/useCases', () => ({
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: noop,
     updateDevicePatch: noop,
-    setTrackGain: noop,
-    setTrackPan: noop,
     getAudioContext: noop,
     getCompensationDelay: noop,
     getFinalFeatureHandlers: sentinelHandlers('FinalFeature'),
@@ -729,20 +733,22 @@ describe('bootstrap', () => {
     });
 
     /**
-     * MIDI learn does not clamp a fader move itself — it asks Arrangement, so
-     * that a controller ride and a mouse drag land on one ceiling. The
-     * `handleMidiMessage` suite proves the injected function is what the store
-     * and the engine both receive, but it injects its own stand-in, so nothing
-     * over there can tell which function production hands in. This is the seam:
-     * assert the identity here and swapping it for a local re-implementation
-     * cannot pass silently.
+     * The `handleMidiMessage` suite proves injected setters reach the store and
+     * the engine, but it injects its own stand-ins, so nothing there can tell
+     * which functions production hands in. This is the only seam that observes
+     * what bootstrap registers: Arrangement's barrel exports `setTrackGain` and
+     * `setTrackPan` as dedicated hoisted stand-ins (not the shared `noop`, which
+     * other barrels also export), so pinning them by reference makes deleting or
+     * rewiring the bootstrap call fail here instead of at the first learned MIDI
+     * message.
      */
-    it('gives MIDI learn Arrangement’s own track gain clamp', () => {
-        const call = setMidiLearnDependenciesMock.mock.calls[0];
-        if (!call) {
-            throw new Error('bootstrap never configured the MIDI learn dependencies');
-        }
-        expect(call[0].clampTrackGain).toBe(clampTrackGainMock);
+    it('wires learned MIDI controls to Arrangement gain and pan setters', () => {
+        expect(setMidiLearnDependenciesMock).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({
+                setTrackGainArrangement: setTrackGainMock,
+                setTrackPanArrangement: setTrackPanMock,
+            })
+        );
     });
 
     describe('offline instrument setup dispatch', () => {
@@ -814,6 +820,44 @@ describe('bootstrap', () => {
 
     it('recovers interrupted AI runs as an explicit boot step', () => {
         expect(recoverInterruptedAgentRunsMock).toHaveBeenCalledExactlyOnceWith();
+        expect(recoverRetainedSectionRenderEffectsMock).toHaveBeenCalledExactlyOnceWith();
+    });
+
+    it('waits for interrupted-run recovery and skips retained renders when that recovery rejects', async () => {
+        recoverInterruptedAgentRunsMock.mockClear();
+        recoverRetainedSectionRenderEffectsMock.mockClear();
+        loggerMock.error.mockClear();
+        let resolveInterruptedRecovery!: (value: { recoveredRunIds: string[] }) => void;
+        const interruptedRecovery = new Promise<{ recoveredRunIds: string[] }>((resolve) => {
+            resolveInterruptedRecovery = resolve;
+        });
+        recoverInterruptedAgentRunsMock.mockImplementationOnce(() => interruptedRecovery);
+
+        vi.resetModules();
+        await import('../bootstrap');
+
+        expect(recoverInterruptedAgentRunsMock).toHaveBeenCalledExactlyOnceWith();
+        expect(recoverRetainedSectionRenderEffectsMock).not.toHaveBeenCalled();
+
+        resolveInterruptedRecovery({ recoveredRunIds: [] });
+        await Promise.resolve();
+
+        expect(recoverRetainedSectionRenderEffectsMock).toHaveBeenCalledExactlyOnceWith();
+
+        recoverInterruptedAgentRunsMock.mockClear();
+        recoverRetainedSectionRenderEffectsMock.mockClear();
+        loggerMock.error.mockClear();
+        recoverInterruptedAgentRunsMock.mockImplementationOnce(() => Promise.reject(new Error('hydration failed')));
+
+        vi.resetModules();
+        await import('../bootstrap');
+        await Promise.resolve();
+
+        expect(recoverInterruptedAgentRunsMock).toHaveBeenCalledExactlyOnceWith();
+        expect(recoverRetainedSectionRenderEffectsMock).not.toHaveBeenCalled();
+        expect(loggerMock.error).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({ message: 'Interrupted AI runs could not be recovered during startup' })
+        );
     });
 
     it('probes OPFS for RAVE model weights exactly once as a non-blocking boot step', () => {

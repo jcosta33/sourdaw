@@ -24,6 +24,7 @@ use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
 use serde::Serialize;
 use serde_json::Value;
+use zeroize::Zeroizing;
 
 use crate::commands;
 use crate::events::{EventSink, EventStream};
@@ -31,8 +32,8 @@ use crate::host::plugin_window::{NoWindowHost, PluginWindowHost};
 use crate::NativeSingletons;
 
 use windows::{
-    CreateEditorWindowFn, EditorWindowExistsFn, EditorWindowLabelFn, EditorWindowSizeFn,
-    JsWindowCallbacks, JsWindowHost,
+    CreateEditorWindowFn, EditorWindowExistsFn, EditorWindowLabelFn, EditorWindowResizableFn,
+    EditorWindowSizeRequest, JsWindowCallbacks, JsWindowHost,
 };
 
 use daw_core::{PluginId, PluginInstanceId};
@@ -53,6 +54,15 @@ type StreamEmitter = ThreadsafeFunction<Value, (), Value, Status, false>;
 
 fn reason<Value_>(result: std::result::Result<Value_, String>) -> Result<Value_> {
     result.map_err(Error::from_reason)
+}
+
+/// Samples as Float32 LE bytes plus the expander's scalar metadata.
+/// Byte payloads stay `Buffer`; they must not round-trip as a JSON number array.
+#[napi(object)]
+pub struct DenoiseAudioResult {
+    pub samples: Buffer,
+    pub noise_floor_db: f64,
+    pub processing_time_ms: i64,
 }
 
 fn json<Payload: Serialize>(payload: Payload) -> Result<Value> {
@@ -134,6 +144,10 @@ impl SourdawNative {
             Arc::clone(&singletons.app_state.engine_plugins),
         );
         crate::host::plugin_host_requests::start(
+            Arc::clone(&events),
+            Arc::clone(&singletons.app_state.engine_plugins),
+        );
+        crate::host::plugin_parameter_events::start(
             events,
             Arc::clone(&singletons.app_state.engine_plugins),
         );
@@ -153,31 +167,60 @@ impl SourdawNative {
 
     /// Register the shell's plugin-window callbacks (packet T-4).
     ///
-    /// Called once at startup, before any plugin command. Each callback is a
-    /// weak threadsafe function for the same reason as the event sink: the
-    /// window host lives for the process, and a referenced one would pin the
-    /// Node event loop so the shell could never quit.
+    /// Called once at startup, before any plugin command, and on the shell's
+    /// main thread — that call is what tells the addon which thread the plugin
+    /// editor lifecycle belongs to, so registering from anywhere else sends
+    /// every editor call to the wrong one.
+    ///
+    /// Each fire-and-forget callback is a weak threadsafe function for the same
+    /// reason as the event sink: the window host lives for the process, and a
+    /// referenced one would pin the Node event loop so the shell could never
+    /// quit. The resize callback is kept as a plain reference instead, because
+    /// it is called on the main thread and must not queue.
     #[napi]
     pub fn register_plugin_window_host(
         &self,
+        env: &Env,
         create_editor_window: CreateEditorWindowFn,
         editor_window_exists: EditorWindowExistsFn,
-        set_editor_window_size: EditorWindowSizeFn,
+        set_editor_window_size: Function<'_, EditorWindowSizeRequest, ()>,
+        set_editor_window_resizable: EditorWindowResizableFn,
         show_and_focus_editor_window: EditorWindowLabelFn,
         destroy_editor_window: EditorWindowLabelFn,
         hide_editor_window: EditorWindowLabelFn,
         show_editor_window: EditorWindowLabelFn,
-    ) {
-        *self.windows.write().expect("window host lock poisoned") =
-            Arc::new(JsWindowHost::new(JsWindowCallbacks {
+    ) -> Result<()> {
+        let host = JsWindowHost::new(
+            env,
+            JsWindowCallbacks {
                 create: create_editor_window,
                 exists: editor_window_exists,
-                set_size: set_editor_window_size,
+                set_size: set_editor_window_size.create_ref()?,
+                set_resizable: set_editor_window_resizable,
                 show_and_focus: show_and_focus_editor_window,
                 destroy: destroy_editor_window,
                 hide: hide_editor_window,
                 show: show_editor_window,
-            }));
+            },
+        )?;
+        *self.windows.write().expect("window host lock poisoned") = Arc::new(host);
+        Ok(())
+    }
+
+    /// Give the Linux VST3 `IRunLoop` one pass on the shell's main thread.
+    ///
+    /// The shell calls this from its own loop while any editor is open. A
+    /// plugin's X11 event handlers and timers are the host's to dispatch, and
+    /// `IRunLoop` exists so that they are dispatched on the thread that owns
+    /// the editor's window; a pass never waits, so calling it on an idle loop
+    /// costs a poll with a zero timeout. Returns how many callbacks ran, which
+    /// is what makes the wiring observable from the shell's specs.
+    ///
+    /// Present on every platform so the shell has one surface to call; nothing
+    /// registers a run loop off Linux, so the pass finds nothing there.
+    #[napi]
+    pub fn service_plugin_editor_run_loops(&self) -> u32 {
+        daw_plugin_host::vst3_run_loop::service_editor_run_loops() as u32
     }
 
     /// The shell reports that the OS ended a plugin editor window (title-bar
@@ -189,22 +232,27 @@ impl SourdawNative {
     /// [`commands::plugin_gui::reset_plugin_gui_state_after_os_close`].
     #[napi]
     pub async fn notify_plugin_window_closed(&self, instance_id: String, label: String) {
+        let windows = self.window_host();
         commands::plugin_gui::reset_plugin_gui_state_after_os_close(
             &instance_id,
             &label,
+            windows.as_ref(),
             &self.singletons.app_state,
             &*self.singletons.events,
         );
     }
 
     /// Run the process-exit cascade: retire discovery, close every plugin
-    /// editor, then sweep the retirement vec.
+    /// editor, sweep the retirement vec, then terminate every instance still
+    /// loaded.
     ///
     /// A shell must call this on its quit path. The Tauri shell got the same
-    /// three steps from `RunEvent::Exit`; a Node shell has no equivalent hook,
-    /// so the cascade is an explicit entry point rather than something each
-    /// shell reassembles — and `load_plugin` / `unload_plugin` are reachable
-    /// through this surface, so the retirement vec fills here too.
+    /// steps from `RunEvent::Exit`; a Node shell has no equivalent hook, so the
+    /// cascade is an explicit entry point rather than something each shell
+    /// reassembles — and `load_plugin` / `unload_plugin` are reachable through
+    /// this surface, so the stores and the retirement vec fill here too. The
+    /// terminal step matters most here: this process does not run destructors
+    /// at exit, so an instance the cascade does not terminate never is.
     ///
     /// Returns the diagnostic report; nothing in it fails the exit. Idempotent.
     #[napi]
@@ -221,12 +269,15 @@ impl SourdawNative {
         adapter_id: String,
         origin: String,
         credential_source: String,
+        credential: String,
     ) -> Result<String> {
+        let credential = Zeroizing::new(credential);
         reason(
             commands::provider_gateway::open_provider_gateway_session(
                 adapter_id,
                 origin,
                 credential_source,
+                credential,
                 &self.singletons.provider_gateway,
             )
             .await,
@@ -282,10 +333,22 @@ impl SourdawNative {
     // ── AI audio processing ────────────────────────────────────────────
 
     #[napi]
-    pub async fn denoise_audio(&self, request: Value) -> Result<Value> {
+    pub async fn denoise_audio(
+        &self,
+        request: Value,
+        samples: Buffer,
+    ) -> Result<DenoiseAudioResult> {
         let request = serde_json::from_value(request)
             .map_err(|error| Error::from_reason(format!("Invalid denoise request: {error}")))?;
-        json(reason(commands::ai_audio::denoise_audio(request).await)?)
+        // Bound on the Buffer length before copying so an over-long clip never
+        // becomes an unbounded `Vec<u8>` on the way into the command body.
+        reason(commands::ai_audio::denoise_pcm_sample_count(samples.len()))?;
+        let result = reason(commands::ai_audio::denoise_audio(request, samples.to_vec()).await)?;
+        Ok(DenoiseAudioResult {
+            samples: Buffer::from(result.samples),
+            noise_floor_db: result.noise_floor_db,
+            processing_time_ms: result.processing_time_ms as i64,
+        })
     }
 
     #[napi]
@@ -390,9 +453,10 @@ impl SourdawNative {
     // ── Plugin hosting ─────────────────────────────────────────────────
 
     #[napi]
-    pub async fn scan_plugins(&self, paths: Vec<String>) -> Result<Value> {
+    pub async fn scan_plugins(&self, paths: Vec<String>, retry_quarantined: bool) -> Result<Value> {
         json(reason(
-            commands::plugins::scan_plugins(paths, &self.singletons.app_state).await,
+            commands::plugins::scan_plugins(paths, retry_quarantined, &self.singletons.app_state)
+                .await,
         )?)
     }
 
@@ -633,6 +697,24 @@ impl SourdawNative {
         )?)
     }
 
+    #[napi]
+    pub async fn engine_transport_position(&self) -> Result<Value> {
+        json(reason(
+            commands::engine_transport::engine_transport_position(&self.singletons.app_state).await,
+        )?)
+    }
+
+    #[napi]
+    pub async fn engine_transport_set_maps(&self, maps: Value) -> Result<Value> {
+        let payload = serde_json::from_value(maps).map_err(|error| {
+            Error::from_reason(format!("transport maps are malformed: {error}"))
+        })?;
+        json(reason(
+            commands::engine_transport::set_transport_maps(payload, &self.singletons.app_state)
+                .await,
+        )?)
+    }
+
     // ── Plugin GUI ─────────────────────────────────────────────────────
 
     #[napi]
@@ -649,6 +731,48 @@ impl SourdawNative {
         json(reason(
             commands::plugin_gui::open_plugin_gui(
                 instance_id,
+                windows.as_ref(),
+                &self.singletons.app_state,
+            )
+            .await,
+        )?)
+    }
+
+    /// The shell's window was resized by the user; the plugin decides what it
+    /// will run at, and the shell snaps its window to the answer.
+    #[napi]
+    pub async fn resize_plugin_gui(
+        &self,
+        instance_id: String,
+        width: u32,
+        height: u32,
+    ) -> Result<Value> {
+        let windows = self.window_host();
+        json(reason(
+            commands::plugin_gui::resize_plugin_gui(
+                instance_id,
+                width,
+                height,
+                windows.as_ref(),
+                &self.singletons.app_state,
+            )
+            .await,
+        )?)
+    }
+
+    /// The shell's window is on a display of a different density than the one
+    /// the editor was opened at.
+    #[napi]
+    pub async fn apply_plugin_gui_scale(
+        &self,
+        instance_id: String,
+        scale_factor: f64,
+    ) -> Result<Value> {
+        let windows = self.window_host();
+        json(reason(
+            commands::plugin_gui::apply_plugin_gui_scale(
+                instance_id,
+                scale_factor,
                 windows.as_ref(),
                 &self.singletons.app_state,
             )

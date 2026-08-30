@@ -1,16 +1,22 @@
 //! Plugin scanning, loading, and parameter management.
 
 use crate::host::native_bridge::{HostedPluginSlot, SharedHostedPlugin};
-use crate::host::plugin_registry_store::{PersistedPluginEntry, PluginRegistryStore, RescanClaim};
+use crate::host::plugin_registry_store::{
+    PersistedPluginEntry, PersistedQuarantineEntry, PluginRegistryStore, RescanClaim,
+};
 use crate::host::plugin_scan_policy::PluginScanPolicy;
 use crate::host::plugin_scan_worker;
-use crate::host::plugin_window::PluginWindowHost;
+use crate::host::plugin_window::{NoWindowHost, PluginWindowHost};
+use crate::host::ui_thread::lend_on_ui_thread;
 use crate::state::{AppState, PluginInstanceData, PluginRegistryEntry};
 use cpal::traits::{DeviceTrait, HostTrait};
 use daw_engine::audio_bridge::{create_audio_bridge, MAX_BLOCK_FRAMES};
 use daw_engine::plugin_slot::MidiNoteEvent;
 use daw_engine::scheduler::HOSTED_PLUGIN_RESERVE;
-use daw_plugin_host::scanner::{self, PluginFormat, ScanResult, ScannedPlugin};
+use daw_plugin_host::scanner::{
+    self, PluginFormat, QuarantinedPlugin, ScanResult, ScannedDescriptor, ScannedInstance,
+    ScannedPlugin,
+};
 use daw_plugin_host::{AudioPlugin, ClapWrapper, HostedPluginRuntime, HostedRuntime, Vst3Wrapper};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -40,6 +46,18 @@ pub struct PluginInstance {
     /// Latency in milliseconds, converted host-side at the activation sample rate.
     /// This is the value the frontend feeds into latency compensation.
     pub latency_ms: f64,
+    /// How long the plugin keeps sounding after its input stops — a reverb's
+    /// decay, a delay's repeats — in frames of that same activation rate.
+    ///
+    /// Frames rather than milliseconds, unlike the latency beside it: both
+    /// formats reserve the top of the range for a tail that never ends, and a
+    /// converted sentinel is an ordinary duration nothing downstream can tell
+    /// apart from a real one.
+    ///
+    /// Read at load like the latency, and revised the same way when the plugin
+    /// announces a new one — over `plugin-tail-changed` rather than in this
+    /// value, which is the reading at load and nothing later.
+    pub tail_samples: u32,
     /// Frames the worklet↔plugin audio bridge adds on top of the plugin's own
     /// latency, at the engine rate this instance was activated with. Zero when
     /// no engine took the instance — nothing crosses a bridge that does not
@@ -270,7 +288,116 @@ async fn persist_plugin_registry(state: &AppState) {
     }
 }
 
-pub async fn scan_plugins(paths: Vec<String>, state: &AppState) -> Result<ScanResult, String> {
+/// Milliseconds since the unix epoch, for a quarantine record's timestamp.
+fn quarantine_timestamp_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Quarantine `path` if `error` is a scan helper process failure — a crash or
+/// a timeout, never a data-level refusal. Shared by the descriptor and
+/// instance passes: a hung or crashed instance helper poisons a scan exactly
+/// like a hung or crashed descriptor helper does, and both need the same
+/// escape hatch or a single bad candidate can exhaust the whole scan's
+/// deadline on every run.
+fn quarantine_if_process_failure(registry_store: &PluginRegistryStore, path: &Path, error: &str) {
+    if plugin_scan_worker::is_process_failure(error) {
+        registry_store.quarantine_failure(path, error.to_string(), quarantine_timestamp_ms());
+    }
+}
+
+/// Apply one instance-pass outcome to its descriptor row.
+///
+/// Success fills in parameters and capabilities. Failure always leaves the
+/// `parameter_metadata_reason` fallback — the candidate's descriptor has
+/// already been published into `plugins` for this scan regardless of how the
+/// instance pass went, so that row still needs a reason for its missing
+/// capability fields — and additionally quarantines `path` when the failure
+/// is a process failure (a crash or a timeout), the same escape hatch the
+/// descriptor pass already has: an instance helper that hangs or crashes is
+/// exactly as capable of poisoning every future scan of this candidate as a
+/// descriptor helper that does.
+fn apply_instance_scan_result(
+    descriptor: &mut ScannedDescriptor,
+    instance: Result<ScannedInstance, String>,
+    registry_store: &PluginRegistryStore,
+    path: &Path,
+) {
+    match instance {
+        Ok(instance) => {
+            descriptor.parameters = Some(instance.parameters);
+            descriptor.capabilities = Some(instance.capabilities);
+        }
+        Err(error) => {
+            quarantine_if_process_failure(registry_store, path, &error);
+            descriptor.parameter_metadata_reason =
+                Some(scanner::PARAMETER_METADATA_UNAVAILABLE_REASON.to_string());
+        }
+    }
+}
+
+/// `retry_quarantined` is the AC-002 escape hatch: `false` is every ordinary
+/// scan, which skips a quarantined candidate without spawning its helper and
+/// never clears the record. `true` — a user-initiated full rescan — clears
+/// every quarantine record it encounters before that candidate's helper runs,
+/// so a fresh crash re-quarantines from a clean slate and a clean run leaves
+/// nothing behind.
+pub async fn scan_plugins(
+    paths: Vec<String>,
+    retry_quarantined: bool,
+    state: &AppState,
+) -> Result<ScanResult, String> {
+    scan_plugins_with_policy(
+        paths,
+        retry_quarantined,
+        PluginScanPolicy::platform_defaults(),
+        state,
+    )
+    .await
+}
+
+/// `scan_policy` is a parameter so a test can scan a fixture directory without
+/// touching the platform's real plugin folders. Production reaches this only
+/// through [`scan_plugins`], which always supplies
+/// [`PluginScanPolicy::platform_defaults`].
+async fn scan_plugins_with_policy(
+    paths: Vec<String>,
+    retry_quarantined: bool,
+    scan_policy: PluginScanPolicy,
+    state: &AppState,
+) -> Result<ScanResult, String> {
+    scan_plugins_with_backend(
+        paths,
+        retry_quarantined,
+        scan_policy,
+        state,
+        plugin_scan_worker::scan_descriptor_metadata,
+        plugin_scan_worker::scan_instance_metadata,
+    )
+    .await
+}
+
+/// `scan_descriptor`/`scan_instance` are parameters so a test can inject a
+/// scan outcome — success, a crash, a timeout — without spawning a real
+/// worker process, the same way [`resolve_registry_entry`]'s rescan closure
+/// lets a targeted-rescan test inject one without a real subprocess.
+/// Production reaches this only through [`scan_plugins_with_policy`], which
+/// always supplies [`plugin_scan_worker::scan_descriptor_metadata`] and
+/// [`plugin_scan_worker::scan_instance_metadata`].
+async fn scan_plugins_with_backend(
+    paths: Vec<String>,
+    retry_quarantined: bool,
+    scan_policy: PluginScanPolicy,
+    state: &AppState,
+    scan_descriptor: impl Fn(PluginFormat, &Path, Duration) -> Result<Vec<ScannedDescriptor>, String>
+        + Send
+        + 'static,
+    scan_instance: impl Fn(PluginFormat, &Path, &str, Duration) -> Result<ScannedInstance, String>
+        + Send
+        + 'static,
+) -> Result<ScanResult, String> {
     let permit = PLUGIN_SCAN_PERMIT
         .try_acquire()
         .map_err(|_| "Plugin scan already in progress".to_string())?;
@@ -280,8 +407,8 @@ pub async fn scan_plugins(paths: Vec<String>, state: &AppState) -> Result<ScanRe
     // *other* root written out of the file by the save that follows.
     hydrate_plugin_registry(state).await;
     let start = std::time::Instant::now();
-    let scan_policy = PluginScanPolicy::platform_defaults();
     let requested_paths: Vec<PathBuf> = paths.iter().map(PathBuf::from).collect();
+    let registry_store = Arc::clone(&state.plugin_registry_store);
 
     let deadline = start + MAX_SCAN_DURATION;
     let (plugins, mut errors, notices, scanned_paths, scan_complete, authorized_paths) =
@@ -324,6 +451,13 @@ pub async fn scan_plugins(paths: Vec<String>, state: &AppState) -> Result<ScanRe
                 }
             }
             retain_first_candidate_per_path(&mut candidates);
+            // Every path this walk actually found, regardless of whether its
+            // helper ran — the removal predicate below needs the full set to
+            // tell "gone from disk" from "skipped because quarantined".
+            let still_present_candidate_paths: HashSet<PathBuf> = candidates
+                .iter()
+                .map(|candidate| candidate.path.clone())
+                .collect();
             let mut plugins = Vec::new();
             let mut scanned_paths = Vec::new();
             for candidate in candidates {
@@ -334,47 +468,70 @@ pub async fn scan_plugins(paths: Vec<String>, state: &AppState) -> Result<ScanRe
                     break;
                 }
                 scanned_paths.push(candidate.path.clone());
-                match plugin_scan_worker::scan_descriptor_metadata(
-                    candidate.format,
-                    &candidate.path,
-                    remaining,
-                ) {
-                    Ok(mut metadata) => {
-                        // One inspection worker answers parameters and
-                        // capabilities together, so they succeed and fail
-                        // together. When it does not run, both stay `None` and
-                        // `scanned_plugin` records why — a capability field
-                        // this scan never asked for must never be published as
-                        // a measured zero.
-                        let instance_remaining = deadline.saturating_duration_since(Instant::now());
-                        let instance = if instance_remaining.is_zero() {
-                            Err("deadline".to_string())
-                        } else {
-                            plugin_scan_worker::scan_instance_metadata(
-                                candidate.format,
+
+                if retry_quarantined {
+                    registry_store.clear_quarantine(&candidate.path);
+                } else if registry_store.is_quarantined(&candidate.path).is_some() {
+                    // Skipped, not retried: a binary whose helper already
+                    // crashed or timed out stays quarantined through every
+                    // ordinary scan (AC-002). It is still named in the scan
+                    // response below, via `quarantined_snapshot`.
+                    continue;
+                }
+
+                match scan_descriptor(candidate.format, &candidate.path, remaining) {
+                    // One bundle may declare several plugins — CLAP's factory is
+                    // count/index shaped — and each gets its own inspection and
+                    // its own row. A file that declares one keeps producing
+                    // exactly the row it always did.
+                    Ok(mut bundle) => {
+                        for descriptor in &mut bundle {
+                            // One inspection worker answers parameters and
+                            // capabilities together, so they succeed and fail
+                            // together. When it does not run, both stay `None`
+                            // and `scanned_plugin` records why — a capability
+                            // field this scan never asked for must never be
+                            // published as a measured zero.
+                            let instance_remaining =
+                                deadline.saturating_duration_since(Instant::now());
+                            let instance = if instance_remaining.is_zero() {
+                                Err("deadline".to_string())
+                            } else {
+                                scan_instance(
+                                    candidate.format,
+                                    &candidate.path,
+                                    &descriptor.descriptor_id,
+                                    instance_remaining,
+                                )
+                            };
+                            apply_instance_scan_result(
+                                descriptor,
+                                instance,
+                                &registry_store,
                                 &candidate.path,
-                                instance_remaining,
-                            )
-                        };
-                        match instance {
-                            Ok(instance) => {
-                                metadata.parameters = Some(instance.parameters);
-                                metadata.capabilities = Some(instance.capabilities);
-                            }
-                            Err(_) => {
-                                metadata.parameter_metadata_reason = Some(
-                                    scanner::PARAMETER_METADATA_UNAVAILABLE_REASON.to_string(),
-                                );
-                            }
+                            );
                         }
-                        plugins.push(scanner::scanned_plugin(&candidate.path, metadata));
+                        plugins.extend(scanner::scanned_bundle_plugins(&candidate.path, bundle));
                     }
                     Err(error) => {
+                        quarantine_if_process_failure(&registry_store, &candidate.path, &error);
                         scan_errors.push(format!("{}: {error}", candidate.path.display()))
                     }
                 }
             }
             retain_first_plugin_per_identity(&mut plugins);
+            // Deliberately not `publish_scan_results_in_registry`'s predicate:
+            // that one drops every registry entry under a scanned root and
+            // rebuilds from what this scan found, which for a *skipped*
+            // quarantined candidate would clear its record on this very scan.
+            // A quarantine record is only dropped once this walk proves the
+            // file genuinely gone — its root fully scanned, and not among the
+            // candidates found there.
+            registry_store.apply_quarantine_removals(|path| {
+                !(scan_complete
+                    && authorized_paths.iter().any(|root| path.starts_with(root))
+                    && !still_present_candidate_paths.contains(path))
+            });
             (
                 plugins,
                 scan_errors,
@@ -404,11 +561,23 @@ pub async fn scan_plugins(paths: Vec<String>, state: &AppState) -> Result<ScanRe
         return Err("Plugin scan did not complete within safety limits".to_string());
     }
 
+    let quarantined: Vec<QuarantinedPlugin> = state
+        .plugin_registry_store
+        .quarantined_snapshot()
+        .into_iter()
+        .map(|entry: PersistedQuarantineEntry| QuarantinedPlugin {
+            path: entry.path,
+            reason: entry.reason,
+            quarantined_at_ms: entry.quarantined_at_ms,
+        })
+        .collect();
+
     Ok(ScanResult {
         plugins,
         errors,
         notices,
         scan_duration_ms: start.elapsed().as_millis() as u64,
+        quarantined,
     })
 }
 
@@ -545,7 +714,7 @@ fn resolve_registry_entry(
     registry_store: &PluginRegistryStore,
     scan_policy: &PluginScanPolicy,
     plugin_id: &str,
-    rescan: impl FnOnce(&str, &Path) -> Result<PluginRegistryEntry, String>,
+    rescan: impl FnOnce(&str, &Path, &str, &str) -> Result<PluginRegistryEntry, String>,
 ) -> Result<PluginRegistryEntry, String> {
     registry_store.hydrate_into(plugin_registry, scan_policy);
 
@@ -572,11 +741,20 @@ fn resolve_registry_entry(
 
     let last_known_path = PathBuf::from(&last_known.path);
     // The rescan reads the path the policy resolved and authorized, which is the
-    // only path the checks above actually looked at.
+    // only path the checks above actually looked at. It also carries the
+    // persisted descriptor id: a requested key that no longer matches a row —
+    // the path re-spelled, the vendor renamed a plugin — still names a plugin
+    // to the persisted row, and that is the one to load.
     let rescanned = match scan_policy
         .authorize_scan_root(&last_known_path)
-        .and_then(|authorized| rescan(&last_known.format, &authorized))
-    {
+        .and_then(|authorized| {
+            rescan(
+                &last_known.format,
+                &authorized,
+                plugin_id,
+                &last_known.descriptor_id,
+            )
+        }) {
         Ok(rescanned) => rescanned,
         Err(reason) => {
             let refusal = plugin_gone_from_last_known_path(&last_known, &reason);
@@ -618,15 +796,65 @@ fn resolve_registry_entry(
 ///
 /// Parameter metadata is not re-read. Activation does not need it, and it is a
 /// second child process for a user who is waiting.
-fn rescan_plugin_file(format: &str, path: &Path) -> Result<PluginRegistryEntry, String> {
+///
+/// The file may be a multi-plugin bundle, so the row the requested registry key
+/// names is the row returned: a key that names a bundle sibling by its
+/// descriptor id must not resolve to the bundle's first plugin. When the key
+/// itself matches nothing — the path was re-spelled, the vendor renamed the
+/// plugin — the persisted descriptor id says which plugin of the bundle the
+/// user was actually using, and that row is returned; guessing the bundle's
+/// first plugin would load a different plugin and hand it the sibling's state.
+fn rescan_plugin_file(
+    format: &str,
+    path: &Path,
+    plugin_id: &str,
+    last_known_descriptor_id: &str,
+) -> Result<PluginRegistryEntry, String> {
     // The format comes off the persisted row rather than from the extension:
     // the row is what the scan that wrote it claimed, and re-deriving it here
     // would let a rename decide which extractor loads the file.
     let format = PluginFormat::from_wire_name(format)
         .ok_or_else(|| format!("Unknown plugin format: {format}"))?;
-    let metadata =
+    let bundle =
         plugin_scan_worker::scan_descriptor_metadata(format, path, TARGETED_RESCAN_TIMEOUT)?;
-    Ok(registry_entry(&scanner::scanned_plugin(path, metadata)))
+    let scanned = scanner::scanned_bundle_plugins(path, bundle);
+    let requested = pick_rescanned_bundle_row(&scanned, plugin_id, last_known_descriptor_id)
+        .ok_or_else(|| {
+            format!(
+                "Plugin file at {} declared no plugin matching '{}' or the last known plugin '{}'. The bundle changed since it was scanned — rescan the folder it lives in now.",
+                path.display(),
+                plugin_id,
+                last_known_descriptor_id
+            )
+        })?;
+    Ok(registry_entry(requested))
+}
+
+/// The one row of a rescanned bundle a registry miss resolves to.
+///
+/// The requested key is either a row's own registry id or its descriptor id —
+/// the same two keys [`index_scanned_plugins`] publishes — and a bundle sibling
+/// is addressed by its descriptor id. A key naming none of the rows is the
+/// stale-key case, and the persisted descriptor id answers it: the row that
+/// descriptor names is the plugin the user was using. When that names nothing
+/// either, there is no honest row left to return — the bundle changed, and the
+/// answer is the caller's error, not a guess at the first plugin.
+fn pick_rescanned_bundle_row<'a>(
+    scanned: &'a [ScannedPlugin],
+    plugin_id: &str,
+    last_known_descriptor_id: &str,
+) -> Option<&'a ScannedPlugin> {
+    scanned
+        .iter()
+        .find(|plugin| plugin.id == plugin_id || plugin.descriptor_id == plugin_id)
+        .or_else(|| {
+            if last_known_descriptor_id.is_empty() {
+                return None;
+            }
+            scanned
+                .iter()
+                .find(|plugin| plugin.descriptor_id == last_known_descriptor_id)
+        })
 }
 
 /// Resolve on the blocking pool: hydration reads the registry file and the
@@ -881,6 +1109,9 @@ pub async fn load_plugin(
     // divided.
     let latency_samples = wrapper.latency_samples();
     let latency_ms = wrapper.latency_ms();
+    // Read on the same control-thread visit, and left in frames: see
+    // `PluginInstance::tail_samples` for why this one does not convert.
+    let tail_samples = wrapper.tail_samples();
 
     // Wake the latency watcher when this instance flags a runtime latency
     // change, so the plugin's own notification — CLAP's `latency.changed()`
@@ -943,10 +1174,10 @@ pub async fn load_plugin(
             // false, and a plugin that is refused can lay itself out to the size
             // it has.
             //
-            // The answer is discarded rather than reported, because a refusal is
-            // the ordinary case for a format that raises none of these asks: only
-            // CLAP routes an editor resize and a state change back through the
-            // host.
+            // The answer is discarded rather than reported, because a refusal
+            // means a second install: CLAP routes an editor resize, a parameter
+            // rescan and a state change back through the host, and VST3 a state
+            // change through `IComponentHandler2::setDirty`.
             let requesting_instance_id = instance_id.0.clone();
             let _ = wrapper.set_plugin_host_request_notifier(Box::new(move |request| {
                 crate::host::plugin_host_requests::notify_plugin_host_request(
@@ -954,6 +1185,11 @@ pub async fn load_plugin(
                     request,
                 );
             }));
+
+            // Take the parameter-event queue before the wrapper is handed to
+            // the audio thread. Held on the record so the drain reaches it
+            // without the control seam — see `EnginePluginInstanceData`.
+            let parameter_events = AudioPlugin::parameter_event_queue(&wrapper);
 
             let shared_plugin = Arc::new(SharedHostedPlugin::new(wrapper));
 
@@ -974,6 +1210,7 @@ pub async fn load_plugin(
                     has_gui,
                     bridge: Some(bridge_handle),
                     relay_scratch: crate::state::PluginRelayScratch::default(),
+                    parameter_events,
                 },
             )?;
 
@@ -1028,6 +1265,7 @@ pub async fn load_plugin(
         is_active: true,
         latency_samples,
         latency_ms,
+        tail_samples,
         bridge_round_trip_frames: bridge_frames,
         engine_plugin_id,
     };
@@ -1173,6 +1411,15 @@ async fn unload_all_plugin_runtimes(
     Ok(result)
 }
 
+/// The thread this unload's editor teardown must run on.
+///
+/// An unload can run with no window host at all — a shell may lose its windows
+/// before its last instance — and [`NoWindowHost`] says so: the editor calls then
+/// run on this thread, which is the only one left to run them on.
+fn editor_thread(windows_host: Option<&dyn PluginWindowHost>) -> &dyn PluginWindowHost {
+    windows_host.unwrap_or(&NoWindowHost)
+}
+
 async fn unload_plugin_runtime(
     instance_id: &str,
     windows_host: Option<&dyn PluginWindowHost>,
@@ -1187,7 +1434,13 @@ async fn unload_plugin_runtime(
         plugins.remove(instance_id)
     };
     if let Some(mut instance) = command_plugin {
-        instance.close_gui();
+        // Removing a device closes its editor, and closing an editor is the same
+        // thread-affine lifecycle a GUI command runs: `close_gui` reaches VST3
+        // `removed` and CLAP `gui.destroy`, and running them on this worker
+        // un-parents an NSView off the main thread.
+        let _ = lend_on_ui_thread(editor_thread(windows_host), &mut instance, |instance| {
+            instance.close_gui()
+        });
         remove_plugin_window(instance_id, windows_host, state);
         return Ok(());
     }
@@ -1227,8 +1480,9 @@ async fn unload_plugin_runtime(
 
         if let Err(error) =
             runtime.with_unload_control(std::time::Duration::from_secs(2), |plugin| {
-                plugin.close_gui();
-                Ok(())
+                lend_on_ui_thread(editor_thread(windows_host), plugin, |plugin| {
+                    plugin.close_gui()
+                })
             })
         {
             eprintln!("[Plugin] GUI cleanup failed during unload: {error}");
@@ -1645,7 +1899,7 @@ pub async fn set_plugin_bypass(
 /// this command can pool away.
 pub async fn process_plugin_audio(
     instance_id: String,
-    audio_bytes: Vec<u8>,
+    mut audio_bytes: Vec<u8>,
     state: &AppState,
 ) -> Result<Vec<u8>, String> {
     let mut engine_plugins = state
@@ -1714,7 +1968,26 @@ pub async fn process_plugin_audio(
         }
         Ok(result)
     } else {
-        // No output yet (first block) — return the dry input
+        // Nothing came back this quantum: the ring is still priming on the first
+        // block, or the engine fell behind and has none ready.
+        //
+        // Silence, not the dry input. Passing dry makes an under-run audible as
+        // the unprocessed source — a chain the user is hearing as a filter or a
+        // distortion briefly plays the raw signal at full level, and a bridged
+        // instrument plays whatever the worklet happened to send it. That is
+        // both louder and less honest than a gap, and
+        // `.agents/decisions/0021-plugin-isolation-by-binary-with-per-plugin-override.md`
+        // records under-run output as zero independently of the failure policy
+        // it decides.
+        //
+        // No ramp: an f32 sample is four zero bytes, and a quantum this command
+        // never processed has no ramp state to carry — the ramped hand-over
+        // belongs to the failure path that knows a plugin stopped.
+        //
+        // Zeroed in place rather than allocated: the input block is owned here
+        // and already the right length, and this path runs once per quantum per
+        // bridged plugin.
+        audio_bytes.fill(0);
         Ok(audio_bytes)
     }
 }
@@ -1722,6 +1995,7 @@ pub async fn process_plugin_audio(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::plugin_window::testing::DedicatedUiWindowHost;
     use crate::state::EnginePluginInstanceData;
     use daw_core::PluginInstanceId;
     use std::path::Path;
@@ -1729,6 +2003,13 @@ mod tests {
     /// The rate a caller's engine renders at. Every load a test makes states
     /// one, because every load the product makes does.
     const TEST_ENGINE_SAMPLE_RATE: f64 = 48_000.0;
+
+    /// `PLUGIN_SCAN_PERMIT` is process-global and maps contention to the
+    /// in-band "Plugin scan already in progress" error, which a scan test
+    /// running beside another would misread as its own behaviour under the
+    /// parallel harness — so every test that reaches the permit serializes
+    /// through this lock for its full duration.
+    static SCAN_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     fn plugin_parameter(id: u32, value: f64) -> PluginParameter {
         PluginParameter {
@@ -1775,6 +2056,7 @@ mod tests {
                 has_gui: true,
                 bridge,
                 relay_scratch: crate::state::PluginRelayScratch::default(),
+                parameter_events: None,
             },
         );
     }
@@ -1925,6 +2207,53 @@ mod tests {
                 .load(AtomicOrdering::Relaxed),
             2,
             "every refused block must add to the count, not overwrite it"
+        );
+    }
+
+    /// One quantum of interleaved stereo at full scale, so a block that came
+    /// back unchanged is unmistakable from one the host zeroed.
+    fn loud_block(frames: usize) -> Vec<u8> {
+        let mut block = Vec::with_capacity(frames * 2 * 4);
+        for _ in 0..frames * 2 {
+            block.extend_from_slice(&1.0_f32.to_le_bytes());
+        }
+        block
+    }
+
+    /// Nothing is processed on the first block — and nothing is processed for as
+    /// long as the engine is behind. Handing the dry input back makes an
+    /// under-run audible as the unprocessed source at full level, which ADR 0021
+    /// records as wrong independently of the failure policy it decides.
+    #[test]
+    fn an_underrun_answers_silence_rather_than_the_dry_input() {
+        let state = AppState::default();
+        // The RT side stays alive and never processes, so `pop_output` has
+        // nothing for the whole test — exactly the under-run this covers.
+        let (_bridge, bridge_handle) = create_audio_bridge(17);
+        insert_engine_owned_fixture_with_bridge(
+            &state,
+            "instance-underrun",
+            Vec::new(),
+            Some(bridge_handle),
+        );
+
+        let block = loud_block(128);
+        let answer = crate::block_on_test(process_plugin_audio(
+            "instance-underrun".to_string(),
+            block.clone(),
+            &state,
+        ))
+        .expect("an under-run must not fail the round trip");
+
+        assert_eq!(
+            answer.len(),
+            block.len(),
+            "the quantum the caller asked for must come back whole"
+        );
+        assert_eq!(
+            answer,
+            vec![0u8; block.len()],
+            "an under-run must answer silence, not the signal the plugin never processed"
         );
     }
 
@@ -2169,6 +2498,7 @@ mod tests {
                     has_gui: true,
                     bridge: None,
                     relay_scratch: crate::state::PluginRelayScratch::default(),
+                    parameter_events: None,
                 },
             );
     }
@@ -2560,6 +2890,7 @@ mod tests {
                 has_gui: false,
                 bridge: None,
                 relay_scratch: crate::state::PluginRelayScratch::default(),
+                parameter_events: None,
             }
         }
 
@@ -2800,13 +3131,19 @@ mod tests {
 
     #[test]
     fn scan_plugins_rejects_arbitrary_renderer_raw_path_without_grant() {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let state = AppState::default();
         let scan_root = unique_temp_scan_root("raw-plugin-scan-path");
         std::fs::create_dir_all(&scan_root).expect("temp scan root should be created");
 
-        let result =
-            crate::block_on_test(scan_plugins(vec![scan_root.display().to_string()], &state))
-                .expect("scan command should return policy errors in-band");
+        let result = crate::block_on_test(scan_plugins(
+            vec![scan_root.display().to_string()],
+            false,
+            &state,
+        ))
+        .expect("scan command should return policy errors in-band");
         let _ = std::fs::remove_dir_all(&scan_root);
 
         assert!(result.plugins.is_empty());
@@ -2834,6 +3171,300 @@ mod tests {
         let root = unique_temp_scan_root(test_name);
         std::fs::create_dir_all(&root).expect("temp scan root should be created");
         std::fs::canonicalize(&root).expect("a directory that was just created resolves")
+    }
+
+    /// AC-001: a candidate already quarantined must not be handed to a scan
+    /// helper on an ordinary scan — proven here by the absence of any error
+    /// naming it, since a spawned helper reading this garbage file would
+    /// produce one — and the scan response must still name it, not drop it
+    /// silently.
+    #[test]
+    fn a_quarantined_candidate_is_skipped_and_still_named_in_the_response() {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root("quarantine-skip");
+        let plugin_path = root.join("Hostile.clap");
+        std::fs::write(&plugin_path, b"not a real clap bundle")
+            .expect("fixture plugin file should be written");
+        let policy = PluginScanPolicy::with_allowed_roots(vec![root.clone()]);
+
+        let state = AppState::default();
+        state.plugin_registry_store.quarantine_failure(
+            &plugin_path,
+            "Plugin scan helper exited unsuccessfully for Hostile.clap".to_string(),
+            1_700_000_000_000,
+        );
+
+        let result = crate::block_on_test(scan_plugins_with_policy(
+            vec![root.display().to_string()],
+            false,
+            policy,
+            &state,
+        ))
+        .expect("a default scan over an authorized root should succeed");
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert!(
+            result.plugins.is_empty(),
+            "a quarantined candidate must not be scanned: {:?}",
+            result.plugins
+        );
+        assert!(
+            !result
+                .errors
+                .iter()
+                .any(|error| error.contains("Hostile.clap")),
+            "a skipped candidate must not spawn a helper, which would have produced its own \
+             error for this unparseable fixture: {:?}",
+            result.errors
+        );
+        let quarantined = result
+            .quarantined
+            .iter()
+            .find(|entry| entry.path == plugin_path.display().to_string())
+            .expect("the scan response must name the quarantined binary, not drop it silently");
+        assert_eq!(
+            quarantined.reason,
+            "Plugin scan helper exited unsuccessfully for Hostile.clap"
+        );
+    }
+
+    /// AC-002: a retry clears the record before the helper runs, rather than
+    /// leaving the skip in place. Proven two ways: an error appears for the
+    /// path — a skipped candidate never reaches the helper, so never produces
+    /// one — and the seeded sentinel timestamp is gone, which only happens if
+    /// the old record was cleared before this run's own attempt (the fixture
+    /// is not a real CLAP bundle, so the helper fails again and the run's own
+    /// failure, dated to now rather than to the sentinel, replaces it).
+    #[test]
+    fn retrying_quarantined_clears_the_record_before_the_helper_runs() {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root("quarantine-retry");
+        let plugin_path = root.join("Recovering.clap");
+        std::fs::write(&plugin_path, b"not a real clap bundle")
+            .expect("fixture plugin file should be written");
+        let policy = PluginScanPolicy::with_allowed_roots(vec![root.clone()]);
+
+        let state = AppState::default();
+        const SEEDED_SENTINEL_TIMESTAMP: u64 = 1;
+        state.plugin_registry_store.quarantine_failure(
+            &plugin_path,
+            "Plugin scan helper timed out".to_string(),
+            SEEDED_SENTINEL_TIMESTAMP,
+        );
+
+        let result = crate::block_on_test(scan_plugins_with_policy(
+            vec![root.display().to_string()],
+            true,
+            policy,
+            &state,
+        ))
+        .expect("a retry scan over an authorized root should succeed");
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|error| error.contains("Recovering.clap")),
+            "a retried candidate must actually reach the helper, not stay skipped: {:?}",
+            result.errors
+        );
+        if let Some(entry) = result
+            .quarantined
+            .iter()
+            .find(|entry| entry.path == plugin_path.display().to_string())
+        {
+            assert_ne!(
+                entry.quarantined_at_ms, SEEDED_SENTINEL_TIMESTAMP,
+                "a record surviving the retry must be this run's own failure, not the \
+                 pre-retry record left untouched"
+            );
+        }
+    }
+
+    fn fake_successful_descriptor_scan(
+        _format: PluginFormat,
+        _path: &Path,
+        _timeout: Duration,
+    ) -> Result<Vec<ScannedDescriptor>, String> {
+        Ok(vec![descriptor("com.vendor.recovered")])
+    }
+
+    fn fake_successful_instance_scan(
+        _format: PluginFormat,
+        _path: &Path,
+        _plugin_id: &str,
+        _timeout: Duration,
+    ) -> Result<ScannedInstance, String> {
+        Ok(scanner::ScannedInstance::default())
+    }
+
+    /// The regression the existing retry test cannot see: it only proves the
+    /// helper *ran*, not that a *successful* retry actually leaves the
+    /// candidate un-quarantined. A retry whose helper fixes nothing and one
+    /// whose helper genuinely succeeds both need the pre-retry record gone —
+    /// this covers the success case by injecting a scan outcome instead of
+    /// spawning a real worker process, the way
+    /// `an_activation_miss_rescans_the_last_known_path_once` injects a rescan
+    /// outcome.
+    #[test]
+    fn retrying_quarantined_clears_the_record_when_the_helper_succeeds() {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root("quarantine-retry-success");
+        let plugin_path = root.join("Recovered.clap");
+        std::fs::write(&plugin_path, b"clap-bytes").expect("fixture plugin file should be written");
+        let policy = PluginScanPolicy::with_allowed_roots(vec![root.clone()]);
+
+        let state = AppState::default();
+        state.plugin_registry_store.quarantine_failure(
+            &plugin_path,
+            "Plugin scan helper timed out".to_string(),
+            1,
+        );
+
+        let result = crate::block_on_test(scan_plugins_with_backend(
+            vec![root.display().to_string()],
+            true,
+            policy,
+            &state,
+            fake_successful_descriptor_scan,
+            fake_successful_instance_scan,
+        ))
+        .expect("a retry scan whose helper succeeds should succeed");
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert!(
+            !result.plugins.is_empty(),
+            "the injected success must actually publish a plugin: {:?}",
+            result.plugins
+        );
+        assert!(
+            state
+                .plugin_registry_store
+                .is_quarantined(&plugin_path)
+                .is_none(),
+            "a fixed plugin must not keep its quarantine badge after a successful retry"
+        );
+        assert!(
+            result
+                .quarantined
+                .iter()
+                .all(|entry| entry.path != plugin_path.display().to_string()),
+            "the scan response must not still name a candidate the retry just cleared: {:?}",
+            result.quarantined
+        );
+    }
+
+    /// The other half of AC-002: the default incremental path must never
+    /// clear a quarantine record on its own, whatever else the scan finds.
+    #[test]
+    fn a_default_scan_never_clears_a_quarantine_record() {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root("quarantine-default-no-retry");
+        let plugin_path = root.join("StillHostile.clap");
+        std::fs::write(&plugin_path, b"not a real clap bundle")
+            .expect("fixture plugin file should be written");
+        let policy = PluginScanPolicy::with_allowed_roots(vec![root.clone()]);
+
+        let state = AppState::default();
+        const SEEDED_SENTINEL_TIMESTAMP: u64 = 1;
+        state.plugin_registry_store.quarantine_failure(
+            &plugin_path,
+            "Plugin scan helper timed out".to_string(),
+            SEEDED_SENTINEL_TIMESTAMP,
+        );
+
+        let result = crate::block_on_test(scan_plugins_with_policy(
+            vec![root.display().to_string()],
+            false,
+            policy,
+            &state,
+        ))
+        .expect("a default scan over an authorized root should succeed");
+        let _ = std::fs::remove_dir_all(&root);
+
+        // Not just "still quarantined": a record a helper attempt overwrote
+        // and re-quarantined would also read `is_some()`, so the timestamp has
+        // to be the untouched sentinel and the helper must never have been
+        // reached at all.
+        let quarantined = state
+            .plugin_registry_store
+            .is_quarantined(&plugin_path)
+            .expect("a default scan must never silently clear a quarantine record");
+        assert_eq!(
+            quarantined.quarantined_at_ms, SEEDED_SENTINEL_TIMESTAMP,
+            "the record must be the untouched original, not a fresh one from a re-attempt"
+        );
+        assert!(
+            !result
+                .errors
+                .iter()
+                .any(|error| error.contains("StillHostile.clap")),
+            "a default scan must never spawn a helper for a quarantined candidate: {:?}",
+            result.errors
+        );
+    }
+
+    /// The instance pass gets the same quarantine escape hatch the descriptor
+    /// pass already has (#2911). Before this, an instance-pass process
+    /// failure was discarded into the `parameter_metadata_reason` fallback
+    /// and never reached `is_process_failure` at all — so a candidate whose
+    /// `create_plugin` call hangs would exhaust `MAX_SCAN_DURATION` on every
+    /// single scan, without ever quarantining, rather than being isolated
+    /// after its first failure.
+    #[test]
+    fn an_instance_pass_process_failure_quarantines_the_bundle() {
+        let store = PluginRegistryStore::in_memory_only();
+        let path = Path::new("/plugins/HangsOnActivate.clap");
+        let mut row = descriptor("com.vendor.hangs-on-activate");
+
+        apply_instance_scan_result(
+            &mut row,
+            Err("Plugin scan helper timed out".to_string()),
+            &store,
+            path,
+        );
+
+        assert_eq!(
+            row.parameter_metadata_reason.as_deref(),
+            Some(scanner::PARAMETER_METADATA_UNAVAILABLE_REASON),
+            "the fallback must still apply so the published row explains its missing fields"
+        );
+        assert!(
+            store.is_quarantined(path).is_some(),
+            "an instance helper timeout must quarantine the bundle, exactly like a descriptor \
+             helper timeout does"
+        );
+    }
+
+    /// The other half: a data-level instance-pass refusal — the descriptor
+    /// pass succeeded, the deadline ran out, or the response was malformed —
+    /// is never evidence the binary itself is dangerous, so it must not
+    /// quarantine.
+    #[test]
+    fn an_instance_pass_data_level_refusal_does_not_quarantine() {
+        let store = PluginRegistryStore::in_memory_only();
+        let path = Path::new("/plugins/RanOutOfTime.clap");
+        let mut row = descriptor("com.vendor.ran-out-of-time");
+
+        apply_instance_scan_result(&mut row, Err("deadline".to_string()), &store, path);
+
+        assert_eq!(
+            row.parameter_metadata_reason.as_deref(),
+            Some(scanner::PARAMETER_METADATA_UNAVAILABLE_REASON)
+        );
+        assert!(
+            store.is_quarantined(path).is_none(),
+            "a deadline miss is not a process failure and must not quarantine the bundle"
+        );
     }
 
     /// The scan keeps the first copy of a plugin it meets, so the order the
@@ -3149,6 +3780,47 @@ mod tests {
         assert_eq!(unload_all.1, ["Native engine not running"]);
         let windows = state.plugin_windows.lock().expect("plugin_windows lock");
         assert!(windows.is_empty());
+    }
+
+    /// Removing a device while its editor is open closes that editor, and the
+    /// close is the same thread-affine lifecycle a GUI command runs: it reaches
+    /// VST3 `removed` and CLAP `gui.destroy`. An unload that ran it on the
+    /// executor's worker un-parents an `NSView` off the main thread, which on
+    /// macOS is a crash rather than a mistake — and no GUI command is involved,
+    /// so nothing in `plugin_gui` covers this path.
+    #[test]
+    fn unloading_an_instance_closes_its_editor_on_the_shell_thread() {
+        let state = AppState::default();
+        let wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Command Fixture", vec![], true);
+        let gui_threads = wrapper
+            .engine_owned_command_fixture_gui_threads()
+            .expect("the command fixture records its editor lifecycle threads");
+        state.plugins.lock().expect("plugins lock").insert(
+            "command-instance".into(),
+            PluginInstanceData {
+                plugin: Box::new(wrapper),
+            },
+        );
+        let windows = DedicatedUiWindowHost::start();
+
+        crate::block_on_test(unload_plugin(
+            Some(PluginInstanceId("command-instance".to_string())),
+            &windows,
+            &state,
+        ))
+        .expect("the instance should unload");
+
+        assert_eq!(
+            gui_threads.lock().expect("gui thread log").clone(),
+            [windows.thread_id],
+            "the editor close an unload performs must run on the shell's thread"
+        );
+        assert_ne!(
+            windows.thread_id,
+            std::thread::current().id(),
+            "the fake shell thread must not be this one, or this test proves nothing"
+        );
     }
 
     #[test]
@@ -3522,7 +4194,9 @@ mod tests {
             &fixture.store(),
             &fixture.scan_policy(),
             "aaaa1111",
-            |_format, path| panic!("a hydrated registry must resolve without rescanning {path:?}"),
+            |_format, path, _plugin_id, _descriptor_id| {
+                panic!("a hydrated registry must resolve without rescanning {path:?}")
+            },
         )
         .expect("the persisted plugin must resolve in a new session");
 
@@ -3550,7 +4224,7 @@ mod tests {
             &store,
             &fixture.scan_policy(),
             "aaaa1111",
-            |format, path| {
+            |format, path, _plugin_id, _descriptor_id| {
                 rescans.set(rescans.get() + 1);
                 // The rescan is told which format to read the file as, from the
                 // row that recorded it. Deriving it from the extension here
@@ -3626,7 +4300,7 @@ mod tests {
         // Borrows the counter rather than owning it, so the same closure can be
         // handed to both calls: the point of the test is that only one of them
         // reaches it.
-        let rescan = |_format: &str, path: &Path| {
+        let rescan = |_format: &str, path: &Path, _plugin_id: &str, _descriptor_id: &str| {
             rescans.set(rescans.get() + 1);
             Err::<PluginRegistryEntry, String>(format!("no such file: {}", path.display()))
         };
@@ -3675,7 +4349,9 @@ mod tests {
             &fixture.store(),
             &fixture.scan_policy(),
             "aaaa1111",
-            |_format, path| Err(format!("no such file: {}", path.display())),
+            |_format, path, _plugin_id, _descriptor_id| {
+                Err(format!("no such file: {}", path.display()))
+            },
         )
         .expect_err("a removed plugin must not resolve");
 
@@ -3803,5 +4479,103 @@ mod tests {
             !refused,
             "a path outside the platform roots must be refused"
         );
+    }
+
+    // ── Multi-plugin bundles ────────────────────────────────────────────────
+
+    /// A bundle rescanned at activation resolves the sibling the key names: a
+    /// saved project that recorded the second plugin's descriptor id must get
+    /// the second plugin back, not the bundle's first.
+    #[test]
+    fn a_rescanned_bundle_resolves_the_sibling_the_key_names() {
+        let bundle = scanner::scanned_bundle_plugins(
+            Path::new("/plugins/TwoPlugins.clap"),
+            vec![
+                descriptor("com.vendor.first"),
+                descriptor("com.vendor.second"),
+            ],
+        );
+
+        let picked = pick_rescanned_bundle_row(&bundle, "com.vendor.second", "irrelevant")
+            .expect("a bundle sibling is addressed by its descriptor id");
+        assert_eq!(picked.descriptor_id, "com.vendor.second");
+
+        assert!(
+            pick_rescanned_bundle_row(&[], "any", "com.vendor.first").is_none(),
+            "an empty bundle is a refusal, not a guess"
+        );
+    }
+
+    /// A stale key — the path re-spelled so its hash changed, or a vendor id
+    /// that no longer matches — must still load the plugin the user was using,
+    /// which the persisted descriptor id names. Guessing the bundle's first
+    /// plugin here would load a different plugin and hand it the sibling's
+    /// state blob.
+    #[test]
+    fn a_stale_key_resolves_through_the_last_known_descriptor_id() {
+        let bundle = scanner::scanned_bundle_plugins(
+            Path::new("/plugins/TwoPlugins.clap"),
+            vec![
+                descriptor("com.vendor.first"),
+                descriptor("com.vendor.second"),
+            ],
+        );
+
+        let picked = pick_rescanned_bundle_row(&bundle, "stale-key", "com.vendor.second")
+            .expect("the persisted descriptor id still names a plugin in the bundle");
+        assert_eq!(
+            picked.descriptor_id, "com.vendor.second",
+            "the sibling the user was using loads, not the bundle's first plugin"
+        );
+
+        // A single-plugin bundle recovers the same way: the requested key is
+        // the old path hash and the descriptor id names the one row there is.
+        let single = scanner::scanned_bundle_plugins(
+            Path::new("/plugins/Moved.clap"),
+            vec![descriptor("com.vendor.only")],
+        );
+        let recovered = pick_rescanned_bundle_row(&single, "old-path-hash", "com.vendor.only")
+            .expect("a moved single-plugin bundle still resolves");
+        assert_eq!(
+            recovered.id,
+            scanner::stable_id(Path::new("/plugins/Moved.clap"))
+        );
+    }
+
+    /// When neither the key nor the persisted descriptor id names a row, the
+    /// bundle genuinely changed and there is no honest row to return.
+    #[test]
+    fn a_stale_key_with_no_matching_descriptor_id_is_an_error_not_a_guess() {
+        let bundle = scanner::scanned_bundle_plugins(
+            Path::new("/plugins/TwoPlugins.clap"),
+            vec![
+                descriptor("com.vendor.first"),
+                descriptor("com.vendor.second"),
+            ],
+        );
+
+        assert!(
+            pick_rescanned_bundle_row(&bundle, "stale-key", "com.vendor.renamed-away").is_none(),
+            "no matching key and no matching descriptor id must refuse, not load the first plugin"
+        );
+
+        assert!(
+            pick_rescanned_bundle_row(&bundle, "stale-key", "").is_none(),
+            "a format with no descriptor id has nothing to fall back on"
+        );
+    }
+
+    fn descriptor(descriptor_id: &str) -> scanner::ScannedDescriptor {
+        scanner::ScannedDescriptor {
+            format: "clap".to_string(),
+            name: Some(format!("Plugin {descriptor_id}")),
+            vendor: "Vendor".to_string(),
+            descriptor_id: descriptor_id.to_string(),
+            version: "1.0.0".to_string(),
+            category: "effect".to_string(),
+            parameters: None,
+            parameter_metadata_reason: None,
+            capabilities: None,
+        }
     }
 }

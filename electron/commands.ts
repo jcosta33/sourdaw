@@ -35,6 +35,7 @@
  */
 export const EXPOSED_COMMANDS = [
     'analyze_pitch',
+    'apply_graph_commands',
     'arm_recording',
     'cancel_provider_gateway_request',
     'close_midi_input',
@@ -57,13 +58,14 @@ export const EXPOSED_COMMANDS = [
     'detect_onsets',
     'detect_smart_loop_points',
     'engine_rt_diagnostics',
+    'engine_transport_position',
+    'engine_transport_set_maps',
     'feed_crumbs_record_input',
     'get_crumbs_position',
     'get_default_plugin_paths',
     'get_plugin_parameters',
     'get_plugin_state_bytes',
     'get_waveform_peaks',
-    'is_plugin_gui_supported',
     'is_scan_path_authorized',
     'list_directory',
     'list_midi_inputs',
@@ -129,13 +131,24 @@ export const EXPOSED_COMMANDS = [
  * (jcosta33/sourdaw#2225): desktop offline export selects the native engine in
  * `selectOfflineRenderEngine`, which reaches them through
  * `src/modules/AudioEngine/repositories/nativeGraph/nativeGraphTransport.ts`.
- * `apply_graph_commands` stays denied: it is the *live* transport's command,
- * its transport method has no production caller yet, and exposing a command
- * requires one — the live cutover (jcosta33/sourdaw#2230) moves it together
- * with its caller.
+ * `apply_graph_commands` joined them at the first live-cutover slice
+ * (jcosta33/sourdaw#3066), with the production caller the exposure law
+ * requires: playback start applies the session's topology through
+ * `startNativeLiveGraphSession`, and that first batch is also what boots the
+ * native engine. It is the one exposed command that can *start* an audio
+ * stream, which is why `pluginCommandAdmission` closes it with the plugin
+ * runtime surface at quit.
+ *
+ * `is_plugin_gui_supported` moved here from the exposed list when its
+ * renderer repository was retired (#2307): the inspector reads editor
+ * capability through `resolvePluginEditorCapability`, so no `src/` caller
+ * invokes the command. Exposing a command requires a production caller, so
+ * it stays denied until one exists. `get_plugin_parameters` was retired in
+ * the same change and restored: `refreshExternalPluginParameters` re-reads a
+ * loaded instance's parameters through it whenever the automation menu or
+ * panel opens, so its caller never went away.
  */
 export const DENIED_COMMANDS = [
-    'apply_graph_commands',
     'cancel_dictation',
     'close_all_plugin_guis',
     'collab_get_nearby_sessions',
@@ -149,6 +162,7 @@ export const DENIED_COMMANDS = [
     'get_asr_status',
     'get_link_status',
     'hide_all_plugin_guis',
+    'is_plugin_gui_supported',
     'link_start_playing',
     'link_stop_playing',
     'load_whisper_model',

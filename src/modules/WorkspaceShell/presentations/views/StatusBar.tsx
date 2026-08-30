@@ -67,26 +67,23 @@ export const StatusBar = (): ReactElement => {
         engineState: engineStateRef,
     });
 
-    const renderIife_13 = () => {
+    const renderAiModelValue = (): ReactElement => {
         if (llmStatus.state === 'generating') {
             return (
                 <span className="animate-pulse font-mono text-[10px] text-[var(--color-accent-lavender)]">active</span>
             );
-        } else {
-            if (llmStatus.state === 'loading') {
-                return (
-                    <span className="font-mono text-[10px] text-[var(--color-state-warning)]">
-                        {Math.round(llmStatus.progress * 100)}%
-                    </span>
-                );
-            } else {
-                if (llmStatus.state === 'ready') {
-                    return <span className="font-mono text-[10px] text-[var(--color-state-success)]/70">ready</span>;
-                } else {
-                    return <span className="font-mono text-[10px] text-muted-foreground/50">idle</span>;
-                }
-            }
         }
+        if (llmStatus.state === 'loading') {
+            return (
+                <span className="font-mono text-[10px] text-[var(--color-state-warning)]">
+                    {Math.round(llmStatus.progress * 100)}%
+                </span>
+            );
+        }
+        if (llmStatus.state === 'ready') {
+            return <span className="font-mono text-[10px] text-[var(--color-state-success)]/70">ready</span>;
+        }
+        return <span className="font-mono text-[10px] text-muted-foreground/50">idle</span>;
     };
 
     return (
@@ -148,7 +145,7 @@ export const StatusBar = (): ReactElement => {
                     <DawMetricCluster
                         label="AI Model"
                         title="Local AI model state — not GPU utilisation."
-                        value={renderIife_13()}
+                        value={renderAiModelValue()}
                     />
 
                     {activeRenderCount > 0 ? (

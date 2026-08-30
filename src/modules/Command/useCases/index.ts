@@ -10,6 +10,7 @@ export { commandBatchPreflightPort } from './commandBatchPreflightPort';
 export { commandBatchPreviewPort } from './commandBatchPreviewPort';
 export { commandRuntimeRepairPort } from './commandRuntimeRepairPort';
 export { configureCommandBatchIdempotency } from './configureCommandBatchIdempotency';
+export { canExecuteCommandBatchEffects } from './canExecuteCommandBatchEffects';
 export { buildSemanticProjectDiff } from './buildSemanticProjectDiff';
 export { compilePartialCommandBatchAcceptance } from './compilePartialCommandBatchAcceptance';
 export { commandDeviceVersionsPort } from './commandDeviceVersionsPort';
@@ -24,6 +25,7 @@ export { compileVersionedCommandBatchEnvelope } from './compileVersionedCommandB
 export { issueCommandApprovalBinding } from './issueCommandApprovalBinding';
 export { createVersionedCommandReceipt } from './createVersionedCommandReceipt';
 export { createVerifiedBatchReceipt } from './createVerifiedBatchReceipt';
+export { getVerifiedBatchReceiptIdentity } from './getVerifiedBatchReceiptIdentity';
 export { getAppActionExecutionPolicy } from './getAppActionExecutionPolicy';
 export { getAppActionStaticAuthority } from './getAppActionStaticAuthority';
 export { getAgentActionRiskPolicy } from './getAgentActionRiskPolicy';
@@ -53,9 +55,11 @@ export { executeVersionedCommandEnvelope } from './executeVersionedCommandEnvelo
 export { executeVersionedCommandBatch } from './executeVersionedCommandBatch';
 export { executeVersionedCommandBatchEnvelope } from './executeVersionedCommandBatchEnvelope';
 export { getVersionedCommandBatchIdempotentReplay } from './getVersionedCommandBatchIdempotentReplay';
+export { finalizeRecoveredCommandBatchEffects } from './finalizeRecoveredCommandBatchEffects';
 export { getVersionedCommandBatchCommitProof } from './getVersionedCommandBatchCommitProof';
 export { getVersionedCommandBatchCommitDisposition } from './getVersionedCommandBatchCommitDisposition';
 export { getVersionedCommandBatchEffects } from './getVersionedCommandBatchEffects';
+export { getVersionedCommandTargetRanges } from './getVersionedCommandTargetRanges';
 export { getCommandProtocolContracts } from './getCommandProtocolContracts';
 export { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
 export { createAppActionCommittedError } from './createAppActionCommittedError';

@@ -2,6 +2,7 @@ export { openExportDialog } from './dialogs/openExportDialog';
 export { openPreferencesDialog } from './dialogs/openPreferencesDialog';
 export { dismissAlphaNotice } from './dismissAlphaNotice';
 export { setWorkspaceEventBus } from './workspaceEventBus';
+export { resetDisplayScaleForStartup } from './resetDisplayScaleForStartup';
 
 // ── Scratch Pad ───────────────────────────────────────────────────────────────
 
@@ -66,3 +67,4 @@ export { updateWorkspaceState } from './workspaceState';
 // ── Window Chrome ─────────────────────────────────────────────────────────────
 
 export { windowChromeControls } from './windowChrome';
+export { nativeApplicationMenu } from './nativeApplicationMenu';

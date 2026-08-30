@@ -24,6 +24,7 @@ import { cn } from '#/utils/Styles/cn';
 import { SectionTitle, FieldGroup } from '../preferencesShared';
 
 type HostedProviderSelection = 'anthropic' | 'openai' | 'openai-compatible';
+type HostedProviderAuthentication = 'api-key' | 'none';
 type BackendSelection = 'auto' | 'webllm' | 'cloud';
 
 type HostedModelOption = {
@@ -52,6 +53,7 @@ const HOSTED_MODEL_OPTIONS: Record<Exclude<HostedProviderSelection, 'openai-comp
 };
 
 const CUSTOM_MODEL_VALUE = 'custom';
+const MAX_API_KEY_BYTES = 16 * 1024;
 
 const DEFAULT_MODELS: Record<HostedProviderSelection, string> = {
     anthropic: HOSTED_MODEL_OPTIONS.anthropic[0]!.value,
@@ -105,6 +107,10 @@ export const AiSection = (): ReactElement => {
         configuredProvider?.model ?? DEFAULT_MODELS[configuredProvider?.provider ?? 'anthropic']
     );
     const [baseUrl, setBaseUrl] = useState(configuredProvider?.baseUrl ?? '');
+    const [authentication, setAuthentication] = useState<HostedProviderAuthentication>(
+        configuredProvider?.authentication ?? 'api-key'
+    );
+    const [apiKey, setApiKey] = useState('');
     const [configurationError, setConfigurationError] = useState<string | null>(null);
     const [configurationPending, setConfigurationPending] = useState(false);
     const hostedProvidersAvailable = getPlatformCapabilities().isDesktopApp;
@@ -118,7 +124,7 @@ export const AiSection = (): ReactElement => {
     const modelOptions = provider === 'openai-compatible' ? [] : HOSTED_MODEL_OPTIONS[provider];
     const customFirstPartyModel =
         provider !== 'openai-compatible' && !modelOptions.some((option) => option.value === model);
-    const renderIife_16 = () => {
+    const backendDotTone = (): 'cyan' | 'primary' | 'muted' => {
         if (backend === 'webllm') {
             return 'cyan';
         }
@@ -127,7 +133,7 @@ export const AiSection = (): ReactElement => {
         }
         return 'muted';
     };
-    const renderIife_17 = () => {
+    const activeBackendLabel = (): string => {
         if (backend === 'cloud') {
             if (configuredProvider) {
                 return `Cloud (${getProviderLabel(configuredProvider.provider)})`;
@@ -146,8 +152,11 @@ export const AiSection = (): ReactElement => {
                 provider,
                 model,
                 baseUrl: provider === 'openai-compatible' ? baseUrl : undefined,
+                authentication,
+                apiKey,
             });
             setConfigurationError(null);
+            setApiKey('');
         } catch (error) {
             setConfigurationError(error instanceof Error ? error.message : 'Hosted provider configuration failed');
         } finally {
@@ -159,6 +168,7 @@ export const AiSection = (): ReactElement => {
         try {
             await removeCloudProvider();
             setConfigurationError(null);
+            setApiKey('');
         } catch (error) {
             setConfigurationError(error instanceof Error ? error.message : 'Hosted provider removal failed');
         } finally {
@@ -202,8 +212,8 @@ export const AiSection = (): ReactElement => {
                             backend === 'none' && 'bg-muted text-muted-foreground'
                         )}
                     >
-                        <DawStatusDot tone={renderIife_16()} />
-                        {renderIife_17()}
+                        <DawStatusDot tone={backendDotTone()} />
+                        {activeBackendLabel()}
                     </span>
                 </Row>
             </FieldGroup>
@@ -211,8 +221,9 @@ export const AiSection = (): ReactElement => {
             {hostedProvidersAvailable ? (
                 <FieldGroup label="Hosted AI provider">
                     <p className="text-[10px] text-muted-foreground mb-2 leading-relaxed">
-                        Set the provider credential in the matching SOURDAW_*_API_KEY environment variable before
-                        launch. The renderer receives only an opaque session ID.
+                        Your key is sent once to create an in-memory native session. It is never saved in Preferences or
+                        included in later AI requests. This session-only key must be entered again after restarting
+                        Sourdaw.
                     </p>
                     <Grid cols={2} gap={1.5} className="mb-1.5">
                         <DawCompactSelect
@@ -225,6 +236,8 @@ export const AiSection = (): ReactElement => {
                                 setProvider(nextProvider);
                                 setModel(DEFAULT_MODELS[nextProvider]);
                                 setBaseUrl('');
+                                setAuthentication('api-key');
+                                setApiKey('');
                                 setConfigurationError(null);
                             }}
                             className="h-8 rounded-md border border-input bg-background px-2 text-xs"
@@ -293,6 +306,51 @@ export const AiSection = (): ReactElement => {
                             aria-label="OpenAI-compatible base URL"
                         />
                     ) : null}
+                    {provider === 'openai-compatible' ? (
+                        <DawCompactSelect
+                            value={authentication}
+                            onChange={(event) => {
+                                const nextAuthentication = event.target.value;
+                                if (nextAuthentication !== 'api-key' && nextAuthentication !== 'none') {
+                                    return;
+                                }
+                                setAuthentication(nextAuthentication);
+                                setApiKey('');
+                                setConfigurationError(null);
+                            }}
+                            className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs mb-1.5"
+                            aria-label="OpenAI-compatible authentication"
+                        >
+                            <option value="api-key">API key</option>
+                            <option value="none">No authentication</option>
+                        </DawCompactSelect>
+                    ) : null}
+                    <label htmlFor="hosted-ai-api-key" className="mb-1 block text-[10px] text-muted-foreground">
+                        API key
+                        {provider === 'openai-compatible' ? ' (required when API-key authentication is selected)' : ''}
+                    </label>
+                    <Input
+                        id="hosted-ai-api-key"
+                        type="password"
+                        value={apiKey}
+                        onChange={(event) => {
+                            if (new TextEncoder().encode(event.target.value).byteLength > MAX_API_KEY_BYTES) {
+                                return;
+                            }
+                            setApiKey(event.target.value);
+                            setConfigurationError(null);
+                        }}
+                        placeholder={
+                            authentication === 'none'
+                                ? 'No API key is used for this endpoint'
+                                : `Paste your ${getProviderLabel(provider)} API key`
+                        }
+                        autoComplete="new-password"
+                        disabled={authentication === 'none'}
+                        maxLength={MAX_API_KEY_BYTES}
+                        className="h-8 text-xs font-mono mb-1.5"
+                        aria-label="Hosted AI API key"
+                    />
                     <Row align="stretch" justify="end">
                         <Button
                             size="sm"
@@ -300,13 +358,14 @@ export const AiSection = (): ReactElement => {
                             disabled={
                                 configurationPending ||
                                 !model.trim() ||
-                                (provider === 'openai-compatible' && !baseUrl.trim())
+                                (provider === 'openai-compatible' && !baseUrl.trim()) ||
+                                (authentication === 'api-key' && !apiKey.trim())
                             }
                             onClick={() => {
                                 void saveHostedProvider();
                             }}
                         >
-                            Save
+                            {configurationPending ? 'Connecting…' : 'Connect'}
                         </Button>
                     </Row>
                     {configurationError ? (
@@ -326,7 +385,7 @@ export const AiSection = (): ReactElement => {
                                 }
                             >
                                 {configuredProvider
-                                    ? `Configured: ${getProviderLabel(configuredProvider.provider)} / ${configuredProvider.model}`
+                                    ? `Configured: ${getProviderLabel(configuredProvider.provider)} / ${configuredProvider.model} (${configuredProvider.authentication === 'api-key' ? 'API-key authentication' : 'no authentication'})`
                                     : 'Not configured'}
                             </span>
                         </span>

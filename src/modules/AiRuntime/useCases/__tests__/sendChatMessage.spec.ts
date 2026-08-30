@@ -14,15 +14,20 @@ import {
 } from '../../repositories/cloudLlm/cloudInference/streamCloudChatCompletion';
 import { agentRunStore } from '../../stores/agentRunStore';
 import { llmStatusStore } from '../../stores/llmStatusStore';
+import { getAgentPlanProposalIdentity } from '../../transformers/normalizeAgentPlanProposal';
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
+import { preparedStemImportCleanup } from '../agentReference/discardPreparedStemImportResources';
 import { materializeBatchLocalActionIdentities } from '../agentReference/materializeBatchLocalActionIdentities';
+import { preparedStemImportResources } from '../agentReference/registerPreparedStemImportResources';
 import { AGENT_RUN_PROVIDER_PERSISTENCE_WARNING } from '../agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { recoverInterruptedAgentRuns } from '../agentRunRecovery';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
+import { agentRunControls } from '../getAgentRunControlProjection';
 import { materializeActionStateGuards } from '../materializeActionStateGuards';
+import { getPlanningProviderSchemaContract } from '../planningProviderSchema';
 import { type planPromptActions } from '../planPromptActions';
 import { sendChatMessage } from '../sendChatMessage';
 
@@ -34,6 +39,8 @@ const PROVIDER_PERSISTENCE_WARNING =
     'Agent run provider response recovery state could not be persisted after execution. The retained response remains visible, but its lifecycle is not durably settled. Review it before retrying.';
 const WORK_PERSISTENCE_WARNING =
     'Agent run work recovery state could not be persisted after execution. The retained work outcome remains visible, but its lifecycle is not durably settled. Review it before retrying.';
+const COMMAND_PERSISTENCE_WARNING =
+    'Agent run recovery state could not be persisted after execution. The verified command receipt remains authoritative; do not retry automatically.';
 const FAILURE_PERSISTENCE_WARNING =
     'Agent run failure recovery state could not be persisted. The work failed, and no successful artifact is claimed. Review the durable run state before retrying.';
 const COMPLETION_PERSISTENCE_WARNING =
@@ -292,7 +299,7 @@ function createCommandGraphForwardingFixture() {
 
 const commandGraphFixture = createCommandGraphForwardingFixture();
 
-function createStemImportAction(audioBufferId: string): ExecutableRuntimeAction {
+function createStemImportAction(audioBufferId: string): Extract<ExecutableRuntimeAction, { type: 'importStemSet' }> {
     return {
         type: 'importStemSet',
         payload: {
@@ -349,7 +356,7 @@ function createProviderProposal(assetIds: string[]): AgentRunProviderProposal {
     };
 }
 
-function configureCommandPlanning(action: ExecutableRuntimeAction): void {
+function configureCommandPlanning(action: ExecutableRuntimeAction) {
     const scope = {
         targetIds: [],
         targetRanges: [],
@@ -384,14 +391,15 @@ function configureCommandPlanning(action: ExecutableRuntimeAction): void {
             scope,
         },
     });
+    return { grants, scope };
 }
 
 function configurePromptPlanning(
     action: ExecutableRuntimeAction,
     readiness: PreparedStemReadiness,
     providerProposal?: AgentRunProviderProposal
-): void {
-    configureCommandPlanning(action);
+) {
+    const authority = configureCommandPlanning(action);
     mocks.planPromptActions.mockImplementation(async (input: PlanPromptActionsInput) => {
         const runId = input.streamIdentity?.runId;
         if (runId === undefined) {
@@ -399,14 +407,12 @@ function configurePromptPlanning(
         }
         plannedRunId = runId;
         if (action.type === 'importStemSet' && readiness !== 'missing') {
-            for (const stem of action.payload.stems) {
-                agentRunLifecycle.registerTemporaryAsset({
-                    runId,
-                    assetId: stem.audioBufferId,
-                    kind: 'import',
-                    cleanupOwner: 'stem-import-preparation',
-                });
-                if (readiness === 'cleanup-pending') {
+            // Register through the owning module the way `planPromptActions`
+            // does: a bare `registerTemporaryAsset` records the asset without
+            // the cleanup callback that actually discards the prepared stem.
+            preparedStemImportResources.register({ runId, stems: action.payload.stems });
+            if (readiness === 'cleanup-pending') {
+                for (const stem of action.payload.stems) {
                     agentRunLifecycle.prepareTemporaryAssetCleanup({
                         runId,
                         assetId: stem.audioBufferId,
@@ -426,9 +432,13 @@ function configurePromptPlanning(
             projectRevision: 'revision-fixture',
         };
     });
+    return authority;
 }
 
-function configureCommandGraphForwarding(branch: 'immediate' | 'confirmation' | 'plan') {
+function configureCommandGraphForwarding(
+    branch: 'immediate' | 'confirmation' | 'plan',
+    projectRevision = 'revision-fixture'
+) {
     const requiresConfirmation = branch === 'confirmation';
     const scope = {
         targetIds: [...commandGraphFixture.fullTargetIds],
@@ -493,10 +503,49 @@ function configureCommandGraphForwarding(branch: 'immediate' | 'confirmation' | 
                 providerKnownTargetIds: commandGraphFixture.providerKnownTargetIds,
                 providerProposal: commandGraphFixture.providerProposal,
             },
-            projectRevision: 'revision-fixture',
+            projectRevision,
         };
     });
-    return commandBatch;
+    return { commandBatch, projectRevision };
+}
+
+function createPendingResumeDecision(input: {
+    runId: string;
+    proposalIdentity: string;
+    authority: ReturnType<typeof configureCommandPlanning>;
+    mode?: 'apply' | 'plan';
+}): void {
+    const budgets = { limits: {}, consumed: {} };
+    agentRunLifecycle.create({
+        runId: input.runId,
+        request: 'Add a reference track',
+        mode: input.mode ?? 'apply',
+        createdRevision: 'revision-fixture',
+        scope: input.authority.scope,
+        grants: input.authority.grants,
+        budgets,
+    });
+    agentRunLifecycle.recordDecision({
+        runId: input.runId,
+        decision: {
+            decisionId: 'decision-reference-track',
+            capabilitySchemaIdentity: getPlanningProviderSchemaContract().identity,
+            proposalIdentity: input.proposalIdentity,
+            budgets,
+            revision: 'revision-fixture',
+            scope: input.authority.scope,
+            grants: input.authority.grants,
+            alternatives: [{ id: 'add-reference', label: 'Add the reference track', changesAuthority: false }],
+            reason: 'Choose whether to add the reference track.',
+            selectedAlternativeId: null,
+            resumeAttemptId: null,
+        },
+    });
+    agentRunLifecycle.requireManualResume({
+        runId: input.runId,
+        reason: 'Choose whether to add the reference track.',
+        workIds: [],
+    });
 }
 
 function getPlannedRun() {
@@ -663,6 +712,7 @@ describe('sendChatMessage retained-provider selection', () => {
             provider: 'openai',
             model: 'gpt-4o-mini',
             baseUrl: 'https://api.openai.com/v1',
+            authentication: 'api-key',
         });
         mocks.streamCloudChatCompletion.mockImplementation(
             async (
@@ -737,6 +787,213 @@ describe('sendChatMessage retained-provider selection', () => {
         }
     });
 
+    it('retains a hosted partial response when the active stream controller aborts its transport', async () => {
+        const partialContent = 'The hosted response began before cancellation.';
+        let transportSignal: AbortSignal | undefined;
+        const transportAbort = vi.fn();
+        let markTransportStarted: () => void = () => undefined;
+        const transportStarted = new Promise<void>((resolve) => {
+            markTransportStarted = resolve;
+        });
+        const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle');
+        mocks.aiBackendPreference.value = 'cloud';
+        mocks.resolveBackend.mockReturnValue('cloud');
+        mocks.isCloudAvailable.mockReturnValue(true);
+        mocks.getCloudProviderInfo.mockReturnValue({
+            provider: 'openai',
+            model: 'gpt-4o-mini',
+            baseUrl: 'https://api.openai.com/v1',
+            authentication: 'api-key',
+        });
+        mocks.streamCloudChatCompletion.mockImplementation(
+            (
+                _messages: Parameters<typeof streamCloudChatCompletion>[0],
+                onToken: Parameters<typeof streamCloudChatCompletion>[1],
+                options?: CloudStreamOptions
+            ) => {
+                transportSignal = options?.signal;
+                onToken(partialContent);
+                markTransportStarted();
+                return new Promise<CloudChatCompletionOutcome>((_resolve, reject) => {
+                    transportSignal?.addEventListener(
+                        'abort',
+                        () => {
+                            transportAbort(transportSignal);
+                            reject(transportSignal?.reason);
+                        },
+                        { once: true }
+                    );
+                });
+            }
+        );
+
+        try {
+            const pendingResponse = sendChatMessage('Summarize the hosted bridge.', { mode: 'explain' });
+            await transportStarted;
+            const activeAborter = mocks.setActiveAborter.mock.calls.find(
+                ([value]) => value instanceof AbortController
+            )?.[0];
+            if (!(activeAborter instanceof AbortController)) {
+                throw new Error('Expected hosted streaming to expose its active abort controller.');
+            }
+
+            activeAborter.abort(new DOMException('Cancelled by the user.', 'AbortError'));
+            await expect(pendingResponse).resolves.toBeUndefined();
+
+            const run = agentRunLifecycle.get(getMostRecentlyAdmittedRunId());
+            expect(transportSignal).toBe(activeAborter.signal);
+            expect(transportAbort).toHaveBeenCalledWith(activeAborter.signal);
+            expect(run).toMatchObject({
+                phase: 'cancelled',
+                workLeases: [expect.objectContaining({ workId: 'provider-response', terminalState: 'cancelled' })],
+            });
+            expect(settleWorkLease).not.toHaveBeenCalledWith(expect.objectContaining({ terminalState: 'completed' }));
+            expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+                expect.any(String),
+                expect.objectContaining({ isStreaming: false, content: partialContent })
+            );
+            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+        } finally {
+            settleWorkLease.mockRestore();
+        }
+    });
+
+    it('retains a WebLLM partial response when the active stream controller interrupts generation', async () => {
+        const partialContent = 'The local response began before cancellation.';
+        let unblockStream: (() => void) | null = null;
+        let markStreamPaused: () => void = () => undefined;
+        const streamPaused = new Promise<void>((resolve) => {
+            markStreamPaused = resolve;
+        });
+        async function* streamCompletion() {
+            yield { choices: [{ delta: { content: partialContent } }] };
+            await new Promise<void>((resolve) => {
+                unblockStream = resolve;
+                markStreamPaused();
+            });
+            yield { choices: [{ delta: {}, finish_reason: 'stop' }] };
+        }
+        const engine = {
+            interruptGenerate: vi.fn(() => {
+                unblockStream?.();
+            }),
+            chat: {
+                completions: {
+                    create: vi.fn(async () => streamCompletion()),
+                },
+            },
+        };
+        const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle');
+        mocks.getLlmEngine.mockReturnValue(engine);
+
+        try {
+            const pendingResponse = sendChatMessage('Summarize the local bridge.', { mode: 'explain' });
+            await streamPaused;
+            const activeAborter = mocks.setActiveAborter.mock.calls.find(
+                ([value]) => value instanceof AbortController
+            )?.[0];
+            if (!(activeAborter instanceof AbortController)) {
+                throw new Error('Expected WebLLM streaming to expose its active abort controller.');
+            }
+
+            activeAborter.abort(new DOMException('Cancelled by the user.', 'AbortError'));
+            await expect(pendingResponse).resolves.toBeUndefined();
+
+            const run = agentRunLifecycle.get(getMostRecentlyAdmittedRunId());
+            expect(engine.interruptGenerate).toHaveBeenCalledOnce();
+            expect(run).toMatchObject({
+                phase: 'cancelled',
+                workLeases: [expect.objectContaining({ workId: 'provider-response', terminalState: 'cancelled' })],
+            });
+            expect(settleWorkLease).not.toHaveBeenCalledWith(expect.objectContaining({ terminalState: 'completed' }));
+            expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+                expect.any(String),
+                expect.objectContaining({ isStreaming: false, content: partialContent })
+            );
+            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+        } finally {
+            settleWorkLease.mockRestore();
+        }
+    });
+
+    it('retains a hosted completed response with a persistence warning when completion settlement cannot persist', async () => {
+        const content = 'The hosted completion remains visible.';
+        const settlementFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+        let releaseCompletion: () => void = () => undefined;
+        let markCompletionReady: () => void = () => undefined;
+        let restoreSetItem: (() => void) | null = null;
+        const completionReady = new Promise<void>((resolve) => {
+            markCompletionReady = resolve;
+        });
+        mocks.aiBackendPreference.value = 'cloud';
+        mocks.resolveBackend.mockReturnValue('cloud');
+        mocks.isCloudAvailable.mockReturnValue(true);
+        mocks.getCloudProviderInfo.mockReturnValue({
+            provider: 'openai',
+            model: 'gpt-4o-mini',
+            baseUrl: 'https://api.openai.com/v1',
+            authentication: 'api-key',
+        });
+        mocks.streamCloudChatCompletion.mockImplementation(
+            (
+                _messages: Parameters<typeof streamCloudChatCompletion>[0],
+                onToken: Parameters<typeof streamCloudChatCompletion>[1]
+            ) => {
+                onToken(content);
+                markCompletionReady();
+                return new Promise<CloudChatCompletionOutcome>((resolve) => {
+                    releaseCompletion = () => resolve({ status: 'complete' });
+                });
+            }
+        );
+
+        try {
+            const pendingResponse = sendChatMessage('Summarize the hosted arrangement.', { mode: 'explain' });
+            await completionReady;
+            const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
+                throw settlementFailure;
+            });
+            restoreSetItem = () => setItem.mockRestore();
+            releaseCompletion();
+            await expect(pendingResponse).resolves.toBeUndefined();
+
+            const run = agentRunLifecycle.get(getMostRecentlyAdmittedRunId());
+            if (run === null) {
+                throw new Error('Expected the hosted run to remain inspectable after settlement persistence failed.');
+            }
+            const durableRun = JSON.parse(localStorage.getItem('sourdaw-agent-runs') ?? '').json.runs.find(
+                (candidate: { runId: string }) => candidate.runId === run.runId
+            );
+            expect(run).toMatchObject({
+                phase: 'planning',
+                workLeases: [expect.objectContaining({ workId: 'provider-response', terminalState: 'completed' })],
+                providerUsage: [expect.objectContaining({ status: 'complete' })],
+            });
+            expect(durableRun).toMatchObject({
+                runId: run.runId,
+                phase: 'planning',
+                workLeases: [expect.objectContaining({ workId: 'provider-response', terminalState: 'completed' })],
+                providerUsage: [expect.objectContaining({ status: 'complete' })],
+            });
+            expect(durableRun.workLeases).toEqual(run.workLeases);
+            expect(durableRun.providerUsage).toEqual(run.providerUsage);
+            expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+                expect.any(String),
+                expect.objectContaining({
+                    isStreaming: false,
+                    content: `${content}\n\n_${PROVIDER_PERSISTENCE_WARNING}_`,
+                    error: PROVIDER_PERSISTENCE_WARNING,
+                })
+            );
+            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+        } finally {
+            restoreSetItem?.();
+        }
+    });
+
     it('keeps a hosted provider stream failure terminal with its exact provider lease and usage identity', async () => {
         const providerError = new Error('Hosted provider stream failed');
         const partialContent = 'The hosted bridge summary started.';
@@ -749,6 +1006,7 @@ describe('sendChatMessage retained-provider selection', () => {
             provider: 'openai',
             model: 'gpt-4o-mini',
             baseUrl: 'https://api.openai.com/v1',
+            authentication: 'api-key',
         });
         mocks.streamCloudChatCompletion.mockImplementation(
             async (
@@ -1475,10 +1733,49 @@ describe('sendChatMessage retained-provider selection', () => {
         }
     });
 
+    it('retains a failed preview settlement warning in the outer assistant failure', async () => {
+        const executionError = new Error('Preview executor failed');
+        const storageFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+        const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        const settleLease = agentRunWorkLease.settle;
+        const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation((input) => {
+            if (input.workId.startsWith('preview:')) {
+                throw storageFailure;
+            }
+            return settleLease(input);
+        });
+        configureCommandGraphForwarding('plan');
+        mocks.executeVersionedCommandBatchEnvelope.mockRejectedValue(executionError);
+
+        try {
+            await expect(sendChatMessage(commandGraphFixture.prompt, { mode: 'preview' })).resolves.toBeUndefined();
+
+            const commandAssistantMessage = mocks.appendChatMessage.mock.calls
+                .map(([message]) => message)
+                .find((message) => message.role === 'assistant' && message.isCommandAction === true);
+            expect(mocks.updateChatMessage).toHaveBeenCalledWith(commandAssistantMessage?.id, {
+                isStreaming: false,
+                content: `Failed to execute prompt command.\n\n_${FAILURE_PERSISTENCE_WARNING}_`,
+                error: `${executionError.message}\n\n${FAILURE_PERSISTENCE_WARNING}`,
+            });
+            expect(loggerError).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    message: 'Failed preview work lease settlement failed',
+                    cause: storageFailure,
+                })
+            );
+        } finally {
+            settleWorkLease.mockRestore();
+            loggerError.mockRestore();
+        }
+    });
+
     it('settles a successful preview with its exact completed work lease', async () => {
         const previewResource = { release: vi.fn() };
         const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle');
-        configureCommandGraphForwarding('plan');
+        const bindAbortController = vi.spyOn(agentRunCancellation, 'bindAbortController');
+        const transitionPhase = vi.spyOn(agentRunLifecycle, 'transitionPhase');
+        const { commandBatch, projectRevision } = configureCommandGraphForwarding('plan', 'revision-planned-preview');
         mocks.executeVersionedCommandBatchEnvelope.mockResolvedValue({
             status: 'previewed',
             resource: previewResource,
@@ -1488,7 +1785,22 @@ describe('sendChatMessage retained-provider selection', () => {
             await expect(sendChatMessage(commandGraphFixture.prompt, { mode: 'preview' })).resolves.toBeUndefined();
 
             const run = getPlannedRun();
+            const commandAssistantMessage = mocks.appendChatMessage.mock.calls
+                .map(([message]) => message)
+                .find((message) => message.role === 'assistant' && message.isCommandAction === true);
+            const activeAbortController = mocks.setActiveAborter.mock.calls
+                .map(([controller]) => controller)
+                .find((controller) => controller instanceof AbortController);
+            const previewCancellationBinding = bindAbortController.mock.calls
+                .map(([input]) => input)
+                .find((input) => input.lease.workId === 'preview:batch-graph');
             const previewReceiptIdentity = `preview:${run.runId}:batch-graph`;
+            expect(mocks.executeVersionedCommandBatchEnvelope).toHaveBeenCalledWith(commandBatch);
+            expect(transitionPhase).toHaveBeenCalledWith({
+                runId: run.runId,
+                phase: 'previewing',
+                revision: projectRevision,
+            });
             expect(settleWorkLease).toHaveBeenCalledWith({
                 runId: run.runId,
                 workId: 'preview:batch-graph',
@@ -1513,8 +1825,60 @@ describe('sendChatMessage retained-provider selection', () => {
                 ]),
             });
             expect(previewResource.release).toHaveBeenCalledOnce();
+            expect(commandAssistantMessage).toEqual(expect.objectContaining({ id: expect.any(String) }));
+            expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+                commandAssistantMessage?.id,
+                expect.objectContaining({
+                    isStreaming: false,
+                    content:
+                        'Previewed without changing the project:\n\n- Create Drum Bus\n- Set Drum Bus gain\n- Remove Kick',
+                })
+            );
+            expect(activeAbortController).toBeInstanceOf(AbortController);
+            expect(previewCancellationBinding?.controller).toBe(activeAbortController);
         } finally {
+            transitionPhase.mockRestore();
+            bindAbortController.mockRestore();
             settleWorkLease.mockRestore();
+        }
+    });
+
+    it('cancels a rejected preview when the project advanced beyond its planned revision', async () => {
+        const rejectionReason = 'Preview targets changed after planning.';
+        const cancelRun = vi.spyOn(agentRunCancellation, 'cancel');
+        configureCommandGraphForwarding('plan', 'revision-planned-stale');
+        mocks.executeVersionedCommandBatchEnvelope.mockResolvedValue({
+            status: 'rejected',
+            reason: rejectionReason,
+        });
+
+        try {
+            await expect(sendChatMessage(commandGraphFixture.prompt, { mode: 'preview' })).resolves.toBeUndefined();
+
+            const run = getPlannedRun();
+            expect(mocks.captureProjectRevision).toHaveReturnedWith('revision-fixture');
+            expect(cancelRun).toHaveBeenCalledWith({ runId: run.runId, reason: rejectionReason });
+        } finally {
+            cancelRun.mockRestore();
+        }
+    });
+
+    it('leases and releases planned prepared-stem resources during preview', async () => {
+        const action = createStemImportAction('buffer-preview-stem');
+        const discardPreparedStems = vi.spyOn(preparedStemImportCleanup, 'discard').mockResolvedValue(undefined);
+        configurePromptPlanning(action, 'ready', createProviderProposal(['stem-kick']));
+        mocks.executeVersionedCommandBatchEnvelope.mockResolvedValue({
+            status: 'previewed',
+            resource: { release: vi.fn() },
+        });
+
+        try {
+            await expect(sendChatMessage('Import the prepared stems', { mode: 'preview' })).resolves.toBeUndefined();
+
+            expect(discardPreparedStems).toHaveBeenCalledWith(action.payload.stems);
+            expect(getPlannedRun().temporaryAssets).toEqual([]);
+        } finally {
+            discardPreparedStems.mockRestore();
         }
     });
 
@@ -1728,22 +2092,20 @@ describe('sendChatMessage retained-provider selection', () => {
         expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
     });
 
-    it('fails closed when the prepared-stem resources are absent', async () => {
-        configurePromptPlanning(createStemImportAction('buffer-missing'), 'missing');
+    it.each([
+        ['missing', 'apply'],
+        ['missing', 'plan'],
+        ['cleanup-pending', 'apply'],
+        ['cleanup-pending', 'plan'],
+    ] as const)('fails closed when prepared-stem resources are %s in %s mode', async (readiness, mode) => {
+        configurePromptPlanning(createStemImportAction(`buffer-${readiness}-${mode}`), readiness);
 
-        await sendChatMessage('Import the prepared stems', { mode: 'apply' });
-
-        expect(getPlannedRun()).toMatchObject({ phase: 'failed', plan: null });
-        expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
-    });
-
-    it('fails closed when prepared-stem resources are pending cleanup', async () => {
-        configurePromptPlanning(createStemImportAction('buffer-releasing'), 'cleanup-pending');
-
-        await sendChatMessage('Import the prepared stems', { mode: 'apply' });
+        await sendChatMessage('Import the prepared stems', { mode });
 
         expect(getPlannedRun()).toMatchObject({ phase: 'failed', plan: null });
         expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
+        expect(mocks.executeVersionedCommandBatchEnvelope).not.toHaveBeenCalled();
+        expect(mocks.executePlannedActions).not.toHaveBeenCalled();
     });
 
     it('keeps unrelated planning independent of prepared-stem readiness', async () => {
@@ -1758,8 +2120,367 @@ describe('sendChatMessage retained-provider selection', () => {
         expect(mocks.proposePendingActionConfirmation).toHaveBeenCalledOnce();
     });
 
+    it('hands a prepared confirmation to its consumer before the next microtask', async () => {
+        configureCommandGraphForwarding('confirmation');
+        const ordering: string[] = [];
+        const recordBatch = agentRunLifecycle.recordBatch;
+        const recordBatchSpy = vi.spyOn(agentRunLifecycle, 'recordBatch').mockImplementation((input) => {
+            const result = recordBatch(input);
+            queueMicrotask(() => ordering.push('microtask-after-batch'));
+            return result;
+        });
+        mocks.proposePendingActionConfirmation.mockImplementation((input) => {
+            ordering.push('confirmation-proposed');
+            expect(getPlannedRun().batches).toContainEqual(
+                expect.objectContaining({ batchId: 'batch-graph', status: 'waiting-for-approval' })
+            );
+            return { id: input.id };
+        });
+
+        try {
+            await sendChatMessage(commandGraphFixture.prompt, { mode: 'apply' });
+
+            expect(ordering.slice(0, 2)).toEqual(['confirmation-proposed', 'microtask-after-batch']);
+        } finally {
+            recordBatchSpy.mockRestore();
+        }
+    });
+
+    it.each(['plan', 'apply'] as const)(
+        'persists an exact paused decision and releases prepared stems in %s mode',
+        async (mode) => {
+            const action = createStemImportAction(`buffer-decision-${mode}`);
+            const providerProposal = {
+                ...createProviderProposal(['stem-kick']),
+                alternatives: [
+                    {
+                        id: 'import-as-takes',
+                        label: 'Import each stem as a take',
+                        changesAuthority: true,
+                    },
+                ],
+            };
+            const authority = configurePromptPlanning(action, 'ready', providerProposal);
+            let finishCleanup: () => void = () => undefined;
+            let markCleanupStarted: () => void = () => undefined;
+            const cleanupCompletion = new Promise<void>((resolve) => {
+                finishCleanup = resolve;
+            });
+            const cleanupStarted = new Promise<void>((resolve) => {
+                markCleanupStarted = resolve;
+            });
+            const releasePreparedStems = vi
+                .spyOn(preparedStemImportCleanup, 'discardBestEffort')
+                .mockImplementation(() => {
+                    markCleanupStarted();
+                    return cleanupCompletion;
+                });
+            const expectedMessage =
+                mode === 'plan'
+                    ? 'Choose one before I continue:\n\n- Import each stem as a take'
+                    : 'Choose one before I can prepare this run:\n\n- Import each stem as a take';
+
+            try {
+                let resolved = false;
+                const pendingDecision = sendChatMessage('Import the prepared stems', { mode }).then(() => {
+                    resolved = true;
+                });
+                await cleanupStarted;
+
+                expect(resolved).toBe(false);
+                expect(getPlannedRun()).toMatchObject({
+                    decision: null,
+                    manualResume: { required: false },
+                });
+                expect(mocks.updateChatMessage).not.toHaveBeenCalledWith(
+                    expect.any(String),
+                    expect.objectContaining({ content: expectedMessage })
+                );
+
+                finishCleanup();
+                await pendingDecision;
+
+                const run = getPlannedRun();
+                expect(run).toMatchObject({
+                    phase: 'paused',
+                    manualResume: {
+                        required: true,
+                        reason: 'The alternatives would change the authority or outcome of this run.',
+                        workIds: [],
+                        requiredAt: expect.any(Number),
+                    },
+                    decision: {
+                        decisionId: expect.any(String),
+                        capabilitySchemaIdentity: getPlanningProviderSchemaContract().identity,
+                        proposalIdentity: getAgentPlanProposalIdentity({
+                            actions: [action],
+                            providerProposal,
+                            scope: authority.scope,
+                            grants: authority.grants,
+                        }),
+                        revision: 'revision-fixture',
+                        scope: authority.scope,
+                        grants: authority.grants,
+                        alternatives: providerProposal.alternatives,
+                        reason: 'The alternatives would change the authority or outcome of this run.',
+                        selectedAlternativeId: null,
+                        resumeAttemptId: null,
+                    },
+                    batches: [],
+                });
+                expect(mocks.executeVersionedCommandBatchEnvelope).not.toHaveBeenCalled();
+                expect(mocks.executePlannedActions).not.toHaveBeenCalled();
+                expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
+                expect(releasePreparedStems).toHaveBeenCalledWith(action.payload.stems, undefined);
+                expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+                    expect.any(String),
+                    expect.objectContaining({ isStreaming: false, content: expectedMessage })
+                );
+            } finally {
+                releasePreparedStems.mockRestore();
+            }
+        }
+    );
+
+    it.each(['apply', 'plan'] as const)(
+        'rejects a mismatched resumed proposal before selecting its source decision and releases the claim in %s mode',
+        async (mode) => {
+            const action = createAddTrackAction();
+            const providerProposal = createProviderProposal([]);
+            const authority = configurePromptPlanning(action, 'missing', providerProposal);
+            const sourceRunId = `run-resume-source-${mode}`;
+            createPendingResumeDecision({
+                runId: sourceRunId,
+                proposalIdentity: 'mismatched-provider-proposal',
+                authority,
+                mode,
+            });
+
+            await expect(
+                agentRunControls.resumeDecision({ runId: sourceRunId, alternativeId: 'add-reference' })
+            ).resolves.toEqual(expect.objectContaining({ status: 'rejected' }));
+
+            expect(agentRunLifecycle.get(sourceRunId)?.decision).toMatchObject({
+                selectedAlternativeId: null,
+                resumeAttemptId: null,
+            });
+            expect(agentRunControls.get(sourceRunId)?.allowedActions.resume).toBe(true);
+            expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
+            expect(mocks.executePlannedActions).not.toHaveBeenCalled();
+
+            await expect(
+                agentRunControls.resumeDecision({ runId: sourceRunId, alternativeId: 'add-reference' })
+            ).resolves.toEqual(expect.objectContaining({ status: 'rejected' }));
+            expect(mocks.planPromptActions).toHaveBeenCalledTimes(2);
+        }
+    );
+
+    it.each(['apply', 'plan'] as const)(
+        'selects a resumed source decision only after replacement plan admission succeeds in %s mode',
+        async (mode) => {
+            const action = createAddTrackAction();
+            const providerProposal = createProviderProposal(['unavailable-provider-asset']);
+            const authority = configurePromptPlanning(action, 'missing', providerProposal);
+            const sourceRunId = `run-resume-plan-rejection-${mode}`;
+            createPendingResumeDecision({
+                runId: sourceRunId,
+                proposalIdentity: getAgentPlanProposalIdentity({
+                    actions: [action],
+                    providerProposal,
+                    scope: authority.scope,
+                    grants: authority.grants,
+                }),
+                authority,
+                mode,
+            });
+
+            await expect(
+                agentRunControls.resumeDecision({ runId: sourceRunId, alternativeId: 'add-reference' })
+            ).resolves.toEqual(expect.objectContaining({ status: 'rejected' }));
+
+            expect(agentRunLifecycle.get(sourceRunId)?.decision).toMatchObject({
+                selectedAlternativeId: null,
+                resumeAttemptId: null,
+            });
+            expect(agentRunControls.get(sourceRunId)?.allowedActions.resume).toBe(true);
+            expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
+            expect(mocks.executePlannedActions).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each(['apply', 'plan'] as const)(
+        'selects a resumed source decision after the replacement plan is admitted in %s mode',
+        async (mode) => {
+            const action = createAddTrackAction();
+            const providerProposal = createProviderProposal([]);
+            const authority = configurePromptPlanning(action, 'missing', providerProposal);
+            const sourceRunId = `run-resume-plan-accepted-${mode}`;
+            createPendingResumeDecision({
+                runId: sourceRunId,
+                proposalIdentity: getAgentPlanProposalIdentity({
+                    actions: [action],
+                    providerProposal,
+                    scope: authority.scope,
+                    grants: authority.grants,
+                }),
+                authority,
+                mode,
+            });
+
+            const result = await agentRunControls.resumeDecision({
+                runId: sourceRunId,
+                alternativeId: 'add-reference',
+            });
+
+            expect(result).toEqual({
+                status: 'resumed',
+                sourceRunId,
+                runId: expect.any(String),
+                decisionId: 'decision-reference-track',
+                selectedAlternativeId: 'add-reference',
+            });
+            expect(agentRunLifecycle.get(sourceRunId)?.decision).toMatchObject({
+                selectedAlternativeId: 'add-reference',
+                resumeAttemptId: null,
+            });
+            expect(agentRunLifecycle.get(sourceRunId)?.manualResume.required).toBe(false);
+            expect(result.status === 'resumed' ? agentRunLifecycle.get(result.runId) : null).toMatchObject({
+                phase: mode === 'apply' ? 'waiting-for-approval' : 'completed',
+                plan: expect.objectContaining({ revision: 'revision-fixture' }),
+            });
+        }
+    );
+
+    it('awaits accepted plan stem cleanup before publishing the final plan result', async () => {
+        const action = createStemImportAction('buffer-plan-cleanup');
+        configurePromptPlanning(action, 'ready', createProviderProposal(['stem-kick']));
+        let finishCleanup: () => void = () => undefined;
+        let markCleanupStarted: () => void = () => undefined;
+        const cleanupCompletion = new Promise<void>((resolve) => {
+            finishCleanup = resolve;
+        });
+        const cleanupStarted = new Promise<void>((resolve) => {
+            markCleanupStarted = resolve;
+        });
+        const ordering: string[] = [];
+        const releasePreparedStems = vi
+            .spyOn(preparedStemImportCleanup, 'discardBestEffort')
+            .mockImplementation(async () => {
+                ordering.push('cleanup-started');
+                markCleanupStarted();
+                await cleanupCompletion;
+                ordering.push('cleanup-finished');
+            });
+        mocks.updateChatMessage.mockImplementation((_messageId, update) => {
+            if (update.content.startsWith('Planned without changing')) {
+                ordering.push('plan-published');
+            }
+        });
+
+        try {
+            let resolved = false;
+            const pendingPlan = sendChatMessage('Import the prepared stems', { mode: 'plan' }).then(() => {
+                resolved = true;
+            });
+            await cleanupStarted;
+
+            expect(resolved).toBe(false);
+            expect(ordering).toEqual(['cleanup-started']);
+            expect(mocks.updateChatMessage).not.toHaveBeenCalledWith(
+                expect.any(String),
+                expect.objectContaining({ content: expect.stringContaining('Planned without changing') })
+            );
+
+            finishCleanup();
+            await pendingPlan;
+
+            expect(ordering).toEqual(['cleanup-started', 'cleanup-finished', 'plan-published']);
+            expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+                expect.any(String),
+                expect.objectContaining({
+                    isStreaming: false,
+                    content: 'Planned without changing the project:\n\n- Fixture action',
+                })
+            );
+        } finally {
+            releasePreparedStems.mockRestore();
+        }
+    });
+
+    it.each(['apply', 'plan'] as const)(
+        'stops an invalid compiled batch before preview, confirmation, or execution in %s mode',
+        async (mode) => {
+            configurePromptPlanning(createAddTrackAction(), 'missing');
+            mocks.parseVersionedCommandBatchEnvelope.mockReturnValue({
+                status: 'invalid',
+                reason: 'fixture command batch is invalid',
+            });
+
+            await sendChatMessage('Add a reference track', { mode });
+
+            expect(getPlannedRun()).toMatchObject({ phase: 'failed', plan: null, batches: [] });
+            expect(mocks.executeVersionedCommandBatchEnvelope).not.toHaveBeenCalled();
+            expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
+            expect(mocks.executePlannedActions).not.toHaveBeenCalled();
+            expect(mocks.updateChatMessage).toHaveBeenCalledWith(
+                expect.any(String),
+                expect.objectContaining({
+                    isStreaming: false,
+                    error: 'fixture command batch is invalid',
+                })
+            );
+        }
+    );
+
+    it.each(['apply', 'plan'] as const)(
+        'admits application-assigned targets-absent ids without provider-known scope in %s mode',
+        async (mode) => {
+            const action = createAddTrackAction();
+            const providerProposal = createProviderProposal([]);
+            const { grants } = configurePromptPlanning(action, 'missing', providerProposal);
+            const scope = {
+                targetIds: ['track-application-assigned'],
+                targetRanges: [],
+                protectedTargetIds: [],
+                protectedRanges: [],
+            };
+            mocks.compileAgentActionExecution.mockReturnValue({
+                commandEnvelopes: [],
+                commandBatch: { serialized: '{}', authority: { scope, grants } },
+                agentApproval: { policy: { risk: 'confirm', reasons: [] } },
+                requiresConfirmation: true,
+            });
+            mocks.parseVersionedCommandBatchEnvelope.mockReturnValue({
+                status: 'valid',
+                envelope: {
+                    batchId: 'batch-application-assigned',
+                    commands: [],
+                    idempotencyKey: 'batch-application-assigned-idempotency',
+                    preconditions: [{ kind: 'targets-absent', targetIds: ['track-application-assigned'] }],
+                    scope,
+                },
+            });
+
+            await sendChatMessage('Add a reference track', { mode });
+
+            expect(getPlannedRun()).toMatchObject({
+                phase: mode === 'apply' ? 'waiting-for-approval' : 'completed',
+                plan: { scope },
+                batches:
+                    mode === 'apply' ? [{ batchId: 'batch-application-assigned', status: 'waiting-for-approval' }] : [],
+            });
+            if (mode === 'apply') {
+                expect(mocks.proposePendingActionConfirmation).toHaveBeenCalledOnce();
+            } else {
+                expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
+            }
+            expect(mocks.executeVersionedCommandBatchEnvelope).not.toHaveBeenCalled();
+            expect(mocks.executePlannedActions).not.toHaveBeenCalled();
+        }
+    );
+
     it('forwards a compiler-produced graph and provider-known scope through immediate application', async () => {
-        const commandBatch = configureCommandGraphForwarding('immediate');
+        const { commandBatch } = configureCommandGraphForwarding('immediate');
         const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle');
 
         try {
@@ -1792,6 +2513,161 @@ describe('sendChatMessage retained-provider selection', () => {
             });
         } finally {
             settleWorkLease.mockRestore();
+        }
+    });
+
+    it.each(['committed', 'executed'] as const)(
+        'records a durable immediate %s receipt ledger and terminal batch identity',
+        async (status) => {
+            configureCommandGraphForwarding('immediate');
+            mocks.executePlannedActions.mockImplementation(async () => {
+                const runId = getMostRecentlyAdmittedRunId();
+                return {
+                    status,
+                    actions: [],
+                    receipt: {
+                        schemaVersion: 2,
+                        runId,
+                        batchId: 'batch-graph',
+                        outcome: status,
+                        pendingEffects: [],
+                        links: { render: [], analysis: [] },
+                    },
+                };
+            });
+
+            await expect(sendChatMessage(commandGraphFixture.prompt, { mode: 'apply' })).resolves.toBeDefined();
+
+            const run = getPlannedRun();
+            const receiptIdentity = `2:${run.runId}:batch-graph:${status}`;
+            const receiptLedger = [expect.objectContaining({ workId: 'batch-graph', receiptIdentity })];
+            const terminalBatch = [
+                expect.objectContaining({
+                    batchId: 'batch-graph',
+                    status: 'committed',
+                    receiptIdentity,
+                }),
+            ];
+            expect(run).toMatchObject({
+                phase: 'completed',
+                receipts: receiptLedger,
+                committedWork: receiptLedger,
+                batches: terminalBatch,
+            });
+            const durableRun = JSON.parse(localStorage.getItem('sourdaw-agent-runs') ?? '').json.runs.find(
+                (candidate: { runId: string }) => candidate.runId === run.runId
+            );
+            expect(durableRun).toMatchObject({
+                phase: 'completed',
+                receipts: receiptLedger,
+                committedWork: receiptLedger,
+                batches: terminalBatch,
+            });
+        }
+    );
+
+    it('persists the immediate no-op batch terminal status', async () => {
+        configureCommandGraphForwarding('immediate');
+        mocks.executePlannedActions.mockResolvedValue({ status: 'no-op', actions: [] });
+
+        await expect(sendChatMessage(commandGraphFixture.prompt, { mode: 'apply' })).resolves.toBeUndefined();
+
+        const run = getPlannedRun();
+        expect(run.batches).toContainEqual(
+            expect.objectContaining({ batchId: 'batch-graph', status: 'no-op', receiptIdentity: null })
+        );
+        const durableRun = JSON.parse(localStorage.getItem('sourdaw-agent-runs') ?? '').json.runs.find(
+            (candidate: { runId: string }) => candidate.runId === run.runId
+        );
+        expect(durableRun.batches).toContainEqual(
+            expect.objectContaining({ batchId: 'batch-graph', status: 'no-op', receiptIdentity: null })
+        );
+    });
+
+    it.each(['committed', 'executed'] as const)(
+        'surfaces command lease persistence failure after an immediate %s receipt',
+        async (status) => {
+            const storageFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+            const settleLease = agentRunWorkLease.settle;
+            const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation((input) => {
+                if (input.workId === 'batch-graph') {
+                    throw storageFailure;
+                }
+                return settleLease(input);
+            });
+            configureCommandGraphForwarding('immediate');
+            mocks.executePlannedActions.mockImplementation(async () => {
+                const runId = getMostRecentlyAdmittedRunId();
+                return {
+                    status,
+                    actions: [],
+                    receipt: {
+                        schemaVersion: 2,
+                        runId,
+                        batchId: 'batch-graph',
+                        outcome: status,
+                        pendingEffects: [],
+                        links: { render: [], analysis: [] },
+                    },
+                };
+            });
+
+            try {
+                await expect(sendChatMessage(commandGraphFixture.prompt, { mode: 'apply' })).resolves.toBeDefined();
+
+                const run = getPlannedRun();
+                expect(run.receipts).toContainEqual(expect.objectContaining({ workId: 'batch-graph' }));
+                expect(run.committedWork).toContainEqual(expect.objectContaining({ workId: 'batch-graph' }));
+                expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+                    expect.any(String),
+                    expect.objectContaining({
+                        isStreaming: false,
+                        error: COMMAND_PERSISTENCE_WARNING,
+                        content: expect.stringContaining(COMMAND_PERSISTENCE_WARNING),
+                    })
+                );
+                expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
+                    expect.any(String),
+                    expect.objectContaining({ content: expect.stringContaining('Do not retry automatically') })
+                );
+            } finally {
+                settleWorkLease.mockRestore();
+            }
+        }
+    );
+
+    it.each([
+        { outcome: 'success', rejects: false },
+        { outcome: 'executor rejection', rejects: true },
+    ])('releases immediate command cancellation registration after $outcome', async ({ rejects }) => {
+        configureCommandGraphForwarding('immediate');
+        const bindAbortController = agentRunCancellation.bindAbortController;
+        const releaseCommandCancellation = vi.fn();
+        const bindCommandCancellation = vi
+            .spyOn(agentRunCancellation, 'bindAbortController')
+            .mockImplementation((input) => {
+                const release = bindAbortController(input);
+                if (input.lease.workId !== 'batch-graph') {
+                    return release;
+                }
+                return () => {
+                    releaseCommandCancellation();
+                    release();
+                };
+            });
+        if (rejects) {
+            mocks.executePlannedActions.mockRejectedValue(new Error('Command execution rejected'));
+        } else {
+            mocks.executePlannedActions.mockResolvedValue({ status: 'no-op', actions: [] });
+        }
+
+        try {
+            await expect(sendChatMessage(commandGraphFixture.prompt, { mode: 'apply' })).resolves.toBeUndefined();
+
+            expect(releaseCommandCancellation).toHaveBeenCalledOnce();
+            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
+        } finally {
+            bindCommandCancellation.mockRestore();
         }
     });
 

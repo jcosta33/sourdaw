@@ -9,6 +9,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 
+import { getProjectCommitFinalizationWarning } from './getProjectCommitFinalizationWarning';
 import { getVerifiedBatchReplayDisposition } from './getVerifiedBatchReplayDisposition';
 import { notifyAiChange } from './notifyAiChange';
 import { prepareAgentRunPendingEffectContinuation } from './prepareAgentRunPendingEffectContinuation';
@@ -50,6 +51,8 @@ type ExecutePlannedActionsResult =
           status: 'committed';
           actions: ExecutedAction[];
           commitWarning?: string;
+          committedRevision?: string;
+          finalizationEvidenceFailure?: string;
           receipt?: VerifiedBatchReceipt;
           reportingWarning?: string;
       }
@@ -76,6 +79,8 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
 
     const group = input.group ?? generateGroupId(input.prompt);
     let revisionInvalidated = false;
+    let finalizedProjectRevision: string | undefined;
+    let finalizationEvidenceFailure: string | undefined;
 
     function shouldExecute(): boolean {
         revisionInvalidated = captureProjectRevision() !== input.projectRevision;
@@ -93,7 +98,14 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
                 runId: receipt.runId,
                 receipt,
                 commandBatch: input.commandBatch,
+                getFinalizedRevision: () => finalizedProjectRevision,
             });
+        },
+        onProjectCommitFinalized: ({ revision }: { revision: string }) => {
+            finalizedProjectRevision = revision;
+        },
+        onProjectCommitFinalizationUnavailable: ({ reason }: { reason: string }) => {
+            finalizationEvidenceFailure = reason;
         },
     };
     const batchResult = await executeVersionedCommandBatchEnvelope({
@@ -179,7 +191,9 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
     }
 
     try {
-        let successSummary = `${input.successVerb ?? 'Executed'}: ${input.prompt}`;
+        let successSummary = finalizationEvidenceFailure
+            ? getProjectCommitFinalizationWarning(finalizationEvidenceFailure)
+            : `${input.successVerb ?? 'Executed'}: ${input.prompt}`;
         if (commitWarning) {
             successSummary = `${successSummary}. Committed with follow-up warning: ${commitWarning}`;
         }
@@ -209,6 +223,8 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
         status: 'committed',
         actions,
         ...(commitWarning ? { commitWarning } : {}),
+        ...(finalizedProjectRevision ? { committedRevision: finalizedProjectRevision } : {}),
+        ...(finalizationEvidenceFailure ? { finalizationEvidenceFailure } : {}),
         receipt,
         ...(reportingWarning ? { reportingWarning } : {}),
     };
