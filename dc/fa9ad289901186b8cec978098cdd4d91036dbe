@@ -1,0 +1,31 @@
+src/modules/Project/useCases/arrangement/__tests__/takeSnapshot.spec.ts
+  s_ae074277795b45::t_efb3ae8d8ec645 38-39
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamNotes.spec.ts
+  s_ae074277795b45::t_fdb0664d575d86 54-55
+src/modules/Arrangement/handlers/track/__tests__/handleRemoveTrack.spec.ts
+  s_ab242b2dab84a5::t_4c1493af1b01c0 112-113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "dcfa9ad289901186b8cec978098cdd4d91036dbe",
+  "prompts": {},
+  "sessions": {
+    "s_ab242b2dab84a5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a053f4-ab62-74d3-83f9-9ed42d1b0453",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
