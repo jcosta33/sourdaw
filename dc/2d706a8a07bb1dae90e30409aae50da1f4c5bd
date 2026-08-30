@@ -1,0 +1,48 @@
+src/modules/PluginHost/useCases/pluginLifecycle/beginProjectSessionPluginRetirement.ts
+  s_ae074277795b45::t_47300e1d9de438 7,10-14
+src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts
+  s_ae074277795b45::t_c28971f6b6ceb1 242-244,251
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/resetExternalPluginRuntimeForGraphRebuild.spec.ts
+  s_ae074277795b45::t_1f765a70c01498 140
+  s_ae074277795b45::t_2e5156f8d12435 159-173
+src/modules/Project/useCases/projectPersistence/__tests__/quiesceProjectSession.spec.ts
+  s_ae074277795b45::t_47300e1d9de438 29
+  s_ae074277795b45::t_f495e32f07d92c 147-150
+electron/__tests__/bridge.spec.ts
+  s_ae074277795b45::t_eb4e43616e4d84 142
+  s_ae074277795b45::t_eae46edf762e53 35,102,260-268
+  s_ae074277795b45::t_71b8ed84dff526 269
+electron/channels.ts
+  s_ae074277795b45::t_c28971f6b6ceb1 62-63,217
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx
+  s_ae074277795b45::t_3f6a38e652571a 12,27-32,118,143,148,263,265-274,286
+  s_ae074277795b45::t_eb4e43616e4d84 264,275-285,287-289
+  s_ae074277795b45::t_16dfde9eb302e8 290-307
+electron/bridge.ts
+  s_ae074277795b45::t_c28971f6b6ceb1 44,198,281-285,471-473
+  s_ae074277795b45::t_420e5ddc2b8596 474
+src/types/sourdaw-desktop.d.ts
+  s_ae074277795b45::t_c28971f6b6ceb1 135
+electron/main.ts
+  s_ae074277795b45::t_34a7efa594f8f6 42,154-159,234,365,388-390
+  s_ae074277795b45::t_3534ea415d2dc7 391
+src/modules/Project/useCases/projectPersistence/projectSessionQuiescer.ts
+  s_ae074277795b45::t_47300e1d9de438 18,29,68
+  s_ae074277795b45::t_f495e32f07d92c 97-99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "dc2d706a8a07bb1dae90e30409aae50da1f4c5bd",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
