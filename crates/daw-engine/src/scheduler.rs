@@ -311,6 +311,26 @@ pub enum GraphCommand {
     /// frame the region ends on.
     SetLoopRegion(LoopRegion),
 
+    /// Shadow the monitor: keep rendering, contribute nothing to the OS
+    /// output.
+    ///
+    /// A *session mode*, deliberately not the master fader. `true` writes the
+    /// device buffer as true zeros at the one place the engine's audio becomes
+    /// the device's (`crate::audio_thread`); everything upstream is untouched,
+    /// so the timeline still renders block-accurately, the playhead still
+    /// advances, loop seams still close on their sample and the transport maps
+    /// still govern. That is what lets a native session hold a live programme
+    /// while another engine remains the path a musician hears.
+    ///
+    /// Two consequences of siting the gate at the device boundary, both
+    /// intended. An offline render ([`crate::offline::OfflineRenderer`]) never
+    /// sees it — a bounce is not a monitor, and a shadowed session must still
+    /// export its mix. And lifting the gate steps rather than fades: the
+    /// change lands at the block boundary that drains this command, so a
+    /// cutover from a non-zero programme is a discontinuity. Ramping that edge
+    /// belongs to the slice that makes the cutover a musician-facing gesture.
+    SetMonitorShadow(bool),
+
     /// Fence announcing that the next `commands` elements on the ring are one
     /// atomically published batch.
     ///
@@ -556,6 +576,7 @@ impl GraphCommand {
             | Self::SetTransportPlayback { .. }
             | Self::SetTransportMaps(..)
             | Self::SetLoopRegion(..)
+            | Self::SetMonitorShadow(..)
             | Self::BeginBatch { .. }
             | Self::SwapCommandChannel { .. }
             | Self::AddTrack(..)
@@ -1297,6 +1318,14 @@ pub struct AudioScheduler {
     /// offline renderer included.
     transport_maps: Option<Box<TransportMaps>>,
     loop_region: LoopRegion,
+    /// Whether the monitor is shadowed ([`GraphCommand::SetMonitorShadow`]).
+    ///
+    /// A plain `bool`, not an atomic: it is written by the command drain and
+    /// read by the device write, both inside the same callback on the same
+    /// thread, so there is no cross-thread read to order. The device write is
+    /// the only consumer — nothing in this file branches on it, which is what
+    /// keeps a shadowed engine rendering exactly what an audible one renders.
+    monitor_shadowed: bool,
     /// Loop seams this engine has closed, for
     /// [`TransportPositionSnapshot::loop_wraps`].
     loop_wraps: u64,
@@ -1386,6 +1415,13 @@ impl AudioScheduler {
             transport: TransportState::default(),
             transport_maps: None,
             loop_region: LoopRegion::default(),
+            // Audible until a session says otherwise. The gate is a mode a
+            // caller opts into, so an engine nobody told behaves exactly as
+            // every engine did before the gate existed; a live session that
+            // wants silence sends the command inside the same fenced batch as
+            // its topology, which is applied before any block that could hold
+            // that session's programme.
+            monitor_shadowed: false,
             loop_wraps: 0,
             last_wrap_frame: 0,
             midi_rt_diagnostics: ActiveMidiRtDiagnostics::new(),
@@ -1421,6 +1457,13 @@ impl AudioScheduler {
             loop_wraps: self.loop_wraps,
             last_wrap_frame: self.last_wrap_frame,
         }
+    }
+
+    /// Whether the device write must be silenced this callback
+    /// ([`GraphCommand::SetMonitorShadow`]).
+    #[inline]
+    pub(crate) const fn monitor_shadowed(&self) -> bool {
+        self.monitor_shadowed
     }
 
     #[inline]
@@ -1752,6 +1795,10 @@ impl AudioScheduler {
                 }
                 GraphCommand::SetLoopRegion(region) => {
                     self.loop_region = region;
+                    None
+                }
+                GraphCommand::SetMonitorShadow(shadowed) => {
+                    self.monitor_shadowed = shadowed;
                     None
                 }
                 GraphCommand::AddTrack(track) => self.timeline.add_track(track).map(|rejected| {
