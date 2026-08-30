@@ -39,4 +39,33 @@ describe('projectRevisionMatchesLiveIgnoringCommandCheckpoint', () => {
 
         expect(projectRevisionMatchesLiveIgnoringCommandCheckpoint(committedRevision)).toBe(false);
     });
+
+    it('rejects a prior revision after a musician-visible edit is restored to its captured value', () => {
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.tempo = 120;
+        });
+        const committedRevision = captureProjectRevision();
+
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.tempo = 128;
+        });
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.tempo = 120;
+        });
+
+        expect(projectRevisionMatchesLiveIgnoringCommandCheckpoint(committedRevision)).toBe(false);
+    });
+
+    it('rejects a prior revision after project truth gains and then loses a field', () => {
+        const committedRevision = captureProjectRevision();
+
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.tempo = 128;
+        });
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            delete doc.tempo;
+        });
+
+        expect(projectRevisionMatchesLiveIgnoringCommandCheckpoint(committedRevision)).toBe(false);
+    });
 });

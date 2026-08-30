@@ -2,6 +2,7 @@ import { type Heads } from '@automerge/automerge';
 
 import { DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
 import { automergeRepository } from '../repositories/automergeRepository';
+import { readChangeHashesSinceHeads } from '../repositories/readChangeHashesSinceHeads';
 
 import { captureProjectRevision } from './captureProjectRevision';
 
@@ -77,9 +78,12 @@ function projectDocumentWithoutCommandCheckpoint(document: Record<string, unknow
     return projectDocument;
 }
 
-function readPlainDocument(document: Record<string, unknown>): Record<string, unknown> | null {
+function readProjectedDocument(document: Record<string, unknown> | undefined): Record<string, unknown> | null {
+    if (!document) {
+        return null;
+    }
     const parsed: unknown = JSON.parse(JSON.stringify(document));
-    return isRecord(parsed) ? parsed : null;
+    return isRecord(parsed) ? projectDocumentWithoutCommandCheckpoint(parsed) : null;
 }
 
 function snapshotsEqual(left: unknown, right: unknown): boolean {
@@ -94,21 +98,34 @@ function headsEqual(left: readonly string[], right: readonly string[]): boolean 
     return [...left].toSorted().every((head, index) => head === sortedRight[index]);
 }
 
-function rootDocumentMatchesHeads(expectedHeads: readonly string[]): boolean {
-    const liveDoc = automergeRepository.getDoc<Record<string, unknown>>(DOC_PREFIX_ROOT);
-    const expectedDoc = automergeRepository.getDocAtHeads<Record<string, unknown>>(
-        DOC_PREFIX_ROOT,
-        expectedHeads as Heads
-    );
-    const livePlain = liveDoc ? readPlainDocument(liveDoc) : null;
-    const expectedPlain = expectedDoc ? readPlainDocument(expectedDoc) : null;
-    if (!livePlain || !expectedPlain) {
+function readProjectedRootAtHeads(heads: Heads): Record<string, unknown> | null {
+    return readProjectedDocument(automergeRepository.getDocAtHeads<Record<string, unknown>>(DOC_PREFIX_ROOT, heads));
+}
+
+/**
+ * True when every root change after `expectedHeads` left project truth outside
+ * the command-batch checkpoint slot untouched.
+ *
+ * Comparing the live document against the expected view is not enough on its
+ * own: an edit that is reverted afterwards — tempo 120 -> 128 -> 120, or a
+ * field added and deleted again — leaves those two snapshots equal on heads
+ * that moved for a musician-visible reason. The state after each change on the
+ * path is compared instead, so the value the revert discarded is still seen.
+ */
+function rootAdvancedOnlyByCommandCheckpoint(expectedHeads: Heads): boolean {
+    const expectedProjection = readProjectedRootAtHeads(expectedHeads);
+    const liveProjection = readProjectedDocument(automergeRepository.getDoc<Record<string, unknown>>(DOC_PREFIX_ROOT));
+    if (!expectedProjection || !liveProjection || !snapshotsEqual(liveProjection, expectedProjection)) {
         return false;
     }
-    return snapshotsEqual(
-        projectDocumentWithoutCommandCheckpoint(livePlain),
-        projectDocumentWithoutCommandCheckpoint(expectedPlain)
-    );
+    const changeHashes = readChangeHashesSinceHeads(DOC_PREFIX_ROOT, expectedHeads);
+    if (!changeHashes) {
+        return false;
+    }
+    return changeHashes.every((hash) => {
+        const projection = readProjectedRootAtHeads([hash]);
+        return projection !== null && snapshotsEqual(projection, expectedProjection);
+    });
 }
 
 /**
@@ -140,7 +157,7 @@ export function projectRevisionMatchesLiveIgnoringCommandCheckpoint(expectedRevi
             if (headsEqual(document.heads, liveDocument.heads)) {
                 continue;
             }
-            if (!rootDocumentMatchesHeads(document.heads)) {
+            if (!rootAdvancedOnlyByCommandCheckpoint(document.heads)) {
                 return false;
             }
             continue;
