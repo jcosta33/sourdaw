@@ -34,11 +34,7 @@ import {
     registerWindowControlChannels,
     SCAN_COMMAND,
 } from './appIpc.js';
-import {
-    createApplicationMenuTemplate,
-    dispatchFocusedNativeMenuIntent,
-    type NativeMenuIntent,
-} from './applicationMenu.js';
+import { createApplicationMenuTemplate, type NativeMenuIntent } from './applicationMenu.js';
 import {
     EVENT_CHANNEL,
     NATIVE_MENU_ACTION_CHANNEL,
@@ -74,12 +70,7 @@ import { activateRendererWindow } from './rendererWindowActivation.js';
 import { registerCommandRouter } from './router.js';
 import { createScanSupervisor, type ScanSupervisor } from './scan.js';
 import { applyPermissionPolicy, decideWindowOpen, isNavigationAllowed, trustedFrameGuard } from './security.js';
-import {
-    composeQuitHandler,
-    installMacApplicationMenu,
-    requestApprovedWindowClose,
-    shouldRecreateRendererAfterCrash,
-} from './shellComposition.js';
+import { createShellComposition, requestApprovedWindowClose } from './shellComposition.js';
 import { runBeforeQuitCascade, type ShutdownOutcome } from './shutdown.js';
 import { systemTimers } from './timers.js';
 import { registerVoiceDictation } from './voiceDictation.js';
@@ -158,26 +149,10 @@ const nativeMenuActionDispatcher = createNativeMenuActionDispatcher({
     createWindow: createAndActivateWindow,
 });
 
+let shellComposition: ReturnType<typeof createShellComposition<ReturnType<typeof Menu.buildFromTemplate>>>;
+
 const nativeMenuAction = (intent: NativeMenuIntent): void => {
-    const window = mainWindow;
-    if (!intent.action.startsWith('edit:')) {
-        nativeMenuActionDispatcher.dispatch(intent);
-        return;
-    }
-    if (window === undefined || window.isDestroyed()) {
-        return;
-    }
-    // A BaseWindow plugin editor can own native focus without being a
-    // BrowserWindow. Leave its responder chain alone rather than applying or
-    // forwarding an Edit operation to the renderer behind it.
-    dispatchFocusedNativeMenuIntent({
-        intent,
-        isMainWindowFocused: BaseWindow.getFocusedWindow() === window,
-        target: window.webContents,
-        send: (next) => nativeMenuActionDispatcher.dispatch(next),
-        sendToNativeResponder:
-            process.platform === 'darwin' ? (action) => Menu.sendActionToFirstResponder(action) : undefined,
-    });
+    shellComposition.sendMenuIntent(intent);
 };
 
 const rebuildMacApplicationMenu = (
@@ -186,12 +161,9 @@ const rebuildMacApplicationMenu = (
     if (process.platform !== 'darwin') {
         return;
     }
-    installMacApplicationMenu({
-        isMac: true,
-        build: (template) => Menu.buildFromTemplate(template),
-        set: (menu) => Menu.setApplicationMenu(menu),
-        template: createApplicationMenuTemplate({ appName: 'Sourdaw', send: nativeMenuAction, recentProjects }),
-    });
+    shellComposition.installMenu(
+        createApplicationMenuTemplate({ appName: 'Sourdaw', send: nativeMenuAction, recentProjects })
+    );
 };
 
 const windowCloseCoordinator = createWindowCloseCoordinator({
@@ -534,6 +506,42 @@ let nativeHost: NativeHost | undefined;
 let scanSupervisor: ScanSupervisor | undefined;
 const pluginCommandAdmission = createPluginCommandAdmission();
 
+shellComposition = createShellComposition({
+    isMac: process.platform === 'darwin',
+    buildMenu: (template) => Menu.buildFromTemplate(template),
+    setMenu: (menu) => Menu.setApplicationMenu(menu),
+    getMainTarget: () => (mainWindow === undefined || mainWindow.isDestroyed() ? undefined : mainWindow.webContents),
+    isMainTargetFocused: () => BaseWindow.getFocusedWindow() === mainWindow,
+    sendToNativeResponder:
+        process.platform === 'darwin' ? (action) => Menu.sendActionToFirstResponder(action) : undefined,
+    dispatchMenuIntent: (intent) => nativeMenuActionDispatcher.dispatch(intent),
+    runShutdown: (): Promise<ShutdownOutcome> =>
+        runBeforeQuitCascade({
+            refusePluginCommands: () => pluginCommandAdmission.refusePluginCommands(),
+            disposeScanSupervisor: () => scanSupervisor?.dispose(),
+            host: nativeHost,
+            timers: systemTimers,
+        }),
+    quitDependencies: {
+        exit: (code) => app.exit(code),
+        report: (outcome) => {
+            if (outcome.status !== 'completed') {
+                console.error(`[shell] shutdown ${outcome.status}: ${JSON.stringify(outcome)}`);
+            }
+        },
+        canQuit: async () => {
+            const approved = await windowCloseCoordinator.requestClose();
+            if (approved) {
+                rendererSessionLifecycle.approveTeardown();
+            }
+            return approved;
+        },
+        beforeRun: quiesceApprovedMainWindow,
+        timers: systemTimers,
+    },
+    lifecycle: rendererSessionLifecycle,
+});
+
 /**
  * The plugin-scan supervisor, over a real `utilityProcess`.
  *
@@ -752,38 +760,7 @@ void app.whenReady().then(() => {
  * shell exits anyway, because a musician who cannot close the app will kill it,
  * and that is strictly worse.
  */
-app.on(
-    'before-quit',
-    composeQuitHandler(
-        (): Promise<ShutdownOutcome> =>
-            runBeforeQuitCascade({
-                refusePluginCommands: () => pluginCommandAdmission.refusePluginCommands(),
-                // The scan worker holds its own addon instance and its own tree
-                // of per-plugin child processes; a hostile plugin can already
-                // have wedged it, so dispose before waiting on the host cascade.
-                disposeScanSupervisor: () => scanSupervisor?.dispose(),
-                host: nativeHost,
-                timers: systemTimers,
-            }),
-        {
-            exit: (code) => app.exit(code),
-            report: (outcome) => {
-                if (outcome.status !== 'completed') {
-                    console.error(`[shell] shutdown ${outcome.status}: ${JSON.stringify(outcome)}`);
-                }
-            },
-            canQuit: async () => {
-                const approved = await windowCloseCoordinator.requestClose();
-                if (approved) {
-                    rendererSessionLifecycle.approveTeardown();
-                }
-                return approved;
-            },
-            beforeRun: quiesceApprovedMainWindow,
-            timers: systemTimers,
-        }
-    )
-);
+app.on('before-quit', shellComposition.beforeQuit);
 
 /**
  * Recreate budget for a crashing renderer.
@@ -799,7 +776,7 @@ app.on(
 const MAX_RECREATES = 3;
 const RECREATE_WINDOW_MS = 60_000;
 const rendererCrashRecovery = createRendererCrashRecovery({
-    shouldRecreate: () => shouldRecreateRendererAfterCrash(rendererSessionLifecycle),
+    shouldRecreate: shellComposition.shouldRecreateAfterCrash,
     createReplacement: createAndActivateWindow,
     clearPending: (window) => nativeMenuActionDispatcher.clearPending(window),
     recoverPending: (crashed, replacement) => nativeMenuActionDispatcher.recoverPendingWindow(crashed, replacement),
