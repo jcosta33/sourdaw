@@ -46,7 +46,10 @@ function hasExactPendingReceiptBinding(
         return true;
     }
     if (isDurableManualRepairContinuation(continuation)) {
-        return hasIntentionalManualizedPendingEffectBinding(continuation, receipt.pendingEffects);
+        return (
+            hasIntentionalManualizedPendingEffectBinding(continuation, receipt.pendingEffects) ||
+            hasExactPendingEffects(continuation.effects, receipt.pendingEffects)
+        );
     }
     return hasExactPendingEffects(continuation.effects, receipt.pendingEffects);
 }
@@ -223,7 +226,9 @@ export async function recoverAgentRunPendingEffects(input: {
         return { status: 'recovered' };
     }
     if (continuation.checkpoint === 'prepared') {
-        const recoveryPolicy = getPendingEffectRecoveryPolicy(priorReceipt.pendingEffects);
+        const recoveryPolicy = getPendingEffectRecoveryPolicy(priorReceipt.pendingEffects, {
+            ...(continuation.sourceRevision === undefined ? {} : { sourceRevision: continuation.sourceRevision }),
+        });
         agentRunLifecycle.recordPendingEffectContinuation({
             runId: input.runId,
             continuation: {
@@ -241,7 +246,11 @@ export async function recoverAgentRunPendingEffects(input: {
     if (!durableContinuation || durableContinuation.checkpoint !== 'durable') {
         return { status: 'failed', reason: 'The durable pending-effect continuation could not be promoted.' };
     }
-    const recoveryPolicy = getPendingEffectRecoveryPolicy(durableContinuation.effects);
+    const recoveryPolicy = getPendingEffectRecoveryPolicy(durableContinuation.effects, {
+        ...(durableContinuation.sourceRevision === undefined
+            ? {}
+            : { sourceRevision: durableContinuation.sourceRevision }),
+    });
     if (recoveryPolicy.recovery === 'manual-repair') {
         const reason = recoveryPolicy.reason ?? 'The retained pending effect requires manual repair.';
         try {

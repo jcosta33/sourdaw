@@ -50,6 +50,11 @@ import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { materializeActionStateGuards } from '../materializeActionStateGuards';
 
+import {
+    configureAiWorkflowCommandCheckpointRuntime,
+    resetAiWorkflowCommandCheckpointRuntime,
+} from './aiWorkflowCommandCheckpointRuntime';
+
 const fixtureStorageOwners = vi.hoisted(() => new Map<string, { flushPendingUnscopedWrite(): void }>());
 
 vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) => {
@@ -459,6 +464,7 @@ function propose(actions: ExecutableRuntimeAction[], id: string): void {
 
 describe('confirmed compound bus actions', () => {
     beforeEach(() => {
+        configureAiWorkflowCommandCheckpointRuntime();
         vi.clearAllMocks();
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('confirmed compound bus test');
@@ -501,6 +507,7 @@ describe('confirmed compound bus actions', () => {
     });
 
     afterEach(() => {
+        resetAiWorkflowCommandCheckpointRuntime();
         commandBatchPreflightPort.setProvider(null);
         configureRuntimeGraphProjectRevisionValidator(null);
         configureRuntimeGraphTopologyValidator(null);

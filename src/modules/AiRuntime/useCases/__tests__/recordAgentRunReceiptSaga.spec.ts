@@ -207,7 +207,7 @@ describe('recordAgentRunReceiptSaga', () => {
                 {
                     batchId: 'batch-agent-effects',
                     effects: [stemEffect],
-                    recovery: 'reconcile-batch',
+                    recovery: 'manual-repair',
                 },
             ],
             saga: {
@@ -290,7 +290,7 @@ describe('recordAgentRunReceiptSaga', () => {
                 {
                     batchId: 'batch-agent-effects',
                     effects: [runtimeEffect, stemEffect],
-                    recovery: 'reconcile-batch',
+                    recovery: 'manual-repair',
                 },
             ],
             saga: {

@@ -92,6 +92,7 @@ import {
     agentProjectInspectionPort,
     initBranchState,
     captureProjectRevision,
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint,
     inspectAgentProjectDivergence,
     createCommandPreviewWorkspace,
     createCommandRecoveryWorkspace,
@@ -196,6 +197,7 @@ setActionHistoryMetadataPort({
 });
 productionBriefAdmissionPort.setGuard(productionBriefActionBatchAdmission.capture);
 commandProjectRevisionPort.setProvider(captureProjectRevision);
+commandProjectRevisionPort.setLiveMatchIgnoringCommandCheckpoint(projectRevisionMatchesLiveIgnoringCommandCheckpoint);
 configureRuntimeGraphProjectRevisionValidator(
     (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
 );

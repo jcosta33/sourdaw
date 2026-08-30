@@ -41,6 +41,11 @@ import {
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 
+import {
+    configureAiWorkflowCommandCheckpointRuntime,
+    resetAiWorkflowCommandCheckpointRuntime,
+} from './aiWorkflowCommandCheckpointRuntime';
+
 const fixtureStorageOwners = vi.hoisted(() => new Map<string, { flushPendingUnscopedWrite(): void }>());
 
 vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) => {
@@ -227,6 +232,7 @@ function landCollaboratorPadNoteBeforePostcondition(): void {
 
 describe('protected target authority under collaborator drift', () => {
     beforeEach(() => {
+        configureAiWorkflowCommandCheckpointRuntime();
         vi.clearAllMocks();
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('protected target collaborator drift test');
@@ -269,6 +275,7 @@ describe('protected target authority under collaborator drift', () => {
     });
 
     afterEach(() => {
+        resetAiWorkflowCommandCheckpointRuntime();
         commandBatchPreflightPort.setProvider(null);
         configureRuntimeGraphProjectRevisionValidator(null);
         configureRuntimeGraphTopologyValidator(null);

@@ -20,6 +20,11 @@ import { cancelPendingChatActions } from '../cancelPendingChatActions';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 
+import {
+    configureAiWorkflowCommandCheckpointRuntime,
+    resetAiWorkflowCommandCheckpointRuntime,
+} from './aiWorkflowCommandCheckpointRuntime';
+
 type ExecuteAppActionBatch = (typeof import('#/modules/Command/useCases'))['executeAppActionBatch'];
 type AppAction = Parameters<ExecuteAppActionBatch>[0][number];
 type BatchOutcome = Awaited<ReturnType<ExecuteAppActionBatch>>['status'];
@@ -180,6 +185,7 @@ function proposePendingAppAction(
 
 describe('pending chat action confirmation', () => {
     beforeEach(() => {
+        configureAiWorkflowCommandCheckpointRuntime();
         commandBatchPreflightPort.setProvider(({ targetIds }) => ({
             audioGraphValid: true,
             availableAssetHashes: [],
@@ -261,6 +267,7 @@ describe('pending chat action confirmation', () => {
     });
 
     afterEach(() => {
+        resetAiWorkflowCommandCheckpointRuntime();
         commandBatchPreflightPort.setProvider(null);
         clearHandlerRegistry();
         vi.restoreAllMocks();

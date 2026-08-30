@@ -289,7 +289,9 @@ function readPendingEffectContinuation(value: unknown): AgentRunPendingEffectCon
     ) {
         return null;
     }
-    const recoveryPolicy = getPendingEffectRecoveryPolicy(effects);
+    const recoveryPolicy = getPendingEffectRecoveryPolicy(effects, {
+        ...(sourceRevision === undefined ? {} : { sourceRevision }),
+    });
     const carriesOnlySectionRenderEffects = effects.every(
         (effect) => effect.kind === 'external-effect' && effect.operation === 'renderProjectSections'
     );
