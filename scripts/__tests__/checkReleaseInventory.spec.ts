@@ -20,7 +20,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { deflateSync } from 'node:zlib';
+import { deflateSync, inflateSync } from 'node:zlib';
 
 import { describe, expect, it } from 'vitest';
 
@@ -78,6 +78,8 @@ import { wasmArtifacts, type WasmManifest } from '../wasm-artifacts';
 
 const fixtureDigest = 'a'.repeat(64);
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const repositoryOwnerCanonical = readFileSync(join(repositoryRoot, 'public/icon.png'));
+const repositoryOwnerAuthority = readFileSync(join(repositoryRoot, 'public/icon-transparent.png'));
 const repositoryDistributedArtifacts = distributedWasmArtifactCensus(repositoryRoot);
 const repositoryDawDspArtifacts = new Set(wasmArtifacts.packages.find(({ id }) => id === 'daw-dsp')?.artifacts ?? []);
 const ddspTfjsApplicationRuntimePathSet = new Set<string>(DDSP_TFJS_APPLICATION_RUNTIME_PATHS);
@@ -120,9 +122,10 @@ function sha256(value: string): string {
 type Rgba = readonly [red: number, green: number, blue: number, alpha: number];
 
 const ownerIconBackground: Rgba = [12, 10, 9, 255];
-const ownerIconMark: Rgba = [241, 165, 75, 255];
 const ownerIcnsFrames = ['ic04', 'ic05', 'ic07', 'ic08', 'ic09', 'ic10', 'ic11', 'ic12', 'ic13', 'ic14'] as const;
 const ownerIcoFrames = [16, 24, 32, 48, 64, 256] as const;
+const ownerPngFileByteLimit = 2 * 1024 * 1024;
+const ownerPngIdatByteLimit = 1024 * 1024;
 
 function pngCrc32(value: Buffer): number {
     let crc = 0xffffffff;
@@ -170,65 +173,279 @@ function rgbaPng(width: number, height: number, pixel: (x: number, y: number) =>
     ]);
 }
 
-function icnsFixture(frames: readonly string[] = ownerIcnsFrames): Buffer {
-    const chunks = frames.map((frame) => {
-        const header = Buffer.alloc(8);
-        header.write(frame, 0, 'ascii');
-        header.writeUInt32BE(9, 4);
-        return Buffer.concat([header, Buffer.from([0])]);
-    });
-    const header = Buffer.alloc(8);
-    header.write('icns', 0, 'ascii');
-    header.writeUInt32BE(8 + chunks.reduce((total, chunk) => total + chunk.length, 0), 4);
-    return Buffer.concat([header, ...chunks]);
+function pngPaeth(left: number, above: number, upperLeft: number): number {
+    const prediction = left + above - upperLeft;
+    const leftDistance = Math.abs(prediction - left);
+    const aboveDistance = Math.abs(prediction - above);
+    const upperLeftDistance = Math.abs(prediction - upperLeft);
+    if (leftDistance <= aboveDistance && leftDistance <= upperLeftDistance) {
+        return left;
+    }
+    return aboveDistance <= upperLeftDistance ? above : upperLeft;
 }
 
-function icoFixture(frames: readonly number[] = ownerIcoFrames): Buffer {
+function decodePngFixture(png: Buffer): { height: number; pixels: Buffer; width: number } {
+    const width = png.readUInt32BE(16);
+    const height = png.readUInt32BE(20);
+    const idat: Buffer[] = [];
+    let offset = 8;
+    while (offset < png.length) {
+        const length = png.readUInt32BE(offset);
+        if (png.toString('ascii', offset + 4, offset + 8) === 'IDAT') {
+            idat.push(png.subarray(offset + 8, offset + 8 + length));
+        }
+        offset += 12 + length;
+    }
+    const filtered = inflateSync(Buffer.concat(idat));
+    const stride = width * 4;
+    const pixels = Buffer.alloc(stride * height);
+    for (let y = 0; y < height; y += 1) {
+        const inputRow = y * (stride + 1);
+        const outputRow = y * stride;
+        const filter = filtered[inputRow];
+        for (let x = 0; x < stride; x += 1) {
+            const value = filtered[inputRow + 1 + x];
+            const left = x >= 4 ? pixels[outputRow + x - 4] : 0;
+            const above = y > 0 ? pixels[outputRow - stride + x] : 0;
+            const upperLeft = y > 0 && x >= 4 ? pixels[outputRow - stride + x - 4] : 0;
+            let predictor = 0;
+            if (filter === 1) {
+                predictor = left;
+            } else if (filter === 2) {
+                predictor = above;
+            } else if (filter === 3) {
+                predictor = Math.floor((left + above) / 2);
+            } else if (filter === 4) {
+                predictor = pngPaeth(left, above, upperLeft);
+            }
+            pixels[outputRow + x] = (value + predictor) & 0xff;
+        }
+    }
+    return { height, pixels, width };
+}
+
+function mutatePngPixel(png: Buffer, x: number, y: number, color: Rgba): Buffer {
+    const decoded = decodePngFixture(png);
+    const offset = (y * decoded.width + x) * 4;
+    for (let channel = 0; channel < 4; channel += 1) {
+        decoded.pixels[offset + channel] = color[channel];
+    }
+    return rgbaPng(decoded.width, decoded.height, (pixelX, pixelY) => {
+        const pixelOffset = (pixelY * decoded.width + pixelX) * 4;
+        return [
+            decoded.pixels[pixelOffset],
+            decoded.pixels[pixelOffset + 1],
+            decoded.pixels[pixelOffset + 2],
+            decoded.pixels[pixelOffset + 3],
+        ];
+    });
+}
+
+function incrementPngPixelChannel(png: Buffer, x: number, y: number, channel: number): Buffer {
+    const decoded = decodePngFixture(png);
+    const offset = (y * decoded.width + x) * 4;
+    const color: Rgba = [
+        decoded.pixels[offset],
+        decoded.pixels[offset + 1],
+        decoded.pixels[offset + 2],
+        decoded.pixels[offset + 3],
+    ];
+    const changed: Rgba = [
+        channel === 0 ? (color[0] + 1) & 0xff : color[0],
+        channel === 1 ? (color[1] + 1) & 0xff : color[1],
+        channel === 2 ? (color[2] + 1) & 0xff : color[2],
+        channel === 3 ? (color[3] + 1) & 0xff : color[3],
+    ];
+    return mutatePngPixel(png, x, y, changed);
+}
+
+function packRepeatedByte(value: number, count: number): Buffer {
+    const chunks: number[] = [];
+    let remaining = count;
+    while (remaining > 0) {
+        const length = Math.min(remaining, 130);
+        if (length >= 3) {
+            chunks.push(length + 0x7d, value);
+        } else {
+            chunks.push(length - 1, ...Array.from({ length }, () => value));
+        }
+        remaining -= length;
+    }
+    return Buffer.from(chunks);
+}
+
+function argbFixture(size: number, backgroundBlue = ownerIconBackground[2]): Buffer {
+    const pixels = size * size;
+    return Buffer.concat([
+        Buffer.from('ARGB', 'ascii'),
+        packRepeatedByte(255, pixels),
+        packRepeatedByte(ownerIconBackground[0], pixels),
+        packRepeatedByte(ownerIconBackground[1], pixels),
+        packRepeatedByte(backgroundBlue, pixels),
+        Buffer.from([0]),
+    ]);
+}
+
+const ownerIcnsFrameSizes: Readonly<Record<string, number>> = {
+    ic04: 16,
+    ic05: 32,
+    ic07: 128,
+    ic08: 256,
+    ic09: 512,
+    ic10: 1024,
+    ic11: 32,
+    ic12: 64,
+    ic13: 256,
+    ic14: 512,
+};
+const ownerIcnsPayloads: Readonly<Record<string, Buffer>> = Object.fromEntries(
+    ownerIcnsFrames.map((frame) => {
+        const size = ownerIcnsFrameSizes[frame];
+        if (size === undefined) {
+            throw new Error(`missing ICNS fixture size: ${frame}`);
+        }
+        const payload =
+            frame === 'ic04' || frame === 'ic05' ? argbFixture(size) : rgbaPng(size, size, () => ownerIconBackground);
+        return [frame, payload];
+    })
+);
+const ownerIcoPayloads = new Map(ownerIcoFrames.map((size) => [size, rgbaPng(size, size, () => ownerIconBackground)]));
+
+function icnsFixturePayload(
+    frame: string,
+    options: { malformedFrame?: string; seamFrame?: string; wrongDimensionFrame?: string }
+): Buffer | undefined {
+    if (options.malformedFrame === frame) {
+        return Buffer.from([0]);
+    }
+    if (options.wrongDimensionFrame === frame) {
+        return rgbaPng(1, 1, () => ownerIconBackground);
+    }
+    if (options.seamFrame === frame) {
+        const size = ownerIcnsFrameSizes[frame];
+        return size === undefined ? undefined : argbFixture(size, 0);
+    }
+    return ownerIcnsPayloads[frame];
+}
+
+function icnsFixture(
+    frames: readonly string[] = ownerIcnsFrames,
+    options: { malformedFrame?: string; seamFrame?: string; wrongDimensionFrame?: string } = {}
+): Buffer {
+    const chunks = frames.map((frame) => {
+        const payload = icnsFixturePayload(frame, options);
+        if (payload === undefined) {
+            throw new Error(`missing ICNS fixture payload: ${frame}`);
+        }
+        const header = Buffer.alloc(8);
+        header.write(frame, 0, 'ascii');
+        header.writeUInt32BE(8 + payload.length, 4);
+        return Buffer.concat([header, payload]);
+    });
+    const info = Buffer.alloc(9);
+    info.write('info', 0, 'ascii');
+    info.writeUInt32BE(info.length, 4);
+    const header = Buffer.alloc(8);
+    header.write('icns', 0, 'ascii');
+    header.writeUInt32BE(8 + chunks.reduce((total, chunk) => total + chunk.length, 0) + info.length, 4);
+    return Buffer.concat([header, ...chunks, info]);
+}
+
+function icoFixturePayload(
+    size: number,
+    options: { malformedSize?: number; wrongDimensionSize?: number }
+): Buffer | undefined {
+    if (options.malformedSize === size) {
+        return Buffer.from([0]);
+    }
+    if (options.wrongDimensionSize === size) {
+        return rgbaPng(1, 1, () => ownerIconBackground);
+    }
+    return ownerIcoPayloads.get(size);
+}
+
+function icoFixture(
+    frames: readonly number[] = ownerIcoFrames,
+    options: { malformedSize?: number; overlap?: boolean; wrongDimensionSize?: number } = {}
+): Buffer {
     const header = Buffer.alloc(6);
     header.writeUInt16LE(1, 2);
     header.writeUInt16LE(frames.length, 4);
     const payloadOffset = 6 + frames.length * 16;
+    const payloads = frames.map((size) => {
+        const payload = icoFixturePayload(size, options);
+        if (payload === undefined) {
+            return rgbaPng(size, size, () => ownerIconBackground);
+        }
+        return payload;
+    });
+    let nextPayloadOffset = payloadOffset;
     const entries = frames.map((size, index) => {
+        const payload = payloads[index];
+        if (payload === undefined) {
+            throw new Error(`missing ICO fixture payload: ${size}`);
+        }
         const entry = Buffer.alloc(16);
         entry[0] = size === 256 ? 0 : size;
         entry[1] = size === 256 ? 0 : size;
         entry.writeUInt16LE(1, 4);
         entry.writeUInt16LE(32, 6);
-        entry.writeUInt32LE(1, 8);
-        entry.writeUInt32LE(payloadOffset + index, 12);
+        entry.writeUInt32LE(payload.length, 8);
+        entry.writeUInt32LE(options.overlap && index === 1 ? payloadOffset : nextPayloadOffset, 12);
+        nextPayloadOffset += payload.length;
         return entry;
     });
-    return Buffer.concat([header, ...entries, Buffer.alloc(frames.length)]);
+    return Buffer.concat([header, ...entries, ...payloads]);
+}
+
+function flipPngChunkCrc(png: Buffer, chunkType: string): Buffer {
+    const changed = Buffer.from(png);
+    let offset = 8;
+    while (offset < changed.length) {
+        const length = changed.readUInt32BE(offset);
+        const type = changed.toString('ascii', offset + 4, offset + 8);
+        if (type === chunkType) {
+            changed[offset + 8 + length] ^= 0xff;
+            return changed;
+        }
+        offset += 12 + length;
+    }
+    throw new Error(`missing PNG fixture chunk: ${chunkType}`);
+}
+
+function oversizedIdatPng(): Buffer {
+    const header = Buffer.alloc(13);
+    header.writeUInt32BE(1, 0);
+    header.writeUInt32BE(1, 4);
+    header[8] = 8;
+    header[9] = 6;
+    return Buffer.concat([
+        Buffer.from('89504e470d0a1a0a', 'hex'),
+        pngChunk('IHDR', header),
+        pngChunk('IDAT', Buffer.alloc(ownerPngIdatByteLimit + 1)),
+        pngChunk('IEND', Buffer.alloc(0)),
+    ]);
 }
 
 function writeOwnerVisualAssetFixture(
     root: string,
     options: {
-        background?: Rgba;
-        canonicalAlpha?: number;
-        canonicalHeight?: number;
-        canonicalMarkOffset?: number;
-        canonicalWidth?: number;
+        authority?: Buffer;
+        canonical?: Buffer;
         icnsFrames?: readonly string[];
         icoFrames?: readonly number[];
+        malformedIcnsFrame?: string;
+        malformedIcoSize?: number;
+        overlappingIcoPayloads?: boolean;
+        seamIcnsFrame?: string;
+        wrongDimensionIcnsFrame?: string;
+        wrongDimensionIcoSize?: number;
     } = {}
 ): void {
     mkdirSync(join(root, 'public/logo-parts'), { recursive: true });
     mkdirSync(join(root, 'build/icons/nested'), { recursive: true });
-    const width = options.canonicalWidth ?? 480;
-    const height = options.canonicalHeight ?? 480;
-    const markX = 66 + (options.canonicalMarkOffset ?? 0);
-    const background = options.background ?? ownerIconBackground;
-    const canonical = rgbaPng(width, height, (x, y) => {
-        if (x === markX && y === 24) {
-            return ownerIconMark;
-        }
-        if (x === 0 && y === 0 && options.canonicalAlpha !== undefined) {
-            return [background[0], background[1], background[2], options.canonicalAlpha];
-        }
-        return background;
-    });
-    const authority = rgbaPng(346, 427, (x, y) => (x === 0 && y === 0 ? ownerIconMark : [0, 0, 0, 0]));
+    const canonical = options.canonical ?? repositoryOwnerCanonical;
+    const authority = options.authority ?? repositoryOwnerAuthority;
 
     writeFileSync(join(root, 'public/icon.png'), canonical);
     writeFileSync(join(root, 'sourdaw.png'), canonical);
@@ -237,8 +454,22 @@ function writeOwnerVisualAssetFixture(
     copyFileSync(join(repositoryRoot, 'public/icon-192.png'), join(root, 'public/icon-192.png'));
     writeFileSync(join(root, 'public/logo-parts/p00.png'), 'part');
     writeFileSync(join(root, 'build/icons/icon.png'), canonical);
-    writeFileSync(join(root, 'build/icons/icon.icns'), icnsFixture(options.icnsFrames));
-    writeFileSync(join(root, 'build/icons/icon.ico'), icoFixture(options.icoFrames));
+    writeFileSync(
+        join(root, 'build/icons/icon.icns'),
+        icnsFixture(options.icnsFrames, {
+            malformedFrame: options.malformedIcnsFrame,
+            seamFrame: options.seamIcnsFrame,
+            wrongDimensionFrame: options.wrongDimensionIcnsFrame,
+        })
+    );
+    writeFileSync(
+        join(root, 'build/icons/icon.ico'),
+        icoFixture(options.icoFrames, {
+            malformedSize: options.malformedIcoSize,
+            overlap: options.overlappingIcoPayloads,
+            wrongDimensionSize: options.wrongDimensionIcoSize,
+        })
+    );
     writeFileSync(join(root, 'build/icons/nested/icon.png'), canonical);
 }
 
@@ -2727,9 +2958,10 @@ describe('release inventory', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-background-'));
 
         try {
-            writeOwnerVisualAssetFixture(root, { background: [5, 4, 3, 255] });
+            const canonical = mutatePngPixel(repositoryOwnerCanonical, 0, 0, [5, 4, 3, 255]);
+            writeOwnerVisualAssetFixture(root, { canonical });
 
-            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+            expect(() => ownerVisualAssetReleaseInventoryContract(root)).toThrow(
                 'owner visual asset public/icon.png background must be opaque #0c0a09'
             );
         } finally {
@@ -2738,20 +2970,72 @@ describe('release inventory', () => {
     });
 
     it.each([
-        ['wrong geometry', { canonicalHeight: 1, canonicalWidth: 1 }, 'public/icon.png must be 480x480 RGBA'],
-        ['non-opaque pixels', { canonicalAlpha: 0 }, 'public/icon.png must be fully opaque'],
+        ['wrong geometry', rgbaPng(1, 1, () => ownerIconBackground), 'public/icon.png must be 480x480 RGBA'],
+        [
+            'non-opaque pixels',
+            mutatePngPixel(repositoryOwnerCanonical, 0, 0, [12, 10, 9, 0]),
+            'public/icon.png must be fully opaque',
+        ],
         [
             'misaligned bread mark',
-            { canonicalMarkOffset: 1 },
+            mutatePngPixel(repositoryOwnerCanonical, 235, 25, ownerIconBackground),
             'public/icon.png mark does not align with public/icon-transparent.png',
         ],
-    ])('rejects canonical owner icon %s', (_label, options, failure) => {
+    ] as const)('rejects canonical owner icon %s', (_label, canonical, failure) => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-canonical-'));
 
         try {
-            writeOwnerVisualAssetFixture(root, options);
+            writeOwnerVisualAssetFixture(root, { canonical });
 
             expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(`owner visual asset ${failure}`);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects a single-pixel change at a matte-authored partial edge', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-partial-edge-'));
+
+        try {
+            const authority = decodePngFixture(repositoryOwnerAuthority);
+            expect(authority.pixels[(81 * authority.width + 105) * 4 + 3]).toBe(128);
+            const canonical = incrementPngPixelChannel(repositoryOwnerCanonical, 171, 105, 0);
+            writeOwnerVisualAssetFixture(root, { canonical });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                'owner visual asset public/icon.png partial edges do not match public/icon-transparent.png authority'
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects a PNG with a corrupt IDAT CRC', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-png-crc-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { canonical: flipPngChunkCrc(repositoryOwnerCanonical, 'IDAT') });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                'owner visual asset public/icon.png PNG IDAT CRC is invalid'
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it.each([
+        [Buffer.alloc(ownerPngFileByteLimit + 1), `exceeds ${ownerPngFileByteLimit}-byte limit`],
+        [oversizedIdatPng(), `PNG IDAT exceeds ${ownerPngIdatByteLimit}-byte limit`],
+    ] as const)('bounds canonical PNG resources before decoding %#', (canonical, failure) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-png-bound-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { canonical });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                `owner visual asset public/icon.png ${failure}`
+            );
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
@@ -2773,6 +3057,50 @@ describe('release inventory', () => {
         }
     });
 
+    it.each(ownerIcnsFrames)('rejects malformed payload data in required ICNS %s frame', (malformedFrame) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-icns-payload-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { malformedIcnsFrame: malformedFrame });
+
+            const failure =
+                malformedFrame === 'ic04' || malformedFrame === 'ic05'
+                    ? `owner visual asset build/icons/icon.icns ${malformedFrame} frame is not ARGB`
+                    : `owner visual asset build/icons/icon.icns ${malformedFrame} is not a PNG`;
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(failure);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it.each(['ic04', 'ic05'] as const)('rejects repaired legacy ICNS %s blue-tail seam pixels', (seamFrame) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-icns-seam-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { seamIcnsFrame: seamFrame });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                `owner visual asset build/icons/icon.icns ${seamFrame} frame contains #0c0a00 seam pixels`
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects a valid PNG at the wrong ICNS frame dimensions', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-icns-dimensions-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { wrongDimensionIcnsFrame: 'ic07' });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                'owner visual asset build/icons/icon.icns ic07 frame must be 128x128 RGBA'
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it.each([
         ['missing', [16, 32, 48, 64, 256]],
         ['unexpected', [16, 20, 32, 48, 64, 256]],
@@ -2784,6 +3112,48 @@ describe('release inventory', () => {
 
             expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
                 'owner visual asset build/icons/icon.ico frame sizes must be 16,24,32,48,64,256'
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects overlapping ICO frame payloads', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-ico-overlap-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { overlappingIcoPayloads: true });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                'owner visual asset build/icons/icon.ico has overlapping frame payloads'
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects malformed ICO frame payload data', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-ico-payload-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { malformedIcoSize: 24 });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                'owner visual asset build/icons/icon.ico 24x24 is not a PNG'
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects an ICO payload whose PNG dimensions disagree with its directory entry', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-ico-dimensions-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { wrongDimensionIcoSize: 24 });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                'owner visual asset build/icons/icon.ico 24px frame payload has wrong dimensions'
             );
         } finally {
             rmSync(root, { recursive: true, force: true });

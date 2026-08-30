@@ -1735,6 +1735,11 @@ type DecodedRgbaPng = {
 };
 
 const OWNER_ICON_BACKGROUND = [12, 10, 9] as const;
+const OWNER_ICON_PARTIAL_EDGE_SHA256 = 'cdfc19f49aa90f8433c5377a54f5b732584a91ea12c11ecec9341abf8dcfaddd';
+const OWNER_ICON_PNG_FILE_BYTE_LIMIT = 2 * 1024 * 1024;
+const OWNER_ICON_PNG_IDAT_BYTE_LIMIT = 1024 * 1024;
+const OWNER_ICON_PNG_PIXEL_BYTE_LIMIT = 5 * 1024 * 1024;
+const OWNER_ICON_CONTAINER_BYTE_LIMIT = 4 * 1024 * 1024;
 const OWNER_ICON_REQUIRED_ICNS_FRAMES = [
     'ic04',
     'ic05',
@@ -1748,6 +1753,18 @@ const OWNER_ICON_REQUIRED_ICNS_FRAMES = [
     'ic14',
 ] as const;
 const OWNER_ICON_REQUIRED_ICO_SIZES = [16, 24, 32, 48, 64, 256] as const;
+const OWNER_ICON_ICNS_FRAME_SIZES: Readonly<Record<(typeof OWNER_ICON_REQUIRED_ICNS_FRAMES)[number], number>> = {
+    ic04: 16,
+    ic05: 32,
+    ic07: 128,
+    ic08: 256,
+    ic09: 512,
+    ic10: 1024,
+    ic11: 32,
+    ic12: 64,
+    ic13: 256,
+    ic14: 512,
+};
 
 function paethPredictor(left: number, above: number, upperLeft: number): number {
     const prediction = left + above - upperLeft;
@@ -1776,35 +1793,89 @@ function pngFilterPredictor(filter: number, left: number, above: number, upperLe
     return 0;
 }
 
-function decodeOwnerRgbaPng(path: string): DecodedRgbaPng {
-    const data = readFileSync(path);
+function ownerPngCrc32(value: Buffer): number {
+    let crc = 0xffffffff;
+    for (const byte of value) {
+        crc ^= byte;
+        for (let bit = 0; bit < 8; bit += 1) {
+            crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+        }
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+}
+
+function readBoundedOwnerAsset(path: string, label: string, byteLimit: number): Buffer {
+    const descriptor = openSync(path, constants.O_RDONLY);
+    try {
+        const size = fstatSync(descriptor).size;
+        if (!Number.isSafeInteger(size) || size > byteLimit) {
+            throw new Error(`owner visual asset ${label} exceeds ${byteLimit}-byte limit`);
+        }
+        const data = Buffer.alloc(size);
+        let offset = 0;
+        while (offset < size) {
+            const bytesRead = readSync(descriptor, data, offset, size - offset, offset);
+            if (bytesRead === 0) {
+                throw new Error(`owner visual asset ${label} changed while being read`);
+            }
+            offset += bytesRead;
+        }
+        const overflow = Buffer.alloc(1);
+        if (readSync(descriptor, overflow, 0, 1, size) !== 0) {
+            throw new Error(`owner visual asset ${label} changed while being read`);
+        }
+        return data;
+    } finally {
+        closeSync(descriptor);
+    }
+}
+
+function decodeOwnerRgbaPng(data: Buffer, label: string): DecodedRgbaPng {
+    if (data.length > OWNER_ICON_PNG_FILE_BYTE_LIMIT) {
+        throw new Error(`owner visual asset ${label} exceeds ${OWNER_ICON_PNG_FILE_BYTE_LIMIT}-byte PNG limit`);
+    }
     const signature = Buffer.from('89504e470d0a1a0a', 'hex');
     if (data.length < signature.length || !data.subarray(0, signature.length).equals(signature)) {
-        throw new Error(`owner visual asset ${relative(process.cwd(), path)} is not a PNG`);
+        throw new Error(`owner visual asset ${label} is not a PNG`);
     }
     let offset = signature.length;
     let header: Buffer | undefined;
     const imageData: Buffer[] = [];
+    let imageDataBytes = 0;
     let ended = false;
     while (offset < data.length) {
         if (offset + 12 > data.length) {
-            throw new Error(`owner visual asset PNG is truncated: ${path}`);
+            throw new Error(`owner visual asset ${label} PNG is truncated`);
         }
         const length = data.readUInt32BE(offset);
         const end = offset + 12 + length;
         if (end > data.length) {
-            throw new Error(`owner visual asset PNG chunk is truncated: ${path}`);
+            throw new Error(`owner visual asset ${label} PNG chunk is truncated`);
         }
         const type = data.toString('ascii', offset + 4, offset + 8);
         const payload = data.subarray(offset + 8, offset + 8 + length);
+        const expectedCrc = data.readUInt32BE(offset + 8 + length);
+        const actualCrc = ownerPngCrc32(data.subarray(offset + 4, offset + 8 + length));
+        if (actualCrc !== expectedCrc) {
+            throw new Error(`owner visual asset ${label} PNG ${type} CRC is invalid`);
+        }
         if (type === 'IHDR') {
             if (header !== undefined || length !== 13) {
-                throw new Error(`owner visual asset PNG has an invalid header: ${path}`);
+                throw new Error(`owner visual asset ${label} PNG has an invalid header`);
             }
             header = payload;
         } else if (type === 'IDAT') {
+            imageDataBytes += length;
+            if (imageDataBytes > OWNER_ICON_PNG_IDAT_BYTE_LIMIT) {
+                throw new Error(
+                    `owner visual asset ${label} PNG IDAT exceeds ${OWNER_ICON_PNG_IDAT_BYTE_LIMIT}-byte limit`
+                );
+            }
             imageData.push(payload);
         } else if (type === 'IEND') {
+            if (length !== 0) {
+                throw new Error(`owner visual asset ${label} PNG has an invalid IEND chunk`);
+            }
             ended = true;
             offset = end;
             break;
@@ -1812,7 +1883,7 @@ function decodeOwnerRgbaPng(path: string): DecodedRgbaPng {
         offset = end;
     }
     if (header === undefined || imageData.length === 0 || !ended || offset !== data.length) {
-        throw new Error(`owner visual asset PNG structure is incomplete: ${path}`);
+        throw new Error(`owner visual asset ${label} PNG structure is incomplete`);
     }
     const width = header.readUInt32BE(0);
     const height = header.readUInt32BE(4);
@@ -1827,14 +1898,17 @@ function decodeOwnerRgbaPng(path: string): DecodedRgbaPng {
         header[11] !== 0 ||
         header[12] !== 0
     ) {
-        throw new Error(`owner visual asset PNG must be non-interlaced 8-bit RGBA: ${path}`);
+        throw new Error(`owner visual asset ${label} PNG must be non-interlaced 8-bit RGBA`);
     }
     const stride = width * 4;
+    if (stride * height > OWNER_ICON_PNG_PIXEL_BYTE_LIMIT) {
+        throw new Error(`owner visual asset ${label} PNG pixels exceed ${OWNER_ICON_PNG_PIXEL_BYTE_LIMIT}-byte limit`);
+    }
     const filtered = inflateSync(Buffer.concat(imageData), {
         maxOutputLength: (stride + 1) * height,
     });
     if (filtered.length !== (stride + 1) * height) {
-        throw new Error(`owner visual asset PNG pixel data has the wrong length: ${path}`);
+        throw new Error(`owner visual asset ${label} PNG pixel data has the wrong length`);
     }
     const pixels = Buffer.alloc(stride * height);
     for (let y = 0; y < height; y += 1) {
@@ -1842,7 +1916,7 @@ function decodeOwnerRgbaPng(path: string): DecodedRgbaPng {
         const outputRow = y * stride;
         const filter = filtered[inputRow];
         if (filter > 4) {
-            throw new Error(`owner visual asset PNG uses an invalid row filter: ${path}`);
+            throw new Error(`owner visual asset ${label} PNG uses an invalid row filter`);
         }
         for (let x = 0; x < stride; x += 1) {
             const value = filtered[inputRow + 1 + x];
@@ -1864,8 +1938,14 @@ function rgbaPixel(image: DecodedRgbaPng, x: number, y: number): readonly [numbe
 function assertCanonicalOwnerIcon(root: string): void {
     const canonicalPath = resolve(root, 'public/icon.png');
     const authorityPath = resolve(root, 'public/icon-transparent.png');
-    const canonical = decodeOwnerRgbaPng(canonicalPath);
-    const authority = decodeOwnerRgbaPng(authorityPath);
+    const canonicalBytes = readBoundedOwnerAsset(canonicalPath, 'public/icon.png', OWNER_ICON_PNG_FILE_BYTE_LIMIT);
+    const authorityBytes = readBoundedOwnerAsset(
+        authorityPath,
+        'public/icon-transparent.png',
+        OWNER_ICON_PNG_FILE_BYTE_LIMIT
+    );
+    const canonical = decodeOwnerRgbaPng(canonicalBytes, 'public/icon.png');
+    const authority = decodeOwnerRgbaPng(authorityBytes, 'public/icon-transparent.png');
     if (canonical.width !== 480 || canonical.height !== 480) {
         throw new Error('owner visual asset public/icon.png must be 480x480 RGBA');
     }
@@ -1878,20 +1958,39 @@ function assertCanonicalOwnerIcon(root: string): void {
         }
     }
     let opaqueMarkPixels = 0;
+    const partialEdgeHash = createHash('sha256');
     for (let y = 0; y < authority.height; y += 1) {
         for (let x = 0; x < authority.width; x += 1) {
             const source = rgbaPixel(authority, x, y);
-            if (source[3] !== 255) {
+            if (source[3] === 0) {
                 continue;
             }
-            opaqueMarkPixels += 1;
             const target = rgbaPixel(canonical, x + 66, y + 24);
-            if (source.some((channel, index) => channel !== target[index])) {
-                throw new Error(
-                    'owner visual asset public/icon.png mark does not align with public/icon-transparent.png'
-                );
+            if (source[3] === 255) {
+                opaqueMarkPixels += 1;
+                if (source.some((channel, index) => channel !== target[index])) {
+                    throw new Error(
+                        'owner visual asset public/icon.png mark does not align with public/icon-transparent.png'
+                    );
+                }
+                continue;
             }
+            // These edges were matte-authored rather than straight-alpha composited.
+            // Pin their exact source/target relationship so validation cannot alter the mark.
+            const evidence = Buffer.alloc(12);
+            evidence.writeUInt16BE(x, 0);
+            evidence.writeUInt16BE(y, 2);
+            for (let channel = 0; channel < 4; channel += 1) {
+                evidence[4 + channel] = source[channel];
+                evidence[8 + channel] = target[channel];
+            }
+            partialEdgeHash.update(evidence);
         }
+    }
+    if (partialEdgeHash.digest('hex') !== OWNER_ICON_PARTIAL_EDGE_SHA256) {
+        throw new Error(
+            'owner visual asset public/icon.png partial edges do not match public/icon-transparent.png authority'
+        );
     }
     if (opaqueMarkPixels === 0) {
         throw new Error('owner visual asset public/icon-transparent.png contains no opaque mark pixels');
@@ -1918,18 +2017,71 @@ function assertCanonicalOwnerIcon(root: string): void {
             }
         }
     }
-    if (!readFileSync(resolve(root, 'sourdaw.png')).equals(readFileSync(canonicalPath))) {
+    const sourdawBytes = readBoundedOwnerAsset(
+        resolve(root, 'sourdaw.png'),
+        'sourdaw.png',
+        OWNER_ICON_PNG_FILE_BYTE_LIMIT
+    );
+    if (!sourdawBytes.equals(canonicalBytes)) {
         throw new Error('owner visual asset sourdaw.png must match public/icon.png');
+    }
+}
+
+function decodeOwnerLegacyArgb(payload: Buffer, type: 'ic04' | 'ic05', size: number): void {
+    if (payload.length < 4 || payload.toString('ascii', 0, 4) !== 'ARGB') {
+        throw new Error(`owner visual asset build/icons/icon.icns ${type} frame is not ARGB`);
+    }
+    const pixelCount = size * size;
+    const expectedBytes = pixelCount * 4;
+    const decoded = Buffer.alloc(expectedBytes);
+    let input = 4;
+    let output = 0;
+    while (output < expectedBytes) {
+        if (input >= payload.length) {
+            throw new Error(`owner visual asset build/icons/icon.icns ${type} ARGB data is truncated`);
+        }
+        const code = payload[input];
+        input += 1;
+        const count = code < 0x80 ? code + 1 : code - 0x7d;
+        if (output + count > expectedBytes) {
+            throw new Error(`owner visual asset build/icons/icon.icns ${type} ARGB data exceeds ${size}x${size}`);
+        }
+        if (code < 0x80) {
+            if (input + count > payload.length) {
+                throw new Error(`owner visual asset build/icons/icon.icns ${type} ARGB data is truncated`);
+            }
+            payload.copy(decoded, output, input, input + count);
+            input += count;
+        } else {
+            if (input >= payload.length) {
+                throw new Error(`owner visual asset build/icons/icon.icns ${type} ARGB data is truncated`);
+            }
+            decoded.fill(payload[input], output, output + count);
+            input += 1;
+        }
+        output += count;
+    }
+    if (input !== payload.length && !(input + 1 === payload.length && payload[input] === 0)) {
+        throw new Error(`owner visual asset build/icons/icon.icns ${type} ARGB data has trailing bytes`);
+    }
+    for (let index = 0; index < pixelCount; index += 1) {
+        const alpha = decoded[index];
+        const red = decoded[pixelCount + index];
+        const green = decoded[pixelCount * 2 + index];
+        const blue = decoded[pixelCount * 3 + index];
+        if (alpha === 255 && red === 12 && green === 10 && blue === 0) {
+            throw new Error(`owner visual asset build/icons/icon.icns ${type} frame contains #0c0a00 seam pixels`);
+        }
     }
 }
 
 function assertOwnerIcnsFrames(root: string): void {
     const path = resolve(root, 'build/icons/icon.icns');
-    const data = readFileSync(path);
+    const data = readBoundedOwnerAsset(path, 'build/icons/icon.icns', OWNER_ICON_CONTAINER_BYTE_LIMIT);
     if (data.length < 8 || data.toString('ascii', 0, 4) !== 'icns' || data.readUInt32BE(4) !== data.length) {
         throw new Error('owner visual asset build/icons/icon.icns has an invalid container header');
     }
-    const frames = new Set<string>();
+    const frames = new Map<string, Buffer>();
     let offset = 8;
     while (offset < data.length) {
         if (offset + 8 > data.length) {
@@ -1940,19 +2092,29 @@ function assertOwnerIcnsFrames(root: string): void {
         if (length <= 8 || offset + length > data.length || frames.has(type)) {
             throw new Error(`owner visual asset build/icons/icon.icns has an invalid ${type} frame`);
         }
-        frames.add(type);
+        frames.set(type, data.subarray(offset + 8, offset + length));
         offset += length;
     }
     for (const required of OWNER_ICON_REQUIRED_ICNS_FRAMES) {
-        if (!frames.has(required)) {
+        const payload = frames.get(required);
+        if (payload === undefined) {
             throw new Error(`owner visual asset build/icons/icon.icns is missing frame ${required}`);
+        }
+        const size = OWNER_ICON_ICNS_FRAME_SIZES[required];
+        if (required === 'ic04' || required === 'ic05') {
+            decodeOwnerLegacyArgb(payload, required, size);
+            continue;
+        }
+        const image = decodeOwnerRgbaPng(payload, `build/icons/icon.icns ${required}`);
+        if (image.width !== size || image.height !== size) {
+            throw new Error(`owner visual asset build/icons/icon.icns ${required} frame must be ${size}x${size} RGBA`);
         }
     }
 }
 
 function assertOwnerIcoFrames(root: string): void {
     const path = resolve(root, 'build/icons/icon.ico');
-    const data = readFileSync(path);
+    const data = readBoundedOwnerAsset(path, 'build/icons/icon.ico', OWNER_ICON_CONTAINER_BYTE_LIMIT);
     if (data.length < 6 || data.readUInt16LE(0) !== 0 || data.readUInt16LE(2) !== 1) {
         throw new Error('owner visual asset build/icons/icon.ico has an invalid container header');
     }
@@ -1960,28 +2122,54 @@ function assertOwnerIcoFrames(root: string): void {
     if (count === 0 || 6 + count * 16 > data.length) {
         throw new Error('owner visual asset build/icons/icon.ico has an invalid frame directory');
     }
-    const sizes: number[] = [];
+    const directoryEnd = 6 + count * 16;
+    const frames: Array<{ end: number; size: number; start: number }> = [];
     for (let index = 0; index < count; index += 1) {
         const offset = 6 + index * 16;
         const width = data[offset] === 0 ? 256 : data[offset];
         const height = data[offset + 1] === 0 ? 256 : data[offset + 1];
+        const planes = data.readUInt16LE(offset + 4);
+        const bitDepth = data.readUInt16LE(offset + 6);
         const length = data.readUInt32LE(offset + 8);
         const payloadOffset = data.readUInt32LE(offset + 12);
         if (
             width !== height ||
+            planes !== 1 ||
+            bitDepth !== 32 ||
             length === 0 ||
-            payloadOffset < 6 + count * 16 ||
+            payloadOffset < directoryEnd ||
             payloadOffset + length > data.length
         ) {
             throw new Error('owner visual asset build/icons/icon.ico has an invalid frame directory');
         }
-        sizes.push(width);
+        frames.push({ end: payloadOffset + length, size: width, start: payloadOffset });
     }
+    const orderedFrames = [...frames].sort((left, right) => left.start - right.start);
+    for (let index = 1; index < orderedFrames.length; index += 1) {
+        const current = orderedFrames[index];
+        const previous = orderedFrames[index - 1];
+        if (current === undefined || previous === undefined) {
+            throw new Error('owner visual asset build/icons/icon.ico has an invalid frame directory');
+        }
+        if (current.start < previous.end) {
+            throw new Error('owner visual asset build/icons/icon.ico has overlapping frame payloads');
+        }
+    }
+    const sizes = frames.map(({ size }) => size);
     sizes.sort((left, right) => left - right);
     if (JSON.stringify(sizes) !== JSON.stringify(OWNER_ICON_REQUIRED_ICO_SIZES)) {
         throw new Error(
             `owner visual asset build/icons/icon.ico frame sizes must be ${OWNER_ICON_REQUIRED_ICO_SIZES.join(',')}`
         );
+    }
+    for (const frame of frames) {
+        const payload = data.subarray(frame.start, frame.end);
+        const image = decodeOwnerRgbaPng(payload, `build/icons/icon.ico ${frame.size}x${frame.size}`);
+        if (image.width !== frame.size || image.height !== frame.size) {
+            throw new Error(
+                `owner visual asset build/icons/icon.ico ${frame.size}px frame payload has wrong dimensions`
+            );
+        }
     }
 }
 
