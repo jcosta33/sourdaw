@@ -120,6 +120,15 @@
 //! transport write leaves plugin-visible tempo and time signature untouched;
 //! the engine re-derives the beat position from the tempo it already holds.
 //!
+//! A `set-transport` is also a **locate** unless it says otherwise, and a
+//! locate is destructive by design: it seeks, and a seek cancels every queued
+//! mixer write stamped at or past the frame it lands on
+//! (`RampedParam::cancel_from`). Strip creation states a fader, a pan and each
+//! send level as writes stamped at frame 0, so a transport write that locates
+//! to the session head after those strips were built erases the mix they
+//! declared. A producer that only needs to start or stop playback from where
+//! the engine already stands therefore sends `locate: false`.
+//!
 //! ## Known deviations, recorded rather than silent
 //!
 //! - `smoothed` writes (Web Audio `setTargetAtTime`) have no native
@@ -220,6 +229,13 @@ pub struct GraphBatchPayload {
     pub commands: Vec<GraphCommandPayload>,
 }
 
+/// A `set-transport` that does not say otherwise is a locate — the meaning the
+/// field's absence carried before it existed, so every producer written against
+/// the older shape keeps behaving exactly as it did.
+fn locate_unless_told_otherwise() -> bool {
+    true
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum GraphCommandPayload {
@@ -279,6 +295,19 @@ pub enum GraphCommandPayload {
     SetTransport {
         playing: bool,
         position_seconds: f64,
+        /// Whether this write is also a *locate*. Absent means it is, which is
+        /// what every producer that moves the playhead wants and what the
+        /// field's absence has always meant.
+        ///
+        /// A producer sets it `false` to say "roll from where you already
+        /// stand". That is not a convenience: a locate cancels every queued
+        /// mixer write stamped at or past its frame (see the mapping arm), so a
+        /// second transport write that merely starts playback would erase the
+        /// fader, pan and send levels an earlier batch queued at frame 0. The
+        /// position still travels, because `SetTransportPlayback` carries it
+        /// and it must stay truthful; only the seek is withheld.
+        #[serde(default = "locate_unless_told_otherwise")]
+        locate: bool,
     },
     /// The session-level shadow monitor gate
     /// ([`GraphCommand::SetMonitorShadow`]): the engine keeps rendering and
@@ -1813,7 +1842,12 @@ fn map_command(
         GraphCommandPayload::SetTransport {
             playing,
             position_seconds,
+            locate,
         } => {
+            // Validated whether or not it is used: a position this side cannot
+            // put on the frame grid is malformed however the producer means it
+            // to be read, and refusing only when the seek is wanted would let
+            // one shape of the command carry a number the other refuses.
             let frame =
                 seconds_to_frames(*position_seconds, sample_rate, "set-transport position")?;
             // Playback state lands before the locate: a play→stop edge holds
@@ -1827,10 +1861,12 @@ fn map_command(
                 is_playing: *playing,
                 song_pos_seconds: *position_seconds,
             });
-            ops.push(GraphCommand::SeekFrames(frame));
-            // The ledger mirrors the locate it just queued: the engine's seek
-            // drops every queued write stamped at or past the target.
-            budgets.apply_seek(frame);
+            if *locate {
+                ops.push(GraphCommand::SeekFrames(frame));
+                // The ledger mirrors the locate it just queued: the engine's
+                // seek drops every queued write stamped at or past the target.
+                budgets.apply_seek(frame);
+            }
             Ok(())
         }
 
@@ -2819,6 +2855,93 @@ mod tests {
     fn batch(commands: Value) -> GraphBatchPayload {
         serde_json::from_value(json!({ "schemaVersion": 1, "commands": commands }))
             .expect("the test batch should deserialize")
+    }
+
+    /// How many locates a mapping queued. `GraphCommand` carries no `Debug`, so
+    /// the shape is counted rather than printed.
+    fn seek_count(ops: &[GraphCommand]) -> usize {
+        ops.iter()
+            .filter(|op| matches!(op, GraphCommand::SeekFrames(_)))
+            .count()
+    }
+
+    /// The shape every producer written before the field existed still sends.
+    #[test]
+    fn a_transport_write_locates_unless_it_says_otherwise() {
+        let mut registry = GraphRegistry::default();
+        let mapped = map_batch(
+            &batch(json!([
+                { "kind": "set-transport", "playing": true, "positionSeconds": 2.0 }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("an ordinary transport write should map");
+
+        assert!(
+            matches!(
+                mapped.ops.as_slice(),
+                [
+                    GraphCommand::SetTransportPlayback {
+                        is_playing: true,
+                        ..
+                    },
+                    GraphCommand::SeekFrames(96_000)
+                ]
+            ),
+            "an unqualified set-transport is a locate at its own position"
+        );
+    }
+
+    /// The live session's roll (`rollNativeTransport`), which follows a topology
+    /// batch that already parked the engine where playback is to start. The
+    /// locate it does not need is one that would cancel every fader, pan and
+    /// send level that topology queued at frame 0.
+    #[test]
+    fn a_transport_write_that_does_not_locate_queues_no_seek() {
+        let mut registry = GraphRegistry::default();
+        let mapped = map_batch(
+            &batch(json!([
+                { "kind": "set-transport", "playing": true, "positionSeconds": 2.0, "locate": false }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a non-locating transport write should map");
+
+        assert_eq!(seek_count(&mapped.ops), 0, "no locate was asked for");
+        assert!(
+            matches!(
+                mapped.ops.as_slice(),
+                [GraphCommand::SetTransportPlayback {
+                    is_playing: true,
+                    song_pos_seconds
+                }] if (*song_pos_seconds - 2.0).abs() < f64::EPSILON
+            ),
+            "the playback state and its position still travel; only the seek is withheld"
+        );
+    }
+
+    /// Withholding the seek must not withhold the validation: a position that
+    /// cannot be put on the frame grid is malformed either way.
+    #[test]
+    fn a_non_locating_transport_write_still_refuses_an_unmappable_position() {
+        let mut registry = GraphRegistry::default();
+        let refused = map_batch(
+            &batch(json!([
+                { "kind": "set-transport", "playing": true, "positionSeconds": -1.0, "locate": false }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        );
+
+        assert!(
+            refused.is_err(),
+            "a position the grid cannot hold is refused whether or not it is used"
+        );
     }
 
     fn clip_and_gain_batch() -> GraphBatchPayload {

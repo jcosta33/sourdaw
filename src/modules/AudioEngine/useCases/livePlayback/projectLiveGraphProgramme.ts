@@ -33,21 +33,31 @@
  * region, so there is nothing to trim against — the bake starts where the
  * track's content starts and runs for as long as it was baked.
  *
- * ── Two per-clip exclusions, both visible ─────────────────────────────────
+ * ── Per-clip exclusions, all visible ──────────────────────────────────────
+ *
+ * Every exclusion below shares one law: the cost of what this producer cannot
+ * carry is *that clip*, never the session. A `schedule-clip` the engine refuses
+ * takes the whole batch down with it, so a batch that would be refused is a
+ * play button that starts no engine at all — and one pathological clip must not
+ * be able to do that to a project.
  *
  * A stretched clip is refused by the engine, not by taste:
  * `schedule-clip` answers `stretched-clip-unsupported` for any non-unity
- * `playbackRate` (`crates/sourdaw-native/src/commands/graph.rs`), and a
- * refusal is whole-batch — one stretched clip would cost the session every
- * strip it has. So the clip is dropped *per clip*, with its reason, and the
- * caller reports it. Lifting the exclusion is engine work (the `TimelineClip`
- * has nowhere to carry a rate), never a producer emitting a command the
- * engine refuses.
+ * `playbackRate` (`crates/sourdaw-native/src/commands/graph.rs`). Lifting the
+ * exclusion is engine work (the `TimelineClip` has nowhere to carry a rate),
+ * never a producer emitting a command the engine refuses.
  *
  * A clip whose material is not in the buffer cache is dropped for the
  * narrower reason that there is nothing to register into the native sample
  * pool, and a `schedule-clip` naming a sample the pool does not hold is
  * refused by name.
+ *
+ * A clip whose loop expansion does not fit its track's remaining native clip
+ * capacity is dropped whole ({@link MAX_NATIVE_TRACK_CLIPS}), and so is one
+ * whose expansion exceeds the allocation budget
+ * ({@link MAX_NATIVE_CLIP_ITERATIONS}). Both are counted before any of the
+ * clip's iterations are admitted, because a clip half-scheduled is a clip that
+ * stops sounding part-way through with nothing saying why.
  *
  * MIDI is out of this slice (#3122): an instrument renders on the Web Audio
  * path, so a MIDI clip is skipped here rather than turned into a rest.
@@ -55,12 +65,13 @@
 
 import { type Track } from '#/modules/Arrangement/stores';
 
-import { type AudioGraphClipFade, type AudioGraphClipPlayback } from '../../models/AudioGraphBackend';
+import { type AudioGraphClipPlayback } from '../../models/AudioGraphBackend';
 import {
     type OfflinePpqEndpointProjector,
     type OfflineTempoAtBeatResolver,
 } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { MICRO_FADE_SECONDS } from '../offlineRender/constants';
+import { projectNativeClipFade } from '../offlineRender/projectNativeClipFade';
 import { projectOfflineAudioClipPlaybacks } from '../offlineRender/projectOfflineAudioClipPlaybacks';
 import { resolveTrackClipsWithComping } from '../offlineRender/resolveTrackClipsWithComping';
 
@@ -71,6 +82,44 @@ import { resolveTrackClipsWithComping } from '../offlineRender/resolveTrackClips
  * live session has none.
  */
 const LIVE_REGION_START_BEAT = 0;
+
+/**
+ * How many clips one native track strip holds — `MAX_TRACK_CLIPS` in
+ * `crates/daw-engine/src/timeline.rs`, mirrored because the producer's job is
+ * to emit a batch the engine takes.
+ *
+ * The engine's own answer to the 1025th is to refuse the command, and a refusal
+ * is whole-batch. One clip's loop expansion can reach four thousand iterations
+ * on its own (`projectClipLoopExpansion`'s ceiling), so this is not a
+ * theoretical bound: a single over-long loop would otherwise cost the session
+ * every strip it has.
+ */
+const MAX_NATIVE_TRACK_CLIPS = 1024;
+
+/**
+ * How many iterations one clip's loop expansion may allocate for.
+ *
+ * Every `schedule-clip` copies the sample's *whole* PCM into the engine — the
+ * mapper hands `TimelineClip::new` a `sample.left.clone()`
+ * (`crates/sourdaw-native/src/commands/graph.rs`), and `TimelineClip` owns
+ * `Vec<f32>` rather than sharing the pool's — so a loop's expansion multiplies
+ * its material instead of referencing it. Referencing it is the engine-side
+ * fix and it is filed as #3134; until that lands, the producer is the only
+ * thing standing between one looped clip and an unbounded native allocation.
+ *
+ * Sixty-four is where ordinary material stops and pathology starts. A one-bar
+ * loop at 120 BPM is two seconds — around 750 KiB of stereo 48 kHz float — so
+ * this budget admits a loop dragged across sixteen bars of arrangement at
+ * roughly 50 MiB, which is the most one clip may cost. The loop projector's own
+ * ceiling is 4096 iterations, three orders of magnitude past that, and the
+ * engine would try to hold every one.
+ *
+ * It bounds one clip, not a project: a session with many looped clips still
+ * allocates the sum of them. That is deliberate — a project-wide ceiling would
+ * make which clips play depend on the order they are walked in, and the real
+ * ceiling belongs to the engine.
+ */
+const MAX_NATIVE_CLIP_ITERATIONS = 64;
 
 export type LiveGraphProgrammeExclusion = Readonly<{
     stripId: string;
@@ -101,21 +150,6 @@ export type LiveGraphProgramme = Readonly<{
     /** Everything this projection could not carry, and why. */
     exclusions: readonly LiveGraphProgrammeExclusion[];
 }>;
-
-function clipFade(input: {
-    fadeIn?: Readonly<{ userEndSec?: number }>;
-    fadeOut?: Readonly<{ userStartSec?: number }>;
-}): AudioGraphClipFade {
-    return {
-        ...(input.fadeIn
-            ? { fadeIn: input.fadeIn.userEndSec === undefined ? {} : { reachesFullAt: input.fadeIn.userEndSec } }
-            : {}),
-        ...(input.fadeOut
-            ? { fadeOut: input.fadeOut.userStartSec === undefined ? {} : { beginsAt: input.fadeOut.userStartSec } }
-            : {}),
-        microFadeSeconds: MICRO_FADE_SECONDS,
-    };
-}
 
 /**
  * How far the programme reaches, in seconds.
@@ -244,6 +278,11 @@ export function projectLiveGraphProgramme(input: LiveGraphProgrammeInput): LiveG
             continue;
         }
 
+        // What the native strip has left to hold. Counted down across the
+        // track's clips, because the engine's ceiling is the strip's and one
+        // clip's expansion is what spends it.
+        let remainingClipSlots = MAX_NATIVE_TRACK_CLIPS;
+
         for (const clip of resolveTrackClipsWithComping(track.id, track.clips)) {
             if (clip.muted || clip.endBeat <= LIVE_REGION_START_BEAT || clip.endBeat - clip.startBeat <= 0) {
                 continue;
@@ -256,17 +295,18 @@ export function projectLiveGraphProgramme(input: LiveGraphProgrammeInput): LiveG
             if (!bufferId) {
                 continue;
             }
+            const clipLabel = clip.name || clip.id;
+            const excludeClip = (reason: string): void => {
+                exclusions.push({ stripId: track.id, subjectId: clip.id, reason });
+            };
+
             const buffer = readBuffer(bufferId);
             if (!buffer) {
-                exclusions.push({
-                    stripId: track.id,
-                    subjectId: clip.id,
-                    reason: `clip "${clip.name || clip.id}" has no decoded material to register`,
-                });
+                excludeClip(`clip "${clipLabel}" has no decoded material to register`);
                 continue;
             }
 
-            for (const playback of projectOfflineAudioClipPlaybacks({
+            const projected = projectOfflineAudioClipPlaybacks({
                 clip,
                 bufferDurationSeconds: buffer.duration,
                 regionStartBeat: LIVE_REGION_START_BEAT,
@@ -275,21 +315,37 @@ export function projectLiveGraphProgramme(input: LiveGraphProgrammeInput): LiveG
                 compensationDelay,
                 projectBeatToSeconds,
                 resolveTempoAtBeat: resolveClipTempo,
-            })) {
-                if (playback.playbackRate !== 1) {
-                    // Per clip, never per batch: see the header. One exclusion
-                    // per clip however many iterations it expands to.
-                    if (!exclusions.some((entry) => entry.subjectId === clip.id)) {
-                        exclusions.push({
-                            stripId: track.id,
-                            subjectId: clip.id,
-                            reason:
-                                `clip "${clip.name || clip.id}" plays at rate ` +
-                                `${String(playback.playbackRate)}, which the native timeline cannot stretch`,
-                        });
-                    }
-                    continue;
-                }
+            });
+
+            // Every gate below is decided over the clip's whole expansion and
+            // costs the whole clip, never the batch and never half a clip. The
+            // rate is one number per clip, so one iteration answering for it
+            // answers for all of them.
+            const stretchedRate = projected.find((playback) => playback.playbackRate !== 1)?.playbackRate;
+            if (stretchedRate !== undefined) {
+                excludeClip(
+                    `clip "${clipLabel}" plays at rate ${String(stretchedRate)}, ` +
+                        `which the native timeline cannot stretch`
+                );
+                continue;
+            }
+            if (projected.length > MAX_NATIVE_CLIP_ITERATIONS) {
+                excludeClip(
+                    `clip "${clipLabel}" loops ${String(projected.length)} times, past the ` +
+                        `${String(MAX_NATIVE_CLIP_ITERATIONS)} the native timeline will allocate material for`
+                );
+                continue;
+            }
+            if (projected.length > remainingClipSlots) {
+                excludeClip(
+                    `clip "${clipLabel}" needs ${String(projected.length)} of track ` +
+                        `"${track.name}"'s ${String(remainingClipSlots)} remaining native clip slots`
+                );
+                continue;
+            }
+            remainingClipSlots -= projected.length;
+
+            for (const playback of projected) {
                 admit(track.id, {
                     trackId: track.id,
                     source: { sourceId: bufferId, buffer },
@@ -298,7 +354,7 @@ export function projectLiveGraphProgramme(input: LiveGraphProgrammeInput): LiveG
                     durationSeconds: playback.playDuration,
                     playbackRate: playback.playbackRate,
                     gain: playback.clipGainValue,
-                    fade: clipFade(playback),
+                    fade: projectNativeClipFade(playback),
                 });
             }
         }

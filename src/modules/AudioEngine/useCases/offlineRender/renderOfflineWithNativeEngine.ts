@@ -51,7 +51,6 @@ import { defaultTransportState, type TempoMapStoreState, transportStore } from '
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 
 import {
-    type AudioGraphClipFade,
     type AudioGraphCommand,
     type AudioGraphParameterWrite,
     type AudioGraphStripParameterTarget,
@@ -67,9 +66,9 @@ import { audioBufferCache } from '../../stores/audioBufferCache';
 import { getCompensationDelay } from '../latencyCompensation/compensation/getCompensationDelay';
 
 import { checkCancel } from './checkCancel';
-import { MICRO_FADE_SECONDS } from './constants';
 import { convertRecordedAutomationEvents } from './convertRecordedAutomationEvents';
 import { createAutomationRecorder, type AutomationRecorder } from './createAutomationRecorder';
+import { projectNativeClipFade } from './projectNativeClipFade';
 import { projectOfflineAudioClipPlaybacks } from './projectOfflineAudioClipPlaybacks';
 import { resolveOutputTarget } from './resolveOutputTarget';
 import { resolveTrackClipsWithComping } from './resolveTrackClipsWithComping';
@@ -139,21 +138,6 @@ function seamFaderValue(recorded: number, vcaMultiplier: number): number {
 /** Pan node-domain (−1…1) back to the seam's −50…50 project scale. */
 function seamPanValue(recorded: number): number {
     return recorded * 50;
-}
-
-function clipFade(input: {
-    fadeIn?: Readonly<{ userEndSec?: number }>;
-    fadeOut?: Readonly<{ userStartSec?: number }>;
-}): AudioGraphClipFade {
-    return {
-        ...(input.fadeIn
-            ? { fadeIn: input.fadeIn.userEndSec === undefined ? {} : { reachesFullAt: input.fadeIn.userEndSec } }
-            : {}),
-        ...(input.fadeOut
-            ? { fadeOut: input.fadeOut.userStartSec === undefined ? {} : { beginsAt: input.fadeOut.userStartSec } }
-            : {}),
-        microFadeSeconds: MICRO_FADE_SECONDS,
-    };
 }
 
 export async function renderOfflineWithNativeEngine(
@@ -400,7 +384,7 @@ export async function renderOfflineWithNativeEngine(
                         durationSeconds: playback.playDuration,
                         playbackRate: playback.playbackRate,
                         gain: playback.clipGainValue,
-                        fade: clipFade(playback),
+                        fade: projectNativeClipFade(playback),
                     },
                 });
             }

@@ -20,9 +20,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
 
 import { type AudioGraphCommand, type AudioGraphCommandBatch } from '../../../models/AudioGraphBackend';
-import { forgetRegisteredNativeTimelineSamples } from '../../../repositories/nativeGraph/forgetRegisteredNativeTimelineSamples';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
 import { type NativeGraphAvailability } from '../../../repositories/nativeGraph/probeNativeGraphTransport';
+import { registeredNativeTimelineSampleIds } from '../../../repositories/nativeGraph/registeredNativeTimelineSampleIds';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
 import { type LiveGraphTopologyInput } from '../projectLiveGraphTopology';
 import { repositionNativeLiveGraphSession } from '../repositionNativeLiveGraphSession';
@@ -200,7 +200,7 @@ beforeEach(() => {
     mocks.wireCalls = [];
     // The pool memo is module state and process-wide by design, so a case that
     // inherited the previous one's belief would see no registration at all.
-    forgetRegisteredNativeTimelineSamples();
+    registeredNativeTimelineSampleIds.clear();
     nativeLiveGraphSession.backend = null;
     nativeLiveGraphSession.audibleCarrier = false;
     nativeLiveGraphSession.monitorShadowed = true;
@@ -271,7 +271,11 @@ describe('startNativeLiveGraphSession', () => {
         expect(topology?.commands).not.toContainEqual(
             expect.objectContaining({ kind: 'set-transport', playing: true })
         );
-        expect(roll?.commands).toEqual([{ kind: 'set-transport', playing: true, positionSeconds: 2.5 }]);
+        // `locate: false` is not decoration. The topology batch has already
+        // parked the engine at this position, and a second locate would seek —
+        // cancelling every fader, pan and send level that batch queued at frame
+        // 0, which is the #3066 wipe one batch later.
+        expect(roll?.commands).toEqual([{ kind: 'set-transport', playing: true, positionSeconds: 2.5, locate: false }]);
         // The roll replaces nothing: a second replacing batch would tear down
         // the topology the first one just built.
         expect(roll?.replaceTopology).toBeUndefined();
@@ -666,7 +670,9 @@ describe('stopNativeLiveGraphSession', () => {
         // about to set rolling, and the session would play with no transport.
         expect(appliedBatches()).toHaveLength(3);
         expect(appliedBatches()[0]?.commands[0]).toEqual({ kind: 'set-monitor-shadow', shadowed: true });
-        expect(appliedBatches()[1]?.commands).toEqual([{ kind: 'set-transport', playing: true, positionSeconds: 0 }]);
+        expect(appliedBatches()[1]?.commands).toEqual([
+            { kind: 'set-transport', playing: true, positionSeconds: 0, locate: false },
+        ]);
         expect(appliedBatches()[2]?.commands).toEqual([{ kind: 'set-transport', playing: false, positionSeconds: 4 }]);
     });
 });
@@ -759,7 +765,9 @@ describe('repositionNativeLiveGraphSession', () => {
         // replacing and then be overwritten by the start's own roll at the old
         // position — the seek silently lost.
         expect(await reposition).toEqual({ outcome: 'repositioned' });
-        expect(appliedBatches()[1]?.commands).toEqual([{ kind: 'set-transport', playing: true, positionSeconds: 0 }]);
+        expect(appliedBatches()[1]?.commands).toEqual([
+            { kind: 'set-transport', playing: true, positionSeconds: 0, locate: false },
+        ]);
         expect(appliedBatches()[2]?.commands).toEqual([
             { kind: 'set-transport', playing: true, positionSeconds: 12.5 },
         ]);

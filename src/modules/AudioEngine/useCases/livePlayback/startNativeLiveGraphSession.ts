@@ -159,6 +159,19 @@ function readSessionTopology(): Readonly<{
  * Web Audio remains the audible path. What the engine does not do is roll, so
  * the playhead feed reports a parked transport and the cursor keeps the
  * scheduler's own clock.
+ *
+ * ── It starts playback; it must not locate ────────────────────────────────
+ *
+ * The topology batch already parked the engine at this very position, so the
+ * playhead is where this roll wants it and a second locate would move nothing.
+ * What it would do is destroy the mix: a locate seeks, a seek cancels every
+ * queued mixer write stamped at or past its frame, and every strip in the batch
+ * this roll follows stated its fader, pan and send levels as writes at frame 0.
+ * The three batches — topology, maps, roll — normally drain into one
+ * `update_graph` before the first block is rendered, so those writes are still
+ * pending when the roll's seek would land on them, and pressing play from the
+ * session head is exactly the case where the frames coincide. `locate: false`
+ * is what keeps a roll a roll ({@link AudioGraphSetTransportCommand}).
  */
 async function rollNativeTransport(
     backend: ReturnType<typeof createNativeLiveGraphBackend>,
@@ -166,7 +179,7 @@ async function rollNativeTransport(
 ): Promise<boolean> {
     const rolling = await backend.apply({
         schemaVersion: 1,
-        commands: [{ kind: 'set-transport', playing: true, positionSeconds }],
+        commands: [{ kind: 'set-transport', playing: true, positionSeconds, locate: false }],
     });
     if (rolling.application !== 'applied') {
         logger.warn(`[AudioEngine] native transport did not start rolling: ${rolling.reason}`);

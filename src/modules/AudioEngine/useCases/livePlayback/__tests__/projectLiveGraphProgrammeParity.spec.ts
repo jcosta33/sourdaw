@@ -26,17 +26,21 @@
  *     (`DeviceRenderer`, #3123). `render_offline_ops` never consults it — a
  *     bounce is not a monitor — so it maps and changes no rendered frame. The
  *     equality below is the proof of that, not the claim.
- *   - `set-transport` restates the preamble `render_offline_ops` already
- *     pushes (playing, from frame 0), and the locate it carries lands ahead of
- *     every strip, so the writes a strip states survive it — the producer's
- *     ordering law, which the last case in this file measures directly. The
- *     live batch is projected here as the *rolling* session it becomes after
- *     the play gesture, because a parked one renders nothing and would compare
- *     silence against silence.
- *   - The batch shape: the export applies strips, routes and programme as
- *     three batches; the live producer sends one. `render_graph_offline` maps
- *     the accumulated command list either way, so what is compared is the
- *     command *sequence*, which is the thing under test.
+ *   - **Two** `set-transport` writes, because that is what a play gesture
+ *     actually sends: the topology goes out *parked* (the loop region arrives
+ *     with the maps a round trip later, and an engine already rolling would
+ *     render that round trip), and a roll follows it. Together they restate the
+ *     preamble `render_offline_ops` already pushes — playing, from frame 0 —
+ *     and neither may cancel the mix. The first is a locate and leads its
+ *     batch, so every strip's writes are queued after it; the second is not a
+ *     locate at all, because the engine already stands where it wants it. Both
+ *     halves of that law are measured directly by the last two cases here.
+ *   - The batch shape: the export applies strips, routes and programme as three
+ *     batches; the live producer sends a topology batch and a roll.
+ *     `render_graph_offline` maps the accumulated command list either way, so
+ *     what is compared is the command *sequence*, which is the thing under
+ *     test — and the live sequence is compared in the order and the shape
+ *     production emits it, not a convenient single batch.
  *
  * `contributesAudio` also differs on one strip — the export marks every
  * scheduled track true, the live producer marks a track with nothing to play
@@ -57,7 +61,9 @@
  * ── What the fixture holds, and what it deliberately does not ─────────────
  *
  * Ordinary clips (one with user fades, one looping), a frozen track, a shaped
- * bus, a track→bus send, and a bus routed into a track.
+ * bus, a track→bus send, a bus routed into a track, and the two clips whose
+ * fade endpoints fall outside their own sound — a clip slipped left of its
+ * material, and a clip longer than its material.
  *
  * No devices: no built-in has a native body yet (#3124), and both producers
  * degrade a bodiless chain the same way, so a device here would measure
@@ -97,9 +103,9 @@ import { type Track } from '#/modules/Arrangement/stores';
 import { NATIVE_ADDON_FILE } from '../../../../../../electron/native';
 import { type AudioGraphCommand } from '../../../models/AudioGraphBackend';
 import { deinterleaveStereoPcm } from '../../../repositories/nativeGraph/deinterleaveStereoPcm';
-import { forgetRegisteredNativeTimelineSamples } from '../../../repositories/nativeGraph/forgetRegisteredNativeTimelineSamples';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
 import { registerNativeTimelineSamples } from '../../../repositories/nativeGraph/nativeTimelineSamplePool';
+import { registeredNativeTimelineSampleIds } from '../../../repositories/nativeGraph/registeredNativeTimelineSampleIds';
 import { serializeAudioGraphCommandBatch } from '../../../repositories/nativeGraph/serializeAudioGraphCommandBatch';
 import {
     type OfflinePpqEndpointProjector,
@@ -391,6 +397,13 @@ function frozenTrack(leg: 'live' | 'export'): Track {
  * - **track-c** — what the bus is routed into, which is bus→track routing, and
  *   which carries no clips of its own.
  * - **track-frozen** — see {@link frozenTrack}.
+ * - **track-slipped** — the two clips whose fade endpoints fall outside their
+ *   own sound: one slipped left of its material with a fade-in, one longer than
+ *   its material with a fade-out. Both are ordinary edits, both used to be
+ *   refused by name, and both producers now clamp them the same way
+ *   (`projectNativeClipFade`) — which is only worth anything if the two
+ *   renders still agree, so they are in the fixture rather than in a unit
+ *   assertion alone.
  */
 function fixtureTracks(leg: 'live' | 'export'): Track[] {
     return [
@@ -435,6 +448,35 @@ function fixtureTracks(leg: 'live' | 'export'): Track[] {
         createTrack({ id: 'bus-1', name: 'Shaped Bus', kind: 'bus', gain: 0.9, pan: 34, outputId: 'track-c' }),
         createTrack({ id: 'track-c', name: 'Bus Return', gain: 0.8, pan: 0 }),
         frozenTrack(leg),
+        createTrack({
+            id: 'track-slipped',
+            name: 'Slipped',
+            gain: 0.6,
+            pan: 22,
+            clips: [
+                // Slipped left of its own material: the sound starts one beat
+                // late and the fade-in the arrangement drew is over before it.
+                audioClip({
+                    id: 'clip-slipped',
+                    trackId: 'track-slipped',
+                    startBeat: 0.5,
+                    endBeat: 3,
+                    fadeInBeats: 0.5,
+                    audioOffsetBeats: -1,
+                    audioBufferId: 'mat-b',
+                }),
+                // Longer than its material: the sound stops early and the
+                // fade-out the arrangement drew begins after it.
+                audioClip({
+                    id: 'clip-truncated',
+                    trackId: 'track-slipped',
+                    startBeat: 4,
+                    endBeat: 8,
+                    fadeOutBeats: 1,
+                    audioBufferId: 'mat-b',
+                }),
+            ],
+        }),
     ];
 }
 
@@ -473,14 +515,18 @@ async function renderExportLeg(): Promise<Float32Array[]> {
     return [result.buffer.getChannelData(0), result.buffer.getChannelData(1)];
 }
 
-/** The live batch, exactly as `startNativeLiveGraphSession` builds it, rolling. */
-function projectLiveBatch(): readonly AudioGraphCommand[] {
+/**
+ * The topology batch, exactly as `startNativeLiveGraphSession` builds it:
+ * **parked**, because the loop region arrives with the maps a round trip later
+ * and an engine already rolling would render that round trip.
+ */
+function projectLiveTopologyBatch(): readonly AudioGraphCommand[] {
     const stripTracks = fixtureTracks('live');
     return projectLiveGraphTopology({
         stripTracks,
         soloGatedTrackIds: new Set(),
         vcaMultiplierByTrackId: new Map(),
-        transport: { playing: true, positionSeconds: 0 },
+        transport: { playing: false, positionSeconds: 0 },
         monitor: 'shadowed',
         programme: projectLiveGraphProgramme({
             stripTracks,
@@ -493,6 +539,33 @@ function projectLiveBatch(): readonly AudioGraphCommand[] {
             compensationDelaySeconds: () => 0,
         }),
     });
+}
+
+/**
+ * The whole sequence one play gesture sends, in the order it sends it.
+ *
+ * Three batches leave `startNativeLiveGraphSession`: the parked topology, the
+ * transport maps, and the roll. The maps are not graph commands — they are
+ * their own native call — so what a graph render sees is the first and the
+ * third, concatenated. That is not a simplification of the production path but
+ * the very shape of it: `update_graph` drains the whole ring at a block
+ * boundary, so on the common fast path all three land before the first block is
+ * rendered and the roll's ops sit directly behind the topology's.
+ *
+ * `locate` is a parameter because the difference between the two answers is
+ * the defect this file caught: a roll that locates seeks to frame 0 and cancels
+ * every fader, pan and send level the topology queued there.
+ */
+function projectLiveSessionCommands(options?: { rollLocates?: boolean }): readonly AudioGraphCommand[] {
+    return [
+        ...projectLiveTopologyBatch(),
+        {
+            kind: 'set-transport',
+            playing: true,
+            positionSeconds: 0,
+            ...(options?.rollLocates === true ? {} : { locate: false }),
+        },
+    ];
 }
 
 async function renderLiveLeg(commands: readonly AudioGraphCommand[]): Promise<Float32Array[]> {
@@ -540,7 +613,7 @@ describe('live and export projections render one project the same way (#3068)', 
         vi.stubGlobal('AudioBuffer', StubAudioBuffer);
         // The pool memo is process-wide; a previous file's belief about a host
         // this one never registered against would skip the registration.
-        forgetRegisteredNativeTimelineSamples();
+        registeredNativeTimelineSampleIds.clear();
         mocks.audioBuffers = new Map<string, unknown>([
             ['mat-a', createMaterial(2, 220)],
             ['mat-b', createMaterial(1.25, 330)],
@@ -571,7 +644,7 @@ describe('live and export projections render one project the same way (#3068)', 
     );
 
     it('carries the frozen track’s bake, and none of the clips it was baked from', () => {
-        const scheduled = projectLiveBatch().flatMap((command) =>
+        const scheduled = projectLiveSessionCommands().flatMap((command) =>
             command.kind === 'schedule-clip' && command.playback.trackId === 'track-frozen' ? [command.playback] : []
         );
 
@@ -584,7 +657,7 @@ describe('live and export projections render one project the same way (#3068)', 
     it.runIf(nativeAddonPresent)(
         'renders both projections of one project bit for bit identically',
         async () => {
-            const commands = projectLiveBatch();
+            const commands = projectLiveSessionCommands();
             const [exportLeft, exportRight] = await renderExportLeg();
             const [liveLeft, liveRight] = await renderLiveLeg(commands);
 
@@ -598,23 +671,50 @@ describe('live and export projections render one project the same way (#3068)', 
     );
 
     it.runIf(nativeAddonPresent)(
-        'loses the mix when the transport is emitted after the strips, which is why it is emitted first',
+        'loses the mix when the topology’s transport is emitted after the strips, which is why it is emitted first',
         async () => {
-            // The producer's ordering law, measured rather than asserted about
-            // the command list. `set-transport` maps to a `SeekFrames`, and a
-            // seek cancels every mixer write stamped at or past its frame — so
-            // a transport that follows the strips drops the fader, pan and send
-            // levels they just stated. Moving it back to last must therefore
-            // change the render; if it does not, the ordering the producer
-            // documents has stopped meaning anything.
-            const commands = projectLiveBatch();
-            const rolled = await renderLiveLeg(commands);
+            // The producer's ordering law *within* the topology batch, measured
+            // rather than asserted about the command list. `set-transport` maps
+            // to a `SeekFrames`, and a seek cancels every mixer write stamped at
+            // or past its frame — so a transport that follows the strips drops
+            // the fader, pan and send levels they just stated. Moving it back to
+            // last must therefore change the render; if it does not, the
+            // ordering the producer documents has stopped meaning anything.
+            //
+            // The roll stays where production puts it, at the end. Without it
+            // nothing here renders at all: the topology batch goes out parked,
+            // and a parked transport advances no playhead, so both sides would
+            // be silence and the comparison would pass on nothing.
+            const topology = projectLiveTopologyBatch();
+            const roll = projectLiveSessionCommands().slice(topology.length);
+            const ordered = await renderLiveLeg([...topology, ...roll]);
             const transportLast = await renderLiveLeg([
-                ...commands.filter((command) => command.kind !== 'set-transport'),
-                ...commands.filter((command) => command.kind === 'set-transport'),
+                ...topology.filter((command) => command.kind !== 'set-transport'),
+                ...topology.filter((command) => command.kind === 'set-transport'),
+                ...roll,
             ]);
 
-            expect(firstDifference(rolled, transportLast)).not.toBe(-1);
+            expect(firstDifference(ordered, transportLast)).not.toBe(-1);
+        },
+        30_000
+    );
+
+    it.runIf(nativeAddonPresent)(
+        'loses the mix when the roll that follows the topology locates, which is why it does not',
+        async () => {
+            // The same law one batch later, and the reason the in-batch
+            // ordering above is not enough. `rollNativeTransport` sends a
+            // second `set-transport` after the topology and the maps; all three
+            // normally drain into one `update_graph` before the first block, so
+            // a roll that located would seek to frame 0 and cancel every fader,
+            // pan and send level the topology queued there — the same wipe, one
+            // batch later. `locate: false` is what stops it, and this is the
+            // measurement that says so: the render must change when the roll is
+            // allowed to locate.
+            const rolled = await renderLiveLeg(projectLiveSessionCommands());
+            const relocating = await renderLiveLeg(projectLiveSessionCommands({ rollLocates: true }));
+
+            expect(firstDifference(rolled, relocating)).not.toBe(-1);
         },
         30_000
     );

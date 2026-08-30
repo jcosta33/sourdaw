@@ -324,3 +324,183 @@ describe('projectLiveGraphProgramme', () => {
         expect(programme.playbacksByStripId.get('audio-1')?.[0]?.startTime).toBe(2 * SECONDS_PER_BEAT + 0.25);
     });
 });
+
+/**
+ * The two ceilings a producer owes the engine, and the one it owes the machine.
+ *
+ * A `schedule-clip` past either is a refusal, and a refusal is whole-batch — so
+ * what these hold is that one pathological clip costs itself and nothing else.
+ */
+describe('projectLiveGraphProgramme — what one clip may cost', () => {
+    /** A clip that expands into `iterations` loop passes of one beat each. */
+    function loopingClip(input: { id: string; startBeat: number; iterations: number }): Track['clips'][number] {
+        return audioClip({
+            id: input.id,
+            trackId: 'audio-1',
+            startBeat: input.startBeat,
+            endBeat: input.startBeat + input.iterations,
+            loopEnabled: true,
+            loopLength: 1,
+            audioBufferId: 'mat-1',
+        });
+    }
+
+    function programmeFor(clips: readonly Track['clips'][number][]) {
+        return projectProgramme({
+            stripTracks: [createTrack({ id: 'audio-1', name: 'Looper', clips: [...clips] })],
+            buffers: { 'mat-1': material(10) },
+        });
+    }
+
+    it('carries a loop that expands to exactly the 64 iterations it may allocate for', () => {
+        const programme = programmeFor([loopingClip({ id: 'at-the-line', startBeat: 0, iterations: 64 })]);
+
+        expect(programme.playbacksByStripId.get('audio-1')).toHaveLength(64);
+        expect(programme.exclusions).toEqual([]);
+    });
+
+    it('excludes the clip, not the session, when one loop would allocate past that budget', () => {
+        // Every `schedule-clip` copies the sample's whole PCM into the engine
+        // (#3134), so an expansion is a multiplication of its material. The
+        // neighbour is here to prove the cost lands on the clip alone.
+        const programme = programmeFor([
+            loopingClip({ id: 'runaway', startBeat: 0, iterations: 65 }),
+            audioClip({ id: 'neighbour', trackId: 'audio-1', startBeat: 100, endBeat: 102, audioBufferId: 'mat-1' }),
+        ]);
+
+        expect(programme.playbacksByStripId.get('audio-1')).toHaveLength(1);
+        expect(programme.playbacksByStripId.get('audio-1')?.[0]?.startTime).toBe(100 * SECONDS_PER_BEAT);
+        expect(programme.exclusions).toEqual([
+            { stripId: 'audio-1', subjectId: 'runaway', reason: expect.stringContaining('loops 65 times') },
+        ]);
+    });
+
+    it('fills a track’s 1024 native clip slots exactly and admits every one of them', () => {
+        // The engine's own ceiling is per strip (`MAX_TRACK_CLIPS`), so it is
+        // spent across a track's clips rather than by any one of them.
+        const clips = Array.from({ length: 16 }, (_unused, index) =>
+            loopingClip({ id: `filler-${String(index)}`, startBeat: index * 100, iterations: 64 })
+        );
+
+        const programme = programmeFor(clips);
+
+        expect(programme.playbacksByStripId.get('audio-1')).toHaveLength(1024);
+        expect(programme.exclusions).toEqual([]);
+    });
+
+    it('excludes the clip that would overflow those slots, leaving the ones that fit playing', () => {
+        const clips = [
+            ...Array.from({ length: 16 }, (_unused, index) =>
+                loopingClip({ id: `filler-${String(index)}`, startBeat: index * 100, iterations: 64 })
+            ),
+            loopingClip({ id: 'overflow', startBeat: 1_700, iterations: 2 }),
+        ];
+
+        const programme = programmeFor(clips);
+
+        expect(programme.playbacksByStripId.get('audio-1')).toHaveLength(1024);
+        expect(programme.exclusions).toEqual([
+            {
+                stripId: 'audio-1',
+                subjectId: 'overflow',
+                reason: expect.stringContaining('0 remaining native clip slots'),
+            },
+        ]);
+    });
+});
+
+/**
+ * Fades, against the bounds the playback actually has.
+ *
+ * Two ordinary edits pull a clip's fade endpoints outside its own sound, and
+ * the native mapper refuses both by name — whole-batch. See
+ * `projectNativeClipFade`.
+ */
+describe('projectLiveGraphProgramme — fades the engine can take', () => {
+    it('leaves an ordinary clip’s fade endpoints exactly where the arrangement drew them', () => {
+        const programme = projectProgramme({
+            stripTracks: [
+                createTrack({
+                    id: 'audio-1',
+                    clips: [
+                        audioClip({
+                            id: 'clip-1',
+                            trackId: 'audio-1',
+                            startBeat: 2,
+                            endBeat: 6,
+                            fadeInBeats: 1,
+                            fadeOutBeats: 1,
+                            audioBufferId: 'mat-1',
+                        }),
+                    ],
+                }),
+            ],
+            buffers: { 'mat-1': material(10) },
+        });
+
+        expect(programme.playbacksByStripId.get('audio-1')?.[0]?.fade).toMatchObject({
+            fadeIn: { reachesFullAt: 3 * SECONDS_PER_BEAT },
+            fadeOut: { beginsAt: 5 * SECONDS_PER_BEAT },
+        });
+    });
+
+    it('pulls a slipped clip’s fade-in up to the first frame anyone hears', () => {
+        // A negative `audioOffsetBeats` puts the clip's head before the start
+        // of its material, so the sound begins a silent span later than the
+        // clip does. The mapper refuses a fade-in that reaches full before the
+        // clip starts, and the fade is over before the sound begins anyway.
+        const programme = projectProgramme({
+            stripTracks: [
+                createTrack({
+                    id: 'audio-1',
+                    clips: [
+                        audioClip({
+                            id: 'slipped',
+                            trackId: 'audio-1',
+                            startBeat: 2,
+                            endBeat: 6,
+                            fadeInBeats: 0.5,
+                            audioOffsetBeats: -1,
+                            audioBufferId: 'mat-1',
+                        }),
+                    ],
+                }),
+            ],
+            buffers: { 'mat-1': material(10) },
+        });
+
+        const playback = programme.playbacksByStripId.get('audio-1')?.[0];
+        // One beat of pre-roll at 120 BPM: the sound starts half a second late.
+        expect(playback?.startTime).toBe(2 * SECONDS_PER_BEAT + SECONDS_PER_BEAT);
+        expect(playback?.fade.fadeIn).toEqual({ reachesFullAt: playback?.startTime });
+    });
+
+    it('pulls a truncated clip’s fade-out back to the last frame anyone hears', () => {
+        // The clip is four seconds long and its material is one, so the
+        // playback is clamped to what the buffer holds. The user's fade-out
+        // still points at the clip's visual end, which the mapper refuses as
+        // beginning after the clip ends.
+        const programme = projectProgramme({
+            stripTracks: [
+                createTrack({
+                    id: 'audio-1',
+                    clips: [
+                        audioClip({
+                            id: 'truncated',
+                            trackId: 'audio-1',
+                            startBeat: 0,
+                            endBeat: 8,
+                            fadeOutBeats: 1,
+                            audioBufferId: 'mat-1',
+                        }),
+                    ],
+                }),
+            ],
+            buffers: { 'mat-1': material(1) },
+        });
+
+        const playback = programme.playbacksByStripId.get('audio-1')?.[0];
+        expect(playback?.durationSeconds).toBe(1);
+        expect(playback?.fade.fadeOut).toEqual({ beginsAt: 1 });
+    });
+});

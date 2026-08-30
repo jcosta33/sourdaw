@@ -2,7 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
-import { resumeEngine, requestMicPermission } from '#/modules/AudioEngine/useCases';
+import { resumeEngine, requestMicPermission, syncNativeTimelineSamples } from '#/modules/AudioEngine/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
 import { finishProjectLoading, loadProject, saveProject } from '#/modules/Project/useCases';
 import { syncTransportMapsToNativeSession } from '#/modules/Transport/useCases';
@@ -28,6 +28,11 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     setMasterGainValue: vi.fn(),
     resumeEngine: vi.fn(),
     requestMicPermission: vi.fn().mockResolvedValue(undefined),
+    // Returns an unsubscribe, like its two siblings below: the boot sequence
+    // calls it and holds what it returns, so a stub returning `undefined` makes
+    // the whole sequence throw into the catch and every later step — including
+    // `loadProject` — never runs.
+    syncNativeTimelineSamples: vi.fn(() => vi.fn()),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
     initWebMidi: vi.fn().mockResolvedValue(undefined),
@@ -256,6 +261,25 @@ describe('useAppInitialization — knead engine subscription teardown', () => {
 
         await waitFor(() => {
             expect(syncTransportMapsToNativeSession).toHaveBeenCalledTimes(1);
+        });
+        expect(unsubscribe).not.toHaveBeenCalled();
+
+        unmount();
+
+        expect(unsubscribe).toHaveBeenCalledTimes(1);
+    });
+
+    it('unsubscribes the native timeline sample sync on unmount instead of leaking the subscription', async () => {
+        // The third store subscription the boot sequence opens (#3068). It has
+        // the same shape and the same leak as its two siblings above: the
+        // trackStore subscriber would accumulate on every remount and HMR.
+        const unsubscribe = vi.fn();
+        vi.mocked(syncNativeTimelineSamples).mockReturnValue(unsubscribe);
+
+        const { unmount } = renderHook(() => useAppInitialization());
+
+        await waitFor(() => {
+            expect(syncNativeTimelineSamples).toHaveBeenCalledTimes(1);
         });
         expect(unsubscribe).not.toHaveBeenCalled();
 

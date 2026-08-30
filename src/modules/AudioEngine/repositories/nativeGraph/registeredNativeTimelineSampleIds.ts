@@ -9,9 +9,10 @@
  * the first frame, which is exactly the cost `createNativeLiveGraphBackend`'s
  * header says must never be paid there.
  *
- * It sits in its own file because two operations own it from opposite sides:
- * `registerNativeTimelineSamples` adds to it, and
- * `forgetRegisteredNativeTimelineSamples` clears it.
+ * It sits in its own file so that `registerNativeTimelineSamples`, which adds
+ * to it, is not also the only way to reach it: a test whose module registry is
+ * shared across files would otherwise inherit a previous case's belief about a
+ * pool its own transport never saw, and clears it here instead.
  *
  * An id belongs here only once the bridge has confirmed it. A failed
  * registration leaves the id unknown, so the next caller — the play gesture, if
