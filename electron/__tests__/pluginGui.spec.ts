@@ -379,6 +379,39 @@ describe('createPluginWindowHost', () => {
     });
 
     /**
+     * The existence probe is the addon's "is this editor still open?", and the
+     * whole OS-close gap turns on its answer: the window is hidden the moment
+     * the close is stopped, while the reset its report schedules runs on the
+     * addon only after the report crosses. A probe that answered "exists" for
+     * the window being torn down would make a reopen clicked into that gap
+     * refuse "already open" for a window the user watched disappear.
+     */
+    it('answers the existence probe false for a window whose OS close is being torn down', async () => {
+        let reportHandled: (() => void) | undefined;
+        const harness = createHarness({
+            notifyClosed: () =>
+                new Promise<void>((resolve) => {
+                    reportHandled = resolve;
+                }),
+        });
+        harness.host.create(request());
+        const window = onlyWindow(harness.windows);
+        expect(harness.host.exists('plugin-a')).toBe(true);
+
+        const stopped = window.emitClose();
+
+        expect(stopped).toBe(true);
+        expect(window.isDestroyed()).toBe(false);
+        expect(harness.host.exists('plugin-a')).toBe(false);
+
+        expect(reportHandled).toBeInstanceOf(Function);
+        reportHandled?.();
+        await settled();
+        expect(window.isDestroyed()).toBe(true);
+        expect(harness.host.exists('plugin-a')).toBe(false);
+    });
+
+    /**
      * The contract this whole path exists for. Both formats un-parent the
      * plugin's child window from the host's — VST3 `IPlugView::removed`, CLAP
      * `gui.destroy` — so the window they were attached to has to still be there
