@@ -1311,7 +1311,12 @@ function tryRestorePreArmedDeliveryReceiptAuthorityAfterMergeFailure(
         }
         return;
     }
-    restorePreArmedDeliveryReceiptAuthority(number, beforeArming, armed, port);
+    if (
+        latestObserved !== undefined &&
+        shouldRestorePreArmedDeliveryReceiptAuthorityAfterFinalObservation(latestObserved)
+    ) {
+        restorePreArmedDeliveryReceiptAuthority(number, beforeArming, armed, port);
+    }
 }
 
 function persistMergeAuthorizedDeliveryReceiptAuthority(
