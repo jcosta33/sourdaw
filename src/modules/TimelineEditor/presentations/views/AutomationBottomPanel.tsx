@@ -1,5 +1,6 @@
 import {
     type ReactElement,
+    type ReactNode,
     type RefObject,
     type WheelEvent,
     useEffect,
@@ -224,8 +225,11 @@ export const AutomationBottomPanel = (): ReactElement => {
         );
     }
 
-    const laneRows = (() => {
-        if (containerWidth > 0 && trackLanes.length === 0) {
+    const renderLaneRows = (): ReactNode => {
+        if (containerWidth === 0) {
+            return null;
+        }
+        if (trackLanes.length === 0) {
             return (
                 <Row justify="center" className="h-full p-4">
                     <DawEmptyState
@@ -236,123 +240,25 @@ export const AutomationBottomPanel = (): ReactElement => {
                     />
                 </Row>
             );
-        } else {
-            if (containerWidth > 0) {
-                return trackLanes.map((lane) =>
-                    lane.collapsed ? (
-                        <LaneSparkline key={lane.id} lane={lane} trackColor={trackColor} width={containerWidth} />
-                    ) : (
-                        <AutomationLaneRow
-                            key={lane.id}
-                            lane={lane}
-                            trackColor={trackColor}
-                            pixelsPerBeat={pixelsPerBeat}
-                            scrollX={scrollX}
-                            containerWidth={containerWidth}
-                        />
-                    )
-                );
-            } else {
-                return null;
-            }
         }
-    })();
-    const renderIife_7 = () => {
-        if (trackListOpen) {
-            return (
-                <div
-                    className="grid min-h-0 min-w-0 flex-1 overflow-hidden"
-                    style={{
-                        gridTemplateColumns: `${trackListWidth}px minmax(0,1fr)`,
-                        gridTemplateRows: 'auto auto minmax(0,1fr)',
-                    }}
-                >
-                    {/* Left panel — fixed width matching track list */}
-                    <AutomationSidebarCell>
-                        {/* Track info header */}
-                        <DawHeaderBand className="h-7 gap-2 px-2" compact>
-                            <div className="size-2.5 rounded-sm" style={{ backgroundColor: trackColor }} />
-                            <span className="text-xs font-medium text-foreground truncate flex-1">
-                                {selectedTrack.name}
-                            </span>
-                        </DawHeaderBand>
-                    </AutomationSidebarCell>
-                    {/* Spacer: same height as track header so row 2 lines up across columns */}
-                    <TimelineChromeSurface tone="subtle" className="h-7" aria-hidden />
-                    {/* Automation mode selector */}
-                    <AutomationSidebarCell className="shrink-0 border-b border-border/20 px-2 py-1.5">
-                        <AutomationModeControl
-                            automationMode={automationMode}
-                            laneCount={trackLanes.length}
-                            onModeChange={(mode) => setAutomationMode(selectedTrackId!, mode)}
-                        />
-                    </AutomationSidebarCell>
-                    {/* Beat ruler for alignment — flex filler below matches mode row height */}
-                    <Stack className="h-full min-w-0 border-b border-border/20">
-                        <BeatRulerBar />
-                        <div className="min-h-0 flex-1" aria-hidden />
-                    </Stack>
-                    {/* Lane labels with collapse toggle and delete */}
-                    <AutomationSidebarCell className="min-h-0 overflow-y-auto">
-                        {trackLanes.map((lane) => (
-                            <Row
-                                gap={1}
-                                shrink={false}
-                                className="px-1.5 border-b border-border/10 group"
-                                key={lane.id}
-                                style={{ height: lane.collapsed ? SPARKLINE_HEIGHT : LANE_HEIGHT }}
-                            >
-                                <Row grow gap={1} className="self-start">
-                                    <Button
-                                        variant="bare"
-                                        size="bare"
-                                        type="button"
-                                        className="size-3.5 flex items-center justify-center text-muted-foreground/50 hover:text-foreground transition-colors shrink-0"
-                                        onClick={() => toggleLaneCollapsed(lane.id)}
-                                        aria-label={lane.collapsed ? 'Expand lane' : 'Collapse lane'}
-                                    >
-                                        {lane.collapsed ? (
-                                            <ChevronRight className="size-2.5" />
-                                        ) : (
-                                            <ChevronDown className="size-2.5" />
-                                        )}
-                                    </Button>
-                                    <div
-                                        className="size-2 rounded-full shrink-0"
-                                        style={{ backgroundColor: lane.color ?? trackColor }}
-                                    />
-                                    <span className="text-[9px] text-muted-foreground truncate flex-1">
-                                        {lane.parameterName}
-                                    </span>
-                                    <Button
-                                        variant="bare"
-                                        size="bare"
-                                        type="button"
-                                        className="size-3.5 flex items-center justify-center text-muted-foreground/30 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 shrink-0"
-                                        onClick={() => handleRemoveLane(lane.id)}
-                                        aria-label={`Remove ${lane.parameterName} lane`}
-                                    >
-                                        <Trash2 className="size-2.5" />
-                                    </Button>
-                                </Row>
-                            </Row>
-                        ))}
+        return trackLanes.map((lane) =>
+            lane.collapsed ? (
+                <LaneSparkline key={lane.id} lane={lane} trackColor={trackColor} width={containerWidth} />
+            ) : (
+                <AutomationLaneRow
+                    key={lane.id}
+                    lane={lane}
+                    trackColor={trackColor}
+                    pixelsPerBeat={pixelsPerBeat}
+                    scrollX={scrollX}
+                    containerWidth={containerWidth}
+                />
+            )
+        );
+    };
 
-                        {/* Add lane — inline or picker */}
-                        <div className="shrink-0 px-2 py-1.5 hover:bg-surface-base/50">
-                            <AutomationAddLaneControl params={unusedParams} onAdd={handleAddLane} showAvailableCount />
-                        </div>
-                    </AutomationSidebarCell>
-                    {/* Right panel — automation lanes aligned with timeline */}
-                    <Stack className="min-w-0 overflow-hidden" ref={containerRef}>
-                        {/* Lanes area */}
-                        <div className="min-h-0 flex-1 overflow-y-auto" onWheel={handleWheel}>
-                            {laneRows}
-                        </div>
-                    </Stack>
-                </div>
-            );
-        } else {
+    const renderPanelBody = (): ReactElement => {
+        if (!trackListOpen) {
             return (
                 <Stack grow className="min-w-0 overflow-hidden" ref={containerRef}>
                     {/* Right panel — automation lanes aligned with timeline */}
@@ -360,16 +266,109 @@ export const AutomationBottomPanel = (): ReactElement => {
                     <BeatRulerBar />
                     {/* Lanes area */}
                     <div className="min-h-0 flex-1 overflow-y-auto" onWheel={handleWheel}>
-                        {laneRows}
+                        {renderLaneRows()}
                     </div>
                 </Stack>
             );
         }
+        return (
+            <div
+                className="grid min-h-0 min-w-0 flex-1 overflow-hidden"
+                style={{
+                    gridTemplateColumns: `${trackListWidth}px minmax(0,1fr)`,
+                    gridTemplateRows: 'auto auto minmax(0,1fr)',
+                }}
+            >
+                {/* Left panel — fixed width matching track list */}
+                <AutomationSidebarCell>
+                    {/* Track info header */}
+                    <DawHeaderBand className="h-7 gap-2 px-2" compact>
+                        <div className="size-2.5 rounded-sm" style={{ backgroundColor: trackColor }} />
+                        <span className="text-xs font-medium text-foreground truncate flex-1">
+                            {selectedTrack.name}
+                        </span>
+                    </DawHeaderBand>
+                </AutomationSidebarCell>
+                {/* Spacer: same height as track header so row 2 lines up across columns */}
+                <TimelineChromeSurface tone="subtle" className="h-7" aria-hidden />
+                {/* Automation mode selector */}
+                <AutomationSidebarCell className="shrink-0 border-b border-border/20 px-2 py-1.5">
+                    <AutomationModeControl
+                        automationMode={automationMode}
+                        laneCount={trackLanes.length}
+                        onModeChange={(mode) => setAutomationMode(selectedTrackId!, mode)}
+                    />
+                </AutomationSidebarCell>
+                {/* Beat ruler for alignment — flex filler below matches mode row height */}
+                <Stack className="h-full min-w-0 border-b border-border/20">
+                    <BeatRulerBar />
+                    <div className="min-h-0 flex-1" aria-hidden />
+                </Stack>
+                {/* Lane labels with collapse toggle and delete */}
+                <AutomationSidebarCell className="min-h-0 overflow-y-auto">
+                    {trackLanes.map((lane) => (
+                        <Row
+                            gap={1}
+                            shrink={false}
+                            className="px-1.5 border-b border-border/10 group"
+                            key={lane.id}
+                            style={{ height: lane.collapsed ? SPARKLINE_HEIGHT : LANE_HEIGHT }}
+                        >
+                            <Row grow gap={1} className="self-start">
+                                <Button
+                                    variant="bare"
+                                    size="bare"
+                                    type="button"
+                                    className="size-3.5 flex items-center justify-center text-muted-foreground/50 hover:text-foreground transition-colors shrink-0"
+                                    onClick={() => toggleLaneCollapsed(lane.id)}
+                                    aria-label={lane.collapsed ? 'Expand lane' : 'Collapse lane'}
+                                >
+                                    {lane.collapsed ? (
+                                        <ChevronRight className="size-2.5" />
+                                    ) : (
+                                        <ChevronDown className="size-2.5" />
+                                    )}
+                                </Button>
+                                <div
+                                    className="size-2 rounded-full shrink-0"
+                                    style={{ backgroundColor: lane.color ?? trackColor }}
+                                />
+                                <span className="text-[9px] text-muted-foreground truncate flex-1">
+                                    {lane.parameterName}
+                                </span>
+                                <Button
+                                    variant="bare"
+                                    size="bare"
+                                    type="button"
+                                    className="size-3.5 flex items-center justify-center text-muted-foreground/30 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 shrink-0"
+                                    onClick={() => handleRemoveLane(lane.id)}
+                                    aria-label={`Remove ${lane.parameterName} lane`}
+                                >
+                                    <Trash2 className="size-2.5" />
+                                </Button>
+                            </Row>
+                        </Row>
+                    ))}
+
+                    {/* Add lane — inline or picker */}
+                    <div className="shrink-0 px-2 py-1.5 hover:bg-surface-base/50">
+                        <AutomationAddLaneControl params={unusedParams} onAdd={handleAddLane} showAvailableCount />
+                    </div>
+                </AutomationSidebarCell>
+                {/* Right panel — automation lanes aligned with timeline */}
+                <Stack className="min-w-0 overflow-hidden" ref={containerRef}>
+                    {/* Lanes area */}
+                    <div className="min-h-0 flex-1 overflow-y-auto" onWheel={handleWheel}>
+                        {renderLaneRows()}
+                    </div>
+                </Stack>
+            </div>
+        );
     };
 
     return (
         <DawPanelSurface className="flex flex-row min-h-0 overflow-hidden bg-surface-base/50">
-            {renderIife_7()}
+            {renderPanelBody()}
         </DawPanelSurface>
     );
 };
