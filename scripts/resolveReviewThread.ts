@@ -327,6 +327,7 @@ function compensateResolution(
     original: unknown
 ): never {
     const failures: string[] = [];
+    let preservedAmbiguousPendingEvidence = false;
     let current: ReviewThreadInspection | undefined;
     attempt(failures, 'inspect ambiguous review transaction', () => {
         current = port.inspect(number, threadId);
@@ -359,14 +360,15 @@ function compensateResolution(
             !replyAttempted &&
             current.head !== context.expectedHead
         ) {
-            deleteAmbiguousCreatedPendingReview(
-                before.pendingReviews,
-                current.pendingReviews,
-                current.thread,
-                context,
-                port,
-                failures
-            );
+            preservedAmbiguousPendingEvidence =
+                deleteAmbiguousCreatedPendingReview(
+                    before.pendingReviews,
+                    current.pendingReviews,
+                    current.thread,
+                    context,
+                    port,
+                    failures
+                ) || preservedAmbiguousPendingEvidence;
         } else if (pendingReviewCreated && !replyAttempted) {
             deleteCreatedPendingReviewUnlessManagedReplyAttached(
                 current.pendingReviews,
@@ -416,7 +418,8 @@ function compensateResolution(
         !pendingReviewCreated &&
         !replyAttempted &&
         !reviewUpdateAttempted &&
-        !reviewSubmitAttempted
+        !reviewSubmitAttempted &&
+        !preservedAmbiguousPendingEvidence
     ) {
         const beforeThread = before.thread;
         attempt(failures, 'verify review-thread compensation', () => {
@@ -1011,11 +1014,14 @@ function deleteAmbiguousCreatedPendingReview(
     current: PullRequestReview[],
     thread: ReviewThread | null,
     context: ResolutionReviewContext,
-    port: ResolveReviewThreadPort,
+    _port: ResolveReviewThreadPort,
     failures: string[]
-): void {
+): boolean {
     const beforeIds = new Set(before.map((review) => review.id));
-    const created = current.filter((review) => !beforeIds.has(review.id) && isExactPendingReview(review, context));
+    const created = current.filter((review) => !beforeIds.has(review.id));
+    if (created.length === 0) {
+        return false;
+    }
     if (
         thread !== null &&
         created.some((review) =>
@@ -1025,18 +1031,14 @@ function deleteAmbiguousCreatedPendingReview(
         )
     ) {
         failures.push('pending review now has a managed Done reply; preserving attached review evidence');
-        return;
+        return true;
     }
-    const [review] = created;
-    if (review === undefined) {
+    if (created.some((review) => isExactPendingReview(review, context))) {
         failures.push('ambiguous pending review mutation; preserving exact pending review evidence');
-        return;
+        return true;
     }
-    if (created.length !== 1) {
-        failures.push('ambiguous pending review mutation; refusing to delete multiple candidate reviews');
-        return;
-    }
-    attempt(failures, 'delete pending review', () => port.deletePendingReview(review.id));
+    failures.push('ambiguous pending review mutation; preserving newly visible pending review evidence');
+    return true;
 }
 function assertCompletedResolution(thread: ReviewThread, threadId: string): void {
     assertRootReviewer(thread, threadId);
