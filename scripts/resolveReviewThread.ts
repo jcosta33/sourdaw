@@ -359,7 +359,14 @@ function compensateResolution(
             !replyAttempted &&
             current.head !== context.expectedHead
         ) {
-            deleteAmbiguousCreatedPendingReview(before.pendingReviews, current.pendingReviews, context, port, failures);
+            deleteAmbiguousCreatedPendingReview(
+                before.pendingReviews,
+                current.pendingReviews,
+                current.thread,
+                context,
+                port,
+                failures
+            );
         } else if (pendingReviewCreated && !replyAttempted) {
             deleteCreatedPendingReviewUnlessManagedReplyAttached(
                 current.pendingReviews,
@@ -1002,12 +1009,24 @@ function deleteCreatedPendingReviewUnlessManagedReplyAttached(
 function deleteAmbiguousCreatedPendingReview(
     before: PullRequestReview[],
     current: PullRequestReview[],
+    thread: ReviewThread | null,
     context: ResolutionReviewContext,
     port: ResolveReviewThreadPort,
     failures: string[]
 ): void {
     const beforeIds = new Set(before.map((review) => review.id));
     const created = current.filter((review) => !beforeIds.has(review.id) && isExactPendingReview(review, context));
+    if (
+        thread !== null &&
+        created.some((review) =>
+            managedReplyMarkers(thread, context, ['PENDING', 'COMMENTED'], true).some(
+                (candidate) => candidate.review.id === review.id
+            )
+        )
+    ) {
+        failures.push('pending review now has a managed Done reply; preserving attached review evidence');
+        return;
+    }
     const [review] = created;
     if (review === undefined) {
         failures.push('ambiguous pending review mutation; preserving exact pending review evidence');
@@ -1060,10 +1079,12 @@ function repairCompletedResolution(
     if (pendingReviewDeleted) {
         thread = refresh();
     }
-    const currentHeadPendingReply = managedReplyMarkers(thread, context, ['PENDING'], false).find(
+    const currentHeadCommentedReply = managedReplyMarkers(thread, context, ['COMMENTED'], false).find(
         (candidate) => candidate.currentHead
     );
-    if (currentHeadPendingReply !== undefined) {
+    const pendingReplies = managedReplyMarkers(thread, context, ['PENDING'], false);
+    const currentHeadPendingReply = pendingReplies.find((candidate) => candidate.currentHead);
+    if (currentHeadPendingReply !== undefined && currentHeadCommentedReply === undefined) {
         const reviewCommitOid = requireReviewCommitOid(
             currentHeadPendingReply.review,
             `Done reply ${currentHeadPendingReply.marker.id}`
@@ -1080,6 +1101,17 @@ function repairCompletedResolution(
             reviewCommitOid,
             'submit review'
         );
+        thread = refresh();
+    }
+    const managedPendingReviewIdsToDelete = new Set(
+        pendingReplies
+            .filter((candidate) => currentHeadCommentedReply !== undefined || !candidate.currentHead)
+            .map((candidate) => candidate.review.id)
+    );
+    if (managedPendingReviewIdsToDelete.size > 0) {
+        for (const reviewId of managedPendingReviewIdsToDelete) {
+            port.deletePendingReview(reviewId);
+        }
         thread = refresh();
     }
     const duplicateMarkers = managedReplyMarkers(thread, context, ['COMMENTED'], false);
@@ -1628,7 +1660,7 @@ function resolveThread(threadId: string, gh: Gh): ReviewResolutionReceipt {
         clientMutationId,
     };
 }
-function deletePendingReview(reviewId: string, gh: Gh): void {
+export function deletePendingReview(reviewId: string, gh: Gh): void {
     const response = graphql(
         gh,
         'mutation($reviewId:ID!,$clientMutationId:String!){deletePullRequestReview(input:{pullRequestReviewId:$reviewId,clientMutationId:$clientMutationId}){clientMutationId pullRequestReview{id state body commit{oid} author{login __typename ... on Bot{id}}}}}',
