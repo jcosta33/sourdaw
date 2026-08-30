@@ -204,8 +204,10 @@ type ActiveReviewResolutionLock = {
 };
 type ReviewResolutionLockInspectionPort = {
     readOid?: (primaryRoot: string, ref: string, number: number) => string | undefined;
-    readOwner?: (primaryRoot: string, oid: string, number: number) => ReviewResolutionLockOwner;
     release?: (primaryRoot: string, ref: string, oid: string, number: number) => void;
+};
+type ReviewResolutionLockRecoveryPort = {
+    updateRef?: (primaryRoot: string, args: string[]) => boolean;
 };
 const REVIEW_RESOLUTION_CHILD_ENV = 'SOURDAW_REVIEW_RESOLUTION_CHILD';
 const REVIEW_RESOLUTION_CHILD_MARKER_VERSION = 1;
@@ -2421,6 +2423,20 @@ function preserveReviewResolutionLockFailure(
     );
 }
 
+function preserveNewerReviewResolutionLockOwner(
+    number: number,
+    active: ActiveReviewResolutionLock,
+    error: unknown,
+    currentOwnerOid: string
+): never {
+    const phase = active.owner.mutation.phase;
+    const epoch = active.owner.mutation.epoch;
+    throw new Error(
+        `${errorMessage(error)}; ${pullRequestReviewResolutionLockScope(number)} lock ownership changed after ${phase} epoch ${epoch}; newer lock owner ${currentOwnerOid} preserved`,
+        originalErrorOptions(error)
+    );
+}
+
 function preserveReviewResolutionLockAfterInspectionFailure(
     number: number,
     active: ActiveReviewResolutionLock,
@@ -2452,7 +2468,6 @@ export function withPullRequestReviewResolutionLock<Value>(
     port: ReviewResolutionLockInspectionPort = {}
 ): Value {
     const readOid = port.readOid ?? readReviewResolutionLockOid;
-    const readOwner = port.readOwner ?? readReviewResolutionLockOwner;
     const release = port.release ?? releasePullRequestReviewResolutionLock;
     const lock = acquirePullRequestReviewResolutionLock(
         primaryRoot,
@@ -2486,15 +2501,10 @@ export function withPullRequestReviewResolutionLock<Value>(
             popActiveReviewResolutionLockIfPresent(active);
             return fail(`${pullRequestReviewResolutionLockScope(number)} lock is not held`);
         }
-        let currentOwner: ReviewResolutionLockOwner;
-        try {
-            currentOwner = readOwner(primaryRoot, currentOwnerOid, number);
-        } catch (inspectionError) {
+        if (currentOwnerOid !== active.oid) {
             popActiveReviewResolutionLockIfPresent(active);
-            return preserveReviewResolutionLockAfterInspectionFailure(number, active, error, inspectionError);
+            return preserveNewerReviewResolutionLockOwner(number, active, error, currentOwnerOid);
         }
-        active.oid = currentOwnerOid;
-        active.owner = currentOwner;
         if (active.owner.mutation.phase === 'idle') {
             popActiveReviewResolutionLockIfPresent(active);
             release(primaryRoot, active.ref, active.oid, number);
@@ -2510,7 +2520,8 @@ export function recoverPullRequestReviewResolutionLock<Value>(
     number: number,
     expectedOwnerOid: string,
     reconcile: (owner: ReviewResolutionLockOwner) => Value,
-    processGroupIsLive: (pgid: number) => boolean = isLiveProcessGroup
+    processGroupIsLive: (pgid: number) => boolean = isLiveProcessGroup,
+    port: ReviewResolutionLockRecoveryPort = {}
 ): Value {
     const ref = pullRequestReviewResolutionLockRef(number);
     const currentOwnerOid = readReviewResolutionLockOid(primaryRoot, ref, number);
@@ -2533,7 +2544,8 @@ export function recoverPullRequestReviewResolutionLock<Value>(
         currentOwnerOid,
         owner,
         number,
-        currentReviewResolutionExecutionFence()
+        currentReviewResolutionExecutionFence(),
+        port.updateRef ?? updateReviewResolutionLockRef
     );
     const active: ActiveReviewResolutionLock = {
         primaryRoot,
@@ -2560,15 +2572,10 @@ export function recoverPullRequestReviewResolutionLock<Value>(
             popActiveReviewResolutionLockIfPresent(active);
             return fail(`${pullRequestReviewResolutionLockScope(number)} lock is not held`);
         }
-        let latestOwner: ReviewResolutionLockOwner;
-        try {
-            latestOwner = readReviewResolutionLockOwner(primaryRoot, latestOwnerOid, number);
-        } catch (inspectionError) {
+        if (latestOwnerOid !== active.oid) {
             popActiveReviewResolutionLockIfPresent(active);
-            return preserveReviewResolutionLockAfterInspectionFailure(number, active, error, inspectionError);
+            return preserveNewerReviewResolutionLockOwner(number, active, error, latestOwnerOid);
         }
-        active.oid = latestOwnerOid;
-        active.owner = latestOwner;
         popActiveReviewResolutionLockIfPresent(active);
         return preserveReviewResolutionLockFailure(number, active, error);
     }
@@ -2579,7 +2586,8 @@ function claimRecoveringPullRequestReviewResolutionLock(
     currentOwnerOid: string,
     owner: ReviewResolutionLockOwner,
     number: number,
-    executionFence: ReviewResolutionExecutionFence
+    executionFence: ReviewResolutionExecutionFence,
+    updateRef: (primaryRoot: string, args: string[]) => boolean
 ): { oid: string; owner: ReviewResolutionLockOwner } {
     const claimedOwner: ReviewResolutionLockOwner = {
         ...owner,
@@ -2587,7 +2595,7 @@ function claimRecoveringPullRequestReviewResolutionLock(
         pgid: executionFence.pgid,
     };
     const claimedOid = writeReviewResolutionLockOwner(primaryRoot, claimedOwner, number);
-    if (!updateReviewResolutionLockRef(primaryRoot, [ref, claimedOid, currentOwnerOid])) {
+    if (!updateRef(primaryRoot, [ref, claimedOid, currentOwnerOid])) {
         fail(`${pullRequestReviewResolutionLockScope(number)} lock ownership changed before recovery`);
     }
     return { oid: claimedOid, owner: claimedOwner };

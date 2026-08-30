@@ -848,28 +848,55 @@ function createFakeGhExecutable(responsesByKey: Record<string, string | string[]
     return { root, executable };
 }
 
-function createFailingReplyDoneGhExecutable(): {
+function createFailingReviewResolutionMutationGhExecutable(
+    mutation: 'createPendingReview' | 'replyDone' | 'submitReview' | 'resolveThread'
+): {
     root: string;
     executable: string;
-    replyCalledPath: string;
+    calledPath: string;
 } {
-    const root = mkdtempSync(join(tmpdir(), 'resolve-review-thread-failing-reply-gh-'));
+    const root = mkdtempSync(join(tmpdir(), `resolve-review-thread-failing-${mutation}-gh-`));
     const executable = join(root, 'gh');
-    const replyCalledPath = join(root, 'reply-called');
+    const calledPath = join(root, `${mutation}-called`);
+    let queryPattern: string;
+    let transportLabel: string;
+    switch (mutation) {
+        case 'createPendingReview':
+            queryPattern =
+                'addPullRequestReview(input:{pullRequestId:$pullRequestId,body:$body,commitOID:$commitOid,clientMutationId:$clientMutationId})';
+            transportLabel = 'create';
+            break;
+        case 'replyDone':
+            queryPattern =
+                'addPullRequestReviewThreadReply(input:{pullRequestReviewId:$reviewId,pullRequestReviewThreadId:$threadId,body:$body,clientMutationId:$clientMutationId})';
+            transportLabel = 'reply';
+            break;
+        case 'submitReview':
+            queryPattern =
+                'submitPullRequestReview(input:{pullRequestReviewId:$reviewId,event:COMMENT,body:$body,clientMutationId:$clientMutationId})';
+            transportLabel = 'submit';
+            break;
+        case 'resolveThread':
+            queryPattern = 'resolveReviewThread(input:{threadId:$threadId,clientMutationId:$clientMutationId})';
+            transportLabel = 'resolve';
+            break;
+    }
     writeFileSync(
         executable,
         [
             `#!${process.execPath}`,
             'const fs = require("node:fs");',
-            `const replyCalledPath = ${JSON.stringify(replyCalledPath)};`,
+            `const calledPath = ${JSON.stringify(calledPath)};`,
+            `const queryPattern = ${JSON.stringify(queryPattern)};`,
+            `const transportLabel = ${JSON.stringify(transportLabel)};`,
             'const args = process.argv.slice(2);',
             "if (args[0] !== 'api' || args[1] !== 'graphql') { console.error(`unexpected gh args ${JSON.stringify(args)}`); process.exit(1); }",
             'const queryArg = args.find((value) => value.startsWith("query="));',
             "if (queryArg === undefined) { console.error('missing query'); process.exit(1); }",
             'const query = queryArg.slice("query=".length);',
-            "if (query.includes('addPullRequestReviewThreadReply(input:{pullRequestReviewId:$reviewId,pullRequestReviewThreadId:$threadId,body:$body,clientMutationId:$clientMutationId})')) {",
-            "  fs.writeFileSync(replyCalledPath, '1');",
-            "  console.error('reply mutation transport lost');",
+            'if (query.includes(queryPattern)) {',
+            "  fs.writeFileSync(calledPath, '1');",
+            '  console.error(`${transportLabel} mutation transport lost`);',
             '  process.exit(1);',
             '}',
             'console.error(`unexpected query ${query}`);',
@@ -878,7 +905,7 @@ function createFailingReplyDoneGhExecutable(): {
         { encoding: 'utf8', mode: 0o700 }
     );
     chmodSync(executable, 0o700);
-    return { root, executable, replyCalledPath };
+    return { root, executable, calledPath };
 }
 
 function createLockObservingCreateReviewGhExecutable(repository: string): {
@@ -1092,41 +1119,16 @@ function updateLock(repository: string, number: number, nextOid: string, previou
     gitCapture(repository, ['update-ref', ...args]);
 }
 
-function setLockMutation(
-    repository: string,
-    number: number,
-    mutation: {
-        phase: string;
-        epoch: number;
-        reviewId?: string;
-        replyId?: string;
-        body?: string;
-        pendingReviewIds?: string[];
-        settleAtMs?: number;
-        replies?: { replyId: string; reviewId: string; reviewState: 'PENDING' | 'COMMENTED' }[];
-        allowedAttachedThreadIds?: string[];
-        snapshotHead?: string;
-        dispatchState?: string;
+function tryUpdateLockRef(repository: string, args: string[]): boolean {
+    const result = spawnSync('git', ['update-ref', ...args], {
+        cwd: repository,
+        encoding: 'utf8',
+        shell: false,
+    });
+    if (result.error !== undefined) {
+        throw result.error;
     }
-): string {
-    const currentOid = readLockOid(repository, number);
-    if (currentOid === undefined) {
-        throw new Error(`review-resolution lock for PR #${number} is not held`);
-    }
-    const currentOwner = readLockOwner(repository, number);
-    if (currentOwner === undefined) {
-        throw new Error(`review-resolution lock owner for PR #${number} is unreadable`);
-    }
-    const nextOid = gitCapture(
-        repository,
-        ['hash-object', '-w', '--stdin'],
-        JSON.stringify({
-            ...currentOwner,
-            mutation,
-        })
-    );
-    updateLock(repository, number, nextOid, currentOid);
-    return nextOid;
+    return result.status === 0;
 }
 
 async function waitForExit(child: ReturnType<typeof spawn>): Promise<void> {
@@ -1338,9 +1340,10 @@ describe('review thread resolution', () => {
     });
 
     it.each([
-        ['create', { phase: 'createPendingReview', epoch: 1 }],
+        ['create', 'createPendingReview', { phase: 'createPendingReview', epoch: 1 }],
         [
             'submit',
+            'submitReview',
             {
                 phase: 'submitReview',
                 epoch: 1,
@@ -1348,26 +1351,49 @@ describe('review thread resolution', () => {
                 body: resolutionReviewSummary(pullRequestId, threadId, head),
             },
         ],
-        ['resolve', { phase: 'resolveThread', epoch: 1 }],
-    ] as const)('preserves the exact PR lock owner after an ambiguous %s transport failure', (_label, mutation) => {
-        const repository = createTemporaryGitRepository();
-        try {
-            expect(() =>
-                withPullRequestReviewResolutionLock(repository, 42, threadId, head, () => {
-                    setLockMutation(repository, 42, mutation);
-                    throw new Error(`${_label} transport lost`);
-                })
-            ).toThrow(new RegExp(`recover with pnpm review:resolve:recover 42 --owner [0-9a-f]{40}`));
-            const owner = readLockOwner(repository, 42);
-            expect(owner).toMatchObject({
-                threadId,
-                head,
-                mutation: { phase: mutation.phase },
-            });
-        } finally {
-            rmSync(repository, { recursive: true, force: true });
+        ['resolve', 'resolveThread', { phase: 'resolveThread', epoch: 1 }],
+    ] as const)(
+        'preserves the exact PR lock owner after an ambiguous %s transport failure',
+        (_label, failingMutation, mutation) => {
+            const repository = createTemporaryGitRepository();
+            const fakeGh = createFailingReviewResolutionMutationGhExecutable(failingMutation);
+            try {
+                const session: GhSession = {
+                    configDir: repository,
+                    env: { SOURDAW_TRUSTED_GH_PATH: fakeGh.executable },
+                    dispose() {},
+                };
+                const port = shellPort(session, repository);
+                expect(() =>
+                    withPullRequestReviewResolutionLock(repository, 42, threadId, head, () => {
+                        if (failingMutation === 'createPendingReview') {
+                            port.createPendingReview(
+                                pullRequestId,
+                                head,
+                                resolutionReviewSummary(pullRequestId, threadId, head)
+                            );
+                            return;
+                        }
+                        if (failingMutation === 'submitReview') {
+                            port.submitReview(reviewId, resolutionReviewSummary(pullRequestId, threadId, head));
+                            return;
+                        }
+                        port.resolve(threadId);
+                    })
+                ).toThrow(new RegExp(`recover with pnpm review:resolve:recover 42 --owner [0-9a-f]{40}`));
+                expect(statSync(fakeGh.calledPath).isFile()).toBe(true);
+                const owner = readLockOwner(repository, 42);
+                expect(owner).toMatchObject({
+                    threadId,
+                    head,
+                    mutation: { phase: mutation.phase },
+                });
+            } finally {
+                rmSync(fakeGh.root, { recursive: true, force: true });
+                rmSync(repository, { recursive: true, force: true });
+            }
         }
-    });
+    );
 
     it('claims the exact dead PR lock owner before reconciliation so concurrent recovery sees a live holder', () => {
         const repository = createTemporaryGitRepository();
@@ -1825,7 +1851,7 @@ describe('review thread resolution', () => {
 
     it('preserves the exact PR lock owner when owner OID reread fails after a non-idle mutation throws', () => {
         const repository = createTemporaryGitRepository();
-        const fakeGh = createFailingReplyDoneGhExecutable();
+        const fakeGh = createFailingReviewResolutionMutationGhExecutable('replyDone');
         try {
             const session: GhSession = {
                 configDir: repository,
@@ -1856,7 +1882,7 @@ describe('review thread resolution', () => {
             ).toThrow(
                 /ownership could not be re-read after failure: simulated owner OID reread failure; review resolution on PR #42 preserved exact lock owner [0-9a-f]{40} after replyDone epoch 1; recover with pnpm review:resolve:recover 42 --owner [0-9a-f]{40}/i
             );
-            expect(statSync(fakeGh.replyCalledPath).isFile()).toBe(true);
+            expect(statSync(fakeGh.calledPath).isFile()).toBe(true);
             expect(readLockOwner(repository, 42)).toMatchObject({
                 threadId,
                 head,
@@ -1868,9 +1894,9 @@ describe('review thread resolution', () => {
         }
     });
 
-    it('preserves the exact PR lock owner when owner blob reread fails after a non-idle mutation throws', () => {
+    it('preserves a newer foreign owner when failure finds the ref changed after a non-idle mutation throws', () => {
         const repository = createTemporaryGitRepository();
-        const fakeGh = createFailingReplyDoneGhExecutable();
+        const fakeGh = createFailingReviewResolutionMutationGhExecutable('replyDone');
         try {
             const session: GhSession = {
                 configDir: repository,
@@ -1878,35 +1904,29 @@ describe('review thread resolution', () => {
                 dispose() {},
             };
             const port = shellPort(session, repository);
-            let readOwnerAttempts = 0;
+            let replacementOwnerOid: string | undefined;
             expect(() =>
-                withPullRequestReviewResolutionLock(
-                    repository,
-                    42,
-                    threadId,
-                    head,
-                    () => {
+                withPullRequestReviewResolutionLock(repository, 42, threadId, head, () => {
+                    try {
                         port.replyDone(threadId, reviewId);
-                    },
-                    {
-                        readOid: () => readLockOid(repository, 42),
-                        readOwner: () => {
-                            readOwnerAttempts += 1;
-                            if (readOwnerAttempts === 1) {
-                                throw new Error('simulated owner blob reread failure');
-                            }
-                            return requireLockOwner(repository, 42);
-                        },
+                    } catch (error) {
+                        const currentOwnerOid = readLockOid(repository, 42);
+                        expect(currentOwnerOid).toBeDefined();
+                        replacementOwnerOid = writeLockOwnerBlob(repository, 1_000_000);
+                        updateLock(repository, 42, replacementOwnerOid, currentOwnerOid);
+                        throw error;
                     }
-                )
+                })
             ).toThrow(
-                /ownership could not be re-read after failure: simulated owner blob reread failure; review resolution on PR #42 preserved exact lock owner [0-9a-f]{40} after replyDone epoch 1; recover with pnpm review:resolve:recover 42 --owner [0-9a-f]{40}/i
+                /reply mutation transport lost; review resolution on PR #42 lock ownership changed after replyDone epoch 1; newer lock owner [0-9a-f]{40} preserved/i
             );
-            expect(statSync(fakeGh.replyCalledPath).isFile()).toBe(true);
+            expect(replacementOwnerOid).toBeDefined();
+            expect(statSync(fakeGh.calledPath).isFile()).toBe(true);
+            expect(readLockOid(repository, 42)).toBe(replacementOwnerOid);
             expect(readLockOwner(repository, 42)).toMatchObject({
                 threadId,
                 head,
-                mutation: { phase: 'replyDone', epoch: 1, reviewId },
+                mutation: { phase: 'idle', epoch: 0 },
             });
         } finally {
             rmSync(fakeGh.root, { recursive: true, force: true });
@@ -1916,7 +1936,7 @@ describe('review thread resolution', () => {
 
     it('preserves the claimed PR lock owner when shell-backed reply recovery cannot yet observe the original Done marker', () => {
         const repository = createTemporaryGitRepository();
-        const fakeGh = createFailingReplyDoneGhExecutable();
+        const fakeGh = createFailingReviewResolutionMutationGhExecutable('replyDone');
         try {
             const ownerOid = writeLockOwnerBlob(repository, 999999, head, {
                 phase: 'replyDone',
@@ -1949,7 +1969,7 @@ describe('review thread resolution', () => {
                 /unreconciled in-flight replyDone mutation from epoch 1; retry recovery after GitHub state changes; review resolution on PR #42 preserved exact lock owner [0-9a-f]{40} after replyDone epoch 1; recover with pnpm review:resolve:recover 42 --owner [0-9a-f]{40}/i
             );
             expect(inspectionPort.calls).toEqual(['inspect:1']);
-            expect(() => statSync(fakeGh.replyCalledPath)).toThrow();
+            expect(() => statSync(fakeGh.calledPath)).toThrow();
             const preservedOid = readLockOid(repository, 42);
             expect(preservedOid).toBeDefined();
             expect(preservedOid).not.toBe(ownerOid);
@@ -2076,9 +2096,48 @@ describe('review thread resolution', () => {
                     () => false
                 )
             ).toThrow(
-                /lock ownership changed before release; review resolution on PR #42 preserved exact lock owner [0-9a-f]{40} after idle epoch 0; recover with pnpm review:resolve:recover 42 --owner [0-9a-f]{40}/i
+                /lock ownership changed before release; review resolution on PR #42 lock ownership changed after idle epoch 0; newer lock owner [0-9a-f]{40} preserved/i
             );
             expect(readLockOid(repository, 42)).toBe(replacementOwnerOid);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects recovery when the owner changes after inspection but before the recovery claim, preserving the newer owner', () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999);
+            updateLock(repository, 42, ownerOid);
+            const replacementOwnerOid = writeLockOwnerBlob(repository, 1_000_000);
+            let reconcileCalled = false;
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    ownerOid,
+                    () => {
+                        reconcileCalled = true;
+                        return 'reconciled';
+                    },
+                    () => false,
+                    {
+                        updateRef: (primaryRoot, args) => {
+                            updateLock(primaryRoot, 42, replacementOwnerOid, ownerOid);
+                            return tryUpdateLockRef(primaryRoot, args);
+                        },
+                    }
+                )
+            ).toThrow(/lock ownership changed before recovery/i);
+            expect(reconcileCalled).toBe(false);
+            expect(readLockOid(repository, 42)).toBe(replacementOwnerOid);
+            expect(requireLockOwner(repository, 42)).toMatchObject({
+                pid: 1_000_000,
+                pgid: 1_000_000,
+                threadId,
+                head,
+                mutation: { phase: 'idle', epoch: 0 },
+            });
         } finally {
             rmSync(repository, { recursive: true, force: true });
         }
