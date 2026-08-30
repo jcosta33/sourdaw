@@ -1026,10 +1026,35 @@ fn create_hosted_runtime(
     }
 }
 
+/// Ask a freshly loaded runtime whether it offers an editor, on the shell's UI
+/// thread.
+///
+/// For VST3 the question is itself an editor call — `createView` is the only
+/// "has an editor" query the format defines, so asking it means creating and
+/// releasing a real view — and the load asks before any window exists, on the
+/// worker that took the load. The ask is carried to the shell's thread exactly
+/// like the open it precedes; the worker holds no control gate at this point
+/// (the runtime is still unregistered), so the carry closes no cycle. CLAP's
+/// answer reads the descriptor's `gui` extension and never reaches the plugin,
+/// so the carry is one harmless hop there — uniform rather than format-aware,
+/// so the rule stays "every editor call crosses", whatever a format's answer is
+/// drawn from.
+///
+/// Standing alone, like [`insert_engine_plugin_record`], because the load path
+/// needs a real plugin library before this point and the thread contract has to
+/// stay observable against a plugin that records its caller.
+fn editor_support_on_ui_thread<P: AudioPlugin + ?Sized + 'static>(
+    windows_host: &dyn PluginWindowHost,
+    runtime: &mut P,
+) -> Result<bool, String> {
+    lend_on_ui_thread(windows_host, runtime, |runtime| runtime.has_gui())
+}
+
 pub async fn load_plugin(
     plugin_id: PluginId,
     instance_id: PluginInstanceId,
     engine_sample_rate: f64,
+    windows_host: &dyn PluginWindowHost,
     state: &AppState,
 ) -> Result<PluginInstance, String> {
     // The rate is decided before anything is resolved, locked or constructed:
@@ -1092,10 +1117,16 @@ pub async fn load_plugin(
         eprintln!("{note}");
     }
 
-    let wrapper = create_hosted_runtime(backend, &entry.path, &descriptor_id, sample_rate)?;
+    let mut wrapper = create_hosted_runtime(backend, &entry.path, &descriptor_id, sample_rate)?;
     let name = wrapper.get_name().to_string();
     let params = wrapper.get_parameters();
-    let has_gui = wrapper.has_gui();
+    // Asked on the shell's UI thread because, for VST3, the question is a real
+    // `createView` — the only "has an editor" query the format has — and this
+    // load ask is the one place a view is created before any window exists. The
+    // backend caches the answer, so every later capability read
+    // (`is_plugin_gui_supported`, the open path's own check) answers from it
+    // without touching the plugin.
+    let has_gui = editor_support_on_ui_thread(windows_host, &mut wrapper)?;
     // Query the plugin's latency on the control thread while it is active (the
     // wrapper just activated it) — both formats define the value only for an
     // active plugin. Captured before the wrapper moves into the engine-owned
@@ -2807,6 +2838,7 @@ mod tests {
             PluginId("aaaa1111".to_string()),
             PluginInstanceId("poisoned-registry-instance".to_string()),
             TEST_ENGINE_SAMPLE_RATE,
+            &NoWindowHost,
             &state,
         ))
         .expect_err("a fake plugin path cannot load");
@@ -2985,6 +3017,7 @@ mod tests {
             PluginId("aaaa1111".to_string()),
             PluginInstanceId("rateless-instance".to_string()),
             0.0,
+            &NoWindowHost,
             &state,
         ))
         .expect_err("a load with no usable engine rate must refuse");
@@ -3061,6 +3094,7 @@ mod tests {
             PluginId("aaaa1111".to_string()),
             PluginInstanceId("over-ceiling-instance".to_string()),
             TEST_ENGINE_SAMPLE_RATE,
+            &NoWindowHost,
             &state,
         ))
         .expect_err("a load at the hosted session ceiling must refuse");
@@ -3072,6 +3106,73 @@ mod tests {
             ),
             "the refusal must be the ceiling's own message, not a later failure"
         );
+    }
+
+    /// A plugin that records the thread its editor support was asked on. The
+    /// real VST3 backend's ask is a `createView` — the format has no other
+    /// "has an editor" query — so this stands in for exactly the call the load
+    /// path must not make on its own worker.
+    struct EditorSupportThreadPlugin {
+        offered: bool,
+        asked_on: Arc<Mutex<Vec<std::thread::ThreadId>>>,
+    }
+
+    impl AudioPlugin for EditorSupportThreadPlugin {
+        fn has_gui(&self) -> bool {
+            self.asked_on
+                .lock()
+                .expect("asked-on log")
+                .push(std::thread::current().id());
+            self.offered
+        }
+
+        fn process(&mut self, _: &[&[f32]], _: &mut [&mut [f32]], _: usize) {}
+        fn set_parameter(&mut self, _: u32, _: f64) {}
+        fn get_parameters(&self) -> Vec<PluginParameter> {
+            Vec::new()
+        }
+        fn get_state(&self) -> Result<Vec<u8>, String> {
+            Ok(Vec::new())
+        }
+        fn set_state(&mut self, _: &[u8]) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    /// The load path's editor-support ask is an editor call for VST3 — a real
+    /// `createView` before any window exists — so it has to reach the plugin on
+    /// the shell's UI thread like the open it precedes, not on the worker that
+    /// took the load. Both answers cross: a plugin that offers an editor and
+    /// one that does not must keep their own answer through the hop.
+    #[test]
+    fn the_load_path_asks_editor_support_on_the_shells_ui_thread() {
+        for offered in [true, false] {
+            let asked_on = Arc::new(Mutex::new(Vec::new()));
+            let mut plugin = EditorSupportThreadPlugin {
+                offered,
+                asked_on: Arc::clone(&asked_on),
+            };
+            let windows = DedicatedUiWindowHost::start();
+
+            let answer = editor_support_on_ui_thread(&windows, &mut plugin)
+                .expect("the ask must be answered");
+
+            assert_eq!(
+                answer, offered,
+                "the plugin's own answer must survive the hop, whatever it is"
+            );
+            assert_eq!(
+                *asked_on.lock().expect("asked-on log"),
+                [windows.thread_id],
+                "the editor-support ask must reach the plugin on the shell's thread and nowhere \
+                 else"
+            );
+            assert_ne!(
+                windows.thread_id,
+                std::thread::current().id(),
+                "the fake shell thread must not be this one, or this test proves nothing"
+            );
+        }
     }
 
     /// An empty descriptor id used to be replaced by the display name, which is
@@ -3103,6 +3204,7 @@ mod tests {
             PluginId("clap-without-descriptor-id".to_string()),
             PluginInstanceId("clap-instance".to_string()),
             TEST_ENGINE_SAMPLE_RATE,
+            &NoWindowHost,
             &state,
         ));
 
@@ -3575,6 +3677,7 @@ mod tests {
             PluginId("vst3-fixture".to_string()),
             PluginInstanceId("vst3-instance".to_string()),
             TEST_ENGINE_SAMPLE_RATE,
+            &NoWindowHost,
             &state,
         ));
 
@@ -3590,6 +3693,7 @@ mod tests {
             PluginId("vst3-fixture".to_string()),
             PluginInstanceId("vst3-instance".to_string()),
             TEST_ENGINE_SAMPLE_RATE,
+            &NoWindowHost,
             &state,
         ));
         assert_eq!(
@@ -3644,6 +3748,7 @@ mod tests {
                 PluginId(plugin_id.to_string()),
                 PluginInstanceId(format!("{plugin_id}-instance")),
                 TEST_ENGINE_SAMPLE_RATE,
+                &NoWindowHost,
                 &state,
             ));
 
@@ -3736,6 +3841,7 @@ mod tests {
             PluginId("unknown-format".to_string()),
             PluginInstanceId("unknown-instance".to_string()),
             TEST_ENGINE_SAMPLE_RATE,
+            &NoWindowHost,
             &state,
         ));
 
