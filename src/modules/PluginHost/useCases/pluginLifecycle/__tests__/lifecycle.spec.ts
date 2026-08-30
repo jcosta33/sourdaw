@@ -7,6 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { loadedExternalInstances } from '../loadedExternalInstances';
 import { loadPlugin } from '../loadPlugin';
 import { openPluginGui } from '../openPluginGui';
+import { pluginLifecycleScheduler } from '../serializePluginLifecycle';
 import { unloadPlugin } from '../unloadPlugin';
 
 const mocks = vi.hoisted(() => ({
@@ -23,6 +24,18 @@ const pluginInstance = {
     is_active: true,
     latency_samples: 0,
 };
+
+/**
+ * Advance the microtask queue past every hop of one serialized lifecycle turn.
+ * Each operation in the scheduler tests blocks on a caller-held deferred, so a
+ * fixed depth cannot carry the chain past an operation the test has not
+ * released yet.
+ */
+async function flushLifecycleTurns(): Promise<void> {
+    for (let turn = 0; turn < 10; turn += 1) {
+        await Promise.resolve();
+    }
+}
 
 vi.mock('../../../repositories/pluginBridge/loadPlugin', () => ({
     loadPlugin: mocks.loadPluginRepo,
@@ -136,7 +149,7 @@ describe('Plugin Lifecycle Use Cases', () => {
         await expect(loadResult).resolves.toBe(pluginInstance);
     });
 
-    it('rejects queued same-instance work after failure and allows a later explicit retry', async () => {
+    it('runs queued same-instance work after a failure instead of inheriting it', async () => {
         const unloading = Promise.withResolvers<never>();
         const failure = new Error('unload failed');
         mocks.unloadPluginRepo.mockReturnValueOnce(unloading.promise);
@@ -144,18 +157,13 @@ describe('Plugin Lifecycle Use Cases', () => {
         loadedExternalInstances.add('recovering-instance');
 
         const failedUnload = unloadPlugin('recovering-instance');
-        const recoveredLoad = loadPlugin('p1', 'recovering-instance', 44_100);
+        const queuedLoad = loadPlugin('p1', 'recovering-instance', 44_100);
 
         expect(mocks.loadPluginRepo).not.toHaveBeenCalled();
         unloading.reject(failure);
         await expect(failedUnload).rejects.toBe(failure);
-        await expect(recoveredLoad).rejects.toBe(failure);
-        expect(mocks.loadPluginRepo).not.toHaveBeenCalled();
-
-        const retriedLoad = loadPlugin('p1', 'recovering-instance', 44_100);
-        await Promise.resolve();
-        expect(mocks.loadPluginRepo).toHaveBeenCalledTimes(1);
-        await expect(retriedLoad).resolves.toBe(pluginInstance);
+        await expect(queuedLoad).resolves.toBe(pluginInstance);
+        expect(mocks.loadPluginRepo).toHaveBeenCalledWith('p1', 'recovering-instance', 44_100);
     });
 
     it('exposes only the ignored caller branch as an unhandled rejection', () => {
@@ -203,5 +211,131 @@ describe('Plugin Lifecycle Use Cases', () => {
     it('openPluginGui delegates to repository', async () => {
         await openPluginGui('inst1');
         expect(mocks.openPluginGuiRepo).toHaveBeenCalledWith('inst1');
+    });
+});
+
+describe('pluginLifecycleScheduler', () => {
+    it('runs a queued operation after the prior rejects and returns its own outcome', async () => {
+        const prior = Promise.withResolvers<never>();
+        const priorFailure = new Error('prior operation failed');
+        const first = pluginLifecycleScheduler.schedule('queued-after-rejection', () => prior.promise);
+        const second = pluginLifecycleScheduler.schedule('queued-after-rejection', () =>
+            Promise.resolve('successor-ran')
+        );
+
+        prior.reject(priorFailure);
+
+        await expect(first).rejects.toBe(priorFailure);
+        await expect(second).resolves.toBe('successor-ran');
+    });
+
+    it('hands a queued operation its own rejection, not the prior failure', async () => {
+        const prior = Promise.withResolvers<never>();
+        const priorFailure = new Error('prior operation failed');
+        const successorFailure = new Error('successor operation failed');
+        const first = pluginLifecycleScheduler.schedule('successor-rejection', () => prior.promise);
+        const second = pluginLifecycleScheduler.schedule('successor-rejection', () => Promise.reject(successorFailure));
+
+        prior.reject(priorFailure);
+
+        await expect(first).rejects.toBe(priorFailure);
+        await expect(second).rejects.toBe(successorFailure);
+    });
+
+    it('keeps a mixed fulfilled-and-rejected chain serial', async () => {
+        const order: string[] = [];
+        const firstTurn = Promise.withResolvers<void>();
+        const secondTurn = Promise.withResolvers<never>();
+        const secondFailure = new Error('middle operation failed');
+        const first = pluginLifecycleScheduler.schedule('mixed-chain', async () => {
+            order.push('first-start');
+            await firstTurn.promise;
+            order.push('first-end');
+        });
+        const second = pluginLifecycleScheduler.schedule('mixed-chain', () => {
+            order.push('second-start');
+            return secondTurn.promise;
+        });
+        const third = pluginLifecycleScheduler.schedule('mixed-chain', async () => {
+            order.push('third-start');
+            order.push('third-end');
+        });
+
+        await flushLifecycleTurns();
+        expect(order).toEqual(['first-start']);
+
+        firstTurn.resolve(undefined);
+        await flushLifecycleTurns();
+        expect(order).toEqual(['first-start', 'first-end', 'second-start']);
+
+        secondTurn.reject(secondFailure);
+        await expect(first).resolves.toBeUndefined();
+        await expect(second).rejects.toBe(secondFailure);
+        await expect(third).resolves.toBeUndefined();
+        expect(order).toEqual(['first-start', 'first-end', 'second-start', 'third-start', 'third-end']);
+    });
+
+    it('drains the instance tail once queued work settles', async () => {
+        const prior = Promise.withResolvers<never>();
+        const priorFailure = new Error('prior operation failed');
+        const first = pluginLifecycleScheduler.schedule('tail-drain', () => prior.promise);
+        const second = pluginLifecycleScheduler.schedule('tail-drain', () => Promise.resolve('queued-ran'));
+
+        prior.reject(priorFailure);
+        await expect(first).rejects.toBe(priorFailure);
+        await expect(second).resolves.toBe('queued-ran');
+
+        let laterStarted = false;
+        const later = pluginLifecycleScheduler.schedule('tail-drain', () => {
+            laterStarted = true;
+            return Promise.resolve('later-ran');
+        });
+        await Promise.resolve();
+
+        expect(laterStarted).toBe(true);
+        await expect(later).resolves.toBe('later-ran');
+    });
+
+    it('keeps gating new schedules behind the rebuild fence and waits out both outcomes', async () => {
+        const existing = Promise.withResolvers<never>();
+        const existingFailure = new Error('existing operation failed');
+        const started: string[] = [];
+        const failing = pluginLifecycleScheduler.schedule('fenced-instance', () => {
+            started.push('failing');
+            return existing.promise;
+        });
+        const succeeding = pluginLifecycleScheduler.schedule('fenced-instance', () => {
+            started.push('succeeding');
+            return Promise.resolve('succeeding-ran');
+        });
+        await flushLifecycleTurns();
+        expect(started).toEqual(['failing']);
+
+        const rebuild = pluginLifecycleScheduler.beginRebuild();
+        expect(pluginLifecycleScheduler.currentRebuildCompletion()).not.toBeNull();
+        let admitted = false;
+        const late = pluginLifecycleScheduler.schedule('fenced-instance', () => {
+            admitted = true;
+            return Promise.resolve('late-ran');
+        });
+
+        let drained = false;
+        void rebuild.waitForExistingOperations().then(() => {
+            drained = true;
+        });
+        await flushLifecycleTurns();
+        expect(drained).toBe(false);
+
+        existing.reject(existingFailure);
+        await expect(failing).rejects.toBe(existingFailure);
+        await expect(succeeding).resolves.toBe('succeeding-ran');
+        await flushLifecycleTurns();
+        expect(drained).toBe(true);
+        expect(admitted).toBe(false);
+
+        rebuild.end();
+        expect(pluginLifecycleScheduler.currentRebuildCompletion()).toBeNull();
+        await expect(late).resolves.toBe('late-ran');
+        expect(admitted).toBe(true);
     });
 });
