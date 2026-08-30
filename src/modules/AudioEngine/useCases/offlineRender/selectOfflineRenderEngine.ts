@@ -24,11 +24,10 @@
  *     MIDI clip would be a rest that reads as a correct file.
  *   - **Stretched clips** — the native timeline refuses any non-unity rate
  *     (`stretched-clip-unsupported`, #2219).
- *   - **Bus sends** — the native bus strip has no send taps, so a send
- *     configured on a bus reaches the seam as an `add-send` refusal
- *     (`bus-send-unsupported`). Refused mid-render it would still fall back,
- *     but only after building the whole graph twice, and this file is where
- *     the promise above says that answer is decided.
+ *   - **Bus-source sends** are not a gate: live and offline native producers
+ *     drop a send whose source strip is a bus (the same drop as a send naming
+ *     no built bus), so native export runs minus that send's contribution.
+ *     Growing a bus send tap is engine work, not a reason to refuse native.
  *   - **Bus → track routing** — a bus routed at an ordinary (non-master)
  *     track is still gated here. A bus whose resolved target is the master
  *     track is a mapper-accepted edge into the master strip, so the default
@@ -81,9 +80,6 @@ function contentGateReason(input: SelectOfflineRenderEngineInput): string | null
         }
         if (track.devices.length > 0) {
             return `track "${track.name}" carries a device chain`;
-        }
-        if (track.kind === 'bus' && track.sends.length > 0) {
-            return `bus "${track.name}" carries a send, which the native bus strip has no tap for`;
         }
     }
     for (const track of scheduledTracks) {

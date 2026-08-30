@@ -1,0 +1,156 @@
+/**
+ * Native offline routing (#3082): the producer must drop a bus-source send
+ * the same way live `sendCommands` does, without a native addon.
+ */
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { type Track } from '#/modules/Arrangement/stores';
+
+import {
+    type MapGraphBatchInput,
+    type NativeGraphTransport,
+} from '../../../repositories/nativeGraph/nativeGraphTransport';
+import { type NativeGraphWireCommand } from '../../../repositories/nativeGraph/serializeAudioGraphCommand';
+import { renderOfflineWithNativeEngine } from '../renderOfflineWithNativeEngine';
+
+class StubAudioBuffer {
+    readonly length: number;
+    readonly numberOfChannels: number;
+    readonly sampleRate: number;
+    readonly duration: number;
+    private readonly channels: Float32Array[];
+
+    constructor(options: { length: number; numberOfChannels: number; sampleRate: number }) {
+        this.length = options.length;
+        this.numberOfChannels = options.numberOfChannels;
+        this.sampleRate = options.sampleRate;
+        this.duration = options.length / options.sampleRate;
+        this.channels = Array.from({ length: options.numberOfChannels }, () => new Float32Array(options.length));
+    }
+
+    getChannelData(channel: number): Float32Array {
+        const data = this.channels[channel];
+        if (!data) {
+            throw new Error(`StubAudioBuffer has no channel ${String(channel)}`);
+        }
+        return data;
+    }
+
+    copyToChannel(source: Float32Array, channel: number): void {
+        this.getChannelData(channel).set(source);
+    }
+}
+
+function createTrack(overrides?: Partial<Track>): Track {
+    return {
+        id: 'track-1',
+        name: 'Track 1',
+        kind: 'audio',
+        muted: false,
+        soloed: false,
+        armed: false,
+        gain: 0.8,
+        pan: 0,
+        color: '#ff0000',
+        clips: [],
+        devices: [],
+        sends: [],
+        frozen: false,
+        freezeState: { status: 'unfrozen' },
+        parentId: null,
+        collapsed: false,
+        inputMonitoring: 'auto',
+        hidden: false,
+        disabled: false,
+        height: 80,
+        outputId: 'hw_out',
+        automationMode: 'off',
+        groupId: null,
+        soloSafe: false,
+        notes: '',
+        inputId: null,
+        activeAlternativeId: 'alt-1',
+        alternatives: [{ id: 'alt-1', name: 'Alternative 1', clips: [] }],
+        vcaGroupId: null,
+        midiOutputTrackId: null,
+        followChordTrack: false,
+        midiFx: [],
+        ...overrides,
+    };
+}
+
+function capturingTransport(frames: number): {
+    transport: NativeGraphTransport;
+    commands: NativeGraphWireCommand[];
+} {
+    const commands: NativeGraphWireCommand[] = [];
+    const transport: NativeGraphTransport = {
+        registerTimelineSample: () => Promise.reject(new Error('routing spec registers no sample')),
+        renderGraphOffline: () => Promise.resolve(new Uint8Array(frames * 8)),
+        applyGraphCommands: () => Promise.reject(new Error('an export must never start the live engine')),
+        mapGraphBatch: (input: MapGraphBatchInput) => {
+            commands.push(...input.batch.commands);
+            return Promise.resolve({ acceptance: 'accepted', application: 'applied', reports: [] });
+        },
+    };
+    return { transport, commands };
+}
+
+describe('renderOfflineWithNativeEngine — routing', () => {
+    beforeEach(() => {
+        vi.stubGlobal('AudioBuffer', StubAudioBuffer);
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it('emits a track send and drops a bus-source send to another built bus', async () => {
+        const frames = 8;
+        const { transport, commands } = capturingTransport(frames);
+        const audio = createTrack({
+            id: 'audio-1',
+            sends: [{ busId: 'verb', level: 0.3, preFader: false }] as Track['sends'],
+        });
+        const verb = createTrack({
+            id: 'verb',
+            kind: 'bus',
+            sends: [{ busId: 'parallel-comp', level: 0.5, preFader: false }] as Track['sends'],
+        });
+        const parallel = createTrack({ id: 'parallel-comp', kind: 'bus' });
+        const renderableTracks = [audio, verb, parallel];
+
+        const result = await renderOfflineWithNativeEngine({
+            transport,
+            sampleRate: 48_000,
+            frameCount: frames,
+            durationSeconds: frames / 48_000,
+            masterGainValue: 1,
+            defaultTempo: 120,
+            changes: [],
+            projectPpqEndpoints: ({ startPpq, endPpq, sampleRate }) => {
+                const startSeconds = startPpq * 0.5;
+                const endSeconds = endPpq * 0.5;
+                return {
+                    startSamples: startSeconds * sampleRate,
+                    endSamples: endSeconds * sampleRate,
+                    durationSamples: (endSeconds - startSeconds) * sampleRate,
+                    startSeconds,
+                    endSeconds,
+                    durationSeconds: endSeconds - startSeconds,
+                };
+            },
+            resolveTempoAtBeat: ({ defaultTempo }) => defaultTempo,
+            renderableTracks,
+            scheduledTracks: [],
+            scheduledTrackIds: new Set(),
+            vcaMultiplierByTrackId: new Map(),
+        });
+
+        expect(result.outcome).toBe('rendered');
+        expect(commands.filter((command) => command.kind === 'add-send')).toEqual([
+            { kind: 'add-send', trackId: 'audio-1', busId: 'verb', tap: 'post-fader', level: 0.3 },
+        ]);
+    });
+});
