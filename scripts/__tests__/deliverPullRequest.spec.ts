@@ -390,17 +390,23 @@ function rollupNodes(checkRuns: HeadCheckRun[]): unknown[] {
     return checkRuns.map((check) => ({ __typename: 'CheckRun', ...check }));
 }
 
-function deliveryReceiptProofForIds(commentIds: string[]): DeliveryReceiptProof {
+function deliveryReceiptProofForIds(commentIds: string[], editedCommentIds: string[] = []): DeliveryReceiptProof {
     return {
         totalCount: commentIds.length,
         latestCommentId: commentIds.at(-1),
         commentIds,
+        editedCommentIds,
     };
 }
 
 function shellDeliveryReceiptProofResponse(
     commentIds: string[],
-    options?: { hasNextPage?: boolean; endCursor?: string | null; totalCount?: number }
+    options?: {
+        hasNextPage?: boolean;
+        endCursor?: string | null;
+        totalCount?: number;
+        editedCommentIds?: string[];
+    }
 ) {
     return JSON.stringify({
         data: {
@@ -412,7 +418,10 @@ function shellDeliveryReceiptProofResponse(
                             hasNextPage: options?.hasNextPage ?? false,
                             endCursor: options?.endCursor ?? null,
                         },
-                        nodes: commentIds.map((id) => ({ id })),
+                        nodes: commentIds.map((id) => ({
+                            id,
+                            lastEditedAt: options?.editedCommentIds?.includes(id) ? '2026-08-21T00:00:00Z' : null,
+                        })),
                     },
                 },
             },
@@ -654,6 +663,7 @@ function fakePort(input: FakeInput = {}) {
             const normalizedProof = {
                 ...proof,
                 commentIds: proof.commentIds ?? receipts.map((receipt) => receipt.id),
+                editedCommentIds: proof.editedCommentIds ?? [],
             };
             calls.push(`receipt-proof:${number}:${proof.totalCount}:${proof.latestCommentId ?? 'none'}`);
             return normalizedProof;
@@ -6017,7 +6027,7 @@ describe('delivery shell boundary', () => {
                 }
                 if (
                     joined.includes(
-                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}'
+                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
                     )
                 ) {
                     return shellDeliveryReceiptProofResponse([
@@ -6052,7 +6062,7 @@ describe('delivery shell boundary', () => {
                     'api',
                     'graphql',
                     '-f',
-                    'query=query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}}}}',
+                    'query=query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}}}}',
                     '-f',
                     'owner=jcosta33',
                     '-f',
@@ -6072,7 +6082,7 @@ describe('delivery shell boundary', () => {
                 const joined = args.join(' ');
                 if (
                     joined.includes(
-                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}'
+                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
                     )
                 ) {
                     if (joined.includes('cursor=cursor-1')) {
@@ -6101,7 +6111,7 @@ describe('delivery shell boundary', () => {
                     'api',
                     'graphql',
                     '-f',
-                    'query=query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}}}}',
+                    'query=query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}}}}',
                     '-f',
                     'owner=jcosta33',
                     '-f',
@@ -6116,7 +6126,7 @@ describe('delivery shell boundary', () => {
                     'api',
                     'graphql',
                     '-f',
-                    'query=query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}}}}',
+                    'query=query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}}}}',
                     '-f',
                     'owner=jcosta33',
                     '-f',
@@ -6137,7 +6147,7 @@ describe('delivery shell boundary', () => {
                 const joined = args.join(' ');
                 if (
                     joined.includes(
-                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}'
+                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
                     )
                 ) {
                     if (joined.includes('cursor=cursor-2')) {
@@ -6179,7 +6189,7 @@ describe('delivery shell boundary', () => {
                 const joined = args.join(' ');
                 if (
                     joined.includes(
-                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}'
+                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
                     )
                 ) {
                     if (joined.includes('cursor=cursor-2')) {
@@ -6214,7 +6224,7 @@ describe('delivery shell boundary', () => {
                 const joined = args.join(' ');
                 if (
                     joined.includes(
-                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}'
+                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
                     )
                 ) {
                     if (joined.includes('cursor=cursor-2')) {
@@ -6241,6 +6251,127 @@ describe('delivery shell boundary', () => {
         });
 
         expect(() => port.deliveryReceiptProof(42)).toThrow(/cannot inspect delivery receipts for PR #42/i);
+    });
+
+    it('completes merged shellPort recovery when a same-timestamp author receipt is unedited in GraphQL proof', () => {
+        const closes = relationshipBody('Closes #2372');
+        const effects: string[] = [];
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            {
+                capture: (_command, args) => {
+                    const joined = args.join(' ');
+                    if (joined.includes('pr view')) {
+                        return JSON.stringify(
+                            shellPullRequest(pullRequest({ state: 'MERGED', body: relationshipBody('None.') }))
+                        );
+                    }
+                    if (joined.includes('mergedBy{__typename')) {
+                        return shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID });
+                    }
+                    if (joined.includes('issues/42/comments?per_page=100')) {
+                        return JSON.stringify([
+                            [
+                                {
+                                    node_id: 'IC_same_timestamp',
+                                    body: deliveryReceiptBody(42, 'head', closes, 2372),
+                                    user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]', type: 'Bot' },
+                                    created_at: '2026-08-21T00:00:00Z',
+                                    updated_at: '2026-08-21T00:00:00Z',
+                                },
+                            ],
+                        ]);
+                    }
+                    if (
+                        joined.includes(
+                            'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
+                        )
+                    ) {
+                        return shellDeliveryReceiptProofResponse(['IC_same_timestamp']);
+                    }
+                    if (joined.includes('pulls?state=open')) {
+                        return JSON.stringify([[]]);
+                    }
+                    throw new Error(`unexpected capture: ${joined}`);
+                },
+                run: () => undefined,
+            },
+            { primaryRoot }
+        );
+
+        try {
+            deliverPullRequest(42, port, {
+                complete: (issue) => effects.push(`complete:${issue}`),
+            });
+        } finally {
+            rmSync(primaryRoot, { recursive: true, force: true });
+        }
+
+        expect(effects).toEqual(['complete:2372']);
+    });
+
+    it('fails merged shellPort recovery when GraphQL marks a same-timestamp author receipt as edited', () => {
+        const closes = relationshipBody('Closes #2372');
+        const effects: string[] = [];
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            {
+                capture: (_command, args) => {
+                    const joined = args.join(' ');
+                    if (joined.includes('pr view')) {
+                        return JSON.stringify(
+                            shellPullRequest(pullRequest({ state: 'MERGED', body: relationshipBody('None.') }))
+                        );
+                    }
+                    if (joined.includes('mergedBy{__typename')) {
+                        return shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID });
+                    }
+                    if (joined.includes('issues/42/comments?per_page=100')) {
+                        return JSON.stringify([
+                            [
+                                {
+                                    node_id: 'IC_same_timestamp',
+                                    body: deliveryReceiptBody(42, 'head', closes, 2372),
+                                    user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]', type: 'Bot' },
+                                    created_at: '2026-08-21T00:00:00Z',
+                                    updated_at: '2026-08-21T00:00:00Z',
+                                },
+                            ],
+                        ]);
+                    }
+                    if (
+                        joined.includes(
+                            'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
+                        )
+                    ) {
+                        return shellDeliveryReceiptProofResponse(['IC_same_timestamp'], {
+                            editedCommentIds: ['IC_same_timestamp'],
+                        });
+                    }
+                    if (joined.includes('pulls?state=open')) {
+                        return JSON.stringify([[]]);
+                    }
+                    throw new Error(`unexpected capture: ${joined}`);
+                },
+                run: () => undefined,
+            },
+            { primaryRoot }
+        );
+
+        try {
+            expect(() =>
+                deliverPullRequest(42, port, {
+                    complete: (issue) => effects.push(`complete:${issue}`),
+                })
+            ).toThrow(/delivery receipt authority cannot be proven/i);
+        } finally {
+            rmSync(primaryRoot, { recursive: true, force: true });
+        }
+        expect(effects).toEqual([]);
     });
 
     it.each([
@@ -6342,7 +6473,7 @@ describe('delivery shell boundary', () => {
                     }
                     if (
                         joined.includes(
-                            'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}'
+                            'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
                         )
                     ) {
                         return shellDeliveryReceiptProofResponse(['IC_x', 'IC_y']);
@@ -6412,7 +6543,7 @@ describe('delivery shell boundary', () => {
                     }
                     if (
                         joined.includes(
-                            'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}'
+                            'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
                         )
                     ) {
                         return shellDeliveryReceiptProofResponse(['IC_legacy_v1']);
@@ -6835,7 +6966,7 @@ describe('delivery shell boundary', () => {
                 }
                 if (
                     joined.includes(
-                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}'
+                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
                     )
                 ) {
                     return shellDeliveryReceiptProofResponse(['IC_x', 'IC_hidden_y']);
@@ -6883,7 +7014,7 @@ describe('delivery shell boundary', () => {
                 }
                 if (
                     joined.includes(
-                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}'
+                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
                     )
                 ) {
                     return shellDeliveryReceiptProofResponse(['IC_hidden_y']);
@@ -6908,7 +7039,7 @@ describe('delivery shell boundary', () => {
                 const joined = args.join(' ');
                 if (
                     joined.includes(
-                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}'
+                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
                     )
                 ) {
                     return shellDeliveryReceiptProofResponse(['IC_x'], {
@@ -6931,7 +7062,7 @@ describe('delivery shell boundary', () => {
                 const joined = args.join(' ');
                 if (
                     joined.includes(
-                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}'
+                        'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
                     )
                 ) {
                     if (joined.includes('cursor=cursor-1')) {

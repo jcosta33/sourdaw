@@ -113,6 +113,7 @@ export type DeliveryReceiptProof = {
     totalCount: number;
     latestCommentId: string | undefined;
     commentIds?: string[];
+    editedCommentIds?: string[];
 };
 
 export type ShellRunner = {
@@ -1298,14 +1299,28 @@ function assertCompleteDeliveryReceiptProof(
     if (!Array.isArray(proof.commentIds) || proof.commentIds.some((commentId) => typeof commentId !== 'string')) {
         fail(`PR #${number} delivery receipt authority cannot be proven`);
     }
+    if (
+        !Array.isArray(proof.editedCommentIds) ||
+        proof.editedCommentIds.some((commentId) => typeof commentId !== 'string') ||
+        new Set(proof.editedCommentIds).size !== proof.editedCommentIds.length
+    ) {
+        fail(`PR #${number} delivery receipt authority cannot be proven`);
+    }
     if (proof.commentIds.length !== proof.totalCount) {
         fail(`PR #${number} delivery receipt authority cannot be proven`);
     }
     if (comments.length !== proof.totalCount) {
         fail(`PR #${number} delivery receipt authority cannot be proven`);
     }
+    const commentIdSet = new Set(proof.commentIds);
+    const editedCommentIds = new Set(proof.editedCommentIds);
+    for (const editedCommentId of editedCommentIds) {
+        if (!commentIdSet.has(editedCommentId)) {
+            fail(`PR #${number} delivery receipt authority cannot be proven`);
+        }
+    }
     if (proof.totalCount === 0) {
-        if (proof.latestCommentId !== undefined || proof.commentIds.length > 0) {
+        if (proof.latestCommentId !== undefined || proof.commentIds.length > 0 || proof.editedCommentIds.length > 0) {
             fail(`PR #${number} delivery receipt authority cannot be proven`);
         }
         return;
@@ -1319,6 +1334,15 @@ function assertCompleteDeliveryReceiptProof(
     }
     for (let index = 0; index < proof.commentIds.length; index += 1) {
         if (comments[index]?.id !== proof.commentIds[index]) {
+            fail(`PR #${number} delivery receipt authority cannot be proven`);
+        }
+        const comment = comments[index];
+        if (
+            comment !== undefined &&
+            editedCommentIds.has(comment.id) &&
+            isAuthorBotNodeId(comment.authorNodeId) &&
+            comment.authorType === 'Bot'
+        ) {
             fail(`PR #${number} delivery receipt authority cannot be proven`);
         }
     }
@@ -1978,7 +2002,7 @@ type DeliveryReceiptProofResponse = {
                 comments?: {
                     totalCount?: unknown;
                     pageInfo?: { hasNextPage?: unknown; endCursor?: unknown } | null;
-                    nodes?: Array<{ id?: unknown } | null> | null;
+                    nodes?: Array<{ id?: unknown; lastEditedAt?: unknown } | null> | null;
                 } | null;
             } | null;
         };
@@ -2166,7 +2190,7 @@ function readDeliveryReceiptProofFromGithub(
     repository: { owner: string; name: string },
     shell: Pick<ShellRunner, 'capture'>
 ): DeliveryReceiptProof {
-    const query = `query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){comments(first:${ROLLUP_PAGE_SIZE},after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id}}}}}`;
+    const query = `query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){comments(first:${ROLLUP_PAGE_SIZE},after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}}}}`;
     const readPage = (cursor: string | null) => {
         const response = parseJson<DeliveryReceiptProofResponse>(
             shell.capture('gh', [
@@ -2198,17 +2222,28 @@ function readDeliveryReceiptProofFromGithub(
                 hasNextPage: comments.pageInfo.hasNextPage,
                 endCursor: typeof comments.pageInfo.endCursor === 'string' ? comments.pageInfo.endCursor : null,
             },
-            commentIds: comments.nodes.map((comment) => {
+            nodes: comments.nodes.map((comment) => {
                 if (comment === null || comment === undefined || typeof comment.id !== 'string') {
                     fail(`cannot inspect delivery receipts for PR #${number}`);
                 }
-                return comment.id;
+                if (
+                    comment.lastEditedAt !== undefined &&
+                    comment.lastEditedAt !== null &&
+                    typeof comment.lastEditedAt !== 'string'
+                ) {
+                    fail(`cannot inspect delivery receipts for PR #${number}`);
+                }
+                return {
+                    id: comment.id,
+                    lastEditedAt: typeof comment.lastEditedAt === 'string' ? comment.lastEditedAt : undefined,
+                };
             }),
         };
     };
     let page = readPage(null);
     const expectedTotalCount = page.totalCount;
     const commentIds: string[] = [];
+    const editedCommentIds: string[] = [];
     const seenCommentIds = new Set<string>();
     const consumedCursors = new Set<string>();
     const emittedCursors = new Set<string>();
@@ -2218,12 +2253,15 @@ function readDeliveryReceiptProofFromGithub(
             fail(`cannot inspect delivery receipts for PR #${number}`);
         }
         let pageContributed = 0;
-        for (const commentId of page.commentIds) {
-            if (seenCommentIds.has(commentId)) {
+        for (const node of page.nodes) {
+            if (seenCommentIds.has(node.id)) {
                 fail(`cannot inspect delivery receipts for PR #${number}`);
             }
-            seenCommentIds.add(commentId);
-            commentIds.push(commentId);
+            seenCommentIds.add(node.id);
+            commentIds.push(node.id);
+            if (node.lastEditedAt !== undefined) {
+                editedCommentIds.push(node.id);
+            }
             pageContributed += 1;
         }
         if (commentIds.length > expectedTotalCount) {
@@ -2259,6 +2297,7 @@ function readDeliveryReceiptProofFromGithub(
         totalCount: expectedTotalCount,
         latestCommentId: commentIds.at(-1),
         commentIds,
+        editedCommentIds,
     };
 }
 
