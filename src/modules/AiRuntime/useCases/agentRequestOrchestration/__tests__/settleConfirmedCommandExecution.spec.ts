@@ -4,6 +4,7 @@ import { createVerifiedBatchReceipt } from '#/modules/Command/useCases';
 
 import { AiProposalInvalidatedError } from '../../../errors/AiProposalInvalidatedError';
 import { type PendingAppActionConfirmation } from '../../../stores/pendingActionConfirmationStore';
+import { type getVerifiedBatchReplayDisposition } from '../../getVerifiedBatchReplayDisposition';
 import { settleConfirmedCommandExecution } from '../settleConfirmedCommandExecution';
 
 const mocks = vi.hoisted(() => ({
@@ -15,7 +16,7 @@ const mocks = vi.hoisted(() => ({
         reason,
     })),
     createFinalizationFailure: vi.fn((reason) => ({ status: 'failed', durableCommit: true, reason })),
-    getReplayDisposition: vi.fn(() => ({ status: 'executed' })),
+    getReplayDisposition: vi.fn((): ReplayDisposition => ({ status: 'executed' })),
     invalidate: vi.fn(async () => ({ status: 'invalidated', reason: 'project changed' })),
     cancel: vi.fn(async () => ({ status: 'cancelled' })),
     loggerError: vi.fn(),
@@ -96,6 +97,7 @@ type Input = Parameters<typeof settleConfirmedCommandExecution>[0];
 type ReadyAdmission = Input['executionAdmission'];
 type CompletedFlight = Extract<Input['executionFlight'], { status: 'completed' }>;
 type CompletedBatchResult = CompletedFlight['batchResult'];
+type ReplayDisposition = ReturnType<typeof getVerifiedBatchReplayDisposition>;
 type AddDeviceAction = Extract<PendingAppActionConfirmation['actions'][number], { type: 'addDevice' }>;
 
 const action = {
@@ -264,9 +266,12 @@ function observeSettlement<T>(promise: Promise<T>): {
     return { isSettled: () => settled, completion };
 }
 
-function createCommittedBatchResult(): CompletedBatchResult {
+function createCommittedBatchResult(): Extract<CompletedBatchResult, { status: 'committed' }> {
     const result = { status: 'committed', actions: createEmptyActions() } satisfies Parameters<typeof createReceipt>[0];
-    return { ...result, receipt: createReceipt(result) } satisfies CompletedBatchResult;
+    return { ...result, receipt: createReceipt(result) } satisfies Extract<
+        CompletedBatchResult,
+        { status: 'committed' }
+    >;
 }
 
 function createCommittedWithWarningBatchResult(): CompletedBatchResult {
@@ -744,6 +749,30 @@ describe('settleConfirmedCommandExecution', () => {
             leaseSettlement: { accepted: true, warning: null },
         });
     });
+
+    it.each([
+        [{ status: 'cancelled' } satisfies ReplayDisposition, 'cancelled'],
+        [{ status: 'failed', reason: 'prior receipt failed' } satisfies ReplayDisposition, 'failed'],
+        [{ status: 'ambiguous', reason: 'prior receipt is ambiguous' } satisfies ReplayDisposition, 'failed'],
+    ] as const)(
+        'settles an idempotent replay with %s receipt disposition as a verified lease result',
+        async (disposition, terminalState) => {
+            const batchResult = createIdempotentReplayBatchResult();
+            mocks.getReplayDisposition.mockReturnValueOnce(disposition);
+
+            await settleConfirmedCommandExecution(
+                createInput(createCompletedFlight(batchResult), { trackedWorkLease })
+            );
+
+            expect(mocks.settleLease).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    lease: trackedWorkLease,
+                    terminalState,
+                    evidence: 'verified-command-receipt',
+                })
+            );
+        }
+    );
 
     it('cancels a user-aborted confirmed batch without invalidating the proposal', async () => {
         const controller = new AbortController();
