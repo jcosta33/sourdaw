@@ -102,6 +102,9 @@ function recoverySummary(number: number, owner: ReviewResolutionLockOwner, inspe
     if (inspection.thread?.id !== owner.threadId) {
         fail(`review thread ${owner.threadId} was not found on this pull request`);
     }
+    if (inspection.head !== owner.head) {
+        fail(`pull-request head changed while reconciling review thread ${owner.threadId} on PR #${number}`);
+    }
     const resolutionState = inspection.thread.isResolved ? 'resolved' : 'unresolved';
     return `review-resolution-lock-recovered:${number}:${owner.threadId}:${owner.head}:${inspection.head}:${resolutionState}:${inspection.pendingReviews.length}`;
 }
@@ -127,16 +130,14 @@ export async function runRecoverReviewResolutionLockCli(
         }
         assertRequiredRepository(dependencies.repositoryName(auth.session, primaryRoot));
         const gh = dependencies.gh(auth.session, primaryRoot);
-        const { owner, inspection } = dependencies.recoverLock(
-            primaryRoot,
-            parsed.number,
-            parsed.owner,
-            (lockOwner) => ({
-                owner: lockOwner,
-                inspection: dependencies.inspectThread(parsed.number!, lockOwner.threadId, gh),
-            })
+        const summary = dependencies.recoverLock(primaryRoot, parsed.number, parsed.owner, (lockOwner) =>
+            recoverySummary(
+                parsed.number!,
+                lockOwner,
+                dependencies.inspectThread(parsed.number!, lockOwner.threadId, gh)
+            )
         );
-        console.log(recoverySummary(parsed.number, owner, inspection));
+        console.log(summary);
         return 0;
     } finally {
         auth.session.dispose();

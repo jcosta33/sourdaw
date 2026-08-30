@@ -1525,8 +1525,30 @@ function updateReviewResolutionLockRef(primaryRoot: string, args: string[]): boo
     return result.status === 0;
 }
 
+function currentProcessGroupId(pid: number): number {
+    if (process.platform === 'win32') {
+        fail('review-resolution lock requires POSIX process-group fencing');
+    }
+    const result = spawnSync('ps', ['-o', 'pgid=', '-p', String(pid)], {
+        encoding: 'utf8',
+        shell: false,
+    });
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status !== 0) {
+        fail('review-resolution lock could not determine the current process group');
+    }
+    const pgid = Number(result.stdout.trim());
+    if (!Number.isSafeInteger(pgid) || pgid <= 0) {
+        fail('review-resolution lock reported an invalid current process group');
+    }
+    return pgid;
+}
+
 function currentReviewResolutionExecutionFence(): ReviewResolutionExecutionFence {
-    return { pid: process.pid, pgid: process.pid };
+    const pid = process.pid;
+    return { pid, pgid: currentProcessGroupId(pid) };
 }
 
 function isLiveProcessGroup(pgid: number): boolean {

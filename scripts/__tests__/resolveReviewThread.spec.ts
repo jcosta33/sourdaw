@@ -1,11 +1,11 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID } from '../githubAppIdentity.ts';
+import { AUTHOR_BOT_NODE_ID, REQUIRED_REPOSITORY, REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
 import {
     parseRecoverReviewResolutionLockArgs,
     runRecoverReviewResolutionLockCli,
@@ -745,6 +745,90 @@ async function waitForProcessGroupGone(pgid: number): Promise<void> {
     throw new Error(`process group ${pgid} did not exit`);
 }
 
+function readProcessGroupId(pid: number): number {
+    const result = spawnSync('ps', ['-o', 'pgid=', '-p', String(pid)], {
+        encoding: 'utf8',
+        shell: false,
+    });
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status !== 0) {
+        throw new Error(`could not read process group for pid ${pid}`);
+    }
+    const pgid = Number(result.stdout.trim());
+    if (!Number.isSafeInteger(pgid) || pgid <= 0) {
+        throw new Error(`invalid process group for pid ${pid}: ${JSON.stringify(result.stdout.trim())}`);
+    }
+    return pgid;
+}
+
+async function waitForReviewResolutionLock(
+    repository: string,
+    number: number
+): Promise<{ oid: string; owner: { pid: number; pgid: number; threadId: string; head: string } }> {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+        const oid = readLockOid(repository, number);
+        if (oid !== undefined) {
+            return {
+                oid,
+                owner: JSON.parse(gitCapture(repository, ['cat-file', 'blob', oid])) as {
+                    pid: number;
+                    pgid: number;
+                    threadId: string;
+                    head: string;
+                },
+            };
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error(`review-resolution lock for PR #${number} did not appear`);
+}
+
+function writeResolveReviewSnapshot(snapshotRoot: string): string {
+    const scriptsRoot = join(snapshotRoot, 'scripts');
+    mkdirSync(scriptsRoot, { recursive: true });
+    writeFileSync(
+        join(scriptsRoot, 'resolveReviewThread.ts'),
+        readFileSync(join(import.meta.dirname, '../resolveReviewThread.ts'))
+    );
+    writeFileSync(join(scriptsRoot, 'prContract.ts'), readFileSync(join(import.meta.dirname, '../prContract.ts')));
+    writeFileSync(
+        join(scriptsRoot, 'githubAppIdentity.ts'),
+        [
+            'const sleeper = new Int32Array(new SharedArrayBuffer(4));',
+            `export const AUTHOR_BOT_NODE_ID = ${JSON.stringify(AUTHOR_BOT_NODE_ID)};`,
+            `export const REVIEWER_BOT_NODE_ID = ${JSON.stringify(REVIEWER_BOT_NODE_ID)};`,
+            `export const REQUIRED_REPOSITORY = ${JSON.stringify(REQUIRED_REPOSITORY)};`,
+            'export function assertRequiredRepository(repository) {',
+            '  if (repository !== REQUIRED_REPOSITORY) throw new Error(`unexpected repository ${repository}`);',
+            '}',
+            'export function assertTrustedExecutingBlob() {}',
+            'export async function authenticateRole() {',
+            '  return { minted: { actorNodeId: AUTHOR_BOT_NODE_ID }, session: { env: {}, dispose() {} } };',
+            '}',
+            'export function isAuthorBotNodeId(value) { return value === AUTHOR_BOT_NODE_ID; }',
+            'export function isReviewerBotNodeId(value) { return value === REVIEWER_BOT_NODE_ID; }',
+            "export function originMainBlob() { return 'trusted'; }",
+            'export function parseGraphqlResponse(output) { return JSON.parse(output); }',
+            'export function resolvePrimaryRoot() {',
+            '  const root = process.env.SOURDAW_TEST_PRIMARY_ROOT;',
+            "  if (typeof root !== 'string' || root.trim() === '') throw new Error('missing test primary root');",
+            '  return root;',
+            '}',
+            'export function spawnCapture(command, args) {',
+            "  if (command !== 'gh') throw new Error(`unexpected command ${command}`);",
+            "  if (args[0] === 'repo' && args[1] === 'view') return REQUIRED_REPOSITORY;",
+            "  if (args[0] === 'api' && args[1] === 'graphql') {",
+            '    for (;;) Atomics.wait(sleeper, 0, 0, 1000);',
+            '  }',
+            '  throw new Error(`unexpected gh args ${JSON.stringify(args)}`);',
+            '}',
+        ].join('\n')
+    );
+    return join(scriptsRoot, 'resolveReviewThread.ts');
+}
+
 describe('review thread resolution', () => {
     it('serializes one review-resolution mutation per PR, refuses same-PR different-thread contenders, and releases after failure', () => {
         const repository = createTemporaryGitRepository();
@@ -890,6 +974,110 @@ describe('review thread resolution', () => {
             rmSync(repository, { recursive: true, force: true });
         }
     });
+
+    it('keeps the exact owner ref when recovery inspection is missing the bound thread or head', async () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999);
+            updateLock(repository, 42, ownerOid);
+            const session: GhSession = { configDir: repository, env: {}, dispose() {} };
+            const recoverDependencies = {
+                trustedPrimaryRoot: () => repository,
+                authenticateAuthor: async () => ({
+                    minted: { actorNodeId: AUTHOR_BOT_NODE_ID },
+                    session,
+                }),
+                repositoryName: () => REQUIRED_REPOSITORY,
+                gh: () => () => '',
+                inspectThread: () => ({
+                    pullRequestId,
+                    head: movedHead,
+                    thread: {
+                        id: 'PRRT_other',
+                        isResolved: false,
+                        resolvedByNodeId: null,
+                        resolvedByLogin: null,
+                        resolvedByType: null,
+                        rootCommentId: null,
+                        rootCommentFullDatabaseId: null,
+                        rootAuthorNodeId: null,
+                        rootAuthorLogin: null,
+                        rootAuthorType: null,
+                        comments: [],
+                    },
+                    pendingReviews: [],
+                }),
+                recoverLock: recoverPullRequestReviewResolutionLock,
+            } satisfies Parameters<typeof runRecoverReviewResolutionLockCli>[1];
+
+            await expect(
+                runRecoverReviewResolutionLockCli(['42', '--owner', ownerOid], recoverDependencies)
+            ).rejects.toThrow(/review thread .* was not found|head changed while reconciling/i);
+            expect(readLockOid(repository, 42)).toBe(ownerOid);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('launches review:resolve in a detached worker group and keeps recovery fenced until that group exits', async () => {
+        const repository = createTemporaryGitRepository();
+        const snapshotRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-resolve-launcher-'));
+        const entryPath = writeResolveReviewSnapshot(snapshotRoot);
+        const launcher = spawn(process.execPath, [entryPath, '42', '--thread', threadId, '--head', head], {
+            cwd: repository,
+            env: { ...process.env, SOURDAW_TEST_PRIMARY_ROOT: repository },
+            stdio: ['ignore', 'ignore', 'pipe'],
+            shell: false,
+        });
+        let stderr = '';
+        launcher.stderr?.setEncoding('utf8');
+        launcher.stderr?.on('data', (chunk: string) => {
+            stderr += chunk;
+        });
+        let owner: { pid: number; pgid: number; threadId: string; head: string } | undefined;
+        try {
+            if (launcher.pid === undefined) {
+                throw new Error('launcher pid is unavailable');
+            }
+            const launcherPgid = readProcessGroupId(launcher.pid);
+            const lock = await waitForReviewResolutionLock(repository, 42);
+            owner = lock.owner;
+            expect(owner.threadId).toBe(threadId);
+            expect(owner.head).toBe(head);
+            expect(owner.pid).not.toBe(launcher.pid);
+            expect(owner.pgid).toBe(owner.pid);
+            expect(owner.pgid).not.toBe(launcherPgid);
+            expect(() => recoverPullRequestReviewResolutionLock(repository, 42, lock.oid, () => 'recovered')).toThrow(
+                /still held by live process group/i
+            );
+
+            process.kill(-owner.pgid, 'SIGKILL');
+            await waitForProcessGroupGone(owner.pgid);
+            await waitForExit(launcher);
+            expect(launcher.exitCode).toBe(1);
+            expect(stderr).toMatch(/terminated by SIGKILL/i);
+            expect(
+                recoverPullRequestReviewResolutionLock(repository, 42, lock.oid, (lockOwner) => ({
+                    head: lockOwner.head,
+                    pendingReviews: [],
+                    thread: { id: lockOwner.threadId, isResolved: false },
+                }))
+            ).toMatchObject({ head, pendingReviews: [], thread: { id: threadId, isResolved: false } });
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            if (owner !== undefined) {
+                try {
+                    process.kill(-owner.pgid, 'SIGKILL');
+                } catch {
+                    // Best-effort cleanup for a worker group already gone.
+                }
+            }
+            launcher.kill('SIGKILL');
+            await waitForExit(launcher).catch(() => undefined);
+            rmSync(snapshotRoot, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true });
+        }
+    }, 10_000);
 
     it('uses supported GraphQL review-envelope, reply, and deletion input fields', () => {
         const source = readFileSync(join(import.meta.dirname, '../resolveReviewThread.ts'), 'utf8');
