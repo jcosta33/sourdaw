@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 
@@ -48,9 +48,21 @@ function systemGitPath(): string {
     }
     return result.stdout.trim();
 }
+function systemPsPath(): string {
+    const result = spawnSync('bash', ['-lc', 'command -v ps'], { encoding: 'utf8', shell: false });
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status !== 0) {
+        throw new Error(result.stderr || result.stdout || 'could not resolve ps');
+    }
+    return result.stdout.trim();
+}
 const trustedGitPath = process.env.SOURDAW_TRUSTED_GIT_PATH ?? systemGitPath();
 process.env.SOURDAW_TRUSTED_GIT_PATH = trustedGitPath;
 const trustedGhPath = process.env.SOURDAW_TRUSTED_GH_PATH ?? process.execPath;
+const trustedPsPath = process.env.SOURDAW_TRUSTED_PS_PATH ?? systemPsPath();
+process.env.SOURDAW_TRUSTED_PS_PATH = trustedPsPath;
 type ReviewRecord = {
     id: string;
     body: string;
@@ -1389,6 +1401,7 @@ function writeResolveReviewSnapshot(snapshotRoot: string): string {
             '  primaryRoot,',
             `  gitPath: process.env.SOURDAW_TEST_TRUSTED_GIT_PATH ?? ${JSON.stringify(trustedGitPath)},`,
             `  ghPath: process.env.SOURDAW_TEST_TRUSTED_GH_PATH ?? ${JSON.stringify(trustedGhPath)},`,
+            `  psPath: process.env.SOURDAW_TEST_TRUSTED_PS_PATH ?? ${JSON.stringify(trustedPsPath)},`,
             '});',
             'const exitCode = await runResolveReviewThreadCli(process.argv.slice(2), { trustedLauncher });',
             'process.exitCode = exitCode;',
@@ -1590,6 +1603,7 @@ function writeRecoverReviewResolutionSnapshot(snapshotRoot: string): string {
             '  primaryRoot,',
             `  gitPath: process.env.SOURDAW_TEST_TRUSTED_GIT_PATH ?? ${JSON.stringify(trustedGitPath)},`,
             `  ghPath: process.env.SOURDAW_TEST_TRUSTED_GH_PATH ?? ${JSON.stringify(trustedGhPath)},`,
+            `  psPath: process.env.SOURDAW_TEST_TRUSTED_PS_PATH ?? ${JSON.stringify(trustedPsPath)},`,
             '});',
             'const lingerMs = Number(process.env.SOURDAW_TEST_LINGER_AFTER_COMMAND_MS ?? "0");',
             'let exitCode;',
@@ -1634,6 +1648,48 @@ describe('review thread resolution', () => {
             ).toThrow(/boom/);
             expect(withPullRequestReviewResolutionLock(repository, 42, threadId, head, () => 'ok')).toBe('ok');
         } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('reads the current process group through the launcher-bound ps executable instead of PATH', () => {
+        const repository = createTemporaryGitRepository();
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-resolve-ps-path-'));
+        const trustedBin = join(root, 'trusted-bin');
+        const hostileBin = join(root, 'hostile-bin');
+        const trustedPs = join(trustedBin, 'ps');
+        const trustedMarker = join(root, 'trusted-ps-entered');
+        const hostileMarker = join(root, 'hostile-ps-entered');
+        const previousPath = process.env.PATH;
+        try {
+            mkdirSync(trustedBin, { recursive: true });
+            mkdirSync(hostileBin, { recursive: true });
+            writeFileSync(
+                trustedPs,
+                `#!/bin/sh\nprintf trusted > ${JSON.stringify(trustedMarker)}\nexec ${JSON.stringify(trustedPsPath)} "$@"\n`
+            );
+            chmodSync(trustedPs, 0o700);
+            writeFileSync(
+                join(hostileBin, 'ps'),
+                `#!/bin/sh\nprintf hostile > ${JSON.stringify(hostileMarker)}\nexit 91\n`
+            );
+            chmodSync(join(hostileBin, 'ps'), 0o700);
+
+            withTemporaryEnvironment(
+                {
+                    PATH: `${hostileBin}${delimiter}${previousPath ?? ''}`,
+                    SOURDAW_TRUSTED_PS_PATH: trustedPs,
+                },
+                () => {
+                    expect(withPullRequestReviewResolutionLock(repository, 42, threadId, head, () => 'ok')).toBe('ok');
+                }
+            );
+
+            expect(readFileSync(trustedMarker, 'utf8')).toBe('trusted');
+            expect(existsSync(hostileMarker)).toBe(false);
+        } finally {
+            process.env.PATH = previousPath;
+            rmSync(root, { recursive: true, force: true });
             rmSync(repository, { recursive: true, force: true });
         }
     });
@@ -3174,7 +3230,12 @@ describe('review thread resolution', () => {
             JSON.stringify({
                 version: 1,
                 token,
-                trustedLauncher: { primaryRoot: repository, gitPath: trustedGitPath, ghPath: trustedGhPath },
+                trustedLauncher: {
+                    primaryRoot: repository,
+                    gitPath: trustedGitPath,
+                    ghPath: trustedGhPath,
+                    psPath: trustedPsPath,
+                },
             }),
             { encoding: 'utf8', mode: 0o600 }
         );
@@ -3231,7 +3292,12 @@ describe('review thread resolution', () => {
             JSON.stringify({
                 version: 1,
                 token,
-                trustedLauncher: { primaryRoot: repository, gitPath: trustedGitPath, ghPath: trustedGhPath },
+                trustedLauncher: {
+                    primaryRoot: repository,
+                    gitPath: trustedGitPath,
+                    ghPath: trustedGhPath,
+                    psPath: trustedPsPath,
+                },
             }),
             { encoding: 'utf8', mode: 0o600 }
         );
@@ -3299,7 +3365,12 @@ describe('review thread resolution', () => {
             JSON.stringify({
                 version: 1,
                 token,
-                trustedLauncher: { primaryRoot: repository, gitPath: trustedGitPath, ghPath: trustedGhPath },
+                trustedLauncher: {
+                    primaryRoot: repository,
+                    gitPath: trustedGitPath,
+                    ghPath: trustedGhPath,
+                    psPath: trustedPsPath,
+                },
             }),
             { encoding: 'utf8', mode: 0o600 }
         );
@@ -3366,7 +3437,12 @@ describe('review thread resolution', () => {
             JSON.stringify({
                 version: 1,
                 token,
-                trustedLauncher: { primaryRoot: repository, gitPath: trustedGitPath, ghPath: trustedGhPath },
+                trustedLauncher: {
+                    primaryRoot: repository,
+                    gitPath: trustedGitPath,
+                    ghPath: trustedGhPath,
+                    psPath: trustedPsPath,
+                },
             }),
             { encoding: 'utf8', mode: 0o600 }
         );

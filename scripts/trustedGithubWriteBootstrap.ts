@@ -24,6 +24,7 @@ export const TRUSTED_PRIMARY_ROOT_ENV = 'SOURDAW_TRUSTED_PRIMARY_ROOT';
 export const TRUSTED_COMMON_DIR_ENV = 'SOURDAW_TRUSTED_COMMON_DIR';
 export const TRUSTED_GIT_PATH_ENV = 'SOURDAW_TRUSTED_GIT_PATH';
 export const TRUSTED_GH_PATH_ENV = 'SOURDAW_TRUSTED_GH_PATH';
+export const TRUSTED_PS_PATH_ENV = 'SOURDAW_TRUSTED_PS_PATH';
 export const TRUSTED_ORIGIN_COMMIT_ENV = 'SOURDAW_TRUSTED_ORIGIN_COMMIT';
 export const TRUSTED_GATE_WORKFLOW_ENV = 'SOURDAW_TRUSTED_GATE_WORKFLOW';
 
@@ -32,6 +33,7 @@ export type TrustedLauncherBinding = {
     commonDir: string;
     gitPath: string;
     ghPath: string;
+    psPath: string;
 };
 
 /**
@@ -725,7 +727,7 @@ async function runSnapshotModule(
         'const loaded = await import(pathToFileURL(entryPath).href);',
         'const command = Reflect.get(loaded, runner);',
         "if (typeof command !== 'function') throw new Error(`trusted snapshot does not export ${runner}`);",
-        'const trustedLauncher = typeof process.env.SOURDAW_TRUSTED_PRIMARY_ROOT === "string" && typeof process.env.SOURDAW_TRUSTED_GIT_PATH === "string" && typeof process.env.SOURDAW_TRUSTED_GH_PATH === "string" ? { primaryRoot: process.env.SOURDAW_TRUSTED_PRIMARY_ROOT, gitPath: process.env.SOURDAW_TRUSTED_GIT_PATH, ghPath: process.env.SOURDAW_TRUSTED_GH_PATH } : undefined;',
+        'const trustedLauncher = typeof process.env.SOURDAW_TRUSTED_PRIMARY_ROOT === "string" && typeof process.env.SOURDAW_TRUSTED_GIT_PATH === "string" && typeof process.env.SOURDAW_TRUSTED_GH_PATH === "string" && typeof process.env.SOURDAW_TRUSTED_PS_PATH === "string" ? { primaryRoot: process.env.SOURDAW_TRUSTED_PRIMARY_ROOT, gitPath: process.env.SOURDAW_TRUSTED_GIT_PATH, ghPath: process.env.SOURDAW_TRUSTED_GH_PATH, psPath: process.env.SOURDAW_TRUSTED_PS_PATH } : undefined;',
         'const dependencies = runner === "runResolveReviewThreadCli" || runner === "runRecoverReviewResolutionLockCli" ? { trustedLauncher } : undefined;',
         'const result = dependencies === undefined ? await command(args) : await command(args, dependencies);',
         "if (!Number.isSafeInteger(result)) throw new Error('trusted snapshot returned an invalid exit code');",
@@ -765,13 +767,19 @@ export function trustedSnapshotEnv(
     if (launcher === undefined) {
         return env;
     }
-    env.PATH = [...new Set([dirname(launcher.gitPath), dirname(launcher.ghPath), dirname(process.execPath)])].join(
-        delimiter
-    );
+    env.PATH = [
+        ...new Set([
+            dirname(launcher.gitPath),
+            dirname(launcher.ghPath),
+            dirname(launcher.psPath),
+            dirname(process.execPath),
+        ]),
+    ].join(delimiter);
     env[TRUSTED_PRIMARY_ROOT_ENV] = launcher.primaryRoot;
     env[TRUSTED_COMMON_DIR_ENV] = launcher.commonDir;
     env[TRUSTED_GIT_PATH_ENV] = launcher.gitPath;
     env[TRUSTED_GH_PATH_ENV] = launcher.ghPath;
+    env[TRUSTED_PS_PATH_ENV] = launcher.psPath;
     env[TRUSTED_ORIGIN_COMMIT_ENV] = snapshot.commit;
     return env;
 }
@@ -819,7 +827,7 @@ export function trustedGitReadEnv(parent: NodeJS.ProcessEnv = process.env): Node
     return env;
 }
 
-export function resolveTrustedExecutable(name: 'git' | 'gh', parent: NodeJS.ProcessEnv = process.env): string {
+export function resolveTrustedExecutable(name: 'git' | 'gh' | 'ps', parent: NodeJS.ProcessEnv = process.env): string {
     const extensions = process.platform === 'win32' ? (parent.PATHEXT ?? '.EXE;.CMD;.BAT').split(';') : [''];
     for (const directory of (parent.PATH ?? '').split(delimiter)) {
         for (const extension of extensions) {
@@ -857,6 +865,7 @@ export function resolveTrustedLauncherBinding(
         commonDir,
         gitPath,
         ghPath: resolveTrustedExecutable('gh', parent),
+        psPath: resolveTrustedExecutable('ps', parent),
     };
 }
 

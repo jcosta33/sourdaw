@@ -138,6 +138,7 @@ export type ReviewResolutionTrustedLauncher = {
     primaryRoot: string;
     gitPath: string;
     ghPath: string;
+    psPath: string;
 };
 export type ReviewResolutionRecoveryClock = {
     now: () => number;
@@ -218,6 +219,7 @@ type ReviewResolutionLockRecoveryPort = {
 export const REVIEW_RESOLUTION_CHILD_ENV = 'SOURDAW_REVIEW_RESOLUTION_CHILD';
 const REVIEW_RESOLUTION_CHILD_MARKER_VERSION = 1;
 const TRUSTED_GIT_PATH_ENV = 'SOURDAW_TRUSTED_GIT_PATH';
+const TRUSTED_PS_PATH_ENV = 'SOURDAW_TRUSTED_PS_PATH';
 const TRUSTED_ORIGIN_COMMIT_ENV = 'SOURDAW_TRUSTED_ORIGIN_COMMIT';
 const activeReviewResolutionLocks: ActiveReviewResolutionLock[] = [];
 const systemReviewResolutionRecoveryClock: ReviewResolutionRecoveryClock = { now: () => Date.now() };
@@ -290,7 +292,12 @@ export function assertTrustedReviewResolutionLauncher(
         typeof value.ghPath !== 'string' ||
         value.ghPath.trim() === '' ||
         !isAbsolute(value.ghPath) ||
-        normalize(value.ghPath) !== value.ghPath
+        normalize(value.ghPath) !== value.ghPath ||
+        !('psPath' in value) ||
+        typeof value.psPath !== 'string' ||
+        value.psPath.trim() === '' ||
+        !isAbsolute(value.psPath) ||
+        normalize(value.psPath) !== value.psPath
     ) {
         fail(label);
     }
@@ -298,6 +305,7 @@ export function assertTrustedReviewResolutionLauncher(
         primaryRoot: value.primaryRoot,
         gitPath: value.gitPath,
         ghPath: value.ghPath,
+        psPath: value.psPath,
     };
 }
 
@@ -2045,6 +2053,17 @@ function trustedReviewResolutionGitPath(env: NodeJS.ProcessEnv = process.env): s
     return trustedPath;
 }
 
+function trustedReviewResolutionPsPath(env: NodeJS.ProcessEnv = process.env): string {
+    const trustedPath = env[TRUSTED_PS_PATH_ENV];
+    if (typeof trustedPath !== 'string' || trustedPath.trim() === '') {
+        fail('review-resolution lock requires launcher-resolved trusted ps path');
+    }
+    if (!isAbsolute(trustedPath)) {
+        fail('trusted ps executable path is not absolute');
+    }
+    return trustedPath;
+}
+
 function reviewResolutionLockGit(
     primaryRoot: string,
     args: string[],
@@ -2267,13 +2286,14 @@ function updateReviewResolutionLockRef(primaryRoot: string, args: string[]): boo
     return result.status === 0;
 }
 
-function currentProcessGroupId(pid: number): number {
+function currentProcessGroupId(pid: number, env: NodeJS.ProcessEnv = process.env): number {
     if (process.platform === 'win32') {
         fail('review-resolution lock requires POSIX process-group fencing');
     }
-    const result = spawnSync('ps', ['-o', 'pgid=', '-p', String(pid)], {
+    const result = spawnSync(trustedReviewResolutionPsPath(env), ['-o', 'pgid=', '-p', String(pid)], {
         encoding: 'utf8',
         shell: false,
+        env,
     });
     if (result.error !== undefined) {
         throw result.error;

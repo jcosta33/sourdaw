@@ -11,7 +11,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 
@@ -971,6 +971,10 @@ describe('package scripts and gitignore', () => {
                 encoding: 'utf8',
                 env: { ...process.env, PATH: previousPath },
             }).trim();
+            const psPath = execFileSync('/usr/bin/which', ['ps'], {
+                encoding: 'utf8',
+                env: { ...process.env, PATH: previousPath },
+            }).trim();
             const snapshot = {
                 commit: 'a'.repeat(40),
                 sources: new Map([
@@ -984,6 +988,7 @@ describe('package scripts and gitignore', () => {
                     commonDir: '/repo/.git',
                     gitPath,
                     ghPath,
+                    psPath,
                 },
             };
 
@@ -999,6 +1004,54 @@ describe('package scripts and gitignore', () => {
             }
             process.env.PATH = previousPath;
             rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('binds split trusted git, gh, and ps paths and carries them into the snapshot env', () => {
+        const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-split-trusted-tools-'));
+        const primary = join(fixtureRoot, 'primary');
+        const gitBin = join(fixtureRoot, 'git-bin');
+        const ghBin = join(fixtureRoot, 'gh-bin');
+        const psBin = join(fixtureRoot, 'ps-bin');
+        const gitWrapper = join(gitBin, 'git');
+        const ghWrapper = join(ghBin, 'gh');
+        const psWrapper = join(psBin, 'ps');
+        const realGit = execFileSync('/usr/bin/which', ['git'], { encoding: 'utf8' }).trim();
+        const realGh = execFileSync('/usr/bin/which', ['gh'], { encoding: 'utf8' }).trim();
+        const realPs = execFileSync('/usr/bin/which', ['ps'], { encoding: 'utf8' }).trim();
+        try {
+            trustedPublishFixture(primary, 'primary');
+            mkdirSync(gitBin);
+            mkdirSync(ghBin);
+            mkdirSync(psBin);
+            writeFileSync(gitWrapper, `#!/bin/sh\nexec ${JSON.stringify(realGit)} "$@"\n`);
+            writeFileSync(ghWrapper, `#!/bin/sh\nexec ${JSON.stringify(realGh)} "$@"\n`);
+            writeFileSync(psWrapper, `#!/bin/sh\nexec ${JSON.stringify(realPs)} "$@"\n`);
+            chmodSync(gitWrapper, 0o700);
+            chmodSync(ghWrapper, 0o700);
+            chmodSync(psWrapper, 0o700);
+
+            const binding = resolveTrustedLauncherBinding(primary, {
+                PATH: [gitBin, ghBin, psBin].join(delimiter),
+            });
+
+            expect(binding.primaryRoot).toBe(realpathSync(primary));
+            expect(binding.gitPath).toBe(realpathSync(gitWrapper));
+            expect(binding.ghPath).toBe(realpathSync(ghWrapper));
+            expect(binding.psPath).toBe(realpathSync(psWrapper));
+
+            const env = trustedSnapshotEnv({
+                commit: 'a'.repeat(40),
+                sources: new Map(),
+                launcher: binding,
+            });
+
+            expect(env.SOURDAW_TRUSTED_GIT_PATH).toBe(binding.gitPath);
+            expect(env.SOURDAW_TRUSTED_GH_PATH).toBe(binding.ghPath);
+            expect(env.SOURDAW_TRUSTED_PS_PATH).toBe(binding.psPath);
+            expect(env.PATH).toBe([...new Set([gitBin, ghBin, psBin, dirname(process.execPath)])].join(delimiter));
+        } finally {
+            rmSync(fixtureRoot, { recursive: true, force: true });
         }
     });
 
@@ -1137,6 +1190,7 @@ describe('package scripts and gitignore', () => {
                                     commonDir: join(root, '.git'),
                                     gitPath,
                                     ghPath,
+                                    psPath: execFileSync('/usr/bin/which', ['ps'], { encoding: 'utf8' }).trim(),
                                 },
                             },
                             async (entryPath, runner, runnerArgs, currentSnapshot) => {
