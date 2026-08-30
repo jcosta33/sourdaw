@@ -424,6 +424,7 @@ const trackedLeaseSettlementCases = {
 function createInput(
     executionFlight: Input['executionFlight'],
     input: {
+        confirmation?: ReadyAdmission['confirmation'];
         trackedWorkLease?: NonNullable<ReadyAdmission['trackedWorkLease']>;
         recoveringPendingEffects?: boolean;
     } = {}
@@ -431,7 +432,7 @@ function createInput(
     return {
         executionAdmission: {
             status: 'ready',
-            confirmation,
+            confirmation: input.confirmation ?? confirmation,
             commandBatch,
             approvedBatchId: 'batch-1',
             trackedWorkLease: input.trackedWorkLease ?? null,
@@ -586,9 +587,21 @@ describe('settleConfirmedCommandExecution', () => {
 
     it('delegates idempotent replay to verified replay settlement', async () => {
         const batchResult = createIdempotentReplayBatchResult();
-        await settleConfirmedCommandExecution(createInput(createCompletedFlight(batchResult)));
+        const replayConfirmation = {
+            ...confirmation,
+            groupId: 'confirmation-group-2',
+        } satisfies PendingAppActionConfirmation;
+        await settleConfirmedCommandExecution(
+            createInput(createCompletedFlight(batchResult), { confirmation: replayConfirmation })
+        );
 
-        expect(mocks.settleReplay).toHaveBeenCalledWith(expect.objectContaining({ receipt: batchResult.receipt }));
+        expect(mocks.settleReplay).toHaveBeenCalledWith({
+            confirmation: replayConfirmation,
+            approvedBatchId: 'batch-1',
+            receipt: batchResult.receipt,
+            recoveredExternalEffects: false,
+            leaseSettlement: { accepted: true, warning: null },
+        });
     });
 
     it('cancels a user-aborted confirmed batch without invalidating the proposal', async () => {
