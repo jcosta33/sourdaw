@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { spawnSync } from 'node:child_process';
+import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -83,6 +85,11 @@ export type ReviewResolutionReceipt = {
     resolvedByType: string;
     clientMutationId: string;
 };
+type ReviewThreadMutationLockOwner = {
+    version: 1;
+    pid: number;
+    token: string;
+};
 export type ResolveReviewThreadPort = {
     inspect: (number: number, threadId: string) => ReviewThreadInspection;
     createPendingReview: (pullRequestId: string, commitOid: string, body: string) => ReviewEnvelopeReceipt;
@@ -92,11 +99,13 @@ export type ResolveReviewThreadPort = {
     resolve: (threadId: string) => ReviewResolutionReceipt;
     deleteReply: (replyId: string) => void;
     deletePendingReview: (reviewId: string) => void;
+    serializeReviewThreadMutation: <Value>(number: number, threadId: string, operation: () => Value) => Value;
     log: (message: string) => void;
 };
 export type ResolveReviewThreadArgs = { number?: number; threadId?: string; head?: string; help: boolean };
 const usage = 'usage: pnpm review:resolve <pr-number> --thread <graphql-thread-node-id> --head <40-hex-sha>';
 const RESOLUTION_REVIEW_SUMMARY = 'Resolved this review thread after applying the requested changes.';
+const REVIEW_THREAD_LOCK_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 type ResolutionReviewContext = {
     pullRequestId: string;
     threadId: string;
@@ -145,6 +154,17 @@ export function resolveReviewThread(
     if (!isAuthorBotNodeId(authorNodeId)) {
         fail(`authenticated author actor ${authorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
     }
+    return port.serializeReviewThreadMutation(number, threadId, () =>
+        resolveReviewThreadWithinMutation(number, threadId, expectedHead, port)
+    );
+}
+
+function resolveReviewThreadWithinMutation(
+    number: number,
+    threadId: string,
+    expectedHead: string,
+    port: ResolveReviewThreadPort
+): string {
     const before = port.inspect(number, threadId);
     assertExpectedHead(before.head, expectedHead);
     const context = resolutionReviewContext(before.pullRequestId, threadId, expectedHead);
@@ -230,16 +250,16 @@ export function resolveReviewThread(
                 }
             }
             if (pendingReview === undefined) {
-                const staleUnattachedPendingReview = findRetirableStaleUnattachedPendingReview(
-                    working.pendingReviews,
-                    working.thread!,
-                    context
-                );
-                if (staleUnattachedPendingReview !== undefined) {
+                if (findRetirableStaleUnattachedPendingReview(working.pendingReviews, working.thread!, context)) {
                     pendingReviewDeleteAttempted = true;
-                    port.deletePendingReview(staleUnattachedPendingReview.id);
-                    working = port.inspect(number, threadId);
-                    assertExpectedHeadAfterMutation(working.head, expectedHead);
+                    const retired = retireRetirableStaleUnattachedPendingReview(
+                        number,
+                        threadId,
+                        working,
+                        context,
+                        port
+                    );
+                    working = retired.working;
                     assertResolvableThread(working.thread, threadId);
                     assertManagedReplyMarkersReadable(working.thread!, context, ['PENDING', 'COMMENTED'], true);
                     pendingReview = convergePendingReviews(working.pendingReviews, context, port);
@@ -1092,6 +1112,26 @@ function hasBlockingAuthorPendingReview(
         (review) => isAuthorBotActor(review.authorNodeId, review.authorType) && !attachedReviewIds.has(review.id)
     );
 }
+function retireRetirableStaleUnattachedPendingReview(
+    number: number,
+    threadId: string,
+    working: ReviewThreadInspection,
+    context: ResolutionReviewContext,
+    port: ResolveReviewThreadPort
+): { working: ReviewThreadInspection; deleted: boolean } {
+    const stalePendingReview = findRetirableStaleUnattachedPendingReview(
+        working.pendingReviews,
+        working.thread!,
+        context
+    );
+    if (stalePendingReview === undefined) {
+        return { working, deleted: false };
+    }
+    port.deletePendingReview(stalePendingReview.id);
+    const refreshed = port.inspect(number, threadId);
+    assertExpectedHeadAfterMutation(refreshed.head, context.expectedHead);
+    return { working: refreshed, deleted: true };
+}
 function convergePendingReviews(
     pendingReviews: PullRequestReview[],
     context: ResolutionReviewContext,
@@ -1244,6 +1284,11 @@ function repairCompletedResolution(
     if (pendingReviewDeleted) {
         thread = refresh();
     }
+    const retired = retireRetirableStaleUnattachedPendingReview(number, context.threadId, working, context, port);
+    if (retired.deleted) {
+        working = retired.working;
+        thread = refresh();
+    }
     const pendingReplies = managedReplyMarkers(thread, context, ['PENDING'], false);
     const currentHeadCommentedReply = managedReplyMarkers(thread, context, ['COMMENTED'], false).find(
         (candidate) => candidate.currentHead
@@ -1260,6 +1305,9 @@ function repairCompletedResolution(
             port.deletePendingReview(reviewId);
         }
         thread = refresh();
+    }
+    if (hasBlockingAuthorPendingReview(working.pendingReviews, thread, context)) {
+        fail(`review thread ${context.threadId} has a non-reusable pending author review`);
     }
     const duplicateMarkers = managedReplyMarkers(thread, context, ['COMMENTED'], false);
     if (duplicateMarkers.length <= 1) {
@@ -1339,9 +1387,182 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Reso
         resolve: (id) => resolveThread(id, gh),
         deleteReply: (id) => deleteReply(id, gh),
         deletePendingReview: (id) => deletePendingReview(id, gh),
+        serializeReviewThreadMutation: (number, threadId, operation) =>
+            withReviewThreadMutationLock(primaryRoot, number, threadId, operation),
         log: (message) => console.log(message),
     };
 }
+
+function reviewThreadMutationLockScope(number: number, threadId: string): string {
+    if (!Number.isSafeInteger(number) || number <= 0) {
+        fail('review-thread mutation lock requires a positive pull-request number');
+    }
+    if (typeof threadId !== 'string' || threadId.trim() === '') {
+        fail('review-thread mutation lock requires a thread ID');
+    }
+    return `review thread ${threadId} on PR #${number}`;
+}
+
+function reviewThreadMutationLockRef(number: number, threadId: string): string {
+    const scope = reviewThreadMutationLockScope(number, threadId);
+    const digest = createHash('sha256').update(`${number}:${threadId}`).digest('hex');
+    if (digest.length !== 64) {
+        fail(`${scope} lock identity is malformed`);
+    }
+    return `refs/sourdaw/review-thread/pr-${number}/${digest}`;
+}
+
+function reviewThreadMutationLockGit(primaryRoot: string, args: string[], input?: string) {
+    return spawnSync('git', args, {
+        cwd: primaryRoot,
+        encoding: 'utf8',
+        shell: false,
+        ...(input === undefined ? {} : { input }),
+    });
+}
+
+function parseReviewThreadMutationLockOwner(
+    contents: string,
+    number: number,
+    threadId: string
+): ReviewThreadMutationLockOwner {
+    const scope = reviewThreadMutationLockScope(number, threadId);
+    let value: unknown;
+    try {
+        value = JSON.parse(contents) as unknown;
+    } catch {
+        fail(`${scope} lock ownership is malformed`);
+    }
+    if (
+        typeof value !== 'object' ||
+        value === null ||
+        Object.keys(value).length !== 3 ||
+        !('version' in value) ||
+        value.version !== 1 ||
+        !('pid' in value) ||
+        typeof value.pid !== 'number' ||
+        !Number.isSafeInteger(value.pid) ||
+        value.pid <= 0 ||
+        !('token' in value) ||
+        typeof value.token !== 'string' ||
+        !REVIEW_THREAD_LOCK_TOKEN_PATTERN.test(value.token)
+    ) {
+        fail(`${scope} lock ownership is malformed`);
+    }
+    return { version: 1, pid: value.pid, token: value.token };
+}
+
+function reviewThreadMutationLockObjectId(value: string, number: number, threadId: string): string {
+    const scope = reviewThreadMutationLockScope(number, threadId);
+    const oid = value.trim();
+    if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(oid)) {
+        fail(`${scope} lock object identity is malformed`);
+    }
+    return oid;
+}
+
+function writeReviewThreadMutationLockOwner(
+    primaryRoot: string,
+    owner: ReviewThreadMutationLockOwner,
+    number: number,
+    threadId: string
+): string {
+    const result = reviewThreadMutationLockGit(primaryRoot, ['hash-object', '-w', '--stdin'], JSON.stringify(owner));
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status !== 0) {
+        fail(`${reviewThreadMutationLockScope(number, threadId)} lock owner could not be stored`);
+    }
+    return reviewThreadMutationLockObjectId(result.stdout, number, threadId);
+}
+
+function readReviewThreadMutationLockOid(primaryRoot: string, ref: string, number: number, threadId: string) {
+    const result = reviewThreadMutationLockGit(primaryRoot, ['show-ref', '--verify', '--hash', ref]);
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status === 1) {
+        return undefined;
+    }
+    if (result.status !== 0) {
+        fail(`${reviewThreadMutationLockScope(number, threadId)} lock ownership cannot be verified`);
+    }
+    return reviewThreadMutationLockObjectId(result.stdout, number, threadId);
+}
+
+function readReviewThreadMutationLockOwner(
+    primaryRoot: string,
+    oid: string,
+    number: number,
+    threadId: string
+): ReviewThreadMutationLockOwner {
+    const result = reviewThreadMutationLockGit(primaryRoot, ['cat-file', 'blob', oid]);
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status !== 0) {
+        fail(`${reviewThreadMutationLockScope(number, threadId)} lock ownership cannot be verified`);
+    }
+    return parseReviewThreadMutationLockOwner(result.stdout, number, threadId);
+}
+
+function updateReviewThreadMutationLockRef(primaryRoot: string, args: string[]): boolean {
+    const result = reviewThreadMutationLockGit(primaryRoot, ['update-ref', ...args]);
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    return result.status === 0;
+}
+
+function acquireReviewThreadMutationLock(
+    primaryRoot: string,
+    number: number,
+    threadId: string
+): { ref: string; oid: string } {
+    const ref = reviewThreadMutationLockRef(number, threadId);
+    const owner: ReviewThreadMutationLockOwner = { version: 1, pid: process.pid, token: randomUUID() };
+    const oid = writeReviewThreadMutationLockOwner(primaryRoot, owner, number, threadId);
+    if (updateReviewThreadMutationLockRef(primaryRoot, [ref, oid, '0'.repeat(oid.length)])) {
+        return { ref, oid };
+    }
+
+    const previousOid = readReviewThreadMutationLockOid(primaryRoot, ref, number, threadId);
+    if (previousOid === undefined) {
+        return fail(`${reviewThreadMutationLockScope(number, threadId)} lock could not be acquired`);
+    }
+    const previousOwner = readReviewThreadMutationLockOwner(primaryRoot, previousOid, number, threadId);
+    return fail(
+        `${reviewThreadMutationLockScope(number, threadId)} is already being resolved by process ${previousOwner.pid}`
+    );
+}
+
+function releaseReviewThreadMutationLock(
+    primaryRoot: string,
+    ref: string,
+    oid: string,
+    number: number,
+    threadId: string
+): void {
+    if (!updateReviewThreadMutationLockRef(primaryRoot, ['-d', ref, oid])) {
+        fail(`${reviewThreadMutationLockScope(number, threadId)} lock ownership changed before release`);
+    }
+}
+
+export function withReviewThreadMutationLock<Value>(
+    primaryRoot: string,
+    number: number,
+    threadId: string,
+    operation: () => Value
+): Value {
+    const lock = acquireReviewThreadMutationLock(primaryRoot, number, threadId);
+    try {
+        return operation();
+    } finally {
+        releaseReviewThreadMutationLock(primaryRoot, lock.ref, lock.oid, number, threadId);
+    }
+}
+
 type Gh = (args: string[]) => string;
 function graphql(gh: Gh, query: string, fields: string[], label: string): unknown {
     return parseGraphqlResponse(gh(['api', 'graphql', '-f', `query=${query}`, ...fields]), label);

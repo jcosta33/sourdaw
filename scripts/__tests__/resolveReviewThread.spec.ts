@@ -1,4 +1,6 @@
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -11,6 +13,7 @@ import {
     deleteReply,
     deletePendingReview,
     submitReview,
+    withReviewThreadMutationLock,
     type ResolveReviewThreadPort,
 } from '../resolveReviewThread.ts';
 
@@ -545,6 +548,7 @@ function fakePort(input: Input = {}) {
             }
             deleteReviewById(id);
         },
+        serializeReviewThreadMutation: (_number, _threadId, operation) => operation(),
         log: (message) => calls.push(`log:${message}`),
     };
     return {
@@ -613,7 +617,40 @@ function expectCanonicalResolutionReview(
     });
 }
 
+function createTemporaryGitRepository(): string {
+    const directory = mkdtempSync(join(tmpdir(), 'resolve-review-thread-lock-'));
+    const init = spawnSync('git', ['init', '--quiet'], {
+        cwd: directory,
+        encoding: 'utf8',
+        shell: false,
+    });
+    if (init.error !== undefined) {
+        throw init.error;
+    }
+    if (init.status !== 0) {
+        throw new Error(init.stderr || 'git init failed');
+    }
+    return directory;
+}
+
 describe('review thread resolution', () => {
+    it('serializes one review-thread mutation per PR/thread and releases the lock after failure', () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            expect(() =>
+                withReviewThreadMutationLock(repository, 42, threadId, () => {
+                    expect(() => withReviewThreadMutationLock(repository, 42, threadId, () => undefined)).toThrow(
+                        /already being resolved by process/i
+                    );
+                    throw new Error('boom');
+                })
+            ).toThrow(/boom/);
+            expect(withReviewThreadMutationLock(repository, 42, threadId, () => 'ok')).toBe('ok');
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it('uses supported GraphQL review-envelope, reply, and deletion input fields', () => {
         const source = readFileSync(join(import.meta.dirname, '../resolveReviewThread.ts'), 'utf8');
         expect(source).toContain('pullRequestReviewThreadId:$threadId');
@@ -2331,6 +2368,61 @@ describe('review thread resolution', () => {
         expect(calls.filter((call) => call.startsWith('submitReview:'))).toEqual([`submitReview:${reviewId}`]);
         expect(state().reviews).toEqual([
             expect.objectContaining({ id: reviewId, state: 'COMMENTED', commitOid: head }),
+        ]);
+    });
+    it('retires a sole stale unattached pending author review on a completed resolution before returning success', () => {
+        const { port, calls, authorNodeId, state } = fakePort({
+            heads: [movedHead, movedHead, movedHead],
+            isResolved: true,
+            initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+            initialResolvedByType: 'User',
+            existingReplyCount: 1,
+            existingReplyReviewBody: pendingReviewBody(movedHead),
+            existingReplyReviewCommitOid: movedHead,
+            existingPendingReviewCount: 1,
+            existingPendingReviewIds: ['PRR_stale_pending'],
+            existingPendingReviewCommitOid: head,
+        });
+        expect(resolveReviewThread(42, threadId, movedHead, authorNodeId, port)).toBe(
+            `review-thread-resolved:42:${threadId}`
+        );
+        expect(calls.filter((call) => call.startsWith('deleteReview:'))).toEqual(['deleteReview:PRR_stale_pending']);
+        expect(state().reviews).toEqual([
+            expect.objectContaining({
+                id: reviewId,
+                state: 'COMMENTED',
+                commitOid: movedHead,
+                body: resolutionReviewSummary(pullRequestId, threadId, movedHead),
+            }),
+        ]);
+        expect(state().comments.filter((comment) => comment.body === 'Done')).toEqual([
+            expect.objectContaining({ id: replyId, reviewId }),
+        ]);
+    });
+    it('fails closed if the head moves after retiring a stale unattached pending author review on a completed resolution', () => {
+        const newerHead = 'c'.repeat(40);
+        const { port, calls, authorNodeId, state } = fakePort({
+            heads: [movedHead, newerHead],
+            isResolved: true,
+            initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+            initialResolvedByType: 'User',
+            existingReplyCount: 1,
+            existingReplyReviewBody: pendingReviewBody(movedHead),
+            existingReplyReviewCommitOid: movedHead,
+            existingPendingReviewCount: 1,
+            existingPendingReviewIds: ['PRR_stale_pending'],
+            existingPendingReviewCommitOid: head,
+        });
+        expect(() => resolveReviewThread(42, threadId, movedHead, authorNodeId, port)).toThrow(/head moved/i);
+        expect(calls.filter((call) => call.startsWith('deleteReview:'))).toEqual(['deleteReview:PRR_stale_pending']);
+        expect(calls.filter((call) => call.startsWith('log:'))).toEqual([]);
+        expect(state().reviews).toEqual([
+            expect.objectContaining({
+                id: reviewId,
+                state: 'COMMENTED',
+                commitOid: movedHead,
+                body: resolutionReviewSummary(pullRequestId, threadId, movedHead),
+            }),
         ]);
     });
     it('submits and preserves a sole stale-head pending Done marker on an already resolved thread', () => {
