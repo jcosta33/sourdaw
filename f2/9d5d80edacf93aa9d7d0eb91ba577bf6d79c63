@@ -1,0 +1,35 @@
+electron/__tests__/pluginGui.spec.ts
+  s_ae074277795b45::t_fad149e81e885a 523-552
+electron/pluginGui.ts
+  s_ae074277795b45::t_b480e969d0aab8 826,844
+  s_ae074277795b45::t_ab8568ff8f0e16 829-831
+electron/main.ts
+  s_ae074277795b45::t_b480e969d0aab8 179
+electron/__tests__/shutdown.spec.ts
+  s_ae074277795b45::t_fad149e81e885a 163-171
+electron/__tests__/rendererSessionLifecycle.spec.ts
+  s_ae074277795b45::t_047245e0620f7b 4,33-45
+  s_ae074277795b45::t_3eaa12f78be415 46-48
+electron/windowCloseCoordinator.ts
+  s_ae074277795b45::t_b480e969d0aab8 23-24,28
+  s_ae074277795b45::t_48c0331c77f1d9 46
+electron/__tests__/windowCloseCoordinator.spec.ts
+  s_ae074277795b45::t_fad149e81e885a 251-262
+  s_ae074277795b45::t_902394099fc6da 263-266
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "f29d5d80edacf93aa9d7d0eb91ba577bf6d79c63",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
