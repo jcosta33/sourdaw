@@ -2606,9 +2606,10 @@ export function shellPort(
                 )
             ),
         readDeliveryReceiptAuthority: (number) => readDeliveryReceiptAuthority(primaryRoot, number),
-        writeDeliveryReceiptAuthority: (number, authority) =>
-            writeDeliveryReceiptAuthority(primaryRoot, number, authority),
-        clearDeliveryReceiptAuthority: (number) => clearDeliveryReceiptAuthority(primaryRoot, number),
+        writeDeliveryReceiptAuthority: (number, authority, expectedCurrent) =>
+            writeDeliveryReceiptAuthority(primaryRoot, number, authority, expectedCurrent),
+        clearDeliveryReceiptAuthority: (number, expectedCurrent) =>
+            clearDeliveryReceiptAuthority(primaryRoot, number, expectedCurrent),
         log: (message) => console.log(message),
     };
 }

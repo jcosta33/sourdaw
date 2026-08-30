@@ -7025,6 +7025,113 @@ describe('delivery shell boundary', () => {
         }
     });
 
+    it('fails shellPort adapter writes when expectedCurrent mismatches the newer stored authority', () => {
+        const closes = relationshipBody('Closes #2372');
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const storedAuthority: PersistedDeliveryReceiptAuthority = {
+            phase: 'prepared',
+            receiptId: 'IC_current',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: {
+                headRefOid: 'head',
+                headRefName: 'feat/gate',
+                baseRefName: 'main',
+                bodySha256: createHash('sha256').update(closes).digest('hex'),
+                trackerTarget: 2372,
+            },
+        };
+        const staleExpectedAuthority: PersistedDeliveryReceiptAuthority = {
+            phase: 'prepared',
+            receiptId: 'IC_stale',
+            receiptBody: visibleDeliveryReceiptBody(42, 'older-head', closes, 2372, 'successful'),
+            postMergeValidation: {
+                headRefOid: 'older-head',
+                headRefName: 'feat/older',
+                baseRefName: 'main',
+                bodySha256: createHash('sha256').update(closes).digest('hex'),
+                trackerTarget: 2372,
+            },
+        };
+        const nextAuthority: PersistedDeliveryReceiptAuthority = {
+            phase: 'released',
+            receiptId: 'IC_current',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+        };
+        const firstPort = shellPort(
+            'jcosta33/sourdaw',
+            { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+            { primaryRoot }
+        );
+        const secondPort = shellPort(
+            'jcosta33/sourdaw',
+            { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+            { primaryRoot }
+        );
+
+        try {
+            firstPort.writeDeliveryReceiptAuthority(42, storedAuthority);
+
+            expect(() => secondPort.writeDeliveryReceiptAuthority(42, nextAuthority, staleExpectedAuthority)).toThrow(
+                /delivery receipt authority could not be stored/i
+            );
+            expect(secondPort.readDeliveryReceiptAuthority(42)).toEqual(storedAuthority);
+        } finally {
+            rmSync(primaryRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('fails shellPort adapter clears when expectedCurrent mismatches the newer stored authority', () => {
+        const closes = relationshipBody('Closes #2372');
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const storedAuthority: PersistedDeliveryReceiptAuthority = {
+            phase: 'prepared',
+            receiptId: 'IC_current',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: {
+                headRefOid: 'head',
+                headRefName: 'feat/gate',
+                baseRefName: 'main',
+                bodySha256: createHash('sha256').update(closes).digest('hex'),
+                trackerTarget: 2372,
+            },
+        };
+        const staleExpectedAuthority: PersistedDeliveryReceiptAuthority = {
+            phase: 'prepared',
+            receiptId: 'IC_stale',
+            receiptBody: visibleDeliveryReceiptBody(42, 'older-head', closes, 2372, 'successful'),
+            postMergeValidation: {
+                headRefOid: 'older-head',
+                headRefName: 'feat/older',
+                baseRefName: 'main',
+                bodySha256: createHash('sha256').update(closes).digest('hex'),
+                trackerTarget: 2372,
+            },
+        };
+        const firstPort = shellPort(
+            'jcosta33/sourdaw',
+            { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+            { primaryRoot }
+        );
+        const secondPort = shellPort(
+            'jcosta33/sourdaw',
+            { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+            { primaryRoot }
+        );
+
+        try {
+            firstPort.writeDeliveryReceiptAuthority(42, storedAuthority);
+
+            expect(() => secondPort.clearDeliveryReceiptAuthority(42, staleExpectedAuthority)).toThrow(
+                /delivery receipt authority could not be cleared/i
+            );
+            expect(secondPort.readDeliveryReceiptAuthority(42)).toEqual(storedAuthority);
+        } finally {
+            rmSync(primaryRoot, { recursive: true, force: true });
+        }
+    });
+
     it('fails before merge when a shellPort authority ref changes immediately after the prepared-authority CAS succeeds', () => {
         const closes = relationshipBody('Closes #2372');
         const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
