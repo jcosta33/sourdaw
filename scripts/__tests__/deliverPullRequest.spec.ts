@@ -6459,7 +6459,9 @@ describe('delivery shell boundary', () => {
                             'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
                         )
                     ) {
-                        return shellDeliveryReceiptProofResponse(['IC_same_timestamp']);
+                        return shellDeliveryReceiptProofResponse(['IC_same_timestamp'], {
+                            editedCommentIds: ['IC_same_timestamp'],
+                        });
                     }
                     if (joined.includes('pulls?state=open')) {
                         return JSON.stringify([[]]);
@@ -6487,17 +6489,25 @@ describe('delivery shell boundary', () => {
     it('fails merged shellPort recovery when GraphQL marks a same-timestamp author receipt as edited', () => {
         const closes = relationshipBody('Closes #2372');
         const effects: string[] = [];
+        const captures: string[] = [];
         const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
         execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const authorityOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+            input: JSON.stringify({ version: 1, receiptId: 'IC_same_timestamp' }),
+        }).trim();
+        execFileSync('git', ['update-ref', 'refs/sourdaw/delivery-receipt/pr-42', authorityOid], {
+            cwd: primaryRoot,
+        });
         const port = shellPort(
             'jcosta33/sourdaw',
             {
                 capture: (_command, args) => {
                     const joined = args.join(' ');
+                    captures.push(joined);
                     if (joined.includes('pr view')) {
-                        return JSON.stringify(
-                            shellPullRequest(pullRequest({ state: 'MERGED', body: relationshipBody('None.') }))
-                        );
+                        return JSON.stringify(shellPullRequest(pullRequest({ state: 'MERGED', body: closes })));
                     }
                     if (joined.includes('mergedBy{__typename')) {
                         return shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID });
@@ -6543,6 +6553,14 @@ describe('delivery shell boundary', () => {
         } finally {
             rmSync(primaryRoot, { recursive: true, force: true });
         }
+        expect(captures).toEqual([
+            expect.stringContaining('pr view 42'),
+            expect.stringContaining('mergedBy{__typename'),
+            'api --paginate --slurp repos/jcosta33/sourdaw/issues/42/comments?per_page=100',
+            expect.stringContaining(
+                'comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}'
+            ),
+        ]);
         expect(effects).toEqual([]);
     });
 
