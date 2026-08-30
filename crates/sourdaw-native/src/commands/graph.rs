@@ -5213,13 +5213,13 @@ mod tests {
     fn map_graph_batch_replays_a_prior_past_the_command_ceiling() {
         let state = AppState::default();
         let transport = json!({ "kind": "set-transport", "playing": false, "positionSeconds": 0 });
-        let prior: Vec<Value> = (0..=MAX_BATCH_COMMANDS)
-            .map(|_| transport.clone())
-            .collect();
+        let strip_id = "t-remainder";
+        let mut prior: Vec<Value> = (0..MAX_BATCH_COMMANDS).map(|_| transport.clone()).collect();
+        prior.push(track_strip(strip_id));
 
         let result = block_on_test(map_graph_batch(
             json!(prior),
-            json!({ "schemaVersion": 1, "commands": [transport] }),
+            json!({ "schemaVersion": 1, "commands": [fader_step(strip_id)] }),
             48_000.0,
             None,
             &state,
