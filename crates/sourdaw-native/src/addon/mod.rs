@@ -477,11 +477,13 @@ impl SourdawNative {
         instance_id: String,
         sample_rate: f64,
     ) -> Result<Value> {
+        let windows = self.window_host();
         json(reason(
             commands::plugins::load_plugin(
                 PluginId(plugin_id),
                 PluginInstanceId(instance_id),
                 sample_rate,
+                windows.as_ref(),
                 &self.singletons.app_state,
             )
             .await,
