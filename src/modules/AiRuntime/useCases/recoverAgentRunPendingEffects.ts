@@ -39,7 +39,11 @@ function hasExactPendingReceiptBinding(
     if (continuation.receiptIdentity !== expectedPendingIdentity) {
         return false;
     }
-    return receipt.pendingEffects.length === 0 || hasExactPendingEffects(continuation.effects, receipt.pendingEffects);
+    return (
+        receipt.pendingEffects.length === 0 ||
+        hasExactPendingEffects(continuation.effects, receipt.pendingEffects) ||
+        hasIntentionalManualizedRuntimeGraphBinding(continuation, receipt.pendingEffects)
+    );
 }
 
 function hasExactPendingEffects(
@@ -50,17 +54,58 @@ function hasExactPendingEffects(
         continuationEffects.length === receiptEffects.length &&
         continuationEffects.every((effect, index) => {
             const receiptEffect = receiptEffects[index];
-            return (
-                receiptEffect !== undefined &&
-                effect.commandId === receiptEffect.commandId &&
-                effect.kind === receiptEffect.kind &&
-                effect.operation === receiptEffect.operation &&
-                effect.reason === receiptEffect.reason &&
-                effect.remediation === receiptEffect.remediation &&
-                effect.state === receiptEffect.state
-            );
+            return receiptEffect !== undefined && hasExactPendingEffect(effect, receiptEffect);
         })
     );
+}
+
+function hasExactPendingEffect(effect: AgentRunPendingEffect, receiptEffect: AgentRunPendingEffect): boolean {
+    return (
+        effect.commandId === receiptEffect.commandId &&
+        effect.kind === receiptEffect.kind &&
+        effect.operation === receiptEffect.operation &&
+        effect.reason === receiptEffect.reason &&
+        effect.remediation === receiptEffect.remediation &&
+        effect.state === receiptEffect.state
+    );
+}
+
+function hasIntentionalManualizedRuntimeGraphBinding(
+    continuation: NonNullable<ReturnType<typeof agentRunLifecycle.getPendingEffectRecovery>>,
+    receiptEffects: readonly AgentRunPendingEffect[]
+): boolean {
+    if (
+        continuation.checkpoint !== 'durable' ||
+        continuation.recovery !== 'manual-repair' ||
+        continuation.lastError !== MISSING_EXACT_CHECKPOINT_RECOVERY_REASON ||
+        continuation.effects.length !== receiptEffects.length
+    ) {
+        return false;
+    }
+    let hasManualizedRuntimeGraphEffect = false;
+    for (const [index, effect] of continuation.effects.entries()) {
+        const receiptEffect = receiptEffects[index];
+        if (receiptEffect === undefined) {
+            return false;
+        }
+        if (hasExactPendingEffect(effect, receiptEffect)) {
+            continue;
+        }
+        const isManualizedRuntimeGraphEffect =
+            effect.commandId === receiptEffect.commandId &&
+            effect.kind === 'runtime-graph' &&
+            receiptEffect.kind === 'runtime-graph' &&
+            effect.operation === receiptEffect.operation &&
+            effect.reason === receiptEffect.reason &&
+            effect.remediation === 'repair' &&
+            receiptEffect.remediation === 'retry' &&
+            effect.state === receiptEffect.state;
+        if (!isManualizedRuntimeGraphEffect) {
+            return false;
+        }
+        hasManualizedRuntimeGraphEffect = true;
+    }
+    return hasManualizedRuntimeGraphEffect;
 }
 
 /** Resumes only persisted, receipt-backed effects; it never admits or replays project mutations. */

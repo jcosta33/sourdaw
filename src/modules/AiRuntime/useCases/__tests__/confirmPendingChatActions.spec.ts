@@ -1230,9 +1230,9 @@ describe('confirmPendingChatActions transaction admission', () => {
             });
             expect(chatStore.value?.messages[0]).toMatchObject({
                 pendingActionConfirmationStatus: 'failed',
-                pendingActionFollowUpStatus: undefined,
                 content: expect.stringContaining('Inspect the current project state before further automation.'),
             });
+            expect(chatStore.value?.messages[0]?.pendingActionFollowUpStatus).toBeUndefined();
             expect(chatStore.value?.messages[0]?.content).not.toContain('manual-repair');
             expect(retain).toHaveBeenCalledOnce();
             expect(release).not.toHaveBeenCalled();
@@ -1398,9 +1398,9 @@ describe('confirmPendingChatActions transaction admission', () => {
         });
         expect(chatStore.value?.messages[0]).toMatchObject({
             pendingActionConfirmationStatus: 'failed',
-            pendingActionFollowUpStatus: undefined,
             content: expect.stringContaining('Do not replay these actions'),
         });
+        expect(chatStore.value?.messages[0]?.pendingActionFollowUpStatus).toBeUndefined();
         expect(retain).toHaveBeenCalledOnce();
         expect(release).not.toHaveBeenCalled();
     });
@@ -3124,16 +3124,16 @@ describe('confirmPendingChatActions transaction admission', () => {
                         expect.objectContaining({
                             commandId: envelope.commandId,
                             kind: 'runtime-graph',
-                            remediation: 'retry',
+                            remediation: 'repair',
                         }),
                     ],
-                    recovery: 'reconcile-batch',
+                    recovery: 'manual-repair',
                     serializedBatch: commandBatch.serialized,
                 },
             ],
             saga: {
                 steps: expect.arrayContaining([
-                    expect.objectContaining({ owner: 'external-effect', state: 'external-pending' }),
+                    expect.objectContaining({ owner: 'external-effect', state: 'manual-repair' }),
                 ]),
             },
         });
@@ -3171,13 +3171,13 @@ describe('confirmPendingChatActions transaction admission', () => {
             pendingEffectContinuations: [
                 {
                     batchId: 'group-runtime-effect',
-                    recovery: 'reconcile-batch',
+                    recovery: 'manual-repair',
                     serializedBatch: commandBatch.serialized,
                 },
             ],
             saga: {
                 steps: expect.arrayContaining([
-                    expect.objectContaining({ owner: 'external-effect', state: 'external-pending' }),
+                    expect.objectContaining({ owner: 'external-effect', state: 'manual-repair' }),
                 ]),
             },
         });
@@ -3209,7 +3209,7 @@ describe('confirmPendingChatActions transaction admission', () => {
             ],
             saga: {
                 steps: expect.arrayContaining([
-                    expect.objectContaining({ owner: 'external-effect', state: 'external-pending' }),
+                    expect.objectContaining({ owner: 'external-effect', state: 'manual-repair' }),
                 ]),
             },
         });
@@ -3681,6 +3681,8 @@ describe('confirmPendingChatActions transaction admission', () => {
         const batchId = 'group-mixed-render-manual-repair';
         configureAiWorkflowCommandPreflightFixture('project-mixed-render-manual-repair');
         configureCommandBatchIdempotency({ canExecute: () => true });
+        registerHandlerMap(getArrangementHandlers());
+        registerHandlerMap(getAudioRenderingHandlers());
         const addDeviceAction = {
             type: 'addDevice',
             payload: {
@@ -3894,6 +3896,7 @@ describe('confirmPendingChatActions transaction admission', () => {
             type: 'renderProjectSections',
             payload: { sectionIds: [verseJob.sectionId, chorusJob.sectionId], jobs: [verseJob, chorusJob] },
         } satisfies RenderSectionsAction;
+        createCrdtDoc('ownerless-render-writer');
         let ownerlessMutationInjected = false;
         runtimeMocks.renderOffline.mockReset();
         runtimeMocks.renderOffline.mockImplementation((options: { startBeat?: number }) => {
@@ -3979,6 +3982,13 @@ describe('confirmPendingChatActions transaction admission', () => {
             status: 'failed',
             followUpProjectRevision: null,
             followUpStatus: 'failed',
+        });
+        expect(chatStore.value?.messages[0]).toMatchObject({
+            pendingActionConfirmationStatus: 'failed',
+            pendingActionFollowUpStatus: 'failed',
+            content: expect.stringContaining(
+                'Do not replay these actions; use the retained pending-effect recovery guidance.'
+            ),
         });
         expect(
             selectAgentRunPendingEffectRecoveries(readAgentRunState()).find(

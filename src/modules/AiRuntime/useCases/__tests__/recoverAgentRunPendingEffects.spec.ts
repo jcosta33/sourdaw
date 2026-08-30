@@ -77,6 +77,7 @@ describe('recoverAgentRunPendingEffects', () => {
             runId: 'run-render-recovery',
             batchId: 'batch-render-recovery',
             reason: 'Generic pending-effect recovery cannot execute receipt-bound section renders. The original confirmation is required and may be unavailable after reload.',
+            preserveEffects: false,
         });
         expect(mocks.getReceipt).toHaveBeenCalledOnce();
         expect(mocks.executeBatch).not.toHaveBeenCalled();
@@ -132,6 +133,80 @@ describe('recoverAgentRunPendingEffects', () => {
             reason: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
             preserveEffects: true,
         });
+    });
+
+    it('admits the exact manualized durable runtime-graph binding without executing recovery', async () => {
+        const recovery = renderRecovery();
+        const receiptEffect = {
+            ...recovery.effects[0],
+            kind: 'runtime-graph' as const,
+            remediation: 'retry' as const,
+        };
+        mocks.getRecovery.mockReturnValue({
+            ...recovery,
+            effects: [{ ...receiptEffect, remediation: 'repair' as const }],
+            lastError: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+            recovery: 'manual-repair',
+        });
+        mocks.getReceipt.mockResolvedValue({
+            schemaVersion: 2,
+            runId: 'run-render-recovery',
+            batchId: 'batch-render-recovery',
+            outcome: 'partially-committed',
+            pendingEffects: [receiptEffect],
+        });
+
+        await expect(
+            recoverAgentRunPendingEffects({ runId: 'run-render-recovery', batchId: 'batch-render-recovery' })
+        ).resolves.toEqual({
+            status: 'failed',
+            reason: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+        });
+
+        expect(mocks.requireManualRepair).toHaveBeenCalledWith({
+            runId: 'run-render-recovery',
+            batchId: 'batch-render-recovery',
+            reason: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+            preserveEffects: true,
+        });
+        expect(mocks.executeBatch).not.toHaveBeenCalled();
+    });
+
+    it('rejects a tampered manualized runtime-graph binding', async () => {
+        const recovery = renderRecovery();
+        const receiptEffect = {
+            ...recovery.effects[0],
+            kind: 'runtime-graph' as const,
+            remediation: 'retry' as const,
+        };
+        mocks.getRecovery.mockReturnValue({
+            ...recovery,
+            effects: [{ ...receiptEffect, reason: 'tampered reason', remediation: 'repair' as const }],
+            lastError: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+            recovery: 'manual-repair',
+        });
+        mocks.getReceipt.mockResolvedValue({
+            schemaVersion: 2,
+            runId: 'run-render-recovery',
+            batchId: 'batch-render-recovery',
+            outcome: 'partially-committed',
+            pendingEffects: [receiptEffect],
+        });
+
+        await expect(
+            recoverAgentRunPendingEffects({ runId: 'run-render-recovery', batchId: 'batch-render-recovery' })
+        ).resolves.toEqual({
+            status: 'failed',
+            reason: 'The durable project checkpoint does not match the retained pending-effect proof.',
+        });
+
+        expect(mocks.failRecovery).toHaveBeenCalledWith({
+            runId: 'run-render-recovery',
+            batchId: 'batch-render-recovery',
+            reason: 'The durable project checkpoint does not match the retained pending-effect proof.',
+        });
+        expect(mocks.requireManualRepair).not.toHaveBeenCalled();
+        expect(mocks.executeBatch).not.toHaveBeenCalled();
     });
 
     it('remains non-executable when manual-repair persistence fails', async () => {

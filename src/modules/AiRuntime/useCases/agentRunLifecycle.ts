@@ -799,7 +799,11 @@ function applyAgentRunReceiptSagaProjection(
         );
     }
     const hasUnsettledExternalSagaStep = sagaSteps.some(
-        (step) => step.state === 'pending' || step.state === 'external-pending' || step.state === 'uncompensated'
+        (step) =>
+            step.state === 'pending' ||
+            step.state === 'external-pending' ||
+            step.state === 'uncompensated' ||
+            step.state === 'manual-repair'
     );
     let phase = reduceAgentRunTransition(run.phase, {
         type: 'work-committed',
