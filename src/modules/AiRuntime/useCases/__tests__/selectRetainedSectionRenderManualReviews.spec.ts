@@ -5,6 +5,7 @@ import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stor
 import {
     compileVersionedCommandBatchEnvelope,
     migrateLegacyAppActionToVersionedCommandEnvelope,
+    parseVersionedCommandBatchEnvelope,
     serializeVersionedCommandEnvelope,
 } from '#/modules/Command/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
@@ -14,10 +15,16 @@ import { type AgentRunPendingEffect, type AgentRunState } from '../../models/Age
 import { selectRetainedSectionRenderManualReviews } from '../selectRetainedSectionRenderManualReviews';
 
 const artifacts = vi.hoisted(() => ({ getExact: vi.fn() }));
+const commandParsing = vi.hoisted(() => ({ parse: vi.fn() }));
 vi.mock('#/modules/AudioRendering/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioRendering/useCases')>()),
     getExactAgentSectionRenderArtifact: artifacts.getExact,
 }));
+vi.mock('#/modules/Command/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Command/useCases')>();
+    commandParsing.parse.mockImplementation(actual.parseVersionedCommandBatchEnvelope);
+    return { ...actual, parseVersionedCommandBatchEnvelope: commandParsing.parse };
+});
 
 const verse: RenderProjectSectionJobSnapshot = {
     jobId: 'job-verse',
@@ -147,6 +154,25 @@ function artifactFor(job: RenderProjectSectionJobSnapshot) {
     };
 }
 
+function getFirstParsedJobs(parsed: ReturnType<typeof parseVersionedCommandBatchEnvelope>): unknown[] {
+    if (parsed.status === 'invalid') {
+        throw new Error(parsed.reason);
+    }
+    const jobs = parsed.envelope.commands[0]?.arguments.jobs;
+    if (!Array.isArray(jobs) || jobs.length === 0) {
+        throw new Error('Expected a parsed render job table.');
+    }
+    return jobs;
+}
+
+function getFirstParsedJob(parsed: ReturnType<typeof parseVersionedCommandBatchEnvelope>): Record<string, unknown> {
+    const job = getFirstParsedJobs(parsed)[0];
+    if (typeof job !== 'object' || job === null || Array.isArray(job)) {
+        throw new Error('Expected a parsed render job record.');
+    }
+    return job;
+}
+
 describe('selectRetainedSectionRenderManualReviews', () => {
     beforeEach(() => {
         clearHandlerRegistry();
@@ -154,6 +180,7 @@ describe('selectRetainedSectionRenderManualReviews', () => {
         registerHandlerMap(getTransportHandlers());
         artifacts.getExact.mockReset();
         artifacts.getExact.mockImplementation(({ job }) => artifactFor(job));
+        commandParsing.parse.mockClear();
     });
 
     it('projects one exact aggregate containing every job from every render command', () => {
@@ -203,6 +230,41 @@ describe('selectRetainedSectionRenderManualReviews', () => {
     it('rejects a sole run receipt whose identity differs from the exact durable binding', () => {
         const { state } = createFixture();
         state.runs[0]!.receipts[0]!.receiptIdentity = '1:run-review:batch-review:committed';
+
+        expect(selectRetainedSectionRenderManualReviews(state)).toEqual([]);
+        expect(artifacts.getExact).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        [
+            'matching receipts',
+            (state: AgentRunState) => {
+                state.runs[0]!.receipts.push(structuredClone(state.runs[0]!.receipts[0]!));
+            },
+        ],
+        [
+            'matching recovery ledger entries',
+            (state: AgentRunState) => {
+                state.pendingEffectRecoveryLedger!.push(structuredClone(state.pendingEffectRecoveryLedger![0]!));
+            },
+        ],
+        [
+            'run IDs',
+            (state: AgentRunState) => {
+                state.runs.push(structuredClone(state.runs[0]!));
+            },
+        ],
+        [
+            'continuation batch IDs',
+            (state: AgentRunState) => {
+                state.runs[0]!.pendingEffectContinuations.push(
+                    structuredClone(state.runs[0]!.pendingEffectContinuations[0]!)
+                );
+            },
+        ],
+    ])('rejects duplicate %s before artifact lookup', (_label, duplicate) => {
+        const { state } = createFixture();
+        duplicate(state);
 
         expect(selectRetainedSectionRenderManualReviews(state)).toEqual([]);
         expect(artifacts.getExact).not.toHaveBeenCalled();
@@ -274,6 +336,45 @@ describe('selectRetainedSectionRenderManualReviews', () => {
         ],
     ])('rejects duplicate job IDs %s before artifact lookup', (_label, createCommands) => {
         const { state } = createFixture({ commands: createCommands() });
+
+        expect(selectRetainedSectionRenderManualReviews(state)).toEqual([]);
+        expect(artifacts.getExact).not.toHaveBeenCalled();
+    });
+
+    it('rejects a non-record persisted render job before artifact lookup', () => {
+        const { commandBatch, state } = createFixture();
+        const parsed = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+        getFirstParsedJobs(parsed)[0] = null;
+        commandParsing.parse.mockReturnValueOnce(parsed);
+
+        expect(selectRetainedSectionRenderManualReviews(state)).toEqual([]);
+        expect(artifacts.getExact).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['jobId type', (job: Record<string, unknown>) => (job.jobId = 1)],
+        ['jobId empty', (job: Record<string, unknown>) => (job.jobId = '')],
+        ['sectionId type', (job: Record<string, unknown>) => (job.sectionId = 1)],
+        ['sectionId empty', (job: Record<string, unknown>) => (job.sectionId = '')],
+        ['sectionName type', (job: Record<string, unknown>) => (job.sectionName = 1)],
+        ['sectionName empty', (job: Record<string, unknown>) => (job.sectionName = '')],
+        ['startBeat type', (job: Record<string, unknown>) => (job.startBeat = '0')],
+        ['startBeat nonfinite', (job: Record<string, unknown>) => (job.startBeat = Number.NaN)],
+        ['startBeat range', (job: Record<string, unknown>) => (job.startBeat = -1)],
+        ['endBeat type', (job: Record<string, unknown>) => (job.endBeat = '16')],
+        ['endBeat nonfinite', (job: Record<string, unknown>) => (job.endBeat = Number.POSITIVE_INFINITY)],
+        ['endBeat range', (job: Record<string, unknown>) => (job.endBeat = 0)],
+        ['sampleRate type', (job: Record<string, unknown>) => (job.sampleRate = '48000')],
+        ['sampleRate nonfinite', (job: Record<string, unknown>) => (job.sampleRate = Number.NaN)],
+        ['sampleRate range', (job: Record<string, unknown>) => (job.sampleRate = 0)],
+        ['tailSeconds type', (job: Record<string, unknown>) => (job.tailSeconds = '1')],
+        ['tailSeconds nonfinite', (job: Record<string, unknown>) => (job.tailSeconds = Number.POSITIVE_INFINITY)],
+        ['tailSeconds range', (job: Record<string, unknown>) => (job.tailSeconds = -1)],
+    ])('rejects malformed persisted render job %s before artifact lookup', (_label, mutate) => {
+        const { commandBatch, state } = createFixture();
+        const parsed = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+        mutate(getFirstParsedJob(parsed));
+        commandParsing.parse.mockReturnValueOnce(parsed);
 
         expect(selectRetainedSectionRenderManualReviews(state)).toEqual([]);
         expect(artifacts.getExact).not.toHaveBeenCalled();

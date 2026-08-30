@@ -364,7 +364,19 @@ describe('settleRetainedSectionRenderManualReview', () => {
             },
         ],
         [
-            'job',
+            'job ID',
+            (binding: ReviewBinding) => {
+                binding.commands[0]!.jobs[0]!.jobId = 'wrong-job';
+            },
+        ],
+        [
+            'job section ID',
+            (binding: ReviewBinding) => {
+                binding.commands[0]!.jobs[0]!.sectionId = 'wrong-section';
+            },
+        ],
+        [
+            'job end beat',
             (binding: ReviewBinding) => {
                 binding.commands[0]!.jobs[0]!.endBeat = 15;
             },
@@ -391,6 +403,12 @@ describe('settleRetainedSectionRenderManualReview', () => {
             'job start beat',
             (binding: ReviewBinding) => {
                 binding.commands[0]!.jobs[0]!.startBeat = 4;
+            },
+        ],
+        [
+            'job sample rate',
+            (binding: ReviewBinding) => {
+                binding.commands[0]!.jobs[0]!.sampleRate = 44_100;
             },
         ],
         [

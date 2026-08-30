@@ -914,8 +914,13 @@ describe('executeConfirmedCommandBatch', () => {
     });
 
     it.each([
+        ['job ID', { jobId: 'wrong-job' }],
+        ['section ID', { sectionId: 'wrong-section' }],
         ['section name', { sectionName: 'Wrong section' }],
         ['start beat', { startBeat: 4 }],
+        ['end beat', { endBeat: 15 }],
+        ['sample rate', { sampleRate: 96_000 }],
+        ['tail seconds', { tailSeconds: 2 }],
     ])('does not rebind a fresh render artifact with the wrong %s', async (_label, mutation) => {
         const fixture = createRenderBatchFixture();
         const verseArtifact = createRenderArtifact({
