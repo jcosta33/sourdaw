@@ -1048,6 +1048,23 @@ function shouldRestorePreArmedDeliveryReceiptAuthorityAfterFinalObservation(pull
     return pullRequest.state === 'CLOSED' || (pullRequest.state === 'OPEN' && pullRequest.mergeable !== 'UNKNOWN');
 }
 
+function restorePreparedDeliveryReceiptAuthorityBeforeClosedRetry(number: number, port: DeliveryPort): void {
+    const current = port.readDeliveryReceiptAuthority(number);
+    if (
+        current?.phase !== 'prepared' ||
+        current.postMergeValidation === undefined ||
+        current.receiptBody === undefined
+    ) {
+        return;
+    }
+    restorePreArmedDeliveryReceiptAuthority(
+        number,
+        preparedDeliveryReceiptAuthority({ id: current.receiptId, body: current.receiptBody }),
+        current,
+        port
+    );
+}
+
 function withRestorablePreArmedDeliveryReceiptAuthority<Result>(
     number: number,
     beforeArming: PersistedDeliveryReceiptAuthority | undefined,
@@ -1073,10 +1090,12 @@ function resolveFinalSnapshotWithRestorablePreparedAuthority(
     port: DeliveryPort
 ): PullRequestSnapshot {
     let latestDefinitiveUnmerged: PullRequestSnapshot | undefined;
+    let sawFinalSnapshot = false;
 
     try {
         port.fetch();
         const initial = port.pullRequest(number);
+        sawFinalSnapshot = true;
         if (shouldRestorePreArmedDeliveryReceiptAuthorityAfterFinalObservation(initial)) {
             latestDefinitiveUnmerged = initial;
         }
@@ -1090,7 +1109,7 @@ function resolveFinalSnapshotWithRestorablePreparedAuthority(
         }
         return finalSnapshot;
     } catch (error) {
-        if (latestDefinitiveUnmerged !== undefined) {
+        if (!sawFinalSnapshot || latestDefinitiveUnmerged !== undefined) {
             restorePreArmedDeliveryReceiptAuthority(number, beforeArming, armed, port);
         }
         throw error;
@@ -1133,7 +1152,10 @@ function tryRestorePreArmedDeliveryReceiptAuthorityAfterMergeFailure(
             return;
         }
     } catch {
-        if (latestObserved?.state === 'OPEN' || latestObserved?.state === 'CLOSED') {
+        if (
+            latestObserved !== undefined &&
+            shouldRestorePreArmedDeliveryReceiptAuthorityAfterFinalObservation(latestObserved)
+        ) {
             restorePreArmedDeliveryReceiptAuthority(number, beforeArming, armed, port);
         }
         return;
@@ -1430,10 +1452,9 @@ function readPersistedMergedRecoveryReceipt(
     }
     const preparedPostMergeValidation = authority.phase === 'prepared' ? authority.postMergeValidation : undefined;
     if (authority.phase === 'prepared') {
-        if (preparedPostMergeValidation === undefined) {
-            fail(`PR #${pullRequest.number} delivery receipt authority is not merge-authorized`);
+        if (preparedPostMergeValidation !== undefined) {
+            validatePostMergeSnapshot(preparedPostMergeValidation, pullRequest, pullRequest.number);
         }
-        validatePostMergeSnapshot(preparedPostMergeValidation, pullRequest, pullRequest.number);
     }
     if (authority.receiptBody === undefined) {
         return readCompatibleBodylessPersistedMergedRecoveryReceipt(pullRequest, port, authority);
@@ -1663,6 +1684,9 @@ function deliverPullRequestWithCiAdmission(
         persistTerminalDeliveryReceiptAuthority(number, receipt, port);
         port.log(`PR #${number} was already merged; repaired ${remaining.length} remaining dependent(s)`);
         return;
+    }
+    if (initial.state === 'CLOSED') {
+        restorePreparedDeliveryReceiptAuthorityBeforeClosedRetry(number, port);
     }
     validateBaseBranch(initial);
     const initialTrackerTarget = trackerCompletionTarget(initial);
