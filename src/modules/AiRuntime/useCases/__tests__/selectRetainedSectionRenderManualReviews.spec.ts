@@ -200,6 +200,14 @@ describe('selectRetainedSectionRenderManualReviews', () => {
         expect(selectRetainedSectionRenderManualReviews(state)).toHaveLength(1);
     });
 
+    it('rejects a sole run receipt whose identity differs from the exact durable binding', () => {
+        const { state } = createFixture();
+        state.runs[0]!.receipts[0]!.receiptIdentity = '1:run-review:batch-review:committed';
+
+        expect(selectRetainedSectionRenderManualReviews(state)).toEqual([]);
+        expect(artifacts.getExact).not.toHaveBeenCalled();
+    });
+
     it('looks up artifacts by the continuation source revision rather than the batch base revision', () => {
         const { state } = createFixture();
         state.runs[0]!.pendingEffectContinuations[0]!.sourceRevision = 'revision-finalized';

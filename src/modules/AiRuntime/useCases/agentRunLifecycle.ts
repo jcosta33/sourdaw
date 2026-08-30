@@ -740,13 +740,13 @@ function applyAgentRunReceiptSagaProjection(
         const continuation = manualRecovery
             ? structuredClone(manualRecovery)
             : structuredClone(projection.pendingEffectContinuation);
-        const createsRenderOnlyContinuation =
-            manualRecovery === undefined &&
+        const requiresExactRenderRevision =
+            continuation.sourceRevision === undefined &&
             continuation.effects.length > 0 &&
             continuation.effects.every(
                 (effect) => effect.kind === 'external-effect' && effect.operation === 'renderProjectSections'
             );
-        const sourceRevision = createsRenderOnlyContinuation
+        const sourceRevision = requiresExactRenderRevision
             ? projection.work.committedRevision
             : continuation.sourceRevision;
         const continuationWithoutRecoveryIdentity = {
