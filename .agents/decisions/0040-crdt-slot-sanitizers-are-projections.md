@@ -5,14 +5,15 @@ title: CRDT slot sanitizers are projections, not validators
 status: accepted
 date: 2026-08-30
 owner: The Sourdaw team
-supersedes: []
 sources:
     - src/infra/store/storage/createAutomergeStorage.ts
     - src/infra/store/createStore.ts
     - src/modules/Project/stores/arrangementStore.ts
     - src/modules/Automation/stores/automationStore.ts
+    - src/modules/MIDI/stores/grooveTemplateAutomergeStorage.ts
     - https://github.com/jcosta33/sourdaw/pull/3032
     - https://github.com/jcosta33/sourdaw/pull/3152
+    - https://github.com/jcosta33/sourdaw/issues/3162
     - https://github.com/jcosta33/sourdaw/pull/3163
 ---
 
@@ -46,10 +47,12 @@ snapshot section whose sanitizer modeled three keys and dropped the fourth.
 3. Content this build cannot read is dropped and reported as a loss on purpose. The detector's
    fail-closed verdict is never the thing to weaken: a false loss is repaired by aligning the
    writer/sanitizer contract above, and an adapter that owns a wire encoding unlike the store
-   shape opts out per value through `ownsCrdtEncoding`, carrying the reason with it.
+   shape opts out per value through `ownsCrdtEncoding` and records the reason at its implementation
+   site.
 4. Any future detector over slot adapters asserts a global invariant and must be swept across the
    whole adapter population when introduced or repaired — validating only the adapters named in an
    incident leaves the class armed (see issue #3162).
 
 Changing or adding a slot sanitizer runs `pnpm test:run` for that store's spec plus
-`src/infra/store/storage/__tests__`; the detector's contract is pinned there.
+`src/infra/store/storage/__tests__/createAutomergeStorage.rawProjectionLossReorder.spec.ts`; the
+detector's contract is pinned there.
