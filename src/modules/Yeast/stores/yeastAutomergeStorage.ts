@@ -134,10 +134,19 @@ function encodeRack(processors: readonly YeastProcessorInfo[]): RackCrdtState {
     return {
         schemaVersion: YEAST_RACK_SCHEMA_VERSION,
         processors: Object.fromEntries(
-            normalizeProcessors(processors).map((processor, index) => [
-                processor.id,
-                { deleted: false, order: index, value: structuredClone(processor) },
-            ])
+            normalizeProcessors(processors).map((processor, index) => {
+                const cloned = structuredClone(processor);
+                return [
+                    processor.id,
+                    {
+                        deleted: false,
+                        order: index,
+                        // Empty `params` is CRDT presence, not a musician-facing value:
+                        // later peers must insert into this map, not assign the field.
+                        value: { ...cloned, params: { ...(cloned.params ?? {}) } },
+                    },
+                ];
+            })
         ),
     };
 }
@@ -270,25 +279,24 @@ function replaceIfChanged(target: MutableRecord, key: string, value: unknown): v
 }
 
 function syncProcessorParams(target: MutableRecord, params: Record<string, number> | undefined): void {
-    if (!params) {
-        if (Object.hasOwn(target, 'params')) {
-            delete target.params;
-        }
-        return;
+    // Concurrent assignments of `params` last-writer-win. Concurrent inserts
+    // into one existing map merge. Never delete the field: clearing keys
+    // must leave the empty map so a later first-key race cannot reopen.
+    if (!isRecord(target.params)) {
+        target.params = {};
     }
-
     const current = target.params;
     if (!isRecord(current)) {
-        target.params = params;
         return;
     }
+    const incoming = params ?? {};
 
     for (const key of Object.keys(current)) {
-        if (!Object.hasOwn(params, key)) {
+        if (!Object.hasOwn(incoming, key)) {
             delete current[key];
         }
     }
-    for (const [key, value] of Object.entries(params)) {
+    for (const [key, value] of Object.entries(incoming)) {
         replaceIfChanged(current, key, value);
     }
 }
@@ -315,7 +323,11 @@ function syncProcessorEntities(current: MutableRecord, desiredProcessors: readon
     for (const [id, processor] of desired) {
         const entity = current[id];
         if (!isRecord(entity) || !isRecord(entity.value)) {
-            current[id] = { deleted: false, order: index, value: processor };
+            current[id] = { deleted: false, order: index, value: { ...processor, params: {} } };
+            const created = current[id];
+            if (isRecord(created) && isRecord(created.value)) {
+                syncProcessorParams(created.value, processor.params);
+            }
             index += 1;
             continue;
         }
