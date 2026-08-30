@@ -44,6 +44,7 @@ import type {
     DeliveryReceiptProof,
     DeliveryPort,
     PersistedDeliveryReceiptAuthority,
+    PersistedPreparedPostMergeValidation,
     PullRequestSnapshot,
     StackedPullRequest,
     TrackerCompletionPort,
@@ -1495,6 +1496,13 @@ describe('package scripts and gitignore', () => {
     it('round-trips prepared, merge-authorized, and terminal receipt authority across fresh shellPort instances', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-authority-'));
         initializeDeliveryLockRepository(root);
+        const postMergeValidation: PersistedPreparedPostMergeValidation = {
+            headRefOid: 'a'.repeat(40),
+            headRefName: 'agent/2495/delivery-lock',
+            baseRefName: 'main',
+            bodySha256: 'c'.repeat(64),
+            trackerTarget: 2406,
+        };
 
         try {
             const writePrepared = shellPort(
@@ -1508,6 +1516,7 @@ describe('package scripts and gitignore', () => {
             writePrepared.writeDeliveryReceiptAuthority(2495, {
                 phase: 'prepared',
                 receiptId: 'IC_exact_authority',
+                postMergeValidation,
             });
 
             const readPrepared = shellPort(
@@ -1521,6 +1530,7 @@ describe('package scripts and gitignore', () => {
             expect(readPrepared.readDeliveryReceiptAuthority(2495)).toEqual({
                 phase: 'prepared',
                 receiptId: 'IC_exact_authority',
+                postMergeValidation,
             });
 
             const writeMergeAuthorized = shellPort(
@@ -1534,6 +1544,7 @@ describe('package scripts and gitignore', () => {
             writeMergeAuthorized.writeDeliveryReceiptAuthority(2495, {
                 phase: 'merge-authorized',
                 receiptId: 'IC_exact_authority',
+                postMergeValidation,
             });
 
             const readMergeAuthorized = shellPort(
@@ -1547,6 +1558,7 @@ describe('package scripts and gitignore', () => {
             expect(readMergeAuthorized.readDeliveryReceiptAuthority(2495)).toEqual({
                 phase: 'merge-authorized',
                 receiptId: 'IC_exact_authority',
+                postMergeValidation,
             });
 
             const writeTerminal = shellPort(
@@ -1560,6 +1572,7 @@ describe('package scripts and gitignore', () => {
             writeTerminal.writeDeliveryReceiptAuthority(2495, {
                 phase: 'terminal',
                 receiptId: 'IC_exact_authority',
+                postMergeValidation,
             });
 
             const readTerminal = shellPort(
@@ -1573,6 +1586,7 @@ describe('package scripts and gitignore', () => {
             expect(readTerminal.readDeliveryReceiptAuthority(2495)).toEqual({
                 phase: 'terminal',
                 receiptId: 'IC_exact_authority',
+                postMergeValidation,
             });
             expect(
                 shellPort(
@@ -1586,6 +1600,7 @@ describe('package scripts and gitignore', () => {
             ).toEqual({
                 phase: 'terminal',
                 receiptId: 'IC_exact_authority',
+                postMergeValidation,
             });
             expect(readDeliveryReceiptAuthorityOid(root, 2495)).toMatch(/^[0-9a-f]{40,64}$/u);
 
@@ -1659,7 +1674,7 @@ describe('package scripts and gitignore', () => {
         }
     });
 
-    it('rejects child-prefix delivery receipt refs instead of treating them as exact authority', () => {
+    it('fails closed on child-prefix delivery receipt refs instead of treating them as exact authority', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-authority-'));
         initializeDeliveryLockRepository(root);
 
@@ -1679,7 +1694,7 @@ describe('package scripts and gitignore', () => {
                 { primaryRoot: root }
             );
 
-            expect(port.readDeliveryReceiptAuthority(2495)).toBeUndefined();
+            expect(() => port.readDeliveryReceiptAuthority(2495)).toThrow(/cannot be verified/i);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
@@ -1739,7 +1754,7 @@ describe('package scripts and gitignore', () => {
                     `ref=${JSON.stringify(deliveryReceiptAuthorityRef(2495))}`,
                     `replacement=${JSON.stringify(replacementOid)}`,
                     `marker=${JSON.stringify(join(wrapperRoot, 'swapped'))}`,
-                    'if [[ "${1:-}" == "show-ref" && "${2:-}" == "--verify" && "${5:-}" == "$ref" && ! -e "$marker" ]]; then',
+                    'if [[ "${1:-}" == "for-each-ref" && "${@: -1}" == "$ref" && ! -e "$marker" ]]; then',
                     '  output="$("$real_git" "$@")"',
                     '  status=$?',
                     '  : > "$marker"',
@@ -1764,7 +1779,9 @@ describe('package scripts and gitignore', () => {
                     { primaryRoot: root }
                 );
 
-                expect(() => port.clearDeliveryReceiptAuthority(2495)).toThrow(/could not be cleared/i);
+                expect(() => port.clearDeliveryReceiptAuthority(2495)).toThrow(
+                    /could not be cleared|could not be verified|cannot be verified/i
+                );
             } finally {
                 process.env.PATH = previousPath;
             }
