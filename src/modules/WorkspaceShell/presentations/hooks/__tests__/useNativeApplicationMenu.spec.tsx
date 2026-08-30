@@ -7,10 +7,16 @@ type NativeMenuIntent = Parameters<Parameters<SourdawDesktopBridge['nativeMenu']
 
 const desktop = vi.hoisted(() => ({
     listener: undefined as ((intent: NativeMenuIntent) => void) | undefined,
+    sessionListener: undefined as ((requestId: number) => void) | undefined,
     projectState: vi.fn(async () => undefined),
     saveResult: vi.fn(async () => undefined),
     edit: vi.fn(async () => undefined),
-    listenSessionQuiesce: vi.fn(() => () => undefined),
+    listenSessionQuiesce: vi.fn((listener: (requestId: number) => void) => {
+        desktop.sessionListener = listener;
+        return () => {
+            desktop.sessionListener = undefined;
+        };
+    }),
     sessionQuiesced: vi.fn(async () => undefined),
 }));
 const projectState = vi.hoisted(() => ({
@@ -107,9 +113,13 @@ vi.mock('#/modules/Onboarding/useCases', () => onboarding);
 describe('useNativeApplicationMenu', () => {
     beforeEach(() => {
         desktop.listener = undefined;
+        desktop.sessionListener = undefined;
         desktop.projectState.mockClear();
         desktop.saveResult.mockClear();
         desktop.edit.mockClear();
+        desktop.listenSessionQuiesce.mockClear();
+        desktop.sessionQuiesced.mockClear();
+        projectActions.quiesceProjectSession.mockReset().mockResolvedValue(true);
         projectState.dirty = false;
         projectState.projectId = 'project';
         projectState.createdAt = 1;
@@ -134,6 +144,56 @@ describe('useNativeApplicationMenu', () => {
         for (const action of Object.values(workspace)) {
             action.mockClear();
         }
+    });
+
+    it('acknowledges one renderer-session quiesce request with the exact result and request id', async () => {
+        projectActions.quiesceProjectSession.mockResolvedValueOnce(false);
+        renderHook(() =>
+            useNativeApplicationMenu({
+                name: 'Song',
+                projectId: 'project',
+                createdAt: 1,
+                dirty: false,
+                identityPersistencePending: false,
+                loading: false,
+                updatedAt: 1,
+                keyRoot: 0,
+                scaleName: 'chromatic',
+                tuning: { name: 'Equal Temperament', frequencies: [] },
+                productionBrief: {} as never,
+                initialized: true,
+            })
+        );
+
+        desktop.sessionListener?.(41);
+
+        await vi.waitFor(() => expect(projectActions.quiesceProjectSession).toHaveBeenCalledTimes(1));
+        expect(desktop.sessionQuiesced).toHaveBeenCalledWith(41, false);
+    });
+
+    it('republishes renderer readiness when Project hydration changes loading state', () => {
+        const project = (loading: boolean) => ({
+            name: 'Song',
+            projectId: 'project',
+            createdAt: 1,
+            dirty: false,
+            identityPersistencePending: false,
+            loading,
+            updatedAt: 1,
+            keyRoot: 0,
+            scaleName: 'chromatic',
+            tuning: { name: 'Equal Temperament', frequencies: [] },
+            productionBrief: {} as never,
+            initialized: true,
+        });
+        const { rerender } = renderHook(({ loading }) => useNativeApplicationMenu(project(loading)), {
+            initialProps: { loading: true },
+        });
+
+        rerender({ loading: false });
+
+        expect(desktop.projectState).toHaveBeenNthCalledWith(1, expect.objectContaining({ rendererReady: false }));
+        expect(desktop.projectState).toHaveBeenLastCalledWith(expect.objectContaining({ rendererReady: true }));
     });
 
     it('projects the active project and routes text editing through the narrow native capability', async () => {

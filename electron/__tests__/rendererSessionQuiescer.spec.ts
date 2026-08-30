@@ -47,4 +47,19 @@ describe('renderer session quiescer', () => {
         await close;
         expect(order).toEqual(['editor-detach-and-window-close']);
     });
+
+    it('cancels before any destructive request when close authority is revoked, and tolerates a late timeout completion', async () => {
+        const order: string[] = [];
+        await completeMacCloseAfterSessionQuiesce({
+            request: async () => {
+                order.push('request');
+                return true;
+            },
+            shouldProceed: () => false,
+            close: () => order.push('close'),
+            cancel: () => order.push('cancel'),
+        });
+
+        expect(order).toEqual(['cancel']);
+    });
 });

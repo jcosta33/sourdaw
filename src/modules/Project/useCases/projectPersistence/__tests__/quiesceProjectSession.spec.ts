@@ -1,7 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { quiesceProjectSession } from '../quiesceProjectSession';
-
 const runtime = vi.hoisted(() => ({ stopPlayback: vi.fn(), resetAudioGraph: vi.fn(), unloadPlugin: vi.fn() }));
 
 vi.mock('#/modules/Transport/useCases', () => ({ stopPlayback: runtime.stopPlayback }));
@@ -10,6 +8,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({ unloadPlugin: runtime.unloadPl
 
 describe('quiesceProjectSession', () => {
     beforeEach(() => {
+        vi.resetModules();
         runtime.stopPlayback.mockReset();
         runtime.resetAudioGraph.mockReset();
         runtime.unloadPlugin.mockReset();
@@ -21,15 +20,27 @@ describe('quiesceProjectSession', () => {
         runtime.resetAudioGraph.mockImplementation(() => order.push('graph'));
         runtime.unloadPlugin.mockImplementation(async () => order.push('plugins'));
 
+        const { quiesceProjectSession } = await import('../quiesceProjectSession');
         await expect(quiesceProjectSession()).resolves.toBe(true);
 
         expect(order).toEqual(['stop', 'graph', 'plugins']);
     });
 
-    it('fails closed when a renderer-owned teardown step fails', async () => {
+    it('fails closed before destructive teardown, but completes the irreversible close after plugin unload rejection', async () => {
         runtime.stopPlayback.mockRejectedValueOnce(new Error('transport unavailable'));
+        let { quiesceProjectSession } = await import('../quiesceProjectSession');
 
         await expect(quiesceProjectSession()).resolves.toBe(false);
         expect(runtime.resetAudioGraph).not.toHaveBeenCalled();
+
+        vi.resetModules();
+        runtime.stopPlayback.mockReset().mockResolvedValue(undefined);
+        runtime.resetAudioGraph.mockReset();
+        runtime.unloadPlugin.mockReset().mockRejectedValueOnce(new Error('plugin release failed'));
+        ({ quiesceProjectSession } = await import('../quiesceProjectSession'));
+
+        await expect(quiesceProjectSession()).resolves.toBe(true);
+        await expect(quiesceProjectSession()).resolves.toBe(true);
+        expect(runtime.resetAudioGraph).toHaveBeenCalledTimes(1);
     });
 });

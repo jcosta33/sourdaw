@@ -3,6 +3,21 @@ import { describe, expect, it, vi } from 'vitest';
 import { createWindowCloseCoordinator } from '../windowCloseCoordinator.js';
 
 describe('window close coordinator', () => {
+    it('fails closed for every new renderer generation until hydrated project truth is ready', async () => {
+        const ask = vi.fn(async () => 'cancel' as const);
+        const coordinator = createWindowCloseCoordinator({ ask, send: vi.fn() });
+
+        await expect(coordinator.requestClose()).resolves.toBe(false);
+        coordinator.updateProject({ title: 'Provisional', dirty: false, rendererReady: false });
+        await expect(coordinator.requestClose()).resolves.toBe(false);
+        coordinator.updateProject({ title: 'Loaded', dirty: false, rendererReady: true });
+        await expect(coordinator.requestClose()).resolves.toBe(true);
+        coordinator.resetForWindow();
+        await expect(coordinator.requestClose()).resolves.toBe(false);
+
+        expect(ask).not.toHaveBeenCalled();
+    });
+
     it('retains dirty crash authority until the replacement renderer publishes hydrated project truth', async () => {
         const coordinator = createWindowCloseCoordinator({ ask: async () => 'cancel', send: vi.fn() });
         coordinator.updateProject({
@@ -292,6 +307,7 @@ describe('window close coordinator', () => {
 
         await expect(coordinator.requestClose()).resolves.toBe(true);
         coordinator.resetForWindow();
+        coordinator.updateProject({ title: 'Replacement', dirty: false, rendererReady: true });
 
         await expect(coordinator.requestClose()).resolves.toBe(true);
         expect(ask).toHaveBeenCalledTimes(1);
@@ -315,11 +331,11 @@ describe('window close coordinator', () => {
 
         coordinator.resetForWindow();
         await expect(coordinator.requestClose()).resolves.toBe(false);
-        expect(ask).toHaveBeenCalledWith('Crashed song');
+        expect(ask).not.toHaveBeenCalled();
 
         coordinator.clearForNoWindow();
         await expect(coordinator.requestClose()).resolves.toBe(true);
-        expect(ask).toHaveBeenCalledTimes(1);
+        expect(ask).not.toHaveBeenCalled();
     });
 
     it('does not open a second prompt while a save is in flight', async () => {

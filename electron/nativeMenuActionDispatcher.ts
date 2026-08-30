@@ -65,7 +65,10 @@ export const createNativeMenuActionDispatcher = ({
             }
             pending = { window: createdWindow, intents: [intent] };
         },
-        rendererReady(window: NativeMenuActionWindow): void {
+        rendererReady(window: NativeMenuActionWindow, rendererReady: boolean): void {
+            if (!rendererReady) {
+                return;
+            }
             if (pending?.window !== window || getWindow() !== window || window.isDestroyed()) {
                 return;
             }

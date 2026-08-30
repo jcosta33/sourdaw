@@ -271,6 +271,7 @@ export const useNativeApplicationMenu = (project: ProjectStoreState): void => {
         project.createdAt,
         project.dirty,
         project.identityPersistencePending,
+        project.loading,
         project.updatedAt,
     ]);
 };

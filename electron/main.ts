@@ -60,6 +60,7 @@ import { APP_ENTRY_URL, APP_ORIGIN, handleAppProtocol, registerAppScheme, resolv
 import { createRendererCrashRecovery } from './rendererCrashRecovery.js';
 import { createRendererSessionLifecycle } from './rendererSessionLifecycle.js';
 import { completeMacCloseAfterSessionQuiesce, createRendererSessionQuiescer } from './rendererSessionQuiescer.js';
+import { activateRendererWindow } from './rendererWindowActivation.js';
 import { registerCommandRouter } from './router.js';
 import { createScanSupervisor, type ScanSupervisor } from './scan.js';
 import { applyPermissionPolicy, decideWindowOpen, isNavigationAllowed, trustedFrameGuard } from './security.js';
@@ -183,7 +184,11 @@ const windowCloseCoordinator = createWindowCloseCoordinator({
             projectKey: expected.projectKey,
             revision: expected.revision,
         }),
-    onApprovalRevoked: () => rendererSessionLifecycle.cancelTeardown(),
+    onApprovalRevoked: () => {
+        closeSessionQuiescedWindow = undefined;
+        rendererSessionQuiescer.cancel();
+        rendererSessionLifecycle.cancelTeardown();
+    },
 });
 
 const nativeMenuProjectStateController = createNativeMenuProjectStateController({
@@ -201,10 +206,6 @@ const quiesceApprovedMainWindow = async (): Promise<boolean> => {
     try {
         if (!window.isDestroyed()) {
             if (!(await rendererSessionQuiescer.request(window))) {
-                rendererSessionLifecycle.cancelTeardown();
-                return false;
-            }
-            if (!windowCloseCoordinator.permitsClose()) {
                 rendererSessionLifecycle.cancelTeardown();
                 return false;
             }
@@ -324,7 +325,7 @@ const createWindow = (): BrowserWindow => {
     window.on('maximize', () => window.webContents.send(WINDOW_MAXIMIZED_CHANGED_CHANNEL, true));
     window.on('unmaximize', () => window.webContents.send(WINDOW_MAXIMIZED_CHANGED_CHANNEL, false));
     window.on('close', (event) => {
-        if (windowCloseCoordinator.permitsClose()) {
+        if (closeSessionQuiescedWindow === window || windowCloseCoordinator.permitsClose()) {
             if (process.platform === 'darwin' && closeSessionQuiescedWindow !== window) {
                 event.preventDefault();
                 void completeMacCloseAfterSessionQuiesce({
@@ -334,7 +335,10 @@ const createWindow = (): BrowserWindow => {
                         closeSessionQuiescedWindow = window;
                         window.close();
                     },
-                    cancel: () => rendererSessionLifecycle.cancelTeardown(),
+                    cancel: () => {
+                        closeSessionQuiescedWindow = undefined;
+                        rendererSessionLifecycle.cancelTeardown();
+                    },
                 });
                 return;
             }
@@ -665,7 +669,7 @@ void app.whenReady().then(() => {
                 return;
             }
             nativeMenuProjectStateController.apply(state);
-            nativeMenuActionDispatcher.rendererReady(senderWindow);
+            nativeMenuActionDispatcher.rendererReady(senderWindow, state.rendererReady === true);
         },
         onSaveResult: (result) => windowCloseCoordinator.resolveSave(result),
         onSessionQuiesced: (result, sender) => {
@@ -819,8 +823,9 @@ app.on('window-all-closed', () => {
 });
 
 app.on('activate', () => {
-    if (mainWindow === undefined || mainWindow.isDestroyed()) {
-        nativeMenuActionDispatcher.clearPending();
-        createAndActivateWindow();
-    }
+    activateRendererWindow({
+        hasLiveWindow: () => mainWindow !== undefined && !mainWindow.isDestroyed(),
+        clearPending: () => nativeMenuActionDispatcher.clearPending(),
+        createWindow: createAndActivateWindow,
+    });
 });

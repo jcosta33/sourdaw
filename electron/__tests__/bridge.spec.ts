@@ -208,6 +208,20 @@ describe('native menu transport', () => {
         });
         expect(listener).toHaveBeenCalledTimes(2);
     });
+
+    it('delivers only valid renderer-session quiesce requests from main', () => {
+        const fake = fakeIpc();
+        const listener = vi.fn();
+        createSourdawBridge(fake.ipc).nativeMenu.listenSessionQuiesce(listener);
+
+        fake.push(RENDERER_SESSION_QUIESCE_CHANNEL, 7);
+        fake.push(RENDERER_SESSION_QUIESCE_CHANNEL, 1.5);
+        fake.push(RENDERER_SESSION_QUIESCE_CHANNEL, 0);
+        fake.push(RENDERER_SESSION_QUIESCE_CHANNEL, '7');
+
+        expect(listener).toHaveBeenCalledTimes(1);
+        expect(listener).toHaveBeenCalledWith(7);
+    });
 });
 
 describe('command admission', () => {

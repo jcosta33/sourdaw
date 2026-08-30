@@ -13,6 +13,25 @@ const makeWindow = (): NativeMenuActionWindow & { readonly send: ReturnType<type
 };
 
 describe('native menu action dispatcher', () => {
+    it('keeps startup, Dock, and crash-recovery windows unready until the hydrated projection says ready', () => {
+        for (const kind of ['startup', 'Dock', 'crash recovery']) {
+            const window = makeWindow();
+            const dispatcher = createNativeMenuActionDispatcher({
+                isMac: true,
+                actionChannel: 'native-menu-action',
+                getWindow: () => window,
+                createWindow: () => window,
+            });
+            dispatcher.registerWindow(window);
+            dispatcher.dispatch({ action: 'project:new' });
+
+            dispatcher.rendererReady(window, false);
+            expect(window.send, kind).not.toHaveBeenCalled();
+            dispatcher.rendererReady(window, true);
+            expect(window.send, kind).toHaveBeenCalledWith('native-menu-action', { action: 'project:new' });
+        }
+    });
+
     it.each([
         [{ action: 'project:new' } as const],
         [{ action: 'project:open-recent', recentKey: 'sourdaw:project:42' } as const],
@@ -37,7 +56,7 @@ describe('native menu action dispatcher', () => {
         if (created === undefined) {
             throw new Error('Expected a created renderer window');
         }
-        dispatcher.rendererReady(created);
+        dispatcher.rendererReady(created, true);
 
         expect(created.send).toHaveBeenCalledWith('native-menu-action', intent);
     });
@@ -61,7 +80,7 @@ describe('native menu action dispatcher', () => {
         if (stale === undefined) {
             throw new Error('Expected a queued renderer window');
         }
-        dispatcher.rendererReady(stale);
+        dispatcher.rendererReady(stale, true);
         dispatcher.dispatch({ action: 'edit:copy' });
         current = undefined;
         dispatcher.dispatch({ action: 'view:zoom-in' });
@@ -90,7 +109,7 @@ describe('native menu action dispatcher', () => {
         if (pendingWindow === undefined) {
             throw new Error('Expected a pending renderer window');
         }
-        dispatcher.rendererReady(pendingWindow);
+        dispatcher.rendererReady(pendingWindow, true);
 
         expect(pendingWindow.send).toHaveBeenCalledTimes(1);
         expect(pendingWindow.send).toHaveBeenCalledWith('native-menu-action', { action: 'project:new' });
@@ -110,7 +129,7 @@ describe('native menu action dispatcher', () => {
         dispatcher.dispatch({ action: 'project:open-recent', recentKey: 'saved-project' });
 
         expect(startup.send).not.toHaveBeenCalled();
-        dispatcher.rendererReady(startup);
+        dispatcher.rendererReady(startup, true);
         expect(startup.send).toHaveBeenCalledTimes(2);
     });
 
@@ -130,7 +149,7 @@ describe('native menu action dispatcher', () => {
         dispatcher.registerWindow(startup);
 
         dispatcher.dispatch(intent);
-        dispatcher.rendererReady(startup);
+        dispatcher.rendererReady(startup, true);
 
         expect(startup.send).not.toHaveBeenCalled();
     });
@@ -159,7 +178,7 @@ describe('native menu action dispatcher', () => {
         });
 
         expect(startup.send).not.toHaveBeenCalled();
-        dispatcher.rendererReady(startup);
+        dispatcher.rendererReady(startup, true);
         expect(startup.send).toHaveBeenNthCalledWith(1, 'native-menu-action', {
             action: 'project:save',
             requestId: 7,
@@ -192,7 +211,7 @@ describe('native menu action dispatcher', () => {
         const replacement = makeWindow();
         current = replacement;
         dispatcher.recoverPendingWindow(crashed, replacement);
-        dispatcher.rendererReady(replacement);
+        dispatcher.rendererReady(replacement, true);
 
         expect(replacement.send).not.toHaveBeenCalled();
     });
@@ -219,7 +238,7 @@ describe('native menu action dispatcher', () => {
         }
 
         dispatcher.recoverPendingWindow(crashed, replacement);
-        dispatcher.rendererReady(replacement);
+        dispatcher.rendererReady(replacement, true);
 
         expect(replacement.send).toHaveBeenNthCalledWith(1, 'native-menu-action', { action: 'project:new' });
         expect(replacement.send).toHaveBeenNthCalledWith(2, 'native-menu-action', {
@@ -248,7 +267,7 @@ describe('native menu action dispatcher', () => {
             throw new Error('Expected a pending renderer window');
         }
         dispatcher.clearPending(pending);
-        dispatcher.rendererReady(replacement);
+        dispatcher.rendererReady(replacement, true);
         dispatcher.clearPending();
 
         expect(replacement.send).not.toHaveBeenCalled();

@@ -41,7 +41,7 @@ export const createWindowCloseCoordinator = ({
     onApprovalRevoked,
     timers = systemTimers,
 }: CreateWindowCloseCoordinatorInput) => {
-    let project: ProjectCloseState = { title: 'Sourdaw', dirty: false, durabilityPending: false };
+    let project: ProjectCloseState = { title: 'Sourdaw', dirty: true, durabilityPending: true, rendererReady: false };
     let phase: 'idle' | 'deciding' | 'saving' | 'approved' | 'closing' = 'idle';
     let pendingSave:
         | {
@@ -57,7 +57,8 @@ export const createWindowCloseCoordinator = ({
     let generation = 0;
     let awaitingRendererTruth = false;
 
-    const isCloseBlocking = (state: ProjectCloseState): boolean => state.dirty || state.durabilityPending === true;
+    const isCloseBlocking = (state: ProjectCloseState): boolean =>
+        state.rendererReady === false || state.dirty || state.durabilityPending === true;
 
     const sameProjectRevision = (left: ProjectCloseState, right: ProjectCloseState): boolean =>
         left.projectKey === right.projectKey && left.revision === right.revision;
@@ -121,7 +122,8 @@ export const createWindowCloseCoordinator = ({
 
     const clearWindowAuthority = (): void => {
         invalidateWindowRequests();
-        project = { title: 'Sourdaw', dirty: false, durabilityPending: false };
+        awaitingRendererTruth = false;
+        project = { title: 'Sourdaw', dirty: false, durabilityPending: false, rendererReady: true };
     };
 
     const requestClose = async (): Promise<boolean> => {
@@ -129,6 +131,9 @@ export const createWindowCloseCoordinator = ({
             return true;
         }
         if (phase !== 'idle') {
+            return false;
+        }
+        if (project.rendererReady === false) {
             return false;
         }
         if (!isCloseBlocking(project)) {
@@ -248,7 +253,8 @@ export const createWindowCloseCoordinator = ({
         // state.
         resetForWindow: (): void => {
             invalidateWindowRequests();
-            awaitingRendererTruth = isCloseBlocking(project);
+            awaitingRendererTruth = true;
+            project = { ...project, dirty: true, durabilityPending: true, rendererReady: false };
         },
         clearForNoWindow: clearWindowAuthority,
         cancelPending,

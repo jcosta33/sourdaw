@@ -70,7 +70,14 @@ export const completeMacCloseAfterSessionQuiesce = async ({
     readonly close: () => void;
     readonly cancel: () => void;
 }): Promise<void> => {
-    if (!(await request()) || !shouldProceed()) {
+    if (!shouldProceed()) {
+        cancel();
+        return;
+    }
+    // Once the renderer confirms its live graph has been retired, it is an
+    // irrevocable session boundary. A late metadata projection cannot safely
+    // resurrect that graph, so finish the already-approved native close.
+    if (!(await request())) {
         cancel();
         return;
     }
