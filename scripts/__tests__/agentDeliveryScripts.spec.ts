@@ -358,22 +358,13 @@ function runTrustedDeliverWithLoader(loader: string): Promise<number> {
 
 type WorkflowRecord = Record<string, unknown>;
 
-const AUTHORIZED_APPROVAL_CONDITION =
-    "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'";
-// Only a pull-request push and an approving review validate a head, so only
-// those two share the PR-number group. A newer pull-request push may replace
-// stale validation; an approving review validates and queues behind that push
-// instead of cancelling it. Every other event is isolated on its own run id.
-const VALIDATING_EVENT_CONDITION =
-    "github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved')";
-const REVIEW_ISOLATED_CONCURRENCY_GROUP = `health-gates-\${{ (${VALIDATING_EVENT_CONDITION}) && github.event.pull_request.number || github.run_id }}`;
-const AUTHORIZED_CANCELLATION_CONDITION = "${{ github.event_name == 'pull_request' }}";
 const GATE_SUMMARY_NAME = 'Gate';
 // `!cancelled()` rather than `always()`: the summary must still evaluate failed
-// and skipped dependencies on a live run, while the approval predicate keeps a
-// deliberately skipped review run from reporting a green Gate over dependencies
-// that were all skipped with it.
-const AUTHORIZED_GATE_CONDITION = `\${{ !cancelled() && (${AUTHORIZED_APPROVAL_CONDITION}) }}`;
+// and skipped dependencies on a live run. This workflow answers pull_request
+// only, so a review event cannot mint a skipped Gate that GitHub would treat as
+// a required-check success.
+const AUTHORIZED_GATE_CONDITION = '${{ !cancelled() }}';
+const PULL_REQUEST_CONCURRENCY_GROUP = 'health-gates-${{ github.event.pull_request.number }}';
 const CODEQL_CONDITION = "needs.decide.outputs.heavy == 'true'";
 
 function asWorkflowRecord(value: unknown, label: string): WorkflowRecord {
@@ -628,12 +619,13 @@ describe('package scripts and gitignore', () => {
         const { document, workflow } = healthGateWorkflow();
         expect(document.errors).toEqual([]);
         const events = workflowRecordAt(workflow, 'on');
-        expect(workflowRecordAt(events, 'pull_request_review').types).toEqual(['submitted']);
+        expect(Object.hasOwn(events, 'pull_request')).toBe(true);
+        expect(Object.hasOwn(events, 'pull_request_review')).toBe(false);
 
         const concurrency = workflowRecordAt(workflow, 'concurrency');
-        expect(concurrency.group).toBe(REVIEW_ISOLATED_CONCURRENCY_GROUP);
-        expect(concurrency['cancel-in-progress']).toBe(AUTHORIZED_CANCELLATION_CONDITION);
-        expect(workflowJob(workflow, 'decide').if).toBe(AUTHORIZED_APPROVAL_CONDITION);
+        expect(concurrency.group).toBe(PULL_REQUEST_CONCURRENCY_GROUP);
+        expect(concurrency['cancel-in-progress']).toBe(true);
+        expect(workflowJob(workflow, 'decide').if).toBeUndefined();
 
         const gate = stableInformationalGateSummary(workflow);
         const eventDependentGate = structuredClone(workflow);
@@ -658,9 +650,14 @@ describe('package scripts and gitignore', () => {
     });
 
     it('runs CodeQL only in the approved heavy lane', () => {
-        const { workflow } = healthGateWorkflow();
+        const source = readFileSync(join(import.meta.dirname, '../../.github/workflows/nightly.yml'), 'utf8');
+        const document = parseDocument(source);
+        expect(document.errors).toEqual([]);
+        const workflow = asWorkflowRecord(document.toJS(), 'nightly workflow');
         const events = workflowRecordAt(workflow, 'on');
-        expect(Object.hasOwn(events, 'pull_request')).toBe(true);
+        expect(Object.hasOwn(events, 'schedule')).toBe(true);
+        expect(Object.hasOwn(events, 'workflow_dispatch')).toBe(true);
+        expect(Object.hasOwn(events, 'pull_request')).toBe(false);
         expect(Object.hasOwn(events, 'pull_request_target')).toBe(false);
 
         const codeql = workflowJob(workflow, 'codeql');

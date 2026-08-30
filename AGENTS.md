@@ -375,11 +375,18 @@ same account can read its credential files. Snapshot and token-bearing children 
 environment overrides that could redirect them — Node loader and preload settings, and Git, GitHub
 CLI, GitHub Actions, and App configuration — and use the launcher-resolved `git` and `gh`.
 
-Hosted checks run. `.github/workflows/health-gates.yml` is authoritative about which lanes it runs,
-when, and what each covers; `gate` is its stable summary, and other tooling reads that name, so do
-not rename it. GitHub can require workflow job checks, but Sourdaw deliberately keeps
-pull-request-editable workflows out of merge authority; that is a Sourdaw trust policy, not a GitHub
-platform restriction.
+Hosted checks run. `.github/workflows/health-gates.yml` is the pull-request workflow that mints the
+stable `Gate` summary; other tooling reads that name, so do not rename it. It answers `pull_request`
+only. Do not subscribe it to `pull_request_review`: GitHub treats a skipped required check as
+success.
+
+`.github/workflows/nightly.yml` is the scheduled and dispatched full train and the only production
+web deploy. No job there may be named `Gate`. `vercel.json` turns the Git integration off, so
+reaching `main` deploys nothing by itself.
+
+GitHub can require workflow job checks, but Sourdaw keeps pull-request-editable workflows out of
+merge authority beyond the live ruleset: that is a Sourdaw trust policy, not a GitHub platform
+restriction.
 
 Those checks exist so that nobody runs them on this machine. Never run a repository-wide check
 locally to satisfy a gate the pipeline already runs on every push; Resource Safety governs what
