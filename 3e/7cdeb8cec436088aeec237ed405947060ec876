@@ -1,0 +1,25 @@
+electron/main.ts
+  s_ae074277795b45::t_ebd89de4a990eb 59,717-732,758-759,768
+electron/__tests__/rendererCrashRecovery.spec.ts
+  s_ae074277795b45::t_a2360fc31ba176 1-56,80
+  s_ae074277795b45::t_b3608db9c0b20b 57-79
+electron/rendererCrashRecovery.ts
+  s_ae074277795b45::t_0b9b3fca0c1805 31
+  s_ae074277795b45::t_61a64deb117f8a 1-30,32-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "3e7cdeb8cec436088aeec237ed405947060ec876",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
