@@ -1079,6 +1079,60 @@ function restorePreArmedDeliveryReceiptAuthority(
     port.writeDeliveryReceiptAuthority(number, beforeArming);
 }
 
+function replacePersistedDeliveryReceiptAuthorityIfUnchanged(
+    number: number,
+    expectedCurrent: CurrentPersistedDeliveryReceiptAuthority,
+    next: CurrentPersistedDeliveryReceiptAuthority,
+    port: DeliveryPort
+): boolean {
+    const current = port.readDeliveryReceiptAuthority(number);
+    if (!samePersistedDeliveryReceiptAuthority(current, expectedCurrent)) {
+        return false;
+    }
+    if (samePersistedDeliveryReceiptAuthority(current, next)) {
+        return true;
+    }
+    port.writeDeliveryReceiptAuthority(number, next);
+    return true;
+}
+
+function frozenDeliveryReceiptAuthorityHead(
+    number: number,
+    authority: CurrentPersistedDeliveryReceiptAuthority
+): string | undefined {
+    if (authority.phase === 'prepared' && authority.postMergeValidation !== undefined) {
+        return authority.postMergeValidation.headRefOid;
+    }
+    if (authority.receiptBody === undefined) {
+        return undefined;
+    }
+    const payload = parseDeliveryReceipt(authority.receiptBody);
+    if (payload === undefined || payload.schemaVersion === 1) {
+        fail(`PR #${number} delivery receipt authority cannot be proven`);
+    }
+    return payload.head;
+}
+
+function releaseStaleFrozenDeliveryReceiptAuthorityBeforeOpenRetry(
+    pullRequest: PullRequestSnapshot,
+    port: DeliveryPort
+): void {
+    const current = port.readDeliveryReceiptAuthority(pullRequest.number);
+    if (!isFrozenPersistedDeliveryReceiptAuthority(current)) {
+        return;
+    }
+    const frozenHead = frozenDeliveryReceiptAuthorityHead(pullRequest.number, current);
+    if (frozenHead === undefined || frozenHead === pullRequest.headRefOid) {
+        return;
+    }
+    replacePersistedDeliveryReceiptAuthorityIfUnchanged(
+        pullRequest.number,
+        current,
+        releasedDeliveryReceiptAuthority(current),
+        port
+    );
+}
+
 function shouldRestorePreArmedDeliveryReceiptAuthorityAfterFinalObservation(pullRequest: PullRequestSnapshot): boolean {
     return pullRequest.state === 'CLOSED' || (pullRequest.state === 'OPEN' && pullRequest.mergeable !== 'UNKNOWN');
 }
@@ -1779,6 +1833,7 @@ function deliverPullRequestWithCiAdmission(
         port.log(`PR #${number} was already merged; repaired ${remaining.length} remaining dependent(s)`);
         return;
     }
+    releaseStaleFrozenDeliveryReceiptAuthorityBeforeOpenRetry(initial, port);
     validateBaseBranch(initial);
     const initialTrackerTarget = trackerCompletionTarget(initial);
     validatePullRequest(initial, port, ciAdmissionMode);
