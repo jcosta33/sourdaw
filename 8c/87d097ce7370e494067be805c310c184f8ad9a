@@ -1,0 +1,108 @@
+src/modules/AiRuntime/useCases/__tests__/agentRunLifecycle.spec.ts
+  s_a40848e8f8cca9::t_4117be97a7b4d6 609-612,705-708
+  s_a40848e8f8cca9::t_10212a07528c3a 1,4,13-26,335-338,614,635-637,710
+src/modules/AiRuntime/stores/selectAgentRunPendingEffectRecoveries.ts
+  s_a40848e8f8cca9::t_763fbae00c8fa2 41-42,44-45
+  s_a40848e8f8cca9::t_1549f114639b98 46
+src/modules/AiRuntime/stores/__tests__/selectAgentRunPendingEffectRecoveries.spec.ts
+  s_a40848e8f8cca9::t_763fbae00c8fa2 82,142-166
+  s_a40848e8f8cca9::t_821bc0d125b672 167-168
+crates/daw-engine/src/audio_thread.rs
+  s_a40848e8f8cca9::t_b61b885eb256c2 1069-1070
+crates/daw-engine/src/lib.rs
+  s_a40848e8f8cca9::t_105496ae8d51ed 631-633,638-639
+crates/daw-engine/src/offline.rs
+  s_a40848e8f8cca9::t_eafdbd2cea3fb2 180-181,250-251
+crates/daw-engine/src/scheduler.rs
+  s_a40848e8f8cca9::t_273cb12ed3b0ce 5349-5350,5366-5367,5390-5391,5416-5417,5448-5449,5459-5460,5833-5834,5944-5945,6406-6407,6743,6750
+crates/daw-engine/src/timeline.rs
+  s_a40848e8f8cca9::t_08bcf961fa9c09 13-14,826-831,833-837,840,842,848-849,852-853,2608,2612,2636-2637,2652-2653,2716-2717,2774-2775,2854-2855,2985-2986,3031-3032,3053,3057,3103-3109,3120-3121
+crates/sourdaw-native/src/commands/graph.rs
+  s_a40848e8f8cca9::t_faefdb63982f71 123-131,161,232-238,298-310,1845,1847-1850,1864-1869,2121-2129,2132-2135,2144-2147,2277-2286,2288,2857-2858,2874-2960,3314-3396,3403-3404,4631-4632
+crates/sourdaw-native/src/state.rs
+  s_a40848e8f8cca9::t_ab4c9be0a7519a 211-217,219-220
+src/modules/AiRuntime/useCases/__tests__/bassCompressorPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_72b8bd69e7b3e1 21-22,618-632,697,700
+src/modules/AiRuntime/useCases/__tests__/deleteMutedEmptyTracksPromptWorkflow.spec.ts
+  s_a40848e8f8cca9::t_e2b12b90dce112 17-18,434-448,519,522
+src/modules/AiRuntime/useCases/__tests__/pendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_3a6c1485996b57 25-58,227-233,243-251,284-287,289,296,299,887-888
+src/modules/AiRuntime/useCases/__tests__/sharedVocalFxBusesWorkflow.spec.ts
+  s_a40848e8f8cca9::t_d97846fa8274a6 24,26,923-937,1022,1025
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_a40848e8f8cca9::t_0b62d3379dbdf6 14-15,569-583,655,657
+src/modules/AudioEngine/models/AudioGraphBackend.ts
+  s_a40848e8f8cca9::t_1115d28e3310fe 469-483
+src/modules/AudioEngine/repositories/nativeGraph/nativeTimelineSamplePool.ts
+  s_a40848e8f8cca9::t_b917ca93913931 1-70
+src/modules/AudioEngine/repositories/nativeGraph/registeredNativeTimelineSampleIds.ts
+  s_a40848e8f8cca9::t_46b51e1be81dbb 1-23
+src/modules/AudioEngine/repositories/nativeGraph/serializeAudioGraphCommand.ts
+  s_a40848e8f8cca9::t_bc69afd0855d62 113,212-220
+src/modules/AudioEngine/useCases/index.ts
+  s_a40848e8f8cca9::t_92b16051c08987 110
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_a40848e8f8cca9::t_061bec91325986 25,47-51,54-63,81-91,100-111,146-152,155-162,219-224,245-249,262-266,275,283-332,334,341-349,360,377-381,388,403,410,420-425,431-463,465,475,486-491,506-510,526-530,548,565,581,596,619-623,636,688,702,728-732,742-745,760,780,793,804,826-830,839-841,848
+src/modules/AudioEngine/useCases/livePlayback/__tests__/primeNativeTimelineSamples.spec.ts
+  s_a40848e8f8cca9::t_08a8fe1a57423d 1-217
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgramme.spec.ts
+  s_a40848e8f8cca9::t_ff2d8d671a17c7 1-509
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgrammeParity.spec.ts
+  s_a40848e8f8cca9::t_71cdf50a081cf2 1-797
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphTopology.spec.ts
+  s_a40848e8f8cca9::t_110535ec1de694 20-21,24-60,116,367,382-408,413,416,419-481,484,490
+src/modules/AudioEngine/useCases/livePlayback/__tests__/syncNativeTimelineSamples.spec.ts
+  s_a40848e8f8cca9::t_a830e27461055a 1-176
+src/modules/AudioEngine/useCases/livePlayback/primeNativeTimelineSamples.ts
+  s_a40848e8f8cca9::t_2ec7069235ab38 1-82
+src/modules/AudioEngine/useCases/livePlayback/projectLiveGraphProgramme.ts
+  s_a40848e8f8cca9::t_e063df6207d8cd 1-317
+src/modules/AudioEngine/useCases/livePlayback/projectLiveGraphTopology.ts
+  s_a40848e8f8cca9::t_e6dc4450c3e805 21-32,40,43-66,77-81,84-85,116-117,121-124,126-133,151-159,165-166,222-237,243,249-253,256-263,272-274
+src/modules/AudioEngine/useCases/livePlayback/readLiveGraphProgramme.ts
+  s_a40848e8f8cca9::t_39ed8ec7fc6fe9 1-66
+src/modules/AudioEngine/useCases/livePlayback/readLiveStripTracks.ts
+  s_a40848e8f8cca9::t_c1447bf5b96933 1-17
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_a40848e8f8cca9::t_6d7b02c16de014 10-23,51,56-57,83-92,121,162-174,182,213-223,228,231-242
+src/modules/AudioEngine/useCases/livePlayback/syncNativeTimelineSamples.ts
+  s_a40848e8f8cca9::t_83a10004ca37c6 1-87
+src/modules/AudioEngine/useCases/offlineRender/admitNativeClipExpansion.ts
+  s_a40848e8f8cca9::t_940290599f2eec 1-64
+src/modules/AudioEngine/useCases/offlineRender/projectNativeClipFade.ts
+  s_a40848e8f8cca9::t_cd1b7f5e8b111b 1-75
+src/modules/AudioEngine/useCases/offlineRender/renderOfflineWithNativeEngine.ts
+  s_a40848e8f8cca9::t_db2f829e43cc25 38-45,76,80,346-350,390-399,411
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  s_a40848e8f8cca9::t_8bc30135ccb153 185-188,191,228-243,1790-1791
+src/modules/Transport/useCases/transportControls/__tests__/startPlayback.spec.ts
+  s_a40848e8f8cca9::t_608ee70fb1f4be 29-31
+src/modules/Transport/useCases/transportControls/startPlayback.ts
+  s_a40848e8f8cca9::t_24d660dbecc90e 2,62-67,75-78
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useAppInitialization.spec.ts
+  s_a40848e8f8cca9::t_ffcd944142ddff 5,31-35,268-286
+src/modules/WorkspaceShell/presentations/hooks/useAppInitialization.ts
+  s_a40848e8f8cca9::t_1a70ddd564a7fa 9,26-32,35,43-46,52-53,80-83
+tests/e2e/browserDisplayScale.spec.ts
+  s_a40848e8f8cca9::t_71722f148efd52 4-5,354-356
+tests/e2e/e2eUtils.ts
+  s_a40848e8f8cca9::t_13c4e46e02add3 6-13
+tests/e2e/exportAudioEvidence.spec.ts
+  s_a40848e8f8cca9::t_af99e83c270bbf 7,64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "8c87d097ce7370e494067be805c310c184f8ad9a",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
