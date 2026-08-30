@@ -6,6 +6,7 @@ import {
     externalPluginActivationStore,
 } from '../../../stores/externalPluginActivationStore';
 import { activateExternalPlugin } from '../activateExternalPlugin';
+import { beginProjectSessionPluginRetirement } from '../beginProjectSessionPluginRetirement';
 import { clearLoadedExternalPlugins } from '../clearLoadedExternalPlugins';
 import { externalLatencyReporters } from '../externalLatencyReporters';
 import { externalPluginActivationOutcomes, externalPluginActivationTasks } from '../externalPluginActivationTasks';
@@ -124,6 +125,35 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
             mocks.loadPlugin.mock.invocationCallOrder[1]!
         );
         expect(loadedExternalInstances.has('late-instance')).toBe(true);
+    });
+
+    it('keeps activation admission fenced through project-session bulk retirement until the reused host reopens', async () => {
+        const bulkUnload = Promise.withResolvers<[string[], string[]]>();
+        mocks.unloadPlugin.mockReturnValueOnce(bulkUnload.promise);
+        mocks.loadPlugin.mockResolvedValueOnce({
+            instance_id: 'late-instance',
+            parameters: [],
+            latency_samples: 0,
+            latency_ms: 2,
+            engine_plugin_id: 1001,
+        });
+        const retirement = beginProjectSessionPluginRetirement();
+        const retiring = retirement.retire();
+        const activation = activateExternalPlugin({
+            engineSampleRate: 48_000,
+            pluginId: 'compressor',
+            instanceId: 'late-instance',
+        });
+
+        await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledOnce());
+        expect(mocks.loadPlugin).not.toHaveBeenCalled();
+        bulkUnload.resolve([[], []]);
+        await retiring;
+        expect(mocks.loadPlugin).not.toHaveBeenCalled();
+
+        retirement.reopen();
+        await activation;
+        expect(mocks.loadPlugin).toHaveBeenCalledOnce();
     });
 
     it('serializes bulk unload after an already admitted keyed lifecycle operation', async () => {

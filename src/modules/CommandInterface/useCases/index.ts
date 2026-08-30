@@ -3,3 +3,4 @@
 
 export { setShortcutMapping } from './setShortcutMapping';
 export { resetShortcutMappings } from './resetShortcutMappings';
+export { isKeyboardEditableTarget } from './isKeyboardEditableTarget';

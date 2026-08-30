@@ -5,6 +5,9 @@ const runtime = vi.hoisted(() => ({
     resetAudioGraph: vi.fn(),
     unloadPlugin: vi.fn(),
     repairRuntimeGraphFromProject: vi.fn(),
+    beginProjectSessionPluginRetirement: vi.fn(),
+    retire: vi.fn(),
+    reopen: vi.fn(),
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
@@ -12,7 +15,9 @@ vi.mock('#/modules/Transport/useCases', () => ({
     repairRuntimeGraphFromProject: runtime.repairRuntimeGraphFromProject,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({ resetAudioGraph: runtime.resetAudioGraph }));
-vi.mock('#/modules/PluginHost/useCases', () => ({ unloadPlugin: runtime.unloadPlugin }));
+vi.mock('#/modules/PluginHost/useCases', () => ({
+    beginProjectSessionPluginRetirement: runtime.beginProjectSessionPluginRetirement,
+}));
 
 describe('quiesceProjectSession', () => {
     beforeEach(() => {
@@ -21,6 +26,12 @@ describe('quiesceProjectSession', () => {
         runtime.resetAudioGraph.mockReset();
         runtime.unloadPlugin.mockReset();
         runtime.repairRuntimeGraphFromProject.mockReset();
+        runtime.beginProjectSessionPluginRetirement.mockReset().mockImplementation(() => ({
+            retire: runtime.retire,
+            reopen: runtime.reopen,
+        }));
+        runtime.retire.mockReset().mockImplementation(() => runtime.unloadPlugin());
+        runtime.reopen.mockReset();
     });
 
     it('stops playback, drops the live graph, then unloads project plugin instances', async () => {
@@ -56,6 +67,7 @@ describe('quiesceProjectSession', () => {
 
         await expect(quiesceProjectSession(1)).resolves.toBe(false);
         expect(runtime.repairRuntimeGraphFromProject).toHaveBeenCalledOnce();
+        expect(runtime.reopen).toHaveBeenCalledOnce();
         runtime.unloadPlugin.mockResolvedValue(undefined);
         await expect(quiesceProjectSession(2)).resolves.toBe(true);
         expect(runtime.resetAudioGraph).toHaveBeenCalledTimes(2);
@@ -120,5 +132,17 @@ describe('quiesceProjectSession', () => {
         releaseRepair();
         await expect(cancelling).resolves.toBe(false);
         await expect(quiesceProjectSession(12, async () => true)).resolves.toBe(true);
+    });
+
+    it('publishes the Project recovery-failure surface and keeps close admission locked when repair also fails', async () => {
+        runtime.stopPlayback.mockResolvedValue(undefined);
+        runtime.unloadPlugin.mockRejectedValueOnce(new Error('unload failed'));
+        runtime.repairRuntimeGraphFromProject.mockRejectedValueOnce(new Error('repair failed'));
+        const { projectLoadFailureStore } = await import('../../../stores/projectLoadFailureStore');
+        const { quiesceProjectSession } = await import('../quiesceProjectSession');
+
+        await expect(quiesceProjectSession(21, async () => true)).resolves.toBe(false);
+        expect(projectLoadFailureStore.value?.message).toMatch(/could not safely restore/u);
+        await expect(quiesceProjectSession(22, async () => true)).resolves.toBe(false);
     });
 });

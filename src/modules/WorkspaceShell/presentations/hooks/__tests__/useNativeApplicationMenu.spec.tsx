@@ -40,6 +40,7 @@ const projectActions = vi.hoisted(() => ({
     saveProject: vi.fn(async () => true),
     quiesceProjectSession: vi.fn(async () => true),
     cancelProjectSessionQuiesce: vi.fn(async () => false),
+    releaseProjectSessionPluginRetirement: vi.fn(),
     discardProjectChanges: vi.fn(async () => true),
     newProject: vi.fn(),
     pickAndImportProjectFile: vi.fn(async () => true),
@@ -116,6 +117,13 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
 }));
 const command = vi.hoisted(() => ({ executeAppAction: vi.fn(async () => undefined), undo: vi.fn(), redo: vi.fn() }));
 vi.mock('#/modules/Command/useCases', () => command);
+vi.mock('#/modules/CommandInterface/useCases', () => ({
+    isKeyboardEditableTarget: (target: Element | null) =>
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        (target instanceof HTMLElement &&
+            (target.isContentEditable || target.closest('[data-canvas-editor]') !== null)),
+}));
 const onboarding = vi.hoisted(() => ({ startOnboardingTour: vi.fn() }));
 vi.mock('#/modules/Onboarding/useCases', () => onboarding);
 
@@ -147,6 +155,7 @@ describe('useNativeApplicationMenu', () => {
         projectActions.discardProjectChanges.mockReset();
         projectActions.discardProjectChanges.mockResolvedValue(true);
         projectActions.cancelProjectSessionQuiesce.mockReset().mockResolvedValue(false);
+        projectActions.releaseProjectSessionPluginRetirement.mockClear();
         projectActions.newProject.mockClear();
         projectActions.loadRecentProject.mockClear();
         projectActions.recentProjectChanges.subscribe.mockClear();
@@ -305,6 +314,39 @@ describe('useNativeApplicationMenu', () => {
         expect(command.undo).not.toHaveBeenCalled();
         expect(command.redo).not.toHaveBeenCalled();
         input.remove();
+    });
+
+    it('leaves native Edit commands to the focused canvas editor', async () => {
+        renderHook(() =>
+            useNativeApplicationMenu({
+                projectId: 'project',
+                name: 'Song',
+                createdAt: 1,
+                updatedAt: 2,
+                dirty: false,
+                loading: false,
+                keyRoot: 0,
+                scaleName: 'chromatic',
+                tuning: { name: 'Equal Temperament', frequencies: [] },
+                productionBrief: {} as never,
+                initialized: true,
+            })
+        );
+        const pianoRoll = document.createElement('div');
+        pianoRoll.tabIndex = 0;
+        pianoRoll.setAttribute('data-canvas-editor', '');
+        document.body.append(pianoRoll);
+        pianoRoll.focus();
+
+        desktop.listener?.({ action: 'edit:cut' });
+        desktop.listener?.({ action: 'edit:copy' });
+        desktop.listener?.({ action: 'edit:paste' });
+        desktop.listener?.({ action: 'edit:select-all' });
+
+        await Promise.resolve();
+        expect(command.executeAppAction).not.toHaveBeenCalled();
+        expect(arrangement.selectAllClips).not.toHaveBeenCalled();
+        pianoRoll.remove();
     });
 
     it('keeps a legacy project close-authoritative with the same snapshot key after canonical identity migration', () => {

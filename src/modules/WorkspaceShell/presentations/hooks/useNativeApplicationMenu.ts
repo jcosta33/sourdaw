@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { clearClipSelection, selectAllClips, zoomTimelineBy } from '#/modules/Arrangement/useCases';
 import { executeAppAction, redo, undo } from '#/modules/Command/useCases';
+import { isKeyboardEditableTarget } from '#/modules/CommandInterface/useCases';
 import { captureProjectRevision, subscribeToCrdtChanges } from '#/modules/CrdtDocument/useCases';
 import { startOnboardingTour } from '#/modules/Onboarding/useCases';
 import { projectStore } from '#/modules/Project/stores';
@@ -18,6 +19,7 @@ import {
     saveProject,
     quiesceProjectSession,
     cancelProjectSessionQuiesce,
+    releaseProjectSessionPluginRetirement,
 } from '#/modules/Project/useCases';
 import {
     openExportDialog,
@@ -38,11 +40,6 @@ import type { ProjectStoreState } from '#/modules/Project/stores';
 
 type NativeMenu = NonNullable<ReturnType<typeof nativeApplicationMenu>>;
 type NativeMenuIntent = Parameters<Parameters<NativeMenu['listen']>[0]>[0];
-
-const editableElement = (element: Element | null): boolean =>
-    element instanceof HTMLInputElement ||
-    element instanceof HTMLTextAreaElement ||
-    (element instanceof HTMLElement && element.isContentEditable);
 
 const allClipIds = (): string[] =>
     trackStore.value?.tracks.flatMap((track) => track.clips.map((clip) => clip.id)) ?? [];
@@ -74,7 +71,7 @@ const reportCloseResult = async (
 
 const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
     const { action } = intent;
-    if (action.startsWith('edit:') && editableElement(document.activeElement)) {
+    if (action.startsWith('edit:') && isKeyboardEditableTarget(document.activeElement)) {
         return;
     }
     switch (action) {
@@ -209,6 +206,8 @@ const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
 
 /** Binds macOS menu intents to existing renderer-owned product operations. */
 export const useNativeApplicationMenu = (project: ProjectStoreState): void => {
+    useEffect(() => () => releaseProjectSessionPluginRetirement(), []);
+
     useEffect(() => {
         const menu = nativeApplicationMenu();
         if (menu === undefined) {
