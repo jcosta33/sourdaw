@@ -180,6 +180,54 @@ describe('agentRunLifecycle', () => {
         expect(agentRunLifecycle.get('run-unsettled-saga')).toMatchObject({ phase: 'partially-completed' });
     });
 
+    it('keeps a reloaded manual-repair saga partially completed when unrelated work commits', () => {
+        const runId = 'run-reloaded-manual-repair';
+        agentRunLifecycle.create({
+            runId,
+            request: 'Repair the retained external effect.',
+            mode: 'apply',
+            createdRevision: 'revision-1',
+            createdAt: 100,
+        });
+        agentRunLifecycle.recordSagaStep({
+            runId,
+            step: createAgentSagaStep({
+                stepId: 'effect:batch-manual:command-manual',
+                order: 0,
+                owner: 'external-effect',
+                workId: 'batch-manual',
+                receiptIdentity: '2:run-reloaded-manual-repair:batch-manual:partially-committed',
+                state: 'manual-repair',
+                relatedArtifactIds: [],
+                updatedAt: 110,
+                compensationAvailable: false,
+            }),
+        });
+        const serializedState = window.localStorage.getItem('sourdaw-agent-runs');
+        if (!serializedState) {
+            throw new Error('Expected the manual-repair saga state to be durable.');
+        }
+        agentRunLifecycle.clear();
+        const reloaded = reloadPersistedAgentRun(serializedState, runId);
+        expect(reloaded).toMatchObject({
+            pendingEffectContinuations: [],
+            saga: { steps: [expect.objectContaining({ owner: 'external-effect', state: 'manual-repair' })] },
+        });
+
+        agentRunLifecycle.recordCommittedWork({
+            runId,
+            workId: 'batch-unrelated',
+            receiptIdentity: '2:run-reloaded-manual-repair:batch-unrelated:committed',
+            committedAt: 120,
+        });
+
+        expect(agentRunLifecycle.get(runId)).toMatchObject({
+            phase: 'partially-completed',
+            pendingEffectContinuations: [],
+            saga: { steps: [expect.objectContaining({ owner: 'external-effect', state: 'manual-repair' })] },
+        });
+    });
+
     it('atomically converts both durable continuation copies to manual repair', () => {
         createRenderReviewRun();
 

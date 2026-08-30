@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { type AgentRunPendingEffect } from '../../models/AgentRun';
 import { MISSING_EXACT_CHECKPOINT_RECOVERY_REASON } from '../../models/GetPendingEffectRecoveryPolicy';
 import { recoverAgentRunPendingEffects } from '../recoverAgentRunPendingEffects';
 
@@ -52,6 +53,52 @@ function renderRecovery() {
         authority: {},
         lastError: null,
     };
+}
+
+const PROVISIONAL_DURABLE_EFFECT_REASON = 'Post-commit effect has not completed';
+const PENDING_EFFECT_PROOF_MISMATCH_REASON =
+    'The durable project checkpoint does not match the retained pending-effect proof.';
+
+function runtimeGraphReceiptEffect(commandId = 'command-runtime'): AgentRunPendingEffect {
+    return {
+        commandId,
+        kind: 'runtime-graph',
+        operation: 'addDevice',
+        reason: 'runtime graph revision is stale',
+        remediation: 'retry',
+        state: 'pending',
+    };
+}
+
+function manualizedRuntimeGraphEffect(receiptEffect: AgentRunPendingEffect): AgentRunPendingEffect {
+    return {
+        ...receiptEffect,
+        kind: 'runtime-graph',
+        reason: PROVISIONAL_DURABLE_EFFECT_REASON,
+        remediation: 'repair',
+    };
+}
+
+function configureManualizedRuntimeGraphProof(input?: {
+    continuationEffects?: AgentRunPendingEffect[];
+    receiptEffects?: AgentRunPendingEffect[];
+    lastError?: string | null;
+}): void {
+    const receiptEffect = runtimeGraphReceiptEffect();
+    const recovery = renderRecovery();
+    mocks.getRecovery.mockReturnValue({
+        ...recovery,
+        effects: input?.continuationEffects ?? [manualizedRuntimeGraphEffect(receiptEffect)],
+        lastError: input?.lastError ?? MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+        recovery: 'manual-repair',
+    });
+    mocks.getReceipt.mockResolvedValue({
+        schemaVersion: 2,
+        runId: 'run-render-recovery',
+        batchId: 'batch-render-recovery',
+        outcome: 'partially-committed',
+        pendingEffects: input?.receiptEffects ?? [receiptEffect],
+    });
 }
 
 describe('recoverAgentRunPendingEffects', () => {
@@ -248,6 +295,141 @@ describe('recoverAgentRunPendingEffects', () => {
             runId: 'run-render-recovery',
             batchId: 'batch-render-recovery',
             reason: 'The durable project checkpoint does not match the retained pending-effect proof.',
+        });
+        expect(mocks.requireManualRepair).not.toHaveBeenCalled();
+        expect(mocks.executeBatch).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        [
+            'wrong last error',
+            () => configureManualizedRuntimeGraphProof({ lastError: 'different recovery policy' }),
+            PENDING_EFFECT_PROOF_MISMATCH_REASON,
+        ],
+        [
+            'extra receipt effect',
+            () => {
+                const first = runtimeGraphReceiptEffect('command-runtime-first');
+                const second = runtimeGraphReceiptEffect('command-runtime-second');
+                configureManualizedRuntimeGraphProof({
+                    continuationEffects: [manualizedRuntimeGraphEffect(first)],
+                    receiptEffects: [first, second],
+                });
+            },
+            PENDING_EFFECT_PROOF_MISMATCH_REASON,
+        ],
+        [
+            'swapped effect order',
+            () => {
+                const first = runtimeGraphReceiptEffect('command-runtime-first');
+                const second = runtimeGraphReceiptEffect('command-runtime-second');
+                configureManualizedRuntimeGraphProof({
+                    continuationEffects: [manualizedRuntimeGraphEffect(second), manualizedRuntimeGraphEffect(first)],
+                    receiptEffects: [first, second],
+                });
+            },
+            PENDING_EFFECT_PROOF_MISMATCH_REASON,
+        ],
+        [
+            'wrong continuation kind',
+            () => {
+                const receiptEffect = runtimeGraphReceiptEffect();
+                configureManualizedRuntimeGraphProof({
+                    continuationEffects: [
+                        {
+                            ...receiptEffect,
+                            kind: 'external-effect',
+                            reason: PROVISIONAL_DURABLE_EFFECT_REASON,
+                            remediation: 'manual-repair',
+                        },
+                    ],
+                    receiptEffects: [receiptEffect],
+                });
+            },
+            PENDING_EFFECT_PROOF_MISMATCH_REASON,
+        ],
+        [
+            'wrong receipt kind',
+            () => {
+                const receiptEffect = runtimeGraphReceiptEffect();
+                configureManualizedRuntimeGraphProof({
+                    continuationEffects: [manualizedRuntimeGraphEffect(receiptEffect)],
+                    receiptEffects: [{ ...receiptEffect, kind: 'external-effect', remediation: 'reconcile' }],
+                });
+            },
+            PENDING_EFFECT_PROOF_MISMATCH_REASON,
+        ],
+        [
+            'wrong continuation operation',
+            () => {
+                const receiptEffect = runtimeGraphReceiptEffect();
+                configureManualizedRuntimeGraphProof({
+                    continuationEffects: [{ ...manualizedRuntimeGraphEffect(receiptEffect), operation: 'setTrackPan' }],
+                    receiptEffects: [receiptEffect],
+                });
+            },
+            PENDING_EFFECT_PROOF_MISMATCH_REASON,
+        ],
+        [
+            'wrong receipt operation',
+            () => {
+                const receiptEffect = runtimeGraphReceiptEffect();
+                configureManualizedRuntimeGraphProof({
+                    continuationEffects: [manualizedRuntimeGraphEffect(receiptEffect)],
+                    receiptEffects: [{ ...receiptEffect, operation: 'setTrackPan' }],
+                });
+            },
+            PENDING_EFFECT_PROOF_MISMATCH_REASON,
+        ],
+        [
+            'wrong continuation remediation',
+            () => {
+                const receiptEffect = runtimeGraphReceiptEffect();
+                configureManualizedRuntimeGraphProof({
+                    continuationEffects: [
+                        {
+                            ...manualizedRuntimeGraphEffect(receiptEffect),
+                            remediation: 'retry',
+                        },
+                    ],
+                    receiptEffects: [receiptEffect],
+                });
+            },
+            PENDING_EFFECT_PROOF_MISMATCH_REASON,
+        ],
+        [
+            'wrong receipt remediation',
+            () => {
+                const receiptEffect = runtimeGraphReceiptEffect();
+                configureManualizedRuntimeGraphProof({
+                    continuationEffects: [manualizedRuntimeGraphEffect(receiptEffect)],
+                    receiptEffects: [{ ...receiptEffect, remediation: 'repair' }],
+                });
+            },
+            PENDING_EFFECT_PROOF_MISMATCH_REASON,
+        ],
+        [
+            'receipt reason remains provisional',
+            () => {
+                const receiptEffect = runtimeGraphReceiptEffect();
+                configureManualizedRuntimeGraphProof({
+                    continuationEffects: [manualizedRuntimeGraphEffect(receiptEffect)],
+                    receiptEffects: [{ ...receiptEffect, reason: PROVISIONAL_DURABLE_EFFECT_REASON }],
+                });
+            },
+            MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+        ],
+    ])('rejects the manualized runtime-graph exception with %s', async (_label, configureProof, expectedReason) => {
+        configureProof();
+
+        await expect(
+            recoverAgentRunPendingEffects({ runId: 'run-render-recovery', batchId: 'batch-render-recovery' })
+        ).resolves.toEqual({ status: 'failed', reason: expectedReason });
+
+        expect(mocks.failRecovery).toHaveBeenCalledWith({
+            runId: 'run-render-recovery',
+            batchId: 'batch-render-recovery',
+            reason: expectedReason,
         });
         expect(mocks.requireManualRepair).not.toHaveBeenCalled();
         expect(mocks.executeBatch).not.toHaveBeenCalled();
