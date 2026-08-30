@@ -1,5 +1,4 @@
 import { logger } from '#/infra/logger/appLogger';
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 import { updateChatMessage } from '../../stores/chatStore';
 import { normalizeAgentFailure } from '../agentErrorAndSaga';
@@ -185,7 +184,7 @@ export async function executeImmediatePromptCommand(
             actions,
             commandBatch,
             revertGroupId: group.groupId,
-            committedRevision: execution.committedRevision ?? captureProjectRevision(),
+            ...(execution.committedRevision ? { committedRevision: execution.committedRevision } : {}),
             completesRun: commandLeaseSettlement.accepted,
         });
         if (runPersistenceWarning) {

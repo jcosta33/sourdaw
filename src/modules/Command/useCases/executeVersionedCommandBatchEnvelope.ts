@@ -1,4 +1,4 @@
-import { type ExecuteOptions } from '#/utils/handlerContract';
+import { type AppAction, type ExecuteOptions } from '#/utils/handlerContract';
 
 import { type CommandBatchAuthority } from '../models/VersionedCommandBatchEnvelope';
 
@@ -42,6 +42,8 @@ type ExecuteVersionedCommandBatchEnvelopeInput = {
         onProjectCommitFinalizationUnavailable?: (result: { reason: string }) => void;
         /** Refuse final checkpoint evidence when the caller's project-write authority was invalidated. */
         shouldFinalizeProjectCommit?: () => boolean;
+        /** Observe the storage commit before deferred post-commit effects begin. */
+        onCommitted?: (actions: readonly AppAction[]) => void;
     };
     onProjectCommitPrepared?: () => void;
 };
@@ -60,6 +62,10 @@ const PROJECT_RECEIPT_REVISION_WARNING =
 const PROJECT_EFFECT_RECOVERY_REQUIRES_EXACT_CHECKPOINT_REVISION =
     'Pending project checkpoint recovery requires exact post-commit project revision evidence.';
 const activeIdempotencyClaims = new Set<string>();
+
+function getStorageCommitRevisionFailureMessage(error: Error | null): string {
+    return error?.message ?? 'exact storage-commit revision evidence is unavailable';
+}
 
 function reportUnavailableProjectCommitFinalization(
     options: ExecuteVersionedCommandBatchEnvelopeInput['options'],
@@ -486,6 +492,9 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
     }
     let result: Awaited<ReturnType<typeof executeVersionedCommandBatch>>;
     const callerShouldExecute = input.options?.shouldExecute;
+    const callerOnCommitted = input.options?.onCommitted;
+    let exactStorageCommitRevision: string | undefined;
+    let storageCommitRevisionError: Error | null = null;
     try {
         result = await executeVersionedCommandBatch({
             commands: resolvedCommands.map((command) =>
@@ -507,6 +516,20 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                 shouldExecute: () =>
                     (!requiresDurableExecutionAuthority || commandBatchExecutionAuthorityPort.canExecute()) &&
                     (callerShouldExecute?.() ?? true),
+                onCommitted: (actions) => {
+                    try {
+                        if (!commandProjectRevisionPort.isConfigured()) {
+                            throw new Error('The project revision provider is unavailable at the storage commit.');
+                        }
+                        exactStorageCommitRevision = commandProjectRevisionPort.capture();
+                    } catch (error) {
+                        storageCommitRevisionError =
+                            error instanceof Error
+                                ? error
+                                : new Error('Unknown storage-commit revision capture failure.');
+                    }
+                    callerOnCommitted?.(actions);
+                },
                 onProjectCommitPrepared: (committedResult) => {
                     if (idempotencyContentHash !== null) {
                         const recoveryResult = {
@@ -575,16 +598,24 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
         throw error;
     }
     let resultingRevision: string | null = null;
-    try {
-        if (commandProjectRevisionPort.isConfigured()) {
-            resultingRevision = commandProjectRevisionPort.capture();
-        } else {
-            receiptWarnings.push('Resulting project revision is unavailable: revision provider is not configured');
+    if (result.status === 'committed' || result.status === 'committed-with-warning') {
+        resultingRevision = exactStorageCommitRevision ?? null;
+        if (resultingRevision === null) {
+            const reason = getStorageCommitRevisionFailureMessage(storageCommitRevisionError);
+            receiptWarnings.push(`Resulting project revision could not be captured at storage commit: ${reason}`);
         }
-    } catch (error) {
-        receiptWarnings.push(
-            `Resulting project revision could not be captured: ${error instanceof Error ? error.message : String(error)}`
-        );
+    } else {
+        try {
+            if (commandProjectRevisionPort.isConfigured()) {
+                resultingRevision = commandProjectRevisionPort.capture();
+            } else {
+                receiptWarnings.push('Resulting project revision is unavailable: revision provider is not configured');
+            }
+        } catch (error) {
+            receiptWarnings.push(
+                `Resulting project revision could not be captured: ${error instanceof Error ? error.message : String(error)}`
+            );
+        }
     }
     let finalized = {
         ...result,
@@ -677,12 +708,14 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                     if (!durableFinalReceipt) {
                         throw new Error('The durable project checkpoint receipt is invalid for finalization evidence.');
                     }
-                    if (!commandProjectRevisionPort.isConfigured()) {
-                        throw new Error('The project revision provider is unavailable for finalization evidence.');
+                    if (exactStorageCommitRevision === undefined) {
+                        throw (
+                            storageCommitRevisionError ?? new Error('The exact storage-commit revision is unavailable.')
+                        );
                     }
                     input.options?.onProjectCommitFinalized?.({
                         receipt: durableFinalReceipt,
-                        revision: commandProjectRevisionPort.capture(),
+                        revision: exactStorageCommitRevision,
                     });
                 } catch (error) {
                     reportUnavailableProjectCommitFinalization(input.options, error);

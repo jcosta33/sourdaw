@@ -609,7 +609,7 @@ describe('executePromptActionGroup', () => {
             receiptOutcome: 'committed',
             result: { status: 'committed', actions: [] },
             phase: 'completed',
-            committedRevision: 'revision-2',
+            committedRevision: null,
             batchStatus: 'committed',
             leaseState: 'completed',
             receiptIdentity: '2:prompt-run-1:batch-1:committed',
@@ -821,6 +821,32 @@ describe('executePromptActionGroup', () => {
 
         await expect(execution).resolves.toEqual({ status: 'committed' });
         expect(agentRunLifecycle.get(RUN_ID)?.revisions.committed).toBe('revision-R2');
+    });
+
+    it('does not fabricate ambient commit provenance for an idempotent replay result', async () => {
+        const fixture = getBatchFixtures().stem;
+        const recordReceiptSaga = vi.spyOn(receiptSaga, 'recordAgentRunReceiptSaga');
+        seedRun(fixture);
+        mocks.projectRevision.value = 'revision-R3';
+        mocks.executePlannedActions.mockResolvedValue({
+            status: 'committed',
+            actions: [],
+            receipt: committedReceipt(fixture),
+        });
+
+        await expect(
+            executePromptActionGroup({
+                actions: fixture.actions,
+                prompt: 'Import stems',
+                projectRevision: 'revision-1',
+                ...admitted(fixture),
+            })
+        ).resolves.toEqual({ status: 'committed' });
+
+        expect(recordReceiptSaga).toHaveBeenCalledOnce();
+        expect(recordReceiptSaga.mock.calls[0]?.[0]).not.toHaveProperty('committedRevision');
+        expect(agentRunLifecycle.get(RUN_ID)?.revisions.committed).not.toBe('revision-R3');
+        recordReceiptSaga.mockRestore();
     });
 
     it('exposes manual repair instead of a reconcile-batch continuation for a manual-repair receipt', async () => {

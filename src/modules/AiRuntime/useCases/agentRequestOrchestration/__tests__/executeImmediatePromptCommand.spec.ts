@@ -150,4 +150,28 @@ describe('executeImmediatePromptCommand', () => {
         );
         expect(mocks.captureProjectRevision).not.toHaveBeenCalled();
     });
+
+    it('does not project the ambient revision as provenance for an idempotent replay result', async () => {
+        const { commandBatch, parsedCommandBatch, receipt } = await createFixture();
+        mocks.captureProjectRevision.mockReturnValue('revision-R3');
+        mocks.executePlannedActions.mockResolvedValue({ status: 'committed', actions: [], receipt });
+
+        await executeImmediatePromptCommand({
+            runId: 'run-immediate',
+            prompt: 'Set tempo',
+            actions: [action],
+            assistantMessageId: 'assistant-immediate',
+            abortController: new AbortController(),
+            projectRevision: 'revision-R1',
+            executionMode: 'atomic',
+            group: generateGroupId('Set tempo'),
+            commandBatch,
+            parsedCommandBatch,
+            onExecutionSettlementWarning: vi.fn(),
+        });
+
+        expect(mocks.recordReceiptSaga).toHaveBeenCalledOnce();
+        expect(mocks.recordReceiptSaga.mock.calls[0]?.[0]).not.toHaveProperty('committedRevision');
+        expect(mocks.captureProjectRevision).not.toHaveBeenCalled();
+    });
 });

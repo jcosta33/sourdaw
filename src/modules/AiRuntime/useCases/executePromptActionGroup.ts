@@ -4,7 +4,6 @@ import {
     isExecutableAppActionType,
     parseVersionedCommandBatchEnvelope,
 } from '#/modules/Command/useCases';
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type AgentRunPhase, type AgentRunWorkTerminalState } from '../models/AgentRun';
@@ -403,8 +402,8 @@ export async function executePromptActionGroup(
             receipt: execution.receipt,
             actions: input.actions,
             commandBatch,
-            ...(execution.status === 'committed'
-                ? { committedRevision: execution.committedRevision ?? captureProjectRevision() }
+            ...(execution.status === 'committed' && execution.committedRevision
+                ? { committedRevision: execution.committedRevision }
                 : {}),
             completesRun: leaseSettlement.accepted && leaseSettlement.warning === null,
         });

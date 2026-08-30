@@ -79,6 +79,11 @@ describe('retained section render review artifacts', () => {
         const wrongSection = { ...job, sectionId: 'section-2' };
         expect(getExactAgentSectionRenderArtifact({ job: wrongSection, sourceRevision: 'revision-1' })).toBeNull();
         expect(disposeExactAgentSectionRenderArtifact({ job: wrongSection, sourceRevision: 'revision-1' })).toBe(false);
+        const wrongSampleRate = { ...job, sampleRate: 44_100 };
+        expect(getExactAgentSectionRenderArtifact({ job: wrongSampleRate, sourceRevision: 'revision-1' })).toBeNull();
+        expect(disposeExactAgentSectionRenderArtifact({ job: wrongSampleRate, sourceRevision: 'revision-1' })).toBe(
+            false
+        );
         expect(getExactAgentSectionRenderArtifact({ job, sourceRevision: 'revision-2' })).toBeNull();
         expect(
             disposeExactAgentSectionRenderArtifact({ job: { ...job, jobId: 'other' }, sourceRevision: 'revision-1' })
