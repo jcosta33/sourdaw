@@ -1116,9 +1116,11 @@ function resolveFinalSnapshotWithRestorablePreparedAuthority(
 ): PullRequestSnapshot {
     let latestDefinitiveUnmerged: PullRequestSnapshot | undefined;
     let sawFinalSnapshot = false;
+    let attemptedFinalSnapshotRead = false;
 
     try {
         port.fetch();
+        attemptedFinalSnapshotRead = true;
         const initial = port.pullRequest(number);
         sawFinalSnapshot = true;
         if (shouldRestorePreArmedDeliveryReceiptAuthorityAfterFinalObservation(initial)) {
@@ -1134,7 +1136,21 @@ function resolveFinalSnapshotWithRestorablePreparedAuthority(
         }
         return finalSnapshot;
     } catch (error) {
-        if (!sawFinalSnapshot || latestDefinitiveUnmerged !== undefined) {
+        if (!sawFinalSnapshot) {
+            if (attemptedFinalSnapshotRead) {
+                restorePreArmedDeliveryReceiptAuthority(number, beforeArming, armed, port);
+                throw error;
+            }
+            try {
+                const recovered = resolveStructuralMergeability(port.pullRequest(number), port);
+                if (shouldRestorePreArmedDeliveryReceiptAuthorityAfterFinalObservation(recovered)) {
+                    latestDefinitiveUnmerged = recovered;
+                }
+            } catch {
+                // Preserve the armed authority when the post-merge state remains unreadable.
+            }
+        }
+        if (latestDefinitiveUnmerged !== undefined) {
             restorePreArmedDeliveryReceiptAuthority(number, beforeArming, armed, port);
         }
         throw error;
@@ -1469,6 +1485,9 @@ function readPersistedMergedRecoveryReceipt(
         );
     }
     if (authority.phase === 'released') {
+        fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
+    }
+    if (authority.phase === 'prepared' && authority.postMergeValidation === undefined) {
         fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
     }
     const preparedPostMergeValidation = authority.phase === 'prepared' ? authority.postMergeValidation : undefined;

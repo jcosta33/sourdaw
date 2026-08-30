@@ -1668,7 +1668,7 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: closes }),
                 pullRequest({ state: 'MERGED', body: closes }),
-                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
+                pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: AUTHOR_BOT_NODE_ID }),
             ],
             dependentSets: [[child], [child], []],
         });
@@ -1866,7 +1866,7 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: closes }),
                 pullRequest({ state: 'MERGED', body: closes }),
-                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
+                pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: AUTHOR_BOT_NODE_ID }),
             ],
             dependentSets: [[child], [child], []],
         });
@@ -1885,6 +1885,13 @@ describe('pull-request delivery', () => {
             phase: 'prepared',
             receiptId: 'IC_delivery_42_1',
             receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: {
+                headRefOid: 'head',
+                headRefName: 'feat/gate',
+                baseRefName: 'main',
+                bodySha256: createHash('sha256').update(closes).digest('hex'),
+                trackerTarget: 2372,
+            },
         });
         expect(calls).toContain('receipt-authority:write:prepared:IC_delivery_42_1');
         expect(calls).not.toContain('merge:42:head');
@@ -3939,6 +3946,39 @@ describe('pull-request delivery', () => {
         expect(receipts.map((entry) => entry.id)).toEqual(['IC_delivery_42_1']);
         expect(calls).not.toContain('merge:42:head');
         expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+    });
+
+    it('fails closed when a proof-failed bodyful prepared authority later sees the PR already merged', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, receipts, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({
+                    state: 'MERGED',
+                    body: closes,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[], []],
+            deliveryReceiptProof: { totalCount: 2, latestCommentId: 'IC_hidden_newer' },
+        });
+        port.deliveryReceipts = (number) => {
+            calls.push(`receipts:${number}`);
+            return structuredClone(receipts.slice(0, 1));
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt was not durably verified/i);
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/delivery receipt authority cannot be proven/i);
+        expect(receipts.map((entry) => entry.id)).toEqual(['IC_delivery_42_1']);
+        expect(calls).not.toContain('merge:42:head');
+        expect(calls.filter((call) => call.startsWith('complete:'))).toHaveLength(0);
+        expect(calls).not.toContain('receipt-authority:write:terminal:IC_delivery_42_1');
     });
 
     it('ignores foreign comments before parsing delivery receipts', () => {
