@@ -15,11 +15,6 @@ const FM_SYNTH_RETIRED_PRESET_KEYS: ReadonlySet<string> = new Set([
     'release',
 ]);
 
-// The op-level fm-synth controls (algorithm plus four ratio/level/ADSR blocks)
-// the descriptor declares only once the FM preset migration maps the retired
-// keys onto them (#3155).
-const FM_SYNTH_OP_LEVEL_ID = /^(?:algorithm|op\d_)/;
-
 describe('faustInstrumentPresets', () => {
     it('exports a non-empty preset array', () => {
         expect(FAUST_INSTRUMENT_PRESETS.length).toBeGreaterThan(0);
@@ -127,10 +122,6 @@ describe('faustInstrumentPresets', () => {
         // bounds and defaults included, scaling where the registration
         // declares one.
         //
-        // fm-synth's op-level controls (algorithm plus the four op blocks)
-        // are excluded from the reverse direction until #3155 maps the
-        // presets onto them; everything else registered must be declared.
-        //
         // The Faust effect descriptors carry their own weld of this shape in
         // `PluginDescriptors/__tests__/FaustEffectDescriptors.spec.ts`.
         const realParamsByDevice = scanRealFaustDeviceParams();
@@ -175,9 +166,6 @@ describe('faustInstrumentPresets', () => {
             }
 
             for (const parameterId of registered.keys()) {
-                if (deviceType === 'faust-fm-synth' && FM_SYNTH_OP_LEVEL_ID.test(parameterId)) {
-                    continue;
-                }
                 if (!declared.has(parameterId)) {
                     mismatches.push(`${deviceType}/${parameterId}: registered but not declared`);
                 }
