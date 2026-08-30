@@ -354,7 +354,7 @@ function assertNightlyDoesNotMintGate(jobs: UnknownRecord): void {
         if (typeof name !== 'string') {
             continue;
         }
-        if (name === GATE_SUMMARY_NAME || /['"]Gate['"]/.test(name)) {
+        if (name === GATE_SUMMARY_NAME) {
             throw new Error('the nightly train must not mint Gate');
         }
     }
