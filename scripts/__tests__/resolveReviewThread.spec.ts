@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -16,6 +16,7 @@ import {
     publishReviewResolutionChildLaunchMarker,
     readPersistedReviewResolutionChildLaunchMarker,
     resolveReviewThread,
+    shellPort,
     deleteReply,
     deletePendingReview,
     submitReview,
@@ -97,6 +98,7 @@ type Input = {
     resolveReceiptType?: string;
     existingPendingReviewCount?: number;
     existingPendingReviewIds?: string[];
+    existingPendingReviewBody?: string;
     existingPendingReviewCommitOid?: string;
     addExactForeignPendingReview?: boolean;
     existingReplyReviewState?: ReviewState;
@@ -194,7 +196,12 @@ function fakePort(input: Input = {}) {
         const currentReviewId =
             input.existingPendingReviewIds?.[reviewIndex] ??
             (reviewIndex === 0 ? reviewId : `PRR_pending_${reviewIndex}`);
-        pushReview(currentReviewId, 'PENDING', expectedReviewBody, input.existingPendingReviewCommitOid ?? head);
+        pushReview(
+            currentReviewId,
+            'PENDING',
+            input.existingPendingReviewBody ?? expectedReviewBody,
+            input.existingPendingReviewCommitOid ?? head
+        );
     }
     if (input.addExactForeignPendingReview) {
         reviews.push({
@@ -648,6 +655,45 @@ function createTemporaryGitRepository(): string {
         throw new Error(init.stderr || 'git init failed');
     }
     return directory;
+}
+
+function createFakeGhExecutable(responsesByKey: Record<string, string>): { root: string; executable: string } {
+    const root = mkdtempSync(join(tmpdir(), 'resolve-review-thread-gh-'));
+    const executable = join(root, 'gh');
+    writeFileSync(
+        executable,
+        [
+            `#!${process.execPath}`,
+            `const responses = ${JSON.stringify(responsesByKey)};`,
+            'const args = process.argv.slice(2);',
+            "if (args[0] !== 'api' || args[1] !== 'graphql') {",
+            "  console.error(`unexpected gh args ${JSON.stringify(args)}`);",
+            '  process.exit(1);',
+            '}',
+            'const queryArg = args.find((value) => value.startsWith(\"query=\"));',
+            "if (queryArg === undefined) { console.error('missing query'); process.exit(1); }",
+            'const query = queryArg.slice("query=".length);',
+            'const fields = new Map();',
+            'for (let index = 0; index < args.length; index += 1) {',
+            "  if (args[index] !== '-F') continue;",
+            '  const field = args[index + 1];',
+            "  if (typeof field !== 'string') { console.error('missing field value'); process.exit(1); }",
+            "  const separator = field.indexOf('=');",
+            "  if (separator <= 0) { console.error(`invalid field ${field}`); process.exit(1); }",
+            '  fields.set(field.slice(0, separator), field.slice(separator + 1));',
+            '}',
+            "let key = 'unknown';",
+            "if (query.includes('comments(first:100')) key = `comments:${fields.get('threadId') ?? ''}:${fields.get('cursor') ?? ''}`;",
+            "else if (query.includes('reviews(first:100')) key = `reviews:${fields.get('cursor') ?? ''}`;",
+            "else if (query.includes('reviewThreads(first:100')) key = `threads:${fields.get('cursor') ?? ''}`;",
+            'const response = responses[key];',
+            "if (response === undefined) { console.error(`unexpected key ${key}`); process.exit(1); }",
+            'process.stdout.write(response);',
+        ].join('\n'),
+        { encoding: 'utf8', mode: 0o700 }
+    );
+    chmodSync(executable, 0o700);
+    return { root, executable };
 }
 
 function reviewResolutionLockRef(number: number): string {
@@ -2620,6 +2666,151 @@ describe('review thread resolution', () => {
             })
         );
     });
+    it('refuses duplicate exact pending-review convergence when another attached thread still depends on the duplicate draft', () => {
+        const { port, authorNodeId, state, calls } = fakePort({
+            heads: [movedHead],
+            existingPendingReviewCount: 2,
+            existingPendingReviewIds: ['PRR_canonical_pending', 'PRR_attached_pending'],
+            existingPendingReviewBody: pendingReviewBody(movedHead),
+            existingPendingReviewCommitOid: movedHead,
+            attachedReviewThreadIdsByReviewId: { PRR_attached_pending: [otherThreadId] },
+        });
+
+        expect(() => resolveReviewThread(42, threadId, movedHead, authorNodeId, port)).toThrow(
+            `pending author review PRR_attached_pending still has attached review-thread comments on ${otherThreadId}`
+        );
+        expect(calls.filter((call) => call.startsWith('inspectAttachedReviewThreads:'))).toEqual([
+            `inspectAttachedReviewThreads:42:PRR_attached_pending:${movedHead}`,
+        ]);
+        expect(calls.filter((call) => call.startsWith('deleteReview:'))).toEqual([]);
+        expect(calls.filter((call) => call.startsWith('reply:'))).toEqual([]);
+        expect(state().reviews).toContainEqual(
+            expect.objectContaining({
+                id: 'PRR_attached_pending',
+                state: 'PENDING',
+                commitOid: movedHead,
+            })
+        );
+    });
+    it('preserves an exact pending review on another thread when the target thread already has a managed commented reply', () => {
+        const { port, authorNodeId, state, calls } = fakePort({
+            heads: [movedHead, movedHead],
+            existingReplyCount: 1,
+            existingReplyReviewState: 'COMMENTED',
+            existingReplyReviewBody: pendingReviewBody(movedHead),
+            existingReplyReviewCommitOid: movedHead,
+            existingPendingReviewCount: 1,
+            existingPendingReviewIds: ['PRR_other_thread_pending'],
+            existingPendingReviewBody: pendingReviewBody(movedHead),
+            existingPendingReviewCommitOid: movedHead,
+            attachedReviewThreadIdsByReviewId: { PRR_other_thread_pending: [otherThreadId] },
+        });
+
+        expect(() => resolveReviewThread(42, threadId, movedHead, authorNodeId, port)).toThrow(
+            `pending author review PRR_other_thread_pending still has attached review-thread comments on ${otherThreadId}`
+        );
+        expect(calls.filter((call) => call.startsWith('inspectAttachedReviewThreads:'))).toEqual([
+            `inspectAttachedReviewThreads:42:PRR_other_thread_pending:${movedHead}`,
+        ]);
+        expect(calls.filter((call) => call.startsWith('deleteReview:'))).toEqual([]);
+        expect(calls.filter((call) => call.startsWith('resolve:'))).toEqual([]);
+        expect(state().reviews).toContainEqual(
+            expect.objectContaining({
+                id: 'PRR_other_thread_pending',
+                state: 'PENDING',
+                commitOid: movedHead,
+            })
+        );
+    });
+    it('detects later-page attached comments through the shell-backed GraphQL scanner and refuses stale review deletion', () => {
+        const repository = createTemporaryGitRepository();
+        const fakeGh = createFakeGhExecutable({
+            'threads:': threadPage(
+                [{ id: threadId, isResolved: false, resolvedBy: null }],
+                true,
+                'thread-page-2',
+                movedHead
+            ),
+            'threads:thread-page-2': threadPage(
+                [{ id: otherThreadId, isResolved: false, resolvedBy: null }],
+                false,
+                null,
+                movedHead
+            ),
+            'reviews:': reviewPage(
+                [
+                    {
+                        id: 'PRR_stale_pending',
+                        state: 'PENDING',
+                        body: resolutionReviewSummary(pullRequestId, threadId, head),
+                        commit: { oid: head },
+                        author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: 'Bot' },
+                    },
+                ],
+                false,
+                null,
+                movedHead
+            ),
+            [`comments:${threadId}:`]: JSON.stringify({
+                data: { node: { id: threadId, comments: { nodes: [root], pageInfo: { hasNextPage: false, endCursor: null } } } },
+            }),
+            [`comments:${otherThreadId}:`]: JSON.stringify({
+                data: {
+                    node: {
+                        id: otherThreadId,
+                        comments: {
+                            nodes: [
+                                {
+                                    ...root,
+                                    id: 'PRRC_other_root',
+                                    fullDatabaseId: '9223372036854775810',
+                                },
+                            ],
+                            pageInfo: { hasNextPage: true, endCursor: 'other-comment-page-2' },
+                        },
+                    },
+                },
+            }),
+            [`comments:${otherThreadId}:other-comment-page-2`]: JSON.stringify({
+                data: {
+                    node: {
+                        id: otherThreadId,
+                        comments: {
+                            nodes: [
+                                {
+                                    id: 'PRRC_other_done',
+                                    fullDatabaseId: '9223372036854775811',
+                                    body: 'Done',
+                                    author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: 'Bot' },
+                                    pullRequestReview: {
+                                        id: 'PRR_stale_pending',
+                                        state: 'PENDING',
+                                        body: resolutionReviewSummary(pullRequestId, threadId, head),
+                                        commit: { oid: head },
+                                        author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: 'Bot' },
+                                    },
+                                },
+                            ],
+                            pageInfo: { hasNextPage: false, endCursor: null },
+                        },
+                    },
+                },
+            }),
+        });
+        const session: GhSession = {
+            configDir: repository,
+            env: { SOURDAW_TRUSTED_GH_PATH: fakeGh.executable },
+            dispose() {},
+        };
+        try {
+            expect(() =>
+                resolveReviewThread(42, threadId, movedHead, AUTHOR_BOT_NODE_ID, shellPort(session, repository))
+            ).toThrow(`pending author review PRR_stale_pending still has attached review-thread comments on ${otherThreadId}`);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+            rmSync(fakeGh.root, { recursive: true, force: true });
+        }
+    });
     it('does not publish a stale unattached pending review when the head drifts before the new-head draft is inspected', () => {
         const newerHead = 'c'.repeat(40);
         const { port, authorNodeId, state, calls } = fakePort({
@@ -2894,6 +3085,7 @@ describe('review thread resolution', () => {
         expect(calls).toEqual([
             'inspect:1',
             'inspect:2',
+            `inspectAttachedReviewThreads:42:PRR_pending_reply:${movedHead}`,
             'deleteReview:PRR_pending_reply',
             'inspect:3',
             'inspect:4',

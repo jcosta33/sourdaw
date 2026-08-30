@@ -348,7 +348,7 @@ function resolveReviewThreadWithinMutation(
         let working = before;
         const existingReply = findReusableReply(before.thread, context);
         if (existingReply === undefined) {
-            let pendingReview = convergePendingReviews(working.pendingReviews, context, port);
+            let pendingReview = convergePendingReviews(number, working.pendingReviews, context, port);
             if (pendingReview === undefined) {
                 const stalePendingReply = findStaleManagedPendingReply(working.thread, context);
                 if (stalePendingReply !== undefined) {
@@ -406,7 +406,7 @@ function resolveReviewThreadWithinMutation(
                         assertExpectedHeadAfterMutation(working.head, expectedHead);
                         assertResolvableThread(working.thread, threadId);
                     }
-                    pendingReview = convergePendingReviews(working.pendingReviews, context, port);
+                    pendingReview = convergePendingReviews(number, working.pendingReviews, context, port);
                 }
             }
             if (pendingReview === undefined) {
@@ -422,7 +422,7 @@ function resolveReviewThreadWithinMutation(
                     working = retired.working;
                     assertResolvableThread(working.thread, threadId);
                     assertManagedReplyMarkersReadable(working.thread!, context, ['PENDING', 'COMMENTED'], true);
-                    pendingReview = convergePendingReviews(working.pendingReviews, context, port);
+                    pendingReview = convergePendingReviews(number, working.pendingReviews, context, port);
                 }
             }
             if (
@@ -450,7 +450,7 @@ function resolveReviewThreadWithinMutation(
                 working = port.inspect(number, threadId);
                 assertExpectedHeadAfterMutation(working.head, expectedHead);
                 assertResolvableThread(working.thread, threadId);
-                pendingReview = convergePendingReviews(working.pendingReviews, context, port);
+                pendingReview = convergePendingReviews(number, working.pendingReviews, context, port);
             }
             if (pendingReview === undefined) {
                 fail(`review thread ${threadId} has no reusable pending author review`);
@@ -538,6 +538,7 @@ function resolveReviewThreadWithinMutation(
             assertResolvableThread(replyInspection.thread, threadId);
         }
         const pendingReviewDeleted = reconcilePendingReviewsForReply(
+            number,
             replyInspection.pendingReviews,
             replyInspection.thread,
             context,
@@ -1290,18 +1291,13 @@ function retireRetirableStaleUnattachedPendingReview(
     if (stalePendingReview === undefined) {
         return { working, deleted: false };
     }
-    const attachedThreadIds = port.inspectAttachedReviewThreadIds(number, stalePendingReview.id, context.expectedHead);
-    if (attachedThreadIds.length > 0) {
-        fail(
-            `pending author review ${stalePendingReview.id} still has attached review-thread comments on ${attachedThreadIds.join(', ')}`
-        );
-    }
-    port.deletePendingReview(stalePendingReview.id);
+    deletePendingReviewSafely(number, stalePendingReview.id, context, port);
     const refreshed = port.inspect(number, threadId);
     assertExpectedHeadAfterMutation(refreshed.head, context.expectedHead);
     return { working: refreshed, deleted: true };
 }
 function convergePendingReviews(
+    number: number,
     pendingReviews: PullRequestReview[],
     context: ResolutionReviewContext,
     port: ResolveReviewThreadPort,
@@ -1314,12 +1310,13 @@ function convergePendingReviews(
     }
     for (const review of exact) {
         if (review.id !== canonical.id) {
-            port.deletePendingReview(review.id);
+            deletePendingReviewSafely(number, review.id, context, port);
         }
     }
     return canonical;
 }
 function reconcilePendingReviewsForReply(
+    number: number,
     pendingReviews: PullRequestReview[],
     thread: ReviewThread | null,
     context: ResolutionReviewContext,
@@ -1355,10 +1352,31 @@ function reconcilePendingReviewsForReply(
         if (!managedPendingReviewIds.has(review.id) && !isExactPendingReview(review, context)) {
             continue;
         }
-        port.deletePendingReview(review.id);
+        deletePendingReviewSafely(
+            number,
+            review.id,
+            context,
+            port,
+            managedPendingReviewIds.has(review.id) ? [context.threadId] : []
+        );
         deleted = true;
     }
     return deleted;
+}
+function deletePendingReviewSafely(
+    number: number,
+    reviewId: string,
+    context: ResolutionReviewContext,
+    port: ResolveReviewThreadPort,
+    allowedAttachedThreadIds: string[] = []
+): void {
+    const allowedThreadIds = new Set(allowedAttachedThreadIds);
+    const attachedThreadIds = [...new Set(port.inspectAttachedReviewThreadIds(number, reviewId, context.expectedHead))].sort();
+    const unsafeThreadIds = attachedThreadIds.filter((threadId) => !allowedThreadIds.has(threadId));
+    if (unsafeThreadIds.length > 0) {
+        fail(`pending author review ${reviewId} still has attached review-thread comments on ${unsafeThreadIds.join(', ')}`);
+    }
+    port.deletePendingReview(reviewId);
 }
 function deleteAmbiguousCreatedPendingReview(
     before: PullRequestReview[],
@@ -1449,7 +1467,7 @@ function repairCompletedResolution(
         );
         thread = refresh();
     }
-    const pendingReviewDeleted = reconcilePendingReviewsForReply(working.pendingReviews, thread, context, port);
+    const pendingReviewDeleted = reconcilePendingReviewsForReply(number, working.pendingReviews, thread, context, port);
     if (pendingReviewDeleted) {
         thread = refresh();
     }
@@ -1471,7 +1489,7 @@ function repairCompletedResolution(
     );
     if (managedPendingReviewIdsToDelete.size > 0) {
         for (const reviewId of managedPendingReviewIdsToDelete) {
-            port.deletePendingReview(reviewId);
+            deletePendingReviewSafely(number, reviewId, context, port, [context.threadId]);
         }
         thread = refresh();
     }
