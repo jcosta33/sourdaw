@@ -30,6 +30,20 @@ const notificationMocks = vi.hoisted(() => ({
     notifyUser: vi.fn(),
 }));
 
+const loggerMocks = vi.hoisted(() => ({
+    warn: vi.fn(),
+}));
+
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: {
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: loggerMocks.warn,
+        error: vi.fn(),
+        setWriters: vi.fn(),
+    },
+}));
+
 const toasterMocks = vi.hoisted(() => ({
     compileToasterTrackStackActions: vi.fn(),
 }));
@@ -239,6 +253,55 @@ describe('InstrumentsTab', () => {
             trackId: mockTrack.id,
         });
         expect(commandMocks.executeAppAction).toHaveBeenCalledWith(action);
+    });
+
+    it('logs the rejection before notifying when the instrument preset load fails', async () => {
+        const preset = {
+            id: 'pad-1',
+            name: 'Glass Pad',
+            category: 'pad',
+            description: '',
+            trackKind: 'audio',
+            devices: [{ type: 'builtin-synth', name: 'Synth', parameterValues: { cutoff: 0.6 } }],
+            tags: [],
+            author: 'test',
+            isFactory: true,
+        };
+        const action = { type: 'loadPreset', payload: { presetId: preset.id, trackId: mockTrack.id } } as const;
+        arrangementMocks.getFactoryPresets.mockReturnValue([preset]);
+        arrangementMocks.compileLoadPresetActions.mockReturnValue({
+            actions: [action],
+            deviceIds: ['preset-device-1'],
+            groupLabel: 'Load preset',
+            trackId: mockTrack.id,
+        });
+        commandMocks.executeAppAction.mockRejectedValue(new Error('repair required'));
+
+        renderWithTooltip(
+            <InstrumentsTab
+                selectedTrackId={mockTrack.id}
+                searchQuery="glass"
+                selectedTrack={mockTrack}
+                favorites={new Set()}
+                onToggleFavorite={vi.fn()}
+                preview={mockPreview}
+                currentRoute={mockRoute}
+                pushRoute={vi.fn()}
+            />
+        );
+
+        fireEvent.click(screen.getByText('Glass Pad'));
+
+        await waitFor(() =>
+            expect(loggerMocks.warn).toHaveBeenCalledWith(
+                'executePresetLoad failed for instrument preset:',
+                expect.any(Error)
+            )
+        );
+        expect(notificationMocks.notifyUser).toHaveBeenCalledWith(
+            'Preset project changes require runtime retry or repair.',
+            'error'
+        );
     });
 
     it('opens the Levain device panel after the catalog action commits (showLevain receives the app-owned device id)', async () => {
