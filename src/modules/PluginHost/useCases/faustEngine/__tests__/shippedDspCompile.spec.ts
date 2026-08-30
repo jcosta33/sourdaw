@@ -344,7 +344,7 @@ describe('shipped Faust DSP compile', () => {
     });
 
     it('de-esser.dsp compiles and exposes the params its descriptors declare', () => {
-        // builtinDSP.ts declares /De-esser/{frequency,bandwidth,threshold,ratio,listen}.
+        // builtinDSP.ts declares /De-esser/{frequency,bandwidth,threshold,ratio,reduction,listen}.
         expect(compiled.failures['de-esser.dsp']).toBeUndefined();
         expect(bareNamesOf('de-esser.dsp', compiled)).toEqual([
             'bandwidth',
