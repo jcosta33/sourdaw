@@ -212,7 +212,12 @@ function routingCommands(input: {
         {
             kind: 'set-track-output',
             trackId: track.id,
-            target: resolveOutputTarget({ outputId: track.outputId, busStripIds, trackStripIds }),
+            target: resolveOutputTarget({
+                outputId: track.outputId,
+                sourceKind: track.kind === 'bus' ? 'bus' : 'track',
+                busStripIds,
+                trackStripIds,
+            }),
         },
         ...sendCommands({ track, busStripIds }),
     ];

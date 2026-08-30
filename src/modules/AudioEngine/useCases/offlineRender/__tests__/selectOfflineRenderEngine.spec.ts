@@ -176,6 +176,24 @@ describe('selectOfflineRenderEngine — the choice and its reason (#2225)', () =
         expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
     });
 
+    it('hands a bus whose default output names the master track to the native engine', async () => {
+        mocks.availability = { available: true, transport: stubTransport };
+        const master = createTrack({ id: 'master', name: 'Master', kind: 'master', outputId: 'hw_out' });
+        const track = createTrack({
+            id: 'track-a',
+            outputId: 'master',
+            clips: [createClip({ id: 'clip-a', trackId: 'track-a', audioBufferId: 'mat-a' })],
+        });
+        const bus = createTrack({ id: 'bus-1', name: 'Bus 1', kind: 'bus', outputId: 'master' });
+
+        const selection = await selectOfflineRenderEngine({
+            renderableTracks: [master, track, bus],
+            scheduledTracks: [track],
+        });
+
+        expect(selection).toEqual({ engine: 'native/offline', transport: stubTransport });
+    });
+
     /**
      * Live native already honours bus mute, pan and solo (#3103). The selector
      * used to refuse pan/mute and force Web Audio; these cases pin that the

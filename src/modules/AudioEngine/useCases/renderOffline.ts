@@ -370,6 +370,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
             // inline routing decided it: a bus first, then a track, then master.
             const outputTarget = resolveOutputTarget({
                 outputId: track.outputId,
+                sourceKind: track.kind === 'bus' ? 'bus' : 'track',
                 busStripIds: busStripsById,
                 trackStripIds: trackStripsById,
             });

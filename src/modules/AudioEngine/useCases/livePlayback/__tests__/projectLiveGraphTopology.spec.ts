@@ -236,11 +236,11 @@ describe('projectLiveGraphTopology', () => {
     it('routes a session built from project defaults to a batch the engine accepts', () => {
         // Nothing here is chosen: `createTrack` is the production route every
         // added track and bus takes, so a plain new session has a master track
-        // called `master` and every other strip pointed at it. The engine takes
-        // a bus → track edge, so the bus keeps that default and its audio runs
-        // through the master strip's device chain — the same mix Web Audio
-        // builds. Rewriting the bus onto the engine sum would bypass those
-        // inserts.
+        // called `master` and every other strip pointed at it. A bus with that
+        // default resolves to the master target — the native summing point —
+        // so a bus-bearing project is not a bus-to-track edge. An ordinary
+        // track with the same output stays a track target so it still enters
+        // the master strip's device chain.
         const commands = project({
             stripTracks: [
                 createTrackFromProjectDefaults({ name: 'Master', kind: 'master' }),
@@ -252,7 +252,7 @@ describe('projectLiveGraphTopology', () => {
         expect(commands.filter((command) => command.kind === 'set-track-output')).toEqual([
             { kind: 'set-track-output', trackId: 'master', target: { kind: 'master' } },
             { kind: 'set-track-output', trackId: 'audio-1', target: { kind: 'track', trackId: 'master' } },
-            { kind: 'set-track-output', trackId: 'bus-1', target: { kind: 'track', trackId: 'master' } },
+            { kind: 'set-track-output', trackId: 'bus-1', target: { kind: 'master' } },
         ]);
     });
 
