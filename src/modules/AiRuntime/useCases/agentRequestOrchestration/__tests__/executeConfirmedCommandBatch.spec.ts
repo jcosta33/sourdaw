@@ -913,6 +913,50 @@ describe('executeConfirmedCommandBatch', () => {
         expect(mocks.rebindArtifacts).not.toHaveBeenCalled();
     });
 
+    it('does not rebind preexisting artifacts that occupy a pending render command', async () => {
+        const fixture = createRenderBatchFixture({ pendingCommandIndex: 0, singleCommand: true });
+        const verseArtifact = createRenderArtifact({
+            ...fixture.jobs[0]!,
+            renderedAt: 1,
+            sourceRevision: 'revision-before-command',
+        });
+        const chorusArtifact = createRenderArtifact({
+            ...fixture.jobs[1]!,
+            renderedAt: 2,
+            sourceRevision: 'revision-before-command',
+        });
+        mocks.getArtifacts
+            .mockReturnValueOnce([verseArtifact, chorusArtifact])
+            .mockReturnValueOnce([verseArtifact, chorusArtifact]);
+        mocks.executeBatch.mockImplementation(async (input) => {
+            input.options?.onProjectCommitCheckpoint?.({ receipt: fixture.receipt });
+            input.options?.onProjectCommitFinalized?.({
+                receipt: fixture.receipt,
+                revision: 'revision-checkpoint',
+            });
+            return fixture.batchResult;
+        });
+
+        const result = await executeConfirmedCommandBatch({
+            confirmation: fixture.confirmation,
+            commandBatch: fixture.commandBatch,
+            approvedBatchId: 'batch-render',
+            trackedWorkLease: lease,
+            priorVerifiedBatchReceipt: null,
+            recoveringPendingEffects: false,
+        });
+
+        expect(result).toMatchObject({
+            status: 'completed',
+            canRebindSectionRenderArtifacts: true,
+            finalizationEvidenceFailure: null,
+        });
+        expect(mocks.rebindArtifacts).toHaveBeenCalledWith({
+            artifacts: [],
+            sourceRevision: 'revision-checkpoint',
+        });
+    });
+
     it.each([
         ['job ID', { jobId: 'wrong-job' }],
         ['section ID', { sectionId: 'wrong-section' }],
