@@ -30,6 +30,7 @@ import {
     type DeliveryReceiptPayload,
 } from './prContract.ts';
 import { shellPort as trackerIssueShellPort } from './reconcileTrackerIssue.ts';
+import { parseJsonWithUniqueKeys } from './strictJson.ts';
 import { completeTrackerIssue, type ReconcileTrackerIssuePort } from './trackerIssueReconciliation.ts';
 
 export type HeadCheckRun = {
@@ -148,7 +149,7 @@ export class DeliveryMergeRejectedError extends Error {
 
 function classifyGithubMergeRejection(number: number, error: unknown): DeliveryMergeRejectedError | undefined {
     const detail = error instanceof Error ? error.message : String(error);
-    if (!/\bHTTP (405|409)\b/u.test(detail)) {
+    if (!/\bHTTP (405|409|422)\b/u.test(detail)) {
         return undefined;
     }
     return new DeliveryMergeRejectedError(`PR #${number} was not merged: ${detail}`);
@@ -305,7 +306,7 @@ function validateStructuralMergeability(pullRequest: PullRequestSnapshot): void 
     fail(`PR #${pullRequest.number} has invalid structural mergeability ${String(pullRequest.mergeable)}`);
 }
 
-function resolveStructuralMergeability(
+function refreshStructuralMergeability(
     initial: PullRequestSnapshot,
     port: Pick<DeliveryPort, 'pullRequest'>
 ): PullRequestSnapshot {
@@ -326,6 +327,14 @@ function resolveStructuralMergeability(
             return pullRequest;
         }
     }
+    return pullRequest;
+}
+
+function resolveStructuralMergeability(
+    initial: PullRequestSnapshot,
+    port: Pick<DeliveryPort, 'pullRequest'>
+): PullRequestSnapshot {
+    const pullRequest = refreshStructuralMergeability(initial, port);
     if (pullRequest.state === 'MERGED') {
         return pullRequest;
     }
@@ -696,7 +705,7 @@ function normalizeObservedCiState(mergeStateStatus: string): NonNullable<Deliver
         return 'absent';
     }
     if (mergeStateStatus === CHECKS_PENDING_MERGE_STATE) {
-        return 'cancelled';
+        return 'failed';
     }
     if (mergeStateStatus === 'UNAVAILABLE') {
         return 'unavailable';
@@ -1066,7 +1075,7 @@ function tryRestorePreArmedDeliveryReceiptAuthorityAfterMergeFailure(
         if (raw.state !== 'OPEN') {
             return;
         }
-        const current = resolveStructuralMergeability(raw, port);
+        const current = refreshStructuralMergeability(raw, port);
         if (current.state === 'MERGED') {
             return;
         }
@@ -1366,11 +1375,12 @@ function readPersistedMergedRecoveryReceipt(
             }
         );
     }
+    const preparedPostMergeValidation = authority.phase === 'prepared' ? authority.postMergeValidation : undefined;
     if (authority.phase === 'prepared') {
-        if (authority.postMergeValidation === undefined) {
+        if (preparedPostMergeValidation === undefined) {
             fail(`PR #${pullRequest.number} delivery receipt authority is not merge-authorized`);
         }
-        validatePostMergeSnapshot(authority.postMergeValidation, pullRequest, pullRequest.number);
+        validatePostMergeSnapshot(preparedPostMergeValidation, pullRequest, pullRequest.number);
     }
     if (authority.receiptBody === undefined) {
         return readCompatibleBodylessPersistedMergedRecoveryReceipt(pullRequest, port, authority);
@@ -1379,11 +1389,11 @@ function readPersistedMergedRecoveryReceipt(
     if (receipt.body !== authority.receiptBody) {
         fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
     }
-    if (authority.phase === 'prepared') {
+    if (preparedPostMergeValidation !== undefined) {
         validateReceiptPayloadAgainstPreparedPostMergeValidation(
             pullRequest.number,
             assertDeliveryReceiptForHead(receipt, pullRequest),
-            authority.postMergeValidation,
+            preparedPostMergeValidation,
             'recovery'
         );
     }
@@ -1409,8 +1419,12 @@ function ensureDeliveryReceipt(
     const expected = expectedDeliveryReceipt(pullRequest, closingIssue, ciAdmissionMode);
     const expectedBody = composeDeliveryReceipt(expected);
     const persistedAuthority = port.readDeliveryReceiptAuthority(pullRequest.number);
-    const frozenAuthority = isFrozenPersistedDeliveryReceiptAuthority(persistedAuthority)
-        ? persistedAuthority
+    const currentPersistedAuthority =
+        persistedAuthority !== undefined && isCurrentPersistedDeliveryReceiptAuthority(persistedAuthority)
+            ? persistedAuthority
+            : undefined;
+    const frozenAuthority = isFrozenPersistedDeliveryReceiptAuthority(currentPersistedAuthority)
+        ? currentPersistedAuthority
         : undefined;
     let receipt: DeliveryReceiptComment | undefined;
     let expectedReceipt = expected;
@@ -1451,9 +1465,9 @@ function ensureDeliveryReceipt(
         receipt =
             historical === undefined ? undefined : tryStableHistoricalDeliveryReceipt(pullRequest, port, expected);
     }
-    if (receipt === undefined && persistedAuthority?.receiptBody === expectedBody) {
+    if (receipt === undefined && currentPersistedAuthority?.receiptBody === expectedBody) {
         try {
-            receipt = readExactDeliveryReceipt(pullRequest, port, persistedAuthority.receiptId);
+            receipt = readExactDeliveryReceipt(pullRequest, port, currentPersistedAuthority.receiptId);
         } catch {
             fail(`PR #${pullRequest.number} delivery receipt was not durably verified`);
         }
@@ -2404,7 +2418,7 @@ function isPersistedPreparedPostMergeValidation(value: unknown): value is Persis
 function parseDeliveryReceiptAuthority(contents: string, number: number): DeliveryReceiptAuthority {
     let value: unknown;
     try {
-        value = JSON.parse(contents) as unknown;
+        value = parseJsonWithUniqueKeys<unknown>(contents, `PR #${number} delivery receipt authority`);
     } catch {
         fail(`PR #${number} delivery receipt authority is malformed`);
     }
@@ -2526,8 +2540,8 @@ function readOptionalDeliveryRefOid(
         fail(`PR #${number} ${label} cannot be verified`);
     }
     const exactRefPath = resolve(primaryRoot, refPath.stdout.trim());
-    let exactPathKind: 'missing' | 'directory' | 'regular';
-    let refStats: ReturnType<typeof lstatSync>;
+    let exactPathKind: 'missing' | 'directory' | 'regular' = 'missing';
+    let refStats: ReturnType<typeof lstatSync> | undefined;
     try {
         refStats = lstatSync(exactRefPath);
     } catch (error) {

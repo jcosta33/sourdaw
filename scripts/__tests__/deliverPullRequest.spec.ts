@@ -1963,6 +1963,36 @@ describe('pull-request delivery', () => {
         });
     });
 
+    it('restores the pre-final-fetch prepared authority after an OPEN UNKNOWN merge-rejection refresh resolves to a definitive OPEN CONFLICTING state', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes }),
+                pullRequest({ body: closes, mergeable: 'UNKNOWN' }),
+                pullRequest({ body: closes, mergeable: 'CONFLICTING' }),
+            ],
+            dependentSets: [[], []],
+        });
+        let rejectOnce = true;
+        port.merge = (number, head) => {
+            calls.push(`merge:${number}:${head}`);
+            if (rejectOnce) {
+                rejectOnce = false;
+                throw new DeliveryMergeRejectedError('PR #42 was not merged: gh: HTTP 409: head SHA changed');
+            }
+        };
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/HTTP 409: head SHA changed/i);
+        expect(calls).toContain('merge:42:head');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+        });
+        expect(calls).not.toContain('complete:2372');
+    });
+
     it('retains the armed receipt authority after an OPEN UNKNOWN merge-rejection refresh resolves to an unrecognized state, then recovers on merged retry', () => {
         const closes = relationshipBody('Closes #2372');
         const { port, calls, tracker, persistedReceiptAuthority } = fakePort({
@@ -3613,7 +3643,7 @@ describe('pull-request delivery', () => {
         { ciState: 'failed', mergeStateStatus: 'BLOCKED' },
         { ciState: 'pending', mergeStateStatus: 'UNKNOWN' },
         { ciState: 'absent', mergeStateStatus: '' },
-        { ciState: 'cancelled', mergeStateStatus: 'UNSTABLE' },
+        { ciState: 'failed', mergeStateStatus: 'UNSTABLE' },
         { ciState: 'malformed', mergeStateStatus: 'not-a-github-state' },
         { ciState: 'unavailable', mergeStateStatus: 'UNAVAILABLE' },
     ])('merges with $ciState CI evidence while CI admission is advisory', ({ mergeStateStatus }) => {
@@ -3636,7 +3666,7 @@ describe('pull-request delivery', () => {
         { ciState: 'failed', mergeStateStatus: 'BLOCKED' },
         { ciState: 'pending', mergeStateStatus: 'UNKNOWN' },
         { ciState: 'absent', mergeStateStatus: '' },
-        { ciState: 'cancelled', mergeStateStatus: 'UNSTABLE' },
+        { ciState: 'failed', mergeStateStatus: 'UNSTABLE' },
         { ciState: 'malformed', mergeStateStatus: 'not-a-github-state' },
         { ciState: 'unavailable', mergeStateStatus: 'UNAVAILABLE' },
     ])('writes advisory delivery receipts with the normalized $ciState CI state', ({ ciState, mergeStateStatus }) => {
@@ -3650,6 +3680,18 @@ describe('pull-request delivery', () => {
         expect(receipts[0]?.body).toContain('Delivery receipt for PR #42.');
         expect(receipts[0]?.body).toContain('- CI admission: advisory');
         expect(receipts[0]?.body).toContain(`- Observed CI state: ${ciState}`);
+    });
+
+    it('writes advisory delivery receipts with failed observed CI state when GitHub reports UNSTABLE', () => {
+        const { port, receipts } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' }), pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+        });
+
+        deliverPullRequest(42, port);
+
+        expect(receipts).toHaveLength(1);
+        expect(receipts[0]?.body).toContain('- Observed CI state: failed');
+        expect(receipts[0]?.body).not.toContain('- Observed CI state: cancelled');
     });
 
     it.each(['BLOCKED', 'BEHIND', 'DIRTY', 'DRAFT', 'UNKNOWN'])(
@@ -5071,6 +5113,60 @@ describe('delivery shell boundary', () => {
         }
     );
 
+    it('rejects a raw v2 authority ref with duplicate top-level receiptId members before JSON.parse collapses them', () => {
+        const closes = relationshipBody('Closes #2372');
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const authorityOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+            input: `{"version":2,"phase":"prepared","receiptId":"IC_first","receiptId":"IC_second","receiptBody":${JSON.stringify(visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'))},"postMergeValidation":{"headRefOid":"head","headRefName":"feat/gate","baseRefName":"main","bodySha256":"${createHash('sha256').update(closes).digest('hex')}","trackerTarget":2372}}`,
+        }).trim();
+        execFileSync('git', ['update-ref', 'refs/sourdaw/delivery-receipt/pr-42', authorityOid], {
+            cwd: primaryRoot,
+        });
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+            { primaryRoot }
+        );
+
+        try {
+            expect(() => port.readDeliveryReceiptAuthority(42)).toThrow(
+                /duplicate key|delivery receipt authority is malformed/i
+            );
+        } finally {
+            rmSync(primaryRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects a raw v2 authority ref with duplicate nested postMergeValidation members before JSON.parse collapses them', () => {
+        const closes = relationshipBody('Closes #2372');
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const authorityOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+            input: `{"version":2,"phase":"prepared","receiptId":"IC_nested_duplicate","receiptBody":${JSON.stringify(visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'))},"postMergeValidation":{"headRefOid":"head","headRefOid":"rewritten-head","headRefName":"feat/gate","baseRefName":"main","bodySha256":"${createHash('sha256').update(closes).digest('hex')}","trackerTarget":2372}}`,
+        }).trim();
+        execFileSync('git', ['update-ref', 'refs/sourdaw/delivery-receipt/pr-42', authorityOid], {
+            cwd: primaryRoot,
+        });
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+            { primaryRoot }
+        );
+
+        try {
+            expect(() => port.readDeliveryReceiptAuthority(42)).toThrow(
+                /duplicate key|delivery receipt authority is malformed/i
+            );
+        } finally {
+            rmSync(primaryRoot, { recursive: true, force: true });
+        }
+    });
+
     it('rejects an exact symlink delivery receipt authority ref path', () => {
         const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
         execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
@@ -5700,6 +5796,7 @@ describe('delivery shell boundary', () => {
     it.each([
         ['405', 'gh: HTTP 405: Base branch policy rejected the merge'],
         ['409', 'gh: HTTP 409: Head SHA changed before merge'],
+        ['422', 'gh: HTTP 422: Pull Request is not mergeable'],
     ])('classifies a shell merge HTTP %s refusal as a definitive rejection', (_code, message) => {
         const shell: ShellRunner = {
             capture: (_command, args) => {
