@@ -1,11 +1,11 @@
 export type NativeDialogWindow = { readonly isDestroyed: () => boolean };
 
-export type NativeCloseDialog = {
+export type NativeCloseDialog<Window extends NativeDialogWindow> = {
     readonly showMessageBox: (
-        window: NativeDialogWindow,
+        window: Window,
         options: {
             readonly type: 'warning';
-            readonly buttons: readonly string[];
+            readonly buttons: string[];
             readonly defaultId: number;
             readonly cancelId: number;
             readonly message: string;
@@ -17,13 +17,13 @@ export type NativeCloseDialog = {
 export type NativeCloseDecision = 'save' | 'discard' | 'cancel';
 
 /** Native loss-warning policy, kept separate from the close state machine. */
-export const askToSaveBeforeClose = async ({
+export const askToSaveBeforeClose = async <Window extends NativeDialogWindow>({
     window,
     dialog,
     title,
 }: {
-    readonly window: NativeDialogWindow | undefined;
-    readonly dialog: NativeCloseDialog;
+    readonly window: Window | undefined;
+    readonly dialog: NativeCloseDialog<Window>;
     readonly title: string;
 }): Promise<NativeCloseDecision> => {
     if (window === undefined || window.isDestroyed()) {

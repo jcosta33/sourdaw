@@ -7,8 +7,13 @@ import {
     type NativeMenuActionWindow,
 } from '../nativeMenuActionDispatcher.js';
 
-const makeWindow = (): NativeMenuActionWindow & { readonly send: ReturnType<typeof vi.fn>; destroyed: boolean } => {
-    const window = {
+type NativeMenuActionWindowFixture = NativeMenuActionWindow & {
+    readonly send: ReturnType<typeof vi.fn>;
+    destroyed: boolean;
+};
+
+const makeWindow = (): NativeMenuActionWindowFixture => {
+    const window: NativeMenuActionWindowFixture = {
         destroyed: false,
         send: vi.fn(),
         isDestroyed: () => window.destroyed,
