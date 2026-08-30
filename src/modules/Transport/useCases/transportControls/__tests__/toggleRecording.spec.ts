@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { defaultTransportState } from '../../../models/TransportState';
 import { getTransportState } from '../../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../../repositories/transport/updateTransportState';
+import { executePlayheadSeek } from '../executePlayheadSeek';
 import { recordingLifecycle } from '../recordingLifecycle';
 import { toggleRecording } from '../toggleRecording';
 
@@ -50,6 +51,14 @@ const mocks = vi.hoisted(() => {
         stopAudioRecording: vi.fn<() => Promise<void>>(),
         getCompensationDelay: vi.fn<(trackId: string) => number>(() => 0),
         timeSignatureMapStore,
+        // The seek-during-count-in case imports the real `executePlayheadSeek`,
+        // whose collaborators stay mocked here like every other side effect.
+        stopAllScheduled: vi.fn<() => void>(),
+        repositionNativeLiveGraphSession: vi.fn<() => Promise<unknown>>(),
+        resetMidiState: vi.fn<() => void>(),
+        startPlayheadScheduler: vi.fn<() => void>(),
+        stopPlayheadScheduler: vi.fn<() => void>(),
+        panicYeastRuntime: vi.fn<() => Promise<void>>(),
     };
 });
 
@@ -72,6 +81,13 @@ vi.mock('../startPlayback', () => ({ startPlayback: mocks.startPlayback }));
 vi.mock('../stopActiveRecording', () => ({
     stopActiveRecording: mocks.stopActiveRecording,
 }));
+vi.mock('../panicYeastRuntime', () => ({ panicYeastRuntime: mocks.panicYeastRuntime }));
+vi.mock('../../playheadScheduler/startPlayheadScheduler', () => ({
+    startPlayheadScheduler: mocks.startPlayheadScheduler,
+}));
+vi.mock('../../playheadScheduler/stopPlayheadScheduler', () => ({
+    stopPlayheadScheduler: mocks.stopPlayheadScheduler,
+}));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
     updateClip: mocks.updateClip,
@@ -85,7 +101,10 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     startAudioRecording: mocks.startAudioRecording,
     stopAudioRecording: mocks.stopAudioRecording,
     getCompensationDelay: mocks.getCompensationDelay,
+    stopAllScheduled: mocks.stopAllScheduled,
+    repositionNativeLiveGraphSession: mocks.repositionNativeLiveGraphSession,
 }));
+vi.mock('#/modules/MIDI/useCases', () => ({ resetMidiState: mocks.resetMidiState }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 
 describe('toggleRecording', () => {
@@ -641,6 +660,47 @@ describe('toggleRecording', () => {
             expect(mocks.stopActiveRecording).toHaveBeenCalledOnce();
             elapse(2600);
             expect(mocks.startRecording).not.toHaveBeenCalled();
+            expect(mocks.notifyUser).not.toHaveBeenCalled();
+        });
+
+        it('a seek mid-count-in cancels the armed start instead of misplacing the take', async () => {
+            armOneBarCountIn();
+
+            // Half a second into the two-second count-in the user seeks from
+            // beat 8 to beat 32. During count-in `isRecording` is still false,
+            // so the seek's recording gate alone would skip the teardown and
+            // the armed wake would keep holding beat 8 — opening the take 24
+            // beats behind the playhead the seek just committed.
+            elapse(500);
+            await executePlayheadSeek(32);
+
+            expect(mocks.stopActiveRecording).toHaveBeenCalledOnce();
+            expect(updateTransportState).toHaveBeenCalledWith({ playheadPosition: 32 });
+
+            // Past the boundary the cancelled wake never fires: no take opens,
+            // no playback starts, and no miss is surfaced for a count-in the
+            // seek itself abandoned.
+            elapse(2600);
+            expect(mocks.startRecording).not.toHaveBeenCalled();
+            expect(mocks.startPlayback).not.toHaveBeenCalled();
+            expect(updateTransportState).not.toHaveBeenCalledWith({ isRecording: true });
+            expect(mocks.notifyUser).not.toHaveBeenCalled();
+        });
+
+        it('drops a wake whose timer identity no longer matches the armed count-in', () => {
+            armOneBarCountIn();
+
+            // A cancel or a newer arm replaced the recorded identity while
+            // this wake's timeout stayed pending on the timer wheel. The wake
+            // no longer speaks for the armed count-in, so it must not open a
+            // take: the identity guard drops it.
+            recordingLifecycle.setCountInTimerId(setTimeout(() => undefined, 60_000));
+
+            elapse(2020);
+
+            expect(mocks.startRecording).not.toHaveBeenCalled();
+            expect(mocks.startPlayback).not.toHaveBeenCalled();
+            expect(updateTransportState).not.toHaveBeenCalledWith({ isRecording: true });
             expect(mocks.notifyUser).not.toHaveBeenCalled();
         });
 
