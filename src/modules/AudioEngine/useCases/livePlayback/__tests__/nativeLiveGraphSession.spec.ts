@@ -172,7 +172,8 @@ beforeEach(() => {
     mocks.stopPlayheadFeed.mockClear();
     mocks.topologyOverride = null;
     nativeLiveGraphSession.backend = null;
-    nativeLiveGraphSession.carriesAudio = false;
+    nativeLiveGraphSession.audibleCarrier = false;
+    nativeLiveGraphSession.monitorShadowed = true;
     nativeLiveGraphSession.rolling = false;
     nativeLiveGraphSession.pending = Promise.resolve();
     trackStore.set({ tracks: [createTrack({ id: 'audio-1' })], selectedTrackId: null, ghostClips: [] });
@@ -211,6 +212,7 @@ describe('startNativeLiveGraphSession', () => {
         // its own strip ids on the second play and refuse forever after.
         expect(appliedBatches()[0]?.replaceTopology).toBe(true);
         expect(appliedBatches()[0]?.commands).toEqual([
+            { kind: 'set-monitor-shadow', shadowed: true },
             expect.objectContaining({ kind: 'create-track-strip', trackId: 'audio-1' }),
             expect.objectContaining({ kind: 'create-bus-strip', busId: 'bus-1' }),
             expect.objectContaining({ kind: 'set-track-output', trackId: 'audio-1' }),
@@ -284,22 +286,51 @@ describe('startNativeLiveGraphSession', () => {
         expect(mocks.startPlayheadFeed).not.toHaveBeenCalled();
     });
 
-    it('reads carriesAudio off the batch it actually sent: silent while nothing is scheduled', async () => {
+    it('shadows the monitor by default, and says so on the wire', async () => {
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS });
+
+        // Silent-by-default is the safe state: the engine renders whatever it
+        // is given and contributes true zeros at the device, so scheduling a
+        // real programme onto it cannot double the Web Audio path.
+        expect(appliedBatches()[0]?.commands[0]).toEqual({ kind: 'set-monitor-shadow', shadowed: true });
+        expect(nativeLiveGraphSession.monitorShadowed).toBe(true);
+    });
+
+    it('asks for an open monitor only when the caller asks for the cutover', async () => {
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, monitor: 'audible' });
+
+        expect(appliedBatches()[0]?.commands[0]).toEqual({ kind: 'set-monitor-shadow', shadowed: false });
+        expect(nativeLiveGraphSession.monitorShadowed).toBe(false);
+    });
+
+    it('is not the audible carrier while nothing is scheduled', async () => {
         await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS });
 
         // The live topology emits strips and routes and no `schedule-clip`, so
-        // this engine renders silence and Web Audio is what a musician hears.
-        expect(nativeLiveGraphSession.carriesAudio).toBe(false);
+        // this engine has nothing to sound whatever its monitor says.
+        expect(nativeLiveGraphSession.audibleCarrier).toBe(false);
     });
 
-    it('reads carriesAudio off the batch it actually sent: audible once a clip is scheduled', async () => {
+    it('is not the audible carrier for a shadowed session that schedules a whole programme', async () => {
         mocks.topologyOverride = [SCHEDULED_CLIP, { kind: 'set-transport', playing: false, positionSeconds: 0 }];
 
         await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS });
 
-        // Derived from the batch rather than declared, so the day the topology
-        // starts carrying clips the cursor follows the engine with no edit here.
-        expect(nativeLiveGraphSession.carriesAudio).toBe(true);
+        // The half that a has-clips reading gets wrong: this engine is full of
+        // material and audible nowhere, so a cursor drawn from it would leave
+        // the mix a musician is actually hearing.
+        expect(nativeLiveGraphSession.audibleCarrier).toBe(false);
+    });
+
+    it('becomes the audible carrier once a scheduled programme meets an open monitor', async () => {
+        mocks.topologyOverride = [SCHEDULED_CLIP, { kind: 'set-transport', playing: false, positionSeconds: 0 }];
+
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, monitor: 'audible' });
+
+        // Both halves, and only both: what was scheduled is read off the batch
+        // actually sent, so the day the producer emits clips the cutover moves
+        // the cursor with no edit here.
+        expect(nativeLiveGraphSession.audibleCarrier).toBe(true);
     });
 
     it('declines on desktop when the addon cannot answer the graph surface', async () => {
