@@ -1,0 +1,22 @@
+electron/main.ts
+  s_ae074277795b45::t_595872724589dc 152
+  s_ae074277795b45::t_84c231d87ff224 73,153,155,543
+  s_ae074277795b45::t_a9f5c72fe8b7ad 509-540
+  s_ae074277795b45::t_804a422781d5d7 37,164-166,541-542,544,763,779
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "adea4b42408381543c5fe46efcf5ee05928b5324",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
