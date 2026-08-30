@@ -1,12 +1,9 @@
 import { logger } from '#/infra/logger/appLogger';
-import { captureProjectRevision, settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
+import { settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
 
-import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
-import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { createAiRuntimeError } from '../errors/AiRuntimeError';
 import { type AgentExecutionMode, type AgentTrustCeiling } from '../models/AgentExecutionMode';
 import { type AgentRunBudgets, type AgentRunDecisionResume } from '../models/AgentRun';
-import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type RunnableAiBackend } from '../models/LlmOrchestrationTypes';
 import { type ModelProviderName } from '../models/ModelProviderProtocol';
 import { getCloudProviderInfo } from '../repositories/cloudLlm/getCloudProviderInfo';
@@ -14,32 +11,15 @@ import { isCloudAvailable } from '../repositories/cloudLlm/isCloudAvailable';
 import { getActiveModelId } from '../repositories/webLlm/getActiveModelId';
 import { getLlmEngine } from '../repositories/webLlm/getLlmEngine';
 import { aiBackendPreferenceStore } from '../stores/aiBackendPreferenceStore';
-import {
-    chatStore,
-    appendChatMessage,
-    updateChatMessage,
-    setChatGenerating,
-    setActiveAborter,
-} from '../stores/chatStore';
+import { chatStore, setChatGenerating } from '../stores/chatStore';
 
-import { normalizeAgentFailure } from './agentErrorAndSaga';
-import { executeImmediatePromptCommand } from './agentRequestOrchestration/executeImmediatePromptCommand';
-import { executePromptCommandPreview } from './agentRequestOrchestration/executePromptCommandPreview';
-import { materializePromptCommandPlan } from './agentRequestOrchestration/materializePromptCommandPlan';
-import { persistPromptActionConfirmation } from './agentRequestOrchestration/persistPromptActionConfirmation';
-import {
-    AGENT_RUN_STALE_COMPLETION_WARNING,
-    settleAgentRunWorkLeaseSafely,
-} from './agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
+import { type executeImmediatePromptCommand } from './agentRequestOrchestration/executeImmediatePromptCommand';
+import { orchestratePromptChatRequest } from './agentRequestOrchestration/orchestratePromptChatRequest';
+import { settleAgentRunWorkLeaseSafely } from './agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
 import { streamExplainChatResponse } from './agentRequestOrchestration/streamExplainChatResponse';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
-import { ApplicationOwnedToolLoopRequestError } from './applicationOwnedToolLoop';
-import { agentRunCancellation } from './cancelAgentRun';
-import { describePendingActionConfirmation } from './describePendingActionConfirmation';
 import { resolveBackend } from './llmOrchestration/backendResolution/helpers';
-import { planPromptActions } from './planPromptActions';
-import { recordAgentProviderUsage } from './recordAgentProviderUsage';
 import { resolveAgentExecutionMode } from './resolveAgentExecutionMode';
 
 function getBackendModelId(backend: RunnableAiBackend): string {
@@ -68,55 +48,6 @@ type SendChatMessageOptions = {
 };
 
 type AgentApplyReceipt = NonNullable<Awaited<ReturnType<typeof executeImmediatePromptCommand>>>;
-
-function tryRecordTerminalFailure(input: Parameters<typeof agentRunLifecycle.recordError>[0]): void {
-    try {
-        agentRunLifecycle.recordError(input);
-    } catch {
-        // The user-visible failure remains authoritative when its recovery record cannot persist.
-    }
-}
-
-function getProviderBudgetCategory(backend: RunnableAiBackend): string {
-    return backend === 'cloud' ? 'remoteTokens' : 'localAnalysis';
-}
-
-function recordApplicationToolOnlyPlan(input: {
-    runId: string;
-    revision: string;
-    receipts: readonly ApplicationToolReceipt[];
-}): void {
-    if (input.receipts.length === 0) {
-        return;
-    }
-    agentRunLifecycle.recordApplicationToolEvidence({
-        runId: input.runId,
-        summary: input.receipts
-            .map((receipt) => `${receipt.toolName} (${receipt.callId}) ${receipt.status}: ${receipt.summary}`)
-            .join('\n'),
-        applicationToolReceipts: [...input.receipts],
-        revision: input.revision,
-        scope: {
-            targetIds: [],
-            targetRanges: [],
-            protectedTargetIds: [],
-            protectedRanges: [],
-        },
-        grants: {
-            allowedOperationPrefixes: [],
-            create: false,
-            delete: false,
-            routing: false,
-            tempo: false,
-            master: false,
-            file: false,
-            audioUpload: false,
-            remoteGeneration: false,
-            autoCommit: false,
-        },
-        budgets: { limits: {}, consumed: {} },
-    });
-}
 
 export async function sendChatMessage(
     userText: string,
@@ -147,6 +78,9 @@ export async function sendChatMessage(
     if (interactionMode === 'explain' && backend === 'cloud' && !isCloudAvailable()) {
         throw createAiRuntimeError('Hosted AI is not configured.');
     }
+    if (interactionMode !== 'explain') {
+        return orchestratePromptChatRequest({ userText, requestedRoute, backend, interactionMode, options });
+    }
 
     const runId = `agent-run-${crypto.randomUUID()}`;
     agentRunLifecycle.create({
@@ -162,7 +96,7 @@ export async function sendChatMessage(
         resume: options?.resume,
     });
     agentRunLifecycle.transitionPhase({ runId, phase: 'planning' });
-    const providerWorkId = interactionMode === 'explain' ? 'provider-response' : 'provider-planning';
+    const providerWorkId = 'provider-response';
     const providerReceiptIdentity = `provider:${backend}:${runId}`;
     const providerLeaseResult = agentRunWorkLease.claim({
         runId,
@@ -198,358 +132,6 @@ export async function sendChatMessage(
     }
 
     setChatGenerating(true);
-
-    // ── Prompt Command Mode ──────────────────────────────────────────────
-    if (interactionMode !== 'explain') {
-        const aborter = new AbortController();
-        let prompt_assistant_message_id: string | null = null;
-        let providerPlanningLeaseSettled = false;
-        let commandExecutionSettlementWarning: string | null = null;
-        setActiveAborter(aborter);
-        const releaseProviderCancellation = agentRunCancellation.bindAbortController({
-            runId,
-            lease: providerLease,
-            controller: aborter,
-            reason: 'User cancelled the run while provider planning was active.',
-        });
-
-        try {
-            const { context, result, projectRevision } = await planPromptActions({
-                prompt: userText,
-                signal: aborter.signal,
-                onProviderResult: (providerResult) => {
-                    recordAgentProviderUsage(runId, providerResult, providerResult.correlationId);
-                },
-                streamIdentity: {
-                    runId,
-                    requestId: providerReceiptIdentity,
-                    cancellationGeneration: providerLease.cancellationGeneration,
-                },
-                onProviderAttempt: ({ backend: attemptBackend, correlationId, estimatedTotalTokens, estimate }) => {
-                    const budgetReservation = agentRunLifecycle.reserveBudget({
-                        runId,
-                        attemptId: correlationId,
-                        category: getProviderBudgetCategory(attemptBackend),
-                        estimate: estimatedTotalTokens,
-                        provenance: 'versioned-estimate',
-                        estimateMethod: estimate.method,
-                    });
-                    return budgetReservation.status === 'reserved'
-                        ? { status: 'admitted' as const }
-                        : { status: 'rejected' as const, reason: budgetReservation.reason ?? 'agent budget limit' };
-                },
-                onLocalWorkAttempt: ({ analysisCount, downloadBytes, storageBytes }) => {
-                    const estimates = [
-                        ['localAnalysis', analysisCount],
-                        ['downloadBytes', downloadBytes],
-                        ['storageBytes', storageBytes],
-                    ] as const;
-                    return (
-                        agentRunLifecycle.reserveBudgetBatch({
-                            runId,
-                            attempts: estimates.map(([category, estimate]) => ({
-                                attemptId: `stem-preparation:${category}`,
-                                category,
-                                estimate,
-                                provenance: 'versioned-estimate',
-                            })),
-                        }).status === 'reserved'
-                    );
-                },
-            });
-            const providerPlanningSettlement = settleAgentRunWorkLeaseSafely({
-                lease: providerLease,
-                terminalState: 'completed',
-                evidence: 'none',
-                settle: agentRunWorkLease.settle,
-                reportFailure: (settlementError) =>
-                    logger.error(
-                        new Error('Completed provider planning work lease settlement failed', {
-                            cause: settlementError,
-                        })
-                    ),
-            });
-            if (!providerPlanningSettlement.accepted || providerPlanningSettlement.warning !== null) {
-                const warning = providerPlanningSettlement.warning ?? AGENT_RUN_STALE_COMPLETION_WARNING;
-                appendChatMessage({
-                    id: `msg-${crypto.randomUUID()}`,
-                    role: 'user',
-                    content: userText,
-                    timestamp: Date.now(),
-                    isCommandAction: true,
-                });
-                appendChatMessage({
-                    id: `msg-${crypto.randomUUID()}`,
-                    role: 'assistant',
-                    content: `Command plan was not retained. ${warning}`,
-                    timestamp: Date.now(),
-                    error: warning,
-                    isCommandAction: true,
-                });
-                return undefined;
-            }
-            providerPlanningLeaseSettled = true;
-
-            if (options?.resume && result.actions.length === 0) {
-                throw new Error('The replacement provider returned no plan for the selected decision interpretation.');
-            }
-            if (result.actions.length === 0) {
-                recordApplicationToolOnlyPlan({
-                    runId,
-                    revision: projectRevision,
-                    receipts: result.applicationToolReceipts ?? [],
-                });
-            }
-
-            if (aborter.signal.aborted) {
-                await agentRunCancellation.cancel({
-                    runId,
-                    reason: 'User cancelled the run before planning completed.',
-                });
-                return undefined;
-            }
-
-            if (result.actions.length > 0) {
-                // Manually inject messages for Fast-Path execution
-                const userMsgId = `msg-${crypto.randomUUID()}`;
-                appendChatMessage({
-                    id: userMsgId,
-                    role: 'user',
-                    content: userText,
-                    timestamp: Date.now(),
-                    isCommandAction: true,
-                });
-
-                const assistantMsgId = `msg-${crypto.randomUUID()}`;
-                prompt_assistant_message_id = assistantMsgId;
-                appendChatMessage({
-                    id: assistantMsgId,
-                    role: 'assistant',
-                    content: 'Executing...',
-                    timestamp: Date.now(),
-                    isCommandAction: true,
-                });
-
-                const confirmationDescription = describePendingActionConfirmation({
-                    actions: result.actions,
-                    context,
-                    prompt: userText,
-                    wholeProjectVibeMixPlan: result.wholeProjectVibeMixPlan,
-                    workflowCapabilityId: result.workflowCapabilityId,
-                });
-                const materializedPlan = materializePromptCommandPlan({
-                    userText,
-                    runId,
-                    assistantMessageId: assistantMsgId,
-                    interactionMode,
-                    trustCeiling: options?.trustCeiling,
-                    resume: options?.resume,
-                    onResumedPlanAccepted: options?.onResumedPlanAccepted,
-                    projectRevision,
-                    context,
-                    result,
-                    actionLabels: confirmationDescription.actionLabels,
-                    protectedTargetIds: confirmationDescription.protectedUnchanged.map((item) => item.id),
-                });
-                if (materializedPlan.status === 'terminal') {
-                    await materializedPlan.completion;
-                    return undefined;
-                }
-                const { commandGroup, compiledActionExecution, parsedCommandBatch } = materializedPlan;
-                const { commandEnvelopes, commandBatch } = compiledActionExecution;
-                if (interactionMode === 'preview') {
-                    await executePromptCommandPreview({
-                        runId,
-                        assistantMessageId: assistantMsgId,
-                        actions: result.actions,
-                        actionLabels: confirmationDescription.actionLabels,
-                        abortController: aborter,
-                        projectRevision,
-                        commandBatch,
-                        parsedCommandBatch,
-                        onExecutionSettlementWarning: (warning) => {
-                            commandExecutionSettlementWarning = warning;
-                        },
-                    });
-                    return undefined;
-                }
-
-                if (compiledActionExecution.requiresConfirmation) {
-                    persistPromptActionConfirmation({
-                        runId,
-                        prompt: userText,
-                        assistantMessageId: assistantMsgId,
-                        actions: result.actions,
-                        actionLabels: confirmationDescription.actionLabels,
-                        commandEnvelopes,
-                        commandBatch,
-                        agentApproval: compiledActionExecution.agentApproval,
-                        affectedIds: confirmationDescription.affectedIds,
-                        protectedUnchanged: confirmationDescription.protectedUnchanged,
-                        executionMode: result.executionMode,
-                        group: commandGroup,
-                        projectRevision,
-                        parsedCommandBatch,
-                        content: confirmationDescription.content,
-                    });
-                    return undefined;
-                }
-
-                return await executeImmediatePromptCommand({
-                    runId,
-                    prompt: userText,
-                    actions: result.actions,
-                    assistantMessageId: assistantMsgId,
-                    abortController: aborter,
-                    projectRevision,
-                    executionMode: result.executionMode,
-                    group: commandGroup,
-                    commandBatch,
-                    parsedCommandBatch,
-                    onExecutionSettlementWarning: (warning) => {
-                        commandExecutionSettlementWarning = warning;
-                    },
-                });
-            } else if (result.rejectionReason) {
-                tryRecordTerminalFailure({
-                    runId,
-                    error: normalizeAgentFailure({
-                        category: /schema/i.test(result.rejectionReason) ? 'schema' : 'resolution',
-                        source: 'provider-planning',
-                        knownDomain: true,
-                    }),
-                    terminal: true,
-                });
-                appendChatMessage({
-                    id: `msg-${crypto.randomUUID()}`,
-                    role: 'user',
-                    content: userText,
-                    timestamp: Date.now(),
-                });
-                appendChatMessage({
-                    id: `msg-${crypto.randomUUID()}`,
-                    role: 'assistant',
-                    content: `Command not executed: ${result.rejectionReason}`,
-                    timestamp: Date.now(),
-                    error: result.rejectionReason,
-                });
-            } else {
-                agentRunLifecycle.transitionPhase({ runId, phase: 'completed' });
-                appendChatMessage({
-                    id: `msg-${crypto.randomUUID()}`,
-                    role: 'user',
-                    content: userText,
-                    timestamp: Date.now(),
-                    isCommandAction: true,
-                });
-                appendChatMessage({
-                    id: `msg-${crypto.randomUUID()}`,
-                    role: 'assistant',
-                    content: 'No actions were matched or executed for your command.',
-                    timestamp: Date.now(),
-                    error: 'No actions matched',
-                });
-            }
-        } catch (error) {
-            if (error instanceof ApplicationOwnedToolLoopRequestError && error.receipts.length > 0) {
-                recordApplicationToolOnlyPlan({
-                    runId,
-                    revision:
-                        error.receipts.find((receipt) => receipt.revision !== null)?.revision ??
-                        captureProjectRevision(),
-                    receipts: error.receipts,
-                });
-            }
-            const reason = error instanceof Error ? error.message : String(error);
-            const configurationChanged = isAiRuntimeConfigurationChangedError(error);
-            const proposalInvalidated = error instanceof AiProposalInvalidatedError;
-            let settlementWarning: string | null = commandExecutionSettlementWarning;
-            if (aborter.signal.aborted || configurationChanged || proposalInvalidated) {
-                await agentRunCancellation.cancel({ runId, reason });
-            } else {
-                if (providerPlanningLeaseSettled) {
-                    tryRecordTerminalFailure({
-                        runId,
-                        error: normalizeAgentFailure({
-                            category: 'internal',
-                            source: 'provider-planning',
-                            knownDomain: false,
-                        }),
-                        terminal: true,
-                    });
-                } else {
-                    const providerPlanningFailureSettlement = settleAgentRunWorkLeaseSafely({
-                        lease: providerLease,
-                        terminalState: 'failed',
-                        evidence: 'none',
-                        settle: agentRunWorkLease.settle,
-                        reportFailure: (settlementError) =>
-                            logger.error(
-                                new Error('Failed provider planning work lease settlement failed', {
-                                    cause: settlementError,
-                                })
-                            ),
-                    });
-                    settlementWarning = providerPlanningFailureSettlement.warning;
-                    if (providerPlanningFailureSettlement.accepted) {
-                        tryRecordTerminalFailure({
-                            runId,
-                            error: normalizeAgentFailure({
-                                category: 'internal',
-                                source: 'provider-planning',
-                                knownDomain: false,
-                            }),
-                            terminal: true,
-                        });
-                    }
-                }
-            }
-            let failureContent = 'Failed to process prompt command.';
-            if (configurationChanged) {
-                failureContent = 'Prompt cancelled because the AI configuration changed.';
-            } else if (proposalInvalidated) {
-                failureContent =
-                    'The project changed while this command was being planned. Review the current project and submit it again.';
-            }
-            const failureError = settlementWarning ? `${reason}\n\n${settlementWarning}` : reason;
-            const failureContentWithWarning = settlementWarning
-                ? `${failureContent}\n\n_${settlementWarning}_`
-                : failureContent;
-            let promptAssistantFailureContent = 'Failed to execute prompt command.';
-            if (configurationChanged) {
-                promptAssistantFailureContent = 'Prompt cancelled because the AI configuration changed.';
-            } else if (settlementWarning) {
-                promptAssistantFailureContent = `Failed to execute prompt command.\n\n_${settlementWarning}_`;
-            }
-            if (prompt_assistant_message_id) {
-                updateChatMessage(prompt_assistant_message_id, {
-                    isStreaming: false,
-                    content: promptAssistantFailureContent,
-                    error: failureError,
-                });
-            } else {
-                appendChatMessage({
-                    id: `msg-${crypto.randomUUID()}`,
-                    role: 'user',
-                    content: userText,
-                    timestamp: Date.now(),
-                });
-                appendChatMessage({
-                    id: `msg-${crypto.randomUUID()}`,
-                    role: 'assistant',
-                    content: failureContentWithWarning,
-                    error: failureError,
-                    timestamp: Date.now(),
-                });
-            }
-        } finally {
-            releaseProviderCancellation();
-            setActiveAborter(null);
-            setChatGenerating(false);
-        }
-        return undefined;
-    }
-
     return streamExplainChatResponse({
         userText,
         runId,
