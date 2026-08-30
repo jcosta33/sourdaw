@@ -1,0 +1,23 @@
+src/modules/AiRuntime/useCases/recoverAgentRunPendingEffects.ts
+  s_a40848e8f8cca9::t_c32ec0db598dd6 102,104-105,110,169-170
+src/modules/AiRuntime/useCases/__tests__/recoverAgentRunPendingEffects.spec.ts
+  s_a40848e8f8cca9::t_c32ec0db598dd6 61,90,380,402,404,426,428,438,443,464,466,491,504,513,515,527-535,539
+  s_a40848e8f8cca9::t_6be71ae0fa7ec0 489,502
+  s_a40848e8f8cca9::t_c09f38e272a27d 536-538
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "8a35706a3b43a29d660ccb7fbcb00407aaf8e2a6",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
