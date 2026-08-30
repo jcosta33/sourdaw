@@ -1,4 +1,4 @@
-import { type MouseEvent, type ReactElement, useEffect, useRef, useState } from 'react';
+import { type KeyboardEvent, type MouseEvent, type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { Ellipsis } from 'lucide-react';
 
@@ -37,6 +37,7 @@ import { UndoRedoButtons } from './Transport/UndoRedoButtons';
 import { WindowControls } from './Transport/WindowControls';
 
 const getTracks = (state: { tracks: Track[] } | null): Track[] => state?.tracks ?? [];
+const COMPACT_TRANSPORT_MAX_WIDTH = 1199;
 const RESPONSIVE_DISCLOSURE_SELECTORS = [
     '[role="dialog"][aria-label="Project controls"]',
     '[role="dialog"][aria-label="View and panel controls"]',
@@ -56,16 +57,25 @@ const hasResponsiveDisclosureOpen = (): boolean => {
     return RESPONSIVE_DISCLOSURE_SELECTORS.some((selector) => document.querySelector(selector) !== null);
 };
 
+const isCompactLayoutViewport = (): boolean => {
+    if (typeof document === 'undefined') {
+        return false;
+    }
+    const width = document.documentElement.clientWidth;
+    return width > 0 && width <= COMPACT_TRANSPORT_MAX_WIDTH;
+};
+
 /** Lit-edge separator that follows the NW light source model from the design system */
 const Sep = (): ReactElement => <div className="mx-0.5 h-5 w-px shrink-0 daw-seam" />;
 
 export const TransportBar = (): ReactElement => {
     const moreContainerRef = useRef<HTMLElement>(null);
+    const moreTriggerRef = useRef<HTMLButtonElement>(null);
     const moreOpenRef = useRef(false);
-    const compactModeRef = useRef(false);
     const restoreFocusAfterModeChangeRef = useRef(false);
     const [moreOpen, setMoreOpen] = useState(false);
-    const [compactMode, setCompactMode] = useState(false);
+    const [compactMode, setCompactMode] = useState(isCompactLayoutViewport);
+    const compactModeRef = useRef(compactMode);
     const {
         sidebarOpen,
         inspectorOpen,
@@ -112,18 +122,11 @@ export const TransportBar = (): ReactElement => {
     };
 
     useEffect(() => {
-        const container = moreContainerRef.current;
-        if (container === null) {
+        if (typeof document === 'undefined' || typeof ResizeObserver === 'undefined') {
             return undefined;
         }
-        if (typeof ResizeObserver === 'undefined') {
-            return undefined;
-        }
-        const observer = new ResizeObserver(([entry]) => {
-            if (entry === undefined) {
-                return;
-            }
-            const nextCompactMode = entry.contentRect.width <= 1199;
+        const observer = new ResizeObserver(() => {
+            const nextCompactMode = isCompactLayoutViewport();
             if (nextCompactMode === compactModeRef.current) {
                 return;
             }
@@ -136,7 +139,7 @@ export const TransportBar = (): ReactElement => {
             restoreFocusAfterModeChangeRef.current = disclosureWasOpen;
             setCompactMode(nextCompactMode);
         });
-        observer.observe(container);
+        observer.observe(document.documentElement);
         return () => observer.disconnect();
     }, []);
 
@@ -151,6 +154,20 @@ export const TransportBar = (): ReactElement => {
     const setMorePopoverOpen = (open: boolean): void => {
         moreOpenRef.current = open;
         setMoreOpen(open);
+    };
+
+    const closeMoreOnNestedTriggerEscape = (event: KeyboardEvent<HTMLDivElement>): void => {
+        if (event.key !== 'Escape' || !(event.target instanceof Element)) {
+            return;
+        }
+        const nestedTrigger = event.target.closest('button[aria-haspopup]');
+        if (nestedTrigger === null || !event.currentTarget.contains(nestedTrigger)) {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        setMorePopoverOpen(false);
+        window.requestAnimationFrame(() => moreTriggerRef.current?.focus());
     };
 
     return (
@@ -305,11 +322,20 @@ export const TransportBar = (): ReactElement => {
                     <div className="transport-bar__action-more">
                         <Popover open={moreOpen} onOpenChange={setMorePopoverOpen}>
                             <PopoverTrigger asChild>
-                                <Button variant="ghost" size="icon-sm" aria-label="More transport controls">
+                                <Button
+                                    ref={moreTriggerRef}
+                                    variant="ghost"
+                                    size="icon-sm"
+                                    aria-label="More transport controls"
+                                >
                                     <Ellipsis className="size-3.5" aria-hidden="true" />
                                 </Button>
                             </PopoverTrigger>
-                            <PopoverContent align="end" aria-label="More transport controls">
+                            <PopoverContent
+                                align="end"
+                                aria-label="More transport controls"
+                                onKeyDownCapture={closeMoreOnNestedTriggerEscape}
+                            >
                                 <div className="space-y-2">
                                     <TempoEditor />
                                     <PunchRecordingControls />
