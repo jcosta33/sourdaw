@@ -59,6 +59,7 @@ import { defaultTransportState, type TempoMapStoreState, transportStore } from '
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 
 import {
+    type AudioGraphAddSendCommand,
     type AudioGraphCommand,
     type AudioGraphParameterWrite,
     type AudioGraphStripParameterTarget,
@@ -127,6 +128,27 @@ function writeCommands(
     writes: readonly AudioGraphParameterWrite[]
 ): AudioGraphCommand[] {
     return writes.map((write): AudioGraphCommand => ({ kind: 'write-parameter', target, write }));
+}
+
+/**
+ * The sends the native graph has a path for — the same drop as live
+ * `sendCommands` in `projectLiveGraphTopology`: no `add-send` from a bus, and
+ * no send naming a bus this render did not build.
+ */
+function sendCommands(input: { track: Track; busStripIds: ReadonlySet<string> }): AudioGraphAddSendCommand[] {
+    const { track, busStripIds } = input;
+    if (track.kind === 'bus') {
+        return [];
+    }
+    return track.sends
+        .filter((send) => busStripIds.has(send.busId))
+        .map((send): AudioGraphAddSendCommand => ({
+            kind: 'add-send',
+            trackId: track.id,
+            busId: send.busId,
+            tap: send.preFader ? 'pre-fader' : 'post-fader',
+            level: send.level,
+        }));
 }
 
 /**
@@ -238,17 +260,7 @@ export async function renderOfflineWithNativeEngine(
                 trackStripIds: trackIds,
             }),
         },
-        // A send naming no built bus is dropped, exactly as the web backend
-        // drops it — the audio path it would carry does not exist either way.
-        ...track.sends
-            .filter((send) => busIds.has(send.busId))
-            .map((send): AudioGraphCommand => ({
-                kind: 'add-send',
-                trackId: track.id,
-                busId: send.busId,
-                tap: send.preFader ? 'pre-fader' : 'post-fader',
-                level: send.level,
-            })),
+        ...sendCommands({ track, busStripIds: busIds }),
     ]);
 
     // ── Programme: automation writes and clip playbacks per scheduled track ─
@@ -269,13 +281,10 @@ export async function renderOfflineWithNativeEngine(
             const panRecorder = createAutomationRecorder();
             const sendRecorders: { busId: string; recorder: AutomationRecorder }[] = [];
             const sendAutomationParams = new Map<string, AudioParam>();
-            for (const send of track.sends) {
-                if (!busIds.has(send.busId)) {
-                    continue;
-                }
+            for (const command of sendCommands({ track, busStripIds: busIds })) {
                 const recorder = createAutomationRecorder();
-                sendRecorders.push({ busId: send.busId, recorder });
-                sendAutomationParams.set(`send:${send.busId}`, recorder.param);
+                sendRecorders.push({ busId: command.busId, recorder });
+                sendAutomationParams.set(`send:${command.busId}`, recorder.param);
             }
 
             scheduleTrackAutomation({
