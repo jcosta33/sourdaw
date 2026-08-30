@@ -4,11 +4,11 @@ import {
     isExecutableAppActionType,
     parseVersionedCommandBatchEnvelope,
 } from '#/modules/Command/useCases';
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type AgentRunPhase, type AgentRunWorkTerminalState } from '../models/AgentRun';
 
+import { normalizeAgentFailure } from './agentErrorAndSaga';
 import { createStemImportConfirmationResourceLease } from './agentReference/createStemImportConfirmationResourceLease';
 import { preparedStemImportResources } from './agentReference/registerPreparedStemImportResources';
 import { settleAgentRunWorkLeaseSafely } from './agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
@@ -77,12 +77,21 @@ function recordCommittedCommandWarningSafe(input: {
     commandBatch: Parameters<typeof recordAgentRunReceiptSaga>[0]['commandBatch'];
     committedRevision?: string;
     completesRun: boolean;
+    recoveryError?: Parameters<typeof agentRunLifecycle.recordCommittedRecoveryFailure>[0]['error'];
 }): string | null {
     try {
-        recordAgentRunReceiptSaga(input);
+        const { recoveryError, ...receiptInput } = input;
+        if (recoveryError) {
+            agentRunLifecycle.recordCommittedRecoveryFailure({ ...receiptInput, error: recoveryError });
+        } else {
+            recordAgentRunReceiptSaga(receiptInput);
+        }
         return null;
     } catch (error) {
         logger.error(new Error('Prompt command receipt persistence failed after verified execution', { cause: error }));
+        if (input.recoveryError) {
+            return AGENT_RUN_PERSISTENCE_WARNING;
+        }
         const receiptIdentity = getReceiptIdentity(input.receipt);
         try {
             agentRunLifecycle.updateBatchStatus({
@@ -398,13 +407,27 @@ export async function executePromptActionGroup(
         }
         const leaseSettlement = settleCommand('completed', 'verified-command-receipt');
         const receiptIdentity = getReceiptIdentity(execution.receipt);
+        const hasExactFinalizationEvidence =
+            execution.status !== 'committed' || execution.finalizationEvidenceFailure === undefined;
         const receiptPersistenceWarning = recordCommittedCommandWarningSafe({
             runId: input.runId,
             receipt: execution.receipt,
             actions: input.actions,
             commandBatch,
-            ...(execution.status === 'committed' ? { committedRevision: captureProjectRevision() } : {}),
-            completesRun: leaseSettlement.accepted && leaseSettlement.warning === null,
+            ...(execution.status === 'committed' && execution.committedRevision
+                ? { committedRevision: execution.committedRevision }
+                : {}),
+            completesRun: leaseSettlement.accepted && leaseSettlement.warning === null && hasExactFinalizationEvidence,
+            ...(execution.status === 'committed' && execution.finalizationEvidenceFailure
+                ? {
+                      recoveryError: normalizeAgentFailure({
+                          category: 'internal',
+                          source: 'command-execution',
+                          related: { receiptIdentities: [receiptIdentity] },
+                          knownDomain: true,
+                      }),
+                  }
+                : {}),
         });
         const resourcePromotionWarning = await completeCommittedImportedStemPromotion();
         if ((!leaseSettlement.accepted || leaseSettlement.warning !== null) && receiptPersistenceWarning === null) {

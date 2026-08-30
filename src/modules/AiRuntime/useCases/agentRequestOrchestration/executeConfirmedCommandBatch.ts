@@ -277,6 +277,7 @@ export async function executeConfirmedCommandBatch(
                     runId: confirmation.runId,
                     receipt,
                     commandBatch,
+                    getFinalizedRevision: () => committedProjectRevision ?? undefined,
                 });
             },
             onProjectCommitFinalized: ({
