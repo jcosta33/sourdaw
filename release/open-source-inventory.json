@@ -1131,7 +1131,7 @@
                 "sha256:200e032a1b2c9bbcfeef4fcd5f6a6bedba7a19eebebc51e3ac5e11def43a7efe:public/icon.png",
                 "sha256:200e032a1b2c9bbcfeef4fcd5f6a6bedba7a19eebebc51e3ac5e11def43a7efe:sourdaw.png",
                 "tree-sha256:fa5dd4f455fd2a2176fb9c3a166b2a002104ac9528bb94e517aac35910cbebc2:public/logo-parts",
-                "tree-sha256:25c51336b0d7788659dba82f83a7785279c3b7d526aeb4bb74658673c24884e8:build/icons"
+                "tree-sha256:8fe3c665aea8a08574ae36e3ed4568ceb921a5efc825584e1577f02eb663f69c:build/icons"
             ],
             "licenses": ["Apache-2.0"],
             "productSurfaces": ["application icons", "brand logo", "release screenshots"],
