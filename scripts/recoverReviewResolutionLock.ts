@@ -9,8 +9,10 @@ import {
 import { fail } from './prContract.ts';
 import {
     assertRecoverableReviewResolutionLockOwner,
+    assertTrustedReviewResolutionLauncher,
     inspectReviewThread,
     recoverPullRequestReviewResolutionLock,
+    type ReviewResolutionTrustedLauncher,
     type ReviewResolutionLockOwner,
     type ReviewThreadInspection,
 } from './resolveReviewThread.ts';
@@ -22,6 +24,24 @@ export type RecoverReviewResolutionLockArgs = {
 };
 
 export type ReviewResolutionRecoveryDependencies = {
+    trustedLauncher?: ReviewResolutionTrustedLauncher;
+    trustedPrimaryRoot?: () => string;
+    authenticateAuthor?: (primaryRoot: string) => Promise<{
+        minted: { actorNodeId: string };
+        session: GhSession;
+    }>;
+    repositoryName?: (session: GhSession, primaryRoot: string) => string;
+    gh?: (session: GhSession, primaryRoot: string) => (args: string[]) => string;
+    inspectThread?: (number: number, threadId: string, gh: (args: string[]) => string) => ReviewThreadInspection;
+    recoverLock?: <Value>(
+        primaryRoot: string,
+        number: number,
+        expectedOwnerOid: string,
+        reconcile: (owner: ReviewResolutionLockOwner) => Value
+    ) => Value;
+};
+type ResolvedReviewResolutionRecoveryDependencies = {
+    trustedLauncher?: ReviewResolutionTrustedLauncher;
     trustedPrimaryRoot: () => string;
     authenticateAuthor: (primaryRoot: string) => Promise<{
         minted: { actorNodeId: string };
@@ -40,38 +60,43 @@ export type ReviewResolutionRecoveryDependencies = {
 
 const usage = 'usage: pnpm review:resolve:recover <pr-number> --owner <lock-object-id>';
 
-function trustedPrimaryRootFromBootstrap(parent: NodeJS.ProcessEnv = process.env): string {
-    const primaryRoot = parent.SOURDAW_TRUSTED_PRIMARY_ROOT;
-    const originCommit = parent.SOURDAW_TRUSTED_ORIGIN_COMMIT;
-    const gitPath = parent.SOURDAW_TRUSTED_GIT_PATH;
-    const ghPath = parent.SOURDAW_TRUSTED_GH_PATH;
-    if (
-        typeof primaryRoot !== 'string' ||
-        primaryRoot.trim() === '' ||
-        typeof originCommit !== 'string' ||
-        !/^[0-9a-f]{40}$/iu.test(originCommit) ||
-        typeof gitPath !== 'string' ||
-        gitPath.trim() === '' ||
-        typeof ghPath !== 'string' ||
-        ghPath.trim() === ''
-    ) {
+function resolveRecoveryDependencies(
+    dependencies: ReviewResolutionRecoveryDependencies | undefined
+): ResolvedReviewResolutionRecoveryDependencies {
+    if (dependencies === undefined) {
         fail('review:resolve:recover must run through the protected primary checkout launcher');
     }
-    return primaryRoot;
-}
-
-function defaultRecoveryDependencies(): ReviewResolutionRecoveryDependencies {
+    const trustedLauncher =
+        dependencies.trustedLauncher === undefined
+            ? undefined
+            : assertTrustedReviewResolutionLauncher(
+                  dependencies.trustedLauncher,
+                  'review:resolve:recover must run through the protected primary checkout launcher'
+              );
     return {
-        trustedPrimaryRoot: () => trustedPrimaryRootFromBootstrap(),
-        authenticateAuthor: (primaryRoot) => authenticateRole({ primaryRoot, role: 'author' }),
-        repositoryName: (session, primaryRoot) =>
-            spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
-                env: session.env,
-                cwd: primaryRoot,
+        trustedLauncher,
+        trustedPrimaryRoot:
+            dependencies.trustedPrimaryRoot ??
+            (() => {
+                if (trustedLauncher === undefined) {
+                    fail('review:resolve:recover must run through the protected primary checkout launcher');
+                }
+                return trustedLauncher.primaryRoot;
             }),
-        gh: (session, primaryRoot) => (args) => spawnCapture('gh', args, { cwd: primaryRoot, env: session.env }),
-        inspectThread: inspectReviewThread,
-        recoverLock: recoverPullRequestReviewResolutionLock,
+        authenticateAuthor:
+            dependencies.authenticateAuthor ?? ((primaryRoot) => authenticateRole({ primaryRoot, role: 'author' })),
+        repositoryName:
+            dependencies.repositoryName ??
+            ((session, primaryRoot) =>
+                spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
+                    env: session.env,
+                    cwd: primaryRoot,
+                })),
+        gh:
+            dependencies.gh ??
+            ((session, primaryRoot) => (args) => spawnCapture('gh', args, { cwd: primaryRoot, env: session.env })),
+        inspectThread: dependencies.inspectThread ?? inspectReviewThread,
+        recoverLock: dependencies.recoverLock ?? recoverPullRequestReviewResolutionLock,
     };
 }
 
@@ -111,7 +136,7 @@ function recoverySummary(number: number, owner: ReviewResolutionLockOwner, inspe
 
 export async function runRecoverReviewResolutionLockCli(
     args: string[],
-    dependencies: ReviewResolutionRecoveryDependencies = defaultRecoveryDependencies()
+    dependencies?: ReviewResolutionRecoveryDependencies
 ): Promise<number> {
     const parsed = parseRecoverReviewResolutionLockArgs(args);
     if (parsed.help) {
@@ -122,19 +147,20 @@ export async function runRecoverReviewResolutionLockCli(
         fail(usage);
     }
 
-    const primaryRoot = dependencies.trustedPrimaryRoot();
-    const auth = await dependencies.authenticateAuthor(primaryRoot);
+    const resolvedDependencies = resolveRecoveryDependencies(dependencies);
+    const primaryRoot = resolvedDependencies.trustedPrimaryRoot();
+    const auth = await resolvedDependencies.authenticateAuthor(primaryRoot);
     try {
         if (!isAuthorBotNodeId(auth.minted.actorNodeId)) {
             fail(`minted actor ${auth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
         }
-        assertRequiredRepository(dependencies.repositoryName(auth.session, primaryRoot));
-        const gh = dependencies.gh(auth.session, primaryRoot);
-        const summary = dependencies.recoverLock(primaryRoot, parsed.number, parsed.owner, (lockOwner) =>
+        assertRequiredRepository(resolvedDependencies.repositoryName(auth.session, primaryRoot));
+        const gh = resolvedDependencies.gh(auth.session, primaryRoot);
+        const summary = resolvedDependencies.recoverLock(primaryRoot, parsed.number, parsed.owner, (lockOwner) =>
             recoverySummary(
                 parsed.number!,
                 lockOwner,
-                dependencies.inspectThread(parsed.number!, lockOwner.threadId, gh)
+                resolvedDependencies.inspectThread(parsed.number!, lockOwner.threadId, gh)
             )
         );
         console.log(summary);

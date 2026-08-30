@@ -111,6 +111,11 @@ export type ReviewResolutionLockOwner = {
     token: string;
     mutation: ReviewResolutionLockMutation;
 };
+export type ReviewResolutionTrustedLauncher = {
+    primaryRoot: string;
+    gitPath: string;
+    ghPath: string;
+};
 export type ResolveReviewThreadPort = {
     inspect: (number: number, threadId: string) => ReviewThreadInspection;
     inspectAttachedReviewThreadIds: (
@@ -135,6 +140,15 @@ export type ResolveReviewThreadPort = {
     log: (message: string) => void;
 };
 export type ResolveReviewThreadArgs = { number?: number; threadId?: string; head?: string; help: boolean };
+export type ResolveReviewThreadCliDependencies = {
+    trustedLauncher: ReviewResolutionTrustedLauncher;
+    authenticateAuthor?: (primaryRoot: string) => Promise<{
+        minted: { actorNodeId: string };
+        session: GhSession;
+    }>;
+    repositoryName?: (session: GhSession, primaryRoot: string) => string;
+    createPort?: (session: GhSession, primaryRoot: string) => ResolveReviewThreadPort;
+};
 const usage = 'usage: pnpm review:resolve <pr-number> --thread <graphql-thread-node-id> --head <40-hex-sha>';
 const RESOLUTION_REVIEW_SUMMARY = 'Resolved this review thread after applying the requested changes.';
 const REVIEW_RESOLUTION_LOCK_TOKEN_PATTERN =
@@ -176,6 +190,12 @@ export type PersistedReviewResolutionChildLaunchMarker = {
     version: 1;
     token: string;
     pid: number | null;
+    capabilityPath: string;
+};
+type PersistedReviewResolutionBootstrapCapability = {
+    version: 1;
+    token: string;
+    trustedLauncher: ReviewResolutionTrustedLauncher;
 };
 
 type ReviewResolutionChildMarkerPublicationPort = {
@@ -200,8 +220,44 @@ function invalidReviewResolutionChildMarker(): never {
     fail('review:resolve detached launcher marker is invalid');
 }
 
+function invalidReviewResolutionBootstrapCapability(): never {
+    fail('review:resolve must run through the protected primary checkout launcher');
+}
+
 function isPositiveSafeInteger(value: unknown): value is number {
     return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+}
+
+export function assertTrustedReviewResolutionLauncher(
+    value: unknown,
+    label: string = 'review:resolve must run through the protected primary checkout launcher'
+): ReviewResolutionTrustedLauncher {
+    if (
+        typeof value !== 'object' ||
+        value === null ||
+        !('primaryRoot' in value) ||
+        typeof value.primaryRoot !== 'string' ||
+        value.primaryRoot.trim() === '' ||
+        !isAbsolute(value.primaryRoot) ||
+        normalize(value.primaryRoot) !== value.primaryRoot ||
+        !('gitPath' in value) ||
+        typeof value.gitPath !== 'string' ||
+        value.gitPath.trim() === '' ||
+        !isAbsolute(value.gitPath) ||
+        normalize(value.gitPath) !== value.gitPath ||
+        !('ghPath' in value) ||
+        typeof value.ghPath !== 'string' ||
+        value.ghPath.trim() === '' ||
+        !isAbsolute(value.ghPath) ||
+        normalize(value.ghPath) !== value.ghPath
+    ) {
+        fail(label);
+    }
+    return {
+        primaryRoot: value.primaryRoot,
+        gitPath: value.gitPath,
+        ghPath: value.ghPath,
+    };
 }
 
 function parseReviewResolutionChildLaunchMarker(value: string): ReviewResolutionChildLaunchMarker {
@@ -241,11 +297,16 @@ export function readPersistedReviewResolutionChildLaunchMarker(
     if (
         typeof parsed !== 'object' ||
         parsed === null ||
-        Object.keys(parsed).length !== 3 ||
+        Object.keys(parsed).length !== 4 ||
         !('version' in parsed) ||
         parsed.version !== REVIEW_RESOLUTION_CHILD_MARKER_VERSION ||
         !('token' in parsed) ||
         parsed.token !== marker.token ||
+        !('capabilityPath' in parsed) ||
+        typeof parsed.capabilityPath !== 'string' ||
+        parsed.capabilityPath.trim() === '' ||
+        !isAbsolute(parsed.capabilityPath) ||
+        normalize(parsed.capabilityPath) !== parsed.capabilityPath ||
         pid === undefined ||
         (pid !== null && !isPositiveSafeInteger(pid))
     ) {
@@ -255,6 +316,36 @@ export function readPersistedReviewResolutionChildLaunchMarker(
         version: REVIEW_RESOLUTION_CHILD_MARKER_VERSION,
         token: marker.token,
         pid,
+        capabilityPath: parsed.capabilityPath,
+    };
+}
+
+function readPersistedReviewResolutionBootstrapCapability(
+    path: string,
+    token: string
+): PersistedReviewResolutionBootstrapCapability {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown;
+    } catch {
+        invalidReviewResolutionBootstrapCapability();
+    }
+    if (
+        typeof parsed !== 'object' ||
+        parsed === null ||
+        Object.keys(parsed).length !== 3 ||
+        !('version' in parsed) ||
+        parsed.version !== 1 ||
+        !('token' in parsed) ||
+        parsed.token !== token ||
+        !('trustedLauncher' in parsed)
+    ) {
+        invalidReviewResolutionBootstrapCapability();
+    }
+    return {
+        version: 1,
+        token,
+        trustedLauncher: assertTrustedReviewResolutionLauncher(parsed.trustedLauncher),
     };
 }
 
@@ -262,12 +353,14 @@ export function publishReviewResolutionChildLaunchMarker(
     path: string,
     token: string,
     pid: number | null,
+    capabilityPath: string,
     port: ReviewResolutionChildMarkerPublicationPort = {}
 ): void {
     const persisted: PersistedReviewResolutionChildLaunchMarker = {
         version: REVIEW_RESOLUTION_CHILD_MARKER_VERSION,
         token,
         pid,
+        capabilityPath,
     };
     const temporaryPath = `${path}.${(port.randomUuid ?? randomUUID)()}.tmp`;
     const write = port.writeFileSync ?? writeFileSync;
@@ -282,26 +375,57 @@ export function publishReviewResolutionChildLaunchMarker(
     }
 }
 
-function createReviewResolutionChildLaunchMarker(): {
+function createReviewResolutionChildLaunchMarker(trustedLauncher: ReviewResolutionTrustedLauncher): {
     envValue: string;
     bindChildPid: (pid: number) => void;
     cleanup: () => void;
 } {
     const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-resolve-'));
     const path = join(root, 'child-marker.json');
+    const capabilityPath = join(root, 'bootstrap-capability.json');
     const token = randomUUID();
-    publishReviewResolutionChildLaunchMarker(path, token, null);
+    const capability: PersistedReviewResolutionBootstrapCapability = {
+        version: 1,
+        token,
+        trustedLauncher,
+    };
+    writeFileSync(capabilityPath, JSON.stringify(capability), { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    publishReviewResolutionChildLaunchMarker(path, token, null, capabilityPath);
     return {
         envValue: JSON.stringify({ path, token }),
         bindChildPid: (pid) => {
             if (!Number.isSafeInteger(pid) || pid <= 0) {
                 invalidReviewResolutionChildMarker();
             }
-            publishReviewResolutionChildLaunchMarker(path, token, pid);
+            publishReviewResolutionChildLaunchMarker(path, token, pid, capabilityPath);
         },
         cleanup: () => {
             rmSync(root, { recursive: true, force: true });
         },
+    };
+}
+
+function resolveReviewThreadCliDependencies(
+    dependencies: ResolveReviewThreadCliDependencies | undefined,
+    trustedLauncherOverride?: ReviewResolutionTrustedLauncher
+): Required<ResolveReviewThreadCliDependencies> {
+    const trustedLauncher = trustedLauncherOverride ?? dependencies?.trustedLauncher;
+    if (trustedLauncher === undefined) {
+        fail('review:resolve must run through the protected primary checkout launcher');
+    }
+    const resolvedLauncher = assertTrustedReviewResolutionLauncher(trustedLauncher);
+    return {
+        trustedLauncher: resolvedLauncher,
+        authenticateAuthor:
+            dependencies?.authenticateAuthor ?? ((primaryRoot) => authenticateRole({ primaryRoot, role: 'author' })),
+        repositoryName:
+            dependencies?.repositoryName ??
+            ((session, primaryRoot) =>
+                spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
+                    env: session.env,
+                    cwd: primaryRoot,
+                })),
+        createPort: dependencies?.createPort ?? ((session, primaryRoot) => shellPort(session, primaryRoot)),
     };
 }
 
@@ -798,6 +922,11 @@ function attempt(failures: string[], label: string, operation: () => void): void
 function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
+
+function originalErrorOptions(error: unknown): { cause: unknown } | undefined {
+    return error instanceof Error ? { cause: error } : undefined;
+}
+
 function assertExpectedHead(currentHead: string, expectedHead: string): void {
     if (
         canonicalGitObjectId(currentHead, 'supplied head does not match the current pull-request head') !== expectedHead
@@ -1950,7 +2079,7 @@ function advanceActiveReviewResolutionLockMutation(
     active.owner = nextOwner;
 }
 
-async function assertDetachedReviewResolutionChild(markerValue: string): Promise<void> {
+async function assertDetachedReviewResolutionChild(markerValue: string): Promise<ReviewResolutionTrustedLauncher> {
     if (process.platform === 'win32') {
         fail('review-resolution lock requires POSIX process-group fencing');
     }
@@ -1968,10 +2097,11 @@ async function assertDetachedReviewResolutionChild(markerValue: string): Promise
         if (persisted.pid !== pid) {
             invalidReviewResolutionChildMarker();
         }
+        const capability = readPersistedReviewResolutionBootstrapCapability(persisted.capabilityPath, marker.token);
         rmSync(marker.path, { force: true });
-        return;
+        return capability.trustedLauncher;
     }
-    invalidReviewResolutionChildMarker();
+    return invalidReviewResolutionChildMarker();
 }
 
 function isLiveProcessGroup(pgid: number): boolean {
@@ -2027,6 +2157,23 @@ function releasePullRequestReviewResolutionLock(primaryRoot: string, ref: string
     }
 }
 
+function reviewResolutionRecoveryCommand(number: number, ownerOid: string): string {
+    return `pnpm review:resolve:recover ${number} --owner ${ownerOid}`;
+}
+
+function preserveReviewResolutionLockFailure(
+    number: number,
+    active: ActiveReviewResolutionLock,
+    error: unknown
+): never {
+    const phase = active.owner.mutation.phase;
+    const epoch = active.owner.mutation.epoch;
+    throw new Error(
+        `${errorMessage(error)}; ${pullRequestReviewResolutionLockScope(number)} preserved exact lock owner ${active.oid} after ${phase} epoch ${epoch}; recover with ${reviewResolutionRecoveryCommand(number, active.oid)}`,
+        originalErrorOptions(error)
+    );
+}
+
 export function withPullRequestReviewResolutionLock<Value>(
     primaryRoot: string,
     number: number,
@@ -2051,9 +2198,26 @@ export function withPullRequestReviewResolutionLock<Value>(
     pushActiveReviewResolutionLock(active);
     try {
         return operation();
-    } finally {
+    } catch (error) {
+        const currentOwnerOid = readReviewResolutionLockOid(primaryRoot, active.ref, number);
+        if (currentOwnerOid === undefined) {
+            popActiveReviewResolutionLock(active);
+            return fail(`${pullRequestReviewResolutionLockScope(number)} lock is not held`);
+        }
+        active.oid = currentOwnerOid;
+        active.owner = readReviewResolutionLockOwner(primaryRoot, currentOwnerOid, number);
+        if (active.owner.mutation.phase === 'idle') {
+            popActiveReviewResolutionLock(active);
+            releasePullRequestReviewResolutionLock(primaryRoot, active.ref, active.oid, number);
+            throw error;
+        }
         popActiveReviewResolutionLock(active);
-        releasePullRequestReviewResolutionLock(primaryRoot, active.ref, active.oid, number);
+        return preserveReviewResolutionLockFailure(number, active, error);
+    } finally {
+        if (activeReviewResolutionLocks.at(-1) === active) {
+            popActiveReviewResolutionLock(active);
+            releasePullRequestReviewResolutionLock(primaryRoot, active.ref, active.oid, number);
+        }
     }
 }
 
@@ -2985,8 +3149,11 @@ export function deleteReply(replyId: string, gh: Gh): void {
     }
 }
 
-async function runResolveReviewThreadInDetachedProcess(args: string[]): Promise<number> {
-    const marker = createReviewResolutionChildLaunchMarker();
+async function runResolveReviewThreadInDetachedProcess(
+    args: string[],
+    trustedLauncher: ReviewResolutionTrustedLauncher
+): Promise<number> {
+    const marker = createReviewResolutionChildLaunchMarker(trustedLauncher);
     try {
         const child = spawn(process.execPath, [fileURLToPath(import.meta.url), ...args], {
             cwd: process.cwd(),
@@ -3014,7 +3181,10 @@ async function runResolveReviewThreadInDetachedProcess(args: string[]): Promise<
     }
 }
 
-export async function runResolveReviewThreadCli(args: string[]): Promise<number> {
+export async function runResolveReviewThreadCli(
+    args: string[],
+    dependencies?: ResolveReviewThreadCliDependencies
+): Promise<number> {
     const parsed = parseResolveReviewThreadArgs(args);
     if (parsed.help) {
         console.log(`Usage: ${usage.slice('usage: '.length)}`);
@@ -3025,33 +3195,30 @@ export async function runResolveReviewThreadCli(args: string[]): Promise<number>
     }
     const childMarker = process.env[REVIEW_RESOLUTION_CHILD_ENV];
     if (childMarker === undefined) {
-        return await runResolveReviewThreadInDetachedProcess(args);
+        const resolvedDependencies = resolveReviewThreadCliDependencies(dependencies);
+        return await runResolveReviewThreadInDetachedProcess(args, resolvedDependencies.trustedLauncher);
     }
-    await assertDetachedReviewResolutionChild(childMarker);
+    const trustedLauncher = await assertDetachedReviewResolutionChild(childMarker);
+    const resolvedDependencies = resolveReviewThreadCliDependencies(dependencies, trustedLauncher);
     const cwd = process.cwd();
     assertTrustedExecutingBlob(
         'scripts/resolveReviewThread.ts',
         fileURLToPath(import.meta.url),
         originMainBlob('scripts/resolveReviewThread.ts', cwd)
     );
-    const primaryRoot = resolvePrimaryRoot();
-    const auth = await authenticateRole({ primaryRoot, role: 'author' });
+    const primaryRoot = resolvedDependencies.trustedLauncher.primaryRoot;
+    const auth = await resolvedDependencies.authenticateAuthor(primaryRoot);
     try {
         if (!isAuthorBotNodeId(auth.minted.actorNodeId)) {
             fail(`minted actor ${auth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
         }
-        assertRequiredRepository(
-            spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
-                env: auth.session.env,
-                cwd: primaryRoot,
-            })
-        );
+        assertRequiredRepository(resolvedDependencies.repositoryName(auth.session, primaryRoot));
         resolveReviewThread(
             parsed.number,
             parsed.threadId,
             parsed.head,
             auth.minted.actorNodeId,
-            shellPort(auth.session)
+            resolvedDependencies.createPort(auth.session, primaryRoot)
         );
         return 0;
     } finally {

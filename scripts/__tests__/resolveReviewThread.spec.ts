@@ -15,6 +15,7 @@ import {
     parseResolveReviewThreadArgs,
     publishReviewResolutionChildLaunchMarker,
     readPersistedReviewResolutionChildLaunchMarker,
+    runResolveReviewThreadCli,
     resolveReviewThread,
     shellPort,
     deleteReply,
@@ -46,6 +47,7 @@ function systemGitPath(): string {
 }
 const trustedGitPath = process.env.SOURDAW_TRUSTED_GIT_PATH ?? systemGitPath();
 process.env.SOURDAW_TRUSTED_GIT_PATH = trustedGitPath;
+const trustedGhPath = process.env.SOURDAW_TRUSTED_GH_PATH ?? process.execPath;
 type ReviewRecord = {
     id: string;
     body: string;
@@ -76,6 +78,31 @@ function withTemporaryEnvironment<Value>(overrides: Record<string, string | unde
     }
     try {
         return operation();
+    } finally {
+        for (const [key, value] of previous) {
+            if (value === undefined) {
+                delete process.env[key];
+                continue;
+            }
+            process.env[key] = value;
+        }
+    }
+}
+async function withTemporaryEnvironmentAsync<Value>(
+    overrides: Record<string, string | undefined>,
+    operation: () => Promise<Value>
+): Promise<Value> {
+    const previous = new Map<string, string | undefined>();
+    for (const [key, value] of Object.entries(overrides)) {
+        previous.set(key, process.env[key]);
+        if (value === undefined) {
+            delete process.env[key];
+            continue;
+        }
+        process.env[key] = value;
+    }
+    try {
+        return await operation();
     } finally {
         for (const [key, value] of previous) {
             if (value === undefined) {
@@ -796,6 +823,68 @@ function createFakeGhExecutable(responsesByKey: Record<string, string | string[]
     return { root, executable };
 }
 
+function createBlockingCreateReviewGhExecutable(): {
+    root: string;
+    executable: string;
+    createCalledPath: string;
+    artifactVisiblePath: string;
+    queryLogPath: string;
+} {
+    const executableRoot = mkdtempSync(join(tmpdir(), 'resolve-review-thread-blocked-create-gh-'));
+    const executable = join(executableRoot, 'gh');
+    const createCalledPath = join(executableRoot, 'create-called');
+    const artifactVisiblePath = join(executableRoot, 'artifact-visible');
+    const queryLogPath = join(executableRoot, 'queries.log');
+    const pendingReviewBody = resolutionReviewSummary(pullRequestId, threadId, head);
+    writeFileSync(
+        executable,
+        [
+            `#!${process.execPath}`,
+            'const sleeper = new Int32Array(new SharedArrayBuffer(4));',
+            'const fs = require("node:fs");',
+            `const createCalledPath = ${JSON.stringify(createCalledPath)};`,
+            `const artifactVisiblePath = ${JSON.stringify(artifactVisiblePath)};`,
+            `const queryLogPath = ${JSON.stringify(queryLogPath)};`,
+            `const pendingReviewBody = ${JSON.stringify(pendingReviewBody)};`,
+            `const threadPageBody = ${JSON.stringify(threadPage([{ id: threadId, isResolved: false, resolvedBy: null }], false, null, head))};`,
+            `const commentPageBody = ${JSON.stringify(commentPage([root], false, null, threadId, head))};`,
+            `const threadResolutionBody = ${JSON.stringify(threadResolutionPage(threadId, head))};`,
+            `const emptyReviewPage = ${JSON.stringify(reviewPage([], false, null, head))};`,
+            `const visibleReviewPage = ${JSON.stringify(
+                reviewPage(
+                    [
+                        {
+                            id: reviewId,
+                            state: 'PENDING',
+                            body: pendingReviewBody,
+                            commit: { oid: head },
+                            author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: 'Bot' },
+                        },
+                    ],
+                    false,
+                    null,
+                    head
+                )
+            )};`,
+            'const args = process.argv.slice(2);',
+            "if (args[0] !== 'api' || args[1] !== 'graphql') { console.error(`unexpected gh args ${JSON.stringify(args)}`); process.exit(1); }",
+            'const queryArg = args.find((value) => value.startsWith("query="));',
+            "if (queryArg === undefined) { console.error('missing query'); process.exit(1); }",
+            'const query = queryArg.slice("query=".length);',
+            "if (query.includes('reviewThreads(first:100')) { fs.appendFileSync(queryLogPath, 'threads\\n'); process.stdout.write(threadPageBody); process.exit(0); }",
+            "if (query.includes('comments(first:100')) { fs.appendFileSync(queryLogPath, 'comments\\n'); process.stdout.write(commentPageBody); process.exit(0); }",
+            "if (query.includes('reviews(first:100')) { fs.appendFileSync(queryLogPath, 'reviews\\n'); process.stdout.write(fs.existsSync(artifactVisiblePath) ? visibleReviewPage : emptyReviewPage); process.exit(0); }",
+            "if (query.includes('node(id:$threadId){... on PullRequestReviewThread{id isResolved resolvedBy{id login __typename}}')) { fs.appendFileSync(queryLogPath, 'threadResolution\\n'); process.stdout.write(threadResolutionBody); process.exit(0); }",
+            "if (query.includes('addPullRequestReview(input:{pullRequestId:$pullRequestId')) { fs.appendFileSync(queryLogPath, 'createReview\\n'); fs.writeFileSync(createCalledPath, '1'); for (;;) Atomics.wait(sleeper, 0, 0, 1000); }",
+            'console.error(`unexpected query ${query}`);',
+            'process.exit(1);',
+        ].join('\n'),
+        { encoding: 'utf8', mode: 0o700 }
+    );
+    chmodSync(executable, 0o700);
+    return { root: executableRoot, executable, createCalledPath, artifactVisiblePath, queryLogPath };
+}
+
 function reviewResolutionLockRef(number: number): string {
     return `refs/sourdaw/review-resolution/pr-${number}`;
 }
@@ -816,6 +905,27 @@ function gitCapture(repository: string, args: string[], input?: string): string 
     return result.stdout.trim();
 }
 
+function executableCapture(
+    executable: string,
+    args: string[],
+    cwd: string,
+    env: NodeJS.ProcessEnv = process.env
+): string {
+    const result = spawnSync(executable, args, {
+        cwd,
+        env,
+        encoding: 'utf8',
+        shell: false,
+    });
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status !== 0) {
+        throw new Error(result.stderr || result.stdout || `${executable} ${args.join(' ')} failed`);
+    }
+    return result.stdout.trim();
+}
+
 function readLockOid(repository: string, number: number): string | undefined {
     const result = spawnSync('git', ['rev-parse', '--verify', '--quiet', reviewResolutionLockRef(number)], {
         cwd: repository,
@@ -832,6 +942,35 @@ function readLockOid(repository: string, number: number): string | undefined {
         throw new Error(result.stderr || result.stdout || 'git show-ref failed');
     }
     return result.stdout.trim();
+}
+
+function readLockOwner(
+    repository: string,
+    number: number
+):
+    | {
+          version: number;
+          pid: number;
+          pgid: number;
+          threadId: string;
+          head: string;
+          token: string;
+          mutation?: { phase?: string; epoch?: number; reviewId?: string; replyId?: string; body?: string };
+      }
+    | undefined {
+    const oid = readLockOid(repository, number);
+    if (oid === undefined) {
+        return undefined;
+    }
+    return JSON.parse(gitCapture(repository, ['cat-file', 'blob', oid])) as {
+        version: number;
+        pid: number;
+        pgid: number;
+        threadId: string;
+        head: string;
+        token: string;
+        mutation?: { phase?: string; epoch?: number; reviewId?: string; replyId?: string; body?: string };
+    };
 }
 
 function writeLockOwnerBlob(
@@ -864,6 +1003,31 @@ function updateLock(repository: string, number: number, nextOid: string, previou
             ? [reviewResolutionLockRef(number), nextOid, '0'.repeat(nextOid.length)]
             : [reviewResolutionLockRef(number), nextOid, previousOid];
     gitCapture(repository, ['update-ref', ...args]);
+}
+
+function setLockMutation(
+    repository: string,
+    number: number,
+    mutation: { phase: string; epoch: number; reviewId?: string; replyId?: string; body?: string }
+): string {
+    const currentOid = readLockOid(repository, number);
+    if (currentOid === undefined) {
+        throw new Error(`review-resolution lock for PR #${number} is not held`);
+    }
+    const currentOwner = readLockOwner(repository, number);
+    if (currentOwner === undefined) {
+        throw new Error(`review-resolution lock owner for PR #${number} is unreadable`);
+    }
+    const nextOid = gitCapture(
+        repository,
+        ['hash-object', '-w', '--stdin'],
+        JSON.stringify({
+            ...currentOwner,
+            mutation,
+        })
+    );
+    updateLock(repository, number, nextOid, currentOid);
+    return nextOid;
 }
 
 async function waitForExit(child: ReturnType<typeof spawn>): Promise<void> {
@@ -952,6 +1116,34 @@ async function waitForReviewResolutionLock(
     throw new Error(`review-resolution lock for PR #${number} did not appear`);
 }
 
+async function waitForPath(path: string): Promise<void> {
+    for (let attempt = 0; attempt < 500; attempt += 1) {
+        try {
+            statSync(path);
+            return;
+        } catch {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+    }
+    throw new Error(`path did not appear: ${path}`);
+}
+
+async function waitForFileText(path: string, pattern: RegExp): Promise<void> {
+    let last = '';
+    for (let attempt = 0; attempt < 500; attempt += 1) {
+        try {
+            last = readFileSync(path, 'utf8');
+            if (pattern.test(last)) {
+                return;
+            }
+        } catch {
+            // Keep waiting for the file to appear.
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error(`file did not contain ${pattern}: ${path}: ${JSON.stringify(last)}`);
+}
+
 async function waitForProcessExitWithoutReviewResolutionLock(
     child: ReturnType<typeof spawn>,
     repository: string,
@@ -981,6 +1173,7 @@ function writeResolveReviewSnapshot(snapshotRoot: string): string {
         join(scriptsRoot, 'githubAppIdentity.ts'),
         [
             'const sleeper = new Int32Array(new SharedArrayBuffer(4));',
+            "import { spawnSync } from 'node:child_process';",
             `export const AUTHOR_BOT_NODE_ID = ${JSON.stringify(AUTHOR_BOT_NODE_ID)};`,
             `export const REVIEWER_BOT_NODE_ID = ${JSON.stringify(REVIEWER_BOT_NODE_ID)};`,
             `export const REQUIRED_REPOSITORY = ${JSON.stringify(REQUIRED_REPOSITORY)};`,
@@ -1000,9 +1193,21 @@ function writeResolveReviewSnapshot(snapshotRoot: string): string {
             "  if (typeof root !== 'string' || root.trim() === '') throw new Error('missing test primary root');",
             '  return root;',
             '}',
-            'export function spawnCapture(command, args) {',
+            'export function spawnCapture(command, args, options = {}) {',
             "  if (command !== 'gh') throw new Error(`unexpected command ${command}`);",
             "  if (args[0] === 'repo' && args[1] === 'view') return REQUIRED_REPOSITORY;",
+            '  const executable = process.env.SOURDAW_TEST_TRUSTED_GH_PATH;',
+            "  if (typeof executable === 'string' && executable.trim() !== '') {",
+            '    const result = spawnSync(executable, args, {',
+            '      cwd: options.cwd,',
+            '      env: options.env ?? process.env,',
+            "      encoding: 'utf8',",
+            '      shell: false,',
+            '    });',
+            '    if (result.error !== undefined) throw result.error;',
+            '    if (result.status !== 0) throw new Error(result.stderr || result.stdout || `gh failed with exit ${result.status ?? "signal"}`);',
+            '    return result.stdout.trim();',
+            '  }',
             "  if (args[0] === 'api' && args[1] === 'graphql') {",
             '    for (;;) Atomics.wait(sleeper, 0, 0, 1000);',
             '  }',
@@ -1010,7 +1215,52 @@ function writeResolveReviewSnapshot(snapshotRoot: string): string {
             '}',
         ].join('\n')
     );
-    return join(scriptsRoot, 'resolveReviewThread.ts');
+    const entryPath = join(snapshotRoot, 'resolve-review-entry.mjs');
+    writeFileSync(
+        entryPath,
+        [
+            "import { runResolveReviewThreadCli, assertTrustedReviewResolutionLauncher } from './scripts/resolveReviewThread.ts';",
+            'const primaryRoot = process.env.SOURDAW_TEST_PRIMARY_ROOT;',
+            "if (typeof primaryRoot !== 'string' || primaryRoot.trim() === '') throw new Error('missing test primary root');",
+            'const trustedLauncher = assertTrustedReviewResolutionLauncher({',
+            '  primaryRoot,',
+            `  gitPath: process.env.SOURDAW_TEST_TRUSTED_GIT_PATH ?? ${JSON.stringify(trustedGitPath)},`,
+            `  ghPath: process.env.SOURDAW_TEST_TRUSTED_GH_PATH ?? ${JSON.stringify(trustedGhPath)},`,
+            '});',
+            'const exitCode = await runResolveReviewThreadCli(process.argv.slice(2), { trustedLauncher });',
+            'process.exitCode = exitCode;',
+        ].join('\n'),
+        { encoding: 'utf8', mode: 0o600 }
+    );
+    return entryPath;
+}
+
+function writeDetachedCreatePhaseSnapshot(snapshotRoot: string): string {
+    writeResolveReviewSnapshot(snapshotRoot);
+    const workerPath = join(snapshotRoot, 'create-phase-worker.mjs');
+    writeFileSync(
+        workerPath,
+        [
+            "import { shellPort, withPullRequestReviewResolutionLock } from './scripts/resolveReviewThread.ts';",
+            "import { authenticateRole, assertRequiredRepository, REQUIRED_REPOSITORY } from './scripts/githubAppIdentity.ts';",
+            'const primaryRoot = process.env.SOURDAW_TEST_PRIMARY_ROOT;',
+            "if (typeof primaryRoot !== 'string' || primaryRoot.trim() === '') throw new Error('missing test primary root');",
+            'const auth = await authenticateRole();',
+            'try {',
+            '  assertRequiredRepository(REQUIRED_REPOSITORY);',
+            '  const port = shellPort(auth.session, primaryRoot);',
+            `  withPullRequestReviewResolutionLock(primaryRoot, 42, ${JSON.stringify(threadId)}, ${JSON.stringify(head)}, () => {`,
+            `    port.createPendingReview(${JSON.stringify(pullRequestId)}, ${JSON.stringify(head)}, ${JSON.stringify(
+                resolutionReviewSummary(pullRequestId, threadId, head)
+            )});`,
+            '  });',
+            '} finally {',
+            '  auth.session.dispose();',
+            '}',
+        ].join('\n'),
+        { encoding: 'utf8', mode: 0o600 }
+    );
+    return workerPath;
 }
 
 describe('review thread resolution', () => {
@@ -1039,6 +1289,38 @@ describe('review thread resolution', () => {
                 })
             ).toThrow(/boom/);
             expect(withPullRequestReviewResolutionLock(repository, 42, threadId, head, () => 'ok')).toBe('ok');
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it.each([
+        ['create', { phase: 'createPendingReview', epoch: 1 }],
+        [
+            'submit',
+            {
+                phase: 'submitReview',
+                epoch: 1,
+                reviewId,
+                body: resolutionReviewSummary(pullRequestId, threadId, head),
+            },
+        ],
+        ['resolve', { phase: 'resolveThread', epoch: 1 }],
+    ] as const)('preserves the exact PR lock owner after an ambiguous %s transport failure', (_label, mutation) => {
+        const repository = createTemporaryGitRepository();
+        try {
+            expect(() =>
+                withPullRequestReviewResolutionLock(repository, 42, threadId, head, () => {
+                    setLockMutation(repository, 42, mutation);
+                    throw new Error(`${_label} transport lost`);
+                })
+            ).toThrow(new RegExp(`recover with pnpm review:resolve:recover 42 --owner [0-9a-f]{40}`));
+            const owner = readLockOwner(repository, 42);
+            expect(owner).toMatchObject({
+                threadId,
+                head,
+                mutation: { phase: mutation.phase },
+            });
         } finally {
             rmSync(repository, { recursive: true, force: true });
         }
@@ -1494,13 +1776,14 @@ describe('review thread resolution', () => {
     it('publishes child-marker PID binding through the production temp-write then atomic rename path', () => {
         const markerRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-marker-publication-'));
         const markerPath = join(markerRoot, 'child-marker.json');
+        const capabilityPath = join(markerRoot, 'bootstrap-capability.json');
         const token = '11111111-1111-4111-8111-111111111111';
         try {
-            publishReviewResolutionChildLaunchMarker(markerPath, token, null);
+            publishReviewResolutionChildLaunchMarker(markerPath, token, null, capabilityPath);
             const originalInode = statSync(markerPath).ino;
             const temporaryPath = `${markerPath}.fixed-publication-id.tmp`;
             const writtenPaths: string[] = [];
-            publishReviewResolutionChildLaunchMarker(markerPath, token, 4321, {
+            publishReviewResolutionChildLaunchMarker(markerPath, token, 4321, capabilityPath, {
                 randomUuid: () => 'fixed-publication-id',
                 writeFileSync: (currentPath, data, options) => {
                     expect(typeof currentPath).toBe('string');
@@ -1517,6 +1800,7 @@ describe('review thread resolution', () => {
                 version: 1,
                 token,
                 pid: 4321,
+                capabilityPath,
             });
             expect(statSync(markerPath).ino).not.toBe(originalInode);
             expect(() => statSync(temporaryPath)).toThrow();
@@ -1566,12 +1850,14 @@ describe('review thread resolution', () => {
         const entryPath = writeResolveReviewSnapshot(snapshotRoot);
         const token = '22222222-2222-4222-8222-222222222222';
         const markerPath = join(markerRoot, 'child-marker.json');
-        publishReviewResolutionChildLaunchMarker(markerPath, token, 999999);
+        const capabilityPath = join(markerRoot, 'bootstrap-capability.json');
+        publishReviewResolutionChildLaunchMarker(markerPath, token, 999999, capabilityPath);
         const child = spawn(process.execPath, [entryPath, '42', '--thread', threadId, '--head', head], {
             cwd: repository,
             env: {
                 ...process.env,
                 SOURDAW_TEST_PRIMARY_ROOT: repository,
+                SOURDAW_TEST_TRUSTED_GIT_PATH: trustedGitPath,
                 SOURDAW_REVIEW_RESOLUTION_CHILD: JSON.stringify({ path: markerPath, token }),
             },
             stdio: ['ignore', 'ignore', 'pipe'],
@@ -1653,6 +1939,110 @@ describe('review thread resolution', () => {
             }
             launcher.kill('SIGKILL');
             await waitForExit(launcher).catch(() => undefined);
+            rmSync(snapshotRoot, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true });
+        }
+    }, 10_000);
+
+    it('keeps the exact review-resolution lock after a real detached create call dies before its artifact is visible, then recovers once the artifact appears', async () => {
+        const repository = createTemporaryGitRepository();
+        const snapshotRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-resolve-create-phase-'));
+        const entryPath = writeDetachedCreatePhaseSnapshot(snapshotRoot);
+        const fakeGh = createBlockingCreateReviewGhExecutable();
+        const launcher = spawn(process.execPath, [entryPath, '42', '--thread', threadId, '--head', head], {
+            cwd: repository,
+            env: {
+                ...process.env,
+                SOURDAW_TEST_PRIMARY_ROOT: repository,
+                SOURDAW_TEST_TRUSTED_GIT_PATH: trustedGitPath,
+                SOURDAW_TEST_TRUSTED_GH_PATH: fakeGh.executable,
+            },
+            stdio: ['ignore', 'ignore', 'pipe'],
+            shell: false,
+            detached: true,
+        });
+        let stderr = '';
+        launcher.stderr?.setEncoding('utf8');
+        launcher.stderr?.on('data', (chunk: string) => {
+            stderr += chunk;
+        });
+        let ownerPgid: number | undefined;
+        try {
+            const lock = await waitForReviewResolutionLock(repository, 42);
+            ownerPgid = lock.owner.pgid;
+            await waitForFileText(fakeGh.queryLogPath, /^createReview$/m);
+            await waitForPath(fakeGh.createCalledPath);
+            const phasedOwnerOid = readLockOid(repository, 42);
+            if (phasedOwnerOid === undefined) {
+                throw new Error('review-resolution lock disappeared before recovery');
+            }
+            expect(readLockOwner(repository, 42)).toMatchObject({
+                threadId,
+                head,
+                mutation: { phase: 'createPendingReview' },
+            });
+
+            process.kill(-lock.owner.pgid, 'SIGKILL');
+            await waitForExit(launcher);
+            await waitForProcessGroupGone(lock.owner.pgid);
+            expect(launcher.signalCode).toBe('SIGKILL');
+            expect(stderr).toBe('');
+
+            const recoverDependencies = {
+                trustedPrimaryRoot: () => repository,
+                authenticateAuthor: async () => ({
+                    minted: { actorNodeId: AUTHOR_BOT_NODE_ID },
+                    session: {
+                        configDir: repository,
+                        env: { SOURDAW_TRUSTED_GH_PATH: fakeGh.executable },
+                        dispose() {},
+                    },
+                }),
+                repositoryName: () => REQUIRED_REPOSITORY,
+                gh: (session: GhSession, primaryRoot: string) => (args: string[]) =>
+                    executableCapture(fakeGh.executable, args, primaryRoot, session.env),
+                inspectThread: inspectReviewThread,
+                recoverLock: (primaryRoot, number, expectedOwnerOid, reconcile) =>
+                    recoverPullRequestReviewResolutionLock(
+                        primaryRoot,
+                        number,
+                        expectedOwnerOid,
+                        reconcile,
+                        () => false
+                    ),
+            } satisfies Parameters<typeof runRecoverReviewResolutionLockCli>[1];
+
+            await expect(
+                runRecoverReviewResolutionLockCli(['42', '--owner', phasedOwnerOid], recoverDependencies)
+            ).rejects.toThrow(/unreconciled in-flight createPendingReview mutation/i);
+            expect(readLockOid(repository, 42)).toBe(phasedOwnerOid);
+
+            writeFileSync(fakeGh.artifactVisiblePath, '1');
+            const logs: string[] = [];
+            const originalLog = console.log;
+            console.log = (message?: unknown) => {
+                logs.push(typeof message === 'string' ? message : JSON.stringify(message));
+            };
+            try {
+                await expect(
+                    runRecoverReviewResolutionLockCli(['42', '--owner', phasedOwnerOid], recoverDependencies)
+                ).resolves.toBe(0);
+            } finally {
+                console.log = originalLog;
+            }
+            expect(logs).toEqual([`review-resolution-lock-recovered:42:${threadId}:${head}:${head}:unresolved:1`]);
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            if (ownerPgid !== undefined) {
+                try {
+                    process.kill(-ownerPgid, 'SIGKILL');
+                } catch {
+                    // Best-effort cleanup for a worker group already gone.
+                }
+            }
+            launcher.kill('SIGKILL');
+            await waitForExit(launcher).catch(() => undefined);
+            rmSync(fakeGh.root, { recursive: true, force: true });
             rmSync(snapshotRoot, { recursive: true, force: true });
             rmSync(repository, { recursive: true, force: true });
         }
@@ -2347,6 +2737,24 @@ describe('review thread resolution', () => {
         }
         await expect(runRecoverReviewResolutionLockCli(['42', '--owner', ownerOid])).rejects.toThrow(
             /protected primary checkout launcher/i
+        );
+    });
+    it('refuses direct review-resolution execution even with forged trusted-launcher env and no bootstrap capability', async () => {
+        await withTemporaryEnvironmentAsync(
+            {
+                SOURDAW_TRUSTED_PRIMARY_ROOT: '/tmp/forged-primary',
+                SOURDAW_TRUSTED_ORIGIN_COMMIT: head,
+                SOURDAW_TRUSTED_GIT_PATH: trustedGitPath,
+                SOURDAW_TRUSTED_GH_PATH: trustedGhPath,
+            },
+            async () => {
+                await expect(runRecoverReviewResolutionLockCli(['42', '--owner', 'a'.repeat(40)])).rejects.toThrow(
+                    /protected primary checkout launcher/i
+                );
+                await expect(runResolveReviewThreadCli(['42', '--thread', threadId, '--head', head])).rejects.toThrow(
+                    /protected primary checkout launcher/i
+                );
+            }
         );
     });
     it.each([
