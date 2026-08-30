@@ -1,0 +1,45 @@
+src/modules/Project/useCases/projectPersistence/__tests__/quiesceProjectSession.pluginFence.integration.spec.ts
+  s_ae074277795b45::t_15583e71538148 1,24-28,47-77,83-98
+  s_ae074277795b45::t_71e51100cb23a6 78-82
+electron/nativeMenuActionDispatcher.ts
+  s_ae074277795b45::t_5ed5323fe3473d 17
+electron/__tests__/nativeMenuActionDispatcher.spec.ts
+  s_ae074277795b45::t_15583e71538148 4-8,21-29,39,42-43
+  s_ae074277795b45::t_e5866623d94cfa 3,30-38,40-41
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx
+  s_ae074277795b45::t_89914956fcddfc 219-244,1005-1050
+  s_ae074277795b45::t_724e9decad8e25 167-168
+  s_ae074277795b45::t_fe87a33769601f 1051
+src/modules/Project/useCases/projectPersistence/__tests__/quiesceProjectSession.spec.ts
+  s_ae074277795b45::t_55d15a1c33b9cb 139,145
+electron/__tests__/shellComposition.spec.ts
+  s_ae074277795b45::t_89914956fcddfc 49,56,84,159-162,164-178
+  s_ae074277795b45::t_677e095c2538a3 50,57,86,92,163
+  s_ae074277795b45::t_b1108c20f4b01b 93-101,179-187
+electron/applicationMenu.ts
+  s_ae074277795b45::t_5ed5323fe3473d 3,33-60
+src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts
+  s_ae074277795b45::t_5ed5323fe3473d 1,220-221,240-245
+electron/__tests__/nativeMenuProjectState.spec.ts
+  s_ae074277795b45::t_89914956fcddfc 73-112
+src/modules/Project/useCases/projectPersistence/projectSessionQuiescer.ts
+  s_ae074277795b45::t_a5ea9680a0f283 22-36,46
+electron/shellComposition.ts
+  s_ae074277795b45::t_5ed5323fe3473d 33-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "1e71e5aee4e0d293cddc7cde600a83d054eab096",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
