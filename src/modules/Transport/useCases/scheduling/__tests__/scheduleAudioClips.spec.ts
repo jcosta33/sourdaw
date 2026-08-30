@@ -9,6 +9,7 @@ import {
     getCurrentTime,
 } from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
+import { clampClipFadeInDurationSeconds, clampClipFadeOutStartSeconds } from '#/utils/clipFadeScheduleClamp';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
@@ -864,6 +865,117 @@ describe('scheduleAudioClips', () => {
         expect(fadeGain.gain.linearRampToValueAtTime).toHaveBeenCalledWith(1, 5);
         // progressRatio 0 at effectiveStart(4) → starts at 0.
         expect(fadeGain.gain.setValueAtTime).toHaveBeenCalledWith(0, 4);
+    });
+
+    /// #2867: live used the raw fade length (`iterStartTime + fadeInSeconds`)
+    /// while offline (`scheduleOfflineClipSource`) already capped each fade at
+    /// half the audible play duration. A 2-beat clip with a 1.6-beat fade-in
+    /// therefore exported at full level by midpoint while monitoring was still
+    /// ramping (~80%). Both schedule paths must reach plateau at the same
+    /// instant — the offline half-duration clamp — without changing the stored
+    /// fade.
+    it('reaches the fade-in plateau at the same instant live and offline do when the fade exceeds half the clip', () => {
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        mockResolveClips.mockReturnValue([makeAudioClip({ startBeat: 8, endBeat: 10, fadeInBeats: 1.6 })] as never);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
+
+        const ctx = vi.mocked(getAudioContext).mock.results[0]!.value;
+        const fadeGain = ctx.createGain.mock.results[0]!.value;
+        // 2 beats at 120 BPM = 1 s playDuration. Requested fade = 1.6 beats = 0.8 s.
+        // Clip head is beat 8 = 4 s. Offline: min(max(0.003, 0.8), 0.5) = 0.5.
+        const clipStartSeconds = 4;
+        const playDurationSeconds = 1;
+        const requestedFadeInSeconds = 1.6 / 2;
+        const microFadeSeconds = 0.003;
+        const offlinePlateauSeconds =
+            clipStartSeconds +
+            clampClipFadeInDurationSeconds(requestedFadeInSeconds, playDurationSeconds, microFadeSeconds);
+
+        expect(offlinePlateauSeconds).toBe(clipStartSeconds + playDurationSeconds * 0.5);
+        expect(fadeGain.gain.setValueAtTime).toHaveBeenCalledWith(0, clipStartSeconds);
+        expect(fadeGain.gain.linearRampToValueAtTime).toHaveBeenCalledWith(1, offlinePlateauSeconds);
+        expect(fadeGain.gain.linearRampToValueAtTime).not.toHaveBeenCalledWith(
+            1,
+            clipStartSeconds + requestedFadeInSeconds
+        );
+    });
+
+    /// Live clamped the full clip-head fade span then added it to
+    /// `iterStartTime`. Offline clamps fade remaining after playback start
+    /// (`userEndSec - startSec`) and lands the plateau on sound start. With
+    /// pre-roll those origins disagree, so a fade longer than half the
+    /// remaining playDuration reached plateau earlier while monitoring than
+    /// in the bounce.
+    it('reaches the fade-in plateau from sound start when pre-roll leaves a fade longer than half remaining playDuration', () => {
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        // 2-beat clip (1 s). audioOffsetBeats -0.5 → 0.25 s pre-roll.
+        // Remaining playDuration 0.75 s, half = 0.375 s. 2-beat fade-in is
+        // 1 s from the clip head, 0.75 s remaining after sound start.
+        mockResolveClips.mockReturnValue([
+            makeAudioClip({ startBeat: 8, endBeat: 10, fadeInBeats: 2, audioOffsetBeats: -0.5 }),
+        ] as never);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
+
+        const ctx = vi.mocked(getAudioContext).mock.results[0]!.value;
+        const fadeGain = ctx.createGain.mock.results[0]!.value;
+        const clipHeadSeconds = 4;
+        const preRollSeconds = 0.25;
+        const soundStartTime = clipHeadSeconds + preRollSeconds;
+        const playDurationSeconds = 1 - preRollSeconds;
+        const userFadeEndSeconds = clipHeadSeconds + 1;
+        const microFadeSeconds = 0.003;
+        const plateauSeconds =
+            soundStartTime +
+            clampClipFadeInDurationSeconds(userFadeEndSeconds - soundStartTime, playDurationSeconds, microFadeSeconds);
+        const wrongLivePlateauSeconds =
+            clipHeadSeconds +
+            clampClipFadeInDurationSeconds(userFadeEndSeconds - clipHeadSeconds, playDurationSeconds, microFadeSeconds);
+
+        expect(plateauSeconds).toBe(soundStartTime + playDurationSeconds * 0.5);
+        expect(wrongLivePlateauSeconds).not.toBe(plateauSeconds);
+        expect(fadeGain.gain.setValueAtTime).toHaveBeenCalledWith(0, soundStartTime);
+        expect(fadeGain.gain.linearRampToValueAtTime).toHaveBeenCalledWith(1, plateauSeconds);
+        expect(fadeGain.gain.linearRampToValueAtTime).not.toHaveBeenCalledWith(1, wrongLivePlateauSeconds);
+        expect(fadeGain.gain.linearRampToValueAtTime).not.toHaveBeenCalledWith(1, userFadeEndSeconds);
+    });
+
+    /// #2867 fade-out pin: 2-beat clip, 1.6-beat fade-out. Both schedule
+    /// paths must hold the plateau until the midpoint, not the unclamped
+    /// earlier start. Unhooking `clampClipFadeOutStartSeconds` lands the
+    /// hold at 4.2 s instead of 4.5 s.
+    it('holds the fade-out plateau until the midpoint when the fade-out exceeds half the clip', () => {
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        mockResolveClips.mockReturnValue([makeAudioClip({ startBeat: 8, endBeat: 10, fadeOutBeats: 1.6 })] as never);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
+
+        const ctx = vi.mocked(getAudioContext).mock.results[0]!.value;
+        const fadeGain = ctx.createGain.mock.results[0]!.value;
+        const playbackStartSeconds = 4;
+        const playDurationSeconds = 1;
+        const clipEndSeconds = 5;
+        const unclampedFadeOutStartSeconds = clipEndSeconds - 1.6 / 2;
+        const clampedFadeOutStartSeconds = clampClipFadeOutStartSeconds(
+            unclampedFadeOutStartSeconds,
+            playbackStartSeconds,
+            playDurationSeconds
+        );
+
+        expect(clampedFadeOutStartSeconds).toBe(playbackStartSeconds + playDurationSeconds * 0.5);
+        expect(fadeGain.gain.setValueAtTime).toHaveBeenCalledWith(1, clampedFadeOutStartSeconds);
+        expect(fadeGain.gain.linearRampToValueAtTime).toHaveBeenCalledWith(0, clipEndSeconds);
+        expect(fadeGain.gain.setValueAtTime).not.toHaveBeenCalledWith(1, unclampedFadeOutStartSeconds);
     });
 
     it('stretches a fade-in that spans a tempo change by integrating the map', () => {

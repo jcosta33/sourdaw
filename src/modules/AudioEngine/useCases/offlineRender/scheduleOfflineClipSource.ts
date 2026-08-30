@@ -2,15 +2,17 @@
  * Start one piece of source material, with the level envelope that keeps its
  * edges from clicking.
  *
- * Lifted verbatim out of `scheduleTrackClips`, which is still its only caller
- * on the export path, so that the offline `AudioGraphBackend` implements the
+ * Lifted out of `scheduleTrackClips`, which is still its only caller on the
+ * export path, so that the offline `AudioGraphBackend` implements the
  * contract's clip command with the same body rather than a second one written
- * to match it. Nothing about the law changed in the move: the arithmetic below
- * is the arithmetic that was inline, and the two branch conditions the caller
- * used to evaluate — "is this the first iteration, untrimmed" and "is this the
- * last" — became the presence of {@link OfflineClipFadeIn} and
- * {@link OfflineClipFadeOut}.
+ * to match it. The two branch conditions the caller used to evaluate — "is
+ * this the first iteration, untrimmed" and "is this the last" — became the
+ * presence of {@link OfflineClipFadeIn} and {@link OfflineClipFadeOut}.
+ * Fade lengths go through the shared half-play-duration clamp (#2867) that
+ * the live scheduler also uses.
  */
+
+import { clampClipFadeInDurationSeconds, clampClipFadeOutStartSeconds } from '#/utils/clipFadeScheduleClamp';
 
 export type OfflineClipFadeIn = {
     /**
@@ -94,12 +96,10 @@ export function scheduleOfflineClipSource(input: ScheduleOfflineClipSourceInput)
 
     if (fadeIn) {
         if (fadeIn.userEndSec !== undefined) {
-            // A user fade never runs shorter than the anti-click floor and
-            // never eats more than half the audible span, so a fade longer
-            // than the clip cannot swallow it.
-            const fadeInDuration = Math.min(
-                Math.max(microFadeSeconds, fadeIn.userEndSec - startSec),
-                playDuration * 0.5
+            const fadeInDuration = clampClipFadeInDurationSeconds(
+                fadeIn.userEndSec - startSec,
+                playDuration,
+                microFadeSeconds
             );
             fadeGain.gain.setValueAtTime(0, startSec);
             fadeGain.gain.linearRampToValueAtTime(clipGainValue, startSec + fadeInDuration);
@@ -111,7 +111,7 @@ export function scheduleOfflineClipSource(input: ScheduleOfflineClipSourceInput)
 
     if (fadeOut) {
         if (fadeOut.userStartSec !== undefined) {
-            const fadeOutOffset = Math.max(startSec, Math.max(fadeOut.userStartSec, endSec - playDuration * 0.5));
+            const fadeOutOffset = clampClipFadeOutStartSeconds(fadeOut.userStartSec, startSec, playDuration);
             fadeGain.gain.setValueAtTime(clipGainValue, fadeOutOffset);
             fadeGain.gain.linearRampToValueAtTime(0, endSec);
         } else {
