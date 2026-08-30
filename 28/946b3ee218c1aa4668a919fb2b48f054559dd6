@@ -1,0 +1,81 @@
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgramme.spec.ts
+  s_4f908a5afb6b58::t_1f36a0795a04fb 327-506
+src/modules/AudioEngine/useCases/livePlayback/__tests__/syncNativeTimelineSamples.spec.ts
+  s_4f908a5afb6b58::t_37bd5d12575512 1-176
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_4f908a5afb6b58::t_ff9070eeed9a95 203
+  s_4f908a5afb6b58::t_fa3eae51138eeb 274-277
+  s_4f908a5afb6b58::t_a2a0f404e71f8f 25,278,673-675,768-770
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgrammeParity.spec.ts
+  s_4f908a5afb6b58::t_a3b3785db6bf5e 29-43
+  s_4f908a5afb6b58::t_6fe897f9044025 566
+  s_4f908a5afb6b58::t_3df79425e49c70 64-66
+  s_4f908a5afb6b58::t_0c0a442b4feb4d 451-479
+  s_4f908a5afb6b58::t_638d06630756d1 676-680,683-690,692-694
+  s_4f908a5afb6b58::t_28a112d29f5610 647
+  s_4f908a5afb6b58::t_321cf0e47b68d3 701-717
+  s_4f908a5afb6b58::t_4c9b1fb01f18e0 660,674,681-682,697
+  s_4f908a5afb6b58::t_31dfedd6cf6775 616
+  s_4f908a5afb6b58::t_7109a295d3be38 400-406
+  s_4f908a5afb6b58::t_afa89bf0d0bd44 518-523,529,544-565,567-568,698
+  s_4f908a5afb6b58::t_10a904c5bc4f8d 108,569-570,699-700
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useAppInitialization.spec.ts
+  s_4f908a5afb6b58::t_820b695e143550 271-286
+  s_4f908a5afb6b58::t_d0bd706410740a 5
+  s_4f908a5afb6b58::t_38ed33025785eb 31-35
+  s_ae074277795b45::t_770b4e46e965c6 268-270
+src/modules/AudioEngine/useCases/offlineRender/renderOfflineWithNativeEngine.ts
+  s_4f908a5afb6b58::t_daf05657ac42ab 71
+  s_4f908a5afb6b58::t_279c14b9a23ee8 387
+src/modules/AudioEngine/useCases/livePlayback/projectLiveGraphProgramme.ts
+  s_4f908a5afb6b58::t_0757d97f80e74e 61,68,74,86-122
+  s_4f908a5afb6b58::t_5a4119ecc362b7 299,301
+  s_4f908a5afb6b58::t_23cb248acc0449 281-285,298,300,302,305,309,318-348,357
+  s_4f908a5afb6b58::t_1eadf66044f298 36-42,46-48,55-60
+  s_4f908a5afb6b58::t_520b46b2233d0d 123
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_4f908a5afb6b58::t_1a51f578e4bc7d 162-174,182
+src/modules/AudioEngine/models/AudioGraphBackend.ts
+  s_4f908a5afb6b58::t_304f4859942533 469-483
+crates/sourdaw-native/src/commands/graph.rs
+  s_4f908a5afb6b58::t_d289e065ad7de7 232-238
+  s_4f908a5afb6b58::t_63d4799d57ae0a 1845,1847-1850,1864-1869
+  s_4f908a5afb6b58::t_bd605ca5af42b8 298-310
+  s_4f908a5afb6b58::t_bc94904a89937a 2860-2946
+  s_4f908a5afb6b58::t_e7925a54ce040d 123-131
+src/modules/AudioEngine/repositories/nativeGraph/serializeAudioGraphCommand.ts
+  s_4f908a5afb6b58::t_0e549d64501076 113
+  s_4f908a5afb6b58::t_dd453462374c87 212-220
+src/modules/AudioEngine/repositories/nativeGraph/registeredNativeTimelineSampleIds.ts
+  s_4f908a5afb6b58::t_9068c612d89239 12-15
+src/modules/AudioEngine/useCases/offlineRender/projectNativeClipFade.ts
+  s_4f908a5afb6b58::t_9089abeb48fd59 1-65,67-73,75
+  s_4f908a5afb6b58::t_62a9317bd35c13 74
+  s_4f908a5afb6b58::t_9cbe55e3d7a6de 66
+src/modules/AudioEngine/useCases/livePlayback/__tests__/primeNativeTimelineSamples.spec.ts
+  s_4f908a5afb6b58::t_3425551970f39e 1-217
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "28946b3ee218c1aa4668a919fb2b48f054559dd6",
+  "prompts": {},
+  "sessions": {
+    "s_4f908a5afb6b58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fcb92ba4-bf56-47a4-8b57-803f335a449e",
+        "model": "claude-fable-5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
