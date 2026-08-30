@@ -1,6 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
 import {
-    hasLiveNativeGraphSession,
     repositionNativeLiveGraphSession,
     setMasterGainValue,
     stopNativeLiveGraphSession,
@@ -22,9 +21,6 @@ export function restoreTransportSnapshot(snapshot: unknown): void {
     playheadPositionRef.current = restored.playheadPosition;
 
     if (!wasPlaying) {
-        return;
-    }
-    if (!hasLiveNativeGraphSession()) {
         return;
     }
 

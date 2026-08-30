@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import {
-    hasLiveNativeGraphSession,
     repositionNativeLiveGraphSession,
     setMasterGainValue,
     stopNativeLiveGraphSession,
@@ -19,7 +18,6 @@ import { projectEngineTransportMaps } from '../tempoMap/projectEngineTransportMa
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     setMasterGainValue: vi.fn(),
-    hasLiveNativeGraphSession: vi.fn(() => false),
     updateNativeLiveGraphSessionTransportMaps: vi.fn(() => Promise.resolve({ outcome: 'updated' })),
     repositionNativeLiveGraphSession: vi.fn(() => Promise.resolve({ outcome: 'repositioned' })),
     stopNativeLiveGraphSession: vi.fn(() => Promise.resolve({ outcome: 'stopped' })),
@@ -47,7 +45,6 @@ function restore_during_playback(snapshot: unknown): void {
         playheadPosition: 16,
     });
     playheadPositionRef.current = 42;
-    vi.mocked(hasLiveNativeGraphSession).mockReturnValue(true);
     restoreTransportSnapshot(snapshot);
 }
 
@@ -56,8 +53,6 @@ describe('restoreTransportSnapshot', () => {
         configureAutomergeStoragePort(null);
         reset_transport_store();
         vi.mocked(setMasterGainValue).mockClear();
-        vi.mocked(hasLiveNativeGraphSession).mockClear();
-        vi.mocked(hasLiveNativeGraphSession).mockReturnValue(false);
         vi.mocked(updateNativeLiveGraphSessionTransportMaps).mockClear();
         vi.mocked(repositionNativeLiveGraphSession).mockClear();
         vi.mocked(stopNativeLiveGraphSession).mockClear();
@@ -189,11 +184,8 @@ describe('restoreTransportSnapshot', () => {
     });
 
     it('sends nothing native when restoring while stopped, even with a live session', () => {
-        vi.mocked(hasLiveNativeGraphSession).mockReturnValue(true);
-
         restoreTransportSnapshot(looping_snapshot);
 
-        expect(hasLiveNativeGraphSession).not.toHaveBeenCalled();
         expect(updateNativeLiveGraphSessionTransportMaps).not.toHaveBeenCalled();
         expect(repositionNativeLiveGraphSession).not.toHaveBeenCalled();
         expect(stopNativeLiveGraphSession).not.toHaveBeenCalled();
@@ -207,16 +199,19 @@ describe('restoreTransportSnapshot', () => {
         expect(setMasterGainValue).toHaveBeenCalledWith(defaultTransportState.masterGain / 100);
     });
 
-    it('sends nothing native when playing without a live session, and still writes the store and master gain', () => {
+    it('sends maps, then locate, then park when playing even without a live session', () => {
         transportStore.set({ ...defaultTransportState, isPlaying: true });
-        vi.mocked(hasLiveNativeGraphSession).mockReturnValue(false);
 
         restoreTransportSnapshot(looping_snapshot);
 
-        expect(hasLiveNativeGraphSession).toHaveBeenCalled();
-        expect(updateNativeLiveGraphSessionTransportMaps).not.toHaveBeenCalled();
-        expect(repositionNativeLiveGraphSession).not.toHaveBeenCalled();
-        expect(stopNativeLiveGraphSession).not.toHaveBeenCalled();
+        expect(updateNativeLiveGraphSessionTransportMaps).toHaveBeenCalledTimes(1);
+        expect(repositionNativeLiveGraphSession).toHaveBeenCalledTimes(1);
+        expect(stopNativeLiveGraphSession).toHaveBeenCalledTimes(1);
+        const maps_order = vi.mocked(updateNativeLiveGraphSessionTransportMaps).mock.invocationCallOrder[0];
+        const locate_order = vi.mocked(repositionNativeLiveGraphSession).mock.invocationCallOrder[0];
+        const park_order = vi.mocked(stopNativeLiveGraphSession).mock.invocationCallOrder[0];
+        expect(maps_order).toBeLessThan(locate_order ?? Number.POSITIVE_INFINITY);
+        expect(locate_order).toBeLessThan(park_order ?? Number.NEGATIVE_INFINITY);
         expect(transportStore.value).toEqual({
             ...defaultTransportState,
             tempo: 120,
