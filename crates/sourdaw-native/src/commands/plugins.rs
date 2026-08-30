@@ -1162,17 +1162,18 @@ pub async fn load_plugin(
             let id = engine.reserve_plugin_id();
             let (bridge, bridge_handle) = create_audio_bridge(id);
 
-            // Wake the request watcher when this instance asks its host for
-            // something it may only be given off its own callback thread — an
-            // editor resize, or the report that its state changed.
+            // Mark this instance as one whose plugin-initiated asks get carried
+            // off the calling thread — the watcher wakes for the `[main-thread]`
+            // asks (a state change, a parameter rescan), and the drain thread
+            // answers the `[thread-safe]` ones (an editor resize, a flush).
             //
-            // Engine-owned only, because the watcher carries an ask out through
-            // `engine_plugins`: an instance the engine never took is not
-            // reachable from there, and installing the wake on one would have the
-            // plugin told its resize was accepted by a follow-up that could never
-            // run. No wake is the honest answer — `request_resize` then returns
-            // false, and a plugin that is refused can lay itself out to the size
-            // it has.
+            // Engine-owned only, because both carriers reach an instance
+            // through `engine_plugins`: one the engine never took is not
+            // reachable from there, and installing the wake on one would have
+            // the plugin told its resize was accepted by a follow-up that could
+            // never run. No wake is the honest answer — `request_resize` then
+            // returns false, and a plugin that is refused can lay itself out to
+            // the size it has.
             //
             // The answer is discarded rather than reported, because a refusal
             // means a second install: CLAP routes an editor resize, a parameter
