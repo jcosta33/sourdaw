@@ -16,7 +16,6 @@ import browserAiWebGpuAdmissionConfig from '../../tests/e2e/browserAiWebGpuAdmis
 type UnknownRecord = Record<string, unknown>;
 type JobResult = 'cancelled' | 'failure' | 'skipped' | 'success';
 
-const REVIEW_CONDITION = "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'";
 const HEAVY_OUTPUT_REFERENCE = '${{ steps.scope.outputs.heavy }}';
 const HEAVY_CONDITION = "needs.decide.outputs.heavy == 'true'";
 const FORCED_SCOPE_OUTPUTS = {
@@ -28,12 +27,15 @@ const FORCED_SCOPE_OUTPUTS = {
     code: 'true',
 };
 const SCOPE_OUTPUT_REFERENCES = {
-    heavy: '${{ steps.scope.outputs.heavy }}',
     rust: '${{ steps.scope.outputs.rust }}',
     server: '${{ steps.scope.outputs.server }}',
     e2e: '${{ steps.scope.outputs.e2e }}',
     web: '${{ steps.scope.outputs.web }}',
     code: '${{ steps.scope.outputs.code }}',
+};
+const NIGHTLY_SCOPE_OUTPUT_REFERENCES = {
+    heavy: HEAVY_OUTPUT_REFERENCE,
+    ...SCOPE_OUTPUT_REFERENCES,
 };
 const CODE_CONDITION = "needs.decide.outputs.code == 'true'";
 // An approving review validates the same pull-request head under a different
@@ -43,11 +45,11 @@ const PULL_REQUEST_PAYLOAD_CONDITION = 'github.event.pull_request != null';
 const SMOKE_CONDITION = `${PULL_REQUEST_PAYLOAD_CONDITION} && needs.decide.outputs.e2e == 'true'`;
 const EVENT_GATED_SMOKE_CONDITION = "github.event_name == 'pull_request' && needs.decide.outputs.e2e == 'true'";
 const SMOKE_COMMAND = 'pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0';
-const PULL_REQUEST_CONCURRENCY_GROUP =
-    "health-gates-${{ (github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved')) && github.event.pull_request.number || github.run_id }}";
-const PULL_REQUEST_CONCURRENCY_CANCELLATION = "${{ github.event_name == 'pull_request' }}";
-const GATE_CONDITION =
-    "${{ !cancelled() && (github.event_name != 'pull_request_review' || github.event.review.state == 'approved') }}";
+const PULL_REQUEST_CONCURRENCY_GROUP = 'health-gates-${{ github.event.pull_request.number }}';
+const PULL_REQUEST_CONCURRENCY_CANCELLATION = true;
+const NIGHTLY_CONCURRENCY_GROUP = 'nightly-${{ github.run_id }}';
+const GATE_CONDITION = '${{ !cancelled() }}';
+const GATE_SUMMARY_NAME = 'Gate';
 const DEPENDENCY_REVIEW_ACTION = 'actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294';
 const TRUSTED_SCANNER_REF = '${{ github.event.pull_request.base.sha || github.sha }}';
 const SCAN_TARGET_REF = '${{ github.event.pull_request.head.sha || github.sha }}';
@@ -81,11 +83,17 @@ const GATE_MEMBERS = [
     'rust',
     'native-macos',
     'native-windows',
+] as const;
+const CURRENT_NON_GATING_JOBS = ['unit'] as const;
+const PULL_REQUEST_EXCLUDED_JOBS = [
+    'e2e',
+    'e2e-report',
     'browser-ai-webgpu',
     'codeql',
     'secrets',
+    'deploy-web',
+    'nightly-report',
 ] as const;
-const CURRENT_NON_GATING_JOBS = ['unit', 'e2e'] as const;
 const DEPLOY_WEB_JOB = 'deploy-web';
 const DEPLOY_WEB_JOB_NAME = 'Daily web deploy';
 // A dispatch runs on whichever ref the person firing it chose, so the branch
@@ -163,8 +171,11 @@ const RELEASE_SIDE_EFFECTS = [
 ] as const;
 const CURRENT_NON_GATING_JOB_WIRING = {
     unit: { needs: 'decide', if: "needs.decide.outputs.web == 'true'" },
-    e2e: { needs: 'decide', if: "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'" },
 } satisfies Record<(typeof CURRENT_NON_GATING_JOBS)[number], Readonly<{ needs: string; if: string }>>;
+const NIGHTLY_E2E_WIRING = {
+    needs: 'decide',
+    if: "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'",
+} as const;
 
 const repositoryRoot = resolve(import.meta.dirname, '../..');
 const parsedPackageManifest: unknown = JSON.parse(readFileSync(join(repositoryRoot, 'package.json'), 'utf8'));
@@ -178,6 +189,12 @@ if (workflowDocument.errors.length > 0) {
     );
 }
 const workflow = asRecord(workflowDocument.toJS(), 'workflow');
+const nightlySource = readFileSync(join(repositoryRoot, '.github/workflows/nightly.yml'), 'utf8');
+const nightlyDocument = parseDocument(nightlySource);
+if (nightlyDocument.errors.length > 0) {
+    throw new Error(`nightly.yml is invalid YAML: ${nightlyDocument.errors.map((error) => error.message).join('; ')}`);
+}
+const nightly = asRecord(nightlyDocument.toJS(), 'nightly workflow');
 const parsedVercelConfig: unknown = JSON.parse(readFileSync(join(repositoryRoot, 'vercel.json'), 'utf8'));
 const vercelConfig = asRecord(parsedVercelConfig, 'Vercel configuration');
 
@@ -282,8 +299,8 @@ function runScopeScript(
 
 function assertScopeContract(candidate: UnknownRecord): string {
     const decide = jobAt(candidate, 'decide');
-    if (decide.if !== REVIEW_CONDITION) {
-        throw new Error('decide must only admit submitted approved reviews');
+    if (decide.if !== undefined) {
+        throw new Error('decide must run on every pull_request');
     }
     const outputs = recordAt(decide, 'outputs');
     for (const [name, reference] of Object.entries(SCOPE_OUTPUT_REFERENCES)) {
@@ -291,11 +308,88 @@ function assertScopeContract(candidate: UnknownRecord): string {
             throw new Error(`decide ${name} output must expose steps.scope.outputs.${name}`);
         }
     }
+    if (Object.hasOwn(outputs, 'heavy')) {
+        throw new Error('the pull-request workflow must not mint a heavy scope');
+    }
     const scope = stepNamed(decide, 'Resolve scope');
     if (scope.id !== 'scope') {
         throw new Error('Resolve scope must retain the scope step id');
     }
     return stringAt(scope, 'run');
+}
+
+function assertNightlyScopeContract(candidate: UnknownRecord): string {
+    const decide = jobAt(candidate, 'decide');
+    if (decide.if !== undefined) {
+        throw new Error('nightly decide must run on every scheduled and dispatched run');
+    }
+    const outputs = recordAt(decide, 'outputs');
+    for (const [name, reference] of Object.entries(NIGHTLY_SCOPE_OUTPUT_REFERENCES)) {
+        if (outputs[name] !== reference) {
+            throw new Error(`nightly decide ${name} output must expose steps.scope.outputs.${name}`);
+        }
+    }
+    const scope = stepNamed(decide, 'Resolve scope');
+    if (scope.id !== 'scope') {
+        throw new Error('nightly Resolve scope must retain the scope step id');
+    }
+    return stringAt(scope, 'run');
+}
+
+function assertPullRequestWorkflowIsolation(candidate: UnknownRecord): void {
+    const jobs = recordAt(candidate, 'jobs');
+    for (const name of PULL_REQUEST_EXCLUDED_JOBS) {
+        if (Object.hasOwn(jobs, name)) {
+            throw new Error(`the pull-request workflow must not define ${name}`);
+        }
+    }
+}
+
+function nightlyJobCheckName(jobId: string, value: unknown): string {
+    const job = asRecord(value, jobId);
+    const name = job.name;
+    if (typeof name === 'string') {
+        return name;
+    }
+    return jobId;
+}
+
+function assertNightlyDoesNotMintGate(jobs: UnknownRecord): void {
+    if (Object.hasOwn(jobs, 'gate')) {
+        throw new Error('the nightly train must not mint Gate');
+    }
+    for (const [jobId, value] of Object.entries(jobs)) {
+        if (nightlyJobCheckName(jobId, value) === GATE_SUMMARY_NAME) {
+            throw new Error('the nightly train must not mint Gate');
+        }
+    }
+}
+
+function assertNightlyWorkflowIsolation(candidate: UnknownRecord): void {
+    const jobs = recordAt(candidate, 'jobs');
+    assertNightlyDoesNotMintGate(jobs);
+    for (const name of ['e2e', 'browser-ai-webgpu', 'codeql', 'secrets', 'deploy-web', 'nightly-report']) {
+        if (!Object.hasOwn(jobs, name)) {
+            throw new Error(`nightly must define ${name}`);
+        }
+    }
+}
+
+function assertNightlyPermissions(candidate: UnknownRecord): void {
+    const permissions = recordAt(candidate, 'permissions');
+    if (permissions.contents !== 'read' || Object.keys(permissions).length !== 1) {
+        throw new Error('nightly must grant only read access to contents');
+    }
+}
+
+function assertNightlyConcurrencyContract(candidate: UnknownRecord): void {
+    const concurrency = recordAt(candidate, 'concurrency');
+    if (concurrency.group !== NIGHTLY_CONCURRENCY_GROUP) {
+        throw new Error('nightly must isolate each run on its own run id');
+    }
+    if (concurrency['cancel-in-progress'] !== false) {
+        throw new Error('nightly must not cancel an in-progress train');
+    }
 }
 
 function unclassifiedPatterns(candidate: UnknownRecord): string[] {
@@ -398,12 +492,6 @@ function assertJobGraph(candidate: UnknownRecord): void {
     if (stepNamed(dependencyReview, 'Review dependency changes').uses !== DEPENDENCY_REVIEW_ACTION) {
         throw new Error('dependency review action must remain pinned');
     }
-    if (jobAt(candidate, 'codeql').if !== HEAVY_CONDITION || jobAt(candidate, 'secrets').if !== HEAVY_CONDITION) {
-        throw new Error('security scans must consume the heavy scope output');
-    }
-    if (jobAt(candidate, 'codeql').needs !== 'decide' || jobAt(candidate, 'secrets').needs !== 'decide') {
-        throw new Error('security scans must depend directly on decide');
-    }
     const gateNeeds = arrayAt(jobAt(candidate, 'gate'), 'needs');
     for (const job of GATE_MEMBERS) {
         if (!gateNeeds.includes(job)) {
@@ -422,6 +510,32 @@ function assertJobGraph(candidate: UnknownRecord): void {
     }
     if (gateNeeds.length !== GATE_MEMBERS.length) {
         throw new Error('gate must depend on exactly the pinned member list');
+    }
+}
+
+function assertNightlySecurityGraph(candidate: UnknownRecord): void {
+    if (jobAt(candidate, 'codeql').if !== HEAVY_CONDITION || jobAt(candidate, 'secrets').if !== HEAVY_CONDITION) {
+        throw new Error('security scans must consume the heavy scope output');
+    }
+    if (jobAt(candidate, 'codeql').needs !== 'decide' || jobAt(candidate, 'secrets').needs !== 'decide') {
+        throw new Error('security scans must depend directly on decide');
+    }
+    const e2e = jobAt(candidate, 'e2e');
+    if (e2e.needs !== NIGHTLY_E2E_WIRING.needs || e2e.if !== NIGHTLY_E2E_WIRING.if) {
+        throw new Error('e2e must retain its current decide dependency and scope condition');
+    }
+    if (e2e['continue-on-error'] !== undefined) {
+        throw new Error('nightly e2e must not continue on error');
+    }
+    const unit = jobAt(candidate, 'unit');
+    if (unit['continue-on-error'] !== undefined) {
+        throw new Error('nightly unit must not continue on error');
+    }
+    if (stepNamed(unit, 'Run shard')['continue-on-error'] !== undefined) {
+        throw new Error('nightly unit Run shard must not continue on error');
+    }
+    if (stepNamed(e2e, 'Run shard')['continue-on-error'] !== undefined) {
+        throw new Error('nightly e2e Run shard must not continue on error');
     }
 }
 
@@ -458,9 +572,6 @@ function assertBrowserAiWebGpuJob(candidate: UnknownRecord): void {
     }
     if (stringAt(stepNamed(job, 'Run Browser AI WebGPU admission'), 'run') !== BROWSER_AI_WEBGPU_COMMAND) {
         throw new Error('Browser AI WebGPU job must run the dedicated hardware command');
-    }
-    if (!arrayAt(jobAt(candidate, 'gate'), 'needs').includes(BROWSER_AI_WEBGPU_JOB)) {
-        throw new Error('gate must depend on the Browser AI WebGPU job');
     }
 }
 
@@ -622,9 +733,7 @@ function assertDailyDeployTrain(candidate: UnknownRecord): DeployTrainScripts {
             throw new Error(`a daily web deployment must not carry a release side effect: ${sideEffect.source}`);
         }
     }
-    if (arrayAt(jobAt(candidate, 'gate'), 'needs').includes(DEPLOY_WEB_JOB)) {
-        throw new Error('the daily deploy train must stay outside the Gate summary');
-    }
+    assertNightlyDoesNotMintGate(recordAt(candidate, 'jobs'));
     const armingReport = stringAt(stepNamed(job, DEPLOY_WEB_CREDENTIAL_REPORT_STEP), 'run');
     for (const precondition of DEPLOY_ARMING_PRECONDITIONS) {
         if (!armingReport.includes(precondition)) {
@@ -772,13 +881,19 @@ describe('health gates workflow contract', () => {
 
     it('parses and subscribes only to the intended events', () => {
         expect(workflowDocument.errors).toEqual([]);
+        expect(nightlyDocument.errors).toEqual([]);
         const events = recordAt(workflow, 'on');
-        expect(recordAt(events, 'pull_request_review').types).toEqual(['submitted']);
-        expect(Object.hasOwn(events, 'pull_request')).toBe(true);
-        expect(Object.hasOwn(events, 'schedule')).toBe(true);
-        expect(Object.hasOwn(events, 'workflow_dispatch')).toBe(true);
+        expect(Object.keys(events).sort()).toEqual(['pull_request']);
         expect(() => assertWorkflowPermissions(workflow)).not.toThrow();
         expect(() => assertConcurrencyContract(workflow)).not.toThrow();
+        expect(() => assertPullRequestWorkflowIsolation(workflow)).not.toThrow();
+
+        const nightlyEvents = recordAt(nightly, 'on');
+        expect(Object.keys(nightlyEvents).sort()).toEqual(['schedule', 'workflow_dispatch']);
+        expect(nightly.name).toBe('Nightly');
+        expect(() => assertNightlyPermissions(nightly)).not.toThrow();
+        expect(() => assertNightlyConcurrencyContract(nightly)).not.toThrow();
+        expect(() => assertNightlyWorkflowIsolation(nightly)).not.toThrow();
 
         const missingPullRequestAccess = asRecord(structuredClone(workflow), 'missing pull-request permission');
         delete recordAt(missingPullRequestAccess, 'permissions')['pull-requests'];
@@ -791,13 +906,45 @@ describe('health gates workflow contract', () => {
         expect(() => assertWorkflowPermissions(widenedPullRequestAccess)).toThrow(
             'workflow must grant only read access to contents and pull requests'
         );
+
+        const leakingDeploy = asRecord(structuredClone(workflow), 'leaking deploy workflow');
+        recordAt(leakingDeploy, 'jobs')[DEPLOY_WEB_JOB] = jobAt(nightly, DEPLOY_WEB_JOB);
+        expect(() => assertPullRequestWorkflowIsolation(leakingDeploy)).toThrow(
+            'the pull-request workflow must not define deploy-web'
+        );
+
+        const mintingGate = asRecord(structuredClone(nightly), 'minting-gate nightly');
+        recordAt(mintingGate, 'jobs').gate = jobAt(workflow, 'gate');
+        expect(() => assertNightlyWorkflowIsolation(mintingGate)).toThrow('the nightly train must not mint Gate');
+
+        const impostorGate = asRecord(structuredClone(nightly), 'impostor-gate nightly');
+        recordAt(impostorGate, 'jobs')['fake-gate'] = { name: 'Gate', needs: ['decide'] };
+        expect(() => assertNightlyWorkflowIsolation(impostorGate)).toThrow('the nightly train must not mint Gate');
+
+        const namelessGateId = asRecord(structuredClone(nightly), 'nameless-gate-id nightly');
+        recordAt(namelessGateId, 'jobs').Gate = { needs: ['decide'] };
+        expect(() => assertNightlyWorkflowIsolation(namelessGateId)).toThrow('the nightly train must not mint Gate');
+
+        const extraPullRequestTarget = asRecord(structuredClone(workflow), 'extra pull_request_target workflow');
+        recordAt(extraPullRequestTarget, 'on').pull_request_target = {};
+        expect(() => {
+            expect(Object.keys(recordAt(extraPullRequestTarget, 'on')).sort()).toEqual(['pull_request']);
+        }).toThrow();
+
+        const extraPullRequestOnNightly = asRecord(structuredClone(nightly), 'extra pull_request nightly');
+        recordAt(extraPullRequestOnNightly, 'on').pull_request = {};
+        expect(() => {
+            expect(Object.keys(recordAt(extraPullRequestOnNightly, 'on')).sort()).toEqual([
+                'schedule',
+                'workflow_dispatch',
+            ]);
+        }).toThrow();
     });
 
     it('rejects review-triggered cancellation and changing the pull-request grouping key', () => {
-        const cancellingReview = asRecord(structuredClone(workflow), 'cancelling review workflow');
-        recordAt(cancellingReview, 'concurrency')['cancel-in-progress'] =
-            "${{ github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') }}";
-        expect(() => assertConcurrencyContract(cancellingReview)).toThrow(
+        const pausingPullRequest = asRecord(structuredClone(workflow), 'pausing pull-request workflow');
+        recordAt(pausingPullRequest, 'concurrency')['cancel-in-progress'] = false;
+        expect(() => assertConcurrencyContract(pausingPullRequest)).toThrow(
             'only a newer pull-request run may cancel in-progress work'
         );
         const splitPullRequest = asRecord(structuredClone(workflow), 'split pull-request workflow');
@@ -805,29 +952,43 @@ describe('health gates workflow contract', () => {
         expect(() => assertConcurrencyContract(splitPullRequest)).toThrow(
             'workflow must group runs by pull request or ref'
         );
+        const cancellingNightly = asRecord(structuredClone(nightly), 'cancelling nightly workflow');
+        recordAt(cancellingNightly, 'concurrency')['cancel-in-progress'] = true;
+        expect(() => assertNightlyConcurrencyContract(cancellingNightly)).toThrow(
+            'nightly must not cancel an in-progress train'
+        );
     });
 
-    it('runs the heavy security lane only for approved reviews, schedules, and dispatches', () => {
+    it('runs the heavy security lane only on the nightly train', () => {
         const scopeScript = assertScopeContract(workflow);
         expect(runScopeScript(scopeScript, 'pull_request')).toEqual({
-            heavy: 'false',
             rust: 'false',
             server: 'false',
             e2e: 'false',
             web: 'false',
             code: 'false',
         });
-        expect(runScopeScript(scopeScript, 'pull_request_review')).toMatchObject({ heavy: 'true' });
-        for (const eventName of ['schedule', 'workflow_dispatch']) {
-            expect(runScopeScript(scopeScript, eventName)).toEqual(FORCED_SCOPE_OUTPUTS);
-        }
-        const nonApproval = asRecord(structuredClone(workflow), 'non-approval workflow');
-        jobAt(nonApproval, 'decide').if = "github.event_name != 'pull_request_review'";
-        expect(() => assertScopeContract(nonApproval)).toThrow('decide must only admit submitted approved reviews');
+        const gatedDecide = asRecord(structuredClone(workflow), 'gated decide workflow');
+        jobAt(gatedDecide, 'decide').if = "github.event_name != 'pull_request_review'";
+        expect(() => assertScopeContract(gatedDecide)).toThrow('decide must run on every pull_request');
         const undisclosedWebScope = asRecord(structuredClone(workflow), 'undisclosed web scope workflow');
         recordAt(jobAt(undisclosedWebScope, 'decide'), 'outputs').web = HEAVY_OUTPUT_REFERENCE;
         expect(() => assertScopeContract(undisclosedWebScope)).toThrow(
             'decide web output must expose steps.scope.outputs.web'
+        );
+        const leakingHeavy = asRecord(structuredClone(workflow), 'leaking heavy workflow');
+        recordAt(jobAt(leakingHeavy, 'decide'), 'outputs').heavy = HEAVY_OUTPUT_REFERENCE;
+        expect(() => assertScopeContract(leakingHeavy)).toThrow(
+            'the pull-request workflow must not mint a heavy scope'
+        );
+
+        const nightlyScope = assertNightlyScopeContract(nightly);
+        expect(runScopeScript(nightlyScope, 'schedule')).toEqual(FORCED_SCOPE_OUTPUTS);
+        expect(runScopeScript(nightlyScope, 'workflow_dispatch')).toEqual(FORCED_SCOPE_OUTPUTS);
+        const gatedNightly = asRecord(structuredClone(nightly), 'gated nightly decide');
+        jobAt(gatedNightly, 'decide').if = "github.event_name == 'schedule'";
+        expect(() => assertNightlyScopeContract(gatedNightly)).toThrow(
+            'nightly decide must run on every scheduled and dispatched run'
         );
     });
 
@@ -837,7 +998,6 @@ describe('health gates workflow contract', () => {
         expect(() => assertProseSkippingJobs(workflow)).not.toThrow();
 
         expect(runScopeScript(scopeScript, 'pull_request', { UNCLASSIFIED: 'true' })).toEqual({
-            heavy: 'false',
             rust: 'true',
             server: 'true',
             e2e: 'true',
@@ -916,6 +1076,7 @@ describe('health gates workflow contract', () => {
 
     it('keeps the current fast, heavy, and non-gating job list', () => {
         expect(() => assertJobGraph(workflow)).not.toThrow();
+        expect(() => assertNightlySecurityGraph(nightly)).not.toThrow();
         const eventGatedDependencyReview = asRecord(
             structuredClone(workflow),
             'event-gated dependency review workflow'
@@ -934,25 +1095,27 @@ describe('health gates workflow contract', () => {
         const narrowedNeeds = arrayAt(jobAt(narrowedSummary, 'gate'), 'needs');
         narrowedNeeds.splice(narrowedNeeds.indexOf('smoke'), 1);
         expect(() => assertJobGraph(narrowedSummary)).toThrow('gate must depend on smoke');
-        const disconnected = asRecord(structuredClone(workflow), 'disconnected security workflow');
+        const disconnected = asRecord(structuredClone(nightly), 'disconnected security workflow');
         jobAt(disconnected, 'secrets').needs = 'build';
-        expect(() => assertJobGraph(disconnected)).toThrow('security scans must depend directly on decide');
+        expect(() => assertNightlySecurityGraph(disconnected)).toThrow('security scans must depend directly on decide');
         const disconnectedUnit = asRecord(structuredClone(workflow), 'disconnected unit workflow');
         jobAt(disconnectedUnit, 'unit').needs = 'static';
         expect(() => assertJobGraph(disconnectedUnit)).toThrow(
             'unit must retain its current decide dependency and scope condition'
         );
-        const ungatedE2eScope = asRecord(structuredClone(workflow), 'ungated e2e scope workflow');
+        const ungatedE2eScope = asRecord(structuredClone(nightly), 'ungated e2e scope workflow');
         jobAt(ungatedE2eScope, 'e2e').if = "needs.decide.outputs.e2e == 'true'";
-        expect(() => assertJobGraph(ungatedE2eScope)).toThrow(
+        expect(() => assertNightlySecurityGraph(ungatedE2eScope)).toThrow(
             'e2e must retain its current decide dependency and scope condition'
         );
         const prematureUnitGate = asRecord(structuredClone(workflow), 'premature unit gate workflow');
         arrayAt(jobAt(prematureUnitGate, 'gate'), 'needs').push('unit');
         expect(() => assertJobGraph(prematureUnitGate)).toThrow('unit is currently non-gating');
-        const prematureE2eGate = asRecord(structuredClone(workflow), 'premature e2e gate workflow');
-        arrayAt(jobAt(prematureE2eGate, 'gate'), 'needs').push('e2e');
-        expect(() => assertJobGraph(prematureE2eGate)).toThrow('e2e is currently non-gating');
+        const permissiveNightlyUnit = asRecord(structuredClone(nightly), 'permissive nightly unit');
+        stepNamed(jobAt(permissiveNightlyUnit, 'unit'), 'Run shard')['continue-on-error'] = true;
+        expect(() => assertNightlySecurityGraph(permissiveNightlyUnit)).toThrow(
+            'nightly unit Run shard must not continue on error'
+        );
     });
 
     it('fetches immutable measurement provenance history only in the unit matrix', () => {
@@ -972,35 +1135,28 @@ describe('health gates workflow contract', () => {
     });
 
     it('gates the dedicated Browser AI WebGPU and admitted-presentation proofs on a standard macOS runner', async () => {
-        expect(() => assertBrowserAiWebGpuJob(workflow)).not.toThrow();
+        expect(() => assertBrowserAiWebGpuJob(nightly)).not.toThrow();
         expect(() => assertBrowserAiWebGpuProofChain(packageManifest, browserAiWebGpuConfig)).not.toThrow();
 
         for (const runner of ['self-hosted', 'macos-14-large', 'macos-14-xlarge']) {
-            const premiumRunner = asRecord(structuredClone(workflow), `${runner} Browser AI workflow`);
+            const premiumRunner = asRecord(structuredClone(nightly), `${runner} Browser AI workflow`);
             jobAt(premiumRunner, BROWSER_AI_WEBGPU_JOB)['runs-on'] = runner;
             expect(() => assertBrowserAiWebGpuJob(premiumRunner)).toThrow(
                 'Browser AI WebGPU job must use the standard macos-14 runner'
             );
         }
 
-        const fastLane = asRecord(structuredClone(workflow), 'fast-lane Browser AI workflow');
+        const fastLane = asRecord(structuredClone(nightly), 'fast-lane Browser AI workflow');
         jobAt(fastLane, BROWSER_AI_WEBGPU_JOB).if = "needs.decide.outputs.e2e == 'true'";
         expect(() => assertBrowserAiWebGpuJob(fastLane)).toThrow(
             'Browser AI WebGPU job must retain its heavy E2E scope condition'
         );
 
-        const defaultMatrix = asRecord(structuredClone(workflow), 'default-matrix Browser AI workflow');
+        const defaultMatrix = asRecord(structuredClone(nightly), 'default-matrix Browser AI workflow');
         stepNamed(jobAt(defaultMatrix, BROWSER_AI_WEBGPU_JOB), 'Run Browser AI WebGPU admission').run =
             'pnpm test:e2e tests/e2e/browserAiWebGpuAdmission.spec.ts';
         expect(() => assertBrowserAiWebGpuJob(defaultMatrix)).toThrow(
             'Browser AI WebGPU job must run the dedicated hardware command'
-        );
-
-        const disconnectedGate = asRecord(structuredClone(workflow), 'disconnected Browser AI workflow');
-        const gateNeeds = arrayAt(jobAt(disconnectedGate, 'gate'), 'needs');
-        gateNeeds.splice(gateNeeds.indexOf(BROWSER_AI_WEBGPU_JOB), 1);
-        expect(() => assertBrowserAiWebGpuJob(disconnectedGate)).toThrow(
-            'gate must depend on the Browser AI WebGPU job'
         );
 
         const indirectPackageScript = asRecord(structuredClone(packageManifest), 'indirect package manifest');
@@ -1082,14 +1238,14 @@ describe('health gates workflow contract', () => {
     });
 
     it('runs a trusted, credentialless scanner over the untrusted target history', () => {
-        expect(() => assertCredentiallessScanner(workflow)).not.toThrow();
-        const targetControlledScanner = asRecord(structuredClone(workflow), 'target-controlled scanner workflow');
+        expect(() => assertCredentiallessScanner(nightly)).not.toThrow();
+        const targetControlledScanner = asRecord(structuredClone(nightly), 'target-controlled scanner workflow');
         recordAt(stepNamed(jobAt(targetControlledScanner, 'secrets'), 'Checkout trusted scanner'), 'with').ref =
             SCAN_TARGET_REF;
         expect(() => assertCredentiallessScanner(targetControlledScanner)).toThrow(
             'secret scanner must come from the trusted base and retain no credentials'
         );
-        const tokenBearingScanner = asRecord(structuredClone(workflow), 'token-bearing scanner workflow');
+        const tokenBearingScanner = asRecord(structuredClone(nightly), 'token-bearing scanner workflow');
         jobAt(tokenBearingScanner, 'secrets').env = { GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}' };
         expect(() => assertCredentiallessScanner(tokenBearingScanner)).toThrow(
             'secret scan job must not reference GitHub tokens or repository secrets'
@@ -1099,7 +1255,7 @@ describe('health gates workflow contract', () => {
     it('promotes the validated revision daily, only with a credential and only when it changed', () => {
         expect(() => assertGitDeploymentsDisabled(vercelConfig)).not.toThrow();
         expect(() => assertCrossOriginIsolationHeaders(vercelConfig)).not.toThrow();
-        const { validation: validationGuard, freshness: freshnessGuard } = assertDailyDeployTrain(workflow);
+        const { validation: validationGuard, freshness: freshnessGuard } = assertDailyDeployTrain(nightly);
 
         const candidate = '1'.repeat(40);
         const newerTip = '2'.repeat(40);
@@ -1122,13 +1278,13 @@ describe('health gates workflow contract', () => {
         expect(runFreshnessGuard(freshnessGuard, candidate, '').status).not.toBe(0);
 
         const onMain = { TRAIN_REF: 'refs/heads/main' };
-        expect(runResultsGuard(validationGuard, needsResults(workflow, DEPLOY_WEB_JOB, 'success'), onMain)).toBe(0);
+        expect(runResultsGuard(validationGuard, needsResults(nightly, DEPLOY_WEB_JOB, 'success'), onMain)).toBe(0);
         const degraded: JobResult[] = ['failure', 'cancelled', 'skipped'];
         for (const result of degraded) {
             expect(
                 runResultsGuard(
                     validationGuard,
-                    needsResults(workflow, DEPLOY_WEB_JOB, 'success', { e2e: result }),
+                    needsResults(nightly, DEPLOY_WEB_JOB, 'success', { e2e: result }),
                     onMain
                 )
             ).not.toBe(0);
@@ -1137,7 +1293,7 @@ describe('health gates workflow contract', () => {
         // half that still holds when somebody edits that condition.
         for (const ref of ['refs/heads/agent/2940/daily-train', 'refs/tags/v1.0.0', 'main']) {
             expect(
-                runResultsGuard(validationGuard, needsResults(workflow, DEPLOY_WEB_JOB, 'success'), {
+                runResultsGuard(validationGuard, needsResults(nightly, DEPLOY_WEB_JOB, 'success'), {
                     TRAIN_REF: ref,
                 })
             ).not.toBe(0);
@@ -1161,7 +1317,7 @@ describe('health gates workflow contract', () => {
             'the deployed application must stay cross-origin isolated'
         );
 
-        const pullRequestTrain = asRecord(structuredClone(workflow), 'pull-request deploy train');
+        const pullRequestTrain = asRecord(structuredClone(nightly), 'pull-request deploy train');
         jobAt(pullRequestTrain, DEPLOY_WEB_JOB).if = PULL_REQUEST_PAYLOAD_CONDITION;
         expect(() => assertDailyDeployTrain(pullRequestTrain)).toThrow(
             'the daily deploy train must run only on the schedule and a dispatch of main'
@@ -1170,39 +1326,39 @@ describe('health gates workflow contract', () => {
         // A dispatch carries whichever ref was chosen, and every validation leg
         // would report honestly on it, so dropping this clause is what would
         // let an unmerged branch reach production.
-        const anyBranchDispatch = asRecord(structuredClone(workflow), 'any-branch dispatch deploy train');
+        const anyBranchDispatch = asRecord(structuredClone(nightly), 'any-branch dispatch deploy train');
         jobAt(anyBranchDispatch, DEPLOY_WEB_JOB).if =
             "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'";
         expect(() => assertDailyDeployTrain(anyBranchDispatch)).toThrow(
             'the daily deploy train must run only on the schedule and a dispatch of main'
         );
 
-        const unguardedRef = asRecord(structuredClone(workflow), 'unguarded-ref deploy train');
+        const unguardedRef = asRecord(structuredClone(nightly), 'unguarded-ref deploy train');
         delete recordAt(stepNamed(jobAt(unguardedRef, DEPLOY_WEB_JOB), DEPLOY_WEB_GUARD_STEP), 'env').TRAIN_REF;
         expect(() => assertDailyDeployTrain(unguardedRef)).toThrow(
             'the daily deploy train must read the ref it is about to deploy'
         );
 
-        const racingTrain = asRecord(structuredClone(workflow), 'racing deploy train');
+        const racingTrain = asRecord(structuredClone(nightly), 'racing deploy train');
         delete jobAt(racingTrain, DEPLOY_WEB_JOB).concurrency;
         expect(() => assertDailyDeployTrain(racingTrain)).toThrow(
             'the daily deploy train must serialise itself against every other production deploy'
         );
 
-        const cancellingTrain = asRecord(structuredClone(workflow), 'cancelling deploy train');
+        const cancellingTrain = asRecord(structuredClone(nightly), 'cancelling deploy train');
         recordAt(jobAt(cancellingTrain, DEPLOY_WEB_JOB), 'concurrency')['cancel-in-progress'] = true;
         expect(() => assertDailyDeployTrain(cancellingTrain)).toThrow(
             'the daily deploy train must queue behind a running deploy rather than cancel it'
         );
 
-        const unauthenticatedBuild = asRecord(structuredClone(workflow), 'unauthenticated deploy train');
+        const unauthenticatedBuild = asRecord(structuredClone(nightly), 'unauthenticated deploy train');
         delete recordAt(stepNamed(jobAt(unauthenticatedBuild, DEPLOY_WEB_JOB), 'Build the validated revision'), 'env')
             .VERCEL_TOKEN;
         expect(() => assertDailyDeployTrain(unauthenticatedBuild)).toThrow(
             'Build the validated revision must authenticate from the environment rather than an echoed argument'
         );
 
-        const reboundIsolation = asRecord(structuredClone(workflow), 'rebound-isolation deploy train');
+        const reboundIsolation = asRecord(structuredClone(nightly), 'rebound-isolation deploy train');
         recordAt(
             stepNamed(jobAt(reboundIsolation, DEPLOY_WEB_JOB), 'Assert cross-origin isolation on the deployment'),
             'env'
@@ -1211,44 +1367,44 @@ describe('health gates workflow contract', () => {
             'the daily deploy train must read its headers back off the deployment it just created'
         );
 
-        const unvalidatedTrain = asRecord(structuredClone(workflow), 'unvalidated deploy train');
+        const unvalidatedTrain = asRecord(structuredClone(nightly), 'unvalidated deploy train');
         const trainNeeds = arrayAt(jobAt(unvalidatedTrain, DEPLOY_WEB_JOB), 'needs');
         trainNeeds.splice(trainNeeds.indexOf('codeql'), 1);
         expect(() => assertDailyDeployTrain(unvalidatedTrain)).toThrow('the daily deploy train must depend on codeql');
 
-        const widenedTrain = asRecord(structuredClone(workflow), 'widened deploy train');
+        const widenedTrain = asRecord(structuredClone(nightly), 'widened deploy train');
         arrayAt(jobAt(widenedTrain, DEPLOY_WEB_JOB), 'needs').push('smoke');
         expect(() => assertDailyDeployTrain(widenedTrain)).toThrow(
             'the daily deploy train must depend on exactly the scheduled validation legs'
         );
 
-        const unscopedTrain = asRecord(structuredClone(workflow), 'unscoped deploy train');
+        const unscopedTrain = asRecord(structuredClone(nightly), 'unscoped deploy train');
         delete jobAt(unscopedTrain, DEPLOY_WEB_JOB).environment;
         expect(() => assertDailyDeployTrain(unscopedTrain)).toThrow(
             'the daily deploy train must draw its credential from the Production environment'
         );
 
-        const ungatedTrain = asRecord(structuredClone(workflow), 'ungated deploy train');
+        const ungatedTrain = asRecord(structuredClone(nightly), 'ungated deploy train');
         delete recordAt(jobAt(ungatedTrain, DEPLOY_WEB_JOB), 'env').DEPLOY_CREDENTIAL_PRESENT;
         expect(() => assertDailyDeployTrain(ungatedTrain)).toThrow(
             'the daily deploy train must resolve credential presence without exposing the token'
         );
 
-        const credentiallessDeploy = asRecord(structuredClone(workflow), 'credentialless deploy train');
+        const credentiallessDeploy = asRecord(structuredClone(nightly), 'credentialless deploy train');
         stepNamed(jobAt(credentiallessDeploy, DEPLOY_WEB_JOB), DEPLOY_WEB_FRESHNESS_STEP).if =
             "github.event_name == 'schedule'";
         expect(() => assertDailyDeployTrain(credentiallessDeploy)).toThrow(
             `${DEPLOY_WEB_FRESHNESS_STEP} must not run without the deployment credential`
         );
 
-        const unfreshResolver = asRecord(structuredClone(workflow), 'stale-tolerant deploy train');
+        const unfreshResolver = asRecord(structuredClone(nightly), 'stale-tolerant deploy train');
         stepNamed(jobAt(unfreshResolver, DEPLOY_WEB_JOB), 'Resolve the current production revision').if =
             DEPLOY_CREDENTIAL_CONDITION;
         expect(() => assertDailyDeployTrain(unfreshResolver)).toThrow(
             'Resolve the current production revision must not run for a revision that is no longer the tip of main'
         );
 
-        const untippedTrain = asRecord(structuredClone(workflow), 'untipped deploy train');
+        const untippedTrain = asRecord(structuredClone(nightly), 'untipped deploy train');
         const untippedStep = stepNamed(jobAt(untippedTrain, DEPLOY_WEB_JOB), DEPLOY_WEB_FRESHNESS_STEP);
         untippedStep.run = stringAt(untippedStep, 'run').replace(
             'git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" refs/heads/main',
@@ -1258,7 +1414,7 @@ describe('health gates workflow contract', () => {
             'the freshness check must read the current tip of main from the remote'
         );
 
-        const uncomparedTip = asRecord(structuredClone(workflow), 'uncompared-tip deploy train');
+        const uncomparedTip = asRecord(structuredClone(nightly), 'uncompared-tip deploy train');
         const uncomparedStep = stepNamed(jobAt(uncomparedTip, DEPLOY_WEB_JOB), DEPLOY_WEB_FRESHNESS_STEP);
         uncomparedStep.run = stringAt(uncomparedStep, 'run').replace('"$tip" != "$CANDIDATE_REVISION"', '1 -eq 2');
         expect(() => assertDailyDeployTrain(uncomparedTip)).toThrow(
@@ -1270,48 +1426,48 @@ describe('health gates workflow contract', () => {
         const alwaysFresh = stringAt(uncomparedStep, 'run');
         expect(runFreshnessGuard(alwaysFresh, candidate, newerTip).outputs).toContain('fresh=true');
 
-        const halfArmedReport = asRecord(structuredClone(workflow), 'half-armed deploy train');
+        const halfArmedReport = asRecord(structuredClone(nightly), 'half-armed deploy train');
         const reportStep = stepNamed(jobAt(halfArmedReport, DEPLOY_WEB_JOB), DEPLOY_WEB_CREDENTIAL_REPORT_STEP);
         reportStep.run = stringAt(reportStep, 'run').replace('deployment branch policy limited to `main`', 'nothing');
         expect(() => assertDailyDeployTrain(halfArmedReport)).toThrow(
             'the gated-off report must name every arming precondition, including deployment branch policy limited to `main`'
         );
 
-        const floatingCli = asRecord(structuredClone(workflow), 'floating-CLI deploy train');
+        const floatingCli = asRecord(structuredClone(nightly), 'floating-CLI deploy train');
         recordAt(jobAt(floatingCli, DEPLOY_WEB_JOB), 'env').VERCEL_CLI = 'vercel@latest';
         expect(() => assertDailyDeployTrain(floatingCli)).toThrow(
             'the daily deploy train must pin an exact Vercel CLI version'
         );
 
-        const movingTarget = asRecord(structuredClone(workflow), 'moving-target deploy train');
+        const movingTarget = asRecord(structuredClone(nightly), 'moving-target deploy train');
         recordAt(stepNamed(jobAt(movingTarget, DEPLOY_WEB_JOB), 'Checkout the validated revision'), 'with').ref =
             '${{ github.ref }}';
         expect(() => assertDailyDeployTrain(movingTarget)).toThrow(
             'the daily deploy train must build the revision its validation legs reported on'
         );
 
-        const duplicatingTrain = asRecord(structuredClone(workflow), 'duplicating deploy train');
+        const duplicatingTrain = asRecord(structuredClone(nightly), 'duplicating deploy train');
         stepNamed(jobAt(duplicatingTrain, DEPLOY_WEB_JOB), 'Deploy the prebuilt revision').if =
             DEPLOY_CREDENTIAL_CONDITION;
         expect(() => assertDailyDeployTrain(duplicatingTrain)).toThrow(
             'Deploy the prebuilt revision must not run for a revision production already serves'
         );
 
-        const anonymousDeploy = asRecord(structuredClone(workflow), 'anonymous deploy train');
+        const anonymousDeploy = asRecord(structuredClone(nightly), 'anonymous deploy train');
         const deployStep = stepNamed(jobAt(anonymousDeploy, DEPLOY_WEB_JOB), 'Deploy the prebuilt revision');
         deployStep.run = stringAt(deployStep, 'run').replace('--meta githubCommitSha="$GITHUB_SHA"', '');
         expect(() => assertDailyDeployTrain(anonymousDeploy)).toThrow(
             'the daily deploy train must record the deployed revision on the deployment'
         );
 
-        const unassertedIsolation = asRecord(structuredClone(workflow), 'unasserted-isolation deploy train');
+        const unassertedIsolation = asRecord(structuredClone(nightly), 'unasserted-isolation deploy train');
         stepNamed(jobAt(unassertedIsolation, DEPLOY_WEB_JOB), 'Assert cross-origin isolation on the deployment').run =
             'curl --fail --silent --head "$DEPLOYMENT_URL"';
         expect(() => assertDailyDeployTrain(unassertedIsolation)).toThrow(
             'the daily deploy train must read the isolation headers back off the deployment'
         );
 
-        const taggingTrain = asRecord(structuredClone(workflow), 'tagging deploy train');
+        const taggingTrain = asRecord(structuredClone(nightly), 'tagging deploy train');
         arrayAt(jobAt(taggingTrain, DEPLOY_WEB_JOB), 'steps').push({
             name: 'Tag the deployed revision',
             run: 'git tag "web-$GITHUB_SHA"',
@@ -1320,10 +1476,8 @@ describe('health gates workflow contract', () => {
             'a daily web deployment must not carry a release side effect: git tag'
         );
 
-        const gatingTrain = asRecord(structuredClone(workflow), 'gating deploy train');
-        arrayAt(jobAt(gatingTrain, 'gate'), 'needs').push(DEPLOY_WEB_JOB);
-        expect(() => assertDailyDeployTrain(gatingTrain)).toThrow(
-            'the daily deploy train must stay outside the Gate summary'
-        );
+        const gatingTrain = asRecord(structuredClone(nightly), 'gating deploy train');
+        recordAt(gatingTrain, 'jobs').gate = { name: 'Gate', needs: [DEPLOY_WEB_JOB] };
+        expect(() => assertDailyDeployTrain(gatingTrain)).toThrow('the nightly train must not mint Gate');
     });
 });

@@ -178,12 +178,13 @@ fi
 SH
 chmod +x "$git_tip_bin/git"
 
-WORKFLOW_PATH="$repo_root/.github/workflows/health-gates.yml" REPO_ROOT="$repo_root" TEST_TEMP_ROOT="$temp_root" FAKE_BIN="$fake_bin" GIT_TIP_BIN="$git_tip_bin" node --input-type=module <<'NODE'
+WORKFLOW_PATH="$repo_root/.github/workflows/health-gates.yml" NIGHTLY_PATH="$repo_root/.github/workflows/nightly.yml" REPO_ROOT="$repo_root" TEST_TEMP_ROOT="$temp_root" FAKE_BIN="$fake_bin" GIT_TIP_BIN="$git_tip_bin" node --input-type=module <<'NODE'
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { parse } from 'yaml';
 
 const workflow = parse(readFileSync(process.env.WORKFLOW_PATH, 'utf8'));
+const nightly = parse(readFileSync(process.env.NIGHTLY_PATH, 'utf8'));
 const gitleaksHelper = readFileSync(`${process.env.REPO_ROOT}/scripts/run-gitleaks-history-scan.sh`, 'utf8');
 const gitleaksConfig = readFileSync(`${process.env.REPO_ROOT}/.gitleaks.toml`, 'utf8');
 const failures = [];
@@ -193,6 +194,17 @@ function expect(condition, message) {
         failures.push(message);
     }
 }
+
+function expectNightlyDoesNotMintGate(jobs) {
+    expect(jobs?.gate === undefined, 'nightly must not mint Gate');
+    for (const [jobId, job] of Object.entries(jobs ?? {})) {
+        const checkName = typeof job?.name === 'string' ? job.name : jobId;
+        if (checkName === 'Gate') {
+            expect(false, `nightly job ${jobId} must not mint Gate`);
+        }
+    }
+}
+
 
 function stepNamed(job, name) {
     return job?.steps?.find((step) => step.name === name);
@@ -269,16 +281,18 @@ const prSecretsScanRun = stepNamed(prSecrets, 'Scan pull request diff for secret
 const prMergeControl = stepNamed(prSecrets, 'Validate PR merge diff secret scanner');
 const prMergeControlRun = prMergeControl?.run ?? '';
 const TOKEN_PATTERN = /GITHUB_TOKEN|GH_TOKEN|github\.token|\$\{\{\s*secrets\./iu;
-const secrets = workflow.jobs?.secrets;
+const secrets = nightly.jobs?.secrets;
 const unit = workflow.jobs?.unit;
-const e2e = workflow.jobs?.e2e;
+const nightlyUnit = nightly.jobs?.unit;
+const e2e = nightly.jobs?.e2e;
 const gate = workflow.jobs?.gate;
 const dependencyReview = workflow.jobs?.['dependency-review'];
 const dependencyReviewWith = stepNamed(dependencyReview, 'Review dependency changes')?.with ?? {};
-const browserAiWebGpu = workflow.jobs?.['browser-ai-webgpu'];
-const nightlyReport = workflow.jobs?.['nightly-report'];
+const browserAiWebGpu = nightly.jobs?.['browser-ai-webgpu'];
+const nightlyReport = nightly.jobs?.['nightly-report'];
 const resolveScopeRun = stepNamed(decide, 'Resolve scope')?.run ?? '';
-const decideCheckoutUses = stepNamed(decide, 'Checkout')?.uses ?? '';
+const nightlyResolveScopeRun = stepNamed(nightly.jobs?.decide, 'Resolve scope')?.run ?? '';
+const nightlyStaticCheckoutUses = stepNamed(nightly.jobs?.static, 'Checkout')?.uses ?? '';
 const trustedCheckout = stepNamed(secrets, 'Checkout trusted scanner');
 const targetCheckout = stepNamed(secrets, 'Checkout scan target');
 const positiveControl = stepNamed(secrets, 'Validate secret scanner positive control');
@@ -310,55 +324,62 @@ const expectedGateNeeds = [
     'rust',
     'native-macos',
     'native-windows',
-    'browser-ai-webgpu',
-    'codeql',
-    'secrets',
 ];
 
 expect(workflow.name === 'Health gates', 'workflow name must stay Health gates');
-expect(events?.pull_request !== undefined, 'pull_request trigger must remain present');
-expect(events?.pull_request_review?.types?.includes('submitted'), 'pull_request_review submitted must trigger the workflow');
-expect(events?.schedule !== undefined, 'schedule trigger must remain present');
-expect(events?.workflow_dispatch !== undefined, 'workflow_dispatch trigger must remain present');
 expect(
-    concurrency?.group ===
-        "health-gates-${{ (github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved')) && github.event.pull_request.number || github.run_id }}",
-    'only pull_request and approved reviews may share a PR-number concurrency group'
+    Object.keys(events ?? {}).sort().join('\0') === 'pull_request',
+    'Health gates on must be exactly pull_request'
 );
 expect(
-    concurrency?.['cancel-in-progress'] === "${{ github.event_name == 'pull_request' }}",
-    'only newer pull_request runs may cancel in-progress work; approved reviews must wait without cancelling'
+    concurrency?.group === 'health-gates-${{ github.event.pull_request.number }}',
+    'pull-request runs must share a PR-number concurrency group'
 );
 expect(
-    decide?.if === "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'",
-    'decide must run the heavy path only for approved pull_request_review submissions'
+    concurrency?.['cancel-in-progress'] === true,
+    'a newer pull_request run must cancel in-progress validation of the same PR'
 );
+expect(decide?.if === undefined, 'decide must run on every pull_request');
+expect(nightly.name === 'Nightly', 'nightly workflow name must stay Nightly');
+expect(
+    Object.keys(nightly.on ?? {}).sort().join('\0') === 'schedule\0workflow_dispatch',
+    'Nightly on must be exactly schedule and workflow_dispatch'
+);
+expectNightlyDoesNotMintGate(nightly.jobs);
+expect(
+    nightly.concurrency?.group === 'nightly-${{ github.run_id }}',
+    'nightly must isolate each run on its own run id'
+);
+expect(nightly.concurrency?.['cancel-in-progress'] === false, 'nightly must not cancel an in-progress train');
+expect(workflow.jobs?.['deploy-web'] === undefined, 'the pull-request workflow must not deploy');
+expect(workflow.jobs?.e2e === undefined, 'the pull-request workflow must not run the end-to-end suite');
 const allFalseScopes = { rust: 'false', server: 'false', e2e: 'false', web: 'false' };
-const reviewScopes = { rust: 'false', server: 'true', e2e: 'false', web: 'true' };
 const pullRequestScopes = { rust: 'true', server: 'false', e2e: 'true', web: 'false' };
 const unclassifiedScopes = { ...allFalseScopes, unclassified: 'true' };
+function runNightlyResolveScope() {
+    const outputPath = `${process.env.TEST_TEMP_ROOT}/resolve-scope-nightly.output`;
+    writeFileSync(outputPath, '');
+    const result = spawnSync('bash', ['-c', nightlyResolveScopeRun], {
+        encoding: 'utf8',
+        env: { ...process.env, GITHUB_OUTPUT: outputPath },
+    });
+    expect(result.status === 0, `Nightly resolve scope must execute: ${result.stderr.trim()}`);
+    return readFileSync(outputPath, 'utf8');
+}
 expect(
-    runResolveScope('schedule', allFalseScopes) === 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\ncode=true\n',
-    'schedule must enable the heavy path and every scope'
+    runNightlyResolveScope() === 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\ncode=true\n',
+    'nightly must enable the heavy path and every scope'
 );
 expect(
-    runResolveScope('workflow_dispatch', allFalseScopes) === 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\ncode=true\n',
-    'workflow_dispatch must enable the heavy path and every scope'
+    runResolveScope('pull_request', pullRequestScopes) === 'rust=true\nserver=false\ne2e=true\nweb=false\ncode=true\n',
+    'pull_request must preserve path-filter outputs without a heavy scope'
 );
 expect(
-    runResolveScope('pull_request_review', reviewScopes) === 'heavy=true\nrust=false\nserver=true\ne2e=false\nweb=true\ncode=true\n',
-    'pull_request_review must enable the heavy path and preserve path-filter outputs'
-);
-expect(
-    runResolveScope('pull_request', pullRequestScopes) === 'heavy=false\nrust=true\nserver=false\ne2e=true\nweb=false\ncode=true\n',
-    'pull_request must disable the heavy path and preserve path-filter outputs'
-);
-expect(
-    runResolveScope('pull_request', allFalseScopes) === 'heavy=false\nrust=false\nserver=false\ne2e=false\nweb=false\ncode=false\n',
+    runResolveScope('pull_request', allFalseScopes) === 'rust=false\nserver=false\ne2e=false\nweb=false\ncode=false\n',
     'a head that claims no scope must report no code-bearing change'
 );
 expect(
-    runResolveScope('pull_request', unclassifiedScopes) === 'heavy=false\nrust=true\nserver=true\ne2e=true\nweb=true\ncode=true\n',
+    runResolveScope('pull_request', unclassifiedScopes) === 'rust=true\nserver=true\ne2e=true\nweb=true\ncode=true\n',
     'an unclassified path must force every fast scope rather than skipping the checks that would observe it'
 );
 expect(
@@ -559,7 +580,6 @@ expect(
     unitRun === 'pnpm run test:run --shard=${{ matrix.shard }}/4',
     'unit shard must use explicit pnpm run so the wrapper receives only the Vitest shard argument'
 );
-const pullRequestReportAllowance = "${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_review' }}";
 const shardFailureCondition = "${{ !cancelled() && steps.run_shard.outcome == 'failure' }}";
 expect(
     unit?.['continue-on-error'] === undefined,
@@ -572,12 +592,16 @@ expect(
 expect(unitRunStep?.id === 'run_shard', 'unit Run shard step must keep its stable id');
 expect(e2eRunStep?.id === 'run_shard', 'end-to-end Run shard step must keep its stable id');
 expect(
-    unitRunStep?.['continue-on-error'] === pullRequestReportAllowance,
-    'unit Run shard must allow failure only for pull request events so schedule and workflow_dispatch stay blocking'
+    unitRunStep?.['continue-on-error'] === true,
+    'pull-request unit Run shard must continue on error so Gate can still report'
 );
 expect(
-    e2eRunStep?.['continue-on-error'] === pullRequestReportAllowance,
-    'end-to-end Run shard must allow failure only for pull request events so schedule and workflow_dispatch stay blocking'
+    e2eRunStep?.['continue-on-error'] === undefined,
+    'nightly end-to-end Run shard must stay blocking'
+);
+expect(
+    stepNamed(nightlyUnit, 'Run shard')?.['continue-on-error'] === undefined,
+    'nightly unit Run shard must stay blocking'
 );
 expect(
     unitFailureWarning?.if === shardFailureCondition,
@@ -602,12 +626,11 @@ expect(
     'dependency review must pass the explicit pull request head SHA, which the action cannot infer on a pull_request_review run'
 );
 expect(gate?.name === 'Gate', 'required Gate job name must stay exact');
-expect(browserAiWebGpu !== undefined, 'browser-ai-webgpu job must remain connected to the workflow');
-expect(gateNeeds.includes('browser-ai-webgpu'), 'Gate must depend on browser-ai-webgpu');
+expect(browserAiWebGpu !== undefined, 'browser-ai-webgpu job must remain connected to the nightly workflow');
+expect(!gateNeeds.includes('browser-ai-webgpu'), 'Gate must not depend on browser-ai-webgpu');
 expect(
-    gate?.if ===
-        "${{ !cancelled() && (github.event_name != 'pull_request_review' || github.event.review.state == 'approved') }}",
-    'Gate must cancel with superseded runs and must not report success for non-approved reviews'
+    gate?.if === '${{ !cancelled() }}',
+    'Gate must cancel with superseded runs and must report on every pull_request'
 );
 expect(
     Array.isArray(gateNeeds) &&
@@ -628,7 +651,7 @@ expect(
 // The daily web train. It is the only route to production now that the Vercel
 // Git integration is off, so what it refuses to deploy from matters as much as
 // what it deploys.
-const deployWeb = workflow.jobs?.['deploy-web'];
+const deployWeb = nightly.jobs?.['deploy-web'];
 const deployWebNeeds = deployWeb?.needs ?? [];
 const expectedDeployWebNeeds = [
     'static',
@@ -706,10 +729,7 @@ expect(
         deployWebNeeds.every((need, index) => need === expectedDeployWebNeeds[index]),
     `the daily web deploy must depend on exactly: ${expectedDeployWebNeeds.join(', ')}`
 );
-expect(
-    !gateNeeds.includes('deploy-web'),
-    'the daily web deploy must stay outside Gate, which reports what a pull request proved'
-);
+expectNightlyDoesNotMintGate(nightly.jobs);
 expect(
     deployWebDeployRun.includes('deploy --prebuilt --prod') &&
         deployWebDeployRun.includes('--meta githubCommitSha="$GITHUB_SHA"'),
@@ -850,8 +870,8 @@ expect(
     'nightly reporter must run inside a real git repository, since a gh build can consult local git for repo resolution even when every invocation already passes --repo'
 );
 expect(
-    nightlyReportCheckout?.uses === decideCheckoutUses && decideCheckoutUses !== '',
-    'nightly reporter checkout must use the same pinned actions/checkout ref as the rest of the workflow'
+    nightlyReportCheckout?.uses === nightlyStaticCheckoutUses && nightlyStaticCheckoutUses !== '',
+    'nightly reporter checkout must use the same pinned actions/checkout ref as the rest of the nightly workflow'
 );
 expect(
     nightlyReportCheckout?.with?.['persist-credentials'] === false,

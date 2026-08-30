@@ -54,28 +54,53 @@ const FAUST_INSTRUMENT_DESCRIPTOR_DATA: PluginDescriptor[] = [
             fp('body_decay', 'faust-rhodes', 'Body Decay', 0.1, 5, 1.5, 's'),
             fp('bell_decay', 'faust-rhodes', 'Bell Decay', 0.01, 1, 0.15, 's'),
             fp('gain', 'faust-rhodes', 'Gain', 0, 1, 0.5),
+            fp('freq', 'faust-rhodes', 'Freq', 20, 10000, 440, 'Hz'),
+            fp('gate', 'faust-rhodes', 'Gate', 0, 1, 0),
         ],
     },
     {
-        // The compiled module exposes 26 op-level controls (algorithm plus four
-        // ratio/level/ADSR operator blocks) whose declaration waits on the FM
-        // preset migration (#3155) deciding the operator mapping, because every
-        // shipped FM preset still authors the retired single-operator set
-        // (`ratio`, `index`, `attack`, …) whose keys never reach the DSP.
-        //
-        // `gain` is declared now: an empty `parameters` array is not nullish,
-        // so it defeated DeviceInspector's derive-from-parameterValues
-        // fallback and left the Faust instrument layout on its loading message
-        // forever, even though `/fm_synth/gain` is registered and reaches the
-        // DSP. Bounds and default copied from that registration, id for id and
-        // bound for bound like every other entry here.
+        // Every input control the compiled node exposes, copied from the
+        // registration id for id and bound for bound: algorithm, four
+        // ratio/level/ADSR operator blocks, gain, and the note-level freq and
+        // gate. Declaring these with DSP-side defaults is orthogonal to the FM
+        // preset migration (#3155), which maps the retired single-operator
+        // preset keys onto them.
         id: 'faust-fm-synth',
         name: 'FM Synth',
         vendor: 'Sourdaw',
         format: 'builtin',
         category: 'instrument',
         hasCustomUI: false,
-        parameters: [fp('gain', 'faust-fm-synth', 'Gain', 0, 1, 0.5)],
+        parameters: [
+            fp('algorithm', 'faust-fm-synth', 'Algorithm', 0, 3, 0),
+            fp('op1_ratio', 'faust-fm-synth', 'OP1 Ratio', 0.5, 16, 1),
+            fp('op1_level', 'faust-fm-synth', 'OP1 Level', 0, 1, 1),
+            fp('op1_attack', 'faust-fm-synth', 'OP1 Attack', 0.001, 5, 0.01, 's'),
+            fp('op1_decay', 'faust-fm-synth', 'OP1 Decay', 0.01, 5, 0.1, 's'),
+            fp('op1_sustain', 'faust-fm-synth', 'OP1 Sustain', 0, 1, 0.8),
+            fp('op1_release', 'faust-fm-synth', 'OP1 Release', 0.01, 10, 0.5, 's'),
+            fp('op2_ratio', 'faust-fm-synth', 'OP2 Ratio', 0.5, 16, 2),
+            fp('op2_level', 'faust-fm-synth', 'OP2 Level', 0, 1, 0.5),
+            fp('op2_attack', 'faust-fm-synth', 'OP2 Attack', 0.001, 5, 0.01, 's'),
+            fp('op2_decay', 'faust-fm-synth', 'OP2 Decay', 0.01, 5, 0.1, 's'),
+            fp('op2_sustain', 'faust-fm-synth', 'OP2 Sustain', 0, 1, 0.8),
+            fp('op2_release', 'faust-fm-synth', 'OP2 Release', 0.01, 10, 0.5, 's'),
+            fp('op3_ratio', 'faust-fm-synth', 'OP3 Ratio', 0.5, 16, 3),
+            fp('op3_level', 'faust-fm-synth', 'OP3 Level', 0, 1, 0.5),
+            fp('op3_attack', 'faust-fm-synth', 'OP3 Attack', 0.001, 5, 0.01, 's'),
+            fp('op3_decay', 'faust-fm-synth', 'OP3 Decay', 0.01, 5, 0.1, 's'),
+            fp('op3_sustain', 'faust-fm-synth', 'OP3 Sustain', 0, 1, 0.8),
+            fp('op3_release', 'faust-fm-synth', 'OP3 Release', 0.01, 10, 0.5, 's'),
+            fp('op4_ratio', 'faust-fm-synth', 'OP4 Ratio', 0.5, 16, 4),
+            fp('op4_level', 'faust-fm-synth', 'OP4 Level', 0, 1, 0.5),
+            fp('op4_attack', 'faust-fm-synth', 'OP4 Attack', 0.001, 5, 0.01, 's'),
+            fp('op4_decay', 'faust-fm-synth', 'OP4 Decay', 0.01, 5, 0.1, 's'),
+            fp('op4_sustain', 'faust-fm-synth', 'OP4 Sustain', 0, 1, 0.8),
+            fp('op4_release', 'faust-fm-synth', 'OP4 Release', 0.01, 10, 0.5, 's'),
+            fp('gain', 'faust-fm-synth', 'Gain', 0, 1, 0.5),
+            fp('freq', 'faust-fm-synth', 'Freq', 20, 10000, 440, 'Hz'),
+            fp('gate', 'faust-fm-synth', 'Gate', 0, 1, 0),
+        ],
     },
     {
         id: 'faust-supersaw-unison',
@@ -85,6 +110,10 @@ const FAUST_INSTRUMENT_DESCRIPTOR_DATA: PluginDescriptor[] = [
         category: 'instrument',
         hasCustomUI: false,
         tail: { kind: 'decaySeconds', parameterId: 'release', defaultSeconds: 0.5 },
+        // The note-level freq and gate sit after the timbre and envelope
+        // controls, copied from the registration bound for bound like every
+        // entry here. This DSP's freq ceiling is 12000, not the 10000 rhodes
+        // and fm-synth declare, because its .dsp says 12000.
         parameters: [
             fp('lfo_rate', 'faust-supersaw-unison', 'LFO Rate', 0.1, 20, 5, 'Hz'),
             fp('lfo_depth', 'faust-supersaw-unison', 'LFO Depth', 0, 1, 0),
@@ -96,6 +125,8 @@ const FAUST_INSTRUMENT_DESCRIPTOR_DATA: PluginDescriptor[] = [
             fp('decay', 'faust-supersaw-unison', 'Decay', 0.01, 5, 0.3, 's', 'log'),
             fp('sustain', 'faust-supersaw-unison', 'Sustain', 0, 1, 0.8),
             fp('release', 'faust-supersaw-unison', 'Release', 0.01, 10, 0.5, 's', 'log'),
+            fp('freq', 'faust-supersaw-unison', 'Freq', 20, 12000, 440, 'Hz'),
+            fp('gate', 'faust-supersaw-unison', 'Gate', 0, 1, 0),
         ],
     },
 ];

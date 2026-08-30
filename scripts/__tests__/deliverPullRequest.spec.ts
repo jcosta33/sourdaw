@@ -1585,10 +1585,9 @@ describe('pull-request delivery', () => {
      * start, or one GitHub reports no start for, order nothing. Each of these would merge over a real
      * failure if it counted as the newer word.
      *
-     * The skip is the one this repository mints by itself: every non-approving `pull_request_review`
-     * event starts a run where `decide` skips, and every job downstream of it then reports `COMPLETED`
-     * with `SKIPPED` and an evaluation-time start later than the push run's. A single comment on a
-     * pull request would otherwise stamp a retiring non-verdict over a genuine failure.
+     * Health gates no longer subscribe to `pull_request_review`, so this repository no longer mints
+     * that skip itself. A skipped later attempt from any other path is still the same shape: it must
+     * not stamp a retiring non-verdict over a genuine failure.
      */
     it.each([
         { shape: 'a later cancellation', later: { conclusion: 'CANCELLED', startedAt: REVIEW_RUN_START } },

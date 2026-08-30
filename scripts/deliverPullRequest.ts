@@ -267,12 +267,11 @@ function unretiredFailedCheckRun(checkRuns: HeadCheckRun[]): HeadCheckRun | unde
 /**
  * Only a later attempt that itself reached a verdict retires an earlier one. A non-verdict
  * conclusion and a still-running rerun decide nothing, so reading either as the newer word would
- * drop a real failure out of the evidence — the one direction this rule must never move. The
- * repository mints that shape by itself: every non-approving `pull_request_review` event starts a
- * run whose `decide` job is skipped, so each job downstream of it settles as `SKIPPED` with an
- * evaluation-time start later than the push run's. Were a skip allowed to retire, one comment on a
- * pull request would stamp a fresh non-verdict over a genuine failing execution and the head would
- * merge.
+ * drop a real failure out of the evidence — the one direction this rule must never move. Health
+ * gates no longer subscribe to `pull_request_review`, so this repository no longer mints that skip
+ * itself; a skipped later attempt from any other path would still be the same shape. Were a skip
+ * allowed to retire, it would stamp a fresh non-verdict over a genuine failing execution and the
+ * head would merge.
  *
  * Attempts GitHub reports no start for, and attempts that share a start, order nothing and so retire
  * nothing: absent or ambiguous recency leaves the failure standing rather than guessing it away.
