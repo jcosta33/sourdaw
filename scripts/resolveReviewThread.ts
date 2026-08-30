@@ -1763,6 +1763,7 @@ function convergePendingReplyStateBeforeSubmit(
     if (exactPendingCount > 1) {
         convergePendingReviews(number, working.pendingReviews, context, port, preferredReviewId, working.head);
         working = port.inspect(number, context.threadId);
+        assertExpectedHeadAfterMutation(working.head, context.expectedHead);
     }
     if (working.thread === null) {
         fail(`review thread ${context.threadId} was not found on this pull request`);
@@ -1771,6 +1772,7 @@ function convergePendingReplyStateBeforeSubmit(
     if (pendingMarkers.length > 1) {
         convergeReplyMarkers(context.threadId, working.thread, port, context, ['PENDING']);
         working = port.inspect(number, context.threadId);
+        assertExpectedHeadAfterMutation(working.head, context.expectedHead);
     }
     if (working.thread === null) {
         fail(`review thread ${context.threadId} was not found on this pull request`);
@@ -3879,6 +3881,9 @@ export function recoverReviewResolutionLockOwnerState(
     const mutation = assertMutationPhaseOwner(owner);
     switch (mutation.phase) {
         case 'createPendingReviewSettlement':
+        case 'replyDoneSettlement':
+            fail(`review-resolution recovery refuses legacy ${mutation.phase} settlement replay`);
+            break;
         case 'createPendingReview':
             if (!hasRecoveredReviewResolutionMutation(number, owner, inspection, context, inspection.thread!, port)) {
                 fail(unreconciledReviewResolutionMutationMessage(number, mutation));
@@ -3889,7 +3894,6 @@ export function recoverReviewResolutionLockOwnerState(
             }
             inspection = continueRecoveredReviewResolution(number, owner, port);
             break;
-        case 'replyDoneSettlement':
         case 'replyDone':
             if (!hasRecoveredReviewResolutionMutation(number, owner, inspection, context, inspection.thread!, port)) {
                 fail(unreconciledReviewResolutionMutationMessage(number, mutation));
@@ -3919,7 +3923,14 @@ export function recoverReviewResolutionLockOwnerState(
                 break;
             }
             if (inspection.head === owner.head) {
-                convergePendingReplyStateBeforeSubmit(number, inspection, context, mutation.reviewId, port);
+                inspection = convergePendingReplyStateBeforeSubmit(
+                    number,
+                    inspection,
+                    context,
+                    mutation.reviewId,
+                    port
+                );
+                assertRecoveryHeadMatchesOwner(inspection.head, owner.head);
             }
             const submitted = port.submitReview(mutation.reviewId, mutation.body);
             assertReviewEnvelopeReceipt(
