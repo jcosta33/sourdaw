@@ -80,6 +80,8 @@ const fixtureDigest = 'a'.repeat(64);
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const repositoryOwnerCanonical = readFileSync(join(repositoryRoot, 'public/icon.png'));
 const repositoryOwnerAuthority = readFileSync(join(repositoryRoot, 'public/icon-transparent.png'));
+const repositoryOwnerIcns = readFileSync(join(repositoryRoot, 'build/icons/icon.icns'));
+const repositoryOwnerIco = readFileSync(join(repositoryRoot, 'build/icons/icon.ico'));
 const repositoryDistributedArtifacts = distributedWasmArtifactCensus(repositoryRoot);
 const repositoryDawDspArtifacts = new Set(wasmArtifacts.packages.find(({ id }) => id === 'daw-dsp')?.artifacts ?? []);
 const ddspTfjsApplicationRuntimePathSet = new Set<string>(DDSP_TFJS_APPLICATION_RUNTIME_PATHS);
@@ -123,6 +125,7 @@ type Rgba = readonly [red: number, green: number, blue: number, alpha: number];
 
 const ownerIconBackground: Rgba = [12, 10, 9, 255];
 const ownerIcnsFrames = ['ic04', 'ic05', 'ic07', 'ic08', 'ic09', 'ic10', 'ic11', 'ic12', 'ic13', 'ic14'] as const;
+const ownerPngIcnsFrames = ['ic07', 'ic08', 'ic09', 'ic10', 'ic11', 'ic12', 'ic13', 'ic14'] as const;
 const ownerIcoFrames = [16, 24, 32, 48, 64, 256] as const;
 const ownerPngFileByteLimit = 2 * 1024 * 1024;
 const ownerPngIdatByteLimit = 1024 * 1024;
@@ -138,13 +141,16 @@ function pngCrc32(value: Buffer): number {
     return (crc ^ 0xffffffff) >>> 0;
 }
 
-function pngChunk(type: string, data: Buffer): Buffer {
-    const name = Buffer.from(type, 'ascii');
+function rawPngChunk(type: Buffer, data: Buffer): Buffer {
     const length = Buffer.alloc(4);
     length.writeUInt32BE(data.length);
     const crc = Buffer.alloc(4);
-    crc.writeUInt32BE(pngCrc32(Buffer.concat([name, data])));
-    return Buffer.concat([length, name, data, crc]);
+    crc.writeUInt32BE(pngCrc32(Buffer.concat([type, data])));
+    return Buffer.concat([length, type, data, crc]);
+}
+
+function pngChunk(type: string, data: Buffer): Buffer {
+    return rawPngChunk(Buffer.from(type, 'ascii'), data);
 }
 
 function rgbaPng(width: number, height: number, pixel: (x: number, y: number) => Rgba): Buffer {
@@ -298,22 +304,32 @@ const ownerIcnsFrameSizes: Readonly<Record<string, number>> = {
     ic13: 256,
     ic14: 512,
 };
-const ownerIcnsPayloads: Readonly<Record<string, Buffer>> = Object.fromEntries(
-    ownerIcnsFrames.map((frame) => {
-        const size = ownerIcnsFrameSizes[frame];
-        if (size === undefined) {
-            throw new Error(`missing ICNS fixture size: ${frame}`);
-        }
-        const payload =
-            frame === 'ic04' || frame === 'ic05' ? argbFixture(size) : rgbaPng(size, size, () => ownerIconBackground);
-        return [frame, payload];
-    })
-);
-const ownerIcoPayloads = new Map(ownerIcoFrames.map((size) => [size, rgbaPng(size, size, () => ownerIconBackground)]));
+
+type IcnsFixtureChunk = { payload: Buffer; type: string };
+
+function readIcnsFixtureChunks(container: Buffer): readonly IcnsFixtureChunk[] {
+    const chunks: IcnsFixtureChunk[] = [];
+    let offset = 8;
+    while (offset < container.length) {
+        const type = container.toString('ascii', offset, offset + 4);
+        const length = container.readUInt32BE(offset + 4);
+        chunks.push({ payload: container.subarray(offset + 8, offset + length), type });
+        offset += length;
+    }
+    return chunks;
+}
+
+const repositoryIcnsChunks = readIcnsFixtureChunks(repositoryOwnerIcns);
 
 function icnsFixturePayload(
     frame: string,
-    options: { malformedFrame?: string; seamFrame?: string; wrongDimensionFrame?: string }
+    payload: Buffer,
+    options: {
+        malformedFrame?: string;
+        seamFrame?: string;
+        wrongDimensionFrame?: string;
+        wrongPixelsFrame?: string;
+    }
 ): Buffer | undefined {
     if (options.malformedFrame === frame) {
         return Buffer.from([0]);
@@ -325,35 +341,69 @@ function icnsFixturePayload(
         const size = ownerIcnsFrameSizes[frame];
         return size === undefined ? undefined : argbFixture(size, 0);
     }
-    return ownerIcnsPayloads[frame];
+    if (options.wrongPixelsFrame === frame) {
+        const size = ownerIcnsFrameSizes[frame];
+        if (size === undefined) {
+            return undefined;
+        }
+        if (frame === 'ic04' || frame === 'ic05') {
+            return argbFixture(size);
+        }
+        return rgbaPng(size, size, () => ownerIconBackground);
+    }
+    return payload;
 }
 
 function icnsFixture(
     frames: readonly string[] = ownerIcnsFrames,
-    options: { malformedFrame?: string; seamFrame?: string; wrongDimensionFrame?: string } = {}
+    options: {
+        malformedFrame?: string;
+        seamFrame?: string;
+        wrongDimensionFrame?: string;
+        wrongPixelsFrame?: string;
+    } = {}
 ): Buffer {
-    const chunks = frames.map((frame) => {
-        const payload = icnsFixturePayload(frame, options);
+    const includedFrames = new Set(frames);
+    const chunks = repositoryIcnsChunks.flatMap(({ payload: originalPayload, type }) => {
+        if (type !== 'info' && !includedFrames.has(type)) {
+            return [];
+        }
+        const payload = type === 'info' ? originalPayload : icnsFixturePayload(type, originalPayload, options);
         if (payload === undefined) {
-            throw new Error(`missing ICNS fixture payload: ${frame}`);
+            throw new Error(`missing ICNS fixture payload: ${type}`);
         }
         const header = Buffer.alloc(8);
-        header.write(frame, 0, 'ascii');
+        header.write(type, 0, 'ascii');
         header.writeUInt32BE(8 + payload.length, 4);
-        return Buffer.concat([header, payload]);
+        return [Buffer.concat([header, payload])];
     });
-    const info = Buffer.alloc(9);
-    info.write('info', 0, 'ascii');
-    info.writeUInt32BE(info.length, 4);
     const header = Buffer.alloc(8);
     header.write('icns', 0, 'ascii');
-    header.writeUInt32BE(8 + chunks.reduce((total, chunk) => total + chunk.length, 0) + info.length, 4);
-    return Buffer.concat([header, ...chunks, info]);
+    header.writeUInt32BE(8 + chunks.reduce((total, chunk) => total + chunk.length, 0), 4);
+    return Buffer.concat([header, ...chunks]);
 }
+
+type IcoFixtureFrame = { payload: Buffer; size: number };
+
+function readIcoFixtureFrames(container: Buffer): readonly IcoFixtureFrame[] {
+    const count = container.readUInt16LE(4);
+    const frames: IcoFixtureFrame[] = [];
+    for (let index = 0; index < count; index += 1) {
+        const offset = 6 + index * 16;
+        const size = container[offset] === 0 ? 256 : container[offset];
+        const length = container.readUInt32LE(offset + 8);
+        const payloadOffset = container.readUInt32LE(offset + 12);
+        frames.push({ payload: container.subarray(payloadOffset, payloadOffset + length), size });
+    }
+    return frames;
+}
+
+const repositoryIcoFrames = readIcoFixtureFrames(repositoryOwnerIco);
 
 function icoFixturePayload(
     size: number,
-    options: { malformedSize?: number; wrongDimensionSize?: number }
+    payload: Buffer | undefined,
+    options: { malformedSize?: number; wrongDimensionSize?: number; wrongPixelsSize?: number }
 ): Buffer | undefined {
     if (options.malformedSize === size) {
         return Buffer.from([0]);
@@ -361,19 +411,28 @@ function icoFixturePayload(
     if (options.wrongDimensionSize === size) {
         return rgbaPng(1, 1, () => ownerIconBackground);
     }
-    return ownerIcoPayloads.get(size);
+    if (options.wrongPixelsSize === size) {
+        return rgbaPng(size, size, () => ownerIconBackground);
+    }
+    return payload;
 }
 
 function icoFixture(
     frames: readonly number[] = ownerIcoFrames,
-    options: { malformedSize?: number; overlap?: boolean; wrongDimensionSize?: number } = {}
+    options: {
+        malformedSize?: number;
+        overlap?: boolean;
+        wrongDimensionSize?: number;
+        wrongPixelsSize?: number;
+    } = {}
 ): Buffer {
     const header = Buffer.alloc(6);
     header.writeUInt16LE(1, 2);
     header.writeUInt16LE(frames.length, 4);
     const payloadOffset = 6 + frames.length * 16;
     const payloads = frames.map((size) => {
-        const payload = icoFixturePayload(size, options);
+        const source = repositoryIcoFrames.find((frame) => frame.size === size)?.payload;
+        const payload = icoFixturePayload(size, source, options);
         if (payload === undefined) {
             return rgbaPng(size, size, () => ownerIconBackground);
         }
@@ -413,6 +472,87 @@ function flipPngChunkCrc(png: Buffer, chunkType: string): Buffer {
     throw new Error(`missing PNG fixture chunk: ${chunkType}`);
 }
 
+type PngFixtureChunk = { data: Buffer; type: Buffer };
+
+function readPngFixtureChunks(png: Buffer): readonly PngFixtureChunk[] {
+    const chunks: PngFixtureChunk[] = [];
+    let offset = 8;
+    while (offset < png.length) {
+        const length = png.readUInt32BE(offset);
+        chunks.push({
+            data: png.subarray(offset + 8, offset + 8 + length),
+            type: png.subarray(offset + 4, offset + 8),
+        });
+        offset += 12 + length;
+    }
+    return chunks;
+}
+
+function pngFixture(chunks: readonly PngFixtureChunk[]): Buffer {
+    return Buffer.concat([
+        Buffer.from('89504e470d0a1a0a', 'hex'),
+        ...chunks.map(({ data, type }) => rawPngChunk(type, data)),
+    ]);
+}
+
+function pngChunkName(chunk: PngFixtureChunk): string {
+    return chunk.type.toString('ascii');
+}
+
+function pngWithIdatBeforeHeader(png: Buffer): Buffer {
+    const chunks = [...readPngFixtureChunks(png)];
+    const headerIndex = chunks.findIndex((chunk) => pngChunkName(chunk) === 'IHDR');
+    const imageDataIndex = chunks.findIndex((chunk) => pngChunkName(chunk) === 'IDAT');
+    const header = chunks[headerIndex];
+    const imageData = chunks[imageDataIndex];
+    if (header === undefined || imageData === undefined) {
+        throw new Error('PNG fixture lacks IHDR or IDAT');
+    }
+    chunks[headerIndex] = imageData;
+    chunks[imageDataIndex] = header;
+    return pngFixture(chunks);
+}
+
+function pngWithInterleavedIdat(png: Buffer): Buffer {
+    const chunks = [...readPngFixtureChunks(png)];
+    const firstImageData = chunks.findIndex((chunk) => pngChunkName(chunk) === 'IDAT');
+    const secondImageData = chunks.findIndex(
+        (chunk, index) => index > firstImageData && pngChunkName(chunk) === 'IDAT'
+    );
+    if (firstImageData < 0 || secondImageData < 0) {
+        throw new Error('PNG fixture needs two IDAT chunks');
+    }
+    chunks.splice(secondImageData, 0, { data: Buffer.from('separator'), type: Buffer.from('tEXt', 'ascii') });
+    return pngFixture(chunks);
+}
+
+function pngWithChunkAfterHeader(png: Buffer, type: Buffer): Buffer {
+    const chunks = [...readPngFixtureChunks(png)];
+    const headerIndex = chunks.findIndex((chunk) => pngChunkName(chunk) === 'IHDR');
+    if (headerIndex < 0) {
+        throw new Error('PNG fixture lacks IHDR');
+    }
+    chunks.splice(headerIndex + 1, 0, { data: Buffer.alloc(0), type });
+    return pngFixture(chunks);
+}
+
+function pngWithTrailingCompressedBytes(png: Buffer): Buffer {
+    const chunks = [...readPngFixtureChunks(png)];
+    let finalImageData = -1;
+    for (let index = 0; index < chunks.length; index += 1) {
+        const candidate = chunks[index];
+        if (candidate !== undefined && pngChunkName(candidate) === 'IDAT') {
+            finalImageData = index;
+        }
+    }
+    const chunk = chunks[finalImageData];
+    if (chunk === undefined) {
+        throw new Error('PNG fixture lacks IDAT');
+    }
+    chunks[finalImageData] = { data: Buffer.concat([chunk.data, Buffer.from([1, 2, 3])]), type: chunk.type };
+    return pngFixture(chunks);
+}
+
 function oversizedIdatPng(): Buffer {
     const header = Buffer.alloc(13);
     header.writeUInt32BE(1, 0);
@@ -440,6 +580,8 @@ function writeOwnerVisualAssetFixture(
         seamIcnsFrame?: string;
         wrongDimensionIcnsFrame?: string;
         wrongDimensionIcoSize?: number;
+        wrongPixelsIcnsFrame?: string;
+        wrongPixelsIcoSize?: number;
     } = {}
 ): void {
     mkdirSync(join(root, 'public/logo-parts'), { recursive: true });
@@ -460,6 +602,7 @@ function writeOwnerVisualAssetFixture(
             malformedFrame: options.malformedIcnsFrame,
             seamFrame: options.seamIcnsFrame,
             wrongDimensionFrame: options.wrongDimensionIcnsFrame,
+            wrongPixelsFrame: options.wrongPixelsIcnsFrame,
         })
     );
     writeFileSync(
@@ -468,6 +611,7 @@ function writeOwnerVisualAssetFixture(
             malformedSize: options.malformedIcoSize,
             overlap: options.overlappingIcoPayloads,
             wrongDimensionSize: options.wrongDimensionIcoSize,
+            wrongPixelsSize: options.wrongPixelsIcoSize,
         })
     );
     writeFileSync(join(root, 'build/icons/nested/icon.png'), canonical);
@@ -849,6 +993,15 @@ function findDigestByLabel(digests: readonly string[], label: string): string {
     return digest;
 }
 
+function initializeIsolatedGitFixture(root: string): void {
+    execFileSync('git', ['-c', 'trace2.eventTarget=/dev/null', 'init', '--quiet'], { cwd: root });
+    execFileSync(
+        'git',
+        ['-c', 'trace2.eventTarget=/dev/null', 'config', '--local', 'trace2.eventTarget', '/dev/null'],
+        { cwd: root }
+    );
+}
+
 function writeGrandBouleMeasurementFixture(root: string): { jsonPath: string; revision: string } {
     const sourcePaths = [
         'crates/daw-dsp/benches/quantum.rs',
@@ -860,7 +1013,7 @@ function writeGrandBouleMeasurementFixture(root: string): { jsonPath: string; re
         mkdirSync(dirname(join(root, path)), { recursive: true });
         writeFileSync(join(root, path), `measured source ${path}`);
     }
-    execFileSync('git', ['init', '--quiet'], { cwd: root });
+    initializeIsolatedGitFixture(root);
     execFileSync('git', ['add', '.'], { cwd: root });
     execFileSync(
         'git',
@@ -976,11 +1129,24 @@ function writeShallowGrandBouleMeasurementFixture(
         clone = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-shallow-'));
         afterDirectoriesCreated?.({ clone, remote });
         rmSync(clone, { recursive: true, force: true });
-        execFileSync('git', ['init', '--bare', '--quiet', remote]);
+        execFileSync('git', ['-c', 'trace2.eventTarget=/dev/null', 'init', '--bare', '--quiet', remote]);
         execFileSync('git', ['remote', 'add', 'origin', remote], { cwd: root });
         execFileSync('git', ['push', '--quiet', 'origin', 'HEAD:refs/heads/main'], { cwd: root });
-        execFileSync('git', ['symbolic-ref', 'HEAD', 'refs/heads/main'], { cwd: remote });
-        execFileSync('git', ['clone', '--depth', '1', `file://${remote}`, clone], { stdio: 'ignore' });
+        execFileSync('git', ['-c', 'trace2.eventTarget=/dev/null', 'symbolic-ref', 'HEAD', 'refs/heads/main'], {
+            cwd: remote,
+        });
+        execFileSync(
+            'git',
+            ['-c', 'trace2.eventTarget=/dev/null', 'clone', '--depth', '1', `file://${remote}`, clone],
+            {
+                stdio: 'ignore',
+            }
+        );
+        execFileSync(
+            'git',
+            ['-c', 'trace2.eventTarget=/dev/null', 'config', '--local', 'trace2.eventTarget', '/dev/null'],
+            { cwd: clone }
+        );
         return { clone, remote, revision, jsonPath: join(clone, 'crates/daw-dsp/benches/quantum-cost-table.json') };
     } catch (error) {
         if (clone !== undefined) {
@@ -3025,6 +3191,42 @@ describe('release inventory', () => {
     });
 
     it.each([
+        ['IDAT before IHDR', pngWithIdatBeforeHeader(repositoryOwnerCanonical), 'PNG IHDR must be first'],
+        [
+            'interleaved IDAT chunks',
+            pngWithInterleavedIdat(repositoryOwnerCanonical),
+            'PNG IDAT chunks must be consecutive',
+        ],
+        [
+            'an unknown critical chunk',
+            pngWithChunkAfterHeader(repositoryOwnerCanonical, Buffer.from('ABCD', 'ascii')),
+            'PNG has unknown critical chunk ABCD',
+        ],
+        [
+            'invalid chunk-type bytes',
+            pngWithChunkAfterHeader(repositoryOwnerCanonical, Buffer.from([0x49, 0x44, 0, 0x54])),
+            'PNG chunk type is invalid',
+        ],
+        [
+            'trailing compressed bytes',
+            pngWithTrailingCompressedBytes(repositoryOwnerCanonical),
+            'PNG IDAT contains trailing compressed bytes',
+        ],
+    ] as const)('rejects canonical PNG grammar with %s', (_label, canonical, failure) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-png-grammar-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { canonical });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                `owner visual asset public/icon.png ${failure}`
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it.each([
         [Buffer.alloc(ownerPngFileByteLimit + 1), `exceeds ${ownerPngFileByteLimit}-byte limit`],
         [oversizedIdatPng(), `PNG IDAT exceeds ${ownerPngIdatByteLimit}-byte limit`],
     ] as const)('bounds canonical PNG resources before decoding %#', (canonical, failure) => {
@@ -3087,14 +3289,28 @@ describe('release inventory', () => {
         }
     });
 
-    it('rejects a valid PNG at the wrong ICNS frame dimensions', () => {
+    it.each(ownerIcnsFrames)('rejects wrong decoded pixels in required ICNS %s frame', (wrongPixelsFrame) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-icns-pixels-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { wrongPixelsIcnsFrame: wrongPixelsFrame });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                `owner visual asset build/icons/icon.icns ${wrongPixelsFrame} pixels do not match the shipped rendition`
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it.each(ownerPngIcnsFrames)('rejects a valid PNG at the wrong ICNS %s frame dimensions', (wrongFrame) => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-icns-dimensions-'));
 
         try {
-            writeOwnerVisualAssetFixture(root, { wrongDimensionIcnsFrame: 'ic07' });
+            writeOwnerVisualAssetFixture(root, { wrongDimensionIcnsFrame: wrongFrame });
 
             expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
-                'owner visual asset build/icons/icon.icns ic07 frame must be 128x128 RGBA'
+                `owner visual asset build/icons/icon.icns ${wrongFrame} frame must be ${ownerIcnsFrameSizes[wrongFrame]}x${ownerIcnsFrameSizes[wrongFrame]} RGBA`
             );
         } finally {
             rmSync(root, { recursive: true, force: true });
@@ -3140,6 +3356,20 @@ describe('release inventory', () => {
 
             expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
                 'owner visual asset build/icons/icon.ico 24x24 is not a PNG'
+            );
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it.each(ownerIcoFrames)('rejects wrong decoded pixels in required ICO %spx frame', (wrongPixelsSize) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-ico-pixels-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { wrongPixelsIcoSize: wrongPixelsSize });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                `owner visual asset build/icons/icon.ico ${wrongPixelsSize}px frame pixels do not match the shipped rendition`
             );
         } finally {
             rmSync(root, { recursive: true, force: true });
