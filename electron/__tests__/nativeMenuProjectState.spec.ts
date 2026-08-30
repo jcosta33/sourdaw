@@ -45,6 +45,29 @@ describe('native menu project-state controller', () => {
             recentProjects: [{ key: 'sourdaw:project:10', name: 'Final mix' }],
         });
         expect(rebuildApplicationMenu).toHaveBeenLastCalledWith([{ key: 'sourdaw:project:10', name: 'Final mix' }]);
+        expect(rebuildApplicationMenu).toHaveBeenCalledTimes(2);
+    });
+
+    it('rebuilds only when a recent project key or name changes', () => {
+        const rebuildApplicationMenu = vi.fn();
+        const controller = createNativeMenuProjectStateController({
+            updateCloseState: vi.fn(),
+            getWindow: () => undefined,
+            rebuildApplicationMenu,
+        });
+        const state = {
+            title: 'Song',
+            dirty: false,
+            durabilityPending: false,
+            projectKey: 'song',
+            revision: '1',
+            recentProjects: [{ key: 'one', name: 'One' }],
+        };
+        controller.apply(state);
+        controller.apply({ ...state, title: 'Renamed window' });
+        controller.apply({ ...state, recentProjects: [{ key: 'one', name: 'Renamed recent' }] });
+        controller.apply({ ...state, recentProjects: [{ key: 'two', name: 'Renamed recent' }] });
+        expect(rebuildApplicationMenu).toHaveBeenCalledTimes(3);
     });
 
     it('keeps a clean replacement visibly edited while its identity snapshot is pending', () => {

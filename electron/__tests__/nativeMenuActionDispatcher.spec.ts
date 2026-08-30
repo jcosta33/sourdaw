@@ -35,6 +35,8 @@ describe('native menu action dispatcher', () => {
     it.each([
         [{ action: 'project:new' } as const],
         [{ action: 'project:open-recent', recentKey: 'sourdaw:project:42' } as const],
+        [{ action: 'project:import-project' } as const],
+        [{ action: 'view:preferences' } as const],
     ])('creates a macOS renderer and delivers %o only after its matching renderer is ready', (intent) => {
         let current: ReturnType<typeof makeWindow> | undefined;
         const createWindow = vi.fn(() => {
