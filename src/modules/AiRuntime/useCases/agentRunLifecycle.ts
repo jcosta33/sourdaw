@@ -1343,7 +1343,7 @@ function settleAgentRunPendingEffectManualReview(input: {
     sourceRevision: string;
     disposition: 'accepted' | 'discarded' | 'missing-evidence';
     settledAt?: number;
-}): AgentRun {
+}): AgentRun | null {
     const settledAt = input.settledAt ?? Date.now();
     const state = readAgentRunState();
     const runIndex = state.runs.findIndex((run) => run.runId === input.runId);
