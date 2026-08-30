@@ -640,7 +640,7 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
         dragStart.current = null;
         setIsDragging(false);
     };
-    const renderIife_10 = () => {
+    const renderEditorOverlay = (): ReactElement | null => {
         if (!hasKnead) {
             return (
                 <Stack
@@ -845,7 +845,7 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                     onPointerUp={handlePointerUp}
                 />
             </div>
-            {renderIife_10()}
+            {renderEditorOverlay()}
         </Stack>
     );
 };

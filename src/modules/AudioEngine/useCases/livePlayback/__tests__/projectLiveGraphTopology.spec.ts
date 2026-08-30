@@ -74,6 +74,7 @@ function project(overrides: Partial<LiveGraphTopologyInput>): readonly AudioGrap
         soloGatedTrackIds: new Set(),
         vcaMultiplierByTrackId: new Map(),
         transport: { playing: true, positionSeconds: 0 },
+        monitor: 'shadowed',
         ...overrides,
     });
 }
@@ -380,6 +381,28 @@ describe('projectLiveGraphTopology', () => {
     it('carries a stopped transport as faithfully as a playing one', () => {
         const commands = project({ transport: { playing: false, positionSeconds: 3 } });
 
-        expect(commands).toEqual([{ kind: 'set-transport', playing: false, positionSeconds: 3 }]);
+        expect(commands).toEqual([
+            { kind: 'set-monitor-shadow', shadowed: true },
+            { kind: 'set-transport', playing: false, positionSeconds: 3 },
+        ]);
+    });
+
+    it('opens the batch with the monitor mode, ahead of anything that could be audible', () => {
+        const commands = project({
+            stripTracks: [createTrack({ id: 'audio-1' })],
+            monitor: 'shadowed',
+        });
+
+        // The batch applies whole at one block boundary, so ordering inside it
+        // is a statement rather than a race — but the statement is the point:
+        // nothing in this batch may be read as audible before the mode that
+        // decides it.
+        expect(commands[0]).toEqual({ kind: 'set-monitor-shadow', shadowed: true });
+    });
+
+    it('asks for an open monitor only when the caller asks for the cutover', () => {
+        const commands = project({ stripTracks: [createTrack({ id: 'audio-1' })], monitor: 'audible' });
+
+        expect(commands[0]).toEqual({ kind: 'set-monitor-shadow', shadowed: false });
     });
 });
