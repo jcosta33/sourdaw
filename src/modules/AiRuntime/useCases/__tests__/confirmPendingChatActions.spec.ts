@@ -3828,10 +3828,9 @@ describe('confirmPendingChatActions transaction admission', () => {
             (candidate) => candidate.runId === runId && candidate.batchId === batchId
         );
         expect(continuation).toMatchObject({
-            authority: commandBatch.authority,
-            receiptIdentity: `2:${runId}:${batchId}:partially-committed`,
+            batchId,
             recovery: 'manual-repair',
-            serializedBatch: commandBatch.serialized,
+            runId,
         });
         expect(continuation?.effects).toEqual([
             expect.objectContaining({
@@ -3853,6 +3852,14 @@ describe('confirmPendingChatActions transaction admission', () => {
                 operation: 'renderProjectSections',
                 remediation: 'manual-repair',
                 reason: 'The final project revision is unavailable.',
+            }),
+        ]);
+        expect(agentRunLifecycle.get(runId)?.pendingEffectContinuations).toEqual([
+            expect.objectContaining({
+                authority: commandBatch.authority,
+                receiptIdentity: `2:${runId}:${batchId}:partially-committed`,
+                recovery: 'manual-repair',
+                serializedBatch: commandBatch.serialized,
             }),
         ]);
     });
