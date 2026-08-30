@@ -447,6 +447,7 @@ function createCompletedFlight(
     batchResult: CompletedBatchResult,
     input: {
         committedProjectRevision?: string | null;
+        finalizationEvidenceFailure?: string | null;
         abortSignal?: AbortSignal;
         cancellationTriggeredByInvalidation?: boolean;
         isProjectMutationAuthorized?: () => boolean;
@@ -458,7 +459,7 @@ function createCompletedFlight(
         group: { groupId: 'batch-1', groupLabel: 'Batch' },
         committedProjectRevision:
             input.committedProjectRevision === undefined ? 'revision-1' : input.committedProjectRevision,
-        finalizationEvidenceFailure: null,
+        finalizationEvidenceFailure: input.finalizationEvidenceFailure ?? null,
         canRebindSectionRenderArtifacts: true,
         isProjectMutationAuthorized: input.isProjectMutationAuthorized ?? (() => true),
         renderJobAttempts: 0,
@@ -558,12 +559,27 @@ describe('settleConfirmedCommandExecution', () => {
     });
 
     it('retains a committed change when finalization evidence is absent', async () => {
+        const batchResult = createCommittedBatchResult();
         const result = await settleConfirmedCommandExecution(
-            createInput(createCompletedFlight(createCommittedBatchResult(), { committedProjectRevision: null }))
+            createInput(
+                createCompletedFlight(batchResult, {
+                    committedProjectRevision: 'revision-2',
+                    finalizationEvidenceFailure: 'finalization evidence is unavailable',
+                })
+            )
         );
 
         expect(result).toEqual({ status: 'failed', durableCommit: true, reason: expect.any(String) });
         expect(mocks.createFinalizationFailure).toHaveBeenCalled();
+        expect(mocks.recordCommittedRecoveryFailure).toHaveBeenCalledWith(confirmation, {
+            category: 'internal',
+            retriable: false,
+            receipt: batchResult.receipt,
+            actions: confirmation.actions,
+            commandBatch,
+            revertGroupId: 'batch-1',
+            committedRevision: 'revision-2',
+        });
         expect(mocks.retainResources).toHaveBeenCalledWith('confirmation-1');
     });
 
