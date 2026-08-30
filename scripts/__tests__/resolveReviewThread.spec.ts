@@ -1007,8 +1007,40 @@ function createBlockingReplyDoneGhExecutable(): {
     return { root: executableRoot, executable, replyCalledPath, artifactVisiblePath, queryLogPath };
 }
 
+function createDefinitiveNoEffectSubmitGhExecutable(): {
+    root: string;
+    executable: string;
+} {
+    const root = mkdtempSync(join(tmpdir(), 'resolve-review-thread-no-effect-submit-gh-'));
+    const executable = join(root, 'gh');
+    writeFileSync(
+        executable,
+        [
+            `#!${process.execPath}`,
+            'const args = process.argv.slice(2);',
+            "if (args[0] !== 'api' || args[1] !== 'graphql') { console.error(`unexpected gh args ${JSON.stringify(args)}`); process.exit(1); }",
+            'const queryArg = args.find((value) => value.startsWith("query="));',
+            "if (queryArg === undefined) { console.error('missing query'); process.exit(1); }",
+            'const query = queryArg.slice("query=".length);',
+            "if (query.includes('submitPullRequestReview(input:{pullRequestReviewId:$reviewId,event:COMMENT,body:$body,clientMutationId:$clientMutationId})')) {",
+            "  console.error(JSON.stringify({ errors: [{ message: 'Review is already submitted' }], data: null }));",
+            '  process.exit(1);',
+            '}',
+            'console.error(`unexpected query ${query}`);',
+            'process.exit(1);',
+        ].join('\n'),
+        { encoding: 'utf8', mode: 0o700 }
+    );
+    chmodSync(executable, 0o700);
+    return { root, executable };
+}
+
 function reviewResolutionLockRef(number: number): string {
     return `refs/sourdaw/review-resolution/pr-${number}`;
+}
+
+function reviewResolutionBridgePath(repository: string, token: string, phase: string, epoch: number): string {
+    return join(repository, '.git', 'sourdaw-review-resolution-bridges', `${token}.${phase}.${epoch}.json`);
 }
 
 function gitCapture(repository: string, args: string[], input?: string): string {
@@ -1510,30 +1542,76 @@ describe('review thread resolution', () => {
         }
     });
 
-    it('releases a quiescent pre-dispatch review-resolution lock without waiting for mutation evidence', () => {
+    it('releases a dead dispatched review-resolution lock when its bridge never advanced past awaiting-go', () => {
         const repository = createTemporaryGitRepository();
         try {
             const ownerOid = writeLockOwnerBlob(repository, 999999, head, {
                 phase: 'createPendingReview',
                 epoch: 1,
-                dispatchState: 'prepared',
+                dispatchState: 'dispatched',
             });
             updateLock(repository, 42, ownerOid);
+            const owner = requireLockOwner(repository, 42);
+            mkdirSync(join(repository, '.git', 'sourdaw-review-resolution-bridges'), { recursive: true, mode: 0o700 });
+            writeFileSync(
+                reviewResolutionBridgePath(repository, owner.token, 'createPendingReview', 1),
+                JSON.stringify({
+                    version: 1,
+                    token: owner.token,
+                    phase: 'createPendingReview',
+                    epoch: 1,
+                    status: 'awaiting-go',
+                    pid: owner.pid,
+                }),
+                { encoding: 'utf8', mode: 0o600 }
+            );
             expect(
-                recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) => ({
-                    owner,
-                    inspection: {
+                recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (lockOwner) => {
+                    const inspection = {
                         pullRequestId,
-                        head: owner.head,
-                        thread: { id: owner.threadId, isResolved: false },
+                        head: lockOwner.head,
+                        thread: {
+                            id: lockOwner.threadId,
+                            isResolved: false,
+                            resolvedByNodeId: null,
+                            resolvedByLogin: null,
+                            resolvedByType: null,
+                            rootCommentId: rootId,
+                            rootCommentFullDatabaseId: '9223372036854775807',
+                            rootAuthorNodeId: REVIEWER_BOT_NODE_ID,
+                            rootAuthorLogin: 'renamed-reviewer',
+                            rootAuthorType: 'Bot',
+                            comments: [
+                                {
+                                    id: rootId,
+                                    fullDatabaseId: '9223372036854775807',
+                                    body: 'review',
+                                    authorNodeId: REVIEWER_BOT_NODE_ID,
+                                    authorLogin: 'renamed-reviewer',
+                                    authorType: 'Bot',
+                                    reviewId: null,
+                                    reviewState: null,
+                                    reviewBody: null,
+                                    reviewCommitOid: null,
+                                    reviewAuthorNodeId: null,
+                                    reviewAuthorLogin: null,
+                                    reviewAuthorType: null,
+                                },
+                            ],
+                        },
                         pendingReviews: [],
-                    },
-                }))
+                    };
+                    assertRecoverableReviewResolutionLockOwner(42, lockOwner, inspection, repository);
+                    return {
+                        owner: lockOwner,
+                        inspection,
+                    };
+                })
             ).toMatchObject({
                 owner: {
                     threadId,
                     head,
-                    mutation: { phase: 'createPendingReview', epoch: 1, dispatchState: 'prepared' },
+                    mutation: { phase: 'createPendingReview', epoch: 1, dispatchState: 'dispatched' },
                 },
                 inspection: {
                     head,
@@ -1605,7 +1683,7 @@ describe('review thread resolution', () => {
                             },
                         ],
                     };
-                    assertRecoverableReviewResolutionLockOwner(42, owner, inspection);
+                    assertRecoverableReviewResolutionLockOwner(42, owner, inspection, repository);
                     return inspection;
                 })
             ).toThrow(/unreconciled in-flight submitReview mutation from epoch 1/i);
@@ -1662,7 +1740,7 @@ describe('review thread resolution', () => {
                         },
                         pendingReviews: [],
                     };
-                    assertRecoverableReviewResolutionLockOwner(42, owner, inspection);
+                    assertRecoverableReviewResolutionLockOwner(42, owner, inspection, repository);
                     return inspection;
                 })
             ).toMatchObject({
@@ -1674,6 +1752,94 @@ describe('review thread resolution', () => {
             });
             expect(readLockOid(repository, 42)).toBeUndefined();
         } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('records a definitive rejected submit mutation as no-effect and releases it on recovery', () => {
+        const repository = createTemporaryGitRepository();
+        const fakeGh = createDefinitiveNoEffectSubmitGhExecutable();
+        try {
+            const session: GhSession = {
+                configDir: repository,
+                env: { SOURDAW_TRUSTED_GH_PATH: fakeGh.executable },
+                dispose() {},
+            };
+            const port = shellPort(session, repository);
+            expect(() =>
+                withPullRequestReviewResolutionLock(repository, 42, threadId, head, () => {
+                    port.submitReview(reviewId, resolutionReviewSummary(pullRequestId, threadId, head));
+                })
+            ).toThrow(/Review is already submitted/);
+            const ownerOid = readLockOid(repository, 42);
+            if (ownerOid === undefined) {
+                throw new Error('review-resolution lock disappeared before no-effect recovery');
+            }
+            const owner = requireLockOwner(repository, 42);
+            expect(owner).toMatchObject({
+                threadId,
+                head,
+                mutation: {
+                    phase: 'submitReview',
+                    epoch: 1,
+                    reviewId,
+                    body: resolutionReviewSummary(pullRequestId, threadId, head),
+                    dispatchState: 'noEffect',
+                },
+            });
+            expect(
+                recoverPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    ownerOid,
+                    (lockOwner) => {
+                        const inspection = {
+                            pullRequestId,
+                            head: lockOwner.head,
+                            thread: {
+                                id: lockOwner.threadId,
+                                isResolved: false,
+                                resolvedByNodeId: null,
+                                resolvedByLogin: null,
+                                resolvedByType: null,
+                                rootCommentId: rootId,
+                                rootCommentFullDatabaseId: '9223372036854775807',
+                                rootAuthorNodeId: REVIEWER_BOT_NODE_ID,
+                                rootAuthorLogin: 'renamed-reviewer',
+                                rootAuthorType: 'Bot',
+                                comments: [
+                                    {
+                                        id: rootId,
+                                        fullDatabaseId: '9223372036854775807',
+                                        body: 'review',
+                                        authorNodeId: REVIEWER_BOT_NODE_ID,
+                                        authorLogin: 'renamed-reviewer',
+                                        authorType: 'Bot',
+                                        reviewId: null,
+                                        reviewState: null,
+                                        reviewBody: null,
+                                        reviewCommitOid: null,
+                                        reviewAuthorNodeId: null,
+                                        reviewAuthorLogin: null,
+                                        reviewAuthorType: null,
+                                    },
+                                ],
+                            },
+                            pendingReviews: [],
+                        };
+                        assertRecoverableReviewResolutionLockOwner(42, lockOwner, inspection, repository);
+                        return inspection;
+                    },
+                    () => false
+                )
+            ).toMatchObject({
+                head,
+                thread: { id: threadId, isResolved: false },
+                pendingReviews: [],
+            });
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(fakeGh.root, { recursive: true, force: true });
             rmSync(repository, { recursive: true, force: true });
         }
     });
