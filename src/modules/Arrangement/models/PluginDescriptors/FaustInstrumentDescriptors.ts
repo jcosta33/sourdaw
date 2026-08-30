@@ -58,19 +58,24 @@ const FAUST_INSTRUMENT_DESCRIPTOR_DATA: PluginDescriptor[] = [
     },
     {
         // The compiled module exposes 26 op-level controls (algorithm plus four
-        // ratio/level/ADSR operator blocks). None is declared here yet: every
-        // shipped FM preset authors the retired single-operator set
-        // (`ratio`, `index`, `attack`, …) whose keys never reach the DSP, so
-        // the inspector-level declaration waits on that preset migration
-        // deciding the operator mapping. The descriptor still carries the
-        // guidance contract, which is what command version capture hashes.
+        // ratio/level/ADSR operator blocks) whose declaration waits on the FM
+        // preset migration (#3155) deciding the operator mapping, because every
+        // shipped FM preset still authors the retired single-operator set
+        // (`ratio`, `index`, `attack`, …) whose keys never reach the DSP.
+        //
+        // `gain` is declared now: an empty `parameters` array is not nullish,
+        // so it defeated DeviceInspector's derive-from-parameterValues
+        // fallback and left the Faust instrument layout on its loading message
+        // forever, even though `/fm_synth/gain` is registered and reaches the
+        // DSP. Bounds and default copied from that registration, id for id and
+        // bound for bound like every other entry here.
         id: 'faust-fm-synth',
         name: 'FM Synth',
         vendor: 'Sourdaw',
         format: 'builtin',
         category: 'instrument',
         hasCustomUI: false,
-        parameters: [],
+        parameters: [fp('gain', 'faust-fm-synth', 'Gain', 0, 1, 0.5)],
     },
     {
         id: 'faust-supersaw-unison',
