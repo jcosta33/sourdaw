@@ -38,15 +38,15 @@ vi.mock('#/infra/logger/appLogger', () => ({
 /** A deferred prime, so a pass can be held open while the project moves under it. */
 function deferredPrime(): { settle: (value?: unknown) => void; reject: (error: Error) => void } {
     let settle = (_value?: unknown): void => {};
-    let reject = (_error: Error): void => {};
+    let fail = (_error: Error): void => {};
     mocks.prime.mockImplementationOnce(
         () =>
-            new Promise((resolve, rejectPromise) => {
+            new Promise((resolve, reject) => {
                 settle = (value) => resolve(value ?? { outcome: 'primed', sampleIds: [] });
-                reject = rejectPromise;
+                fail = reject;
             })
     );
-    return { settle: (value) => settle(value), reject: (error) => reject(error) };
+    return { settle: (value) => settle(value), reject: (error) => fail(error) };
 }
 
 /** One notification. The content is irrelevant — the subscriber reads the store, not the event. */

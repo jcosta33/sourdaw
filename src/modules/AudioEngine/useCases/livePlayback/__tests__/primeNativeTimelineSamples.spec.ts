@@ -125,7 +125,7 @@ function trackPlaying(bufferId: string, overrides?: Partial<Track>): Track {
                 locked: false,
                 muted: false,
                 audioBufferId: bufferId,
-            } as Track['clips'][number],
+            },
         ],
     });
 }
