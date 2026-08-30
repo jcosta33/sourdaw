@@ -338,7 +338,7 @@ function resolveStructuralMergeability(
     port: Pick<DeliveryPort, 'pullRequest'>
 ): PullRequestSnapshot {
     const pullRequest = refreshStructuralMergeability(initial, port);
-    if (pullRequest.state === 'MERGED') {
+    if (pullRequest.state === 'MERGED' || pullRequest.state === 'CLOSED') {
         return pullRequest;
     }
     validateStructuralMergeability(pullRequest);
@@ -816,9 +816,12 @@ function authoritativeEquivalentDeliveryReceipt(
     ) {
         return undefined;
     }
-    const authoritative = newestLogicalDeliveryReceiptAuthority(lineage, pullRequest);
-    if (sameExactDeliveryReceipt(assertDeliveryReceiptForHead(authoritative, pullRequest), expected)) {
-        return authoritative;
+    const newest = lineage.at(-1);
+    if (newest === undefined) {
+        return undefined;
+    }
+    if (sameExactDeliveryReceipt(assertDeliveryReceiptForHead(newest, pullRequest), expected)) {
+        return newest;
     }
     return undefined;
 }
@@ -1670,6 +1673,9 @@ function deliverPullRequestWithCiAdmission(
         restorePreparedDeliveryReceiptAuthorityBeforeClosedRetry(number, port);
     }
     const initial = resolveStructuralMergeability(rawInitial, port);
+    if (initial.state === 'CLOSED') {
+        restorePreparedDeliveryReceiptAuthorityBeforeClosedRetry(number, port);
+    }
     if (initial.state === 'MERGED') {
         validateBaseBranch(initial);
         validateAuthorAppMerger(initial);
