@@ -17,11 +17,20 @@ describe('native menu project-state controller', () => {
             rebuildApplicationMenu,
         });
 
-        controller.apply({ title: 'First mix', dirty: false, durabilityPending: false, recentProjects: [] });
+        controller.apply({
+            title: 'First mix',
+            dirty: false,
+            durabilityPending: false,
+            projectId: 'first',
+            revision: 'revision-1',
+            recentProjects: [],
+        });
         controller.apply({
             title: 'Final mix',
             dirty: true,
             durabilityPending: false,
+            projectId: 'final',
+            revision: 'revision-2',
             recentProjects: [{ key: 'sourdaw:project:10', name: 'Final mix' }],
         });
 
@@ -31,6 +40,8 @@ describe('native menu project-state controller', () => {
             title: 'Final mix',
             dirty: true,
             durabilityPending: false,
+            projectId: 'final',
+            revision: 'revision-2',
             recentProjects: [{ key: 'sourdaw:project:10', name: 'Final mix' }],
         });
         expect(rebuildApplicationMenu).toHaveBeenLastCalledWith([{ key: 'sourdaw:project:10', name: 'Final mix' }]);
@@ -48,7 +59,14 @@ describe('native menu project-state controller', () => {
             rebuildApplicationMenu: vi.fn(),
         });
 
-        controller.apply({ title: 'Untitled Project', dirty: false, durabilityPending: true, recentProjects: [] });
+        controller.apply({
+            title: 'Untitled Project',
+            dirty: false,
+            durabilityPending: true,
+            projectId: 'untitled',
+            revision: 'revision-1',
+            recentProjects: [],
+        });
 
         expect(window.setDocumentEdited).toHaveBeenCalledWith(true);
     });

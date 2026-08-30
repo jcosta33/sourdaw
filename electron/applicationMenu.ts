@@ -35,6 +35,8 @@ export type NativeMenuIntent = {
     readonly action: NativeMenuAction;
     readonly requestId?: number;
     readonly recentKey?: string;
+    readonly projectId?: string;
+    readonly revision?: string;
 };
 
 export type NativeRecentProject = { readonly key: string; readonly name: string };
@@ -87,7 +89,11 @@ export const isNativeMenuIntent = (value: unknown): value is NativeMenuIntent =>
     ) {
         return false;
     }
-    return !('recentKey' in value) || typeof value.recentKey === 'string';
+    return (
+        (!('recentKey' in value) || typeof value.recentKey === 'string') &&
+        (!('projectId' in value) || typeof value.projectId === 'string') &&
+        (!('revision' in value) || typeof value.revision === 'string')
+    );
 };
 
 type CreateApplicationMenuTemplateInput = {

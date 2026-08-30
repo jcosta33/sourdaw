@@ -148,6 +148,8 @@ describe('native menu channels', () => {
             title: 'Song',
             dirty: true,
             durabilityPending: false,
+            projectId: 'project',
+            revision: 'revision-1',
             recentProjects: [],
         });
         await handlers.get(NATIVE_MENU_SAVE_RESULT_CHANNEL)?.(frame, { requestId: 2, saved: true, dirty: false });
@@ -160,6 +162,8 @@ describe('native menu channels', () => {
                 title: 'Song',
                 dirty: true,
                 durabilityPending: false,
+                projectId: 'project',
+                revision: 'revision-1',
                 recentProjects: [],
             },
             'sender'
@@ -188,6 +192,8 @@ describe('native menu channels', () => {
                 title: 'Song',
                 dirty: false,
                 durabilityPending: false,
+                projectId: 'project',
+                revision: 'revision-1',
                 recentProjects: 'not-an-array',
             })
         ).toThrow(/invalid/u);
@@ -196,6 +202,8 @@ describe('native menu channels', () => {
                 title: 'Song',
                 dirty: false,
                 durabilityPending: false,
+                projectId: 'project',
+                revision: 'revision-1',
                 recentProjects: [{ key: 'recent' }],
             })
         ).toThrow(/recent project is invalid/u);

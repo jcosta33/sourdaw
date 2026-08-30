@@ -142,9 +142,14 @@ export async function saveProject(): Promise<boolean> {
         if (
             agentProjectRepairStateStore.value === null &&
             latest?.createdAt === project.createdAt &&
+            latest.projectId === project.projectId &&
             captureProjectRevision() === snapshotRevision
         ) {
-            projectStore.set({ ...latest, dirty: false });
+            // The CRDT snapshot and named project file above establish the
+            // same durable identity that a freshly-created project is waiting
+            // for. Clear the transient pending bit only for this exact active
+            // project/revision; a newer project or edit keeps close blocked.
+            projectStore.set({ ...latest, dirty: false, identityPersistencePending: false });
         }
         return true;
     } catch (error) {

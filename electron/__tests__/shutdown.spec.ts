@@ -160,6 +160,15 @@ describe('plugin command admission before the cascade', () => {
         );
     });
 
+    it('carries only queued windowless project commands into the exact crash replacement', () => {
+        expect(mainSource).toMatch(
+            /const replacementWindow\s*=\s*createAndActivateWindow\(\);\s*nativeMenuActionDispatcher\.recoverPendingWindow\(crashedWindow,\s*replacementWindow\);/u
+        );
+        expect(mainSource).toMatch(
+            /recreateTimestamps\.length\s*>=\s*MAX_RECREATES[\s\S]*?nativeMenuActionDispatcher\.clearPending\(crashedWindow/u
+        );
+    });
+
     it('wires approved renderer quiescence before the native quit cascade', () => {
         expect(mainSource).toMatch(
             /canQuit:\s*async\s*\(\)\s*=>\s*\{[\s\S]*?windowCloseCoordinator\.requestClose\(\)[\s\S]*?rendererSessionLifecycle\.approveTeardown\(\)[\s\S]*?\},\s*beforeRun:\s*quiesceApprovedMainWindow/u

@@ -110,12 +110,16 @@ type SourdawDesktopBridge = {
                 readonly action: SourdawNativeMenuAction;
                 readonly requestId?: number;
                 readonly recentKey?: string;
+                readonly projectId?: string;
+                readonly revision?: string;
             }) => void
         ) => () => void;
         readonly projectState: (state: {
             readonly title: string;
             readonly dirty: boolean;
             readonly durabilityPending: boolean;
+            readonly projectId: string;
+            readonly revision: string;
             readonly recentProjects: readonly { readonly key: string; readonly name: string }[];
         }) => Promise<void>;
         readonly saveResult: (result: {

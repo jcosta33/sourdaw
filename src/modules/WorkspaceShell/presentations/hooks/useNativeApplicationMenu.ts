@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { clearClipSelection, selectAllClips, zoomTimelineBy } from '#/modules/Arrangement/useCases';
 import { executeAppAction, redo, undo } from '#/modules/Command/useCases';
+import { captureProjectRevision, subscribeToCrdtChanges } from '#/modules/CrdtDocument/useCases';
 import { startOnboardingTour } from '#/modules/Onboarding/useCases';
 import { projectStore } from '#/modules/Project/stores';
 import {
@@ -61,7 +62,10 @@ const nativeEditOperation = (action: string): 'undo' | 'redo' | 'cut' | 'copy' |
 const allClipIds = (): string[] =>
     trackStore.value?.tracks.flatMap((track) => track.clips.map((clip) => clip.id)) ?? [];
 
-const saveProjectIfClean = async (): Promise<boolean> => (await saveProject()) && projectStore.value?.dirty !== true;
+const saveProjectIfClean = async (): Promise<boolean> =>
+    (await saveProject()) &&
+    projectStore.value?.dirty !== true &&
+    projectStore.value?.identityPersistencePending !== true;
 
 const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
     const { action } = intent;
@@ -92,6 +96,17 @@ const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
             return;
         }
         case 'project:discard': {
+            if (
+                intent.projectId === undefined ||
+                intent.revision === undefined ||
+                projectStore.value?.projectId !== intent.projectId ||
+                captureProjectRevision() !== intent.revision
+            ) {
+                if (intent.requestId !== undefined) {
+                    await desktopNativeMenu().saveResult({ requestId: intent.requestId, saved: false, dirty: true });
+                }
+                return;
+            }
             const discarded = await discardProjectChanges();
             if (intent.requestId !== undefined) {
                 await desktopNativeMenu().saveResult({
@@ -197,6 +212,8 @@ export const useNativeApplicationMenu = (project: ProjectStoreState): void => {
                 title: project.name,
                 dirty: project.dirty,
                 durabilityPending: project.identityPersistencePending === true,
+                projectId: project.projectId,
+                revision: captureProjectRevision(),
                 recentProjects: getRecentProjects().map(({ key, name }) => ({ key, name })),
             });
         };
@@ -205,9 +222,11 @@ export const useNativeApplicationMenu = (project: ProjectStoreState): void => {
             void runMenuAction(intent);
         });
         const unsubscribeRecentProjects = recentProjectChanges.subscribe(publishProjectState);
+        const unsubscribeCrdt = subscribeToCrdtChanges(publishProjectState);
         return () => {
             unlisten();
             unsubscribeRecentProjects();
+            unsubscribeCrdt();
         };
     }, [project.name, project.dirty, project.identityPersistencePending, project.updatedAt]);
 };

@@ -169,8 +169,13 @@ const windowCloseCoordinator = createWindowCloseCoordinator({
         }
         return 'cancel';
     },
-    send: (operation, requestId) =>
-        nativeMenuAction({ action: operation === 'save' ? 'project:save' : 'project:discard', requestId }),
+    send: (operation, requestId, expected) =>
+        nativeMenuAction({
+            action: operation === 'save' ? 'project:save' : 'project:discard',
+            requestId,
+            projectId: expected.projectId,
+            revision: expected.revision,
+        }),
 });
 
 const nativeMenuProjectStateController = createNativeMenuProjectStateController({
@@ -289,6 +294,7 @@ const createWindow = (): BrowserWindow => {
         if (windowCloseCoordinator.permitsClose()) {
             rendererSessionLifecycle.approveTeardown();
             windowCloseCoordinator.markClosing();
+            nativeMenuActionDispatcher.clearPending(window);
             return;
         }
         event.preventDefault();
@@ -709,6 +715,7 @@ app.on('render-process-gone', (_event, contents, details) => {
     };
 
     if (!rendererSessionLifecycle.shouldRecreateAfterCrash()) {
+        nativeMenuActionDispatcher.clearPending(crashedWindow ?? undefined);
         destroyCrashedWindow();
         if (mainWindow === crashedWindow) {
             mainWindow = undefined;
@@ -719,6 +726,7 @@ app.on('render-process-gone', (_event, contents, details) => {
     const now = Date.now();
     recreateTimestamps = recreateTimestamps.filter((at) => now - at < RECREATE_WINDOW_MS);
     if (recreateTimestamps.length >= MAX_RECREATES) {
+        nativeMenuActionDispatcher.clearPending(crashedWindow ?? undefined);
         destroyCrashedWindow();
         windowCloseCoordinator.clearForNoWindow();
         mainWindow = undefined;
@@ -744,7 +752,8 @@ app.on('render-process-gone', (_event, contents, details) => {
     // platforms. Building the replacement first means that instant never
     // exists, and no ordering question about when Electron emits the event has
     // to be answered.
-    createAndActivateWindow();
+    const replacementWindow = createAndActivateWindow();
+    nativeMenuActionDispatcher.recoverPendingWindow(crashedWindow, replacementWindow);
     destroyCrashedWindow();
 });
 
@@ -765,6 +774,7 @@ app.on('window-all-closed', () => {
 
 app.on('activate', () => {
     if (mainWindow === undefined || mainWindow.isDestroyed()) {
+        nativeMenuActionDispatcher.clearPending();
         createAndActivateWindow();
     }
 });

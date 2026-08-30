@@ -313,6 +313,8 @@ export type NativeMenuProjectState = {
     readonly title: string;
     readonly dirty: boolean;
     readonly durabilityPending: boolean;
+    readonly projectId: string;
+    readonly revision: string;
     readonly recentProjects: readonly { readonly key: string; readonly name: string }[];
 };
 
@@ -336,6 +338,8 @@ const nativeMenuProjectState = (value: unknown): NativeMenuProjectState => {
         typeof state.title !== 'string' ||
         typeof state.dirty !== 'boolean' ||
         typeof state.durabilityPending !== 'boolean' ||
+        typeof state.projectId !== 'string' ||
+        typeof state.revision !== 'string' ||
         !Array.isArray(state.recentProjects)
     ) {
         throw new TypeError('native menu project state is invalid');
@@ -347,7 +351,14 @@ const nativeMenuProjectState = (value: unknown): NativeMenuProjectState => {
         }
         return { key: project.key, name: project.name };
     });
-    return { title: state.title, dirty: state.dirty, durabilityPending: state.durabilityPending, recentProjects };
+    return {
+        title: state.title,
+        dirty: state.dirty,
+        durabilityPending: state.durabilityPending,
+        projectId: state.projectId,
+        revision: state.revision,
+        recentProjects,
+    };
 };
 
 const nativeMenuSaveResult = (value: unknown): NativeMenuSaveResult => {

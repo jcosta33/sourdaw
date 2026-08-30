@@ -95,4 +95,61 @@ describe('native menu action dispatcher', () => {
         expect(pendingWindow.send).toHaveBeenCalledTimes(1);
         expect(pendingWindow.send).toHaveBeenCalledWith('native-menu-action', { action: 'project:new' });
     });
+
+    it('transfers supported queued actions only to the exact crash-recovery replacement', () => {
+        let current: ReturnType<typeof makeWindow> | undefined;
+        const dispatcher = createNativeMenuActionDispatcher({
+            isMac: true,
+            actionChannel: 'native-menu-action',
+            getWindow: () => current,
+            createWindow: () => {
+                current = makeWindow();
+                return current;
+            },
+        });
+
+        dispatcher.dispatch({ action: 'project:new' });
+        dispatcher.dispatch({ action: 'project:open-recent', recentKey: 'saved-project' });
+        const crashed = current;
+        const replacement = makeWindow();
+        current = replacement;
+        if (crashed === undefined) {
+            throw new Error('Expected a pending renderer window');
+        }
+
+        dispatcher.recoverPendingWindow(crashed, replacement);
+        dispatcher.rendererReady(replacement);
+
+        expect(replacement.send).toHaveBeenNthCalledWith(1, 'native-menu-action', { action: 'project:new' });
+        expect(replacement.send).toHaveBeenNthCalledWith(2, 'native-menu-action', {
+            action: 'project:open-recent',
+            recentKey: 'saved-project',
+        });
+    });
+
+    it('clears queued actions for intentional, unrelated, and exhausted replacements', () => {
+        let current: ReturnType<typeof makeWindow> | undefined;
+        const dispatcher = createNativeMenuActionDispatcher({
+            isMac: true,
+            actionChannel: 'native-menu-action',
+            getWindow: () => current,
+            createWindow: () => {
+                current = makeWindow();
+                return current;
+            },
+        });
+
+        dispatcher.dispatch({ action: 'project:new' });
+        const pending = current;
+        const replacement = makeWindow();
+        current = replacement;
+        if (pending === undefined) {
+            throw new Error('Expected a pending renderer window');
+        }
+        dispatcher.clearPending(pending);
+        dispatcher.rendererReady(replacement);
+        dispatcher.clearPending();
+
+        expect(replacement.send).not.toHaveBeenCalled();
+    });
 });

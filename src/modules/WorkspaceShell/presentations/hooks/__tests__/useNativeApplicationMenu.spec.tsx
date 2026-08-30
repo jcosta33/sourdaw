@@ -12,6 +12,10 @@ const desktop = vi.hoisted(() => ({
     edit: vi.fn(async () => undefined),
 }));
 const projectState = vi.hoisted(() => ({ dirty: false, identityPersistencePending: false }));
+const crdt = vi.hoisted(() => ({
+    captureProjectRevision: vi.fn(() => 'revision-1'),
+    subscribeToCrdtChanges: vi.fn(() => () => undefined),
+}));
 const projectActions = vi.hoisted(() => ({
     saveProject: vi.fn(async () => true),
     discardProjectChanges: vi.fn(async () => true),
@@ -41,11 +45,16 @@ vi.mock('#/utils/desktopBridge', () => ({
 vi.mock('#/modules/Project/stores', () => ({
     projectStore: {
         get value() {
-            return { dirty: projectState.dirty, identityPersistencePending: projectState.identityPersistencePending };
+            return {
+                projectId: 'project',
+                dirty: projectState.dirty,
+                identityPersistencePending: projectState.identityPersistencePending,
+            };
         },
     },
 }));
 vi.mock('#/modules/Project/useCases', () => projectActions);
+vi.mock('#/modules/CrdtDocument/useCases', () => crdt);
 const tracks = vi.hoisted(() => ({
     value: [
         {
@@ -95,8 +104,13 @@ describe('useNativeApplicationMenu', () => {
         desktop.edit.mockClear();
         projectState.dirty = false;
         projectState.identityPersistencePending = false;
-        projectActions.saveProject.mockClear();
-        projectActions.discardProjectChanges.mockClear();
+        crdt.captureProjectRevision.mockClear();
+        crdt.captureProjectRevision.mockReturnValue('revision-1');
+        crdt.subscribeToCrdtChanges.mockClear();
+        projectActions.saveProject.mockReset();
+        projectActions.saveProject.mockResolvedValue(true);
+        projectActions.discardProjectChanges.mockReset();
+        projectActions.discardProjectChanges.mockResolvedValue(true);
         projectActions.newProject.mockClear();
         projectActions.loadRecentProject.mockClear();
         projectActions.recentProjectChanges.subscribe.mockClear();
@@ -133,6 +147,8 @@ describe('useNativeApplicationMenu', () => {
             title: 'Song',
             dirty: true,
             durabilityPending: false,
+            projectId: 'project',
+            revision: 'revision-1',
             recentProjects: [],
         });
         const input = document.createElement('input');
@@ -240,6 +256,36 @@ describe('useNativeApplicationMenu', () => {
         );
     });
 
+    it('reports a clean correlated save only after project identity persistence is durable', async () => {
+        projectState.identityPersistencePending = true;
+        projectActions.saveProject.mockImplementation(async () => {
+            projectState.identityPersistencePending = false;
+            return true;
+        });
+        renderHook(() =>
+            useNativeApplicationMenu({
+                projectId: 'project',
+                name: 'Song',
+                createdAt: 1,
+                updatedAt: 2,
+                dirty: false,
+                identityPersistencePending: true,
+                loading: false,
+                keyRoot: 0,
+                scaleName: 'chromatic',
+                tuning: { name: 'Equal Temperament', frequencies: [] },
+                productionBrief: {} as never,
+                initialized: true,
+            })
+        );
+
+        desktop.listener?.({ action: 'project:save', requestId: 9 });
+
+        await vi.waitFor(() =>
+            expect(desktop.saveResult).toHaveBeenCalledWith({ requestId: 9, saved: true, dirty: false })
+        );
+    });
+
     it('returns a correlated clean result after discarding a close request', async () => {
         renderHook(() =>
             useNativeApplicationMenu({
@@ -257,10 +303,36 @@ describe('useNativeApplicationMenu', () => {
             })
         );
 
-        desktop.listener?.({ action: 'project:discard', requestId: 7 });
+        desktop.listener?.({ action: 'project:discard', requestId: 7, projectId: 'project', revision: 'revision-1' });
 
         await vi.waitFor(() => expect(projectActions.discardProjectChanges).toHaveBeenCalledTimes(1));
         expect(desktop.saveResult).toHaveBeenCalledWith({ requestId: 7, saved: true, dirty: false });
+    });
+
+    it('rejects a discard request whose renderer revision has changed before it begins', async () => {
+        renderHook(() =>
+            useNativeApplicationMenu({
+                projectId: 'project',
+                name: 'Song',
+                createdAt: 1,
+                updatedAt: 2,
+                dirty: true,
+                loading: false,
+                keyRoot: 0,
+                scaleName: 'chromatic',
+                tuning: { name: 'Equal Temperament', frequencies: [] },
+                productionBrief: {} as never,
+                initialized: true,
+            })
+        );
+        crdt.captureProjectRevision.mockReturnValue('revision-2');
+
+        desktop.listener?.({ action: 'project:discard', requestId: 7, projectId: 'project', revision: 'revision-1' });
+
+        await vi.waitFor(() =>
+            expect(desktop.saveResult).toHaveBeenCalledWith({ requestId: 7, saved: false, dirty: true })
+        );
+        expect(projectActions.discardProjectChanges).not.toHaveBeenCalled();
     });
 
     it('keeps a clean replacement close-blocking until its identity persistence finishes', async () => {
@@ -282,7 +354,7 @@ describe('useNativeApplicationMenu', () => {
             })
         );
 
-        desktop.listener?.({ action: 'project:discard', requestId: 7 });
+        desktop.listener?.({ action: 'project:discard', requestId: 7, projectId: 'project', revision: 'revision-1' });
 
         await vi.waitFor(() =>
             expect(desktop.saveResult).toHaveBeenCalledWith({ requestId: 7, saved: true, dirty: true })
@@ -290,14 +362,20 @@ describe('useNativeApplicationMenu', () => {
     });
 
     it('keeps New and Open Recent in place when save succeeds but a concurrent edit remains dirty', async () => {
-        projectState.dirty = true;
+        const completeSaves: (() => void)[] = [];
+        projectActions.saveProject.mockImplementation(
+            () =>
+                new Promise<boolean>((resolve) => {
+                    completeSaves.push(() => resolve(true));
+                })
+        );
         renderHook(() =>
             useNativeApplicationMenu({
                 projectId: 'project',
                 name: 'Song',
                 createdAt: 1,
                 updatedAt: 2,
-                dirty: true,
+                dirty: false,
                 loading: false,
                 keyRoot: 0,
                 scaleName: 'chromatic',
@@ -311,6 +389,14 @@ describe('useNativeApplicationMenu', () => {
         desktop.listener?.({ action: 'project:open-recent', recentKey: 'recent-project' });
 
         await vi.waitFor(() => expect(projectActions.saveProject).toHaveBeenCalledTimes(2));
+        projectState.dirty = true;
+        for (const completeSave of completeSaves) {
+            completeSave();
+        }
+        // Await both post-save continuations: this assertion fails if the
+        // live dirty check is removed from the transition guard.
+        await Promise.resolve();
+        await Promise.resolve();
         expect(projectActions.newProject).not.toHaveBeenCalled();
         expect(projectActions.loadRecentProject).not.toHaveBeenCalled();
     });
@@ -434,6 +520,8 @@ describe('useNativeApplicationMenu', () => {
             title: 'Song',
             dirty: false,
             durabilityPending: false,
+            projectId: 'project',
+            revision: 'revision-1',
             recentProjects: [{ key: 'recent-2', name: 'Second' }],
         });
 

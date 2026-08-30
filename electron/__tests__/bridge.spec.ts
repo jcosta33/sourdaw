@@ -135,8 +135,20 @@ describe('native menu transport', () => {
         fake.push(NATIVE_MENU_ACTION_CHANNEL, { action: 'edit:undo' });
         fake.push(NATIVE_MENU_ACTION_CHANNEL, { action: 'unknown' });
         fake.push(NATIVE_MENU_ACTION_CHANNEL, 'edit:undo');
+        fake.push(NATIVE_MENU_ACTION_CHANNEL, { action: 'project:discard', projectId: 7, revision: 'revision-1' });
+        fake.push(NATIVE_MENU_ACTION_CHANNEL, {
+            action: 'project:discard',
+            projectId: 'project',
+            revision: 'revision-1',
+        });
 
-        expect(listener).toHaveBeenCalledExactlyOnceWith({ action: 'edit:undo' });
+        expect(listener).toHaveBeenNthCalledWith(1, { action: 'edit:undo' });
+        expect(listener).toHaveBeenNthCalledWith(2, {
+            action: 'project:discard',
+            projectId: 'project',
+            revision: 'revision-1',
+        });
+        expect(listener).toHaveBeenCalledTimes(2);
     });
 });
 

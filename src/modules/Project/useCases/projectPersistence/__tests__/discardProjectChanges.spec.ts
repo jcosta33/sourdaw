@@ -136,7 +136,23 @@ describe('discardProjectChanges', () => {
         load.loadRecentProject.mockImplementation(
             async (_key: string, options: { readonly shouldProceed?: () => boolean }) =>
                 new Promise<'committed' | 'aborted'>((resolve) => {
-                    resolveSecondRead = () => resolve(options.shouldProceed?.() ? 'committed' : 'aborted');
+                    resolveSecondRead = () => {
+                        // A committed load really publishes the replacement;
+                        // omitting the authority guard would therefore expose
+                        // the stale-discard regression rather than produce a
+                        // harmless mocked result.
+                        if (options.shouldProceed?.() ?? true) {
+                            state.project = {
+                                projectId: 'restored-project',
+                                createdAt: 10,
+                                dirty: false,
+                                identityPersistencePending: false,
+                            };
+                            resolve('committed');
+                            return;
+                        }
+                        resolve('aborted');
+                    };
                 })
         );
 

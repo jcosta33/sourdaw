@@ -3,6 +3,9 @@ export type ProjectCloseState = {
     readonly dirty: boolean;
     /** A clean replacement is not safe to discard until its identity snapshot persists. */
     readonly durabilityPending?: boolean;
+    /** Renderer-owned identity and CRDT revision make close approval specific to project truth. */
+    readonly projectId?: string;
+    readonly revision?: string;
 };
 
 export type SaveResult = {
@@ -16,7 +19,7 @@ type CloseOperation = Extract<CloseDecision, 'save' | 'discard'>;
 
 type CreateWindowCloseCoordinatorInput = {
     readonly ask: (title: string) => Promise<CloseDecision>;
-    readonly send: (operation: CloseOperation, requestId: number) => void;
+    readonly send: (operation: CloseOperation, requestId: number, expected: ProjectCloseState) => void;
 };
 
 /** Main-process state only: a disposable projection of renderer project state. */
@@ -27,8 +30,25 @@ export const createWindowCloseCoordinator = ({ ask, send }: CreateWindowCloseCoo
     let nextRequestId = 1;
     let generation = 0;
 
+    const isCloseBlocking = (state: ProjectCloseState): boolean => state.dirty || state.durabilityPending === true;
+
+    const sameProjectRevision = (left: ProjectCloseState, right: ProjectCloseState): boolean =>
+        left.projectId === right.projectId && left.revision === right.revision;
+
     const updateProject = (next: ProjectCloseState): void => {
+        const changedRevision = !sameProjectRevision(project, next);
         project = next;
+        if (phase === 'approved' && isCloseBlocking(next)) {
+            generation += 1;
+            phase = 'idle';
+            return;
+        }
+        // A dialog decision is about a particular piece of project truth. A
+        // new project or an edit while it is open needs a fresh decision.
+        if (phase === 'deciding' && changedRevision) {
+            generation += 1;
+            phase = 'idle';
+        }
     };
 
     const resolveSave = (result: SaveResult): void => {
@@ -63,11 +83,12 @@ export const createWindowCloseCoordinator = ({ ask, send }: CreateWindowCloseCoo
         if (phase !== 'idle') {
             return false;
         }
-        if (!project.dirty && project.durabilityPending !== true) {
+        if (!isCloseBlocking(project)) {
             phase = 'approved';
             return true;
         }
         const requestGeneration = generation;
+        const expectedProject = project;
         phase = 'deciding';
         let decision: CloseDecision;
         try {
@@ -94,7 +115,7 @@ export const createWindowCloseCoordinator = ({ ask, send }: CreateWindowCloseCoo
             result = await new Promise<SaveResult>((resolve, reject) => {
                 pendingSave = { requestId, settle: resolve };
                 try {
-                    send(decision, requestId);
+                    send(decision, requestId, expectedProject);
                 } catch (error) {
                     pendingSave = undefined;
                     reject(error);

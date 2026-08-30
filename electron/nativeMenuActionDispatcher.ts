@@ -59,5 +59,18 @@ export const createNativeMenuActionDispatcher = ({
                 deliver(window, intent);
             }
         },
+        /** Carry only supported windowless actions across the renderer crash they created. */
+        recoverPendingWindow(crashed: NativeMenuActionWindow, replacement: NativeMenuActionWindow): void {
+            if (pending?.window !== crashed || replacement.isDestroyed()) {
+                return;
+            }
+            pending = { window: replacement, intents: pending.intents };
+        },
+        /** Intentional or unrelated lifecycle transitions must never replay stale actions. */
+        clearPending(window?: NativeMenuActionWindow): void {
+            if (window === undefined || pending?.window === window) {
+                pending = undefined;
+            }
+        },
     };
 };
