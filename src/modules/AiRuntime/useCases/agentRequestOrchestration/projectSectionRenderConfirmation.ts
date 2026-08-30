@@ -1,5 +1,4 @@
 import { getAgentSectionRenderArtifacts } from '#/modules/AudioRendering/useCases';
-import { parseVersionedCommandEnvelope } from '#/modules/Command/useCases';
 
 import {
     type PendingActionExecution,
@@ -29,6 +28,10 @@ type SectionRenderReceiptScope = {
     reviewRequiredArtifacts: Array<{ jobId: string; warnings: readonly string[] }>;
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function getApprovedCommandId(
     confirmation: PendingAppActionConfirmation,
     actionIndex: number,
@@ -38,16 +41,26 @@ function getApprovedCommandId(
     if (!serialized) {
         return null;
     }
-    const parsed = parseVersionedCommandEnvelope(serialized);
-    if (parsed.status !== 'valid' || parsed.envelope.operation !== action.type) {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(serialized) as unknown;
+    } catch {
+        return null;
+    }
+    if (
+        !isRecord(parsed) ||
+        parsed.operation !== action.type ||
+        typeof parsed.commandId !== 'string' ||
+        parsed.commandId.length === 0
+    ) {
         return null;
     }
     const actionHash = getExactAgentActionHash({ operation: action.type, arguments: action.payload });
     const commandHash = getExactAgentActionHash({
-        operation: parsed.envelope.operation,
-        arguments: parsed.envelope.arguments,
+        operation: parsed.operation,
+        arguments: parsed.arguments,
     });
-    return actionHash === commandHash ? parsed.envelope.commandId : null;
+    return actionHash === commandHash ? parsed.commandId : null;
 }
 
 function getReceiptScopes(

@@ -1,5 +1,5 @@
 import { cancelExport, renderOffline } from '#/modules/AudioEngine/useCases';
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from '#/modules/CrdtDocument/useCases';
 import { type RenderProjectSectionJobSnapshot } from '#/utils/handlerContract';
 
 import { type AgentSectionRenderArtifact } from '../models/AgentSectionRenderArtifact';
@@ -8,6 +8,7 @@ import { SectionRenderFollowUpError, SectionRenderRetentionCapacityError } from 
 import { agentSectionRenderArtifactStore } from '../stores/agentSectionRenderArtifactStore';
 
 import { pruneExpiredAgentSectionRenderArtifacts } from './pruneExpiredAgentSectionRenderArtifacts';
+import { removeAgentProjectSectionArtifacts } from './removeAgentProjectSectionArtifacts';
 import { scheduleAgentSectionRenderArtifactExpiry } from './scheduleAgentSectionRenderArtifactExpiry';
 
 const PCM_SAMPLE_BYTE_SIZE = Float32Array.BYTES_PER_ELEMENT;
@@ -19,6 +20,7 @@ type RenderAgentProjectSectionsInput = {
     signal?: AbortSignal;
     validateArtifactAttachment?: () => string | null;
     onRenderAttempt?: (job: RenderProjectSectionJobSnapshot) => void;
+    replaceMismatchedRevisionArtifacts?: boolean;
 };
 
 function createCancellationError(): Error {
@@ -27,11 +29,7 @@ function createCancellationError(): Error {
     return error;
 }
 
-function jobMatchesArtifact(
-    job: RenderProjectSectionJobSnapshot,
-    artifact: AgentSectionRenderArtifact,
-    sourceRevision: string
-): boolean {
+function jobGeometryMatches(job: RenderProjectSectionJobSnapshot, artifact: AgentSectionRenderArtifact): boolean {
     return (
         artifact.jobId === job.jobId &&
         artifact.sectionId === job.sectionId &&
@@ -39,9 +37,16 @@ function jobMatchesArtifact(
         artifact.startBeat === job.startBeat &&
         artifact.endBeat === job.endBeat &&
         artifact.sampleRate === job.sampleRate &&
-        artifact.tailSeconds === job.tailSeconds &&
-        artifact.sourceRevision === sourceRevision
+        artifact.tailSeconds === job.tailSeconds
     );
+}
+
+function jobMatchesArtifact(
+    job: RenderProjectSectionJobSnapshot,
+    artifact: AgentSectionRenderArtifact,
+    sourceRevision: string
+): boolean {
+    return jobGeometryMatches(job, artifact) && artifact.sourceRevision === sourceRevision;
 }
 
 function failureReason(error: unknown): string {
@@ -106,7 +111,7 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
     const existingByJobId = new Map(initialArtifacts.map((artifact) => [artifact.jobId, artifact]));
     for (const job of input.jobs) {
         const existing = existingByJobId.get(job.jobId);
-        if (existing && !jobMatchesArtifact(job, existing, input.sourceRevision)) {
+        if (existing && !jobGeometryMatches(job, existing)) {
             throw new Error(`Section render job identity is already owned by another artifact: ${job.jobId}`);
         }
     }
@@ -119,15 +124,23 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
         }
         const existing = existingByJobId.get(job.jobId);
         if (existing) {
-            if (existing.warnings.length > 0) {
-                failures.push(`${job.jobId}: ${existing.warnings.join('; ')}`);
+            if (jobMatchesArtifact(job, existing, input.sourceRevision)) {
+                if (existing.warnings.length > 0) {
+                    failures.push(`${job.jobId}: ${existing.warnings.join('; ')}`);
+                }
+                continue;
             }
-            continue;
+            if (!input.replaceMismatchedRevisionArtifacts) {
+                failures.push(`${job.jobId}: artifact is bound to a different project revision`);
+                continue;
+            }
+            removeAgentProjectSectionArtifacts({ jobs: [job] });
+            existingByJobId.delete(job.jobId);
         }
 
         const warnings: string[] = [];
         try {
-            if (captureProjectRevision() !== input.sourceRevision) {
+            if (!projectRevisionMatchesLiveIgnoringCommandCheckpoint(input.sourceRevision)) {
                 throw new Error('Project changed during rendering; the artifact was not attached');
             }
         } catch (error) {
@@ -154,7 +167,7 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
             if (input.signal?.aborted) {
                 throw createCancellationError();
             }
-            if (captureProjectRevision() !== input.sourceRevision) {
+            if (!projectRevisionMatchesLiveIgnoringCommandCheckpoint(input.sourceRevision)) {
                 throw new Error('Project changed during rendering; the artifact was not attached');
             }
             assertArtifactAttachmentAllowed(input);
