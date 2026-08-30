@@ -2621,6 +2621,7 @@ describe('pull-request delivery', () => {
                     new Error('PR #42 final fetch failed before any snapshot'),
                     pullRequest({ headRefOid: retryHead, body: retryBody, mergeStateStatus: retryMergeStateStatus }),
                     pullRequest({ headRefOid: retryHead, body: retryBody, mergeStateStatus: retryMergeStateStatus }),
+                    pullRequest({ headRefOid: retryHead, body: retryBody, mergeStateStatus: retryMergeStateStatus }),
                 ],
                 dependentSets: [[], []],
             });
@@ -2646,6 +2647,44 @@ describe('pull-request delivery', () => {
             });
         }
     );
+
+    it('retains the final-fetch armed authority when fetch succeeds but the final snapshot read fails before any observation, then recovers on merged retry', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
+            primary: [
+                pullRequest({ headRefOid: 'head', body: closes, mergeStateStatus: 'CLEAN' }),
+                new Error('PR #42 final snapshot read failed'),
+                pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: AUTHOR_BOT_NODE_ID }),
+                pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: AUTHOR_BOT_NODE_ID }),
+            ],
+            dependentSets: [[], []],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/final snapshot read failed/i);
+        expect(calls).not.toContain('merge:42:head');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'prepared',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+            postMergeValidation: {
+                headRefOid: 'head',
+                headRefName: 'feat/gate',
+                baseRefName: 'main',
+                bodySha256: createHash('sha256').update(closes).digest('hex'),
+                trackerTarget: 2372,
+            },
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(receipts.map(({ id }) => id)).toEqual(['IC_delivery_42_1']);
+        expect(calls).toContain('complete:2372');
+        expect(persistedReceiptAuthority()).toEqual({
+            phase: 'terminal',
+            receiptId: 'IC_delivery_42_1',
+            receiptBody: visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful'),
+        });
+    });
 
     it('retains the armed receipt authority after an OPEN UNKNOWN merge-rejection refresh resolves to an unrecognized state, then recovers on merged retry', () => {
         const closes = relationshipBody('Closes #2372');
@@ -7924,6 +7963,79 @@ describe('delivery shell boundary', () => {
             );
         } finally {
             rmSync(primaryRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects a delivery receipt authority ref that becomes symbolic after the path check but before the bound git read', () => {
+        const closes = relationshipBody('Closes #2372');
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-shell-port-'));
+        const wrapperRoot = mkdtempSync(join(tmpdir(), 'sourdaw-git-wrapper-'));
+        execFileSync('git', ['init', '--quiet'], { cwd: primaryRoot });
+        const ref = 'refs/sourdaw/delivery-receipt/pr-42';
+        const hostileTarget = 'refs/sourdaw/hostile-authority';
+        const legitimateAuthority = {
+            phase: 'terminal',
+            receiptId: 'IC_legitimate',
+            receiptBody: deliveryReceiptBody(42, 'head', closes, 2372),
+        } satisfies PersistedDeliveryReceiptAuthority;
+        const hostileAuthority = {
+            phase: 'terminal',
+            receiptId: 'IC_hostile',
+            receiptBody: deliveryReceiptBody(42, 'hostile-head', closes, 2372),
+        } satisfies PersistedDeliveryReceiptAuthority;
+        const legitimateOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+            input: JSON.stringify({ version: 2, ...legitimateAuthority }),
+        }).trim();
+        const hostileOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+            cwd: primaryRoot,
+            encoding: 'utf8',
+            input: JSON.stringify({ version: 2, ...hostileAuthority }),
+        }).trim();
+        execFileSync('git', ['update-ref', ref, legitimateOid], { cwd: primaryRoot });
+        execFileSync('git', ['update-ref', hostileTarget, hostileOid], { cwd: primaryRoot });
+        const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+        const wrapperPath = join(wrapperRoot, 'git');
+        writeFileSync(
+            wrapperPath,
+            [
+                '#!/usr/bin/env bash',
+                'set -euo pipefail',
+                `real_git=${JSON.stringify(realGit)}`,
+                `ref=${JSON.stringify(ref)}`,
+                `target=${JSON.stringify(hostileTarget)}`,
+                `marker=${JSON.stringify(join(wrapperRoot, 'authority-became-symbolic'))}`,
+                'if [[ ! -e "$marker" ]]; then',
+                '  if [[ "${1:-}" == "show-ref" && "${2:-}" == "--verify" && "${3:-}" == "--hash" && "${4:-}" == "--" && "${5:-}" == "$ref" ]]; then',
+                '    : > "$marker"',
+                '    "$real_git" symbolic-ref "$ref" "$target"',
+                '  elif [[ "${1:-}" == "for-each-ref" && "${@: -1}" == "$ref" ]]; then',
+                '    : > "$marker"',
+                '    "$real_git" symbolic-ref "$ref" "$target"',
+                '  fi',
+                'fi',
+                'exec "$real_git" "$@"',
+            ].join('\n')
+        );
+        chmodSync(wrapperPath, 0o755);
+        const previousPath = process.env.PATH;
+        process.env.PATH = `${wrapperRoot}:${previousPath ?? ''}`;
+
+        try {
+            const port = shellPort(
+                'jcosta33/sourdaw',
+                { capture: () => expect.fail('unexpected capture'), run: () => undefined },
+                { primaryRoot }
+            );
+
+            expect(() => port.readDeliveryReceiptAuthority(42)).toThrow(
+                /delivery receipt authority cannot be proven|delivery receipt authority cannot be verified/i
+            );
+        } finally {
+            process.env.PATH = previousPath;
+            rmSync(primaryRoot, { recursive: true, force: true });
+            rmSync(wrapperRoot, { recursive: true, force: true });
         }
     });
 

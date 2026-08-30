@@ -1226,11 +1226,9 @@ function resolveFinalSnapshotWithRestorablePreparedAuthority(
 ): PullRequestSnapshot {
     let latestDefinitiveUnmerged: PullRequestSnapshot | undefined;
     let sawFinalSnapshot = false;
-    let attemptedFinalSnapshotRead = false;
 
     try {
         port.fetch();
-        attemptedFinalSnapshotRead = true;
         const initial = port.pullRequest(number);
         sawFinalSnapshot = true;
         if (shouldRestorePreArmedDeliveryReceiptAuthorityAfterFinalObservation(initial)) {
@@ -1247,10 +1245,6 @@ function resolveFinalSnapshotWithRestorablePreparedAuthority(
         return finalSnapshot;
     } catch (error) {
         if (!sawFinalSnapshot) {
-            if (attemptedFinalSnapshotRead) {
-                restorePreArmedDeliveryReceiptAuthority(number, beforeArming, armed, port);
-                throw error;
-            }
             try {
                 const recovered = resolveStructuralMergeability(port.pullRequest(number), port);
                 if (shouldRestorePreArmedDeliveryReceiptAuthorityAfterFinalObservation(recovered)) {
@@ -3078,16 +3072,6 @@ function readOptionalDeliveryRefOid(
     number: number,
     label: string
 ): string | undefined {
-    const symbolic = deliveryLockGit(primaryRoot, ['symbolic-ref', '-q', '--', ref]);
-    if (symbolic.error !== undefined) {
-        throw symbolic.error;
-    }
-    if (symbolic.status === 0) {
-        fail(`PR #${number} ${label} cannot be verified`);
-    }
-    if (symbolic.status !== 1) {
-        fail(`PR #${number} ${label} cannot be verified`);
-    }
     const refPath = deliveryLockGit(primaryRoot, ['rev-parse', '--git-path', ref]);
     if (refPath.error !== undefined) {
         throw refPath.error;
@@ -3115,29 +3099,34 @@ function readOptionalDeliveryRefOid(
             fail(`PR #${number} ${label} cannot be verified`);
         }
     }
-    const result = deliveryLockGit(primaryRoot, ['show-ref', '--verify', '--hash', '--', ref]);
+    const result = deliveryLockGit(primaryRoot, ['for-each-ref', '--format=%(objectname)%00%(symref)', '--', ref]);
     if (result.error !== undefined) {
         throw result.error;
     }
-    if (result.status === 0) {
+    if (result.status !== 0) {
+        fail(`PR #${number} ${label} cannot be verified`);
+    }
+    const entries = result.stdout
+        .split('\n')
+        .filter((entry) => entry.length > 0)
+        .map((entry) => entry.split('\u0000'));
+    if (entries.length > 1) {
+        fail(`PR #${number} ${label} cannot be verified`);
+    }
+    const entry = entries[0];
+    if (entry !== undefined) {
         if (exactPathKind === 'directory') {
             fail(`PR #${number} ${label} cannot be verified`);
         }
-        return deliveryObjectId(result.stdout, `PR #${number} ${label} object identity is malformed`);
+        const [oid = '', symref = ''] = entry;
+        if (symref !== '') {
+            fail(`PR #${number} ${label} cannot be verified`);
+        }
+        return deliveryObjectId(oid, `PR #${number} ${label} object identity is malformed`);
     }
-    if (exactPathKind === 'directory') {
-        return undefined;
-    }
-    if (exactPathKind === 'missing' && /not a valid ref/u.test(result.stderr)) {
-        return undefined;
-    }
-    if (result.status !== 1) {
+    if (exactPathKind !== 'missing' && exactPathKind !== 'directory') {
         fail(`PR #${number} ${label} cannot be verified`);
     }
-    if (!/not a valid ref/u.test(result.stderr)) {
-        fail(`PR #${number} ${label} cannot be verified`);
-    }
-    fail(`PR #${number} ${label} cannot be verified`);
     return undefined;
 }
 
