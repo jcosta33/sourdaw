@@ -10,6 +10,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { collaborationStore } from '#/modules/Collaboration/stores';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
+import { clampClipFadeInDurationSeconds, clampClipFadeOutStartSeconds } from '#/utils/clipFadeScheduleClamp';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
@@ -315,11 +316,15 @@ export function scheduleAudioClips(
                         // with the timeline's own mapping. Dividing by the clip's
                         // local rate made the ramp outlast (or undershoot) its beat
                         // span whenever a tempo change fell inside the fade.
-                        const fadeInSeconds = secondsBetweenBeats(
-                            changes,
-                            iterStartBeat,
-                            iterStartBeat + clip.fadeInBeats,
-                            transport.tempo
+                        const fadeInSeconds = clampClipFadeInDurationSeconds(
+                            secondsBetweenBeats(
+                                changes,
+                                iterStartBeat,
+                                iterStartBeat + clip.fadeInBeats,
+                                transport.tempo
+                            ),
+                            playDuration,
+                            MICRO_FADE_SECONDS
                         );
                         const fadeInEnd = iterStartTime + fadeInSeconds;
                         if (effectiveStart < fadeInEnd) {
@@ -352,14 +357,17 @@ export function scheduleAudioClips(
 
                     if (isLastIter && clip.fadeOutBeats > 0) {
                         const clipEndTime = beatToAudioTime(clip.endBeat);
-                        const fadeOutStart =
+                        const fadeOutStart = clampClipFadeOutStartSeconds(
                             clipEndTime -
-                            secondsBetweenBeats(
-                                changes,
-                                clip.endBeat - clip.fadeOutBeats,
-                                clip.endBeat,
-                                transport.tempo
-                            );
+                                secondsBetweenBeats(
+                                    changes,
+                                    clip.endBeat - clip.fadeOutBeats,
+                                    clip.endBeat,
+                                    transport.tempo
+                                ),
+                            soundStartTime,
+                            playDuration
+                        );
                         fadeGain.gain.setValueAtTime(clipGain, Math.max(fadeOutStart, effectiveStart));
                         fadeGain.gain.linearRampToValueAtTime(0, clipEndTime);
                     } else if (needsMicroFadeOut) {
