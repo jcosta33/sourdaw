@@ -1,0 +1,78 @@
+electron/preload.ts
+  s_ae074277795b45::t_eed993607b05ae 19-22,24-25
+electron/appIpc.ts
+  s_ae074277795b45::t_9b4e4311a55041 32,329,389,391,394-396
+  s_ae074277795b45::t_f20891d46f5527 392,400,404
+electron/__tests__/rendererSessionQuiescer.spec.ts
+  s_ae074277795b45::t_eed993607b05ae 162-192
+  s_ae074277795b45::t_95b95af504a404 22-25,30,48-49,53,72,81-82,86,88,91-92,106,111-112,116,120,129,139,148-161
+electron/__tests__/shutdown.spec.ts
+  s_ae074277795b45::t_eed993607b05ae 303-305,316-318
+  s_ae074277795b45::t_02a7eae8c5f2e5 233,236,261,294,323
+  s_ae074277795b45::t_33d5c4c34309eb 306-315,319-321
+src/types/sourdaw-desktop.d.ts
+  s_ae074277795b45::t_9b4e4311a55041 135-138
+electron/rendererSessionQuiescer.ts
+  s_ae074277795b45::t_fe147a36cc847b 3-4,27,33,54,58,62-65,67,75,79,81,84,91,97,101-102,104-107,109,112-119,133-135,141,162,171
+electron/__tests__/bridge.spec.ts
+  s_ae074277795b45::t_33d5c4c34309eb 167,174
+src/modules/Project/useCases/projectPersistence/projectSessionQuiescer.ts
+  s_ae074277795b45::t_a19a6b8c97a7e2 8-9,12,18,22,42,52-55,60,67,71,84,94-97,99-102,104-105,118,121,124
+  s_ae074277795b45::t_eed993607b05ae 31-35
+electron/bridge.ts
+  s_ae074277795b45::t_9b4e4311a55041 464-465
+src/modules/Project/useCases/projectPersistence/__tests__/quiesceProjectSession.pluginFence.success.integration.spec.ts
+  s_ae074277795b45::t_02a7eae8c5f2e5 37
+src/modules/Project/useCases/projectPersistence/quiesceProjectSession.ts
+  s_ae074277795b45::t_9b4e4311a55041 3-4,9
+src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts
+  s_ae074277795b45::t_fe147a36cc847b 246-247,251
+electron/__tests__/shellComposition.spec.ts
+  s_ae074277795b45::t_02a7eae8c5f2e5 32,52
+electron/channels.ts
+  s_ae074277795b45::t_f20891d46f5527 63
+  s_ae074277795b45::t_9b4e4311a55041 64-69,223
+  s_ae074277795b45::t_40573b55f39711 62
+src/modules/Project/useCases/projectPersistence/__tests__/quiesceProjectSession.spec.ts
+  s_ae074277795b45::t_33d5c4c34309eb 49,58,68,72,83,86,108-109,126,128-129,133-134,144,146
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/resetExternalPluginRuntimeForGraphRebuild.spec.ts
+  s_ae074277795b45::t_33d5c4c34309eb 159-196
+  s_ae074277795b45::t_8ccb3554e253d3 197-200
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx
+  s_ae074277795b45::t_33d5c4c34309eb 41-42,150-155,167,188,210-212,238-240,291
+  s_ae074277795b45::t_eed993607b05ae 244-269
+electron/main.ts
+  s_ae074277795b45::t_d49dd0ba870312 194,199-203,211,217,223,235,251,742
+  s_ae074277795b45::t_f20891d46f5527 74,191
+src/modules/Project/useCases/projectPersistence/projectSessionQuiesceOutcome.ts
+  s_ae074277795b45::t_9b4e4311a55041 1
+electron/__tests__/appIpc.spec.ts
+  s_ae074277795b45::t_ac01bc403d35f7 266-269,271-273,296
+  s_ae074277795b45::t_33d5c4c34309eb 280,284-291
+src/modules/Project/useCases/projectPersistence/__tests__/quiesceProjectSession.pluginFence.integration.spec.ts
+  s_ae074277795b45::t_33d5c4c34309eb 31
+src/modules/Project/useCases/projectPersistence/cancelProjectSessionQuiesce.ts
+  s_ae074277795b45::t_9b4e4311a55041 3-4,6
+electron/shutdown.ts
+  s_ae074277795b45::t_f20891d46f5527 37-38,140,145-146,149
+  s_ae074277795b45::t_d49dd0ba870312 139,166,206-212
+  s_ae074277795b45::t_eed993607b05ae 169-172
+src/modules/Project/useCases/index.ts
+  s_ae074277795b45::t_9b4e4311a55041 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "125f552a35bfd54c0d3297e5bc2d1a70dc77d59c",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
