@@ -423,7 +423,10 @@ const trackedLeaseSettlementCases = {
 
 function createInput(
     executionFlight: Input['executionFlight'],
-    input: { trackedWorkLease?: NonNullable<ReadyAdmission['trackedWorkLease']> } = {}
+    input: {
+        trackedWorkLease?: NonNullable<ReadyAdmission['trackedWorkLease']>;
+        recoveringPendingEffects?: boolean;
+    } = {}
 ): Input {
     return {
         executionAdmission: {
@@ -434,7 +437,7 @@ function createInput(
             trackedWorkLease: input.trackedWorkLease ?? null,
             commandBudget: null,
             priorVerifiedBatchReceipt: null,
-            recoveringPendingEffects: false,
+            recoveringPendingEffects: input.recoveringPendingEffects ?? false,
         } satisfies ReadyAdmission,
         executionFlight,
     } satisfies Input;
@@ -446,6 +449,7 @@ function createCompletedFlight(
         committedProjectRevision?: string | null;
         abortSignal?: AbortSignal;
         cancellationTriggeredByInvalidation?: boolean;
+        isProjectMutationAuthorized?: () => boolean;
     } = {}
 ): CompletedFlight {
     return {
@@ -456,7 +460,7 @@ function createCompletedFlight(
             input.committedProjectRevision === undefined ? 'revision-1' : input.committedProjectRevision,
         finalizationEvidenceFailure: null,
         canRebindSectionRenderArtifacts: true,
-        isProjectMutationAuthorized: () => true,
+        isProjectMutationAuthorized: input.isProjectMutationAuthorized ?? (() => true),
         renderJobAttempts: 0,
         cancellationTriggeredByInvalidation: input.cancellationTriggeredByInvalidation ?? false,
         abortSignal: input.abortSignal ?? new AbortController().signal,
@@ -504,6 +508,49 @@ describe('settleConfirmedCommandExecution', () => {
             error: 'flight failed work lease was replaced',
             content: 'Failed to execute confirmed actions atomically:\n\nflight failed work lease was replaced',
         });
+        expect(mocks.settleResources).toHaveBeenCalledWith({
+            confirmationId: 'confirmation-1',
+            disposition: 'discard',
+        });
+    });
+
+    it.each([
+        ['rejected', createRejectedBatchResult],
+        ['conflicted', createConflictedBatchResult],
+        ['failed', createFailedBatchResult],
+    ] as const)('invalidates an unauthorized pre-commit %s result', async (status, createBatchResult) => {
+        const batchResult = createBatchResult();
+        const result = await settleConfirmedCommandExecution(
+            createInput(
+                createCompletedFlight(batchResult, {
+                    isProjectMutationAuthorized: () => false,
+                })
+            )
+        );
+
+        expect(batchResult.status).toBe(status);
+        expect(result).toEqual({ status: 'invalidated', reason: 'project changed' });
+        expect(mocks.invalidate).toHaveBeenCalledWith(confirmation);
+        expect(mocks.recordFailure).not.toHaveBeenCalled();
+        expect(mocks.settleResources).not.toHaveBeenCalled();
+    });
+
+    it('settles a recovering pre-commit failure without invalidating for authorization drift', async () => {
+        const result = await settleConfirmedCommandExecution(
+            createInput(
+                createCompletedFlight(createFailedBatchResult(), {
+                    isProjectMutationAuthorized: () => false,
+                }),
+                { recoveringPendingEffects: true }
+            )
+        );
+
+        expect(result).toEqual({ status: 'failed', reason: 'precondition failed' });
+        expect(mocks.invalidate).not.toHaveBeenCalled();
+        expect(mocks.recordFailure).toHaveBeenCalledWith(
+            confirmation,
+            expect.objectContaining({ category: 'project' })
+        );
         expect(mocks.settleResources).toHaveBeenCalledWith({
             confirmationId: 'confirmation-1',
             disposition: 'discard',
