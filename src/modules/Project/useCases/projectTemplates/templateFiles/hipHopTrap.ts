@@ -148,11 +148,25 @@ export async function createHipHopTrapTemplate(): Promise<void> {
     });
 
     const melodicFolder = createFolder({ name: 'Melodic' });
+    // Instrument chain inlined from factory preset 'factory-faust-rhodes-warm' (faustInstrumentPresets).
     const melodicRhodes = createInstrumentTrack({
         name: 'Rhodes',
         parentId: melodicFolder.id,
-        deviceType: 'factory-faust-rhodes-warm',
+        deviceType: 'faust-rhodes',
         deviceName: 'Warm Rhodes',
+        deviceParams: { brightness: 0.3, body_decay: 2.0, bell_decay: 0.1, gain: 0.5 },
+        extraDevices: [
+            {
+                type: 'builtin-chorus',
+                name: 'Chorus',
+                params: { 'chorus-rate': 0.8, 'chorus-depth': 5, 'chorus-feedback': 0.2, 'chorus-mix': 0.3 },
+            },
+            {
+                type: 'faust-1176-compressor',
+                name: 'Evenness',
+                params: { threshold: -18, ratio: 3, attack: 0.008, release: 0.12 },
+            },
+        ],
     });
     const flute = createInstrumentTrack({
         name: 'Flute Lead',
@@ -170,11 +184,35 @@ export async function createHipHopTrapTemplate(): Promise<void> {
             gain: 0.35,
         },
     });
+    // Instrument chain inlined from factory preset 'factory-pad-dark' (padPresets).
     const trapPad = createInstrumentTrack({
         name: 'Pad',
         parentId: melodicFolder.id,
-        deviceType: 'factory-pad-dark',
+        deviceType: 'builtin-synth',
         deviceName: 'Dark Pad',
+        deviceParams: {
+            waveform: 3,
+            attack: 0.3,
+            decay: 0.4,
+            sustain: 0.7,
+            release: 1.5,
+            filterCutoff: 800,
+            filterResonance: 1,
+            filterType: 0,
+            detune: 3,
+            gain: 0.25,
+            osc2Waveform: 2,
+            osc2Mix: 0.3,
+            osc2Detune: -5,
+            subOscLevel: 0.2,
+        },
+        extraDevices: [
+            {
+                type: 'builtin-reverb',
+                name: 'Reverb',
+                params: { 'rev-size': 0.6, 'rev-decay': 3, 'rev-damping': 0.6, 'rev-mix': 0.4 },
+            },
+        ],
     });
     addSend({ from: melodicRhodes, to: reverbHall, level: 0.4 });
     addSend({ from: melodicRhodes, to: tapeDelay, level: 0.3 });

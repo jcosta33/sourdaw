@@ -159,83 +159,80 @@ export const Sidebar = ({ style, onClose, panelActions }: SidebarProps): ReactEl
     );
 
     const selectedTrack = selectedTrackId ? (tracks.find((time) => time.id === selectedTrackId) ?? null) : null;
-    const renderIife_11 = () => {
-        if (currentRoute.id === 'library') {
-            const renderIife_12 = () => {
-                if (libSubTab === 'folders') {
-                    return (
-                        <div className="px-1 flex-1 min-h-0">
-                            <LibraryBrowser preview={preview} selectedTrackId={selectedTrackId} />
-                        </div>
-                    );
-                }
-                if (libSubTab === 'mine') {
-                    return (
-                        <div className="px-2">
-                            <Row justify="between" className="pb-1">
-                                <span className="text-[9px] text-muted-foreground">
-                                    {filteredSamples.length} samples
-                                </span>
-                                <Button
-                                    variant="ghost"
-                                    size="xs"
-                                    className="h-5 gap-1 text-[10px]"
-                                    onClick={() => fileInputRef.current?.click()}
-                                >
-                                    <Upload className="size-3" aria-hidden="true" />
-                                    Import
-                                </Button>
-                                <input
-                                    ref={fileInputRef}
-                                    type="file"
-                                    accept="audio/*,.wav,.mp3,.ogg,.flac,.aac,.m4a,.aiff,.aif"
-                                    multiple
-                                    className="hidden"
-                                    onChange={(event) => {
-                                        void handleFileImport(event.target.files);
-                                        event.target.value = '';
-                                    }}
-                                />
-                            </Row>
-                            <SamplesTab
-                                samples={filteredSamples}
-                                favorites={favorites}
-                                onToggleFavorite={toggleFavorite}
-                                selectedTrackId={selectedTrackId}
-                                preview={preview}
-                            />
-                        </div>
-                    );
-                }
-                return (
-                    <div className="px-2">
-                        <OnlineSampleBrowser preview={preview} />
-                    </div>
-                );
-            };
-
+    const renderLibrarySubTab = (): ReactElement => {
+        if (libSubTab === 'folders') {
             return (
-                <>
-                    {/* Sub-tabs: Folders | My Samples | Find Samples */}
-                    <RailTabBar
-                        activeId={libSubTab}
-                        items={[
-                            { id: 'folders', label: 'Folders', icon: FolderSync },
-                            { id: 'mine', label: 'Imported', icon: FileAudio },
-                            { id: 'find', label: 'Find', icon: Search },
-                        ]}
-                        onChange={setLibSubTab}
-                        size="sub"
-                        className="px-2 pb-2"
-                        scrollerClassName="gap-1"
-                        buttonClassName="min-w-[88px]"
-                    />
-                    {renderIife_12()}
-                </>
+                <div className="px-1 flex-1 min-h-0">
+                    <LibraryBrowser preview={preview} selectedTrackId={selectedTrackId} />
+                </div>
             );
-        } else {
+        }
+        if (libSubTab === 'mine') {
+            return (
+                <div className="px-2">
+                    <Row justify="between" className="pb-1">
+                        <span className="text-[9px] text-muted-foreground">{filteredSamples.length} samples</span>
+                        <Button
+                            variant="ghost"
+                            size="xs"
+                            className="h-5 gap-1 text-[10px]"
+                            onClick={() => fileInputRef.current?.click()}
+                        >
+                            <Upload className="size-3" aria-hidden="true" />
+                            Import
+                        </Button>
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="audio/*,.wav,.mp3,.ogg,.flac,.aac,.m4a,.aiff,.aif"
+                            multiple
+                            className="hidden"
+                            onChange={(event) => {
+                                void handleFileImport(event.target.files);
+                                event.target.value = '';
+                            }}
+                        />
+                    </Row>
+                    <SamplesTab
+                        samples={filteredSamples}
+                        favorites={favorites}
+                        onToggleFavorite={toggleFavorite}
+                        selectedTrackId={selectedTrackId}
+                        preview={preview}
+                    />
+                </div>
+            );
+        }
+        return (
+            <div className="px-2">
+                <OnlineSampleBrowser preview={preview} />
+            </div>
+        );
+    };
+
+    const renderLibraryTab = (): ReactElement | null => {
+        if (currentRoute.id !== 'library') {
             return null;
         }
+        return (
+            <>
+                {/* Sub-tabs: Folders | My Samples | Find Samples */}
+                <RailTabBar
+                    activeId={libSubTab}
+                    items={[
+                        { id: 'folders', label: 'Folders', icon: FolderSync },
+                        { id: 'mine', label: 'Imported', icon: FileAudio },
+                        { id: 'find', label: 'Find', icon: Search },
+                    ]}
+                    onChange={setLibSubTab}
+                    size="sub"
+                    className="px-2 pb-2"
+                    scrollerClassName="gap-1"
+                    buttonClassName="min-w-[88px]"
+                />
+                {renderLibrarySubTab()}
+            </>
+        );
     };
 
     return (
@@ -284,7 +281,7 @@ export const Sidebar = ({ style, onClose, panelActions }: SidebarProps): ReactEl
                     className="p-1 h-full"
                     aria-label={`${currentRoute.title} browser`}
                 >
-                    {renderIife_11()}
+                    {renderLibraryTab()}
 
                     {currentRoute.id.startsWith('instruments') ? (
                         <InstrumentsTab
