@@ -38,6 +38,10 @@ const renderWithTooltip = (ui: React.ReactElement) => {
     return render(<TooltipProvider delayDuration={0}>{ui}</TooltipProvider>);
 };
 
+const openTransportSettings = (): void => {
+    fireEvent.click(screen.getByRole('button', { name: 'Transport settings' }));
+};
+
 describe('TransportControls', () => {
     const defaultProps = {
         isPlaying: false,
@@ -199,11 +203,13 @@ describe('TransportControls', () => {
 
         it('renders the volume slider with the percentage when metronome is enabled', () => {
             renderWithTooltip(<TransportControls {...defaultProps} metronomeEnabled={true} metronomeVolume={0.75} />);
+            openTransportSettings();
             expect(screen.getByLabelText('Metronome volume: 75%')).toBeInTheDocument();
         });
 
         it('routes volume changes to setMetronomeVolume', () => {
             renderWithTooltip(<TransportControls {...defaultProps} metronomeEnabled={true} metronomeVolume={0.5} />);
+            openTransportSettings();
             const slider = screen.getByLabelText('Metronome volume: 50%');
             fireEvent.keyDown(slider, { key: 'ArrowRight' });
             expect(mocks.setMetronomeVolume).toHaveBeenCalled();
@@ -218,35 +224,41 @@ describe('TransportControls', () => {
 
         it('renders the pill showing the bar count when enabled', () => {
             renderWithTooltip(<TransportControls {...defaultProps} countInEnabled={true} countInBars={2} />);
+            openTransportSettings();
             expect(screen.getByLabelText('Count-in bars: 2. Click to cycle.')).toBeInTheDocument();
         });
 
         it('cycles 1 -> 2 when countInBars is 1', () => {
             renderWithTooltip(<TransportControls {...defaultProps} countInEnabled={true} countInBars={1} />);
+            openTransportSettings();
             fireEvent.click(screen.getByLabelText('Count-in bars: 1. Click to cycle.'));
             expect(mocks.setCountInBars).toHaveBeenCalledWith(2);
         });
 
         it('cycles 2 -> 4 when countInBars is 2', () => {
             renderWithTooltip(<TransportControls {...defaultProps} countInEnabled={true} countInBars={2} />);
+            openTransportSettings();
             fireEvent.click(screen.getByLabelText('Count-in bars: 2. Click to cycle.'));
             expect(mocks.setCountInBars).toHaveBeenCalledWith(4);
         });
 
         it('cycles 4 -> 1 when countInBars is 4', () => {
             renderWithTooltip(<TransportControls {...defaultProps} countInEnabled={true} countInBars={4} />);
+            openTransportSettings();
             fireEvent.click(screen.getByLabelText('Count-in bars: 4. Click to cycle.'));
             expect(mocks.setCountInBars).toHaveBeenCalledWith(1);
         });
 
         it('cycles 0 -> 1 (default branch) when countInBars is 0', () => {
             renderWithTooltip(<TransportControls {...defaultProps} countInEnabled={true} countInBars={0} />);
+            openTransportSettings();
             fireEvent.click(screen.getByLabelText('Count-in bars: 0. Click to cycle.'));
             expect(mocks.setCountInBars).toHaveBeenCalledWith(1);
         });
 
         it('cycles 3 -> 4 (>= 2 but < 4 branch) when countInBars is 3', () => {
             renderWithTooltip(<TransportControls {...defaultProps} countInEnabled={true} countInBars={3} />);
+            openTransportSettings();
             fireEvent.click(screen.getByLabelText('Count-in bars: 3. Click to cycle.'));
             expect(mocks.setCountInBars).toHaveBeenCalledWith(4);
         });

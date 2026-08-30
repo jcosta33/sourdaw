@@ -2,6 +2,7 @@ import { type ReactElement } from 'react';
 
 import { DawTransportCluster } from '#/components/daw/DawTransportCluster';
 import { Button } from '#/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 
 import { type SoloMode } from '../../../models/WorkspaceState';
@@ -27,9 +28,43 @@ const SOLO_MODES: { value: SoloMode; label: string; description: string }[] = [
 
 type SoloModeSelectorProps = {
     soloMode: SoloMode;
+    compact?: boolean;
 };
 
-export const SoloModeSelector = ({ soloMode }: SoloModeSelectorProps): ReactElement => {
+export const SoloModeSelector = ({ soloMode, compact = false }: SoloModeSelectorProps): ReactElement => {
+    if (compact) {
+        return (
+            <Popover>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <PopoverTrigger asChild>
+                            <Button variant="ghost" size="xs" aria-label={`Solo mode: ${soloMode.toUpperCase()}`}>
+                                {soloMode.toUpperCase()}
+                            </Button>
+                        </PopoverTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>Solo mode: {soloMode.toUpperCase()}</TooltipContent>
+                </Tooltip>
+                <PopoverContent align="end" aria-label="Solo mode">
+                    <div className="grid min-w-48 gap-1" role="radiogroup" aria-label="Solo mode">
+                        {SOLO_MODES.map((message) => (
+                            <Button
+                                key={message.value}
+                                variant={soloMode === message.value ? 'secondary' : 'ghost'}
+                                size="sm"
+                                role="radio"
+                                aria-checked={soloMode === message.value}
+                                onClick={() => setSoloMode(message.value)}
+                            >
+                                {message.label} — {message.description}
+                            </Button>
+                        ))}
+                    </div>
+                </PopoverContent>
+            </Popover>
+        );
+    }
+
     return (
         <DawTransportCluster role="radiogroup" aria-label="Solo mode">
             {SOLO_MODES.map((message) => (

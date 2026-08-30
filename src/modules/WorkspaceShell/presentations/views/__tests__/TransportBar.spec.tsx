@@ -265,7 +265,7 @@ describe('TransportBar', () => {
         windowChromeMocks.frameless = true;
         renderTransportBar();
 
-        fireEvent.doubleClick(screen.getByTestId('panel-toggle-button'));
+        fireEvent.doubleClick(screen.getAllByTestId('panel-toggle-button')[0]);
 
         expect(windowChromeMocks.toggleMaximize).not.toHaveBeenCalled();
     });
@@ -371,12 +371,14 @@ describe('TransportBar', () => {
         renderTransportBar();
 
         // showOverdub requires an armed MIDI track; audio-only → no overdub control.
+        fireEvent.click(screen.getByRole('button', { name: 'Transport settings' }));
         expect(screen.queryByRole('button', { name: /overdub/i })).not.toBeInTheDocument();
     });
 
     it('hides the overdub control when no tracks are armed', () => {
         renderTransportBar();
 
+        fireEvent.click(screen.getByRole('button', { name: 'Transport settings' }));
         expect(screen.queryByRole('button', { name: /overdub/i })).not.toBeInTheDocument();
     });
 

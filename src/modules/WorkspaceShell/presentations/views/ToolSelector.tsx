@@ -1,9 +1,18 @@
 import { type ReactElement } from 'react';
 
-import { MousePointer2, Scissors, Pencil, TrendingUp, MoveHorizontal, SquareDashed } from 'lucide-react';
+import {
+    MousePointer2,
+    Scissors,
+    Pencil,
+    TrendingUp,
+    MoveHorizontal,
+    SquareDashed,
+    SlidersHorizontal,
+} from 'lucide-react';
 
 import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { Button } from '#/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 
 import { TOOL_LABELS, type EditingTool } from '../../models/EditingTool';
@@ -24,10 +33,62 @@ const TOOLS: EditingTool[] = ['select', 'cut', 'draw', 'automation', 'stretch', 
 type ToolSelectorProps = {
     rippleEditing?: boolean;
     onToggleRipple?: () => void;
+    compact?: boolean;
 };
 
-export const ToolSelector = ({ rippleEditing, onToggleRipple }: ToolSelectorProps): ReactElement => {
+export const ToolSelector = ({ rippleEditing, onToggleRipple, compact = false }: ToolSelectorProps): ReactElement => {
     const { activeTool } = useWorkspaceState();
+
+    if (compact) {
+        return (
+            <Popover>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <PopoverTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                aria-label={`Editing tools: ${TOOL_LABELS[activeTool]}`}
+                            >
+                                <SlidersHorizontal className="size-3.5" aria-hidden="true" />
+                            </Button>
+                        </PopoverTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>Editing tools: {TOOL_LABELS[activeTool]}</TooltipContent>
+                </Tooltip>
+                <PopoverContent align="end" aria-label="Editing tools">
+                    <div className="grid min-w-40 gap-1">
+                        <p className="px-1 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">
+                            Editing tools
+                        </p>
+                        {TOOLS.map((tool) => (
+                            <Button
+                                key={tool}
+                                variant={activeTool === tool ? 'secondary' : 'ghost'}
+                                size="sm"
+                                role="radio"
+                                aria-checked={activeTool === tool}
+                                onClick={() => setEditingTool(tool)}
+                            >
+                                {TOOL_ICONS[tool]}
+                                {TOOL_LABELS[tool]}
+                            </Button>
+                        ))}
+                        {onToggleRipple !== null && onToggleRipple !== undefined ? (
+                            <Button
+                                variant={rippleEditing ? 'secondary' : 'ghost'}
+                                size="sm"
+                                aria-pressed={rippleEditing}
+                                onClick={onToggleRipple}
+                            >
+                                Ripple editing
+                            </Button>
+                        ) : null}
+                    </div>
+                </PopoverContent>
+            </Popover>
+        );
+    }
 
     return (
         <DawControlStrip className="gap-0.5 rounded-sm px-1 py-0.5" role="radiogroup" aria-label="Editing tools">

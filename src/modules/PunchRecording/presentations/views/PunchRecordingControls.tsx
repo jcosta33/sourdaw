@@ -1,12 +1,13 @@
 import { type ReactElement, useEffect, useState } from 'react';
 
-import { Radio, Scissors } from 'lucide-react';
+import { Radio, Scissors, SlidersHorizontal } from 'lucide-react';
 
 import { DawTransportCluster } from '#/components/daw/DawTransportCluster';
 import { LatchButton } from '#/components/daw/LatchButton';
 import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
+import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
 import { transportStore } from '#/modules/Transport/stores';
@@ -120,69 +121,80 @@ export const PunchRecordingControls = (): ReactElement => {
                 <TooltipContent>{punch.enabled ? 'Background capture on' : 'Background capture off'}</TooltipContent>
             </Tooltip>
 
-            <NumberField
-                label="In"
-                value={transport.punchInBeat}
-                step={0.25}
-                onCommit={setPunchIn}
-                tooltip="Punch-in beat"
-                ariaLabel="Punch-in beat"
-                testId="punch-in-beat"
-            />
-            <NumberField
-                label="Out"
-                value={transport.punchOutBeat}
-                step={0.25}
-                onCommit={setPunchOut}
-                tooltip="Punch-out beat"
-                ariaLabel="Punch-out beat"
-                testId="punch-out-beat"
-            />
-            <NumberField
-                label="Pre"
-                value={punch.defaultPreRoll}
-                step={1}
-                onCommit={setPreRoll}
-                tooltip="Pre-roll beats captured before punch-in"
-                ariaLabel="Pre-roll in beats"
-                testId="punch-pre-roll"
-            />
-            <NumberField
-                label="Post"
-                value={punch.defaultPostRoll}
-                step={1}
-                onCommit={setPostRoll}
-                tooltip="Post-roll beats captured after punch-out"
-                ariaLabel="Post-roll in beats"
-                testId="punch-post-roll"
-            />
-
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <Button
-                        variant="bare"
-                        size="bare"
-                        type="button"
-                        className={cn(
-                            'inline-flex h-6 items-center gap-1 rounded-sm border border-border-soft px-1.5 text-[10px] uppercase tracking-wider text-text-secondary transition-colors',
-                            activeCapture
-                                ? 'bg-[var(--color-state-record)]/15 text-[var(--color-state-record)] hover:bg-[var(--color-state-record)]/25'
-                                : 'opacity-60'
-                        )}
-                        aria-label="Mark punch region from current capture"
-                        disabled={!activeCapture}
-                        onClick={onDefineRegion}
-                    >
-                        <Scissors className="size-3" aria-hidden="true" />
-                        <span>Mark</span>
-                    </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                    {activeCapture
-                        ? 'Carve a punch region from the active background capture'
-                        : 'Start playback with background capture enabled to mark a region'}
-                </TooltipContent>
-            </Tooltip>
+            <Popover>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <PopoverTrigger asChild>
+                            <Button variant="ghost" size="icon-sm" aria-label="Punch recording settings">
+                                <SlidersHorizontal className="size-3.5" aria-hidden="true" />
+                            </Button>
+                        </PopoverTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>Punch recording settings</TooltipContent>
+                </Tooltip>
+                <PopoverContent align="start" aria-label="Punch recording settings">
+                    <div className="space-y-2">
+                        <p className="px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">
+                            Punch recording
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                            <NumberField
+                                label="In"
+                                value={transport.punchInBeat}
+                                step={0.25}
+                                onCommit={setPunchIn}
+                                tooltip="Punch-in beat"
+                                ariaLabel="Punch-in beat"
+                                testId="punch-in-beat"
+                            />
+                            <NumberField
+                                label="Out"
+                                value={transport.punchOutBeat}
+                                step={0.25}
+                                onCommit={setPunchOut}
+                                tooltip="Punch-out beat"
+                                ariaLabel="Punch-out beat"
+                                testId="punch-out-beat"
+                            />
+                            <NumberField
+                                label="Pre"
+                                value={punch.defaultPreRoll}
+                                step={1}
+                                onCommit={setPreRoll}
+                                tooltip="Pre-roll beats captured before punch-in"
+                                ariaLabel="Pre-roll in beats"
+                                testId="punch-pre-roll"
+                            />
+                            <NumberField
+                                label="Post"
+                                value={punch.defaultPostRoll}
+                                step={1}
+                                onCommit={setPostRoll}
+                                tooltip="Post-roll beats captured after punch-out"
+                                ariaLabel="Post-roll in beats"
+                                testId="punch-post-roll"
+                            />
+                        </div>
+                        <Button
+                            variant="bare"
+                            size="bare"
+                            type="button"
+                            className={cn(
+                                'inline-flex h-6 w-full items-center justify-center gap-1 rounded-sm border border-border-soft px-1.5 text-[10px] uppercase tracking-wider text-text-secondary transition-colors',
+                                activeCapture
+                                    ? 'bg-[var(--color-state-record)]/15 text-[var(--color-state-record)] hover:bg-[var(--color-state-record)]/25'
+                                    : 'opacity-60'
+                            )}
+                            aria-label="Mark punch region from current capture"
+                            disabled={!activeCapture}
+                            onClick={onDefineRegion}
+                        >
+                            <Scissors className="size-3" aria-hidden="true" />
+                            <span>Mark</span>
+                        </Button>
+                    </div>
+                </PopoverContent>
+            </Popover>
         </DawTransportCluster>
     );
 };

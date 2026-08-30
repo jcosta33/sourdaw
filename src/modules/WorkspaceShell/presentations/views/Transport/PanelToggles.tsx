@@ -10,10 +10,12 @@ import {
     Sparkles,
     Piano,
     Layers,
+    SlidersHorizontal,
 } from 'lucide-react';
 
 import { DawTransportCluster } from '#/components/daw/DawTransportCluster';
 import { Button } from '#/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
 import { aiStore } from '#/modules/AiGeneration/stores';
@@ -40,6 +42,7 @@ type PanelTogglesProps = {
     trackListOpen: boolean;
     virtualKeyboardOpen: boolean;
     dualViewOpen: boolean;
+    compact?: boolean;
 };
 
 export const PanelToggles = ({
@@ -50,8 +53,65 @@ export const PanelToggles = ({
     trackListOpen,
     virtualKeyboardOpen,
     dualViewOpen,
+    compact = false,
 }: PanelTogglesProps): ReactElement => {
     const aiState = useStore<AiPanelState>(aiStore, { isPanelOpen: false });
+
+    if (compact) {
+        return (
+            <Popover>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <PopoverTrigger asChild>
+                            <Button variant="ghost" size="icon-sm" aria-label="View and panel controls">
+                                <SlidersHorizontal className="size-3.5" aria-hidden="true" />
+                            </Button>
+                        </PopoverTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>View and panel controls</TooltipContent>
+                </Tooltip>
+                <PopoverContent align="end" aria-label="View and panel controls">
+                    <div className="grid min-w-48 gap-1">
+                        <p className="px-1 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">
+                            View
+                        </p>
+                        <Button variant="ghost" size="sm" aria-pressed={trackListOpen} onClick={toggleTrackList}>
+                            Track list
+                        </Button>
+                        <Button variant="ghost" size="sm" aria-pressed={sidebarOpen} onClick={toggleSidebar}>
+                            Browser
+                        </Button>
+                        <Button variant="ghost" size="sm" aria-pressed={inspectorOpen} onClick={toggleInspector}>
+                            Inspector
+                        </Button>
+                        <Button variant="ghost" size="sm" aria-pressed={dualViewOpen} onClick={toggleDualView}>
+                            Session + Arrangement View
+                        </Button>
+                        <Button variant="ghost" size="sm" aria-pressed={mixerOpen} onClick={toggleMixer}>
+                            Bottom dock
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            aria-pressed={virtualKeyboardOpen}
+                            onClick={toggleVirtualKeyboard}
+                        >
+                            Virtual keyboard
+                        </Button>
+                        <Button variant="ghost" size="sm" aria-pressed={chatPanelOpen} onClick={toggleChatPanel}>
+                            AI chat
+                        </Button>
+                        <Button variant="ghost" size="sm" aria-pressed={aiState.isPanelOpen} onClick={toggleAiPanel}>
+                            Generate
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={openPreferencesDialog}>
+                            Preferences
+                        </Button>
+                    </div>
+                </PopoverContent>
+            </Popover>
+        );
+    }
 
     return (
         <DawTransportCluster role="group" aria-label="Panel toggles">

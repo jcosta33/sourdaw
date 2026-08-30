@@ -1,12 +1,13 @@
 import { type ReactElement } from 'react';
 
-import { Play, Pause, Square, Circle, Repeat, Scissors, ListOrdered, Layers } from 'lucide-react';
+import { Play, Pause, Square, Circle, Repeat, Scissors, ListOrdered, Layers, SlidersHorizontal } from 'lucide-react';
 
 import { DawTransportCluster } from '#/components/daw/DawTransportCluster';
 import { LatchButton } from '#/components/daw/LatchButton';
 import { LED } from '#/components/daw/LED';
 import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover';
 import { Slider } from '#/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { executeAppAction } from '#/modules/Command/useCases';
@@ -22,8 +23,6 @@ import {
     setCountInBars,
 } from '#/modules/Transport/useCases';
 import { cn } from '#/utils/Styles/cn';
-
-import { TransportValuePill } from '../../components/Transport/TransportValuePill';
 
 type TransportControlsProps = {
     isPlaying: boolean;
@@ -173,119 +172,201 @@ export const TransportControls = ({
             </Tooltip>
 
             {showOverdub ? (
+                <span className="transport-bar__full-only">
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <LatchButton
+                                active={overdubEnabled}
+                                variant="cyan"
+                                size="icon"
+                                aria-label="Overdub"
+                                aria-pressed={overdubEnabled}
+                                onClick={toggleOverdub}
+                            >
+                                <Layers className="size-3.5" aria-hidden="true" />
+                            </LatchButton>
+                        </TooltipTrigger>
+                        <TooltipContent>MIDI Overdub (+)</TooltipContent>
+                    </Tooltip>
+                </span>
+            ) : null}
+
+            <span className="transport-bar__full-only">
                 <Tooltip>
                     <TooltipTrigger asChild>
                         <LatchButton
-                            active={overdubEnabled}
+                            active={metronomeEnabled}
                             variant="cyan"
                             size="icon"
-                            aria-label="Overdub"
-                            aria-pressed={overdubEnabled}
-                            onClick={toggleOverdub}
+                            aria-label="Metronome"
+                            aria-pressed={metronomeEnabled}
+                            onClick={toggleMetronome}
+                            data-testid="transport-metronome"
                         >
-                            <Layers className="size-3.5" aria-hidden="true" />
+                            <svg
+                                className="size-3.5"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                aria-hidden="true"
+                            >
+                                <path d="M12 2L6 22h12L12 2z" />
+                                <path d="M12 12l4-8" />
+                            </svg>
                         </LatchButton>
                     </TooltipTrigger>
-                    <TooltipContent>MIDI Overdub (+)</TooltipContent>
+                    <TooltipContent>Metronome (M)</TooltipContent>
                 </Tooltip>
-            ) : null}
+            </span>
 
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <LatchButton
-                        active={metronomeEnabled}
-                        variant="cyan"
-                        size="icon"
-                        aria-label="Metronome"
-                        aria-pressed={metronomeEnabled}
-                        onClick={toggleMetronome}
-                        data-testid="transport-metronome"
-                    >
-                        <svg
-                            className="size-3.5"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            aria-hidden="true"
-                        >
-                            <path d="M12 2L6 22h12L12 2z" />
-                            <path d="M12 12l4-8" />
-                        </svg>
-                    </LatchButton>
-                </TooltipTrigger>
-                <TooltipContent>Metronome (M)</TooltipContent>
-            </Tooltip>
-
-            {metronomeEnabled ? (
+            <span className="transport-bar__full-only">
                 <Tooltip>
                     <TooltipTrigger asChild>
-                        <Row className="px-2 py-1">
-                            <Slider
-                                min={0}
-                                max={1}
-                                step={0.01}
-                                value={[metronomeVolume]}
-                                onValueChange={(val) => setMetronomeVolume(val[0] ?? 0)}
-                                className="w-16 h-3"
-                                aria-label={`Metronome volume: ${Math.round(metronomeVolume * 100)}%`}
-                            />
-                        </Row>
+                        <LatchButton
+                            active={punchInEnabled}
+                            variant="amber"
+                            size="icon"
+                            aria-label="Punch in/out"
+                            aria-pressed={punchInEnabled}
+                            disabled={isPlaying || isRecording}
+                            onClick={setPunchEnabled}
+                            data-testid="transport-punch"
+                        >
+                            <Scissors className="size-3.5" aria-hidden="true" />
+                        </LatchButton>
                     </TooltipTrigger>
-                    <TooltipContent>Metronome volume: {Math.round(metronomeVolume * 100)}%</TooltipContent>
+                    <TooltipContent>Punch In/Out (I)</TooltipContent>
                 </Tooltip>
-            ) : null}
+            </span>
 
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <LatchButton
-                        active={punchInEnabled}
-                        variant="amber"
-                        size="icon"
-                        aria-label="Punch in/out"
-                        aria-pressed={punchInEnabled}
-                        disabled={isPlaying || isRecording}
-                        onClick={setPunchEnabled}
-                        data-testid="transport-punch"
-                    >
-                        <Scissors className="size-3.5" aria-hidden="true" />
-                    </LatchButton>
-                </TooltipTrigger>
-                <TooltipContent>Punch In/Out (I)</TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <LatchButton
-                        active={countInEnabled}
-                        variant="cyan"
-                        size="icon"
-                        aria-label="Count-in"
-                        aria-pressed={countInEnabled}
-                        onClick={toggleCountIn}
-                        data-testid="transport-countin"
-                    >
-                        <ListOrdered className="size-3.5" aria-hidden="true" />
-                    </LatchButton>
-                </TooltipTrigger>
-                <TooltipContent>Count-in</TooltipContent>
-            </Tooltip>
-            {countInEnabled ? (
+            <span className="transport-bar__full-only">
                 <Tooltip>
                     <TooltipTrigger asChild>
-                        <TransportValuePill
-                            active
-                            onClick={cycleCountInBars}
-                            aria-label={`Count-in bars: ${countInBars}. Click to cycle.`}
+                        <LatchButton
+                            active={countInEnabled}
+                            variant="cyan"
+                            size="icon"
+                            aria-label="Count-in"
+                            aria-pressed={countInEnabled}
+                            onClick={toggleCountIn}
+                            data-testid="transport-countin"
                         >
-                            {countInBars}
-                        </TransportValuePill>
+                            <ListOrdered className="size-3.5" aria-hidden="true" />
+                        </LatchButton>
                     </TooltipTrigger>
-                    <TooltipContent>Count-in bars (click to cycle 1→2→4)</TooltipContent>
+                    <TooltipContent>Count-in</TooltipContent>
                 </Tooltip>
-            ) : null}
+            </span>
+            <Popover>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <PopoverTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                aria-label="Transport settings"
+                                data-testid="transport-settings"
+                            >
+                                <SlidersHorizontal className="size-3.5" aria-hidden="true" />
+                            </Button>
+                        </PopoverTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>Transport settings</TooltipContent>
+                </Tooltip>
+                <PopoverContent align="center" aria-label="Transport settings">
+                    <div className="space-y-2">
+                        <p className="px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">
+                            Transport settings
+                        </p>
+                        {showOverdub ? (
+                            <span className="transport-bar__compact-only">
+                                <LatchButton
+                                    active={overdubEnabled}
+                                    variant="cyan"
+                                    size="sm"
+                                    aria-label="Overdub"
+                                    aria-pressed={overdubEnabled}
+                                    onClick={toggleOverdub}
+                                    className="w-full justify-start"
+                                >
+                                    <Layers className="size-3.5" aria-hidden="true" />
+                                    Overdub
+                                </LatchButton>
+                            </span>
+                        ) : null}
+                        <span className="transport-bar__compact-only">
+                            <LatchButton
+                                active={metronomeEnabled}
+                                variant="cyan"
+                                size="sm"
+                                aria-label="Metronome"
+                                aria-pressed={metronomeEnabled}
+                                onClick={toggleMetronome}
+                                className="w-full justify-start"
+                            >
+                                Metronome
+                            </LatchButton>
+                        </span>
+                        {metronomeEnabled ? (
+                            <Row className="gap-2 px-1 py-1">
+                                <span className="text-[11px] text-text-secondary">Volume</span>
+                                <Slider
+                                    min={0}
+                                    max={1}
+                                    step={0.01}
+                                    value={[metronomeVolume]}
+                                    onValueChange={(val) => setMetronomeVolume(val[0] ?? 0)}
+                                    className="w-24 h-3"
+                                    aria-label={`Metronome volume: ${Math.round(metronomeVolume * 100)}%`}
+                                />
+                            </Row>
+                        ) : null}
+                        <span className="transport-bar__compact-only">
+                            <LatchButton
+                                active={punchInEnabled}
+                                variant="amber"
+                                size="sm"
+                                aria-label="Punch in/out"
+                                aria-pressed={punchInEnabled}
+                                disabled={isPlaying || isRecording}
+                                onClick={setPunchEnabled}
+                                className="w-full justify-start"
+                            >
+                                <Scissors className="size-3.5" aria-hidden="true" />
+                                Punch in/out
+                            </LatchButton>
+                        </span>
+                        <span className="transport-bar__compact-only">
+                            <LatchButton
+                                active={countInEnabled}
+                                variant="cyan"
+                                size="sm"
+                                aria-label="Count-in"
+                                aria-pressed={countInEnabled}
+                                onClick={toggleCountIn}
+                                className="w-full justify-start"
+                            >
+                                <ListOrdered className="size-3.5" aria-hidden="true" />
+                                Count-in
+                            </LatchButton>
+                        </span>
+                        {countInEnabled ? (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={cycleCountInBars}
+                                aria-label={`Count-in bars: ${countInBars}. Click to cycle.`}
+                                className="w-full justify-between"
+                            >
+                                Count-in bars <span>{countInBars}</span>
+                            </Button>
+                        ) : null}
+                    </div>
+                </PopoverContent>
+            </Popover>
         </DawTransportCluster>
     );
 };

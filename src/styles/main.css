@@ -72,6 +72,86 @@
     width: env(titlebar-area-width, 100%);
 }
 
+/* The transport header owns its fit modes. These are container, not viewport,
+ * queries because browser display scale and docked desktop sessions change the
+ * renderer width without changing the outer window. */
+.transport-bar {
+    container-type: inline-size;
+}
+
+.transport-bar__title-row,
+.transport-bar__action-row {
+    display: grid;
+    align-items: center;
+    column-gap: 0.5rem;
+    min-width: 0;
+}
+
+.transport-bar__title-row {
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 40vw) minmax(0, 1fr);
+}
+
+.transport-bar__title-project,
+.transport-bar__title-prompt,
+.transport-bar__title-panels,
+.transport-bar__action-left,
+.transport-bar__action-right {
+    min-width: 0;
+}
+
+.transport-bar__title-prompt > :first-child {
+    min-width: 0;
+}
+
+.transport-bar__action-row {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    flex: 1;
+}
+
+.transport-bar__action-detail {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-width: 0;
+}
+
+.transport-bar__compact-only,
+.transport-bar__action-more {
+    display: none;
+}
+
+@container (max-width: 1199px) {
+    .transport-bar__full-only {
+        display: none;
+    }
+
+    .transport-bar__compact-only {
+        display: inline-flex;
+    }
+
+    .transport-bar__title-row {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
+    }
+
+    .transport-bar__action-left .transport-bar__full-or-compact {
+        display: none;
+    }
+
+    .transport-bar__action-more {
+        display: inline-flex;
+    }
+}
+
+@container (max-width: 739px) {
+    .transport-bar__action-row {
+        grid-template-columns: minmax(0, 1fr) auto auto;
+    }
+
+    .transport-bar__action-right {
+        display: none;
+    }
+}
+
 /* ── DAW-specific utilities ────────────────────────────────────────────── */
 @utility panel-raised {
     background: var(--color-bg-panel);

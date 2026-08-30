@@ -60,6 +60,10 @@ function renderUi(): void {
     render(<PunchRecordingControls />);
 }
 
+function openSettings(): void {
+    fireEvent.click(screen.getByRole('button', { name: 'Punch recording settings' }));
+}
+
 describe('PunchRecordingControls', () => {
     beforeEach(() => {
         punchState = {
@@ -97,6 +101,7 @@ describe('PunchRecordingControls', () => {
     describe('number fields', () => {
         it('renders the In/Out/Pre/Post fields seeded from store values', () => {
             renderUi();
+            openSettings();
             expect(screen.getByLabelText('Punch-in beat')).toHaveValue(4);
             expect(screen.getByLabelText('Punch-out beat')).toHaveValue(16);
             expect(screen.getByLabelText('Pre-roll in beats')).toHaveValue(4);
@@ -105,6 +110,7 @@ describe('PunchRecordingControls', () => {
 
         it('commits the In field to setPunchIn on blur', () => {
             renderUi();
+            openSettings();
             const input = screen.getByLabelText('Punch-in beat') as HTMLInputElement;
             fireEvent.change(input, { target: { value: '8.5' } });
             fireEvent.blur(input);
@@ -113,6 +119,7 @@ describe('PunchRecordingControls', () => {
 
         it('commits the Out field to setPunchOut on Enter', () => {
             renderUi();
+            openSettings();
             const input = screen.getByLabelText('Punch-out beat') as HTMLInputElement;
             fireEvent.change(input, { target: { value: '24' } });
             fireEvent.keyDown(input, { key: 'Enter' });
@@ -121,6 +128,7 @@ describe('PunchRecordingControls', () => {
 
         it('clamps a below-min value to the min (0) on commit for the In field', () => {
             renderUi();
+            openSettings();
             const input = screen.getByLabelText('Punch-in beat') as HTMLInputElement;
             fireEvent.change(input, { target: { value: '-10' } });
             fireEvent.blur(input);
@@ -129,6 +137,7 @@ describe('PunchRecordingControls', () => {
 
         it('falls back to the min when the value is non-numeric', () => {
             renderUi();
+            openSettings();
             const input = screen.getByLabelText('Punch-in beat') as HTMLInputElement;
             fireEvent.change(input, { target: { value: 'abc' } });
             fireEvent.blur(input);
@@ -137,6 +146,7 @@ describe('PunchRecordingControls', () => {
 
         it('commits the Pre field to setPreRoll and Post to setPostRoll', () => {
             renderUi();
+            openSettings();
             const pre = screen.getByLabelText('Pre-roll in beats') as HTMLInputElement;
             fireEvent.change(pre, { target: { value: '8' } });
             fireEvent.blur(pre);
@@ -152,6 +162,7 @@ describe('PunchRecordingControls', () => {
     describe('Mark region button', () => {
         it('is disabled when there is no active capture', () => {
             renderUi();
+            openSettings();
             const mark = screen.getByRole('button', { name: 'Mark punch region from current capture' });
             expect(mark).toBeDisabled();
         });
@@ -159,6 +170,7 @@ describe('PunchRecordingControls', () => {
         it('is enabled when a capture is recording', () => {
             punchState.captures = [capture({ id: 'cap-1', recording: true })];
             renderUi();
+            openSettings();
             const mark = screen.getByRole('button', { name: 'Mark punch region from current capture' });
             expect(mark).not.toBeDisabled();
         });
@@ -167,6 +179,7 @@ describe('PunchRecordingControls', () => {
             punchState.captures = [capture({ id: 'cap-1', recording: true })];
             transportState = { ...defaultTransportState, punchInBeat: 4, punchOutBeat: 16 };
             renderUi();
+            openSettings();
             fireEvent.click(screen.getByRole('button', { name: 'Mark punch region from current capture' }));
             expect(definePunchRegion).toHaveBeenCalledWith('cap-1', 4, 16);
         });
@@ -177,6 +190,7 @@ describe('PunchRecordingControls', () => {
                 capture({ id: 'cap-live', recording: true }),
             ];
             renderUi();
+            openSettings();
             fireEvent.click(screen.getByRole('button', { name: 'Mark punch region from current capture' }));
             expect(definePunchRegion).toHaveBeenCalledWith('cap-live', 4, 16);
         });

@@ -1,6 +1,10 @@
 import { type MouseEvent, type ReactElement } from 'react';
 
+import { Ellipsis } from 'lucide-react';
+
 import { Row, Stack } from '#/components/layout';
+import { Button } from '#/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover';
 import { useStore } from '#/infra/store/useStore';
 import { voiceInputAvailabilityStore, voiceStatusStore } from '#/modules/AiRuntime/stores';
 import { toggleVoiceInput } from '#/modules/AiRuntime/useCases';
@@ -87,7 +91,7 @@ export const TransportBar = (): ReactElement => {
         <Stack
             as="header"
             shrink={false}
-            className="h-(--spacing-transport-height) border-b border-black transition-colors duration-300 relative z-50"
+            className="transport-bar h-(--spacing-transport-height) border-b border-black transition-colors duration-300 relative z-50"
             style={{
                 background: isRecording
                     ? 'linear-gradient(180deg, rgba(255,64,50,0.06) 0%, rgba(10,10,10,1) 40%)'
@@ -101,29 +105,28 @@ export const TransportBar = (): ReactElement => {
             aria-label="Transport controls"
         >
             {/* ── ROW 1: Meta Layer (Project, AI Copilot, Layout) ── */}
-            <Row
-                grow
+            <div
                 className={cn(
-                    'desktop-titlebar-region w-full min-h-[40px] px-2',
+                    'transport-bar__title-row desktop-titlebar-region min-h-[40px] px-2',
                     framelessChrome && 'desktop-titlebar-region--frameless',
                     overlayChrome && 'desktop-titlebar-region--overlay'
                 )}
                 data-testid="window-titlebar-region"
                 onDoubleClick={toggleMaximizeOnTitlebarDoubleClick}
             >
-                {/* Left wing (flex-1 basis-0 ensures the center is absolutely geometrically centered) */}
-                <Row grow gap={1} className="basis-0">
+                <Row gap={1} className="transport-bar__title-project min-w-0">
                     <Row gap={0} shrink={false} data-testid="project-menu-control">
                         <ProjectName name={project.name} dirty={project.dirty} />
                         <RecentProjectsMenu />
                     </Row>
-                    <Sep />
-                    <ArrangementSelector />
-                    <MissingMediaPanel />
+                    <span className="transport-bar__full-only contents">
+                        <Sep />
+                        <ArrangementSelector />
+                        <MissingMediaPanel />
+                    </span>
                 </Row>
 
-                {/* Center stage */}
-                <Row justify="center" gap={1} shrink={false} className="w-[40vw] max-w-[800px] min-w-[300px]">
+                <Row justify="center" gap={1} className="transport-bar__title-prompt min-w-0">
                     <PromptBar />
                     <VoiceButton
                         isAvailable={voiceInputAvailable}
@@ -133,17 +136,30 @@ export const TransportBar = (): ReactElement => {
                     />
                 </Row>
 
-                {/* Right wing */}
-                <Row justify="end" grow gap={1} className="basis-0">
-                    <PanelToggles
-                        sidebarOpen={sidebarOpen}
-                        inspectorOpen={inspectorOpen}
-                        mixerOpen={mixerOpen}
-                        chatPanelOpen={chatPanelOpen}
-                        trackListOpen={trackListOpen}
-                        virtualKeyboardOpen={virtualKeyboardOpen}
-                        dualViewOpen={dualViewOpen}
-                    />
+                <Row justify="end" gap={1} className="transport-bar__title-panels">
+                    <span className="transport-bar__full-only">
+                        <PanelToggles
+                            sidebarOpen={sidebarOpen}
+                            inspectorOpen={inspectorOpen}
+                            mixerOpen={mixerOpen}
+                            chatPanelOpen={chatPanelOpen}
+                            trackListOpen={trackListOpen}
+                            virtualKeyboardOpen={virtualKeyboardOpen}
+                            dualViewOpen={dualViewOpen}
+                        />
+                    </span>
+                    <span className="transport-bar__compact-only">
+                        <PanelToggles
+                            sidebarOpen={sidebarOpen}
+                            inspectorOpen={inspectorOpen}
+                            mixerOpen={mixerOpen}
+                            chatPanelOpen={chatPanelOpen}
+                            trackListOpen={trackListOpen}
+                            virtualKeyboardOpen={virtualKeyboardOpen}
+                            dualViewOpen={dualViewOpen}
+                            compact
+                        />
+                    </span>
                     {framelessChrome ? (
                         <>
                             <Sep />
@@ -151,63 +167,94 @@ export const TransportBar = (): ReactElement => {
                         </>
                     ) : null}
                 </Row>
-            </Row>
+            </div>
 
             {/* Visual Separator */}
             <div className="w-full h-px bg-black/40 shadow-[0_1px_0_rgba(255,255,255,0.02)] shrink-0" />
 
             {/* ── ROW 2: Action Layer (Transport, Tools, Chronology) ── */}
-            <Row
-                grow
-                className="w-full min-h-[46px] px-2"
+            <div
+                className="transport-bar__action-row min-h-[46px] px-2"
                 style={{
                     background: isRecording
                         ? 'radial-gradient(ellipse at top, rgba(255,64,50,0.1) 0%, transparent 80%)'
                         : 'none',
                 }}
             >
-                {/* Left wing: Time and Tempo */}
-                <Row grow gap={1} className="basis-0">
+                <Row gap={1} className="transport-bar__action-left min-w-0">
                     <PlayheadDisplay
                         tempo={transport.tempo}
                         numerator={transport.timeSignatureNumerator}
                         timeDisplayMode={timeDisplayMode}
                     />
-                    <Sep />
-                    <TempoEditor />
-                    <Sep />
-                    <PunchRecordingControls />
+                    <span className="transport-bar__action-detail transport-bar__full-or-compact">
+                        <Sep />
+                        <TempoEditor />
+                        <Sep />
+                        <PunchRecordingControls />
+                    </span>
                 </Row>
 
-                {/* Center stage: Core Transport */}
-                <Row justify="center" gap={1} shrink={false}>
-                    <TransportControls
-                        isPlaying={transport.isPlaying}
-                        isRecording={transport.isRecording}
-                        isAudioRecording={audioState.isRecording}
-                        isLooping={transport.isLooping}
-                        overdubEnabled={transport.overdubEnabled}
-                        showOverdub={anyMidiTrackArmed}
-                        anyTrackArmed={anyTrackArmed}
-                        metronomeEnabled={transport.metronomeEnabled}
-                        metronomeVolume={transport.metronomeVolume}
-                        punchInEnabled={transport.punchInEnabled}
-                        countInEnabled={transport.countInEnabled}
-                        countInBars={transport.countInBars}
-                    />
-                </Row>
+                <TransportControls
+                    isPlaying={transport.isPlaying}
+                    isRecording={transport.isRecording}
+                    isAudioRecording={audioState.isRecording}
+                    isLooping={transport.isLooping}
+                    overdubEnabled={transport.overdubEnabled}
+                    showOverdub={anyMidiTrackArmed}
+                    anyTrackArmed={anyTrackArmed}
+                    metronomeEnabled={transport.metronomeEnabled}
+                    metronomeVolume={transport.metronomeVolume}
+                    punchInEnabled={transport.punchInEnabled}
+                    countInEnabled={transport.countInEnabled}
+                    countInBars={transport.countInBars}
+                />
 
-                {/* Right wing: Editing Tools */}
-                <Row justify="end" grow gap={1} className="basis-0">
+                <Row justify="end" gap={1} className="transport-bar__action-right">
                     <AutoScrollToggle />
                     <Sep />
-                    <ToolSelector rippleEditing={rippleEditing} onToggleRipple={toggleRippleEditing} />
+                    <span className="transport-bar__full-only">
+                        <ToolSelector rippleEditing={rippleEditing} onToggleRipple={toggleRippleEditing} />
+                    </span>
+                    <span className="transport-bar__compact-only">
+                        <ToolSelector rippleEditing={rippleEditing} onToggleRipple={toggleRippleEditing} compact />
+                    </span>
                     <Sep />
-                    <SoloModeSelector soloMode={soloMode} />
+                    <span className="transport-bar__full-only">
+                        <SoloModeSelector soloMode={soloMode} />
+                    </span>
+                    <span className="transport-bar__compact-only">
+                        <SoloModeSelector soloMode={soloMode} compact />
+                    </span>
                     <Sep />
                     <UndoRedoButtons canUndo={undoState.canUndo} canRedo={undoState.canRedo} />
                 </Row>
-            </Row>
+                <div className="transport-bar__action-more">
+                    <Popover>
+                        <PopoverTrigger asChild>
+                            <Button variant="ghost" size="icon-sm" aria-label="More transport controls">
+                                <Ellipsis className="size-3.5" aria-hidden="true" />
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent align="end" aria-label="More transport controls">
+                            <div className="space-y-2">
+                                <TempoEditor />
+                                <PunchRecordingControls />
+                                <div className="flex items-center gap-1 border-t border-border-soft pt-2">
+                                    <AutoScrollToggle />
+                                    <ToolSelector
+                                        rippleEditing={rippleEditing}
+                                        onToggleRipple={toggleRippleEditing}
+                                        compact
+                                    />
+                                    <SoloModeSelector soloMode={soloMode} compact />
+                                    <UndoRedoButtons canUndo={undoState.canUndo} canRedo={undoState.canRedo} />
+                                </div>
+                            </div>
+                        </PopoverContent>
+                    </Popover>
+                </div>
+            </div>
         </Stack>
     );
 };
