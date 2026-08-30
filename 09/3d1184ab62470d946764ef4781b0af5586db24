@@ -1,0 +1,27 @@
+src/modules/CommandInterface/useCases/__tests__/isNativeTextEditableTarget.spec.ts
+  s_ae074277795b45::t_9e707a55bbba1d 19-26
+  s_ae074277795b45::t_8af062a32eae70 18
+electron/shellComposition.ts
+  s_ae074277795b45::t_d7648edaa1efdd 49-93
+  s_ae074277795b45::t_6efe3c45b69985 1
+  s_ae074277795b45::t_657681f60f4982 4
+electron/__tests__/shellComposition.spec.ts
+  s_ae074277795b45::t_6015e316256a1b 8,45-74
+  s_ae074277795b45::t_dfddad4eabcab2 75-82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "093d1184ab62470d946764ef4781b0af5586db24",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
