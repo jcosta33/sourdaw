@@ -1,0 +1,66 @@
+src/modules/WorkspaceShell/useCases/index.ts
+  s_ae074277795b45::t_e753ec323f9b03 70
+electron/pluginGui.ts
+  s_ae074277795b45::t_ff61313e01ba5c 840-854
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx
+  s_ae074277795b45::t_16be218694354c 348-350,388-389,415-420,425-437,440-441,451-454,459,485-487
+  s_ae074277795b45::t_85a5fe744fd9c6 14,34,102
+  s_ae074277795b45::t_5721e864bb821e 252-258,283-289,320-347,384-386,438,457
+  s_ae074277795b45::t_30e107a9f8378a 351-360
+  s_ae074277795b45::t_722053927d2c49 75-85
+  s_ae074277795b45::t_4da3a7743f1720 387,390,414,439,442-450,455-456,458,482-484,488
+electron/windowCloseCoordinator.ts
+  s_ae074277795b45::t_de7a18ab8a3c75 169,177-178
+  s_ae074277795b45::t_b2ecb2283303d9 15-16,33-40,52,60-65,83-89,141,160,165-168,170-171,175-176,179-181
+electron/channels.ts
+  s_ae074277795b45::t_b2ecb2283303d9 203-204
+electron/nativeMenuActionDispatcher.ts
+  s_ae074277795b45::t_b1a057f5f818d3 34-40,57-60
+electron/__tests__/pluginGui.spec.ts
+  s_ae074277795b45::t_1acff3b87567e3 553-572
+electron/main.ts
+  s_ae074277795b45::t_b1a057f5f818d3 123
+electron/__tests__/shutdown.spec.ts
+  s_ae074277795b45::t_b26b346d15f3f6 172-177
+src/modules/WorkspaceShell/repositories/nativeMenuDesktop.ts
+  s_ae074277795b45::t_e753ec323f9b03 1-4
+electron/__tests__/windowCloseCoordinator.spec.ts
+  s_ae074277795b45::t_f204621df9ac16 325-326
+  s_ae074277795b45::t_ebc189ade21bde 64-95,365-368
+  s_ae074277795b45::t_3d5cb3cee1a08f 96-109,118,121,369-370
+  s_ae074277795b45::t_74aa2391c12dfe 110-117,119-120,327-337,371-385
+src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts
+  s_ae074277795b45::t_308df7eeef0991 31,36-37,73,86,218-219
+  s_ae074277795b45::t_95182e9d1b3d24 71,76,106,123
+  s_ae074277795b45::t_8f13e3a6d7cb1f 72,74-75,77-81,111,129
+src/modules/WorkspaceShell/useCases/nativeApplicationMenu.ts
+  s_ae074277795b45::t_e753ec323f9b03 1-4
+electron/__tests__/nativeMenuActionDispatcher.spec.ts
+  s_ae074277795b45::t_47a7daab1557ab 99-137
+  s_ae074277795b45::t_7884be3bc66152 138-160
+electron/appIpc.ts
+  s_ae074277795b45::t_b2ecb2283303d9 325-326,373-375,379-385
+electron/__tests__/appIpc.spec.ts
+  s_ae074277795b45::t_6723e3842a6db7 155-161,165-167,180-186,190-192
+src/types/sourdaw-desktop.d.ts
+  s_ae074277795b45::t_b2ecb2283303d9 129-130
+src/modules/WorkspaceShell/repositories/__tests__/nativeMenuDesktop.spec.ts
+  s_ae074277795b45::t_3db887f4c174f8 2-12,19-30
+  s_ae074277795b45::t_85a68ad05f3337 1,13-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "5d7e6c82da0b0bd31658423a5b603261dda822f1",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
