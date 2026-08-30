@@ -154,6 +154,7 @@ describe('useNativeApplicationMenu', () => {
             durabilityPending: false,
             projectKey: 'sourdaw:project:1',
             revision: 'revision-1',
+            rendererReady: true,
             recentProjects: [],
         });
         const input = document.createElement('input');
@@ -765,6 +766,7 @@ describe('useNativeApplicationMenu', () => {
             durabilityPending: false,
             projectKey: 'sourdaw:project:1',
             revision: 'revision-1',
+            rendererReady: true,
             recentProjects: [{ key: 'recent-2', name: 'Second' }],
         });
 

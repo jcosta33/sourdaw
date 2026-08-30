@@ -11,6 +11,8 @@ export type ProjectCloseState = {
     /** Stable Project snapshot key and CRDT revision make close approval specific to project truth. */
     readonly projectKey?: string;
     readonly revision?: string;
+    /** False only while a replacement renderer is still restoring Project truth. */
+    readonly rendererReady?: boolean;
 };
 
 export type SaveResult = {
@@ -53,6 +55,7 @@ export const createWindowCloseCoordinator = ({
         | undefined;
     let nextRequestId = 1;
     let generation = 0;
+    let awaitingRendererTruth = false;
 
     const isCloseBlocking = (state: ProjectCloseState): boolean => state.dirty || state.durabilityPending === true;
 
@@ -60,6 +63,13 @@ export const createWindowCloseCoordinator = ({
         left.projectKey === right.projectKey && left.revision === right.revision;
 
     const updateProject = (next: ProjectCloseState): void => {
+        // A crash replacement begins with the renderer's provisional store. It
+        // must not turn retained dirty authority into a clean close before the
+        // project owner has hydrated its actual CRDT-backed state.
+        if (awaitingRendererTruth && next.rendererReady === false) {
+            return;
+        }
+        awaitingRendererTruth = false;
         const changedRevision = !sameProjectRevision(project, next);
         project = next;
         if (phase === 'approved' && (changedRevision || isCloseBlocking(next))) {
@@ -236,7 +246,10 @@ export const createWindowCloseCoordinator = ({
         // to persist before crashing. A successful clean close already clears
         // it above, so a later normal window starts clean without special-case
         // state.
-        resetForWindow: invalidateWindowRequests,
+        resetForWindow: (): void => {
+            invalidateWindowRequests();
+            awaitingRendererTruth = isCloseBlocking(project);
+        },
         clearForNoWindow: clearWindowAuthority,
         cancelPending,
     };

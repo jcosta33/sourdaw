@@ -3,6 +3,37 @@ import { describe, expect, it, vi } from 'vitest';
 import { createWindowCloseCoordinator } from '../windowCloseCoordinator.js';
 
 describe('window close coordinator', () => {
+    it('retains dirty crash authority until the replacement renderer publishes hydrated project truth', async () => {
+        const coordinator = createWindowCloseCoordinator({ ask: async () => 'cancel', send: vi.fn() });
+        coordinator.updateProject({
+            title: 'Unsaved song',
+            dirty: true,
+            projectKey: 'project-a',
+            revision: 'revision-1',
+        });
+        coordinator.resetForWindow();
+
+        coordinator.updateProject({
+            title: 'Sourdaw',
+            dirty: false,
+            projectKey: 'provisional',
+            revision: 'revision-0',
+            rendererReady: false,
+        });
+
+        await expect(coordinator.requestClose()).resolves.toBe(false);
+        expect(coordinator.permitsClose()).toBe(false);
+
+        coordinator.updateProject({
+            title: 'Recovered song',
+            dirty: false,
+            projectKey: 'project-a',
+            revision: 'revision-1',
+            rendererReady: true,
+        });
+        await expect(coordinator.requestClose()).resolves.toBe(true);
+    });
+
     it('saves the requested close and only approves after the renderer confirms it is clean', async () => {
         const send = vi.fn();
         const coordinator = createWindowCloseCoordinator({

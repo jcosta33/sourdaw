@@ -120,6 +120,7 @@ type SourdawDesktopBridge = {
             readonly durabilityPending: boolean;
             readonly projectKey: string;
             readonly revision: string;
+            readonly rendererReady?: boolean;
             readonly recentProjects: readonly { readonly key: string; readonly name: string }[];
         }) => Promise<void>;
         readonly saveResult: (result: {

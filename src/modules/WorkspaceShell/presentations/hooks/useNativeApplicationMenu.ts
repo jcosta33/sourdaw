@@ -240,6 +240,7 @@ export const useNativeApplicationMenu = (project: ProjectStoreState): void => {
                 durabilityPending: project.identityPersistencePending === true,
                 projectKey: nativeProjectKey(project),
                 revision: captureProjectRevision(),
+                rendererReady: project.loading !== true,
                 recentProjects: getRecentProjects().map(({ key, name }) => ({ key, name })),
             });
         };

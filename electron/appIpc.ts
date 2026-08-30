@@ -315,6 +315,8 @@ export type NativeMenuProjectState = {
     readonly durabilityPending: boolean;
     readonly projectKey: string;
     readonly revision: string;
+    /** A recovering renderer may publish its provisional shell state before Project hydration completes. */
+    readonly rendererReady?: boolean;
     readonly recentProjects: readonly { readonly key: string; readonly name: string }[];
 };
 
@@ -353,12 +355,17 @@ const nativeMenuProjectState = (value: unknown): NativeMenuProjectState => {
         }
         return { key: project.key, name: project.name };
     });
+    const rendererReady = state.rendererReady;
+    if (rendererReady !== undefined && typeof rendererReady !== 'boolean') {
+        throw new TypeError('native menu renderer readiness is invalid');
+    }
     return {
         title: state.title,
         dirty: state.dirty,
         durabilityPending: state.durabilityPending,
         projectKey: state.projectKey,
         revision: state.revision,
+        rendererReady,
         recentProjects,
     };
 };
