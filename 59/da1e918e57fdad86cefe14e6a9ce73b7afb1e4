@@ -1,0 +1,48 @@
+src/modules/WorkspaceShell/presentations/views/Transport/PanelToggles.tsx
+  s_ae074277795b45::t_acdc51a413653a 13,18,45,56,60-109
+  s_ae074277795b45::t_5f9234ca04ff18 110-115
+src/modules/WorkspaceShell/presentations/views/Transport/__tests__/TransportControls.spec.tsx
+  s_ae074277795b45::t_fc262f58d93903 41-44,206,212,227,233,240,247,254,261
+src/styles/main.css
+  s_ae074277795b45::t_883b7f93d6d16d 135-142
+  s_ae074277795b45::t_fa9dc1b8e75ad0 75-134,143-154
+src/modules/PunchRecording/presentations/views/__tests__/PunchRecordingControls.spec.tsx
+  s_ae074277795b45::t_6f107f2dedf9bd 63-66,104,113,122,131,140,149,165,173,182,193
+src/modules/WorkspaceShell/presentations/views/ToolSelector.tsx
+  s_ae074277795b45::t_a587a68b119819 3-11,15,36,39,42-78
+  s_ae074277795b45::t_bc0fd2e640a932 79-92
+src/modules/WorkspaceShell/presentations/views/Transport/SoloModeSelector.tsx
+  s_ae074277795b45::t_93a781b65e3b74 5,31,34-67
+src/modules/WorkspaceShell/presentations/views/__tests__/TransportBar.spec.tsx
+  s_ae074277795b45::t_d673eccc9b6395 374,381
+  s_ae074277795b45::t_2dd70caab7e966 268
+src/modules/PunchRecording/presentations/views/PunchRecordingControls.tsx
+  s_ae074277795b45::t_b485a15dc41c67 3,10,124-197
+src/components/ui/popover.tsx
+  s_ae074277795b45::t_b9414a3cd36bef 1-38
+src/modules/WorkspaceShell/presentations/views/Transport/TransportControls.tsx
+  s_ae074277795b45::t_ca576221a69bfc 3,10,263-283,299,301-311,313-326,328-340,343-354,356-369
+  s_ae074277795b45::t_a98f16bc53a3df 175-194,198,201-204,206-218,221,223,225,228-239,241,243,245,248-255,257-258,260,262,284-298,300,312,327,341-342,355
+src/modules/WorkspaceShell/presentations/views/TransportBar.tsx
+  s_ae074277795b45::t_397c8509067413 3-4,6-7,94,108,110,117,122-126,129,139-162,170,176-177,184,190-195,213,216-221,223-228,232-244,250-257
+  s_ae074277795b45::t_9c1ed34edb2217 198-211,245-249
+tests/e2e/transportResponsive.spec.ts
+  s_ae074277795b45::t_e64968904d3f53 42-51,63-71
+  s_ae074277795b45::t_8d94cf538070c2 1-41,52-62,72-73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "59da1e918e57fdad86cefe14e6a9ce73b7afb1e4",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
