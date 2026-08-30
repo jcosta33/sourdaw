@@ -2527,21 +2527,11 @@ mod tests {
         );
     }
 
-    /// Replace the record under an instance id with a fresh runtime, exactly as
-    /// an unload followed by a reload of the same id does.
-    fn reload_engine_owned_fixture(state: &AppState, instance_id: &str, parameter_value: f64) {
-        let mut engine_plugins = state.engine_plugins.lock().expect("engine_plugins lock");
-        reload_engine_owned_record(
-            &mut engine_plugins,
-            instance_id,
-            reloaded_engine_owned_record(parameter_value),
-        );
-    }
-
-    /// The swap half of [`reload_engine_owned_fixture`], for a caller already
-    /// inside the map's critical section. The interleaving tests install the
-    /// replacement under one held lock so no racing command can observe the id
-    /// absent or half-replaced.
+    /// Replace the record under an instance id with a fresh runtime — exactly
+    /// as an unload followed by a reload of the same id does — for a caller
+    /// already inside the map's critical section. The interleaving tests
+    /// install the replacement under one held lock so no racing command can
+    /// observe the id absent or half-replaced.
     fn reload_engine_owned_record(
         engine_plugins: &mut HashMap<String, EnginePluginInstanceData>,
         instance_id: &str,
@@ -2602,6 +2592,30 @@ mod tests {
         }
     }
 
+    /// Wait until the command thread under test is provably past its runtime
+    /// resolution: resolving clones the record's `Arc`, so the strong count
+    /// rising above the pre-spawn `baseline` is that resolve made observable.
+    ///
+    /// The raised count is stable, not a transient to be missed — the command
+    /// parks on the control gate this choreography holds, and only leaves the
+    /// command — dropping its clone — after that gate opens. A command that
+    /// resolved before a swap therefore holds the runtime the swap replaces,
+    /// whatever the scheduler does with it in between.
+    fn wait_for_the_command_resolve(
+        runtime: &Arc<SharedHostedPlugin>,
+        baseline: usize,
+        phase: &str,
+    ) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Arc::strong_count(runtime) <= baseline {
+            assert!(
+                Instant::now() < deadline,
+                "{phase} must resolve the runtime it addresses before the choreography proceeds"
+            );
+            std::thread::yield_now();
+        }
+    }
+
     fn parameter_values(parameters: &[PluginParameter]) -> Vec<f64> {
         parameters.iter().map(|parameter| parameter.value).collect()
     }
@@ -2629,29 +2643,23 @@ mod tests {
 
         std::thread::scope(|scope| {
             let (control_held, control_gate_taken) = std::sync::mpsc::channel();
-            let (write_issued, writer_issued_write) = std::sync::mpsc::channel();
             let state_ref = &state;
+            let resolve_baseline = Arc::strong_count(&runtime);
             // The holder owns the runtime's control gate — the mutex and the
             // access seam beneath it — for its whole closure, and the closure
-            // performs the swap itself: the writer parks on the gate, the
-            // replacement is installed while the gate is still held, and only
-            // the closure's return hands the gate back. The write can never
-            // land on the record that replaced the runtime it addressed.
+            // performs the swap itself. The swap waits for the writer's
+            // resolve to become observable: resolving clones the record's
+            // `Arc`, so the count rising above its pre-spawn baseline proves
+            // the writer holds the OLD runtime — a writer the scheduler
+            // parked mid-command can therefore never resolve the replacement
+            // and legitimately write to it. The map must be free for the
+            // swap — the first half of this contract — and the replacement
+            // goes in under one critical section while the gate is still
+            // held, so the write-back always meets a swapped record.
             let control_holder = scope.spawn(move || {
                 runtime.with_control(Duration::from_secs(5), |_plugin| {
                     control_held.send(()).expect("the test is still listening");
-                    writer_issued_write
-                        .recv_timeout(Duration::from_secs(5))
-                        .expect("the writer must issue the write while the gate is held");
-
-                    // The writer's next step after signalling is two lock
-                    // acquisitions, then it parks on the gate this closure
-                    // holds — so its resolution of the runtime is long done.
-                    // Building the replacement is real work on this side of
-                    // the signal, which keeps it that way under load. The map
-                    // must be free here — the first half of this contract —
-                    // and the replacement goes in under one critical section
-                    // before the gate is handed back.
+                    wait_for_the_command_resolve(&runtime, resolve_baseline, "the writer");
                     let replacement = reloaded_engine_owned_record(0.25);
                     let mut engine_plugins =
                         lock_engine_plugins_for_the_swap(state_ref, "set_plugin_parameter");
@@ -2665,23 +2673,15 @@ mod tests {
             });
             control_gate_taken
                 .recv_timeout(Duration::from_secs(5))
-                .expect("the control holder must take the gate before the write is issued");
+                .expect("the control holder must take the gate before the write runs");
 
             let writer = scope.spawn(move || {
-                crate::block_on_test(async {
-                    // Sent from inside the driven future, one statement before
-                    // the command resolves its runtime: the signal and the
-                    // resolution share a thread with nothing schedulable
-                    // between them but the resolve itself.
-                    write_issued.send(()).expect("the test is still listening");
-                    set_plugin_parameter(
-                        PluginInstanceId("instance-swapped-write".to_string()),
-                        7,
-                        0.75,
-                        state_ref,
-                    )
-                    .await
-                })
+                crate::block_on_test(set_plugin_parameter(
+                    PluginInstanceId("instance-swapped-write".to_string()),
+                    7,
+                    0.75,
+                    state_ref,
+                ))
             });
 
             assert_eq!(writer.join().expect("writer thread"), Ok(()));
@@ -2727,29 +2727,22 @@ mod tests {
 
         std::thread::scope(|scope| {
             let (control_held, control_gate_taken) = std::sync::mpsc::channel();
-            let (restore_issued, writer_issued_restore) = std::sync::mpsc::channel();
             let state_ref = &state;
+            let resolve_baseline = Arc::strong_count(&runtime);
             // The holder owns the runtime's control gate — the mutex and the
             // access seam beneath it — for its whole closure, and the closure
-            // performs the swap itself: the writer parks on the gate, the
-            // replacement is installed while the gate is still held, and only
-            // the closure's return hands the gate back. The restore can never
-            // complete against the record it resolved.
+            // performs the swap itself. The swap waits for the writer's
+            // resolve to become observable: resolving clones the record's
+            // `Arc`, so the count rising above its pre-spawn baseline proves
+            // the writer holds the OLD runtime, whatever the scheduler does.
+            // The map must be free for the swap — the first half of this
+            // contract — and the replacement goes in under one critical
+            // section while the gate is still held, so the write-back always
+            // meets a swapped record.
             let control_holder = scope.spawn(move || {
                 runtime.with_control(Duration::from_secs(5), |_plugin| {
                     control_held.send(()).expect("the test is still listening");
-                    writer_issued_restore
-                        .recv_timeout(Duration::from_secs(5))
-                        .expect("the writer must issue the restore while the gate is held");
-
-                    // The writer's next step after signalling is two lock
-                    // acquisitions, then it parks on the gate this closure
-                    // holds — so its resolution of the runtime is long done.
-                    // Building the replacement is real work on this side of
-                    // the signal, which keeps it that way under load. The map
-                    // must be free here — the first half of this contract —
-                    // and the replacement goes in under one critical section
-                    // before the gate is handed back.
+                    wait_for_the_command_resolve(&runtime, resolve_baseline, "the writer");
                     let replacement = reloaded_engine_owned_record(0.25);
                     let mut engine_plugins =
                         lock_engine_plugins_for_the_swap(state_ref, "write_plugin_state_chunk");
@@ -2763,12 +2756,9 @@ mod tests {
             });
             control_gate_taken
                 .recv_timeout(Duration::from_secs(5))
-                .expect("the control holder must take the gate before the restore is issued");
+                .expect("the control holder must take the gate before the restore runs");
 
             let writer = scope.spawn(move || {
-                restore_issued
-                    .send(())
-                    .expect("the test is still listening");
                 write_plugin_state_chunk("instance-swapped-restore", &[9, 8, 7], state_ref)
             });
 
@@ -2815,28 +2805,22 @@ mod tests {
 
         let polled = std::thread::scope(|scope| {
             let (control_held, control_gate_taken) = std::sync::mpsc::channel();
-            let (poll_issued, reader_issued_poll) = std::sync::mpsc::channel();
             let state_ref = &state;
+            let resolve_baseline = Arc::strong_count(&runtime);
             // The holder owns the runtime's control gate — the mutex and the
             // access seam beneath it — for its whole closure, and the closure
-            // performs the swap itself: the reader parks on the gate, the
-            // replacement is installed while the gate is still held, and only
-            // the closure's return hands the gate back. The poll can never
-            // complete against the record it resolved.
+            // performs the swap itself. The swap waits for the reader's
+            // resolve to become observable: resolving clones the record's
+            // `Arc`, so the count rising above its pre-spawn baseline proves
+            // the reader holds the OLD runtime, whatever the scheduler does.
+            // The map must be free for the swap, and the replacement goes in
+            // under one critical section while the gate is still held, so the
+            // poll always describes the dead runtime and the write-back
+            // always meets a swapped record.
             let control_holder = scope.spawn(move || {
                 runtime.with_control(Duration::from_secs(5), |_plugin| {
                     control_held.send(()).expect("the test is still listening");
-                    reader_issued_poll
-                        .recv_timeout(Duration::from_secs(5))
-                        .expect("the reader must issue the poll while the gate is held");
-
-                    // The reader's next step after signalling is two lock
-                    // acquisitions, then it parks on the gate this closure
-                    // holds — so its resolution of the runtime is long done.
-                    // Building the replacement is real work on this side of
-                    // the signal, which keeps it that way under load. The map
-                    // must be free here, and the replacement goes in under one
-                    // critical section before the gate is handed back.
+                    wait_for_the_command_resolve(&runtime, resolve_baseline, "the reader");
                     let replacement = reloaded_engine_owned_record(0.25);
                     let mut engine_plugins =
                         lock_engine_plugins_for_the_swap(state_ref, "get_plugin_parameters");
@@ -2850,21 +2834,13 @@ mod tests {
             });
             control_gate_taken
                 .recv_timeout(Duration::from_secs(5))
-                .expect("the control holder must take the gate before the poll is issued");
+                .expect("the control holder must take the gate before the poll runs");
 
             let reader = scope.spawn(move || {
-                crate::block_on_test(async {
-                    // Sent from inside the driven future, one statement before
-                    // the command resolves its runtime: the signal and the
-                    // resolution share a thread with nothing schedulable
-                    // between them but the resolve itself.
-                    poll_issued.send(()).expect("the test is still listening");
-                    get_plugin_parameters(
-                        PluginInstanceId("instance-swapped-poll".to_string()),
-                        state_ref,
-                    )
-                    .await
-                })
+                crate::block_on_test(get_plugin_parameters(
+                    PluginInstanceId("instance-swapped-poll".to_string()),
+                    state_ref,
+                ))
             });
 
             let polled = reader.join().expect("reader thread");
@@ -2899,11 +2875,12 @@ mod tests {
     /// it. Storing the poll on top reverts it — the exact knob snap-back
     /// `poll_parameters` claims to prevent.
     ///
-    /// The window is constructed with gates, not sleeps: the map is held from
-    /// before the poll may run until the newer write and its cache entry are
-    /// both in, and the write is enqueued only after a control round trip
-    /// proves the poll's snapshot was taken — so the write-back always meets
-    /// a cache that is newer than the poll.
+    /// The window is constructed with gates, not sleeps: the map is taken only
+    /// once the reader's resolve is observable, is held from before the poll
+    /// may run until the newer write and its cache entry are both in, and the
+    /// write is enqueued after a control round trip that queues behind the
+    /// reader's poll — so the write-back meets a cache that is newer than the
+    /// poll, and no schedule of correct code fails.
     #[test]
     fn get_plugin_parameters_does_not_revert_a_write_accepted_during_the_poll() {
         let state = AppState::default();
@@ -2919,7 +2896,6 @@ mod tests {
         let polled = std::thread::scope(|scope| {
             let (control_held, control_gate_taken) = std::sync::mpsc::channel();
             let (let_poll_run, poll_may_run) = std::sync::mpsc::channel();
-            let (poll_issued, reader_issued_poll) = std::sync::mpsc::channel();
             let (go_hold_map, hold_map) = std::sync::mpsc::channel();
             let (map_held, map_was_held) = std::sync::mpsc::channel();
 
@@ -2928,6 +2904,8 @@ mod tests {
             // sent once the map below is held — so the reader's write-back
             // can never run before the newer write is in the cache.
             let event_runtime = Arc::clone(&runtime);
+            let state_ref = &state;
+            let resolve_baseline = Arc::strong_count(&runtime);
             let control_holder = scope.spawn(move || {
                 runtime.with_control(Duration::from_secs(5), |_plugin| {
                     control_held.send(()).expect("the test is still listening");
@@ -2939,26 +2917,14 @@ mod tests {
             });
             control_gate_taken
                 .recv_timeout(Duration::from_secs(5))
-                .expect("the control holder must take the gate before the poll is issued");
+                .expect("the control holder must take the gate before the poll runs");
 
-            let state_ref = &state;
             let reader = scope.spawn(move || {
-                crate::block_on_test(async {
-                    // Sent from inside the driven future, one statement before
-                    // the command resolves its runtime: the signal and the
-                    // resolution share a thread with nothing schedulable
-                    // between them but the resolve itself.
-                    poll_issued.send(()).expect("the test is still listening");
-                    get_plugin_parameters(
-                        PluginInstanceId("instance-late-write".to_string()),
-                        state_ref,
-                    )
-                    .await
-                })
+                crate::block_on_test(get_plugin_parameters(
+                    PluginInstanceId("instance-late-write".to_string()),
+                    state_ref,
+                ))
             });
-            reader_issued_poll
-                .recv_timeout(Duration::from_secs(5))
-                .expect("the reader must issue the poll while control is held");
 
             // Holds the map across the reader's poll, then lands the write in
             // that window exactly as `set_plugin_parameter` does: enqueue,
@@ -2966,17 +2932,31 @@ mod tests {
             let map_holder = scope.spawn(move || {
                 hold_map
                     .recv_timeout(Duration::from_secs(5))
-                    .expect("the test asks for the map once the poll is issued");
+                    .expect("the test asks for the map once the reader runs");
+
+                // The map is taken only once the reader's resolve is
+                // observable: resolving clones the record's `Arc`, so the
+                // count rising above the pre-spawn baseline proves the reader
+                // is inside the command with this runtime. From there the
+                // still-closed gate leaves the poll the only step it can
+                // take, so the enqueue below cannot land before the reader
+                // has even resolved.
+                wait_for_the_command_resolve(&event_runtime, resolve_baseline, "the reader");
 
                 let mut engine_plugins =
                     lock_engine_plugins_for_the_swap(state_ref, "get_plugin_parameters");
                 map_held.send(()).expect("the test is still listening");
 
-                // The gate is still closed above, so this parks until it
-                // opens; once the reader's poll runs it holds the runtime's
-                // control mutex for the poll's duration, so this round trip
-                // returning means the poll's snapshot is determined — the
-                // write that follows is provably the newer one.
+                // The gate above is still closed, so the reader parks on the
+                // control mutex and this round trip queues behind it; the
+                // reader holds that mutex across its whole poll, so this
+                // returning means the reader's snapshot is taken and the
+                // enqueued write is the newer one. The one escape is a reader
+                // descheduled between its resolve and the mutex: this then
+                // runs uncontended and the enqueue precedes the poll, whose
+                // own pending check refuses the window for this run — that
+                // schedule leaves the write-back guard unexercised but no
+                // schedule of correct code fails.
                 event_runtime
                     .with_control(Duration::from_secs(2), |_plugin| Ok(()))
                     .expect("fixture control access should succeed");
