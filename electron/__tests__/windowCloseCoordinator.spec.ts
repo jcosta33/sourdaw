@@ -195,6 +195,34 @@ describe('window close coordinator', () => {
         expect(coordinator.permitsClose()).toBe(false);
     });
 
+    it('accepts the clean replacement key produced by its correlated never-saved discard', async () => {
+        const coordinator = createWindowCloseCoordinator({ ask: async () => 'discard', send: vi.fn() });
+        coordinator.updateProject({
+            title: 'Untitled',
+            dirty: true,
+            projectKey: 'sourdaw:project:1',
+            revision: 'revision-1',
+        });
+
+        const close = coordinator.requestClose();
+        await Promise.resolve();
+        coordinator.updateProject({
+            title: 'Untitled Project',
+            dirty: false,
+            projectKey: 'sourdaw:project:2',
+            revision: 'revision-2',
+        });
+        coordinator.resolveSave({
+            requestId: 1,
+            saved: true,
+            dirty: false,
+            projectKey: 'sourdaw:project:2',
+            revision: 'revision-2',
+        });
+
+        await expect(close).resolves.toBe(true);
+    });
+
     it('re-prompts after a failed discard leaves a clean but non-durable replacement', async () => {
         const ask = vi.fn(async () => 'discard' as const);
         const send = vi.fn();

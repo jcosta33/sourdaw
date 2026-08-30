@@ -44,6 +44,7 @@ export const createWindowCloseCoordinator = ({
     let pendingSave:
         | {
               readonly requestId: number;
+              readonly operation: CloseOperation;
               readonly expected: ProjectCloseState;
               latestCandidate: ProjectCloseState | undefined;
               readonly timer: TimerHandle;
@@ -70,7 +71,7 @@ export const createWindowCloseCoordinator = ({
         // A dialog decision is about a particular piece of project truth. A
         // new project or an edit while it is open needs a fresh decision.
         if (phase === 'saving' && changedRevision && pendingSave !== undefined) {
-            if (next.projectKey === pendingSave.expected.projectKey) {
+            if (next.projectKey === pendingSave.expected.projectKey || pendingSave.operation === 'discard') {
                 pendingSave.latestCandidate = next;
                 return;
             }
@@ -168,6 +169,7 @@ export const createWindowCloseCoordinator = ({
                 );
                 pendingSave = {
                     requestId,
+                    operation: decision,
                     expected: expectedProject,
                     latestCandidate: undefined,
                     timer,
@@ -201,7 +203,9 @@ export const createWindowCloseCoordinator = ({
             !result.saved ||
             result.dirty ||
             result.requestId !== requestId ||
-            (result.projectKey !== undefined && result.projectKey !== expectedProject.projectKey) ||
+            (result.projectKey !== undefined &&
+                result.projectKey !== expectedProject.projectKey &&
+                result.projectKey !== activeSave?.latestCandidate?.projectKey) ||
             (result.revision !== undefined &&
                 result.revision !== expectedProject.revision &&
                 result.revision !== activeSave?.latestCandidate?.revision)
