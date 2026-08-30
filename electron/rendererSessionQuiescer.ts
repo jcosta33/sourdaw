@@ -8,7 +8,13 @@ export type RendererSessionWindow = {
     readonly webContents: { readonly send: (channel: string, requestId: number) => void };
 };
 
-export const createRendererSessionQuiescer = (channel: string, timers: Timers = systemTimers) => {
+export const createRendererSessionQuiescer = (
+    channel: string,
+    cancelChannelOrTimers: string | Timers = systemTimers,
+    injectedTimers: Timers = systemTimers
+) => {
+    const cancelChannel = typeof cancelChannelOrTimers === 'string' ? cancelChannelOrTimers : `${channel}:cancel`;
+    const timers = typeof cancelChannelOrTimers === 'string' ? injectedTimers : cancelChannelOrTimers;
     let requestId = 1;
     let pending:
         | {
@@ -26,6 +32,13 @@ export const createRendererSessionQuiescer = (channel: string, timers: Timers = 
         }
         if (!pending.started) {
             pending.settle(false);
+            return;
+        }
+        try {
+            pending.window.webContents.send(cancelChannel, pending.requestId);
+        } catch {
+            // The final request timeout keeps the native window open if a
+            // disappearing renderer cannot acknowledge cancellation.
         }
     };
 
@@ -43,7 +56,16 @@ export const createRendererSessionQuiescer = (channel: string, timers: Timers = 
                     pending = undefined;
                     resolve(quiesced);
                 };
-                timer = timers.setTimer(() => settle(false), RENDERER_SESSION_QUIESCE_TIMEOUT_MS);
+                timer = timers.setTimer(() => {
+                    if (pending?.requestId === currentRequestId && pending.started) {
+                        try {
+                            pending.window.webContents.send(cancelChannel, currentRequestId);
+                        } catch {
+                            // The missing final acknowledgement still denies close.
+                        }
+                    }
+                    settle(false);
+                }, RENDERER_SESSION_QUIESCE_TIMEOUT_MS);
                 pending = { window, requestId: currentRequestId, timer, started: false, settle };
                 try {
                     window.webContents.send(channel, currentRequestId);

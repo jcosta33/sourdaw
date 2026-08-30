@@ -74,4 +74,26 @@ describe('quiesceProjectSession', () => {
         await expect(quiesceProjectSession(async () => true)).resolves.toBe(true);
         expect(runtime.resetAudioGraph).toHaveBeenCalledTimes(1);
     });
+
+    it('repairs a started teardown when close authority is revoked while plugin retirement is pending', async () => {
+        runtime.stopPlayback.mockResolvedValue(undefined);
+        let releasePlugin!: () => void;
+        runtime.unloadPlugin.mockImplementation(
+            () =>
+                new Promise<void>((resolve) => {
+                    releasePlugin = resolve;
+                })
+        );
+        runtime.repairRuntimeGraphFromProject.mockResolvedValue(undefined);
+        const { cancelProjectSessionQuiesce } = await import('../cancelProjectSessionQuiesce');
+        const { quiesceProjectSession } = await import('../quiesceProjectSession');
+
+        const quiescing = quiesceProjectSession(async () => true);
+        await vi.waitFor(() => expect(runtime.unloadPlugin).toHaveBeenCalledOnce());
+        cancelProjectSessionQuiesce();
+        releasePlugin();
+
+        await expect(quiescing).resolves.toBe(false);
+        expect(runtime.repairRuntimeGraphFromProject).toHaveBeenCalledOnce();
+    });
 });

@@ -2,6 +2,8 @@ import { resetAudioGraph } from '#/modules/AudioEngine/useCases';
 import { unloadPlugin } from '#/modules/PluginHost/useCases';
 import { repairRuntimeGraphFromProject, stopPlayback } from '#/modules/Transport/useCases';
 
+import { projectSessionQuiesceCancellation } from './projectSessionQuiesceCancellation';
+
 /** Retire only renderer-owned project runtime before a macOS window closes. */
 export async function quiesceProjectSession(
     beginDestructiveTeardown: () => Promise<boolean> = async () => true
@@ -17,6 +19,7 @@ let inFlight: Promise<boolean> | undefined;
 let quiesced = false;
 
 async function quiesce(beginDestructiveTeardown: () => Promise<boolean>): Promise<boolean> {
+    projectSessionQuiesceCancellation.begin();
     try {
         await stopPlayback();
     } catch {
@@ -37,6 +40,11 @@ async function quiesce(beginDestructiveTeardown: () => Promise<boolean>): Promis
     try {
         resetAudioGraph();
         await unloadPlugin();
+        if (projectSessionQuiesceCancellation.requested()) {
+            await repairRuntimeGraphFromProject();
+            inFlight = undefined;
+            return false;
+        }
     } catch {
         // `unloadPlugin` can fail after graph reset. Restore through the
         // existing Project/Transport runtime-repair path before returning

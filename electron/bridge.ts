@@ -40,6 +40,7 @@ import {
     NATIVE_MENU_PROJECT_STATE_CHANNEL,
     NATIVE_MENU_SAVE_RESULT_CHANNEL,
     RENDERER_SESSION_QUIESCE_CHANNEL,
+    RENDERER_SESSION_QUIESCE_CANCEL_CHANNEL,
     RENDERER_SESSION_QUIESCED_CHANNEL,
     RENDERER_SESSION_QUIESCE_STARTED_CHANNEL,
     type SourdawBridge,
@@ -192,6 +193,7 @@ export const createSourdawBridge = (
     const maximizedListeners = new Set<(maximized: boolean) => void>();
     const nativeMenuListeners = new Set<(intent: NativeMenuIntent) => void>();
     const rendererSessionListeners = new Set<(requestId: number) => void>();
+    const rendererSessionCancelListeners = new Set<(requestId: number) => void>();
     let nextStreamId = 0;
     const voiceActivation = createVoiceActivation(ipc, voiceDocument);
 
@@ -262,6 +264,15 @@ export const createSourdawBridge = (
             return;
         }
         for (const listener of [...rendererSessionListeners]) {
+            listener(requestId);
+        }
+    });
+    ipc.on(RENDERER_SESSION_QUIESCE_CANCEL_CHANNEL, (_event, ...args) => {
+        const [requestId] = args;
+        if (typeof requestId !== 'number' || !Number.isSafeInteger(requestId) || requestId < 1) {
+            return;
+        }
+        for (const listener of [...rendererSessionCancelListeners]) {
             listener(requestId);
         }
     });
@@ -445,6 +456,10 @@ export const createSourdawBridge = (
             listenSessionQuiesce: (callback) => {
                 rendererSessionListeners.add(callback);
                 return () => rendererSessionListeners.delete(callback);
+            },
+            listenSessionQuiesceCancel: (callback) => {
+                rendererSessionCancelListeners.add(callback);
+                return () => rendererSessionCancelListeners.delete(callback);
             },
             sessionQuiesced: async (requestId, quiesced) => {
                 await ipc.invoke(RENDERER_SESSION_QUIESCED_CHANNEL, { requestId, quiesced });

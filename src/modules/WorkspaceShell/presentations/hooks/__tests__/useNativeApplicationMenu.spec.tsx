@@ -8,12 +8,19 @@ type NativeMenuIntent = Parameters<Parameters<SourdawDesktopBridge['nativeMenu']
 const desktop = vi.hoisted(() => ({
     listener: undefined as ((intent: NativeMenuIntent) => void) | undefined,
     sessionListener: undefined as ((requestId: number) => void) | undefined,
+    sessionCancelListener: undefined as ((requestId: number) => void) | undefined,
     projectState: vi.fn(async () => undefined),
     saveResult: vi.fn(async () => undefined),
     listenSessionQuiesce: vi.fn((listener: (requestId: number) => void) => {
         desktop.sessionListener = listener;
         return () => {
             desktop.sessionListener = undefined;
+        };
+    }),
+    listenSessionQuiesceCancel: vi.fn((listener: (requestId: number) => void) => {
+        desktop.sessionCancelListener = listener;
+        return () => {
+            desktop.sessionCancelListener = undefined;
         };
     }),
     sessionQuiesced: vi.fn(async () => undefined),
@@ -32,6 +39,7 @@ const crdt = vi.hoisted(() => ({
 const projectActions = vi.hoisted(() => ({
     saveProject: vi.fn(async () => true),
     quiesceProjectSession: vi.fn(async () => true),
+    cancelProjectSessionQuiesce: vi.fn(),
     discardProjectChanges: vi.fn(async () => true),
     newProject: vi.fn(),
     pickAndImportProjectFile: vi.fn(async () => true),
@@ -98,6 +106,7 @@ const workspace = vi.hoisted(() => ({
         projectState: desktop.projectState,
         saveResult: desktop.saveResult,
         listenSessionQuiesce: desktop.listenSessionQuiesce,
+        listenSessionQuiesceCancel: desktop.listenSessionQuiesceCancel,
         sessionQuiesced: desktop.sessionQuiesced,
         sessionQuiesceStarted: desktop.sessionQuiesceStarted,
     })),
@@ -114,9 +123,11 @@ describe('useNativeApplicationMenu', () => {
     beforeEach(() => {
         desktop.listener = undefined;
         desktop.sessionListener = undefined;
+        desktop.sessionCancelListener = undefined;
         desktop.projectState.mockClear();
         desktop.saveResult.mockClear();
         desktop.listenSessionQuiesce.mockClear();
+        desktop.listenSessionQuiesceCancel.mockClear();
         desktop.sessionQuiesced.mockClear();
         desktop.sessionQuiesceStarted.mockReset().mockResolvedValue(true);
         projectActions.quiesceProjectSession
@@ -133,6 +144,7 @@ describe('useNativeApplicationMenu', () => {
         projectActions.saveProject.mockResolvedValue(true);
         projectActions.discardProjectChanges.mockReset();
         projectActions.discardProjectChanges.mockResolvedValue(true);
+        projectActions.cancelProjectSessionQuiesce.mockClear();
         projectActions.newProject.mockClear();
         projectActions.loadRecentProject.mockClear();
         projectActions.recentProjectChanges.subscribe.mockClear();
@@ -200,6 +212,29 @@ describe('useNativeApplicationMenu', () => {
 
         await vi.waitFor(() => expect(desktop.sessionQuiesced).toHaveBeenCalledWith(42, false));
         expect(projectActions.quiesceProjectSession).toHaveBeenCalledWith(expect.any(Function));
+    });
+
+    it('routes a correlated renderer-session cancellation through the Project use case', () => {
+        renderHook(() =>
+            useNativeApplicationMenu({
+                name: 'Song',
+                projectId: 'project',
+                createdAt: 1,
+                dirty: false,
+                identityPersistencePending: false,
+                loading: false,
+                updatedAt: 1,
+                keyRoot: 0,
+                scaleName: 'chromatic',
+                tuning: { name: 'Equal Temperament', frequencies: [] },
+                productionBrief: {} as never,
+                initialized: true,
+            })
+        );
+
+        desktop.sessionCancelListener?.(42);
+
+        expect(projectActions.cancelProjectSessionQuiesce).toHaveBeenCalledOnce();
     });
 
     it('republishes renderer readiness when Project hydration changes loading state', () => {

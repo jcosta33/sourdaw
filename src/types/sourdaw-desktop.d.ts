@@ -131,6 +131,7 @@ type SourdawDesktopBridge = {
             readonly revision: string;
         }) => Promise<void>;
         readonly listenSessionQuiesce: (callback: (requestId: number) => void) => () => void;
+        readonly listenSessionQuiesceCancel: (callback: (requestId: number) => void) => () => void;
         readonly sessionQuiesced: (requestId: number, quiesced: boolean) => Promise<void>;
         readonly sessionQuiesceStarted: (requestId: number) => Promise<boolean>;
     };

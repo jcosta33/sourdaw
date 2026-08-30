@@ -31,6 +31,7 @@ import {
     NATIVE_MENU_PROJECT_STATE_CHANNEL,
     NATIVE_MENU_SAVE_RESULT_CHANNEL,
     RENDERER_SESSION_QUIESCE_CHANNEL,
+    RENDERER_SESSION_QUIESCE_CANCEL_CHANNEL,
     RENDERER_SESSION_QUIESCED_CHANNEL,
     RENDERER_SESSION_QUIESCE_STARTED_CHANNEL,
 } from '../channels.js';
@@ -96,6 +97,7 @@ describe('the published surface', () => {
         expect(Object.keys(bridge.nativeMenu).sort()).toEqual([
             'listen',
             'listenSessionQuiesce',
+            'listenSessionQuiesceCancel',
             'projectState',
             'saveResult',
             'sessionQuiesceStarted',
@@ -134,6 +136,7 @@ describe('the published surface', () => {
                 [WINDOW_MAXIMIZED_CHANGED_CHANNEL, 1],
                 [NATIVE_MENU_ACTION_CHANNEL, 1],
                 [RENDERER_SESSION_QUIESCE_CHANNEL, 1],
+                [RENDERER_SESSION_QUIESCE_CANCEL_CHANNEL, 1],
             ])
         );
     });
@@ -238,6 +241,18 @@ describe('native menu transport', () => {
 
         expect(listener).toHaveBeenCalledTimes(1);
         expect(listener).toHaveBeenCalledWith(7);
+    });
+
+    it('delivers only valid renderer-session cancellation requests from main', () => {
+        const fake = fakeIpc();
+        const listener = vi.fn();
+        createSourdawBridge(fake.ipc).nativeMenu.listenSessionQuiesceCancel(listener);
+
+        fake.push(RENDERER_SESSION_QUIESCE_CANCEL_CHANNEL, 7);
+        fake.push(RENDERER_SESSION_QUIESCE_CANCEL_CHANNEL, 0);
+        fake.push(RENDERER_SESSION_QUIESCE_CANCEL_CHANNEL, '7');
+
+        expect(listener).toHaveBeenCalledExactlyOnceWith(7);
     });
 });
 

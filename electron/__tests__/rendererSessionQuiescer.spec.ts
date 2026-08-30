@@ -52,6 +52,24 @@ describe('renderer session quiescer', () => {
         expect(quiescer.start(window, 2)).toBe(false);
     });
 
+    it('asks a started renderer to restore its session before denying a revoked or timed-out close', async () => {
+        let timeout: (() => void) | undefined;
+        const window = { isDestroyed: () => false, webContents: { send: vi.fn() } };
+        const quiescer = createRendererSessionQuiescer('renderer:quiesce', 'renderer:cancel', {
+            setTimer: (callback) => {
+                timeout = callback;
+                return { cancel: vi.fn() };
+            },
+        });
+
+        const revoked = quiescer.request(window);
+        expect(quiescer.start(window, 1)).toBe(true);
+        quiescer.cancel();
+        expect(window.webContents.send).toHaveBeenLastCalledWith('renderer:cancel', 1);
+        timeout?.();
+        await expect(revoked).resolves.toBe(false);
+    });
+
     it('does not let native editor detach/window close begin before renderer project runtime quiesces', async () => {
         let release!: (quiesced: boolean) => void;
         const order: string[] = [];

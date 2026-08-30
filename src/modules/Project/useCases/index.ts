@@ -3,6 +3,7 @@ export { newProject } from './projectPersistence/newProject';
 export { discardProjectChanges } from './projectPersistence/discardProjectChanges';
 export { getProjectSnapshotKey } from './projectPersistence/getProjectSnapshotKey';
 export { quiesceProjectSession } from './projectPersistence/quiesceProjectSession';
+export { cancelProjectSessionQuiesce } from './projectPersistence/cancelProjectSessionQuiesce';
 export { captureProjectTransitionAuthority } from './projectPersistence/captureProjectTransitionAuthority';
 export { saveProject } from './projectPersistence/saveProject/saveProject';
 export { markDirty } from './projectPersistence/saveProject/markDirty';

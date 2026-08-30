@@ -38,6 +38,7 @@ import { applyNativeTextEdit, createApplicationMenuTemplate, type NativeMenuInte
 import {
     EVENT_CHANNEL,
     NATIVE_MENU_ACTION_CHANNEL,
+    RENDERER_SESSION_QUIESCE_CANCEL_CHANNEL,
     RENDERER_SESSION_QUIESCE_CHANNEL,
     STREAM_CHANNEL,
     WINDOW_MAXIMIZED_CHANGED_CHANNEL,
@@ -120,7 +121,10 @@ let pluginWindowHost: PluginWindowHost | undefined;
 let destroyMainWindowAfterEditorsDetach: ((force?: boolean) => Promise<boolean>) | undefined;
 let closeSessionQuiescedWindow: BrowserWindow | undefined;
 const rendererSessionLifecycle = createRendererSessionLifecycle();
-const rendererSessionQuiescer = createRendererSessionQuiescer(RENDERER_SESSION_QUIESCE_CHANNEL);
+const rendererSessionQuiescer = createRendererSessionQuiescer(
+    RENDERER_SESSION_QUIESCE_CHANNEL,
+    RENDERER_SESSION_QUIESCE_CANCEL_CHANNEL
+);
 
 const createAndActivateWindow = (): BrowserWindow => {
     rendererSessionLifecycle.startWindow();
