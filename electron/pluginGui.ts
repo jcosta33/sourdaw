@@ -823,8 +823,12 @@ export const interceptOwnerWindowTeardown = (
     onDestroying?: () => void
 ): { readonly destroyAfterEditorsDetach: (force?: boolean) => Promise<boolean> } => {
     let inFlight: Promise<boolean> | undefined;
+    let forceDestroy = false;
 
     const destroyAfterEditorsDetach = (force = false): Promise<boolean> => {
+        if (force) {
+            forceDestroy = true;
+        }
         if (inFlight !== undefined) {
             return inFlight;
         }
@@ -837,7 +841,7 @@ export const interceptOwnerWindowTeardown = (
                 // A dirty/revision projection can arrive while a plugin editor
                 // drains. The original close approval is no longer authority
                 // to destroy this renderer session.
-                if (!force && !shouldProceed()) {
+                if (!forceDestroy && !shouldProceed()) {
                     owner.show?.();
                     onCancelled?.();
                     return false;

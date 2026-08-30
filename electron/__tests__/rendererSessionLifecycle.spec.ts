@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { createRendererSessionLifecycle } from '../rendererSessionLifecycle.js';
+import { createWindowCloseCoordinator } from '../windowCloseCoordinator.js';
 
 describe('renderer session lifecycle', () => {
     it('does not recreate a renderer that crashes while approved editor-detach teardown is still pending', () => {
@@ -26,6 +27,22 @@ describe('renderer session lifecycle', () => {
         lifecycle.approveTeardown();
 
         lifecycle.cancelTeardown();
+
+        expect(lifecycle.shouldRecreateAfterCrash()).toBe(true);
+    });
+
+    it('restores crash recovery before delayed detach completes when approved close authority is revoked', async () => {
+        const lifecycle = createRendererSessionLifecycle();
+        const coordinator = createWindowCloseCoordinator({
+            ask: async () => 'cancel',
+            send: () => undefined,
+            onApprovalRevoked: () => lifecycle.cancelTeardown(),
+        });
+        coordinator.updateProject({ title: 'Song', dirty: false, projectId: 'project-a', revision: 'revision-1' });
+
+        await coordinator.requestClose();
+        lifecycle.approveTeardown();
+        coordinator.updateProject({ title: 'Song', dirty: true, projectId: 'project-a', revision: 'revision-2' });
 
         expect(lifecycle.shouldRecreateAfterCrash()).toBe(true);
     });

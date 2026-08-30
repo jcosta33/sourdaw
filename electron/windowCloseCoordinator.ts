@@ -20,10 +20,12 @@ type CloseOperation = Extract<CloseDecision, 'save' | 'discard'>;
 type CreateWindowCloseCoordinatorInput = {
     readonly ask: (title: string) => Promise<CloseDecision>;
     readonly send: (operation: CloseOperation, requestId: number, expected: ProjectCloseState) => void;
+    /** Immediately re-open crash recovery when an approved close loses authority. */
+    readonly onApprovalRevoked?: () => void;
 };
 
 /** Main-process state only: a disposable projection of renderer project state. */
-export const createWindowCloseCoordinator = ({ ask, send }: CreateWindowCloseCoordinatorInput) => {
+export const createWindowCloseCoordinator = ({ ask, send, onApprovalRevoked }: CreateWindowCloseCoordinatorInput) => {
     let project: ProjectCloseState = { title: 'Sourdaw', dirty: false, durabilityPending: false };
     let phase: 'idle' | 'deciding' | 'saving' | 'approved' | 'closing' = 'idle';
     let pendingSave: { readonly requestId: number; readonly settle: (result: SaveResult) => void } | undefined;
@@ -41,6 +43,7 @@ export const createWindowCloseCoordinator = ({ ask, send }: CreateWindowCloseCoo
         if (phase === 'approved' && isCloseBlocking(next)) {
             generation += 1;
             phase = 'idle';
+            onApprovalRevoked?.();
             return;
         }
         // A dialog decision is about a particular piece of project truth. A

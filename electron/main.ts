@@ -176,6 +176,7 @@ const windowCloseCoordinator = createWindowCloseCoordinator({
             projectId: expected.projectId,
             revision: expected.revision,
         }),
+    onApprovalRevoked: () => rendererSessionLifecycle.cancelTeardown(),
 });
 
 const nativeMenuProjectStateController = createNativeMenuProjectStateController({

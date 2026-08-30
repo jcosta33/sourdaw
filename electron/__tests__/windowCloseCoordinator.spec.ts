@@ -248,6 +248,22 @@ describe('window close coordinator', () => {
         expect(ask).toHaveBeenCalledWith('Song');
     });
 
+    it('notifies the shell to restore crash recovery as soon as approved close authority is revoked', async () => {
+        const onApprovalRevoked = vi.fn();
+        const coordinator = createWindowCloseCoordinator({
+            ask: async () => 'cancel',
+            send: vi.fn(),
+            onApprovalRevoked,
+        });
+        coordinator.updateProject({ title: 'Song', dirty: false, projectId: 'project-a', revision: 'revision-1' });
+
+        await expect(coordinator.requestClose()).resolves.toBe(true);
+        coordinator.updateProject({ title: 'Song', dirty: true, projectId: 'project-a', revision: 'revision-2' });
+
+        expect(onApprovalRevoked).toHaveBeenCalledTimes(1);
+        expect(coordinator.permitsClose()).toBe(false);
+    });
+
     it.each([
         ['a replacement project', { projectId: 'project-b', revision: 'revision-2' }],
         ['an edit to an already-dirty project', { projectId: 'project-a', revision: 'revision-2' }],

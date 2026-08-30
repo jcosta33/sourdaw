@@ -160,6 +160,15 @@ describe('plugin command admission before the cascade', () => {
         );
     });
 
+    it('re-enables crash recovery immediately when a delayed approved close loses renderer authority', () => {
+        expect(mainSource).toMatch(
+            /createWindowCloseCoordinator\(\{[\s\S]*?onApprovalRevoked:\s*\(\)\s*=>\s*rendererSessionLifecycle\.cancelTeardown\(\)/u
+        );
+        expect(mainSource).toMatch(
+            /rendererSessionLifecycle\.shouldRecreateAfterCrash\(\)[\s\S]*?const replacementWindow\s*=\s*createAndActivateWindow\(\)/u
+        );
+    });
+
     it('carries only queued windowless project commands into the exact crash replacement', () => {
         expect(mainSource).toMatch(
             /const replacementWindow\s*=\s*createAndActivateWindow\(\);\s*nativeMenuActionDispatcher\.recoverPendingWindow\(crashedWindow,\s*replacementWindow\);/u
