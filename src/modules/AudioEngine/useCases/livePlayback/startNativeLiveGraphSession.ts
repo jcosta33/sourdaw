@@ -7,9 +7,20 @@
  * while an engine exists, and otherwise warns that the instance will not
  * process audio. What it does not gain is the mix: a session starts with its
  * monitor shadowed, so whatever the batch schedules the engine contributes
- * true zeros at the device and Web Audio remains the live product path. Today
- * the batch also carries no `schedule-clip` (see `projectLiveGraphTopology`);
- * the shadow is what keeps the engine inaudible once it does.
+ * true zeros at the device and Web Audio remains the live product path. The
+ * batch now carries the arrangement's whole programme (#3068), and the shadow
+ * is exactly what makes that safe to send.
+ *
+ * ── Material before the batch that names it ───────────────────────────────
+ *
+ * A `schedule-clip` carries a sample identity, not PCM, and the native side
+ * refuses one whose sample the pool does not hold — whole-batch, so a single
+ * unregistered buffer costs the session every strip. Registration therefore
+ * happens here, between the projection and the apply. It is normally free:
+ * `primeNativeTimelineSamples` has already put the project's material in the
+ * pool while the arrangement was being edited, and the memo turns this into a
+ * lookup rather than a transfer. The prime is the optimisation; this call is
+ * the contract.
  *
  * ── Declining is an outcome, not a failure ────────────────────────────────
  *
@@ -28,7 +39,6 @@ import {
     deriveEffectiveAudibility,
     deriveVcaMultiplier,
     getVcaGroupsState,
-    shouldCreateLiveTrackStrip,
     trackStore,
     type Track,
 } from '#/modules/Arrangement/stores';
@@ -38,10 +48,13 @@ import { type AudioGraphStripReport } from '../../models/AudioGraphBackend';
 import { type EngineTransportMaps } from '../../models/EngineTransportPosition';
 import { setEngineTransportMaps } from '../../repositories/engineTransport/setEngineTransportMaps';
 import { createNativeLiveGraphBackend } from '../../repositories/nativeGraph/createNativeLiveGraphBackend';
+import { registerNativeTimelineSamples } from '../../repositories/nativeGraph/nativeTimelineSamplePool';
 import { probeNativeGraphTransport } from '../../repositories/nativeGraph/probeNativeGraphTransport';
 
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import { projectLiveGraphTopology, type LiveGraphMonitorMode } from './projectLiveGraphTopology';
+import { readLiveGraphProgramme } from './readLiveGraphProgramme';
+import { readLiveStripTracks } from './readLiveStripTracks';
 import { startNativeEnginePlayheadFeed } from './startNativeEnginePlayheadFeed';
 
 /**
@@ -67,6 +80,16 @@ export type StartNativeLiveGraphSessionInput = Readonly<{
      * module owns the shape the engine reads, not what the timeline says.
      */
     transportMaps: EngineTransportMaps;
+    /**
+     * The frame grid this session's programme is placed on.
+     *
+     * Passed in for the same reason `transportMaps` is: the clock belongs to
+     * whoever owns the transport, and every beat in the batch is rounded onto
+     * this grid (`projectPpqEndpoints`). A session projected on one rate and an
+     * export bounced on another place the same clip on the same sample only
+     * when both are told which grid to use.
+     */
+    sampleRate: number;
     /**
      * Whether this session's engine may reach the speakers.
      *
@@ -95,7 +118,7 @@ function readSessionTopology(): Readonly<{
     vcaMultiplierByTrackId: ReadonlyMap<string, number>;
 }> {
     const projectTracks = trackStore.value?.tracks ?? [];
-    const stripTracks = projectTracks.filter((track) => !track.disabled && shouldCreateLiveTrackStrip(track));
+    const stripTracks = readLiveStripTracks();
     // The live solo path's ambiguous-owner guard (#593): a track id appearing
     // more than once in the document has no unambiguous solo owner, so it can
     // neither engage nor answer solo.
@@ -178,7 +201,20 @@ export function startNativeLiveGraphSession(
             ...topology,
             transport: { playing: false, positionSeconds: input.positionSeconds },
             monitor,
+            programme: readLiveGraphProgramme({ stripTracks: topology.stripTracks, sampleRate: input.sampleRate }),
         });
+
+        // Material before the batch that names it, always: the native side
+        // refuses a `schedule-clip` whose sample the pool does not hold, and it
+        // refuses the whole batch with it. The prime pass has normally left
+        // nothing to send (`primeNativeTimelineSamples`), so this is a memo
+        // lookup at the gesture rather than a transfer — but the guarantee is
+        // this call's, not the prime's, because a prime is an optimisation and
+        // an ordering is a contract.
+        const material = await registerNativeTimelineSamples({ transport: availability.transport, commands });
+        if (material.outcome === 'declined') {
+            return { outcome: 'declined', reason: material.reason };
+        }
 
         const backend = createNativeLiveGraphBackend({ transport: availability.transport });
         // Every play sends the session's whole topology, so every play replaces

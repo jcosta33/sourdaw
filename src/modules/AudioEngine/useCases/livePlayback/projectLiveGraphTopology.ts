@@ -18,16 +18,18 @@
  * so an engine can never render a block holding this session's material
  * without also holding the mode that says whether that material may be heard.
  *
- * **No programme.** No `schedule-clip` is emitted, and that is a scope
- * decision with an audible consequence worth stating: an engine holding this
- * topology and no clips renders silence
- * (`crates/daw-engine/src/audio_thread.rs` — `process_block` on an engine with
- * nothing scheduled), so applying it cannot double the Web Audio path, which
- * stays the live product path. The shadow monitor is what keeps that true once
- * the programme does arrive, rather than leaving it a property of an empty
- * timeline. What starting the engine *does* change is plugin hosting:
- * `load_plugin` takes its engine-owned branch only while an engine runs, and
- * until one does it warns that the plugin will not process audio
+ * **The programme**, projected by `projectLiveGraphProgramme` and emitted here
+ * as `schedule-clip` after the routes, because a playback names a strip that
+ * has to exist by the time it is read. The engine therefore renders the real
+ * arrangement — and still contributes nothing audible, because the monitor
+ * above it is shadowed: the device callback writes true zeros however full the
+ * timeline is (`crates/daw-engine/src/audio_thread.rs`, `DeviceRenderer`).
+ * That is the whole reason the shadow landed first (#3123): scheduling a real
+ * programme could not otherwise be done without doubling the Web Audio path,
+ * which stays the live product path until the cutover. What starting the
+ * engine *also* changes is plugin hosting: `load_plugin` takes its
+ * engine-owned branch only while an engine runs, and until one does it warns
+ * that the plugin will not process audio
  * (`crates/sourdaw-native/src/commands/plugins.rs`).
  *
  * **No tempo or time signature.** `set-transport` here carries `playing` and
@@ -35,17 +37,33 @@
  * ownership law draws (`crates/sourdaw-native/src/commands/graph.rs`): tempo
  * and time signature are a different native command with a different producer.
  *
- * ── Why every strip is built as contributing no audio ─────────────────────
+ * ── Which strips are built as contributing audio ──────────────────────────
  *
  * `contributesAudio` asks whether anything a strip produces can reach the
- * output ({@link AudioGraphCreateTrackStripCommand}). Nothing is scheduled on
- * any strip in this batch, so `false` is literally what is true, and it is the
- * flag that keeps a device the native side cannot build — a WASM device, or a
- * plugin the host still owns — from refusing a batch whose whole purpose is to
- * mirror a topology. The value is stored per strip and no command edits it, so
- * the slice that starts scheduling clips raises it the only way it can be
- * raised: by building the strip again in a replacing batch, which is what every
- * play already does.
+ * output ({@link AudioGraphCreateTrackStripCommand}), and the native mapper
+ * reads it as permission to *refuse*: `map_device` fails the whole batch when
+ * the flag is true and any device on the strip has no native body, and
+ * `no_native_body` accepts exactly one type today — knead — and no externally
+ * hosted plugin (`crates/sourdaw-native/src/commands/graph.rs`). A refusal is
+ * whole-batch, so one WASM device anywhere in the project would cost the
+ * session every strip it has.
+ *
+ * The derivation is therefore per strip and has two terms, both necessary:
+ *
+ *   1. **The strip plays something.** Only a track can: `schedule-clip`
+ *      refuses a bus by name, so a bus is always false — the same answer
+ *      `renderOfflineWithNativeEngine` gives it.
+ *   2. **Its whole chain is native-representable.** A track carrying a WASM
+ *      built-in or an external plugin keeps `false` and still schedules its
+ *      clips. What that costs is the chain, which `map_device` then omits and
+ *      the strip report says is absent — and it costs nothing audible, because
+ *      a shadowed session is where those clips play. Widening the native
+ *      registry is #3124's work, not a producer's.
+ *
+ * A frozen track is the one place the chain is dropped rather than judged: its
+ * bake already contains the processing (see `projectLiveGraphProgramme`), so
+ * the strip is built with no devices at all, which is both faithful and
+ * trivially representable.
  *
  * ── Bus fidelity ──────────────────────────────────────────────────────────
  *
@@ -56,8 +74,14 @@
 
 import { type Track } from '#/modules/Arrangement/stores';
 
-import { type AudioGraphCommand, type AudioGraphStripState } from '../../models/AudioGraphBackend';
+import {
+    type AudioGraphCommand,
+    type AudioGraphDeviceChain,
+    type AudioGraphStripState,
+} from '../../models/AudioGraphBackend';
 import { resolveOutputTarget } from '../offlineRender/resolveOutputTarget';
+
+import { type LiveGraphProgramme } from './projectLiveGraphProgramme';
 
 export type LiveGraphTransportState = Readonly<{
     playing: boolean;
@@ -89,14 +113,24 @@ export type LiveGraphTopologyInput = Readonly<{
     transport: LiveGraphTransportState;
     /** Whether this session's engine may reach the speakers at all. */
     monitor: LiveGraphMonitorMode;
+    /** What each strip plays, from {@link projectLiveGraphProgramme}. */
+    programme: LiveGraphProgramme;
 }>;
 
 /**
- * No strip in this batch is scheduled, so none of them can reach the output.
- * Named rather than written as a bare `false` at two call sites, because the
- * value is a claim about this slice and not a per-strip fact.
+ * The one device type `daw-engine` builds a body for, matched the way
+ * `no_native_body` matches it. Stated here because the producer's whole job is
+ * to emit a batch the engine takes: a second, looser reading of what is
+ * representable is how `contributesAudio` starts refusing sessions.
  */
-const NOTHING_IS_SCHEDULED_YET = false;
+const NATIVE_DEVICE_TYPE = 'knead';
+
+function hasNativeBody(device: AudioGraphDeviceChain[number]): boolean {
+    if (device.externalPluginId !== undefined || device.externalInstanceId !== undefined) {
+        return false;
+    }
+    return device.type.toLowerCase() === NATIVE_DEVICE_TYPE;
+}
 
 function stripState(input: {
     track: Track;
@@ -114,15 +148,22 @@ function stripState(input: {
     };
 }
 
-function createStripCommand(input: { track: Track; state: AudioGraphStripState }): AudioGraphCommand {
-    const { track, state } = input;
+function createStripCommand(input: {
+    track: Track;
+    state: AudioGraphStripState;
+    programme: LiveGraphProgramme;
+}): AudioGraphCommand {
+    const { track, state, programme } = input;
+    // A bake replaces the chain rather than feeding it — see the header.
+    const devices: AudioGraphDeviceChain = programme.bakedStripIds.has(track.id) ? [] : track.devices;
+    const plays = (programme.playbacksByStripId.get(track.id)?.length ?? 0) > 0;
     // Live playback always honours a mute the engineer pressed; only an
     // export chooses otherwise, and only for stems.
     const shared = {
         name: track.name,
         state,
-        devices: track.devices,
-        contributesAudio: NOTHING_IS_SCHEDULED_YET,
+        devices,
+        contributesAudio: plays && devices.every(hasNativeBody),
         honorMuted: true,
     } as const;
     return track.kind === 'bus'
@@ -178,34 +219,58 @@ function routingCommands(input: {
 }
 
 /**
- * One batch's worth of commands, in application order: the monitor mode first,
- * because nothing after it may be audible before it is stated; then every strip
- * before any route, because a send names a bus that has to exist by the time it
- * is read; and the transport last, because a topology is what it is meant to
- * play.
+ * One batch's worth of commands, in application order.
+ *
+ * The monitor mode first, because nothing after it may be audible before it is
+ * stated. Then the transport, because `set-transport` is a *locate*: the native
+ * mapper follows it with a `SeekFrames`, and a seek cancels every mixer write
+ * stamped at or past the frame it lands on (`RampedParam::cancel_from` in
+ * `crates/daw-engine/src/timeline.rs`). A strip states its fader, pan and send
+ * levels as writes stamped at frame 0, so a transport emitted *after* the
+ * strips locates to the session's position and drops the whole mix on its way
+ * — every strip left at the engine's default. Locating first is the only order
+ * under which the state a strip declares survives the batch that declares it.
+ *
+ * Then every strip before any route, because a send names a bus that has to
+ * exist by the time it is read; then the programme, which names a strip for the
+ * same reason. Clip placement is in absolute timeline frames and a seek touches
+ * no clip, so nothing in the programme depends on following the locate.
  *
  * The batch applies whole, at one block boundary, so the engine never renders a
  * block holding this session's material without also holding its monitor mode.
  */
 export function projectLiveGraphTopology(input: LiveGraphTopologyInput): readonly AudioGraphCommand[] {
-    const { stripTracks, soloGatedTrackIds, vcaMultiplierByTrackId, transport, monitor } = input;
+    const { stripTracks, soloGatedTrackIds, vcaMultiplierByTrackId, transport, monitor, programme } = input;
 
     const busStripIds = new Set(stripTracks.filter((track) => track.kind === 'bus').map((track) => track.id));
     const trackStripIds = new Set(stripTracks.filter((track) => track.kind !== 'bus').map((track) => track.id));
 
     const strips = stripTracks.map((track) =>
-        createStripCommand({ track, state: stripState({ track, soloGatedTrackIds, vcaMultiplierByTrackId }) })
+        createStripCommand({
+            track,
+            state: stripState({ track, soloGatedTrackIds, vcaMultiplierByTrackId }),
+            programme,
+        })
     );
     const routes = stripTracks.flatMap((track) => routingCommands({ track, busStripIds, trackStripIds }));
+    // Walked in project order rather than over the programme's own map, so the
+    // command stream's order is the arrangement's and not a hash iteration.
+    const playbacks = stripTracks.flatMap((track) =>
+        (programme.playbacksByStripId.get(track.id) ?? []).map((playback): AudioGraphCommand => ({
+            kind: 'schedule-clip',
+            playback,
+        }))
+    );
 
     return [
         { kind: 'set-monitor-shadow', shadowed: monitor === 'shadowed' },
-        ...strips,
-        ...routes,
         {
             kind: 'set-transport',
             playing: transport.playing,
             positionSeconds: transport.positionSeconds,
         },
+        ...strips,
+        ...routes,
+        ...playbacks,
     ];
 }
