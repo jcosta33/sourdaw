@@ -59,6 +59,19 @@ export const pluginLifecycleScheduler = {
         return rebuildFence?.completion ?? null;
     },
 
+    /**
+     * Acquires a rebuild fence only after the currently active fence has
+     * opened. The acquisition happens in the same continuation as the final
+     * check, so another rebuild cannot slip in between a session-retirement
+     * join and its own admission fence.
+     */
+    async beginRebuildAfterCurrent(): Promise<{ waitForExistingOperations: () => Promise<void>; end: () => void }> {
+        while (rebuildFence !== null) {
+            await rebuildFence.completion;
+        }
+        return pluginLifecycleScheduler.beginRebuild();
+    },
+
     beginRebuild(): { waitForExistingOperations: () => Promise<void>; end: () => void } {
         if (rebuildFence) {
             throw new Error('External plugin runtime rebuild is already in progress');

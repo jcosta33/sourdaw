@@ -8,7 +8,12 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 
-import { bindMainWindowOwnerTeardown, destroyCrashedMainWindow } from '../mainWindowTeardown.js';
+import {
+    bindMainWindowOwnerTeardown,
+    destroyCrashedMainWindow,
+    notifyCurrentWindowDestroying,
+    isApprovedRendererTerminal,
+} from '../mainWindowTeardown.js';
 
 import type { OwnerWindow, PluginWindowHost, PreventableEditorEvent } from '../pluginGui.js';
 
@@ -101,6 +106,81 @@ describe('main window owner teardown wiring', () => {
         expect(owner.destroy).toHaveBeenCalledTimes(1);
     });
 
+    it('leaves a cancelled dirty close untouched', async () => {
+        const owner = createOwnerStub();
+        const detachOpenEditors = vi.fn((): Promise<void> => Promise.resolve());
+        bindMainWindowOwnerTeardown(owner, createHostStub(detachOpenEditors), () => false);
+
+        const stopped = owner.emitClose();
+        await settled();
+
+        expect(stopped).toBe(false);
+        expect(detachOpenEditors).not.toHaveBeenCalled();
+        expect(owner.hide).not.toHaveBeenCalled();
+        expect(owner.destroy).not.toHaveBeenCalled();
+    });
+
+    it('does not let the later plugin-owner listener detach on a cancelled non-macOS close', async () => {
+        const owner = createOwnerStub();
+        const detachOpenEditors = vi.fn((): Promise<void> => Promise.resolve());
+        let permitted = false;
+        // This models the earlier main-process close listener. It retains the
+        // native event while the dirty-project coordinator is deciding.
+        owner.on('close', (event) => event.preventDefault());
+        bindMainWindowOwnerTeardown(
+            owner,
+            createHostStub(detachOpenEditors),
+            () => permitted,
+            undefined,
+            undefined,
+            () => permitted
+        );
+
+        expect(owner.emitClose()).toBe(true);
+        await settled();
+        expect(detachOpenEditors).not.toHaveBeenCalled();
+        expect(owner.hide).not.toHaveBeenCalled();
+        expect(owner.destroy).not.toHaveBeenCalled();
+
+        permitted = true;
+        expect(owner.emitClose()).toBe(true);
+        await settled();
+        expect(detachOpenEditors).toHaveBeenCalledOnce();
+        expect(owner.destroy).toHaveBeenCalledOnce();
+    });
+
+    it('does not let the later plugin-owner listener tear down on the original Darwin close event', async () => {
+        const owner = createOwnerStub();
+        const detachOpenEditors = vi.fn((): Promise<void> => Promise.resolve());
+        let quiescedReentry = false;
+        // This models the main close listener, registered before the plugin
+        // owner listener. Its first event is stopped for renderer quiescence.
+        owner.on('close', (event) => {
+            if (!quiescedReentry) {
+                event.preventDefault();
+            }
+        });
+        bindMainWindowOwnerTeardown(
+            owner,
+            createHostStub(detachOpenEditors),
+            () => true,
+            undefined,
+            undefined,
+            () => quiescedReentry
+        );
+
+        expect(owner.emitClose()).toBe(true);
+        await settled();
+        expect(detachOpenEditors).not.toHaveBeenCalled();
+        expect(owner.destroy).not.toHaveBeenCalled();
+
+        quiescedReentry = true;
+        expect(owner.emitClose()).toBe(true);
+        await settled();
+        expect(detachOpenEditors).toHaveBeenCalledOnce();
+        expect(owner.destroy).toHaveBeenCalledOnce();
+    });
+
     it('destroys a crashed main window through the captured detach-first path after recovery rebinding', async () => {
         const crashedOwner = createOwnerStub();
         let releaseDetach!: () => void;
@@ -139,5 +219,29 @@ describe('main window owner teardown wiring', () => {
         destroyCrashedMainWindow(crashedOwner, undefined);
 
         expect(crashedOwner.destroy).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not let a delayed crashed-owner teardown mark its replacement closing', () => {
+        const notify = vi.fn();
+        let current = false;
+
+        notifyCurrentWindowDestroying({ isCurrentWindow: () => current, notify });
+        expect(notify).not.toHaveBeenCalled();
+
+        current = true;
+        notifyCurrentWindowDestroying({ isCurrentWindow: () => current, notify });
+        expect(notify).toHaveBeenCalledOnce();
+    });
+
+    it('treats an approved crashed renderer as terminal but preserves authority-revoked renderer recovery', () => {
+        const owner = createOwnerStub();
+        const replacement = createOwnerStub();
+
+        expect(isApprovedRendererTerminal({ owner, currentWindow: () => replacement, permitsClose: () => true })).toBe(
+            true
+        );
+        expect(isApprovedRendererTerminal({ owner, currentWindow: () => replacement, permitsClose: () => false })).toBe(
+            false
+        );
     });
 });
