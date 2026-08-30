@@ -1,0 +1,36 @@
+tests/e2e/transportResponsive.spec.ts
+  s_ae074277795b45::t_a8af746c8f2db2 82,85,87-91
+  s_ae074277795b45::t_91ec5009c4b485 6,14-16,86
+  s_ae074277795b45::t_1c57640960cdcc 93-106
+  s_ae074277795b45::t_594e0dc4030bbc 73
+  s_ae074277795b45::t_28a7de76b7ab4e 17-21
+  s_ae074277795b45::t_57774cf7223e7b 83-84
+  s_ae074277795b45::t_463a5a0015e652 92
+src/modules/WorkspaceShell/presentations/views/__tests__/TransportBar.spec.tsx
+  s_ae074277795b45::t_f4f381bb53e2f2 374,381
+src/modules/WorkspaceShell/presentations/views/TransportBar.tsx
+  s_ae074277795b45::t_b52de78ee6a1b0 232-247
+src/modules/WorkspaceShell/presentations/views/Transport/__tests__/TransportControls.spec.tsx
+  s_ae074277795b45::t_f4f381bb53e2f2 42
+src/styles/main.css
+  s_ae074277795b45::t_35af15b719569d 140,153-160
+src/modules/WorkspaceShell/presentations/views/Transport/TransportControls.tsx
+  s_ae074277795b45::t_937316a68a8bf9 42-168
+  s_ae074277795b45::t_f15771c9c2f6c9 220-239,410-419,421-448
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "3cea27cb2f12aa9cb477c31e7c06005ade1224c2",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
