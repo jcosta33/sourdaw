@@ -878,19 +878,13 @@ describe('health gates workflow contract', () => {
         expect(workflowDocument.errors).toEqual([]);
         expect(nightlyDocument.errors).toEqual([]);
         const events = recordAt(workflow, 'on');
-        expect(Object.hasOwn(events, 'pull_request')).toBe(true);
-        expect(Object.hasOwn(events, 'pull_request_review')).toBe(false);
-        expect(Object.hasOwn(events, 'schedule')).toBe(false);
-        expect(Object.hasOwn(events, 'workflow_dispatch')).toBe(false);
+        expect(Object.keys(events).sort()).toEqual(['pull_request']);
         expect(() => assertWorkflowPermissions(workflow)).not.toThrow();
         expect(() => assertConcurrencyContract(workflow)).not.toThrow();
         expect(() => assertPullRequestWorkflowIsolation(workflow)).not.toThrow();
 
         const nightlyEvents = recordAt(nightly, 'on');
-        expect(Object.hasOwn(nightlyEvents, 'schedule')).toBe(true);
-        expect(Object.hasOwn(nightlyEvents, 'workflow_dispatch')).toBe(true);
-        expect(Object.hasOwn(nightlyEvents, 'pull_request')).toBe(false);
-        expect(Object.hasOwn(nightlyEvents, 'pull_request_review')).toBe(false);
+        expect(Object.keys(nightlyEvents).sort()).toEqual(['schedule', 'workflow_dispatch']);
         expect(nightly.name).toBe('Nightly');
         expect(() => assertNightlyPermissions(nightly)).not.toThrow();
         expect(() => assertNightlyConcurrencyContract(nightly)).not.toThrow();
@@ -921,6 +915,21 @@ describe('health gates workflow contract', () => {
         const impostorGate = asRecord(structuredClone(nightly), 'impostor-gate nightly');
         recordAt(impostorGate, 'jobs')['fake-gate'] = { name: 'Gate', needs: ['decide'] };
         expect(() => assertNightlyWorkflowIsolation(impostorGate)).toThrow('the nightly train must not mint Gate');
+
+        const extraPullRequestTarget = asRecord(structuredClone(workflow), 'extra pull_request_target workflow');
+        recordAt(extraPullRequestTarget, 'on').pull_request_target = {};
+        expect(() => {
+            expect(Object.keys(recordAt(extraPullRequestTarget, 'on')).sort()).toEqual(['pull_request']);
+        }).toThrow();
+
+        const extraPullRequestOnNightly = asRecord(structuredClone(nightly), 'extra pull_request nightly');
+        recordAt(extraPullRequestOnNightly, 'on').pull_request = {};
+        expect(() => {
+            expect(Object.keys(recordAt(extraPullRequestOnNightly, 'on')).sort()).toEqual([
+                'schedule',
+                'workflow_dispatch',
+            ]);
+        }).toThrow();
     });
 
     it('rejects review-triggered cancellation and changing the pull-request grouping key', () => {

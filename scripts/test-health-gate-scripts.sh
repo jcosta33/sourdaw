@@ -327,10 +327,10 @@ const expectedGateNeeds = [
 ];
 
 expect(workflow.name === 'Health gates', 'workflow name must stay Health gates');
-expect(events?.pull_request !== undefined, 'pull_request trigger must remain present');
-expect(events?.pull_request_review === undefined, 'pull_request_review must not mint Gate');
-expect(events?.schedule === undefined, 'schedule must not run on the pull-request workflow');
-expect(events?.workflow_dispatch === undefined, 'workflow_dispatch must not run on the pull-request workflow');
+expect(
+    Object.keys(events ?? {}).sort().join('\0') === 'pull_request',
+    'Health gates on must be exactly pull_request'
+);
 expect(
     concurrency?.group === 'health-gates-${{ github.event.pull_request.number }}',
     'pull-request runs must share a PR-number concurrency group'
@@ -341,9 +341,10 @@ expect(
 );
 expect(decide?.if === undefined, 'decide must run on every pull_request');
 expect(nightly.name === 'Nightly', 'nightly workflow name must stay Nightly');
-expect(nightly.on?.schedule !== undefined, 'schedule trigger must remain on the nightly workflow');
-expect(nightly.on?.workflow_dispatch !== undefined, 'workflow_dispatch trigger must remain on the nightly workflow');
-expect(nightly.on?.pull_request === undefined, 'nightly must not run on pull requests');
+expect(
+    Object.keys(nightly.on ?? {}).sort().join('\0') === 'schedule\0workflow_dispatch',
+    'Nightly on must be exactly schedule and workflow_dispatch'
+);
 expectNightlyDoesNotMintGate(nightly.jobs);
 expect(
     nightly.concurrency?.group === 'nightly-${{ github.run_id }}',
