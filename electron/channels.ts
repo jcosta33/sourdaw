@@ -57,6 +57,8 @@ export const NATIVE_EDIT_CHANNEL = 'sourdaw:native-menu:edit';
 export const RENDERER_SESSION_QUIESCE_CHANNEL = 'sourdaw:renderer-session:quiesce';
 /** Renderer → main correlated acknowledgement of project-session quiescence. */
 export const RENDERER_SESSION_QUIESCED_CHANNEL = 'sourdaw:renderer-session:quiesced';
+/** Renderer → main commitment immediately before destructive graph retirement. */
+export const RENDERER_SESSION_QUIESCE_STARTED_CHANNEL = 'sourdaw:renderer-session:quiesce-started';
 
 /** A filter in an open or save dialog. */
 export type DialogFilter = {
@@ -211,5 +213,6 @@ export type SourdawBridge = {
         readonly edit: (operation: 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'selectAll') => Promise<void>;
         readonly listenSessionQuiesce: (callback: (requestId: number) => void) => () => void;
         readonly sessionQuiesced: (requestId: number, quiesced: boolean) => Promise<void>;
+        readonly sessionQuiesceStarted: (requestId: number) => Promise<boolean>;
     };
 };

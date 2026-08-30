@@ -15,6 +15,7 @@ export const createRendererSessionQuiescer = (channel: string, timers: Timers = 
               readonly window: RendererSessionWindow;
               readonly requestId: number;
               readonly timer: TimerHandle;
+              started: boolean;
               readonly settle: (quiesced: boolean) => void;
           }
         | undefined;
@@ -23,7 +24,9 @@ export const createRendererSessionQuiescer = (channel: string, timers: Timers = 
         if (pending === undefined) {
             return;
         }
-        pending.settle(false);
+        if (!pending.started) {
+            pending.settle(false);
+        }
     };
 
     return {
@@ -40,8 +43,11 @@ export const createRendererSessionQuiescer = (channel: string, timers: Timers = 
                     pending = undefined;
                     resolve(quiesced);
                 };
-                timer = timers.setTimer(() => settle(false), RENDERER_SESSION_QUIESCE_TIMEOUT_MS);
-                pending = { window, requestId: currentRequestId, timer, settle };
+                timer = timers.setTimer(
+                    () => settle(pending?.requestId === currentRequestId && pending.started),
+                    RENDERER_SESSION_QUIESCE_TIMEOUT_MS
+                );
+                pending = { window, requestId: currentRequestId, timer, started: false, settle };
                 try {
                     window.webContents.send(channel, currentRequestId);
                 } catch {
@@ -53,6 +59,13 @@ export const createRendererSessionQuiescer = (channel: string, timers: Timers = 
             if (pending?.window === window && pending.requestId === completedRequestId) {
                 pending.settle(quiesced);
             }
+        },
+        start: (window: RendererSessionWindow, startedRequestId: number): boolean => {
+            if (pending?.window !== window || pending.requestId !== startedRequestId) {
+                return false;
+            }
+            pending.started = true;
+            return true;
         },
         cancel,
     };

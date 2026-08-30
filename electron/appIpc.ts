@@ -29,6 +29,7 @@ import {
     NATIVE_MENU_PROJECT_STATE_CHANNEL,
     NATIVE_MENU_SAVE_RESULT_CHANNEL,
     RENDERER_SESSION_QUIESCED_CHANNEL,
+    RENDERER_SESSION_QUIESCE_STARTED_CHANNEL,
 } from './channels.js';
 import { commandChannel } from './commands.js';
 import { asPositionalArguments, withTrustedSender, withTrustedSenderEvent, type IpcMainLike } from './router.js';
@@ -339,6 +340,7 @@ export type RegisterNativeMenuChannelsInput = {
         result: { readonly requestId: number; readonly quiesced: boolean },
         sender: unknown
     ) => void;
+    readonly onSessionQuiesceStarted: (requestId: number, sender: unknown) => boolean;
 };
 
 const nativeMenuProjectState = (value: unknown): NativeMenuProjectState => {
@@ -410,6 +412,14 @@ const rendererSessionQuiesced = (value: unknown): { readonly requestId: number; 
     return { requestId: result.requestId, quiesced: result.quiesced };
 };
 
+const rendererSessionRequestId = (value: unknown): number => {
+    const result = asRecord(value);
+    if (typeof result.requestId !== 'number' || !Number.isSafeInteger(result.requestId) || result.requestId < 1) {
+        throw new TypeError('renderer session quiesce start is invalid');
+    }
+    return result.requestId;
+};
+
 /** The entire renderer-facing native menu surface: validated projections and text editing only. */
 export const registerNativeMenuChannels = ({
     ipcMain,
@@ -418,11 +428,18 @@ export const registerNativeMenuChannels = ({
     onSaveResult,
     editTargetForSender,
     onSessionQuiesced,
+    onSessionQuiesceStarted,
 }: RegisterNativeMenuChannelsInput): void => {
     ipcMain.handle(
         NATIVE_MENU_PROJECT_STATE_CHANNEL,
         withTrustedSenderEvent('nativeMenu.projectState', isTrustedFrameUrl, (event, value) =>
             onProjectState(nativeMenuProjectState(value), event.sender)
+        )
+    );
+    ipcMain.handle(
+        RENDERER_SESSION_QUIESCE_STARTED_CHANNEL,
+        withTrustedSenderEvent('rendererSession.quiesceStarted', isTrustedFrameUrl, (event, value) =>
+            onSessionQuiesceStarted(rendererSessionRequestId(value), event.sender)
         )
     );
     ipcMain.handle(

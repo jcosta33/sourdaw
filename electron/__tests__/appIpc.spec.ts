@@ -141,6 +141,7 @@ describe('native menu channels', () => {
             onProjectState,
             onSaveResult,
             onSessionQuiesced: vi.fn(),
+            onSessionQuiesceStarted: vi.fn(() => true),
             editTargetForSender: (sender) => (sender === 'sender' ? editTarget : null),
         });
         const frame = { ...APP_FRAME, sender: 'sender' };
@@ -203,6 +204,7 @@ describe('native menu channels', () => {
             onProjectState: vi.fn(),
             onSaveResult: vi.fn(),
             onSessionQuiesced: vi.fn(),
+            onSessionQuiesceStarted: vi.fn(() => true),
             editTargetForSender: () => null,
         });
         const projectState = handlers.get(NATIVE_MENU_PROJECT_STATE_CHANNEL);
@@ -256,6 +258,7 @@ describe('native menu channels', () => {
             onProjectState: vi.fn(),
             onSaveResult,
             onSessionQuiesced: vi.fn(),
+            onSessionQuiesceStarted: vi.fn(() => true),
             editTargetForSender: () => null,
         });
 

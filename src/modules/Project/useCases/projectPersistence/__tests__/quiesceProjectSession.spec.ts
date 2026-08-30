@@ -21,9 +21,14 @@ describe('quiesceProjectSession', () => {
         runtime.unloadPlugin.mockImplementation(async () => order.push('plugins'));
 
         const { quiesceProjectSession } = await import('../quiesceProjectSession');
-        await expect(quiesceProjectSession()).resolves.toBe(true);
+        await expect(
+            quiesceProjectSession(async () => {
+                order.push('commit');
+                return true;
+            })
+        ).resolves.toBe(true);
 
-        expect(order).toEqual(['stop', 'graph', 'plugins']);
+        expect(order).toEqual(['stop', 'commit', 'graph', 'plugins']);
     });
 
     it('fails closed before destructive teardown, but completes the irreversible close after plugin unload rejection', async () => {

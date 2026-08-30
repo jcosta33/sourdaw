@@ -33,6 +33,7 @@ import {
     NATIVE_MENU_SAVE_RESULT_CHANNEL,
     RENDERER_SESSION_QUIESCE_CHANNEL,
     RENDERER_SESSION_QUIESCED_CHANNEL,
+    RENDERER_SESSION_QUIESCE_STARTED_CHANNEL,
 } from '../channels.js';
 import { commandChannel, DENIED_COMMANDS } from '../commands.js';
 
@@ -99,6 +100,7 @@ describe('the published surface', () => {
             'listenSessionQuiesce',
             'projectState',
             'saveResult',
+            'sessionQuiesceStarted',
             'sessionQuiesced',
         ]);
     });
@@ -141,7 +143,7 @@ describe('the published surface', () => {
 
 describe('native menu transport', () => {
     it('forwards exact renderer-owned native menu payloads on their narrow channels', async () => {
-        const fake = fakeIpc();
+        const fake = fakeIpc((channel) => (channel === RENDERER_SESSION_QUIESCE_STARTED_CHANNEL ? true : undefined));
         const bridge = createSourdawBridge(fake.ipc);
         const state = {
             title: 'Song',
@@ -163,6 +165,7 @@ describe('native menu transport', () => {
         await bridge.nativeMenu.saveResult(result);
         await bridge.nativeMenu.edit('paste');
         await bridge.nativeMenu.sessionQuiesced(3, true);
+        await bridge.nativeMenu.sessionQuiesceStarted(3);
 
         expect(fake.invoke).toHaveBeenNthCalledWith(1, NATIVE_MENU_PROJECT_STATE_CHANNEL, state);
         expect(fake.invoke).toHaveBeenNthCalledWith(2, NATIVE_MENU_SAVE_RESULT_CHANNEL, result);
@@ -171,6 +174,7 @@ describe('native menu transport', () => {
             requestId: 3,
             quiesced: true,
         });
+        expect(fake.invoke).toHaveBeenNthCalledWith(5, RENDERER_SESSION_QUIESCE_STARTED_CHANNEL, { requestId: 3 });
     });
 
     it('delivers only validated intents from main', () => {

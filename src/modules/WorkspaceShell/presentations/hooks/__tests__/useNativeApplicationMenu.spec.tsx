@@ -18,6 +18,7 @@ const desktop = vi.hoisted(() => ({
         };
     }),
     sessionQuiesced: vi.fn(async () => undefined),
+    sessionQuiesceStarted: vi.fn(async () => true),
 }));
 const projectState = vi.hoisted(() => ({
     projectId: 'project' as string | undefined,
@@ -100,6 +101,7 @@ const workspace = vi.hoisted(() => ({
         edit: desktop.edit,
         listenSessionQuiesce: desktop.listenSessionQuiesce,
         sessionQuiesced: desktop.sessionQuiesced,
+        sessionQuiesceStarted: desktop.sessionQuiesceStarted,
     })),
 }));
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({
@@ -119,6 +121,7 @@ describe('useNativeApplicationMenu', () => {
         desktop.edit.mockClear();
         desktop.listenSessionQuiesce.mockClear();
         desktop.sessionQuiesced.mockClear();
+        desktop.sessionQuiesceStarted.mockReset().mockResolvedValue(true);
         projectActions.quiesceProjectSession.mockReset().mockResolvedValue(true);
         projectState.dirty = false;
         projectState.projectId = 'project';
@@ -147,7 +150,10 @@ describe('useNativeApplicationMenu', () => {
     });
 
     it('acknowledges one renderer-session quiesce request with the exact result and request id', async () => {
-        projectActions.quiesceProjectSession.mockResolvedValueOnce(false);
+        projectActions.quiesceProjectSession.mockImplementationOnce(async (begin: () => Promise<boolean>) => {
+            await begin();
+            return false;
+        });
         renderHook(() =>
             useNativeApplicationMenu({
                 name: 'Song',
@@ -167,8 +173,9 @@ describe('useNativeApplicationMenu', () => {
 
         desktop.sessionListener?.(41);
 
-        await vi.waitFor(() => expect(projectActions.quiesceProjectSession).toHaveBeenCalledTimes(1));
-        expect(desktop.sessionQuiesced).toHaveBeenCalledWith(41, false);
+        await vi.waitFor(() => expect(desktop.sessionQuiesced).toHaveBeenCalledWith(41, false));
+        expect(projectActions.quiesceProjectSession).toHaveBeenCalledTimes(1);
+        expect(desktop.sessionQuiesceStarted).toHaveBeenCalledWith(41);
     });
 
     it('republishes renderer readiness when Project hydration changes loading state', () => {

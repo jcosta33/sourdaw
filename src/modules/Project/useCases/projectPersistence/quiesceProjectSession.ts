@@ -3,21 +3,27 @@ import { unloadPlugin } from '#/modules/PluginHost/useCases';
 import { stopPlayback } from '#/modules/Transport/useCases';
 
 /** Retire only renderer-owned project runtime before a macOS window closes. */
-export async function quiesceProjectSession(): Promise<boolean> {
+export async function quiesceProjectSession(
+    beginDestructiveTeardown: () => Promise<boolean> = async () => true
+): Promise<boolean> {
     if (quiesced) {
         return true;
     }
-    inFlight ??= quiesce();
+    inFlight ??= quiesce(beginDestructiveTeardown);
     return inFlight;
 }
 
 let inFlight: Promise<boolean> | undefined;
 let quiesced = false;
 
-async function quiesce(): Promise<boolean> {
+async function quiesce(beginDestructiveTeardown: () => Promise<boolean>): Promise<boolean> {
     try {
         await stopPlayback();
     } catch {
+        inFlight = undefined;
+        return false;
+    }
+    if (!(await beginDestructiveTeardown())) {
         inFlight = undefined;
         return false;
     }

@@ -362,7 +362,11 @@ const createWindow = (): BrowserWindow => {
         window,
         pluginWindowHost,
         () => windowCloseCoordinator.permitsClose(),
-        () => rendererSessionLifecycle.cancelTeardown(),
+        () => {
+            closeSessionQuiescedWindow = undefined;
+            rendererSessionQuiescer.cancel();
+            rendererSessionLifecycle.cancelTeardown();
+        },
         () => windowCloseCoordinator.markClosing()
     );
     return window;
@@ -680,6 +684,13 @@ void app.whenReady().then(() => {
             if (senderWindow !== null) {
                 rendererSessionQuiescer.resolve(senderWindow, result.requestId, result.quiesced);
             }
+        },
+        onSessionQuiesceStarted: (requestId, sender) => {
+            const senderWindow =
+                typeof sender === 'object' && sender !== null
+                    ? BrowserWindow.fromWebContents(sender as WebContents)
+                    : null;
+            return senderWindow !== null && rendererSessionQuiescer.start(senderWindow, requestId);
         },
         editTargetForSender: (sender) =>
             typeof sender === 'object' &&

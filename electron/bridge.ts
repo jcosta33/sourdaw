@@ -42,6 +42,7 @@ import {
     NATIVE_MENU_SAVE_RESULT_CHANNEL,
     RENDERER_SESSION_QUIESCE_CHANNEL,
     RENDERER_SESSION_QUIESCED_CHANNEL,
+    RENDERER_SESSION_QUIESCE_STARTED_CHANNEL,
     type SourdawBridge,
 } from './channels.js';
 import { commandChannel, isExposedCommand } from './commands.js';
@@ -451,6 +452,13 @@ export const createSourdawBridge = (
             },
             sessionQuiesced: async (requestId, quiesced) => {
                 await ipc.invoke(RENDERER_SESSION_QUIESCED_CHANNEL, { requestId, quiesced });
+            },
+            sessionQuiesceStarted: async (requestId) => {
+                const accepted = await ipc.invoke(RENDERER_SESSION_QUIESCE_STARTED_CHANNEL, { requestId });
+                if (typeof accepted !== 'boolean') {
+                    throw new TypeError('renderer session quiesce start returned an invalid acknowledgement');
+                }
+                return accepted;
             },
         },
     };

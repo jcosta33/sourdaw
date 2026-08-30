@@ -29,6 +29,29 @@ describe('renderer session quiescer', () => {
         expect(RENDERER_SESSION_QUIESCE_TIMEOUT_MS).toBe(5_000);
     });
 
+    it('forces the irreversible close after a real timer expiry once graph retirement has started, and rejects a revoked pre-start request', async () => {
+        let timeout: (() => void) | undefined;
+        const window = { isDestroyed: () => false, webContents: { send: vi.fn() } };
+        const quiescer = createRendererSessionQuiescer('renderer:quiesce', {
+            setTimer: (callback) => {
+                timeout = callback;
+                return { cancel: vi.fn() };
+            },
+        });
+
+        const started = quiescer.request(window);
+        expect(quiescer.start(window, 1)).toBe(true);
+        quiescer.cancel(); // A revision revoke after commit cannot reopen the retired graph.
+        timeout?.();
+        await expect(started).resolves.toBe(true);
+        quiescer.resolve(window, 1, true); // late completion is harmless
+
+        const revoked = quiescer.request(window);
+        quiescer.cancel();
+        await expect(revoked).resolves.toBe(false);
+        expect(quiescer.start(window, 2)).toBe(false);
+    });
+
     it('does not let native editor detach/window close begin before renderer project runtime quiesces', async () => {
         let release!: (quiesced: boolean) => void;
         const order: string[] = [];
