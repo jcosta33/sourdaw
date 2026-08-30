@@ -7,28 +7,20 @@ import {
     MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
 } from '../GetPendingEffectRecoveryPolicy';
 
-function createEffect(input: Pick<AgentRunPendingEffect, 'kind' | 'operation' | 'remediation'>): AgentRunPendingEffect {
+function createExternalEffect(operation: string): AgentRunPendingEffect {
     return {
-        commandId: `command-${input.operation}`,
-        kind: input.kind,
-        operation: input.operation,
+        commandId: `command-${operation}`,
+        kind: 'external-effect',
+        operation,
         reason: 'pending',
-        remediation: input.remediation,
+        remediation: 'reconcile',
         state: 'pending',
     };
 }
 
 describe('getPendingEffectRecoveryPolicy', () => {
-    const genericEffect = createEffect({
-        kind: 'external-effect',
-        operation: 'setTrackGain',
-        remediation: 'reconcile',
-    });
-    const renderEffect = createEffect({
-        kind: 'external-effect',
-        operation: 'renderProjectSections',
-        remediation: 'reconcile',
-    });
+    const genericEffect = createExternalEffect('setTrackGain');
+    const renderEffect = createExternalEffect('renderProjectSections');
 
     it('requires exact checkpoint revision before generic pending effects can reconcile', () => {
         expect(getPendingEffectRecoveryPolicy([genericEffect])).toEqual({
