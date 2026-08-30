@@ -239,6 +239,32 @@ describe('native menu channels', () => {
             })
         ).toThrow(/invalid/u);
     });
+
+    it.each([
+        { requestId: 1.5, projectKey: 'project', revision: 'revision-1' },
+        { requestId: 1, revision: 'revision-1' },
+        { requestId: 1, projectKey: 'project' },
+        { requestId: 1, projectId: 'legacy-id', revision: 'revision-1' },
+    ])('rejects an invalid close-save result %# before notifying the coordinator', (partial) => {
+        const { ipcMain, handlers } = collectingIpc();
+        const onSaveResult = vi.fn();
+        registerNativeMenuChannels({
+            ipcMain,
+            isTrustedFrameUrl,
+            onProjectState: vi.fn(),
+            onSaveResult,
+            editTargetForSender: () => null,
+        });
+
+        expect(() =>
+            handlers.get(NATIVE_MENU_SAVE_RESULT_CHANNEL)?.(APP_FRAME, {
+                saved: true,
+                dirty: false,
+                ...partial,
+            })
+        ).toThrow(/invalid/u);
+        expect(onSaveResult).not.toHaveBeenCalled();
+    });
 });
 
 describe('the open dialog', () => {

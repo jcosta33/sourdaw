@@ -202,7 +202,9 @@ export const createWindowCloseCoordinator = ({
             result.dirty ||
             result.requestId !== requestId ||
             (result.projectKey !== undefined && result.projectKey !== expectedProject.projectKey) ||
-            (activeSave?.latestCandidate !== undefined && activeSave.latestCandidate.revision !== result.revision)
+            (result.revision !== undefined &&
+                result.revision !== expectedProject.revision &&
+                result.revision !== activeSave?.latestCandidate?.revision)
         ) {
             phase = 'idle';
             return false;

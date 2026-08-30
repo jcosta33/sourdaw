@@ -154,6 +154,23 @@ describe('window close coordinator', () => {
         await expect(close).resolves.toBe(false);
     });
 
+    it('rejects an unprojected same-key result revision that was not produced by the close save', async () => {
+        const coordinator = createWindowCloseCoordinator({ ask: async () => 'save', send: vi.fn() });
+        coordinator.updateProject({ title: 'Song', dirty: true, projectKey: 'project-a', revision: 'revision-1' });
+
+        const close = coordinator.requestClose();
+        await Promise.resolve();
+        coordinator.resolveSave({
+            requestId: 1,
+            saved: true,
+            dirty: false,
+            projectKey: 'project-a',
+            revision: 'unrelated-revision',
+        });
+
+        await expect(close).resolves.toBe(false);
+    });
+
     it('settles an in-flight request when its renderer window is reset', async () => {
         const coordinator = createWindowCloseCoordinator({ ask: async () => 'save', send: vi.fn() });
         coordinator.updateProject({ title: 'Dirty song', dirty: true });

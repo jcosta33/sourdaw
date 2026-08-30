@@ -30,7 +30,11 @@ export async function discardProjectChanges(): Promise<boolean> {
     const stillOwnsDiscard = (): boolean => {
         const current = projectStore.value;
         return (
-            current === project &&
+            // replaceProjectData claims `loading` before it validates the
+            // caller's predicate. That publication belongs to this exact
+            // transition, not to a user project switch, so it must retain the
+            // captured created-at/revision authority through the commit gate.
+            (current === project || (current?.createdAt === project.createdAt && current.loading === true)) &&
             (!transitionWasCurrent || transitionAuthority.isCurrent()) &&
             captureProjectRevision() === projectRevision
         );
