@@ -195,6 +195,17 @@ function expect(condition, message) {
     }
 }
 
+function expectNightlyDoesNotMintGate(jobs) {
+    expect(jobs?.gate === undefined, 'nightly must not mint Gate');
+    for (const [jobId, job] of Object.entries(jobs ?? {})) {
+        const name = job?.name;
+        if (typeof name === 'string' && (name === 'Gate' || /['"]Gate['"]/.test(name))) {
+            expect(false, `nightly job ${jobId} must not mint Gate`);
+        }
+    }
+}
+
+
 function stepNamed(job, name) {
     return job?.steps?.find((step) => step.name === name);
 }
@@ -333,7 +344,7 @@ expect(nightly.name === 'Nightly', 'nightly workflow name must stay Nightly');
 expect(nightly.on?.schedule !== undefined, 'schedule trigger must remain on the nightly workflow');
 expect(nightly.on?.workflow_dispatch !== undefined, 'workflow_dispatch trigger must remain on the nightly workflow');
 expect(nightly.on?.pull_request === undefined, 'nightly must not run on pull requests');
-expect(nightly.jobs?.gate === undefined, 'nightly must not mint Gate');
+expectNightlyDoesNotMintGate(nightly.jobs);
 expect(
     nightly.concurrency?.group === 'nightly-${{ github.run_id }}',
     'nightly must isolate each run on its own run id'
@@ -717,10 +728,7 @@ expect(
         deployWebNeeds.every((need, index) => need === expectedDeployWebNeeds[index]),
     `the daily web deploy must depend on exactly: ${expectedDeployWebNeeds.join(', ')}`
 );
-expect(
-    nightly.jobs?.gate === undefined,
-    'the daily web deploy must live on the nightly train, which must not mint Gate'
-);
+expectNightlyDoesNotMintGate(nightly.jobs);
 expect(
     deployWebDeployRun.includes('deploy --prebuilt --prod') &&
         deployWebDeployRun.includes('--meta githubCommitSha="$GITHUB_SHA"'),

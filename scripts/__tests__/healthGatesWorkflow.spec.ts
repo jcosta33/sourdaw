@@ -49,6 +49,7 @@ const PULL_REQUEST_CONCURRENCY_GROUP = 'health-gates-${{ github.event.pull_reque
 const PULL_REQUEST_CONCURRENCY_CANCELLATION = true;
 const NIGHTLY_CONCURRENCY_GROUP = 'nightly-${{ github.run_id }}';
 const GATE_CONDITION = '${{ !cancelled() }}';
+const GATE_SUMMARY_NAME = 'Gate';
 const DEPENDENCY_REVIEW_ACTION = 'actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294';
 const TRUSTED_SCANNER_REF = '${{ github.event.pull_request.base.sha || github.sha }}';
 const SCAN_TARGET_REF = '${{ github.event.pull_request.head.sha || github.sha }}';
@@ -344,11 +345,24 @@ function assertPullRequestWorkflowIsolation(candidate: UnknownRecord): void {
     }
 }
 
-function assertNightlyWorkflowIsolation(candidate: UnknownRecord): void {
-    const jobs = recordAt(candidate, 'jobs');
+function assertNightlyDoesNotMintGate(jobs: UnknownRecord): void {
     if (Object.hasOwn(jobs, 'gate')) {
         throw new Error('the nightly train must not mint Gate');
     }
+    for (const [jobId, value] of Object.entries(jobs)) {
+        const name = asRecord(value, jobId).name;
+        if (typeof name !== 'string') {
+            continue;
+        }
+        if (name === GATE_SUMMARY_NAME || /['"]Gate['"]/.test(name)) {
+            throw new Error('the nightly train must not mint Gate');
+        }
+    }
+}
+
+function assertNightlyWorkflowIsolation(candidate: UnknownRecord): void {
+    const jobs = recordAt(candidate, 'jobs');
+    assertNightlyDoesNotMintGate(jobs);
     for (const name of ['e2e', 'browser-ai-webgpu', 'codeql', 'secrets', 'deploy-web', 'nightly-report']) {
         if (!Object.hasOwn(jobs, name)) {
             throw new Error(`nightly must define ${name}`);
@@ -714,9 +728,7 @@ function assertDailyDeployTrain(candidate: UnknownRecord): DeployTrainScripts {
             throw new Error(`a daily web deployment must not carry a release side effect: ${sideEffect.source}`);
         }
     }
-    if (Object.hasOwn(recordAt(candidate, 'jobs'), 'gate')) {
-        throw new Error('the nightly train must not mint Gate');
-    }
+    assertNightlyDoesNotMintGate(recordAt(candidate, 'jobs'));
     const armingReport = stringAt(stepNamed(job, DEPLOY_WEB_CREDENTIAL_REPORT_STEP), 'run');
     for (const precondition of DEPLOY_ARMING_PRECONDITIONS) {
         if (!armingReport.includes(precondition)) {
@@ -905,6 +917,10 @@ describe('health gates workflow contract', () => {
         const mintingGate = asRecord(structuredClone(nightly), 'minting-gate nightly');
         recordAt(mintingGate, 'jobs').gate = jobAt(workflow, 'gate');
         expect(() => assertNightlyWorkflowIsolation(mintingGate)).toThrow('the nightly train must not mint Gate');
+
+        const impostorGate = asRecord(structuredClone(nightly), 'impostor-gate nightly');
+        recordAt(impostorGate, 'jobs')['fake-gate'] = { name: 'Gate', needs: ['decide'] };
+        expect(() => assertNightlyWorkflowIsolation(impostorGate)).toThrow('the nightly train must not mint Gate');
     });
 
     it('rejects review-triggered cancellation and changing the pull-request grouping key', () => {
