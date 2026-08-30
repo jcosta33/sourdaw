@@ -828,7 +828,9 @@ describe('settleConfirmedCommandExecution', () => {
 
     it('retains resources after an ambiguous batch outcome', async () => {
         const resourceCleanup = createDeferred<void>();
+        const stemRecovery = createDeferred<void>();
         mocks.settleResources.mockImplementationOnce(() => resourceCleanup.promise);
+        mocks.recoverStemResources.mockImplementationOnce(() => stemRecovery.promise);
         const resultPromise = settleConfirmedCommandExecution(
             createInput(createCompletedFlight(createAmbiguousBatchResult()))
         );
@@ -845,6 +847,13 @@ describe('settleConfirmedCommandExecution', () => {
         expect(mocks.settleResources).toHaveBeenCalledWith({ confirmationId: 'confirmation-1', disposition: 'retain' });
 
         resourceCleanup.resolve(undefined);
+
+        await Promise.resolve();
+
+        expect(settlement.isSettled()).toBe(false);
+        expect(mocks.recoverStemResources).toHaveBeenCalledWith({ runId: 'run-1' });
+
+        stemRecovery.resolve(undefined);
 
         await expect(resultPromise).resolves.toEqual({ status: 'failed', reason: 'partial write' });
         await settlement.completion;
