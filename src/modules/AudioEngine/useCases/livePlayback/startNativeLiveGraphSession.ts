@@ -210,11 +210,22 @@ export function startNativeLiveGraphSession(
         // (`advance_playhead` returns on `!is_playing`), so nothing can be
         // rendered ahead of the region that governs it.
         const monitor = input.monitor ?? DEFAULT_MONITOR;
+        const programme = readLiveGraphProgramme({ stripTracks: topology.stripTracks, sampleRate: input.sampleRate });
+        // The producer drops what it cannot carry so one clip cannot refuse the
+        // whole batch, but a drop nobody says out loud is a track that plays a
+        // bar short with no account of why. This is where the programme is
+        // applied, so this is where its cost is stated.
+        for (const exclusion of programme.exclusions) {
+            logger.warn(
+                `[AudioEngine] live programme excluded ${exclusion.subjectId} on strip ` +
+                    `${exclusion.stripId}: ${exclusion.reason}`
+            );
+        }
         const commands = projectLiveGraphTopology({
             ...topology,
             transport: { playing: false, positionSeconds: input.positionSeconds },
             monitor,
-            programme: readLiveGraphProgramme({ stripTracks: topology.stripTracks, sampleRate: input.sampleRate }),
+            programme,
         });
 
         // Material before the batch that names it, always: the native side

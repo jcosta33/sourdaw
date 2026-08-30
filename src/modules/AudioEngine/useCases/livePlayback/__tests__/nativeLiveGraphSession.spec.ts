@@ -51,6 +51,14 @@ const mocks = vi.hoisted(() => ({
      * buffer cache to make the producer emit one.
      */
     topologyOverride: null as readonly unknown[] | null,
+    /**
+     * A programme to read in place of the project's, or `null` to read the real
+     * one. Standing up a tempo projector and a buffer cache just to make the
+     * producer drop a clip would prove the producer here, which is not this
+     * file's job; what is, is what the session does with a drop.
+     */
+    programmeOverride: null as unknown,
+    warn: vi.fn<(message: string) => void>(),
     /** Every bridge call this session made, in order. */
     wireCalls: [] as string[],
 }));
@@ -70,6 +78,17 @@ vi.mock('../startNativeEnginePlayheadFeed', () => ({
 vi.mock('../stopNativeEnginePlayheadFeed', () => ({
     stopNativeEnginePlayheadFeed: () => mocks.stopPlayheadFeed(),
 }));
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: { error: vi.fn(), warn: mocks.warn, info: vi.fn(), debug: vi.fn() },
+}));
+vi.mock('../readLiveGraphProgramme', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../readLiveGraphProgramme')>();
+    return {
+        readLiveGraphProgramme: (input: Parameters<typeof actual.readLiveGraphProgramme>[0]) =>
+            (mocks.programmeOverride as ReturnType<typeof actual.readLiveGraphProgramme> | null) ??
+            actual.readLiveGraphProgramme(input),
+    };
+});
 vi.mock('../projectLiveGraphTopology', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../projectLiveGraphTopology')>();
     return {
@@ -197,6 +216,8 @@ beforeEach(() => {
     mocks.startPlayheadFeed.mockClear();
     mocks.stopPlayheadFeed.mockClear();
     mocks.topologyOverride = null;
+    mocks.programmeOverride = null;
+    mocks.warn.mockClear();
     mocks.wireCalls = [];
     // The pool memo is module state and process-wide by design, so a case that
     // inherited the previous one's belief would see no registration at all.
@@ -257,6 +278,56 @@ describe('startNativeLiveGraphSession', () => {
             expect.objectContaining({ kind: 'set-track-output', trackId: 'audio-1' }),
             expect.objectContaining({ kind: 'set-track-output', trackId: 'bus-1' }),
         ]);
+    });
+
+    it('says what the programme could not carry, and still plays everything it could', async () => {
+        // The producer drops a clip rather than let it refuse the whole batch,
+        // which is right — and invisible unless the session says so. A track
+        // that plays a bar short with nothing in the log is indistinguishable
+        // from an engine defect.
+        mocks.programmeOverride = {
+            playbacksByStripId: new Map([
+                [
+                    'audio-1',
+                    [
+                        {
+                            trackId: 'audio-1',
+                            source: { sourceId: 'sample-1', buffer: MATERIAL },
+                            startTime: 0,
+                            sourceOffsetSeconds: 0,
+                            durationSeconds: 1,
+                            playbackRate: 1,
+                            gain: 1,
+                            fade: { microFadeSeconds: 0.005 },
+                        },
+                    ],
+                ],
+            ]),
+            bakedStripIds: new Set<string>(),
+            exclusions: [
+                {
+                    stripId: 'audio-1',
+                    subjectId: 'runaway',
+                    reason: 'its 12 loop iterations allocate 264 MiB of material',
+                },
+            ],
+        };
+
+        const result = await startNativeLiveGraphSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        expect(result).toMatchObject({ outcome: 'started' });
+        const warning = mocks.warn.mock.calls
+            .map(([message]) => message)
+            .find((message) => message.includes('runaway'));
+        expect(warning).toContain('audio-1');
+        expect(warning).toContain('its 12 loop iterations allocate 264 MiB of material');
+        // The drop cost that clip and nothing else — the rest still reached the
+        // engine in the same batch.
+        expect(appliedBatches()[0]?.commands).toContainEqual(expect.objectContaining({ kind: 'schedule-clip' }));
     });
 
     it('installs the loop region before the engine is ever allowed to roll', async () => {

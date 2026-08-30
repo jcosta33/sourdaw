@@ -405,7 +405,7 @@ function frozenTrack(leg: 'live' | 'export'): Track {
  *   renders still agree, so they are in the fixture rather than in a unit
  *   assertion alone.
  */
-function fixtureTracks(leg: 'live' | 'export'): Track[] {
+function fixtureTracks(leg: 'live' | 'export', extraTracks: readonly Track[] = []): Track[] {
     return [
         createTrack({
             id: 'track-a',
@@ -477,7 +477,44 @@ function fixtureTracks(leg: 'live' | 'export'): Track[] {
                 }),
             ],
         }),
+        ...extraTracks,
     ];
+}
+
+/**
+ * A track carrying a loop whose expansion is past what one clip may cost the
+ * native timeline, and an ordinary neighbour on the same strip.
+ *
+ * Sixteen passes over 45 seconds of stereo material is 277 MiB of native
+ * allocation (#3134). Both producers must leave the loop out and keep the
+ * neighbour, and the two renders must still agree — a budget honoured on one
+ * leg only is a bounce that is not the mix the engineer monitored.
+ */
+function overBudgetTrack(): Track {
+    return createTrack({
+        id: 'track-runaway',
+        name: 'Runaway',
+        gain: 0.5,
+        pan: -6,
+        clips: [
+            audioClip({
+                id: 'clip-runaway',
+                trackId: 'track-runaway',
+                startBeat: 0,
+                endBeat: 8,
+                loopEnabled: true,
+                loopLength: 0.5,
+                audioBufferId: 'mat-big',
+            }),
+            audioClip({
+                id: 'clip-neighbour',
+                trackId: 'track-runaway',
+                startBeat: 1,
+                endBeat: 3,
+                audioBufferId: 'mat-a',
+            }),
+        ],
+    });
 }
 
 /** The tracks whose programme reaches the mix — the export's own vocabulary. */
@@ -487,9 +524,13 @@ function scheduledOf(tracks: readonly Track[]): Track[] {
 
 // ── The two legs ──────────────────────────────────────────────────────────
 
-async function renderExportLeg(): Promise<Float32Array[]> {
+async function renderExportLeg(options?: {
+    extraTracks?: readonly Track[];
+    /** Collects warnings instead of failing on them, for a case that expects one. */
+    onWarning?: (message: string) => void;
+}): Promise<Float32Array[]> {
     const transport = inProcessNativeTransport(requireNativeHost());
-    const renderableTracks = fixtureTracks('export');
+    const renderableTracks = fixtureTracks('export', options?.extraTracks);
     const scheduledTracks = scheduledOf(renderableTracks);
     const result = await renderOfflineWithNativeEngine({
         transport,
@@ -505,9 +546,11 @@ async function renderExportLeg(): Promise<Float32Array[]> {
         scheduledTracks,
         scheduledTrackIds: new Set(scheduledTracks.map((track) => track.id)),
         vcaMultiplierByTrackId: new Map(),
-        onWarning: (message) => {
-            throw new Error(`the export leg degraded instead of rendering: ${message}`);
-        },
+        onWarning:
+            options?.onWarning ??
+            ((message) => {
+                throw new Error(`the export leg degraded instead of rendering: ${message}`);
+            }),
     });
     if (result.outcome !== 'rendered') {
         throw new Error(`the export leg declined: ${result.reason}`);
@@ -520,8 +563,8 @@ async function renderExportLeg(): Promise<Float32Array[]> {
  * **parked**, because the loop region arrives with the maps a round trip later
  * and an engine already rolling would render that round trip.
  */
-function projectLiveTopologyBatch(): readonly AudioGraphCommand[] {
-    const stripTracks = fixtureTracks('live');
+function projectLiveTopologyBatch(extraTracks: readonly Track[] = []): readonly AudioGraphCommand[] {
+    const stripTracks = fixtureTracks('live', extraTracks);
     return projectLiveGraphTopology({
         stripTracks,
         soloGatedTrackIds: new Set(),
@@ -556,9 +599,12 @@ function projectLiveTopologyBatch(): readonly AudioGraphCommand[] {
  * the defect this file caught: a roll that locates seeks to frame 0 and cancels
  * every fader, pan and send level the topology queued there.
  */
-function projectLiveSessionCommands(options?: { rollLocates?: boolean }): readonly AudioGraphCommand[] {
+function projectLiveSessionCommands(options?: {
+    rollLocates?: boolean;
+    extraTracks?: readonly Track[];
+}): readonly AudioGraphCommand[] {
     return [
-        ...projectLiveTopologyBatch(),
+        ...projectLiveTopologyBatch(options?.extraTracks),
         {
             kind: 'set-transport',
             playing: true,
@@ -618,6 +664,8 @@ describe('live and export projections render one project the same way (#3068)', 
             ['mat-a', createMaterial(2, 220)],
             ['mat-b', createMaterial(1.25, 330)],
             ['bake-1', createMaterial(BAKE_SECONDS, 110)],
+            // Long enough that a loop over it passes the per-clip budget.
+            ['mat-big', createMaterial(45, 110)],
         ]);
     });
 
@@ -666,6 +714,35 @@ describe('live and export projections render one project the same way (#3068)', 
             expect(peak(exportLeft!)).toBeGreaterThan(0.01);
             expect(peak(exportRight!)).toBeGreaterThan(0.01);
             expect(firstDifference([exportLeft!, exportRight!], [liveLeft!, liveRight!])).toBe(-1);
+        },
+        30_000
+    );
+
+    it.runIf(nativeAddonPresent)(
+        'drops a clip past the native material budget on both legs, and still renders them alike',
+        async () => {
+            const extraTracks = [overBudgetTrack()];
+            const exportWarnings: string[] = [];
+            const [exportLeft, exportRight] = await renderExportLeg({
+                extraTracks,
+                onWarning: (message) => exportWarnings.push(message),
+            });
+            const [liveLeft, liveRight] = await renderLiveLeg(projectLiveSessionCommands({ extraTracks }));
+
+            expect(peak(exportLeft!)).toBeGreaterThan(0.01);
+            expect(peak(exportRight!)).toBeGreaterThan(0.01);
+            expect(firstDifference([exportLeft!, exportRight!], [liveLeft!, liveRight!])).toBe(-1);
+
+            // And they agree by both leaving the loop out while both keep its
+            // neighbour — not by both silencing a track the arrangement asks
+            // for, which would satisfy the equality just as well.
+            expect(exportWarnings).toEqual([expect.stringContaining('clip-runaway')]);
+            const liveSources = projectLiveSessionCommands({ extraTracks }).flatMap((command) =>
+                command.kind === 'schedule-clip' && command.playback.trackId === 'track-runaway'
+                    ? [command.playback.source.sourceId]
+                    : []
+            );
+            expect(liveSources).toEqual(['mat-a']);
         },
         30_000
     );

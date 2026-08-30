@@ -48,9 +48,14 @@ const projectPpqEndpoints: OfflinePpqEndpointProjector = ({ startPpq, endPpq, sa
 
 const resolveTempoAtBeat: OfflineTempoAtBeatResolver = () => TEMPO;
 
-/** jsdom has no `AudioBuffer`; the producer reads `duration` and nothing else. */
+/** jsdom has no `AudioBuffer`; the producer reads its length and its shape. */
 function material(durationSeconds: number): AudioBuffer {
-    return { duration: durationSeconds, sampleRate: SAMPLE_RATE, numberOfChannels: 2 } as unknown as AudioBuffer;
+    return {
+        duration: durationSeconds,
+        length: Math.round(durationSeconds * SAMPLE_RATE),
+        sampleRate: SAMPLE_RATE,
+        numberOfChannels: 2,
+    } as unknown as AudioBuffer;
 }
 
 function createTrack(overrides?: Partial<Track>): Track {
@@ -345,34 +350,63 @@ describe('projectLiveGraphProgramme — what one clip may cost', () => {
         });
     }
 
-    function programmeFor(clips: readonly Track['clips'][number][]) {
+    function programmeFor(clips: readonly Track['clips'][number][], materialSeconds = 2) {
         return projectProgramme({
             stripTracks: [createTrack({ id: 'audio-1', name: 'Looper', clips: [...clips] })],
-            buffers: { 'mat-1': material(10) },
+            buffers: { 'mat-1': material(materialSeconds) },
         });
     }
 
-    it('carries a loop that expands to exactly the 64 iterations it may allocate for', () => {
-        const programme = programmeFor([loopingClip({ id: 'at-the-line', startBeat: 0, iterations: 64 })]);
+    it('carries a one-bar loop dragged across a four-minute arrangement, which is ordinary arranging', () => {
+        // 120 iterations of two seconds of 48 kHz stereo float: 88 MiB, well
+        // inside what one clip may cost.
+        const programme = programmeFor([loopingClip({ id: 'ordinary', startBeat: 0, iterations: 120 })]);
 
-        expect(programme.playbacksByStripId.get('audio-1')).toHaveLength(64);
+        expect(programme.playbacksByStripId.get('audio-1')).toHaveLength(120);
         expect(programme.exclusions).toEqual([]);
     });
 
-    it('excludes the clip, not the session, when one loop would allocate past that budget', () => {
+    it('excludes the clip, not the session, when one loop’s expansion allocates past the budget', () => {
         // Every `schedule-clip` copies the sample's whole PCM into the engine
-        // (#3134), so an expansion is a multiplication of its material. The
-        // neighbour is here to prove the cost lands on the clip alone.
-        const programme = programmeFor([
-            loopingClip({ id: 'runaway', startBeat: 0, iterations: 65 }),
-            audioClip({ id: 'neighbour', trackId: 'audio-1', startBeat: 100, endBeat: 102, audioBufferId: 'mat-1' }),
-        ]);
+        // (#3134), so an expansion multiplies its material: twelve passes over
+        // a minute of stereo material is 264 MiB. The neighbour is here to
+        // prove the cost lands on the clip alone.
+        const programme = programmeFor(
+            [
+                loopingClip({ id: 'runaway', startBeat: 0, iterations: 12 }),
+                audioClip({
+                    id: 'neighbour',
+                    trackId: 'audio-1',
+                    startBeat: 100,
+                    endBeat: 102,
+                    audioBufferId: 'mat-1',
+                }),
+            ],
+            60
+        );
 
         expect(programme.playbacksByStripId.get('audio-1')).toHaveLength(1);
         expect(programme.playbacksByStripId.get('audio-1')?.[0]?.startTime).toBe(100 * SECONDS_PER_BEAT);
         expect(programme.exclusions).toEqual([
-            { stripId: 'audio-1', subjectId: 'runaway', reason: expect.stringContaining('loops 65 times') },
+            {
+                stripId: 'audio-1',
+                subjectId: 'runaway',
+                reason: expect.stringContaining('past the 256 MiB'),
+            },
         ]);
+    });
+
+    it('plays a single take however long it is, because one copy is what playing it costs', () => {
+        // Twenty minutes of stereo material is 440 MiB — past the budget on its
+        // own — but nothing looped it, and the engine must hold that copy to
+        // sound the clip at all.
+        const programme = programmeFor(
+            [audioClip({ id: 'long-take', trackId: 'audio-1', startBeat: 0, endBeat: 2, audioBufferId: 'mat-1' })],
+            1_200
+        );
+
+        expect(programme.playbacksByStripId.get('audio-1')).toHaveLength(1);
+        expect(programme.exclusions).toEqual([]);
     });
 
     it('fills a track’s 1024 native clip slots exactly and admits every one of them', () => {
@@ -403,7 +437,7 @@ describe('projectLiveGraphProgramme — what one clip may cost', () => {
             {
                 stripId: 'audio-1',
                 subjectId: 'overflow',
-                reason: expect.stringContaining('0 remaining native clip slots'),
+                reason: expect.stringContaining('needs 2 of the 0 native clip slots'),
             },
         ]);
     });

@@ -2118,10 +2118,21 @@ fn map_schedule_clip(
             begins_at: Some(at),
         }) => {
             let at = seconds_to_frames(*at, sample_rate, "fadeOut beginsAt")?;
-            if at > clip_end_frame {
+            // A producer states the clip's end as one quantity of seconds; this
+            // arm reconstructs it as two roundings, `round(start) +
+            // round(length)`. The two disagree by exactly one frame whenever
+            // both fractional parts sit below a half and still sum past it, so
+            // a fade-out pinned to the end of its own clip lands one frame past
+            // that reconstruction through arithmetic alone. One frame is the
+            // widest that split can be, so absorb it and keep refusing anything
+            // farther out, which is a fade genuinely outside its sound.
+            if at > clip_end_frame.saturating_add(1) {
                 return Err("schedule-clip: fadeOut begins after the clip ends".to_string());
             }
-            Some(frames_u32(clip_end_frame - at, "fadeOut span")?)
+            Some(frames_u32(
+                clip_end_frame.saturating_sub(at),
+                "fadeOut span",
+            )?)
         }
     };
 
@@ -3295,6 +3306,53 @@ mod tests {
         )
         .expect_err("an unregistered sample must refuse");
         assert!(refusal.contains("unknown sample 'nowhere'"));
+    }
+
+    /// A clip whose start and length each round *down* by 0.4 of a frame, so
+    /// the end stated as one quantity of seconds rounds one frame past the end
+    /// this mapper reconstructs from the two: 0.0113 s and 0.9113 s land on
+    /// frames 542 and 43_742 at 48 kHz, while their sum lands on 44_285 rather
+    /// than 44_284.
+    fn clip_with_fade_out_at(begins_at: f64) -> GraphBatchPayload {
+        batch(json!([
+            { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
+              "devices": [], "honorMuted": true, "contributesAudio": true },
+            { "kind": "schedule-clip", "playback": {
+                "trackId": "t1", "source": { "sourceId": "source-a" },
+                "startTime": 0.0113, "sourceOffsetSeconds": 0, "durationSeconds": 0.9113,
+                "playbackRate": 1, "gain": 1,
+                "fade": { "fadeOut": { "beginsAt": begins_at }, "microFadeSeconds": 0 } } }
+        ]))
+    }
+
+    #[test]
+    fn a_fade_out_on_the_clips_own_end_survives_the_rounding_split() {
+        let mapped = map_batch(
+            &clip_with_fade_out_at(0.9226),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a fade-out pinned to the clip's own end must map");
+
+        assert!(mapped.ops.iter().any(|op| matches!(
+            op,
+            GraphCommand::AddClip(_, clip) if clip.playback().fade.fade_out_frames == Some(0)
+        )));
+    }
+
+    #[test]
+    fn a_fade_out_two_frames_past_the_clip_end_still_refuses() {
+        // 44_286 frames — one frame farther than any rounding split can reach.
+        let refusal = map_batch(
+            &clip_with_fade_out_at(44_286.0 / 48_000.0),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("a fade-out genuinely past the clip must refuse");
+
+        assert!(refusal.contains("fadeOut begins after the clip ends"));
     }
 
     #[test]

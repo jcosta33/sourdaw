@@ -52,12 +52,11 @@
  * pool, and a `schedule-clip` naming a sample the pool does not hold is
  * refused by name.
  *
- * A clip whose loop expansion does not fit its track's remaining native clip
- * capacity is dropped whole ({@link MAX_NATIVE_TRACK_CLIPS}), and so is one
- * whose expansion exceeds the allocation budget
- * ({@link MAX_NATIVE_CLIP_ITERATIONS}). Both are counted before any of the
- * clip's iterations are admitted, because a clip half-scheduled is a clip that
- * stops sounding part-way through with nothing saying why.
+ * A clip whose loop expansion does not fit its strip's remaining native clip
+ * capacity is dropped whole, and so is one whose expansion allocates past the
+ * native material budget. Both verdicts come from `admitNativeClipExpansion`,
+ * which the export leg asks the same questions of: a ceiling applied on one
+ * side only is a clip that plays in the bounce and is silent here.
  *
  * MIDI is out of this slice (#3122): an instrument renders on the Web Audio
  * path, so a MIDI clip is skipped here rather than turned into a rest.
@@ -70,6 +69,7 @@ import {
     type OfflinePpqEndpointProjector,
     type OfflineTempoAtBeatResolver,
 } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
+import { admitNativeClipExpansion, MAX_NATIVE_TRACK_CLIPS } from '../offlineRender/admitNativeClipExpansion';
 import { MICRO_FADE_SECONDS } from '../offlineRender/constants';
 import { projectNativeClipFade } from '../offlineRender/projectNativeClipFade';
 import { projectOfflineAudioClipPlaybacks } from '../offlineRender/projectOfflineAudioClipPlaybacks';
@@ -82,44 +82,6 @@ import { resolveTrackClipsWithComping } from '../offlineRender/resolveTrackClips
  * live session has none.
  */
 const LIVE_REGION_START_BEAT = 0;
-
-/**
- * How many clips one native track strip holds — `MAX_TRACK_CLIPS` in
- * `crates/daw-engine/src/timeline.rs`, mirrored because the producer's job is
- * to emit a batch the engine takes.
- *
- * The engine's own answer to the 1025th is to refuse the command, and a refusal
- * is whole-batch. One clip's loop expansion can reach four thousand iterations
- * on its own (`projectClipLoopExpansion`'s ceiling), so this is not a
- * theoretical bound: a single over-long loop would otherwise cost the session
- * every strip it has.
- */
-const MAX_NATIVE_TRACK_CLIPS = 1024;
-
-/**
- * How many iterations one clip's loop expansion may allocate for.
- *
- * Every `schedule-clip` copies the sample's *whole* PCM into the engine — the
- * mapper hands `TimelineClip::new` a `sample.left.clone()`
- * (`crates/sourdaw-native/src/commands/graph.rs`), and `TimelineClip` owns
- * `Vec<f32>` rather than sharing the pool's — so a loop's expansion multiplies
- * its material instead of referencing it. Referencing it is the engine-side
- * fix and it is filed as #3134; until that lands, the producer is the only
- * thing standing between one looped clip and an unbounded native allocation.
- *
- * Sixty-four is where ordinary material stops and pathology starts. A one-bar
- * loop at 120 BPM is two seconds — around 750 KiB of stereo 48 kHz float — so
- * this budget admits a loop dragged across sixteen bars of arrangement at
- * roughly 50 MiB, which is the most one clip may cost. The loop projector's own
- * ceiling is 4096 iterations, three orders of magnitude past that, and the
- * engine would try to hold every one.
- *
- * It bounds one clip, not a project: a session with many looped clips still
- * allocates the sum of them. That is deliberate — a project-wide ceiling would
- * make which clips play depend on the order they are walked in, and the real
- * ceiling belongs to the engine.
- */
-const MAX_NATIVE_CLIP_ITERATIONS = 64;
 
 export type LiveGraphProgrammeExclusion = Readonly<{
     stripId: string;
@@ -329,18 +291,13 @@ export function projectLiveGraphProgramme(input: LiveGraphProgrammeInput): LiveG
                 );
                 continue;
             }
-            if (projected.length > MAX_NATIVE_CLIP_ITERATIONS) {
-                excludeClip(
-                    `clip "${clipLabel}" loops ${String(projected.length)} times, past the ` +
-                        `${String(MAX_NATIVE_CLIP_ITERATIONS)} the native timeline will allocate material for`
-                );
-                continue;
-            }
-            if (projected.length > remainingClipSlots) {
-                excludeClip(
-                    `clip "${clipLabel}" needs ${String(projected.length)} of track ` +
-                        `"${track.name}"'s ${String(remainingClipSlots)} remaining native clip slots`
-                );
+            const expansion = admitNativeClipExpansion({
+                iterations: projected.length,
+                buffer,
+                remainingClipSlots,
+            });
+            if (!expansion.admitted) {
+                excludeClip(`clip "${clipLabel}" on track "${track.name}": ${expansion.reason}`);
                 continue;
             }
             remainingClipSlots -= projected.length;
