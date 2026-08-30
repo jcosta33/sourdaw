@@ -1,0 +1,27 @@
+electron/nativeMenuActionDispatcher.ts
+  s_ae074277795b45::t_a731aac79846d6 19-20
+electron/rendererSessionQuiescer.ts
+  s_ae074277795b45::t_a731aac79846d6 60-62
+electron/__tests__/rendererSessionQuiescer.spec.ts
+  s_ae074277795b45::t_105b25cbdbd6d9 27-28
+  s_ae074277795b45::t_b90bcb7d606626 25
+electron/nativeMenuProjectState.ts
+  s_ae074277795b45::t_a731aac79846d6 21
+  s_ae074277795b45::t_5cab0a7a72968a 20,22-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "bdb7e3237fc3b9b1fbd698266a2f917db442b157",
+  "prompts": {},
+  "sessions": {
+    "s_ae074277795b45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a04ab5-5234-7100-be1c-76ebfaba88d3",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
