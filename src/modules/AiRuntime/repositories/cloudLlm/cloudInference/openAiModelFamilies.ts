@@ -1,3 +1,3 @@
-export function isOpenAiReasoningModel(model: string): boolean {
-    return model.startsWith('gpt-5') || /^o\d/.test(model);
+export function isGpt56FamilyModel(model: string): boolean {
+    return model === 'gpt-5.6' || model.startsWith('gpt-5.6-');
 }

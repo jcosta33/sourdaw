@@ -51,40 +51,45 @@ describe('streamOpenAiCompatibleChatCompletion', () => {
         expect(body).not.toHaveProperty('max_completion_tokens');
     });
 
-    it('sends max_completion_tokens instead of max_tokens for first-party OpenAI', async () => {
-        const openaiRuntime: OpenAiCompatibleCloudRuntime = {
-            provider: 'openai',
-            authentication: 'api-key',
-            session_id: 'provider-session-00000000000000000000000000000000',
-            model: 'gpt-5.6-luna',
-            base_url: 'https://api.openai.com/v1',
-        };
-        const sse = [
-            'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n',
-            'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
-            'data: [DONE]\n\n',
-        ].join('');
-        const fetchMock = vi
-            .fn<typeof fetch>()
-            .mockResolvedValue(new Response(sse, { status: 200, headers: { 'Content-Type': 'text/event-stream' } }));
-        vi.stubGlobal('fetch', fetchMock);
+    it.each(['gpt-5.6-luna', 'gpt-4-turbo'])(
+        'sends max_completion_tokens instead of max_tokens for first-party OpenAI (%s)',
+        async (model) => {
+            const openaiRuntime: OpenAiCompatibleCloudRuntime = {
+                provider: 'openai',
+                authentication: 'api-key',
+                session_id: 'provider-session-00000000000000000000000000000000',
+                model,
+                base_url: 'https://api.openai.com/v1',
+            };
+            const sse = [
+                'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n',
+                'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
+                'data: [DONE]\n\n',
+            ].join('');
+            const fetchMock = vi
+                .fn<typeof fetch>()
+                .mockResolvedValue(
+                    new Response(sse, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+                );
+            vi.stubGlobal('fetch', fetchMock);
 
-        await streamOpenAiCompatibleChatCompletion({
-            runtime: openaiRuntime,
-            messages: [{ role: 'user', content: 'help' }],
-            onToken: vi.fn(),
-            signal: new AbortController().signal,
-            maxTokens: 100,
-        });
+            await streamOpenAiCompatibleChatCompletion({
+                runtime: openaiRuntime,
+                messages: [{ role: 'user', content: 'help' }],
+                onToken: vi.fn(),
+                signal: new AbortController().signal,
+                maxTokens: 100,
+            });
 
-        const request = fetchMock.mock.calls[0]?.[1];
-        if (!request || typeof request.body !== 'string') {
-            throw new Error('Expected a JSON request body');
+            const request = fetchMock.mock.calls[0]?.[1];
+            if (!request || typeof request.body !== 'string') {
+                throw new Error('Expected a JSON request body');
+            }
+            const body = JSON.parse(request.body) as Record<string, unknown>;
+            expect(body).toMatchObject({ model, stream: true, max_completion_tokens: 100 });
+            expect(body).not.toHaveProperty('max_tokens');
         }
-        const body = JSON.parse(request.body) as Record<string, unknown>;
-        expect(body).toMatchObject({ model: 'gpt-5.6-luna', stream: true, max_completion_tokens: 100 });
-        expect(body).not.toHaveProperty('max_tokens');
-    });
+    );
 
     it('normalizes the usage-only terminal event without double-emitting text', async () => {
         const sse = [

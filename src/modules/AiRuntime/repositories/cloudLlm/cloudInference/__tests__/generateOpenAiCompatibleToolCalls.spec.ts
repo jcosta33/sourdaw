@@ -153,13 +153,16 @@ describe('generateOpenAiCompatibleToolCalls', () => {
         expect(body).not.toHaveProperty('reasoning_effort');
     });
 
-    it('sends reasoning_effort none for first-party OpenAI reasoning models', async () => {
-        const body = await requestBodyFor(openaiRuntime('gpt-5.6-luna'));
-        expect(body).toMatchObject({ model: 'gpt-5.6-luna', reasoning_effort: 'none' });
-    });
+    it.each(['gpt-5.6', 'gpt-5.6-luna', 'gpt-5.6-luna-2026-04-01'])(
+        'sends reasoning_effort none for first-party OpenAI gpt-5.6 model %s',
+        async (model) => {
+            const body = await requestBodyFor(openaiRuntime(model));
+            expect(body).toMatchObject({ model, reasoning_effort: 'none' });
+        }
+    );
 
-    it('omits reasoning_effort for first-party OpenAI non-reasoning models', async () => {
-        const body = await requestBodyFor(openaiRuntime('gpt-4-turbo'));
+    it.each(['gpt-5', 'o3', 'gpt-4-turbo'])('omits reasoning_effort for first-party OpenAI model %s', async (model) => {
+        const body = await requestBodyFor(openaiRuntime(model));
         expect(body).not.toHaveProperty('reasoning_effort');
     });
 
