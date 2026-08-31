@@ -455,4 +455,65 @@ describe('generateOpenAiCompatibleToolCalls', () => {
             'Content-Type': 'application/json',
         });
     });
+
+    it('encodes dotted tool names on the wire and decodes them on the response', async () => {
+        const dottedTools = [
+            {
+                type: 'function' as const,
+                function: {
+                    name: 'project.query',
+                    description: 'Query the project',
+                    parameters: {
+                        type: 'object' as const,
+                        properties: {},
+                        required: [],
+                        additionalProperties: false,
+                    },
+                },
+            },
+        ];
+        const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+            new Response(
+                JSON.stringify({
+                    choices: [
+                        {
+                            finish_reason: 'tool_calls',
+                            message: {
+                                tool_calls: [
+                                    {
+                                        function: {
+                                            name: 'project_query',
+                                            arguments: '{}',
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                }),
+                { status: 200, headers: { 'Content-Type': 'application/json' } }
+            )
+        );
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await generateOpenAiCompatibleToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'what tracks exist',
+            toolSchemas: dottedTools,
+        });
+
+        const request = fetchMock.mock.calls[0]?.[1];
+        if (!request || typeof request.body !== 'string') {
+            throw new Error('Expected a JSON request body');
+        }
+        const body = JSON.parse(request.body) as {
+            tools: Array<{ function: { name: string } }>;
+        };
+        expect(body.tools[0]?.function.name).toBe('project_query');
+        for (const tool of body.tools) {
+            expect(tool.function.name).not.toContain('.');
+        }
+        expect(result).toEqual([{ name: 'project.query', arguments: {} }]);
+    });
 });
