@@ -40,6 +40,11 @@ struct SensitiveCaptureSlots<T: EraseSlots>(T);
 
 trait EraseSlots {
     fn erase_slots(&mut self);
+
+    #[cfg(test)]
+    fn slot_bits(&self) -> Vec<u32> {
+        Vec::new()
+    }
 }
 
 impl EraseSlots for Box<[AtomicU32]> {
@@ -48,11 +53,33 @@ impl EraseSlots for Box<[AtomicU32]> {
             slot.get_mut().zeroize();
         }
     }
+
+    #[cfg(test)]
+    fn slot_bits(&self) -> Vec<u32> {
+        self.iter()
+            .map(|slot| slot.load(Ordering::SeqCst))
+            .collect()
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static ERASED_CAPTURE_SLOT_BITS: std::cell::Cell<Vec<u32>> =
+        const { std::cell::Cell::new(Vec::new()) };
+}
+
+#[cfg(test)]
+fn take_erased_capture_slot_bits() -> Vec<u32> {
+    ERASED_CAPTURE_SLOT_BITS.with(std::cell::Cell::take)
 }
 
 impl<T: EraseSlots> Drop for SensitiveCaptureSlots<T> {
     fn drop(&mut self) {
         self.0.erase_slots();
+        #[cfg(test)]
+        {
+            ERASED_CAPTURE_SLOT_BITS.with(|bits| bits.set(self.0.slot_bits()));
+        }
     }
 }
 
@@ -1282,14 +1309,23 @@ mod tests {
         assert!(unwound.get());
 
         // Erasure covers every slot the callback could have written, not only
-        // the ones the drain had yet to take.
-        let mut slots: Box<[AtomicU32]> = [0.1f32, -0.2, 0.3, 0.4]
+        // the ones the drain had yet to take. The view is filled by
+        // `SensitiveCaptureSlots`' Drop, so a ring that stored a bare box
+        // would leave this empty.
+        let _ = super::take_erased_capture_slot_bits();
+        let (mut producer, mut consumer) = capture_ring(4);
+        assert_eq!(producer.push_partial(&[0.1, -0.2, 0.3, 0.4]), 4);
+        let mut drained = Vec::new();
+        consumer.drain_into(&mut drained, 2);
+        assert_eq!(drained, vec![0.1, -0.2]);
+        assert!(producer
+            .0
+            .slots()
             .iter()
-            .map(|sample| AtomicU32::new(sample.to_bits()))
-            .collect();
-        assert!(slots.iter().all(|slot| slot.load(Ordering::SeqCst) != 0));
-        slots.erase_slots();
-        assert!(slots.iter().all(|slot| slot.load(Ordering::SeqCst) == 0));
+            .all(|slot| slot.load(Ordering::SeqCst) != 0));
+        drop(producer);
+        drop(consumer);
+        assert_eq!(super::take_erased_capture_slot_bits(), vec![0, 0, 0, 0]);
     }
 
     #[test]
@@ -1346,7 +1382,7 @@ mod tests {
         );
         assert!(
             record_mic.contains(
-                "finish_capture_after_stream_status(buffer, &stream_failed, &failure_code)"
+                "finish_capture_after_stream_status(buffer, &stream_failed, &failure_code)?"
             ),
             "record_mic must finish the capture through the helper that reads them"
         );
