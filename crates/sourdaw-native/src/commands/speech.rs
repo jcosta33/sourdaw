@@ -1212,6 +1212,31 @@ mod tests {
     /// though the microphone had worked.
     #[test]
     fn a_stream_that_dies_after_play_surfaces_as_an_error_not_an_empty_capture() {
+        // The assertions below drive the helpers directly, so this pin is
+        // what binds them to `record_mic`: a build that dropped either call
+        // would return Ok([]) for a dead stream while the helpers stayed
+        // green.
+        let source = include_str!("speech.rs");
+        let record_mic = source
+            .split_once("fn record_mic(")
+            .expect("record_mic must exist")
+            .1
+            .split_once("fn finish_capture_after_stream_status(")
+            .expect("record_mic must end before capture finalization")
+            .0;
+        assert!(
+            record_mic.contains(
+                "cpal_runtime_failure_callback(stream_failed.clone(), failure_kind.clone()),"
+            ),
+            "record_mic must register the failure callback that sets these atomics"
+        );
+        assert!(
+            record_mic.contains(
+                "finish_capture_after_stream_status(buffer, &stream_failed, &failure_kind)"
+            ),
+            "record_mic must finish the capture through the helper that reads them"
+        );
+
         let stream_failed = Arc::new(AtomicBool::new(false));
         let failure_kind = Arc::new(AtomicU8::new(NO_CAPTURE_FAILURE));
 
