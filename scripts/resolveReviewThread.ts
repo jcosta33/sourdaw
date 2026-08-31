@@ -2684,7 +2684,7 @@ function reviewResolutionOwnerFenceLabel(ownerFence: ReviewResolutionLockOwnerFe
     if (ownerFence.kind === 'pid') {
         return `process ${ownerFence.pid}`;
     }
-    return `Windows process tree rooted at process ${ownerFence.rootPid}; Windows root-absent recovery is unavailable`;
+    return `Windows process tree rooted at process ${ownerFence.rootPid}`;
 }
 
 function signalReviewResolutionLivenessTarget(target: number): void {
@@ -2815,14 +2815,11 @@ function isLiveWindowsProcessTree(
     if (rows === undefined) {
         return true;
     }
-    if (rows.some((row) => row.pid === ownerFence.rootPid)) {
+    const root = rows.find((row) => row.pid === ownerFence.rootPid);
+    if (root?.startedAt === ownerFence.rootStartedAt) {
         return true;
     }
-    // Win32_Process exposes only the current parent relation. Once the root exits,
-    // its children can be reparented and no remaining row can prove membership in
-    // this lock's original tree. Do not infer membership from time or a missing
-    // parent: Windows root-absent lock recovery stays unavailable.
-    return true;
+    return false;
 }
 
 export function reviewResolutionOwnerFenceIsLive(
@@ -3097,11 +3094,8 @@ function acquirePullRequestReviewResolutionLock(
     threadId: string,
     expectedHead: string,
     executionFence: ReviewResolutionExecutionFence,
-    platform: NodeJS.Platform
+    _platform: NodeJS.Platform
 ): { ref: string; oid: string } {
-    if (platform === 'win32') {
-        fail('review-resolution lock acquisition is unavailable on Windows without a durable quiescence fence');
-    }
     const ref = pullRequestReviewResolutionLockRef(number);
     const owner: CurrentReviewResolutionLockOwner = {
         version: 5,
@@ -4386,6 +4380,28 @@ function recoverReplyDoneSettlement(
     return fail(unreconciledReviewResolutionMutationMessage(number, mutation));
 }
 
+function convergeSubmittedCommentedReplyMarkers(
+    number: number,
+    owner: CurrentReviewResolutionLockOwner,
+    inspection: ReviewThreadInspection,
+    context: ResolutionReviewContext,
+    port: ResolveReviewThreadPort
+): ReviewThreadInspection {
+    if (
+        repairManagedCommentedReviewEnvelopes(number, owner.threadId, inspection.thread, port, context, ['COMMENTED'])
+    ) {
+        inspection = inspectReviewResolutionRecovery(number, owner, port);
+    }
+    if (managedReplyMarkers(inspection.thread!, context, ['COMMENTED'], false).length > 1) {
+        convergeReplyMarkers(owner.threadId, inspection.thread, port, context, ['COMMENTED']);
+        inspection = inspectReviewResolutionRecovery(number, owner, port);
+    }
+    if (managedReplyMarkers(inspection.thread!, context, ['COMMENTED'], false).length !== 1) {
+        fail(`submit review recovery could not converge to one Done reply marker on thread ${owner.threadId}`);
+    }
+    return inspection;
+}
+
 export function recoverReviewResolutionLockOwnerState(
     number: number,
     owner: ReviewResolutionLockOwner,
@@ -4452,6 +4468,9 @@ export function recoverReviewResolutionLockOwnerState(
             );
         case 'submitReview': {
             if (hasRecoveredReviewResolutionMutation(number, owner, inspection, context, inspection.thread!, port)) {
+                if (inspection.head !== owner.head) {
+                    inspection = convergeSubmittedCommentedReplyMarkers(number, owner, inspection, context, port);
+                }
                 break;
             }
             if (inspection.head !== owner.head) {
@@ -4466,6 +4485,7 @@ export function recoverReviewResolutionLockOwnerState(
                 const submitted = port.submitReview(mutation.reviewId, mutation.body, mutation.reviewCommitOid);
                 assertProvenReviewSubmissionReceipt(submitted, review, mutation.body);
                 inspection = inspectReviewResolutionRecovery(number, owner, port);
+                inspection = convergeSubmittedCommentedReplyMarkers(number, owner, inspection, context, port);
                 break;
             }
             assertCanonicalHistoricalReviewSubmissionBody(context, mutation);
@@ -4490,17 +4510,7 @@ export function recoverReviewResolutionLockOwnerState(
             const submitted = port.submitReview(mutation.reviewId, mutation.body, mutation.reviewCommitOid);
             assertProvenReviewSubmissionReceipt(submitted, review, mutation.body);
             inspection = inspectReviewResolutionRecovery(number, owner, port);
-            if (
-                repairManagedCommentedReviewEnvelopes(number, owner.threadId, inspection.thread, port, context, [
-                    'COMMENTED',
-                ])
-            ) {
-                inspection = inspectReviewResolutionRecovery(number, owner, port);
-            }
-            if (managedReplyMarkers(inspection.thread!, context, ['COMMENTED'], false).length > 1) {
-                convergeReplyMarkers(owner.threadId, inspection.thread, port, context, ['COMMENTED']);
-                inspection = inspectReviewResolutionRecovery(number, owner, port);
-            }
+            inspection = convergeSubmittedCommentedReplyMarkers(number, owner, inspection, context, port);
             break;
         }
         case 'updateReviewBody': {

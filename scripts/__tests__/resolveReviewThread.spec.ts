@@ -1451,7 +1451,7 @@ function writeResolveReviewSnapshot(snapshotRoot: string): string {
             '}',
             'export function spawnCapture(command, args, options = {}) {',
             "  if (command !== 'gh') throw new Error(`unexpected command ${command}`);",
-            "  if (args[0] === 'repo' && args[1] === 'view') return REQUIRED_REPOSITORY;",
+            "  if (args[0] === 'repo' && args[1] === 'view') return process.env.SOURDAW_TEST_REPOSITORY_NAME ?? REQUIRED_REPOSITORY;",
             '  const executable = process.env.SOURDAW_TEST_TRUSTED_GH_PATH;',
             "  if (typeof executable === 'string' && executable.trim() !== '') {",
             '    const result = spawnSync(executable, args, {',
@@ -1662,7 +1662,7 @@ function writeRecoverReviewResolutionSnapshot(snapshotRoot: string): string {
             '}',
             'export function spawnCapture(command, args, options = {}) {',
             "  if (command !== 'gh') throw new Error(`unexpected command ${command}`);",
-            "  if (args[0] === 'repo' && args[1] === 'view') return REQUIRED_REPOSITORY;",
+            "  if (args[0] === 'repo' && args[1] === 'view') return process.env.SOURDAW_TEST_REPOSITORY_NAME ?? REQUIRED_REPOSITORY;",
             '  const executable = process.env.SOURDAW_TEST_TRUSTED_GH_PATH;',
             "  if (typeof executable !== 'string' || executable.trim() === '') throw new Error('missing test gh executable');",
             '  const result = spawnSync(executable, args, {',
@@ -1799,6 +1799,89 @@ describe('review thread resolution', () => {
             runRecoverReviewResolutionLockCli(['42', '--owner', 'a'.repeat(40), '--retire-unseen'], dependencies)
         ).rejects.toThrow(/usage: pnpm review:resolve:recover/);
         expect(fake.calls).toEqual([]);
+    });
+
+    it('refuses a wrong repository from the resolution CLI before a lock or GraphQL mutation', async () => {
+        const repository = createTemporaryGitRepository();
+        const snapshotRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-resolve-wrong-repository-'));
+        const fakeGh = createFailingReviewResolutionMutationGhExecutable('resolveThread');
+        const entryPath = writeResolveReviewSnapshot(snapshotRoot);
+        let child: ReturnType<typeof spawn> | undefined;
+        let stderr = '';
+        try {
+            child = spawn(process.execPath, [entryPath, '42', '--thread', threadId, '--head', head], {
+                cwd: repository,
+                env: {
+                    ...process.env,
+                    SOURDAW_TEST_PRIMARY_ROOT: repository,
+                    SOURDAW_TEST_REPOSITORY_NAME: 'other-owner/other-repository',
+                    SOURDAW_TEST_TRUSTED_GH_PATH: fakeGh.executable,
+                    SOURDAW_TRUSTED_ORIGIN_COMMIT: head,
+                },
+                stdio: ['ignore', 'ignore', 'pipe'],
+                shell: false,
+            });
+            child.stderr?.setEncoding('utf8');
+            child.stderr?.on('data', (chunk: string) => {
+                stderr += chunk;
+            });
+
+            await waitForExit(child);
+            expect(child.exitCode).toBe(1);
+            expect(stderr).toMatch(/unexpected repository other-owner\/other-repository/i);
+            expect(readLockOid(repository, 42)).toBeUndefined();
+            expect(() => statSync(fakeGh.calledPath)).toThrow();
+        } finally {
+            if (child !== undefined) {
+                child.kill('SIGKILL');
+                await waitForExit(child).catch(() => undefined);
+            }
+            rmSync(fakeGh.root, { recursive: true, force: true });
+            rmSync(snapshotRoot, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses a wrong repository from the recovery CLI before reconciliation or GraphQL work', async () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 9_999_999);
+            updateLock(repository, 42, ownerOid);
+            const session: GhSession = { configDir: repository, env: {}, dispose() {} };
+            const calls: string[] = [];
+            await expect(
+                runRecoverReviewResolutionLockCli(['42', '--owner', ownerOid], {
+                    trustedPrimaryRoot: () => {
+                        calls.push('trustedPrimaryRoot');
+                        return repository;
+                    },
+                    authenticateAuthor: async () => {
+                        calls.push('authenticateAuthor');
+                        return { minted: { actorNodeId: AUTHOR_BOT_NODE_ID }, session };
+                    },
+                    repositoryName: () => {
+                        calls.push('repositoryName');
+                        return 'other-owner/other-repository';
+                    },
+                    gh: () => {
+                        calls.push('gh');
+                        return () => '';
+                    },
+                    createPort: () => {
+                        calls.push('createPort');
+                        return fakePort().port;
+                    },
+                    recoverLock: () => {
+                        calls.push('recoverLock');
+                        throw new Error('recovery must not run');
+                    },
+                })
+            ).rejects.toThrow(/unexpected repository other-owner\/other-repository/i);
+            expect(calls).toEqual(['trustedPrimaryRoot', 'authenticateAuthor', 'repositoryName']);
+            expect(readLockOid(repository, 42)).toBe(ownerOid);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
     });
 
     it.each([
@@ -2026,7 +2109,7 @@ describe('review thread resolution', () => {
         }
     });
 
-    it('refuses Windows lock acquisition before creating a root-absent process-tree owner', () => {
+    it('acquires and releases a Windows lock with an exact process-start fence', () => {
         const repository = createTemporaryGitRepository();
         try {
             withTemporaryEnvironment({ SOURDAW_TRUSTED_PS_PATH: undefined }, () => {
@@ -2039,12 +2122,12 @@ describe('review thread resolution', () => {
                         rootStartedAt: '2026-08-30T12:00:00.000000+000',
                     },
                 };
-                expect(() =>
-                    withPullRequestReviewResolutionLock(repository, 42, threadId, head, () => 'unexpected operation', {
+                expect(
+                    withPullRequestReviewResolutionLock(repository, 42, threadId, head, () => 'Windows operation', {
                         platform: 'win32',
                         executionFence,
                     })
-                ).toThrow(/acquisition is unavailable on Windows/i);
+                ).toBe('Windows operation');
             });
             expect(readLockOid(repository, 42)).toBeUndefined();
         } finally {
@@ -2204,7 +2287,7 @@ describe('review thread resolution', () => {
         }
     });
 
-    it('fails closed for a Windows process-tree owner when the root is absent, reused, or inspection is unavailable', () => {
+    it('identifies the exact live Windows root and treats absent or reused roots as recoverable', () => {
         const ownerFence = {
             kind: 'win32-process-tree' as const,
             version: 1 as const,
@@ -2215,13 +2298,24 @@ describe('review thread resolution', () => {
             reviewResolutionOwnerFenceIsLive(ownerFence, {
                 inspectWindowsProcessRows: () => [
                     {
+                        pid: 4100,
+                        parentPid: 1,
+                        startedAt: '2026-08-30T12:00:00.000000+000',
+                    },
+                ],
+            })
+        ).toBe(true);
+        expect(
+            reviewResolutionOwnerFenceIsLive(ownerFence, {
+                inspectWindowsProcessRows: () => [
+                    {
                         pid: 4101,
                         parentPid: 4100,
                         startedAt: '2026-08-30T12:00:01.000000+000',
                     },
                 ],
             })
-        ).toBe(true);
+        ).toBe(false);
         expect(
             reviewResolutionOwnerFenceIsLive(ownerFence, {
                 inspectWindowsProcessRows: () => [
@@ -2232,7 +2326,7 @@ describe('review thread resolution', () => {
                     },
                 ],
             })
-        ).toBe(true);
+        ).toBe(false);
         expect(
             reviewResolutionOwnerFenceIsLive(ownerFence, {
                 inspectWindowsProcessRows: () => [
@@ -2243,7 +2337,7 @@ describe('review thread resolution', () => {
                     },
                 ],
             })
-        ).toBe(true);
+        ).toBe(false);
         expect(
             reviewResolutionOwnerFenceIsLive(ownerFence, {
                 inspectWindowsProcessRows: () => undefined,
@@ -2251,7 +2345,7 @@ describe('review thread resolution', () => {
         ).toBe(true);
     });
 
-    it('keeps root-absent Windows process-tree locks unrecoverable because current process rows cannot prove the original tree is gone', () => {
+    it('fails closed when Windows process-tree inspection is unavailable', () => {
         expect(
             reviewResolutionOwnerFenceIsLive(
                 {
@@ -2261,7 +2355,7 @@ describe('review thread resolution', () => {
                     rootStartedAt: '2026-08-30T12:00:00.000000+000',
                 },
                 {
-                    inspectWindowsProcessRows: () => [],
+                    inspectWindowsProcessRows: () => undefined,
                 }
             )
         ).toBe(true);
@@ -2958,6 +3052,89 @@ describe('review thread resolution', () => {
                 'inspect:2',
             ]);
             expect(inspection.head).toBe(movedHead);
+            expect(state().reviews).toEqual([
+                expect.objectContaining({ id: reviewId, state: 'COMMENTED', commitOid: head }),
+            ]);
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('converges duplicate H1 Done markers after an H2 submit replay before releasing recovery', () => {
+        const repository = createTemporaryGitRepository();
+        const { port, calls, state } = fakePort({
+            heads: [movedHead, movedHead, movedHead],
+            existingReplyCount: 1,
+            existingReplyReviewState: 'PENDING',
+            existingReplyReviewBody: resolutionReviewSummary(pullRequestId, threadId, head),
+            existingReplyReviewCommitOid: head,
+            concurrentReplyBeforeConvergence: true,
+            expectedAttachedReviewThreadInspectionHead: movedHead,
+            expectedPullRequestReviewInspectionPullRequestId: pullRequestId,
+            expectedPullRequestReviewInspectionHead: movedHead,
+        });
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, {
+                phase: 'submitReview',
+                epoch: 1,
+                reviewId,
+                body: resolutionReviewSummary(pullRequestId, threadId, head),
+                reviewCommitOid: head,
+            });
+            updateLock(repository, 42, ownerOid);
+
+            const inspection = recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) =>
+                recoverReviewResolutionLockOwnerState(42, owner, port)
+            );
+
+            expect(inspection.head).toBe(movedHead);
+            expect(calls).toEqual([
+                'inspect:1',
+                `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${movedHead}`,
+                `submitReview:${reviewId}`,
+                'inspect:2',
+                'delete:PRRC_concurrent',
+                'inspect:3',
+            ]);
+            expect(state().reviews).toEqual([
+                expect.objectContaining({
+                    id: reviewId,
+                    state: 'COMMENTED',
+                    commitOid: head,
+                    body: resolutionReviewSummary(pullRequestId, threadId, head),
+                }),
+            ]);
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('converges duplicate landed H1 Done markers at H2 without another submit', () => {
+        const repository = createTemporaryGitRepository();
+        const { port, calls, state } = fakePort({
+            heads: [movedHead, movedHead],
+            existingReplyCount: 2,
+            existingReplyReviewState: 'COMMENTED',
+            existingReplyReviewBody: resolutionReviewSummary(pullRequestId, threadId, head),
+            existingReplyReviewCommitOid: head,
+        });
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, {
+                phase: 'submitReview',
+                epoch: 1,
+                reviewId,
+                body: resolutionReviewSummary(pullRequestId, threadId, head),
+                reviewCommitOid: head,
+            });
+            updateLock(repository, 42, ownerOid);
+
+            recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) =>
+                recoverReviewResolutionLockOwnerState(42, owner, port)
+            );
+
+            expect(calls).toEqual(['inspect:1', 'delete:PRRC_existing_1', 'inspect:2']);
             expect(state().reviews).toEqual([
                 expect.objectContaining({ id: reviewId, state: 'COMMENTED', commitOid: head }),
             ]);
@@ -4109,9 +4286,15 @@ describe('review thread resolution', () => {
         }
     });
 
-    it('does not recover a root-absent Windows process-tree lock after a child exits', () => {
+    it('recovers a root-absent or reused Windows root through the journaled recovery path', () => {
         const repository = createTemporaryGitRepository();
         try {
+            const ownerFence = {
+                kind: 'win32-process-tree' as const,
+                version: 1 as const,
+                rootPid: 4001,
+                rootStartedAt: '2026-08-30T12:00:00.000000+000',
+            };
             const ownerOid = writeLockOwnerBlob(
                 repository,
                 4001,
@@ -4121,15 +4304,9 @@ describe('review thread resolution', () => {
                     epoch: 1,
                     reviewId,
                 },
-                {
-                    kind: 'win32-process-tree',
-                    version: 1,
-                    rootPid: 4001,
-                    rootStartedAt: '2026-08-30T12:00:00.000000+000',
-                }
+                ownerFence
             );
             updateLock(repository, 42, ownerOid);
-            let childLive = true;
             const currentExecutionFence = {
                 pid: process.pid,
                 ownerFence: {
@@ -4140,34 +4317,7 @@ describe('review thread resolution', () => {
                 },
             };
 
-            expect(() =>
-                recoverPullRequestReviewResolutionLock(
-                    repository,
-                    42,
-                    ownerOid,
-                    () => 'reconciled',
-                    (ownerFence) =>
-                        reviewResolutionOwnerFenceIsLive(ownerFence, {
-                            inspectWindowsProcessRows: () =>
-                                childLive
-                                    ? [
-                                          {
-                                              pid: 4002,
-                                              parentPid: 4001,
-                                              startedAt: '2026-08-30T12:00:01.000000+000',
-                                          },
-                                      ]
-                                    : [],
-                        }),
-                    {
-                        platform: 'win32',
-                        executionFence: currentExecutionFence,
-                    }
-                )
-            ).toThrow(/still held by live Windows process tree rooted at process 4001/i);
-
-            childLive = false;
-            expect(() =>
+            expect(
                 recoverPullRequestReviewResolutionLock(
                     repository,
                     42,
@@ -4177,10 +4327,42 @@ describe('review thread resolution', () => {
                         reviewResolutionOwnerFenceIsLive(ownerFence, {
                             inspectWindowsProcessRows: () => [],
                         }),
+                    {
+                        platform: 'win32',
+                        executionFence: currentExecutionFence,
+                    }
+                )
+            ).toBe('reconciled');
+            expect(readLockOid(repository, 42)).toBeUndefined();
+
+            const reusedOwnerOid = writeLockOwnerBlob(
+                repository,
+                4001,
+                head,
+                { phase: 'replyDone', epoch: 1, reviewId },
+                ownerFence
+            );
+            updateLock(repository, 42, reusedOwnerOid);
+            expect(
+                recoverPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    reusedOwnerOid,
+                    () => 'reconciled',
+                    (ownerFence) =>
+                        reviewResolutionOwnerFenceIsLive(ownerFence, {
+                            inspectWindowsProcessRows: () => [
+                                {
+                                    pid: 4001,
+                                    parentPid: 1,
+                                    startedAt: '2026-08-30T13:00:00.000000+000',
+                                },
+                            ],
+                        }),
                     { platform: 'win32', executionFence: currentExecutionFence }
                 )
-            ).toThrow(/Windows root-absent recovery is unavailable/i);
-            expect(readLockOid(repository, 42)).toBe(ownerOid);
+            ).toBe('reconciled');
+            expect(readLockOid(repository, 42)).toBeUndefined();
         } finally {
             rmSync(repository, { recursive: true, force: true });
         }
