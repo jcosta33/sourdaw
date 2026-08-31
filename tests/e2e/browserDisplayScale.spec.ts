@@ -261,24 +261,21 @@ async function expectContextMenuUsable(app: FrameLocator, scale: number): Promis
 
 async function expectRightEdgeContextMenuClamped(app: FrameLocator, scale: number): Promise<void> {
     const canvas = app.getByLabel('Timeline editor surface');
-    // handleContextMenu is on this canvas. Host mouse clicks 4px from the
-    // labeled box's right edge miss it under iframe CSS scale — that edge is
-    // inspector, scrollbar, or chrome, so no role=menu appears.
-    const edgeInset = 8;
-    const pointer = await canvas.evaluate((element, inset) => {
-        const box = element.getBoundingClientRect();
-        return {
-            localX: box.width - inset,
-            localY: box.height / 2,
-            clientX: box.left + box.width - inset,
-            clientY: box.top + box.height / 2,
-        };
-    }, edgeInset);
+    const canvasBox = requireBox(await canvas.boundingBox(), 'timeline canvas');
+    // boundingBox() and click({ position }) are host/main-frame pixels.
+    // Iframe getBoundingClientRect CSS pixels overshoot the canvas at 50%
+    // scale and miss the right edge at 125%/200%, so the fit-vs-clamp
+    // branch is judged on the wrong x. Stay inland of the labeled box: 4px
+    // from its right edge is inspector, scrollbar, or chrome.
+    const inland = 16;
+    const clickPoint = {
+        x: canvasBox.x + canvasBox.width - inland,
+        y: canvasBox.y + canvasBox.height / 2,
+    };
     await canvas.click({
         button: 'right',
-        position: { x: pointer.localX, y: pointer.localY },
+        position: { x: canvasBox.width - inland, y: canvasBox.height / 2 },
     });
-    const clickPoint = { x: pointer.clientX * scale, y: pointer.clientY * scale };
 
     const menu = app.getByRole('menu');
     await expect(menu).toBeVisible();
