@@ -3,7 +3,10 @@ import { logger } from '#/infra/logger/appLogger';
 import { isDesktopRuntime } from '#/utils/desktopBridge';
 
 import { type HostedLlmConfiguration } from '../../models/HostedLlmProvider';
+import { closeProviderGatewaySession } from '../closeProviderGatewaySession';
+import { ensureAdapterCapabilities } from '../ensureAdapterCapabilities';
 import { openProviderGatewaySession } from '../openProviderGatewaySession';
+import { probeProviderGatewaySession } from '../probeProviderGatewaySession';
 import { compileProviderAdapterInstallation } from '../providerAdapterRegistry';
 
 import { cloudSession, type CloudProviderRuntime } from './cloudSession';
@@ -12,6 +15,45 @@ const ANTHROPIC_PROVIDER_ADAPTER = Object.freeze({
     adapterId: 'builtin.anthropic.messages.v1' as const,
     origin: 'https://api.anthropic.com' as const,
 });
+const CONNECT_PROBE_DEADLINE_MS = 15_000;
+
+async function waitForProbe(probe: Promise<void>, signal: AbortSignal): Promise<void> {
+    let rejectOnAbort: (() => void) | null = null;
+    const aborted = new Promise<never>((_resolve, reject) => {
+        rejectOnAbort = () => reject(signal.reason);
+        signal.addEventListener('abort', rejectOnAbort, { once: true });
+    });
+    try {
+        await Promise.race([probe, aborted]);
+    } finally {
+        if (rejectOnAbort !== null) {
+            signal.removeEventListener('abort', rejectOnAbort);
+        }
+    }
+}
+
+async function verifyOpenedProviderSession(runtime: CloudProviderRuntime): Promise<void> {
+    const sessionId = runtime.session_id;
+    if (sessionId === null) {
+        return;
+    }
+    const probeSignal = AbortSignal.timeout(CONNECT_PROBE_DEADLINE_MS);
+    try {
+        let probe: Promise<void>;
+        if (runtime.provider !== 'anthropic' && runtime.adapter) {
+            probe = ensureAdapterCapabilities(runtime.adapter, sessionId, probeSignal);
+        } else {
+            probe = probeProviderGatewaySession(sessionId, probeSignal).then(() => undefined);
+        }
+        await waitForProbe(probe, probeSignal);
+    } catch (error) {
+        await closeProviderGatewaySession(sessionId).catch(() => undefined);
+        if (error instanceof DOMException && error.name === 'TimeoutError') {
+            throw new Error('Provider adapter capability probe timed out', { cause: error });
+        }
+        throw error;
+    }
+}
 
 export const setCloudProviderConfig = inject({ logger })(
     ({ logger }) =>
@@ -74,6 +116,7 @@ export const setCloudProviderConfig = inject({ logger })(
                 };
             }
 
+            await verifyOpenedProviderSession(runtime);
             await cloudSession.replace_runtime(runtime);
             if (configuration.provider === 'anthropic') {
                 logger.info('[Cloud AI] Anthropic provider configured');
