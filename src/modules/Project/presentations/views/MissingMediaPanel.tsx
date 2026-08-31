@@ -56,16 +56,19 @@ export const MissingMediaPanel = (): ReactElement | null => {
             }
         };
         const handleEscape = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') {
-                setOpen(false);
+            if (event.key !== 'Escape') {
+                return;
             }
+            event.preventDefault();
+            event.stopPropagation();
+            setOpen(false);
         };
 
         document.addEventListener('mousedown', handleClickOutside);
-        document.addEventListener('keydown', handleEscape);
+        document.addEventListener('keydown', handleEscape, true);
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
-            document.removeEventListener('keydown', handleEscape);
+            document.removeEventListener('keydown', handleEscape, true);
         };
     }, [open]);
 
@@ -131,7 +134,6 @@ export const MissingMediaPanel = (): ReactElement | null => {
                               ...panelPosition,
                               maxWidth: 'min(20rem, calc(100vw - 1.5rem))',
                               maxHeight: 'calc(100vh - 1.5rem)',
-                              WebkitAppRegion: 'no-drag',
                           }}
                           role="dialog"
                       >

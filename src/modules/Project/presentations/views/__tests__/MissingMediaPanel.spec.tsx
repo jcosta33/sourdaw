@@ -150,16 +150,24 @@ describe('MissingMediaPanel', () => {
         consoleError.mockRestore();
     });
 
-    it('closes the detail list on Escape', () => {
+    it('closes the detail list and consumes Escape', () => {
         missingMediaStore.set({ items: [clipItem()] });
 
         render(<MissingMediaPanel />);
         fireEvent.click(screen.getByRole('button'));
-        expect(screen.getByRole('dialog')).not.toBeNull();
+        const dialog = screen.getByRole('dialog');
+        const parentDismiss = vi.fn();
+        window.addEventListener('keydown', parentDismiss);
+        const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
 
-        fireEvent.keyDown(document, { key: 'Escape' });
+        act(() => {
+            dialog.dispatchEvent(escape);
+        });
 
         expect(screen.queryByRole('dialog')).toBeNull();
+        expect(escape.defaultPrevented).toBe(true);
+        expect(parentDismiss).not.toHaveBeenCalled();
+        window.removeEventListener('keydown', parentDismiss);
     });
 
     it('drops the surface when a later clean load clears the record', () => {

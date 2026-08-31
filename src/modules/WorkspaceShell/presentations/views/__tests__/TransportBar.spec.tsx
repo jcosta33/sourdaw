@@ -504,6 +504,7 @@ describe('TransportBar', () => {
         });
 
         expect(settingsDialog).toBeInTheDocument();
+        expect(settingsDialog.contains(document.activeElement)).toBe(true);
         expect(screen.getByRole('button', { name: 'Stop' })).not.toHaveFocus();
     });
 });

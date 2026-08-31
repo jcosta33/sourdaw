@@ -788,6 +788,35 @@ describe('useTempoEditorState', () => {
         });
     });
 
+    describe('tempo map panel Escape', () => {
+        it('closes only the map and restores focus to its trigger', () => {
+            const { result } = renderHook(() => useTempoEditorState());
+            const trigger = document.createElement('button');
+            const panel = document.createElement('div');
+            document.body.append(trigger, panel);
+            result.current.mapTriggerRef.current = trigger;
+            result.current.mapPanelRef.current = panel;
+            const parentDismiss = vi.fn();
+            window.addEventListener('keydown', parentDismiss);
+
+            act(() => {
+                result.current.setMapOpen(true);
+            });
+            const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+            act(() => {
+                panel.dispatchEvent(escape);
+            });
+
+            expect(result.current.mapOpen).toBe(false);
+            expect(trigger).toHaveFocus();
+            expect(escape.defaultPrevented).toBe(true);
+            expect(parentDismiss).not.toHaveBeenCalled();
+            window.removeEventListener('keydown', parentDismiss);
+            trigger.remove();
+            panel.remove();
+        });
+    });
+
     describe('tempo map panel click-outside', () => {
         it('closes the panel when a mousedown lands outside it', () => {
             const { result } = renderHook(() => useTempoEditorState());

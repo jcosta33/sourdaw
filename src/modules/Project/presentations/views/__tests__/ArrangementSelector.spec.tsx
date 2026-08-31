@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { ArrangementSelector } from '../ArrangementSelector';
@@ -70,13 +70,16 @@ vi.mock('#/components/daw/DawPickerRow', () => ({
         heading,
         active,
         onClick,
+        endSlot,
     }: {
         heading?: React.ReactNode;
         active?: boolean;
         onClick?: React.MouseEventHandler<HTMLDivElement>;
+        endSlot?: React.ReactNode;
     }) => (
         <div data-testid="picker-row" data-active={active} onClick={onClick}>
             {heading}
+            {endSlot}
         </div>
     ),
 }));
@@ -234,6 +237,49 @@ describe('ArrangementSelector', () => {
         expect(clampedRect.right).toBeLessThanOrEqual(window.innerWidth);
         expect(clampedRect.left).toBeGreaterThanOrEqual(0);
         expect(clampedRect.left).toBeLessThan(triggerRect.left);
+    });
+
+    it('consumes Escape when closing the arrangement menu', () => {
+        render(<ArrangementSelector />);
+        fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
+        const menu = screen.getByRole('menu', { name: 'Arrangement menu' });
+        const parentDismiss = vi.fn();
+        window.addEventListener('keydown', parentDismiss);
+        const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+
+        act(() => {
+            menu.dispatchEvent(escape);
+        });
+
+        expect(screen.queryByRole('menu', { name: 'Arrangement menu' })).toBeNull();
+        expect(escape.defaultPrevented).toBe(true);
+        expect(parentDismiss).not.toHaveBeenCalled();
+        window.removeEventListener('keydown', parentDismiss);
+    });
+
+    it('consumes the first Escape to cancel a rename without closing the menu', () => {
+        render(<ArrangementSelector />);
+        fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
+        const firstRow = screen.getAllByTestId('picker-row')[0];
+        const editButton = firstRow?.querySelector('button');
+        if (!editButton) {
+            throw new Error('expected an arrangement rename button');
+        }
+        fireEvent.click(editButton);
+        const input = screen.getByTestId('compact-input');
+        const parentDismiss = vi.fn();
+        window.addEventListener('keydown', parentDismiss);
+        const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+
+        act(() => {
+            input.dispatchEvent(escape);
+        });
+
+        expect(screen.queryByTestId('compact-input')).toBeNull();
+        expect(screen.getByRole('menu', { name: 'Arrangement menu' })).toBeInTheDocument();
+        expect(escape.defaultPrevented).toBe(true);
+        expect(parentDismiss).not.toHaveBeenCalled();
+        window.removeEventListener('keydown', parentDismiss);
     });
 
     it('should have New Arrangement button', () => {

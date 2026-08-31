@@ -216,7 +216,6 @@ export const useTempoEditorState = (): TempoEditorState => {
     const [editingChangeId, setEditingChangeId] = useState<string | null>(null);
     const [editingChangeTempo, setEditingChangeTempo] = useState('');
 
-    // Click-outside to close tempo map panel
     useEffect(() => {
         if (!mapOpen) {
             return undefined;
@@ -229,8 +228,21 @@ export const useTempoEditorState = (): TempoEditorState => {
                 setMapOpen(false);
             }
         };
+        const handleEscape = (event: KeyboardEvent): void => {
+            if (event.key !== 'Escape') {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            setMapOpen(false);
+            mapTriggerRef.current?.focus();
+        };
         document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
+        document.addEventListener('keydown', handleEscape, true);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+            document.removeEventListener('keydown', handleEscape, true);
+        };
     }, [mapOpen]);
 
     /**
@@ -246,6 +258,7 @@ export const useTempoEditorState = (): TempoEditorState => {
     const openTempoMapPanel = (open: boolean): void => {
         if (!open) {
             setMapOpen(false);
+            mapTriggerRef.current?.focus();
             return;
         }
         let playheadBeat = transport.playheadPosition;

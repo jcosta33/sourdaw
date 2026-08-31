@@ -50,20 +50,23 @@ export const ArrangementSelector = (): ReactElement | null => {
         };
 
         const handleEscape = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') {
-                if (editingId) {
-                    setEditingId(null);
-                } else {
-                    setOpen(false);
-                }
+            if (event.key !== 'Escape') {
+                return;
             }
+            event.preventDefault();
+            event.stopPropagation();
+            if (editingId) {
+                setEditingId(null);
+                return;
+            }
+            setOpen(false);
         };
 
         document.addEventListener('mousedown', handleClickOutside);
-        document.addEventListener('keydown', handleEscape);
+        document.addEventListener('keydown', handleEscape, true);
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
-            document.removeEventListener('keydown', handleEscape);
+            document.removeEventListener('keydown', handleEscape, true);
         };
     }, [open, editingId]);
 
@@ -158,7 +161,6 @@ export const ArrangementSelector = (): ReactElement | null => {
                               ...menuPosition,
                               maxWidth: 'min(14rem, calc(100vw - 1.5rem))',
                               maxHeight: 'calc(100vh - 1.5rem)',
-                              WebkitAppRegion: 'no-drag',
                           }}
                           role="menu"
                           aria-label="Arrangement menu"
