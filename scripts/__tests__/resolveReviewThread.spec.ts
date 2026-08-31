@@ -1908,6 +1908,102 @@ describe('review thread resolution', () => {
         }
     );
 
+    it('refuses unseen retirement when the wait returns before the monotonic deadline and preserves the exact owner ref', async () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 9_999_999, head, {
+                phase: 'createPendingReview',
+                epoch: 1,
+            });
+            updateLock(repository, 42, ownerOid);
+            const session: GhSession = { configDir: repository, env: {}, dispose() {} };
+            const fake = fakePort();
+            const waits: number[] = [];
+            let failure: Error | undefined;
+            try {
+                await runRecoverReviewResolutionLockCli(['42', '--owner', ownerOid, '--retire-unseen'], {
+                    trustedPrimaryRoot: () => repository,
+                    authenticateAuthor: async () => ({ minted: { actorNodeId: AUTHOR_BOT_NODE_ID }, session }),
+                    repositoryName: () => REQUIRED_REPOSITORY,
+                    gh: () => () => '',
+                    createPort: () => fake.port,
+                    clock: { now: () => 0 },
+                    retirementClock: {
+                        monotonicNow: () => 0n,
+                        wait: (milliseconds) => waits.push(milliseconds),
+                    },
+                    recoverLock: (primaryRoot, number, owner, reconcile) =>
+                        recoverPullRequestReviewResolutionLock(primaryRoot, number, owner, reconcile, () => false),
+                });
+            } catch (error) {
+                failure = error as Error;
+            }
+            const preservedOwnerOid = readLockOid(repository, 42);
+            expect(preservedOwnerOid).toBeDefined();
+            expect(failure?.message).toContain('could not prove settlement elapsed with monotonic time');
+            expect(failure?.message).toContain(`preserved exact lock owner ${preservedOwnerOid}`);
+            expect(fake.calls).toEqual(['inspect:1']);
+            expect(waits).toEqual([30_000]);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses unseen retirement when pinned inspections drift from H2 to H3 and preserves the historical H1 evidence key', async () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const thirdHead = 'c'.repeat(40);
+            const ownerOid = writeLockOwnerBlob(repository, 9_999_999, head, {
+                phase: 'createPendingReview',
+                epoch: 1,
+            });
+            updateLock(repository, 42, ownerOid);
+            const session: GhSession = { configDir: repository, env: {}, dispose() {} };
+            const fake = fakePort({ heads: [movedHead, thirdHead] });
+            let monotonicNow = 0n;
+            const waits: number[] = [];
+            let failure: Error | undefined;
+            try {
+                await runRecoverReviewResolutionLockCli(['42', '--owner', ownerOid, '--retire-unseen'], {
+                    trustedPrimaryRoot: () => repository,
+                    authenticateAuthor: async () => ({ minted: { actorNodeId: AUTHOR_BOT_NODE_ID }, session }),
+                    repositoryName: () => REQUIRED_REPOSITORY,
+                    gh: () => () => '',
+                    createPort: () => fake.port,
+                    clock: { now: () => 0 },
+                    retirementClock: {
+                        monotonicNow: () => monotonicNow,
+                        wait: (milliseconds) => {
+                            waits.push(milliseconds);
+                            monotonicNow += 30_000_000_000n;
+                        },
+                    },
+                    recoverLock: (primaryRoot, number, owner, reconcile) =>
+                        recoverPullRequestReviewResolutionLock(primaryRoot, number, owner, reconcile, () => false),
+                });
+            } catch (error) {
+                failure = error as Error;
+            }
+            const preservedOwnerOid = readLockOid(repository, 42);
+            expect(preservedOwnerOid).toBeDefined();
+            expect(failure?.message).toContain('retirement refuses head drift during remote inspection');
+            expect(failure?.message).toContain(`preserved exact lock owner ${preservedOwnerOid}`);
+            expect(fake.calls).toEqual(['inspect:1', 'inspect:2']);
+            expect(waits).toEqual([30_000]);
+            expect(requireLockOwner(repository, 42)).toMatchObject({
+                head,
+                mutation: {
+                    phase: 'createPendingReviewSettlement',
+                    epoch: 2,
+                    body: pendingReviewBody(head),
+                    reviewCommitOid: head,
+                },
+            });
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it('rejects invalid resolution and recovery argv before invoking delivery dependencies', async () => {
         const session: GhSession = { configDir: process.cwd(), env: {}, dispose() {} };
         const fake = fakePort();
