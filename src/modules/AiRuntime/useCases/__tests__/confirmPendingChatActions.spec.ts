@@ -3432,16 +3432,14 @@ describe('confirmPendingChatActions transaction admission', () => {
         });
         // The batch flight awaits durable idempotency completion after its
         // project checkpoint is visible. Land a foreign app action in that
-        // await: its later revision must not relabel checkpoint evidence.
+        // await: its later revision must not relabel storage-commit evidence.
         let foreignWriteInjected = false;
-        let checkpointRevision: string | null = null;
         let foreignRevision: string | null = null;
         vi.stubGlobal('navigator', {
             ...navigator,
             locks: {
                 request: async (_name: string, _options: LockOptions, task: () => unknown) => {
                     if (lastRenderAttempted && !foreignWriteInjected) {
-                        checkpointRevision = captureProjectRevision();
                         foreignWriteInjected = true;
                         await executeAppAction({ type: 'setTempo', payload: { bpm: 144 } });
                         foreignRevision = captureProjectRevision();
@@ -3493,7 +3491,23 @@ describe('confirmPendingChatActions transaction admission', () => {
             groupLabel: 'Tempo and renders',
             projectRevision,
         });
-        const executeBatch = vi.spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope');
+        let storageCommitRevision: string | null = null;
+        const executeBatchImplementation = commandUseCases.executeVersionedCommandBatchEnvelope;
+        const executeBatch = vi
+            .spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope')
+            .mockImplementation((input) => {
+                const onProjectCommitFinalized = input.options?.onProjectCommitFinalized;
+                return executeBatchImplementation({
+                    ...input,
+                    options: {
+                        ...input.options,
+                        onProjectCommitFinalized: (result) => {
+                            storageCommitRevision = result.revision;
+                            onProjectCommitFinalized?.(result);
+                        },
+                    },
+                });
+            });
 
         await expect(
             confirmPendingChatActions({ confirmationId: 'confirmation-render-rebind' })
@@ -3501,23 +3515,24 @@ describe('confirmPendingChatActions transaction admission', () => {
         expect(executeBatch).toHaveBeenCalledOnce();
 
         expect(foreignWriteInjected).toBe(true);
-        expect(checkpointRevision).not.toBeNull();
-        expect(foreignRevision).not.toBe(checkpointRevision);
+        expect(foreignRevision).not.toBeNull();
+        expect(storageCommitRevision).not.toBeNull();
+        expect(storageCommitRevision).not.toBe(foreignRevision);
         const committedConfirmation = getPendingActionConfirmation('confirmation-render-rebind');
-        if (checkpointRevision === null) {
-            throw new Error('Expected a captured batch checkpoint revision');
+        if (storageCommitRevision === null) {
+            throw new Error('Expected a captured storage-commit revision');
         }
         expect(committedConfirmation).toMatchObject({
             status: 'failed',
-            followUpProjectRevision: checkpointRevision,
+            followUpProjectRevision: storageCommitRevision,
             followUpStatus: 'retryable',
         });
         const artifacts = getAgentSectionRenderArtifacts();
         expect(artifacts).toHaveLength(1);
-        expect(artifacts[0]).toMatchObject({ jobId: verseJob.jobId, sourceRevision: checkpointRevision });
+        expect(artifacts[0]).toMatchObject({ jobId: verseJob.jobId, sourceRevision: storageCommitRevision });
         expect(artifacts[0]?.sourceRevision).not.toBe(foreignRevision);
 
-        // The retry stays bound to the batch checkpoint and must fail closed
+        // The retry stays bound to the storage commit and must fail closed
         // rather than treat the later foreign revision as its source.
         const renderCallsBeforeRetry = runtimeMocks.renderOffline.mock.calls.length;
         executeBatch.mockClear();
