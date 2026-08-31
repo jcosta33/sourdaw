@@ -30,6 +30,7 @@ import {
     BOOTSTRAP_PATH,
     executeTrustedSnapshot,
     resolveTrustedLauncherBinding,
+    resolveTrustedExecutable,
     runTrustedGithubWriteCommand,
     trustedGitReadEnv,
     trustedDependencyPaths,
@@ -970,6 +971,13 @@ describe('package scripts and gitignore', () => {
         ],
         ['review:resolve', 'scripts/resolveReviewThread.ts', 'runResolveReviewThreadCli', 'invalid', '1'],
         [
+            'review:resolve',
+            'scripts/resolveReviewThread.ts',
+            'runResolveReviewThreadCli',
+            'valid',
+            JSON.stringify({ path: '/trusted/child-marker.json', token: '11111111-1111-4111-8111-111111111111' }),
+        ],
+        [
             'review:resolve:recover',
             'scripts/recoverReviewResolutionLock.ts',
             'runRecoverReviewResolutionLockCli',
@@ -982,6 +990,13 @@ describe('package scripts and gitignore', () => {
             'runRecoverReviewResolutionLockCli',
             'invalid',
             '1',
+        ],
+        [
+            'review:resolve:recover',
+            'scripts/recoverReviewResolutionLock.ts',
+            'runRecoverReviewResolutionLockCli',
+            'valid',
+            JSON.stringify({ path: '/trusted/child-marker.json', token: '11111111-1111-4111-8111-111111111111' }),
         ],
     ] as const)(
         'starts %s snapshot without a %s inherited detached-worker marker',
@@ -1142,8 +1157,8 @@ describe('package scripts and gitignore', () => {
         const ghBin = join(fixtureRoot, 'gh-bin');
         const powerShellBin = join(fixtureRoot, 'powershell-bin');
         const gitWrapper = join(gitBin, 'git.exe');
-        const ghWrapper = join(ghBin, 'gh.cmd');
-        const powerShellWrapper = join(powerShellBin, 'powershell.bat');
+        const ghWrapper = join(ghBin, 'gh.exe');
+        const powerShellWrapper = join(powerShellBin, 'powershell.exe');
         const realGit = execFileSync('/usr/bin/which', ['git'], { encoding: 'utf8' }).trim();
         const realGh = execFileSync('/usr/bin/which', ['gh'], { encoding: 'utf8' }).trim();
         try {
@@ -1161,7 +1176,7 @@ describe('package scripts and gitignore', () => {
             const binding = resolveTrustedLauncherBinding(
                 primary,
                 {
-                    PATH: [gitBin, ghBin, powerShellBin].join(delimiter),
+                    PATH: [gitBin, ghBin, powerShellBin].join(';'),
                     PATHEXT: '.EXE;.CMD;.BAT',
                 },
                 'review:resolve',
@@ -1173,6 +1188,8 @@ describe('package scripts and gitignore', () => {
             expect(binding.ghPath).toBe(realpathSync(ghWrapper));
             expect(binding.psPath).toBeUndefined();
             expect(binding.powershellPath).toBe(realpathSync(powerShellWrapper));
+            expect(spawnSync(binding.ghPath, ['--version'], { shell: false }).status).toBe(0);
+            expect(spawnSync(binding.powershellPath, [], { shell: false }).status).toBe(0);
 
             const env = trustedSnapshotEnv({
                 commit: 'a'.repeat(40),
@@ -1190,6 +1207,28 @@ describe('package scripts and gitignore', () => {
         }
     });
 
+    it('rejects Windows command scripts as trusted executable bindings', () => {
+        const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-win32-command-scripts-'));
+        const commandBin = join(fixtureRoot, 'bin');
+        const commandScript = join(commandBin, 'gh.cmd');
+        const batchScript = join(commandBin, 'git.bat');
+        try {
+            mkdirSync(commandBin);
+            writeFileSync(commandScript, '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+            writeFileSync(batchScript, '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+            chmodSync(commandScript, 0o700);
+            chmodSync(batchScript, 0o700);
+            expect(() =>
+                resolveTrustedExecutable('gh', { PATH: commandBin, PATHEXT: '.EXE;.CMD;.BAT' }, 'win32')
+            ).toThrow(/cannot resolve trusted gh executable/i);
+            expect(() =>
+                resolveTrustedExecutable('git', { PATH: commandBin, PATHEXT: '.EXE;.CMD;.BAT' }, 'win32')
+            ).toThrow(/cannot resolve trusted git executable/i);
+        } finally {
+            rmSync(fixtureRoot, { recursive: true, force: true });
+        }
+    });
+
     it('requires a trusted ps binding on non-Windows review-resolution commands and trusted powershell on Windows, and reports invalid commands before binding', () => {
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-bootstrap-command-gating-'));
         const primary = join(fixtureRoot, 'primary');
@@ -1198,7 +1237,7 @@ describe('package scripts and gitignore', () => {
         const gitWrapper = join(gitBin, 'git');
         const ghWrapper = join(ghBin, 'gh');
         const windowsGitWrapper = join(gitBin, 'git.exe');
-        const windowsGhWrapper = join(ghBin, 'gh.cmd');
+        const windowsGhWrapper = join(ghBin, 'gh.exe');
         const realGit = execFileSync('/usr/bin/which', ['git'], { encoding: 'utf8' }).trim();
         const realGh = execFileSync('/usr/bin/which', ['gh'], { encoding: 'utf8' }).trim();
         try {
@@ -1215,6 +1254,7 @@ describe('package scripts and gitignore', () => {
             chmodSync(windowsGhWrapper, 0o700);
 
             const path = [gitBin, ghBin].join(delimiter);
+            const windowsPath = [gitBin, ghBin].join(';');
             expect(resolveTrustedLauncherBinding(primary, { PATH: path }, 'deliver')).toMatchObject({
                 primaryRoot: realpathSync(primary),
                 gitPath: realpathSync(gitWrapper),
@@ -1224,7 +1264,7 @@ describe('package scripts and gitignore', () => {
             expect(resolveTrustedLauncherBinding(primary, { PATH: path }, 'lane:publish').psPath).toBeUndefined();
             expect(resolveTrustedLauncherBinding(primary, { PATH: path }, 'issue:reconcile').psPath).toBeUndefined();
             for (const command of ['deliver', 'lane:publish', 'issue:reconcile'] as const) {
-                expect(resolveTrustedLauncherBinding(primary, { PATH: path }, command, 'win32')).toMatchObject({
+                expect(resolveTrustedLauncherBinding(primary, { PATH: windowsPath }, command, 'win32')).toMatchObject({
                     primaryRoot: realpathSync(primary),
                     gitPath: realpathSync(windowsGitWrapper),
                     ghPath: realpathSync(windowsGhWrapper),
@@ -1238,11 +1278,11 @@ describe('package scripts and gitignore', () => {
             expect(() => resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:resolve:recover')).toThrow(
                 /cannot resolve trusted ps executable/i
             );
-            expect(() => resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:resolve', 'win32')).toThrow(
-                /cannot resolve trusted powershell executable/i
-            );
             expect(() =>
-                resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:resolve:recover', 'win32')
+                resolveTrustedLauncherBinding(primary, { PATH: windowsPath }, 'review:resolve', 'win32')
+            ).toThrow(/cannot resolve trusted powershell executable/i);
+            expect(() =>
+                resolveTrustedLauncherBinding(primary, { PATH: windowsPath }, 'review:resolve:recover', 'win32')
             ).toThrow(/cannot resolve trusted powershell executable/i);
 
             const result = spawnSync(

@@ -1811,7 +1811,7 @@ describe('review thread resolution', () => {
         }
     });
 
-    it('rejects retired-unseen recovery arguments before inspecting GitHub', async () => {
+    it('routes explicit retired-unseen recovery arguments through the exact-owner recovery claim', async () => {
         const session: GhSession = { configDir: process.cwd(), env: {}, dispose() {} };
         const fake = fakePort();
         const calls: string[] = [];
@@ -1844,10 +1844,66 @@ describe('review thread resolution', () => {
 
         await expect(
             runRecoverReviewResolutionLockCli(['42', '--owner', 'a'.repeat(40), '--retire-unseen'], dependencies)
-        ).rejects.toThrow(/usage: pnpm review:resolve:recover/);
-        expect(calls).toEqual([]);
+        ).rejects.toThrow(/unsupported recovery arguments must not recover a lock/);
+        expect(calls).toEqual([
+            'trustedPrimaryRoot',
+            'authenticateAuthor',
+            'repositoryName',
+            'gh',
+            'createPort',
+            'recoverLock',
+        ]);
         expect(fake.calls).toEqual([]);
     });
+
+    it.each([
+        ['createPendingReview', { phase: 'createPendingReview' as const, epoch: 1 }],
+        [
+            'replyDone',
+            {
+                phase: 'replyDone' as const,
+                epoch: 1,
+                reviewId,
+                reviewState: 'PENDING' as const,
+                body: pendingReviewBody(head),
+                reviewCommitOid: head,
+            },
+        ],
+    ] as const)(
+        'retires a zero-evidence %s partial mutation only after two settled inspections',
+        async (_phase, mutation) => {
+            const repository = createTemporaryGitRepository();
+            try {
+                const ownerOid = writeLockOwnerBlob(repository, 9_999_999, head, mutation);
+                updateLock(repository, 42, ownerOid);
+                const session: GhSession = { configDir: repository, env: {}, dispose() {} };
+                const fake = fakePort();
+                let monotonicNow = 0n;
+                await expect(
+                    runRecoverReviewResolutionLockCli(['42', '--owner', ownerOid, '--retire-unseen'], {
+                        trustedPrimaryRoot: () => repository,
+                        authenticateAuthor: async () => ({ minted: { actorNodeId: AUTHOR_BOT_NODE_ID }, session }),
+                        repositoryName: () => REQUIRED_REPOSITORY,
+                        gh: () => () => '',
+                        createPort: () => fake.port,
+                        clock: { now: () => 0 },
+                        retirementClock: {
+                            monotonicNow: () => monotonicNow,
+                            wait: () => {
+                                monotonicNow += 30_000_000_000n;
+                            },
+                        },
+                        recoverLock: (primaryRoot, number, owner, reconcile) =>
+                            recoverPullRequestReviewResolutionLock(primaryRoot, number, owner, reconcile, () => false),
+                    })
+                ).resolves.toBe(0);
+                expect(fake.calls).toEqual(['inspect:1', 'inspect:2']);
+                expect(readLockOid(repository, 42)).toBeUndefined();
+            } finally {
+                rmSync(repository, { recursive: true, force: true });
+            }
+        }
+    );
 
     it('rejects invalid resolution and recovery argv before invoking delivery dependencies', async () => {
         const session: GhSession = { configDir: process.cwd(), env: {}, dispose() {} };
@@ -2003,7 +2059,7 @@ describe('review thread resolution', () => {
                         throw new Error('recovery must not run');
                     },
                 })
-            ).rejects.toThrow(/unexpected repository other-owner\/other-repository/i);
+            ).rejects.toThrow(/refusing to operate on other-owner\/other-repository/i);
             expect(calls).toEqual(['trustedPrimaryRoot', 'authenticateAuthor', 'repositoryName']);
             expect(readLockOid(repository, 42)).toBe(ownerOid);
         } finally {
@@ -2267,8 +2323,8 @@ describe('review thread resolution', () => {
                         }
                     )
                 ).toThrow(/forced owner inspection failure/);
+                expect(requireLockOwner(repository, 42).ownerFence).toEqual(executionFence.ownerFence);
             });
-            expect(requireLockOwner(repository, 42).ownerFence).toEqual(executionFence.ownerFence);
             gitCapture(repository, ['update-ref', '-d', reviewResolutionLockRef(42)]);
             expect(readLockOid(repository, 42)).toBeUndefined();
         } finally {
@@ -2375,7 +2431,7 @@ describe('review thread resolution', () => {
         ).toBe(true);
     });
 
-    it('fails closed when POSIX leader identity inspection is unavailable or absent', () => {
+    it('fails closed when POSIX leader identity inspection is unavailable and probes legacy groups without a leader identity', () => {
         const missingGroup = new Error('missing process group') as NodeJS.ErrnoException;
         missingGroup.code = 'ESRCH';
         expect(
@@ -2398,7 +2454,7 @@ describe('review thread resolution', () => {
                     },
                 }
             )
-        ).toBe(true);
+        ).toBe(false);
     });
 
     it('propagates an unexpected POSIX group-leader inspection failure', () => {
@@ -2435,7 +2491,7 @@ describe('review thread resolution', () => {
                     () => 'unexpected',
                     () => false
                 )
-            ).toThrow(/lock owner is malformed/i);
+            ).toThrow(/lock ownership is malformed/i);
             expect(readLockOid(repository, 42)).toBe(ownerOid);
         } finally {
             rmSync(repository, { recursive: true, force: true });
@@ -2601,7 +2657,7 @@ describe('review thread resolution', () => {
                 ],
             })
         ).toBe(false);
-        expect(reviewResolutionOwnerFenceIsLive(ownerFence, { inspectWindowsProcessRows: () => [] })).toBe(true);
+        expect(reviewResolutionOwnerFenceIsLive(ownerFence, { inspectWindowsProcessRows: () => [] })).toBe(false);
         expect(
             reviewResolutionOwnerFenceIsLive(ownerFence, {
                 inspectWindowsProcessRows: () => [
@@ -2765,7 +2821,7 @@ describe('review thread resolution', () => {
                     }) as typeof spawnSync,
                 }
             )
-        ).toBe(true);
+        ).toBe(false);
         expect(calls).toEqual([
             {
                 executable: trustedPowerShellPath,
@@ -3029,7 +3085,7 @@ describe('review thread resolution', () => {
                     (owner) => recoverReviewResolutionLockOwnerState(42, owner, port),
                     () => false
                 )
-            ).toThrow(/could not prove exact landed createPendingReview after head drift/i);
+            ).toThrow(/unreconciled in-flight createPendingReview mutation/i);
             expect(calls).toEqual(['inspect:1']);
             const preservedOwnerOid = readLockOid(repository, 42);
             expect(preservedOwnerOid).toBeDefined();
@@ -3438,6 +3494,12 @@ describe('review thread resolution', () => {
                     commitOid: head,
                     body: resolutionReviewSummary(pullRequestId, threadId, head),
                 }),
+                expect.objectContaining({
+                    id: 'PRR_concurrent',
+                    state: 'COMMENTED',
+                    commitOid: head,
+                    body: resolutionReviewSummary(pullRequestId, threadId, head),
+                }),
             ]);
             expect(readLockOid(repository, 42)).toBeUndefined();
         } finally {
@@ -3471,6 +3533,7 @@ describe('review thread resolution', () => {
             expect(calls).toEqual(['inspect:1', 'delete:PRRC_existing_1', 'inspect:2']);
             expect(state().reviews).toEqual([
                 expect.objectContaining({ id: reviewId, state: 'COMMENTED', commitOid: head }),
+                expect.objectContaining({ id: 'PRR_existing_1', state: 'COMMENTED', commitOid: head }),
             ]);
             expect(readLockOid(repository, 42)).toBeUndefined();
         } finally {
@@ -4259,7 +4322,7 @@ describe('review thread resolution', () => {
         }
     });
 
-    it('preserves the claimed PR lock owner when an expired reply settlement replay loses transport', () => {
+    it('preserves the claimed PR lock owner when expired reply settlement has no landed evidence', () => {
         const repository = createTemporaryGitRepository();
         const fakeGh = createFailingReviewResolutionMutationGhExecutable('replyDone');
         try {
@@ -4299,15 +4362,15 @@ describe('review thread resolution', () => {
                 failure = error as Error;
             }
             expect(inspectionPort.calls).toEqual(['inspect:1']);
-            expect(statSync(fakeGh.calledPath).isFile()).toBe(true);
+            expect(existsSync(fakeGh.calledPath)).toBe(false);
             const preservedOid = readLockOid(repository, 42);
             expect(preservedOid).toBeDefined();
             expect(preservedOid).not.toBe(ownerOid);
-            expect(failure?.message).toContain('reply mutation transport lost');
+            expect(failure?.message).toContain('unreconciled in-flight replyDone mutation');
             expect(requireLockOwner(repository, 42)).toMatchObject({
                 threadId,
                 head,
-                mutation: { phase: 'replyDone', epoch: 2, reviewId },
+                mutation: { phase: 'replyDoneSettlement', epoch: 1, reviewId },
             });
         } finally {
             rmSync(fakeGh.root, { recursive: true, force: true });
@@ -5048,7 +5111,7 @@ describe('review thread resolution', () => {
         }
     });
 
-    it('preserves the claimed owner when an expired create settlement replay loses transport', async () => {
+    it('preserves the claimed owner when expired create settlement has no landed evidence', async () => {
         const repository = createTemporaryGitRepository();
         const fakeGh = createFailingReviewResolutionMutationGhExecutable('createPendingReview');
         try {
@@ -5116,14 +5179,14 @@ describe('review thread resolution', () => {
             try {
                 await expect(
                     runRecoverReviewResolutionLockCli(['42', '--owner', ownerOid], recoverDependencies)
-                ).rejects.toThrow(/create mutation transport lost/i);
+                ).rejects.toThrow(/unreconciled in-flight createPendingReview mutation/i);
                 expect(logs).toEqual([]);
                 expect(calls).toEqual(['inspect:1']);
             } finally {
                 console.log = originalLog;
             }
             expect(logs).toEqual([]);
-            expect(statSync(fakeGh.calledPath).isFile()).toBe(true);
+            expect(existsSync(fakeGh.calledPath)).toBe(false);
             const preservedOwnerOid = readLockOid(repository, 42);
             expect(preservedOwnerOid).toBeDefined();
             expect(preservedOwnerOid).not.toBe(ownerOid);
@@ -5131,8 +5194,8 @@ describe('review thread resolution', () => {
                 threadId,
                 head,
                 mutation: {
-                    phase: 'createPendingReview',
-                    epoch: 2,
+                    phase: 'createPendingReviewSettlement',
+                    epoch: 1,
                 },
             });
         } finally {
@@ -5376,6 +5439,97 @@ describe('review thread resolution', () => {
             expect(child.exitCode).toBe(1);
             expect(stderr).toMatch(/detached launcher marker is invalid/i);
             expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            child.kill('SIGKILL');
+            await waitForExit(child).catch(() => undefined);
+            rmSync(markerRoot, { recursive: true, force: true });
+            rmSync(snapshotRoot, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true });
+        }
+    }, 10_000);
+
+    it('rejects a malformed recover child marker before lock recovery can mutate the owner', async () => {
+        const repository = createTemporaryGitRepository();
+        const snapshotRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-recover-forged-marker-'));
+        const entryPath = writeRecoverReviewResolutionSnapshot(snapshotRoot);
+        const ownerOid = writeLockOwnerBlob(repository, 9_999_999);
+        updateLock(repository, 42, ownerOid);
+        const child = spawn(process.execPath, [entryPath, '42', '--owner', ownerOid], {
+            cwd: repository,
+            env: {
+                ...process.env,
+                SOURDAW_TEST_PRIMARY_ROOT: repository,
+                SOURDAW_REVIEW_RESOLUTION_CHILD: '1',
+            },
+            stdio: ['ignore', 'ignore', 'pipe'],
+            shell: false,
+            detached: true,
+        });
+        let stderr = '';
+        child.stderr?.setEncoding('utf8');
+        child.stderr?.on('data', (chunk: string) => {
+            stderr += chunk;
+        });
+        try {
+            await waitForExit(child);
+            expect(child.exitCode).toBe(1);
+            expect(stderr).toMatch(/detached launcher marker is invalid/i);
+            expect(readLockOid(repository, 42)).toBe(ownerOid);
+        } finally {
+            child.kill('SIGKILL');
+            await waitForExit(child).catch(() => undefined);
+            rmSync(snapshotRoot, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true });
+        }
+    }, 10_000);
+
+    it('rejects a wrong-PID recover child marker before lock recovery can reconcile', async () => {
+        const repository = createTemporaryGitRepository();
+        const snapshotRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-recover-wrong-pid-marker-'));
+        const markerRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-recover-wrong-pid-marker-file-'));
+        const entryPath = writeRecoverReviewResolutionSnapshot(snapshotRoot);
+        const ownerOid = writeLockOwnerBlob(repository, 9_999_999);
+        const markerPath = join(markerRoot, 'child-marker.json');
+        const capabilityPath = join(markerRoot, 'bootstrap-capability.json');
+        const token = '11111111-1111-4111-8111-111111111111';
+        updateLock(repository, 42, ownerOid);
+        writeFileSync(
+            capabilityPath,
+            JSON.stringify({
+                version: 1,
+                token,
+                trustedLauncher: {
+                    primaryRoot: repository,
+                    gitPath: trustedGitPath,
+                    ghPath: trustedGhPath,
+                    psPath: trustedPsPath,
+                },
+            }),
+            { encoding: 'utf8', mode: 0o600 }
+        );
+        publishReviewResolutionChildLaunchMarker(markerPath, token, 999999, capabilityPath);
+        const child = spawn(process.execPath, [entryPath, '42', '--owner', ownerOid], {
+            cwd: repository,
+            env: {
+                ...process.env,
+                SOURDAW_TEST_PRIMARY_ROOT: repository,
+                SOURDAW_TRUSTED_ORIGIN_COMMIT: head,
+                SOURDAW_REVIEW_RESOLUTION_CHILD: JSON.stringify({ path: markerPath, token }),
+            },
+            stdio: ['ignore', 'ignore', 'pipe'],
+            shell: false,
+            detached: true,
+        });
+        let stderr = '';
+        child.stderr?.setEncoding('utf8');
+        child.stderr?.on('data', (chunk: string) => {
+            stderr += chunk;
+        });
+        try {
+            await waitForExit(child);
+            expect(child.exitCode).toBe(1);
+            expect(stderr).toMatch(/detached launcher marker is invalid/i);
+            expect(readLockOid(repository, 42)).toBe(ownerOid);
         } finally {
             child.kill('SIGKILL');
             await waitForExit(child).catch(() => undefined);
@@ -5970,9 +6124,14 @@ describe('review thread resolution', () => {
                 expect(logs).toEqual([]);
                 expect(calls).toEqual(['inspect:1']);
                 expect(readLockOid(repository, 42)).toBeDefined();
-                expect(requireLockOwner(repository, 42).mutation.phase).toBe(
-                    mutation.phase === 'createPendingReview' ? 'createPendingReviewSettlement' : 'replyDoneSettlement'
-                );
+                let expectedPhase = mutation.phase;
+                if (observedHead === head) {
+                    expectedPhase =
+                        mutation.phase === 'createPendingReview'
+                            ? 'createPendingReviewSettlement'
+                            : 'replyDoneSettlement';
+                }
+                expect(requireLockOwner(repository, 42).mutation.phase).toBe(expectedPhase);
             } finally {
                 rmSync(repository, { recursive: true, force: true });
             }
@@ -6813,7 +6972,7 @@ describe('review thread resolution', () => {
         const ownerOid = 'a'.repeat(40);
         const sha256OwnerOid = 'b'.repeat(64);
         expect(parseResolveReviewThreadArgs(['--help'])).toEqual({ help: true });
-        expect(parseRecoverReviewResolutionLockArgs(['--help'])).toEqual({ help: true });
+        expect(parseRecoverReviewResolutionLockArgs(['--help'])).toEqual({ help: true, retireUnseen: false });
         expect(parseRecoverReviewResolutionLockArgs(['42', '--owner', ownerOid])).toMatchObject({
             number: 42,
             owner: ownerOid,
@@ -6826,12 +6985,12 @@ describe('review thread resolution', () => {
             number: 42,
             owner: sha256OwnerOid,
         });
-        for (const args of [
-            [],
-            ['42', '--thread', threadId, '--owner', ownerOid],
-            ['42', '--owner', 'bad'],
-            ['42', '--owner', ownerOid, '--retire-unseen'],
-        ]) {
+        expect(parseRecoverReviewResolutionLockArgs(['42', '--owner', ownerOid, '--retire-unseen'])).toMatchObject({
+            number: 42,
+            owner: ownerOid,
+            retireUnseen: true,
+        });
+        for (const args of [[], ['42', '--thread', threadId, '--owner', ownerOid], ['42', '--owner', 'bad']]) {
             expect(() => parseRecoverReviewResolutionLockArgs(args)).toThrow(/usage/i);
         }
         await expect(runRecoverReviewResolutionLockCli(['42', '--owner', ownerOid])).rejects.toThrow(
@@ -7853,6 +8012,8 @@ describe('review thread resolution', () => {
         );
         expect(calls.filter((call) => call.startsWith('inspectAttachedReviewThreads:'))).toEqual([
             `inspectAttachedReviewThreads:42:PRR_stale_pending:${pullRequestId}:${movedHead}`,
+            `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${movedHead}`,
+            `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${movedHead}`,
         ]);
         expect(calls.filter((call) => call.startsWith('deleteReview:'))).toEqual(['deleteReview:PRR_stale_pending']);
         expect(calls.filter((call) => call.startsWith('createReview:'))).toEqual([`createReview:${pullRequestId}`]);

@@ -843,8 +843,8 @@ export function resolveTrustedExecutable(
     parent: NodeJS.ProcessEnv = process.env,
     platform: NodeJS.Platform = process.platform
 ): string {
-    const extensions = platform === 'win32' ? (parent.PATHEXT ?? '.EXE;.CMD;.BAT').split(';') : [''];
-    for (const directory of (parent.PATH ?? '').split(delimiter)) {
+    const extensions = platform === 'win32' ? ['.exe'] : [''];
+    for (const directory of (parent.PATH ?? '').split(platform === 'win32' ? ';' : delimiter)) {
         for (const extension of extensions) {
             const candidate = resolve(directory || process.cwd(), `${name}${extension.toLowerCase()}`);
             try {
@@ -863,8 +863,8 @@ function resolveTrustedPowerShellExecutable(
     parent: NodeJS.ProcessEnv = process.env,
     platform: NodeJS.Platform = process.platform
 ): string {
-    const extensions = platform === 'win32' ? (parent.PATHEXT ?? '.EXE;.CMD;.BAT').split(';') : [''];
-    for (const directory of (parent.PATH ?? '').split(delimiter)) {
+    const extensions = platform === 'win32' ? ['.exe'] : [''];
+    for (const directory of (parent.PATH ?? '').split(platform === 'win32' ? ';' : delimiter)) {
         for (const extension of extensions) {
             const suffix = extension === '' ? '' : extension.toLowerCase();
             const candidate = resolve(directory || process.cwd(), `powershell${suffix}`);
