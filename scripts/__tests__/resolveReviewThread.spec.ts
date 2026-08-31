@@ -895,13 +895,17 @@ function expectCanonicalResolutionReview(
     });
 }
 
-function createTemporaryGitRepository(): string {
+function createTemporaryGitRepository(objectFormat: 'sha1' | 'sha256' = 'sha1'): string {
     const directory = mkdtempSync(join(tmpdir(), 'resolve-review-thread-lock-'));
-    const init = spawnSync('git', ['init', '--quiet'], {
-        cwd: directory,
-        encoding: 'utf8',
-        shell: false,
-    });
+    const init = spawnSync(
+        'git',
+        ['init', '--quiet', ...(objectFormat === 'sha256' ? ['--object-format=sha256'] : [])],
+        {
+            cwd: directory,
+            encoding: 'utf8',
+            shell: false,
+        }
+    );
     if (init.error !== undefined) {
         throw init.error;
     }
@@ -1841,6 +1845,85 @@ describe('review thread resolution', () => {
         await expect(
             runRecoverReviewResolutionLockCli(['42', '--owner', 'a'.repeat(40), '--retire-unseen'], dependencies)
         ).rejects.toThrow(/usage: pnpm review:resolve:recover/);
+        expect(calls).toEqual([]);
+        expect(fake.calls).toEqual([]);
+    });
+
+    it('rejects invalid resolution and recovery argv before invoking delivery dependencies', async () => {
+        const session: GhSession = { configDir: process.cwd(), env: {}, dispose() {} };
+        const fake = fakePort();
+        const calls: string[] = [];
+        const resolveDependencies = {
+            trustedPrimaryRoot: () => {
+                calls.push('resolve:trustedPrimaryRoot');
+                return process.cwd();
+            },
+            authenticateAuthor: async () => {
+                calls.push('resolve:authenticateAuthor');
+                return { minted: { actorNodeId: AUTHOR_BOT_NODE_ID }, session };
+            },
+            repositoryName: () => {
+                calls.push('resolve:repositoryName');
+                return REQUIRED_REPOSITORY;
+            },
+            gh: () => {
+                calls.push('resolve:gh');
+                return () => '';
+            },
+            createPort: () => {
+                calls.push('resolve:createPort');
+                return fake.port;
+            },
+        } satisfies Parameters<typeof runResolveReviewThreadCli>[1];
+        const recoveryDependencies = {
+            trustedPrimaryRoot: () => {
+                calls.push('recover:trustedPrimaryRoot');
+                return process.cwd();
+            },
+            authenticateAuthor: async () => {
+                calls.push('recover:authenticateAuthor');
+                return { minted: { actorNodeId: AUTHOR_BOT_NODE_ID }, session };
+            },
+            repositoryName: () => {
+                calls.push('recover:repositoryName');
+                return REQUIRED_REPOSITORY;
+            },
+            gh: () => {
+                calls.push('recover:gh');
+                return () => '';
+            },
+            createPort: () => {
+                calls.push('recover:createPort');
+                return fake.port;
+            },
+            recoverLock: () => {
+                calls.push('recover:lock');
+                throw new Error('invalid argv must not recover a lock');
+            },
+        } satisfies Parameters<typeof runRecoverReviewResolutionLockCli>[1];
+        const invalidNumbers = ['0', '-1', '1.5', '9007199254740992'];
+        const invalidResolveArgs = [
+            ...invalidNumbers.map((number) => [number, '--thread', threadId, '--head', head]),
+            ['42', '--thread'],
+            ['42', '--thread', threadId, '--head'],
+            ['42', '--thread', '', '--head', head],
+            ['42', '--thread', threadId, '--head', ''],
+            ['42', '--thread', threadId, '--head', 'not-an-oid'],
+            ['--help', '--thread'],
+        ];
+        const invalidRecoveryArgs = [
+            ...invalidNumbers.map((number) => [number, '--owner', 'a'.repeat(40)]),
+            ['42', '--owner'],
+            ['42', '--owner', ''],
+            ['42', '--owner', 'not-an-oid'],
+            ['--help', '--owner'],
+        ];
+        for (const args of invalidResolveArgs) {
+            await expect(runResolveReviewThreadCli(args, resolveDependencies)).rejects.toThrow();
+        }
+        for (const args of invalidRecoveryArgs) {
+            await expect(runRecoverReviewResolutionLockCli(args, recoveryDependencies)).rejects.toThrow();
+        }
         expect(calls).toEqual([]);
         expect(fake.calls).toEqual([]);
     });
@@ -6701,6 +6784,8 @@ describe('review thread resolution', () => {
     it('parses review-resolution recovery arguments and refuses non-bootstrap execution by default', async () => {
         const ownerOid = 'a'.repeat(40);
         const sha256OwnerOid = 'b'.repeat(64);
+        expect(parseResolveReviewThreadArgs(['--help'])).toEqual({ help: true });
+        expect(parseRecoverReviewResolutionLockArgs(['--help'])).toEqual({ help: true });
         expect(parseRecoverReviewResolutionLockArgs(['42', '--owner', ownerOid])).toMatchObject({
             number: 42,
             owner: ownerOid,
@@ -6731,6 +6816,27 @@ describe('review thread resolution', () => {
                 },
             })
         ).rejects.toThrow(/64-hex owner reached recovery bootstrap/);
+    });
+
+    it('recovers an exact owner from a real SHA-256 Git repository', () => {
+        const repository = createTemporaryGitRepository('sha256');
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 9_999_999);
+            expect(ownerOid).toMatch(/^[0-9a-f]{64}$/);
+            updateLock(repository, 42, ownerOid);
+            expect(
+                recoverPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    ownerOid,
+                    () => 'recovered',
+                    () => false
+                )
+            ).toBe('recovered');
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
     });
     it.each([
         ['reviewer actor', REVIEWER_BOT_NODE_ID],
