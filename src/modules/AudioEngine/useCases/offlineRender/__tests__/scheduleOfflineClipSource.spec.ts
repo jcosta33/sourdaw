@@ -64,6 +64,29 @@ describe('scheduleOfflineClipSource', () => {
         expect(gain.linearRampToValueAtTime).toHaveBeenCalledWith(0, 6);
     });
 
+    it('half-caps user fade-out after the micro-fade floor on short clips', () => {
+        const { context, gain } = makeFadeRecordingContext();
+        const startSec = 0;
+        const playDuration = 0.004;
+        const microFadeSeconds = 0.003;
+
+        scheduleOfflineClipSource({
+            context,
+            destinationNode: {} as AudioNode,
+            buffer: {} as AudioBuffer,
+            startSec,
+            bufferOffsetSec: 0,
+            playDuration,
+            playbackRate: 1,
+            clipGainValue: 0.8,
+            microFadeSeconds,
+            fadeOut: { userStartSec: 0.0035 },
+        });
+
+        expect(gain.setValueAtTime).toHaveBeenCalledWith(0.8, 0.002);
+        expect(gain.linearRampToValueAtTime).toHaveBeenCalledWith(0, 0.004);
+    });
+
     it('applies the anti-click fade-out when there is no user fade', () => {
         const gain = scheduleFades({ fadeOut: {} });
 
