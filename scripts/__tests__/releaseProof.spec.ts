@@ -23,10 +23,9 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 
 const zipPayloadExpansionProbe = vi.hoisted(() => ({
     archive: undefined as Buffer | undefined,
@@ -88,13 +87,49 @@ import {
     validateTrustedSystemInterpreter,
 } from '../releaseProof';
 
-const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const workspaceRoot = join(import.meta.dirname, '..', '..');
 const WEBLLM_REQUIRED_LEGAL_FILES = webLlmRequiredLegalFiles(workspaceRoot);
 const WEBLLM_REQUIRED_SOURCE_LEGAL_FILES = WEBLLM_REQUIRED_LEGAL_FILES.map((path) => `public/${path}`);
 const WEBLLM_PACKAGED_PATH_LIST_DIGEST = '03220ef72279533c5110dea8cad8b087065c2232238096c6cc50cf3f48a10603';
 const fixtureRoots: string[] = [];
 const electronRepository = 'https://example.test/electron/electron';
 const ffmpegRepository = 'https://example.test/chromium/ffmpeg';
+
+type SourceRepositoryTemplate = {
+    ffmpegSource: string;
+    ffmpegRevision: string;
+    electronSource: string;
+    electronRevision: string;
+};
+
+let sourceRepositoryTemplate: SourceRepositoryTemplate | undefined;
+let sourceRepositoryTemplateRoot: string | undefined;
+
+function sourceRepositoryTemplateSnapshot(): SourceRepositoryTemplate {
+    if (sourceRepositoryTemplate !== undefined) {
+        return sourceRepositoryTemplate;
+    }
+    const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-proof-source-template-'));
+    sourceRepositoryTemplateRoot = base;
+    const ffmpegSource = createRepository(base, 'ffmpeg', ffmpegRepository, {
+        'BUILD.gn': 'shared_library("ffmpeg") {}\n',
+        'COPYING.LGPLv2.1': 'fixture LGPL source\n',
+        'libavcodec/codec.c': 'int codec(void) { return 1; }\n',
+    });
+    const ffmpegRevision = git(ffmpegSource, ['rev-parse', 'HEAD']);
+    const electronFiles = Object.fromEntries(
+        ELECTRON_FFMPEG_BUILD_INPUTS.map((path) => [path, `fixture Electron input ${path}\n`])
+    );
+    electronFiles.DEPS = `'ffmpeg_revision': '${ffmpegRevision}'\n`;
+    const electronSource = createRepository(base, 'electron', electronRepository, electronFiles);
+    const electronRevision = git(electronSource, ['rev-parse', 'HEAD']);
+    sourceRepositoryTemplate = { ffmpegSource, ffmpegRevision, electronSource, electronRevision };
+    return sourceRepositoryTemplate;
+}
+
+function cloneCachedRepository(source: string, destination: string): void {
+    cpSync(source, destination, { recursive: true });
+}
 
 type Fixture = {
     base: string;
@@ -351,21 +386,16 @@ function createDesktopZip(fixture: Fixture, archiveDirectory: string, options: D
 }
 
 function createFixture(options: DesktopOptions = {}): Fixture {
-    const base = mkdtempSync(join(workspaceRoot, 'release-proof-fixture-'));
+    const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-proof-fixture-'));
     fixtureRoots.push(base);
 
-    const ffmpegSource = createRepository(base, 'ffmpeg', ffmpegRepository, {
-        'BUILD.gn': 'shared_library("ffmpeg") {}\n',
-        'COPYING.LGPLv2.1': 'fixture LGPL source\n',
-        'libavcodec/codec.c': 'int codec(void) { return 1; }\n',
-    });
-    const ffmpegRevision = git(ffmpegSource, ['rev-parse', 'HEAD']);
-    const electronFiles = Object.fromEntries(
-        ELECTRON_FFMPEG_BUILD_INPUTS.map((path) => [path, `fixture Electron input ${path}\n`])
-    );
-    electronFiles.DEPS = `'ffmpeg_revision': '${ffmpegRevision}'\n`;
-    const electronSource = createRepository(base, 'electron', electronRepository, electronFiles);
-    const electronRevision = git(electronSource, ['rev-parse', 'HEAD']);
+    const template = sourceRepositoryTemplateSnapshot();
+    const ffmpegSource = join(base, 'ffmpeg');
+    const electronSource = join(base, 'electron');
+    cloneCachedRepository(template.ffmpegSource, ffmpegSource);
+    cloneCachedRepository(template.electronSource, electronSource);
+    const ffmpegRevision = template.ffmpegRevision;
+    const electronRevision = template.electronRevision;
 
     const contract = structuredClone(ELECTRON_RUNTIME_CONTRACT);
     contract.repository = electronRepository;
@@ -645,6 +675,14 @@ function validate(fixture: Fixture, fileReader?: ReleaseProofFileReader): string
         fileReader,
     }).join('\n');
 }
+
+afterAll(() => {
+    if (sourceRepositoryTemplateRoot !== undefined) {
+        rmSync(sourceRepositoryTemplateRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
+        sourceRepositoryTemplateRoot = undefined;
+        sourceRepositoryTemplate = undefined;
+    }
+});
 
 afterEach(() => {
     for (const root of fixtureRoots.splice(0)) {
