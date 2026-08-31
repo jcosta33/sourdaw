@@ -301,6 +301,44 @@ describe('lane removal', () => {
         }
     });
 
+    it('refuses a strand when the final snapshot registers the same canonical lane twice', () => {
+        const repository = mkdtempSync(join(tmpdir(), 'sourdaw-lane-alias-strand-duplicate-'));
+        const aliasParent = mkdtempSync(join(tmpdir(), 'sourdaw-lane-alias-strand-duplicate-link-'));
+        const alias = join(aliasParent, 'repository');
+        const lane = join(repository, '.agents/worktrees/feature');
+        try {
+            mkdirSync(lane, { recursive: true });
+            symlinkSync(repository, alias, 'dir');
+            const canonicalLane = realpathSync(lane);
+            const first = worktree({
+                path: join(alias, '.agents/worktrees/feature'),
+                locked: true,
+                lockReason: 'active:sourdaw-author',
+            });
+            const duplicate = worktree({
+                path: canonicalLane,
+                locked: true,
+                lockReason: 'active:sourdaw-author',
+            });
+            const { port, calls, receipts } = fakeStrandPort({ root: repository, lane: first });
+            let reads = 0;
+            port.worktrees = () => {
+                reads += 1;
+                return [worktree({ path: repository, branch: 'main' }), first, ...(reads > 2 ? [duplicate] : [])];
+            };
+
+            expect(() => strandLane(canonicalLane, 'duplicate registered identity', port)).toThrow(
+                /identity changed during stranding/
+            );
+            expect(receipts).toEqual([]);
+            expect(calls.some((call) => call.startsWith('remove:'))).toBe(false);
+            expect(calls.some((call) => call.startsWith('branch:-D:'))).toBe(false);
+        } finally {
+            rmSync(aliasParent, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it('removes a clean inactive lane after two stable reads', () => {
         const { port, calls } = fakePort();
 
