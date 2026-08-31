@@ -2,21 +2,21 @@ use serde::{Deserialize, Serialize};
 
 /// Frame ceiling shared with offline rendering: ten minutes at 48 kHz.
 /// An over-long clip is a command error; the PCM `Vec<f32>` is never allocated.
-pub const MAX_DENOISE_SAMPLES: usize = 48_000 * 600;
+pub const MAX_DENOISE_FRAMES: usize = 48_000 * 600;
 
 const BYTES_PER_SAMPLE: usize = 4;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DenoiseRequest {
     pub sample_rate: u32,
-    /// Channel-planar PCM: `[ch0 frames…][ch1 frames…]…`, where
-    /// `frames = samples.len() / channels`.
+    /// Number of channel planes in the PCM payload.
     pub channels: u32,
     pub strength: f64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DenoiseResult {
+    /// Float32 LE PCM in channel-planar layout: `[ch0 frames…][ch1 frames…]…`.
     pub samples: Vec<u8>,
     pub noise_floor_db: f64,
     pub processing_time_ms: u64,
@@ -71,7 +71,9 @@ fn encode_denoise_pcm(samples: &[f32]) -> Vec<u8> {
 
 /// Denoise audio using a noise-floor-keyed downward expander.
 ///
-/// Samples arrive as Float32 little-endian bytes. The DSP pass runs off the
+/// `samples` is Float32 little-endian PCM in channel-planar layout:
+/// `[ch0 frames…][ch1 frames…]…`, where
+/// `frames = samples.len() / request.channels`. The DSP pass runs off the
 /// async worker via `spawn_blocking`.
 ///
 /// This curve is mirrored by the browser fallback in
@@ -177,9 +179,9 @@ fn validate_channel_layout(sample_count: usize, channels: u32) -> Result<usize, 
 }
 
 fn validate_frame_ceiling(frames: usize) -> Result<usize, String> {
-    if frames > MAX_DENOISE_SAMPLES {
+    if frames > MAX_DENOISE_FRAMES {
         return Err(format!(
-            "Denoise clip length {frames} frames exceeds the {MAX_DENOISE_SAMPLES}-frame ceiling"
+            "Denoise clip length {frames} frames exceeds the {MAX_DENOISE_FRAMES}-frame ceiling"
         ));
     }
     Ok(frames)
@@ -468,14 +470,14 @@ mod tests {
 
     #[test]
     fn denoise_frame_ceiling_preserves_stereo_duration() {
-        let stereo_frames = MAX_DENOISE_SAMPLES / 2 + 1;
+        let stereo_frames = MAX_DENOISE_FRAMES / 2 + 1;
         assert_eq!(
             denoise_pcm_frame_count(stereo_frames * 2 * BYTES_PER_SAMPLE, 2).unwrap(),
             stereo_frames
         );
 
         for channels in [1, 2] {
-            let byte_len = (MAX_DENOISE_SAMPLES + 1) * channels * BYTES_PER_SAMPLE;
+            let byte_len = (MAX_DENOISE_FRAMES + 1) * channels * BYTES_PER_SAMPLE;
             let error = denoise_pcm_frame_count(byte_len, channels as u32)
                 .expect_err("frames above the ceiling must be rejected");
             assert!(error.contains("ceiling"), "unexpected error: {error}");
