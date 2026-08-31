@@ -91,6 +91,40 @@ describe('streamOpenAiCompatibleChatCompletion', () => {
         }
     );
 
+    it('defaults first-party max_completion_tokens to 2048 when maxTokens is omitted', async () => {
+        const openaiRuntime: OpenAiCompatibleCloudRuntime = {
+            provider: 'openai',
+            authentication: 'api-key',
+            session_id: 'provider-session-00000000000000000000000000000000',
+            model: 'gpt-4-turbo',
+            base_url: 'https://api.openai.com/v1',
+        };
+        const sse = [
+            'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n',
+            'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
+            'data: [DONE]\n\n',
+        ].join('');
+        const fetchMock = vi
+            .fn<typeof fetch>()
+            .mockResolvedValue(new Response(sse, { status: 200, headers: { 'Content-Type': 'text/event-stream' } }));
+        vi.stubGlobal('fetch', fetchMock);
+
+        await streamOpenAiCompatibleChatCompletion({
+            runtime: openaiRuntime,
+            messages: [{ role: 'user', content: 'help' }],
+            onToken: vi.fn(),
+            signal: new AbortController().signal,
+        });
+
+        const request = fetchMock.mock.calls[0]?.[1];
+        if (!request || typeof request.body !== 'string') {
+            throw new Error('Expected a JSON request body');
+        }
+        const body = JSON.parse(request.body) as Record<string, unknown>;
+        expect(body).toMatchObject({ max_completion_tokens: 2048 });
+        expect(body).not.toHaveProperty('max_tokens');
+    });
+
     it('normalizes the usage-only terminal event without double-emitting text', async () => {
         const sse = [
             'data: {"choices":[{"delta":{"content":"Done"}}]}\n\n',
