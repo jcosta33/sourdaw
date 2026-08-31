@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     createReadyGrinderProcessor,
+    grinderResetCalls,
     grinderSetParamCalls,
     resetGrinderProcessorCalls,
     setGrinderLatencySamplesAfterSetParam,
@@ -61,12 +62,10 @@ describe('GrinderProcessor fallback-control protocol', () => {
 
     it('resets the ready WASM instance on a reset message', async () => {
         const processor = await createReadyGrinderProcessor();
-        const reset = vi.fn();
-        (processor as unknown as { _instance: { reset: () => void } })._instance.reset = reset;
 
         processor.port.onmessage?.({ data: { type: 'reset' } });
 
-        expect(reset).toHaveBeenCalledOnce();
+        expect(grinderResetCalls).toBe(1);
     });
 
     it('drops arbitrary parameters and target identities outside the initialized control schema', async () => {

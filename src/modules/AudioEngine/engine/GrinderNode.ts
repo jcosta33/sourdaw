@@ -333,9 +333,10 @@ export async function createGrinderNode(
             );
         },
         reset() {
-            if (!destroyed) {
-                node.port.postMessage({ type: 'reset' });
+            if (destroyed) {
+                return;
             }
+            node.port.postMessage({ type: 'reset' });
         },
         onMeterData(cb: (data: GrinderMeterData) => void) {
             if (meterRafId !== null) {
