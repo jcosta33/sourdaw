@@ -1,12 +1,13 @@
 import { type ReactElement } from 'react';
 
-import { Play, Pause, Square, Circle, Repeat, Scissors, ListOrdered, Layers } from 'lucide-react';
+import { Play, Pause, Square, Circle, Repeat, Scissors, ListOrdered, Layers, SlidersHorizontal } from 'lucide-react';
 
 import { DawTransportCluster } from '#/components/daw/DawTransportCluster';
 import { LatchButton } from '#/components/daw/LatchButton';
 import { LED } from '#/components/daw/LED';
 import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover';
 import { Slider } from '#/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { executeAppAction } from '#/modules/Command/useCases';
@@ -38,6 +39,134 @@ type TransportControlsProps = {
     punchInEnabled: boolean;
     countInEnabled: boolean;
     countInBars: number;
+    compact?: boolean;
+};
+
+type TransportSettingsContentProps = {
+    includeSecondaryActions: boolean;
+    overdubEnabled: boolean;
+    showOverdub: boolean;
+    metronomeEnabled: boolean;
+    metronomeVolume: number;
+    punchInEnabled: boolean;
+    countInEnabled: boolean;
+    countInBars: number;
+    isPlaying: boolean;
+    isRecording: boolean;
+    onToggleOverdub: () => void;
+    onToggleMetronome: () => void;
+    onSetMetronomeVolume: (value: number) => void;
+    onTogglePunch: () => void;
+    onToggleCountIn: () => void;
+    onCycleCountInBars: () => void;
+};
+
+const TransportSettingsContent = ({
+    includeSecondaryActions,
+    overdubEnabled,
+    showOverdub,
+    metronomeEnabled,
+    metronomeVolume,
+    punchInEnabled,
+    countInEnabled,
+    countInBars,
+    isPlaying,
+    isRecording,
+    onToggleOverdub,
+    onToggleMetronome,
+    onSetMetronomeVolume,
+    onTogglePunch,
+    onToggleCountIn,
+    onCycleCountInBars,
+}: TransportSettingsContentProps): ReactElement => {
+    return (
+        <div className="space-y-2">
+            <p className="px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-tertiary">
+                Transport settings
+            </p>
+            {includeSecondaryActions && showOverdub ? (
+                <LatchButton
+                    active={overdubEnabled}
+                    variant="cyan"
+                    size="sm"
+                    aria-label="Overdub"
+                    aria-pressed={overdubEnabled}
+                    onClick={onToggleOverdub}
+                    className="w-full justify-start"
+                >
+                    <Layers className="size-3.5" aria-hidden="true" />
+                    Overdub
+                </LatchButton>
+            ) : null}
+            {includeSecondaryActions ? (
+                <LatchButton
+                    active={metronomeEnabled}
+                    variant="cyan"
+                    size="sm"
+                    aria-label="Metronome"
+                    aria-pressed={metronomeEnabled}
+                    onClick={onToggleMetronome}
+                    className="w-full justify-start"
+                >
+                    Metronome
+                </LatchButton>
+            ) : null}
+            {metronomeEnabled ? (
+                <Row className="gap-2 px-1 py-1">
+                    <span className="text-[11px] text-text-secondary">Volume</span>
+                    <Slider
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        value={[metronomeVolume]}
+                        onValueChange={(val) => onSetMetronomeVolume(val[0] ?? 0)}
+                        className="w-24 h-3"
+                        aria-label={`Metronome volume: ${Math.round(metronomeVolume * 100)}%`}
+                    />
+                </Row>
+            ) : null}
+            {includeSecondaryActions ? (
+                <LatchButton
+                    active={punchInEnabled}
+                    variant="amber"
+                    size="sm"
+                    aria-label="Punch in/out"
+                    aria-pressed={punchInEnabled}
+                    disabled={isPlaying || isRecording}
+                    onClick={onTogglePunch}
+                    className="w-full justify-start"
+                >
+                    <Scissors className="size-3.5" aria-hidden="true" />
+                    Punch in/out
+                </LatchButton>
+            ) : null}
+            {includeSecondaryActions ? (
+                <LatchButton
+                    active={countInEnabled}
+                    variant="cyan"
+                    size="sm"
+                    aria-label="Count-in"
+                    aria-pressed={countInEnabled}
+                    onClick={onToggleCountIn}
+                    className="w-full justify-start"
+                >
+                    <ListOrdered className="size-3.5" aria-hidden="true" />
+                    Count-in
+                </LatchButton>
+            ) : null}
+            {countInEnabled ? (
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={onCycleCountInBars}
+                    aria-label={`Count-in bars: ${countInBars}. Click to cycle.`}
+                    className="w-full justify-between"
+                >
+                    Count-in bars <span>{countInBars}</span>
+                </Button>
+            ) : null}
+        </div>
+    );
 };
 
 export const TransportControls = ({
@@ -53,6 +182,7 @@ export const TransportControls = ({
     punchInEnabled,
     countInEnabled,
     countInBars,
+    compact = false,
 }: TransportControlsProps): ReactElement => {
     const setPunchEnabled = (): void => {
         void executeAppAction({
@@ -91,6 +221,26 @@ export const TransportControls = ({
         }
         return 'Record';
     };
+    const renderSettingsContent = (includeSecondaryActions: boolean): ReactElement => (
+        <TransportSettingsContent
+            includeSecondaryActions={includeSecondaryActions}
+            overdubEnabled={overdubEnabled}
+            showOverdub={showOverdub}
+            metronomeEnabled={metronomeEnabled}
+            metronomeVolume={metronomeVolume}
+            punchInEnabled={punchInEnabled}
+            countInEnabled={countInEnabled}
+            countInBars={countInBars}
+            isPlaying={isPlaying}
+            isRecording={isRecording}
+            onToggleOverdub={toggleOverdub}
+            onToggleMetronome={toggleMetronome}
+            onSetMetronomeVolume={setMetronomeVolume}
+            onTogglePunch={setPunchEnabled}
+            onToggleCountIn={toggleCountIn}
+            onCycleCountInBars={cycleCountInBars}
+        />
+    );
 
     return (
         <DawTransportCluster tone="well" role="group" aria-label="Playback controls">
@@ -172,7 +322,7 @@ export const TransportControls = ({
                 <TooltipContent>Loop (L)</TooltipContent>
             </Tooltip>
 
-            {showOverdub ? (
+            {!compact && showOverdub ? (
                 <Tooltip>
                     <TooltipTrigger asChild>
                         <LatchButton
@@ -190,36 +340,38 @@ export const TransportControls = ({
                 </Tooltip>
             ) : null}
 
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <LatchButton
-                        active={metronomeEnabled}
-                        variant="cyan"
-                        size="icon"
-                        aria-label="Metronome"
-                        aria-pressed={metronomeEnabled}
-                        onClick={toggleMetronome}
-                        data-testid="transport-metronome"
-                    >
-                        <svg
-                            className="size-3.5"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            aria-hidden="true"
+            {!compact ? (
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <LatchButton
+                            active={metronomeEnabled}
+                            variant="cyan"
+                            size="icon"
+                            aria-label="Metronome"
+                            aria-pressed={metronomeEnabled}
+                            onClick={toggleMetronome}
+                            data-testid="transport-metronome"
                         >
-                            <path d="M12 2L6 22h12L12 2z" />
-                            <path d="M12 12l4-8" />
-                        </svg>
-                    </LatchButton>
-                </TooltipTrigger>
-                <TooltipContent>Metronome (M)</TooltipContent>
-            </Tooltip>
+                            <svg
+                                className="size-3.5"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                aria-hidden="true"
+                            >
+                                <path d="M12 2L6 22h12L12 2z" />
+                                <path d="M12 12l4-8" />
+                            </svg>
+                        </LatchButton>
+                    </TooltipTrigger>
+                    <TooltipContent>Metronome (M)</TooltipContent>
+                </Tooltip>
+            ) : null}
 
-            {metronomeEnabled ? (
+            {!compact && metronomeEnabled ? (
                 <Tooltip>
                     <TooltipTrigger asChild>
                         <Row className="px-2 py-1">
@@ -238,41 +390,46 @@ export const TransportControls = ({
                 </Tooltip>
             ) : null}
 
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <LatchButton
-                        active={punchInEnabled}
-                        variant="amber"
-                        size="icon"
-                        aria-label="Punch in/out"
-                        aria-pressed={punchInEnabled}
-                        disabled={isPlaying || isRecording}
-                        onClick={setPunchEnabled}
-                        data-testid="transport-punch"
-                    >
-                        <Scissors className="size-3.5" aria-hidden="true" />
-                    </LatchButton>
-                </TooltipTrigger>
-                <TooltipContent>Punch In/Out (I)</TooltipContent>
-            </Tooltip>
+            {!compact ? (
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <LatchButton
+                            active={punchInEnabled}
+                            variant="amber"
+                            size="icon"
+                            aria-label="Punch in/out"
+                            aria-pressed={punchInEnabled}
+                            disabled={isPlaying || isRecording}
+                            onClick={setPunchEnabled}
+                            data-testid="transport-punch"
+                        >
+                            <Scissors className="size-3.5" aria-hidden="true" />
+                        </LatchButton>
+                    </TooltipTrigger>
+                    <TooltipContent>Punch In/Out (I)</TooltipContent>
+                </Tooltip>
+            ) : null}
 
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <LatchButton
-                        active={countInEnabled}
-                        variant="cyan"
-                        size="icon"
-                        aria-label="Count-in"
-                        aria-pressed={countInEnabled}
-                        onClick={toggleCountIn}
-                        data-testid="transport-countin"
-                    >
-                        <ListOrdered className="size-3.5" aria-hidden="true" />
-                    </LatchButton>
-                </TooltipTrigger>
-                <TooltipContent>Count-in</TooltipContent>
-            </Tooltip>
-            {countInEnabled ? (
+            {!compact ? (
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <LatchButton
+                            active={countInEnabled}
+                            variant="cyan"
+                            size="icon"
+                            aria-label="Count-in"
+                            aria-pressed={countInEnabled}
+                            onClick={toggleCountIn}
+                            data-testid="transport-countin"
+                        >
+                            <ListOrdered className="size-3.5" aria-hidden="true" />
+                        </LatchButton>
+                    </TooltipTrigger>
+                    <TooltipContent>Count-in</TooltipContent>
+                </Tooltip>
+            ) : null}
+
+            {!compact && countInEnabled ? (
                 <Tooltip>
                     <TooltipTrigger asChild>
                         <TransportValuePill
@@ -286,6 +443,26 @@ export const TransportControls = ({
                     <TooltipContent>Count-in bars (click to cycle 1→2→4)</TooltipContent>
                 </Tooltip>
             ) : null}
+            <Popover key="transport-settings">
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <PopoverTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                aria-label="Transport settings"
+                                data-testid="transport-settings"
+                            >
+                                <SlidersHorizontal className="size-3.5" aria-hidden="true" />
+                            </Button>
+                        </PopoverTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>Transport settings</TooltipContent>
+                </Tooltip>
+                <PopoverContent align="center" aria-label="Transport settings">
+                    {renderSettingsContent(true)}
+                </PopoverContent>
+            </Popover>
         </DawTransportCluster>
     );
 };

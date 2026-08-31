@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
@@ -83,7 +83,10 @@ vi.mock('../Transport/AutoScrollToggle', () => ({
 vi.mock('../Transport/PanelToggles', () => ({
     PanelToggles: () => (
         <div data-testid="panel-toggles">
-            <button data-testid="panel-toggle-button">Toggle</button>
+            <button data-testid="panel-toggle-button">
+                <svg data-testid="panel-toggle-icon" />
+                Toggle
+            </button>
         </div>
     ),
 }));
@@ -162,6 +165,12 @@ let voiceInputAvailable = false;
  */
 const DRAG_REGION_SELECTOR = selectorDeclaring('app-region', 'drag');
 const TITLEBAR_INSET_SELECTOR = selectorDeclaring('margin-left', 'env(titlebar-area-x, 0px)');
+const VIEWPORT_FULL_WIDTH = 1440;
+const VIEWPORT_COMPACT_WIDTH = 1024;
+
+const setViewportWidth = (width: number): void => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width });
+};
 
 describe('TransportBar', () => {
     beforeEach(() => {
@@ -181,6 +190,7 @@ describe('TransportBar', () => {
         undoState.canRedo = false;
         projectState.name = 'Test';
         projectState.dirty = false;
+        setViewportWidth(VIEWPORT_FULL_WIDTH);
         vi.mocked(useStore).mockImplementation((store, defaultValue) => {
             if (store === voiceStatusStore) {
                 return voiceStatus;
@@ -266,6 +276,15 @@ describe('TransportBar', () => {
         renderTransportBar();
 
         fireEvent.doubleClick(screen.getByTestId('panel-toggle-button'));
+
+        expect(windowChromeMocks.toggleMaximize).not.toHaveBeenCalled();
+    });
+
+    it('does not toggle maximize when the double-click lands on an interactive SVG child', () => {
+        windowChromeMocks.frameless = true;
+        renderTransportBar();
+
+        fireEvent.doubleClick(screen.getByTestId('panel-toggle-icon'));
 
         expect(windowChromeMocks.toggleMaximize).not.toHaveBeenCalled();
     });
@@ -371,12 +390,14 @@ describe('TransportBar', () => {
         renderTransportBar();
 
         // showOverdub requires an armed MIDI track; audio-only → no overdub control.
+        fireEvent.click(screen.getByRole('button', { name: 'Transport settings' }));
         expect(screen.queryByRole('button', { name: /overdub/i })).not.toBeInTheDocument();
     });
 
     it('hides the overdub control when no tracks are armed', () => {
         renderTransportBar();
 
+        fireEvent.click(screen.getByRole('button', { name: 'Transport settings' }));
         expect(screen.queryByRole('button', { name: /overdub/i })).not.toBeInTheDocument();
     });
 
@@ -418,5 +439,72 @@ describe('TransportBar', () => {
 
         expect(splitControl).toHaveClass('gap-0', 'shrink-0');
         expect(Array.from(splitControl.children)).toEqual([projectName, menuTrigger]);
+        expect(screen.queryByRole('button', { name: 'Project controls' })).not.toBeInTheDocument();
+    });
+
+    it('admits compact controls from the viewport width rather than the header contents', () => {
+        setViewportWidth(VIEWPORT_COMPACT_WIDTH);
+        renderTransportBar();
+
+        expect(screen.getByRole('button', { name: 'Project controls' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'More transport controls' })).toBeInTheDocument();
+        expect(screen.queryByTestId('arrangement-selector')).not.toBeInTheDocument();
+    });
+
+    it('switches into compact mode when the viewport shrinks across the compact boundary', () => {
+        renderTransportBar();
+
+        expect(screen.queryByRole('button', { name: 'More transport controls' })).not.toBeInTheDocument();
+
+        setViewportWidth(VIEWPORT_COMPACT_WIDTH);
+        act(() => {
+            window.dispatchEvent(new Event('resize'));
+        });
+
+        expect(screen.getByRole('button', { name: 'More transport controls' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Project controls' })).toBeInTheDocument();
+    });
+
+    it('restores focus when the focused transport control unmounts during a mode change', () => {
+        renderTransportBar();
+        screen.getByRole('menu', { name: 'Arrangement menu' }).remove();
+        screen.getByTestId('transport-metronome').focus();
+
+        setViewportWidth(VIEWPORT_COMPACT_WIDTH);
+        act(() => {
+            window.dispatchEvent(new Event('resize'));
+        });
+
+        expect(screen.getByRole('button', { name: 'Stop' })).toHaveFocus();
+    });
+
+    it('keeps focus on a transport control that remains mounted during a mode change', () => {
+        renderTransportBar();
+        screen.getByRole('button', { name: 'Play' }).focus();
+
+        setViewportWidth(VIEWPORT_COMPACT_WIDTH);
+        act(() => {
+            window.dispatchEvent(new Event('resize'));
+        });
+
+        expect(screen.getByRole('button', { name: 'Play' })).toHaveFocus();
+    });
+
+    it('keeps focus in portaled transport settings during a mode change', () => {
+        renderTransportBar();
+        screen.getByRole('menu', { name: 'Arrangement menu' }).remove();
+        fireEvent.click(screen.getByRole('button', { name: 'Transport settings' }));
+
+        const settingsDialog = screen.getByRole('dialog', { name: 'Transport settings' });
+        expect(settingsDialog).toBeInTheDocument();
+
+        setViewportWidth(VIEWPORT_COMPACT_WIDTH);
+        act(() => {
+            window.dispatchEvent(new Event('resize'));
+        });
+
+        expect(settingsDialog).toBeInTheDocument();
+        expect(settingsDialog.contains(document.activeElement)).toBe(true);
+        expect(screen.getByRole('button', { name: 'Stop' })).not.toHaveFocus();
     });
 });
