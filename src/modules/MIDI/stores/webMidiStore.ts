@@ -17,6 +17,7 @@ export const defaultWebMidiState: WebMidiState = {
     isSupported: false,
     inputs: [],
     selectedInputId: null,
+    enumerationError: null,
 };
 
 export const webMidiStore = createStore<WebMidiState>({
