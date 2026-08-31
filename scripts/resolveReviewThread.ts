@@ -213,9 +213,7 @@ export type ReviewResolutionTrustedLauncher = {
 export type ReviewResolutionRecoveryClock = {
     now: () => number;
 };
-export type ReviewResolutionRecoveryResult =
-    | { kind: 'reconciled'; inspection: ReviewThreadInspection }
-    | { kind: 'retiredObsoleteHead'; inspection: ReviewThreadInspection; ownerHead: string; observedHead: string };
+export type ReviewResolutionRecoveryResult = { kind: 'reconciled'; inspection: ReviewThreadInspection };
 export type ResolveReviewThreadPort = {
     inspect: (number: number, threadId: string) => ReviewThreadInspection;
     inspectPullRequestReview: (
@@ -3207,6 +3205,11 @@ export function recoverPullRequestReviewResolutionLock<Value>(
         );
     }
     if (owner.version === 3 || owner.version === 4) {
+        if (owner.legacyUnjournaled === true) {
+            fail(
+                'review-resolution recovery refuses an unjournaled legacy v2 lock owner without positive landed-mutation proof'
+            );
+        }
         if (owner.mutation.phase !== 'idle') {
             fail(`review-resolution recovery refuses legacy v${owner.version} lock owner without a v5 replay receipt`);
         }
@@ -4068,29 +4071,38 @@ function hasRecoveredReviewResolutionMutation(
 }
 
 export function reviewResolutionRecoveryResult(
-    number: number,
     owner: ReviewResolutionLockOwner,
-    inspection: ReviewThreadInspection,
-    port: ResolveReviewThreadPort
+    inspection: ReviewThreadInspection
 ): ReviewResolutionRecoveryResult {
     assertV5ReviewResolutionLockOwner(owner);
-    const thread = inspection.thread;
-    if (
-        thread !== null &&
-        inspection.head !== owner.head &&
-        owner.mutation.phase !== 'idle' &&
-        !hasRecoveredReviewResolutionMutation(
-            number,
-            owner,
-            inspection,
-            resolutionReviewContext(inspection.pullRequestId, owner.threadId, owner.head),
-            thread,
-            port
-        )
-    ) {
-        return { kind: 'retiredObsoleteHead', inspection, ownerHead: owner.head, observedHead: inspection.head };
-    }
     return { kind: 'reconciled', inspection };
+}
+
+export function retireUnseenReviewResolutionLockOwnerState(
+    number: number,
+    owner: ReviewResolutionLockOwner,
+    port: ResolveReviewThreadPort
+): ReviewThreadInspection {
+    assertV5ReviewResolutionLockOwner(owner);
+    if (
+        owner.mutation.phase !== 'createPendingReview' &&
+        owner.mutation.phase !== 'createPendingReviewSettlement' &&
+        owner.mutation.phase !== 'replyDone' &&
+        owner.mutation.phase !== 'replyDoneSettlement'
+    ) {
+        fail('review-resolution retirement requires an unseen createPendingReview or replyDone mutation');
+    }
+    const first = inspectReviewResolutionRecovery(number, owner, port);
+    const firstContext = resolutionReviewContext(first.pullRequestId, owner.threadId, owner.head);
+    if (hasRecoveredReviewResolutionMutation(number, owner, first, firstContext, first.thread!, port)) {
+        fail('review-resolution retirement found a matching mutation during the first remote inspection');
+    }
+    const second = inspectReviewResolutionRecovery(number, owner, port);
+    const secondContext = resolutionReviewContext(second.pullRequestId, owner.threadId, owner.head);
+    if (hasRecoveredReviewResolutionMutation(number, owner, second, secondContext, second.thread!, port)) {
+        fail('review-resolution retirement found a matching mutation during the second remote inspection');
+    }
+    return second;
 }
 
 function continueRecoveredReviewResolution(
@@ -4291,10 +4303,11 @@ function recoverCreatePendingReviewSettlement(
     if (inspection.head !== owner.head) {
         if (recoveredReviewIds.length > 0) {
             assertExactRecoveredMutationAfterHeadDrift(number, owner, inspection, context, inspection.thread!);
+            return inspection;
         }
-        return inspection;
+        fail(unreconciledReviewResolutionMutationMessage(number, mutation));
     }
-    if (mutation.replayed && clock.now() < mutation.settleAtMs) {
+    if (mutation.replayed) {
         fail(unreconciledReviewResolutionMutationMessage(number, mutation));
     }
     if (recoveredReviewIds.length > 0) {
@@ -4338,10 +4351,11 @@ function recoverReplyDoneSettlement(
     if (inspection.head !== owner.head) {
         if (recoveredReplies.length > 0) {
             assertExactRecoveredMutationAfterHeadDrift(number, owner, inspection, context, inspection.thread!);
+            return inspection;
         }
-        return inspection;
+        fail(unreconciledReviewResolutionMutationMessage(number, mutation));
     }
-    if (mutation.replayed && clock.now() < mutation.settleAtMs) {
+    if (mutation.replayed) {
         fail(unreconciledReviewResolutionMutationMessage(number, mutation));
     }
     if (recoveredReplies.length > 0) {
@@ -4396,7 +4410,7 @@ export function recoverReviewResolutionLockOwnerState(
                 if (inspection.head === owner.head) {
                     preserveCreatePendingReviewSettlement(number, recoveryPrimaryRoot, inspection, mutation, clock);
                 }
-                return inspection;
+                fail(unreconciledReviewResolutionMutationMessage(number, mutation));
             }
             if (inspection.head !== owner.head) {
                 assertExactRecoveredMutationAfterHeadDrift(number, owner, inspection, context, inspection.thread!);
@@ -4409,7 +4423,7 @@ export function recoverReviewResolutionLockOwnerState(
                 if (inspection.head === owner.head) {
                     preserveReplyDoneSettlement(number, recoveryPrimaryRoot, inspection, mutation, clock);
                 }
-                return inspection;
+                fail(unreconciledReviewResolutionMutationMessage(number, mutation));
             }
             if (inspection.head !== owner.head) {
                 assertExactRecoveredMutationAfterHeadDrift(number, owner, inspection, context, inspection.thread!);

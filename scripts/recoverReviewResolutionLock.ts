@@ -19,6 +19,7 @@ import {
     inspectReviewThread,
     requiredTrustedReviewResolutionOriginCommit,
     recoverReviewResolutionLockOwnerState,
+    retireUnseenReviewResolutionLockOwnerState,
     reviewResolutionRecoveryResult,
     recoverPullRequestReviewResolutionLock,
     runDetachedReviewResolutionWorker,
@@ -28,11 +29,13 @@ import {
     type ReviewResolutionTrustedLauncher,
     type ReviewResolutionLockOwner,
     type ReviewResolutionRecoveryResult,
+    type ReviewThreadInspection,
 } from './resolveReviewThread.ts';
 
 export type RecoverReviewResolutionLockArgs = {
     number?: number;
     owner?: string;
+    retireUnseen: boolean;
     help: boolean;
 };
 
@@ -85,7 +88,7 @@ type ResolvedReviewResolutionRecoveryDependencies = {
     ) => Value;
 };
 
-const usage = 'usage: pnpm review:resolve:recover <pr-number> --owner <lock-object-id>';
+const usage = 'usage: pnpm review:resolve:recover <pr-number> --owner <lock-object-id> [--retire-unseen]';
 
 function resolveRecoveryDependencies(
     dependencies: ReviewResolutionRecoveryDependencies | undefined
@@ -139,11 +142,12 @@ export function parseRecoverReviewResolutionLockArgs(args: string[]): RecoverRev
         if (args.length !== 1) {
             fail('--help takes no other arguments');
         }
-        return { help: true };
+        return { help: true, retireUnseen: false };
     }
     if (
-        args.length !== 3 ||
+        (args.length !== 3 && args.length !== 4) ||
         args[1] !== '--owner' ||
+        (args.length === 4 && args[3] !== '--retire-unseen') ||
         args[0] === undefined ||
         args[2] === undefined ||
         !/^[1-9][0-9]*$/.test(args[0]) ||
@@ -155,7 +159,7 @@ export function parseRecoverReviewResolutionLockArgs(args: string[]): RecoverRev
     if (!Number.isSafeInteger(number)) {
         fail(usage);
     }
-    return { number, owner: args[2].toLowerCase(), help: false };
+    return { number, owner: args[2].toLowerCase(), retireUnseen: args[3] === '--retire-unseen', help: false };
 }
 
 function recoverySummary(
@@ -165,9 +169,6 @@ function recoverySummary(
     port: ResolveReviewThreadPort
 ): string {
     const inspection = result.inspection;
-    if (result.kind === 'retiredObsoleteHead') {
-        return `review-resolution-lock-retired-obsolete-head:${number}:${owner.threadId}:${result.ownerHead}:${result.observedHead}`;
-    }
     assertRecoverableReviewResolutionLockOwner(number, owner, inspection, port);
     const thread = inspection.thread;
     if (thread === null) {
@@ -175,6 +176,14 @@ function recoverySummary(
     }
     const resolutionState = thread.isResolved ? 'resolved' : 'unresolved';
     return `review-resolution-lock-recovered:${number}:${owner.threadId}:${owner.head}:${inspection.head}:${resolutionState}:${inspection.pendingReviews.length}`;
+}
+
+function retirementSummary(
+    number: number,
+    owner: ReviewResolutionLockOwner,
+    inspection: ReviewThreadInspection
+): string {
+    return `review-resolution-lock-retired-unseen:${number}:${owner.threadId}:${owner.head}:${inspection.head}`;
 }
 
 async function runRecoverReviewResolutionLockCliResolved(
@@ -193,19 +202,24 @@ async function runRecoverReviewResolutionLockCliResolved(
         assertRequiredRepository(resolvedDependencies.repositoryName(auth.session, primaryRoot));
         const gh = resolvedDependencies.gh(auth.session, primaryRoot);
         const port = resolvedDependencies.createPort(auth.session, primaryRoot, resolvedDependencies.inspectThread, gh);
-        const summary = resolvedDependencies.recoverLock(primaryRoot, parsed.number, parsed.owner, (lockOwner) =>
-            recoverySummary(
+        const summary = resolvedDependencies.recoverLock(primaryRoot, parsed.number, parsed.owner, (lockOwner) => {
+            if (parsed.retireUnseen) {
+                return retirementSummary(
+                    parsed.number!,
+                    lockOwner,
+                    retireUnseenReviewResolutionLockOwnerState(parsed.number!, lockOwner, port)
+                );
+            }
+            return recoverySummary(
                 parsed.number!,
                 lockOwner,
                 reviewResolutionRecoveryResult(
-                    parsed.number!,
                     lockOwner,
-                    recoverReviewResolutionLockOwnerState(parsed.number!, lockOwner, port, resolvedDependencies.clock),
-                    port
+                    recoverReviewResolutionLockOwnerState(parsed.number!, lockOwner, port, resolvedDependencies.clock)
                 ),
                 port
-            )
-        );
+            );
+        });
         console.log(summary);
         return 0;
     } finally {
