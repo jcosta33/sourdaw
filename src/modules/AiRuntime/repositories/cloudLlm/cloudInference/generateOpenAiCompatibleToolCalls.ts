@@ -4,6 +4,7 @@ import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { type ToolCallResult } from '../../../transformers/toolCallParser';
 import { type OpenAiCompatibleCloudRuntime } from '../cloudSession';
 
+import { buildWireToolNameCodec } from './buildWireToolNameCodec';
 import { isGpt56FamilyModel } from './openAiModelFamilies';
 import { requestOpenAiCompatibleProvider } from './requestOpenAiCompatibleProvider';
 
@@ -59,7 +60,7 @@ function parseArguments(value: unknown): Record<string, unknown> | null {
     }
 }
 
-function parseToolCalls(response: unknown): ToolCallResult[] {
+function parseToolCalls(response: unknown, decodeWireName: (wireName: string) => string): ToolCallResult[] {
     if (!isRecord(response) || !Array.isArray(response.choices)) {
         throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-planning response');
     }
@@ -115,7 +116,11 @@ function parseToolCalls(response: unknown): ToolCallResult[] {
         ) {
             throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-call batch');
         }
-        results.push({ ...(typeof id === 'string' ? { id } : {}), name, arguments: arguments_ });
+        results.push({
+            ...(typeof id === 'string' ? { id } : {}),
+            name: decodeWireName(name),
+            arguments: arguments_,
+        });
     }
     if (finishReason === 'tool_calls' && results.length === 0) {
         throw new ToolPlanningRejectedError('Hosted AI returned an incomplete tool-call batch');
@@ -130,13 +135,20 @@ export async function generateOpenAiCompatibleToolCalls({
     toolSchemas,
     signal,
 }: GenerateOpenAiCompatibleToolCallsInput): Promise<ToolCallResult[]> {
+    const codec = buildWireToolNameCodec(toolSchemas);
     const body = JSON.stringify({
         model: runtime.model,
         messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userMessage },
         ],
-        tools: toolSchemas,
+        tools: toolSchemas.map((schema) => ({
+            ...schema,
+            function: {
+                ...schema.function,
+                name: codec.encode(schema.function.name),
+            },
+        })),
         tool_choice: 'auto',
         n: 1,
         stream: false,
@@ -168,7 +180,7 @@ export async function generateOpenAiCompatibleToolCalls({
         }
         throw error;
     }
-    return parseToolCalls(payload);
+    return parseToolCalls(payload, codec.decode);
 }
 
 function hasErrorName(value: unknown, name: string): boolean {
