@@ -26,8 +26,11 @@ import stereoWidenerDsp from './dsp/stereo-widener.dsp?raw';
 import tapeDelayDsp from './dsp/tape-delay.dsp?raw';
 import zitaRev1Dsp from './dsp/zita-rev1.dsp?raw';
 import { registerFaustDSP } from './registerFaustDSP';
+import { registerSupersawUnison } from './registerSupersawUnison';
 
 export function registerBuiltinFaustDSP(): void {
+    registerSupersawUnison();
+
     // ── Zita-Rev1 algorithmic reverb ──────────────────────────
     registerFaustDSP('Zita-Rev1 Reverb', zitaRev1Dsp, [
         {
