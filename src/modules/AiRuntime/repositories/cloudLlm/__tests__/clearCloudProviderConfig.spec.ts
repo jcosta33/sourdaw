@@ -170,8 +170,8 @@ describe('clearCloudProviderConfig', () => {
         await firstProbeStarted;
         const firstRejection = expect(firstConnect).rejects.toThrow('Cloud credential replacement was superseded');
         await clearCloudProviderConfig();
-        releaseFirstProbe();
         await firstRejection;
+        releaseFirstProbe();
 
         expect(getCloudProviderRuntime()).toBeNull();
         expect(hostedLlmProviderStatusStore.value).toBeNull();

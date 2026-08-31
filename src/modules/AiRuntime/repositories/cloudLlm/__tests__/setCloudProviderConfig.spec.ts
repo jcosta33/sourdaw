@@ -524,8 +524,8 @@ describe('setCloudProviderConfig', () => {
             authentication: 'api-key',
             apiKey: 'sk-second',
         });
-        releaseFirstProbe();
         await firstRejection;
+        releaseFirstProbe();
 
         expect(getCloudProviderRuntime()).toMatchObject({
             provider: 'anthropic',
