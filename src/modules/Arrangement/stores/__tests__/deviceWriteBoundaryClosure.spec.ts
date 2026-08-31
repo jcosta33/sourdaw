@@ -1422,6 +1422,7 @@ describe('device write boundary closure', () => {
             'src/modules/Arrangement/commentToken.ts',
             '// persistDeviceParam is documented here\nexport const value = 1;'
         );
+        expect(parsed.code).toBe('export const value = 1;\n');
         expect(parsed.code).not.toContain('persistDeviceParam');
         const counts = countByPath([parsed], SINK_DEFINITIONS['persistence-runtime']);
         expect(counts['src/modules/Arrangement/commentToken.ts']).toBeUndefined();
