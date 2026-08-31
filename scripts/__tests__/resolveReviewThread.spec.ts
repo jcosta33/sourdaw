@@ -1808,17 +1808,38 @@ describe('review thread resolution', () => {
     it('rejects retired-unseen recovery arguments before inspecting GitHub', async () => {
         const session: GhSession = { configDir: process.cwd(), env: {}, dispose() {} };
         const fake = fakePort();
+        const calls: string[] = [];
         const dependencies = {
-            trustedPrimaryRoot: () => process.cwd(),
-            authenticateAuthor: async () => ({ minted: { actorNodeId: AUTHOR_BOT_NODE_ID }, session }),
-            repositoryName: () => REQUIRED_REPOSITORY,
-            gh: () => () => '',
-            createPort: () => fake.port,
+            trustedPrimaryRoot: () => {
+                calls.push('trustedPrimaryRoot');
+                return process.cwd();
+            },
+            authenticateAuthor: async () => {
+                calls.push('authenticateAuthor');
+                return { minted: { actorNodeId: AUTHOR_BOT_NODE_ID }, session };
+            },
+            repositoryName: () => {
+                calls.push('repositoryName');
+                return REQUIRED_REPOSITORY;
+            },
+            gh: () => {
+                calls.push('gh');
+                return () => '';
+            },
+            createPort: () => {
+                calls.push('createPort');
+                return fake.port;
+            },
+            recoverLock: () => {
+                calls.push('recoverLock');
+                throw new Error('unsupported recovery arguments must not recover a lock');
+            },
         } satisfies Parameters<typeof runRecoverReviewResolutionLockCli>[1];
 
         await expect(
             runRecoverReviewResolutionLockCli(['42', '--owner', 'a'.repeat(40), '--retire-unseen'], dependencies)
         ).rejects.toThrow(/usage: pnpm review:resolve:recover/);
+        expect(calls).toEqual([]);
         expect(fake.calls).toEqual([]);
     });
 
@@ -2442,6 +2463,24 @@ describe('review thread resolution', () => {
                 inspectWindowsProcessRows: () => [
                     { pid: 4100, parentPid: 1, startedAt: '2026-08-30T13:00:00.000000+000' },
                     { pid: 4101, parentPid: 4100, startedAt: '2026-08-30T13:00:01.000000+000' },
+                    { pid: 4102, parentPid: 4101, startedAt: '2026-08-30T12:00:02.000000+000' },
+                ],
+            })
+        ).toBe(true);
+        expect(
+            reviewResolutionOwnerFenceIsLive(ownerFence, {
+                inspectWindowsProcessRows: () => [
+                    { pid: 4100, parentPid: 1, startedAt: '2026-08-30T13:00:00.000000+000' },
+                    { pid: 4101, parentPid: 4100, startedAt: '2026-08-30T13:00:01.000000+000' },
+                ],
+            })
+        ).toBe(false);
+        expect(
+            reviewResolutionOwnerFenceIsLive(ownerFence, {
+                inspectWindowsProcessRows: () => [
+                    { pid: 4100, parentPid: 1, startedAt: '2026-08-30T13:00:00.000000+000' },
+                    { pid: 4101, parentPid: 4100, startedAt: '2026-08-30T13:00:01.000000+000' },
+                    { pid: 4102, parentPid: 4101, startedAt: '2026-08-30T13:00:02.000000+000' },
                 ],
             })
         ).toBe(false);
@@ -6627,6 +6666,7 @@ describe('review thread resolution', () => {
     });
     it('parses review-resolution recovery arguments and refuses non-bootstrap execution by default', async () => {
         const ownerOid = 'a'.repeat(40);
+        const sha256OwnerOid = 'b'.repeat(64);
         expect(parseRecoverReviewResolutionLockArgs(['42', '--owner', ownerOid])).toMatchObject({
             number: 42,
             owner: ownerOid,
@@ -6634,6 +6674,10 @@ describe('review thread resolution', () => {
         expect(parseRecoverReviewResolutionLockArgs(['42', '--owner', ownerOid.toUpperCase()])).toMatchObject({
             number: 42,
             owner: ownerOid,
+        });
+        expect(parseRecoverReviewResolutionLockArgs(['42', '--owner', sha256OwnerOid.toUpperCase()])).toMatchObject({
+            number: 42,
+            owner: sha256OwnerOid,
         });
         for (const args of [
             [],
@@ -6646,6 +6690,13 @@ describe('review thread resolution', () => {
         await expect(runRecoverReviewResolutionLockCli(['42', '--owner', ownerOid])).rejects.toThrow(
             /protected primary checkout launcher/i
         );
+        await expect(
+            runRecoverReviewResolutionLockCli(['42', '--owner', sha256OwnerOid], {
+                trustedPrimaryRoot: () => {
+                    throw new Error('64-hex owner reached recovery bootstrap');
+                },
+            })
+        ).rejects.toThrow(/64-hex owner reached recovery bootstrap/);
     });
     it.each([
         ['reviewer actor', REVIEWER_BOT_NODE_ID],

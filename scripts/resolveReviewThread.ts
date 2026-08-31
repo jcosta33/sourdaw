@@ -2889,18 +2889,25 @@ function isLiveWindowsProcessTree(
         const visited = new Set<number>();
         let current: WindowsProcessRow | undefined = candidate;
         while (current !== undefined && !visited.has(current.pid)) {
-            if (current.parentPid === ownerFence.rootPid) {
-                const candidateStartedAt = parseWindowsProcessStartedAt(current.startedAt);
-                if (candidateStartedAt === undefined) {
+            const currentStartedAt = parseWindowsProcessStartedAt(current.startedAt);
+            if (currentStartedAt === undefined) {
+                return true;
+            }
+            const parent = rowsByPid.get(current.parentPid);
+            if (parent !== undefined) {
+                const parentStartedAt = parseWindowsProcessStartedAt(parent.startedAt);
+                if (parentStartedAt === undefined || currentStartedAt < parentStartedAt) {
                     return true;
                 }
-                if (rootStartedAt !== undefined && candidateStartedAt > rootStartedAt) {
+            }
+            if (current.parentPid === ownerFence.rootPid) {
+                if (rootStartedAt !== undefined && currentStartedAt > rootStartedAt) {
                     break;
                 }
                 return true;
             }
             visited.add(current.pid);
-            current = rowsByPid.get(current.parentPid);
+            current = parent;
         }
     }
     return false;
@@ -2989,7 +2996,7 @@ function currentPosixProcessGroupFence(
     pid: number,
     env: NodeJS.ProcessEnv = process.env
 ): ReviewResolutionLockOwnerFence {
-    const invariantEnv = invariantPosixProcessIdentityEnv(env);
+    const invariantEnv = invariantPosixProcessIdentityEnv();
     const result = spawnSync(trustedReviewResolutionPsPath(env), ['-o', 'pgid=', '-p', String(pid)], {
         encoding: 'utf8',
         shell: false,
@@ -3163,7 +3170,7 @@ function isLiveProcessGroup(
 }
 
 function inspectPosixProcessGroupLeader(pgid: number, env: NodeJS.ProcessEnv = process.env): string | undefined | null {
-    const invariantEnv = invariantPosixProcessIdentityEnv(env);
+    const invariantEnv = invariantPosixProcessIdentityEnv();
     const result = spawnSync(trustedReviewResolutionPsPath(env), ['-o', 'lstart=', '-p', String(pgid)], {
         encoding: 'utf8',
         shell: false,
@@ -3176,8 +3183,8 @@ function inspectPosixProcessGroupLeader(pgid: number, env: NodeJS.ProcessEnv = p
     return leaderStartedAt === '' ? undefined : leaderStartedAt;
 }
 
-function invariantPosixProcessIdentityEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-    return { ...env, LC_ALL: 'C', LANG: 'C', TZ: 'UTC' };
+function invariantPosixProcessIdentityEnv(): NodeJS.ProcessEnv {
+    return { LC_ALL: 'C', LANG: 'C', TZ: 'UTC' };
 }
 
 function acquirePullRequestReviewResolutionLock(
