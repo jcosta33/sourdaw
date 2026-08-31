@@ -161,10 +161,13 @@ describe('generateOpenAiCompatibleToolCalls', () => {
         }
     );
 
-    it.each(['gpt-5', 'o3', 'gpt-4-turbo'])('omits reasoning_effort for first-party OpenAI model %s', async (model) => {
-        const body = await requestBodyFor(openaiRuntime(model));
-        expect(body).not.toHaveProperty('reasoning_effort');
-    });
+    it.each(['gpt-5', 'gpt-5-2025-08-07', 'o3', 'o1-mini', 'gpt-4-turbo', 'gpt-4o'])(
+        'omits reasoning_effort for first-party OpenAI model %s',
+        async (model) => {
+            const body = await requestBodyFor(openaiRuntime(model));
+            expect(body).not.toHaveProperty('reasoning_effort');
+        }
+    );
 
     it('omits reasoning_effort for openai-compatible endpoints', async () => {
         const body = await requestBodyFor({
