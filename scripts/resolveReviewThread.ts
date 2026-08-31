@@ -2779,7 +2779,7 @@ function parseWindowsProcessRows(output: string): WindowsProcessRow[] | undefine
     return normalized;
 }
 
-function parseWindowsProcessStartedAt(value: string): number | undefined {
+function parseWindowsProcessStartedAt(value: string): bigint | undefined {
     const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.(\d{6,7})(Z|[+-]\d{2}:\d{2}|[+-]\d{3})$/.exec(
         value
     );
@@ -2794,7 +2794,7 @@ function parseWindowsProcessStartedAt(value: string): number | undefined {
         Number(hour),
         Number(minute),
         Number(second),
-        Number(microseconds.slice(0, 3))
+        0
     );
     if (!Number.isSafeInteger(milliseconds)) {
         return undefined;
@@ -2810,8 +2810,9 @@ function parseWindowsProcessStartedAt(value: string): number | undefined {
     ) {
         return undefined;
     }
+    const ticks = BigInt(milliseconds) * 10_000n + BigInt(microseconds.padEnd(7, '0'));
     if (offsetIdentity === 'Z') {
-        return milliseconds;
+        return ticks;
     }
     const offset = /^([+-])(\d{2}):(\d{2})$/.exec(offsetIdentity);
     const compactOffset = /^([+-])(\d{3})$/.exec(offsetIdentity);
@@ -2824,8 +2825,8 @@ function parseWindowsProcessStartedAt(value: string): number | undefined {
     if (offsetMinutes > 23 * 60 + 59) {
         return undefined;
     }
-    const offsetMilliseconds = offsetMinutes * 60_000;
-    return offsetSign === '+' ? milliseconds - offsetMilliseconds : milliseconds + offsetMilliseconds;
+    const offsetTicks = BigInt(offsetMinutes) * 60_000n * 10_000n;
+    return offsetSign === '+' ? ticks - offsetTicks : ticks + offsetTicks;
 }
 
 const windowsProcessCreationIdentityProperty =
@@ -3001,7 +3002,6 @@ function currentPosixProcessGroupFence(
         encoding: 'utf8',
         shell: false,
         env: invariantEnv,
-        env,
     });
     if (result.error !== undefined) {
         throw result.error;
@@ -3017,7 +3017,6 @@ function currentPosixProcessGroupFence(
         encoding: 'utf8',
         shell: false,
         env: invariantEnv,
-        env,
     });
     if (leader.error !== undefined) {
         throw leader.error;

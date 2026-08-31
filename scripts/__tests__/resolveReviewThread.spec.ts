@@ -1756,7 +1756,7 @@ describe('review thread resolution', () => {
             mkdirSync(hostileBin, { recursive: true });
             writeFileSync(
                 trustedPs,
-                `#!/bin/sh\nprintf '%s|%s|%s\\n' "$LC_ALL" "$LANG" "$TZ" >> ${JSON.stringify(trustedMarker)}\nexec ${JSON.stringify(trustedPsPath)} "$@"\n`
+                `#!/bin/sh\nprintf '%s|%s|%s|%s\\n' "$LC_ALL" "$LANG" "$TZ" "$SOURDAW_TEST_CALLER_ONLY" >> ${JSON.stringify(trustedMarker)}\nexec ${JSON.stringify(trustedPsPath)} "$@"\n`
             );
             chmodSync(trustedPs, 0o700);
             writeFileSync(
@@ -1786,6 +1786,7 @@ describe('review thread resolution', () => {
                 LC_ALL: 'de_CH.UTF-8',
                 LANG: 'de_CH.UTF-8',
                 TZ: 'Europe/Zurich',
+                SOURDAW_TEST_CALLER_ONLY: 'european-caller-environment',
             });
             const americanFence = captureOwnerFence({
                 PATH: `${hostileBin}${delimiter}${previousPath ?? ''}`,
@@ -1793,10 +1794,11 @@ describe('review thread resolution', () => {
                 LC_ALL: 'en_US.UTF-8',
                 LANG: 'en_US.UTF-8',
                 TZ: 'America/Los_Angeles',
+                SOURDAW_TEST_CALLER_ONLY: 'american-caller-environment',
             });
             expect(europeanFence).toEqual(americanFence);
             expect(europeanFence).toMatchObject({ kind: 'pgid', leaderStartedAt: expect.any(String) });
-            expect(readFileSync(trustedMarker, 'utf8')).toBe('C|C|UTC\nC|C|UTC\nC|C|UTC\nC|C|UTC\n');
+            expect(readFileSync(trustedMarker, 'utf8')).toBe('C|C|UTC|\nC|C|UTC|\nC|C|UTC|\nC|C|UTC|\n');
             expect(existsSync(hostileMarker)).toBe(false);
         } finally {
             process.env.PATH = previousPath;
@@ -2275,7 +2277,7 @@ describe('review thread resolution', () => {
                     },
                 }
             )
-        ).toBe(true);
+        ).toBe(false);
     });
 
     it('keeps a leader-gone POSIX process group live when an original child remains', () => {
@@ -2410,6 +2412,38 @@ describe('review thread resolution', () => {
                 inspectWindowsProcessRows: () => undefined,
             })
         ).toBe(true);
+    });
+
+    it('distinguishes Windows creation identities that differ within the same millisecond', () => {
+        const ownerFence = {
+            kind: 'win32-process-tree' as const,
+            version: 1 as const,
+            rootPid: 4100,
+            rootStartedAt: '2026-08-30T12:00:00.0000000Z',
+        };
+        expect(
+            reviewResolutionOwnerFenceIsLive(ownerFence, {
+                inspectWindowsProcessRows: () => [
+                    { pid: 4100, parentPid: 1, startedAt: '2026-08-30T12:00:00.0000001Z' },
+                ],
+            })
+        ).toBe(false);
+        expect(
+            reviewResolutionOwnerFenceIsLive(ownerFence, {
+                inspectWindowsProcessRows: () => [
+                    { pid: 4100, parentPid: 1, startedAt: '2026-08-30T12:00:00.0000001Z' },
+                    { pid: 4101, parentPid: 4100, startedAt: '2026-08-30T12:00:00.0000000Z' },
+                ],
+            })
+        ).toBe(true);
+        expect(
+            reviewResolutionOwnerFenceIsLive(ownerFence, {
+                inspectWindowsProcessRows: () => [
+                    { pid: 4100, parentPid: 1, startedAt: '2026-08-30T12:00:00.0000001Z' },
+                    { pid: 4101, parentPid: 4100, startedAt: '2026-08-30T12:00:00.0000002Z' },
+                ],
+            })
+        ).toBe(false);
     });
 
     it('fails closed when Windows process-tree inspection is unavailable', () => {
