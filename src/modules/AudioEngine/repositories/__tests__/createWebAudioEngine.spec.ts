@@ -2594,6 +2594,21 @@ describe('AudioEngine', () => {
             }
         });
 
+        it('resets device runtime state through the generic controller surface', () => {
+            const reset = vi.fn();
+            const strip = engine.ensureTrackStrip('tGrinder');
+            strip.deviceNodes.push({
+                deviceId: 'grinder-dev',
+                type: 'grinder',
+                nodes: [],
+                controller: { reset, setParam: vi.fn(), setBypass: vi.fn() },
+            } as never);
+
+            engine.stopAllScheduled();
+
+            expect(reset).toHaveBeenCalledOnce();
+        });
+
         it('does not fan out per-note messages to an instrument worklet port', () => {
             const strip = engine.ensureTrackStrip('tFerm');
             const workletNode = new FakeWorkletNode();
