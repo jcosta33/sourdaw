@@ -2914,6 +2914,17 @@ export function loadRepositorySnapshot(
     };
 }
 
+export function validateDdspReleaseInventorySurfaces(
+    root: string,
+    inventory: ReleaseInventory,
+    validateSurface: (surfaceId: string, validate: () => void) => void
+): void {
+    const ddspTfjsRuntimeSurface = inventory.surfaces.find((surface) => surface.id === 'ddsp-tfjs-runtime');
+    validateSurface('ddsp-tfjs-runtime', () => assertDdspTfjsRuntimeReleaseInventory(root, ddspTfjsRuntimeSurface));
+    const ddspModelsSurface = inventory.surfaces.find((surface) => surface.id === 'ddsp-models');
+    validateSurface('ddsp-models', () => assertDdspModelsReleaseInventory(root, ddspModelsSurface));
+}
+
 export function checkReleaseInventory(
     root: string,
     projectLicensePreflight: ProjectLicensePreflight = (preflightRoot, inventoryContents) =>
@@ -2978,10 +2989,7 @@ export function checkReleaseInventory(
             'owner visual asset'
         )
     );
-    const ddspTfjsRuntimeSurface = currentInventory.surfaces.find((surface) => surface.id === 'ddsp-tfjs-runtime');
-    validateSurface('ddsp-tfjs-runtime', () => assertDdspTfjsRuntimeReleaseInventory(root, ddspTfjsRuntimeSurface));
-    const ddspModelsSurface = currentInventory.surfaces.find((surface) => surface.id === 'ddsp-models');
-    validateSurface('ddsp-models', () => assertDdspModelsReleaseInventory(root, ddspModelsSurface));
+    validateDdspReleaseInventorySurfaces(root, currentInventory, validateSurface);
     checkElectronRuntimeProvenance(root);
     const electronSurface = currentInventory.surfaces.find((surface) => surface.id === 'desktop-shell');
     for (const [field, expected] of Object.entries(electronReleaseInventoryContract())) {

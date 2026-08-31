@@ -40,7 +40,6 @@ import {
     assertGrandBouleDesignAroundSource,
     assertGrandBouleMeasurementAdmission,
     assertDdspModelsReleaseInventory,
-    assertDdspTfjsRuntimeReleaseInventory,
     assertGrandBouleReleaseInventory,
     assertGrandBouleReleasedInWasm,
     assertOwnerVisualAssetIntegrity,
@@ -70,6 +69,7 @@ import {
     type RepositorySnapshotFileReader,
     type ReleaseInventory,
     type RepositorySnapshot,
+    validateDdspReleaseInventorySurfaces,
     validateReleaseInventory,
     wasmReleaseInventoryContract,
 } from '../checkReleaseInventory';
@@ -1520,11 +1520,17 @@ describe('release inventory', () => {
     });
 
     it('composes the DDSP TF.js runtime into live release inventory validation', () => {
-        const inventory = readReleaseInventory(repositoryRoot);
-        assertDdspTfjsRuntimeReleaseInventory(
+        const validatedSurfaceIds: string[] = [];
+        validateDdspReleaseInventorySurfaces(
             repositoryRoot,
-            inventory.surfaces.find(({ id }) => id === 'ddsp-tfjs-runtime')
+            readReleaseInventory(repositoryRoot),
+            (surfaceId, validate) => {
+                validate();
+                validatedSurfaceIds.push(surfaceId);
+            }
         );
+
+        expect(validatedSurfaceIds).toContain('ddsp-tfjs-runtime');
     });
 
     it('pins the WebLLM legal closure to exact paths, source buckets, and path-addressed digests', () => {
@@ -2377,11 +2383,17 @@ describe('release inventory', () => {
     });
 
     it('composes the admitted DDSP model contract into live release inventory validation', () => {
-        const inventory = readReleaseInventory(repositoryRoot);
-        assertDdspModelsReleaseInventory(
+        const validatedSurfaceIds: string[] = [];
+        validateDdspReleaseInventorySurfaces(
             repositoryRoot,
-            inventory.surfaces.find(({ id }) => id === 'ddsp-models')
+            readReleaseInventory(repositoryRoot),
+            (surfaceId, validate) => {
+                validate();
+                validatedSurfaceIds.push(surfaceId);
+            }
         );
+
+        expect(validatedSurfaceIds).toContain('ddsp-models');
     });
 
     it('binds admitted DDSP writes, rendering, exact artifacts, and reversal obligations', () => {
