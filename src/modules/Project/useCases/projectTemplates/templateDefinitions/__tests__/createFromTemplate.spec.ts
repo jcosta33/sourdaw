@@ -35,12 +35,18 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 
 vi.mock('#/modules/PluginHost/useCases', () => ({
     unloadPlugin: mocks.unloadPlugin,
+    activateExternalPlugin: vi.fn(),
+    findSupportedPlugin: vi.fn(),
+    registerFaustDSP: vi.fn(),
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
     clearUndoHistory: mocks.clearUndoHistory,
     executeAppAction: mocks.executeAppAction,
     isAppActionCommittedError: mocks.isAppActionCommittedError,
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    pushUndoEntry: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({

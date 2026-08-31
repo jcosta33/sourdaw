@@ -47,7 +47,12 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     resetCrdtProjectAuthority: vi.fn(),
     startCrdtAutoSave: vi.fn(() => vi.fn()),
 }));
-vi.mock('#/modules/PluginHost/useCases', () => ({ unloadPlugin: vi.fn() }));
+vi.mock('#/modules/PluginHost/useCases', () => ({
+    unloadPlugin: vi.fn(),
+    activateExternalPlugin: vi.fn(),
+    findSupportedPlugin: vi.fn(),
+    registerFaustDSP: vi.fn(),
+}));
 vi.mock('#/modules/Transport/useCases', () => ({ ensureTrackStrips: vi.fn(), stopPlayback: vi.fn() }));
 vi.mock('../helpers/autoSaveHandle', () => ({ setAutoSaveHandle: vi.fn() }));
 vi.mock('../helpers/stopActiveAutoSave', () => ({ stopActiveAutoSave: vi.fn() }));

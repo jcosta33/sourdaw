@@ -30,6 +30,8 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     sanitizeIncomingCrdtDocument: vi.fn((document) => document),
     DOC_PREFIX_ROOT: 'root',
     DOC_BRANCHES: '__branches__',
+    removeCrdtDoc: vi.fn(),
+    runCrdtPersistenceBarrier: vi.fn(),
 }));
 
 /**
