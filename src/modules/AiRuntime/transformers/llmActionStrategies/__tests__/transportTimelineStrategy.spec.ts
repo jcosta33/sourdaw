@@ -153,6 +153,8 @@ const invalidPunchRegionContexts = [
     { context: { ...projectContext, punchInBeat: Number.NaN }, label: 'non-finite punch-in beat' },
     { context: { ...projectContext, punchOutBeat: Number.NaN }, label: 'non-finite punch-out beat' },
     { context: { ...projectContext, punchInBeat: -1 }, label: 'negative punch-in beat' },
+    { context: { ...projectContext, punchInBeat: 4, punchOutBeat: 4 }, label: 'equal punch endpoints' },
+    { context: { ...projectContext, punchOutBeat: Number.POSITIVE_INFINITY }, label: 'infinite punch-out beat' },
     { context: { ...projectContext, punchInBeat: 8, punchOutBeat: 4 }, label: 'punch-out at or before punch-in' },
 ] satisfies readonly { context: ProjectContext; label: string }[];
 
@@ -628,7 +630,7 @@ describe('transportTimelineStrategy', () => {
         for (const testCase of assertAllExactKeyGuardsCovered(exactKeyGuardCases)) {
             const input = {
                 context: projectContext,
-                index: 0,
+                index: 7,
                 projectPunchRegion: createPunchRegionPatch,
             };
 
@@ -643,19 +645,8 @@ describe('transportTimelineStrategy', () => {
                     ...input,
                     call: { name: testCase.name, arguments: { ...testCase.arguments, unexpected: true } },
                 })
-            ).toEqual({ index: 0, name: testCase.name, reason: testCase.reason });
+            ).toEqual({ index: 7, name: testCase.name, reason: testCase.reason });
         }
-    });
-
-    it('preserves the supplied index when rejecting an invalid call', () => {
-        expect(
-            bridgeTransportTimelineToolCall({
-                call: { name: 'setTempo', arguments: { bpm: 301 } },
-                context: projectContext,
-                index: 7,
-                projectPunchRegion: createPunchRegionPatch,
-            })
-        ).toEqual({ index: 7, name: 'setTempo', reason: 'Expected only a finite bpm from 20 through 300' });
     });
 
     it('rejects invalid punch regions before calling the projector', () => {
@@ -701,6 +692,24 @@ describe('transportTimelineStrategy', () => {
                 reason: 'Requested punch endpoint already matches project state',
             });
         }
+    });
+
+    it('routes punch endpoints to the matching projector edge', () => {
+        const edges: Array<'in' | 'out'> = [];
+        const projectPunchRegion: typeof createPunchRegionPatch = ({ beat, edge }) => {
+            edges.push(edge);
+            return edge === 'in' ? { punchInBeat: beat } : { punchOutBeat: beat };
+        };
+
+        expect(bridgePunchCall({ ...punchCallCases[0], context: projectContext, projectPunchRegion })).toEqual({
+            type: 'setPunchIn',
+            payload: { beat: 4 },
+        });
+        expect(bridgePunchCall({ ...punchCallCases[1], context: projectContext, projectPunchRegion })).toEqual({
+            type: 'setPunchOut',
+            payload: { beat: 12 },
+        });
+        expect(edges).toEqual(['in', 'out']);
     });
 
     it('rejects both boolean no-op polarities for playback and punch enablement', () => {
