@@ -42,6 +42,7 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     createFaustNode: vi.fn(),
     isFaustModule: mocks.isFaustModule,
     isFaustInstrumentModule: mocks.isFaustInstrumentModule,
+    registerFaustDSP: vi.fn(),
 }));
 
 vi.mock('../../../repositories/faustDeviceFactory', () => ({

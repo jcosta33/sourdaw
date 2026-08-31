@@ -361,6 +361,7 @@ vi.mock('#/modules/GrandBoule/useCases', () => ({
     getGrandBouleHandlers: sentinelHandlers('GrandBoule'),
     initGrandBouleSubscribers: () => noop,
     setGrandBouleEventBus: noop,
+    prepareOfflineGrandBoule: noop,
 }));
 
 vi.mock('#/modules/Grinder/stores', () => ({ updateGrinderTelemetry: noop }));
@@ -432,6 +433,7 @@ vi.mock('#/modules/Proof/useCases', () => ({
     registerProofDevice: noop,
     unregisterProofDevice: noop,
     syncFullPatch: noop,
+    prepareOfflineProof: noop,
 }));
 
 vi.mock('#/modules/PunchRecording/useCases', () => ({
@@ -456,6 +458,7 @@ vi.mock('#/modules/Toaster/useCases', () => ({
     initToasterKitPersistence: noop,
     setToasterEventBus: noop,
     setToasterGrooveAssignmentExecutor: noop,
+    prepareOfflineToaster: noop,
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
