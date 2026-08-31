@@ -17,11 +17,13 @@ type MutableNoteOnRequest = { -readonly [K in keyof DeviceNoteOnRequest]: Device
 type MutableNoteOffRequest = { -readonly [K in keyof DeviceNoteOffRequest]: DeviceNoteOffRequest[K] };
 
 /**
- * Pre-queue all collected worklet note events to their respective DSP processors.
+ * Pre-queue all collected worklet events to their respective DSP processors.
  * Must be called ONCE after ALL tracks are scheduled and BEFORE startRendering().
  *
  * This uses the sample-accurate `sampleFrame` parameter instead of main-thread
- * OfflineAudioContext.suspend() polling, preventing timing drift.
+ * OfflineAudioContext.suspend() polling, preventing timing drift. Per-note MPE
+ * expression is frame-addressed the same way, so it lands with its note rather
+ * than at scheduling time.
  *
  * The note surface is addressed by name (`DeviceNoteOnRequest`). It used to be
  * positional, and the two branches below disagreed about what slot three meant:
@@ -40,7 +42,7 @@ export function schedulePendingSuspends(
         return;
     }
 
-    // Sort by time, then noteOff before noteOn at same time (release before re-trigger).
+    // Sort by time, then release before re-trigger before expression at one time.
     events.sort(comparePendingWorkletEvents);
 
     for (const evt of events) {
@@ -49,6 +51,18 @@ export function schedulePendingSuspends(
         }
 
         const sampleFrame = Math.max(0, Math.floor(evt.time * offlineCtx.sampleRate));
+
+        if (evt.type === 'expression') {
+            evt.dispatch({
+                noteOrPad: evt.pitch,
+                channel: evt.channel,
+                bendSemitones: evt.bendSemitones,
+                pressure: evt.pressure,
+                slide: evt.slide,
+                sampleFrame,
+            });
+            continue;
+        }
 
         if (evt.type === 'on') {
             if (evt.isToaster) {
