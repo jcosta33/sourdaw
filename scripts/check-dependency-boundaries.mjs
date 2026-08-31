@@ -666,6 +666,54 @@ function declarationForSymbol(context, sourceFile, node) {
     return (symbol && context.declarationsByFile.get(normalizeFileName(sourceFile.fileName))?.get(symbol)) ?? null;
 }
 
+function projectDeclarationsForReferencedSymbol(context, node) {
+    const symbol = symbolAtLocation(context, node);
+    if (!symbol) {
+        return [];
+    }
+    const declarations = new Set();
+    try {
+        const referencedSymbol =
+            symbol.flags & ts.SymbolFlags.Alias ? context.checker.getAliasedSymbol(symbol) : symbol;
+        for (const declaration of referencedSymbol.declarations ?? []) {
+            const fileName = declaration.getSourceFile?.().fileName ?? '';
+            if (!isTypeScriptLibraryFile(fileName) && !isExternalDeclarationFile(fileName)) {
+                declarations.add(declaration);
+            }
+        }
+    } catch {
+        // Unresolved aliases can still be followed through their import syntax below.
+    }
+    for (const declaration of symbol.declarations ?? []) {
+        if (!ts.isImportSpecifier(declaration)) {
+            continue;
+        }
+        const importDeclaration = declaration.parent.parent.parent;
+        if (!ts.isImportDeclaration(importDeclaration)) {
+            continue;
+        }
+        const moduleSpecifier = moduleSpecifierText(importDeclaration.moduleSpecifier);
+        const targetFile = moduleSpecifier
+            ? resolveRepositoryModuleSpecifier(
+                  moduleSpecifier,
+                  declaration.getSourceFile().fileName,
+                  context.options,
+                  context.compilerHost
+              )
+            : null;
+        if (!targetFile || !isRepositorySourceFile(context.repositoryRoot, targetFile)) {
+            continue;
+        }
+        const targetName = (declaration.propertyName ?? declaration.name).text;
+        for (const record of recordsForName(context, targetFile, targetName)) {
+            if (record.valueNode) {
+                declarations.add(record.valueNode);
+            }
+        }
+    }
+    return [...declarations];
+}
+
 function vendorBindingsFor(context, binding) {
     const symbols = new Set([symbolAtLocation(context, binding)].filter(Boolean));
     if (ts.isIdentifier(binding) && ts.isShorthandPropertyAssignment(binding.parent)) {
@@ -765,9 +813,12 @@ function collectSyntaxVendorModules(context, node, sourceFile, { includeImplemen
                 for (const moduleSpecifier of vendorBindingsFor(context, rootName)) {
                     modules.add(moduleSpecifier);
                 }
-                const declaration = declarationForSymbol(context, sourceFile, rootName);
+                const declaration = declarationForSymbol(context, current.getSourceFile(), rootName);
                 if (declaration) {
                     visit(declaration);
+                }
+                for (const aliasedDeclaration of projectDeclarationsForReferencedSymbol(context, rootName)) {
+                    visit(aliasedDeclaration);
                 }
             }
         }
@@ -778,9 +829,12 @@ function collectSyntaxVendorModules(context, node, sourceFile, { includeImplemen
         }
         if (includeImplementation) {
             if (ts.isIdentifier(current)) {
-                const declaration = declarationForSymbol(context, sourceFile, current);
+                const declaration = declarationForSymbol(context, current.getSourceFile(), current);
                 if (declaration && declaration !== current) {
                     visit(declaration);
+                }
+                for (const aliasedDeclaration of projectDeclarationsForReferencedSymbol(context, current)) {
+                    visit(aliasedDeclaration);
                 }
             }
             ts.forEachChild(current, visit);
