@@ -78,7 +78,9 @@ export type TempoEditorState = {
     // Tempo map panel
     mapOpen: boolean;
     setMapOpen: (v: boolean) => void;
+    mapTriggerRef: RefObject<HTMLButtonElement | null>;
     mapPanelRef: RefObject<HTMLDivElement | null>;
+    mapPanelPosition: { top: number; left: number };
 
     // Tempo change editing
     newBeat: string;
@@ -203,7 +205,9 @@ export const useTempoEditorState = (): TempoEditorState => {
      */
     const tapTimesRef = useRef<number[]>([]);
     const [mapOpen, setMapOpen] = useState(false);
+    const mapTriggerRef = useRef<HTMLButtonElement>(null);
     const mapPanelRef = useRef<HTMLDivElement>(null);
+    const [mapPanelPosition, setMapPanelPosition] = useState({ top: 0, left: 0 });
     const [newBeat, setNewBeat] = useState('0');
     const [newTempo, setNewTempo] = useState('120');
     const [newCurve, setNewCurve] = useState<TempoCurve>('instant');
@@ -216,7 +220,10 @@ export const useTempoEditorState = (): TempoEditorState => {
             return undefined;
         }
         const handleClickOutside = (event: MouseEvent): void => {
-            if (mapPanelRef.current && !mapPanelRef.current.contains(event.target as Node)) {
+            const target = event.target as Node;
+            const clickedTrigger = mapTriggerRef.current?.contains(target) ?? false;
+            const clickedPanel = mapPanelRef.current?.contains(target) ?? false;
+            if (!clickedTrigger && !clickedPanel) {
                 setMapOpen(false);
             }
         };
@@ -243,6 +250,11 @@ export const useTempoEditorState = (): TempoEditorState => {
         if (transport.isPlaying) {
             playheadBeat = playheadPositionRef.current;
         }
+        const triggerRect = mapTriggerRef.current?.getBoundingClientRect();
+        setMapPanelPosition({
+            top: (triggerRect?.bottom ?? 0) + 4,
+            left: triggerRect?.left ?? 0,
+        });
         setNewBeat(String(Math.max(0, Math.round(playheadBeat * 100) / 100)));
         setMapOpen(true);
     };
@@ -409,7 +421,9 @@ export const useTempoEditorState = (): TempoEditorState => {
         cancelTimeSigEdit,
         mapOpen,
         setMapOpen: openTempoMapPanel,
+        mapTriggerRef,
         mapPanelRef,
+        mapPanelPosition,
         newBeat,
         setNewBeat,
         newTempo,

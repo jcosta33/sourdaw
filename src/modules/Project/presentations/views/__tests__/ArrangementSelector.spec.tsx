@@ -1,8 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { selectorDeclaring } from '#/styles/testing/mainStylesheetRules';
-
 import { ArrangementSelector } from '../ArrangementSelector';
 
 // Mock external dependencies
@@ -178,11 +176,11 @@ describe('ArrangementSelector', () => {
         });
     });
 
-    it('should keep its menu rows clickable inside the desktop titlebar drag region', () => {
-        // The transport header hosts this selector, and on the desktop builds
-        // that row is the window's drag region: a press the OS takes as a window
-        // move never reaches the row's onClick. The rows are plain divs, so only
-        // the menu surface around them can opt the clicks back out.
+    it('portals its menu out of the desktop titlebar drag region so rows stay clickable', () => {
+        // The transport header is the window's drag region. A menu rendered
+        // inside that row would need an app-region no-drag ancestor; this menu
+        // is portaled to document.body so the window manager never sees the
+        // press as a drag.
         render(
             <div className="desktop-titlebar-region--overlay">
                 <ArrangementSelector />
@@ -195,7 +193,8 @@ describe('ArrangementSelector', () => {
             throw new Error('expected a second picker row');
         }
 
-        expect(arrangementRow.closest(selectorDeclaring('app-region', 'no-drag'))).not.toBeNull();
+        expect(arrangementRow.closest('.desktop-titlebar-region--overlay')).toBeNull();
+        expect(screen.getByRole('menu', { name: 'Arrangement menu' })).toBeInTheDocument();
     });
 
     it('should have New Arrangement button', () => {

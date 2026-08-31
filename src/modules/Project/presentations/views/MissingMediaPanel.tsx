@@ -1,6 +1,7 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { AlertTriangle } from 'lucide-react';
+import { createPortal } from 'react-dom';
 
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
@@ -34,6 +35,8 @@ function rowKey(item: MissingMediaItem): string {
 export const MissingMediaPanel = (): ReactElement | null => {
     const missingMedia = useStore(missingMediaStore, defaultMissingMediaStoreState);
     const [open, setOpen] = useState(false);
+    const [panelPosition, setPanelPosition] = useState({ top: 0, left: 0 });
+    const triggerContainerRef = useRef<HTMLDivElement>(null);
     const panelRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -42,7 +45,10 @@ export const MissingMediaPanel = (): ReactElement | null => {
         }
 
         const handleClickOutside = (event: MouseEvent) => {
-            if (panelRef.current && !panelRef.current.contains(event.target as Node)) {
+            const target = event.target as Node;
+            const clickedTrigger = triggerContainerRef.current?.contains(target) ?? false;
+            const clickedPanel = panelRef.current?.contains(target) ?? false;
+            if (!clickedTrigger && !clickedPanel) {
                 setOpen(false);
             }
         };
@@ -74,14 +80,20 @@ export const MissingMediaPanel = (): ReactElement | null => {
         items.length === fileCount
             ? null
             : `Used by ${String(items.length)} clips and tracks — relinking a file repairs every place it is used.`;
-
     return (
-        <div className="relative" ref={panelRef}>
+        <div className="relative" ref={triggerContainerRef}>
             <Button
                 aria-expanded={open}
                 aria-haspopup="dialog"
                 aria-label={`${summary} — show details`}
                 onClick={() => {
+                    if (!open) {
+                        const triggerRect = triggerContainerRef.current?.getBoundingClientRect();
+                        setPanelPosition({
+                            top: (triggerRect?.bottom ?? 0) + 4,
+                            left: triggerRect?.left ?? 0,
+                        });
+                    }
                     setOpen(!open);
                 }}
                 size="sm"
@@ -91,27 +103,32 @@ export const MissingMediaPanel = (): ReactElement | null => {
                 <span>{summary}</span>
             </Button>
 
-            {open ? (
-                <div
-                    aria-label="Missing media"
-                    className="absolute top-full left-0 z-50 mt-1 w-80 rounded-md border border-white/10 bg-neutral-900 p-2 shadow-lg"
-                    role="dialog"
-                >
-                    <p className="px-2 py-1 text-xs text-neutral-400">
-                        The project opened without this audio. Playback is silent where it is referenced.
-                    </p>
-                    {referenceNote ? <p className="px-2 py-1 text-xs text-neutral-400">{referenceNote}</p> : null}
-                    <ul className="max-h-64 overflow-y-auto">
-                        {items.map((item) => (
-                            <li className="px-2 py-1.5" key={rowKey(item)}>
-                                <p className="text-sm">{item.label}</p>
-                                <p className="text-xs text-neutral-400">{item.trackName}</p>
-                                <p className="text-xs text-neutral-500">{describeRepair(item)}</p>
-                            </li>
-                        ))}
-                    </ul>
-                </div>
-            ) : null}
+            {open
+                ? createPortal(
+                      <div
+                          ref={panelRef}
+                          aria-label="Missing media"
+                          className="fixed z-50 w-80 rounded-md border border-white/10 bg-neutral-900 p-2 shadow-lg"
+                          style={{ ...panelPosition, WebkitAppRegion: 'no-drag' }}
+                          role="dialog"
+                      >
+                          <p className="px-2 py-1 text-xs text-neutral-400">
+                              The project opened without this audio. Playback is silent where it is referenced.
+                          </p>
+                          {referenceNote ? <p className="px-2 py-1 text-xs text-neutral-400">{referenceNote}</p> : null}
+                          <ul className="max-h-64 overflow-y-auto">
+                              {items.map((item) => (
+                                  <li className="px-2 py-1.5" key={rowKey(item)}>
+                                      <p className="text-sm">{item.label}</p>
+                                      <p className="text-xs text-neutral-400">{item.trackName}</p>
+                                      <p className="text-xs text-neutral-500">{describeRepair(item)}</p>
+                                  </li>
+                              ))}
+                          </ul>
+                      </div>,
+                      document.body
+                  )
+                : null}
         </div>
     );
 };

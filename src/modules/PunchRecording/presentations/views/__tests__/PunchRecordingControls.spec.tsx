@@ -190,11 +190,19 @@ describe('PunchRecordingControls', () => {
         it('hides punch fields until settings are opened', () => {
             renderUi(true);
             expect(screen.queryByTestId('punch-in-beat')).not.toBeInTheDocument();
+            expect(screen.queryByTestId('punch-out-beat')).not.toBeInTheDocument();
+            expect(screen.queryByTestId('punch-pre-roll')).not.toBeInTheDocument();
+            expect(screen.queryByTestId('punch-post-roll')).not.toBeInTheDocument();
             expect(
                 screen.queryByRole('button', { name: 'Mark punch region from current capture' })
             ).not.toBeInTheDocument();
+
             openSettings();
+
             expect(screen.getByTestId('punch-in-beat')).toBeInTheDocument();
+            expect(screen.getByTestId('punch-out-beat')).toBeInTheDocument();
+            expect(screen.getByTestId('punch-pre-roll')).toBeInTheDocument();
+            expect(screen.getByTestId('punch-post-roll')).toBeInTheDocument();
             expect(screen.getByRole('button', { name: 'Mark punch region from current capture' })).toBeInTheDocument();
         });
     });

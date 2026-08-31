@@ -213,9 +213,11 @@ test.describe('Responsive transport bar', () => {
         await expect(page.getByRole('dialog', { name: 'Solo mode' })).toHaveCount(0);
         await expect(page.getByRole('button', { name: 'Stop' })).toBeFocused();
 
+        await page.setViewportSize({ width: 1199, height: 900 });
+        await page.getByRole('button', { name: 'More transport controls' }).click();
         await page.getByRole('button', { name: 'Punch recording settings' }).click();
         await expect(page.getByRole('dialog', { name: 'Punch recording settings' })).toHaveCount(1);
-        await page.setViewportSize({ width: 1199, height: 900 });
+        await page.setViewportSize({ width: 1200, height: 900 });
         await expect(page.getByRole('dialog', { name: 'Punch recording settings' })).toHaveCount(0);
         await expect(page.getByRole('button', { name: 'Stop' })).toBeFocused();
     });

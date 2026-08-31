@@ -1,6 +1,7 @@
 import { type ReactElement } from 'react';
 
 import { Lock, Map, Plus, Trash2 } from 'lucide-react';
+import { createPortal } from 'react-dom';
 
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
@@ -108,6 +109,7 @@ export const TempoEditor = (): ReactElement => {
             <Tooltip>
                 <TooltipTrigger asChild>
                     <Button
+                        ref={time.mapTriggerRef}
                         variant="ghost"
                         size="icon-xs"
                         onClick={() => time.setMapOpen(!time.mapOpen)}
@@ -203,141 +205,145 @@ export const TempoEditor = (): ReactElement => {
                     <TooltipContent>Click to edit time signature</TooltipContent>
                 </Tooltip>
             )}
-            {time.mapOpen ? (
-                <div
-                    ref={time.mapPanelRef}
-                    role="dialog"
-                    aria-label="Tempo map editor"
-                    className="daw-floating-surface absolute left-0 top-full z-50 mt-1 w-72 rounded-md p-2"
-                >
-                    <h3 className="mb-1.5 text-xs font-semibold text-foreground">Tempo Map</h3>
+            {time.mapOpen
+                ? createPortal(
+                      <div
+                          ref={time.mapPanelRef}
+                          role="dialog"
+                          aria-label="Tempo map editor"
+                          className="daw-floating-surface fixed z-50 w-72 rounded-md p-2"
+                          style={{ ...time.mapPanelPosition, WebkitAppRegion: 'no-drag' }}
+                      >
+                          <h3 className="mb-1.5 text-xs font-semibold text-foreground">Tempo Map</h3>
 
-                    {time.tempoMap.changes.length === 0 ? (
-                        <p className="py-2 text-center text-xs text-muted-foreground">No tempo changes</p>
-                    ) : (
-                        <Stack gap={0.5} className="max-h-40 overflow-y-auto">
-                            {time.tempoMap.changes.map((change) => (
-                                <Row
-                                    gap={1.5}
-                                    className="rounded px-1.5 py-1 text-xs hover:bg-accent/30"
-                                    key={change.id}
-                                >
-                                    <span className="w-12 shrink-0 font-mono tabular-nums text-muted-foreground">
-                                        Beat {change.beat}
-                                    </span>
+                          {time.tempoMap.changes.length === 0 ? (
+                              <p className="py-2 text-center text-xs text-muted-foreground">No tempo changes</p>
+                          ) : (
+                              <Stack gap={0.5} className="max-h-40 overflow-y-auto">
+                                  {time.tempoMap.changes.map((change) => (
+                                      <Row
+                                          gap={1.5}
+                                          className="rounded px-1.5 py-1 text-xs hover:bg-accent/30"
+                                          key={change.id}
+                                      >
+                                          <span className="w-12 shrink-0 font-mono tabular-nums text-muted-foreground">
+                                              Beat {change.beat}
+                                          </span>
 
-                                    {time.editingChangeId === change.id ? (
-                                        <DawCompactInput
-                                            type="number"
-                                            value={time.editingChangeTempo}
-                                            onChange={(event) => time.setEditingChangeTempo(event.target.value)}
-                                            onBlur={time.commitEditChange}
-                                            onKeyDown={(event) => {
-                                                if (event.key === 'Enter') {
-                                                    time.commitEditChange();
-                                                }
-                                                if (event.key === 'Escape') {
-                                                    time.cancelEditChange();
-                                                }
-                                            }}
-                                            size="micro"
-                                            align="center"
-                                            monospace
-                                            className="h-5 w-14"
-                                            min={20}
-                                            max={999}
-                                            step={0.1}
-                                            autoFocus
-                                            aria-label={`Edit tempo at beat ${change.beat}`}
-                                        />
-                                    ) : (
-                                        <Button
-                                            variant="ghost"
-                                            size="xs"
-                                            className="w-14 text-center font-mono tabular-nums"
-                                            onClick={() => time.startEditChange(change)}
-                                            aria-label={`${change.tempo} BPM at beat ${change.beat}. Click to edit.`}
-                                        >
-                                            {change.tempo}
-                                        </Button>
-                                    )}
+                                          {time.editingChangeId === change.id ? (
+                                              <DawCompactInput
+                                                  type="number"
+                                                  value={time.editingChangeTempo}
+                                                  onChange={(event) => time.setEditingChangeTempo(event.target.value)}
+                                                  onBlur={time.commitEditChange}
+                                                  onKeyDown={(event) => {
+                                                      if (event.key === 'Enter') {
+                                                          time.commitEditChange();
+                                                      }
+                                                      if (event.key === 'Escape') {
+                                                          time.cancelEditChange();
+                                                      }
+                                                  }}
+                                                  size="micro"
+                                                  align="center"
+                                                  monospace
+                                                  className="h-5 w-14"
+                                                  min={20}
+                                                  max={999}
+                                                  step={0.1}
+                                                  autoFocus
+                                                  aria-label={`Edit tempo at beat ${change.beat}`}
+                                              />
+                                          ) : (
+                                              <Button
+                                                  variant="ghost"
+                                                  size="xs"
+                                                  className="w-14 text-center font-mono tabular-nums"
+                                                  onClick={() => time.startEditChange(change)}
+                                                  aria-label={`${change.tempo} BPM at beat ${change.beat}. Click to edit.`}
+                                              >
+                                                  {change.tempo}
+                                              </Button>
+                                          )}
 
-                                    <span className="text-muted-foreground">BPM</span>
+                                          <span className="text-muted-foreground">BPM</span>
 
-                                    <span
-                                        className={cn(
-                                            'rounded px-1 py-0.5 text-[10px]',
-                                            change.curve === 'linear'
-                                                ? 'bg-[var(--color-accent-cyan)]/20 text-[var(--color-accent-cyan)]'
-                                                : 'bg-muted text-muted-foreground'
-                                        )}
-                                    >
-                                        {change.curve}
-                                    </span>
+                                          <span
+                                              className={cn(
+                                                  'rounded px-1 py-0.5 text-[10px]',
+                                                  change.curve === 'linear'
+                                                      ? 'bg-[var(--color-accent-cyan)]/20 text-[var(--color-accent-cyan)]'
+                                                      : 'bg-muted text-muted-foreground'
+                                              )}
+                                          >
+                                              {change.curve}
+                                          </span>
 
-                                    <Button
-                                        variant="ghost"
-                                        size="icon-xs"
-                                        className="ml-auto size-5 text-muted-foreground hover:text-destructive"
-                                        onClick={() => time.removeChange(change.id)}
-                                        aria-label={`Remove tempo change at beat ${change.beat}`}
-                                    >
-                                        <Trash2 className="size-3" />
-                                    </Button>
-                                </Row>
-                            ))}
-                        </Stack>
-                    )}
+                                          <Button
+                                              variant="ghost"
+                                              size="icon-xs"
+                                              className="ml-auto size-5 text-muted-foreground hover:text-destructive"
+                                              onClick={() => time.removeChange(change.id)}
+                                              aria-label={`Remove tempo change at beat ${change.beat}`}
+                                          >
+                                              <Trash2 className="size-3" />
+                                          </Button>
+                                      </Row>
+                                  ))}
+                              </Stack>
+                          )}
 
-                    <Row gap={1} className="mt-2 border-t border-border pt-2">
-                        <DawCompactInput
-                            type="number"
-                            value={time.newBeat}
-                            onChange={(event) => time.setNewBeat(event.target.value)}
-                            size="micro"
-                            align="center"
-                            monospace
-                            className="w-14"
-                            min={0}
-                            step={1}
-                            placeholder="Beat"
-                            aria-label="New tempo change beat"
-                        />
-                        <DawCompactInput
-                            type="number"
-                            value={time.newTempo}
-                            onChange={(event) => time.setNewTempo(event.target.value)}
-                            size="micro"
-                            align="center"
-                            monospace
-                            className="w-14"
-                            min={20}
-                            max={999}
-                            step={0.1}
-                            placeholder="BPM"
-                            aria-label="New tempo change BPM"
-                        />
-                        <DawCompactSelect
-                            value={time.newCurve}
-                            onChange={(event) => time.setNewCurve(event.target.value as 'instant' | 'linear')}
-                            className="bg-muted px-1"
-                            aria-label="New tempo change curve type"
-                        >
-                            <option value="instant">instant</option>
-                            <option value="linear">linear</option>
-                        </DawCompactSelect>
-                        <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            onClick={time.handleAddTempoChange}
-                            aria-label="Add tempo change"
-                            className="size-6"
-                        >
-                            <Plus className="size-3" />
-                        </Button>
-                    </Row>
-                </div>
-            ) : null}
+                          <Row gap={1} className="mt-2 border-t border-border pt-2">
+                              <DawCompactInput
+                                  type="number"
+                                  value={time.newBeat}
+                                  onChange={(event) => time.setNewBeat(event.target.value)}
+                                  size="micro"
+                                  align="center"
+                                  monospace
+                                  className="w-14"
+                                  min={0}
+                                  step={1}
+                                  placeholder="Beat"
+                                  aria-label="New tempo change beat"
+                              />
+                              <DawCompactInput
+                                  type="number"
+                                  value={time.newTempo}
+                                  onChange={(event) => time.setNewTempo(event.target.value)}
+                                  size="micro"
+                                  align="center"
+                                  monospace
+                                  className="w-14"
+                                  min={20}
+                                  max={999}
+                                  step={0.1}
+                                  placeholder="BPM"
+                                  aria-label="New tempo change BPM"
+                              />
+                              <DawCompactSelect
+                                  value={time.newCurve}
+                                  onChange={(event) => time.setNewCurve(event.target.value as 'instant' | 'linear')}
+                                  className="bg-muted px-1"
+                                  aria-label="New tempo change curve type"
+                              >
+                                  <option value="instant">instant</option>
+                                  <option value="linear">linear</option>
+                              </DawCompactSelect>
+                              <Button
+                                  variant="ghost"
+                                  size="icon-xs"
+                                  onClick={time.handleAddTempoChange}
+                                  aria-label="Add tempo change"
+                                  className="size-6"
+                              >
+                                  <Plus className="size-3" />
+                              </Button>
+                          </Row>
+                      </div>,
+                      document.body
+                  )
+                : null}
         </Row>
     );
 };

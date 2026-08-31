@@ -38,25 +38,6 @@ import { WindowControls } from './Transport/WindowControls';
 
 const getTracks = (state: { tracks: Track[] } | null): Track[] => state?.tracks ?? [];
 const COMPACT_TRANSPORT_MAX_WIDTH = 1199;
-const RESPONSIVE_DISCLOSURE_SELECTORS = [
-    '[role="dialog"][aria-label="Project controls"]',
-    '[role="dialog"][aria-label="View and panel controls"]',
-    '[role="dialog"][aria-label="More transport controls"]',
-    '[role="dialog"][aria-label="Punch recording settings"]',
-    '[role="dialog"][aria-label="Editing tools"]',
-    '[role="dialog"][aria-label="Solo mode"]',
-    '[role="dialog"][aria-label="Tempo map editor"]',
-    '[role="dialog"][aria-label="Missing media"]',
-    '[role="menu"][aria-label="Arrangement menu"]',
-];
-
-const hasResponsiveDisclosureOpen = (): boolean => {
-    if (typeof document === 'undefined') {
-        return false;
-    }
-    return RESPONSIVE_DISCLOSURE_SELECTORS.some((selector) => document.querySelector(selector) !== null);
-};
-
 const isCompactLayoutViewport = (): boolean => {
     if (typeof window === 'undefined') {
         return false;
@@ -130,13 +111,12 @@ export const TransportBar = (): ReactElement => {
             if (nextCompactMode === compactModeRef.current) {
                 return;
             }
-            const disclosureWasOpen = hasResponsiveDisclosureOpen();
             compactModeRef.current = nextCompactMode;
             if (moreOpenRef.current) {
                 moreOpenRef.current = false;
                 setMoreOpen(false);
             }
-            restoreFocusAfterModeChangeRef.current = disclosureWasOpen;
+            restoreFocusAfterModeChangeRef.current = true;
             setCompactMode(nextCompactMode);
         };
         window.addEventListener('resize', syncCompactMode);
@@ -151,6 +131,10 @@ export const TransportBar = (): ReactElement => {
             return;
         }
         restoreFocusAfterModeChangeRef.current = false;
+        const activeElement = document.activeElement;
+        if (activeElement !== document.body && moreContainerRef.current?.contains(activeElement)) {
+            return;
+        }
         moreContainerRef.current?.querySelector<HTMLElement>('[aria-label="Stop"]')?.focus();
     }, [compactMode]);
 

@@ -464,4 +464,17 @@ describe('TransportBar', () => {
         expect(screen.getByRole('button', { name: 'More transport controls' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Project controls' })).toBeInTheDocument();
     });
+
+    it('restores focus when the focused transport control unmounts during a mode change', () => {
+        renderTransportBar();
+        screen.getByRole('menu', { name: 'Arrangement menu' }).remove();
+        screen.getByTestId('transport-metronome').focus();
+
+        setViewportWidth(VIEWPORT_COMPACT_WIDTH);
+        act(() => {
+            window.dispatchEvent(new Event('resize'));
+        });
+
+        expect(screen.getByRole('button', { name: 'Stop' })).toHaveFocus();
+    });
 });
