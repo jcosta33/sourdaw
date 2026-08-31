@@ -159,7 +159,7 @@ export async function settleConfirmedBatchOutcome(
                     durableReceipt: batchResult.receipt,
                     phase: 'arming',
                 }).status === 'admitted';
-            const requiresManualRenderRepair = batchResult.receipt.pendingEffects.some(
+            const manualRenderRepairEffect = batchResult.receipt.pendingEffects.find(
                 (effect) =>
                     effect.kind === 'external-effect' &&
                     effect.operation === 'renderProjectSections' &&
@@ -192,7 +192,7 @@ export async function settleConfirmedBatchOutcome(
                     status: manualReviewPersistenceWarning ? 'failed' : 'executed',
                     error: surfacedManualReviewError,
                 });
-            } else if (requiresManualRenderRepair) {
+            } else if (manualRenderRepairEffect) {
                 manualReviewReason =
                     reviewRequiredSectionRenders.length > 0
                         ? `Section render artifacts require manual review: ${formatSectionRenderReviewSummary(reviewRequiredSectionRenders)}.`
@@ -212,6 +212,9 @@ export async function settleConfirmedBatchOutcome(
                 updatePendingActionFollowUp({
                     confirmationId: confirmation.id,
                     error: surfacedManualReviewError,
+                    ...(manualRenderRepairEffect.failureKind === 'retention-capacity'
+                        ? { failureKind: 'retention-capacity' as const }
+                        : {}),
                     projectRevision: null,
                     status: 'failed',
                 });

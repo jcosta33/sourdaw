@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
     getAffectedIds: vi.fn<GetPlannedActionAffectedIds>(() => []),
     getRun: vi.fn(),
     parseBatch: vi.fn(),
+    revisionMatches: vi.fn<(revision: string) => boolean>(),
     reserveBudget: vi.fn(),
     transitionToExecuting: vi.fn(),
     updateConfirmation: vi.fn(),
@@ -33,7 +34,7 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: mocks.captureRevision,
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(() => true),
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint: mocks.revisionMatches,
 }));
 vi.mock('../../../stores/chatStore', () => ({ updateChatMessage: mocks.updateMessage }));
 vi.mock('../../../stores/pendingActionConfirmationStore', () => ({
@@ -257,6 +258,7 @@ beforeEach(() => {
     vi.clearAllMocks();
     mocks.getRun.mockReturnValue({ runId: confirmation.runId });
     mocks.parseBatch.mockReturnValue(parsedBatch);
+    mocks.revisionMatches.mockImplementation((revision) => revision === 'revision-1');
     mocks.reserveBudget.mockReturnValue({ status: 'reserved', estimates: [{ category: 'maxCommands', amount: 1 }] });
     mocks.claimLease.mockReturnValue({ status: 'claimed', lease });
     mocks.failPreflight.mockResolvedValue({ status: 'failed', reason: 'preflight failed' });
@@ -278,6 +280,20 @@ describe('beginConfirmedCommandExecution', () => {
         expect(mocks.reserveBudget).not.toHaveBeenCalled();
         expect(mocks.claimLease).not.toHaveBeenCalled();
         expect(mocks.updateConfirmation).not.toHaveBeenCalled();
+    });
+
+    it('validates approval against the confirmed revision when only the command checkpoint drifted', () => {
+        mocks.captureRevision.mockReturnValueOnce('revision-with-checkpoint-drift');
+        mocks.revisionMatches.mockImplementationOnce((revision) => revision === confirmation.projectRevision);
+
+        const result = execute();
+
+        expect(result.status).toBe('ready');
+        expect(mocks.revisionMatches).toHaveBeenCalledWith(confirmation.projectRevision);
+        expect(mocks.validateApproval).toHaveBeenCalledWith(
+            expect.objectContaining({ currentRevision: confirmation.projectRevision })
+        );
+        expect(mocks.captureRevision).not.toHaveBeenCalled();
     });
 
     it('should settle a confirmation without an exact risk approval binding before admission continues', async () => {

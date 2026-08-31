@@ -51,7 +51,11 @@ type PendingPostCommitEffectBase = {
 export type PendingPostCommitEffect = PendingPostCommitEffectBase &
     (
         | { kind: 'runtime-graph'; remediation: 'retry' | 'repair' }
-        | { kind: 'external-effect'; remediation: 'reconcile' | 'manual-repair' }
+        | {
+              kind: 'external-effect';
+              remediation: 'reconcile' | 'manual-repair';
+              failureKind?: 'retention-capacity';
+          }
     );
 
 type BatchWarningDetail = {
@@ -170,6 +174,8 @@ function getPendingPostCommitEffect(
         declared.reason.trim().length > 0 &&
         (declared.remediation === 'reconcile' || declared.remediation === 'manual-repair')
     ) {
+        const failureKind =
+            isRecord(error) && error.failureKind === 'retention-capacity' ? error.failureKind : undefined;
         return {
             commandId: prepared.envelope.commandId,
             kind: declared.kind,
@@ -177,6 +183,7 @@ function getPendingPostCommitEffect(
             reason: declared.reason,
             remediation: declared.remediation,
             state: declared.state,
+            ...(failureKind ? { failureKind } : {}),
         };
     }
     if (prepared.postCommitEffect?.kind === 'runtime-graph') {
