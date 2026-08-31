@@ -8,10 +8,10 @@
 // `CrdtDocument/useCases/projection/__tests__/projectionCompleteness.spec.ts`
 // for the same kind of cross-module-truth problem.
 //
-// Both live registration sites are scanned: PluginHost's `builtinDSP.ts` and
-// Synth's `proSynthInstruments.ts`. Scanning only the first would declare the
-// Supersaw Unison addresses (registered by Synth) unreal, so every supersaw
-// preset key would read as a stray even though it reaches the DSP.
+// All live registration sites are scanned: PluginHost's `builtinDSP.ts`,
+// `registerSupersawUnison.ts`, and Synth's `proSynthInstruments.ts`. Scanning
+// only the first would declare Supersaw Unison addresses unreal, so every
+// supersaw preset key would read as a stray even though it reaches the DSP.
 //
 // Shared by the preset-key guard and the descriptor welds (instruments in
 // `faustInstrumentPresets.spec.ts`, effects in
@@ -20,6 +20,7 @@
 const FAUST_DSP_SOURCE_GLOB = import.meta.glob(
     [
         '/src/modules/PluginHost/useCases/faustEngine/builtinDSP.ts',
+        '/src/modules/PluginHost/useCases/faustEngine/registerSupersawUnison.ts',
         '/src/modules/Synth/useCases/proSynthInstruments.ts',
     ],
     {

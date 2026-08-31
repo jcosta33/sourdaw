@@ -145,7 +145,7 @@ function snapshotNode(nodes: readonly object[]): string {
  * Naming the source in prose alone would go stale silently on any Rust or Faust
  * rename; reading it turns the claim into a check.
  */
-const OFF_GRAPH_TAIL_ATTESTATION: Record<string, { file: string; consumes: string }> = {
+const OFF_GRAPH_TAIL_ATTESTATION: Record<string, { file: string; consumes: string | readonly string[] }> = {
     // `decay` is the unitless 0..0.999 coefficient the descriptor declares, and
     // the FDN converts it to an RT60 in seconds itself via `decay_to_rt60_seconds`,
     // so the knob's full travel reaches the engine's full ~0.1..30 s range.
@@ -175,7 +175,7 @@ const OFF_GRAPH_TAIL_ATTESTATION: Record<string, { file: string; consumes: strin
     },
     'faust-fm-synth': {
         file: 'src/modules/PluginHost/useCases/faustEngine/dsp/fm-synth.dsp',
-        consumes: 'hslider("op1_release"',
+        consumes: ['hslider("op1_release"', 'hslider("op2_release"', 'hslider("op3_release"', 'hslider("op4_release"'],
     },
     'faust-supersaw-unison': {
         file: 'src/modules/PluginHost/useCases/faustEngine/dsp/supersaw-unison.dsp',
@@ -338,8 +338,11 @@ describe('device tail declarations — descriptor/estimator conformance', () => 
                 stale.push(`${plugin.id}: missing file ${attestation.file}`);
                 continue;
             }
-            if (!readFileSync(absolute, 'utf8').includes(attestation.consumes)) {
-                stale.push(`${plugin.id}: ${attestation.file} no longer contains ${attestation.consumes}`);
+            const source = readFileSync(absolute, 'utf8');
+            for (const consumes of [attestation.consumes].flat()) {
+                if (!source.includes(consumes)) {
+                    stale.push(`${plugin.id}: ${attestation.file} no longer contains ${consumes}`);
+                }
             }
         }
 
