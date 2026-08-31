@@ -2780,11 +2780,13 @@ function parseWindowsProcessRows(output: string): WindowsProcessRow[] | undefine
 }
 
 function parseWindowsProcessStartedAt(value: string): number | undefined {
-    const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.(\d{6})([+-])(\d{3})$/.exec(value);
+    const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.(\d{6,7})(Z|[+-]\d{2}:\d{2}|[+-]\d{3})$/.exec(
+        value
+    );
     if (match === null) {
         return undefined;
     }
-    const [, year, month, day, hour, minute, second, microseconds, offsetSign, offsetMinutes] = match;
+    const [, year, month, day, hour, minute, second, microseconds, offsetIdentity] = match;
     const milliseconds = Date.UTC(
         Number(year),
         Number(month) - 1,
@@ -2808,16 +2810,33 @@ function parseWindowsProcessStartedAt(value: string): number | undefined {
     ) {
         return undefined;
     }
-    const offset = Number(offsetMinutes) * 60_000;
-    return offsetSign === '+' ? milliseconds - offset : milliseconds + offset;
+    if (offsetIdentity === 'Z') {
+        return milliseconds;
+    }
+    const offset = /^([+-])(\d{2}):(\d{2})$/.exec(offsetIdentity);
+    const compactOffset = /^([+-])(\d{3})$/.exec(offsetIdentity);
+    const selectedOffset = offset ?? compactOffset;
+    if (selectedOffset === null) {
+        return undefined;
+    }
+    const offsetSign = selectedOffset[1];
+    const offsetMinutes = offset === null ? Number(selectedOffset[2]) : Number(offset[2]) * 60 + Number(offset[3]);
+    if (offsetMinutes > 23 * 60 + 59) {
+        return undefined;
+    }
+    const offsetMilliseconds = offsetMinutes * 60_000;
+    return offsetSign === '+' ? milliseconds - offsetMilliseconds : milliseconds + offsetMilliseconds;
 }
+
+const windowsProcessCreationIdentityProperty =
+    "@{Name='CreationDate';Expression={$_.CreationDate.ToUniversalTime().ToString('O',[System.Globalization.CultureInfo]::InvariantCulture)}}";
 
 function inspectLiveWindowsProcesses(
     env: NodeJS.ProcessEnv = process.env,
     runWindowsProcessQuery: WindowsProcessQueryRunner = spawnSync
 ): WindowsProcessRow[] | undefined {
     return readTrustedWindowsProcessRows(
-        'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CreationDate | ConvertTo-Json -Compress',
+        `Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,${windowsProcessCreationIdentityProperty} | ConvertTo-Json -Compress`,
         env,
         runWindowsProcessQuery
     );
@@ -2829,7 +2848,7 @@ export function currentWindowsProcessTreeFence(
     runWindowsProcessQuery: WindowsProcessQueryRunner = spawnSync
 ): ReviewResolutionLockOwnerFence {
     const rows = readTrustedWindowsProcessRows(
-        `Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}" | Select-Object ProcessId,ParentProcessId,CreationDate | ConvertTo-Json -Compress`,
+        `Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}" | Select-Object ProcessId,ParentProcessId,${windowsProcessCreationIdentityProperty} | ConvertTo-Json -Compress`,
         env,
         runWindowsProcessQuery
     );
@@ -2850,7 +2869,7 @@ function isLiveWindowsProcessTree(
     inspect: () => WindowsProcessRow[] | undefined = () => inspectLiveWindowsProcesses()
 ): boolean {
     const rows = inspect();
-    if (rows === undefined) {
+    if (rows === undefined || rows.length === 0) {
         return true;
     }
     const ownerStartedAt = parseWindowsProcessStartedAt(ownerFence.rootStartedAt);
@@ -2970,9 +2989,11 @@ function currentPosixProcessGroupFence(
     pid: number,
     env: NodeJS.ProcessEnv = process.env
 ): ReviewResolutionLockOwnerFence {
+    const invariantEnv = invariantPosixProcessIdentityEnv(env);
     const result = spawnSync(trustedReviewResolutionPsPath(env), ['-o', 'pgid=', '-p', String(pid)], {
         encoding: 'utf8',
         shell: false,
+        env: invariantEnv,
         env,
     });
     if (result.error !== undefined) {
@@ -2988,6 +3009,7 @@ function currentPosixProcessGroupFence(
     const leader = spawnSync(trustedReviewResolutionPsPath(env), ['-o', 'lstart=', '-p', String(pgid)], {
         encoding: 'utf8',
         shell: false,
+        env: invariantEnv,
         env,
     });
     if (leader.error !== undefined) {
@@ -3141,16 +3163,21 @@ function isLiveProcessGroup(
 }
 
 function inspectPosixProcessGroupLeader(pgid: number, env: NodeJS.ProcessEnv = process.env): string | undefined | null {
+    const invariantEnv = invariantPosixProcessIdentityEnv(env);
     const result = spawnSync(trustedReviewResolutionPsPath(env), ['-o', 'lstart=', '-p', String(pgid)], {
         encoding: 'utf8',
         shell: false,
-        env,
+        env: invariantEnv,
     });
     if (result.error !== undefined || (result.status !== 0 && result.status !== 1)) {
         return null;
     }
     const leaderStartedAt = result.stdout.trim();
     return leaderStartedAt === '' ? undefined : leaderStartedAt;
+}
+
+function invariantPosixProcessIdentityEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+    return { ...env, LC_ALL: 'C', LANG: 'C', TZ: 'UTC' };
 }
 
 function acquirePullRequestReviewResolutionLock(

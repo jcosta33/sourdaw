@@ -1742,7 +1742,7 @@ describe('review thread resolution', () => {
         }
     });
 
-    it('reads the current process group through the launcher-bound ps executable instead of PATH', () => {
+    it('normalizes the current POSIX group identity across caller locale and timezone', () => {
         const repository = createTemporaryGitRepository();
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-resolve-ps-path-'));
         const trustedBin = join(root, 'trusted-bin');
@@ -1756,7 +1756,7 @@ describe('review thread resolution', () => {
             mkdirSync(hostileBin, { recursive: true });
             writeFileSync(
                 trustedPs,
-                `#!/bin/sh\nprintf trusted > ${JSON.stringify(trustedMarker)}\nexec ${JSON.stringify(trustedPsPath)} "$@"\n`
+                `#!/bin/sh\nprintf '%s|%s|%s\\n' "$LC_ALL" "$LANG" "$TZ" >> ${JSON.stringify(trustedMarker)}\nexec ${JSON.stringify(trustedPsPath)} "$@"\n`
             );
             chmodSync(trustedPs, 0o700);
             writeFileSync(
@@ -1765,17 +1765,38 @@ describe('review thread resolution', () => {
             );
             chmodSync(join(hostileBin, 'ps'), 0o700);
 
-            withTemporaryEnvironment(
-                {
-                    PATH: `${hostileBin}${delimiter}${previousPath ?? ''}`,
-                    SOURDAW_TRUSTED_PS_PATH: trustedPs,
-                },
-                () => {
-                    expect(withPullRequestReviewResolutionLock(repository, 42, threadId, head, () => 'ok')).toBe('ok');
+            const captureOwnerFence = (environment: NodeJS.ProcessEnv): ReviewResolutionLockOwnerFence => {
+                let ownerFence: ReviewResolutionLockOwnerFence | undefined;
+                withTemporaryEnvironment(environment, () => {
+                    expect(
+                        withPullRequestReviewResolutionLock(repository, 42, threadId, head, () => {
+                            ownerFence = requireLockOwner(repository, 42).ownerFence;
+                            return 'ok';
+                        })
+                    ).toBe('ok');
+                });
+                if (ownerFence === undefined) {
+                    throw new Error('review-resolution lock did not persist a POSIX owner fence');
                 }
-            );
-
-            expect(readFileSync(trustedMarker, 'utf8')).toBe('trusted');
+                return ownerFence;
+            };
+            const europeanFence = captureOwnerFence({
+                PATH: `${hostileBin}${delimiter}${previousPath ?? ''}`,
+                SOURDAW_TRUSTED_PS_PATH: trustedPs,
+                LC_ALL: 'de_CH.UTF-8',
+                LANG: 'de_CH.UTF-8',
+                TZ: 'Europe/Zurich',
+            });
+            const americanFence = captureOwnerFence({
+                PATH: `${hostileBin}${delimiter}${previousPath ?? ''}`,
+                SOURDAW_TRUSTED_PS_PATH: trustedPs,
+                LC_ALL: 'en_US.UTF-8',
+                LANG: 'en_US.UTF-8',
+                TZ: 'America/Los_Angeles',
+            });
+            expect(europeanFence).toEqual(americanFence);
+            expect(europeanFence).toMatchObject({ kind: 'pgid', leaderStartedAt: expect.any(String) });
+            expect(readFileSync(trustedMarker, 'utf8')).toBe('C|C|UTC\nC|C|UTC\nC|C|UTC\nC|C|UTC\n');
             expect(existsSync(hostileMarker)).toBe(false);
         } finally {
             process.env.PATH = previousPath;
@@ -2109,7 +2130,7 @@ describe('review thread resolution', () => {
         }
     });
 
-    it('acquires and releases a Windows lock with an exact process-start fence', () => {
+    it('preserves the exact Windows process-tree fence after acquisition failure', () => {
         const repository = createTemporaryGitRepository();
         try {
             withTemporaryEnvironment({ SOURDAW_TRUSTED_PS_PATH: undefined }, () => {
@@ -2122,13 +2143,27 @@ describe('review thread resolution', () => {
                         rootStartedAt: '2026-08-30T12:00:00.000000+000',
                     },
                 };
-                expect(
-                    withPullRequestReviewResolutionLock(repository, 42, threadId, head, () => 'Windows operation', {
-                        platform: 'win32',
-                        executionFence,
-                    })
-                ).toBe('Windows operation');
+                expect(() =>
+                    withPullRequestReviewResolutionLock(
+                        repository,
+                        42,
+                        threadId,
+                        head,
+                        () => {
+                            throw new Error('forced operation failure');
+                        },
+                        {
+                            platform: 'win32',
+                            executionFence,
+                            readOid: () => {
+                                throw new Error('forced owner inspection failure');
+                            },
+                        }
+                    )
+                ).toThrow(/forced owner inspection failure/);
             });
+            expect(requireLockOwner(repository, 42).ownerFence).toEqual(executionFence.ownerFence);
+            gitCapture(repository, ['update-ref', '-d', reviewResolutionLockRef(42)]);
             expect(readLockOid(repository, 42)).toBeUndefined();
         } finally {
             rmSync(repository, { recursive: true, force: true });
@@ -2410,7 +2445,14 @@ describe('review thread resolution', () => {
                 ],
             })
         ).toBe(false);
-        expect(reviewResolutionOwnerFenceIsLive(ownerFence, { inspectWindowsProcessRows: () => [] })).toBe(false);
+        expect(reviewResolutionOwnerFenceIsLive(ownerFence, { inspectWindowsProcessRows: () => [] })).toBe(true);
+        expect(
+            reviewResolutionOwnerFenceIsLive(ownerFence, {
+                inspectWindowsProcessRows: () => [
+                    { pid: 4199, parentPid: 1, startedAt: '2026-08-30T12:00:01.0000000Z' },
+                ],
+            })
+        ).toBe(false);
     });
 
     it('skips the CIM System Idle Process row so a dead Windows owner remains recoverable', () => {
@@ -2429,7 +2471,7 @@ describe('review thread resolution', () => {
                     output: [],
                     stdout: JSON.stringify([
                         { ProcessId: 0, ParentProcessId: 'ignored', CreationDate: '' },
-                        { ProcessId: 4101, ParentProcessId: 1, CreationDate: '2026-08-30T12:00:01.000000+000' },
+                        { ProcessId: 4101, ParentProcessId: 1, CreationDate: '2026-08-30T12:00:01.0000000Z' },
                     ]),
                     stderr: '',
                     status: 0,
@@ -2451,7 +2493,7 @@ describe('review thread resolution', () => {
             return {
                 pid: 0,
                 output: [],
-                stdout: '{"ProcessId":4321,"ParentProcessId":17,"CreationDate":"2026-08-30T12:34:56.000000+000"}',
+                stdout: '{"ProcessId":4321,"ParentProcessId":17,"CreationDate":"2026-08-30T12:34:56.0000000Z"}',
                 stderr: '',
                 status: 0,
                 signal: null,
@@ -2461,7 +2503,7 @@ describe('review thread resolution', () => {
             kind: 'win32-process-tree',
             version: 1,
             rootPid: 4321,
-            rootStartedAt: '2026-08-30T12:34:56.000000+000',
+            rootStartedAt: '2026-08-30T12:34:56.0000000Z',
         });
         expect(calls).toEqual([
             {
@@ -2470,11 +2512,27 @@ describe('review thread resolution', () => {
                     '-NoProfile',
                     '-NonInteractive',
                     '-Command',
-                    'Get-CimInstance Win32_Process -Filter "ProcessId = 4321" | Select-Object ProcessId,ParentProcessId,CreationDate | ConvertTo-Json -Compress',
+                    "Get-CimInstance Win32_Process -Filter \"ProcessId = 4321\" | Select-Object ProcessId,ParentProcessId,@{Name='CreationDate';Expression={$_.CreationDate.ToUniversalTime().ToString('O',[System.Globalization.CultureInfo]::InvariantCulture)}} | ConvertTo-Json -Compress",
                 ],
                 envPath: trustedPowerShellPath,
             },
         ]);
+    });
+
+    it.each([
+        ['PowerShell UTC identity', '2026-08-30T12:34:56.0000000Z'],
+        ['PowerShell-compatible offset identity', '2026-08-30T12:34:56.0000000+02:30'],
+    ] as const)('accepts the %s Windows creation identity contract', (_label, creationDate) => {
+        expect(
+            currentWindowsProcessTreeFence(4321, { SOURDAW_TRUSTED_POWERSHELL_PATH: trustedPowerShellPath }, (() => ({
+                pid: 0,
+                output: [],
+                stdout: JSON.stringify({ ProcessId: 4321, ParentProcessId: 17, CreationDate: creationDate }),
+                stderr: '',
+                status: 0,
+                signal: null,
+            })) as typeof spawnSync)
+        ).toMatchObject({ rootPid: 4321, rootStartedAt: creationDate });
     });
 
     it.each([
@@ -2498,6 +2556,14 @@ describe('review thread resolution', () => {
             ]),
         ],
         ['blank CreationDate', JSON.stringify({ ProcessId: 4321, ParentProcessId: 17, CreationDate: ' ' })],
+        [
+            'non-O-format CreationDate',
+            JSON.stringify({ ProcessId: 4321, ParentProcessId: 17, CreationDate: '2026-08-30 12:34:56Z' }),
+        ],
+        [
+            'out-of-range CreationDate offset',
+            JSON.stringify({ ProcessId: 4321, ParentProcessId: 17, CreationDate: '2026-08-30T12:34:56.0000000+24:00' }),
+        ],
     ] as const)('rejects %s while building a Windows process-tree fence', (_label, stdout) => {
         expect(() =>
             currentWindowsProcessTreeFence(4321, { SOURDAW_TRUSTED_POWERSHELL_PATH: trustedPowerShellPath }, (() => ({
@@ -2551,7 +2617,7 @@ describe('review thread resolution', () => {
                     '-NoProfile',
                     '-NonInteractive',
                     '-Command',
-                    'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CreationDate | ConvertTo-Json -Compress',
+                    "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,@{Name='CreationDate';Expression={$_.CreationDate.ToUniversalTime().ToString('O',[System.Globalization.CultureInfo]::InvariantCulture)}} | ConvertTo-Json -Compress",
                 ],
                 envPath: trustedPowerShellPath,
             },
