@@ -131,8 +131,7 @@ export const TransportBar = (): ReactElement => {
             return;
         }
         restoreFocusAfterModeChangeRef.current = false;
-        const activeElement = document.activeElement;
-        if (activeElement !== document.body && moreContainerRef.current?.contains(activeElement)) {
+        if (document.activeElement !== document.body) {
             return;
         }
         moreContainerRef.current?.querySelector<HTMLElement>('[aria-label="Stop"]')?.focus();

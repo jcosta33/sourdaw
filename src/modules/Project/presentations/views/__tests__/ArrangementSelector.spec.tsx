@@ -197,6 +197,45 @@ describe('ArrangementSelector', () => {
         expect(screen.getByRole('menu', { name: 'Arrangement menu' })).toBeInTheDocument();
     });
 
+    it('clamps its portaled menu inside the viewport near the right edge', () => {
+        render(<ArrangementSelector />);
+        const trigger = screen.getByLabelText(/Arrangement selector/i);
+        const triggerContainer = trigger.parentElement;
+        if (!triggerContainer) {
+            throw new Error('expected an arrangement selector container');
+        }
+
+        const triggerRect = DOMRect.fromRect({
+            x: window.innerWidth - 10,
+            y: 40,
+            width: 100,
+            height: 30,
+        });
+        const menuRect = DOMRect.fromRect({ width: 224, height: 200 });
+        Object.defineProperty(triggerContainer, 'getBoundingClientRect', {
+            configurable: true,
+            value: () => triggerRect,
+        });
+        const rectSpy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(menuRect);
+
+        fireEvent.click(trigger);
+        rectSpy.mockRestore();
+
+        const menu = screen.getByRole('menu', { name: 'Arrangement menu' });
+        Object.defineProperty(menu, 'getBoundingClientRect', {
+            configurable: true,
+            value: () => {
+                const left = Number.parseFloat(menu.style.left);
+                return DOMRect.fromRect({ x: left, width: 224, height: 200 });
+            },
+        });
+
+        const clampedRect = menu.getBoundingClientRect();
+        expect(clampedRect.right).toBeLessThanOrEqual(window.innerWidth);
+        expect(clampedRect.left).toBeGreaterThanOrEqual(0);
+        expect(clampedRect.left).toBeLessThan(triggerRect.left);
+    });
+
     it('should have New Arrangement button', () => {
         render(<ArrangementSelector />);
         const button = screen.getByLabelText(/Arrangement selector/i);

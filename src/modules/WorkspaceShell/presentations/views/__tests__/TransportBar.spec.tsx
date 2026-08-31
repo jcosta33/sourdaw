@@ -489,4 +489,21 @@ describe('TransportBar', () => {
 
         expect(screen.getByRole('button', { name: 'Play' })).toHaveFocus();
     });
+
+    it('keeps focus in portaled transport settings during a mode change', () => {
+        renderTransportBar();
+        screen.getByRole('menu', { name: 'Arrangement menu' }).remove();
+        fireEvent.click(screen.getByRole('button', { name: 'Transport settings' }));
+
+        const settingsDialog = screen.getByRole('dialog', { name: 'Transport settings' });
+        expect(settingsDialog).toBeInTheDocument();
+
+        setViewportWidth(VIEWPORT_COMPACT_WIDTH);
+        act(() => {
+            window.dispatchEvent(new Event('resize'));
+        });
+
+        expect(settingsDialog).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Stop' })).not.toHaveFocus();
+    });
 });
