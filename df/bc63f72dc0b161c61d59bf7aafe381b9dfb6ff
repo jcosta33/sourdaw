@@ -1,0 +1,20 @@
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/transportTimelineStrategy.spec.ts
+  s_a40848e8f8cca9::t_5346a2a74ff730 339-348,519-524,547-556,650-658
+  s_a40848e8f8cca9::t_94893502386dfd 659-660
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "dfbc63f72dc0b161c61d59bf7aafe381b9dfb6ff",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
