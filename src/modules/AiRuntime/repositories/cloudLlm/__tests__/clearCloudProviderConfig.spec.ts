@@ -5,22 +5,91 @@ import { clearCloudProviderConfig } from '../clearCloudProviderConfig';
 import { registerCloudStreamController } from '../registerCloudStreamController';
 import { setCloudProviderConfig } from '../setCloudProviderConfig';
 
-const invoke = vi.hoisted(() =>
-    vi.fn<(command: string, args?: Record<string, unknown>) => Promise<unknown>>(async (command) =>
-        command === 'open_provider_gateway_session' ? 'provider-session-00000000000000000000000000000000' : undefined
-    )
-);
+type TestGatewayChannel = {
+    id: number;
+    onmessage: (event: unknown) => void;
+    toJSON: () => string;
+};
+
+const SESSION_ID = 'provider-session-00000000000000000000000000000000';
+
+const invoke = vi.hoisted(() => {
+    const channels: TestGatewayChannel[] = [];
+    let nextChannelId = 100;
+    return {
+        channels,
+        createChannel: vi.fn(async () => {
+            const id = nextChannelId;
+            nextChannelId += 1;
+            const channel: TestGatewayChannel = {
+                id,
+                onmessage: (_event: unknown) => undefined,
+                toJSON: () => `__CHANNEL__:${String(id)}`,
+            };
+            channels.push(channel);
+            return channel;
+        }),
+        invoke: vi.fn<(command: string, args?: Record<string, unknown>) => Promise<unknown>>(),
+    };
+});
 
 vi.mock('#/utils/desktopBridge', () => ({
     isDesktopRuntime: () => true,
-    desktopInvoke: invoke,
-    createChannel: vi.fn(),
+    desktopInvoke: invoke.invoke,
+    createChannel: invoke.createChannel,
 }));
+
+function gatewayEvent(
+    requestId: unknown,
+    sequence: number,
+    event: string,
+    data: Record<string, unknown> = {}
+): Record<string, unknown> {
+    return { event, data: { ...data, requestId, sequence } };
+}
+
+function mockSuccessfulGateway(): void {
+    invoke.invoke.mockImplementation(async (command, args) => {
+        if (command === 'open_provider_gateway_session') {
+            return SESSION_ID;
+        }
+        if (command === 'provider_gateway_request') {
+            const channelValue = args?.onEvent;
+            if (
+                typeof channelValue !== 'object' ||
+                channelValue === null ||
+                !('onmessage' in channelValue) ||
+                typeof channelValue.onmessage !== 'function'
+            ) {
+                throw new Error('Expected a provider gateway event channel');
+            }
+            const channel = channelValue as TestGatewayChannel;
+            const encoder = new TextEncoder();
+            let sequence = 0;
+            channel.onmessage(
+                gatewayEvent(args?.requestId, sequence++, 'response-start', {
+                    status: 200,
+                    contentType: 'application/json',
+                })
+            );
+            channel.onmessage(
+                gatewayEvent(args?.requestId, sequence++, 'body-chunk', {
+                    bytes: Array.from(encoder.encode('{"data":[]}')),
+                })
+            );
+            channel.onmessage(gatewayEvent(args?.requestId, sequence, 'done'));
+            return undefined;
+        }
+        return undefined;
+    });
+}
 
 describe('clearCloudProviderConfig', () => {
     beforeEach(async () => {
         await clearCloudProviderConfig();
-        invoke.mockClear();
+        vi.clearAllMocks();
+        invoke.channels.length = 0;
+        mockSuccessfulGateway();
     });
 
     it('closes the native session and aborts every active request', async () => {
@@ -35,8 +104,8 @@ describe('clearCloudProviderConfig', () => {
 
         await clearCloudProviderConfig();
 
-        expect(invoke).toHaveBeenCalledWith('close_provider_gateway_session', {
-            sessionId: 'provider-session-00000000000000000000000000000000',
+        expect(invoke.invoke).toHaveBeenCalledWith('close_provider_gateway_session', {
+            sessionId: SESSION_ID,
         });
         expect(hostedLlmProviderStatusStore.value).toBeNull();
         expect(first.signal.aborted).toBe(true);
