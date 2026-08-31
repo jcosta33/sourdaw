@@ -1877,8 +1877,9 @@ describe('review thread resolution', () => {
                 const ownerOid = writeLockOwnerBlob(repository, 9_999_999, head, mutation);
                 updateLock(repository, 42, ownerOid);
                 const session: GhSession = { configDir: repository, env: {}, dispose() {} };
-                const fake = fakePort();
+                const fake = fakePort({ heads: [movedHead, movedHead] });
                 let monotonicNow = 0n;
+                const waits: number[] = [];
                 await expect(
                     runRecoverReviewResolutionLockCli(['42', '--owner', ownerOid, '--retire-unseen'], {
                         trustedPrimaryRoot: () => repository,
@@ -1889,7 +1890,8 @@ describe('review thread resolution', () => {
                         clock: { now: () => 0 },
                         retirementClock: {
                             monotonicNow: () => monotonicNow,
-                            wait: () => {
+                            wait: (milliseconds) => {
+                                waits.push(milliseconds);
                                 monotonicNow += 30_000_000_000n;
                             },
                         },
@@ -1898,6 +1900,7 @@ describe('review thread resolution', () => {
                     })
                 ).resolves.toBe(0);
                 expect(fake.calls).toEqual(['inspect:1', 'inspect:2']);
+                expect(waits).toEqual([30_000]);
                 expect(readLockOid(repository, 42)).toBeUndefined();
             } finally {
                 rmSync(repository, { recursive: true, force: true });
@@ -2434,12 +2437,14 @@ describe('review thread resolution', () => {
     it('fails closed when POSIX leader identity inspection is unavailable and probes legacy groups without a leader identity', () => {
         const missingGroup = new Error('missing process group') as NodeJS.ErrnoException;
         missingGroup.code = 'ESRCH';
+        const targets: number[] = [];
         expect(
             reviewResolutionOwnerFenceIsLive(
                 { kind: 'pgid', pgid: 1234, leaderStartedAt: 'Mon Aug 31 12:00:00 2026' },
                 {
                     inspectPosixGroupLeader: () => null,
-                    probe: () => {
+                    probe: (target) => {
+                        targets.push(target);
                         throw missingGroup;
                     },
                 }
@@ -2449,12 +2454,32 @@ describe('review thread resolution', () => {
             reviewResolutionOwnerFenceIsLive(
                 { kind: 'pgid', pgid: 1234 },
                 {
-                    probe: () => {
+                    probe: (target) => {
+                        targets.push(target);
                         throw missingGroup;
                     },
                 }
             )
         ).toBe(false);
+        expect(targets).toEqual([-1234]);
+    });
+
+    it('keeps legacy PGID recovery live when probing its process group is permission-denied', () => {
+        const permissionDenied = new Error('permission denied') as NodeJS.ErrnoException;
+        permissionDenied.code = 'EPERM';
+        const targets: number[] = [];
+        expect(
+            reviewResolutionOwnerFenceIsLive(
+                { kind: 'pgid', pgid: 1234 },
+                {
+                    probe: (target) => {
+                        targets.push(target);
+                        throw permissionDenied;
+                    },
+                }
+            )
+        ).toBe(true);
+        expect(targets).toEqual([-1234]);
     });
 
     it('propagates an unexpected POSIX group-leader inspection failure', () => {

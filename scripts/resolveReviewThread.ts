@@ -4301,9 +4301,6 @@ export function retireUnseenReviewResolutionLockOwnerState(
         fail('review-resolution retirement requires an unseen createPendingReview or replyDone settlement');
     }
     const initialInspection = inspectReviewResolutionRecovery(number, owner, port);
-    if (initialInspection.head !== owner.head) {
-        fail('review-resolution retirement refuses head drift during remote inspection');
-    }
     const initialContext = resolutionReviewContext(initialInspection.pullRequestId, owner.threadId, owner.head);
     if (exactRetirementMutationEvidenceCount(owner, initialInspection, initialContext) !== 0) {
         fail('review-resolution retirement found mutation evidence during remote inspection');
@@ -4327,7 +4324,10 @@ export function retireUnseenReviewResolutionLockOwnerState(
         fail('review-resolution retirement lock owner changed during settlement');
     }
     const settledInspection = inspectReviewResolutionRecovery(number, settledOwner, port);
-    if (settledInspection.head !== owner.head) {
+    if (
+        settledInspection.pullRequestId !== initialInspection.pullRequestId ||
+        settledInspection.head !== initialInspection.head
+    ) {
         fail('review-resolution retirement refuses head drift during remote inspection');
     }
     const settledContext = resolutionReviewContext(
