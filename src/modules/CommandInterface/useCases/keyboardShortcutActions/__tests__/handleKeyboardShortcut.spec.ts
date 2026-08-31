@@ -16,6 +16,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     setLoopRegion: vi.fn(),
     stopAllSlots: vi.fn(),
     triggerPad: vi.fn(),
+    panicAllNotes: vi.fn(),
 }));
 
 vi.mock('../trackShortcuts/clearSolos', () => ({ clearSolos: vi.fn() }));

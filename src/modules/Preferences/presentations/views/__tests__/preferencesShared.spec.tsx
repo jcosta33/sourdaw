@@ -60,16 +60,20 @@ describe('ToggleRow', () => {
 });
 
 describe('VoiceKeyEditor', () => {
-    it('shows the current key uppercased when not listening', () => {
+    // The literal accessible-name contract the browser display-scale E2E
+    // addresses: the uppercased key plus the visible change/voice hint.
+    const idleCaptureName = 'Voice command key V — Click to change — hold to activate voice input';
+
+    it('names the capture button with the uppercased key and the change/voice hint', () => {
         render(<VoiceKeyEditor currentKey="v" onChange={vi.fn()} />);
 
-        expect(screen.getByRole('button', { name: 'V' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: idleCaptureName })).toBeInTheDocument();
     });
 
     it('enters listening mode when the capture button is clicked', () => {
         render(<VoiceKeyEditor currentKey="v" onChange={vi.fn()} />);
 
-        fireEvent.click(screen.getByRole('button', { name: 'V' }));
+        fireEvent.click(screen.getByRole('button', { name: idleCaptureName }));
 
         expect(screen.getByRole('button', { name: 'Press a key...' })).toBeInTheDocument();
         expect(screen.getByText('Listening for keypress')).toBeInTheDocument();
@@ -79,22 +83,22 @@ describe('VoiceKeyEditor', () => {
         const onChange = vi.fn();
         render(<VoiceKeyEditor currentKey="v" onChange={onChange} />);
 
-        fireEvent.click(screen.getByRole('button', { name: 'V' }));
+        fireEvent.click(screen.getByRole('button', { name: idleCaptureName }));
         fireEvent.keyDown(window, { key: 'K' });
 
         expect(onChange).toHaveBeenCalledWith('k');
-        expect(screen.getByRole('button', { name: 'V' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: idleCaptureName })).toBeInTheDocument();
     });
 
     it('exits listening mode without calling onChange for multi-character keys (e.g. Shift)', () => {
         const onChange = vi.fn();
         render(<VoiceKeyEditor currentKey="v" onChange={onChange} />);
 
-        fireEvent.click(screen.getByRole('button', { name: 'V' }));
+        fireEvent.click(screen.getByRole('button', { name: idleCaptureName }));
         fireEvent.keyDown(window, { key: 'Shift' });
 
         expect(onChange).not.toHaveBeenCalled();
-        expect(screen.getByRole('button', { name: 'V' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: idleCaptureName })).toBeInTheDocument();
     });
 });
 
