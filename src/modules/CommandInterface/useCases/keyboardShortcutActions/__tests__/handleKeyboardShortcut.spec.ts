@@ -73,6 +73,10 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     selectAllClips: vi.fn(),
     selectClipWithFocus: vi.fn(),
     setMarqueeSelection: vi.fn(),
+    cancelActiveTimelineGesture: vi.fn(() => false),
+    executeUndoableDuplicateTimeRange: vi.fn(),
+    executeUndoableInsertTime: vi.fn(),
+    getAllTracks: vi.fn(() => []),
 }));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({

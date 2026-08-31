@@ -88,6 +88,10 @@ vi.mock('#/modules/Preferences/stores', () => ({
 
 vi.mock('#/modules/Preferences/useCases', () => ({
     setTimelineMinimapHeight: preferencesMocks.setTimelineMinimapHeight,
+    TRACK_HEIGHT_VALUES: { compact: 40, normal: 64, large: 96 },
+    defaultPreferences: {},
+    gridSnapBeats: vi.fn(() => 0),
+    setTrackHeight: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({

@@ -39,6 +39,10 @@ vi.mock('#/modules/Command/useCases', () => ({
     clearUndoHistory: vi.fn(),
     executeAppAction: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    isAppActionCommittedError: vi.fn(() => false),
+    pushUndoEntry: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: vi.fn(),
