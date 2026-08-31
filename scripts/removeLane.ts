@@ -82,6 +82,20 @@ export function inside(parent: string, candidate: string): boolean {
     return path === '' || (!path.startsWith('..') && !isAbsolute(path));
 }
 
+function canonicalPath(path: string): string {
+    const absolute = resolve(path);
+    try {
+        return realpathSync(absolute);
+    } catch {
+        return absolute;
+    }
+}
+
+function matchingWorktrees(target: string, worktrees: Worktree[]): Worktree[] {
+    const canonicalTarget = canonicalPath(target);
+    return worktrees.filter((worktree) => canonicalPath(worktree.path) === canonicalTarget);
+}
+
 /**
  * The one shared definition of ignored output that is safe to discard: regenerable build and test
  * products, nothing else. Removal refuses a lane carrying ignored data that is not this, and
@@ -129,18 +143,27 @@ function locateAgentWorktree(target: string, verb: string, port: LaneRemovalPort
     if (root === undefined) {
         fail('repository has no worktree state');
     }
-    const lane = worktrees.find((worktree) => worktree.path === target);
-    if (lane === undefined) {
+    const canonicalRoot = canonicalPath(root.path);
+    const canonicalTarget = canonicalPath(target);
+    const matches = matchingWorktrees(target, worktrees);
+    if (matches.length === 0) {
         fail(`${target} is not a registered worktree`);
     }
-    if (target === root.path) {
+    if (matches.length !== 1) {
+        fail(`${target} does not identify one registered worktree`);
+    }
+    const [lane] = matches;
+    if (lane === undefined) {
+        fail(`${target} does not identify one registered worktree`);
+    }
+    if (canonicalTarget === canonicalRoot) {
         fail(`refusing to ${verb} the primary worktree`);
     }
-    const agentRoot = join(root.path, '.agents', 'worktrees');
-    if (target === agentRoot || !inside(agentRoot, target)) {
+    const agentRoot = canonicalPath(join(canonicalRoot, '.agents', 'worktrees'));
+    if (canonicalTarget === agentRoot || !inside(agentRoot, canonicalTarget)) {
         fail(`${target} is not an agent worktree`);
     }
-    if (inside(target, port.currentDirectory())) {
+    if (inside(canonicalTarget, canonicalPath(port.currentDirectory()))) {
         fail(`refusing to ${verb} the active worktree`);
     }
     if (port.active(target)) {
@@ -241,9 +264,12 @@ function validateOwnership(
     repository: string,
     port: LaneRemovalPort
 ): OwnershipSnapshot {
-    const current = port.worktrees().find((worktree) => worktree.path === target);
+    const matches = matchingWorktrees(target, port.worktrees());
+    const [current] = matches;
     if (
+        matches.length !== 1 ||
         current === undefined ||
+        current.path !== expected.path ||
         current.head !== expected.head ||
         current.branch !== expected.branch ||
         current.bare ||
@@ -396,9 +422,12 @@ type StrandSnapshot = {
  * backlog this path exists to drain.
  */
 function validateStrand(target: string, expected: Worktree, port: LaneRemovalPort): StrandSnapshot {
-    const current = port.worktrees().find((worktree) => worktree.path === target);
+    const matches = matchingWorktrees(target, port.worktrees());
+    const [current] = matches;
     if (
+        matches.length !== 1 ||
         current === undefined ||
+        current.path !== expected.path ||
         current.head !== expected.head ||
         current.branch !== expected.branch ||
         current.bare ||
@@ -561,13 +590,18 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneStrandPort
         currentDirectory: () => realpathSync(process.cwd()),
         worktrees: () => parseWorktrees(shell.capture('git', ['worktree', 'list', '--porcelain', '-z'])),
         active: (path) => {
+            const canonicalTarget = canonicalPath(path);
             let pid: number | undefined;
             for (const line of shell.capture('lsof', ['-a', '-d', 'cwd', '-F', 'pn']).split('\n')) {
                 if (line.startsWith('p')) {
                     pid = Number(line.slice(1));
                     continue;
                 }
-                if (line.startsWith('n') && pid !== process.pid && inside(path, line.slice(1))) {
+                if (
+                    line.startsWith('n') &&
+                    pid !== process.pid &&
+                    inside(canonicalTarget, canonicalPath(line.slice(1)))
+                ) {
                     return true;
                 }
             }
