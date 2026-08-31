@@ -2260,6 +2260,20 @@ describe('review thread resolution', () => {
         ).toBe(true);
     });
 
+    it('propagates an unexpected POSIX group-leader inspection failure', () => {
+        const failure = new Error('leader inspection failed');
+        expect(() =>
+            reviewResolutionOwnerFenceIsLive(
+                { kind: 'pgid', pgid: 1234, leaderStartedAt: 'Mon Aug 31 12:00:00 2026' },
+                {
+                    inspectPosixGroupLeader: () => {
+                        throw failure;
+                    },
+                }
+            )
+        ).toThrow(failure);
+    });
+
     it('rejects a malformed persisted POSIX group-leader identity before recovery', () => {
         const repository = createTemporaryGitRepository();
         try {
@@ -2361,6 +2375,65 @@ describe('review thread resolution', () => {
         ).toBe(true);
     });
 
+    it('keeps Windows recovery live for provable descendants and ambiguous reused-root children', () => {
+        const ownerFence = {
+            kind: 'win32-process-tree' as const,
+            version: 1 as const,
+            rootPid: 4100,
+            rootStartedAt: '2026-08-30T12:00:00.000000+000',
+        };
+        expect(
+            reviewResolutionOwnerFenceIsLive(ownerFence, {
+                inspectWindowsProcessRows: () => [
+                    { pid: 4101, parentPid: 4100, startedAt: '2026-08-30T12:00:01.000000+000' },
+                ],
+            })
+        ).toBe(true);
+        expect(
+            reviewResolutionOwnerFenceIsLive(ownerFence, {
+                inspectWindowsProcessRows: () => [
+                    { pid: 4101, parentPid: 4100, startedAt: '2026-08-30T12:00:01.000000+000' },
+                    { pid: 4102, parentPid: 4101, startedAt: '2026-08-30T12:00:02.000000+000' },
+                ],
+            })
+        ).toBe(true);
+        expect(
+            reviewResolutionOwnerFenceIsLive(ownerFence, {
+                inspectWindowsProcessRows: () => [
+                    { pid: 4100, parentPid: 1, startedAt: '2026-08-30T13:00:00.000000+000' },
+                    { pid: 4101, parentPid: 4100, startedAt: '2026-08-30T13:00:01.000000+000' },
+                ],
+            })
+        ).toBe(true);
+        expect(reviewResolutionOwnerFenceIsLive(ownerFence, { inspectWindowsProcessRows: () => [] })).toBe(false);
+    });
+
+    it('skips the CIM System Idle Process row so a dead Windows owner remains recoverable', () => {
+        const ownerFence = {
+            kind: 'win32-process-tree' as const,
+            version: 1 as const,
+            rootPid: 4100,
+            rootStartedAt: '2026-08-30T12:00:00.000000+000',
+        };
+        expect(
+            reviewResolutionOwnerFenceIsLive(ownerFence, {
+                platform: 'win32',
+                windowsProcessQueryEnv: { SOURDAW_TRUSTED_POWERSHELL_PATH: trustedPowerShellPath },
+                runWindowsProcessQuery: (() => ({
+                    pid: 0,
+                    output: [],
+                    stdout: JSON.stringify([
+                        { ProcessId: 0, ParentProcessId: 0, CreationDate: '2026-08-30T00:00:00.000000+000' },
+                        { ProcessId: 4101, ParentProcessId: 1, CreationDate: '2026-08-30T12:00:01.000000+000' },
+                    ]),
+                    stderr: '',
+                    status: 0,
+                    signal: null,
+                })) as typeof spawnSync,
+            })
+        ).toBe(false);
+    });
+
     it('uses the exact trusted PowerShell path and root CreationDate when building a Windows process-tree fence', () => {
         const calls: { executable: string; args: string[]; envPath: string | undefined }[] = [];
         const env: NodeJS.ProcessEnv = { SOURDAW_TRUSTED_POWERSHELL_PATH: trustedPowerShellPath };
@@ -2397,6 +2470,40 @@ describe('review thread resolution', () => {
                 envPath: trustedPowerShellPath,
             },
         ]);
+    });
+
+    it.each([
+        ['empty output', ''],
+        [
+            'multiple rows',
+            JSON.stringify([
+                { ProcessId: 4321, ParentProcessId: 17, CreationDate: '2026-08-30T12:34:56.000000+000' },
+                { ProcessId: 4322, ParentProcessId: 17, CreationDate: '2026-08-30T12:34:57.000000+000' },
+            ]),
+        ],
+        [
+            'wrong PID',
+            JSON.stringify({ ProcessId: 4322, ParentProcessId: 17, CreationDate: '2026-08-30T12:34:56.000000+000' }),
+        ],
+        [
+            'duplicate PID',
+            JSON.stringify([
+                { ProcessId: 4321, ParentProcessId: 17, CreationDate: '2026-08-30T12:34:56.000000+000' },
+                { ProcessId: 4321, ParentProcessId: 17, CreationDate: '2026-08-30T12:34:57.000000+000' },
+            ]),
+        ],
+        ['blank CreationDate', JSON.stringify({ ProcessId: 4321, ParentProcessId: 17, CreationDate: ' ' })],
+    ] as const)('rejects %s while building a Windows process-tree fence', (_label, stdout) => {
+        expect(() =>
+            currentWindowsProcessTreeFence(4321, { SOURDAW_TRUSTED_POWERSHELL_PATH: trustedPowerShellPath }, (() => ({
+                pid: 0,
+                output: [],
+                stdout,
+                stderr: '',
+                status: 0,
+                signal: null,
+            })) as typeof spawnSync)
+        ).toThrow(/could not determine the current Windows process identity/i);
     });
 
     it('uses the exact trusted PowerShell path for full Windows process-tree liveness queries', () => {

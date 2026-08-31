@@ -2748,10 +2748,15 @@ function parseWindowsProcessRows(output: string): WindowsProcessRow[] | undefine
     const normalized: WindowsProcessRow[] = [];
     const seen = new Set<number>();
     for (const row of rows) {
+        const processId =
+            typeof row === 'object' && row !== null ? (row as { ProcessId?: unknown }).ProcessId : undefined;
+        if (processId === 0) {
+            continue;
+        }
         if (
             typeof row !== 'object' ||
             row === null ||
-            !isPositiveSafeInteger((row as { ProcessId?: unknown }).ProcessId) ||
+            !isPositiveSafeInteger(processId) ||
             typeof (row as { ParentProcessId?: unknown }).ParentProcessId !== 'number' ||
             !Number.isSafeInteger((row as { ParentProcessId: number }).ParentProcessId) ||
             (row as { ParentProcessId: number }).ParentProcessId < 0 ||
@@ -2760,7 +2765,7 @@ function parseWindowsProcessRows(output: string): WindowsProcessRow[] | undefine
         ) {
             return undefined;
         }
-        const pid = (row as { ProcessId: number }).ProcessId;
+        const pid = processId;
         if (seen.has(pid)) {
             return undefined;
         }
@@ -2818,6 +2823,18 @@ function isLiveWindowsProcessTree(
     const root = rows.find((row) => row.pid === ownerFence.rootPid);
     if (root?.startedAt === ownerFence.rootStartedAt) {
         return true;
+    }
+    const rowsByPid = new Map(rows.map((row) => [row.pid, row]));
+    for (const candidate of rows) {
+        const visited = new Set<number>();
+        let current: WindowsProcessRow | undefined = candidate;
+        while (current !== undefined && !visited.has(current.pid)) {
+            if (current.parentPid === ownerFence.rootPid) {
+                return true;
+            }
+            visited.add(current.pid);
+            current = rowsByPid.get(current.parentPid);
+        }
     }
     return false;
 }
