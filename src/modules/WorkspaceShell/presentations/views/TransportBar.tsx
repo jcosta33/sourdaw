@@ -49,6 +49,10 @@ const isCompactLayoutViewport = (): boolean => {
 /** Lit-edge separator that follows the NW light source model from the design system */
 const Sep = (): ReactElement => <div className="mx-0.5 h-5 w-px shrink-0 daw-seam" />;
 
+const hasOpenNestedDisclosure = (surface: HTMLElement): boolean => {
+    return surface.querySelector('button[aria-haspopup][aria-expanded="true"]') !== null;
+};
+
 export const TransportBar = (): ReactElement => {
     const moreContainerRef = useRef<HTMLElement>(null);
     const moreTriggerRef = useRef<HTMLButtonElement>(null);
@@ -146,8 +150,12 @@ export const TransportBar = (): ReactElement => {
         if (event.key !== 'Escape' || !(event.target instanceof Element)) {
             return;
         }
+        const moreSurface = event.currentTarget;
+        if (hasOpenNestedDisclosure(moreSurface)) {
+            return;
+        }
         const nestedTrigger = event.target.closest('button[aria-haspopup]');
-        if (nestedTrigger === null || !event.currentTarget.contains(nestedTrigger)) {
+        if (nestedTrigger === null || !moreSurface.contains(nestedTrigger)) {
             return;
         }
         event.preventDefault();
@@ -273,7 +281,7 @@ export const TransportBar = (): ReactElement => {
                             <Sep />
                             <TempoEditor />
                             <Sep />
-                            <PunchRecordingControls />
+                            <PunchRecordingControls compact />
                         </span>
                     ) : null}
                 </Row>
