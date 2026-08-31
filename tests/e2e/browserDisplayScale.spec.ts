@@ -259,14 +259,23 @@ async function expectContextMenuUsable(app: FrameLocator, scale: number): Promis
     await expect(menu).toHaveCount(0);
 }
 
-async function expectRightEdgeContextMenuClamped(page: Page, app: FrameLocator, scale: number): Promise<void> {
-    const timeline = app.getByLabel('Timeline editor surface');
-    const timelineBox = requireBox(await timeline.boundingBox(), 'timeline editor');
+async function expectRightEdgeContextMenuClamped(app: FrameLocator, scale: number): Promise<void> {
+    const canvas = app.getByLabel('Timeline editor surface');
+    const canvasBox = requireBox(await canvas.boundingBox(), 'timeline canvas');
+    // boundingBox() and click({ position }) are host/main-frame pixels.
+    // Iframe getBoundingClientRect CSS pixels overshoot the canvas at 50%
+    // scale and miss the right edge at 125%/200%, so the fit-vs-clamp
+    // branch is judged on the wrong x. Stay inland of the labeled box: 4px
+    // from its right edge is inspector, scrollbar, or chrome.
+    const inland = 16;
     const clickPoint = {
-        x: timelineBox.x + timelineBox.width - 4,
-        y: timelineBox.y + timelineBox.height / 2,
+        x: canvasBox.x + canvasBox.width - inland,
+        y: canvasBox.y + canvasBox.height / 2,
     };
-    await page.mouse.click(clickPoint.x, clickPoint.y, { button: 'right' });
+    await canvas.click({
+        button: 'right',
+        position: { x: canvasBox.width - inland, y: canvasBox.height / 2 },
+    });
 
     const menu = app.getByRole('menu');
     await expect(menu).toBeVisible();
@@ -420,7 +429,7 @@ test('browser display scale preserves viewport geometry and interactions at 50%,
         await expectRestoredFrameReceivesGlobalShortcut(page, app);
         await expectRecentProjectsMenuUsable(frame, app, scale);
         await expectContextMenuUsable(app, scale);
-        await expectRightEdgeContextMenuClamped(page, app, scale);
+        await expectRightEdgeContextMenuClamped(app, scale);
         await expectEqCanvasDrag(page, app);
         await expectExportUsable(page, app);
     }
