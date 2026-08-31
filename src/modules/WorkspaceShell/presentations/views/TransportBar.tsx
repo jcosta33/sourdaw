@@ -341,7 +341,7 @@ export const TransportBar = (): ReactElement => {
                             >
                                 <div className="space-y-2">
                                     <TempoEditor />
-                                    <PunchRecordingControls />
+                                    <PunchRecordingControls compact />
                                     <div className="flex items-center gap-1 border-t border-border-soft pt-2">
                                         <AutoScrollToggle />
                                         <ToolSelector

@@ -24,6 +24,8 @@ import {
 } from '#/modules/Transport/useCases';
 import { cn } from '#/utils/Styles/cn';
 
+import { TransportValuePill } from '../../components/Transport/TransportValuePill';
+
 type TransportControlsProps = {
     isPlaying: boolean;
     isRecording: boolean;
@@ -369,6 +371,25 @@ export const TransportControls = ({
                 </Tooltip>
             ) : null}
 
+            {!compact && metronomeEnabled ? (
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Row className="px-2 py-1">
+                            <Slider
+                                min={0}
+                                max={1}
+                                step={0.01}
+                                value={[metronomeVolume]}
+                                onValueChange={(val) => setMetronomeVolume(val[0] ?? 0)}
+                                className="w-16 h-3"
+                                aria-label={`Metronome volume: ${Math.round(metronomeVolume * 100)}%`}
+                            />
+                        </Row>
+                    </TooltipTrigger>
+                    <TooltipContent>Metronome volume: {Math.round(metronomeVolume * 100)}%</TooltipContent>
+                </Tooltip>
+            ) : null}
+
             {!compact ? (
                 <Tooltip>
                     <TooltipTrigger asChild>
@@ -405,6 +426,21 @@ export const TransportControls = ({
                         </LatchButton>
                     </TooltipTrigger>
                     <TooltipContent>Count-in</TooltipContent>
+                </Tooltip>
+            ) : null}
+
+            {!compact && countInEnabled ? (
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <TransportValuePill
+                            active
+                            onClick={cycleCountInBars}
+                            aria-label={`Count-in bars: ${countInBars}. Click to cycle.`}
+                        >
+                            {countInBars}
+                        </TransportValuePill>
+                    </TooltipTrigger>
+                    <TooltipContent>Count-in bars (click to cycle 1→2→4)</TooltipContent>
                 </Tooltip>
             ) : null}
             <Popover key="transport-settings">

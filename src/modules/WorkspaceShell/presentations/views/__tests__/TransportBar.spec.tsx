@@ -172,14 +172,6 @@ const setViewportWidth = (width: number): void => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width });
 };
 
-const getFirst = <Element extends HTMLElement>(elements: Element[], description: string): Element => {
-    const element = elements.at(0);
-    if (element === undefined) {
-        throw new Error(`Expected ${description}`);
-    }
-    return element;
-};
-
 describe('TransportBar', () => {
     beforeEach(() => {
         voiceStatus = { isListening: false, transcribing: false };
@@ -283,7 +275,7 @@ describe('TransportBar', () => {
         windowChromeMocks.frameless = true;
         renderTransportBar();
 
-        fireEvent.doubleClick(getFirst(screen.getAllByTestId('panel-toggle-button'), 'a panel toggle button'));
+        fireEvent.doubleClick(screen.getByTestId('panel-toggle-button'));
 
         expect(windowChromeMocks.toggleMaximize).not.toHaveBeenCalled();
     });
@@ -292,7 +284,7 @@ describe('TransportBar', () => {
         windowChromeMocks.frameless = true;
         renderTransportBar();
 
-        fireEvent.doubleClick(getFirst(screen.getAllByTestId('panel-toggle-icon'), 'a panel toggle icon'));
+        fireEvent.doubleClick(screen.getByTestId('panel-toggle-icon'));
 
         expect(windowChromeMocks.toggleMaximize).not.toHaveBeenCalled();
     });
@@ -398,18 +390,14 @@ describe('TransportBar', () => {
         renderTransportBar();
 
         // showOverdub requires an armed MIDI track; audio-only → no overdub control.
-        fireEvent.click(
-            getFirst(screen.getAllByRole('button', { name: 'Transport settings' }), 'a transport settings button')
-        );
+        fireEvent.click(screen.getByRole('button', { name: 'Transport settings' }));
         expect(screen.queryByRole('button', { name: /overdub/i })).not.toBeInTheDocument();
     });
 
     it('hides the overdub control when no tracks are armed', () => {
         renderTransportBar();
 
-        fireEvent.click(
-            getFirst(screen.getAllByRole('button', { name: 'Transport settings' }), 'a transport settings button')
-        );
+        fireEvent.click(screen.getByRole('button', { name: 'Transport settings' }));
         expect(screen.queryByRole('button', { name: /overdub/i })).not.toBeInTheDocument();
     });
 
@@ -450,7 +438,7 @@ describe('TransportBar', () => {
         const menuTrigger = screen.getByTestId('recent-projects');
 
         expect(splitControl).toHaveClass('gap-0', 'shrink-0');
-        expect(Array.from(splitControl.children).slice(0, 2)).toEqual([projectName, menuTrigger]);
+        expect(Array.from(splitControl.children)).toEqual([projectName, menuTrigger]);
         expect(screen.queryByRole('button', { name: 'Project controls' })).not.toBeInTheDocument();
     });
 

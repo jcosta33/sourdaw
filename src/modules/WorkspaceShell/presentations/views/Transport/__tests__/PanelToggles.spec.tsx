@@ -160,7 +160,7 @@ describe('PanelToggles', () => {
     it('uses the active panel treatment for every pressed compact row', () => {
         vi.mocked(useStore).mockImplementation((store, defaultValue) => {
             if (store === aiStore) {
-                return { isPanelOpen: true };
+                return { isPanelOpen: false };
             }
             return defaultValue;
         });
@@ -169,13 +169,13 @@ describe('PanelToggles', () => {
             <PanelToggles
                 {...allClosed}
                 compact
-                sidebarOpen={true}
+                sidebarOpen={false}
                 inspectorOpen={true}
                 mixerOpen={true}
-                chatPanelOpen={true}
+                chatPanelOpen={false}
                 trackListOpen={true}
-                virtualKeyboardOpen={true}
-                dualViewOpen={true}
+                virtualKeyboardOpen={false}
+                dualViewOpen={false}
             />
         );
 
@@ -183,17 +183,15 @@ describe('PanelToggles', () => {
         expect(compactTrigger).toHaveAttribute('data-onboarding', 'mixer-button');
         fireEvent.click(compactTrigger);
 
-        for (const name of [
-            'Track list',
-            'Browser',
-            'Inspector',
-            'Session + Arrangement View',
-            'Bottom dock',
-            'Virtual keyboard',
-            'AI chat',
-            'Generate',
-        ]) {
-            expect(screen.getByRole('button', { name })).toHaveAttribute('data-variant', 'secondary');
+        for (const name of ['Track list', 'Inspector', 'Bottom dock']) {
+            const row = screen.getByRole('button', { name });
+            expect(row).toHaveAttribute('data-variant', 'secondary');
+            expect(row).toHaveAttribute('aria-pressed', 'true');
+        }
+        for (const name of ['Browser', 'Session + Arrangement View', 'Virtual keyboard', 'AI chat', 'Generate']) {
+            const row = screen.getByRole('button', { name });
+            expect(row).toHaveAttribute('data-variant', 'ghost');
+            expect(row).toHaveAttribute('aria-pressed', 'false');
         }
     });
 
