@@ -77,6 +77,10 @@ vi.mock('#/modules/Command/useCases', () => ({
     clearUndoHistory: vi.fn(),
     executeAppAction: mocks.executeAppAction,
     resetActionReplayAuthority: vi.fn(),
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    isAppActionCommittedError: vi.fn(() => false),
+    pushUndoEntry: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
     migrateAbsoluteMidiNotes: vi.fn(),

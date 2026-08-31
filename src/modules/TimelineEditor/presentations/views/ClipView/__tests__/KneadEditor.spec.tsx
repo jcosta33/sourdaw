@@ -94,6 +94,10 @@ vi.mock('#/modules/Knead/stores', () => ({
 vi.mock('#/modules/Knead/useCases', () => ({
     updateClipKneadState: vi.fn(),
     analyzeClipPitch: vi.fn(() => Promise.resolve({ status: 'no-buffer', reason: 'missing-clip-or-buffer' })),
+    captureClipPitchAnalysis: vi.fn(),
+    clearClipPitchAnalysis: vi.fn(),
+    hydrateKneadFromTrackStore: vi.fn(),
+    restoreClipPitchAnalysis: vi.fn(),
 }));
 
 vi.mock('#/infra/store/useStore', () => ({

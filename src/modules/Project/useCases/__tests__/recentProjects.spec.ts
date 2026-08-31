@@ -64,6 +64,10 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),
     clearUndoHistory: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    isAppActionCommittedError: vi.fn(() => false),
+    pushUndoEntry: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
 }));
 
 vi.mock('../projectPersistence/helpers/verifyAudioBufferReferences', () => ({
