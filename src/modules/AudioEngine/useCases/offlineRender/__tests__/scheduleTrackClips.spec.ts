@@ -3,11 +3,16 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { type TakeLaneStoreState, type Track } from '#/modules/Arrangement/stores';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
 
+import {
+    type DeviceNoteExpressionRequest,
+    type DeviceNoteOnRequest,
+} from '../../../repositories/deviceStrategy/AudioDeviceStrategy';
 import { offlineDeviceParameterLawState } from '../../../repositories/offlineScheduler/offlineDeviceParameterLawState';
 import { type OfflineMidiProbabilitySelector } from '../../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import { type OfflineYeastMidiProcessor } from '../../../repositories/offlineScheduler/offlineYeastMidiProcessorState';
 import { type DeviceNodeEntry } from '../../buildDeviceChain';
 import { configureOfflineDeviceParameterLaw } from '../../configureOfflineDeviceParameterLaw';
+import { schedulePendingSuspends } from '../schedulePendingSuspends';
 import { scheduleTrackClips } from '../scheduleTrackClips';
 import { type PendingWorkletEvent } from '../types';
 
@@ -1317,5 +1322,172 @@ describe('scheduleTrackClips — offline automation reads the same laws live doe
         // call a parameter stepped, and inventing one is the same substitution
         // the clamp fallback refuses.
         expect(law.quantiseValue({ deviceType: 'fermenter', paramId: 'filterCutoff', value: 12.59 })).toBe(12.59);
+    });
+});
+
+describe('scheduleTrackClips — per-note MPE for offline worklet instruments', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.getDrumKitDefByIndex.mockReturnValue(null);
+        mocks.getSynthParamsFromDevices.mockReturnValue(null);
+        mocks.resolveDrumKit.mockReturnValue(null);
+        mocks.checkCancel.mockImplementation(() => {});
+    });
+
+    type Arrivals = {
+        /** Every call the instrument received, in arrival order. */
+        order: string[];
+        noteOn: DeviceNoteOnRequest[];
+        expression: DeviceNoteExpressionRequest[];
+    };
+
+    /**
+     * Schedules one Levain note and then runs the real dispatcher over the
+     * scheduler's output, so what is asserted is the request the instrument's
+     * own surfaces received and the order they arrived in — not that a
+     * collaborator of the scheduler was called.
+     */
+    async function dispatchOneNote(
+        note: Partial<{ pressure: number; slide: number; pitchBend: number; pitchBendRangeSemitones: number }>,
+        options: { deviceType?: string; withExpressionSurface?: boolean } = {}
+    ): Promise<Arrivals> {
+        const { deviceType = 'levain', withExpressionSurface = true } = options;
+        const arrivals: Arrivals = { order: [], noteOn: [], expression: [] };
+
+        const strategy: DeviceNodeEntry['strategy'] = {
+            node: { inputNode: {} as AudioNode, outputNode: {} as AudioNode, nodes: [] },
+            acceptsNotes: true,
+            setParam: () => {},
+            resolveOfflineAutomation: () => null,
+        };
+        if (withExpressionSurface) {
+            strategy.noteExpression = (request) => {
+                arrivals.order.push('expression');
+                arrivals.expression.push(request);
+            };
+        }
+
+        const entry: DeviceNodeEntry = {
+            deviceId: 'inst-1',
+            deviceType,
+            node: strategy.node,
+            strategy,
+            instrumentControls: {
+                noteOn: (request) => {
+                    arrivals.order.push('noteOn');
+                    arrivals.noteOn.push(request);
+                },
+                noteOff: () => arrivals.order.push('noteOff'),
+            },
+        };
+
+        const track = makeMidiTrack();
+        track.devices[0] = { id: 'inst-1', name: 'Instrument', type: deviceType, bypassed: false, parameterValues: {} };
+        const midi = makeMidi();
+        Object.assign(midi.notesByClipId['clip-1']![0]!, { channel: 3 }, note);
+        const pendingWorkletEvents: PendingWorkletEvent[] = [];
+        const offlineCtx = makeOfflineCtx();
+
+        await scheduleTrackClips({
+            offlineCtx,
+            track,
+            midi,
+            trackInputNode: {} as GainNode,
+            trackGainNode: {} as GainNode,
+            trackPanNode: {} as StereoPannerNode,
+            destination: {} as AudioNode,
+            durationSeconds: 60,
+            defaultTempo: 120,
+            changes: [],
+            projections: {
+                projectMidiEvents,
+                projectPpqEndpoints,
+                processYeastMidi,
+                resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
+                selectMidiEventProbability: mocks.shouldPlayMidiEvent,
+                projectChordPitch: mocks.projectChordPitch,
+                evaluateAutomationValue: mocks.evaluateAutomationValue,
+                resolveArticulationId: mocks.resolveArticulationId,
+            },
+            pendingWorkletEvents,
+            allTracks: [track],
+            deviceEntriesByTrack: new Map([[track.id, [entry]]]),
+        });
+
+        schedulePendingSuspends(offlineCtx, pendingWorkletEvents, 60);
+        return arrivals;
+    }
+
+    it('hands the instrument the note expression at the note-on frame, after the note-on', async () => {
+        // Live playback posts `noteOn` and then `applyNoteExpression` at one
+        // sample frame. The offline path used to build the same MPE values and
+        // then hand them only to the built-in synth, so a bounce of Levain,
+        // Fermenter or Grand Boule played every note flat.
+        //
+        // The wire values are chosen so the engine units are exact: bend
+        // 4096 of 8192 over a 12-semitone range is 6 semitones, pressure 127
+        // is full, and CC74 at 1 is the bottom of the timbre axis.
+        const arrivals = await dispatchOneNote({
+            pressure: 127,
+            slide: 1,
+            pitchBend: 4_096,
+            pitchBendRangeSemitones: 12,
+        });
+
+        // Beat 1 at 120bpm is 0.5s, which is frame 24000 at this context's rate.
+        expect(arrivals.expression).toEqual([
+            {
+                noteOrPad: 60,
+                channel: 3,
+                bendSemitones: 6,
+                pressure: 1,
+                slide: -1,
+                sampleFrame: 24_000,
+            },
+        ]);
+        expect(arrivals.noteOn[0]?.sampleFrame).toBe(24_000);
+        expect(arrivals.order).toEqual(['noteOn', 'expression', 'noteOff']);
+    });
+
+    it('falls back to the MPE member bend range when the note never recorded one', async () => {
+        // Notes captured before RPN 0 was decoded carry no range. Live resolves
+        // them to the MPE member default, which is the range they were actually
+        // performed under; a bounce that assumed a narrower one bends less than
+        // the monitor. 4096 of 8192 over 48 semitones is 24.
+        const arrivals = await dispatchOneNote({ pitchBend: 4_096 });
+
+        expect(arrivals.expression.map(({ bendSemitones }) => bendSemitones)).toEqual([24]);
+    });
+
+    it('sends nothing to the expression surface for a note that carries no expression', async () => {
+        const arrivals = await dispatchOneNote({});
+
+        expect({ order: arrivals.order, expression: arrivals.expression }).toEqual({
+            order: ['noteOn', 'noteOff'],
+            expression: [],
+        });
+    });
+
+    it('leaves an instrument with no expression surface receiving only notes', async () => {
+        // Crumbs voices notes and has no `noteExpression` at all. The scheduler
+        // must not manufacture one for it.
+        const arrivals = await dispatchOneNote(
+            { pressure: 127, slide: 1, pitchBend: 4_096 },
+            { deviceType: 'crumbs', withExpressionSurface: false }
+        );
+
+        expect({ order: arrivals.order, expression: arrivals.expression }).toEqual({
+            order: ['noteOn', 'noteOff'],
+            expression: [],
+        });
+    });
+
+    it('sends no expression to Toaster, which addresses pads rather than note instances', async () => {
+        const arrivals = await dispatchOneNote(
+            { pressure: 127, slide: 1, pitchBend: 4_096 },
+            { deviceType: 'toaster' }
+        );
+
+        expect(arrivals.expression).toEqual([]);
     });
 });
