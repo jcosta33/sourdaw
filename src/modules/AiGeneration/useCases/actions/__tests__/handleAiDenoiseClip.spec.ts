@@ -150,6 +150,41 @@ describe('handleAiDenoiseClip', () => {
         expect(cached_buffer.getChannelData(1)).not.toStrictEqual(cached_buffer.getChannelData(0));
     });
 
+    it('estimates one browser noise floor from both channel window heads', async () => {
+        const sample_rate = 48_000;
+        const hop = 1024;
+        const counted_frames = Math.floor((sample_rate * 0.5) / hop) * hop;
+        const frames = 30_000;
+        const left = new Float32Array(frames).fill(0.01);
+        left.fill(0.9, counted_frames);
+        const right = new Float32Array(frames).fill(1);
+        right.fill(0.2, counted_frames);
+        getCachedAudioBufferMock.mockReturnValue(create_test_audio_buffer([left, right], sample_rate));
+
+        await handleAiDenoiseClip('clip-stereo-floor', 0);
+
+        const summed_power = [...left.subarray(0, counted_frames), ...right.subarray(0, counted_frames)].reduce(
+            (sum, sample) => sum + sample * sample,
+            0
+        );
+        const expected_db = 10 * Math.log10(summed_power / (counted_frames * 2));
+        const success_update = updateTaskMock.mock.calls[0]![1];
+        expect(success_update.data.noiseFloorDb).toBeCloseTo(expected_db, 10);
+    });
+
+    it('uses independent browser envelopes for identical stereo planes', async () => {
+        const channel = new Float32Array(4800);
+        for (let frame = 0; frame < channel.length; frame++) {
+            channel[frame] = frame % 2 === 0 ? 0.01 : -0.01;
+        }
+        getCachedAudioBufferMock.mockReturnValue(create_test_audio_buffer([channel.slice(), channel.slice()]));
+
+        await handleAiDenoiseClip('clip-stereo-envelopes', 0.7);
+
+        const cached_buffer = cacheAudioBufferMock.mock.calls[0]![0].buffer as AudioBuffer;
+        expect(cached_buffer.getChannelData(0)).toStrictEqual(cached_buffer.getChannelData(1));
+    });
+
     it('sends planar stereo samples to native denoise and caches its stereo result', async () => {
         const left = new Float32Array([0.1, 0.2, 0.3]);
         const right = new Float32Array([-0.4, -0.5, -0.6]);
