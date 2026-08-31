@@ -35,9 +35,9 @@ export const MobileGate = ({ children }: MobileGateProps): ReactElement => {
     // Latched at first evaluation: the gate owns `AppShell`'s mount, so a decision
     // that flipped mid-session would unmount a running shell and discard undo
     // history and non-CRDT state. No resize or orientation event may reopen it.
-    const [isMobile] = useState(isUnsupportedPhone);
+    const [shouldShowMobileGate] = useState(isUnsupportedPhone);
 
-    if (!isMobile) {
+    if (!shouldShowMobileGate) {
         return <>{children}</>;
     }
 
