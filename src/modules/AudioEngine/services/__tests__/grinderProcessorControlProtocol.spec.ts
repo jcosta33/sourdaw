@@ -59,6 +59,16 @@ describe('GrinderProcessor fallback-control protocol', () => {
         expect(processor.port.postMessage).not.toHaveBeenCalled();
     });
 
+    it('resets the ready WASM instance on a reset message', async () => {
+        const processor = await createReadyGrinderProcessor();
+        const reset = vi.fn();
+        (processor as unknown as { _instance: { reset: () => void } })._instance.reset = reset;
+
+        processor.port.onmessage?.({ data: { type: 'reset' } });
+
+        expect(reset).toHaveBeenCalledOnce();
+    });
+
     it('drops arbitrary parameters and target identities outside the initialized control schema', async () => {
         const processor = await createReadyGrinderProcessor();
         initializeControlGeneration(processor);

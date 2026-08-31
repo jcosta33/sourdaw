@@ -2464,6 +2464,7 @@ class AudioEngineImpl implements AudioEngine {
         for (const [, trackNode] of this.trackNodes) {
             for (const dn of trackNode.strip.deviceNodes) {
                 dn.controller?.allNotesOff?.();
+                dn.controller?.reset?.();
             }
         }
     }
