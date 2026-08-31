@@ -14,7 +14,11 @@ import { type DeviceNodeEntry } from '../../buildDeviceChain';
 import { configureOfflineDeviceParameterLaw } from '../../configureOfflineDeviceParameterLaw';
 import { schedulePendingSuspends } from '../schedulePendingSuspends';
 import { scheduleTrackClips } from '../scheduleTrackClips';
-import { type PendingWorkletEvent } from '../types';
+import { type PendingNoteWorkletEvent, type PendingWorkletEvent } from '../types';
+
+function isPendingNoteWorkletEvent(event: PendingWorkletEvent): event is PendingNoteWorkletEvent {
+    return event.type === 'on' || event.type === 'off';
+}
 
 // Local, field-identical replica of Arrangement's TrackDummy fixture — foreign
 // test fixtures have no compliant cross-module path (models are not re-exported).
@@ -802,7 +806,9 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
             deviceEntriesByTrack: new Map([[track.id, [entry]]]),
         });
 
-        expect(pendingWorkletEvents.map((event) => event.toasterPadIndex)).toEqual([0, 0]);
+        expect(pendingWorkletEvents.filter(isPendingNoteWorkletEvent).map((event) => event.toasterPadIndex)).toEqual([
+            0, 0,
+        ]);
         expect(pendingWorkletEvents.map((event) => event.pitch)).toEqual([60, 60]);
         expect(pendingWorkletEvents.map((event) => event.type)).toEqual(['on', 'on']);
     });
@@ -859,7 +865,7 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
             honorMuted: false,
         });
 
-        const noteOns = pendingWorkletEvents.filter((event) => event.type === 'on');
+        const noteOns = pendingWorkletEvents.filter(isPendingNoteWorkletEvent).filter((event) => event.type === 'on');
         expect(noteOns.map((event) => event.toasterPadIndex)).toEqual([0, 2]);
         expect(noteOns.map((event) => event.pitch)).toEqual([60, 60]);
         expect(pendingWorkletEvents.filter((event) => event.type === 'off')).toHaveLength(0);
@@ -890,7 +896,12 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
             deviceEntriesByTrack: new Map([[parent.id, [entry]]]),
         });
 
-        expect(mixdownEvents.filter((event) => event.type === 'on').map((event) => event.toasterPadIndex)).toEqual([2]);
+        expect(
+            mixdownEvents
+                .filter(isPendingNoteWorkletEvent)
+                .filter((event) => event.type === 'on')
+                .map((event) => event.toasterPadIndex)
+        ).toEqual([2]);
     });
 
     it('applies the parent Toaster swing lane to the offline one-shot onset without adding a gate release', async () => {
