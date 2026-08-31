@@ -394,6 +394,19 @@ pub async fn close_provider_gateway_session(
     Ok(())
 }
 
+fn resolve_provider_gateway_operation(
+    adapter_id: &str,
+    operation: &str,
+) -> Result<(reqwest::Method, &'static str), String> {
+    match (adapter_id, operation) {
+        (OPENAI_ADAPTER_ID, "probe") => Ok((reqwest::Method::GET, "/v1/models")),
+        (OPENAI_ADAPTER_ID, "request") => Ok((reqwest::Method::POST, "/v1/chat/completions")),
+        (ANTHROPIC_ADAPTER_ID, "probe") => Ok((reqwest::Method::GET, "/v1/models")),
+        (ANTHROPIC_ADAPTER_ID, "request") => Ok((reqwest::Method::POST, "/v1/messages")),
+        _ => Err("Provider gateway operation is not supported by the compiled adapter".to_string()),
+    }
+}
+
 pub async fn provider_gateway_request(
     request_id: String,
     session_id: String,
@@ -414,17 +427,8 @@ pub async fn provider_gateway_request(
             return Err("Provider gateway request exceeds its body limit".to_string());
         }
         let (origin_url, host, port) = parse_canonical_origin(&session.origin)?;
-        let (method, path) = match (session.adapter_id.as_str(), operation.as_str()) {
-            (OPENAI_ADAPTER_ID, "probe") => (reqwest::Method::GET, "/v1/models"),
-            (OPENAI_ADAPTER_ID, "request") => (reqwest::Method::POST, "/v1/chat/completions"),
-            (ANTHROPIC_ADAPTER_ID, "request") => (reqwest::Method::POST, "/v1/messages"),
-            _ => {
-                return Err(
-                    "Provider gateway operation is not supported by the compiled adapter"
-                        .to_string(),
-                )
-            }
-        };
+        let (method, path) =
+            resolve_provider_gateway_operation(session.adapter_id.as_str(), operation.as_str())?;
         let request_url = origin_url
             .join(path)
             .map_err(|_| "Provider gateway could not compile the request URL".to_string())?;
@@ -559,10 +563,11 @@ mod tests {
         admit_provider_gateway_request, await_provider_step_or_cancellation,
         close_provider_gateway_session, open_provider_gateway_session,
         open_provider_gateway_session_with_credential, parse_canonical_origin,
-        register_cancellation, request_cancellation, validate_credential_binding,
-        validate_resolved_addresses, ProviderGatewayEvent, ProviderGatewayState,
-        ANTHROPIC_ADAPTER_ID, ANTHROPIC_ORIGIN, CANCELLATION_TOMBSTONE_TTL, MAX_API_KEY_BYTES,
-        MAX_CANCELLATION_ENTRIES, MAX_CREDENTIAL_SESSIONS, OPENAI_ADAPTER_ID, OPENAI_ORIGIN,
+        register_cancellation, request_cancellation, resolve_provider_gateway_operation,
+        validate_credential_binding, validate_resolved_addresses, ProviderGatewayEvent,
+        ProviderGatewayState, ANTHROPIC_ADAPTER_ID, ANTHROPIC_ORIGIN, CANCELLATION_TOMBSTONE_TTL,
+        MAX_API_KEY_BYTES, MAX_CANCELLATION_ENTRIES, MAX_CREDENTIAL_SESSIONS, OPENAI_ADAPTER_ID,
+        OPENAI_ORIGIN,
     };
     use std::net::SocketAddr;
     use std::time::{Duration, Instant};
@@ -819,6 +824,31 @@ mod tests {
         )
         .await
         .is_err());
+    }
+
+    #[test]
+    fn provider_gateway_resolves_anthropic_probe_and_rejects_unknown_operations() {
+        let (method, path) = resolve_provider_gateway_operation(ANTHROPIC_ADAPTER_ID, "probe")
+            .expect("anthropic probe must resolve");
+        assert_eq!(method, reqwest::Method::GET);
+        assert_eq!(path, "/v1/models");
+
+        let (method, path) = resolve_provider_gateway_operation(ANTHROPIC_ADAPTER_ID, "request")
+            .expect("anthropic request must still resolve");
+        assert_eq!(method, reqwest::Method::POST);
+        assert_eq!(path, "/v1/messages");
+
+        let (method, path) = resolve_provider_gateway_operation(OPENAI_ADAPTER_ID, "probe")
+            .expect("openai probe must still resolve");
+        assert_eq!(method, reqwest::Method::GET);
+        assert_eq!(path, "/v1/models");
+
+        assert_eq!(
+            resolve_provider_gateway_operation(ANTHROPIC_ADAPTER_ID, "unknown")
+                .expect_err("unsupported operations must fail"),
+            "Provider gateway operation is not supported by the compiled adapter"
+        );
+        assert!(resolve_provider_gateway_operation(OPENAI_ADAPTER_ID, "delete").is_err());
     }
 
     #[test]
