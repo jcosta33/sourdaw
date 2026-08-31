@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
@@ -165,6 +165,12 @@ let voiceInputAvailable = false;
  */
 const DRAG_REGION_SELECTOR = selectorDeclaring('app-region', 'drag');
 const TITLEBAR_INSET_SELECTOR = selectorDeclaring('margin-left', 'env(titlebar-area-x, 0px)');
+const VIEWPORT_FULL_WIDTH = 1440;
+const VIEWPORT_COMPACT_WIDTH = 1024;
+
+const setViewportWidth = (width: number): void => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width });
+};
 
 const getFirst = <Element extends HTMLElement>(elements: Element[], description: string): Element => {
     const element = elements.at(0);
@@ -192,6 +198,7 @@ describe('TransportBar', () => {
         undoState.canRedo = false;
         projectState.name = 'Test';
         projectState.dirty = false;
+        setViewportWidth(VIEWPORT_FULL_WIDTH);
         vi.mocked(useStore).mockImplementation((store, defaultValue) => {
             if (store === voiceStatusStore) {
                 return voiceStatus;
@@ -444,6 +451,29 @@ describe('TransportBar', () => {
 
         expect(splitControl).toHaveClass('gap-0', 'shrink-0');
         expect(Array.from(splitControl.children).slice(0, 2)).toEqual([projectName, menuTrigger]);
+        expect(screen.queryByRole('button', { name: 'Project controls' })).not.toBeInTheDocument();
+    });
+
+    it('admits compact controls from the viewport width rather than the header contents', () => {
+        setViewportWidth(VIEWPORT_COMPACT_WIDTH);
+        renderTransportBar();
+
+        expect(screen.getByRole('button', { name: 'Project controls' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'More transport controls' })).toBeInTheDocument();
+        expect(screen.queryByTestId('arrangement-selector')).not.toBeInTheDocument();
+    });
+
+    it('switches into compact mode when the viewport shrinks across the compact boundary', () => {
+        renderTransportBar();
+
+        expect(screen.queryByRole('button', { name: 'More transport controls' })).not.toBeInTheDocument();
+
+        setViewportWidth(VIEWPORT_COMPACT_WIDTH);
+        act(() => {
+            window.dispatchEvent(new Event('resize'));
+        });
+
+        expect(screen.getByRole('button', { name: 'More transport controls' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Project controls' })).toBeInTheDocument();
     });
 });

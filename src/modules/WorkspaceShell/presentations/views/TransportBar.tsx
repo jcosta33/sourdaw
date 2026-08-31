@@ -58,10 +58,10 @@ const hasResponsiveDisclosureOpen = (): boolean => {
 };
 
 const isCompactLayoutViewport = (): boolean => {
-    if (typeof document === 'undefined') {
+    if (typeof window === 'undefined') {
         return false;
     }
-    const width = document.documentElement.clientWidth;
+    const width = window.innerWidth;
     return width > 0 && width <= COMPACT_TRANSPORT_MAX_WIDTH;
 };
 
@@ -122,10 +122,10 @@ export const TransportBar = (): ReactElement => {
     };
 
     useEffect(() => {
-        if (typeof document === 'undefined' || typeof ResizeObserver === 'undefined') {
+        if (typeof window === 'undefined') {
             return undefined;
         }
-        const observer = new ResizeObserver(() => {
+        const syncCompactMode = (): void => {
             const nextCompactMode = isCompactLayoutViewport();
             if (nextCompactMode === compactModeRef.current) {
                 return;
@@ -138,9 +138,12 @@ export const TransportBar = (): ReactElement => {
             }
             restoreFocusAfterModeChangeRef.current = disclosureWasOpen;
             setCompactMode(nextCompactMode);
-        });
-        observer.observe(document.documentElement);
-        return () => observer.disconnect();
+        };
+        window.addEventListener('resize', syncCompactMode);
+        syncCompactMode();
+        return () => {
+            window.removeEventListener('resize', syncCompactMode);
+        };
     }, []);
 
     useEffect(() => {
