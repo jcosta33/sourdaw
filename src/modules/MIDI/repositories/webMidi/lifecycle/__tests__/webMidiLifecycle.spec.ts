@@ -136,7 +136,12 @@ describe('initWebMidi', () => {
         const mockAccess = { inputs: new Map([['built-in', standIn]]), onstatechange: null };
         requestMidiAccessMock.mockResolvedValue(mockAccess);
         getMidiAccessMock.mockReturnValue(mockAccess);
-        getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: 'launchkey' });
+        getStateMock.mockReturnValue({
+            isSupported: true,
+            inputs: [],
+            selectedInputId: 'launchkey',
+            enumerationError: null,
+        });
         readPersistedInputIdMock.mockReturnValue('launchkey');
 
         await initWebMidi({ onMidiMessage });
@@ -157,7 +162,12 @@ describe('initWebMidi', () => {
         const mockAccess = { inputs: new Map([['launchkey', input]]), onstatechange: null };
         requestMidiAccessMock.mockResolvedValue(mockAccess);
         getMidiAccessMock.mockReturnValue(mockAccess);
-        getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: 'launchkey' });
+        getStateMock.mockReturnValue({
+            isSupported: true,
+            inputs: [],
+            selectedInputId: 'launchkey',
+            enumerationError: null,
+        });
         readPersistedInputIdMock.mockReturnValue('launchkey');
 
         await initWebMidi({ onMidiMessage });
@@ -180,11 +190,21 @@ describe('initWebMidi', () => {
         getMidiAccessMock.mockReturnValue(mockAccess);
         readPersistedInputIdMock.mockReturnValue('launchkey');
 
-        getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: 'launchkey' });
+        getStateMock.mockReturnValue({
+            isSupported: true,
+            inputs: [],
+            selectedInputId: 'launchkey',
+            enumerationError: null,
+        });
         await initWebMidi({ onMidiMessage });
 
         // Second init sees the stand-in as the live selection.
-        getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: 'built-in' });
+        getStateMock.mockReturnValue({
+            isSupported: true,
+            inputs: [],
+            selectedInputId: 'built-in',
+            enumerationError: null,
+        });
         await initWebMidi({ onMidiMessage });
 
         const persistedSelectionWrites = setStateMock.mock.calls.filter(
@@ -253,7 +273,12 @@ describe('initWebMidi', () => {
         requestMidiAccessMock.mockResolvedValue(mockAccess);
         getMidiAccessMock.mockReturnValue(mockAccess);
         getActiveInputMock.mockReturnValue(activeInput);
-        getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: 'missing-input' });
+        getStateMock.mockReturnValue({
+            isSupported: true,
+            inputs: [],
+            selectedInputId: 'missing-input',
+            enumerationError: null,
+        });
 
         await initWebMidi({ onMidiMessage });
         mockAccess.onstatechange?.();
@@ -272,7 +297,12 @@ describe('initWebMidi', () => {
         };
         requestMidiAccessMock.mockResolvedValue(mockAccess);
         getMidiAccessMock.mockReturnValue(mockAccess);
-        getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: 'gone-input' });
+        getStateMock.mockReturnValue({
+            isSupported: true,
+            inputs: [],
+            selectedInputId: 'gone-input',
+            enumerationError: null,
+        });
         readPersistedInputIdMock.mockReturnValue('gone-input');
         vi.mocked(attachInput).mockClear();
 
@@ -301,7 +331,12 @@ describe('initWebMidi', () => {
         };
         requestMidiAccessMock.mockResolvedValue(mockAccess);
         getMidiAccessMock.mockReturnValue(mockAccess);
-        getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: 'preferred-input' });
+        getStateMock.mockReturnValue({
+            isSupported: true,
+            inputs: [],
+            selectedInputId: 'preferred-input',
+            enumerationError: null,
+        });
         readPersistedInputIdMock.mockReturnValue('preferred-input');
 
         await initWebMidi({ onMidiMessage });
@@ -326,7 +361,12 @@ describe('initWebMidi', () => {
         getMidiAccessMock.mockReturnValue(mockAccess);
         // The session has fallen back to the stand-in; the saved preference is
         // still the device that was unplugged.
-        getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: 'in-2' });
+        getStateMock.mockReturnValue({
+            isSupported: true,
+            inputs: [],
+            selectedInputId: 'in-2',
+            enumerationError: null,
+        });
         readPersistedInputIdMock.mockReturnValue('preferred-input');
 
         await initWebMidi({ onMidiMessage });
@@ -352,7 +392,12 @@ describe('initWebMidi', () => {
         };
         requestMidiAccessMock.mockResolvedValue(mockAccess);
         getMidiAccessMock.mockReturnValue(mockAccess);
-        getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: 'in-1' });
+        getStateMock.mockReturnValue({
+            isSupported: true,
+            inputs: [],
+            selectedInputId: 'in-1',
+            enumerationError: null,
+        });
         vi.mocked(attachInput).mockClear();
 
         await initWebMidi({ onMidiMessage });
@@ -375,7 +420,7 @@ describe('initWebMidi', () => {
 
     it('should return false and warn when MIDI is reported unsupported', async () => {
         const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
-        getStateMock.mockReturnValue({ isSupported: false, inputs: [], selectedInputId: null });
+        getStateMock.mockReturnValue({ isSupported: false, inputs: [], selectedInputId: null, enumerationError: null });
 
         const result = await initWebMidi({ onMidiMessage });
 
@@ -445,7 +490,7 @@ describe('initWebMidi', () => {
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
         vi.mocked(isDesktopRuntime).mockReturnValue(true);
         vi.mocked(desktopInvoke).mockResolvedValue([{ index: 0, name: 'Built-in' }]);
-        getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: '3' });
+        getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: '3', enumerationError: null });
         readPersistedInputIdMock.mockReturnValue('3');
 
         await initWebMidi({ onMidiMessage });
@@ -468,7 +513,12 @@ describe('initWebMidi', () => {
             { index: 0, name: 'Built-in' },
             { index: 1, name: 'Launchkey' },
         ]);
-        getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: 'Launchkey' });
+        getStateMock.mockReturnValue({
+            isSupported: true,
+            inputs: [],
+            selectedInputId: 'Launchkey',
+            enumerationError: null,
+        });
         readPersistedInputIdMock.mockReturnValue('Launchkey');
 
         await initWebMidi({ onMidiMessage });
@@ -488,7 +538,7 @@ describe('initWebMidi', () => {
             { index: 0, name: 'Built-in' },
             { index: 1, name: 'Launchkey' },
         ]);
-        getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: '1' });
+        getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: '1', enumerationError: null });
         readPersistedInputIdMock.mockReturnValue('1');
 
         await initWebMidi({ onMidiMessage });
