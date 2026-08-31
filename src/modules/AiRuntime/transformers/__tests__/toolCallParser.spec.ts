@@ -40,6 +40,22 @@ describe('toolCallParser', () => {
         expect(result).toHaveLength(25);
     });
 
+    it.each([
+        { label: 'array', input: `[{"name":"muteTrack","arguments":[]}]` },
+        { label: 'string', input: `[{"name":"muteTrack","arguments":"{}"}]` },
+        { label: 'number', input: `[{"name":"muteTrack","arguments":7}]` },
+    ])('preserves a non-object $label arguments slot as invalid for bridge rejection', ({ input }) => {
+        const result = parseToolCallXml(input);
+
+        expect(result).toEqual([{ name: '<invalid>', arguments: {} }]);
+    });
+
+    it('defaults absent arguments to an empty object', () => {
+        const result = parseToolCallXml(`[{"name":"listTracks"}]`);
+
+        expect(result).toEqual([{ name: 'listTracks', arguments: {} }]);
+    });
+
     it('parses wrapped JSON mode {"actions": [...]}', () => {
         const input = `{"actions": [{"name": "muteTrack", "arguments": {"trackId": "t1"}}]}`;
         const result = parseToolCallXml(input);
