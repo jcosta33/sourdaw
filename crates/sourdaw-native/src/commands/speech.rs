@@ -1,12 +1,13 @@
 use crate::events::{EventSink, EventSinkExt};
 use audioadapter_buffers::{direct::SequentialSliceOfVecs, owned::InterleavedOwned};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use rtrb::{Consumer, Producer, RingBuffer};
 use rubato::{
     audioadapter::Adapter, Async, FixedAsync, Resampler, SincInterpolationParameters,
     SincInterpolationType, WindowFunction,
 };
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 use zeroize::{Zeroize, Zeroizing};
@@ -667,31 +668,100 @@ pub async fn get_asr_status(state: &DictationState) -> Result<AsrStatus, String>
 
 // ── Internal helpers ────────────────────────────────────────────────────
 
-/// Record audio from the default input device until the stop flag is set
-/// or 15 seconds elapse. Returns (samples, sample_rate, channels).
-fn report_cpal_runtime_failure(
-    stream_failed: &AtomicBool,
-    stream_failure: &Mutex<Option<String>>,
-    error: impl std::fmt::Display,
-) {
-    // The audio callback cannot wait for the capture buffer or terminal lock.
-    stream_failed.store(true, Ordering::SeqCst);
-    if let Ok(mut failure) = stream_failure.try_lock() {
-        if failure.is_none() {
-            *failure = Some(format!("Microphone stream failed: {error}"));
-        }
+/// The CPAL error kinds a capture failure is reported as, in the order the
+/// error callback publishes them. That callback runs on the stream's own
+/// thread, so it may publish nothing but an index into this table; the
+/// control thread turns the index back into a message once the stream is
+/// dropped. `ErrorKind` is `#[non_exhaustive]`, so a kind this table does not
+/// name still fails the capture, only without its detail.
+const CAPTURE_FAILURE_KINDS: &[cpal::ErrorKind] = &[
+    cpal::ErrorKind::DeviceBusy,
+    cpal::ErrorKind::DeviceChanged,
+    cpal::ErrorKind::DeviceNotAvailable,
+    cpal::ErrorKind::HostUnavailable,
+    cpal::ErrorKind::InvalidInput,
+    cpal::ErrorKind::PermissionDenied,
+    cpal::ErrorKind::RealtimeDenied,
+    cpal::ErrorKind::ResourceExhausted,
+    cpal::ErrorKind::StreamInvalidated,
+    cpal::ErrorKind::UnsupportedConfig,
+    cpal::ErrorKind::UnsupportedOperation,
+    cpal::ErrorKind::Xrun,
+    cpal::ErrorKind::BackendError,
+    cpal::ErrorKind::Other,
+];
+
+/// Published codes are one-based so this one can mean "no kind published",
+/// which a reader must be able to tell apart from the table's first entry.
+const NO_CAPTURE_FAILURE: u8 = 0;
+
+fn capture_failure_code(kind: cpal::ErrorKind) -> u8 {
+    CAPTURE_FAILURE_KINDS
+        .iter()
+        .position(|known| *known == kind)
+        .and_then(|index| u8::try_from(index + 1).ok())
+        .unwrap_or(u8::MAX)
+}
+
+fn capture_failure_message(code: u8) -> String {
+    let named = code
+        .checked_sub(1)
+        .and_then(|index| CAPTURE_FAILURE_KINDS.get(usize::from(index)));
+    match named {
+        Some(kind) => format!("Microphone stream failed: {kind}"),
+        None => "Microphone stream failed.".to_string(),
     }
 }
 
 fn cpal_runtime_failure_callback(
     stream_failed: Arc<AtomicBool>,
-    stream_failure: Arc<Mutex<Option<String>>>,
+    failure_kind: Arc<AtomicU8>,
 ) -> impl FnMut(cpal::Error) + Send + 'static {
     move |error| {
-        report_cpal_runtime_failure(&stream_failed, &stream_failure, error);
+        // CPAL calls this on the stream's own thread, so an atomic store is
+        // the only thing it may do: composing the message belongs to the
+        // control thread, after the stream is dropped. The first failure
+        // keeps the kind, because later ones are consequences of it.
+        let _ = failure_kind.compare_exchange(
+            NO_CAPTURE_FAILURE,
+            capture_failure_code(error.kind()),
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        );
+        stream_failed.store(true, Ordering::SeqCst);
     }
 }
 
+/// The whole of what the CPAL data callback does: copy into ring slots that
+/// already exist and abandon whatever does not fit. Returns how many samples
+/// were accepted. Nothing here waits for the control thread or grows a
+/// buffer, which is what the OS audio thread requires of it.
+fn capture_samples(captured_tx: &mut Producer<f32>, data: &[f32]) -> usize {
+    let (accepted, _abandoned) = captured_tx.push_partial_slice(data);
+    accepted.len()
+}
+
+/// Moves what the callback published into the owned capture buffer, stopping
+/// at the capture bound so its preallocated storage never grows. The control
+/// thread is the only side that runs this.
+fn drain_capture_ring(
+    captured_rx: &mut Consumer<f32>,
+    buffer: &mut SensitiveCaptureBuffer,
+    capacity: usize,
+) {
+    let room = capacity.saturating_sub(buffer.0.len());
+    let available = captured_rx.slots().min(room);
+    let Ok(chunk) = captured_rx.read_chunk(available) else {
+        return;
+    };
+    let (first, second) = chunk.as_slices();
+    buffer.0.extend_from_slice(first);
+    buffer.0.extend_from_slice(second);
+    chunk.commit_all();
+}
+
+/// Record audio from the default input device until the stop flag is set
+/// or 15 seconds elapse. Returns (samples, sample_rate, channels).
 fn record_mic(stop: &AtomicBool) -> Result<(Vec<f32>, u32, u16), String> {
     let host = cpal::default_host();
     let device = host.default_input_device().ok_or("No microphone found")?;
@@ -703,23 +773,21 @@ fn record_mic(stop: &AtomicBool) -> Result<(Vec<f32>, u32, u16), String> {
     let sample_rate = config.sample_rate();
     let channels = config.channels();
     let capacity = sample_rate as usize * 15 * channels as usize;
-    let buffer: Arc<Mutex<SensitiveCaptureBuffer>> = Arc::new(Mutex::new(SensitiveCaptureBuffer(
-        Vec::with_capacity(capacity),
-    )));
+    // The ring carries the whole capture bound, so a drain the OS deschedules
+    // costs no sample this session would have kept: the callback is refused
+    // only once the 15 seconds are already in hand.
+    let (mut captured_tx, mut captured_rx) = RingBuffer::<f32>::new(capacity);
+    let mut buffer = SensitiveCaptureBuffer(Vec::with_capacity(capacity));
     let stream_failed = Arc::new(AtomicBool::new(false));
-    let stream_failure = Arc::new(Mutex::new(None::<String>));
+    let failure_kind = Arc::new(AtomicU8::new(NO_CAPTURE_FAILURE));
 
-    let buf_writer = buffer.clone();
     let stream = device
         .build_input_stream(
             config.into(),
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                if let Ok(mut buf) = buf_writer.try_lock() {
-                    let count = capacity.saturating_sub(buf.0.len()).min(data.len());
-                    buf.0.extend_from_slice(&data[..count]);
-                }
+                capture_samples(&mut captured_tx, data);
             },
-            cpal_runtime_failure_callback(stream_failed.clone(), stream_failure.clone()),
+            cpal_runtime_failure_callback(stream_failed.clone(), failure_kind.clone()),
             None,
         )
         .map_err(|e| format!("Failed to build mic stream: {e}"))?;
@@ -735,34 +803,29 @@ fn record_mic(stop: &AtomicBool) -> Result<(Vec<f32>, u32, u16), String> {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(50));
+        drain_capture_ring(&mut captured_rx, &mut buffer, capacity);
     }
 
     drop(stream);
+    drain_capture_ring(&mut captured_rx, &mut buffer, capacity);
 
-    let buffer = Arc::try_unwrap(buffer)
-        .map_err(|_| "Microphone capture did not release its callback buffer.".to_string())?
-        .into_inner()
-        .map_err(|error| format!("Lock error: {error}"))?;
-    let samples = finish_capture_after_stream_status(buffer, &stream_failed, &stream_failure)?;
+    let samples = finish_capture_after_stream_status(buffer, &stream_failed, &failure_kind)?;
 
     Ok((samples, sample_rate, channels))
 }
 
 /// CPAL's error callback is authoritative: do not extract a partial capture
 /// after it fired. Dropping the owned buffer on this error path zeroizes its
-/// contents before the dictation worker can resample or transcribe anything.
+/// contents before the dictation worker can resample or transcribe anything,
+/// and a stream that died after `play()` reaches the worker as an error
+/// rather than as a successful silent recording.
 fn finish_capture_after_stream_status(
     mut buffer: SensitiveCaptureBuffer,
     stream_failed: &AtomicBool,
-    stream_failure: &Mutex<Option<String>>,
+    failure_kind: &AtomicU8,
 ) -> Result<Vec<f32>, String> {
     if stream_failed.load(Ordering::SeqCst) {
-        let error = stream_failure
-            .lock()
-            .map_err(|error| format!("Lock error: {error}"))?
-            .take()
-            .unwrap_or_else(|| "Microphone stream failed.".to_string());
-        return Err(error);
+        return Err(capture_failure_message(failure_kind.load(Ordering::SeqCst)));
     }
 
     Ok(std::mem::take(&mut buffer.0))
@@ -1049,25 +1112,110 @@ mod tests {
         assert!(!terminal.claim_result());
     }
 
+    /// The mic data callback used to `try_lock` a `Mutex` and
+    /// `extend_from_slice` a `Vec` on the OS audio thread, so a block that
+    /// arrived while the control thread held that lock was lost outright. It
+    /// now copies into ring slots that already exist: a drain in progress
+    /// costs nothing, and the capture buffer only ever grows on the control
+    /// thread, inside the bound it was preallocated for.
+    #[test]
+    fn the_mic_callback_keeps_writing_while_the_control_thread_drains() {
+        const BOUND: usize = 4;
+        let (mut captured_tx, mut captured_rx) = RingBuffer::<f32>::new(BOUND);
+        let mut buffer = SensitiveCaptureBuffer(Vec::with_capacity(BOUND));
+        let slots = buffer.0.as_ptr();
+
+        assert_eq!(capture_samples(&mut captured_tx, &[0.1, 0.2]), 2);
+        drain_capture_ring(&mut captured_rx, &mut buffer, BOUND);
+        assert_eq!(capture_samples(&mut captured_tx, &[0.3, 0.4]), 2);
+        drain_capture_ring(&mut captured_rx, &mut buffer, BOUND);
+        assert_eq!(buffer.0, vec![0.1, 0.2, 0.3, 0.4]);
+
+        // With the bound reached the drain stops taking samples, the ring
+        // fills, and the callback is refused rather than waiting or growing.
+        assert_eq!(capture_samples(&mut captured_tx, &[0.5, 0.6]), 2);
+        drain_capture_ring(&mut captured_rx, &mut buffer, BOUND);
+        assert_eq!(capture_samples(&mut captured_tx, &[0.7, 0.8, 0.9]), 2);
+        assert_eq!(capture_samples(&mut captured_tx, &[1.0]), 0);
+        assert_eq!(buffer.0, vec![0.1, 0.2, 0.3, 0.4]);
+        assert!(
+            std::ptr::eq(buffer.0.as_ptr(), slots),
+            "the capture buffer must never reallocate"
+        );
+    }
+
     #[test]
     fn cpal_runtime_error_rejects_before_capture_sample_extraction() {
         let stream_failed = Arc::new(AtomicBool::new(false));
-        let stream_failure = Arc::new(Mutex::new(None));
+        let failure_kind = Arc::new(AtomicU8::new(NO_CAPTURE_FAILURE));
         let mut error_callback =
-            cpal_runtime_failure_callback(Arc::clone(&stream_failed), Arc::clone(&stream_failure));
+            cpal_runtime_failure_callback(Arc::clone(&stream_failed), Arc::clone(&failure_kind));
         error_callback(cpal::Error::with_message(
             cpal::ErrorKind::DeviceNotAvailable,
             "disconnected",
         ));
+        // A later error is a consequence of the first, so the reported kind
+        // stays the one that broke the stream.
+        error_callback(cpal::Error::new(cpal::ErrorKind::Xrun));
         let result = finish_capture_after_stream_status(
             SensitiveCaptureBuffer(vec![0.2, -0.3]),
             &stream_failed,
-            &stream_failure,
+            &failure_kind,
         );
 
         assert_eq!(
             result,
-            Err("Microphone stream failed: disconnected".to_string())
+            Err(format!(
+                "Microphone stream failed: {}",
+                cpal::ErrorKind::DeviceNotAvailable
+            ))
+        );
+    }
+
+    /// A stream that dies after `play()` delivers no block at all, so the
+    /// capture is empty. Reporting that as a successful empty recording would
+    /// hand the worker silence to transcribe and resolve the session as
+    /// though the microphone had worked.
+    #[test]
+    fn a_stream_that_dies_after_play_surfaces_as_an_error_not_an_empty_capture() {
+        let stream_failed = Arc::new(AtomicBool::new(false));
+        let failure_kind = Arc::new(AtomicU8::new(NO_CAPTURE_FAILURE));
+
+        // Without a failure an empty capture is a legitimate empty result.
+        assert_eq!(
+            finish_capture_after_stream_status(
+                SensitiveCaptureBuffer(Vec::new()),
+                &stream_failed,
+                &failure_kind,
+            ),
+            Ok(Vec::new())
+        );
+
+        let mut error_callback =
+            cpal_runtime_failure_callback(Arc::clone(&stream_failed), Arc::clone(&failure_kind));
+        error_callback(cpal::Error::new(cpal::ErrorKind::StreamInvalidated));
+
+        assert_eq!(
+            finish_capture_after_stream_status(
+                SensitiveCaptureBuffer(Vec::new()),
+                &stream_failed,
+                &failure_kind,
+            ),
+            Err(format!(
+                "Microphone stream failed: {}",
+                cpal::ErrorKind::StreamInvalidated
+            ))
+        );
+
+        // A kind the table does not name still fails the capture.
+        let unnamed_kind = AtomicU8::new(u8::MAX);
+        assert_eq!(
+            finish_capture_after_stream_status(
+                SensitiveCaptureBuffer(Vec::new()),
+                &stream_failed,
+                &unnamed_kind,
+            ),
+            Err("Microphone stream failed.".to_string())
         );
     }
 
