@@ -212,7 +212,8 @@ export async function settleConfirmedBatchOutcome(
                 updatePendingActionFollowUp({
                     confirmationId: confirmation.id,
                     error: surfacedManualReviewError,
-                    ...(manualRenderRepairEffect.failureKind === 'retention-capacity'
+                    ...(manualRenderRepairEffect.kind === 'external-effect' &&
+                    manualRenderRepairEffect.failureKind === 'retention-capacity'
                         ? { failureKind: 'retention-capacity' as const }
                         : {}),
                     projectRevision: null,

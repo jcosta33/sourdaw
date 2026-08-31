@@ -509,6 +509,30 @@ describe('renderAgentProjectSections', () => {
         expect(wouldAgentSectionRenderSetExceedRetention([retainedJob, shiftedJob])).toBe(false);
     });
 
+    it('reports retention-capacity when a failed same-geometry follow-up would exceed retained capacity', async () => {
+        const frameCount = Math.floor(
+            (AGENT_SECTION_RENDER_RETENTION_POLICY.maxPcmBytes * 3) / (4 * 2 * Float32Array.BYTES_PER_ELEMENT)
+        );
+        const retainedJob = createJob({ jobId: 'render-retained' });
+        const followUpJob = createJob({
+            jobId: 'render-follow-up',
+            sectionId: 'section-follow-up',
+            sectionName: 'Follow Up',
+        });
+        mocks.renderOffline.mockResolvedValue(createAudioBuffer({ length: frameCount }));
+        await renderAgentProjectSections({ jobs: [retainedJob], sourceRevision: 'revision-a' });
+
+        mocks.renderOffline.mockRejectedValueOnce(new Error('offline renderer unavailable'));
+
+        await expect(
+            renderAgentProjectSections({ jobs: [retainedJob, followUpJob], sourceRevision: 'revision-a' })
+        ).rejects.toMatchObject({
+            name: 'SectionRenderFollowUpError',
+            failureKind: 'retention-capacity',
+            message: expect.stringContaining('retention capacity'),
+        });
+    });
+
     it('preserves approved artifacts when a missing artifact cannot coexist within retention capacity', async () => {
         const frameCount = Math.floor(
             (AGENT_SECTION_RENDER_RETENTION_POLICY.maxPcmBytes * 3) / (4 * 2 * Float32Array.BYTES_PER_ELEMENT)
