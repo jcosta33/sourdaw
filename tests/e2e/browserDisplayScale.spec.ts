@@ -338,6 +338,11 @@ async function expectEqCanvasDrag(page: Page, app: FrameLocator): Promise<void> 
     const band = app.getByRole('slider', { name: /EQ band 1/i });
     await canvas.scrollIntoViewIfNeeded();
     await expect(canvas).toBeVisible();
+    // Scroll the drag target itself into view, as a user would: at 200% scale
+    // the plugin window is narrower than the fixed-size EQ surface, and
+    // scrolling the canvas centers it, which leaves the lowest band outside
+    // the visible slice.
+    await band.scrollIntoViewIfNeeded();
     const bandBox = requireBox(await band.boundingBox(), 'EQ band handle');
     const before = Number(await band.getAttribute('aria-valuenow'));
 
