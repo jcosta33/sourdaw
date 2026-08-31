@@ -1207,6 +1207,58 @@ describe('package scripts and gitignore', () => {
         }
     });
 
+    it('skips non-executable Windows git.exe and powershell.exe candidates for executable fallbacks', () => {
+        const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-win32-executable-fallbacks-'));
+        const primary = join(fixtureRoot, 'primary');
+        const rejectedBin = join(fixtureRoot, 'rejected-bin');
+        const gitBin = join(fixtureRoot, 'git-bin');
+        const ghBin = join(fixtureRoot, 'gh-bin');
+        const powerShellBin = join(fixtureRoot, 'powershell-bin');
+        const rejectedGit = join(rejectedBin, 'git.exe');
+        const rejectedPowerShell = join(rejectedBin, 'powershell.exe');
+        const gitWrapper = join(gitBin, 'git.exe');
+        const ghWrapper = join(ghBin, 'gh.exe');
+        const powerShellWrapper = join(powerShellBin, 'powershell.exe');
+        const realGit = execFileSync('/usr/bin/which', ['git'], { encoding: 'utf8' }).trim();
+        const realGh = execFileSync('/usr/bin/which', ['gh'], { encoding: 'utf8' }).trim();
+        try {
+            trustedPublishFixture(primary, 'primary');
+            mkdirSync(rejectedBin);
+            mkdirSync(gitBin);
+            mkdirSync(ghBin);
+            mkdirSync(powerShellBin);
+            writeFileSync(rejectedGit, '#!/bin/sh\nexit 99\n');
+            writeFileSync(rejectedPowerShell, '#!/bin/sh\nexit 99\n');
+            writeFileSync(gitWrapper, `#!/bin/sh\nexec ${JSON.stringify(realGit)} "$@"\n`);
+            writeFileSync(ghWrapper, `#!/bin/sh\nexec ${JSON.stringify(realGh)} "$@"\n`);
+            writeFileSync(powerShellWrapper, '#!/bin/sh\nexit 0\n');
+            chmodSync(rejectedGit, 0o600);
+            chmodSync(rejectedPowerShell, 0o600);
+            chmodSync(gitWrapper, 0o700);
+            chmodSync(ghWrapper, 0o700);
+            chmodSync(powerShellWrapper, 0o700);
+
+            const binding = resolveTrustedLauncherBinding(
+                primary,
+                {
+                    PATH: [rejectedBin, gitBin, ghBin, powerShellBin].join(';'),
+                    PATHEXT: '.EXE;.CMD;.BAT',
+                },
+                'review:resolve',
+                'win32'
+            );
+
+            expect(binding.gitPath).toBe(realpathSync(gitWrapper));
+            expect(binding.gitPath).not.toBe(realpathSync(rejectedGit));
+            expect(binding.powershellPath).toBe(realpathSync(powerShellWrapper));
+            expect(binding.powershellPath).not.toBe(realpathSync(rejectedPowerShell));
+            expect(spawnSync(binding.gitPath, ['--version'], { shell: false }).status).toBe(0);
+            expect(spawnSync(binding.powershellPath, [], { shell: false }).status).toBe(0);
+        } finally {
+            rmSync(fixtureRoot, { recursive: true, force: true });
+        }
+    });
+
     it('rejects Windows command scripts as trusted executable bindings', () => {
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-win32-command-scripts-'));
         const commandBin = join(fixtureRoot, 'bin');

@@ -2124,6 +2124,126 @@ describe('review thread resolution', () => {
         }
     });
 
+    it('refuses unseen retirement immediately when historical H1 create and reply evidence is present only in the first H2 inspection', async () => {
+        for (const phase of ['createPendingReview', 'replyDone'] as const) {
+            const repository = createTemporaryGitRepository();
+            try {
+                const mutation =
+                    phase === 'createPendingReview'
+                        ? { phase, epoch: 1 }
+                        : {
+                              phase,
+                              epoch: 1,
+                              reviewId,
+                              reviewState: 'PENDING' as const,
+                              body: pendingReviewBody(head),
+                              reviewCommitOid: head,
+                          };
+                const ownerOid = writeLockOwnerBlob(repository, 9_999_999, head, mutation);
+                updateLock(repository, 42, ownerOid);
+                const session: GhSession = { configDir: repository, env: {}, dispose() {} };
+                const fake = fakePort({ heads: [movedHead, movedHead] });
+                let inspectionCount = 0;
+                const port: ResolveReviewThreadPort = {
+                    ...fake.port,
+                    inspect: (number, requestedThreadId) => {
+                        const inspection = fake.port.inspect(number, requestedThreadId);
+                        inspectionCount += 1;
+                        if (inspectionCount !== 1) {
+                            return inspection;
+                        }
+                        if (phase === 'createPendingReview') {
+                            return {
+                                ...inspection,
+                                pendingReviews: [
+                                    ...inspection.pendingReviews,
+                                    {
+                                        id: reviewId,
+                                        state: 'PENDING',
+                                        body: pendingReviewBody(head),
+                                        commitOid: head,
+                                        authorNodeId: AUTHOR_BOT_NODE_ID,
+                                        authorLogin: 'renamed-author[bot]',
+                                        authorType: 'Bot',
+                                    },
+                                ],
+                            };
+                        }
+                        if (inspection.thread === null) {
+                            throw new Error('expected review thread during retirement evidence inspection');
+                        }
+                        return {
+                            ...inspection,
+                            thread: {
+                                ...inspection.thread,
+                                comments: [
+                                    ...inspection.thread.comments,
+                                    {
+                                        id: replyId,
+                                        fullDatabaseId: '9223372036854775808',
+                                        body: 'Done',
+                                        authorNodeId: AUTHOR_BOT_NODE_ID,
+                                        authorLogin: 'renamed-author[bot]',
+                                        authorType: 'Bot',
+                                        reviewId,
+                                        reviewState: 'PENDING',
+                                        reviewBody: pendingReviewBody(head),
+                                        reviewCommitOid: head,
+                                        reviewAuthorNodeId: AUTHOR_BOT_NODE_ID,
+                                        reviewAuthorLogin: 'renamed-author[bot]',
+                                        reviewAuthorType: 'Bot',
+                                    },
+                                ],
+                            },
+                        };
+                    },
+                };
+                let monotonicNow = 0n;
+                const waits: number[] = [];
+                let failure: Error | undefined;
+                try {
+                    await runRecoverReviewResolutionLockCli(['42', '--owner', ownerOid, '--retire-unseen'], {
+                        trustedPrimaryRoot: () => repository,
+                        authenticateAuthor: async () => ({ minted: { actorNodeId: AUTHOR_BOT_NODE_ID }, session }),
+                        repositoryName: () => REQUIRED_REPOSITORY,
+                        gh: () => () => '',
+                        createPort: () => port,
+                        clock: { now: () => 0 },
+                        retirementClock: {
+                            monotonicNow: () => monotonicNow,
+                            wait: (milliseconds) => {
+                                waits.push(milliseconds);
+                                monotonicNow += 30_000_000_000n;
+                            },
+                        },
+                        recoverLock: (primaryRoot, number, owner, reconcile) =>
+                            recoverPullRequestReviewResolutionLock(primaryRoot, number, owner, reconcile, () => false),
+                    });
+                } catch (error) {
+                    failure = error as Error;
+                }
+                const preservedOwnerOid = readLockOid(repository, 42);
+                expect(preservedOwnerOid).toBeDefined();
+                expect(failure?.message).toContain('retirement found mutation evidence during remote inspection');
+                expect(failure?.message).toContain(`preserved exact lock owner ${preservedOwnerOid}`);
+                expect(fake.calls).toEqual(['inspect:1']);
+                expect(waits).toEqual([]);
+                expect(readLockOid(repository, 42)).toBe(preservedOwnerOid);
+                expect(requireLockOwner(repository, 42)).toMatchObject({
+                    head,
+                    mutation: {
+                        phase,
+                        epoch: 1,
+                        body: pendingReviewBody(head),
+                        reviewCommitOid: head,
+                    },
+                });
+            } finally {
+                rmSync(repository, { recursive: true, force: true });
+            }
+        }
+    });
+
     it('refuses unseen retirement when stable H2 inspections change pull-request identity', async () => {
         const repository = createTemporaryGitRepository();
         try {
