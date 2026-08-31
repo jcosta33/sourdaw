@@ -16,7 +16,8 @@ pub struct DenoiseRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DenoiseResult {
-    /// Float32 LE PCM in channel-planar layout: `[ch0 frames…][ch1 frames…]…`.
+    /// Float32 little-endian PCM bytes in channel-planar order:
+    /// `[ch0 frames…][ch1 frames…]…`.
     pub samples: Vec<u8>,
     pub noise_floor_db: f64,
     pub processing_time_ms: u64,
@@ -71,10 +72,10 @@ fn encode_denoise_pcm(samples: &[f32]) -> Vec<u8> {
 
 /// Denoise audio using a noise-floor-keyed downward expander.
 ///
-/// `samples` is Float32 little-endian PCM in channel-planar layout:
+/// `samples` is Float32 little-endian PCM bytes in channel-planar order:
 /// `[ch0 frames…][ch1 frames…]…`, where
-/// `frames = samples.len() / request.channels`. The DSP pass runs off the
-/// async worker via `spawn_blocking`.
+/// `frames = (samples.len() / BYTES_PER_SAMPLE) / request.channels`. The DSP
+/// pass runs off the async worker via `spawn_blocking`.
 ///
 /// This curve is mirrored by the browser fallback in
 /// `src/modules/AiGeneration/useCases/actions/handleAiDenoiseClip.ts`: the
