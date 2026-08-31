@@ -2,6 +2,8 @@ use sha2::{Digest, Sha256};
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
+use super::filesystem::APP_DIR_NAME;
+
 pub struct VerifiedCachedModel {
     pub filename: &'static str,
     pub expected_sha256: &'static str,
@@ -12,7 +14,7 @@ pub struct VerifiedCachedModel {
 pub fn cached_model_dir() -> Result<PathBuf, String> {
     Ok(dirs::data_dir()
         .ok_or("Could not determine data directory")?
-        .join("com.sourdaw.app")
+        .join(APP_DIR_NAME)
         .join("models"))
 }
 
