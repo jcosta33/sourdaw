@@ -16,6 +16,10 @@ const ANTHROPIC_PROVIDER_ADAPTER = Object.freeze({
     origin: 'https://api.anthropic.com' as const,
 });
 const CONNECT_PROBE_DEADLINE_MS = 15_000;
+const SUPERSEDED_CLOUD_CREDENTIAL_REPLACEMENT = 'Cloud credential replacement was superseded';
+
+let connectGeneration = 0;
+let inFlightConnectAbort: AbortController | null = null;
 
 async function waitForProbe(probe: Promise<void>, signal: AbortSignal): Promise<void> {
     let rejectOnAbort: (() => void) | null = null;
@@ -25,6 +29,12 @@ async function waitForProbe(probe: Promise<void>, signal: AbortSignal): Promise<
     });
     try {
         await Promise.race([probe, aborted]);
+    } catch (error) {
+        void probe.then(
+            () => undefined,
+            () => undefined
+        );
+        throw error;
     } finally {
         if (rejectOnAbort !== null) {
             signal.removeEventListener('abort', rejectOnAbort);
@@ -32,12 +42,12 @@ async function waitForProbe(probe: Promise<void>, signal: AbortSignal): Promise<
     }
 }
 
-async function verifyOpenedProviderSession(runtime: CloudProviderRuntime): Promise<void> {
+async function verifyOpenedProviderSession(runtime: CloudProviderRuntime, connectSignal: AbortSignal): Promise<void> {
     const sessionId = runtime.session_id;
     if (sessionId === null) {
         return;
     }
-    const probeSignal = AbortSignal.timeout(CONNECT_PROBE_DEADLINE_MS);
+    const probeSignal = AbortSignal.any([connectSignal, AbortSignal.timeout(CONNECT_PROBE_DEADLINE_MS)]);
     try {
         let probe: Promise<void>;
         if (runtime.provider !== 'anthropic' && runtime.adapter) {
@@ -55,73 +65,100 @@ async function verifyOpenedProviderSession(runtime: CloudProviderRuntime): Promi
     }
 }
 
+async function discardSupersededCandidate(runtime: CloudProviderRuntime): Promise<never> {
+    const sessionId = runtime.session_id;
+    if (sessionId !== null) {
+        await closeProviderGatewaySession(sessionId);
+    }
+    throw new Error(SUPERSEDED_CLOUD_CREDENTIAL_REPLACEMENT);
+}
+
 export const setCloudProviderConfig = inject({ logger })(
     ({ logger }) =>
         async function setCloudProviderConfig(configuration: HostedLlmConfiguration): Promise<void> {
-            let runtime: CloudProviderRuntime;
-            if (configuration.provider === 'anthropic') {
-                if (configuration.authentication !== 'api-key') {
-                    throw new Error('Anthropic requires API-key authentication');
-                }
-                if (!isDesktopRuntime()) {
-                    throw new Error('Hosted providers are available in desktop builds only');
-                }
-                runtime = {
-                    provider: 'anthropic',
-                    model: configuration.model,
-                    authentication: configuration.authentication,
-                    session_id: await openProviderGatewaySession(
-                        ANTHROPIC_PROVIDER_ADAPTER,
-                        'anthropic',
-                        configuration.apiKey
-                    ),
-                };
-            } else {
-                if (configuration.provider === 'openai' && configuration.authentication !== 'api-key') {
-                    throw new Error('OpenAI requires API-key authentication');
-                }
-                if (!configuration.baseUrl) {
-                    throw new Error('OpenAI-compatible provider requires a base URL');
-                }
-                const parsedBaseUrl = new URL(configuration.baseUrl);
-                const usesPrivilegedAdapter = parsedBaseUrl.protocol === 'https:';
-                if (usesPrivilegedAdapter && parsedBaseUrl.pathname !== '/' && parsedBaseUrl.pathname !== '/v1') {
-                    throw new Error('Remote OpenAI-compatible provider must use the compiled /v1 protocol path');
-                }
-                const adapter = usesPrivilegedAdapter
-                    ? compileProviderAdapterInstallation({
-                          adapterId: 'builtin.openai-compatible.chat-completions.v1',
-                          providerId: configuration.provider,
-                          modelId: configuration.model,
-                          protocolFamily: 'openai-chat-completions',
-                          origin: parsedBaseUrl.origin,
-                      })
-                    : null;
-                if (adapter === null && (configuration.authentication !== 'none' || configuration.apiKey !== '')) {
-                    throw new Error('Authenticated OpenAI-compatible providers require HTTPS');
-                }
-                if (adapter !== null && !isDesktopRuntime()) {
-                    throw new Error('Hosted providers are available in desktop builds only');
-                }
-                runtime = {
-                    provider: configuration.provider,
-                    model: configuration.model,
-                    base_url: configuration.baseUrl,
-                    authentication: configuration.authentication,
-                    adapter,
-                    session_id:
-                        adapter === null
-                            ? null
-                            : await openProviderGatewaySession(adapter, configuration.provider, configuration.apiKey),
-                };
+            if (inFlightConnectAbort !== null) {
+                inFlightConnectAbort.abort(new Error(SUPERSEDED_CLOUD_CREDENTIAL_REPLACEMENT));
             }
+            const connectAbort = new AbortController();
+            inFlightConnectAbort = connectAbort;
+            const generation = ++connectGeneration;
+            try {
+                let runtime: CloudProviderRuntime;
+                if (configuration.provider === 'anthropic') {
+                    if (configuration.authentication !== 'api-key') {
+                        throw new Error('Anthropic requires API-key authentication');
+                    }
+                    if (!isDesktopRuntime()) {
+                        throw new Error('Hosted providers are available in desktop builds only');
+                    }
+                    runtime = {
+                        provider: 'anthropic',
+                        model: configuration.model,
+                        authentication: configuration.authentication,
+                        session_id: await openProviderGatewaySession(
+                            ANTHROPIC_PROVIDER_ADAPTER,
+                            'anthropic',
+                            configuration.apiKey
+                        ),
+                    };
+                } else {
+                    if (configuration.provider === 'openai' && configuration.authentication !== 'api-key') {
+                        throw new Error('OpenAI requires API-key authentication');
+                    }
+                    if (!configuration.baseUrl) {
+                        throw new Error('OpenAI-compatible provider requires a base URL');
+                    }
+                    const parsedBaseUrl = new URL(configuration.baseUrl);
+                    const usesPrivilegedAdapter = parsedBaseUrl.protocol === 'https:';
+                    if (usesPrivilegedAdapter && parsedBaseUrl.pathname !== '/' && parsedBaseUrl.pathname !== '/v1') {
+                        throw new Error('Remote OpenAI-compatible provider must use the compiled /v1 protocol path');
+                    }
+                    const adapter = usesPrivilegedAdapter
+                        ? compileProviderAdapterInstallation({
+                              adapterId: 'builtin.openai-compatible.chat-completions.v1',
+                              providerId: configuration.provider,
+                              modelId: configuration.model,
+                              protocolFamily: 'openai-chat-completions',
+                              origin: parsedBaseUrl.origin,
+                          })
+                        : null;
+                    if (adapter === null && (configuration.authentication !== 'none' || configuration.apiKey !== '')) {
+                        throw new Error('Authenticated OpenAI-compatible providers require HTTPS');
+                    }
+                    if (adapter !== null && !isDesktopRuntime()) {
+                        throw new Error('Hosted providers are available in desktop builds only');
+                    }
+                    runtime = {
+                        provider: configuration.provider,
+                        model: configuration.model,
+                        base_url: configuration.baseUrl,
+                        authentication: configuration.authentication,
+                        adapter,
+                        session_id:
+                            adapter === null
+                                ? null
+                                : await openProviderGatewaySession(
+                                      adapter,
+                                      configuration.provider,
+                                      configuration.apiKey
+                                  ),
+                    };
+                }
 
-            await verifyOpenedProviderSession(runtime);
-            await cloudSession.replace_runtime(runtime);
-            if (configuration.provider === 'anthropic') {
-                logger.info('[Cloud AI] Anthropic provider configured');
-            } else {
-                logger.info(`[Cloud AI] ${configuration.provider} provider configured`);
+                await verifyOpenedProviderSession(runtime, connectAbort.signal);
+                if (generation !== connectGeneration) {
+                    await discardSupersededCandidate(runtime);
+                }
+                await cloudSession.replace_runtime(runtime);
+                if (configuration.provider === 'anthropic') {
+                    logger.info('[Cloud AI] Anthropic provider configured');
+                } else {
+                    logger.info(`[Cloud AI] ${configuration.provider} provider configured`);
+                }
+            } finally {
+                if (inFlightConnectAbort === connectAbort) {
+                    inFlightConnectAbort = null;
+                }
             }
         }
 );

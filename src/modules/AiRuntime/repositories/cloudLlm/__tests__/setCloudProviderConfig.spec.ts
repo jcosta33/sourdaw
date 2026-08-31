@@ -465,4 +465,85 @@ describe('setCloudProviderConfig', () => {
         ).rejects.toThrow('Authenticated OpenAI-compatible providers require HTTPS');
         expect(mocks.invoke).not.toHaveBeenCalled();
     });
+
+    it('installs the later Connect and closes the superseded candidate when probes overlap', async () => {
+        let releaseFirstProbe!: () => void;
+        const firstProbeReleased = new Promise<void>((resolve) => {
+            releaseFirstProbe = resolve;
+        });
+        let notifyFirstProbeStarted!: () => void;
+        const firstProbeStarted = new Promise<void>((resolve) => {
+            notifyFirstProbeStarted = resolve;
+        });
+        let openCount = 0;
+
+        mocks.invoke.mockImplementation(async (command, args) => {
+            if (command === 'open_provider_gateway_session') {
+                openCount += 1;
+                if (openCount === 1) {
+                    return SESSION_ID;
+                }
+                return CANDIDATE_SESSION_ID;
+            }
+            if (command === 'provider_gateway_request') {
+                const channelValue = args?.onEvent;
+                if (
+                    typeof channelValue !== 'object' ||
+                    channelValue === null ||
+                    !('onmessage' in channelValue) ||
+                    typeof channelValue.onmessage !== 'function'
+                ) {
+                    throw new Error('Expected a provider gateway event channel');
+                }
+                const channel = channelValue as TestGatewayChannel;
+                if (args?.sessionId === SESSION_ID) {
+                    notifyFirstProbeStarted();
+                    await firstProbeReleased;
+                    emitProbeResponse(channel, args?.requestId, 200, DEFAULT_PROBE_BODY);
+                    return undefined;
+                }
+                emitProbeResponse(channel, args?.requestId, 200, '{"data":[]}');
+                return undefined;
+            }
+            return undefined;
+        });
+
+        const firstConnect = setCloudProviderConfig({
+            provider: 'openai',
+            model: 'gpt-test',
+            baseUrl: 'https://api.openai.com/v1',
+            authentication: 'api-key',
+            apiKey: 'sk-first',
+        });
+        await firstProbeStarted;
+        const firstRejection = expect(firstConnect).rejects.toThrow('Cloud credential replacement was superseded');
+
+        await setCloudProviderConfig({
+            provider: 'anthropic',
+            model: 'claude-test',
+            authentication: 'api-key',
+            apiKey: 'sk-second',
+        });
+        releaseFirstProbe();
+        await firstRejection;
+
+        expect(getCloudProviderRuntime()).toMatchObject({
+            provider: 'anthropic',
+            model: 'claude-test',
+            authentication: 'api-key',
+            session_id: CANDIDATE_SESSION_ID,
+        });
+        expect(hostedLlmProviderStatusStore.value).toEqual({
+            provider: 'anthropic',
+            model: 'claude-test',
+            baseUrl: null,
+            authentication: 'api-key',
+        });
+        expect(mocks.invoke).toHaveBeenCalledWith('close_provider_gateway_session', {
+            sessionId: SESSION_ID,
+        });
+        expect(mocks.invoke).not.toHaveBeenCalledWith('close_provider_gateway_session', {
+            sessionId: CANDIDATE_SESSION_ID,
+        });
+    });
 });
