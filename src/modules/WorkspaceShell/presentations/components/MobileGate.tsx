@@ -1,4 +1,4 @@
-import { type ReactElement, type ReactNode, useState, useEffect } from 'react';
+import { type ReactElement, type ReactNode, useState } from 'react';
 
 import { Bug, MessageCircle } from 'lucide-react';
 
@@ -9,55 +9,22 @@ import { PROJECT_LINKS } from '../projectLinks';
 
 import { SourdawLogo } from './SourdawLogo';
 
-const MOBILE_BREAKPOINT = 768;
+const TABLET_SCREEN_FLOOR = 1024;
 
 /**
- * Reports whether the viewport is too small to run the DAW.
- *
- * The result is **monotonic**: it can go mobile → desktop, never back. This gate
- * decides whether `AppShell` mounts at all, so flipping back to mobile would unmount
- * a running shell and re-run its boot effects — and `loadProject` ends in
- * `clearUndoHistory()`, so the user's undo stack and non-CRDT module state would be
- * silently discarded. Ordinary desktop actions cross 768 CSS px mid-session: browser
- * zoom at 175–200%, docking DevTools to the side, dragging the Sourdaw desktop app
- * window narrow. The
- * mobile → desktop direction stays live because the shell has not mounted yet, so
- * there is no session to lose and a window that starts narrow can still recover.
- *
- * The cost is not symmetric, and it is not trivial. A desktop user who narrows the
- * window gets a cramped layout, which is recoverable. But every modern phone exceeds
- * 768 CSS px in landscape — iPhone 15 is 852, 15 Pro Max 932, Pixel 8 about 892 — so
- * one rotation mounts `AppShell` and boots the engine, project load, MIDI and autosave
- * on a phone, and rotating back to portrait leaves an unusable full DAW at 393 px with
- * no notice and no way back short of a reload. Before the gate owned the shell's mount
- * it was reactive both ways and this could not happen. `(pointer: coarse)` is not the
- * fix: it would gate an iPad mini in portrait at 744 px, and the notice copy explicitly
- * supports tablets.
+ * Deliberate, test-guarded rule: a device is an unsupported phone iff its primary
+ * pointer is coarse and neither `screen` axis reaches the 1024 CSS px tablet floor.
+ * Platform identity carries this decision where window width cannot: every modern
+ * phone pushes `innerWidth` past 768 in landscape, while desktop zoom, docked
+ * DevTools, or a dragged-narrow window pull it below — and taking the max over both
+ * screen axes keeps the answer identical in every orientation. The floor keeps
+ * phones (iPhone 15 is 393×852 CSS px, 15 Pro Max ~440×956) gated while the iPad
+ * mini (744×1133) and larger tablets stay eligible; a fine-pointer desktop is never
+ * gated, whatever its window size.
  */
-function useIsMobile(): boolean {
-    const [isDesktopViewport, setIsDesktopViewport] = useState(() => window.innerWidth >= MOBILE_BREAKPOINT);
-
-    useEffect(() => {
-        if (isDesktopViewport) {
-            return undefined;
-        }
-
-        const mq = window.matchMedia(`(min-width: ${MOBILE_BREAKPOINT}px)`);
-        if (mq.matches) {
-            setIsDesktopViewport(true);
-            return undefined;
-        }
-
-        const handler = (event: MediaQueryListEvent): void => {
-            if (event.matches) {
-                setIsDesktopViewport(true);
-            }
-        };
-        mq.addEventListener('change', handler);
-        return () => mq.removeEventListener('change', handler);
-    }, [isDesktopViewport]);
-
-    return !isDesktopViewport;
+function isUnsupportedPhone(): boolean {
+    const largestScreenDimension = Math.max(window.screen.width, window.screen.height);
+    return window.matchMedia('(pointer: coarse)').matches && largestScreenDimension < TABLET_SCREEN_FLOOR;
 }
 
 type MobileGateProps = {
@@ -65,7 +32,10 @@ type MobileGateProps = {
 };
 
 export const MobileGate = ({ children }: MobileGateProps): ReactElement => {
-    const isMobile = useIsMobile();
+    // Latched at first evaluation: the gate owns `AppShell`'s mount, so a decision
+    // that flipped mid-session would unmount a running shell and discard undo
+    // history and non-CRDT state. No resize or orientation event may reopen it.
+    const [isMobile] = useState(isUnsupportedPhone);
 
     if (!isMobile) {
         return <>{children}</>;
