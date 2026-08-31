@@ -527,17 +527,28 @@ mod tests {
 
     #[test]
     fn stereo_noise_floor_is_shared_across_both_channel_window_heads() {
+        let sample_rate = 48_000;
+        let hop = 1024;
+        let counted_frames = (sample_rate as f64 * 0.5 / hop as f64) as usize * hop;
         let frames = 30_000;
-        let mut samples = vec![0.01; frames];
-        samples.extend(vec![1.0; frames]);
+        let mut left = vec![0.01_f32; frames];
+        left[counted_frames..].fill(0.9);
+        let mut right = vec![1.0_f32; frames];
+        right[counted_frames..].fill(0.2);
+        let samples = [left.clone(), right.clone()].concat();
         let result = denoise_audio_blocking(DenoisePcm {
             samples,
-            sample_rate: 48_000,
+            sample_rate,
             channels: 2,
             strength: 0.0,
         })
         .unwrap();
-        let expected_power = (0.01_f64.powi(2) + 1.0) / 2.0;
+        let summed_power: f64 = left[..counted_frames]
+            .iter()
+            .chain(&right[..counted_frames])
+            .map(|sample| (*sample as f64).powi(2))
+            .sum();
+        let expected_power = summed_power / (counted_frames * 2) as f64;
         let expected_db = 10.0 * expected_power.log10();
 
         assert!(
