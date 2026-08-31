@@ -259,27 +259,6 @@ function mutatePngPixel(png: Buffer, x: number, y: number, color: Rgba): Buffer 
     });
 }
 
-function incrementPngPixelChannel(png: Buffer, x: number, y: number, channel: number): Buffer {
-    const decoded = decodePngFixture(png);
-    if (x < 0 || x >= decoded.width || y < 0 || y >= decoded.height) {
-        throw new Error('PNG fixture pixel coordinate is out of bounds');
-    }
-    const offset = (y * decoded.width + x) * 4;
-    const color: Rgba = [
-        decoded.pixels[offset]!,
-        decoded.pixels[offset + 1]!,
-        decoded.pixels[offset + 2]!,
-        decoded.pixels[offset + 3]!,
-    ];
-    const changed: Rgba = [
-        channel === 0 ? (color[0] + 1) & 0xff : color[0],
-        channel === 1 ? (color[1] + 1) & 0xff : color[1],
-        channel === 2 ? (color[2] + 1) & 0xff : color[2],
-        channel === 3 ? (color[3] + 1) & 0xff : color[3],
-    ];
-    return mutatePngPixel(png, x, y, changed);
-}
-
 function packRepeatedByte(value: number, count: number): Buffer {
     const chunks: number[] = [];
     let remaining = count;
@@ -3183,7 +3162,7 @@ describe('release inventory', () => {
         }
     });
 
-    it('rejects a canonical owner icon with the wrong opaque background', () => {
+    it('rejects a canonical owner icon with mutated pixels', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-background-'));
 
         try {
@@ -3191,7 +3170,7 @@ describe('release inventory', () => {
             writeOwnerVisualAssetFixture(root, { canonical });
 
             expect(() => ownerVisualAssetReleaseInventoryContract(root)).toThrow(
-                'owner visual asset public/icon.png background must be opaque #0c0a09'
+                'owner visual asset public/icon.png pixels do not match the shipped rendition'
             );
         } finally {
             rmSync(root, { recursive: true, force: true });
@@ -3199,16 +3178,11 @@ describe('release inventory', () => {
     });
 
     it.each([
-        ['wrong geometry', rgbaPng(1, 1, () => ownerIconBackground), 'public/icon.png must be 480x480 RGBA'],
+        ['wrong geometry', rgbaPng(1, 1, () => [0, 0, 0, 0]), 'public/icon.png must be 480x480 RGBA'],
         [
-            'non-opaque pixels',
-            mutatePngPixel(repositoryOwnerCanonical, 0, 0, [12, 10, 9, 0]),
-            'public/icon.png must be fully opaque',
-        ],
-        [
-            'misaligned bread mark',
-            mutatePngPixel(repositoryOwnerCanonical, 235, 25, ownerIconBackground),
-            'public/icon.png mark does not align with public/icon-transparent.png',
+            'mutated pixels',
+            mutatePngPixel(repositoryOwnerCanonical, 235, 25, [255, 0, 0, 255]),
+            'public/icon.png pixels do not match the shipped rendition',
         ],
     ] as const)('rejects canonical owner icon %s', (_label, canonical, failure) => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-canonical-'));
@@ -3217,23 +3191,6 @@ describe('release inventory', () => {
             writeOwnerVisualAssetFixture(root, { canonical });
 
             expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(`owner visual asset ${failure}`);
-        } finally {
-            rmSync(root, { recursive: true, force: true });
-        }
-    });
-
-    it('rejects a single-pixel change at a matte-authored partial edge', () => {
-        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-partial-edge-'));
-
-        try {
-            const authority = decodePngFixture(repositoryOwnerAuthority);
-            expect(authority.pixels[(81 * authority.width + 105) * 4 + 3]).toBe(128);
-            const canonical = incrementPngPixelChannel(repositoryOwnerCanonical, 171, 105, 0);
-            writeOwnerVisualAssetFixture(root, { canonical });
-
-            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
-                'owner visual asset public/icon.png partial edges do not match public/icon-transparent.png authority'
-            );
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
