@@ -7,7 +7,8 @@ import { agentSectionRenderArtifactStore } from '../stores/agentSectionRenderArt
 function hasComparableGeometry(job: RenderProjectSectionJobSnapshot, artifact: AgentSectionRenderArtifact): boolean {
     return (
         artifact.sampleRate === job.sampleRate &&
-        artifact.endBeat - artifact.startBeat === job.endBeat - job.startBeat &&
+        artifact.startBeat === job.startBeat &&
+        artifact.endBeat === job.endBeat &&
         artifact.tailSeconds === job.tailSeconds
     );
 }

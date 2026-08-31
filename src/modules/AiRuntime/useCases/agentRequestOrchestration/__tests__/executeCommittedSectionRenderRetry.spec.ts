@@ -569,7 +569,11 @@ describe('executeCommittedSectionRenderRetry', () => {
             reason: 'Approved artifacts exceed retention capacity.',
         });
         expect(mocks.updateFollowUp).toHaveBeenLastCalledWith(
-            expect.objectContaining({ status: 'failed', error: 'Approved artifacts exceed retention capacity.' })
+            expect.objectContaining({
+                status: 'failed',
+                error: 'Approved artifacts exceed retention capacity.',
+                failureKind: 'retention-capacity',
+            })
         );
     });
 

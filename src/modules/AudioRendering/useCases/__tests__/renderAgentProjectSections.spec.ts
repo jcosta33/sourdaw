@@ -6,6 +6,7 @@ import { AGENT_SECTION_RENDER_RETENTION_POLICY } from '../../models/AgentSection
 import { clearAgentSectionRenderArtifacts } from '../clearAgentSectionRenderArtifacts';
 import { getAgentSectionRenderArtifacts } from '../getAgentSectionRenderArtifacts';
 import { renderAgentProjectSections } from '../renderAgentProjectSections';
+import { wouldAgentSectionRenderSetExceedRetention } from '../wouldAgentSectionRenderSetExceedRetention';
 
 const mocks = vi.hoisted(() => ({
     cancelExport: vi.fn(),
@@ -488,6 +489,24 @@ describe('renderAgentProjectSections', () => {
             'artifact byte capacity exceeded'
         );
         expect(getAgentSectionRenderArtifacts()).toEqual([]);
+    });
+
+    it('does not estimate a shifted tempo-map range from a same-span artifact', async () => {
+        const frameCount = Math.floor(
+            (AGENT_SECTION_RENDER_RETENTION_POLICY.maxPcmBytes * 3) / (4 * 2 * Float32Array.BYTES_PER_ELEMENT)
+        );
+        const retainedJob = createJob({ jobId: 'render-retained' });
+        const shiftedJob = createJob({
+            jobId: 'render-shifted',
+            sectionId: 'section-shifted',
+            sectionName: 'Shifted',
+            startBeat: 64,
+            endBeat: 96,
+        });
+        mocks.renderOffline.mockResolvedValue(createAudioBuffer({ length: frameCount }));
+        await renderAgentProjectSections({ jobs: [retainedJob], sourceRevision: 'revision-a' });
+
+        expect(wouldAgentSectionRenderSetExceedRetention([retainedJob, shiftedJob])).toBe(false);
     });
 
     it('preserves approved artifacts when a missing artifact cannot coexist within retention capacity', async () => {

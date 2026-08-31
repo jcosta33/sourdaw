@@ -10,7 +10,6 @@ import {
     getPendingActionConfirmation,
     refreshPendingActionConfirmationApproval,
     type PendingAppActionConfirmation,
-    updatePendingActionFollowUp,
 } from '../../stores/pendingActionConfirmationStore';
 import { hasExactAgentCommandBatchAuthority } from '../../validators/hasExactAgentCommandBatchAuthority';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
@@ -75,17 +74,12 @@ function getRetainedRenderCapacityFailure(
     if (
         confirmation.status !== 'executed' ||
         confirmation.followUpStatus !== 'failed' ||
-        !confirmation.error?.includes('retention capacity')
+        confirmation.followUpFailureKind !== 'retention-capacity' ||
+        !confirmation.error
     ) {
         return null;
     }
-    const reason = confirmation.error;
-    updatePendingActionFollowUp({
-        confirmationId: confirmation.id,
-        error: 'Section render manual repair is already required.',
-        status: 'failed',
-    });
-    return { status: 'failed', reason };
+    return { status: 'failed', reason: confirmation.error };
 }
 
 function consumeConfirmationAdmission(

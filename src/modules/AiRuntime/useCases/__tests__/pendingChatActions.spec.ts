@@ -73,6 +73,7 @@ const projectMutationAuthorization = vi.hoisted(() => {
 
 const mocks = vi.hoisted(() => ({
     projectRevision: { value: 'revision-1' },
+    projectRevisionMatchesLive: vi.fn(() => true),
     unownedMutationEpoch: { value: 0 },
     executeAppAction: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     executeAppActionBatch: vi.fn<ExecuteAppActionBatch>(),
@@ -92,8 +93,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectMutationAuthorization: projectMutationAuthorization.capture,
     captureProjectRevision: () => mocks.projectRevision.value,
     captureUnownedProjectMutations: () => mocks.unownedMutationEpoch.value,
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint: (expectedRevision: string) =>
-        mocks.projectRevision.value === expectedRevision,
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint: mocks.projectRevisionMatchesLive,
 }));
 
 vi.mock('#/modules/Command/useCases', async (import_original) => ({
@@ -262,6 +262,7 @@ describe('pending chat action confirmation', () => {
         mocks.describeAction.mockReturnValue('Remove track');
         mocks.generateGroupId.mockReturnValue({ groupId: 'group-1', groupLabel: 'delete drums' });
         mocks.projectRevision.value = 'revision-1';
+        mocks.projectRevisionMatchesLive.mockReturnValue(true);
         projectMutationAuthorization.isAuthorized.mockImplementation(
             () => mocks.projectRevision.value === 'revision-1'
         );
@@ -333,6 +334,7 @@ describe('pending chat action confirmation', () => {
     it('invalidates an app-action proposal when the project revision changed before confirmation', async () => {
         proposePendingAppAction('confirm-stale');
         mocks.projectRevision.value = 'revision-2';
+        mocks.projectRevisionMatchesLive.mockReturnValue(false);
 
         const result = await confirmPendingChatActions({ confirmationId: 'confirm-stale' });
 
