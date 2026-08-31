@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { hostedLlmProviderStatusStore } from '../../../stores/hostedLlmProviderStatusStore';
 import { clearCloudProviderConfig } from '../clearCloudProviderConfig';
+import { getCloudProviderRuntime } from '../getCloudProviderRuntime';
 import { registerCloudStreamController } from '../registerCloudStreamController';
 import { setCloudProviderConfig } from '../setCloudProviderConfig';
 
@@ -12,6 +13,7 @@ type TestGatewayChannel = {
 };
 
 const SESSION_ID = 'provider-session-00000000000000000000000000000000';
+const DEFAULT_PROBE_BODY = '{"data":[{"id":"gpt-test"},{"id":"custom-model"}]}';
 
 const invoke = vi.hoisted(() => {
     const channels: TestGatewayChannel[] = [];
@@ -46,6 +48,19 @@ function gatewayEvent(
     data: Record<string, unknown> = {}
 ): Record<string, unknown> {
     return { event, data: { ...data, requestId, sequence } };
+}
+
+function emitProbeResponse(channel: TestGatewayChannel, requestId: unknown, status: number, body: string): void {
+    const encoder = new TextEncoder();
+    let sequence = 0;
+    channel.onmessage(
+        gatewayEvent(requestId, sequence++, 'response-start', {
+            status,
+            contentType: 'application/json',
+        })
+    );
+    channel.onmessage(gatewayEvent(requestId, sequence++, 'body-chunk', { bytes: Array.from(encoder.encode(body)) }));
+    channel.onmessage(gatewayEvent(requestId, sequence, 'done'));
 }
 
 function mockSuccessfulGateway(): void {
@@ -110,5 +125,58 @@ describe('clearCloudProviderConfig', () => {
         expect(hostedLlmProviderStatusStore.value).toBeNull();
         expect(first.signal.aborted).toBe(true);
         expect(second.signal.aborted).toBe(true);
+    });
+
+    it('rejects an in-flight Connect when configuration is cleared during the probe', async () => {
+        let releaseFirstProbe!: () => void;
+        const firstProbeReleased = new Promise<void>((resolve) => {
+            releaseFirstProbe = resolve;
+        });
+        let notifyFirstProbeStarted!: () => void;
+        const firstProbeStarted = new Promise<void>((resolve) => {
+            notifyFirstProbeStarted = resolve;
+        });
+
+        invoke.invoke.mockImplementation(async (command, args) => {
+            if (command === 'open_provider_gateway_session') {
+                return SESSION_ID;
+            }
+            if (command === 'provider_gateway_request') {
+                const channelValue = args?.onEvent;
+                if (
+                    typeof channelValue !== 'object' ||
+                    channelValue === null ||
+                    !('onmessage' in channelValue) ||
+                    typeof channelValue.onmessage !== 'function'
+                ) {
+                    throw new Error('Expected a provider gateway event channel');
+                }
+                const channel = channelValue as TestGatewayChannel;
+                notifyFirstProbeStarted();
+                await firstProbeReleased;
+                emitProbeResponse(channel, args?.requestId, 200, DEFAULT_PROBE_BODY);
+                return undefined;
+            }
+            return undefined;
+        });
+
+        const firstConnect = setCloudProviderConfig({
+            provider: 'openai',
+            model: 'gpt-test',
+            baseUrl: 'https://api.openai.com/v1',
+            authentication: 'api-key',
+            apiKey: 'sk-first',
+        });
+        await firstProbeStarted;
+        const firstRejection = expect(firstConnect).rejects.toThrow('Cloud credential replacement was superseded');
+        await clearCloudProviderConfig();
+        releaseFirstProbe();
+        await firstRejection;
+
+        expect(getCloudProviderRuntime()).toBeNull();
+        expect(hostedLlmProviderStatusStore.value).toBeNull();
+        expect(invoke.invoke).toHaveBeenCalledWith('close_provider_gateway_session', {
+            sessionId: SESSION_ID,
+        });
     });
 });

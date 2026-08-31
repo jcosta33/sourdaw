@@ -10,16 +10,13 @@ import { probeProviderGatewaySession } from '../probeProviderGatewaySession';
 import { compileProviderAdapterInstallation } from '../providerAdapterRegistry';
 
 import { cloudSession, type CloudProviderRuntime } from './cloudSession';
+import { inFlightCloudConnect } from './inFlightCloudConnect';
 
 const ANTHROPIC_PROVIDER_ADAPTER = Object.freeze({
     adapterId: 'builtin.anthropic.messages.v1' as const,
     origin: 'https://api.anthropic.com' as const,
 });
 const CONNECT_PROBE_DEADLINE_MS = 15_000;
-const SUPERSEDED_CLOUD_CREDENTIAL_REPLACEMENT = 'Cloud credential replacement was superseded';
-
-let connectGeneration = 0;
-let inFlightConnectAbort: AbortController | null = null;
 
 async function waitForProbe(probe: Promise<void>, signal: AbortSignal): Promise<void> {
     let rejectOnAbort: (() => void) | null = null;
@@ -70,18 +67,13 @@ async function discardSupersededCandidate(runtime: CloudProviderRuntime): Promis
     if (sessionId !== null) {
         await closeProviderGatewaySession(sessionId);
     }
-    throw new Error(SUPERSEDED_CLOUD_CREDENTIAL_REPLACEMENT);
+    throw new Error(inFlightCloudConnect.supersededMessage);
 }
 
 export const setCloudProviderConfig = inject({ logger })(
     ({ logger }) =>
         async function setCloudProviderConfig(configuration: HostedLlmConfiguration): Promise<void> {
-            if (inFlightConnectAbort !== null) {
-                inFlightConnectAbort.abort(new Error(SUPERSEDED_CLOUD_CREDENTIAL_REPLACEMENT));
-            }
-            const connectAbort = new AbortController();
-            inFlightConnectAbort = connectAbort;
-            const generation = ++connectGeneration;
+            const { generation, abort: connectAbort } = inFlightCloudConnect.begin();
             try {
                 let runtime: CloudProviderRuntime;
                 if (configuration.provider === 'anthropic') {
@@ -146,7 +138,7 @@ export const setCloudProviderConfig = inject({ logger })(
                 }
 
                 await verifyOpenedProviderSession(runtime, connectAbort.signal);
-                if (generation !== connectGeneration) {
+                if (!inFlightCloudConnect.isCurrent(generation)) {
                     await discardSupersededCandidate(runtime);
                 }
                 await cloudSession.replace_runtime(runtime);
@@ -156,9 +148,7 @@ export const setCloudProviderConfig = inject({ logger })(
                     logger.info(`[Cloud AI] ${configuration.provider} provider configured`);
                 }
             } finally {
-                if (inFlightConnectAbort === connectAbort) {
-                    inFlightConnectAbort = null;
-                }
+                inFlightCloudConnect.release(connectAbort);
             }
         }
 );
