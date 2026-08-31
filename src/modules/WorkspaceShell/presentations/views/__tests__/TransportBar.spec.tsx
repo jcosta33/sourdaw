@@ -141,10 +141,24 @@ vi.mock('#/modules/Project/presentations/views', async (importOriginal) => ({
     MissingMediaPanel: () => <div data-testid="missing-media-panel" />,
 }));
 
-vi.mock('#/modules/PunchRecording/presentations/views', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/PunchRecording/presentations/views')>()),
-    PunchRecordingControls: () => <div data-testid="punch-recording" />,
-}));
+vi.mock('#/modules/PunchRecording/presentations/views', async (importOriginal) => {
+    const { Popover, PopoverContent, PopoverTrigger } = await import('#/components/ui/popover');
+    return {
+        ...(await importOriginal<typeof import('#/modules/PunchRecording/presentations/views')>()),
+        PunchRecordingControls: ({ compact = false }: { compact?: boolean }) => (
+            <div data-testid="punch-recording" data-compact={compact ? 'true' : 'false'}>
+                <Popover>
+                    <PopoverTrigger asChild>
+                        <button type="button" aria-label="Punch recording settings">
+                            Punch recording settings
+                        </button>
+                    </PopoverTrigger>
+                    <PopoverContent aria-label="Punch recording settings">Punch recording settings</PopoverContent>
+                </Popover>
+            </div>
+        ),
+    };
+});
 
 vi.mock('../PromptBar', () => ({
     PromptBar: () => <div data-testid="prompt-bar" />,
@@ -506,5 +520,40 @@ describe('TransportBar', () => {
         expect(settingsDialog).toBeInTheDocument();
         expect(settingsDialog.contains(document.activeElement)).toBe(true);
         expect(screen.getByRole('button', { name: 'Stop' })).not.toHaveFocus();
+    });
+
+    it('mounts punch as a compact cluster on the expanded action row', () => {
+        renderTransportBar();
+
+        expect(screen.queryByRole('button', { name: 'More transport controls' })).not.toBeInTheDocument();
+        expect(screen.getByTestId('punch-recording')).toHaveAttribute('data-compact', 'true');
+    });
+
+    it('closes nested punch settings on the first Escape and More on the second', async () => {
+        setViewportWidth(VIEWPORT_COMPACT_WIDTH);
+        renderTransportBar();
+
+        const moreTrigger = screen.getByRole('button', { name: 'More transport controls' });
+        fireEvent.click(moreTrigger);
+        expect(moreTrigger).toHaveAttribute('aria-expanded', 'true');
+
+        const punchTrigger = screen.getByRole('button', { name: 'Punch recording settings' });
+        fireEvent.click(punchTrigger);
+        expect(screen.getByRole('dialog', { name: 'Punch recording settings' })).toBeInTheDocument();
+        expect(moreTrigger).toHaveAttribute('aria-expanded', 'true');
+
+        punchTrigger.focus();
+        fireEvent.keyDown(punchTrigger, { key: 'Escape' });
+        expect(screen.queryByRole('dialog', { name: 'Punch recording settings' })).not.toBeInTheDocument();
+        expect(moreTrigger).toHaveAttribute('aria-expanded', 'true');
+
+        await act(async () => {
+            fireEvent.keyDown(punchTrigger, { key: 'Escape' });
+            await new Promise<void>((resolve) => {
+                requestAnimationFrame(() => resolve());
+            });
+        });
+        expect(moreTrigger).toHaveAttribute('aria-expanded', 'false');
+        expect(moreTrigger).toHaveFocus();
     });
 });
