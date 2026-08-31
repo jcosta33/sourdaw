@@ -15,21 +15,42 @@ const ANTHROPIC_PROVIDER_ADAPTER = Object.freeze({
     adapterId: 'builtin.anthropic.messages.v1' as const,
     origin: 'https://api.anthropic.com' as const,
 });
+const CONNECT_PROBE_DEADLINE_MS = 15_000;
+
+async function waitForProbe(probe: Promise<void>, signal: AbortSignal): Promise<void> {
+    let rejectOnAbort: (() => void) | null = null;
+    const aborted = new Promise<never>((_resolve, reject) => {
+        rejectOnAbort = () => reject(signal.reason);
+        signal.addEventListener('abort', rejectOnAbort, { once: true });
+    });
+    try {
+        await Promise.race([probe, aborted]);
+    } finally {
+        if (rejectOnAbort !== null) {
+            signal.removeEventListener('abort', rejectOnAbort);
+        }
+    }
+}
 
 async function verifyOpenedProviderSession(runtime: CloudProviderRuntime): Promise<void> {
     const sessionId = runtime.session_id;
     if (sessionId === null) {
         return;
     }
-    const probeSignal = new AbortController().signal;
+    const probeSignal = AbortSignal.timeout(CONNECT_PROBE_DEADLINE_MS);
     try {
+        let probe: Promise<void>;
         if (runtime.provider !== 'anthropic' && runtime.adapter) {
-            await ensureAdapterCapabilities(runtime.adapter, sessionId, probeSignal);
+            probe = ensureAdapterCapabilities(runtime.adapter, sessionId, probeSignal);
         } else {
-            await probeProviderGatewaySession(sessionId, probeSignal);
+            probe = probeProviderGatewaySession(sessionId, probeSignal).then(() => undefined);
         }
+        await waitForProbe(probe, probeSignal);
     } catch (error) {
         await closeProviderGatewaySession(sessionId).catch(() => undefined);
+        if (error instanceof DOMException && error.name === 'TimeoutError') {
+            throw new Error('Provider adapter capability probe timed out', { cause: error });
+        }
         throw error;
     }
 }

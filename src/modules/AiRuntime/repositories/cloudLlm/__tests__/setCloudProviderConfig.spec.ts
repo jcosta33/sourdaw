@@ -188,6 +188,67 @@ describe('setCloudProviderConfig', () => {
         });
     });
 
+    it('rejects an OpenAI probe that does not advertise the configured model', async () => {
+        mockProviderGateway({
+            sessionId: CANDIDATE_SESSION_ID,
+            probeBody: '{"data":[{"id":"another-model"}]}',
+        });
+
+        await expect(
+            setCloudProviderConfig({
+                provider: 'openai',
+                model: 'gpt-test',
+                baseUrl: 'https://api.openai.com/v1',
+                authentication: 'api-key',
+                apiKey: 'sk-test-key',
+            })
+        ).rejects.toThrow('did not advertise the configured model');
+
+        expect(mocks.invoke).toHaveBeenCalledWith('close_provider_gateway_session', {
+            sessionId: CANDIDATE_SESSION_ID,
+        });
+        expect(hostedLlmProviderStatusStore.value).toBeNull();
+    });
+
+    it('times out a stalled provider probe and closes the candidate session', async () => {
+        vi.useFakeTimers();
+        const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockImplementation((delay) => {
+            const controller = new AbortController();
+            setTimeout(() => controller.abort(new DOMException('Timed out', 'TimeoutError')), delay);
+            return controller.signal;
+        });
+        try {
+            mocks.invoke.mockImplementation(async (command) => {
+                if (command === 'open_provider_gateway_session') {
+                    return CANDIDATE_SESSION_ID;
+                }
+                if (command === 'provider_gateway_request') {
+                    return new Promise<never>(() => undefined);
+                }
+                return undefined;
+            });
+
+            const configuration = setCloudProviderConfig({
+                provider: 'openai',
+                model: 'gpt-test',
+                baseUrl: 'https://api.openai.com/v1',
+                authentication: 'api-key',
+                apiKey: 'sk-test-key',
+            });
+            const rejection = expect(configuration).rejects.toThrow('Provider adapter capability probe timed out');
+            await vi.advanceTimersByTimeAsync(15_000);
+
+            await rejection;
+            expect(mocks.invoke).toHaveBeenCalledWith('close_provider_gateway_session', {
+                sessionId: CANDIDATE_SESSION_ID,
+            });
+            expect(hostedLlmProviderStatusStore.value).toBeNull();
+        } finally {
+            timeoutSpy.mockRestore();
+            vi.useRealTimers();
+        }
+    });
+
     it('leaves the previously configured runtime in place when a probe returns 401', async () => {
         await setCloudProviderConfig({
             provider: 'openai-compatible',
