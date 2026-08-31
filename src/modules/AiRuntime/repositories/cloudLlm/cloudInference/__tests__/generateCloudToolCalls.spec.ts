@@ -44,7 +44,7 @@ describe('generateCloudToolCalls', () => {
 
     it('rejects an unconfigured cloud runtime', async () => {
         mocks.getRuntime.mockReturnValue(null);
-        await expect(generateCloudToolCalls('state', 'message')).rejects.toThrow('Hosted AI is not configured');
+        await expect(generateCloudToolCalls('state', 'message', tools)).rejects.toThrow('Hosted AI is not configured');
     });
 
     it('dispatches Anthropic planning through the native provider path', async () => {
