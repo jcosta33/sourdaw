@@ -312,6 +312,7 @@ function makePeer(overrides: Partial<PeerInfo> = {}): PeerInfo {
         isConnected: true,
         lastSeen: Date.now(),
         latencyMs: null,
+        syncHealth: 'converging',
         ...overrides,
     };
 }
@@ -478,6 +479,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                             isConnected: true,
                             lastSeen: 1,
                             latencyMs: null,
+                            syncHealth: 'converging',
                         },
                     ],
                 })
@@ -524,6 +526,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                             isConnected: true,
                             lastSeen: 1,
                             latencyMs: null,
+                            syncHealth: 'converging',
                         },
                     ],
                 })
@@ -577,6 +580,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                             isConnected: true,
                             lastSeen: 1,
                             latencyMs: null,
+                            syncHealth: 'converging',
                         },
                     ],
                 })
@@ -617,6 +621,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                             isConnected: true,
                             lastSeen: 1,
                             latencyMs: null,
+                            syncHealth: 'converging',
                         },
                     ],
                 })
@@ -654,6 +659,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                             isConnected: true,
                             lastSeen: 1,
                             latencyMs: null,
+                            syncHealth: 'converging',
                         },
                         {
                             id: 'guest-peer',
@@ -663,6 +669,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                             isConnected: true,
                             lastSeen: 1,
                             latencyMs: null,
+                            syncHealth: 'converging',
                         },
                     ],
                 })
@@ -711,6 +718,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                             isConnected: true,
                             lastSeen: 1,
                             latencyMs: null,
+                            syncHealth: 'converging',
                         },
                     ],
                 })
@@ -753,6 +761,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                             isConnected: true,
                             lastSeen: 1,
                             latencyMs: null,
+                            syncHealth: 'converging',
                         },
                     ],
                 })
@@ -868,7 +877,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
          */
         it('records a quarantined peer in durable state rather than the transient error slot', () => {
             sessionRuntimePrimitives.initialize('project-owner-1');
-            collaborationStore.set(makeState());
+            collaborationStore.set(makeState({ peers: [makePeer({ id: 'peer-2' })] }));
+            latestPeerManager().getConnectedPeerIds.mockReturnValue(['peer-2', 'peer-3']);
 
             latestAutomergeSync().hooks.onSyncQuarantine?.({
                 peerId: 'peer-2',
@@ -877,6 +887,21 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             });
 
             expect(collaborationStore.value?.quarantinedPeerIds).toEqual(['peer-2']);
+            expect(collaborationStore.value?.peers[0]?.syncHealth).toBe('diverged');
+            expect(latestPeerManager().sendCrdtSync.mock.calls).toEqual([
+                [
+                    {
+                        peerId: 'peer-2',
+                        message: { type: 'sync-channel-quarantined', peerId: 'peer-2' },
+                    },
+                ],
+                [
+                    {
+                        peerId: 'peer-3',
+                        message: { type: 'sync-channel-quarantined', peerId: 'peer-2' },
+                    },
+                ],
+            ]);
         });
 
         it('lists a peer once however many of its documents are quarantined', () => {
@@ -906,6 +931,66 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
     });
 
     describe('handlePeerMessage (routed through the captured onMessage callback)', () => {
+        it('records the detector when this local peer is the named quarantined sender', () => {
+            sessionRuntimePrimitives.initialize('project-owner-1');
+            collaborationStore.set(
+                makeState({
+                    localPeerId: 'local-1',
+                    peers: [makePeer({ id: 'detector-peer' })],
+                })
+            );
+
+            latestPeerManager().callbacks.onMessage({
+                peerId: 'detector-peer',
+                message: { type: 'sync-channel-quarantined', peerId: 'local-1' },
+            });
+
+            expect(collaborationStore.value?.quarantinedPeerIds).toEqual(['detector-peer']);
+            expect(collaborationStore.value?.peers[0]?.syncHealth).toBe('diverged');
+        });
+
+        it('records the named diverged peer when a connected detector reports it', () => {
+            sessionRuntimePrimitives.initialize('project-owner-1');
+            collaborationStore.set(
+                makeState({
+                    localPeerId: 'local-1',
+                    peers: [makePeer({ id: 'detector-peer' }), makePeer({ id: 'diverged-peer' })],
+                })
+            );
+
+            latestPeerManager().callbacks.onMessage({
+                peerId: 'detector-peer',
+                message: { type: 'sync-channel-quarantined', peerId: 'diverged-peer' },
+            });
+
+            expect(collaborationStore.value?.quarantinedPeerIds).toEqual(['diverged-peer']);
+            expect(collaborationStore.value?.peers[1]?.syncHealth).toBe('diverged');
+        });
+
+        it('keeps a local diverged flag when legacy peer-info omits sync health', () => {
+            sessionRuntimePrimitives.initialize('project-owner-1');
+            collaborationStore.set(
+                makeState({
+                    localPeerId: 'local-1',
+                    peers: [makePeer({ id: 'detector-peer' }), makePeer({ id: 'diverged-peer' })],
+                })
+            );
+            latestPeerManager().callbacks.onMessage({
+                peerId: 'detector-peer',
+                message: { type: 'sync-channel-quarantined', peerId: 'diverged-peer' },
+            });
+
+            const legacyPeer = makePeer({ id: 'diverged-peer' }) as Partial<PeerInfo>;
+            delete legacyPeer.syncHealth;
+            latestPeerManager().callbacks.onMessage({
+                peerId: 'diverged-peer',
+                message: { type: 'peer-info', peer: legacyPeer as PeerInfo },
+            });
+
+            expect(collaborationStore.value?.quarantinedPeerIds).toEqual(['diverged-peer']);
+            expect(collaborationStore.value?.peers[1]?.syncHealth).toBe('diverged');
+        });
+
         it('routes an asset crdt-sync message to the asset transfer subsystem', () => {
             sessionRuntimePrimitives.initialize('project-owner-1');
             const message: PeerMessage = { type: 'crdt-sync', docId: DOC_ID_ASSET, data: 'payload' };
