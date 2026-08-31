@@ -1,5 +1,14 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    realpathSync,
+    rmSync,
+    symlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -68,6 +77,7 @@ function supersededPullRequest(overrides: Partial<PullRequest> = {}): PullReques
 }
 
 type FakeInput = {
+    root?: string;
     lane?: Worktree;
     currentDirectory?: string;
     active?: boolean;
@@ -88,8 +98,8 @@ function fakePort(input: FakeInput = {}) {
     const port: LaneRemovalPort = {
         fetch: () => calls.push('fetch'),
         repository: () => 'jcosta33/sourdaw',
-        currentDirectory: () => input.currentDirectory ?? root,
-        worktrees: () => [worktree({ path: root, branch: 'main' }), { ...lane, locked }],
+        currentDirectory: () => input.currentDirectory ?? input.root ?? root,
+        worktrees: () => [worktree({ path: input.root ?? root, branch: 'main' }), { ...lane, locked }],
         active: () => input.active ?? false,
         processAlive: () => input.alive ?? true,
         dirty: () => input.dirty ?? false,
@@ -148,6 +158,44 @@ function fakeStrandPort(input: FakeInput = {}) {
 }
 
 describe('lane removal', () => {
+    it('recognizes an aliased registered lane while preserving aliased safety boundaries', () => {
+        const repository = mkdtempSync(join(tmpdir(), 'sourdaw-lane-alias-'));
+        const aliasParent = mkdtempSync(join(tmpdir(), 'sourdaw-lane-alias-link-'));
+        const alias = join(aliasParent, 'repository');
+        const lane = join(repository, '.agents/worktrees/feature');
+        try {
+            mkdirSync(join(lane, 'scripts'), { recursive: true });
+            symlinkSync(repository, alias, 'dir');
+            const aliasedLane = join(alias, '.agents/worktrees/feature');
+            const canonicalLane = realpathSync(lane);
+            const agentRoot = join(repository, '.agents/worktrees');
+            const aliasedAgentRoot = join(alias, '.agents/worktrees');
+
+            const admitted = fakePort({ root: repository, lane: worktree({ path: aliasedLane }) });
+            removeLane(canonicalLane, admitted.port);
+            expect(admitted.calls).toContain(`remove:${canonicalLane}`);
+
+            const primary = fakePort({ root: repository });
+            expect(() => removeLane(alias, primary.port)).toThrow(/primary/);
+
+            const agentRootPort = fakePort({
+                root: repository,
+                lane: worktree({ path: agentRoot }),
+            });
+            expect(() => removeLane(aliasedAgentRoot, agentRootPort.port)).toThrow(/not an agent worktree/);
+
+            const active = fakePort({
+                root: repository,
+                lane: worktree({ path: aliasedLane }),
+                currentDirectory: join(aliasedLane, 'scripts'),
+            });
+            expect(() => removeLane(canonicalLane, active.port)).toThrow(/active worktree/);
+        } finally {
+            rmSync(aliasParent, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it('removes a clean inactive lane after two stable reads', () => {
         const { port, calls } = fakePort();
 
