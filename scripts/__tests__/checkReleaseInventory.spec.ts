@@ -19,7 +19,6 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { deflateSync, inflateSync } from 'node:zlib';
 
 import { describe, expect, it } from 'vitest';
@@ -41,6 +40,7 @@ import {
     assertGrandBouleDesignAroundSource,
     assertGrandBouleMeasurementAdmission,
     assertDdspModelsReleaseInventory,
+    assertDdspTfjsRuntimeReleaseInventory,
     assertGrandBouleReleaseInventory,
     assertGrandBouleReleasedInWasm,
     assertOwnerVisualAssetIntegrity,
@@ -77,7 +77,7 @@ import { DEPENDENCY_LICENSE_REPORT_PATH } from '../dependencyLicenseReport';
 import { wasmArtifacts, type WasmManifest } from '../wasm-artifacts';
 
 const fixtureDigest = 'a'.repeat(64);
-const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const repositoryRoot = join(import.meta.dirname, '..', '..');
 const repositoryOwnerCanonical = readFileSync(join(repositoryRoot, 'public/icon.png'));
 const repositoryOwnerAuthority = readFileSync(join(repositoryRoot, 'public/icon-transparent.png'));
 const repositoryOwnerIcns = readFileSync(join(repositoryRoot, 'build/icons/icon.icns'));
@@ -1519,8 +1519,12 @@ describe('release inventory', () => {
         }
     });
 
-    it('composes the DDSP TF.js runtime into live release inventory validation', { timeout: 20_000 }, () => {
-        expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-tfjs-runtime');
+    it('composes the DDSP TF.js runtime into live release inventory validation', () => {
+        const inventory = readReleaseInventory(repositoryRoot);
+        assertDdspTfjsRuntimeReleaseInventory(
+            repositoryRoot,
+            inventory.surfaces.find(({ id }) => id === 'ddsp-tfjs-runtime')
+        );
     });
 
     it('pins the WebLLM legal closure to exact paths, source buckets, and path-addressed digests', () => {
@@ -2372,8 +2376,12 @@ describe('release inventory', () => {
         expect(validateReleaseInventory(value, snapshot())).toEqual([]);
     });
 
-    it('composes the admitted DDSP model contract into live release inventory validation', { timeout: 20_000 }, () => {
-        expect(checkReleaseInventory(process.cwd()).validatedSurfaceIds).toContain('ddsp-models');
+    it('composes the admitted DDSP model contract into live release inventory validation', () => {
+        const inventory = readReleaseInventory(repositoryRoot);
+        assertDdspModelsReleaseInventory(
+            repositoryRoot,
+            inventory.surfaces.find(({ id }) => id === 'ddsp-models')
+        );
     });
 
     it('binds admitted DDSP writes, rendering, exact artifacts, and reversal obligations', () => {

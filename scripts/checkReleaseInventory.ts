@@ -2403,6 +2403,13 @@ export function assertDdspModelsReleaseInventory(root: string, surface: Partial<
     assertSurfaceContract(surface, ddspModelsReleaseInventoryContract(root), 'DDSP models');
 }
 
+export function assertDdspTfjsRuntimeReleaseInventory(
+    root: string,
+    surface: Partial<ReleaseSurface> | undefined
+): void {
+    assertSurfaceContract(surface, ddspTfjsRuntimeReleaseInventoryContract(root), 'DDSP TF.js runtime');
+}
+
 export function assertGrandBouleReleaseInventory(root: string, surface: Partial<ReleaseSurface> | undefined): void {
     assertSurfaceContract(surface, grandBouleReleaseInventoryContract(root), 'Grand Boule');
 }
@@ -2972,13 +2979,7 @@ export function checkReleaseInventory(
         )
     );
     const ddspTfjsRuntimeSurface = currentInventory.surfaces.find((surface) => surface.id === 'ddsp-tfjs-runtime');
-    validateSurface('ddsp-tfjs-runtime', () =>
-        assertSurfaceContract(
-            ddspTfjsRuntimeSurface,
-            ddspTfjsRuntimeReleaseInventoryContract(root),
-            'DDSP TF.js runtime'
-        )
-    );
+    validateSurface('ddsp-tfjs-runtime', () => assertDdspTfjsRuntimeReleaseInventory(root, ddspTfjsRuntimeSurface));
     const ddspModelsSurface = currentInventory.surfaces.find((surface) => surface.id === 'ddsp-models');
     validateSurface('ddsp-models', () => assertDdspModelsReleaseInventory(root, ddspModelsSurface));
     checkElectronRuntimeProvenance(root);
