@@ -464,6 +464,22 @@ function createFixture(options: DesktopOptions = {}): Fixture {
     };
 }
 
+function cloneAssembledFixture(source: Fixture): Fixture {
+    const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-proof-clone-'));
+    const root = join(base, 'repository');
+    const candidate = join(base, 'candidate');
+    fixtureRoots.push(base);
+    cpSync(source.root, root, { recursive: true });
+    cpSync(source.candidate, candidate, { recursive: true });
+    return {
+        ...source,
+        base,
+        root,
+        candidate,
+        contract: structuredClone(source.contract),
+    };
+}
+
 function writeWebBuild(fixture: Fixture, marker = 'current'): void {
     const webDist = join(fixture.root, 'dist');
     write(join(webDist, 'index.html'), `<!doctype html><title>${marker}</title>`);
@@ -2969,6 +2985,20 @@ with open(early, "r+b", buffering=0) as file:
         expect(validate(fixture)).toContain('was not generated from the pinned Electron and FFmpeg sources');
     });
 
+    it('stops desktop verification after a non-canonical artifact path', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        const value = proof(fixture);
+        const desktop = desktopProof(value);
+        const canonicalPath = desktop.artifactPath as string;
+        desktop.artifactPath = `desktop/relocated/${basename(canonicalPath)}`;
+        writeJson(join(fixture.candidate, 'release-proof.json'), value);
+
+        const errors = validate(fixture);
+        expect(errors).toContain(`desktop material path must be ${canonicalPath}`);
+        expect(errors).not.toContain('desktop artifact: file is missing');
+    });
+
     it('rejects relocation of every canonical desktop material path', { timeout: 10_000 }, () => {
         const fixture = createFixture();
         assemble(fixture);
@@ -3026,8 +3056,14 @@ with open(early, "r+b", buffering=0) as file:
     });
 
     it('rejects ZIP archive resource metadata without expanding hostile payloads', { timeout: 20_000 }, () => {
-        const tar = createFixture();
-        assemble(tar);
+        const assembled = createFixture();
+        assemble(assembled);
+        const tar = cloneAssembledFixture(assembled);
+        const file = cloneAssembledFixture(assembled);
+        const entry = cloneAssembledFixture(assembled);
+        const aggregate = cloneAssembledFixture(assembled);
+        const count = cloneAssembledFixture(assembled);
+        const depth = assembled;
         const tarSource = proof(tar).source as Record<string, unknown>;
         const tarArchive = join(tar.candidate, tarSource.archivePath as string);
         writeFileSync(tarArchive, oversizedTarHeader(RELEASE_PROOF_ARCHIVE_LIMITS.entryBytes + 1));
@@ -3036,8 +3072,6 @@ with open(early, "r+b", buffering=0) as file:
             'tar archive is unreadable: release archive limit exceeded: an entry exceeds the expanded-size limit'
         );
 
-        const file = createFixture();
-        assemble(file);
         const fileSource = proof(file).source as Record<string, unknown>;
         truncateSync(
             join(file.candidate, fileSource.archivePath as string),
@@ -3045,8 +3079,6 @@ with open(early, "r+b", buffering=0) as file:
         );
         expect(validate(file)).toContain('source archive: file exceeds the candidate file-size limit');
 
-        const entry = createFixture();
-        assemble(entry);
         const entryArchive = replaceWebArchive(entry, ['entry.txt']);
         patchZipMetadata(entryArchive, (bytes, centralOffset) => {
             bytes.writeUInt32LE(RELEASE_PROOF_ARCHIVE_LIMITS.entryBytes + 1, centralOffset + 24);
@@ -3058,8 +3090,6 @@ with open(early, "r+b", buffering=0) as file:
             'zip archive is unreadable: release archive limit exceeded: an entry exceeds the expanded-size limit'
         );
 
-        const aggregate = createFixture();
-        assemble(aggregate);
         const aggregatePaths = Array.from({ length: 11 }, (_value, index) => `file-${String(index)}.txt`);
         const aggregateArchive = replaceWebArchive(aggregate, aggregatePaths);
         patchZipMetadata(aggregateArchive, (bytes, centralOffset, entryCount) => {
@@ -3081,8 +3111,6 @@ with open(early, "r+b", buffering=0) as file:
             'zip archive is unreadable: release archive limit exceeded: aggregate expanded bytes exceed the limit'
         );
 
-        const count = createFixture();
-        assemble(count);
         const countArchive = replaceWebArchive(count, ['count.txt']);
         patchZipMetadata(countArchive, (bytes, _centralOffset) => {
             const end = bytes.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
@@ -3096,8 +3124,6 @@ with open(early, "r+b", buffering=0) as file:
             'zip archive is unreadable: release archive limit exceeded: entry count exceeds the limit'
         );
 
-        const depth = createFixture();
-        assemble(depth);
         const deepPath = `${Array.from({ length: RELEASE_PROOF_ARCHIVE_LIMITS.pathDepth + 1 }, () => 'deep').join('/')}/file.txt`;
         replaceWebArchive(depth, [deepPath]);
         expect(validate(depth)).toContain('web archive contains a path exceeding the depth limit');
