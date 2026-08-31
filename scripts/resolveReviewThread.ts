@@ -104,6 +104,7 @@ export type ReviewResolutionLockMutation =
           reviewCommitOid: string;
           pendingReviewIds: string[];
           settleAtMs: number;
+          replayed: boolean;
       }
     | {
           phase: 'replyDone';
@@ -121,6 +122,7 @@ export type ReviewResolutionLockMutation =
           reviewCommitOid: string;
           replies: ReviewResolutionSettledReply[];
           settleAtMs: number;
+          replayed: boolean;
       }
     | { phase: 'submitReview'; epoch: number; reviewId: string; body: string; reviewCommitOid: string }
     | { phase: 'updateReviewBody'; epoch: number; reviewId: string; body: string; reviewCommitOid: string }
@@ -211,6 +213,9 @@ export type ReviewResolutionTrustedLauncher = {
 export type ReviewResolutionRecoveryClock = {
     now: () => number;
 };
+export type ReviewResolutionRecoveryResult =
+    | { kind: 'reconciled'; inspection: ReviewThreadInspection }
+    | { kind: 'retiredObsoleteHead'; inspection: ReviewThreadInspection; ownerHead: string; observedHead: string };
 export type ResolveReviewThreadPort = {
     inspect: (number: number, threadId: string) => ReviewThreadInspection;
     inspectPullRequestReview: (
@@ -2444,6 +2449,7 @@ function parseReviewResolutionLockMutation(value: unknown, label: string): Revie
         const pullRequestId = (value as { pullRequestId?: unknown }).pullRequestId;
         const body = (value as { body?: unknown }).body;
         const reviewCommitOid = (value as { reviewCommitOid?: unknown }).reviewCommitOid;
+        const replayed = (value as { replayed?: unknown }).replayed;
         const pendingReviewIds = sortedUniqueStrings(
             Array.isArray((value as { pendingReviewIds?: unknown }).pendingReviewIds)
                 ? ((value as { pendingReviewIds: unknown[] }).pendingReviewIds as string[])
@@ -2456,6 +2462,7 @@ function parseReviewResolutionLockMutation(value: unknown, label: string): Revie
             pullRequestId.trim() === '' ||
             typeof body !== 'string' ||
             typeof reviewCommitOid !== 'string' ||
+            typeof replayed !== 'boolean' ||
             typeof settleAtMs !== 'number' ||
             !Number.isSafeInteger(settleAtMs) ||
             settleAtMs < 0
@@ -2470,6 +2477,7 @@ function parseReviewResolutionLockMutation(value: unknown, label: string): Revie
             reviewCommitOid: canonicalGitObjectId(reviewCommitOid, label),
             pendingReviewIds,
             settleAtMs,
+            replayed,
         };
     }
     if (phase === 'replyDone') {
@@ -2499,6 +2507,7 @@ function parseReviewResolutionLockMutation(value: unknown, label: string): Revie
         const reviewId = (value as { reviewId?: unknown }).reviewId;
         const body = (value as { body?: unknown }).body;
         const reviewCommitOid = (value as { reviewCommitOid?: unknown }).reviewCommitOid;
+        const replayed = (value as { replayed?: unknown }).replayed;
         const rawReplies = (value as { replies?: unknown }).replies;
         const settleAtMs = (value as { settleAtMs?: unknown }).settleAtMs;
         if (
@@ -2506,6 +2515,7 @@ function parseReviewResolutionLockMutation(value: unknown, label: string): Revie
             reviewId.trim() === '' ||
             typeof body !== 'string' ||
             typeof reviewCommitOid !== 'string' ||
+            typeof replayed !== 'boolean' ||
             !Array.isArray(rawReplies) ||
             typeof settleAtMs !== 'number' ||
             !Number.isSafeInteger(settleAtMs) ||
@@ -2540,6 +2550,7 @@ function parseReviewResolutionLockMutation(value: unknown, label: string): Revie
             reviewCommitOid: canonicalGitObjectId(reviewCommitOid, label),
             replies,
             settleAtMs,
+            replayed,
         };
     }
     if (phase === 'deleteReply') {
@@ -4056,6 +4067,32 @@ function hasRecoveredReviewResolutionMutation(
     }
 }
 
+export function reviewResolutionRecoveryResult(
+    number: number,
+    owner: ReviewResolutionLockOwner,
+    inspection: ReviewThreadInspection,
+    port: ResolveReviewThreadPort
+): ReviewResolutionRecoveryResult {
+    assertV5ReviewResolutionLockOwner(owner);
+    const thread = inspection.thread;
+    if (
+        thread !== null &&
+        inspection.head !== owner.head &&
+        owner.mutation.phase !== 'idle' &&
+        !hasRecoveredReviewResolutionMutation(
+            number,
+            owner,
+            inspection,
+            resolutionReviewContext(inspection.pullRequestId, owner.threadId, owner.head),
+            thread,
+            port
+        )
+    ) {
+        return { kind: 'retiredObsoleteHead', inspection, ownerHead: owner.head, observedHead: inspection.head };
+    }
+    return { kind: 'reconciled', inspection };
+}
+
 function continueRecoveredReviewResolution(
     number: number,
     owner: CurrentReviewResolutionLockOwner,
@@ -4208,6 +4245,7 @@ function preserveCreatePendingReviewSettlement(
         reviewCommitOid: mutation.reviewCommitOid,
         pendingReviewIds: inspection.pendingReviews.map((review) => review.id).sort(),
         settleAtMs: settlementDeadline(clock),
+        replayed: false,
     });
     return fail(unreconciledReviewResolutionMutationMessage(number, mutation));
 }
@@ -4234,6 +4272,7 @@ function preserveReplyDoneSettlement(
         reviewCommitOid: mutation.reviewCommitOid,
         replies,
         settleAtMs: settlementDeadline(clock),
+        replayed: false,
     });
     fail(unreconciledReviewResolutionMutationMessage(number, mutation));
 }
@@ -4254,6 +4293,9 @@ function recoverCreatePendingReviewSettlement(
             assertExactRecoveredMutationAfterHeadDrift(number, owner, inspection, context, inspection.thread!);
         }
         return inspection;
+    }
+    if (mutation.replayed && clock.now() < mutation.settleAtMs) {
+        fail(unreconciledReviewResolutionMutationMessage(number, mutation));
     }
     if (recoveredReviewIds.length > 0) {
         return continueRecoveredReviewResolution(number, owner, port);
@@ -4277,6 +4319,7 @@ function recoverCreatePendingReviewSettlement(
         ...mutation,
         pendingReviewIds: [...new Set([...mutation.pendingReviewIds, created.id])].sort(),
         settleAtMs: settlementDeadline(clock),
+        replayed: true,
     });
     return fail(unreconciledReviewResolutionMutationMessage(number, mutation));
 }
@@ -4297,6 +4340,9 @@ function recoverReplyDoneSettlement(
             assertExactRecoveredMutationAfterHeadDrift(number, owner, inspection, context, inspection.thread!);
         }
         return inspection;
+    }
+    if (mutation.replayed && clock.now() < mutation.settleAtMs) {
+        fail(unreconciledReviewResolutionMutationMessage(number, mutation));
     }
     if (recoveredReplies.length > 0) {
         return continueRecoveredReviewResolution(number, owner, port);
@@ -4324,6 +4370,7 @@ function recoverReplyDoneSettlement(
         ...mutation,
         replies: replies.sort((left, right) => left.replyId.localeCompare(right.replyId)),
         settleAtMs: settlementDeadline(clock),
+        replayed: true,
     });
     return fail(unreconciledReviewResolutionMutationMessage(number, mutation));
 }

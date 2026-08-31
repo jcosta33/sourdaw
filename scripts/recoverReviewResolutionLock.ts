@@ -19,6 +19,7 @@ import {
     inspectReviewThread,
     requiredTrustedReviewResolutionOriginCommit,
     recoverReviewResolutionLockOwnerState,
+    reviewResolutionRecoveryResult,
     recoverPullRequestReviewResolutionLock,
     runDetachedReviewResolutionWorker,
     shellPort,
@@ -26,7 +27,7 @@ import {
     type ReviewResolutionRecoveryClock,
     type ReviewResolutionTrustedLauncher,
     type ReviewResolutionLockOwner,
-    type ReviewThreadInspection,
+    type ReviewResolutionRecoveryResult,
 } from './resolveReviewThread.ts';
 
 export type RecoverReviewResolutionLockArgs = {
@@ -160,9 +161,13 @@ export function parseRecoverReviewResolutionLockArgs(args: string[]): RecoverRev
 function recoverySummary(
     number: number,
     owner: ReviewResolutionLockOwner,
-    inspection: ReviewThreadInspection,
+    result: ReviewResolutionRecoveryResult,
     port: ResolveReviewThreadPort
 ): string {
+    const inspection = result.inspection;
+    if (result.kind === 'retiredObsoleteHead') {
+        return `review-resolution-lock-retired-obsolete-head:${number}:${owner.threadId}:${result.ownerHead}:${result.observedHead}`;
+    }
     assertRecoverableReviewResolutionLockOwner(number, owner, inspection, port);
     const thread = inspection.thread;
     if (thread === null) {
@@ -192,7 +197,12 @@ async function runRecoverReviewResolutionLockCliResolved(
             recoverySummary(
                 parsed.number!,
                 lockOwner,
-                recoverReviewResolutionLockOwnerState(parsed.number!, lockOwner, port, resolvedDependencies.clock),
+                reviewResolutionRecoveryResult(
+                    parsed.number!,
+                    lockOwner,
+                    recoverReviewResolutionLockOwnerState(parsed.number!, lockOwner, port, resolvedDependencies.clock),
+                    port
+                ),
                 port
             )
         );
