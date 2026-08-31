@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// Ceiling shared with the offline-render sample pool: ten minutes at 48 kHz.
+/// Frame ceiling shared with offline rendering: ten minutes at 48 kHz.
 /// An over-long clip is a command error; the PCM `Vec<f32>` is never allocated.
 pub const MAX_DENOISE_SAMPLES: usize = 48_000 * 600;
 
@@ -35,26 +35,24 @@ struct DenoisePcmResult {
     processing_time_ms: u64,
 }
 
-/// Sample count of a Float32 LE payload, or a command error.
-///
-/// Length is decided from the byte length alone, before any `Vec<f32>` is
-/// allocated, so an over-long clip is rejected rather than copied into PCM.
+/// Sample count of a Float32 LE payload, or an alignment error.
 pub fn denoise_pcm_sample_count(byte_len: usize) -> Result<usize, String> {
     if byte_len % BYTES_PER_SAMPLE != 0 {
         return Err(format!(
             "Denoise PCM byte length {byte_len} is not a whole number of f32 samples"
         ));
     }
-    let count = byte_len / BYTES_PER_SAMPLE;
-    if count > MAX_DENOISE_SAMPLES {
-        return Err(format!(
-            "Denoise clip length {count} samples exceeds the {MAX_DENOISE_SAMPLES}-sample ceiling"
-        ));
-    }
-    Ok(count)
+    Ok(byte_len / BYTES_PER_SAMPLE)
 }
 
-fn decode_denoise_pcm(bytes: &[u8]) -> Result<Vec<f32>, String> {
+fn denoise_pcm_frame_count(byte_len: usize, channels: u32) -> Result<usize, String> {
+    let sample_count = denoise_pcm_sample_count(byte_len)?;
+    let channels = validate_channel_layout(sample_count, channels)?;
+    validate_frame_ceiling(sample_count / channels)
+}
+
+fn decode_denoise_pcm(bytes: &[u8], channels: u32) -> Result<Vec<f32>, String> {
+    denoise_pcm_frame_count(bytes.len(), channels)?;
     let count = denoise_pcm_sample_count(bytes.len())?;
     let mut samples = Vec::with_capacity(count);
     for chunk in bytes.chunks_exact(BYTES_PER_SAMPLE) {
@@ -86,7 +84,7 @@ pub async fn denoise_audio(
     request: DenoiseRequest,
     samples: Vec<u8>,
 ) -> Result<DenoiseResult, String> {
-    let pcm = decode_denoise_pcm(&samples)?;
+    let pcm = decode_denoise_pcm(&samples, request.channels)?;
     tokio::task::spawn_blocking(move || {
         let processed = denoise_audio_blocking(DenoisePcm {
             samples: pcm,
@@ -123,7 +121,7 @@ fn denoise_audio_blocking(request: DenoisePcm) -> Result<DenoisePcmResult, Strin
     let start = std::time::Instant::now();
     let strength = request.strength.clamp(0.0, 1.0);
     let channels = validate_channel_layout(request.samples.len(), request.channels)?;
-    let frames = request.samples.len() / channels;
+    let frames = validate_frame_ceiling(request.samples.len() / channels)?;
     let mut output = request.samples;
 
     let noise_power = estimate_noise_power(&output, request.sample_rate, channels);
@@ -165,12 +163,6 @@ fn envelope_coefficient(sample_rate: u32, time_seconds: f32) -> f32 {
     (-1.0 / (time_seconds * sample_rate as f32)).exp()
 }
 
-/// Estimate the noise power (mean squared sample value) from up to the first
-/// [`NOISE_WINDOW_SECONDS`] of audio.
-///
-/// The mean divides by the number of samples actually summed, so a clip
-/// shorter than the window is averaged over what exists instead of being
-/// diluted by the nominal window length.
 fn validate_channel_layout(sample_count: usize, channels: u32) -> Result<usize, String> {
     if channels == 0 {
         return Err("Denoise channel count must be at least 1".to_owned());
@@ -184,6 +176,21 @@ fn validate_channel_layout(sample_count: usize, channels: u32) -> Result<usize, 
     Ok(channels)
 }
 
+fn validate_frame_ceiling(frames: usize) -> Result<usize, String> {
+    if frames > MAX_DENOISE_SAMPLES {
+        return Err(format!(
+            "Denoise clip length {frames} frames exceeds the {MAX_DENOISE_SAMPLES}-frame ceiling"
+        ));
+    }
+    Ok(frames)
+}
+
+/// Estimate the noise power (mean squared sample value) from up to the first
+/// [`NOISE_WINDOW_SECONDS`] of every channel.
+///
+/// The mean divides by the number of samples actually summed, so a clip
+/// shorter than the window is averaged over what exists instead of being
+/// diluted by the nominal window length.
 fn estimate_noise_power(samples: &[f32], sample_rate: u32, channels: usize) -> f64 {
     let frames = samples.len() / channels;
     let hop = 1024_usize;
@@ -460,33 +467,25 @@ mod tests {
     }
 
     #[test]
-    fn denoise_pcm_sample_count_rejects_over_long_clips_without_allocating_pcm() {
+    fn denoise_frame_ceiling_preserves_stereo_duration() {
+        let stereo_frames = MAX_DENOISE_SAMPLES / 2 + 1;
         assert_eq!(
-            denoise_pcm_sample_count(MAX_DENOISE_SAMPLES * BYTES_PER_SAMPLE).unwrap(),
-            MAX_DENOISE_SAMPLES
+            denoise_pcm_frame_count(stereo_frames * 2 * BYTES_PER_SAMPLE, 2).unwrap(),
+            stereo_frames
         );
-        let over = denoise_pcm_sample_count((MAX_DENOISE_SAMPLES + 1) * BYTES_PER_SAMPLE);
-        let error = over.expect_err("over-long clip must be a command error");
-        assert!(
-            error.contains("ceiling"),
-            "expected a ceiling error, got {error}"
-        );
-    }
 
-    #[test]
-    fn decode_denoise_pcm_rejects_over_long_clips_before_allocating_pcm() {
-        let bytes = vec![0u8; (MAX_DENOISE_SAMPLES + 1) * BYTES_PER_SAMPLE];
-        let error = decode_denoise_pcm(&bytes).expect_err("over-long clip must be a command error");
-        assert!(
-            error.contains("ceiling"),
-            "expected a ceiling error, got {error}"
-        );
+        for channels in [1, 2] {
+            let byte_len = (MAX_DENOISE_SAMPLES + 1) * channels * BYTES_PER_SAMPLE;
+            let error = denoise_pcm_frame_count(byte_len, channels as u32)
+                .expect_err("frames above the ceiling must be rejected");
+            assert!(error.contains("ceiling"), "unexpected error: {error}");
+        }
     }
 
     #[test]
     fn denoise_pcm_round_trip_is_little_endian() {
         let bytes = [0_u8, 0, 0x80, 0x3f, 0, 0, 0x80, 0xbf];
-        let decoded = decode_denoise_pcm(&bytes).unwrap();
+        let decoded = decode_denoise_pcm(&bytes, 1).unwrap();
         assert_eq!(decoded, vec![1.0, -1.0]);
         assert_eq!(encode_denoise_pcm(&decoded), bytes);
     }
@@ -527,8 +526,8 @@ mod tests {
     }
 
     #[test]
-    fn stereo_noise_floor_is_shared_across_all_channel_samples() {
-        let frames = 1024;
+    fn stereo_noise_floor_is_shared_across_both_channel_window_heads() {
+        let frames = 30_000;
         let mut samples = vec![0.01; frames];
         samples.extend(vec![1.0; frames]);
         let result = denoise_audio_blocking(DenoisePcm {
