@@ -546,6 +546,7 @@ async function renderExportLeg(options?: {
         renderableTracks,
         scheduledTracks,
         scheduledTrackIds: new Set(scheduledTracks.map((track) => track.id)),
+        soloGatedByTrackId: new Map(),
         vcaMultiplierByTrackId: new Map(),
         onWarning:
             options?.onWarning ??
