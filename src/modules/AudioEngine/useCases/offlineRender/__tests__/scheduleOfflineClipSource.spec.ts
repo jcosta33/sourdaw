@@ -2,7 +2,82 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { clampClipFadeInDurationSeconds, clampClipFadeOutStartSeconds } from '#/utils/clipFadeScheduleClamp';
 
-import { scheduleOfflineClipSource } from '../scheduleOfflineClipSource';
+import { scheduleOfflineClipSource, type ScheduleOfflineClipSourceInput } from '../scheduleOfflineClipSource';
+
+type FadeInput = Pick<ScheduleOfflineClipSourceInput, 'fadeIn' | 'fadeOut'>;
+
+function makeFadeRecordingContext() {
+    const gain = {
+        value: 1,
+        setValueAtTime: vi.fn(),
+        linearRampToValueAtTime: vi.fn(),
+    };
+    const source = {
+        buffer: null,
+        playbackRate: { value: 1 },
+        connect: vi.fn(),
+        start: vi.fn(),
+    };
+    const gainNode = {
+        gain,
+        connect: vi.fn(),
+    };
+    const context = {
+        createBufferSource: vi.fn(() => source),
+        createGain: vi.fn(() => gainNode),
+    } as unknown as BaseAudioContext;
+
+    return { context, gain };
+}
+
+function scheduleFades(fades: FadeInput) {
+    const { context, gain } = makeFadeRecordingContext();
+
+    scheduleOfflineClipSource({
+        context,
+        destinationNode: {} as AudioNode,
+        buffer: {} as AudioBuffer,
+        startSec: 2,
+        bufferOffsetSec: 0,
+        playDuration: 4,
+        playbackRate: 1,
+        clipGainValue: 0.8,
+        microFadeSeconds: 0.1,
+        ...fades,
+    });
+
+    return gain;
+}
+
+describe('scheduleOfflineClipSource', () => {
+    it('holds a short user fade-out to the anti-click floor', () => {
+        const gain = scheduleFades({ fadeOut: { userStartSec: 5.95 } });
+
+        expect(gain.setValueAtTime).toHaveBeenCalledWith(0.8, 5.9);
+        expect(gain.linearRampToValueAtTime).toHaveBeenCalledWith(0, 6);
+    });
+
+    it('preserves a user fade-out longer than the anti-click floor', () => {
+        const gain = scheduleFades({ fadeOut: { userStartSec: 5.5 } });
+
+        expect(gain.setValueAtTime).toHaveBeenCalledWith(0.8, 5.5);
+        expect(gain.linearRampToValueAtTime).toHaveBeenCalledWith(0, 6);
+    });
+
+    it('applies the anti-click fade-out when there is no user fade', () => {
+        const gain = scheduleFades({ fadeOut: {} });
+
+        expect(gain.setValueAtTime).toHaveBeenCalledWith(0.8, 5.9);
+        expect(gain.linearRampToValueAtTime).toHaveBeenCalledWith(0, 6);
+    });
+
+    it('holds a short user fade-in to the anti-click floor', () => {
+        const gain = scheduleFades({ fadeIn: { userEndSec: 2.05 } });
+
+        expect(gain.setValueAtTime).toHaveBeenCalledWith(0, 2);
+        expect(gain.linearRampToValueAtTime).toHaveBeenCalledWith(0.8, 2.1);
+    });
+});
 
 type FakeGain = {
     gain: {
