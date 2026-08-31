@@ -100,6 +100,7 @@ vi.mock('../selectMidiInputNative', () => ({
 describe('initWebMidi', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        webMidiRuntime.initGeneration = 0;
         getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: null, enumerationError: null });
         readPersistedInputIdMock.mockReturnValue(null);
     });
@@ -632,6 +633,52 @@ describe('initWebMidi', () => {
                 isSupported: true,
                 enumerationError: null,
             })
+        );
+    });
+
+    it('ignores a stale native enumeration failure after a newer init succeeds', async () => {
+        const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
+        requestMidiAccessMock.mockRejectedValue(new Error('no access'));
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+
+        let currentState = {
+            isSupported: true,
+            inputs: [] as unknown[],
+            selectedInputId: null as string | null,
+            enumerationError: null as string | null,
+        };
+        getStateMock.mockImplementation(() => currentState);
+        setStateMock.mockImplementation((next: Record<string, unknown>) => {
+            currentState = { ...currentState, ...next };
+        });
+
+        let rejectFirst!: (reason: Error) => void;
+        const firstInvoke = new Promise<never>((_resolve, reject) => {
+            rejectFirst = reject;
+        });
+        vi.mocked(desktopInvoke)
+            .mockImplementationOnce(() => firstInvoke)
+            .mockResolvedValueOnce([{ index: 0, name: 'Native MIDI' }]);
+
+        const firstInit = initWebMidi({ onMidiMessage });
+        const secondResult = await initWebMidi({ onMidiMessage });
+
+        expect(secondResult).toBe(true);
+        expect(getStateMock()).toMatchObject({
+            enumerationError: null,
+            inputs: [expect.objectContaining({ id: 'Native MIDI', name: 'Native MIDI' })],
+        });
+
+        rejectFirst(new Error('native port closed'));
+        const firstResult = await firstInit;
+
+        expect(firstResult).toBe(false);
+        expect(getStateMock()).toMatchObject({
+            enumerationError: null,
+            inputs: [expect.objectContaining({ id: 'Native MIDI', name: 'Native MIDI' })],
+        });
+        expect(setStateMock).not.toHaveBeenCalledWith(
+            expect.objectContaining({ enumerationError: expect.any(String) })
         );
     });
 });

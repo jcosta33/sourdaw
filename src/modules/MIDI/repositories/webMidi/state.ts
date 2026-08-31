@@ -41,6 +41,7 @@ export const webMidiRuntime = {
      * it; see `mapNativeMidiTimestamp`.
      */
     nativeMidiTimeAnchorMs: null as number | null,
+    initGeneration: 0,
 };
 
 export const webMidiState: { current: WebMidiState } = {

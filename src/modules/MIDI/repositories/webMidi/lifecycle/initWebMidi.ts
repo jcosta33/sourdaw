@@ -10,6 +10,7 @@ import { setNativeMode } from '../setNativeMode';
 import { setState } from '../setState';
 // Side-effect: registers the store sync subscription before any setState below.
 import '../store';
+import { webMidiRuntime } from '../state';
 
 import { detachActiveInput } from './detachActiveInput';
 import { attachInput } from './helpers';
@@ -21,6 +22,15 @@ type WebMidiMessageCallback = (event: WebMidiInputMessage) => void;
 
 function enumerationFailureMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
+}
+
+function claimInitGeneration(): number {
+    webMidiRuntime.initGeneration += 1;
+    return webMidiRuntime.initGeneration;
+}
+
+function isCurrentInit(generation: number): boolean {
+    return webMidiRuntime.initGeneration === generation;
 }
 
 function enumerateInputs(): MidiInputInfo[] {
@@ -99,9 +109,14 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
         return false;
     }
 
+    const initGeneration = claimInitGeneration();
+
     if (webMidiSupported) {
         try {
             const access = await navigator.requestMIDIAccess({ sysex: false });
+            if (!isCurrentInit(initGeneration)) {
+                return false;
+            }
             setMidiAccess(access);
             access.onstatechange = () => onStateChange({ onMidiMessage });
 
@@ -140,6 +155,9 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
         try {
             setNativeMode(true);
             const ports = await listNativeMidiInputs();
+            if (!isCurrentInit(initGeneration)) {
+                return false;
+            }
             const inputs: MidiInputInfo[] = ports.map((port) => ({
                 id: port.id,
                 name: port.name,
@@ -179,6 +197,9 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
             return true;
         } catch (error) {
             logger.warn('[MIDI] Native MIDI init failed:', error);
+            if (!isCurrentInit(initGeneration)) {
+                return false;
+            }
             setState({
                 isSupported: true,
                 enumerationError: enumerationFailureMessage(error),
