@@ -769,6 +769,32 @@ describe('useTempoEditorState', () => {
             expect(result.current.newBeat).toBe('44.5');
         });
 
+        it('recomputes and vertically clamps the panel position on resize', () => {
+            const originalInnerHeight = window.innerHeight;
+            Object.defineProperty(window, 'innerHeight', { configurable: true, value: 300 });
+            const { result } = renderHook(() => useTempoEditorState());
+            const trigger = document.createElement('button');
+            const panel = document.createElement('div');
+            trigger.getBoundingClientRect = () => DOMRect.fromRect({ x: 40, y: 250, width: 40, height: 30 });
+            panel.getBoundingClientRect = () => DOMRect.fromRect({ width: 288, height: 100 });
+            result.current.mapTriggerRef.current = trigger;
+            result.current.mapPanelRef.current = panel;
+
+            act(() => {
+                result.current.setMapOpen(true);
+            });
+
+            expect(result.current.mapPanelPosition.top).toBe(188);
+
+            Object.defineProperty(window, 'innerHeight', { configurable: true, value: 240 });
+            act(() => {
+                window.dispatchEvent(new Event('resize'));
+            });
+
+            expect(result.current.mapPanelPosition.top).toBe(128);
+            Object.defineProperty(window, 'innerHeight', { configurable: true, value: originalInnerHeight });
+        });
+
         it('leaves the seeded beat alone when the panel closes', () => {
             mockTransportState = { ...baseTransportState, playheadPosition: 12, isPlaying: false };
             const { result } = renderHook(() => useTempoEditorState());
@@ -789,6 +815,50 @@ describe('useTempoEditorState', () => {
     });
 
     describe('tempo map panel Escape', () => {
+        it('cancels an inline tempo edit before a second Escape closes the map', () => {
+            const { result } = renderHook(() => useTempoEditorState());
+
+            act(() => {
+                result.current.setMapOpen(true);
+                result.current.startEditChange({ id: 'tc-1', beat: 4, tempo: 140, curve: 'instant' });
+            });
+
+            const cancelEscape = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+            act(() => {
+                window.dispatchEvent(cancelEscape);
+            });
+
+            expect(result.current.editingChangeId).toBeNull();
+            expect(result.current.mapOpen).toBe(true);
+            expect(cancelEscape.defaultPrevented).toBe(true);
+
+            const closeEscape = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+            act(() => {
+                window.dispatchEvent(closeEscape);
+            });
+
+            expect(result.current.mapOpen).toBe(false);
+            expect(closeEscape.defaultPrevented).toBe(true);
+        });
+
+        it('cancels a time-signature edit before closing the map', () => {
+            const { result } = renderHook(() => useTempoEditorState());
+
+            act(() => {
+                result.current.setMapOpen(true);
+                result.current.startTimeSigEdit();
+            });
+
+            const escape = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+            act(() => {
+                window.dispatchEvent(escape);
+            });
+
+            expect(result.current.editingTimeSig).toBe(false);
+            expect(result.current.mapOpen).toBe(true);
+            expect(escape.defaultPrevented).toBe(true);
+        });
+
         it('closes only the map and restores focus to its trigger', () => {
             const { result } = renderHook(() => useTempoEditorState());
             const trigger = document.createElement('button');

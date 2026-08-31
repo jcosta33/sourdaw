@@ -63,10 +63,10 @@ export const ArrangementSelector = (): ReactElement | null => {
         };
 
         document.addEventListener('mousedown', handleClickOutside);
-        document.addEventListener('keydown', handleEscape, true);
+        window.addEventListener('keydown', handleEscape, true);
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
-            document.removeEventListener('keydown', handleEscape, true);
+            window.removeEventListener('keydown', handleEscape, true);
         };
     }, [open, editingId]);
 
@@ -79,26 +79,32 @@ export const ArrangementSelector = (): ReactElement | null => {
 
     useLayoutEffect(() => {
         if (!open) {
-            return;
+            return undefined;
         }
 
-        const triggerRect = triggerContainerRef.current?.getBoundingClientRect();
-        const menuRect = menuRef.current?.getBoundingClientRect();
-        if (!triggerRect || !menuRect) {
-            return;
-        }
+        const updateMenuPosition = (): void => {
+            const triggerRect = triggerContainerRef.current?.getBoundingClientRect();
+            const menuRect = menuRef.current?.getBoundingClientRect();
+            if (!triggerRect || !menuRect) {
+                return;
+            }
 
-        const menuWidth = Math.min(ARRANGEMENT_MENU_WIDTH, window.innerWidth - VIEWPORT_EDGE_GAP * 2);
-        setMenuPosition({
-            top: Math.min(
-                Math.max(VIEWPORT_EDGE_GAP, triggerRect.bottom + 4),
-                Math.max(VIEWPORT_EDGE_GAP, window.innerHeight - menuRect.height - VIEWPORT_EDGE_GAP)
-            ),
-            left: Math.min(
-                Math.max(VIEWPORT_EDGE_GAP, triggerRect.left),
-                window.innerWidth - menuWidth - VIEWPORT_EDGE_GAP
-            ),
-        });
+            const menuWidth = Math.min(ARRANGEMENT_MENU_WIDTH, window.innerWidth - VIEWPORT_EDGE_GAP * 2);
+            setMenuPosition({
+                top: Math.min(
+                    Math.max(VIEWPORT_EDGE_GAP, triggerRect.bottom + 4),
+                    Math.max(VIEWPORT_EDGE_GAP, window.innerHeight - menuRect.height - VIEWPORT_EDGE_GAP)
+                ),
+                left: Math.min(
+                    Math.max(VIEWPORT_EDGE_GAP, triggerRect.left),
+                    window.innerWidth - menuWidth - VIEWPORT_EDGE_GAP
+                ),
+            });
+        };
+
+        updateMenuPosition();
+        window.addEventListener('resize', updateMenuPosition);
+        return () => window.removeEventListener('resize', updateMenuPosition);
     }, [open, state]);
 
     if (!state) {

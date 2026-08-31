@@ -234,17 +234,17 @@ describe('ArrangementSelector', () => {
         });
 
         const clampedRect = menu.getBoundingClientRect();
-        expect(clampedRect.right).toBeLessThanOrEqual(window.innerWidth);
-        expect(clampedRect.left).toBeGreaterThanOrEqual(0);
+        expect(clampedRect.left).toBe(window.innerWidth - menuRect.width - 12);
+        expect(clampedRect.right).toBe(window.innerWidth - 12);
         expect(clampedRect.left).toBeLessThan(triggerRect.left);
     });
 
-    it('consumes Escape when closing the arrangement menu', () => {
+    it('consumes Escape before an earlier document-capture parent can dismiss', () => {
         render(<ArrangementSelector />);
+        const parentDismiss = vi.fn();
+        document.addEventListener('keydown', parentDismiss, true);
         fireEvent.click(screen.getByLabelText(/Arrangement selector/i));
         const menu = screen.getByRole('menu', { name: 'Arrangement menu' });
-        const parentDismiss = vi.fn();
-        window.addEventListener('keydown', parentDismiss);
         const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
 
         act(() => {
@@ -254,7 +254,7 @@ describe('ArrangementSelector', () => {
         expect(screen.queryByRole('menu', { name: 'Arrangement menu' })).toBeNull();
         expect(escape.defaultPrevented).toBe(true);
         expect(parentDismiss).not.toHaveBeenCalled();
-        window.removeEventListener('keydown', parentDismiss);
+        document.removeEventListener('keydown', parentDismiss, true);
     });
 
     it('consumes the first Escape to cancel a rename without closing the menu', () => {

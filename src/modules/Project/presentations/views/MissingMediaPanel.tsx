@@ -65,35 +65,41 @@ export const MissingMediaPanel = (): ReactElement | null => {
         };
 
         document.addEventListener('mousedown', handleClickOutside);
-        document.addEventListener('keydown', handleEscape, true);
+        window.addEventListener('keydown', handleEscape, true);
         return () => {
             document.removeEventListener('mousedown', handleClickOutside);
-            document.removeEventListener('keydown', handleEscape, true);
+            window.removeEventListener('keydown', handleEscape, true);
         };
     }, [open]);
 
     useLayoutEffect(() => {
         if (!open) {
-            return;
+            return undefined;
         }
 
-        const triggerRect = triggerContainerRef.current?.getBoundingClientRect();
-        const panelRect = panelRef.current?.getBoundingClientRect();
-        if (!triggerRect || !panelRect) {
-            return;
-        }
+        const updatePanelPosition = (): void => {
+            const triggerRect = triggerContainerRef.current?.getBoundingClientRect();
+            const panelRect = panelRef.current?.getBoundingClientRect();
+            if (!triggerRect || !panelRect) {
+                return;
+            }
 
-        const panelWidth = Math.min(MISSING_MEDIA_PANEL_WIDTH, window.innerWidth - VIEWPORT_EDGE_GAP * 2);
-        setPanelPosition({
-            top: Math.min(
-                Math.max(VIEWPORT_EDGE_GAP, triggerRect.bottom + 4),
-                Math.max(VIEWPORT_EDGE_GAP, window.innerHeight - panelRect.height - VIEWPORT_EDGE_GAP)
-            ),
-            left: Math.min(
-                Math.max(VIEWPORT_EDGE_GAP, triggerRect.left),
-                window.innerWidth - panelWidth - VIEWPORT_EDGE_GAP
-            ),
-        });
+            const panelWidth = Math.min(MISSING_MEDIA_PANEL_WIDTH, window.innerWidth - VIEWPORT_EDGE_GAP * 2);
+            setPanelPosition({
+                top: Math.min(
+                    Math.max(VIEWPORT_EDGE_GAP, triggerRect.bottom + 4),
+                    Math.max(VIEWPORT_EDGE_GAP, window.innerHeight - panelRect.height - VIEWPORT_EDGE_GAP)
+                ),
+                left: Math.min(
+                    Math.max(VIEWPORT_EDGE_GAP, triggerRect.left),
+                    window.innerWidth - panelWidth - VIEWPORT_EDGE_GAP
+                ),
+            });
+        };
+
+        updatePanelPosition();
+        window.addEventListener('resize', updatePanelPosition);
+        return () => window.removeEventListener('resize', updatePanelPosition);
     }, [open, missingMedia.items]);
 
     const items = missingMedia.items;

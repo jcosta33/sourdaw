@@ -215,6 +215,7 @@ export const TempoEditor = (): ReactElement => {
                           style={{
                               ...time.mapPanelPosition,
                               maxWidth: 'min(18rem, calc(100vw - 1.5rem))',
+                              maxHeight: 'calc(100vh - 1.5rem)',
                           }}
                       >
                           <h3 className="mb-1.5 text-xs font-semibold text-foreground">Tempo Map</h3>
