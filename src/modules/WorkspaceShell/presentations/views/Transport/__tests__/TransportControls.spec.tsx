@@ -184,7 +184,16 @@ describe('TransportControls', () => {
 
     describe('overdub button (conditional on showOverdub)', () => {
         it('routes every compact settings action through its owning use case', () => {
-            renderWithTooltip(<TransportControls {...defaultProps} compact showOverdub={true} />);
+            renderWithTooltip(
+                <TransportControls
+                    {...defaultProps}
+                    compact
+                    showOverdub={true}
+                    metronomeEnabled
+                    countInEnabled
+                    countInBars={2}
+                />
+            );
             expect(screen.queryByTestId('transport-metronome')).not.toBeInTheDocument();
             expect(screen.queryByTestId('transport-punch')).not.toBeInTheDocument();
             expect(screen.queryByTestId('transport-countin')).not.toBeInTheDocument();
@@ -195,6 +204,12 @@ describe('TransportControls', () => {
             fireEvent.click(settings.getByRole('button', { name: 'Metronome' }));
             fireEvent.click(settings.getByRole('button', { name: 'Punch in/out' }));
             fireEvent.click(settings.getByRole('button', { name: 'Count-in' }));
+            const volume = settings.getByLabelText('Metronome volume: 80%');
+            expect(volume).toBeInTheDocument();
+            fireEvent.keyDown(volume, { key: 'ArrowRight' });
+            const countInBars = settings.getByRole('button', { name: 'Count-in bars: 2. Click to cycle.' });
+            expect(countInBars).toBeInTheDocument();
+            fireEvent.click(countInBars);
 
             expect(mocks.toggleOverdub).toHaveBeenCalledTimes(1);
             expect(mocks.toggleMetronome).toHaveBeenCalledTimes(1);
@@ -203,6 +218,8 @@ describe('TransportControls', () => {
                 payload: { enabled: true },
             });
             expect(mocks.toggleCountIn).toHaveBeenCalledTimes(1);
+            expect(mocks.setMetronomeVolume).toHaveBeenCalled();
+            expect(mocks.setCountInBars).toHaveBeenCalledWith(4);
         });
 
         it('does not render the overdub button when showOverdub is false', () => {

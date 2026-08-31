@@ -212,7 +212,11 @@ export const TempoEditor = (): ReactElement => {
                           role="dialog"
                           aria-label="Tempo map editor"
                           className="daw-floating-surface fixed z-50 w-72 rounded-md p-2"
-                          style={{ ...time.mapPanelPosition, WebkitAppRegion: 'no-drag' }}
+                          style={{
+                              ...time.mapPanelPosition,
+                              maxWidth: 'min(18rem, calc(100vw - 1.5rem))',
+                              WebkitAppRegion: 'no-drag',
+                          }}
                       >
                           <h3 className="mb-1.5 text-xs font-semibold text-foreground">Tempo Map</h3>
 

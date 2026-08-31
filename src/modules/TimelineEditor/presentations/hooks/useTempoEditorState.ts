@@ -29,6 +29,8 @@ const defaultTempoMapState: TempoMapViewState = { changes: [] };
 
 /** What double-click reset restores the transport's *base* tempo to. */
 const DEFAULT_BASE_TEMPO = 120;
+const TEMPO_MAP_PANEL_WIDTH = 18 * 16;
+const VIEWPORT_EDGE_GAP = 12;
 
 const useTempoMapState = (): TempoMapViewState => {
     return useStore<TempoMapViewState>(tempoMapStore, defaultTempoMapState);
@@ -251,9 +253,14 @@ export const useTempoEditorState = (): TempoEditorState => {
             playheadBeat = playheadPositionRef.current;
         }
         const triggerRect = mapTriggerRef.current?.getBoundingClientRect();
+        const panelWidth = Math.min(TEMPO_MAP_PANEL_WIDTH, window.innerWidth - VIEWPORT_EDGE_GAP * 2);
+        const triggerLeft = triggerRect?.left ?? 0;
         setMapPanelPosition({
             top: (triggerRect?.bottom ?? 0) + 4,
-            left: triggerRect?.left ?? 0,
+            left: Math.min(
+                Math.max(VIEWPORT_EDGE_GAP, triggerLeft),
+                window.innerWidth - panelWidth - VIEWPORT_EDGE_GAP
+            ),
         });
         setNewBeat(String(Math.max(0, Math.round(playheadBeat * 100) / 100)));
         setMapOpen(true);

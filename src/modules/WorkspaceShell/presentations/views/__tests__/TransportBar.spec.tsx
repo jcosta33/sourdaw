@@ -477,4 +477,16 @@ describe('TransportBar', () => {
 
         expect(screen.getByRole('button', { name: 'Stop' })).toHaveFocus();
     });
+
+    it('keeps focus on a transport control that remains mounted during a mode change', () => {
+        renderTransportBar();
+        screen.getByRole('button', { name: 'Play' }).focus();
+
+        setViewportWidth(VIEWPORT_COMPACT_WIDTH);
+        act(() => {
+            window.dispatchEvent(new Event('resize'));
+        });
+
+        expect(screen.getByRole('button', { name: 'Play' })).toHaveFocus();
+    });
 });

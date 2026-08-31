@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { AlertTriangle } from 'lucide-react';
 import { createPortal } from 'react-dom';
@@ -11,6 +11,9 @@ import {
     type MissingMediaItem,
     missingMediaStore,
 } from '../../stores/missingMediaStore';
+
+const MISSING_MEDIA_PANEL_WIDTH = 20 * 16;
+const VIEWPORT_EDGE_GAP = 12;
 
 /** Frozen tracks have no relink affordance — the repair is to unfreeze and
  * re-render — so the two kinds get different guidance. */
@@ -66,6 +69,30 @@ export const MissingMediaPanel = (): ReactElement | null => {
         };
     }, [open]);
 
+    useLayoutEffect(() => {
+        if (!open) {
+            return;
+        }
+
+        const triggerRect = triggerContainerRef.current?.getBoundingClientRect();
+        const panelRect = panelRef.current?.getBoundingClientRect();
+        if (!triggerRect || !panelRect) {
+            return;
+        }
+
+        const panelWidth = Math.min(MISSING_MEDIA_PANEL_WIDTH, window.innerWidth - VIEWPORT_EDGE_GAP * 2);
+        setPanelPosition({
+            top: Math.min(
+                Math.max(VIEWPORT_EDGE_GAP, triggerRect.bottom + 4),
+                Math.max(VIEWPORT_EDGE_GAP, window.innerHeight - panelRect.height - VIEWPORT_EDGE_GAP)
+            ),
+            left: Math.min(
+                Math.max(VIEWPORT_EDGE_GAP, triggerRect.left),
+                window.innerWidth - panelWidth - VIEWPORT_EDGE_GAP
+            ),
+        });
+    }, [open, missingMedia.items]);
+
     const items = missingMedia.items;
     if (items.length === 0) {
         return null;
@@ -86,16 +113,7 @@ export const MissingMediaPanel = (): ReactElement | null => {
                 aria-expanded={open}
                 aria-haspopup="dialog"
                 aria-label={`${summary} — show details`}
-                onClick={() => {
-                    if (!open) {
-                        const triggerRect = triggerContainerRef.current?.getBoundingClientRect();
-                        setPanelPosition({
-                            top: (triggerRect?.bottom ?? 0) + 4,
-                            left: triggerRect?.left ?? 0,
-                        });
-                    }
-                    setOpen(!open);
-                }}
+                onClick={() => setOpen((previousOpen) => !previousOpen)}
                 size="sm"
                 variant="ghost"
             >
@@ -109,7 +127,12 @@ export const MissingMediaPanel = (): ReactElement | null => {
                           ref={panelRef}
                           aria-label="Missing media"
                           className="fixed z-50 w-80 rounded-md border border-white/10 bg-neutral-900 p-2 shadow-lg"
-                          style={{ ...panelPosition, WebkitAppRegion: 'no-drag' }}
+                          style={{
+                              ...panelPosition,
+                              maxWidth: 'min(20rem, calc(100vw - 1.5rem))',
+                              maxHeight: 'calc(100vh - 1.5rem)',
+                              WebkitAppRegion: 'no-drag',
+                          }}
                           role="dialog"
                       >
                           <p className="px-2 py-1 text-xs text-neutral-400">

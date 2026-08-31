@@ -160,7 +160,12 @@ test.describe('Responsive transport bar', () => {
         const moreTrigger = page.getByRole('button', { name: 'More transport controls' });
         await moreTrigger.click();
         await expect(page.getByRole('dialog', { name: 'More transport controls' })).toHaveCount(1);
-        await page.getByRole('button', { name: 'Punch recording settings' }).focus();
+        await page.getByRole('button', { name: 'Punch recording settings' }).click();
+        await expect(page.getByRole('dialog', { name: 'Punch recording settings' })).toHaveCount(1);
+        await expect(moreTrigger).toHaveAttribute('aria-expanded', 'true');
+        await page.keyboard.press('Escape');
+        await expect(page.getByRole('dialog', { name: 'Punch recording settings' })).toHaveCount(0);
+        await expect(moreTrigger).toHaveAttribute('aria-expanded', 'true');
         await page.keyboard.press('Escape');
         await expect(moreTrigger).toHaveAttribute('aria-expanded', 'false');
         await expect(moreTrigger).toBeFocused();

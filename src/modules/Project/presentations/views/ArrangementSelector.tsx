@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useRef, useEffect } from 'react';
+import { type ReactElement, useState, useRef, useEffect, useLayoutEffect } from 'react';
 
 import { ChevronDown, Plus, Copy, ListTree, Check, Edit2 } from 'lucide-react';
 import { createPortal } from 'react-dom';
@@ -18,6 +18,9 @@ import { createArrangement } from '../../useCases/arrangement/createArrangement'
 import { duplicateArrangement } from '../../useCases/arrangement/duplicateArrangement';
 import { renameArrangement } from '../../useCases/arrangement/renameArrangement';
 import { switchArrangement } from '../../useCases/arrangement/switchArrangement';
+
+const ARRANGEMENT_MENU_WIDTH = 14 * 16;
+const VIEWPORT_EDGE_GAP = 12;
 
 export const ArrangementSelector = (): ReactElement | null => {
     const [open, setOpen] = useState(false);
@@ -71,6 +74,30 @@ export const ArrangementSelector = (): ReactElement | null => {
         }
     }, [editingId]);
 
+    useLayoutEffect(() => {
+        if (!open) {
+            return;
+        }
+
+        const triggerRect = triggerContainerRef.current?.getBoundingClientRect();
+        const menuRect = menuRef.current?.getBoundingClientRect();
+        if (!triggerRect || !menuRect) {
+            return;
+        }
+
+        const menuWidth = Math.min(ARRANGEMENT_MENU_WIDTH, window.innerWidth - VIEWPORT_EDGE_GAP * 2);
+        setMenuPosition({
+            top: Math.min(
+                Math.max(VIEWPORT_EDGE_GAP, triggerRect.bottom + 4),
+                Math.max(VIEWPORT_EDGE_GAP, window.innerHeight - menuRect.height - VIEWPORT_EDGE_GAP)
+            ),
+            left: Math.min(
+                Math.max(VIEWPORT_EDGE_GAP, triggerRect.left),
+                window.innerWidth - menuWidth - VIEWPORT_EDGE_GAP
+            ),
+        });
+    }, [open, state]);
+
     if (!state) {
         return null;
     }
@@ -111,16 +138,7 @@ export const ArrangementSelector = (): ReactElement | null => {
                         aria-label="Arrangement selector"
                         aria-expanded={open}
                         aria-haspopup="menu"
-                        onClick={() => {
-                            if (!open) {
-                                const triggerRect = triggerContainerRef.current?.getBoundingClientRect();
-                                setMenuPosition({
-                                    top: (triggerRect?.bottom ?? 0) + 4,
-                                    left: triggerRect?.left ?? 0,
-                                });
-                            }
-                            setOpen((previousOpen) => !previousOpen);
-                        }}
+                        onClick={() => setOpen((previousOpen) => !previousOpen)}
                     >
                         <ListTree className="size-3 text-muted-foreground/60" />
                         <span className="max-w-[120px] truncate text-foreground/70">
@@ -136,7 +154,12 @@ export const ArrangementSelector = (): ReactElement | null => {
                       <div
                           ref={menuRef}
                           className="daw-floating-surface fixed z-50 w-56 rounded-md border border-border bg-surface-overlay py-1 select-none"
-                          style={{ ...menuPosition, WebkitAppRegion: 'no-drag' }}
+                          style={{
+                              ...menuPosition,
+                              maxWidth: 'min(14rem, calc(100vw - 1.5rem))',
+                              maxHeight: 'calc(100vh - 1.5rem)',
+                              WebkitAppRegion: 'no-drag',
+                          }}
                           role="menu"
                           aria-label="Arrangement menu"
                       >
