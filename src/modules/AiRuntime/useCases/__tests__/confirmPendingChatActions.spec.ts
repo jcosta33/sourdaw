@@ -4388,7 +4388,8 @@ describe('confirmPendingChatActions transaction admission', () => {
 
         expect(executeTempo).toHaveBeenCalledOnce();
         expect(runtimeMocks.renderOffline).not.toHaveBeenCalled();
-        expect(getPendingActionConfirmation('confirmation-capacity-render')).toMatchObject({
+        const retainedConfirmation = getPendingActionConfirmation('confirmation-capacity-render');
+        expect(retainedConfirmation).toMatchObject({
             status: 'executed',
             followUpProjectRevision: null,
             followUpStatus: 'failed',
@@ -4405,8 +4406,8 @@ describe('confirmPendingChatActions transaction admission', () => {
         ).toMatchObject({ recovery: 'manual-repair' });
 
         await expect(confirmPendingChatActions({ confirmationId: 'confirmation-capacity-render' })).resolves.toEqual({
-            status: 'not_pending',
-            currentStatus: 'executed',
+            status: 'failed',
+            reason: retainedConfirmation?.error,
         });
         expect(executeTempo).toHaveBeenCalledOnce();
         expect(runtimeMocks.renderOffline).not.toHaveBeenCalled();
