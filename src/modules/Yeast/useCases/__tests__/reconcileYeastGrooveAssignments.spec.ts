@@ -26,6 +26,7 @@ vi.mock('#/modules/MIDI/stores', () => ({
 vi.mock('#/modules/MIDI/useCases', () => ({
     getScopedGrooveConsumerId: ({ ownerId, localId }: { ownerId: string; localId: string }) => `${ownerId}:${localId}`,
     restoreGrooveAssignment: mocks.restoreGrooveAssignment,
+    getScopedGrooveAssignment: vi.fn(),
 }));
 vi.mock('../../stores/yeastStore', () => ({
     // Rack state is per device instance (issue #2422): the live-consumer set

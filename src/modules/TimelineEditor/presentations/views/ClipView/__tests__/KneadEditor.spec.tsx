@@ -119,6 +119,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     syncActionReplayMetadata: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    isAppActionCommittedError: vi.fn(() => false),
 }));
 
 vi.mock('#/modules/Project/useCases', () => ({

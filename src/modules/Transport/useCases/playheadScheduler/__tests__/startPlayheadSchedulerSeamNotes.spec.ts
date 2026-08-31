@@ -126,6 +126,9 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     cacheAudioBuffer: vi.fn(),
     refreshSidechainAlignment: vi.fn(),
     scheduleAdjustmentLayers: vi.fn(),
+    createBufferSource: vi.fn(),
+    getCachedAudioBuffer: vi.fn(),
+    getFactoryDrumKitByIndex: vi.fn(),
     // No native engine here: the cursor these seams are about follows the
     // scheduler's own integration.
     readNativeEnginePlayheadSeconds: (): number | null => null,
@@ -142,6 +145,7 @@ vi.mock('#/modules/Synth/useCases', () => ({
     scheduleDrumKitNote: vi.fn(),
     scheduleKitNote: vi.fn(),
     scheduleNote: scheduleNoteSpy,
+    getSynthParamsFromDevices: vi.fn(),
 }));
 vi.mock('#/modules/PluginHost/useCases', () => ({ isFaustInstrumentModule: () => false }));
 vi.mock('#/modules/Yeast/useCases', () => ({

@@ -28,7 +28,10 @@ vi.mock('#/modules/Transport/stores', () => {
     throw new Error('Cinematic template must not import Transport stores');
 });
 
-vi.mock('#/modules/Transport/useCases', () => transportMocks);
+vi.mock('#/modules/Transport/useCases', () => ({
+    replaceTempoMap: transportMocks.replaceTempoMap,
+    replaceTimeSignatureMap: transportMocks.replaceTimeSignatureMap,
+}));
 
 vi.mock('../../templateHelpers/addDeviceChain', () => ({ addDeviceChain: builderMocks.addDeviceChain }));
 vi.mock('../../templateHelpers/addMarkers', () => ({ addMarkers: builderMocks.addMarkers }));

@@ -46,6 +46,9 @@ vi.mock('#/infra/logger/appLogger', () => ({
 
 vi.mock('#/modules/Transport/useCases', () => ({
     stopPlayback: vi.fn(),
+    defaultTransportState: { masterGain: 75, isPlaying: false },
+    ensureTrackStrips: vi.fn(),
+    restoreTimelineMapSnapshot: vi.fn(),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({

@@ -238,42 +238,6 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
     // Pre-existing useCases debt surfaced by enforcing this barrel kind. Each row
     // mutes only the exact names already missing; later names still fail the gate.
     {
-        spec: 'src/app/__tests__/bootstrap.spec.ts',
-        barrel: '#/modules/GrandBoule/useCases',
-        missingKeys: ['prepareOfflineGrandBoule'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/app/__tests__/bootstrap.spec.ts',
-        barrel: '#/modules/Proof/useCases',
-        missingKeys: ['prepareOfflineProof'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/app/__tests__/bootstrap.spec.ts',
-        barrel: '#/modules/Toaster/useCases',
-        missingKeys: ['prepareOfflineToaster'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/AiGeneration/handlers/generation/__tests__/handleGenerateChordProgression.spec.ts',
-        barrel: '#/modules/Arrangement/useCases',
-        missingKeys: ['selectClipWithFocus'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/AiGeneration/handlers/generation/__tests__/handleGenerateDrumPattern.spec.ts',
-        barrel: '#/modules/Arrangement/useCases',
-        missingKeys: ['selectClipWithFocus'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/AiGeneration/handlers/generation/__tests__/handleGenerateMelody.spec.ts',
-        barrel: '#/modules/Arrangement/useCases',
-        missingKeys: ['selectClipWithFocus'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
         spec: 'src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx',
         barrel: '#/modules/AudioEngine/useCases',
         missingKeys: [
@@ -733,12 +697,6 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
         reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
     },
     {
-        spec: 'src/modules/Arrangement/handlers/track/__tests__/discardCreatedTrack.spec.ts',
-        barrel: '#/modules/Routing/useCases',
-        missingKeys: ['getAllSidechainRoutes'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
         spec: 'src/modules/Arrangement/handlers/track/__tests__/duplicateTrack.integration.spec.ts',
         barrel: '#/modules/AudioEngine/useCases',
         missingKeys: [
@@ -798,24 +756,6 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
             'getLiveEngineSampleRate',
             'reportBridgeRoundTripFrames',
         ],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/Arrangement/handlers/track/__tests__/handleImportStemSet.spec.ts',
-        barrel: '#/modules/PluginHost/useCases',
-        missingKeys: ['registerFaustDSP'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/Arrangement/handlers/track/__tests__/handleImportStemSet.spec.ts',
-        barrel: '#/modules/Routing/useCases',
-        missingKeys: ['hydrateSidechainRoutes'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/Arrangement/handlers/track/__tests__/handleRemoveTrack.spec.ts',
-        barrel: '#/modules/Routing/useCases',
-        missingKeys: ['hydrateSidechainRoutes'],
         reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
     },
     {
@@ -1082,12 +1022,6 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
         reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
     },
     {
-        spec: 'src/modules/Arrangement/presentations/views/__tests__/TrackHeader.spec.tsx',
-        barrel: '#/modules/Command/useCases',
-        missingKeys: ['pushUndoEntry'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
         spec: 'src/modules/Arrangement/presentations/views/__tests__/TrackListView.spec.tsx',
         barrel: '#/modules/Command/useCases',
         missingKeys: [
@@ -1101,21 +1035,9 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
         reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
     },
     {
-        spec: 'src/modules/Arrangement/useCases/clipEditing/__tests__/glueClips.spec.ts',
-        barrel: '#/modules/Automation/useCases',
-        missingKeys: ['removeAutomationLane', 'restoreAutomationLanes'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
         spec: 'src/modules/AudioEngine/handlers/finalFeature/__tests__/transientHandlers.spec.ts',
         barrel: '#/modules/ElasticAudio/useCases',
         missingKeys: ['* (namespace import)'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/AudioEngine/useCases/offlineRender/__tests__/faustInstrumentOfflineRender.spec.ts',
-        barrel: '#/modules/PluginHost/useCases',
-        missingKeys: ['registerFaustDSP'],
         reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
     },
     {
@@ -1173,18 +1095,6 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
         reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
     },
     {
-        spec: 'src/modules/AudioRendering/useCases/__tests__/renderToClip.spec.ts',
-        barrel: '#/modules/Arrangement/useCases',
-        missingKeys: ['removeClip', 'removeTrack'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/Collaboration/useCases/__tests__/automergeSyncMessageSize.spec.ts',
-        barrel: '#/modules/CrdtDocument/useCases',
-        missingKeys: ['removeCrdtDoc', 'runCrdtPersistenceBarrier'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
         spec: 'src/modules/CommandInterface/useCases/keyboardShortcutActions/__tests__/handleKeyboardShortcut.spec.ts',
         barrel: '#/modules/Arrangement/useCases',
         missingKeys: [
@@ -1193,18 +1103,6 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
             'executeUndoableInsertTime',
             'getAllTracks',
         ],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/CommandInterface/useCases/keyboardShortcutActions/__tests__/handleKeyboardShortcut.spec.ts',
-        barrel: '#/modules/Transport/useCases',
-        missingKeys: ['panicAllNotes'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/InstrumentsTab.spec.tsx',
-        barrel: '#/modules/Arrangement/useCases',
-        missingKeys: ['executeAddDeviceAction'],
         reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
     },
     {
@@ -1923,18 +1821,6 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
         reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
     },
     {
-        spec: 'src/modules/Project/useCases/__tests__/recentProjects.spec.ts',
-        barrel: '#/modules/Transport/useCases',
-        missingKeys: ['defaultTransportState', 'ensureTrackStrips', 'restoreTimelineMapSnapshot'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/Project/useCases/arrangement/__tests__/loadSnapshot.spec.ts',
-        barrel: '#/modules/Automation/useCases',
-        missingKeys: ['getAutomationLaneCeiling'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
         spec: 'src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts',
         barrel: '#/modules/AudioEngine/useCases',
         missingKeys: [
@@ -2018,18 +1904,6 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
             'subscribeToCrdtChanges',
             'waitForCrdtDocumentTransition',
         ],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts',
-        barrel: '#/modules/PluginHost/useCases',
-        missingKeys: ['activateExternalPlugin', 'findSupportedPlugin', 'registerFaustDSP'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.spec.ts',
-        barrel: '#/modules/CrdtDocument/useCases',
-        missingKeys: ['captureProjectRevision', 'compactProject'],
         reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
     },
     {
@@ -2640,18 +2514,6 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
         reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
     },
     {
-        spec: 'src/modules/Project/useCases/projectPersistence/helpers/__tests__/replaceProjectData.spec.ts',
-        barrel: '#/modules/AudioEngine/useCases',
-        missingKeys: ['cancelPendingAudioBufferImport'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/Project/useCases/projectPersistence/helpers/__tests__/replaceProjectData.spec.ts',
-        barrel: '#/modules/Command/useCases',
-        missingKeys: ['resetActionReplayAuthority'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
         spec: 'src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetModuleStoresToDefault.spec.ts',
         barrel: '#/modules/Arrangement/useCases',
         missingKeys: [
@@ -2771,18 +2633,6 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
         reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
     },
     {
-        spec: 'src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts',
-        barrel: '#/modules/PluginHost/useCases',
-        missingKeys: ['activateExternalPlugin', 'findSupportedPlugin', 'registerFaustDSP'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts',
-        barrel: '#/modules/Transport/useCases',
-        missingKeys: ['defaultTransportState', 'restoreTimelineMapSnapshot', 'restoreTransportSnapshot'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
         spec: 'src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts',
         barrel: '#/modules/AudioEngine/useCases',
         missingKeys: [
@@ -2877,18 +2727,6 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
         reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
     },
     {
-        spec: 'src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts',
-        barrel: '#/modules/PluginHost/useCases',
-        missingKeys: ['activateExternalPlugin', 'findSupportedPlugin', 'registerFaustDSP'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts',
-        barrel: '#/modules/Transport/useCases',
-        missingKeys: ['restoreTimelineMapSnapshot', 'restoreTransportSnapshot'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
         spec: 'src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts',
         barrel: '#/modules/AudioEngine/useCases',
         missingKeys: [
@@ -2898,12 +2736,6 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
             'getDefaultBendRangeSemitones',
             'getFactoryDrumKitByIndex',
         ],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts',
-        barrel: '#/modules/Transport/useCases',
-        missingKeys: ['ensureTrackStrips'],
         reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
     },
     {
@@ -2965,12 +2797,6 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
     },
     {
         spec: 'src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/createFromTemplate.spec.ts',
-        barrel: '#/modules/Command/useCases',
-        missingKeys: ['REDO_NOT_APPLIED', 'pushUndoEntry', 'syncActionReplayMetadata'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/createFromTemplate.spec.ts',
         barrel: '#/modules/CrdtDocument/useCases',
         missingKeys: [
             'DOC_BRANCHES',
@@ -2997,12 +2823,6 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
     },
     {
         spec: 'src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/createFromTemplate.spec.ts',
-        barrel: '#/modules/PluginHost/useCases',
-        missingKeys: ['activateExternalPlugin', 'findSupportedPlugin', 'registerFaustDSP'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/createFromTemplate.spec.ts',
         barrel: '#/modules/Transport/useCases',
         missingKeys: [
             'addTempoChange',
@@ -3011,12 +2831,6 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
             'replaceTempoMap',
             'replaceTimeSignatureMap',
         ],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/Project/useCases/projectTemplates/templateFiles/__tests__/cinematic.spec.ts',
-        barrel: '#/modules/Transport/useCases',
-        missingKeys: ['replaceTempoMap', 'replaceTimeSignatureMap'],
         reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
     },
     {
@@ -3153,24 +2967,6 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
             'updateMidiFxParam',
             'wireSidechainRoute',
         ],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/ProofChamber/presentations/views/__tests__/proofChamberAlgorithmGating.spec.tsx',
-        barrel: '#/modules/Command/useCases',
-        missingKeys: ['pushUndoEntry'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/ProofChamber/presentations/views/__tests__/proofChamberDampingDefaultGrid.spec.tsx',
-        barrel: '#/modules/Command/useCases',
-        missingKeys: ['pushUndoEntry'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/ProofChamber/presentations/views/__tests__/ProofChamberPanel.spec.tsx',
-        barrel: '#/modules/Command/useCases',
-        missingKeys: ['pushUndoEntry'],
         reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
     },
     {
@@ -3372,18 +3168,6 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
         reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
     },
     {
-        spec: 'src/modules/TimelineEditor/presentations/views/__tests__/AutomationBottomPanel.spec.tsx',
-        barrel: '#/modules/Automation/useCases',
-        missingKeys: ['getAutomationLaneCeiling'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/TimelineEditor/presentations/views/ClipView/__tests__/KneadEditor.spec.tsx',
-        barrel: '#/modules/Command/useCases',
-        missingKeys: ['isAppActionCommittedError'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
         spec: 'src/modules/TimelineEditor/presentations/views/ClipView/__tests__/KneadEditor.spec.tsx',
         barrel: '#/modules/Knead/useCases',
         missingKeys: [
@@ -3550,12 +3334,6 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
         reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
     },
     {
-        spec: 'src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackDevicesSection.spec.tsx',
-        barrel: '#/modules/Command/useCases',
-        missingKeys: ['isAppActionCommittedError'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
         spec: 'src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackLevelSection.spec.tsx',
         barrel: '#/modules/Automation/useCases',
         missingKeys: [
@@ -3673,18 +3451,6 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
         reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
     },
     {
-        spec: 'src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamNotes.spec.ts',
-        barrel: '#/modules/AudioEngine/useCases',
-        missingKeys: ['createBufferSource', 'getCachedAudioBuffer', 'getFactoryDrumKitByIndex'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamNotes.spec.ts',
-        barrel: '#/modules/Synth/useCases',
-        missingKeys: ['getSynthParamsFromDevices'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
         spec: 'src/modules/Transport/useCases/transportControls/__tests__/pausePlayback.spec.ts',
         barrel: '#/modules/MIDI/useCases',
         missingKeys: [
@@ -3725,30 +3491,6 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
     },
     {
         spec: 'src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx',
-        barrel: '#/modules/Arrangement/useCases',
-        missingKeys: ['clearClipSelection', 'selectAllClips', 'zoomTimelineBy'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx',
-        barrel: '#/modules/Command/useCases',
-        missingKeys: ['executeAppAction', 'redo', 'undo'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx',
-        barrel: '#/modules/CrdtDocument/useCases',
-        missingKeys: ['captureProjectRevision', 'subscribeToCrdtChanges'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx',
-        barrel: '#/modules/Onboarding/useCases',
-        missingKeys: ['startOnboardingTour'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx',
         barrel: '#/modules/Project/useCases',
         missingKeys: [
             'cancelProjectSessionQuiesce',
@@ -3763,24 +3505,6 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
             'recentProjectChanges',
             'saveProject',
         ],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/Yeast/useCases/__tests__/commitYeastProjection.spec.ts',
-        barrel: '#/modules/MIDI/useCases',
-        missingKeys: ['getScopedGrooveAssignment'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/Yeast/useCases/__tests__/reconcileYeastGrooveAssignments.spec.ts',
-        barrel: '#/modules/MIDI/useCases',
-        missingKeys: ['getScopedGrooveAssignment'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
-        spec: 'src/modules/Yeast/useCases/__tests__/removeYeastGrooveAssignments.spec.ts',
-        barrel: '#/modules/MIDI/useCases',
-        missingKeys: ['getScopedGrooveAssignment'],
         reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
     },
 ];

@@ -72,6 +72,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     saveCurrentAsPreset: arrangementMocks.saveCurrentAsPreset,
     deleteUserPreset: vi.fn(),
     compileLoadPresetActions: arrangementMocks.compileLoadPresetActions,
+    executeAddDeviceAction: vi.fn(),
 }));
 
 vi.mock('#/utils/Notification/notifyUser', () => ({
