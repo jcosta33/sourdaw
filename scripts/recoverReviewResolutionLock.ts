@@ -26,6 +26,7 @@ import {
     shellPort,
     type ResolveReviewThreadPort,
     type ReviewResolutionRecoveryClock,
+    type ReviewResolutionRetirementClock,
     type ReviewResolutionTrustedLauncher,
     type ReviewResolutionLockOwner,
     type ReviewResolutionRecoveryResult,
@@ -56,6 +57,7 @@ export type ReviewResolutionRecoveryDependencies = {
         gh: (args: string[]) => string
     ) => ResolveReviewThreadPort;
     clock?: ReviewResolutionRecoveryClock;
+    retirementClock?: ReviewResolutionRetirementClock;
     recoverLock?: <Value>(
         primaryRoot: string,
         number: number,
@@ -80,6 +82,7 @@ type ResolvedReviewResolutionRecoveryDependencies = {
         gh: (args: string[]) => string
     ) => ResolveReviewThreadPort;
     clock: ReviewResolutionRecoveryClock;
+    retirementClock?: ReviewResolutionRetirementClock;
     recoverLock: <Value>(
         primaryRoot: string,
         number: number,
@@ -133,6 +136,7 @@ function resolveRecoveryDependencies(
                 inspect: (number, threadId) => inspectThread(number, threadId, gh),
             })),
         clock: dependencies.clock ?? { now: () => Date.now() },
+        retirementClock: dependencies.retirementClock,
         recoverLock: dependencies.recoverLock ?? recoverPullRequestReviewResolutionLock,
     };
 }
@@ -212,7 +216,8 @@ async function runRecoverReviewResolutionLockCliResolved(
                         lockOwner,
                         port,
                         resolvedDependencies.clock,
-                        primaryRoot
+                        primaryRoot,
+                        resolvedDependencies.retirementClock
                     )
                 );
             }

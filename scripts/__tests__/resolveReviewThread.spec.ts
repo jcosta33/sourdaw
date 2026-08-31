@@ -1914,7 +1914,160 @@ describe('review thread resolution', () => {
         }
     });
 
-    it('persists a base retirement settlement before a later post-deadline retirement can release the unseen owner', async () => {
+    it.each([
+        [
+            'replyDone',
+            {
+                phase: 'replyDone' as const,
+                epoch: 1,
+                reviewId,
+                reviewState: 'PENDING' as const,
+                body: pendingReviewBody(head),
+                reviewCommitOid: head,
+            },
+        ],
+        [
+            'replyDoneSettlement',
+            {
+                phase: 'replyDoneSettlement' as const,
+                epoch: 1,
+                reviewId,
+                body: pendingReviewBody(head),
+                reviewCommitOid: head,
+                replies: [],
+                settleAtMs: 0,
+                replayed: false,
+            },
+        ],
+    ] as const)('preserves %s retirement with one exact landed Done marker', async (phase, mutation) => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 9_999_999, head, mutation);
+            updateLock(repository, 42, ownerOid);
+            const session: GhSession = { configDir: repository, env: {}, dispose() {} };
+            const fake = fakePort({ existingReplyCount: 1, existingReplyReviewState: 'PENDING' });
+            const dependencies = {
+                trustedPrimaryRoot: () => repository,
+                authenticateAuthor: async () => ({ minted: { actorNodeId: AUTHOR_BOT_NODE_ID }, session }),
+                repositoryName: () => REQUIRED_REPOSITORY,
+                gh: () => () => '',
+                createPort: () => fake.port,
+                recoverLock: (primaryRoot, number, owner, reconcile) =>
+                    recoverPullRequestReviewResolutionLock(primaryRoot, number, owner, reconcile, () => false),
+            } satisfies Parameters<typeof runRecoverReviewResolutionLockCli>[1];
+
+            await expect(
+                runRecoverReviewResolutionLockCli(['42', '--owner', ownerOid, '--retire-unseen'], dependencies)
+            ).rejects.toThrow(/matching mutation during remote inspection/);
+            expect(fake.calls).toEqual(['inspect:1']);
+            expect(requireLockOwner(repository, 42).mutation.phase).toBe(phase);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it.each([
+        [
+            'replyDone',
+            {
+                phase: 'replyDone' as const,
+                epoch: 1,
+                reviewId,
+                reviewState: 'PENDING' as const,
+                body: pendingReviewBody(head),
+                reviewCommitOid: head,
+            },
+        ],
+        [
+            'replyDoneSettlement',
+            {
+                phase: 'replyDoneSettlement' as const,
+                epoch: 1,
+                reviewId,
+                body: pendingReviewBody(head),
+                reviewCommitOid: head,
+                replies: [],
+                settleAtMs: 0,
+                replayed: false,
+            },
+        ],
+    ] as const)('preserves %s retirement when duplicate exact Done markers are ambiguous', async (phase, mutation) => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 9_999_999, head, mutation);
+            updateLock(repository, 42, ownerOid);
+            const session: GhSession = { configDir: repository, env: {}, dispose() {} };
+            const fake = fakePort({
+                existingReplyCount: 2,
+                existingReplyReviewState: 'PENDING',
+                secondaryReplyReviewId: reviewId,
+                secondaryReplyReviewMissing: true,
+            });
+            const dependencies = {
+                trustedPrimaryRoot: () => repository,
+                authenticateAuthor: async () => ({ minted: { actorNodeId: AUTHOR_BOT_NODE_ID }, session }),
+                repositoryName: () => REQUIRED_REPOSITORY,
+                gh: () => () => '',
+                createPort: () => fake.port,
+                recoverLock: (primaryRoot, number, owner, reconcile) =>
+                    recoverPullRequestReviewResolutionLock(primaryRoot, number, owner, reconcile, () => false),
+            } satisfies Parameters<typeof runRecoverReviewResolutionLockCli>[1];
+
+            await expect(
+                runRecoverReviewResolutionLockCli(['42', '--owner', ownerOid, '--retire-unseen'], dependencies)
+            ).rejects.toThrow(/ambiguous matching mutations during remote inspection/);
+            expect(fake.calls).toEqual(['inspect:1']);
+            expect(requireLockOwner(repository, 42).mutation.phase).toBe(phase);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('retires a zero-evidence replyDoneSettlement only after an owner-fenced monotonic interval', async () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 9_999_999, head, {
+                phase: 'replyDoneSettlement',
+                epoch: 1,
+                reviewId,
+                body: pendingReviewBody(head),
+                reviewCommitOid: head,
+                replies: [],
+                settleAtMs: 0,
+                replayed: false,
+            });
+            updateLock(repository, 42, ownerOid);
+            const session: GhSession = { configDir: repository, env: {}, dispose() {} };
+            const fake = fakePort();
+            let monotonicNow = 0n;
+            const dependencies = {
+                trustedPrimaryRoot: () => repository,
+                authenticateAuthor: async () => ({ minted: { actorNodeId: AUTHOR_BOT_NODE_ID }, session }),
+                repositoryName: () => REQUIRED_REPOSITORY,
+                gh: () => () => '',
+                createPort: () => fake.port,
+                clock: { now: () => 0 },
+                retirementClock: {
+                    monotonicNow: () => monotonicNow,
+                    wait: () => {
+                        monotonicNow += 30_000_000_000n;
+                    },
+                },
+                recoverLock: (primaryRoot, number, owner, reconcile) =>
+                    recoverPullRequestReviewResolutionLock(primaryRoot, number, owner, reconcile, () => false),
+            } satisfies Parameters<typeof runRecoverReviewResolutionLockCli>[1];
+
+            await expect(
+                runRecoverReviewResolutionLockCli(['42', '--owner', ownerOid, '--retire-unseen'], dependencies)
+            ).resolves.toBe(0);
+            expect(fake.calls).toEqual(['inspect:1', 'inspect:2']);
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('requires a new owner-fenced monotonic settlement before retiring an unseen owner', async () => {
         const repository = createTemporaryGitRepository();
         try {
             const ownerOid = writeLockOwnerBlob(repository, 9_999_999, head, {
@@ -1925,6 +2078,8 @@ describe('review thread resolution', () => {
             const session: GhSession = { configDir: repository, env: {}, dispose() {} };
             const fake = fakePort();
             let now = 10;
+            let elapsed = false;
+            let monotonicNow = 0n;
             const dependencies = {
                 trustedPrimaryRoot: () => repository,
                 authenticateAuthor: async () => ({ minted: { actorNodeId: AUTHOR_BOT_NODE_ID }, session }),
@@ -1932,6 +2087,14 @@ describe('review thread resolution', () => {
                 gh: () => () => '',
                 createPort: () => fake.port,
                 clock: { now: () => now },
+                retirementClock: {
+                    monotonicNow: () => monotonicNow,
+                    wait: () => {
+                        if (elapsed) {
+                            monotonicNow += 30_000_000_000n;
+                        }
+                    },
+                },
                 recoverLock: (primaryRoot, number, owner, reconcile) =>
                     recoverPullRequestReviewResolutionLock(primaryRoot, number, owner, reconcile, () => false),
             } satisfies Parameters<typeof runRecoverReviewResolutionLockCli>[1];
@@ -1947,11 +2110,22 @@ describe('review thread resolution', () => {
                 replayed: false,
             });
 
-            now = 30_011;
+            now = 9_999_999;
             await expect(
                 runRecoverReviewResolutionLockCli(['42', '--owner', settlementOid!, '--retire-unseen'], dependencies)
+            ).rejects.toThrow(/could not prove settlement elapsed with monotonic time/);
+            const restartedSettlementOid = readLockOid(repository, 42);
+            expect(restartedSettlementOid).toBeDefined();
+            expect(readLockOid(repository, 42)).toBeDefined();
+
+            elapsed = true;
+            await expect(
+                runRecoverReviewResolutionLockCli(
+                    ['42', '--owner', restartedSettlementOid!, '--retire-unseen'],
+                    dependencies
+                )
             ).resolves.toBe(0);
-            expect(fake.calls).toEqual(['inspect:1', 'inspect:2']);
+            expect(fake.calls).toEqual(['inspect:1', 'inspect:2', 'inspect:3', 'inspect:4']);
             expect(readLockOid(repository, 42)).toBeUndefined();
         } finally {
             rmSync(repository, { recursive: true, force: true });

@@ -213,6 +213,10 @@ export type ReviewResolutionTrustedLauncher = {
 export type ReviewResolutionRecoveryClock = {
     now: () => number;
 };
+export type ReviewResolutionRetirementClock = {
+    monotonicNow: () => bigint;
+    wait: (milliseconds: number) => void;
+};
 export type ReviewResolutionRecoveryResult = { kind: 'reconciled'; inspection: ReviewThreadInspection };
 export type ResolveReviewThreadPort = {
     inspect: (number: number, threadId: string) => ReviewThreadInspection;
@@ -300,6 +304,13 @@ const TRUSTED_ORIGIN_COMMIT_ENV = 'SOURDAW_TRUSTED_ORIGIN_COMMIT';
 const activeReviewResolutionLocks: ActiveReviewResolutionLock[] = [];
 const systemReviewResolutionRecoveryClock: ReviewResolutionRecoveryClock = { now: () => Date.now() };
 const REVIEW_RESOLUTION_SETTLEMENT_WINDOW_MS = 30_000;
+const REVIEW_RESOLUTION_SETTLEMENT_WINDOW_NS = BigInt(REVIEW_RESOLUTION_SETTLEMENT_WINDOW_MS) * 1_000_000n;
+const systemReviewResolutionRetirementClock: ReviewResolutionRetirementClock = {
+    monotonicNow: () => process.hrtime.bigint(),
+    wait: (milliseconds) => {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT)), 0, 0, milliseconds);
+    },
+};
 
 type ReviewResolutionChildLaunchMarker = {
     path: string;
@@ -4112,7 +4123,8 @@ export function retireUnseenReviewResolutionLockOwnerState(
     owner: ReviewResolutionLockOwner,
     port: ResolveReviewThreadPort,
     clock: ReviewResolutionRecoveryClock = systemReviewResolutionRecoveryClock,
-    primaryRoot: string = process.cwd()
+    primaryRoot: string = process.cwd(),
+    retirementClock: ReviewResolutionRetirementClock = systemReviewResolutionRetirementClock
 ): ReviewThreadInspection {
     assertV5ReviewResolutionLockOwner(owner);
     if (
@@ -4140,10 +4152,35 @@ export function retireUnseenReviewResolutionLockOwnerState(
     if (mutation.phase === 'replyDone') {
         return preserveReplyDoneSettlement(number, recoveryPrimaryRoot, inspection, mutation, clock);
     }
-    if (mutation.replayed || clock.now() <= mutation.settleAtMs) {
+    if (mutation.replayed) {
         fail(unreconciledReviewResolutionMutationMessage(number, mutation));
     }
-    return inspection;
+    restartRetirementSettlement(number, recoveryPrimaryRoot, inspection, mutation, clock);
+    const active = currentActiveReviewResolutionLock(recoveryPrimaryRoot, number);
+    const expectedOwnerOid = active.oid;
+    const deadline = retirementClock.monotonicNow() + REVIEW_RESOLUTION_SETTLEMENT_WINDOW_NS;
+    retirementClock.wait(REVIEW_RESOLUTION_SETTLEMENT_WINDOW_MS);
+    if (retirementClock.monotonicNow() < deadline) {
+        fail(`${pullRequestReviewResolutionLockScope(number)} could not prove settlement elapsed with monotonic time`);
+    }
+    if (readReviewResolutionLockOid(recoveryPrimaryRoot, active.ref, number) !== expectedOwnerOid) {
+        fail(`${pullRequestReviewResolutionLockScope(number)} lock ownership changed during retirement settlement`);
+    }
+    const settledOwner = active.owner;
+    const settledInspection = inspectReviewResolutionRecovery(number, settledOwner, port);
+    const settledContext = resolutionReviewContext(
+        settledInspection.pullRequestId,
+        settledOwner.threadId,
+        settledOwner.head
+    );
+    const settledEvidenceCount = exactRetirementMutationEvidenceCount(settledOwner, settledInspection, settledContext);
+    if (settledEvidenceCount === 1) {
+        fail('review-resolution retirement found a matching mutation during remote inspection');
+    }
+    if (settledEvidenceCount > 1) {
+        fail('review-resolution retirement found ambiguous matching mutations during remote inspection');
+    }
+    return settledInspection;
 }
 
 function continueRecoveredReviewResolution(
@@ -4328,6 +4365,44 @@ function preserveReplyDoneSettlement(
         replayed: false,
     });
     fail(unreconciledReviewResolutionMutationMessage(number, mutation));
+}
+
+function restartRetirementSettlement(
+    number: number,
+    primaryRoot: string,
+    inspection: ReviewThreadInspection,
+    mutation: Extract<ReviewResolutionLockMutation, { phase: 'createPendingReviewSettlement' | 'replyDoneSettlement' }>,
+    clock: ReviewResolutionRecoveryClock
+): void {
+    if (mutation.phase === 'createPendingReviewSettlement') {
+        advanceActiveReviewResolutionLockMutation(primaryRoot, number, {
+            phase: 'createPendingReviewSettlement',
+            pullRequestId: mutation.pullRequestId,
+            body: mutation.body,
+            reviewCommitOid: mutation.reviewCommitOid,
+            pendingReviewIds: inspection.pendingReviews.map((review) => review.id).sort(),
+            settleAtMs: settlementDeadline(clock),
+            replayed: false,
+        });
+        return;
+    }
+    const context = resolutionReviewContext(inspection.pullRequestId, inspection.thread!.id, inspection.head);
+    const replies = managedReplyMarkers(inspection.thread!, context, ['PENDING', 'COMMENTED'], false)
+        .map((candidate) => ({
+            replyId: candidate.marker.id,
+            reviewId: candidate.review.id,
+            reviewState: settledReviewState(candidate.review.state),
+        }))
+        .sort((left, right) => left.replyId.localeCompare(right.replyId));
+    advanceActiveReviewResolutionLockMutation(primaryRoot, number, {
+        phase: 'replyDoneSettlement',
+        reviewId: mutation.reviewId,
+        body: mutation.body,
+        reviewCommitOid: mutation.reviewCommitOid,
+        replies,
+        settleAtMs: settlementDeadline(clock),
+        replayed: false,
+    });
 }
 
 function recoverCreatePendingReviewSettlement(
