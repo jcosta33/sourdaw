@@ -685,6 +685,38 @@ describe('executeAppActionBatch', () => {
         }
     );
 
+    it('records declared retention-capacity failure metadata after commit', async () => {
+        const failure = new Error('section render retention capacity exceeded');
+        Reflect.set(failure, 'failureKind', 'retention-capacity');
+        Reflect.set(failure, 'pendingEffect', {
+            kind: 'external-effect',
+            remediation: 'manual-repair',
+            reason: 'Section render retention capacity exceeded.',
+            state: 'pending',
+        });
+        const afterCommit = vi.fn().mockRejectedValue(failure);
+        const afterAmbiguousCommit = vi.fn().mockRejectedValue(failure);
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute: () => ({ status: 'written', afterCommit, afterAmbiguousCommit }),
+            }),
+        });
+
+        const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }]);
+
+        expect(result).toMatchObject({
+            status: 'committed-with-warning',
+            warningDetails: [
+                expect.objectContaining({
+                    pendingEffect: expect.objectContaining({
+                        failureKind: 'retention-capacity',
+                        remediation: 'manual-repair',
+                    }),
+                }),
+            ],
+        });
+    });
+
     it('recovers a deferred-effect failure by reconciling durable truth', async () => {
         const afterCommit = vi.fn().mockRejectedValue(new Error('event unavailable'));
         const reconcileRuntime = vi.fn();

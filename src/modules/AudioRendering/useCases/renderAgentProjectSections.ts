@@ -10,6 +10,7 @@ import { agentSectionRenderArtifactStore } from '../stores/agentSectionRenderArt
 import { pruneExpiredAgentSectionRenderArtifacts } from './pruneExpiredAgentSectionRenderArtifacts';
 import { removeAgentProjectSectionArtifacts } from './removeAgentProjectSectionArtifacts';
 import { scheduleAgentSectionRenderArtifactExpiry } from './scheduleAgentSectionRenderArtifactExpiry';
+import { wouldAgentSectionRenderSetExceedRetention } from './wouldAgentSectionRenderSetExceedRetention';
 
 const PCM_SAMPLE_BYTE_SIZE = Float32Array.BYTES_PER_ELEMENT;
 
@@ -214,7 +215,10 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
     }
 
     if (failures.length > 0) {
-        const reason = `Section render follow-up requires review: ${failures.join('; ')}`;
+        retentionCapacityFailure ||= wouldAgentSectionRenderSetExceedRetention(input.jobs, input.sourceRevision);
+        const reason = retentionCapacityFailure
+            ? `Section render retention capacity errors require manual repair: ${failures.join('; ')}`
+            : `Section render follow-up requires review: ${failures.join('; ')}`;
         const allRequestedArtifactsPresent = input.jobs.every((job) => {
             const artifact = existingByJobId.get(job.jobId);
             return artifact !== undefined && jobMatchesArtifact(job, artifact, input.sourceRevision);

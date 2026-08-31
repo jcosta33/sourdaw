@@ -601,8 +601,12 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
     if (result.status === 'committed' || result.status === 'committed-with-warning') {
         resultingRevision = exactStorageCommitRevision ?? null;
         if (resultingRevision === null) {
-            const reason = getStorageCommitRevisionFailureMessage(storageCommitRevisionError);
-            receiptWarnings.push(`Resulting project revision could not be captured at storage commit: ${reason}`);
+            if (!commandProjectRevisionPort.isConfigured()) {
+                receiptWarnings.push('Resulting project revision is unavailable: revision provider is not configured');
+            } else {
+                const reason = getStorageCommitRevisionFailureMessage(storageCommitRevisionError);
+                receiptWarnings.push(`Resulting project revision could not be captured: ${reason}`);
+            }
         }
     } else {
         try {
