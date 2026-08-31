@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { type ToolSchema } from '../../../models/ToolDefinitions';
+import { type ToolSchema } from '../../../../models/ToolDefinitions';
 import { buildWireToolNameCodec } from '../buildWireToolNameCodec';
 
 function schema(name: string): ToolSchema {
