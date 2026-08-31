@@ -727,6 +727,7 @@ function resolveReviewThreadWithinMutation(
                         stalePendingReplyReview = refreshedPendingReply.review;
                     }
                     if (stalePendingReplyReview.state === 'PENDING') {
+                        assertReusablePendingReviewAttachment(number, stalePendingReplyReview.id, context, port);
                         reviewSubmitAttempted = true;
                         const submittedStalePendingReplyReview = port.submitReview(
                             stalePendingReplyReview.id,
@@ -794,6 +795,7 @@ function resolveReviewThreadWithinMutation(
             if (pendingReview === undefined) {
                 fail(`review thread ${threadId} has no reusable pending author review`);
             }
+            assertReusablePendingReviewAttachment(number, pendingReview.id, context, port);
             replyAttempted = true;
             const reply = port.replyDone(threadId, pendingReview.id, pendingReview);
             assertReply(reply, replyClientMutationId(threadId), pendingReview.id, context);
@@ -880,6 +882,7 @@ function resolveReviewThreadWithinMutation(
             );
             canonicalReply = canonical.marker;
             canonicalReview = canonical.review;
+            assertReusablePendingReviewAttachment(number, canonicalReview.id, context, port);
             reviewSubmitAttempted = true;
             const canonicalReviewCommitOid = requireReviewCommitOid(canonicalReview, `Done reply ${canonicalReply.id}`);
             const submittedReview = port.submitReview(
@@ -1649,6 +1652,30 @@ function assertExclusiveBackfillReviewAttachment(
     }
     fail(`pending author review ${reviewId} is shared across review threads ${attachedThreadIds.join(', ')}`);
 }
+function assertReusablePendingReviewAttachment(
+    number: number,
+    reviewId: string,
+    context: ResolutionReviewContext,
+    port: ResolveReviewThreadPort,
+    snapshotHead: string = context.expectedHead
+): void {
+    const attachedThreadIds = [
+        ...new Set(port.inspectAttachedReviewThreadIds(number, reviewId, context.pullRequestId, snapshotHead)),
+    ].sort();
+    if (
+        attachedThreadIds.length === 0 ||
+        (attachedThreadIds.length === 1 && attachedThreadIds[0] === context.threadId)
+    ) {
+        return;
+    }
+    const foreignThreadIds = attachedThreadIds.filter((threadId) => threadId !== context.threadId);
+    if (foreignThreadIds.length > 0) {
+        fail(
+            `pending author review ${reviewId} still has attached review-thread comments on ${foreignThreadIds.join(', ')}`
+        );
+    }
+    fail(`pending author review ${reviewId} has an invalid attached review-thread set`);
+}
 function isCanonicalAuthorPendingReview(review: PullRequestReview, context: ResolutionReviewContext): boolean {
     return (
         review.state === 'PENDING' &&
@@ -1913,6 +1940,7 @@ function repairCompletedResolution(
         false
     );
     if (canonical.review.state === 'PENDING') {
+        assertReusablePendingReviewAttachment(number, canonical.review.id, context, port);
         const reviewCommitOid = requireReviewCommitOid(canonical.review, `Done reply ${canonical.marker.id}`);
         const submittedReview = port.submitReview(
             canonical.review.id,
@@ -4412,8 +4440,8 @@ function recoverCreatePendingReviewSettlement(
     context: ResolutionReviewContext,
     mutation: Extract<ReviewResolutionLockMutation, { phase: 'createPendingReviewSettlement' }>,
     port: ResolveReviewThreadPort,
-    clock: ReviewResolutionRecoveryClock,
-    primaryRoot: string
+    _clock: ReviewResolutionRecoveryClock,
+    _primaryRoot: string
 ): ReviewThreadInspection {
     const recoveredReviewIds = exactRecoveredReviewIdsAtOwnerHead(inspection, context);
     if (inspection.head !== owner.head) {
@@ -4423,33 +4451,9 @@ function recoverCreatePendingReviewSettlement(
         }
         fail(unreconciledReviewResolutionMutationMessage(number, mutation));
     }
-    if (mutation.replayed) {
-        fail(unreconciledReviewResolutionMutationMessage(number, mutation));
-    }
     if (recoveredReviewIds.length > 0) {
         return continueRecoveredReviewResolution(number, owner, port);
     }
-    if (clock.now() <= mutation.settleAtMs) {
-        fail(unreconciledReviewResolutionMutationMessage(number, mutation));
-    }
-    if (inspection.pullRequestId !== mutation.pullRequestId) {
-        fail(`create pending review recovery changed pull request identity on PR #${number}`);
-    }
-    const created = port.createPendingReview(mutation.pullRequestId, mutation.reviewCommitOid, mutation.body);
-    assertReviewEnvelopeReceipt(
-        created,
-        createReviewClientMutationId(owner.threadId),
-        'PENDING',
-        mutation.body,
-        mutation.reviewCommitOid,
-        'create pending review'
-    );
-    advanceActiveReviewResolutionLockMutation(primaryRoot, number, {
-        ...mutation,
-        pendingReviewIds: [...new Set([...mutation.pendingReviewIds, created.id])].sort(),
-        settleAtMs: settlementDeadline(clock),
-        replayed: true,
-    });
     return fail(unreconciledReviewResolutionMutationMessage(number, mutation));
 }
 
@@ -4460,8 +4464,8 @@ function recoverReplyDoneSettlement(
     context: ResolutionReviewContext,
     mutation: Extract<ReviewResolutionLockMutation, { phase: 'replyDoneSettlement' }>,
     port: ResolveReviewThreadPort,
-    clock: ReviewResolutionRecoveryClock,
-    primaryRoot: string
+    _clock: ReviewResolutionRecoveryClock,
+    _primaryRoot: string
 ): ReviewThreadInspection {
     const recoveredReplies = exactRecoveredReplyMarkersAtOwnerHead(inspection.thread!, context, mutation.reviewId);
     if (inspection.head !== owner.head) {
@@ -4471,37 +4475,9 @@ function recoverReplyDoneSettlement(
         }
         fail(unreconciledReviewResolutionMutationMessage(number, mutation));
     }
-    if (mutation.replayed) {
-        fail(unreconciledReviewResolutionMutationMessage(number, mutation));
-    }
     if (recoveredReplies.length > 0) {
         return continueRecoveredReviewResolution(number, owner, port);
     }
-    if (clock.now() <= mutation.settleAtMs) {
-        fail(unreconciledReviewResolutionMutationMessage(number, mutation));
-    }
-    const review = port.inspectPullRequestReview(number, mutation.reviewId, inspection.pullRequestId, inspection.head);
-    if (
-        review === null ||
-        review.state !== 'PENDING' ||
-        review.body !== mutation.body ||
-        review.commitOid !== mutation.reviewCommitOid ||
-        !isAuthorBotActor(review.authorNodeId, review.authorType)
-    ) {
-        fail(`reply recovery could not prove an unlanded review ${mutation.reviewId}`);
-    }
-    const reply = port.replyDone(owner.threadId, mutation.reviewId, review);
-    assertReply(reply, replyClientMutationId(owner.threadId), mutation.reviewId, context);
-    const replies: ReviewResolutionSettledReply[] = [
-        ...mutation.replies,
-        { replyId: reply.id, reviewId: mutation.reviewId, reviewState: 'PENDING' },
-    ];
-    advanceActiveReviewResolutionLockMutation(primaryRoot, number, {
-        ...mutation,
-        replies: replies.sort((left, right) => left.replyId.localeCompare(right.replyId)),
-        settleAtMs: settlementDeadline(clock),
-        replayed: true,
-    });
     return fail(unreconciledReviewResolutionMutationMessage(number, mutation));
 }
 

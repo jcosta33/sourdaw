@@ -984,7 +984,7 @@ function createFakeGhExecutable(responsesByKey: Record<string, string | string[]
             "else if (query.includes('reviews(first:100')) key = `reviews:${fields.get('cursor') ?? ''}`;",
             "else if (query.includes('reviewThreads(first:100')) key = `threads:${fields.get('cursor') ?? ''}`;",
             "else if (query.includes('node(id:$reviewId){... on PullRequestReview{')) key = `review:${fields.get('reviewId') ?? ''}`;",
-            "else if (query === 'mutation($pullRequestId:ID!,$body:String!,$commitOid:GitObjectID!,$clientMutationId:String!){addPullRequestReview(input:{pullRequestId:$pullRequestId,body:$body,commitOID:$commitOid,clientMutationId:$clientMutationId}){clientMutationId pullRequestReview{id state body commit{oid} author{login __typename ... on Bot{id}}}}}') key = `createReview:${fields.get('pullRequestId') ?? ''}:${fields.get('commitOid') ?? ''}:${fields.get('clientMutationId') ?? ''}`;",
+            "else if (query === 'mutation($pullRequestId:ID!,$body:String!,$commitOid:GitObjectID!,$clientMutationId:String!){addPullRequestReview(input:{pullRequestId:$pullRequestId,body:$body,commitOID:$commitOid,clientMutationId:$clientMutationId}){clientMutationId pullRequestReview{id state body commit{oid} author{login __typename ... on Bot{id}}}}}') key = `createReview:${fields.get('pullRequestId') ?? ''}:${fields.get('body') ?? ''}:${fields.get('commitOid') ?? ''}:${fields.get('clientMutationId') ?? ''}`;",
             "else if (query === 'mutation($reviewId:ID!,$body:String!,$clientMutationId:String!){submitPullRequestReview(input:{pullRequestReviewId:$reviewId,event:COMMENT,body:$body,clientMutationId:$clientMutationId}){clientMutationId pullRequestReview{id state body commit{oid} author{login __typename ... on Bot{id}}}}}') key = `submitReview:${fields.get('reviewId') ?? ''}:${fields.get('body') ?? ''}:${fields.get('clientMutationId') ?? ''}`;",
             "else if (query === 'mutation($reviewId:ID!,$body:String!,$clientMutationId:String!){updatePullRequestReview(input:{pullRequestReviewId:$reviewId,body:$body,clientMutationId:$clientMutationId}){clientMutationId pullRequestReview{id state body commit{oid} author{login __typename ... on Bot{id}}}}}') key = `updateReview:${fields.get('reviewId') ?? ''}:${fields.get('body') ?? ''}:${fields.get('clientMutationId') ?? ''}`;",
             "else if (query === 'mutation($threadId:ID!,$reviewId:ID!,$body:String!,$clientMutationId:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewId:$reviewId,pullRequestReviewThreadId:$threadId,body:$body,clientMutationId:$clientMutationId}){clientMutationId comment{id fullDatabaseId body author{login __typename ... on Bot{id}} pullRequestReview{id state body commit{oid} author{login __typename ... on Bot{id}}}}}}') key = `reply:${fields.get('threadId') ?? ''}:${fields.get('reviewId') ?? ''}:${fields.get('body') ?? ''}:${fields.get('clientMutationId') ?? ''}`;",
@@ -2195,152 +2195,114 @@ describe('review thread resolution', () => {
         }
     });
 
-    it('settles an unseen create before replaying it and converges a late original with the replay', () => {
+    it('never replays an unseen create settlement after a wall-clock deadline', () => {
         const repository = createTemporaryGitRepository();
-        const { port, calls, injectManagedPendingReview, state } = fakePort();
-        let now = 10;
-        const clock = { now: () => now };
+        const { port, calls } = fakePort();
         try {
-            const initialOid = writeLockOwnerBlob(repository, 9_999_999, head, {
-                phase: 'createPendingReview',
+            const ownerOid = writeLockOwnerBlob(repository, 9_999_999, head, {
+                phase: 'createPendingReviewSettlement',
                 epoch: 1,
-            });
-            updateLock(repository, 42, initialOid);
-
-            expect(() =>
-                recoverPullRequestReviewResolutionLock(
-                    repository,
-                    42,
-                    initialOid,
-                    (owner) => recoverReviewResolutionLockOwnerState(42, owner, port, clock),
-                    () => false
-                )
-            ).toThrow(/unreconciled in-flight createPendingReview mutation/);
-            const settledOid = readLockOid(repository, 42)!;
-            expect(requireLockOwner(repository, 42).mutation).toMatchObject({
-                phase: 'createPendingReviewSettlement',
                 pendingReviewIds: [],
-                settleAtMs: 30_010,
+                settleAtMs: 0,
             });
-            expect(calls).toEqual(['inspect:1']);
+            updateLock(repository, 42, ownerOid);
 
-            now = 30_011;
             expect(() =>
                 recoverPullRequestReviewResolutionLock(
                     repository,
                     42,
-                    settledOid,
-                    (owner) => recoverReviewResolutionLockOwnerState(42, owner, port, clock),
+                    ownerOid,
+                    (owner) =>
+                        recoverReviewResolutionLockOwnerState(42, owner, port, { now: () => Number.MAX_SAFE_INTEGER }),
                     () => false
                 )
             ).toThrow(/unreconciled in-flight createPendingReview mutation/);
-            const replayedOid = readLockOid(repository, 42)!;
-            expect(calls.filter((call) => call.startsWith('createReview:'))).toEqual([`createReview:${pullRequestId}`]);
-            expect(requireLockOwner(repository, 42).mutation).toMatchObject({
+            expect(calls.filter((call) => call.startsWith('createReview:'))).toEqual([]);
+            expect(readLockOid(repository, 42)).toBeDefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('never replays an unseen Done reply settlement after a wall-clock deadline', () => {
+        const repository = createTemporaryGitRepository();
+        const { port, calls } = fakePort({ existingPendingReviewCount: 1 });
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 9_999_999, head, {
+                phase: 'replyDoneSettlement',
+                epoch: 1,
+                reviewId,
+                replies: [],
+                settleAtMs: 0,
+            });
+            updateLock(repository, 42, ownerOid);
+
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    ownerOid,
+                    (owner) =>
+                        recoverReviewResolutionLockOwnerState(42, owner, port, { now: () => Number.MAX_SAFE_INTEGER }),
+                    () => false
+                )
+            ).toThrow(/unreconciled in-flight replyDone mutation/);
+            expect(calls.filter((call) => call.startsWith('reply:'))).toEqual([]);
+            expect(readLockOid(repository, 42)).toBeDefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('converges landed evidence for a replayed create settlement before refusing it', () => {
+        const repository = createTemporaryGitRepository();
+        const { port, calls } = fakePort({ existingPendingReviewCount: 1 });
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 9_999_999, head, {
                 phase: 'createPendingReviewSettlement',
-                pendingReviewIds: [reviewId],
-                settleAtMs: 60_010,
+                epoch: 1,
+                pendingReviewIds: [],
+                settleAtMs: 0,
+                replayed: true,
             });
+            updateLock(repository, 42, ownerOid);
 
-            now = 30_012;
-            expect(() =>
-                recoverPullRequestReviewResolutionLock(
-                    repository,
-                    42,
-                    replayedOid,
-                    (owner) => recoverReviewResolutionLockOwnerState(42, owner, port, clock),
-                    () => false
-                )
-            ).toThrow(/unreconciled in-flight createPendingReview mutation/);
-            expect(calls.filter((call) => call.startsWith('createReview:'))).toEqual([`createReview:${pullRequestId}`]);
-            expect(readLockOid(repository, 42)).toBe(replayedOid);
-
-            injectManagedPendingReview('PRR_late_original');
-            now = 60_010;
             recoverPullRequestReviewResolutionLock(
                 repository,
                 42,
-                replayedOid,
-                (owner) => recoverReviewResolutionLockOwnerState(42, owner, port, clock),
+                ownerOid,
+                (owner) => recoverReviewResolutionLockOwnerState(42, owner, port),
                 () => false
             );
-            expect(state().reviews.filter((review) => review.state === 'COMMENTED')).toHaveLength(1);
+            expect(calls.filter((call) => call.startsWith('createReview:'))).toEqual([]);
             expect(readLockOid(repository, 42)).toBeUndefined();
         } finally {
             rmSync(repository, { recursive: true, force: true });
         }
     });
 
-    it('settles an unseen Done reply before replaying it and converges a late original', () => {
+    it('converges landed evidence for a replayed Done reply settlement before refusing it', () => {
         const repository = createTemporaryGitRepository();
-        const { port, calls, injectManagedPendingReply, state } = fakePort({ existingPendingReviewCount: 1 });
-        let now = 100;
-        const clock = { now: () => now };
+        const { port, calls } = fakePort({ existingPendingReviewCount: 1, existingReplyCount: 1 });
         try {
-            const initialOid = writeLockOwnerBlob(repository, 9_999_999, head, {
-                phase: 'replyDone',
+            const ownerOid = writeLockOwnerBlob(repository, 9_999_999, head, {
+                phase: 'replyDoneSettlement',
                 epoch: 1,
                 reviewId,
-            });
-            updateLock(repository, 42, initialOid);
-
-            expect(() =>
-                recoverPullRequestReviewResolutionLock(
-                    repository,
-                    42,
-                    initialOid,
-                    (owner) => recoverReviewResolutionLockOwnerState(42, owner, port, clock),
-                    () => false
-                )
-            ).toThrow(/unreconciled in-flight replyDone mutation/);
-            const settledOid = readLockOid(repository, 42)!;
-            expect(requireLockOwner(repository, 42).mutation).toMatchObject({
-                phase: 'replyDoneSettlement',
                 replies: [],
-                settleAtMs: 30_100,
+                settleAtMs: 0,
+                replayed: true,
             });
+            updateLock(repository, 42, ownerOid);
 
-            now = 30_101;
-            expect(() =>
-                recoverPullRequestReviewResolutionLock(
-                    repository,
-                    42,
-                    settledOid,
-                    (owner) => recoverReviewResolutionLockOwnerState(42, owner, port, clock),
-                    () => false
-                )
-            ).toThrow(/unreconciled in-flight replyDone mutation/);
-            const replayedOid = readLockOid(repository, 42)!;
-            expect(calls.filter((call) => call.startsWith('reply:'))).toEqual([`reply:${threadId}:${reviewId}`]);
-            expect(requireLockOwner(repository, 42).mutation).toMatchObject({
-                phase: 'replyDoneSettlement',
-                replies: [{ replyId, reviewId, reviewState: 'PENDING' }],
-                settleAtMs: 60_100,
-            });
-
-            now = 30_102;
-            expect(() =>
-                recoverPullRequestReviewResolutionLock(
-                    repository,
-                    42,
-                    replayedOid,
-                    (owner) => recoverReviewResolutionLockOwnerState(42, owner, port, clock),
-                    () => false
-                )
-            ).toThrow(/unreconciled in-flight replyDone mutation/);
-            expect(calls.filter((call) => call.startsWith('reply:'))).toEqual([`reply:${threadId}:${reviewId}`]);
-            expect(readLockOid(repository, 42)).toBe(replayedOid);
-
-            injectManagedPendingReply('PRRC_late_original', '9223372036854775817');
-            now = 60_100;
             recoverPullRequestReviewResolutionLock(
                 repository,
                 42,
-                replayedOid,
-                (owner) => recoverReviewResolutionLockOwnerState(42, owner, port, clock),
+                ownerOid,
+                (owner) => recoverReviewResolutionLockOwnerState(42, owner, port),
                 () => false
             );
-            expect(state().comments.filter((comment) => comment.body === 'Done')).toHaveLength(1);
+            expect(calls.filter((call) => call.startsWith('reply:'))).toEqual([]);
             expect(readLockOid(repository, 42)).toBeUndefined();
         } finally {
             rmSync(repository, { recursive: true, force: true });
@@ -6772,8 +6734,10 @@ describe('review thread resolution', () => {
             'inspect:1',
             `createReview:${pullRequestId}`,
             'inspect:2',
+            `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${head}`,
             `reply:${threadId}:${reviewId}`,
             'inspect:3',
+            `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${head}`,
             `submitReview:${reviewId}`,
             'inspect:4',
             'inspect:5',
@@ -6863,6 +6827,19 @@ describe('review thread resolution', () => {
         ]);
         expect(calls.filter((call) => call.startsWith('updateReview:') || call.startsWith('resolve:'))).toEqual([]);
     });
+    it('refuses to add Done to an exact pending review attached on another thread', () => {
+        const { port, calls, authorNodeId } = fakePort({
+            existingPendingReviewCount: 1,
+            attachedReviewThreadIdsByReviewId: { [reviewId]: [otherThreadId] },
+        });
+        expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(
+            `pending author review ${reviewId} still has attached review-thread comments on ${otherThreadId}`
+        );
+        expect(calls.filter((call) => call.startsWith('inspectAttachedReviewThreads:'))).toEqual([
+            `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${head}`,
+        ]);
+        expect(calls.filter((call) => call.startsWith('reply:') || call.startsWith('submitReview:'))).toEqual([]);
+    });
     it('backfills and submits a whitespace-only pending resolution review before resolving an existing Done marker', () => {
         const { port, calls, authorNodeId, state } = fakePort({
             existingReplyCount: 1,
@@ -6936,6 +6913,7 @@ describe('review thread resolution', () => {
             `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${head}`,
             `updateReview:${reviewId}`,
             'inspect:2',
+            `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${head}`,
             `submitReview:${reviewId}`,
             'inspect:3',
             `log:review-thread-resolved:42:${threadId}`,
@@ -7203,13 +7181,16 @@ describe('review thread resolution', () => {
             `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${movedHead}`,
             `updateReview:${reviewId}`,
             'inspect:2',
+            `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${movedHead}`,
             `submitReview:${reviewId}`,
             'inspect:3',
             `createReview:${pullRequestId}`,
             'inspect:4',
+            `inspectAttachedReviewThreads:42:PRR_created_1:${pullRequestId}:${movedHead}`,
             `reply:${threadId}:PRR_created_1`,
             'inspect:5',
             'inspect:6',
+            `inspectAttachedReviewThreads:42:PRR_created_1:${pullRequestId}:${movedHead}`,
             `submitReview:PRR_created_1`,
             'inspect:7',
             `delete:${replyId}`,
@@ -7928,7 +7909,7 @@ describe('review thread resolution', () => {
                     movedHead
                 ),
             ],
-            [`createReview:${pullRequestId}:${movedHead}:${createClientMutationId}`]: JSON.stringify({
+            [`createReview:${pullRequestId}:${createBody}:${movedHead}:${createClientMutationId}`]: JSON.stringify({
                 data: {
                     addPullRequestReview: {
                         clientMutationId: createClientMutationId,
@@ -8336,6 +8317,7 @@ describe('review thread resolution', () => {
         expect(calls).toEqual([
             'inspect:1',
             'inspect:2',
+            `inspectAttachedReviewThreads:42:PRR_pending_reply:${pullRequestId}:${head}`,
             `submitReview:PRR_pending_reply`,
             'inspect:3',
             'delete:PRRC_reply',
@@ -8757,6 +8739,7 @@ describe('review thread resolution', () => {
         );
         expect(calls).toEqual([
             'inspect:1',
+            `inspectAttachedReviewThreads:42:PRR_resolved_pending:${pullRequestId}:${head}`,
             `submitReview:PRR_resolved_pending`,
             'inspect:2',
             'delete:PRRC_reply',
