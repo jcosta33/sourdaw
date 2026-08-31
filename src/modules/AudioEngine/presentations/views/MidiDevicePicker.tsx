@@ -17,6 +17,7 @@ const defaultWebMidiState = {
     isSupported: false,
     inputs: [],
     selectedInputId: null,
+    enumerationError: null,
 };
 
 export const MidiDevicePicker = (): ReactElement => {
@@ -94,9 +95,14 @@ export const MidiDevicePicker = (): ReactElement => {
                     </Button>
                 </Row>
             </Stack>
-            {!initialised && state.inputs.length === 0 ? (
+            {!initialised && state.inputs.length === 0 && (state.enumerationError ?? null) === null ? (
                 <DawInlineHint className="justify-start px-0 py-0 text-[10px] text-muted-foreground/70">
                     Detecting MIDI devices...
+                </DawInlineHint>
+            ) : null}
+            {(state.enumerationError ?? null) !== null ? (
+                <DawInlineHint className="justify-start px-0 py-0 text-[10px] text-muted-foreground/70">
+                    Couldn&apos;t list MIDI devices. Refresh to try again.
                 </DawInlineHint>
             ) : null}
             {state.selectedInputId && state.inputs.length > 0 ? (

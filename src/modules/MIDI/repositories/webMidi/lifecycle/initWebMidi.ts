@@ -19,6 +19,10 @@ import { selectMidiInputNative } from './selectMidiInputNative';
 
 type WebMidiMessageCallback = (event: WebMidiInputMessage) => void;
 
+function enumerationFailureMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+}
+
 function enumerateInputs(): MidiInputInfo[] {
     const access = getMidiAccess();
     if (!access) {
@@ -49,7 +53,7 @@ function onStateChange({ onMidiMessage }: OnStateChangeInput): void {
         if (preferredInput && inputs.some((entry) => entry.id === preferredId)) {
             detachActiveInput();
             attachInput({ input: preferredInput, onMidiMessage });
-            setState({ inputs, selectedInputId: preferredId });
+            setState({ inputs, selectedInputId: preferredId, enumerationError: null });
             return;
         }
     }
@@ -67,7 +71,7 @@ function onStateChange({ onMidiMessage }: OnStateChangeInput): void {
             attachInput({ input, onMidiMessage });
             // Session-only stand-in: the user still prefers the device that
             // was unplugged, so leave the persisted preference alone.
-            setState({ inputs, selectedInputId: first.id }, { persistSelection: false });
+            setState({ inputs, selectedInputId: first.id, enumerationError: null }, { persistSelection: false });
             return;
         }
     }
@@ -76,6 +80,7 @@ function onStateChange({ onMidiMessage }: OnStateChangeInput): void {
         {
             inputs,
             selectedInputId: selectedStillExists ? state.selectedInputId : null,
+            enumerationError: null,
         },
         { persistSelection: false }
     );
@@ -101,7 +106,7 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
             access.onstatechange = () => onStateChange({ onMidiMessage });
 
             const inputs = enumerateInputs();
-            setState({ inputs });
+            setState({ inputs, enumerationError: null });
 
             if (inputs.length > 0) {
                 // Always (re-)attach: covers first load AND re-init after page
@@ -140,7 +145,7 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
                 name: port.name,
                 manufacturer: 'System',
             }));
-            setState({ inputs, isSupported: true });
+            setState({ inputs, isSupported: true, enumerationError: null });
 
             if (ports.length > 0) {
                 // Always (re-)open: covers first load AND re-init after app
@@ -174,7 +179,10 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
             return true;
         } catch (error) {
             logger.warn('[MIDI] Native MIDI init failed:', error);
-            setState({ isSupported: false });
+            setState({
+                isSupported: true,
+                enumerationError: enumerationFailureMessage(error),
+            });
             return false;
         }
     }

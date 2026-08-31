@@ -48,6 +48,7 @@ export const webMidiState: { current: WebMidiState } = {
         isSupported: webMidiSupported || isDesktopRuntime(),
         inputs: [],
         selectedInputId: readPersistedInputId(),
+        enumerationError: null,
     },
 };
 

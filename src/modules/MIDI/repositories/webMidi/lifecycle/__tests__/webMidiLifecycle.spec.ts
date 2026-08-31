@@ -7,10 +7,18 @@ type TestMidiInput = Pick<MIDIInput, 'removeEventListener'> & {
 const getMidiAccessMock = vi.hoisted(() => vi.fn<() => unknown>());
 const getActiveInputMock = vi.hoisted(() => vi.fn<() => TestMidiInput | null>());
 const getStateMock = vi.hoisted(() =>
-    vi.fn<() => { isSupported: boolean; inputs: unknown[]; selectedInputId: string | null }>(() => ({
+    vi.fn<
+        () => {
+            isSupported: boolean;
+            inputs: unknown[];
+            selectedInputId: string | null;
+            enumerationError: string | null;
+        }
+    >(() => ({
         isSupported: true,
         inputs: [],
         selectedInputId: null,
+        enumerationError: null,
     }))
 );
 const requestMidiAccessMock = vi.hoisted(() => vi.fn<() => Promise<unknown>>());
@@ -92,7 +100,7 @@ vi.mock('../selectMidiInputNative', () => ({
 describe('initWebMidi', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: null });
+        getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: null, enumerationError: null });
         readPersistedInputIdMock.mockReturnValue(null);
     });
 
@@ -213,7 +221,10 @@ describe('initWebMidi', () => {
 
         expect(result).toBe(false);
         expect(selectMidiInputNative).not.toHaveBeenCalled();
-        expect(setStateMock).toHaveBeenCalledWith({ isSupported: false });
+        expect(setStateMock).not.toHaveBeenCalledWith({ isSupported: false });
+        expect(setStateMock).toHaveBeenCalledWith(
+            expect.objectContaining({ isSupported: true, enumerationError: expect.any(String) })
+        );
     });
 
     it('should return false if neither is supported', async () => {
@@ -270,10 +281,11 @@ describe('initWebMidi', () => {
 
         expect(attachInput).toHaveBeenCalledWith({ input, onMidiMessage });
         expect(setStateMock).toHaveBeenCalledWith(
-            {
+            expect.objectContaining({
                 inputs: [expect.objectContaining({ id: 'in-2' })],
                 selectedInputId: 'in-2',
-            },
+                enumerationError: null,
+            }),
             { persistSelection: false }
         );
     });
@@ -352,10 +364,11 @@ describe('initWebMidi', () => {
         // The selection is unchanged, so this is a no-op re-statement rather
         // than a user choice: it must not rewrite the stored preference.
         expect(setStateMock).toHaveBeenLastCalledWith(
-            {
+            expect.objectContaining({
                 inputs: [expect.objectContaining({ id: 'in-1' })],
                 selectedInputId: 'in-1',
-            },
+                enumerationError: null,
+            }),
             { persistSelection: false }
         );
     });
@@ -394,7 +407,9 @@ describe('initWebMidi', () => {
         const result = await initWebMidi({ onMidiMessage });
 
         expect(result).toBe(true);
-        expect(setStateMock).toHaveBeenCalledWith({ inputs: [], isSupported: true });
+        expect(setStateMock).toHaveBeenCalledWith(
+            expect.objectContaining({ inputs: [], isSupported: true, enumerationError: null })
+        );
         expect(selectMidiInputNative).not.toHaveBeenCalled();
     });
 
@@ -407,15 +422,18 @@ describe('initWebMidi', () => {
         };
         requestMidiAccessMock.mockResolvedValue(mockAccess);
         getMidiAccessMock.mockReturnValue(mockAccess);
-        getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: null });
+        getStateMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: null, enumerationError: null });
 
         await initWebMidi({ onMidiMessage });
 
         // enumerateInputs defaults a null name to "Unknown Device" and a missing
         // manufacturer to "Unknown". The inputs list is published via its own setState.
-        expect(setStateMock).toHaveBeenCalledWith({
-            inputs: [expect.objectContaining({ id: 'in-1', name: 'Unknown Device', manufacturer: 'Unknown' })],
-        });
+        expect(setStateMock).toHaveBeenCalledWith(
+            expect.objectContaining({
+                inputs: [expect.objectContaining({ id: 'in-1', name: 'Unknown Device', manufacturer: 'Unknown' })],
+                enumerationError: null,
+            })
+        );
         // Init resolves and attaches, but never writes the preference.
         expect(setStateMock).toHaveBeenCalledWith({ selectedInputId: 'in-1' }, { persistSelection: false });
     });
@@ -513,24 +531,57 @@ describe('initWebMidi', () => {
 
         await initWebMidi({ onMidiMessage });
 
-        expect(setStateMock).toHaveBeenCalledWith({
-            inputs: [
-                { id: 'MPK Mini #0', name: 'MPK Mini', manufacturer: 'System' },
-                { id: 'MPK Mini #1', name: 'MPK Mini', manufacturer: 'System' },
-            ],
-            isSupported: true,
-        });
+        expect(setStateMock).toHaveBeenCalledWith(
+            expect.objectContaining({
+                inputs: [
+                    { id: 'MPK Mini #0', name: 'MPK Mini', manufacturer: 'System' },
+                    { id: 'MPK Mini #1', name: 'MPK Mini', manufacturer: 'System' },
+                ],
+                isSupported: true,
+                enumerationError: null,
+            })
+        );
     });
 
-    it('should report unsupported and return false when the native MIDI init throws', async () => {
+    it('keeps MIDI supported with a retryable enumeration error, then clears it on a successful retry', async () => {
         const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
         vi.mocked(isDesktopRuntime).mockReturnValue(true);
-        vi.mocked(desktopInvoke).mockRejectedValue(new Error('native port closed'));
 
-        const result = await initWebMidi({ onMidiMessage });
+        let currentState = {
+            isSupported: true,
+            inputs: [] as unknown[],
+            selectedInputId: null as string | null,
+            enumerationError: null as string | null,
+        };
+        getStateMock.mockImplementation(() => currentState);
+        setStateMock.mockImplementation((next: Record<string, unknown>) => {
+            currentState = { ...currentState, ...next };
+        });
 
-        expect(result).toBe(false);
-        expect(setStateMock).toHaveBeenCalledWith({ isSupported: false });
+        vi.mocked(desktopInvoke).mockRejectedValueOnce(new Error('native port closed'));
+
+        const firstResult = await initWebMidi({ onMidiMessage });
+
+        expect(firstResult).toBe(false);
+        expect(selectMidiInputNative).not.toHaveBeenCalled();
+        expect(setStateMock).not.toHaveBeenCalledWith({ isSupported: false });
+        expect(setStateMock).toHaveBeenCalledWith(
+            expect.objectContaining({ isSupported: true, enumerationError: expect.any(String) })
+        );
+        expect(getStateMock()).toMatchObject({ isSupported: true, enumerationError: expect.any(String) });
+
+        vi.mocked(desktopInvoke).mockResolvedValue([{ index: 0, name: 'Native MIDI' }]);
+
+        const secondResult = await initWebMidi({ onMidiMessage });
+
+        expect(secondResult).toBe(true);
+        expect(setStateMock).toHaveBeenCalledWith(
+            expect.objectContaining({
+                inputs: [expect.objectContaining({ id: 'Native MIDI', name: 'Native MIDI' })],
+                isSupported: true,
+                enumerationError: null,
+            })
+        );
     });
 });

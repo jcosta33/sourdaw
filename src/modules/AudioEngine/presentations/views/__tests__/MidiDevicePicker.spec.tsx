@@ -12,6 +12,7 @@ vi.mock('#/infra/store/useStore', () => ({
             { id: 'midi2', name: 'Drum Pad', manufacturer: 'Akai' },
         ],
         selectedInputId: null,
+        enumerationError: null,
     })),
 }));
 
@@ -39,6 +40,7 @@ describe('MidiDevicePicker', () => {
                 { id: 'midi2', name: 'Drum Pad', manufacturer: 'Akai' },
             ],
             selectedInputId: null,
+            enumerationError: null,
         });
     });
 
@@ -99,11 +101,36 @@ describe('MidiDevicePicker', () => {
         expect(screen.getByText('MIDI not supported in this browser')).toBeInTheDocument();
     });
 
+    it('shows a retryable hint when enumeration fails but MIDI stays supported', async () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            isSupported: true,
+            enumerationError: 'enumeration failed',
+            inputs: [],
+            selectedInputId: null,
+        });
+        mockInitWebMidi.mockResolvedValue(undefined);
+
+        render(<MidiDevicePicker />);
+
+        expect(screen.getByText("Couldn't list MIDI devices. Refresh to try again.")).toBeInTheDocument();
+        expect(screen.getByLabelText('Refresh MIDI devices')).toBeInTheDocument();
+        expect(screen.queryByText('MIDI not supported in this browser')).not.toBeInTheDocument();
+
+        await waitFor(() => {
+            expect(mockInitWebMidi).toHaveBeenCalled();
+        });
+
+        mockInitWebMidi.mockClear();
+        fireEvent.click(screen.getByLabelText('Refresh MIDI devices'));
+        expect(mockInitWebMidi).toHaveBeenCalledTimes(1);
+    });
+
     it('should show connected badge when device is selected', () => {
         (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
             isSupported: true,
             inputs: [{ id: 'midi1', name: 'MIDI Keyboard', manufacturer: 'Roland' }],
             selectedInputId: 'midi1',
+            enumerationError: null,
         });
         render(<MidiDevicePicker />);
         // The component shows "Connected:" when selectedInputId is set
@@ -203,6 +230,7 @@ describe('MidiDevicePicker', () => {
             inputs: [{ id: 'midi1', name: 'MIDI Keyboard', manufacturer: 'Roland' }],
             // selectedInputId refers to a device that is absent from inputs.
             selectedInputId: 'disconnected',
+            enumerationError: null,
         });
         render(<MidiDevicePicker />);
         // find() returns undefined ⇒ `?? 'Unknown'` fallback ⇒ "Connected: Unknown".
