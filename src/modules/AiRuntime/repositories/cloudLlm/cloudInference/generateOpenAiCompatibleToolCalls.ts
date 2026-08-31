@@ -4,6 +4,7 @@ import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { type ToolCallResult } from '../../../transformers/toolCallParser';
 import { type OpenAiCompatibleCloudRuntime } from '../cloudSession';
 
+import { isOpenAiReasoningModel } from './openAiModelFamilies';
 import { requestOpenAiCompatibleProvider } from './requestOpenAiCompatibleProvider';
 
 type GenerateOpenAiCompatibleToolCallsInput = {
@@ -139,6 +140,7 @@ export async function generateOpenAiCompatibleToolCalls({
         tool_choice: 'auto',
         n: 1,
         stream: false,
+        ...(runtime.provider === 'openai' && isOpenAiReasoningModel(runtime.model) ? { reasoning_effort: 'none' } : {}),
     });
     const chunks: Uint8Array[] = [];
     const response = await requestOpenAiCompatibleProvider({

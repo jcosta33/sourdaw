@@ -158,7 +158,9 @@ export async function streamOpenAiCompatibleChatCompletion({
         messages: messages.filter(
             (message) => message.role === 'system' || message.role === 'user' || message.role === 'assistant'
         ),
-        max_tokens: maxTokens ?? 2048,
+        ...(runtime.provider === 'openai'
+            ? { max_completion_tokens: maxTokens ?? 2048 }
+            : { max_tokens: maxTokens ?? 2048 }),
         stream: true,
         ...(runtime.provider === 'openai' ? { stream_options: { include_usage: true } } : {}),
     });

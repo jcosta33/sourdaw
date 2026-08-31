@@ -36,6 +36,37 @@ function generateToolCalls() {
     });
 }
 
+function openaiRuntime(model: string): OpenAiCompatibleCloudRuntime {
+    return {
+        provider: 'openai',
+        authentication: 'api-key',
+        session_id: 'provider-session-00000000000000000000000000000000',
+        model,
+        base_url: 'https://api.openai.com/v1',
+    };
+}
+
+async function requestBodyFor(targetRuntime: OpenAiCompatibleCloudRuntime): Promise<Record<string, unknown>> {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { tool_calls: [] } }] }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+        })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    await generateOpenAiCompatibleToolCalls({
+        runtime: targetRuntime,
+        systemPrompt: 'system',
+        userMessage: 'mute drums',
+        toolSchemas: tools,
+    });
+    const request = fetchMock.mock.calls[0]?.[1];
+    if (!request || typeof request.body !== 'string') {
+        throw new Error('Expected a JSON request body');
+    }
+    return JSON.parse(request.body) as Record<string, unknown>;
+}
+
 function respondWith(payload: unknown): void {
     vi.stubGlobal(
         'fetch',
@@ -119,6 +150,25 @@ describe('generateOpenAiCompatibleToolCalls', () => {
         expect(body.tools).toEqual(tools);
         expect(body.tool_choice).toBe('auto');
         expect(body.n).toBe(1);
+        expect(body).not.toHaveProperty('reasoning_effort');
+    });
+
+    it('sends reasoning_effort none for first-party OpenAI reasoning models', async () => {
+        const body = await requestBodyFor(openaiRuntime('gpt-5.6-luna'));
+        expect(body).toMatchObject({ model: 'gpt-5.6-luna', reasoning_effort: 'none' });
+    });
+
+    it('omits reasoning_effort for first-party OpenAI non-reasoning models', async () => {
+        const body = await requestBodyFor(openaiRuntime('gpt-4-turbo'));
+        expect(body).not.toHaveProperty('reasoning_effort');
+    });
+
+    it('omits reasoning_effort for openai-compatible endpoints', async () => {
+        const body = await requestBodyFor({
+            ...runtime,
+            model: 'gpt-5.6-luna',
+        });
+        expect(body).not.toHaveProperty('reasoning_effort');
     });
 
     it.each([
