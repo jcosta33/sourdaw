@@ -12,11 +12,10 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 
 import { Header, Pax } from 'tar';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseDocument } from 'yaml';
 
 import {
@@ -48,6 +47,7 @@ import {
     type DependencyLicenseProof,
     type DependencyLicenseRecord,
 } from '../dependencyLicenseReport';
+import * as dependencyLicenseReport from '../dependencyLicenseReport';
 
 const ownershipFiles = [
     '.dependency-cruiser.cjs',
@@ -220,11 +220,13 @@ describe('project license', () => {
     });
 
     it('parses pnpm-lock.yaml once per artifact build across repeated pnpm proof lookups', () => {
+        const npmSpy = vi.spyOn(dependencyLicenseReport, 'collectNpmDependencyLicenses').mockReturnValue([]);
+        const npmLockSpy = vi.spyOn(dependencyLicenseReport, 'collectNpmLockDependencyLicenses').mockReturnValue([]);
         let parseCount = 0;
         let pnpmLookupCount = 0;
-        const loadPnpmLockPackages = (root: string) => {
+        const loadPnpmLockPackages = (fixtureRoot: string) => {
             parseCount += 1;
-            const document = parseDocument(readFileSync(join(root, 'pnpm-lock.yaml'), 'utf8'));
+            const document = parseDocument(readFileSync(join(fixtureRoot, 'pnpm-lock.yaml'), 'utf8'));
             if (document.errors.length > 0) {
                 throw new Error(document.errors[0]!.message);
             }
@@ -239,16 +241,23 @@ describe('project license', () => {
             });
         };
 
-        const first = buildDependencyLicenseArtifacts(process.cwd(), { loadPnpmLockPackages });
-        const firstBuildLookupCount = pnpmLookupCount;
-        const second = buildDependencyLicenseArtifacts(process.cwd(), { loadPnpmLockPackages });
-        const secondBuildLookupCount = pnpmLookupCount - firstBuildLookupCount;
+        try {
+            const artifactRoot = process.cwd();
+            const expectedReport = readFileSync(join(artifactRoot, DEPENDENCY_LICENSE_REPORT_PATH), 'utf8');
+            const first = buildDependencyLicenseArtifacts(artifactRoot, { loadPnpmLockPackages });
+            const firstBuildLookupCount = pnpmLookupCount;
+            const second = buildDependencyLicenseArtifacts(artifactRoot, { loadPnpmLockPackages });
+            const secondBuildLookupCount = pnpmLookupCount - firstBuildLookupCount;
 
-        expect(first.report).toBe(readFileSync(join(process.cwd(), DEPENDENCY_LICENSE_REPORT_PATH), 'utf8'));
-        expect(second.report).toBe(first.report);
-        expect(firstBuildLookupCount).toBeGreaterThan(1);
-        expect(secondBuildLookupCount).toBeGreaterThan(1);
-        expect(parseCount).toBe(2);
+            expect(first.report).toBe(expectedReport);
+            expect(second.report).toBe(first.report);
+            expect(firstBuildLookupCount).toBeGreaterThan(1);
+            expect(secondBuildLookupCount).toBeGreaterThan(1);
+            expect(parseCount).toBe(2);
+        } finally {
+            npmSpy.mockRestore();
+            npmLockSpy.mockRestore();
+        }
     });
 
     it('binds the offline Cargo inventory to the shipped feature contract', () => {
@@ -618,7 +627,7 @@ describe('project license', () => {
     it('marks the intended WASM package when run from a crate directory', () => {
         const helperRoot = mkdtempSync(join(tmpdir(), 'sourdaw-mark-wasm-package-'));
         try {
-            const sourceHelper = join(dirname(fileURLToPath(import.meta.url)), '..', 'markWasmPackageInternal.ts');
+            const sourceHelper = join(import.meta.dirname, '..', 'markWasmPackageInternal.ts');
             const helper = join(helperRoot, 'scripts/markWasmPackageInternal.ts');
             const packagePath = join(helperRoot, 'public/wasm/daw-dsp/package.json');
             const crateDirectory = join(helperRoot, 'crates/daw-dsp');
@@ -646,7 +655,7 @@ describe('project license', () => {
     it('rejects duplicate WASM package metadata before marking it internal', () => {
         const helperRoot = mkdtempSync(join(tmpdir(), 'sourdaw-mark-wasm-duplicate-'));
         try {
-            const scriptsDirectory = join(dirname(fileURLToPath(import.meta.url)), '..');
+            const scriptsDirectory = join(import.meta.dirname, '..');
             const helper = join(helperRoot, 'scripts/markWasmPackageInternal.ts');
             const packagePath = join(helperRoot, 'public/wasm/daw-dsp/package.json');
             const crateDirectory = join(helperRoot, 'crates/daw-dsp');
