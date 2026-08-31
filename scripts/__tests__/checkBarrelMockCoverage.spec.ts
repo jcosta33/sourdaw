@@ -336,6 +336,38 @@ describe('checkBarrelMockCoverage — the exemption mechanism', () => {
         });
     }
 
+    it('gates a newly required useCases export without unmuting exempted debt', () => {
+        const useCasesBarrel = '#/modules/Host/useCases';
+        const useCasesSpec = 'src/modules/Consumer/__tests__/consumer.spec.tsx';
+        const row: ExemptionRow = {
+            spec: useCasesSpec,
+            barrel: useCasesBarrel,
+            missingKeys: ['LegacyDebt'],
+            reason: 'test',
+        };
+        const buildUseCasesFixture = (requiredNames: string): Fixture =>
+            buildFixture({
+                'src/modules/Host/useCases/index.ts':
+                    "export { FreshExport } from './FreshExport';\nexport { LegacyDebt } from './LegacyDebt';\n",
+                'src/modules/Consumer/consumer.ts': `import { ${requiredNames} } from '${useCasesBarrel}';\nexport const consumer = [${requiredNames}];\n`,
+                [useCasesSpec]: `vi.mock('${useCasesBarrel}', () => ({}));\nimport { consumer } from '../consumer';\n`,
+            });
+
+        const drifted = analyzeSpecs({
+            ...buildUseCasesFixture('LegacyDebt, FreshExport'),
+            exemptions: [row],
+        });
+        const clean = analyzeSpecs({
+            ...buildUseCasesFixture('LegacyDebt'),
+            exemptions: [row],
+        });
+
+        expect(drifted.violations.map((violation) => violation.missing)).toEqual([['FreshExport']]);
+        expect(drifted.staleExemptions).toEqual([]);
+        expect(clean.violations).toEqual([]);
+        expect(clean.staleExemptions).toEqual([]);
+    });
+
     it('mutes only the key names a row lists — an unnamed missing key still violates', () => {
         const fixture = threeMissingKeysFixture();
         const rows: ExemptionRow[] = [
@@ -438,7 +470,7 @@ describe('checkBarrelMockCoverage — the real tree', () => {
     // `presentations/views` — the name has to keep meaning what it says.
     //
     // "No violations" is only a coverage claim when something was analysed. For
-    // `stores` and `presentations/views` that population must be nonzero — an
+    // `stores`, `useCases`, and `presentations/views` that population must be nonzero — an
     // empty gate proves nothing. `events` is the deliberate exception: no spec
     // mocks an `events` contract barrel today, so its population is zero and its
     // claim is a pre-commitment, not a measurement. Asserting that zero explicitly
@@ -461,7 +493,7 @@ describe('checkBarrelMockCoverage — the real tree', () => {
     // narrowing away `presentations/views` would otherwise delete the claim this
     // whole file exists to make, silently, with nothing forcing a second look.
     it('claims every barrel kind the gate blocks on', () => {
-        expect([...gatedBarrelKinds].toSorted()).toEqual(['events', 'presentations/views', 'stores']);
+        expect([...gatedBarrelKinds].toSorted()).toEqual(['events', 'presentations/views', 'stores', 'useCases']);
     });
 
     it('derived enough to have a verdict — no spec parses, resolves or walks to nothing', () => {
@@ -477,40 +509,25 @@ describe('checkBarrelMockCoverage — the real tree', () => {
     // as debt bookkeeping for debt that no longer exists. This is also the
     // real-tree half of the exemption mechanism's own coverage: the planted
     // fixture above proves a row mutes only its named keys, this proves the
-    // eight real rows are not doing that against nothing.
+    // real rows are not doing that against nothing.
     it('carries no stale exemption row — every row still matches live debt', () => {
         expect(gated.staleExemptions).toEqual([]);
     });
 
     /**
-     * What holds the ungated kinds, in place of the scalar that used to.
-     *
-     * The scalar did not work. `does not grow the ungated barrel-mock debt beyond
-     * its measured 127 pairs` was written against 109 in a source comment and 127
-     * in the assertion while the tree held 101 — three numbers for one quantity, in
-     * one change. A ratchet 26 pairs above the real figure passes a 26-pair
-     * regression, and the only way to tighten it is to re-type it, which is the
-     * move that produced the slack. Worse, it was defeated by exactly the failure
-     * this file's zero-derivation cases exist to catch: a `--all` scan that derived
-     * nothing reports zero pairs, and zero is comfortably under any ceiling.
-     *
-     * The property underneath is the one worth holding, and it does not drift with
-     * unrelated work. `--all` must stay a strict widening of the gate: every pair
-     * it finds belongs to a kind the gate does not cover, so the gated kinds read
-     * zero through both entry points, and `--all` must have derived enough to be
-     * saying so. Repaying `useCases` debt to zero keeps this green; regressing a
-     * gated kind, or blinding the wider scan, does not.
+     * `--all` and the default gate now cover the same four contract-barrel kinds.
+     * Keeping both scans equivalent proves the CLI widening flag cannot expose debt
+     * that the enforced path misses, while the derivation floors prevent two empty
+     * analyses from satisfying the comparison.
      */
-    it('confines the debt --all measures to the kinds the gate does not cover', () => {
-        expect(
-            describeViolations(everyKind, (barrel) => gatedBarrelKinds.some((kind) => kindOf(barrel) === kind))
-        ).toEqual([]);
+    it('keeps --all equivalent to the default gate now that every kind is enforced', () => {
+        expect(everyKind.violations).toEqual([]);
+        expect(everyKind.staleExemptions).toEqual([]);
         expect(everyKind.extractionFailures).toEqual([]);
         expectDerivedEnough(everyKind);
-        // `--all` scans a superset of the gate's mocks over the same spec glob, so
-        // it can never walk less than the gate did. A drop means it stopped walking.
-        expect(everyKind.analyzedSpecCount).toBeGreaterThanOrEqual(gated.analyzedSpecCount);
-        expect(everyKind.graphNodeCount).toBeGreaterThanOrEqual(gated.graphNodeCount);
-        expect(everyKind.resolvedMockCount).toBeGreaterThanOrEqual(gated.resolvedMockCount);
+        expect(everyKind.analyzedSpecCount).toBe(gated.analyzedSpecCount);
+        expect(everyKind.graphNodeCount).toBe(gated.graphNodeCount);
+        expect(everyKind.resolvedMockCount).toBe(gated.resolvedMockCount);
+        expect(everyKind.matchedBarrelKindCounts).toEqual(gated.matchedBarrelKindCounts);
     });
 });
