@@ -221,6 +221,7 @@ describe('joinSession', () => {
                 isConnected: false,
                 lastSeen: expect.any(Number),
                 latencyMs: null,
+                syncHealth: 'converging',
             },
         ]);
     });

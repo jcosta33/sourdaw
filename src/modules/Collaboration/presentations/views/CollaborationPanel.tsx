@@ -226,6 +226,7 @@ export const CollaborationPanel = (): ReactElement | null => {
                                             color={peer.color}
                                             isConnected={peer.isConnected}
                                             isHost={peer.isHost}
+                                            syncHealth={peer.syncHealth}
                                         />
                                     ))}
                                 </Stack>

@@ -8,6 +8,7 @@ export type PeerInfo = {
     isConnected: boolean;
     lastSeen: number;
     latencyMs: number | null;
+    syncHealth: 'converging' | 'diverged';
 };
 
 export type CollaborationState = {
@@ -73,7 +74,8 @@ export type PeerMessage =
     | { type: 'crdt-sync'; docId: string; data: string }
     | { type: 'presence'; data: PresenceDelta }
     | { type: 'peer-info'; peer: PeerInfo }
-    | { type: 'peer-leave'; peerId: PeerId };
+    | { type: 'peer-leave'; peerId: PeerId }
+    | { type: 'sync-channel-quarantined'; peerId: PeerId };
 
 /** Peer colors for the first 8 collaborators (host is always the first). */
 export const PEER_COLORS = [
