@@ -1120,6 +1120,40 @@ mod tests {
     /// thread, inside the bound it was preallocated for.
     #[test]
     fn the_mic_callback_keeps_writing_while_the_control_thread_drains() {
+        let source = include_str!("speech.rs");
+        let record_mic = source
+            .split_once("fn record_mic(")
+            .expect("record_mic must exist")
+            .1
+            .split_once("fn finish_capture_after_stream_status(")
+            .expect("record_mic must end before capture finalization")
+            .0;
+        let data_callback = record_mic
+            .split_once(".build_input_stream(")
+            .expect("record_mic must build an input stream")
+            .1
+            .split_once("cpal_runtime_failure_callback")
+            .expect("the data callback must precede the error callback")
+            .0;
+        assert_eq!(
+            data_callback.trim(),
+            "config.into(),\n            move |data: &[f32], _: &cpal::InputCallbackInfo| {\n                capture_samples(&mut captured_tx, data);\n            },"
+        );
+
+        let capture_helper = source
+            .split_once("fn capture_samples(")
+            .expect("capture_samples must exist")
+            .1
+            .split_once("fn drain_capture_ring(")
+            .expect("capture_samples must end before drain_capture_ring")
+            .0;
+        for forbidden in ["Mutex", "try_lock", "lock", "extend_from_slice"] {
+            assert!(
+                !capture_helper.contains(forbidden),
+                "capture_samples must not mention {forbidden}"
+            );
+        }
+
         const BOUND: usize = 4;
         let (mut captured_tx, mut captured_rx) = RingBuffer::<f32>::new(BOUND);
         let mut buffer = SensitiveCaptureBuffer(Vec::with_capacity(BOUND));
