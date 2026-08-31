@@ -111,7 +111,11 @@ export function scheduleOfflineClipSource(input: ScheduleOfflineClipSourceInput)
 
     if (fadeOut) {
         if (fadeOut.userStartSec !== undefined) {
-            const fadeOutOffset = clampClipFadeOutStartSeconds(fadeOut.userStartSec, startSec, playDuration);
+            const fadeOutOffset = clampClipFadeOutStartSeconds(
+                Math.min(fadeOut.userStartSec, Math.max(startSec, endSec - microFadeSeconds)),
+                startSec,
+                playDuration
+            );
             fadeGain.gain.setValueAtTime(clipGainValue, fadeOutOffset);
             fadeGain.gain.linearRampToValueAtTime(0, endSec);
         } else {
