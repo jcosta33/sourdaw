@@ -28,30 +28,10 @@ export const midiTools: readonly ToolSchema[] = [
         },
         ['clipId', 'semitones']
     ),
-    tool(
-        'humanizeNotes',
-        'Add natural timing variation to MIDI notes.',
-        {
-            clipId: { type: 'string' },
-            amount: { type: 'number', description: '0.0=none, 0.3=subtle, 0.7=loose, 1.0=maximum' },
-        },
-        ['clipId', 'amount']
-    ),
     tool('invertNotes', 'Melodic inversion — mirror notes around the center pitch.', { clipId: { type: 'string' } }, [
         'clipId',
     ]),
     tool('retrogradeNotes', 'Reverse the note order (play backwards).', { clipId: { type: 'string' } }, ['clipId']),
-    tool(
-        'scaleVelocities',
-        'Apply a velocity curve to notes in a clip.',
-        {
-            clipId: { type: 'string' },
-            curve: { type: 'string', description: '"crescendo", "decrescendo", "accent-downbeats", "random"' },
-            minVelocity: { type: 'number', description: '1–127, optional' },
-            maxVelocity: { type: 'number', description: '1–127, optional' },
-        },
-        ['clipId', 'curve']
-    ),
     tool(
         'scaleAllVelocities',
         'Scale all note velocities by a factor.',
@@ -185,14 +165,6 @@ export const routingTools: readonly ToolSchema[] = [
         'Create a bus track for parallel processing or submixing.',
         {
             name: { type: 'string', description: 'Bus name (e.g. "Reverb Bus", "Drum Bus", "Vocal Bus")' },
-        },
-        ['name']
-    ),
-    tool(
-        'createFolder',
-        'Create a folder track to organize tracks visually.',
-        {
-            name: { type: 'string', description: 'Folder name (e.g. "Drums", "Strings")' },
         },
         ['name']
     ),

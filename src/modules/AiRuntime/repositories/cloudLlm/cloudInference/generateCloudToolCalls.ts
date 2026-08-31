@@ -3,7 +3,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { FADER_GAIN_RANGE_DESCRIPTION } from '#/utils/audioLevelLaw';
 
 import { isAiRuntimeConfigurationChangedError } from '../../../errors/AiRuntimeConfigurationChangedError';
-import { DAW_TOOL_SCHEMAS, type ToolSchema } from '../../../models/ToolDefinitions';
+import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { type ToolCallResult } from '../../../transformers/toolCallParser';
 import { getCloudProviderRuntime } from '../getCloudProviderRuntime';
 import { linkCloudRequestAbort } from '../linkCloudRequestAbort';
@@ -27,7 +27,7 @@ export const generateCloudToolCalls = inject({ logger })(
         async function generateCloudToolCalls(
             systemPrompt: string,
             userMessage: string,
-            toolSchemas: readonly ToolSchema[] = DAW_TOOL_SCHEMAS,
+            toolSchemas: readonly ToolSchema[],
             signal?: AbortSignal
         ): Promise<ToolCallResult[]> {
             const runtime = getCloudProviderRuntime();
