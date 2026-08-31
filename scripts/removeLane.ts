@@ -91,6 +91,11 @@ function canonicalPath(path: string): string {
     }
 }
 
+function matchingWorktrees(target: string, worktrees: Worktree[]): Worktree[] {
+    const canonicalTarget = canonicalPath(target);
+    return worktrees.filter((worktree) => canonicalPath(worktree.path) === canonicalTarget);
+}
+
 /**
  * The one shared definition of ignored output that is safe to discard: regenerable build and test
  * products, nothing else. Removal refuses a lane carrying ignored data that is not this, and
@@ -138,11 +143,18 @@ function locateAgentWorktree(target: string, verb: string, port: LaneRemovalPort
     if (root === undefined) {
         fail('repository has no worktree state');
     }
-    const canonicalTarget = canonicalPath(target);
     const canonicalRoot = canonicalPath(root.path);
-    const lane = worktrees.find((worktree) => canonicalPath(worktree.path) === canonicalTarget);
-    if (lane === undefined) {
+    const canonicalTarget = canonicalPath(target);
+    const matches = matchingWorktrees(target, worktrees);
+    if (matches.length === 0) {
         fail(`${target} is not a registered worktree`);
+    }
+    if (matches.length !== 1) {
+        fail(`${target} does not identify one registered worktree`);
+    }
+    const [lane] = matches;
+    if (lane === undefined) {
+        fail(`${target} does not identify one registered worktree`);
     }
     if (canonicalTarget === canonicalRoot) {
         fail(`refusing to ${verb} the primary worktree`);
@@ -252,10 +264,12 @@ function validateOwnership(
     repository: string,
     port: LaneRemovalPort
 ): OwnershipSnapshot {
-    const canonicalTarget = canonicalPath(target);
-    const current = port.worktrees().find((worktree) => canonicalPath(worktree.path) === canonicalTarget);
+    const matches = matchingWorktrees(target, port.worktrees());
+    const [current] = matches;
     if (
+        matches.length !== 1 ||
         current === undefined ||
+        current.path !== expected.path ||
         current.head !== expected.head ||
         current.branch !== expected.branch ||
         current.bare ||
@@ -408,10 +422,12 @@ type StrandSnapshot = {
  * backlog this path exists to drain.
  */
 function validateStrand(target: string, expected: Worktree, port: LaneRemovalPort): StrandSnapshot {
-    const canonicalTarget = canonicalPath(target);
-    const current = port.worktrees().find((worktree) => canonicalPath(worktree.path) === canonicalTarget);
+    const matches = matchingWorktrees(target, port.worktrees());
+    const [current] = matches;
     if (
+        matches.length !== 1 ||
         current === undefined ||
+        current.path !== expected.path ||
         current.head !== expected.head ||
         current.branch !== expected.branch ||
         current.bare ||
