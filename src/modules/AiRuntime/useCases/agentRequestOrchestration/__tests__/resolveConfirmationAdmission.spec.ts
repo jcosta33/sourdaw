@@ -247,6 +247,22 @@ describe('resolveConfirmationAdmission', () => {
         expect(confirmation.error).toBe(reason);
     });
 
+    it('returns a retained retention-capacity failure after confirmation settlement fails', async () => {
+        const reason = 'The approved render set cannot fit the session artifact budget.';
+        const confirmation = {
+            ...createConfirmation({ commandBatch: createBatch() }),
+            status: 'failed' as const,
+            error: reason,
+            followUpFailureKind: 'retention-capacity' as const,
+            followUpStatus: 'failed' as const,
+        };
+        mocks.getConfirmation.mockReturnValue(confirmation);
+
+        await expect(
+            confirmationAdmission.resolveConfirmationAdmission({ confirmationId: confirmation.id })
+        ).resolves.toEqual({ status: 'handled', result: { status: 'failed', reason } });
+    });
+
     it('does not classify an unrelated failed follow-up from retention wording alone', async () => {
         const confirmation = {
             ...createConfirmation({ commandBatch: createBatch() }),

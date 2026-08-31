@@ -72,7 +72,7 @@ function getRetainedRenderCapacityFailure(
     confirmation: PendingAppActionConfirmation
 ): TerminalConfirmationResult | null {
     if (
-        confirmation.status !== 'executed' ||
+        (confirmation.status !== 'executed' && confirmation.status !== 'failed') ||
         confirmation.followUpStatus !== 'failed' ||
         confirmation.followUpFailureKind !== 'retention-capacity' ||
         !confirmation.error
