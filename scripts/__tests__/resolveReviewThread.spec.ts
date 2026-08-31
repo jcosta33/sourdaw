@@ -3893,6 +3893,34 @@ describe('review thread resolution', () => {
         }
     });
 
+    it('continues same-head recovery after a landed reply deletion to converge and resolve', () => {
+        const repository = createTemporaryGitRepository();
+        const { port, calls, state } = fakePort({ existingReplyCount: 3, existingReplyReviewState: 'COMMENTED' });
+        try {
+            port.deleteReply(replyId);
+            calls.length = 0;
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, {
+                phase: 'deleteReply',
+                epoch: 1,
+                replyId,
+            });
+            updateLock(repository, 42, ownerOid);
+            const inspection = recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) =>
+                recoverReviewResolutionLockOwnerState(42, owner, port)
+            );
+            expect(calls).toContain(`resolve:${threadId}`);
+            expect(inspection.thread).toMatchObject({
+                isResolved: true,
+                resolvedByNodeId: AUTHOR_BOT_NODE_ID,
+                resolvedByType: 'User',
+            });
+            expect(state().comments.filter((comment) => comment.body === 'Done')).toHaveLength(1);
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it('replays an absent delete-pending-review recovery phase with its persisted attachment allowance and snapshot head', () => {
         const repository = createTemporaryGitRepository();
         const { port, calls, deletePendingReviewCalls, state } = fakePort({

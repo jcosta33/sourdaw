@@ -4644,6 +4644,9 @@ export function recoverReviewResolutionLockOwnerState(
         }
         case 'deleteReply':
             if (hasRecoveredReviewResolutionMutation(number, owner, inspection, context, inspection.thread!, port)) {
+                if (inspection.head === owner.head) {
+                    inspection = continueRecoveredReviewResolution(number, owner, port);
+                }
                 break;
             }
             assertRecoveryHeadMatchesOwner(inspection.head, owner.head);

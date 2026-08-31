@@ -1140,6 +1140,15 @@ describe('package scripts and gitignore', () => {
             });
             expect(resolveTrustedLauncherBinding(primary, { PATH: path }, 'lane:publish').psPath).toBeUndefined();
             expect(resolveTrustedLauncherBinding(primary, { PATH: path }, 'issue:reconcile').psPath).toBeUndefined();
+            for (const command of ['deliver', 'lane:publish', 'issue:reconcile'] as const) {
+                expect(resolveTrustedLauncherBinding(primary, { PATH: path }, command, 'win32')).toMatchObject({
+                    primaryRoot: realpathSync(primary),
+                    gitPath: realpathSync(gitWrapper),
+                    ghPath: realpathSync(ghWrapper),
+                    psPath: undefined,
+                    powershellPath: undefined,
+                });
+            }
             expect(() => resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:resolve')).toThrow(
                 /cannot resolve trusted ps executable/i
             );
