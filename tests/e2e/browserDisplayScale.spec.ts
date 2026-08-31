@@ -36,8 +36,31 @@ async function findApplicationFrame(page: Page): Promise<Frame> {
     return frame;
 }
 
-async function setDisplayScale(app: FrameLocator, frame: Frame, scale: number): Promise<Locator> {
+/**
+ * TransportBar's compact threshold (COMPACT_TRANSPORT_MAX_WIDTH): at or below
+ * this CSS viewport width the transport collapses its direct actions, and
+ * "Open Preferences" moves into the "View and panel controls" popover as a
+ * "Preferences" item. At 125% and 200% display scale this 1280px-wide host
+ * yields 1024px and 640px viewports, so the compact route is the only one the
+ * product offers there — the same route a user at that scale takes.
+ */
+const COMPACT_TRANSPORT_MAX_WIDTH = 1199;
+
+async function openPreferencesDialog(app: FrameLocator, frame: Frame): Promise<void> {
+    const compactTransport = await frame.evaluate(
+        (maxWidth) => window.innerWidth <= maxWidth,
+        COMPACT_TRANSPORT_MAX_WIDTH
+    );
+    if (compactTransport) {
+        await app.getByRole('button', { name: 'View and panel controls' }).click();
+        await app.getByRole('button', { name: 'Preferences', exact: true }).click();
+        return;
+    }
     await app.getByRole('button', { name: 'Open Preferences' }).click();
+}
+
+async function setDisplayScale(app: FrameLocator, frame: Frame, scale: number): Promise<Locator> {
+    await openPreferencesDialog(app, frame);
     const dialog = app.getByRole('dialog').filter({ hasText: /Preferences/i });
     await expect(dialog).toBeVisible();
     await dialog.getByRole('button', { name: 'Appearance', exact: true }).click();
@@ -213,7 +236,10 @@ async function expectContextMenuUsable(app: FrameLocator, scale: number): Promis
     await expect(menu).toBeVisible();
     const menuBox = requireBox(await menu.boundingBox(), 'track context menu');
     expectInsideViewport(menuBox);
-    expect(menuBox.x).toBeCloseTo(clickPoint.x, 0);
+    // The menu anchors on the app's own pixel grid, and one app pixel spans
+    // `scale` host pixels, so anchor rounding may land up to that far from the
+    // pointer in host coordinates.
+    expect(Math.abs(menuBox.x - clickPoint.x)).toBeLessThanOrEqual(Math.max(1, scale));
     expect(menuBox.y).toBeLessThanOrEqual(clickPoint.y);
     expect(menuBox.y + menuBox.height).toBeGreaterThanOrEqual(clickPoint.y);
 
@@ -233,7 +259,7 @@ async function expectContextMenuUsable(app: FrameLocator, scale: number): Promis
     await expect(menu).toHaveCount(0);
 }
 
-async function expectRightEdgeContextMenuClamped(page: Page, app: FrameLocator): Promise<void> {
+async function expectRightEdgeContextMenuClamped(page: Page, app: FrameLocator, scale: number): Promise<void> {
     const timeline = app.getByLabel('Timeline editor surface');
     const timelineBox = requireBox(await timeline.boundingBox(), 'timeline editor');
     const clickPoint = {
@@ -246,10 +272,21 @@ async function expectRightEdgeContextMenuClamped(page: Page, app: FrameLocator):
     await expect(menu).toBeVisible();
     const menuBox = requireBox(await menu.boundingBox(), 'right-edge context menu');
     expectInsideViewport(menuBox);
-    expect(menuBox.x).toBeLessThan(clickPoint.x);
+    // One app pixel spans `scale` host pixels, so anchor rounding may land up
+    // to that far from the pointer in host coordinates.
+    const anchorTolerance = Math.max(1, scale);
+    // Clamping is owed only when the menu cannot fit to the right of the
+    // pointer — at 50% scale the half-size menu fits and must open at the
+    // pointer like any context menu. When it cannot fit, it must shift left;
+    // expectInsideViewport above fails a missing clamp either way.
+    if (clickPoint.x + menuBox.width > VIEWPORT.width) {
+        expect(menuBox.x).toBeLessThan(clickPoint.x);
+    } else {
+        expect(Math.abs(menuBox.x - clickPoint.x)).toBeLessThanOrEqual(anchorTolerance);
+    }
     expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(VIEWPORT.width);
-    const attachedBelow = Math.abs(menuBox.y - clickPoint.y) <= 1;
-    const attachedAbove = Math.abs(menuBox.y + menuBox.height - clickPoint.y) <= 1;
+    const attachedBelow = Math.abs(menuBox.y - clickPoint.y) <= anchorTolerance;
+    const attachedAbove = Math.abs(menuBox.y + menuBox.height - clickPoint.y) <= anchorTolerance;
     expect(attachedBelow || attachedAbove).toBe(true);
 
     await menu.getByRole('menuitem').first().press('Escape');
@@ -378,7 +415,7 @@ test('browser display scale preserves viewport geometry and interactions at 50%,
         await expectRestoredFrameReceivesGlobalShortcut(page, app);
         await expectRecentProjectsMenuUsable(frame, app, scale);
         await expectContextMenuUsable(app, scale);
-        await expectRightEdgeContextMenuClamped(page, app);
+        await expectRightEdgeContextMenuClamped(page, app, scale);
         await expectEqCanvasDrag(page, app);
         await expectExportUsable(page, app);
     }

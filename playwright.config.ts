@@ -7,6 +7,9 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
     testDir: './tests/e2e',
     testIgnore: ['**/__tests__/**'],
+    // Warm the dev server's cold module transform once, before any test's
+    // first-paint bound starts observing. See tests/e2e/firstPaintWarmup.ts.
+    globalSetup: './tests/e2e/firstPaintWarmup.ts',
     // Default per-test timeout. The ceiling accommodates independently bounded
     // cold first-paint and workspace-ready phases without outer preemption.
     // Template launches boot the WASM DSP + audio graph before the launch

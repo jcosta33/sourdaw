@@ -1,7 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 import { stringify as superjsonStringify } from 'superjson';
 
-const LAUNCH_SCREEN_NAME = 'Sourdaw — start a project';
+export const LAUNCH_SCREEN_NAME = 'Sourdaw — start a project';
 const PLAYBACK_CONTROLS_NAME = 'Playback controls';
 /**
  * The launch overlay is the application's first paint, so it is bounded

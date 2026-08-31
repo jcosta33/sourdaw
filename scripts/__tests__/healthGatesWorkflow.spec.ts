@@ -69,6 +69,10 @@ const BROWSER_AI_WEBGPU_PACKAGE_SCRIPT =
 const BROWSER_AI_WEBGPU_TEST_MATCH = ['browserAiWebGpuAdmission.spec.ts', 'browserAiAdmittedPresentation.spec.ts'];
 const BROWSER_AI_WEBGPU_ORIGIN = 'http://localhost:5188';
 const BROWSER_AI_WEBGPU_SERVER_COMMAND = 'pnpm dev --host 127.0.0.1 --port 5188 --strictPort';
+// `webServer.url` answers on the HTML shell, long before Vite has compiled the
+// SPA module graph, so without a warmup the first admission spec absorbs that
+// cold compile inside its own first-paint bound and times out on cold runners.
+const BROWSER_AI_WEBGPU_GLOBAL_SETUP = './firstPaintWarmup.ts';
 // Exact rather than a subset: a job added to the Gate without a first observed
 // hosted run is the mistake this pin exists to catch.
 const GATE_MEMBERS = [
@@ -607,6 +611,9 @@ function assertBrowserAiWebGpuProofChain(manifest: UnknownRecord, config: Unknow
         recordAt(config, 'use').baseURL !== BROWSER_AI_WEBGPU_ORIGIN
     ) {
         throw new Error('Browser AI WebGPU config must own a non-reused isolated server');
+    }
+    if (config.globalSetup !== BROWSER_AI_WEBGPU_GLOBAL_SETUP) {
+        throw new Error('Browser AI WebGPU config must warm the cold first paint before its specs observe it');
     }
 }
 
@@ -1206,6 +1213,12 @@ describe('health gates workflow contract', () => {
         recordAt(sharedOrigin, 'use').baseURL = 'http://localhost:5173';
         expect(() => assertBrowserAiWebGpuProofChain(packageManifest, sharedOrigin)).toThrow(
             'Browser AI WebGPU config must own a non-reused isolated server'
+        );
+
+        const coldFirstPaint = asRecord(structuredClone(browserAiWebGpuConfig), 'cold-first-paint Browser AI config');
+        delete coldFirstPaint.globalSetup;
+        expect(() => assertBrowserAiWebGpuProofChain(packageManifest, coldFirstPaint)).toThrow(
+            'Browser AI WebGPU config must warm the cold first paint before its specs observe it'
         );
 
         const fallbackRequestAdapter = vi.fn().mockResolvedValue({
