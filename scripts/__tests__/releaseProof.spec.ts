@@ -2985,6 +2985,20 @@ with open(early, "r+b", buffering=0) as file:
         expect(validate(fixture)).toContain('was not generated from the pinned Electron and FFmpeg sources');
     });
 
+    it('stops desktop verification after a non-canonical artifact path', () => {
+        const fixture = createFixture();
+        assemble(fixture);
+        const value = proof(fixture);
+        const desktop = desktopProof(value);
+        const canonicalPath = desktop.artifactPath as string;
+        desktop.artifactPath = `desktop/relocated/${basename(canonicalPath)}`;
+        writeJson(join(fixture.candidate, 'release-proof.json'), value);
+
+        const errors = validate(fixture);
+        expect(errors).toContain(`desktop material path must be ${canonicalPath}`);
+        expect(errors).not.toContain('desktop artifact: file is missing');
+    });
+
     it('rejects relocation of every canonical desktop material path', { timeout: 10_000 }, () => {
         const fixture = createFixture();
         assemble(fixture);
