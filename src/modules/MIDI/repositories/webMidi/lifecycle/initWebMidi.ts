@@ -184,6 +184,9 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
                         portName: targetPort.name,
                         onMidiMessage,
                     });
+                    if (!isCurrentInit(initGeneration)) {
+                        return true;
+                    }
                     // Never persist from init — same rule as the Web MIDI path.
                     setState({ selectedInputId: targetPort.id }, { persistSelection: false });
                 } catch (error) {
