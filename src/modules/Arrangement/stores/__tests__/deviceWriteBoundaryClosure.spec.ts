@@ -978,6 +978,42 @@ const GUARDED_EXECUTABLE_PATHS = [
     'src/modules/Tuner/useCases/setA4Reference.ts',
 ] as const;
 
+// Raw-source tokens for every census the closure runs: sink regex families,
+// device-data property names and AST entry points, and the executable guard.
+// Files whose raw text contains none of these cannot contribute a match, so
+// they skip the compiler printer. Tokens that appear only in comments still
+// require parsing so comment text is stripped before counting.
+const CENSUS_TOKENS = [
+    'persistDeviceParam',
+    'persistDevicePatch',
+    'updateDeviceParam',
+    'updateDevicePatch',
+    'addDeviceToStrip',
+    'setParam',
+    'setPadParam',
+    'loadToasterKitPreset',
+    'loadSamplesForInstrument',
+    'loadInstrument',
+    'audioDevice.loaded',
+    'compile',
+    'PatchWithAudio',
+    'Immediate',
+    'devices',
+    'parameterValues',
+    'updateTrack',
+    'trackStore',
+    'resolveEligibleDeviceWriteTarget',
+] as const;
+
+function rawSourceContainsCensusToken(source: string): boolean {
+    for (const token of CENSUS_TOKENS) {
+        if (source.includes(token)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Compiler-printer comment removal, not hand-rolled scanning: censused sources
 // carry comment-like text inside string literals (`'audio/*,.wav'` accept
 // filters), and only the parser reliably tells a comment from a string.
@@ -993,7 +1029,11 @@ function stripComments(path: string, source: string): string {
 }
 
 function productionSource(path: string, source: string): ProductionSource {
-    return { path, source, code: stripComments(path, source) };
+    return {
+        path,
+        source,
+        code: rawSourceContainsCensusToken(source) ? stripComments(path, source) : '',
+    };
 }
 
 function productionSources(root: string): ProductionSource[] {
@@ -1366,6 +1406,26 @@ describe('device write boundary closure', () => {
     it('classifies every production sink by family, path, and exact count', () => {
         const files = readProductionSources(process.cwd());
         expect(() => assertProductionClosure(files)).not.toThrow();
+    });
+
+    it('skips comment stripping when raw source has no census tokens', () => {
+        const skipped = productionSource('src/modules/Arrangement/tokenless.ts', 'export const value = 1;');
+        expect(skipped.code).toBe('');
+        const sinkCounts = countByPath([skipped], SINK_DEFINITIONS['persistence-runtime']);
+        expect(sinkCounts['src/modules/Arrangement/tokenless.ts']).toBeUndefined();
+        const deviceDataCounts = countDeviceDataByPath([skipped]);
+        expect(deviceDataCounts['src/modules/Arrangement/tokenless.ts']).toBeUndefined();
+    });
+
+    it('still strips comments when a census token appears only in a comment', () => {
+        const parsed = productionSource(
+            'src/modules/Arrangement/commentToken.ts',
+            '// persistDeviceParam is documented here\nexport const value = 1;'
+        );
+        expect(parsed.code).toBe('export const value = 1;\n');
+        expect(parsed.code).not.toContain('persistDeviceParam');
+        const counts = countByPath([parsed], SINK_DEFINITIONS['persistence-runtime']);
+        expect(counts['src/modules/Arrangement/commentToken.ts']).toBeUndefined();
     });
 
     it('does not count device-data properties quoted in comments', () => {
