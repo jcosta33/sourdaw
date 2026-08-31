@@ -928,6 +928,14 @@ describe('package scripts and gitignore', () => {
             GITHUB_TOKEN: 'actions',
             SOURDAW_GITHUB_APP_PRIVATE_KEY: 'secret',
             SOURDAW_TRUSTED_REPOSITORY_ROOT: '/repo',
+            SOURDAW_TRUSTED_PRIMARY_ROOT: '/hostile/primary',
+            SOURDAW_TRUSTED_COMMON_DIR: '/hostile/common',
+            SOURDAW_TRUSTED_GIT_PATH: '/hostile/git',
+            SOURDAW_TRUSTED_GH_PATH: '/hostile/gh',
+            SOURDAW_TRUSTED_PS_PATH: '/hostile/ps',
+            SOURDAW_TRUSTED_POWERSHELL_PATH: '/hostile/powershell.exe',
+            SOURDAW_TRUSTED_ORIGIN_COMMIT: 'b'.repeat(40),
+            SOURDAW_TRUSTED_GATE_WORKFLOW: '{"jobs":{}}',
             NODE_OPTIONS: '--import=/hostile/preload.mjs',
             NODE_PATH: '/hostile/modules',
         });
@@ -938,11 +946,79 @@ describe('package scripts and gitignore', () => {
         expect(env.GITHUB_TOKEN).toBeUndefined();
         expect(env.SOURDAW_GITHUB_APP_PRIVATE_KEY).toBeUndefined();
         expect(env.SOURDAW_TRUSTED_REPOSITORY_ROOT).toBeUndefined();
+        expect(env.SOURDAW_TRUSTED_PRIMARY_ROOT).toBeUndefined();
+        expect(env.SOURDAW_TRUSTED_COMMON_DIR).toBeUndefined();
+        expect(env.SOURDAW_TRUSTED_GIT_PATH).toBeUndefined();
+        expect(env.SOURDAW_TRUSTED_GH_PATH).toBeUndefined();
+        expect(env.SOURDAW_TRUSTED_PS_PATH).toBeUndefined();
+        expect(env.SOURDAW_TRUSTED_POWERSHELL_PATH).toBeUndefined();
+        expect(env.SOURDAW_TRUSTED_ORIGIN_COMMIT).toBeUndefined();
+        expect(env.SOURDAW_TRUSTED_GATE_WORKFLOW).toBeUndefined();
         expect(env.NODE_OPTIONS).toBeUndefined();
         expect(env.NODE_PATH).toBeUndefined();
         expect(env.GIT_CONFIG_GLOBAL).toBe('/dev/null');
         expect(env.GIT_CONFIG_SYSTEM).toBe('/dev/null');
     });
+
+    it.each([
+        [
+            'review:resolve',
+            'scripts/resolveReviewThread.ts',
+            'runResolveReviewThreadCli',
+            'stale',
+            JSON.stringify({ path: '/hostile/child-marker.json', token: 'stale-token' }),
+        ],
+        ['review:resolve', 'scripts/resolveReviewThread.ts', 'runResolveReviewThreadCli', 'invalid', '1'],
+        [
+            'review:resolve:recover',
+            'scripts/recoverReviewResolutionLock.ts',
+            'runRecoverReviewResolutionLockCli',
+            'stale',
+            JSON.stringify({ path: '/hostile/child-marker.json', token: 'stale-token' }),
+        ],
+        [
+            'review:resolve:recover',
+            'scripts/recoverReviewResolutionLock.ts',
+            'runRecoverReviewResolutionLockCli',
+            'invalid',
+            '1',
+        ],
+    ] as const)(
+        'starts %s snapshot without a %s inherited detached-worker marker',
+        async (command, entryPath, runner, _markerKind, inheritedMarker) => {
+            const snapshot = {
+                commit: 'a'.repeat(40),
+                sources: new Map([
+                    [
+                        entryPath,
+                        `export async function ${runner}() { return process.env.SOURDAW_REVIEW_RESOLUTION_CHILD === undefined ? 0 : 23; }`,
+                    ],
+                ]),
+                launcher: {
+                    primaryRoot: '/repo',
+                    commonDir: '/repo/.git',
+                    gitPath: process.execPath,
+                    ghPath: process.execPath,
+                    psPath: process.execPath,
+                },
+            };
+
+            const env = trustedSnapshotEnv(snapshot, { SOURDAW_REVIEW_RESOLUTION_CHILD: inheritedMarker });
+            const previousChildMarker = process.env.SOURDAW_REVIEW_RESOLUTION_CHILD;
+
+            try {
+                process.env.SOURDAW_REVIEW_RESOLUTION_CHILD = inheritedMarker;
+                expect(env.SOURDAW_REVIEW_RESOLUTION_CHILD).toBeUndefined();
+                await expect(executeTrustedSnapshot(command, [], snapshot)).resolves.toBe(0);
+            } finally {
+                if (previousChildMarker === undefined) {
+                    delete process.env.SOURDAW_REVIEW_RESOLUTION_CHILD;
+                } else {
+                    process.env.SOURDAW_REVIEW_RESOLUTION_CHILD = previousChildMarker;
+                }
+            }
+        }
+    );
 
     it('does not enter inherited Node preloads or child PATH shims', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-child-env-'));
@@ -1065,9 +1141,9 @@ describe('package scripts and gitignore', () => {
         const gitBin = join(fixtureRoot, 'git-bin');
         const ghBin = join(fixtureRoot, 'gh-bin');
         const powerShellBin = join(fixtureRoot, 'powershell-bin');
-        const gitWrapper = join(gitBin, 'git');
-        const ghWrapper = join(ghBin, 'gh');
-        const powerShellWrapper = join(powerShellBin, 'powershell.exe');
+        const gitWrapper = join(gitBin, 'git.exe');
+        const ghWrapper = join(ghBin, 'gh.cmd');
+        const powerShellWrapper = join(powerShellBin, 'powershell.bat');
         const realGit = execFileSync('/usr/bin/which', ['git'], { encoding: 'utf8' }).trim();
         const realGh = execFileSync('/usr/bin/which', ['gh'], { encoding: 'utf8' }).trim();
         try {
@@ -1086,6 +1162,7 @@ describe('package scripts and gitignore', () => {
                 primary,
                 {
                     PATH: [gitBin, ghBin, powerShellBin].join(delimiter),
+                    PATHEXT: '.EXE;.CMD;.BAT',
                 },
                 'review:resolve',
                 'win32'
@@ -1120,6 +1197,8 @@ describe('package scripts and gitignore', () => {
         const ghBin = join(fixtureRoot, 'gh-bin');
         const gitWrapper = join(gitBin, 'git');
         const ghWrapper = join(ghBin, 'gh');
+        const windowsGitWrapper = join(gitBin, 'git.exe');
+        const windowsGhWrapper = join(ghBin, 'gh.cmd');
         const realGit = execFileSync('/usr/bin/which', ['git'], { encoding: 'utf8' }).trim();
         const realGh = execFileSync('/usr/bin/which', ['gh'], { encoding: 'utf8' }).trim();
         try {
@@ -1128,8 +1207,12 @@ describe('package scripts and gitignore', () => {
             mkdirSync(ghBin);
             writeFileSync(gitWrapper, `#!/bin/sh\nexec ${JSON.stringify(realGit)} "$@"\n`);
             writeFileSync(ghWrapper, `#!/bin/sh\nexec ${JSON.stringify(realGh)} "$@"\n`);
+            writeFileSync(windowsGitWrapper, `#!/bin/sh\nexec ${JSON.stringify(realGit)} "$@"\n`);
+            writeFileSync(windowsGhWrapper, `#!/bin/sh\nexec ${JSON.stringify(realGh)} "$@"\n`);
             chmodSync(gitWrapper, 0o700);
             chmodSync(ghWrapper, 0o700);
+            chmodSync(windowsGitWrapper, 0o700);
+            chmodSync(windowsGhWrapper, 0o700);
 
             const path = [gitBin, ghBin].join(delimiter);
             expect(resolveTrustedLauncherBinding(primary, { PATH: path }, 'deliver')).toMatchObject({
@@ -1143,8 +1226,8 @@ describe('package scripts and gitignore', () => {
             for (const command of ['deliver', 'lane:publish', 'issue:reconcile'] as const) {
                 expect(resolveTrustedLauncherBinding(primary, { PATH: path }, command, 'win32')).toMatchObject({
                     primaryRoot: realpathSync(primary),
-                    gitPath: realpathSync(gitWrapper),
-                    ghPath: realpathSync(ghWrapper),
+                    gitPath: realpathSync(windowsGitWrapper),
+                    ghPath: realpathSync(windowsGhWrapper),
                     psPath: undefined,
                     powershellPath: undefined,
                 });

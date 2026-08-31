@@ -29,6 +29,8 @@ export const TRUSTED_POWERSHELL_PATH_ENV = 'SOURDAW_TRUSTED_POWERSHELL_PATH';
 export const TRUSTED_ORIGIN_COMMIT_ENV = 'SOURDAW_TRUSTED_ORIGIN_COMMIT';
 export const TRUSTED_GATE_WORKFLOW_ENV = 'SOURDAW_TRUSTED_GATE_WORKFLOW';
 
+const REVIEW_RESOLUTION_CHILD_ENV = 'SOURDAW_REVIEW_RESOLUTION_CHILD';
+
 export type TrustedLauncherBinding = {
     primaryRoot: string;
     commonDir: string;
@@ -762,6 +764,7 @@ export function trustedSnapshotEnv(
     parent: NodeJS.ProcessEnv = process.env
 ): NodeJS.ProcessEnv {
     const env = trustedGitReadEnv(parent);
+    delete env[REVIEW_RESOLUTION_CHILD_ENV];
     if (snapshot.gateWorkflow !== undefined) {
         env[TRUSTED_GATE_WORKFLOW_ENV] = JSON.stringify(snapshot.gateWorkflow);
     }
@@ -835,8 +838,12 @@ export function trustedGitReadEnv(parent: NodeJS.ProcessEnv = process.env): Node
     return env;
 }
 
-export function resolveTrustedExecutable(name: 'git' | 'gh' | 'ps', parent: NodeJS.ProcessEnv = process.env): string {
-    const extensions = process.platform === 'win32' ? (parent.PATHEXT ?? '.EXE;.CMD;.BAT').split(';') : [''];
+export function resolveTrustedExecutable(
+    name: 'git' | 'gh' | 'ps',
+    parent: NodeJS.ProcessEnv = process.env,
+    platform: NodeJS.Platform = process.platform
+): string {
+    const extensions = platform === 'win32' ? (parent.PATHEXT ?? '.EXE;.CMD;.BAT').split(';') : [''];
     for (const directory of (parent.PATH ?? '').split(delimiter)) {
         for (const extension of extensions) {
             const candidate = resolve(directory || process.cwd(), `${name}${extension.toLowerCase()}`);
@@ -885,7 +892,7 @@ export function resolveTrustedLauncherBinding(
     platform: NodeJS.Platform = process.platform
 ): TrustedLauncherBinding {
     const root = realpathSync(launcherRoot);
-    const gitPath = resolveTrustedExecutable('git', parent);
+    const gitPath = resolveTrustedExecutable('git', parent, platform);
     const commonDir = repositoryCommonDir(root, gitPath);
     const primaryRoot = realpathSync(dirname(commonDir));
     if (root !== primaryRoot) {
@@ -895,8 +902,10 @@ export function resolveTrustedLauncherBinding(
         primaryRoot,
         commonDir,
         gitPath,
-        ghPath: resolveTrustedExecutable('gh', parent),
-        psPath: commandRequiresTrustedPs(command, platform) ? resolveTrustedExecutable('ps', parent) : undefined,
+        ghPath: resolveTrustedExecutable('gh', parent, platform),
+        psPath: commandRequiresTrustedPs(command, platform)
+            ? resolveTrustedExecutable('ps', parent, platform)
+            : undefined,
         powershellPath: commandRequiresTrustedPowerShell(command, platform)
             ? resolveTrustedPowerShellExecutable(parent, platform)
             : undefined,
