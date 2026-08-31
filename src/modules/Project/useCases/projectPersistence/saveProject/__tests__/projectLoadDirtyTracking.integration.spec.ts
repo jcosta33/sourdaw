@@ -65,11 +65,18 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     resetCrdtProjectAuthority: mockResetCrdtProjectAuthority,
     startCrdtAutoSave: mockStartCrdtAutoSave,
 }));
-vi.mock('#/modules/PluginHost/useCases', () => ({ unloadPlugin: mockUnloadLoadedExternalPlugins }));
+vi.mock('#/modules/PluginHost/useCases', () => ({
+    unloadPlugin: mockUnloadLoadedExternalPlugins,
+    activateExternalPlugin: vi.fn(),
+    findSupportedPlugin: vi.fn(),
+    registerFaustDSP: vi.fn(),
+}));
 vi.mock('#/modules/Transport/useCases', () => ({
     defaultTransportState: { masterGain: 75, isPlaying: false },
     ensureTrackStrips: mockEnsureTrackStrips,
     stopPlayback: mockStopPlayback,
+    restoreTimelineMapSnapshot: vi.fn(),
+    restoreTransportSnapshot: vi.fn(),
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mockNotifyUser }));
 vi.mock('../../helpers/autoSaveHandle', () => ({ setAutoSaveHandle: mockSetAutoSaveHandle }));
