@@ -145,6 +145,7 @@ describe('renderOfflineWithNativeEngine — routing', () => {
             renderableTracks,
             scheduledTracks: [],
             scheduledTrackIds: new Set(),
+            soloGatedByTrackId: new Map(),
             vcaMultiplierByTrackId: new Map(),
         });
 
@@ -152,5 +153,58 @@ describe('renderOfflineWithNativeEngine — routing', () => {
         expect(commands.filter((command) => command.kind === 'add-send')).toEqual([
             { kind: 'add-send', trackId: 'audio-1', busId: 'verb', tap: 'post-fader', level: 0.3 },
         ]);
+    });
+
+    it('marks a solo-gated destination bus on create-bus-strip while the source stays ungated', async () => {
+        const frames = 8;
+        const { transport, commands } = capturingTransport(frames);
+        const audio = createTrack({
+            id: 'audio-1',
+            sends: [{ busId: 'verb', level: 0.3, preFader: false }] as Track['sends'],
+        });
+        const verb = createTrack({ id: 'verb', kind: 'bus' });
+        const renderableTracks = [audio, verb];
+
+        const result = await renderOfflineWithNativeEngine({
+            transport,
+            sampleRate: 48_000,
+            frameCount: frames,
+            durationSeconds: frames / 48_000,
+            masterGainValue: 1,
+            defaultTempo: 120,
+            changes: [],
+            projectPpqEndpoints: ({ startPpq, endPpq, sampleRate }) => {
+                const startSeconds = startPpq * 0.5;
+                const endSeconds = endPpq * 0.5;
+                return {
+                    startSamples: startSeconds * sampleRate,
+                    endSamples: endSeconds * sampleRate,
+                    durationSamples: (endSeconds - startSeconds) * sampleRate,
+                    startSeconds,
+                    endSeconds,
+                    durationSeconds: endSeconds - startSeconds,
+                };
+            },
+            resolveTempoAtBeat: ({ defaultTempo }) => defaultTempo,
+            renderableTracks,
+            scheduledTracks: [audio],
+            scheduledTrackIds: new Set(['audio-1']),
+            soloGatedByTrackId: new Map([['verb', true]]),
+            vcaMultiplierByTrackId: new Map(),
+        });
+
+        expect(result.outcome).toBe('rendered');
+
+        const busStrip = commands.find(
+            (command): command is Extract<NativeGraphWireCommand, { kind: 'create-bus-strip' }> =>
+                command.kind === 'create-bus-strip' && command.busId === 'verb'
+        );
+        const sourceStrip = commands.find(
+            (command): command is Extract<NativeGraphWireCommand, { kind: 'create-track-strip' }> =>
+                command.kind === 'create-track-strip' && command.trackId === 'audio-1'
+        );
+
+        expect(busStrip?.state.soloGated).toBe(true);
+        expect(sourceStrip?.state.soloGated).toBe(false);
     });
 });

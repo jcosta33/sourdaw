@@ -111,6 +111,7 @@ export type NativeOfflineRenderInput = Readonly<{
     /** The tracks whose programme reaches the mix — audible plus cue-send-only. */
     scheduledTracks: readonly Track[];
     scheduledTrackIds: ReadonlySet<string>;
+    soloGatedByTrackId: ReadonlyMap<string, boolean>;
     vcaMultiplierByTrackId: ReadonlyMap<string, number>;
     onWarning?: (message: string) => void;
     onProgress?: (fraction: number) => void;
@@ -187,6 +188,7 @@ export async function renderOfflineWithNativeEngine(
         renderableTracks,
         scheduledTracks,
         scheduledTrackIds,
+        soloGatedByTrackId,
         vcaMultiplierByTrackId,
         onWarning,
         onProgress,
@@ -223,9 +225,7 @@ export async function renderOfflineWithNativeEngine(
             gain: track.gain,
             pan: track.pan,
             muted: track.muted,
-            // The mixdown does not gate a soloed-off track's strip; it leaves
-            // it out of `scheduledTracks` instead — the web path's law.
-            soloGated: false,
+            soloGated: soloGatedByTrackId.get(track.id) ?? false,
             vcaMultiplier: vcaMultiplierByTrackId.get(track.id) ?? 1,
         };
         return track.kind === 'bus'
