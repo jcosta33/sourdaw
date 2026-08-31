@@ -173,8 +173,12 @@ const OFF_GRAPH_TAIL_ATTESTATION: Record<string, { file: string; consumes: strin
         file: 'src/modules/PluginHost/useCases/faustEngine/dsp/rhodes.dsp',
         consumes: 'hslider("body_decay"',
     },
+    'faust-fm-synth': {
+        file: 'src/modules/PluginHost/useCases/faustEngine/dsp/fm-synth.dsp',
+        consumes: 'hslider("op1_release"',
+    },
     'faust-supersaw-unison': {
-        file: 'src/modules/Synth/useCases/dsp/supersaw-unison.dsp',
+        file: 'src/modules/PluginHost/useCases/faustEngine/dsp/supersaw-unison.dsp',
         consumes: 'hslider("release"',
     },
     // `ampRelease` on the descriptor reaches the engine as snake_case.
