@@ -835,7 +835,7 @@ describe('createWebGpuRenderer audio waveform cache reads', () => {
             bufferId: 'buf-1',
             numBins: 100,
             startSample: 24_000,
-            endSample: 72_000,
+            endSample: 216_000,
         });
         expect(handles.writeBuffer).toHaveBeenCalled();
         expect(handles.draw).toHaveBeenCalled();
@@ -1884,7 +1884,7 @@ describe('audio waveform span parity across renderers (#2519)', () => {
         { audioOffsetBeats: -1, stretchRatio: 1, startSample: 0, endSample: 72_000, gapPx: 25 },
         // The pre-roll is the offset span crossed at the clip's rate, so a
         // ratio of 2 halves it (scheduler: preRollSeconds = span / ratio).
-        { audioOffsetBeats: -1, stretchRatio: 2, startSample: 0, endSample: 42_000, gapPx: 12.5 },
+        { audioOffsetBeats: -1, stretchRatio: 2, startSample: 0, endSample: 168_000, gapPx: 12.5 },
     ])(
         'offset $audioOffsetBeats (stretch $stretchRatio): span $startSample to $endSample, gap $gapPx px',
         async ({ audioOffsetBeats, stretchRatio, startSample, endSample, gapPx }) => {
