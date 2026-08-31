@@ -16,6 +16,7 @@ describe('loadWasmDecoderModule', () => {
         expect(loaderSource).toMatch(
             /new URL\(\s*'wasm\/daw-wasm-decoder\/daw_wasm_decoder\.js',\s*globalThis\.location\.href\s*\)\.href/
         );
+        expect(loaderSource).toMatch(/import\(\s*\/\*\s*@vite-ignore\s*\*\/\s*wasmDecoderUrl\s*\)/);
         expect(loaderSource).not.toMatch(/import\([^)]*['"`]\/(?:public\/)?wasm\//s);
     });
 });
