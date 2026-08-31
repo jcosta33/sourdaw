@@ -123,6 +123,7 @@ vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
 vi.mock('#/modules/Routing/useCases', () => ({
     getAllSidechainRoutes: mocks.getAllSidechainRoutes,
     wireSidechainRoutes: mocks.wireSidechainRoutes,
+    hydrateSidechainRoutes: vi.fn(),
 }));
 
 vi.mock('../../../stores/takeLaneStore', () => ({

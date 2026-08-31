@@ -177,7 +177,9 @@ vi.mock('#/modules/CommandInterface/useCases', () => ({
     dispatchCanvasEditorCommand: commandInterface.dispatchCanvasEditorCommand,
 }));
 const onboarding = vi.hoisted(() => ({ startOnboardingTour: vi.fn() }));
-vi.mock('#/modules/Onboarding/useCases', () => onboarding);
+vi.mock('#/modules/Onboarding/useCases', () => ({
+    startOnboardingTour: onboarding.startOnboardingTour,
+}));
 
 describe('useNativeApplicationMenu', () => {
     beforeEach(() => {

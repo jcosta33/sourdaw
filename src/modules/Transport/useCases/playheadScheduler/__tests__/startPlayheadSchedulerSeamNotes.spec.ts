@@ -142,6 +142,7 @@ vi.mock('#/modules/Synth/useCases', () => ({
     scheduleDrumKitNote: vi.fn(),
     scheduleKitNote: vi.fn(),
     scheduleNote: scheduleNoteSpy,
+    getSynthParamsFromDevices: vi.fn(),
 }));
 vi.mock('#/modules/PluginHost/useCases', () => ({ isFaustInstrumentModule: () => false }));
 vi.mock('#/modules/Yeast/useCases', () => ({
