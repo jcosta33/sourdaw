@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 
-const APP_DIR_NAME: &str = "com.sourdaw.app";
+pub(crate) const APP_DIR_NAME: &str = "com.sourdaw.app";
 const IPC_TEMP_DIR_NAME: &str = "sourdaw_ipc";
 const MAX_FILE_IPC_BYTES: u64 = 1024 * 1024 * 1024;
 const MAX_RENDERER_PATH_BYTES: usize = 4096;
@@ -392,6 +392,33 @@ fn allowed_roots() -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_application_data_paths_share_one_directory_identity() {
+        assert_eq!(APP_DIR_NAME, "com.sourdaw.app");
+
+        let roots = allowed_roots();
+        if let Some(data_dir) = dirs::data_dir() {
+            assert!(roots.contains(&data_dir.join(APP_DIR_NAME)));
+        }
+        if let Some(cache_dir) = dirs::cache_dir() {
+            assert!(roots.contains(&cache_dir.join(APP_DIR_NAME)));
+        }
+
+        for source in [
+            include_str!("verified_cached_model.rs"),
+            include_str!("../host/plugin_registry_store.rs"),
+        ] {
+            assert!(
+                source.contains(".join(APP_DIR_NAME)"),
+                "every native application-data path must join the shared identity"
+            );
+            assert!(
+                !source.contains(".join(\"com.sourdaw.app\")"),
+                "native application-data consumers must not own the directory identity"
+            );
+        }
+    }
 
     #[test]
     fn should_resolve_relative_renderer_paths_inside_ipc_temp_root() {
