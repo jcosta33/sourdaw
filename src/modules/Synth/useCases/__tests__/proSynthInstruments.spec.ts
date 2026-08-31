@@ -13,14 +13,12 @@ describe('registerProSynthInstruments', () => {
         vi.mocked(registerFaustDSP).mockClear();
     });
 
-    it('registers the four pro instruments with Faust DSP source and params', () => {
+    it('registers the Synth-owned pro instruments with Faust DSP source and params', () => {
         registerProSynthInstruments();
 
-        expect(registerFaustDSP).toHaveBeenCalledTimes(4);
+        expect(registerFaustDSP).toHaveBeenCalledTimes(3);
         const names = vi.mocked(registerFaustDSP).mock.calls.map((c) => c[0]);
-        expect(names).toEqual(
-            expect.arrayContaining(['Morphing Synth', 'Supersaw Unison', 'Physical Model String', 'Additive Synth'])
-        );
+        expect(names).toEqual(expect.arrayContaining(['Morphing Synth', 'Physical Model String', 'Additive Synth']));
 
         for (const call of vi.mocked(registerFaustDSP).mock.calls) {
             const [, dsp, params] = call;

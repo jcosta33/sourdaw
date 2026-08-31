@@ -71,6 +71,15 @@ const FAUST_INSTRUMENT_DESCRIPTOR_DATA: PluginDescriptor[] = [
         format: 'builtin',
         category: 'instrument',
         hasCustomUI: false,
+        tail: {
+            kind: 'parallel',
+            tails: [
+                { kind: 'decaySeconds', parameterId: 'op1_release', defaultSeconds: 0.5 },
+                { kind: 'decaySeconds', parameterId: 'op2_release', defaultSeconds: 0.5 },
+                { kind: 'decaySeconds', parameterId: 'op3_release', defaultSeconds: 0.5 },
+                { kind: 'decaySeconds', parameterId: 'op4_release', defaultSeconds: 0.5 },
+            ],
+        },
         parameters: [
             fp('algorithm', 'faust-fm-synth', 'Algorithm', 0, 3, 0),
             fp('op1_ratio', 'faust-fm-synth', 'OP1 Ratio', 0.5, 16, 1),
