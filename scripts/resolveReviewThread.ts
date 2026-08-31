@@ -2761,7 +2761,7 @@ function parseWindowsProcessRows(output: string): WindowsProcessRow[] | undefine
             !Number.isSafeInteger((row as { ParentProcessId: number }).ParentProcessId) ||
             (row as { ParentProcessId: number }).ParentProcessId < 0 ||
             typeof (row as { CreationDate?: unknown }).CreationDate !== 'string' ||
-            (row as { CreationDate: string }).CreationDate.trim() === ''
+            parseWindowsProcessStartedAt((row as { CreationDate: string }).CreationDate) === undefined
         ) {
             return undefined;
         }
@@ -2777,6 +2777,39 @@ function parseWindowsProcessRows(output: string): WindowsProcessRow[] | undefine
         });
     }
     return normalized;
+}
+
+function parseWindowsProcessStartedAt(value: string): number | undefined {
+    const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.(\d{6})([+-])(\d{3})$/.exec(value);
+    if (match === null) {
+        return undefined;
+    }
+    const [, year, month, day, hour, minute, second, microseconds, offsetSign, offsetMinutes] = match;
+    const milliseconds = Date.UTC(
+        Number(year),
+        Number(month) - 1,
+        Number(day),
+        Number(hour),
+        Number(minute),
+        Number(second),
+        Number(microseconds.slice(0, 3))
+    );
+    if (!Number.isSafeInteger(milliseconds)) {
+        return undefined;
+    }
+    const normalized = new Date(milliseconds);
+    if (
+        normalized.getUTCFullYear() !== Number(year) ||
+        normalized.getUTCMonth() !== Number(month) - 1 ||
+        normalized.getUTCDate() !== Number(day) ||
+        normalized.getUTCHours() !== Number(hour) ||
+        normalized.getUTCMinutes() !== Number(minute) ||
+        normalized.getUTCSeconds() !== Number(second)
+    ) {
+        return undefined;
+    }
+    const offset = Number(offsetMinutes) * 60_000;
+    return offsetSign === '+' ? milliseconds - offset : milliseconds + offset;
 }
 
 function inspectLiveWindowsProcesses(
@@ -2820,8 +2853,16 @@ function isLiveWindowsProcessTree(
     if (rows === undefined) {
         return true;
     }
+    const ownerStartedAt = parseWindowsProcessStartedAt(ownerFence.rootStartedAt);
+    if (ownerStartedAt === undefined) {
+        return true;
+    }
     const root = rows.find((row) => row.pid === ownerFence.rootPid);
-    if (root?.startedAt === ownerFence.rootStartedAt) {
+    const rootStartedAt = root === undefined ? undefined : parseWindowsProcessStartedAt(root.startedAt);
+    if (root !== undefined && rootStartedAt === undefined) {
+        return true;
+    }
+    if (rootStartedAt === ownerStartedAt) {
         return true;
     }
     const rowsByPid = new Map(rows.map((row) => [row.pid, row]));
@@ -2830,6 +2871,13 @@ function isLiveWindowsProcessTree(
         let current: WindowsProcessRow | undefined = candidate;
         while (current !== undefined && !visited.has(current.pid)) {
             if (current.parentPid === ownerFence.rootPid) {
+                const candidateStartedAt = parseWindowsProcessStartedAt(current.startedAt);
+                if (candidateStartedAt === undefined) {
+                    return true;
+                }
+                if (rootStartedAt !== undefined && candidateStartedAt > rootStartedAt) {
+                    break;
+                }
                 return true;
             }
             visited.add(current.pid);

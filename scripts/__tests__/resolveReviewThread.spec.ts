@@ -2219,7 +2219,7 @@ describe('review thread resolution', () => {
                     },
                 }
             )
-        ).toBe(false);
+        ).toBe(true);
     });
 
     it('keeps a leader-gone POSIX process group live when an original child remains', () => {
@@ -2329,18 +2329,15 @@ describe('review thread resolution', () => {
                     },
                 ],
             })
-        ).toBe(false);
+        ).toBe(true);
         expect(
             reviewResolutionOwnerFenceIsLive(ownerFence, {
                 inspectWindowsProcessRows: () => [
-                    {
-                        pid: 4102,
-                        parentPid: 4101,
-                        startedAt: '2026-08-30T12:00:02.000000+000',
-                    },
+                    { pid: 4101, parentPid: 4100, startedAt: '2026-08-30T12:00:01.000000+000' },
+                    { pid: 4102, parentPid: 4101, startedAt: '2026-08-30T12:00:02.000000+000' },
                 ],
             })
-        ).toBe(false);
+        ).toBe(true);
         expect(
             reviewResolutionOwnerFenceIsLive(ownerFence, {
                 inspectWindowsProcessRows: () => [
@@ -2375,7 +2372,7 @@ describe('review thread resolution', () => {
         ).toBe(true);
     });
 
-    it('keeps Windows recovery live for provable descendants and ambiguous reused-root children', () => {
+    it('keeps Windows recovery live only for original or ambiguous descendants', () => {
         const ownerFence = {
             kind: 'win32-process-tree' as const,
             version: 1 as const,
@@ -2386,6 +2383,14 @@ describe('review thread resolution', () => {
             reviewResolutionOwnerFenceIsLive(ownerFence, {
                 inspectWindowsProcessRows: () => [
                     { pid: 4101, parentPid: 4100, startedAt: '2026-08-30T12:00:01.000000+000' },
+                ],
+            })
+        ).toBe(true);
+        expect(
+            reviewResolutionOwnerFenceIsLive(ownerFence, {
+                inspectWindowsProcessRows: () => [
+                    { pid: 4100, parentPid: 1, startedAt: '2026-08-30T13:00:00.000000+000' },
+                    { pid: 4101, parentPid: 4100, startedAt: '2026-08-30T12:30:00.000000+000' },
                 ],
             })
         ).toBe(true);
@@ -2404,7 +2409,7 @@ describe('review thread resolution', () => {
                     { pid: 4101, parentPid: 4100, startedAt: '2026-08-30T13:00:01.000000+000' },
                 ],
             })
-        ).toBe(true);
+        ).toBe(false);
         expect(reviewResolutionOwnerFenceIsLive(ownerFence, { inspectWindowsProcessRows: () => [] })).toBe(false);
     });
 
@@ -2423,7 +2428,7 @@ describe('review thread resolution', () => {
                     pid: 0,
                     output: [],
                     stdout: JSON.stringify([
-                        { ProcessId: 0, ParentProcessId: 0, CreationDate: '2026-08-30T00:00:00.000000+000' },
+                        { ProcessId: 0, ParentProcessId: 'ignored', CreationDate: '' },
                         { ProcessId: 4101, ParentProcessId: 1, CreationDate: '2026-08-30T12:00:01.000000+000' },
                     ]),
                     stderr: '',
