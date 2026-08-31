@@ -171,6 +171,7 @@ export type ReviewResolutionLockOwnerFence =
     | {
           kind: 'pgid';
           pgid: number;
+          leaderStartedAt?: string;
       }
     | {
           kind: 'pid';
@@ -212,10 +213,6 @@ export type ReviewResolutionTrustedLauncher = {
 };
 export type ReviewResolutionRecoveryClock = {
     now: () => number;
-};
-export type ReviewResolutionRetirementClock = {
-    monotonicNow: () => bigint;
-    wait: (milliseconds: number) => void;
 };
 export type ReviewResolutionRecoveryResult = { kind: 'reconciled'; inspection: ReviewThreadInspection };
 export type ResolveReviewThreadPort = {
@@ -304,13 +301,6 @@ const TRUSTED_ORIGIN_COMMIT_ENV = 'SOURDAW_TRUSTED_ORIGIN_COMMIT';
 const activeReviewResolutionLocks: ActiveReviewResolutionLock[] = [];
 const systemReviewResolutionRecoveryClock: ReviewResolutionRecoveryClock = { now: () => Date.now() };
 const REVIEW_RESOLUTION_SETTLEMENT_WINDOW_MS = 30_000;
-const REVIEW_RESOLUTION_SETTLEMENT_WINDOW_NS = BigInt(REVIEW_RESOLUTION_SETTLEMENT_WINDOW_MS) * 1_000_000n;
-const systemReviewResolutionRetirementClock: ReviewResolutionRetirementClock = {
-    monotonicNow: () => process.hrtime.bigint(),
-    wait: (milliseconds) => {
-        Atomics.wait(new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT)), 0, 0, milliseconds);
-    },
-};
 
 type ReviewResolutionChildLaunchMarker = {
     path: string;
@@ -350,6 +340,7 @@ type WindowsProcessRow = {
 type ReviewResolutionOwnerFenceLivenessPort = {
     platform?: NodeJS.Platform;
     probe?: ReviewResolutionLivenessProbe;
+    inspectPosixGroupLeader?: (pgid: number) => string | undefined | null;
     inspectWindowsProcessRows?: () => WindowsProcessRow[] | undefined;
     runWindowsProcessQuery?: WindowsProcessQueryRunner;
     windowsProcessQueryEnv?: NodeJS.ProcessEnv;
@@ -2644,10 +2635,15 @@ function parseReviewResolutionLockOwnerFence(
     }
     if ((value as { kind: string }).kind === 'pgid') {
         const pgid = (value as { pgid?: unknown }).pgid;
-        if (!isPositiveSafeInteger(pgid) || 'pid' in value) {
+        const leaderStartedAt = (value as { leaderStartedAt?: unknown }).leaderStartedAt;
+        if (
+            !isPositiveSafeInteger(pgid) ||
+            'pid' in value ||
+            (leaderStartedAt !== undefined && (typeof leaderStartedAt !== 'string' || leaderStartedAt.trim() === ''))
+        ) {
             fail(label);
         }
-        return { kind: 'pgid', pgid };
+        return leaderStartedAt === undefined ? { kind: 'pgid', pgid } : { kind: 'pgid', pgid, leaderStartedAt };
     }
     if ((value as { kind: string }).kind === 'pid') {
         const pid = (value as { pid?: unknown }).pid;
@@ -2836,6 +2832,16 @@ export function reviewResolutionOwnerFenceIsLive(
     const platform = port.platform ?? process.platform;
     const probe = port.probe ?? signalReviewResolutionLivenessTarget;
     if (ownerFence.kind === 'pgid') {
+        if (typeof ownerFence.leaderStartedAt !== 'string' || ownerFence.leaderStartedAt.trim() === '') {
+            return true;
+        }
+        const leaderStartedAt = (port.inspectPosixGroupLeader ?? inspectPosixProcessGroupLeader)(ownerFence.pgid);
+        if (leaderStartedAt === null) {
+            return true;
+        }
+        if (leaderStartedAt !== undefined && leaderStartedAt !== ownerFence.leaderStartedAt) {
+            return false;
+        }
         return isLiveProcessGroup(ownerFence.pgid, probe);
     }
     if (ownerFence.kind === 'pid') {
@@ -2898,7 +2904,10 @@ function updateReviewResolutionLockRef(primaryRoot: string, args: string[]): boo
     return result.status === 0;
 }
 
-function currentProcessGroupId(pid: number, env: NodeJS.ProcessEnv = process.env): number {
+function currentPosixProcessGroupFence(
+    pid: number,
+    env: NodeJS.ProcessEnv = process.env
+): ReviewResolutionLockOwnerFence {
     const result = spawnSync(trustedReviewResolutionPsPath(env), ['-o', 'pgid=', '-p', String(pid)], {
         encoding: 'utf8',
         shell: false,
@@ -2914,7 +2923,19 @@ function currentProcessGroupId(pid: number, env: NodeJS.ProcessEnv = process.env
     if (!Number.isSafeInteger(pgid) || pgid <= 0) {
         fail('review-resolution lock reported an invalid current process group');
     }
-    return pgid;
+    const leader = spawnSync(trustedReviewResolutionPsPath(env), ['-o', 'lstart=', '-p', String(pgid)], {
+        encoding: 'utf8',
+        shell: false,
+        env,
+    });
+    if (leader.error !== undefined) {
+        throw leader.error;
+    }
+    const leaderStartedAt = leader.stdout.trim();
+    if (leader.status !== 0 || leaderStartedAt === '') {
+        fail('review-resolution lock could not determine the current process-group leader identity');
+    }
+    return { kind: 'pgid', pgid, leaderStartedAt };
 }
 
 function currentReviewResolutionExecutionFence(
@@ -2929,10 +2950,7 @@ function currentReviewResolutionExecutionFence(
     }
     return {
         pid,
-        ownerFence: {
-            kind: 'pgid',
-            pgid: currentProcessGroupId(pid),
-        },
+        ownerFence: currentPosixProcessGroupFence(pid),
     };
 }
 
@@ -3058,6 +3076,19 @@ function isLiveProcessGroup(
     probe: ReviewResolutionLivenessProbe = signalReviewResolutionLivenessTarget
 ): boolean {
     return isLiveReviewResolutionTarget(-pgid, probe);
+}
+
+function inspectPosixProcessGroupLeader(pgid: number, env: NodeJS.ProcessEnv = process.env): string | undefined | null {
+    const result = spawnSync(trustedReviewResolutionPsPath(env), ['-o', 'lstart=', '-p', String(pgid)], {
+        encoding: 'utf8',
+        shell: false,
+        env,
+    });
+    if (result.error !== undefined || (result.status !== 0 && result.status !== 1)) {
+        return null;
+    }
+    const leaderStartedAt = result.stdout.trim();
+    return leaderStartedAt === '' ? undefined : leaderStartedAt;
 }
 
 function acquirePullRequestReviewResolutionLock(
@@ -4010,29 +4041,6 @@ function exactRecoveredReplyMarkersAtOwnerHead(
     );
 }
 
-function exactRetirementMutationEvidenceCount(
-    owner: CurrentReviewResolutionLockOwner,
-    inspection: ReviewThreadInspection,
-    context: ResolutionReviewContext
-): number {
-    switch (owner.mutation.phase) {
-        case 'createPendingReview':
-        case 'createPendingReviewSettlement':
-            return exactLandedCreatePendingReviewIds(inspection, context, owner.mutation).length;
-        case 'replyDone':
-        case 'replyDoneSettlement':
-            return managedReplyMarkers(inspection.thread!, context, ['PENDING', 'COMMENTED'], false).filter(
-                (candidate) =>
-                    candidate.currentHead &&
-                    candidate.review.id === owner.mutation.reviewId &&
-                    candidate.review.body === owner.mutation.body &&
-                    candidate.review.commitOid === owner.mutation.reviewCommitOid
-            ).length;
-        default:
-            return 0;
-    }
-}
-
 function assertExactRecoveredMutationAfterHeadDrift(
     number: number,
     owner: CurrentReviewResolutionLockOwner,
@@ -4144,71 +4152,6 @@ export function reviewResolutionRecoveryResult(
 ): ReviewResolutionRecoveryResult {
     assertV5ReviewResolutionLockOwner(owner);
     return { kind: 'reconciled', inspection };
-}
-
-export function retireUnseenReviewResolutionLockOwnerState(
-    number: number,
-    owner: ReviewResolutionLockOwner,
-    port: ResolveReviewThreadPort,
-    clock: ReviewResolutionRecoveryClock = systemReviewResolutionRecoveryClock,
-    primaryRoot: string = process.cwd(),
-    retirementClock: ReviewResolutionRetirementClock = systemReviewResolutionRetirementClock
-): ReviewThreadInspection {
-    assertV5ReviewResolutionLockOwner(owner);
-    if (
-        owner.mutation.phase !== 'createPendingReview' &&
-        owner.mutation.phase !== 'createPendingReviewSettlement' &&
-        owner.mutation.phase !== 'replyDone' &&
-        owner.mutation.phase !== 'replyDoneSettlement'
-    ) {
-        fail('review-resolution retirement requires an unseen createPendingReview or replyDone mutation');
-    }
-    const inspection = inspectReviewResolutionRecovery(number, owner, port);
-    const context = resolutionReviewContext(inspection.pullRequestId, owner.threadId, owner.head);
-    const mutation = owner.mutation;
-    const evidenceCount = exactRetirementMutationEvidenceCount(owner, inspection, context);
-    if (evidenceCount === 1) {
-        fail('review-resolution retirement found a matching mutation during remote inspection');
-    }
-    if (evidenceCount > 1) {
-        fail('review-resolution retirement found ambiguous matching mutations during remote inspection');
-    }
-    const recoveryPrimaryRoot = activeReviewResolutionLocks.at(-1)?.primaryRoot ?? primaryRoot;
-    if (mutation.phase === 'createPendingReview') {
-        return preserveCreatePendingReviewSettlement(number, recoveryPrimaryRoot, inspection, mutation, clock);
-    }
-    if (mutation.phase === 'replyDone') {
-        return preserveReplyDoneSettlement(number, recoveryPrimaryRoot, inspection, mutation, clock);
-    }
-    if (mutation.replayed) {
-        fail(unreconciledReviewResolutionMutationMessage(number, mutation));
-    }
-    restartRetirementSettlement(number, recoveryPrimaryRoot, inspection, mutation, clock);
-    const active = currentActiveReviewResolutionLock(recoveryPrimaryRoot, number);
-    const expectedOwnerOid = active.oid;
-    const deadline = retirementClock.monotonicNow() + REVIEW_RESOLUTION_SETTLEMENT_WINDOW_NS;
-    retirementClock.wait(REVIEW_RESOLUTION_SETTLEMENT_WINDOW_MS);
-    if (retirementClock.monotonicNow() < deadline) {
-        fail(`${pullRequestReviewResolutionLockScope(number)} could not prove settlement elapsed with monotonic time`);
-    }
-    if (readReviewResolutionLockOid(recoveryPrimaryRoot, active.ref, number) !== expectedOwnerOid) {
-        fail(`${pullRequestReviewResolutionLockScope(number)} lock ownership changed during retirement settlement`);
-    }
-    const settledOwner = active.owner;
-    const settledInspection = inspectReviewResolutionRecovery(number, settledOwner, port);
-    const settledContext = resolutionReviewContext(
-        settledInspection.pullRequestId,
-        settledOwner.threadId,
-        settledOwner.head
-    );
-    const settledEvidenceCount = exactRetirementMutationEvidenceCount(settledOwner, settledInspection, settledContext);
-    if (settledEvidenceCount === 1) {
-        fail('review-resolution retirement found a matching mutation during remote inspection');
-    }
-    if (settledEvidenceCount > 1) {
-        fail('review-resolution retirement found ambiguous matching mutations during remote inspection');
-    }
-    return settledInspection;
 }
 
 function continueRecoveredReviewResolution(
@@ -4393,44 +4336,6 @@ function preserveReplyDoneSettlement(
         replayed: false,
     });
     fail(unreconciledReviewResolutionMutationMessage(number, mutation));
-}
-
-function restartRetirementSettlement(
-    number: number,
-    primaryRoot: string,
-    inspection: ReviewThreadInspection,
-    mutation: Extract<ReviewResolutionLockMutation, { phase: 'createPendingReviewSettlement' | 'replyDoneSettlement' }>,
-    clock: ReviewResolutionRecoveryClock
-): void {
-    if (mutation.phase === 'createPendingReviewSettlement') {
-        advanceActiveReviewResolutionLockMutation(primaryRoot, number, {
-            phase: 'createPendingReviewSettlement',
-            pullRequestId: mutation.pullRequestId,
-            body: mutation.body,
-            reviewCommitOid: mutation.reviewCommitOid,
-            pendingReviewIds: inspection.pendingReviews.map((review) => review.id).sort(),
-            settleAtMs: settlementDeadline(clock),
-            replayed: false,
-        });
-        return;
-    }
-    const context = resolutionReviewContext(inspection.pullRequestId, inspection.thread!.id, inspection.head);
-    const replies = managedReplyMarkers(inspection.thread!, context, ['PENDING', 'COMMENTED'], false)
-        .map((candidate) => ({
-            replyId: candidate.marker.id,
-            reviewId: candidate.review.id,
-            reviewState: settledReviewState(candidate.review.state),
-        }))
-        .sort((left, right) => left.replyId.localeCompare(right.replyId));
-    advanceActiveReviewResolutionLockMutation(primaryRoot, number, {
-        phase: 'replyDoneSettlement',
-        reviewId: mutation.reviewId,
-        body: mutation.body,
-        reviewCommitOid: mutation.reviewCommitOid,
-        replies,
-        settleAtMs: settlementDeadline(clock),
-        replayed: false,
-    });
 }
 
 function recoverCreatePendingReviewSettlement(
