@@ -337,6 +337,16 @@ const valuePredicateCases = [
         label: 'seek rejects non-finite beats',
     },
     {
+        call: { arguments: { beat: Number.POSITIVE_INFINITY }, name: 'seekPlayhead' },
+        context: projectContext,
+        expected: {
+            index: 0,
+            name: 'seekPlayhead',
+            reason: 'Expected only a changed finite beat greater than or equal to 0',
+        },
+        label: 'seek rejects positive infinity',
+    },
+    {
         call: { arguments: { beat: -1 }, name: 'seekPlayhead' },
         context: projectContext,
         expected: {
@@ -507,6 +517,12 @@ const valuePredicateCases = [
         label: 'metronome enablement rejects non-boolean values',
     },
     {
+        call: { arguments: { enabled: false }, name: 'setMetronomeEnabled' },
+        context: projectContext,
+        expected: { type: 'setMetronomeEnabled', payload: { enabled: false } },
+        label: 'metronome disablement preserves false in the payload',
+    },
+    {
         call: { arguments: { volume: 0 }, name: 'setMetronomeVolume' },
         context: projectContext,
         expected: { type: 'setMetronomeVolume', payload: { volume: 0 } },
@@ -527,6 +543,16 @@ const valuePredicateCases = [
             reason: 'Expected only a finite metronome volume from 0 through 1',
         },
         label: 'metronome volume rejects non-finite values',
+    },
+    {
+        call: { arguments: { volume: '0.5' }, name: 'setMetronomeVolume' },
+        context: projectContext,
+        expected: {
+            index: 0,
+            name: 'setMetronomeVolume',
+            reason: 'Expected only a finite metronome volume from 0 through 1',
+        },
+        label: 'metronome volume rejects numeric strings',
     },
     {
         call: { arguments: { volume: -0.1 }, name: 'setMetronomeVolume' },
@@ -619,6 +645,17 @@ describe('transportTimelineStrategy', () => {
                 })
             ).toEqual({ index: 0, name: testCase.name, reason: testCase.reason });
         }
+    });
+
+    it('preserves the supplied index when rejecting an invalid call', () => {
+        expect(
+            bridgeTransportTimelineToolCall({
+                call: { name: 'setTempo', arguments: { bpm: 301 } },
+                context: projectContext,
+                index: 7,
+                projectPunchRegion: createPunchRegionPatch,
+            })
+        ).toEqual({ index: 7, name: 'setTempo', reason: 'Expected only a finite bpm from 20 through 300' });
     });
 
     it('rejects invalid punch regions before calling the projector', () => {
