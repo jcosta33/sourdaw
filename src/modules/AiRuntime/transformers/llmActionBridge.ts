@@ -20,6 +20,7 @@ import { type SyncopatedArpeggioCapability } from '../models/SyncopatedArpeggioC
 import { type WholeProjectVibeMixCapability } from '../models/WholeProjectVibeMixPlan';
 import { normalizeSafeProjectName } from '../validators/normalizeSafeProjectName';
 
+import { bridgeTransportTimelineToolCall } from './llmActionStrategies/transportTimelineStrategy';
 import { type ToolCallResult } from './toolCallParser';
 
 type ExecutableTrackKind = 'audio' | 'midi' | 'folder';
@@ -347,10 +348,6 @@ function isSafeTrackColor(value: unknown): value is string {
     return typeof value === 'string' && /^#[\dA-Fa-f]{6}$/.test(value);
 }
 
-function isValidTimeSignatureDenominator(value: unknown): value is 2 | 4 | 8 | 16 {
-    return value === 2 || value === 4 || value === 8 || value === 16;
-}
-
 function serializePromptData(value: unknown): string {
     return JSON.stringify(value).replaceAll('&', '\\u0026').replaceAll('<', '\\u003c').replaceAll('>', '\\u003e');
 }
@@ -376,61 +373,12 @@ function bridgeToolCall({
     sectionSignatures: readonly SectionPlanningSignature[];
     sidechainRouteDeviceAdmissions: readonly SidechainRouteDeviceAdmission[];
 }): RuntimeAction | LlmActionRejection {
+    const transportTimelineResult = bridgeTransportTimelineToolCall({ call, context, index, projectPunchRegion });
+    if (transportTimelineResult !== null) {
+        return transportTimelineResult;
+    }
+
     const args = call.arguments;
-
-    if (call.name === 'setTempo') {
-        if (!hasExactKeys(args, ['bpm']) || !isFiniteNumber(args.bpm) || args.bpm < 20 || args.bpm > 300) {
-            return rejection(index, call.name, 'Expected only a finite bpm from 20 through 300');
-        }
-        return { type: 'setTempo', payload: { bpm: args.bpm } };
-    }
-
-    if (call.name === 'setTimeSignature') {
-        if (
-            !hasExactKeys(args, ['numerator', 'denominator']) ||
-            !isFiniteNumber(args.numerator) ||
-            !Number.isInteger(args.numerator) ||
-            args.numerator < 1 ||
-            args.numerator > 32 ||
-            !isValidTimeSignatureDenominator(args.denominator)
-        ) {
-            return rejection(
-                index,
-                call.name,
-                'Expected an integer numerator from 1 through 32 and denominator 2, 4, 8, or 16'
-            );
-        }
-        return { type: 'setTimeSignature', payload: { numerator: args.numerator, denominator: args.denominator } };
-    }
-
-    if (call.name === 'setPlayback') {
-        if (!hasExactKeys(args, ['playing']) || typeof args.playing !== 'boolean') {
-            return rejection(index, call.name, 'Expected only a boolean playing value');
-        }
-        if (args.playing === context.isPlaying) {
-            return rejection(index, call.name, 'Requested playback state already matches the current transport state');
-        }
-        return { type: 'setPlayback', payload: { playing: args.playing } };
-    }
-
-    if (call.name === 'stopPlayback') {
-        if (!hasExactKeys(args, [])) {
-            return rejection(index, call.name, 'Expected no arguments');
-        }
-        return { type: 'stopPlayback' };
-    }
-
-    if (call.name === 'seekPlayhead') {
-        if (
-            !hasExactKeys(args, ['beat']) ||
-            !isFiniteNumber(args.beat) ||
-            args.beat < 0 ||
-            args.beat === context.playheadPosition
-        ) {
-            return rejection(index, call.name, 'Expected only a changed finite beat greater than or equal to 0');
-        }
-        return { type: 'seekPlayhead', payload: { beat: args.beat } };
-    }
 
     if (call.name === 'addMarker') {
         const name = normalizeSafeProjectName(args.name);
@@ -582,97 +530,6 @@ function bridgeToolCall({
             return rejection(index, call.name, 'Replacement section label already exists at that range');
         }
         return { type: 'renameSection', payload: { sectionId: match.sectionId, name: newName } };
-    }
-
-    if (call.name === 'setLoopEnabled') {
-        if (
-            !hasExactKeys(args, ['enabled']) ||
-            typeof args.enabled !== 'boolean' ||
-            (args.enabled && context.loopEnd <= context.loopStart)
-        ) {
-            return rejection(index, call.name, 'Expected a boolean enabled value and a valid existing loop region');
-        }
-        return { type: 'setLoopEnabled', payload: { enabled: args.enabled } };
-    }
-
-    if (call.name === 'setLoopRegion') {
-        if (
-            !hasExactKeys(args, ['startBeat', 'endBeat']) ||
-            !isFiniteNumber(args.startBeat) ||
-            !isFiniteNumber(args.endBeat) ||
-            args.startBeat < 0 ||
-            args.endBeat <= args.startBeat
-        ) {
-            return rejection(index, call.name, 'Expected finite loop beats with 0 <= startBeat < endBeat');
-        }
-        return { type: 'setLoopRegion', payload: { startBeat: args.startBeat, endBeat: args.endBeat } };
-    }
-
-    if (call.name === 'setPunchIn' || call.name === 'setPunchOut') {
-        const beat = args.beat;
-        const isPunchIn = call.name === 'setPunchIn';
-        let expected = 'Expected exactly one finite punch-out beat with 0 < beat <= Number.MAX_VALUE';
-        if (isPunchIn) {
-            expected = 'Expected exactly one finite punch-in beat with 0 <= beat < Number.MAX_VALUE';
-        }
-        if (!hasExactKeys(args, ['beat']) || !isFiniteNumber(beat)) {
-            return rejection(index, call.name, expected);
-        }
-
-        let hasValidBeat = beat > 0 && beat <= Number.MAX_VALUE;
-        if (isPunchIn) {
-            hasValidBeat = beat >= 0 && beat < Number.MAX_VALUE;
-        }
-        const hasValidCurrentRegion =
-            isFiniteNumber(context.punchInBeat) &&
-            isFiniteNumber(context.punchOutBeat) &&
-            context.punchInBeat >= 0 &&
-            context.punchOutBeat > context.punchInBeat;
-        if (!hasValidBeat || !hasValidCurrentRegion) {
-            return rejection(index, call.name, expected);
-        }
-
-        const current = { punchInBeat: context.punchInBeat, punchOutBeat: context.punchOutBeat };
-        const patch = projectPunchRegion({ current, beat, edge: isPunchIn ? 'in' : 'out' });
-        if (patch === null) {
-            return rejection(index, call.name, 'Requested punch endpoint cannot produce a finite punch region');
-        }
-        const next = { ...current, ...patch };
-        if (next.punchInBeat === current.punchInBeat && next.punchOutBeat === current.punchOutBeat) {
-            return rejection(index, call.name, 'Requested punch endpoint already matches project state');
-        }
-
-        if (isPunchIn) {
-            return { type: 'setPunchIn', payload: { beat } };
-        }
-        return { type: 'setPunchOut', payload: { beat } };
-    }
-
-    if (call.name === 'setPunchEnabled') {
-        if (!hasExactKeys(args, ['enabled']) || typeof args.enabled !== 'boolean') {
-            return rejection(index, call.name, 'Expected only a boolean enabled value');
-        }
-        if (context.isPlaying || context.isRecording) {
-            return rejection(index, call.name, 'Transport Punch In/Out can change only while transport is stopped');
-        }
-        if (context.punchInEnabled === args.enabled) {
-            return rejection(index, call.name, 'Requested Transport Punch In/Out state already matches project state');
-        }
-        return { type: 'setPunchEnabled', payload: { enabled: args.enabled } };
-    }
-
-    if (call.name === 'setMetronomeEnabled') {
-        if (!hasExactKeys(args, ['enabled']) || typeof args.enabled !== 'boolean') {
-            return rejection(index, call.name, 'Expected only a boolean enabled value');
-        }
-        return { type: 'setMetronomeEnabled', payload: { enabled: args.enabled } };
-    }
-
-    if (call.name === 'setMetronomeVolume') {
-        if (!hasExactKeys(args, ['volume']) || !isFiniteNumber(args.volume) || args.volume < 0 || args.volume > 1) {
-            return rejection(index, call.name, 'Expected only a finite metronome volume from 0 through 1');
-        }
-        return { type: 'setMetronomeVolume', payload: { volume: args.volume } };
     }
 
     if (call.name === 'setMasterGain') {
