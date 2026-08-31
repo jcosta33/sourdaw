@@ -215,7 +215,7 @@ export async function renderAgentProjectSections(input: RenderAgentProjectSectio
     }
 
     if (failures.length > 0) {
-        retentionCapacityFailure ||= wouldAgentSectionRenderSetExceedRetention(input.jobs);
+        retentionCapacityFailure ||= wouldAgentSectionRenderSetExceedRetention(input.jobs, input.sourceRevision);
         const reason = retentionCapacityFailure
             ? `Section render retention capacity errors require manual repair: ${failures.join('; ')}`
             : `Section render follow-up requires review: ${failures.join('; ')}`;

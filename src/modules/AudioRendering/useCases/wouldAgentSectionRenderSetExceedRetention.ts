@@ -13,11 +13,16 @@ function hasComparableGeometry(job: RenderProjectSectionJobSnapshot, artifact: A
     );
 }
 
-export function wouldAgentSectionRenderSetExceedRetention(jobs: readonly RenderProjectSectionJobSnapshot[]): boolean {
+export function wouldAgentSectionRenderSetExceedRetention(
+    jobs: readonly RenderProjectSectionJobSnapshot[],
+    sourceRevision: string
+): boolean {
     if (jobs.length > AGENT_SECTION_RENDER_RETENTION_POLICY.maxArtifacts) {
         return true;
     }
-    const retainedArtifacts = agentSectionRenderArtifactStore.value?.artifacts ?? [];
+    const retainedArtifacts = (agentSectionRenderArtifactStore.value?.artifacts ?? []).filter(
+        (artifact) => artifact.sourceRevision === sourceRevision
+    );
     let estimatedBytes = 0;
     for (const job of jobs) {
         const exactArtifact = retainedArtifacts.find(({ jobId }) => jobId === job.jobId);
