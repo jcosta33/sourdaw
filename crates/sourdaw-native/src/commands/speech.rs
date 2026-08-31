@@ -1,13 +1,12 @@
 use crate::events::{EventSink, EventSinkExt};
 use audioadapter_buffers::{direct::SequentialSliceOfVecs, owned::InterleavedOwned};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use rtrb::{Consumer, Producer, RingBuffer};
 use rubato::{
     audioadapter::Adapter, Async, FixedAsync, Resampler, SincInterpolationParameters,
     SincInterpolationType, WindowFunction,
 };
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 use zeroize::{Zeroize, Zeroizing};
@@ -30,6 +29,30 @@ struct SensitiveCaptureBuffer(Vec<f32>);
 impl Drop for SensitiveCaptureBuffer {
     fn drop(&mut self) {
         self.0.zeroize();
+    }
+}
+
+/// Owns the capture ring's slots until Drop has overwritten them. A ring that
+/// only deallocated would hand a whole dictation session back to the allocator
+/// in the clear, which is why this storage is owned here rather than inside a
+/// queue crate.
+struct SensitiveCaptureSlots<T: EraseSlots>(T);
+
+trait EraseSlots {
+    fn erase_slots(&mut self);
+}
+
+impl EraseSlots for Box<[AtomicU32]> {
+    fn erase_slots(&mut self) {
+        for slot in self.iter_mut() {
+            slot.get_mut().zeroize();
+        }
+    }
+}
+
+impl<T: EraseSlots> Drop for SensitiveCaptureSlots<T> {
+    fn drop(&mut self) {
+        self.0.erase_slots();
     }
 }
 
@@ -715,14 +738,14 @@ fn capture_failure_message(code: u8) -> String {
 
 fn cpal_runtime_failure_callback(
     stream_failed: Arc<AtomicBool>,
-    failure_kind: Arc<AtomicU8>,
+    failure_code: Arc<AtomicU8>,
 ) -> impl FnMut(cpal::Error) + Send + 'static {
     move |error| {
         // CPAL calls this on the stream's own thread, so an atomic store is
         // the only thing it may do: composing the message belongs to the
         // control thread, after the stream is dropped. The first failure
         // keeps the kind, because later ones are consequences of it.
-        let _ = failure_kind.compare_exchange(
+        let _ = failure_code.compare_exchange(
             NO_CAPTURE_FAILURE,
             capture_failure_code(error.kind()),
             Ordering::SeqCst,
@@ -732,32 +755,84 @@ fn cpal_runtime_failure_callback(
     }
 }
 
-/// The whole of what the CPAL data callback does: copy into ring slots that
-/// already exist and abandon whatever does not fit. Returns how many samples
-/// were accepted. Nothing here waits for the control thread or grows a
-/// buffer, which is what the OS audio thread requires of it.
-fn capture_samples(captured_tx: &mut Producer<f32>, data: &[f32]) -> usize {
-    let (accepted, _abandoned) = captured_tx.push_partial_slice(data);
-    accepted.len()
+/// A fixed-capacity single-producer single-consumer queue of microphone
+/// samples. Samples live as `f32` bits in atomic slots, so the producer half
+/// publishes from the OS audio thread without waiting on the control thread,
+/// and the slots are erased once both halves have dropped.
+struct CaptureRing {
+    storage: SensitiveCaptureSlots<Box<[AtomicU32]>>,
+    published: AtomicUsize,
+    consumed: AtomicUsize,
+}
+
+impl CaptureRing {
+    fn slots(&self) -> &[AtomicU32] {
+        &self.storage.0
+    }
+}
+
+/// The write half, owned by the CPAL data callback.
+struct CaptureProducer(Arc<CaptureRing>);
+
+/// The read half, owned by the control thread.
+struct CaptureConsumer(Arc<CaptureRing>);
+
+/// Allocates every slot the capture bound needs, so neither half ever
+/// allocates again and no sample outlives the last half unerased.
+fn capture_ring(capacity: usize) -> (CaptureProducer, CaptureConsumer) {
+    let ring = Arc::new(CaptureRing {
+        storage: SensitiveCaptureSlots((0..capacity).map(|_| AtomicU32::new(0)).collect()),
+        published: AtomicUsize::new(0),
+        consumed: AtomicUsize::new(0),
+    });
+    (CaptureProducer(Arc::clone(&ring)), CaptureConsumer(ring))
+}
+
+impl CaptureProducer {
+    /// The whole of what the CPAL data callback does: copy into slots that
+    /// already exist and abandon whatever does not fit. Returns how many
+    /// samples were accepted. Nothing here waits for the control thread or
+    /// grows storage, which is what the OS audio thread requires of it.
+    fn push_partial(&mut self, data: &[f32]) -> usize {
+        let ring = &*self.0;
+        let published = ring.published.load(Ordering::Relaxed);
+        let free = ring.slots().len() - (published - ring.consumed.load(Ordering::Acquire));
+        let accepted = data.len().min(free);
+        for (offset, sample) in data.iter().take(accepted).enumerate() {
+            let slot = &ring.slots()[(published + offset) % ring.slots().len()];
+            slot.store(sample.to_bits(), Ordering::Relaxed);
+        }
+        ring.published
+            .store(published + accepted, Ordering::Release);
+        accepted
+    }
+}
+
+impl CaptureConsumer {
+    /// Appends up to `limit` published samples, oldest first, and returns
+    /// their slots to the producer.
+    fn drain_into(&mut self, out: &mut Vec<f32>, limit: usize) {
+        let ring = &*self.0;
+        let consumed = ring.consumed.load(Ordering::Relaxed);
+        let taken = (ring.published.load(Ordering::Acquire) - consumed).min(limit);
+        for offset in 0..taken {
+            let slot = &ring.slots()[(consumed + offset) % ring.slots().len()];
+            out.push(f32::from_bits(slot.load(Ordering::Relaxed)));
+        }
+        ring.consumed.store(consumed + taken, Ordering::Release);
+    }
 }
 
 /// Moves what the callback published into the owned capture buffer, stopping
 /// at the capture bound so its preallocated storage never grows. The control
 /// thread is the only side that runs this.
 fn drain_capture_ring(
-    captured_rx: &mut Consumer<f32>,
+    captured_rx: &mut CaptureConsumer,
     buffer: &mut SensitiveCaptureBuffer,
     capacity: usize,
 ) {
     let room = capacity.saturating_sub(buffer.0.len());
-    let available = captured_rx.slots().min(room);
-    let Ok(chunk) = captured_rx.read_chunk(available) else {
-        return;
-    };
-    let (first, second) = chunk.as_slices();
-    buffer.0.extend_from_slice(first);
-    buffer.0.extend_from_slice(second);
-    chunk.commit_all();
+    captured_rx.drain_into(&mut buffer.0, room);
 }
 
 /// Record audio from the default input device until the stop flag is set
@@ -775,19 +850,20 @@ fn record_mic(stop: &AtomicBool) -> Result<(Vec<f32>, u32, u16), String> {
     let capacity = sample_rate as usize * 15 * channels as usize;
     // The ring carries the whole capture bound, so a drain the OS deschedules
     // costs no sample this session would have kept: the callback is refused
-    // only once the 15 seconds are already in hand.
-    let (mut captured_tx, mut captured_rx) = RingBuffer::<f32>::new(capacity);
+    // only once the 15 seconds are already in hand. Both halves unwind with
+    // this frame, and the last of them to drop erases every slot.
+    let (mut captured_tx, mut captured_rx) = capture_ring(capacity);
     let mut buffer = SensitiveCaptureBuffer(Vec::with_capacity(capacity));
     let stream_failed = Arc::new(AtomicBool::new(false));
-    let failure_kind = Arc::new(AtomicU8::new(NO_CAPTURE_FAILURE));
+    let failure_code = Arc::new(AtomicU8::new(NO_CAPTURE_FAILURE));
 
     let stream = device
         .build_input_stream(
             config.into(),
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                capture_samples(&mut captured_tx, data);
+                captured_tx.push_partial(data);
             },
-            cpal_runtime_failure_callback(stream_failed.clone(), failure_kind.clone()),
+            cpal_runtime_failure_callback(stream_failed.clone(), failure_code.clone()),
             None,
         )
         .map_err(|e| format!("Failed to build mic stream: {e}"))?;
@@ -809,7 +885,7 @@ fn record_mic(stop: &AtomicBool) -> Result<(Vec<f32>, u32, u16), String> {
     drop(stream);
     drain_capture_ring(&mut captured_rx, &mut buffer, capacity);
 
-    let samples = finish_capture_after_stream_status(buffer, &stream_failed, &failure_kind)?;
+    let samples = finish_capture_after_stream_status(buffer, &stream_failed, &failure_code)?;
 
     Ok((samples, sample_rate, channels))
 }
@@ -822,10 +898,10 @@ fn record_mic(stop: &AtomicBool) -> Result<(Vec<f32>, u32, u16), String> {
 fn finish_capture_after_stream_status(
     mut buffer: SensitiveCaptureBuffer,
     stream_failed: &AtomicBool,
-    failure_kind: &AtomicU8,
+    failure_code: &AtomicU8,
 ) -> Result<Vec<f32>, String> {
     if stream_failed.load(Ordering::SeqCst) {
-        return Err(capture_failure_message(failure_kind.load(Ordering::SeqCst)));
+        return Err(capture_failure_message(failure_code.load(Ordering::SeqCst)));
     }
 
     Ok(std::mem::take(&mut buffer.0))
@@ -932,6 +1008,14 @@ mod tests {
 
     impl EraseOwnedOutput for EraseOutputProbe {
         fn erase_owned_output(self) {
+            self.0.set(true);
+        }
+    }
+
+    struct EraseSlotsProbe(Rc<Cell<bool>>);
+
+    impl EraseSlots for EraseSlotsProbe {
+        fn erase_slots(&mut self) {
             self.0.set(true);
         }
     }
@@ -1112,14 +1196,13 @@ mod tests {
         assert!(!terminal.claim_result());
     }
 
-    /// The mic data callback used to `try_lock` a `Mutex` and
-    /// `extend_from_slice` a `Vec` on the OS audio thread, so a block that
-    /// arrived while the control thread held that lock was lost outright. It
-    /// now copies into ring slots that already exist: a drain in progress
-    /// costs nothing, and the capture buffer only ever grows on the control
-    /// thread, inside the bound it was preallocated for.
+    /// Pins the OS audio thread's whole share of the capture path — the data
+    /// callback body and the ring push it calls — then drives that path in
+    /// sequence: alternating pushes and drains deliver every sample in order,
+    /// the drain stops at the capture bound, and the ring then refuses what no
+    /// longer fits instead of waiting or growing.
     #[test]
-    fn the_mic_callback_keeps_writing_while_the_control_thread_drains() {
+    fn the_pinned_capture_path_never_locks_and_never_grows_past_the_capture_bound() {
         let source = include_str!("speech.rs");
         let record_mic = source
             .split_once("fn record_mic(")
@@ -1137,40 +1220,40 @@ mod tests {
             .0;
         assert_eq!(
             data_callback.trim(),
-            "config.into(),\n            move |data: &[f32], _: &cpal::InputCallbackInfo| {\n                capture_samples(&mut captured_tx, data);\n            },"
+            "config.into(),\n            move |data: &[f32], _: &cpal::InputCallbackInfo| {\n                captured_tx.push_partial(data);\n            },"
         );
 
-        let capture_helper = source
-            .split_once("fn capture_samples(")
-            .expect("capture_samples must exist")
+        let ring_push = source
+            .split_once("fn push_partial(")
+            .expect("push_partial must exist")
             .1
-            .split_once("fn drain_capture_ring(")
-            .expect("capture_samples must end before drain_capture_ring")
+            .split_once("impl CaptureConsumer {")
+            .expect("push_partial must end before the consumer half")
             .0;
         for forbidden in ["Mutex", "try_lock", "lock", "extend_from_slice"] {
             assert!(
-                !capture_helper.contains(forbidden),
-                "capture_samples must not mention {forbidden}"
+                !ring_push.contains(forbidden),
+                "the ring push must not mention {forbidden}"
             );
         }
 
         const BOUND: usize = 4;
-        let (mut captured_tx, mut captured_rx) = RingBuffer::<f32>::new(BOUND);
+        let (mut captured_tx, mut captured_rx) = capture_ring(BOUND);
         let mut buffer = SensitiveCaptureBuffer(Vec::with_capacity(BOUND));
         let slots = buffer.0.as_ptr();
 
-        assert_eq!(capture_samples(&mut captured_tx, &[0.1, 0.2]), 2);
+        assert_eq!(captured_tx.push_partial(&[0.1, 0.2]), 2);
         drain_capture_ring(&mut captured_rx, &mut buffer, BOUND);
-        assert_eq!(capture_samples(&mut captured_tx, &[0.3, 0.4]), 2);
+        assert_eq!(captured_tx.push_partial(&[0.3, 0.4]), 2);
         drain_capture_ring(&mut captured_rx, &mut buffer, BOUND);
         assert_eq!(buffer.0, vec![0.1, 0.2, 0.3, 0.4]);
 
         // With the bound reached the drain stops taking samples, the ring
         // fills, and the callback is refused rather than waiting or growing.
-        assert_eq!(capture_samples(&mut captured_tx, &[0.5, 0.6]), 2);
+        assert_eq!(captured_tx.push_partial(&[0.5, 0.6]), 2);
         drain_capture_ring(&mut captured_rx, &mut buffer, BOUND);
-        assert_eq!(capture_samples(&mut captured_tx, &[0.7, 0.8, 0.9]), 2);
-        assert_eq!(capture_samples(&mut captured_tx, &[1.0]), 0);
+        assert_eq!(captured_tx.push_partial(&[0.7, 0.8, 0.9]), 2);
+        assert_eq!(captured_tx.push_partial(&[1.0]), 0);
         assert_eq!(buffer.0, vec![0.1, 0.2, 0.3, 0.4]);
         assert!(
             std::ptr::eq(buffer.0.as_ptr(), slots),
@@ -1178,12 +1261,43 @@ mod tests {
         );
     }
 
+    /// A capture ring holds a whole dictation session. Returning those slots
+    /// to the allocator without overwriting them would leave the recording
+    /// readable in released memory, so the storage erases on every exit path,
+    /// unwind included.
+    #[test]
+    fn the_capture_ring_erases_its_slots_before_they_are_freed() {
+        let erased = Rc::new(Cell::new(false));
+        {
+            let _slots = SensitiveCaptureSlots(EraseSlotsProbe(Rc::clone(&erased)));
+        }
+        assert!(erased.get());
+
+        let unwound = Rc::new(Cell::new(false));
+        let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _slots = SensitiveCaptureSlots(EraseSlotsProbe(Rc::clone(&unwound)));
+            panic!("forced capture ring unwind");
+        }));
+        assert!(unwind.is_err());
+        assert!(unwound.get());
+
+        // Erasure covers every slot the callback could have written, not only
+        // the ones the drain had yet to take.
+        let mut slots: Box<[AtomicU32]> = [0.1f32, -0.2, 0.3, 0.4]
+            .iter()
+            .map(|sample| AtomicU32::new(sample.to_bits()))
+            .collect();
+        assert!(slots.iter().all(|slot| slot.load(Ordering::SeqCst) != 0));
+        slots.erase_slots();
+        assert!(slots.iter().all(|slot| slot.load(Ordering::SeqCst) == 0));
+    }
+
     #[test]
     fn cpal_runtime_error_rejects_before_capture_sample_extraction() {
         let stream_failed = Arc::new(AtomicBool::new(false));
-        let failure_kind = Arc::new(AtomicU8::new(NO_CAPTURE_FAILURE));
+        let failure_code = Arc::new(AtomicU8::new(NO_CAPTURE_FAILURE));
         let mut error_callback =
-            cpal_runtime_failure_callback(Arc::clone(&stream_failed), Arc::clone(&failure_kind));
+            cpal_runtime_failure_callback(Arc::clone(&stream_failed), Arc::clone(&failure_code));
         error_callback(cpal::Error::with_message(
             cpal::ErrorKind::DeviceNotAvailable,
             "disconnected",
@@ -1194,7 +1308,7 @@ mod tests {
         let result = finish_capture_after_stream_status(
             SensitiveCaptureBuffer(vec![0.2, -0.3]),
             &stream_failed,
-            &failure_kind,
+            &failure_code,
         );
 
         assert_eq!(
@@ -1226,39 +1340,39 @@ mod tests {
             .0;
         assert!(
             record_mic.contains(
-                "cpal_runtime_failure_callback(stream_failed.clone(), failure_kind.clone()),"
+                "cpal_runtime_failure_callback(stream_failed.clone(), failure_code.clone()),"
             ),
             "record_mic must register the failure callback that sets these atomics"
         );
         assert!(
             record_mic.contains(
-                "finish_capture_after_stream_status(buffer, &stream_failed, &failure_kind)"
+                "finish_capture_after_stream_status(buffer, &stream_failed, &failure_code)"
             ),
             "record_mic must finish the capture through the helper that reads them"
         );
 
         let stream_failed = Arc::new(AtomicBool::new(false));
-        let failure_kind = Arc::new(AtomicU8::new(NO_CAPTURE_FAILURE));
+        let failure_code = Arc::new(AtomicU8::new(NO_CAPTURE_FAILURE));
 
         // Without a failure an empty capture is a legitimate empty result.
         assert_eq!(
             finish_capture_after_stream_status(
                 SensitiveCaptureBuffer(Vec::new()),
                 &stream_failed,
-                &failure_kind,
+                &failure_code,
             ),
             Ok(Vec::new())
         );
 
         let mut error_callback =
-            cpal_runtime_failure_callback(Arc::clone(&stream_failed), Arc::clone(&failure_kind));
+            cpal_runtime_failure_callback(Arc::clone(&stream_failed), Arc::clone(&failure_code));
         error_callback(cpal::Error::new(cpal::ErrorKind::StreamInvalidated));
 
         assert_eq!(
             finish_capture_after_stream_status(
                 SensitiveCaptureBuffer(Vec::new()),
                 &stream_failed,
-                &failure_kind,
+                &failure_code,
             ),
             Err(format!(
                 "Microphone stream failed: {}",
@@ -1267,12 +1381,12 @@ mod tests {
         );
 
         // A kind the table does not name still fails the capture.
-        let unnamed_kind = AtomicU8::new(u8::MAX);
+        let unnamed_code = AtomicU8::new(u8::MAX);
         assert_eq!(
             finish_capture_after_stream_status(
                 SensitiveCaptureBuffer(Vec::new()),
                 &stream_failed,
-                &unnamed_kind,
+                &unnamed_code,
             ),
             Err("Microphone stream failed.".to_string())
         );
