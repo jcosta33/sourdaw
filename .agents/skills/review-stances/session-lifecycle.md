@@ -1,5 +1,3 @@
-[mode overridden: auto -> full, reason=instruction file requires complete content]
-
 # Review stance: session lifecycle
 
 Dispatch guidance for the stance that attacks a change to a runtime session's lifecycle — anything
