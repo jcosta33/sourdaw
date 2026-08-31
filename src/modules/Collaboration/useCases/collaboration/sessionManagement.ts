@@ -760,9 +760,7 @@ function handlePeerMessage({ peerId, message }: HandlePeerMessageInput): void {
             return;
         }
         const senderIsConnected = state.peers.some((peer) => peer.id === peerId && peer.isConnected);
-        const namedPeerIsKnown =
-            message.peerId === state.localPeerId || state.peers.some((peer) => peer.id === message.peerId);
-        if (!senderIsConnected || !namedPeerIsKnown) {
+        if (!senderIsConnected) {
             return;
         }
         const quarantinedPeerId = message.peerId === state.localPeerId ? peerId : message.peerId;
@@ -840,7 +838,6 @@ function handlePeerConnected(peerId: PeerId): void {
             ...state,
             connectionStatus: 'connected',
             error: recovered && state.error === HOST_DEPARTED_MESSAGE ? null : state.error,
-            quarantinedPeerIds: [],
         });
     }
 }
@@ -982,7 +979,11 @@ function removePeer(peerId: PeerId): void {
         if (!state) {
             return state;
         }
-        return { ...state, peers: state.peers.filter((param) => param.id !== peerId) };
+        return {
+            ...state,
+            peers: state.peers.filter((param) => param.id !== peerId),
+            quarantinedPeerIds: state.quarantinedPeerIds.filter((param) => param !== peerId),
+        };
     });
     sessionState.automergeSync?.forgetPeer(peerId);
     sessionState.peerManager?.removePeer(peerId);

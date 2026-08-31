@@ -967,6 +967,28 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(collaborationStore.value?.peers[1]?.syncHealth).toBe('diverged');
         });
 
+        /**
+         * Turns red on: requiring `message.peerId` to already be in `state.peers`.
+         * A third joiner's roster is often only the host, so a host report that
+         * names sibling joiner J1 would otherwise be dropped.
+         */
+        it('records a sibling joiner named by the host even when the local roster is only the host', () => {
+            sessionRuntimePrimitives.initialize('project-owner-1');
+            collaborationStore.set(
+                makeState({
+                    localPeerId: 'local-j2',
+                    peers: [makePeer({ id: 'host-1', isHost: true })],
+                })
+            );
+
+            latestPeerManager().callbacks.onMessage({
+                peerId: 'host-1',
+                message: { type: 'sync-channel-quarantined', peerId: 'joiner-j1' },
+            });
+
+            expect(collaborationStore.value?.quarantinedPeerIds).toEqual(['joiner-j1']);
+        });
+
         it('keeps a local diverged flag when legacy peer-info omits sync health', () => {
             sessionRuntimePrimitives.initialize('project-owner-1');
             collaborationStore.set(
@@ -1188,6 +1210,29 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
             expect(collaborationStore.value?.peers).toHaveLength(1);
         });
+
+        /**
+         * Turns red on: `removePeer` leaving a remote-only id in
+         * `quarantinedPeerIds`. A host-relayed report never hits
+         * `onSyncQuarantineLifted` on this node, so leave is the only drop.
+         */
+        it('clears a remote-only quarantine record when that peer is removed', () => {
+            sessionRuntimePrimitives.initialize('project-owner-1');
+            collaborationStore.set(
+                makeState({
+                    localPeerId: 'local-j2',
+                    peers: [makePeer({ id: 'host-1', isHost: true })],
+                    quarantinedPeerIds: ['joiner-j1'],
+                })
+            );
+
+            latestPeerManager().callbacks.onMessage({
+                peerId: 'joiner-j1',
+                message: { type: 'peer-leave', peerId: 'joiner-j1' },
+            });
+
+            expect(collaborationStore.value?.quarantinedPeerIds).toEqual([]);
+        });
     });
 
     describe('handlePeerConnected (routed through the captured onConnected callback)', () => {
@@ -1250,6 +1295,25 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             vi.advanceTimersByTime(20_000);
 
             expect(collaborationStore.value?.peers.some((peer) => peer.id === 'peer-1')).toBe(true);
+        });
+
+        /**
+         * Turns red on: `quarantinedPeerIds: []` in `handlePeerConnected`.
+         * Admitting a new peer must not erase a live quarantine.
+         */
+        it('leaves quarantinedPeerIds intact when a new peer connects', () => {
+            sessionRuntimePrimitives.initialize('project-owner-1');
+            collaborationStore.set(makeState({ peers: [makePeer({ id: 'peer-2' })] }));
+            latestAutomergeSync().hooks.onSyncQuarantine?.({
+                peerId: 'peer-2',
+                docId: 'root',
+                error: new Error('sanitation failed'),
+            });
+            expect(collaborationStore.value?.quarantinedPeerIds).toEqual(['peer-2']);
+
+            latestPeerManager().callbacks.onConnected('peer-3');
+
+            expect(collaborationStore.value?.quarantinedPeerIds).toEqual(['peer-2']);
         });
     });
 
