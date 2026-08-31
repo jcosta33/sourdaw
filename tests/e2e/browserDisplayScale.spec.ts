@@ -259,14 +259,26 @@ async function expectContextMenuUsable(app: FrameLocator, scale: number): Promis
     await expect(menu).toHaveCount(0);
 }
 
-async function expectRightEdgeContextMenuClamped(page: Page, app: FrameLocator, scale: number): Promise<void> {
-    const timeline = app.getByLabel('Timeline editor surface');
-    const timelineBox = requireBox(await timeline.boundingBox(), 'timeline editor');
-    const clickPoint = {
-        x: timelineBox.x + timelineBox.width - 4,
-        y: timelineBox.y + timelineBox.height / 2,
-    };
-    await page.mouse.click(clickPoint.x, clickPoint.y, { button: 'right' });
+async function expectRightEdgeContextMenuClamped(app: FrameLocator, scale: number): Promise<void> {
+    const canvas = app.getByLabel('Timeline editor surface');
+    // handleContextMenu is on this canvas. Host mouse clicks 4px from the
+    // labeled box's right edge miss it under iframe CSS scale — that edge is
+    // inspector, scrollbar, or chrome, so no role=menu appears.
+    const edgeInset = 8;
+    const pointer = await canvas.evaluate((element, inset) => {
+        const box = element.getBoundingClientRect();
+        return {
+            localX: box.width - inset,
+            localY: box.height / 2,
+            clientX: box.left + box.width - inset,
+            clientY: box.top + box.height / 2,
+        };
+    }, edgeInset);
+    await canvas.click({
+        button: 'right',
+        position: { x: pointer.localX, y: pointer.localY },
+    });
+    const clickPoint = { x: pointer.clientX * scale, y: pointer.clientY * scale };
 
     const menu = app.getByRole('menu');
     await expect(menu).toBeVisible();
@@ -420,7 +432,7 @@ test('browser display scale preserves viewport geometry and interactions at 50%,
         await expectRestoredFrameReceivesGlobalShortcut(page, app);
         await expectRecentProjectsMenuUsable(frame, app, scale);
         await expectContextMenuUsable(app, scale);
-        await expectRightEdgeContextMenuClamped(page, app, scale);
+        await expectRightEdgeContextMenuClamped(app, scale);
         await expectEqCanvasDrag(page, app);
         await expectExportUsable(page, app);
     }
