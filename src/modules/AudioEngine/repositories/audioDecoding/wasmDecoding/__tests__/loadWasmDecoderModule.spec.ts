@@ -10,13 +10,27 @@ const loaderSource = readFileSync(
     'utf8'
 );
 
+const wasmDecoderUrlAssignment =
+    /const\s+wasmDecoderUrl\s*=\s*new URL\(\s*'wasm\/daw-wasm-decoder\/daw_wasm_decoder\.js',\s*globalThis\.location\.href\s*\)\.href/;
+
+const viteIgnoreImport = /import\(\s*\/\*\s*@vite-ignore\s*\*\/\s*wasmDecoderUrl\s*\)/;
+
 describe('loadWasmDecoderModule', () => {
     it('should construct the public glue URL at runtime before importing it', () => {
         expect(loadWasmDecoderModule).toBeTypeOf('function');
-        expect(loaderSource).toMatch(
-            /new URL\(\s*'wasm\/daw-wasm-decoder\/daw_wasm_decoder\.js',\s*globalThis\.location\.href\s*\)\.href/
-        );
-        expect(loaderSource).toMatch(/import\(\s*\/\*\s*@vite-ignore\s*\*\/\s*wasmDecoderUrl\s*\)/);
+        expect(loaderSource).toMatch(wasmDecoderUrlAssignment);
+        expect(loaderSource).toMatch(viteIgnoreImport);
         expect(loaderSource).not.toMatch(/import\([^)]*['"`]\/(?:public\/)?wasm\//s);
+    });
+
+    it('rejects a decoy URL when wasmDecoderUrl is assigned from the wrong path', () => {
+        const hybridLoaderSource = `
+            new URL('wasm/daw-wasm-decoder/daw_wasm_decoder.js', globalThis.location.href).href;
+            const wasmDecoderUrl = new URL('wasm/wrong.js', globalThis.location.href).href;
+            return (await import(/* @vite-ignore */ wasmDecoderUrl)) as WasmDecoderModule;
+        `;
+
+        expect(hybridLoaderSource).toMatch(viteIgnoreImport);
+        expect(hybridLoaderSource).not.toMatch(wasmDecoderUrlAssignment);
     });
 });
