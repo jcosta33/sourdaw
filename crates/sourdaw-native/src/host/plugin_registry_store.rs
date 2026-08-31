@@ -43,6 +43,7 @@ use std::time::UNIX_EPOCH;
 
 use serde::{Deserialize, Serialize};
 
+use crate::commands::filesystem::APP_DIR_NAME;
 use crate::commands::plugins::MAX_SCAN_CANDIDATES;
 use crate::host::plugin_scan_policy::PluginScanPolicy;
 use crate::state::PluginRegistryEntry;
@@ -76,7 +77,6 @@ use crate::state::PluginRegistryEntry;
 /// would misreport every previously-quarantined binary as healthy.
 const SCAN_REGISTRY_SCHEMA_VERSION: u32 = 4;
 
-const REGISTRY_DIRECTORY: &str = "com.sourdaw.app";
 const REGISTRY_FILE_NAME: &str = "plugin-registry.json";
 const REGISTRY_TEMPORARY_FILE_STEM: &str = "plugin-registry.json";
 
@@ -607,7 +607,7 @@ impl PluginRegistryStore {
 fn default_registry_location() -> Option<PathBuf> {
     Some(
         dirs::data_dir()?
-            .join(REGISTRY_DIRECTORY)
+            .join(APP_DIR_NAME)
             .join(REGISTRY_FILE_NAME),
     )
 }
