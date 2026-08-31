@@ -41,8 +41,13 @@ vi.mock('../../../stores/chatStore', () => ({ chatStore: mocks.chatState, update
 vi.mock('../../../stores/pendingActionConfirmationStore', () => ({
     getPendingActionConfirmation: mocks.getConfirmation,
     refreshPendingActionConfirmationApproval: mocks.reboundApproval,
+    updatePendingActionFollowUp: vi.fn(),
 }));
-vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRevision: mocks.revision }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRevision: mocks.revision,
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint: (expectedRevision: string) =>
+        mocks.revision() === expectedRevision,
+}));
 vi.mock('../admitCommittedSectionRenderRetry', () => ({ admitCommittedSectionRenderRetry: mocks.admitRetry }));
 vi.mock('../../compileAgentRiskApproval', () => ({ compileAgentRiskApproval: mocks.compileApproval }));
 vi.mock('../confirmationTerminalSettlement', () => ({

@@ -33,6 +33,8 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: mocks.captureRevision,
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint: (expectedRevision: string) =>
+        mocks.captureRevision() === expectedRevision,
 }));
 vi.mock('../../../stores/chatStore', () => ({ updateChatMessage: mocks.updateMessage }));
 vi.mock('../../../stores/pendingActionConfirmationStore', () => ({

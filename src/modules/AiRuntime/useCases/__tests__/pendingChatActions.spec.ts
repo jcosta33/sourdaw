@@ -92,6 +92,8 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectMutationAuthorization: projectMutationAuthorization.capture,
     captureProjectRevision: () => mocks.projectRevision.value,
     captureUnownedProjectMutations: () => mocks.unownedMutationEpoch.value,
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint: (expectedRevision: string) =>
+        mocks.projectRevision.value === expectedRevision,
 }));
 
 vi.mock('#/modules/Command/useCases', async (import_original) => ({

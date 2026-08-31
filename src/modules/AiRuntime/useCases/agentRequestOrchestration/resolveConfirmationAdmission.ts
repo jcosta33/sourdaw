@@ -2,7 +2,7 @@ import {
     getVersionedCommandBatchIdempotentReplay,
     refreshVersionedCommandBatchForApproval,
 } from '#/modules/Command/useCases';
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from '#/modules/CrdtDocument/useCases';
 
 import { type ChatActionConfirmationStatus } from '../../models/Chat';
 import { chatStore, updateChatMessage } from '../../stores/chatStore';
@@ -10,6 +10,7 @@ import {
     getPendingActionConfirmation,
     refreshPendingActionConfirmationApproval,
     type PendingAppActionConfirmation,
+    updatePendingActionFollowUp,
 } from '../../stores/pendingActionConfirmationStore';
 import { hasExactAgentCommandBatchAuthority } from '../../validators/hasExactAgentCommandBatchAuthority';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
@@ -66,6 +67,25 @@ function hasSameAdmissionBinding(
             admittedBatch === undefined ||
             hasExactAgentCommandBatchAuthority(currentBatch.authority, admittedBatch.authority))
     );
+}
+
+function getRetainedRenderCapacityFailure(
+    confirmation: PendingAppActionConfirmation
+): TerminalConfirmationResult | null {
+    if (
+        confirmation.status !== 'executed' ||
+        confirmation.followUpStatus !== 'failed' ||
+        !confirmation.error?.includes('retention capacity')
+    ) {
+        return null;
+    }
+    const reason = confirmation.error;
+    updatePendingActionFollowUp({
+        confirmationId: confirmation.id,
+        error: 'Section render manual repair is already required.',
+        status: 'failed',
+    });
+    return { status: 'failed', reason };
 }
 
 function consumeConfirmationAdmission(
@@ -212,6 +232,10 @@ async function resolveConfirmationAdmission(input: {
             };
         }
     }
+    const retainedRenderCapacityFailure = getRetainedRenderCapacityFailure(confirmation);
+    if (retainedRenderCapacityFailure) {
+        return { status: 'handled', result: retainedRenderCapacityFailure };
+    }
     if (confirmation.status !== 'proposed') {
         return { status: 'handled', result: { status: 'not_pending', currentStatus: confirmation.status } };
     }
@@ -220,7 +244,10 @@ async function resolveConfirmationAdmission(input: {
     const recoveringPendingEffects =
         priorVerifiedBatchReceipt?.outcome === 'partially-committed' &&
         priorVerifiedBatchReceipt.pendingEffects.length > 0;
-    if (!hasPriorVerifiedBatchReceipt && captureProjectRevision() !== confirmation.projectRevision) {
+    if (
+        !hasPriorVerifiedBatchReceipt &&
+        !projectRevisionMatchesLiveIgnoringCommandCheckpoint(confirmation.projectRevision)
+    ) {
         const commandBatch = confirmation.approvalSnapshot.commandBatch;
         if (!commandBatch) {
             return {
