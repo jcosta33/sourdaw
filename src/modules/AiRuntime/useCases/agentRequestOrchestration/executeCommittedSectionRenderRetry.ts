@@ -268,7 +268,12 @@ function finishRetentionCapacityManualRepair(
         reason,
     });
     const surfacedError = [reason, persistenceWarning, manualRepairPersistenceWarning].filter(Boolean).join('\n\n');
-    updatePendingActionFollowUp({ confirmationId: confirmation.id, error: surfacedError, status: 'failed' });
+    updatePendingActionFollowUp({
+        confirmationId: confirmation.id,
+        error: surfacedError,
+        failureKind: 'retention-capacity',
+        status: 'failed',
+    });
     updatePendingActionConfirmationStatus({
         confirmationId: confirmation.id,
         status: manualRepairPersistenceWarning ? 'failed' : 'executed',

@@ -132,17 +132,21 @@ const batchEnvelope = {
     },
 } satisfies Parameters<typeof createVerifiedBatchReceipt>[0]['envelope'];
 
-function createInput(status: Input['batchResult']['status'], options: { pendingEffect?: boolean } = {}): Input {
+function createInput(
+    status: Input['batchResult']['status'],
+    options: { pendingEffect?: boolean; failureKind?: 'retention-capacity' } = {}
+): Input {
     const warning = status.endsWith('warning') ? 'follow-up warning' : undefined;
     const receiptWarning = options.pendingEffect ? 'render still pending' : warning;
     const pendingEffect = options.pendingEffect
         ? {
               commandId: 'command-1',
               kind: 'external-effect' as const,
-              operation: 'addDevice' as const,
+              operation: options.failureKind ? ('renderProjectSections' as const) : ('addDevice' as const),
               reason: 'render still pending',
               remediation: 'manual-repair' as const,
               state: 'pending' as const,
+              ...(options.failureKind ? { failureKind: options.failureKind } : {}),
           }
         : undefined;
     const receipt = createVerifiedBatchReceipt({
@@ -313,6 +317,28 @@ describe('settleConfirmedBatchOutcome', () => {
         ]);
     });
 
+    it('records retention-capacity failure kind for a matching manual render repair', async () => {
+        const input = createInput('committed-with-warning', {
+            pendingEffect: true,
+            failureKind: 'retention-capacity',
+        });
+        mocks.recordReceipt.mockReturnValue({ warning: null, effectsPending: true });
+        mocks.project.mockReset();
+        mocks.project.mockReturnValueOnce({ executions: [], receipt: 'receipt' }).mockReturnValueOnce({
+            incompleteSectionRenders: { jobs: [{ jobId: 'render-a' }] },
+            reviewRequiredSectionRenders: [],
+        });
+
+        await settleConfirmedBatchOutcome(input);
+
+        expect(mocks.updateFollowUp).toHaveBeenCalledWith(
+            expect.objectContaining({
+                failureKind: 'retention-capacity',
+                status: 'failed',
+            })
+        );
+    });
+
     it('arms a retry only for incomplete warned project renders', async () => {
         const input = createInput('committed-with-warning');
         mocks.project.mockReturnValueOnce({ executions: [], receipt: 'receipt' }).mockReturnValueOnce({
@@ -345,6 +371,7 @@ describe('settleConfirmedBatchOutcome', () => {
         expect(mocks.updateFollowUp).toHaveBeenCalledWith(
             expect.objectContaining({ status: 'failed', projectRevision: null })
         );
+        expect(mocks.updateFollowUp.mock.calls[0]?.[0]).not.toHaveProperty('failureKind');
     });
 
     it('does not report a persistence failure when review settles during deferred resource retention', async () => {
