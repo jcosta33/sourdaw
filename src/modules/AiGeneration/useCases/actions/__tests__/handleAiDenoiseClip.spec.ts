@@ -33,18 +33,25 @@ vi.mock('../updateTask', () => ({
     updateTask: updateTaskMock,
 }));
 
-const create_test_audio_buffer = (samples: Float32Array<ArrayBuffer>, sample_rate: number = 48_000): AudioBuffer => {
+const create_test_audio_buffer = (
+    samples: Float32Array<ArrayBuffer> | Float32Array<ArrayBuffer>[],
+    sample_rate: number = 48_000
+): AudioBuffer => {
+    const channels = samples instanceof Float32Array ? [samples] : samples;
+    const frame_length = channels[0]?.length ?? 0;
     return {
-        copyFromChannel: (destination, _channel_number, start_in_channel = 0) => {
-            destination.set(samples.subarray(start_in_channel, start_in_channel + destination.length));
+        copyFromChannel: (destination, channel_number, start_in_channel = 0) => {
+            destination.set(
+                channels[channel_number]!.subarray(start_in_channel, start_in_channel + destination.length)
+            );
         },
-        copyToChannel: (source, _channel_number, start_in_channel = 0) => {
-            samples.set(source, start_in_channel);
+        copyToChannel: (source, channel_number, start_in_channel = 0) => {
+            channels[channel_number]!.set(source, start_in_channel);
         },
-        duration: samples.length / sample_rate,
-        getChannelData: () => samples,
-        length: samples.length,
-        numberOfChannels: 1,
+        duration: frame_length / sample_rate,
+        getChannelData: (channel_number) => channels[channel_number]!,
+        length: frame_length,
+        numberOfChannels: channels.length,
         sampleRate: sample_rate,
     };
 };
@@ -56,8 +63,9 @@ class TestOfflineAudioContext {
         private readonly sample_rate: number
     ) {}
 
-    createBuffer(_number_of_channels: number, length: number, sample_rate: number): AudioBuffer {
-        return create_test_audio_buffer(new Float32Array(length || this.length), sample_rate || this.sample_rate);
+    createBuffer(number_of_channels: number, length: number, sample_rate: number): AudioBuffer {
+        const channels = Array.from({ length: number_of_channels }, () => new Float32Array(length || this.length));
+        return create_test_audio_buffer(channels, sample_rate || this.sample_rate);
     }
 }
 
@@ -125,6 +133,43 @@ describe('handleAiDenoiseClip', () => {
         const cached_buffer = cacheAudioBufferMock.mock.calls[0]![0].buffer as AudioBuffer;
         const output = cached_buffer.getChannelData(0);
         expect(output).toStrictEqual(source_samples);
+    });
+
+    it('preserves distinct stereo channels in the browser fallback', async () => {
+        const left = new Float32Array([0.01, -0.02, 0.03, -0.04]);
+        const right = new Float32Array([0.4, 0.3, -0.2, -0.1]);
+        getCachedAudioBufferMock.mockReturnValue(create_test_audio_buffer([left.slice(), right.slice()]));
+
+        await handleAiDenoiseClip('clip-stereo-browser', 0);
+
+        const cached_buffer = cacheAudioBufferMock.mock.calls[0]![0].buffer as AudioBuffer;
+        expect(cached_buffer.numberOfChannels).toBe(2);
+        expect(cached_buffer.length).toBe(left.length);
+        expect(cached_buffer.getChannelData(0)).toStrictEqual(left);
+        expect(cached_buffer.getChannelData(1)).toStrictEqual(right);
+        expect(cached_buffer.getChannelData(1)).not.toStrictEqual(cached_buffer.getChannelData(0));
+    });
+
+    it('sends planar stereo samples to native denoise and caches its stereo result', async () => {
+        const left = new Float32Array([0.1, 0.2, 0.3]);
+        const right = new Float32Array([-0.4, -0.5, -0.6]);
+        const denoised_left = new Float32Array([0.01, 0.02, 0.03]);
+        const denoised_right = new Float32Array([-0.04, -0.05, -0.06]);
+        getCachedAudioBufferMock.mockReturnValue(create_test_audio_buffer([left, right]));
+        isDesktopMock.mockReturnValue(true);
+        denoiseAudioMock.mockResolvedValue({
+            noise_floor_db: -36,
+            samples: new Float32Array([...denoised_left, ...denoised_right]),
+        });
+
+        await handleAiDenoiseClip('clip-stereo-desktop', 0.5);
+
+        expect(denoiseAudioMock).toHaveBeenCalledWith(new Float32Array([...left, ...right]), 48_000, 2, 0.5);
+        const cached_buffer = cacheAudioBufferMock.mock.calls[0]![0].buffer as AudioBuffer;
+        expect(cached_buffer.numberOfChannels).toBe(2);
+        expect(cached_buffer.length).toBe(left.length);
+        expect(cached_buffer.getChannelData(0)).toStrictEqual(denoised_left);
+        expect(cached_buffer.getChannelData(1)).toStrictEqual(denoised_right);
     });
 
     // Mirrors the Rust pin

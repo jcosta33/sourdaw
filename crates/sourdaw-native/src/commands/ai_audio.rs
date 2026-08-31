@@ -9,6 +9,8 @@ const BYTES_PER_SAMPLE: usize = 4;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DenoiseRequest {
     pub sample_rate: u32,
+    /// Channel-planar PCM: `[ch0 frames…][ch1 frames…]…`, where
+    /// `frames = samples.len() / channels`.
     pub channels: u32,
     pub strength: f64,
 }
@@ -23,6 +25,7 @@ pub struct DenoiseResult {
 struct DenoisePcm {
     samples: Vec<f32>,
     sample_rate: u32,
+    channels: u32,
     strength: f64,
 }
 
@@ -88,6 +91,7 @@ pub async fn denoise_audio(
         let processed = denoise_audio_blocking(DenoisePcm {
             samples: pcm,
             sample_rate: request.sample_rate,
+            channels: request.channels,
             strength: request.strength,
         })?;
         Ok(DenoiseResult {
@@ -118,33 +122,33 @@ const ENVELOPE_RELEASE_SECONDS: f32 = 0.1;
 fn denoise_audio_blocking(request: DenoisePcm) -> Result<DenoisePcmResult, String> {
     let start = std::time::Instant::now();
     let strength = request.strength.clamp(0.0, 1.0);
-
+    let channels = validate_channel_layout(request.samples.len(), request.channels)?;
+    let frames = request.samples.len() / channels;
     let mut output = request.samples;
 
-    let noise_power = estimate_noise_power(&output, request.sample_rate);
+    let noise_power = estimate_noise_power(&output, request.sample_rate, channels);
     let noise_floor_db = 10.0 * noise_power.max(1e-12).log10();
 
     // Strength 0 is bit-exact pass-through: skipping the loop (rather than
     // multiplying by a computed gain of 1.0) guarantees it.
-    if strength > 0.0 {
+    if strength > 0.0 && frames > 0 {
         let threshold = (noise_power * (1.0 + strength * 3.0)).sqrt() as f32;
         let strength = strength as f32;
         let attack = envelope_coefficient(request.sample_rate, ENVELOPE_ATTACK_SECONDS);
         let release = envelope_coefficient(request.sample_rate, ENVELOPE_RELEASE_SECONDS);
-        // The gain is keyed by a smoothed level, not the instantaneous
-        // sample: gain from |x| itself turns the sub-threshold branch into
-        // a memoryless waveshaper that returns sub-threshold sines as
-        // harmonic distortion instead of attenuating them (pinned by the
-        // THD test below).
-        let mut envelope = 0.0_f32;
-        for sample in output.iter_mut() {
-            let abs = sample.abs();
-            let coefficient = if abs > envelope { attack } else { release };
-            envelope = abs + coefficient * (envelope - abs);
-            // `envelope < threshold` is false when the threshold is 0 (a
-            // digitally silent analysis window), so silence passes through.
-            if envelope < threshold {
-                *sample *= expander_gain(envelope / threshold, strength);
+        for channel in output.chunks_exact_mut(frames) {
+            // Each channel owns an envelope so a preceding channel cannot
+            // alter the gain at the start of the next channel plane.
+            let mut envelope = 0.0_f32;
+            for sample in channel {
+                let abs = sample.abs();
+                let coefficient = if abs > envelope { attack } else { release };
+                envelope = abs + coefficient * (envelope - abs);
+                // `envelope < threshold` is false when the threshold is 0 (a
+                // digitally silent analysis window), so silence passes through.
+                if envelope < threshold {
+                    *sample *= expander_gain(envelope / threshold, strength);
+                }
             }
         }
     }
@@ -167,15 +171,32 @@ fn envelope_coefficient(sample_rate: u32, time_seconds: f32) -> f32 {
 /// The mean divides by the number of samples actually summed, so a clip
 /// shorter than the window is averaged over what exists instead of being
 /// diluted by the nominal window length.
-fn estimate_noise_power(samples: &[f32], sample_rate: u32) -> f64 {
+fn validate_channel_layout(sample_count: usize, channels: u32) -> Result<usize, String> {
+    if channels == 0 {
+        return Err("Denoise channel count must be at least 1".to_owned());
+    }
+    let channels = channels as usize;
+    if sample_count % channels != 0 {
+        return Err(format!(
+            "Denoise sample count {sample_count} must be divisible by channel count {channels}"
+        ));
+    }
+    Ok(channels)
+}
+
+fn estimate_noise_power(samples: &[f32], sample_rate: u32, channels: usize) -> f64 {
+    let frames = samples.len() / channels;
     let hop = 1024_usize;
     let noise_frames = (sample_rate as f64 * NOISE_WINDOW_SECONDS / hop as f64) as usize;
-    let counted = (noise_frames * hop).min(samples.len());
+    let counted_frames = (noise_frames * hop).min(frames);
     let mut noise_power = 0.0_f64;
-    for s in samples.iter().take(counted) {
-        noise_power += (*s as f64) * (*s as f64);
+    for channel in 0..channels {
+        let channel_start = channel * frames;
+        for sample in &samples[channel_start..channel_start + counted_frames] {
+            noise_power += (*sample as f64) * (*sample as f64);
+        }
     }
-    noise_power / counted.max(1) as f64
+    noise_power / (counted_frames * channels).max(1) as f64
 }
 
 /// Gain applied below the expander threshold, where
@@ -214,6 +235,7 @@ mod tests {
         DenoisePcm {
             samples,
             sample_rate,
+            channels: 1,
             strength,
         }
     }
@@ -270,11 +292,11 @@ mod tests {
     fn estimate_noise_power_averages_over_the_samples_actually_summed() {
         // Shorter than the window: mean over the 4 real samples, not the
         // nominal 23 552-sample window at 48 kHz.
-        let power = estimate_noise_power(&[0.5, -0.5, 0.5, -0.5], 48_000);
+        let power = estimate_noise_power(&[0.5, -0.5, 0.5, -0.5], 48_000, 1);
         assert!((power - 0.25).abs() < 1e-9);
         // Longer than the window: only the window is summed and divided by.
         let long: Vec<f32> = vec![0.5; 30_000];
-        let power = estimate_noise_power(&long, 48_000);
+        let power = estimate_noise_power(&long, 48_000, 1);
         assert!((power - 0.25).abs() < 1e-9);
     }
 
@@ -485,5 +507,95 @@ mod tests {
             error.contains("whole number"),
             "expected an alignment error, got {error}"
         );
+    }
+
+    #[test]
+    fn stereo_denoise_preserves_distinct_channel_planes() {
+        let left = vec![0.01, -0.02, 0.03, -0.04];
+        let right = vec![0.4, 0.3, -0.2, -0.1];
+        let samples = [left.clone(), right.clone()].concat();
+        let result = denoise_audio_blocking(DenoisePcm {
+            samples,
+            sample_rate: 48_000,
+            channels: 2,
+            strength: 0.0,
+        })
+        .unwrap();
+
+        assert_eq!(&result.samples[..left.len()], left);
+        assert_eq!(&result.samples[left.len()..], right);
+    }
+
+    #[test]
+    fn stereo_noise_floor_is_shared_across_all_channel_samples() {
+        let frames = 1024;
+        let mut samples = vec![0.01; frames];
+        samples.extend(vec![1.0; frames]);
+        let result = denoise_audio_blocking(DenoisePcm {
+            samples,
+            sample_rate: 48_000,
+            channels: 2,
+            strength: 0.0,
+        })
+        .unwrap();
+        let expected_power = (0.01_f64.powi(2) + 1.0) / 2.0;
+        let expected_db = 10.0 * expected_power.log10();
+
+        assert!(
+            (result.noise_floor_db - expected_db).abs() < 1e-9,
+            "noise_floor_db = {}, expected {expected_db}",
+            result.noise_floor_db
+        );
+    }
+
+    #[test]
+    fn stereo_channels_use_independent_envelopes() {
+        let channel: Vec<f32> = (0..4800)
+            .map(|index| if index % 2 == 0 { 0.01 } else { -0.01 })
+            .collect();
+        let result = denoise_audio_blocking(DenoisePcm {
+            samples: [channel.clone(), channel.clone()].concat(),
+            sample_rate: 48_000,
+            channels: 2,
+            strength: 0.7,
+        })
+        .unwrap();
+
+        assert_eq!(
+            &result.samples[..channel.len()],
+            &result.samples[channel.len()..]
+        );
+    }
+
+    #[tokio::test]
+    async fn channel_count_must_divide_the_sample_count() {
+        let error = denoise_audio(
+            DenoiseRequest {
+                sample_rate: 48_000,
+                channels: 2,
+                strength: 0.0,
+            },
+            encode_denoise_pcm(&[0.1, 0.2, 0.3]),
+        )
+        .await
+        .expect_err("odd stereo sample count must be a command error");
+
+        assert!(error.contains("divisible"), "unexpected error: {error}");
+    }
+
+    #[tokio::test]
+    async fn zero_channels_is_a_command_error() {
+        let error = denoise_audio(
+            DenoiseRequest {
+                sample_rate: 48_000,
+                channels: 0,
+                strength: 0.0,
+            },
+            encode_denoise_pcm(&[0.1, 0.2]),
+        )
+        .await
+        .expect_err("zero channels must be a command error");
+
+        assert!(error.contains("at least 1"), "unexpected error: {error}");
     }
 }
