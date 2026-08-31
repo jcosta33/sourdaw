@@ -207,7 +207,13 @@ async function runRecoverReviewResolutionLockCliResolved(
                 return retirementSummary(
                     parsed.number!,
                     lockOwner,
-                    retireUnseenReviewResolutionLockOwnerState(parsed.number!, lockOwner, port)
+                    retireUnseenReviewResolutionLockOwnerState(
+                        parsed.number!,
+                        lockOwner,
+                        port,
+                        resolvedDependencies.clock,
+                        primaryRoot
+                    )
                 );
             }
             return recoverySummary(

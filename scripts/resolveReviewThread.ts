@@ -3206,9 +3206,7 @@ export function recoverPullRequestReviewResolutionLock<Value>(
     }
     if (owner.version === 3 || owner.version === 4) {
         if (owner.legacyUnjournaled === true) {
-            fail(
-                'review-resolution recovery refuses an unjournaled legacy v2 lock owner without positive landed-mutation proof'
-            );
+            fail(unjournaledLegacyReviewResolutionLockOwnerMessage(owner.version));
         }
         if (owner.mutation.phase !== 'idle') {
             fail(`review-resolution recovery refuses legacy v${owner.version} lock owner without a v5 replay receipt`);
@@ -3290,11 +3288,13 @@ function assertV5ReviewResolutionLockOwner(
         return;
     }
     if (owner.legacyUnjournaled === true) {
-        fail(
-            'review-resolution recovery refuses an unjournaled legacy v2 lock owner without positive landed-mutation proof'
-        );
+        fail(unjournaledLegacyReviewResolutionLockOwnerMessage(owner.version));
     }
     fail(`review-resolution recovery refuses legacy v${owner.version} lock owner without a v5 replay receipt`);
+}
+
+function unjournaledLegacyReviewResolutionLockOwnerMessage(version: 2 | 3 | 4): string {
+    return `review-resolution recovery refuses an unjournaled legacy v${version} lock owner without positive landed-mutation proof`;
 }
 function claimRecoveringPullRequestReviewResolutionLock(
     primaryRoot: string,
@@ -3928,6 +3928,39 @@ function exactRecoveredReviewIdsAtOwnerHead(
     return [...reviewIds].sort();
 }
 
+function exactLandedCreatePendingReviewIds(
+    inspection: ReviewThreadInspection,
+    context: ResolutionReviewContext,
+    mutation: Extract<ReviewResolutionLockMutation, { phase: 'createPendingReview' | 'createPendingReviewSettlement' }>
+): string[] {
+    if (inspection.pullRequestId !== mutation.pullRequestId) {
+        return [];
+    }
+    const reviewIds = new Set<string>();
+    for (const review of inspection.pendingReviews) {
+        if (
+            review.state === 'PENDING' &&
+            review.commitOid === mutation.reviewCommitOid &&
+            review.body === mutation.body &&
+            isAuthorBotActor(review.authorNodeId, review.authorType)
+        ) {
+            reviewIds.add(review.id);
+        }
+    }
+    if (inspection.thread !== null) {
+        for (const candidate of managedReplyMarkers(inspection.thread, context, ['PENDING', 'COMMENTED'], false)) {
+            if (
+                candidate.currentHead &&
+                candidate.review.commitOid === mutation.reviewCommitOid &&
+                candidate.review.body === mutation.body
+            ) {
+                reviewIds.add(candidate.review.id);
+            }
+        }
+    }
+    return [...reviewIds].sort();
+}
+
 function exactRecoveredReplyMarkersAtOwnerHead(
     thread: ReviewThread,
     context: ResolutionReviewContext,
@@ -3936,6 +3969,29 @@ function exactRecoveredReplyMarkersAtOwnerHead(
     return managedReplyMarkers(thread, context, ['PENDING', 'COMMENTED'], true).filter(
         (candidate) => candidate.currentHead && candidate.review.id === reviewId
     );
+}
+
+function exactRetirementMutationEvidenceCount(
+    owner: CurrentReviewResolutionLockOwner,
+    inspection: ReviewThreadInspection,
+    context: ResolutionReviewContext
+): number {
+    switch (owner.mutation.phase) {
+        case 'createPendingReview':
+        case 'createPendingReviewSettlement':
+            return exactLandedCreatePendingReviewIds(inspection, context, owner.mutation).length;
+        case 'replyDone':
+        case 'replyDoneSettlement':
+            return managedReplyMarkers(inspection.thread!, context, ['PENDING', 'COMMENTED'], false).filter(
+                (candidate) =>
+                    candidate.currentHead &&
+                    candidate.review.id === owner.mutation.reviewId &&
+                    candidate.review.body === owner.mutation.body &&
+                    candidate.review.commitOid === owner.mutation.reviewCommitOid
+            ).length;
+        default:
+            return 0;
+    }
 }
 
 function assertExactRecoveredMutationAfterHeadDrift(
@@ -3985,36 +4041,9 @@ function hasRecoveredReviewResolutionMutation(
         case 'idle':
             return true;
         case 'createPendingReview':
-            return (
-                inspection.pullRequestId === mutation.pullRequestId &&
-                (inspection.pendingReviews.filter(
-                    (review) =>
-                        review.state === 'PENDING' &&
-                        review.commitOid === mutation.reviewCommitOid &&
-                        review.body === mutation.body &&
-                        isAuthorBotActor(review.authorNodeId, review.authorType)
-                ).length === 1 ||
-                    managedReplyMarkers(thread, context, ['PENDING', 'COMMENTED'], false).filter(
-                        (candidate) =>
-                            candidate.review.commitOid === mutation.reviewCommitOid &&
-                            candidate.review.body === mutation.body
-                    ).length === 1)
-            );
+            return exactLandedCreatePendingReviewIds(inspection, context, mutation).length === 1;
         case 'createPendingReviewSettlement':
-            return (
-                inspection.pendingReviews.some(
-                    (review) =>
-                        review.state === 'PENDING' &&
-                        review.commitOid === mutation.reviewCommitOid &&
-                        review.body === mutation.body &&
-                        isAuthorBotActor(review.authorNodeId, review.authorType)
-                ) ||
-                managedReplyMarkers(thread, context, ['PENDING', 'COMMENTED'], false).some(
-                    (candidate) =>
-                        candidate.review.commitOid === mutation.reviewCommitOid &&
-                        candidate.review.body === mutation.body
-                )
-            );
+            return exactLandedCreatePendingReviewIds(inspection, context, mutation).length > 0;
         case 'replyDone':
             return managedReplyMarkers(thread, context, ['PENDING', 'COMMENTED'], false).some(
                 (candidate) =>
@@ -4081,7 +4110,9 @@ export function reviewResolutionRecoveryResult(
 export function retireUnseenReviewResolutionLockOwnerState(
     number: number,
     owner: ReviewResolutionLockOwner,
-    port: ResolveReviewThreadPort
+    port: ResolveReviewThreadPort,
+    clock: ReviewResolutionRecoveryClock = systemReviewResolutionRecoveryClock,
+    primaryRoot: string = process.cwd()
 ): ReviewThreadInspection {
     assertV5ReviewResolutionLockOwner(owner);
     if (
@@ -4092,17 +4123,27 @@ export function retireUnseenReviewResolutionLockOwnerState(
     ) {
         fail('review-resolution retirement requires an unseen createPendingReview or replyDone mutation');
     }
-    const first = inspectReviewResolutionRecovery(number, owner, port);
-    const firstContext = resolutionReviewContext(first.pullRequestId, owner.threadId, owner.head);
-    if (hasRecoveredReviewResolutionMutation(number, owner, first, firstContext, first.thread!, port)) {
-        fail('review-resolution retirement found a matching mutation during the first remote inspection');
+    const inspection = inspectReviewResolutionRecovery(number, owner, port);
+    const context = resolutionReviewContext(inspection.pullRequestId, owner.threadId, owner.head);
+    const mutation = owner.mutation;
+    const evidenceCount = exactRetirementMutationEvidenceCount(owner, inspection, context);
+    if (evidenceCount === 1) {
+        fail('review-resolution retirement found a matching mutation during remote inspection');
     }
-    const second = inspectReviewResolutionRecovery(number, owner, port);
-    const secondContext = resolutionReviewContext(second.pullRequestId, owner.threadId, owner.head);
-    if (hasRecoveredReviewResolutionMutation(number, owner, second, secondContext, second.thread!, port)) {
-        fail('review-resolution retirement found a matching mutation during the second remote inspection');
+    if (evidenceCount > 1) {
+        fail('review-resolution retirement found ambiguous matching mutations during remote inspection');
     }
-    return second;
+    const recoveryPrimaryRoot = activeReviewResolutionLocks.at(-1)?.primaryRoot ?? primaryRoot;
+    if (mutation.phase === 'createPendingReview') {
+        return preserveCreatePendingReviewSettlement(number, recoveryPrimaryRoot, inspection, mutation, clock);
+    }
+    if (mutation.phase === 'replyDone') {
+        return preserveReplyDoneSettlement(number, recoveryPrimaryRoot, inspection, mutation, clock);
+    }
+    if (mutation.replayed || clock.now() <= mutation.settleAtMs) {
+        fail(unreconciledReviewResolutionMutationMessage(number, mutation));
+    }
+    return inspection;
 }
 
 function continueRecoveredReviewResolution(
@@ -4313,7 +4354,7 @@ function recoverCreatePendingReviewSettlement(
     if (recoveredReviewIds.length > 0) {
         return continueRecoveredReviewResolution(number, owner, port);
     }
-    if (clock.now() < mutation.settleAtMs) {
+    if (clock.now() <= mutation.settleAtMs) {
         fail(unreconciledReviewResolutionMutationMessage(number, mutation));
     }
     if (inspection.pullRequestId !== mutation.pullRequestId) {
@@ -4361,7 +4402,7 @@ function recoverReplyDoneSettlement(
     if (recoveredReplies.length > 0) {
         return continueRecoveredReviewResolution(number, owner, port);
     }
-    if (clock.now() < mutation.settleAtMs) {
+    if (clock.now() <= mutation.settleAtMs) {
         fail(unreconciledReviewResolutionMutationMessage(number, mutation));
     }
     const review = port.inspectPullRequestReview(number, mutation.reviewId, inspection.pullRequestId, inspection.head);
