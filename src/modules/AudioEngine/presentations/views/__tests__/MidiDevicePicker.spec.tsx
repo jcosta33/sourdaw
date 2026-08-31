@@ -166,6 +166,24 @@ describe('MidiDevicePicker', () => {
         });
     });
 
+    it('does not show detecting copy when listing failed before init settles', async () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            isSupported: true,
+            enumerationError: 'enumeration failed',
+            inputs: [],
+            selectedInputId: null,
+        });
+        mockInitWebMidi.mockReturnValue(new Promise(() => {}));
+
+        render(<MidiDevicePicker />);
+
+        expect(screen.getByText("Couldn't list MIDI devices. Refresh to try again.")).toBeInTheDocument();
+        expect(screen.getByLabelText('Refresh MIDI devices')).toBeInTheDocument();
+        expect(screen.queryByText('Detecting devices...')).not.toBeInTheDocument();
+        expect(screen.queryByText('Detecting MIDI devices...')).not.toBeInTheDocument();
+        expect(screen.getByText('No MIDI devices found')).toBeInTheDocument();
+    });
+
     it('shows the detecting state and a disabled select while devices are empty and not initialised', async () => {
         (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
             isSupported: true,

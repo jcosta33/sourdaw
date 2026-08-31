@@ -1,4 +1,3 @@
-import { waitFor } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 
 type TestMidiInput = Pick<MIDIInput, 'removeEventListener'> & {
@@ -675,9 +674,11 @@ describe('initWebMidi', () => {
 
         expect(firstResult).toBe(false);
         expect(getStateMock()).toMatchObject({
+            isSupported: true,
             enumerationError: null,
             inputs: [expect.objectContaining({ id: 'Native MIDI', name: 'Native MIDI' })],
         });
+        expect(setStateMock).not.toHaveBeenCalledWith({ isSupported: false });
         expect(setStateMock).not.toHaveBeenCalledWith(
             expect.objectContaining({ enumerationError: expect.any(String) })
         );
@@ -717,7 +718,7 @@ describe('initWebMidi', () => {
         readPersistedInputIdMock.mockReturnValue(null);
 
         const firstInit = initWebMidi({ onMidiMessage });
-        await waitFor(() => {
+        await vi.waitFor(() => {
             expect(selectMidiInputNative).toHaveBeenCalledWith(
                 expect.objectContaining({ portIndex: 0, portName: 'Built-in', onMidiMessage })
             );
