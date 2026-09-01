@@ -67,6 +67,10 @@ const identityTransitionReady = vi.hoisted(() => {
             this.ready = Promise.resolve();
             release = undefined;
         },
+        fail(reason: unknown): void {
+            this.ready = Promise.reject(reason);
+            void this.ready.catch(() => undefined);
+        },
         ready: Promise.resolve(),
     };
 });
@@ -548,6 +552,17 @@ describe('useAppInitialization — Project loading boundary', () => {
         await waitFor(() => {
             expect(loadProject).toHaveBeenCalledTimes(1);
         });
+    });
+
+    it('toasts when identity-transition configuration fails closed', async () => {
+        identityTransitionReady.fail(new Error('bootstrap chunk failed'));
+
+        renderHook(() => useAppInitialization());
+
+        await waitFor(() => {
+            expect(notifyUser).toHaveBeenCalledWith('App failed to load — please reload the page.', 'error');
+        });
+        expect(loadProject).not.toHaveBeenCalled();
     });
 
     it('surfaces corrupt or rootless persistence instead of completing first-run startup', async () => {

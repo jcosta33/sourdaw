@@ -15,18 +15,23 @@ const unconfiguredLeave = async (): Promise<void> => {
 type ConfiguredBarrier = {
     promise: Promise<void>;
     resolve: () => void;
+    reject: (reason: unknown) => void;
 };
 
 function createConfiguredBarrier(): ConfiguredBarrier {
     let resolveBarrier = (): void => {};
-    const promise = new Promise<void>((resolve) => {
+    let rejectBarrier = (_reason: unknown): void => {};
+    const promise = new Promise<void>((resolve, reject) => {
         resolveBarrier = resolve;
+        rejectBarrier = reject;
     });
-    return { promise, resolve: resolveBarrier };
+    void promise.catch(() => undefined);
+    return { promise, resolve: resolveBarrier, reject: rejectBarrier };
 }
 
 let configuredBarrier = createConfiguredBarrier();
 let isConfigured = false;
+let isFailed = false;
 
 export const projectIdentityTransitionDependencies: ProjectIdentityTransitionDependencies = {
     leaveCollaborationSession: unconfiguredLeave,
@@ -40,16 +45,24 @@ export const projectIdentityTransitionConfiguration = {
         projectIdentityTransitionDependencies.leaveCollaborationSession = dependencies.leaveCollaborationSession;
         projectIdentityTransitionDependencies.resumeDurableAssetOwnerHandoffsAfterProjectLoad =
             dependencies.resumeDurableAssetOwnerHandoffsAfterProjectLoad;
-        if (isConfigured) {
+        if (isConfigured || isFailed) {
             return;
         }
         isConfigured = true;
         configuredBarrier.resolve();
     },
+    fail(reason: unknown): void {
+        if (isConfigured || isFailed) {
+            return;
+        }
+        isFailed = true;
+        configuredBarrier.reject(reason);
+    },
     reset(): void {
         projectIdentityTransitionDependencies.leaveCollaborationSession = unconfiguredLeave;
         delete projectIdentityTransitionDependencies.resumeDurableAssetOwnerHandoffsAfterProjectLoad;
         isConfigured = false;
+        isFailed = false;
         configuredBarrier = createConfiguredBarrier();
     },
 };
