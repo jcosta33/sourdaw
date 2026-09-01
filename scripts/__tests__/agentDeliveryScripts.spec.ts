@@ -391,7 +391,7 @@ function trustedReviewMutationFixture(root: string, mutationLog: string): void {
     for (const [path, runner, label] of [
         ['publishReview.ts', 'runPublishReviewCli', 'publish'],
         ['resolveReviewThread.ts', 'runResolveReviewThreadCli', 'resolve'],
-    ]) {
+    ] as const) {
         writeFileSync(
             join(root, 'scripts', path),
             [
