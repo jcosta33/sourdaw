@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { stopAllScheduled } from '#/modules/AudioEngine/useCases';
+import { stopAllScheduled, stopNativeLiveGraphSession } from '#/modules/AudioEngine/useCases';
 import { resetMidiState } from '#/modules/MIDI/useCases';
 import { yeastPanic } from '#/modules/Yeast/useCases';
 
@@ -14,6 +14,7 @@ import { stopActiveRecording } from '../stopActiveRecording';
 
 const loggerMock = vi.hoisted(() => ({
     error: vi.fn(),
+    warn: vi.fn(),
 }));
 
 vi.mock('../../playheadScheduler/stopPlayheadScheduler', () => ({
@@ -26,9 +27,16 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     getAudioContext: vi.fn(() => ({ currentTime: 1, sampleRate: 48000 })),
     stopAllScheduled: vi.fn(),
+    stopNativeLiveGraphSession: vi.fn(() => Promise.resolve({ outcome: 'declined', reason: 'no session' })),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
     resetMidiState: vi.fn(),
+    adaptGrooveTemplateForConsumer: vi.fn(),
+    getGrooveTemplate: vi.fn(),
+    getScopedGrooveAssignment: vi.fn(),
+    getScopedGrooveConsumerId: vi.fn(),
+    getStraightGrooveTemplateId: vi.fn(),
+    restoreGrooveAssignment: vi.fn(),
 }));
 vi.mock('#/modules/Yeast/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Yeast/useCases')>()),
@@ -54,8 +62,66 @@ describe('pausePlayback', () => {
         vi.mocked(yeastPanic).mockClear();
         vi.mocked(getTransportState).mockClear();
         vi.mocked(updateTransportState).mockClear();
+        vi.mocked(stopNativeLiveGraphSession).mockClear();
+        vi.mocked(stopNativeLiveGraphSession).mockResolvedValue({ outcome: 'declined', reason: 'no session' });
         loggerMock.error.mockClear();
+        loggerMock.warn.mockClear();
         playheadPositionRef.current = 0;
+    });
+
+    it('parks the native engine at the beat the pause landed on', () => {
+        // Pause is a halt without a locate: the engine parks where the transport
+        // stopped, which during playback is the live `playheadPositionRef` and
+        // never the store's `playheadPosition` (still the beat play began at).
+        // Beat 42 at 120 BPM is 21 seconds on the engine's clock.
+        const liveState = { ...defaultTransportState, isPlaying: true, playheadPosition: 0 };
+        vi.mocked(getTransportState).mockReturnValue(liveState);
+        vi.mocked(updateTransportState).mockImplementation((patch) => {
+            Object.assign(liveState, patch);
+        });
+        playheadPositionRef.current = 42;
+
+        pausePlayback();
+
+        expect(stopNativeLiveGraphSession).toHaveBeenCalledWith({ positionSeconds: 21 });
+    });
+
+    it('parks the engine on the gesture, not behind the recording flush', () => {
+        // The session serialises its commands in arrival order, so a play landing
+        // during the flush must queue behind this park. Deferring the park into
+        // the flush continuation would let that play be overtaken and leave the
+        // engine parked under a rolling transport.
+        const liveState = { ...defaultTransportState, isPlaying: true };
+        vi.mocked(getTransportState).mockReturnValue(liveState);
+        vi.mocked(updateTransportState).mockImplementation((patch) => {
+            Object.assign(liveState, patch);
+        });
+        vi.mocked(stopActiveRecording).mockReturnValueOnce(new Promise<void>(() => undefined));
+
+        pausePlayback();
+
+        expect(stopNativeLiveGraphSession).toHaveBeenCalledTimes(1);
+        expect(stopPlayheadScheduler).not.toHaveBeenCalled();
+    });
+
+    it('pauses the transport whatever the native engine answers, because it is not the audible path', async () => {
+        const liveState = { ...defaultTransportState, isPlaying: true };
+        vi.mocked(getTransportState).mockReturnValue(liveState);
+        vi.mocked(updateTransportState).mockImplementation((patch) => {
+            Object.assign(liveState, patch);
+        });
+        vi.mocked(stopNativeLiveGraphSession).mockRejectedValue(new Error('addon crashed'));
+
+        pausePlayback();
+
+        await vi.waitFor(() => expect(stopPlayheadScheduler).toHaveBeenCalled());
+        // The rejection is caught and reported rather than left unhandled: an
+        // addon that cannot answer must not take the pause down with it.
+        await vi.waitFor(() => {
+            expect(loggerMock.warn).toHaveBeenCalledWith(
+                expect.objectContaining({ message: expect.stringContaining('failed to park') })
+            );
+        });
     });
 
     it('persists the live playhead position into the store so resume restarts from the pause point', async () => {

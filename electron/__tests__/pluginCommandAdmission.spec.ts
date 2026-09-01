@@ -8,6 +8,7 @@ import {
 
 /** Explicit pin of the production runtime surface — omitting a member must fail. */
 const EXPECTED_PLUGIN_RUNTIME_COMMANDS = [
+    'apply_graph_commands',
     'close_plugin_gui',
     'get_plugin_parameters',
     'get_plugin_state_bytes',
@@ -54,6 +55,9 @@ describe('plugin command admission during quit', () => {
         expect(admission.acceptsCommand('unload_plugin')).toBe(false);
         expect(admission.acceptsCommand('scan_plugins')).toBe(false);
         expect(admission.acceptsCommand('close_plugin_gui')).toBe(false);
+        // The engine bootstrap: admitted after the cascade drained the plugin
+        // runtimes, it would spawn an audio stream on the way out.
+        expect(admission.acceptsCommand('apply_graph_commands')).toBe(false);
     });
 
     it('still accepts non-runtime commands after quit has begun', () => {

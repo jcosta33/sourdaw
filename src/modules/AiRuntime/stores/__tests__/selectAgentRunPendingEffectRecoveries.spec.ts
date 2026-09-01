@@ -79,6 +79,7 @@ function createRetainedRenderRecovery() {
             receiptIdentity,
             recovery: 'reconcile-batch',
             serializedBatch: '{"batch":"render-owner"}',
+            sourceRevision: COMMITTED_REVISION,
         },
         recordedAt: 3,
     });
@@ -138,6 +139,33 @@ describe('selectAgentRunPendingEffectRecoveries', () => {
         expect(selectAgentRunPendingEffectRecoveries(readAgentRunState())).toEqual([]);
     });
 
+    it('keeps an escalated manual-repair recovery visible to the confirmation owner that would otherwise hide it', () => {
+        const authority = createRetainedRenderRecovery();
+        createRetryableConfirmation({ authority, followUpRevision: COMMITTED_REVISION });
+
+        // The owner hides this batch while its effects are reconcilable, so the
+        // escalation below is the only thing that changes. A manual-repair effect
+        // names work the user has to do, and no live retry claim may take it off
+        // the panel.
+        expect(selectAgentRunPendingEffectRecoveries(readAgentRunState())).toEqual([]);
+
+        agentRunLifecycle.requirePendingEffectManualRepair({
+            runId: RUN_ID,
+            batchId: BATCH_ID,
+            reason: 'The retained render cannot be retried exactly.',
+            requiredAt: 4,
+        });
+
+        expect(selectAgentRunPendingEffectRecoveries(readAgentRunState())).toEqual([
+            expect.objectContaining({
+                runId: RUN_ID,
+                batchId: BATCH_ID,
+                recovery: 'manual-repair',
+                effects: [expect.objectContaining({ commandId: COMMAND_ID, remediation: 'manual-repair' })],
+            }),
+        ]);
+    });
+
     it('keeps generic recovery visible when the confirmation authority is tampered', () => {
         const authority = createRetainedRenderRecovery();
         createRetryableConfirmation({
@@ -146,7 +174,7 @@ describe('selectAgentRunPendingEffectRecoveries', () => {
         });
 
         expect(selectAgentRunPendingEffectRecoveries(readAgentRunState())).toEqual([
-            expect.objectContaining({ runId: RUN_ID, batchId: BATCH_ID }),
+            expect.objectContaining({ runId: RUN_ID, batchId: BATCH_ID, recovery: 'manual-repair' }),
         ]);
     });
 
@@ -155,7 +183,7 @@ describe('selectAgentRunPendingEffectRecoveries', () => {
         createRetryableConfirmation({ authority, followUpRevision: 'revision-render-foreign' });
 
         expect(selectAgentRunPendingEffectRecoveries(readAgentRunState())).toEqual([
-            expect.objectContaining({ runId: RUN_ID, batchId: BATCH_ID }),
+            expect.objectContaining({ runId: RUN_ID, batchId: BATCH_ID, recovery: 'manual-repair' }),
         ]);
     });
 
@@ -166,7 +194,7 @@ describe('selectAgentRunPendingEffectRecoveries', () => {
             createRetryableConfirmation({ authority, followUpRevision: COMMITTED_REVISION, outcome });
 
             expect(selectAgentRunPendingEffectRecoveries(readAgentRunState())).toEqual([
-                expect.objectContaining({ runId: RUN_ID, batchId: BATCH_ID }),
+                expect.objectContaining({ runId: RUN_ID, batchId: BATCH_ID, recovery: 'manual-repair' }),
             ]);
         }
     );

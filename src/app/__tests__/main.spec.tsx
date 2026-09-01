@@ -13,6 +13,12 @@ const mocks = vi.hoisted(() => ({
     resolveAppComposition: vi.fn(),
 }));
 
+function observeNextRender(): Promise<void> {
+    return new Promise((resolve) => {
+        mocks.render.mockImplementationOnce(() => resolve());
+    });
+}
+
 vi.mock('../bootstrap', () => {
     mocks.bootstrap();
     return {};
@@ -77,6 +83,7 @@ describe('app main composition', () => {
                 finishReset = resolve;
             })
         );
+        const rendered = observeNextRender();
 
         const mainImport = import('../main');
 
@@ -88,9 +95,10 @@ describe('app main composition', () => {
         }
         finishReset();
         await mainImport;
+        await rendered;
 
-        await vi.waitFor(() => expect(mocks.bootstrap).toHaveBeenCalledOnce());
-        await vi.waitFor(() => expect(mocks.render).toHaveBeenCalledOnce());
+        expect(mocks.bootstrap).toHaveBeenCalledOnce();
+        expect(mocks.render).toHaveBeenCalledOnce();
         const resetCallOrder = mocks.resetDisplayScaleForStartup.mock.invocationCallOrder[0];
         const renderCallOrder = mocks.render.mock.invocationCallOrder[0];
         expect(resetCallOrder).toBeDefined();
@@ -109,10 +117,12 @@ describe('app main composition', () => {
             expect(mocks.bootstrap).not.toHaveBeenCalled();
             expect(mocks.render).not.toHaveBeenCalled();
         });
+        const rendered = observeNextRender();
 
         await import('../main');
+        await rendered;
 
-        await vi.waitFor(() => expect(mocks.render).toHaveBeenCalledOnce());
+        expect(mocks.render).toHaveBeenCalledOnce();
         expect(mocks.resetBrowserDisplayScaleForChildStartup).toHaveBeenCalledOnce();
         expect(mocks.resetDisplayScaleForStartup).not.toHaveBeenCalled();
         expect(mocks.mountBrowserDisplayScaleHost).not.toHaveBeenCalled();
@@ -120,10 +130,12 @@ describe('app main composition', () => {
 
     it('renders only the fatal startup surface when a desktop document has no bridge', async () => {
         mocks.resolveAppComposition.mockReturnValue('desktop-startup-error');
+        const rendered = observeNextRender();
 
         await import('../main');
+        await rendered;
 
-        await vi.waitFor(() => expect(mocks.render).toHaveBeenCalledOnce());
+        expect(mocks.render).toHaveBeenCalledOnce();
         const startupError = mocks.render.mock.calls[0]?.[0];
         expect(isValidElement(startupError)).toBe(true);
         if (!isValidElement<{ onReload: () => void }>(startupError)) {

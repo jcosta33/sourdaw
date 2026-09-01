@@ -2594,6 +2594,21 @@ describe('AudioEngine', () => {
             }
         });
 
+        it('resets device runtime state through the generic controller surface', () => {
+            const reset = vi.fn();
+            const strip = engine.ensureTrackStrip('tGrinder');
+            strip.deviceNodes.push({
+                deviceId: 'grinder-dev',
+                type: 'grinder',
+                nodes: [],
+                controller: { reset, setParam: vi.fn(), setBypass: vi.fn() },
+            } as never);
+
+            engine.stopAllScheduled();
+
+            expect(reset).toHaveBeenCalledOnce();
+        });
+
         it('does not fan out per-note messages to an instrument worklet port', () => {
             const strip = engine.ensureTrackStrip('tFerm');
             const workletNode = new FakeWorkletNode();
@@ -2755,6 +2770,131 @@ describe('AudioEngine', () => {
 
         it('setTrackOutput is a no-op when the track has no strip', () => {
             expect(() => engine.setTrackOutput('ghost-track', 'hw_out')).not.toThrow();
+        });
+    });
+
+    describe('unregistered runtime graph validators', () => {
+        it('applies a forward device-chain delta when both validators are null', () => {
+            engine.setRuntimeGraphProjectRevisionValidator(null);
+            engine.setRuntimeGraphTopologyValidator(null);
+            engine.ensureTrackStrip('aba-track');
+            const delta = createRuntimeDeviceDelta(
+                engine.getRuntimeGraphRevision(),
+                'add-device',
+                [],
+                [{ id: 'device-1', type: 'eq' }]
+            );
+
+            const result = engine.applyRuntimeGraphDelta(delta);
+
+            expect(result).toMatchObject({ acceptance: 'accepted', application: 'applied' });
+            expect(result).not.toEqual(
+                expect.objectContaining({
+                    reason: 'Runtime graph delta cannot validate its project revision',
+                })
+            );
+            expect(result).not.toEqual(
+                expect.objectContaining({
+                    reason: 'Runtime graph delta cannot validate its project topology',
+                })
+            );
+            expect(getMockTrackNode(engine, 'aba-track').strip.deviceNodes).toEqual([
+                expect.objectContaining({ deviceId: 'device-1', type: 'eq' }),
+            ]);
+        });
+
+        it('applies track-strip initialization when both validators are null', () => {
+            engine.setRuntimeGraphProjectRevisionValidator(null);
+            engine.setRuntimeGraphTopologyValidator(null);
+
+            const result = engine.initializeTrackStripFromSnapshot(
+                createTrackStripInitialization(engine.getRuntimeGraphRevision(), [
+                    { id: 'eq-1', type: 'eq', parameterIds: ['frequency'] },
+                ])
+            );
+
+            expect(result).toMatchObject({ acceptance: 'accepted', application: 'applied' });
+            expect(result).not.toEqual(
+                expect.objectContaining({
+                    reason: 'Runtime graph initialization cannot validate its project revision',
+                })
+            );
+            expect(result).not.toEqual(
+                expect.objectContaining({
+                    reason: 'Runtime graph initialization cannot validate its project topology',
+                })
+            );
+            expect(engine.getTrackStrip('bootstrap-track')?.deviceNodes.map((device) => device.deviceId)).toEqual([
+                'eq-1',
+            ]);
+        });
+
+        it('applies a current set-track-output delta when both validators are null', () => {
+            engine.setRuntimeGraphProjectRevisionValidator(null);
+            engine.setRuntimeGraphTopologyValidator(null);
+            const source = engine.ensureTrackStrip('source');
+            engine.ensureTrackStrip('target');
+
+            const result = engine.applyRuntimeGraphDelta(createRuntimeOutputDelta(engine.getRuntimeGraphRevision()));
+
+            expect(result).toMatchObject({ acceptance: 'accepted', application: 'applied' });
+            expect(result).not.toEqual(
+                expect.objectContaining({
+                    reason: 'Runtime graph delta cannot validate its project revision',
+                })
+            );
+            expect(result).not.toEqual(
+                expect.objectContaining({
+                    reason: 'Runtime graph delta cannot validate its project topology',
+                })
+            );
+            expect(source.outputId).toBe('target');
+        });
+
+        it('still rejects topology mismatch when only the revision validator is null', () => {
+            engine.setRuntimeGraphProjectRevisionValidator(null);
+            engine.setRuntimeGraphTopologyValidator(() => false);
+            engine.ensureTrackStrip('aba-track');
+            const delta = createRuntimeDeviceDelta(
+                engine.getRuntimeGraphRevision(),
+                'add-device',
+                [],
+                [{ id: 'device-1', type: 'eq' }]
+            );
+
+            const result = engine.applyRuntimeGraphDelta(delta);
+
+            expect(result).toEqual(
+                expect.objectContaining({
+                    acceptance: 'rejected',
+                    application: 'not-applied',
+                    reason: 'Runtime graph delta does not match the current project topology',
+                })
+            );
+            expect(getMockTrackNode(engine, 'aba-track').strip.deviceNodes).toEqual([]);
+        });
+
+        it('still rejects a stale project revision when only the topology validator is null', () => {
+            engine.setRuntimeGraphTopologyValidator(null);
+            engine.setRuntimeGraphProjectRevisionValidator(() => false);
+            engine.ensureTrackStrip('aba-track');
+            const delta = createRuntimeDeviceDelta(
+                engine.getRuntimeGraphRevision(),
+                'add-device',
+                [],
+                [{ id: 'device-1', type: 'eq' }]
+            );
+
+            const result = engine.applyRuntimeGraphDelta(delta);
+
+            expect(result).toEqual(
+                expect.objectContaining({
+                    acceptance: 'rejected',
+                    application: 'not-applied',
+                    reason: 'Runtime graph delta is stale for the current project revision',
+                })
+            );
+            expect(getMockTrackNode(engine, 'aba-track').strip.deviceNodes).toEqual([]);
         });
     });
 

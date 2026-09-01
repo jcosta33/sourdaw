@@ -119,6 +119,7 @@ type PendingActionConfirmationBase = {
     executedActions: PendingActionExecution[];
     status: ChatActionConfirmationStatus;
     error: string | null;
+    followUpFailureKind?: 'retention-capacity' | null;
     followUpProjectRevision: string | null;
     followUpStatus: ChatActionFollowUpStatus | null;
     createdAt: number;
@@ -571,6 +572,7 @@ export function updatePendingActionConfirmationStatus(
 type UpdatePendingActionFollowUpInput = {
     confirmationId: string;
     error?: string | null;
+    failureKind?: 'retention-capacity' | null;
     projectRevision?: string | null;
     status: ChatActionFollowUpStatus;
 };
@@ -589,6 +591,7 @@ export function updatePendingActionFollowUp(
     const updated: PendingAppActionConfirmation = {
         ...current,
         error: input.error === undefined ? current.error : input.error,
+        followUpFailureKind: input.failureKind === undefined ? current.followUpFailureKind : input.failureKind,
         followUpProjectRevision:
             input.projectRevision === undefined ? current.followUpProjectRevision : input.projectRevision,
         followUpStatus: input.status,

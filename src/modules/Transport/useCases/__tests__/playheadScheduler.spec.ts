@@ -133,6 +133,10 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     // scheduling windows was vacuous while that hole was open.
     refreshSidechainAlignment: vi.fn(),
     getCompensationDelay: vi.fn(() => 0),
+    // No native engine in this harness, so the cursor is the scheduler's own
+    // integration. Omitting it throws in the same tail `refreshSidechainAlignment`
+    // used to, and every assertion past that point goes vacuous again.
+    readNativeEnginePlayheadSeconds: vi.fn((): number | null => null),
 }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: harness.logger }));
 vi.mock('../scheduling/scheduleMetronome', () => ({

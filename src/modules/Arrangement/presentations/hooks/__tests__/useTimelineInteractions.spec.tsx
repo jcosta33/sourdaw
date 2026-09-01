@@ -225,13 +225,23 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     pushUndoEntry: mocks.pushUndoEntry,
 }));
-vi.mock('#/modules/MIDI/stores', () => ({
-    midiStore: {
-        get value() {
-            return mocks.midiStoreValue.value;
+vi.mock('#/modules/MIDI/stores', async () => {
+    // The graph consumes isValidMidiProbabilitySeed via arrangementStore, so
+    // the factory must provide it. Exactly this one key is exposed: a full
+    // importOriginal spread would also provide the names this spec's
+    // exemption row in checkBarrelMockCoverage.ts lists as still missing,
+    // staling that row.
+    const { isValidMidiProbabilitySeed } =
+        await vi.importActual<typeof import('#/modules/MIDI/stores')>('#/modules/MIDI/stores');
+    return {
+        isValidMidiProbabilitySeed,
+        midiStore: {
+            get value() {
+                return mocks.midiStoreValue.value;
+            },
         },
-    },
-}));
+    };
+});
 vi.mock('../../../stores/inlineMidiNotePreviewRef', () => ({
     inlineMidiNotePreviewRef: mocks.inlineMidiNotePreviewRef,
 }));

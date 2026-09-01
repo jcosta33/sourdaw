@@ -17,6 +17,11 @@ import { TOASTER_ENGINE_MAP } from '../toasterEngineMap';
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioTime: vi.fn(() => 0),
+    applyNoteExpression: vi.fn(),
+    audioEngine: {},
+    getCompensationDelay: vi.fn(),
+    getDefaultBendRangeSemitones: vi.fn(),
+    getFactoryDrumKitByIndex: vi.fn(),
 }));
 
 vi.mock('../scheduleToasterHit', () => ({

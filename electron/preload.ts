@@ -16,7 +16,10 @@ import { contextBridge, ipcRenderer, webFrame } from 'electron';
 
 import { createSourdawBridge } from './bridge.js';
 
-contextBridge.exposeInMainWorld(
-    'sourdaw',
-    createSourdawBridge(ipcRenderer, undefined, undefined, undefined, (factor) => webFrame.setZoomFactor(factor))
+import type { SourdawBridge } from './channels.js';
+
+const sourdawBridge: SourdawBridge = createSourdawBridge(ipcRenderer, undefined, undefined, undefined, (factor) =>
+    webFrame.setZoomFactor(factor)
 );
+
+contextBridge.exposeInMainWorld('sourdaw', sourdawBridge);

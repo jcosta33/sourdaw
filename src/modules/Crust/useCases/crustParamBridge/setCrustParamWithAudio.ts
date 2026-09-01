@@ -1,6 +1,7 @@
 import { type CrustPatch } from '../../models/CrustPatch';
 import { setCrustParam } from '../../stores/crustStore';
 
+import { algorithmFromStyle } from './algorithmFromStyle';
 import { createFlushHandlers } from './createFlushHandlers';
 import { crustBridgeDeps, encodeCrustValue, paramBatcher } from './helpers';
 
@@ -31,6 +32,15 @@ export function setCrustParamWithAudio<Key extends keyof CrustPatch>(
     }
 
     setCrustParam(key, value);
+
+    if (key === 'style' && typeof value === 'string') {
+        const algorithm = algorithmFromStyle(value);
+        if (algorithm !== null) {
+            // Engine already applied from_style_index from the style param;
+            // a second algorithm flush can race. Store-only so L2 chips follow.
+            setCrustParam('algorithm', algorithm);
+        }
+    }
 
     if (encodedValue === undefined) {
         return;

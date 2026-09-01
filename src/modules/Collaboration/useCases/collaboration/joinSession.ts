@@ -78,6 +78,7 @@ export async function joinSession(inviteString: string, name: string): Promise<s
                     isConnected: false,
                     lastSeen: Date.now(),
                     latencyMs: null,
+                    syncHealth: 'converging',
                 },
             ],
             connectionStatus: 'connecting',

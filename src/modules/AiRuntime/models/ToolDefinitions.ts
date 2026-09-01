@@ -12,7 +12,7 @@
  */
 
 import { clipTools, deviceTools } from './Tools/ClipAndDevice';
-import { generationTools, markerTools, timeTools, workspaceTools } from './Tools/GenerationAndView';
+import { generationTools, markerTools } from './Tools/GenerationAndView';
 import { midiTools, automationTools, routingTools } from './Tools/MidiAutomationRouting';
 import { trackTools } from './Tools/Track';
 import { transportTools } from './Tools/Transport';
@@ -30,6 +30,4 @@ export const DAW_TOOL_SCHEMAS = [
     ...routingTools,
     ...generationTools,
     ...markerTools,
-    ...timeTools,
-    ...workspaceTools,
 ];

@@ -227,4 +227,36 @@ describe('isGeneratedMidiStateCurrent', () => {
         mocks.serializeClipScopedAutomationLanes.mockReturnValue('edited-lanes');
         expect(isGeneratedMidiStateCurrent({ entityId: generatedClip.id, entityType: 'clip', guard })).toBe(false);
     });
+
+    it('accepts a generated track carrying its captured clip-scoped lanes, and still refuses a track-scoped lane on it', () => {
+        const generatedTrack = {
+            ...createTrack({ id: 'generated-track', name: 'Bass', kind: 'midi' }),
+            clips: [generatedClip],
+        };
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [generatedTrack] });
+        // A track duplicate clones the source's clip-scoped lanes onto the
+        // copies' clip ids — the cloned lanes carry the copy track's id, and
+        // presence alone must not conflict when the capture still matches.
+        const clonedLane = { id: 'lane-copy', trackId: 'generated-track', clipId: 'generated-clip' };
+        mocks.getAutomationLanes.mockReturnValue([clonedLane]);
+        mocks.serializeClipScopedAutomationLanes.mockReturnValue('captured-lanes');
+        const guard = {
+            entityJson: JSON.stringify(generatedTrack),
+            midiByClipIdJson: 'exact-midi',
+            clipAutomationLanesJson: 'captured-lanes',
+        };
+
+        expect(isGeneratedMidiStateCurrent({ entityId: generatedTrack.id, entityType: 'track', guard })).toBe(true);
+        expect(mocks.serializeClipScopedAutomationLanes).toHaveBeenCalledWith(['generated-clip']);
+
+        // A track-scoped lane is user-drawn state no generation writes, so it
+        // still disqualifies the track.
+        mocks.getAutomationLanes.mockReturnValue([clonedLane, { id: 'lane-track', trackId: 'generated-track' }]);
+        expect(isGeneratedMidiStateCurrent({ entityId: generatedTrack.id, entityType: 'track', guard })).toBe(false);
+
+        // And a clip-scoped lane the user moved after the capture refuses too.
+        mocks.getAutomationLanes.mockReturnValue([clonedLane]);
+        mocks.serializeClipScopedAutomationLanes.mockReturnValue('edited-lanes');
+        expect(isGeneratedMidiStateCurrent({ entityId: generatedTrack.id, entityType: 'track', guard })).toBe(false);
+    });
 });

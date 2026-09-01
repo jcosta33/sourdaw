@@ -28,6 +28,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 
 vi.mock('#/modules/Automation/useCases', () => ({
     restoreAutomationSnapshot: mocks.restore_automation_snapshot,
+    getAutomationLaneCeiling: vi.fn(),
 }));
 
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {

@@ -3538,10 +3538,15 @@ function validateDesktop(
         [desktop.ffmpegBuildPath, 'desktop/ffmpeg-build-material.json'],
         [desktop.buildInputsPath, 'desktop/build-inputs/electron'],
     ] as const;
+    let hasCanonicalPathError = false;
     for (const [actual, expected] of canonicalPaths) {
         if (expected !== undefined && actual !== expected) {
             errors.push(`desktop material path must be ${expected}`);
+            hasCanonicalPathError = true;
         }
+    }
+    if (hasCanonicalPathError) {
+        return undefined;
     }
     const artifactPath = verifyFileHash(
         candidate,

@@ -1,6 +1,8 @@
 import { expect, test, type Frame, type FrameLocator, type Locator, type Page } from '@playwright/test';
 import { stringify as superjsonStringify } from 'superjson';
 
+import { LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS } from './e2eUtils';
+
 type Box = { x: number; y: number; width: number; height: number };
 type RecentProject = { key: string; name: string; updatedAt: number };
 
@@ -34,8 +36,31 @@ async function findApplicationFrame(page: Page): Promise<Frame> {
     return frame;
 }
 
-async function setDisplayScale(app: FrameLocator, frame: Frame, scale: number): Promise<Locator> {
+/**
+ * TransportBar's compact threshold (COMPACT_TRANSPORT_MAX_WIDTH): at or below
+ * this CSS viewport width the transport collapses its direct actions, and
+ * "Open Preferences" moves into the "View and panel controls" popover as a
+ * "Preferences" item. At 125% and 200% display scale this 1280px-wide host
+ * yields 1024px and 640px viewports, so the compact route is the only one the
+ * product offers there — the same route a user at that scale takes.
+ */
+const COMPACT_TRANSPORT_MAX_WIDTH = 1199;
+
+async function openPreferencesDialog(app: FrameLocator, frame: Frame): Promise<void> {
+    const compactTransport = await frame.evaluate(
+        (maxWidth) => window.innerWidth <= maxWidth,
+        COMPACT_TRANSPORT_MAX_WIDTH
+    );
+    if (compactTransport) {
+        await app.getByRole('button', { name: 'View and panel controls' }).click();
+        await app.getByRole('button', { name: 'Preferences', exact: true }).click();
+        return;
+    }
     await app.getByRole('button', { name: 'Open Preferences' }).click();
+}
+
+async function setDisplayScale(app: FrameLocator, frame: Frame, scale: number): Promise<Locator> {
+    await openPreferencesDialog(app, frame);
     const dialog = app.getByRole('dialog').filter({ hasText: /Preferences/i });
     await expect(dialog).toBeVisible();
     await dialog.getByRole('button', { name: 'Appearance', exact: true }).click();
@@ -56,6 +81,44 @@ async function setDisplayScale(app: FrameLocator, frame: Frame, scale: number): 
     await expect.poll(async () => frame.evaluate(() => window.innerWidth)).toBe(Math.round(VIEWPORT.width / scale));
 
     return dialog;
+}
+
+async function expectUiScaleDragKeepsGeometryUntilCommit(page: Page, frame: Frame, dialog: Locator): Promise<void> {
+    const slider = dialog.getByRole('slider', { name: 'UI Scale' });
+    const sliderRoot = dialog.locator('[data-slot="slider"]');
+    await expect(sliderRoot).toHaveCount(1);
+    const sliderBox = requireBox(await slider.boundingBox(), 'UI Scale slider thumb');
+    const sliderRootBox = requireBox(await sliderRoot.boundingBox(), 'UI Scale slider');
+    const dialogBox = requireBox(await dialog.boundingBox(), 'Preferences dialog');
+    const initialSliderValue = Number(await slider.getAttribute('aria-valuenow'));
+    const initialInnerWidth = await frame.evaluate(() => window.innerWidth);
+
+    await page.mouse.move(sliderBox.x + sliderBox.width / 2, sliderBox.y + sliderBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(sliderBox.x + sliderBox.width / 2 + 32, sliderBox.y + sliderBox.height / 2);
+
+    await expect
+        .poll(async () => Number(await slider.getAttribute('aria-valuenow')))
+        .toBeGreaterThan(initialSliderValue);
+    expect(await frame.evaluate(() => window.innerWidth)).toBe(initialInnerWidth);
+    const draftSliderRootBox = requireBox(await sliderRoot.boundingBox(), 'UI Scale slider during drag');
+    const draftDialogBox = requireBox(await dialog.boundingBox(), 'Preferences dialog during drag');
+    expect(draftSliderRootBox.x).toBeCloseTo(sliderRootBox.x, 4);
+    expect(draftSliderRootBox.y).toBeCloseTo(sliderRootBox.y, 4);
+    expect(draftSliderRootBox.width).toBeCloseTo(sliderRootBox.width, 4);
+    expect(draftSliderRootBox.height).toBeCloseTo(sliderRootBox.height, 4);
+    expect(draftDialogBox.x).toBeCloseTo(dialogBox.x, 4);
+    expect(draftDialogBox.y).toBeCloseTo(dialogBox.y, 4);
+    expect(draftDialogBox.width).toBeCloseTo(dialogBox.width, 4);
+    expect(draftDialogBox.height).toBeCloseTo(dialogBox.height, 4);
+
+    await page.mouse.up();
+
+    const committedScale = Number(await slider.getAttribute('aria-valuenow')) / 100;
+    expect(committedScale).toBeGreaterThan(1);
+    await expect
+        .poll(async () => frame.evaluate(() => window.innerWidth))
+        .toBe(Math.round(VIEWPORT.width / committedScale));
 }
 
 async function expectScrollableAncestor(locator: Locator, shouldScroll: boolean): Promise<void> {
@@ -173,7 +236,10 @@ async function expectContextMenuUsable(app: FrameLocator, scale: number): Promis
     await expect(menu).toBeVisible();
     const menuBox = requireBox(await menu.boundingBox(), 'track context menu');
     expectInsideViewport(menuBox);
-    expect(menuBox.x).toBeCloseTo(clickPoint.x, 0);
+    // The menu anchors on the app's own pixel grid, and one app pixel spans
+    // `scale` host pixels, so anchor rounding may land up to that far from the
+    // pointer in host coordinates.
+    expect(Math.abs(menuBox.x - clickPoint.x)).toBeLessThanOrEqual(Math.max(1, scale));
     expect(menuBox.y).toBeLessThanOrEqual(clickPoint.y);
     expect(menuBox.y + menuBox.height).toBeGreaterThanOrEqual(clickPoint.y);
 
@@ -193,23 +259,43 @@ async function expectContextMenuUsable(app: FrameLocator, scale: number): Promis
     await expect(menu).toHaveCount(0);
 }
 
-async function expectRightEdgeContextMenuClamped(page: Page, app: FrameLocator): Promise<void> {
-    const timeline = app.getByLabel('Timeline editor surface');
-    const timelineBox = requireBox(await timeline.boundingBox(), 'timeline editor');
+async function expectRightEdgeContextMenuClamped(app: FrameLocator, scale: number): Promise<void> {
+    const canvas = app.getByLabel('Timeline editor surface');
+    const canvasBox = requireBox(await canvas.boundingBox(), 'timeline canvas');
+    // boundingBox() and click({ position }) are host/main-frame pixels.
+    // Iframe getBoundingClientRect CSS pixels overshoot the canvas at 50%
+    // scale and miss the right edge at 125%/200%, so the fit-vs-clamp
+    // branch is judged on the wrong x. Stay inland of the labeled box: 4px
+    // from its right edge is inspector, scrollbar, or chrome.
+    const inland = 16;
     const clickPoint = {
-        x: timelineBox.x + timelineBox.width - 4,
-        y: timelineBox.y + timelineBox.height / 2,
+        x: canvasBox.x + canvasBox.width - inland,
+        y: canvasBox.y + canvasBox.height / 2,
     };
-    await page.mouse.click(clickPoint.x, clickPoint.y, { button: 'right' });
+    await canvas.click({
+        button: 'right',
+        position: { x: canvasBox.width - inland, y: canvasBox.height / 2 },
+    });
 
     const menu = app.getByRole('menu');
     await expect(menu).toBeVisible();
     const menuBox = requireBox(await menu.boundingBox(), 'right-edge context menu');
     expectInsideViewport(menuBox);
-    expect(menuBox.x).toBeLessThan(clickPoint.x);
+    // One app pixel spans `scale` host pixels, so anchor rounding may land up
+    // to that far from the pointer in host coordinates.
+    const anchorTolerance = Math.max(1, scale);
+    // Clamping is owed only when the menu cannot fit to the right of the
+    // pointer — at 50% scale the half-size menu fits and must open at the
+    // pointer like any context menu. When it cannot fit, it must shift left;
+    // expectInsideViewport above fails a missing clamp either way.
+    if (clickPoint.x + menuBox.width > VIEWPORT.width) {
+        expect(menuBox.x).toBeLessThan(clickPoint.x);
+    } else {
+        expect(Math.abs(menuBox.x - clickPoint.x)).toBeLessThanOrEqual(anchorTolerance);
+    }
     expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(VIEWPORT.width);
-    const attachedBelow = Math.abs(menuBox.y - clickPoint.y) <= 1;
-    const attachedAbove = Math.abs(menuBox.y + menuBox.height - clickPoint.y) <= 1;
+    const attachedBelow = Math.abs(menuBox.y - clickPoint.y) <= anchorTolerance;
+    const attachedAbove = Math.abs(menuBox.y + menuBox.height - clickPoint.y) <= anchorTolerance;
     expect(attachedBelow || attachedAbove).toBe(true);
 
     await menu.getByRole('menuitem').first().press('Escape');
@@ -261,6 +347,11 @@ async function expectEqCanvasDrag(page: Page, app: FrameLocator): Promise<void> 
     const band = app.getByRole('slider', { name: /EQ band 1/i });
     await canvas.scrollIntoViewIfNeeded();
     await expect(canvas).toBeVisible();
+    // Scroll the drag target itself into view, as a user would: at 200% scale
+    // the plugin window is narrower than the fixed-size EQ surface, and
+    // scrolling the canvas centers it, which leaves the lowest band outside
+    // the visible slice.
+    await band.scrollIntoViewIfNeeded();
     const bandBox = requireBox(await band.boundingBox(), 'EQ band handle');
     const before = Number(await band.getAttribute('aria-valuenow'));
 
@@ -311,7 +402,9 @@ test('browser display scale preserves viewport geometry and interactions at 50%,
 
     const frame = await findApplicationFrame(page);
     const app = page.frameLocator('iframe[title="Sourdaw"]');
-    await expect(app.getByLabel('Sourdaw — start a project')).toBeVisible();
+    await expect(app.getByLabel('Sourdaw — start a project')).toBeVisible({
+        timeout: LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS,
+    });
     await app.locator('#launch-new-project').click();
     await expect(app.getByRole('group', { name: 'Playback controls' })).toBeVisible({ timeout: 30_000 });
     await app.getByRole('button', { name: /Add blank MIDI track/ }).click();
@@ -325,6 +418,10 @@ test('browser display scale preserves viewport geometry and interactions at 50%,
     await expect(page.getByTestId('app-shell')).toHaveCount(0);
     await expect(app.getByTestId('app-shell')).toHaveCount(1);
 
+    const dragPreferences = await setDisplayScale(app, frame, 1);
+    await expectUiScaleDragKeepsGeometryUntilCommit(page, frame, dragPreferences);
+    await dragPreferences.getByRole('button', { name: 'Done', exact: true }).click();
+
     for (const scale of [0.5, 1, 1.25, 2]) {
         const preferences = await setDisplayScale(app, frame, scale);
         await expectPreferencesUsable(app, preferences, scale);
@@ -332,7 +429,7 @@ test('browser display scale preserves viewport geometry and interactions at 50%,
         await expectRestoredFrameReceivesGlobalShortcut(page, app);
         await expectRecentProjectsMenuUsable(frame, app, scale);
         await expectContextMenuUsable(app, scale);
-        await expectRightEdgeContextMenuClamped(page, app);
+        await expectRightEdgeContextMenuClamped(app, scale);
         await expectEqCanvasDrag(page, app);
         await expectExportUsable(page, app);
     }

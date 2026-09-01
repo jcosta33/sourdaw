@@ -10,6 +10,7 @@ export { commandBatchPreflightPort } from './commandBatchPreflightPort';
 export { commandBatchPreviewPort } from './commandBatchPreviewPort';
 export { commandRuntimeRepairPort } from './commandRuntimeRepairPort';
 export { configureCommandBatchIdempotency } from './configureCommandBatchIdempotency';
+export { resetCommandBatchIdempotency } from './resetCommandBatchIdempotency';
 export { canExecuteCommandBatchEffects } from './canExecuteCommandBatchEffects';
 export { buildSemanticProjectDiff } from './buildSemanticProjectDiff';
 export { compilePartialCommandBatchAcceptance } from './compilePartialCommandBatchAcceptance';
@@ -25,6 +26,7 @@ export { compileVersionedCommandBatchEnvelope } from './compileVersionedCommandB
 export { issueCommandApprovalBinding } from './issueCommandApprovalBinding';
 export { createVersionedCommandReceipt } from './createVersionedCommandReceipt';
 export { createVerifiedBatchReceipt } from './createVerifiedBatchReceipt';
+export { getVerifiedBatchReceiptIdentity } from './getVerifiedBatchReceiptIdentity';
 export { getAppActionExecutionPolicy } from './getAppActionExecutionPolicy';
 export { getAppActionStaticAuthority } from './getAppActionStaticAuthority';
 export { getAgentActionRiskPolicy } from './getAgentActionRiskPolicy';

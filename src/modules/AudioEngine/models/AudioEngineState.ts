@@ -210,6 +210,7 @@ export type DeviceController = {
     noteOn?(note: number, velocity: number, sampleFrame?: number): void;
     noteOff?(note: number, sampleFrame?: number): void;
     allNotesOff?(): void;
+    reset?(): void;
     handleCc?(cc: number, value: number): void;
     setPadParam?(pad: number, name: string, value: number): void;
     setSustain?(position: number): void;

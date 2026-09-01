@@ -106,6 +106,7 @@ export async function acceptAnswer(answerString: string): Promise<void> {
                 isConnected: false,
                 lastSeen: Date.now(),
                 latencyMs: null,
+                syncHealth: 'converging',
             };
             collaborationStore.set({
                 ...state,

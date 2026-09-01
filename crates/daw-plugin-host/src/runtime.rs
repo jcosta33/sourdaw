@@ -238,14 +238,15 @@ impl HostedRuntime {
     /// [`crate::traits::PluginHostRequest`].
     ///
     /// A loader concern like the latency wake, and installed the same way.
-    /// Reports whether a wake was installed, which is `false` both for a second
-    /// install and for a format that raises none of these asks: VST3 answers its
-    /// editor resize synchronously on the frame the plugin calls into, and its
-    /// component handler is not the one that carries `setDirty`.
+    /// Reports whether a wake was installed, which is `false` for a second
+    /// install. Both formats raise at least one ask — CLAP its editor resize,
+    /// parameter rescan and state change; VST3 the `IComponentHandler2`
+    /// `setDirty` state change, its editor resize being answered
+    /// synchronously on the frame the plugin calls into.
     pub fn set_plugin_host_request_notifier(&self, notifier: PluginHostRequestNotifier) -> bool {
         match self {
             Self::Clap(backend) => backend.set_plugin_host_request_notifier(notifier),
-            Self::Vst3(_) => false,
+            Self::Vst3(backend) => backend.set_plugin_host_request_notifier(notifier),
         }
     }
 

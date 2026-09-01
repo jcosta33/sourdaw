@@ -25,6 +25,11 @@ function create_malformed_punch_action(type: 'setPunchIn' | 'setPunchOut', paylo
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.executeAppAction,
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    isAppActionCommittedError: vi.fn(() => false),
+    pushUndoEntry: vi.fn(),
+    resetActionReplayAuthority: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mocks.logger }));

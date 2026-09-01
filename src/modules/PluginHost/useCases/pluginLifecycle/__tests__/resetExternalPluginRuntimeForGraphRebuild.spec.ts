@@ -6,6 +6,7 @@ import {
     externalPluginActivationStore,
 } from '../../../stores/externalPluginActivationStore';
 import { activateExternalPlugin } from '../activateExternalPlugin';
+import { beginProjectSessionPluginRetirement } from '../beginProjectSessionPluginRetirement';
 import { clearLoadedExternalPlugins } from '../clearLoadedExternalPlugins';
 import { externalLatencyReporters } from '../externalLatencyReporters';
 import { externalPluginActivationOutcomes, externalPluginActivationTasks } from '../externalPluginActivationTasks';
@@ -124,6 +125,121 @@ describe('resetExternalPluginRuntimeForGraphRebuild', () => {
             mocks.loadPlugin.mock.invocationCallOrder[1]!
         );
         expect(loadedExternalInstances.has('late-instance')).toBe(true);
+    });
+
+    it('keeps activation admission fenced through project-session bulk retirement until the reused host reopens', async () => {
+        const bulkUnload = Promise.withResolvers<[string[], string[]]>();
+        mocks.unloadPlugin.mockReturnValueOnce(bulkUnload.promise);
+        mocks.loadPlugin.mockResolvedValueOnce({
+            instance_id: 'late-instance',
+            parameters: [],
+            latency_samples: 0,
+            latency_ms: 2,
+            engine_plugin_id: 1001,
+        });
+        const retirement = await beginProjectSessionPluginRetirement();
+        const retiring = retirement.retire();
+        const activation = activateExternalPlugin({
+            engineSampleRate: 48_000,
+            pluginId: 'compressor',
+            instanceId: 'late-instance',
+        });
+
+        await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledOnce());
+        expect(mocks.loadPlugin).not.toHaveBeenCalled();
+        bulkUnload.resolve([[], []]);
+        await retiring;
+        expect(mocks.loadPlugin).not.toHaveBeenCalled();
+
+        retirement.reopen();
+        await activation;
+        expect(mocks.loadPlugin).toHaveBeenCalledOnce();
+    });
+
+    it('keeps project-session activation fenced when native bulk retirement rejects', async () => {
+        mocks.unloadPlugin.mockRejectedValueOnce(new Error('native unload failed'));
+        const retirement = await beginProjectSessionPluginRetirement();
+
+        await expect(retirement.retire()).rejects.toThrow('native unload failed');
+        const activation = activateExternalPlugin({
+            engineSampleRate: 48_000,
+            pluginId: 'compressor',
+            instanceId: 'after-failed-retirement',
+        });
+        await Promise.resolve();
+        expect(mocks.loadPlugin).not.toHaveBeenCalled();
+
+        retirement.reopen();
+        await activation;
+        expect(mocks.loadPlugin).toHaveBeenCalledOnce();
+    });
+
+    it('waits for a pre-admitted activation before bulk retirement and leaves no late instance behind', async () => {
+        const admittedLoad =
+            Promise.withResolvers<
+                Pick<
+                    PluginInstance,
+                    'instance_id' | 'parameters' | 'latency_samples' | 'latency_ms' | 'engine_plugin_id'
+                >
+            >();
+        const bulkUnload = Promise.withResolvers<[string[], string[]]>();
+        mocks.loadPlugin.mockReturnValueOnce(admittedLoad.promise);
+        mocks.unloadPlugin.mockReturnValueOnce(bulkUnload.promise);
+
+        const activation = activateExternalPlugin({
+            engineSampleRate: 48_000,
+            pluginId: 'compressor',
+            instanceId: 'pre-admitted-instance',
+        });
+        await vi.waitFor(() => expect(mocks.loadPlugin).toHaveBeenCalledOnce());
+
+        const retirement = await beginProjectSessionPluginRetirement();
+        const retiring = retirement.retire();
+        await Promise.resolve();
+        expect(mocks.unloadPlugin).not.toHaveBeenCalled();
+
+        admittedLoad.resolve({
+            instance_id: 'pre-admitted-instance',
+            parameters: [],
+            latency_samples: 0,
+            latency_ms: 3,
+            engine_plugin_id: 1002,
+        });
+        await expect(activation).resolves.toMatchObject({ status: 'failed', stage: 'attach' });
+        await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledOnce());
+        bulkUnload.resolve([['pre-admitted-instance'], []]);
+        await retiring;
+
+        expect(loadedExternalInstances.has('pre-admitted-instance')).toBe(false);
+        expect(externalPluginActivationTasks.has('pre-admitted-instance')).toBe(false);
+        expect(externalPluginActivationOutcomes.has('pre-admitted-instance')).toBe(false);
+        retirement.reopen();
+    });
+
+    it('waits for an already-active rebuild before acquiring the project-session retirement fence', async () => {
+        const activeUnload = Promise.withResolvers<[string[], string[]]>();
+        mocks.unloadPlugin.mockReturnValueOnce(activeUnload.promise);
+        const activeRebuild = resetExternalPluginRuntimeForGraphRebuild();
+        const retirement = beginProjectSessionPluginRetirement();
+
+        await vi.waitFor(() => expect(mocks.unloadPlugin).toHaveBeenCalledOnce());
+        let retirementAcquired = false;
+        void retirement.then(() => {
+            retirementAcquired = true;
+        });
+        await Promise.resolve();
+        expect(retirementAcquired).toBe(false);
+        // The session fence cannot begin its own bulk unload while the active
+        // graph rebuild still owns the lifecycle fence.
+        expect(mocks.unloadPlugin).toHaveBeenCalledOnce();
+
+        activeUnload.resolve([[], []]);
+        await activeRebuild;
+        const sessionRetirement = await retirement;
+        await sessionRetirement.retire();
+        sessionRetirement.reopen();
+
+        expect(mocks.unloadPlugin).toHaveBeenCalledTimes(2);
     });
 
     it('serializes bulk unload after an already admitted keyed lifecycle operation', async () => {

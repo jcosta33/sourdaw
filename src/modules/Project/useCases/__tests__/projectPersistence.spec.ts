@@ -66,19 +66,38 @@ vi.mock('../../stores/projectStore', () => ({
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: mocks.captureProjectRevision,
+    createCrdtDoc: vi.fn(),
     createCrdtProject: mocks.createCrdtProject,
+    DOC_BRANCHES: '__branches__',
     DOC_PREFIX_ROOT: 'root',
     getCrdtDoc: mocks.getCrdtDoc,
+    getCrdtDocIds: vi.fn(),
+    hasCrdtDoc: vi.fn(),
     loadCrdtProject: mocks.loadCrdtProject,
-    projectCrdtToStores: mocks.projectCrdtToStores,
-    startCrdtAutoSave: mocks.startCrdtAutoSave,
+    mutateCrdtDoc: vi.fn(),
     persistCrdtProject: mocks.persistCrdtProject,
+    preserveBranchStateForSession: vi.fn(),
+    projectCrdtToStores: mocks.projectCrdtToStores,
+    removeCrdtDoc: vi.fn(),
+    replaceBranchState: vi.fn(),
+    replaceCrdtDoc: vi.fn(),
+    restoreBranchStateAfterSession: vi.fn(),
+    runCrdtPersistenceBarrier: vi.fn(),
+    sanitizeIncomingCrdtDocument: vi.fn(),
+    setupProjectionBridge: vi.fn(),
+    startCrdtAutoSave: mocks.startCrdtAutoSave,
+    subscribeToCrdtChanges: vi.fn(),
+    waitForCrdtDocumentTransition: vi.fn(),
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.executeAppAction,
     clearUndoHistory: mocks.clearUndoHistory,
     resetActionReplayAuthority: mocks.resetActionReplayAuthority,
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    isAppActionCommittedError: vi.fn(() => false),
+    pushUndoEntry: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
     migrateAbsoluteMidiNotes: mocks.migrateAbsoluteMidiNotes,

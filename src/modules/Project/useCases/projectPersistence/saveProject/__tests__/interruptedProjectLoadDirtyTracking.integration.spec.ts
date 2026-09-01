@@ -107,17 +107,33 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     prepareCachedAudioBuffersFromIdb: mockPrepareCachedAudioBuffersFromIdb,
     resetAudioGraph: mockResetAudioGraph,
 }));
-vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: mockClearUndoHistory, executeAppAction: vi.fn() }));
+vi.mock('#/modules/Command/useCases', () => ({
+    clearUndoHistory: mockClearUndoHistory,
+    executeAppAction: vi.fn(),
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    isAppActionCommittedError: vi.fn(() => false),
+    pushUndoEntry: vi.fn(),
+    resetActionReplayAuthority: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
+}));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     compactProject: mockCompactProject,
     projectActionHistoryToStore: mockProjectActionHistoryToStore,
     resetCrdtProjectAuthority: mockResetCrdtProjectAuthority,
     startCrdtAutoSave: mockStartCrdtAutoSave,
 }));
-vi.mock('#/modules/PluginHost/useCases', () => ({ unloadPlugin: mockUnloadLoadedExternalPlugins }));
+vi.mock('#/modules/PluginHost/useCases', () => ({
+    unloadPlugin: mockUnloadLoadedExternalPlugins,
+    activateExternalPlugin: vi.fn(),
+    findSupportedPlugin: vi.fn(),
+    registerFaustDSP: vi.fn(),
+}));
 vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: mockEnsureTrackStrips,
     stopPlayback: mockStopPlayback,
+    defaultTransportState: { masterGain: 75, isPlaying: false },
+    restoreTimelineMapSnapshot: vi.fn(),
+    restoreTransportSnapshot: vi.fn(),
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mockNotifyUser }));
 vi.mock('../../helpers/autoSaveHandle', () => ({ setAutoSaveHandle: mockSetAutoSaveHandle }));

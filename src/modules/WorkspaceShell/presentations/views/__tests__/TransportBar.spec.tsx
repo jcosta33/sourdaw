@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
@@ -83,7 +83,10 @@ vi.mock('../Transport/AutoScrollToggle', () => ({
 vi.mock('../Transport/PanelToggles', () => ({
     PanelToggles: () => (
         <div data-testid="panel-toggles">
-            <button data-testid="panel-toggle-button">Toggle</button>
+            <button data-testid="panel-toggle-button">
+                <svg data-testid="panel-toggle-icon" />
+                Toggle
+            </button>
         </div>
     ),
 }));
@@ -138,10 +141,31 @@ vi.mock('#/modules/Project/presentations/views', async (importOriginal) => ({
     MissingMediaPanel: () => <div data-testid="missing-media-panel" />,
 }));
 
-vi.mock('#/modules/PunchRecording/presentations/views', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/PunchRecording/presentations/views')>()),
-    PunchRecordingControls: () => <div data-testid="punch-recording" />,
-}));
+vi.mock('#/modules/PunchRecording/presentations/views', async (importOriginal) => {
+    const { Popover, PopoverContent, PopoverTrigger } = await import('#/components/ui/popover');
+    return {
+        ...(await importOriginal<typeof import('#/modules/PunchRecording/presentations/views')>()),
+        PunchRecordingControls: ({ compact = false }: { compact?: boolean }) => (
+            <div data-testid="punch-recording" data-compact={compact ? 'true' : 'false'}>
+                <Popover>
+                    <PopoverTrigger asChild>
+                        <button type="button" aria-label="Punch recording settings">
+                            Punch recording settings
+                        </button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                        aria-label="Punch recording settings"
+                        onEscapeKeyDown={(event) => {
+                            event.preventDefault();
+                        }}
+                    >
+                        Punch recording settings
+                    </PopoverContent>
+                </Popover>
+            </div>
+        ),
+    };
+});
 
 vi.mock('../PromptBar', () => ({
     PromptBar: () => <div data-testid="prompt-bar" />,
@@ -162,6 +186,12 @@ let voiceInputAvailable = false;
  */
 const DRAG_REGION_SELECTOR = selectorDeclaring('app-region', 'drag');
 const TITLEBAR_INSET_SELECTOR = selectorDeclaring('margin-left', 'env(titlebar-area-x, 0px)');
+const VIEWPORT_FULL_WIDTH = 1440;
+const VIEWPORT_COMPACT_WIDTH = 1024;
+
+const setViewportWidth = (width: number): void => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width });
+};
 
 describe('TransportBar', () => {
     beforeEach(() => {
@@ -181,6 +211,7 @@ describe('TransportBar', () => {
         undoState.canRedo = false;
         projectState.name = 'Test';
         projectState.dirty = false;
+        setViewportWidth(VIEWPORT_FULL_WIDTH);
         vi.mocked(useStore).mockImplementation((store, defaultValue) => {
             if (store === voiceStatusStore) {
                 return voiceStatus;
@@ -266,6 +297,15 @@ describe('TransportBar', () => {
         renderTransportBar();
 
         fireEvent.doubleClick(screen.getByTestId('panel-toggle-button'));
+
+        expect(windowChromeMocks.toggleMaximize).not.toHaveBeenCalled();
+    });
+
+    it('does not toggle maximize when the double-click lands on an interactive SVG child', () => {
+        windowChromeMocks.frameless = true;
+        renderTransportBar();
+
+        fireEvent.doubleClick(screen.getByTestId('panel-toggle-icon'));
 
         expect(windowChromeMocks.toggleMaximize).not.toHaveBeenCalled();
     });
@@ -371,12 +411,14 @@ describe('TransportBar', () => {
         renderTransportBar();
 
         // showOverdub requires an armed MIDI track; audio-only → no overdub control.
+        fireEvent.click(screen.getByRole('button', { name: 'Transport settings' }));
         expect(screen.queryByRole('button', { name: /overdub/i })).not.toBeInTheDocument();
     });
 
     it('hides the overdub control when no tracks are armed', () => {
         renderTransportBar();
 
+        fireEvent.click(screen.getByRole('button', { name: 'Transport settings' }));
         expect(screen.queryByRole('button', { name: /overdub/i })).not.toBeInTheDocument();
     });
 
@@ -407,5 +449,155 @@ describe('TransportBar', () => {
 
         expect(screen.getByText('Custom Song')).toBeInTheDocument();
         expect(screen.getByTitle('Unsaved changes')).toBeInTheDocument();
+    });
+
+    it('keeps the project name and menu trigger in one gapless control', () => {
+        renderTransportBar();
+
+        const splitControl = screen.getByTestId('project-menu-control');
+        const projectName = screen.getByTestId('project-name');
+        const menuTrigger = screen.getByTestId('recent-projects');
+
+        expect(splitControl).toHaveClass('gap-0', 'shrink-0');
+        expect(Array.from(splitControl.children)).toEqual([projectName, menuTrigger]);
+        expect(screen.queryByRole('button', { name: 'Project controls' })).not.toBeInTheDocument();
+    });
+
+    it('admits compact controls from the viewport width rather than the header contents', () => {
+        setViewportWidth(VIEWPORT_COMPACT_WIDTH);
+        renderTransportBar();
+
+        expect(screen.getByRole('button', { name: 'Project controls' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'More transport controls' })).toBeInTheDocument();
+        expect(screen.queryByTestId('arrangement-selector')).not.toBeInTheDocument();
+    });
+
+    it('switches into compact mode when the viewport shrinks across the compact boundary', () => {
+        renderTransportBar();
+
+        expect(screen.queryByRole('button', { name: 'More transport controls' })).not.toBeInTheDocument();
+
+        setViewportWidth(VIEWPORT_COMPACT_WIDTH);
+        act(() => {
+            window.dispatchEvent(new Event('resize'));
+        });
+
+        expect(screen.getByRole('button', { name: 'More transport controls' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Project controls' })).toBeInTheDocument();
+    });
+
+    it('restores focus when the focused transport control unmounts during a mode change', () => {
+        renderTransportBar();
+        screen.getByRole('menu', { name: 'Arrangement menu' }).remove();
+        screen.getByTestId('transport-metronome').focus();
+
+        setViewportWidth(VIEWPORT_COMPACT_WIDTH);
+        act(() => {
+            window.dispatchEvent(new Event('resize'));
+        });
+
+        expect(screen.getByRole('button', { name: 'Stop' })).toHaveFocus();
+    });
+
+    it('keeps focus on a transport control that remains mounted during a mode change', () => {
+        renderTransportBar();
+        screen.getByRole('button', { name: 'Play' }).focus();
+
+        setViewportWidth(VIEWPORT_COMPACT_WIDTH);
+        act(() => {
+            window.dispatchEvent(new Event('resize'));
+        });
+
+        expect(screen.getByRole('button', { name: 'Play' })).toHaveFocus();
+    });
+
+    it('keeps focus in portaled transport settings during a mode change', () => {
+        renderTransportBar();
+        screen.getByRole('menu', { name: 'Arrangement menu' }).remove();
+        fireEvent.click(screen.getByRole('button', { name: 'Transport settings' }));
+
+        const settingsDialog = screen.getByRole('dialog', { name: 'Transport settings' });
+        expect(settingsDialog).toBeInTheDocument();
+
+        setViewportWidth(VIEWPORT_COMPACT_WIDTH);
+        act(() => {
+            window.dispatchEvent(new Event('resize'));
+        });
+
+        expect(settingsDialog).toBeInTheDocument();
+        expect(settingsDialog.contains(document.activeElement)).toBe(true);
+        expect(screen.getByRole('button', { name: 'Stop' })).not.toHaveFocus();
+    });
+
+    it('mounts punch as a compact cluster on the expanded action row', () => {
+        renderTransportBar();
+
+        expect(screen.queryByRole('button', { name: 'More transport controls' })).not.toBeInTheDocument();
+        expect(screen.getByTestId('punch-recording')).toHaveAttribute('data-compact', 'true');
+    });
+
+    it('closes nested punch settings on the first Escape and More on the second', async () => {
+        setViewportWidth(VIEWPORT_COMPACT_WIDTH);
+        renderTransportBar();
+
+        const moreTrigger = screen.getByRole('button', { name: 'More transport controls' });
+        fireEvent.click(moreTrigger);
+        expect(moreTrigger).toHaveAttribute('aria-expanded', 'true');
+
+        const punchTrigger = screen.getByRole('button', { name: 'Punch recording settings' });
+        fireEvent.click(punchTrigger);
+        const punchDialog = screen.getByRole('dialog', { name: 'Punch recording settings' });
+        expect(punchDialog).toBeInTheDocument();
+        expect(moreTrigger).toHaveAttribute('aria-expanded', 'true');
+
+        // Playwright sends Escape to the focused portaled surface, not the trigger.
+        // The Punch mock blocks Radix dismiss, so only the window-capture handler can close it.
+        punchDialog.focus();
+        fireEvent.keyDown(punchDialog, { key: 'Escape' });
+        expect(screen.queryByRole('dialog', { name: 'Punch recording settings' })).not.toBeInTheDocument();
+        expect(moreTrigger).toHaveAttribute('aria-expanded', 'true');
+
+        await act(async () => {
+            fireEvent.keyDown(punchTrigger, { key: 'Escape' });
+            await new Promise<void>((resolve) => {
+                requestAnimationFrame(() => resolve());
+            });
+        });
+        expect(moreTrigger).toHaveAttribute('aria-expanded', 'false');
+        expect(moreTrigger).toHaveFocus();
+    });
+
+    it('closes nested punch settings on Escape when a capture listener preventDefaults', () => {
+        setViewportWidth(VIEWPORT_COMPACT_WIDTH);
+        renderTransportBar();
+
+        const addEventListener = vi.spyOn(window, 'addEventListener');
+        try {
+            const moreTrigger = screen.getByRole('button', { name: 'More transport controls' });
+            fireEvent.click(moreTrigger);
+            expect(addEventListener).toHaveBeenCalledWith('keydown', expect.any(Function), true);
+
+            const punchTrigger = screen.getByRole('button', { name: 'Punch recording settings' });
+            fireEvent.click(punchTrigger);
+            const punchDialog = screen.getByRole('dialog', { name: 'Punch recording settings' });
+
+            const swallowEscape = (event: KeyboardEvent): void => {
+                if (event.key === 'Escape') {
+                    event.preventDefault();
+                }
+            };
+            window.addEventListener('keydown', swallowEscape, true);
+            try {
+                punchDialog.focus();
+                fireEvent.keyDown(punchDialog, { key: 'Escape' });
+            } finally {
+                window.removeEventListener('keydown', swallowEscape, true);
+            }
+
+            expect(screen.queryByRole('dialog', { name: 'Punch recording settings' })).not.toBeInTheDocument();
+            expect(moreTrigger).toHaveAttribute('aria-expanded', 'true');
+        } finally {
+            addEventListener.mockRestore();
+        }
     });
 });

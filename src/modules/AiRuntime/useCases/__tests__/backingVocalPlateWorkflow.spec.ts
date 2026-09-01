@@ -1362,11 +1362,15 @@ describe('backing-vocal plate workflow', () => {
             continuation: {
                 authority: 'authoritative-collaboration-host',
                 idempotency: 'project-checkpoint',
-                kind: 'reconcile-exact-batch',
+                kind: 'manual-repair',
             },
         });
 
-        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(3);
+        // A confirmation spends one render attempt per approved job. The failed
+        // job is left to the armed retry below, which reserves its own render
+        // budget and re-checks artifact-attachment authority; a silent second
+        // pass inside the confirmation would do neither.
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(renderAction.payload.jobs.length);
         expect(getAgentSectionRenderArtifacts()).toEqual([
             expect.objectContaining({
                 jobId: successfulJob.jobId,
@@ -1412,13 +1416,16 @@ describe('backing-vocal plate workflow', () => {
 
         // The armed retry re-renders only the missing job and leaves the
         // committed project batch untouched.
+        const failedRetryCallIndex = runtimeMocks.renderOffline.mock.calls.length;
         const failedRetry = await confirmPendingChatActions({ confirmationId: confirmation.id });
         expect(failedRetry).toMatchObject({
             status: 'failed',
             reason: expect.stringContaining('chorus two renderer unavailable'),
         });
-        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(4);
-        expect(runtimeMocks.renderOffline.mock.calls[3]?.[0]).toMatchObject({ startBeat: failedJob.startBeat });
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(failedRetryCallIndex + 1);
+        expect(runtimeMocks.renderOffline.mock.calls[failedRetryCallIndex]?.[0]).toMatchObject({
+            startBeat: failedJob.startBeat,
+        });
         expect(trackStore.value?.tracks).toEqual(committedTracks);
         expect(automationStore.value?.lanes).toEqual(committedLanes);
         expect(undoStore.value?.past).toHaveLength(11);
@@ -1429,10 +1436,11 @@ describe('backing-vocal plate workflow', () => {
 
         runtimeMocks.renderOffline.mockResolvedValue(createTestAudioBuffer());
 
+        const finalizedRetryCallIndex = runtimeMocks.renderOffline.mock.calls.length;
         await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
             status: 'executed',
         });
-        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(5);
+        expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(finalizedRetryCallIndex + 1);
         expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.jobId)).toEqual(
             renderAction.payload.jobs.map((job) => job.jobId)
         );
@@ -1486,11 +1494,14 @@ describe('backing-vocal plate workflow', () => {
             durableCommit: true,
         });
         expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.jobId)).toEqual([completedJob.jobId]);
-        expect(agentRunLifecycle.get(confirmation.runId)?.pendingEffectContinuations).toEqual(
-            expect.arrayContaining([
-                expect.objectContaining({ batchId: confirmation.groupId, recovery: 'reconcile-batch' }),
-            ])
-        );
+        expect(
+            agentRunLifecycle
+                .get(confirmation.runId)
+                ?.pendingEffectContinuations.some(
+                    (continuation) =>
+                        continuation.batchId === confirmation.groupId && continuation.recovery === 'reconcile-batch'
+                )
+        ).toBe(true);
 
         runtimeMocks.renderOffline.mockResolvedValue(createRetentionSizedTestAudioBuffer(frameCount));
         const retry = await confirmPendingChatActions({ confirmationId: confirmation.id });
@@ -1502,6 +1513,7 @@ describe('backing-vocal plate workflow', () => {
         expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.jobId)).toEqual([completedJob.jobId]);
         expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
             status: 'executed',
+            followUpFailureKind: 'retention-capacity',
             followUpStatus: 'failed',
         });
         expect(agentRunLifecycle.get(confirmation.runId)?.pendingEffectContinuations).toEqual(
@@ -1513,10 +1525,13 @@ describe('backing-vocal plate workflow', () => {
         expect(receipt?.content).toContain('project commands were not replayed');
         expect(receipt?.content).toContain('require manual repair');
 
+        const retainedError = getPendingActionConfirmation(confirmation.id)?.error;
         const renderCallsBeforeBlockedRetry = runtimeMocks.renderOffline.mock.calls.length;
-        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toMatchObject({
-            status: 'not_pending',
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+            status: 'failed',
+            reason: retainedError,
         });
+        expect(getPendingActionConfirmation(confirmation.id)?.error).toBe(retainedError);
         expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(renderCallsBeforeBlockedRetry);
     });
 

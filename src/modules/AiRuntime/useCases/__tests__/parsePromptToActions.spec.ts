@@ -1518,6 +1518,89 @@ describe('parsePromptToActions', () => {
         expect(result.executionMode).toBe('atomic');
     });
 
+    it('keeps every planned action when one of them cannot compile for range measurement', async () => {
+        mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
+        vi.mocked(generateToolCalls)
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: ['setLoopRegion', 'setTempo'] },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: {
+                                semantic: { classification: 'simple', uncertainty: [] },
+                                objective: 'Set the loop region and the tempo.',
+                                constraints: [],
+                                scope: {
+                                    targetIds: [],
+                                    targetRanges: [],
+                                    protectedTargetIds: [],
+                                    protectedRanges: [],
+                                },
+                                capabilityIds: ['setLoopRegion', 'setTempo'],
+                                assetIds: [],
+                                alternatives: [],
+                                validationStrategy: ['Validate the grounded command batch.'],
+                                stoppingConditions: ['Stop if application validation fails.'],
+                            },
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'set-loop-region',
+                                        name: 'setLoopRegion',
+                                        arguments: { startBeat: 8, endBeat: 16 },
+                                    },
+                                    { id: 'set-tempo', name: 'setTempo', arguments: { bpm: 130 } },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            });
+        // Measuring the plan's beat spans compiles every planned action through the batch compiler.
+        // One handler refuses to materialize a reference the project never seeded — the shape a
+        // hallucinated provider target takes at parse time — so only the other action is measurable.
+        registerHandlerMap({
+            setLoopRegion: {
+                describe: () => ({ label: 'Set loop region', inverseAction: null }),
+                execute: () => undefined,
+                undoable: true,
+            },
+            setTempo: {
+                materializeCommandArguments: () => {
+                    throw new Error('Tempo reference does not resolve in the current project');
+                },
+                describe: () => ({ label: 'Set tempo', inverseAction: null }),
+                execute: () => undefined,
+                undoable: true,
+            },
+        });
+
+        const result = await parsePromptToActions(
+            'set the loop region from beat 8 to beat 16 and set the tempo to 130',
+            createMixerContext(),
+            undefined,
+            'revision-partial-measurement'
+        );
+
+        expect(result.rejectionReason).toBeUndefined();
+        expect(result.actions).toEqual([
+            { type: 'setLoopRegion', payload: { startBeat: 8, endBeat: 16 } },
+            { type: 'setTempo', payload: { bpm: 130 } },
+        ]);
+        expect(result.providerProposal?.scope.targetRanges).toEqual([{ startBeat: 8, endBeat: 16 }]);
+    });
+
     it('proposes a grounded two-clip crossfade as one confirmable atomic action', async () => {
         mockBridgeGroundedLlmToolCalls.mockImplementation(actualBridge.bridgeGroundedLlmToolCalls);
         vi.mocked(generateToolCalls).mockResolvedValue(

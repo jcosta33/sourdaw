@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
     reboundApproval: vi.fn(),
     refreshBatch: vi.fn(),
     revision: vi.fn(() => 'revision-1'),
+    revisionMatchesLive: vi.fn(() => true),
     chatState: { value: null as { isGenerating: boolean } | null },
 }));
 
@@ -42,7 +43,10 @@ vi.mock('../../../stores/pendingActionConfirmationStore', () => ({
     getPendingActionConfirmation: mocks.getConfirmation,
     refreshPendingActionConfirmationApproval: mocks.reboundApproval,
 }));
-vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRevision: mocks.revision }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRevision: mocks.revision,
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint: mocks.revisionMatchesLive,
+}));
 vi.mock('../admitCommittedSectionRenderRetry', () => ({ admitCommittedSectionRenderRetry: mocks.admitRetry }));
 vi.mock('../../compileAgentRiskApproval', () => ({ compileAgentRiskApproval: mocks.compileApproval }));
 vi.mock('../confirmationTerminalSettlement', () => ({
@@ -161,6 +165,7 @@ beforeEach(() => {
     mocks.getConfirmation.mockReturnValue(confirmation);
     mocks.getReplay.mockResolvedValue(null);
     mocks.revision.mockReturnValue('revision-1');
+    mocks.revisionMatchesLive.mockReturnValue(true);
     mocks.admitRetry.mockReturnValue({ status: 'ineligible' });
     mocks.failRetryProof.mockReturnValue({ status: 'failed', reason: 'retry proof mismatch' });
     mocks.compileApproval.mockReturnValue({ approval: 'rebound' });
@@ -201,6 +206,77 @@ describe('resolveConfirmationAdmission', () => {
             confirmation,
             priorVerifiedBatchReceipt: null,
             recoveringPendingEffects: false,
+        });
+    });
+
+    it('admits when only the command checkpoint changed the strict project revision', async () => {
+        const confirmation = createConfirmation({ commandBatch: createBatch() });
+        mocks.getConfirmation.mockReturnValue(confirmation);
+        mocks.revision.mockReturnValue('revision-with-command-checkpoint');
+        mocks.revisionMatchesLive.mockReturnValue(true);
+
+        await expect(
+            confirmationAdmission.resolveConfirmationAdmission({ confirmationId: confirmation.id })
+        ).resolves.toEqual({
+            status: 'ready',
+            confirmation,
+            priorVerifiedBatchReceipt: null,
+            recoveringPendingEffects: false,
+        });
+        expect(mocks.revisionMatchesLive).toHaveBeenCalledWith(confirmation.projectRevision);
+        expect(mocks.revision()).not.toBe(confirmation.projectRevision);
+        expect(mocks.invalidateForProjectChange).not.toHaveBeenCalled();
+    });
+
+    it('returns the same structured retention-capacity failure on repeated admission without changing its error', async () => {
+        const reason = 'The approved render set cannot fit the session artifact budget.';
+        const confirmation = {
+            ...createConfirmation({ commandBatch: createBatch() }),
+            status: 'executed' as const,
+            error: reason,
+            followUpFailureKind: 'retention-capacity' as const,
+            followUpStatus: 'failed' as const,
+        };
+        mocks.getConfirmation.mockReturnValue(confirmation);
+
+        const first = await confirmationAdmission.resolveConfirmationAdmission({ confirmationId: confirmation.id });
+        const second = await confirmationAdmission.resolveConfirmationAdmission({ confirmationId: confirmation.id });
+
+        expect(first).toEqual({ status: 'handled', result: { status: 'failed', reason } });
+        expect(second).toEqual(first);
+        expect(confirmation.error).toBe(reason);
+    });
+
+    it('returns a retained retention-capacity failure after confirmation settlement fails', async () => {
+        const reason = 'The approved render set cannot fit the session artifact budget.';
+        const confirmation = {
+            ...createConfirmation({ commandBatch: createBatch() }),
+            status: 'failed' as const,
+            error: reason,
+            followUpFailureKind: 'retention-capacity' as const,
+            followUpStatus: 'failed' as const,
+        };
+        mocks.getConfirmation.mockReturnValue(confirmation);
+
+        await expect(
+            confirmationAdmission.resolveConfirmationAdmission({ confirmationId: confirmation.id })
+        ).resolves.toEqual({ status: 'handled', result: { status: 'failed', reason } });
+    });
+
+    it('does not classify an unrelated failed follow-up from retention wording alone', async () => {
+        const confirmation = {
+            ...createConfirmation({ commandBatch: createBatch() }),
+            status: 'executed' as const,
+            error: 'Remote retention capacity telemetry was unavailable.',
+            followUpStatus: 'failed' as const,
+        };
+        mocks.getConfirmation.mockReturnValue(confirmation);
+
+        await expect(
+            confirmationAdmission.resolveConfirmationAdmission({ confirmationId: confirmation.id })
+        ).resolves.toEqual({
+            status: 'handled',
+            result: { status: 'not_pending', currentStatus: 'executed' },
         });
     });
 
@@ -314,6 +390,7 @@ describe('resolveConfirmationAdmission', () => {
         const confirmation = createConfirmation();
         mocks.getConfirmation.mockReturnValue(confirmation);
         mocks.revision.mockReturnValue('revision-2');
+        mocks.revisionMatchesLive.mockReturnValue(false);
         await expect(
             confirmationAdmission.resolveConfirmationAdmission({ confirmationId: confirmation.id })
         ).resolves.toEqual({
@@ -329,6 +406,7 @@ describe('resolveConfirmationAdmission', () => {
         const divergence = reapprovalDivergence();
         mocks.getConfirmation.mockReturnValue(confirmation);
         mocks.revision.mockReturnValue('revision-2');
+        mocks.revisionMatchesLive.mockReturnValue(false);
         mocks.refreshBatch.mockReturnValue({ status: 'conflicted', divergence });
 
         await expect(
@@ -345,6 +423,7 @@ describe('resolveConfirmationAdmission', () => {
         const divergence = { kind: 'unrelated-change', targetIds: [], repairCandidates: [] } as const;
         mocks.getConfirmation.mockReturnValue(confirmation);
         mocks.revision.mockReturnValue('revision-2');
+        mocks.revisionMatchesLive.mockReturnValue(false);
         mocks.refreshBatch.mockReturnValue({
             status: 'ready',
             commandBatch: refreshedBatch,
@@ -377,6 +456,7 @@ describe('resolveConfirmationAdmission', () => {
         const confirmation = createConfirmation({ commandBatch });
         mocks.getConfirmation.mockReturnValue(confirmation);
         mocks.revision.mockReturnValue('revision-2');
+        mocks.revisionMatchesLive.mockReturnValue(false);
         mocks.refreshBatch.mockReturnValue({
             status: 'ready',
             commandBatch: refreshedBatch,

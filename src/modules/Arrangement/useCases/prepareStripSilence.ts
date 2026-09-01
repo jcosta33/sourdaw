@@ -3,7 +3,7 @@ import { transportStore } from '#/modules/Transport/stores';
 import { type StripSilenceActionSnapshot } from '#/utils/handlerContract';
 
 import { type Clip } from '../models/Track';
-import { type WarpMarker, type WarpState } from '../models/WarpMarker';
+import { type WarpState } from '../models/WarpMarker';
 import { getTrackState } from '../repositories/track/getTrackState';
 import { readClipSatelliteEntry, type ClipSatelliteEntry } from '../stores/clipSatelliteState';
 import { type ClipGainEnvelope, type GainEnvelopePoint } from '../stores/gainEnvelopeStore';
@@ -101,22 +101,21 @@ function rebaseGainEnvelope(
 }
 
 /**
- * Every new segment inherits a copy of the target's warp state the same way
- * as the gain envelope. Both `originalBeat` and `warpedBeat` shift by the
- * same delta as the segment's own start, a rigid translation of the marker
- * set that preserves the warp curve's shape and re-anchors it to the
- * segment's clip-relative frame.
+ * Warp markers live in source-content beats: `detectTransientsForClip` writes
+ * `beat` from the decoded buffer with no clip `audioOffsetBeats`. Each
+ * segment therefore keeps the same marker set, unshifted — split also leaves
+ * `originalBeat` / `warpedBeat` alone after partitioning by content beat.
+ * Subtracting the segment's timeline start would treat them as clip-relative
+ * and park them off their transients.
  */
-function rebaseWarpState(warpState: WarpState | null, shift: number): WarpState | null {
+function copyWarpState(warpState: WarpState | null): WarpState | null {
     if (!warpState) {
         return null;
     }
-    const markers: WarpMarker[] = warpState.markers.map((marker) => ({
-        ...marker,
-        originalBeat: marker.originalBeat - shift,
-        warpedBeat: marker.warpedBeat - shift,
-    }));
-    return { ...warpState, markers };
+    return {
+        ...warpState,
+        markers: warpState.markers.map((marker) => ({ ...marker })),
+    };
 }
 
 function pointsInsideSegment(points: readonly AutomationLanePoint[] | undefined, segment: Clip): AutomationLanePoint[] {
@@ -337,7 +336,7 @@ export function prepareStripSilence({ clipId, threshold = -40, minDuration = 0.5
         newClipSatellites.push({
             clipId: newClipId,
             gainEnvelope: rebaseGainEnvelope(targetSatelliteEntry.gainEnvelope, newClipId, shift),
-            warpState: rebaseWarpState(targetSatelliteEntry.warpState, shift),
+            warpState: copyWarpState(targetSatelliteEntry.warpState),
         });
     }
 

@@ -12,6 +12,8 @@ import { describe, expect, it, vi } from 'vitest';
 import {
     createIntervalRunLoopPump,
     createPluginWindowHost,
+    interceptOwnerWindowTeardown,
+    OWNER_EDITOR_DETACH_TIMEOUT_MS,
     registerPluginWindowHost,
     type CreateEditorWindowRequest,
     type EditorSize,
@@ -149,6 +151,34 @@ const createFakeWindow = (options: EditorWindowOptions): FakeWindow => {
             }[event];
             listeners?.push(listener as () => void);
         },
+    };
+};
+
+/**
+ * The DAW window as Electron models a parent: destroying it ends each child
+ * with CloseImmediately — `closed` and no preventable `close`.
+ */
+type FakeOwnerWindow = FakeWindow & {
+    readonly adopt: (child: FakeWindow) => void;
+};
+
+const createFakeOwnerWindow = (): FakeOwnerWindow => {
+    const children: FakeWindow[] = [];
+    const window = createFakeWindow({ title: 'Sourdaw', parent: undefined, alwaysOnTop: false });
+    const destroySelf = window.destroy;
+    return {
+        ...window,
+        adopt: (child) => {
+            children.push(child);
+        },
+        destroy: vi.fn<() => void>(() => {
+            for (const child of children) {
+                if (!child.isDestroyed()) {
+                    child.emitClosed();
+                }
+            }
+            destroySelf();
+        }),
     };
 };
 
@@ -349,6 +379,39 @@ describe('createPluginWindowHost', () => {
     });
 
     /**
+     * The existence probe is the addon's "is this editor still open?", and the
+     * whole OS-close gap turns on its answer: the window is hidden the moment
+     * the close is stopped, while the reset its report schedules runs on the
+     * addon only after the report crosses. A probe that answered "exists" for
+     * the window being torn down would make a reopen clicked into that gap
+     * refuse "already open" for a window the user watched disappear.
+     */
+    it('answers the existence probe false for a window whose OS close is being torn down', async () => {
+        let reportHandled: (() => void) | undefined;
+        const harness = createHarness({
+            notifyClosed: () =>
+                new Promise<void>((resolve) => {
+                    reportHandled = resolve;
+                }),
+        });
+        harness.host.create(request());
+        const window = onlyWindow(harness.windows);
+        expect(harness.host.exists('plugin-a')).toBe(true);
+
+        const stopped = window.emitClose();
+
+        expect(stopped).toBe(true);
+        expect(window.isDestroyed()).toBe(false);
+        expect(harness.host.exists('plugin-a')).toBe(false);
+
+        expect(reportHandled).toBeInstanceOf(Function);
+        reportHandled?.();
+        await settled();
+        expect(window.isDestroyed()).toBe(true);
+        expect(harness.host.exists('plugin-a')).toBe(false);
+    });
+
+    /**
      * The contract this whole path exists for. Both formats un-parent the
      * plugin's child window from the host's — VST3 `IPlugView::removed`, CLAP
      * `gui.destroy` — so the window they were attached to has to still be there
@@ -377,6 +440,361 @@ describe('createPluginWindowHost', () => {
         expect(windowAliveAtReport).toEqual([true, false]);
         expect(window.destroy).toHaveBeenCalledTimes(1);
         expect(harness.host.exists('plugin-a')).toBe(false);
+    });
+
+    /**
+     * Parent `destroy()` is CloseImmediately: the child never sees a stoppable
+     * `close`, so the title-bar detach path is skipped and the addon's reset
+     * runs from `closed` against a window that is already gone. That is the
+     * owner-destroy cascade this host has to intercept.
+     */
+    it('detaches parented editors while they are still alive when the owner is destroyed', async () => {
+        const owner = createFakeOwnerWindow();
+        const windowAliveAtReport: boolean[] = [];
+        const harness: Harness = createHarness({
+            getParentWindow: () => owner as never,
+            notifyClosed: vi.fn((): Promise<void> => {
+                windowAliveAtReport.push(!onlyWindow(harness.windows).isDestroyed());
+                return Promise.resolve();
+            }),
+        });
+        const { destroyAfterEditorsDetach } = interceptOwnerWindowTeardown(owner, () =>
+            harness.host.detachOpenEditors()
+        );
+        harness.host.create(request());
+        const editor = onlyWindow(harness.windows);
+        owner.adopt(editor);
+
+        await destroyAfterEditorsDetach();
+
+        expect(windowAliveAtReport).toEqual([true, false]);
+        expect(editor.isDestroyed()).toBe(true);
+        expect(harness.host.exists('plugin-a')).toBe(false);
+        expect(owner.isDestroyed()).toBe(true);
+        expect(owner.hide).toHaveBeenCalled();
+    });
+
+    /**
+     * A title-bar close of the DAW window is preventable. Stopping it and
+     * destroying only after the editors have left is what keeps that close
+     * from becoming CloseImmediately on the children.
+     */
+    it('stops the owner close, detaches editors, then destroys the owner', async () => {
+        const owner = createFakeOwnerWindow();
+        const windowAliveAtReport: boolean[] = [];
+        const harness: Harness = createHarness({
+            getParentWindow: () => owner as never,
+            notifyClosed: vi.fn((): Promise<void> => {
+                windowAliveAtReport.push(!onlyWindow(harness.windows).isDestroyed());
+                return Promise.resolve();
+            }),
+        });
+        interceptOwnerWindowTeardown(owner, () => harness.host.detachOpenEditors());
+        harness.host.create(request());
+        owner.adopt(onlyWindow(harness.windows));
+
+        const stopped = owner.emitClose();
+        const ownerDestroyedInsideTheEvent = owner.isDestroyed();
+        await settled();
+
+        expect(stopped).toBe(true);
+        expect(ownerDestroyedInsideTheEvent).toBe(false);
+        expect(windowAliveAtReport).toEqual([true, false]);
+        expect(owner.isDestroyed()).toBe(true);
+    });
+
+    it('leaves a cancelled dirty owner close untouched', async () => {
+        const owner = createFakeOwnerWindow();
+        const detachOpenEditors = vi.fn((): Promise<void> => Promise.resolve());
+        interceptOwnerWindowTeardown(owner, detachOpenEditors, () => false);
+
+        const stopped = owner.emitClose();
+        await settled();
+
+        expect(stopped).toBe(false);
+        expect(detachOpenEditors).not.toHaveBeenCalled();
+        expect(owner.hide).not.toHaveBeenCalled();
+        expect(owner.destroy).not.toHaveBeenCalled();
+    });
+
+    it('restores an owner when close authority changes while editor detach is pending', async () => {
+        const owner = createFakeOwnerWindow();
+        let proceed = true;
+        let firstDetach = true;
+        const onCancelled = vi.fn();
+        let releaseDetach: (() => void) | undefined;
+        const detachOpenEditors = vi.fn(() => {
+            if (!firstDetach) {
+                return Promise.resolve();
+            }
+            return new Promise<void>((resolve) => {
+                releaseDetach = resolve;
+            });
+        });
+        const { destroyAfterEditorsDetach } = interceptOwnerWindowTeardown(
+            owner,
+            detachOpenEditors,
+            () => proceed,
+            onCancelled
+        );
+
+        const teardown = destroyAfterEditorsDetach();
+        await settled();
+        proceed = false;
+        firstDetach = false;
+        releaseDetach?.();
+
+        await expect(teardown).resolves.toBe(false);
+        expect(owner.destroy).not.toHaveBeenCalled();
+        expect(owner.show).toHaveBeenCalledTimes(1);
+        expect(onCancelled).toHaveBeenCalledTimes(1);
+
+        proceed = true;
+        await expect(destroyAfterEditorsDetach()).resolves.toBe(true);
+        expect(owner.destroy).toHaveBeenCalledTimes(1);
+    });
+
+    it('upgrades an in-flight close teardown to forced crash destruction', async () => {
+        const owner = createFakeOwnerWindow();
+        let proceed = true;
+        let releaseDetach: (() => void) | undefined;
+        const onCancelled = vi.fn();
+        const detachOpenEditors = vi.fn(
+            () =>
+                new Promise<void>((resolve) => {
+                    releaseDetach = resolve;
+                })
+        );
+        const { destroyAfterEditorsDetach } = interceptOwnerWindowTeardown(
+            owner,
+            detachOpenEditors,
+            () => proceed,
+            onCancelled
+        );
+
+        const normalClose = destroyAfterEditorsDetach();
+        await settled();
+        proceed = false;
+        const crashDestroy = destroyAfterEditorsDetach(true);
+        releaseDetach?.();
+
+        await expect(Promise.all([normalClose, crashDestroy])).resolves.toEqual([true, true]);
+        expect(owner.destroy).toHaveBeenCalledTimes(1);
+        expect(owner.show).not.toHaveBeenCalled();
+        expect(onCancelled).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['approved close', false],
+        ['forced crash', true],
+    ])('destroys the hidden owner after a never-settling detach on %s', async (_case, force) => {
+        const owner = createFakeOwnerWindow();
+        let expireDetach!: () => void;
+        const cancelDeadline = vi.fn();
+        const timers = {
+            setTimer: vi.fn((callback: () => void) => {
+                expireDetach = callback;
+                return { cancel: cancelDeadline };
+            }),
+        };
+        let rejectDetach!: (error: Error) => void;
+        const detachOpenEditors = vi.fn(
+            () =>
+                new Promise<void>((_resolve, reject) => {
+                    rejectDetach = reject;
+                })
+        );
+        const { destroyAfterEditorsDetach } = interceptOwnerWindowTeardown(
+            owner,
+            detachOpenEditors,
+            () => true,
+            undefined,
+            undefined,
+            undefined,
+            { timers }
+        );
+
+        const teardown = destroyAfterEditorsDetach(force);
+        await settled();
+        expect(owner.hide).toHaveBeenCalledOnce();
+        expect(owner.destroy).not.toHaveBeenCalled();
+        expect(timers.setTimer).toHaveBeenCalledWith(expect.any(Function), OWNER_EDITOR_DETACH_TIMEOUT_MS);
+
+        expireDetach();
+        await expect(teardown).resolves.toBe(true);
+        expect(owner.destroy).toHaveBeenCalledOnce();
+        expect(owner.isDestroyed()).toBe(true);
+
+        rejectDetach(new Error('late detach failure'));
+        await settled();
+        expect(owner.destroy).toHaveBeenCalledOnce();
+    });
+
+    it.each([
+        ['approved', true, false, true],
+        ['forced', false, true, true],
+        ['authority-invalidated', false, false, false],
+    ])('handles a rejected editor detach for %s teardown', async (_case, proceed, force, destroys) => {
+        const owner = createFakeOwnerWindow();
+        const onCancelled = vi.fn();
+        const { destroyAfterEditorsDetach } = interceptOwnerWindowTeardown(
+            owner,
+            async () => Promise.reject(new Error('editor detach failed')),
+            () => proceed,
+            onCancelled
+        );
+
+        await expect(destroyAfterEditorsDetach(force)).resolves.toBe(destroys);
+        expect(owner.destroy).toHaveBeenCalledTimes(destroys ? 1 : 0);
+        expect(owner.show).toHaveBeenCalledTimes(destroys ? 0 : 1);
+        expect(onCancelled).toHaveBeenCalledTimes(destroys ? 0 : 1);
+    });
+
+    /**
+     * Intercepting the owner must not swallow a title-bar close of an editor.
+     */
+    it('still detaches an editor from its own title-bar close while the owner stays up', async () => {
+        const owner = createFakeOwnerWindow();
+        const harness = createHarness({ getParentWindow: () => owner as never });
+        interceptOwnerWindowTeardown(owner, () => harness.host.detachOpenEditors());
+        harness.host.create(request());
+        const editor = onlyWindow(harness.windows);
+
+        const stopped = editor.emitClose();
+        await settled();
+
+        expect(stopped).toBe(true);
+        expect(editor.isDestroyed()).toBe(true);
+        expect(harness.host.exists('plugin-a')).toBe(false);
+        expect(owner.isDestroyed()).toBe(false);
+    });
+
+    it('bounds owner teardown to one detach deadline even with two open editors', async () => {
+        vi.useFakeTimers();
+        try {
+            const owner = createFakeOwnerWindow();
+            const harness = createHarness({
+                getParentWindow: () => owner as never,
+                notifyClosed: vi.fn(() => new Promise<void>(() => {})),
+            });
+            interceptOwnerWindowTeardown(owner, () => harness.host.detachOpenEditors());
+            harness.host.create(request('plugin-a', 'instance-a'));
+            harness.host.create(request('plugin-b', 'instance-b'));
+            for (const window of harness.windows) {
+                owner.adopt(window);
+            }
+
+            const stopped = owner.emitClose();
+            await vi.advanceTimersByTimeAsync(4_999);
+            const destroyedBeforeTheDeadline = owner.isDestroyed();
+            await vi.advanceTimersByTimeAsync(1);
+
+            expect(stopped).toBe(true);
+            expect(destroyedBeforeTheDeadline).toBe(false);
+            expect(owner.isDestroyed()).toBe(true);
+            expect(harness.windows.every((window) => window.isDestroyed())).toBe(true);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    /**
+     * `detachOpenEditors` snapshots labels once. A create that parents to the
+     * still-live owner during that await would miss the drain and then take
+     * CloseImmediately from `owner.destroy()` — notifyClosed against a dead
+     * window. Refuse create against an owner already in teardown instead.
+     */
+    it('refuses create against an owner already tearing down', async () => {
+        const owner = createFakeOwnerWindow();
+        let releaseFirstDetach: () => void = () => {};
+        const firstDetachHeld = new Promise<void>((resolve) => {
+            releaseFirstDetach = resolve;
+        });
+        const lateAliveAtNotify: boolean[] = [];
+        const harness: Harness = createHarness({
+            getParentWindow: () => owner as never,
+            notifyClosed: vi.fn((_instanceId: string, label: string): Promise<void> => {
+                if (label === 'plugin-b') {
+                    const late = harness.windows[1];
+                    if (late !== undefined) {
+                        lateAliveAtNotify.push(!late.isDestroyed());
+                    }
+                }
+                if (label === 'plugin-a') {
+                    return firstDetachHeld;
+                }
+                return Promise.resolve();
+            }),
+        });
+        const { destroyAfterEditorsDetach } = interceptOwnerWindowTeardown(owner, () =>
+            harness.host.detachOpenEditors()
+        );
+        harness.host.create(request('plugin-a', 'instance-a'));
+        owner.adopt(onlyWindow(harness.windows));
+
+        const teardown = destroyAfterEditorsDetach();
+        await settled();
+
+        const late = harness.host.create(request('plugin-b', 'instance-b'));
+        expect(late.error).toMatch(/tearing down/i);
+        expect(harness.host.exists('plugin-b')).toBe(false);
+
+        releaseFirstDetach();
+        await teardown;
+
+        expect(lateAliveAtNotify).toEqual([]);
+        expect(owner.isDestroyed()).toBe(true);
+    });
+
+    /**
+     * Crash recovery rebinds getParentWindow to the replacement. Creates during
+     * the crashed owner's detach must parent there and survive its destroy.
+     */
+    it('creates against a replacement owner while a crashed owner is tearing down', async () => {
+        const crashedOwner = createFakeOwnerWindow();
+        const replacementOwner = createFakeOwnerWindow();
+        let parent: FakeOwnerWindow = crashedOwner;
+        let releaseFirstDetach: () => void = () => {};
+        const firstDetachHeld = new Promise<void>((resolve) => {
+            releaseFirstDetach = resolve;
+        });
+        const harness: Harness = createHarness({
+            getParentWindow: () => parent as never,
+            notifyClosed: vi.fn((_instanceId: string, label: string): Promise<void> => {
+                if (label === 'plugin-a') {
+                    return firstDetachHeld;
+                }
+                return Promise.resolve();
+            }),
+        });
+        const { destroyAfterEditorsDetach } = interceptOwnerWindowTeardown(crashedOwner, () =>
+            harness.host.detachOpenEditors()
+        );
+        harness.host.create(request('plugin-a', 'instance-a'));
+        crashedOwner.adopt(onlyWindow(harness.windows));
+
+        const teardown = destroyAfterEditorsDetach();
+        await settled();
+
+        parent = replacementOwner;
+        interceptOwnerWindowTeardown(replacementOwner, () => harness.host.detachOpenEditors());
+
+        const late = harness.host.create(request('plugin-b', 'instance-b'));
+        expect(late.error).toBeNull();
+        expect(late.parented).toBe(true);
+        const lateEditor = harness.windows[1];
+        if (lateEditor === undefined) {
+            throw new Error('expected the replacement-parented editor');
+        }
+        replacementOwner.adopt(lateEditor);
+
+        releaseFirstDetach();
+        await teardown;
+
+        expect(harness.host.exists('plugin-b')).toBe(true);
+        expect(lateEditor.isDestroyed()).toBe(false);
+        expect(crashedOwner.isDestroyed()).toBe(true);
+        expect(replacementOwner.isDestroyed()).toBe(false);
     });
 
     /**
@@ -1096,7 +1514,7 @@ describe('registerPluginWindowHost', () => {
                 return window;
             })
         );
-        expect(registered).toBe(true);
+        expect(registered).toBeDefined();
         expect(register.mock.calls[0]).toHaveLength(8);
         const [create, exists, setSize, setResizable, showAndFocus, destroy, hide, show] = (register.mock.calls[0] ??
             []) as [
@@ -1201,7 +1619,7 @@ describe('registerPluginWindowHost', () => {
     it('survives an addon built before this packet', () => {
         const registered = registerPluginWindowHost({}, shellDeps(createFakeWindow));
 
-        expect(registered).toBe(false);
+        expect(registered).toBeUndefined();
     });
 
     /**
@@ -1215,7 +1633,7 @@ describe('registerPluginWindowHost', () => {
             const native = windowNative();
             Reflect.deleteProperty(native, missing);
 
-            expect(registerPluginWindowHost(native, shellDeps(createFakeWindow))).toBe(false);
+            expect(registerPluginWindowHost(native, shellDeps(createFakeWindow))).toBeUndefined();
         }
     });
 
@@ -1282,7 +1700,7 @@ describe('registerPluginWindowHost', () => {
 
         const registered = registerPluginWindowHost(native, shellDeps(createFakeWindow));
 
-        expect(registered).toBe(false);
+        expect(registered).toBeUndefined();
         expect(register).not.toHaveBeenCalled();
     });
 });

@@ -65,18 +65,38 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     prepareCachedAudioBuffersFromIdb: mocks.prepareCachedAudioBuffersFromIdb,
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRevision: vi.fn(),
+    createCrdtDoc: vi.fn(),
     createCrdtProject: mocks.createCrdtProject,
+    DOC_BRANCHES: '__branches__',
     DOC_PREFIX_ROOT: 'root',
     getCrdtDoc: mocks.getCrdtDoc,
+    getCrdtDocIds: vi.fn(),
+    hasCrdtDoc: vi.fn(),
     loadCrdtProject: mocks.loadCrdtProject,
+    mutateCrdtDoc: vi.fn(),
     persistCrdtProject: mocks.persistCrdtProject,
+    preserveBranchStateForSession: vi.fn(),
     projectCrdtToStores: mocks.projectCrdtToStores,
+    removeCrdtDoc: vi.fn(),
+    replaceBranchState: vi.fn(),
+    replaceCrdtDoc: vi.fn(),
+    restoreBranchStateAfterSession: vi.fn(),
+    runCrdtPersistenceBarrier: vi.fn(),
+    sanitizeIncomingCrdtDocument: vi.fn(),
+    setupProjectionBridge: vi.fn(),
     startCrdtAutoSave: mocks.startCrdtAutoSave,
+    subscribeToCrdtChanges: vi.fn(),
+    waitForCrdtDocumentTransition: vi.fn(),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
     clearUndoHistory: vi.fn(),
     executeAppAction: mocks.executeAppAction,
     resetActionReplayAuthority: vi.fn(),
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    isAppActionCommittedError: vi.fn(() => false),
+    pushUndoEntry: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
     migrateAbsoluteMidiNotes: vi.fn(),

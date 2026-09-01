@@ -52,6 +52,9 @@ const audioEngineMocks = {
     cacheAudioBuffer: vi.fn(),
     refreshSidechainAlignment: vi.fn(),
     scheduleAdjustmentLayers: vi.fn(),
+    // No native engine reading by default: the cursor follows the scheduler's
+    // own integration unless a test says otherwise.
+    readNativeEnginePlayheadSeconds: vi.fn((): number | null => null),
 };
 
 vi.mock('#/modules/Arrangement/stores', () => ({
@@ -134,6 +137,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
         (audioEngineMocks.refreshSidechainAlignment as (...a: unknown[]) => unknown)(...args),
     scheduleAdjustmentLayers: (...args: unknown[]) =>
         (audioEngineMocks.scheduleAdjustmentLayers as (...a: unknown[]) => unknown)(...args),
+    readNativeEnginePlayheadSeconds: (...args: unknown[]) =>
+        (audioEngineMocks.readNativeEnginePlayheadSeconds as (...a: unknown[]) => unknown)(...args),
 }));
 vi.mock('#/modules/Automation/useCases', () => ({
     startAutomationRecording: (...args: unknown[]) =>
@@ -272,6 +277,44 @@ describe('startPlayheadScheduler', () => {
             interval: 25,
             generation: schedulerSession.generation,
         });
+    });
+
+    it('draws the cursor from the native engine while that engine is the audible transport', async () => {
+        transportStoreState.value = playingState({ playheadPosition: 0 });
+        ctxTime.now = 0.1;
+        // Four seconds on the engine clock is eight beats at the default
+        // 120 BPM — nowhere near where one 100 ms tick of local integration
+        // would have put the playhead.
+        audioEngineMocks.readNativeEnginePlayheadSeconds.mockReturnValue(4);
+
+        startPlayheadScheduler();
+        const worker = schedulerSession.worker as unknown as {
+            onmessage: ((event: { data: unknown }) => void) | null;
+        };
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(playheadPositionRef.current).toBeCloseTo(8, 6);
+        // The scheduling clock is untouched: the engine reading moves the
+        // cursor, not the window notes are emitted into.
+        expect(schedulerSession.accumulatedPosition).toBeLessThan(1);
+    });
+
+    it('keeps the cursor on its own integration when no engine answers', async () => {
+        transportStoreState.value = playingState({ playheadPosition: 0 });
+        ctxTime.now = 0.1;
+        audioEngineMocks.readNativeEnginePlayheadSeconds.mockReturnValue(null);
+
+        startPlayheadScheduler();
+        const worker = schedulerSession.worker as unknown as {
+            onmessage: ((event: { data: unknown }) => void) | null;
+        };
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(playheadPositionRef.current).toBe(schedulerSession.accumulatedPosition);
     });
 
     it('runs a tick that schedules metronome, midi, audio, and automation in order', async () => {

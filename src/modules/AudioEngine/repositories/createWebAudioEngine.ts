@@ -551,53 +551,43 @@ class AudioEngineImpl implements AudioEngine {
                 reason: 'Runtime graph delta is stale for the live engine revision',
             });
         }
-        if (!this.runtimeGraphProjectRevisionValidator) {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: 'Runtime graph delta cannot validate its project revision',
-            });
+        if (this.runtimeGraphProjectRevisionValidator) {
+            let isCurrentProjectRevision: boolean;
+            try {
+                isCurrentProjectRevision = this.runtimeGraphProjectRevisionValidator(delta.correlation.projectRevision);
+            } catch (error) {
+                return Object.freeze({
+                    acceptance: 'rejected' as const,
+                    application: 'not-applied' as const,
+                    reason: `Runtime graph delta project revision validation failed: ${String(error)}`,
+                });
+            }
+            if (!isCurrentProjectRevision) {
+                return Object.freeze({
+                    acceptance: 'rejected' as const,
+                    application: 'not-applied' as const,
+                    reason: 'Runtime graph delta is stale for the current project revision',
+                });
+            }
         }
-        let isCurrentProjectRevision: boolean;
-        try {
-            isCurrentProjectRevision = this.runtimeGraphProjectRevisionValidator(delta.correlation.projectRevision);
-        } catch (error) {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: `Runtime graph delta project revision validation failed: ${String(error)}`,
-            });
-        }
-        if (!isCurrentProjectRevision) {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: 'Runtime graph delta is stale for the current project revision',
-            });
-        }
-        if (!this.runtimeGraphTopologyValidator) {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: 'Runtime graph delta cannot validate its project topology',
-            });
-        }
-        let isCurrentProjectTopology: boolean;
-        try {
-            isCurrentProjectTopology = this.runtimeGraphTopologyValidator([delta.after]);
-        } catch (error) {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: `Runtime graph delta topology validation failed: ${String(error)}`,
-            });
-        }
-        if (!isCurrentProjectTopology) {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: 'Runtime graph delta does not match the current project topology',
-            });
+        if (this.runtimeGraphTopologyValidator) {
+            let isCurrentProjectTopology: boolean;
+            try {
+                isCurrentProjectTopology = this.runtimeGraphTopologyValidator([delta.after]);
+            } catch (error) {
+                return Object.freeze({
+                    acceptance: 'rejected' as const,
+                    application: 'not-applied' as const,
+                    reason: `Runtime graph delta topology validation failed: ${String(error)}`,
+                });
+            }
+            if (!isCurrentProjectTopology) {
+                return Object.freeze({
+                    acceptance: 'rejected' as const,
+                    application: 'not-applied' as const,
+                    reason: 'Runtime graph delta does not match the current project topology',
+                });
+            }
         }
 
         let source = this.trackNodes.get(delta.before.id);
@@ -674,53 +664,43 @@ class AudioEngineImpl implements AudioEngine {
                 reason: 'Runtime graph initialization is stale for the live engine revision',
             });
         }
-        if (!this.runtimeGraphProjectRevisionValidator) {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: 'Runtime graph initialization cannot validate its project revision',
-            });
+        if (this.runtimeGraphProjectRevisionValidator) {
+            let isCurrentProjectRevision: boolean;
+            try {
+                isCurrentProjectRevision = this.runtimeGraphProjectRevisionValidator(delta.correlation.projectRevision);
+            } catch (error) {
+                return Object.freeze({
+                    acceptance: 'rejected' as const,
+                    application: 'not-applied' as const,
+                    reason: `Runtime graph initialization project revision validation failed: ${String(error)}`,
+                });
+            }
+            if (!isCurrentProjectRevision) {
+                return Object.freeze({
+                    acceptance: 'rejected' as const,
+                    application: 'not-applied' as const,
+                    reason: 'Runtime graph initialization is stale for the current project revision',
+                });
+            }
         }
-        let isCurrentProjectRevision: boolean;
-        try {
-            isCurrentProjectRevision = this.runtimeGraphProjectRevisionValidator(delta.correlation.projectRevision);
-        } catch (error) {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: `Runtime graph initialization project revision validation failed: ${String(error)}`,
-            });
-        }
-        if (!isCurrentProjectRevision) {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: 'Runtime graph initialization is stale for the current project revision',
-            });
-        }
-        if (!this.runtimeGraphTopologyValidator) {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: 'Runtime graph initialization cannot validate its project topology',
-            });
-        }
-        let isCurrentProjectTopology: boolean;
-        try {
-            isCurrentProjectTopology = this.runtimeGraphTopologyValidator(delta.nodes);
-        } catch (error) {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: `Runtime graph initialization topology validation failed: ${String(error)}`,
-            });
-        }
-        if (!isCurrentProjectTopology) {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: 'Runtime graph initialization does not match the current project topology',
-            });
+        if (this.runtimeGraphTopologyValidator) {
+            let isCurrentProjectTopology: boolean;
+            try {
+                isCurrentProjectTopology = this.runtimeGraphTopologyValidator(delta.nodes);
+            } catch (error) {
+                return Object.freeze({
+                    acceptance: 'rejected' as const,
+                    application: 'not-applied' as const,
+                    reason: `Runtime graph initialization topology validation failed: ${String(error)}`,
+                });
+            }
+            if (!isCurrentProjectTopology) {
+                return Object.freeze({
+                    acceptance: 'rejected' as const,
+                    application: 'not-applied' as const,
+                    reason: 'Runtime graph initialization does not match the current project topology',
+                });
+            }
         }
 
         const sourcePlan = delta.nodes[0];
@@ -1194,10 +1174,12 @@ class AudioEngineImpl implements AudioEngine {
         return this.runtimeGraphRevision;
     }
 
+    // null clears the contract: an unregistered validator is skipped, not fail-closed.
     public setRuntimeGraphProjectRevisionValidator(validator: RuntimeGraphProjectRevisionValidator | null): void {
         this.runtimeGraphProjectRevisionValidator = validator;
     }
 
+    // null clears the contract: an unregistered validator is skipped, not fail-closed.
     public setRuntimeGraphTopologyValidator(validator: RuntimeGraphTopologyValidator | null): void {
         this.runtimeGraphTopologyValidator = validator;
     }
@@ -1231,53 +1213,43 @@ class AudioEngineImpl implements AudioEngine {
                 reason: 'Runtime graph delta is stale for the live engine revision',
             });
         }
-        if (!this.runtimeGraphProjectRevisionValidator) {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: 'Runtime graph delta cannot validate its project revision',
-            });
+        if (this.runtimeGraphProjectRevisionValidator) {
+            let isCurrentProjectRevision: boolean;
+            try {
+                isCurrentProjectRevision = this.runtimeGraphProjectRevisionValidator(delta.correlation.projectRevision);
+            } catch (error) {
+                return Object.freeze({
+                    acceptance: 'rejected' as const,
+                    application: 'not-applied' as const,
+                    reason: `Runtime graph delta project revision validation failed: ${String(error)}`,
+                });
+            }
+            if (!isCurrentProjectRevision) {
+                return Object.freeze({
+                    acceptance: 'rejected' as const,
+                    application: 'not-applied' as const,
+                    reason: 'Runtime graph delta is stale for the current project revision',
+                });
+            }
         }
-        let isCurrentProjectRevision: boolean;
-        try {
-            isCurrentProjectRevision = this.runtimeGraphProjectRevisionValidator(delta.correlation.projectRevision);
-        } catch (error) {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: `Runtime graph delta project revision validation failed: ${String(error)}`,
-            });
-        }
-        if (!isCurrentProjectRevision) {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: 'Runtime graph delta is stale for the current project revision',
-            });
-        }
-        if (!this.runtimeGraphTopologyValidator) {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: 'Runtime graph delta cannot validate its project topology',
-            });
-        }
-        let isCurrentProjectTopology: boolean;
-        try {
-            isCurrentProjectTopology = this.runtimeGraphTopologyValidator(delta.nodes);
-        } catch (error) {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: `Runtime graph delta topology validation failed: ${String(error)}`,
-            });
-        }
-        if (!isCurrentProjectTopology) {
-            return Object.freeze({
-                acceptance: 'rejected' as const,
-                application: 'not-applied' as const,
-                reason: 'Runtime graph delta does not match the current project topology',
-            });
+        if (this.runtimeGraphTopologyValidator) {
+            let isCurrentProjectTopology: boolean;
+            try {
+                isCurrentProjectTopology = this.runtimeGraphTopologyValidator(delta.nodes);
+            } catch (error) {
+                return Object.freeze({
+                    acceptance: 'rejected' as const,
+                    application: 'not-applied' as const,
+                    reason: `Runtime graph delta topology validation failed: ${String(error)}`,
+                });
+            }
+            if (!isCurrentProjectTopology) {
+                return Object.freeze({
+                    acceptance: 'rejected' as const,
+                    application: 'not-applied' as const,
+                    reason: 'Runtime graph delta does not match the current project topology',
+                });
+            }
         }
 
         const edge = delta.edges[0];
@@ -2464,6 +2436,7 @@ class AudioEngineImpl implements AudioEngine {
         for (const [, trackNode] of this.trackNodes) {
             for (const dn of trackNode.strip.deviceNodes) {
                 dn.controller?.allNotesOff?.();
+                dn.controller?.reset?.();
             }
         }
     }

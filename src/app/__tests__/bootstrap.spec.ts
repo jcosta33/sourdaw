@@ -57,6 +57,9 @@ type RuntimeSinkUnderTest = {
 const {
     noop,
     sentinelHandlers,
+    assertCanonicalLlmActionStrategiesMock,
+    getExecutableAppActionGroundingCatalogMock,
+    executableAppActionGroundingCatalog,
     registerProductionCommandHandlersMock,
     configureCommandBatchIdempotencyMock,
     initBrowserAiMock,
@@ -94,6 +97,7 @@ const {
     setMidiLearnDependenciesMock,
     registerCrdtStorageRuntimeMock,
     captureProjectRevisionMock,
+    projectRevisionMatchesLiveIgnoringCommandCheckpointMock,
     agentProjectInspectionSetProviderMock,
     setArrangementEventBusMock,
     configureRuntimeGraphProjectRevisionValidatorMock,
@@ -106,9 +110,13 @@ const {
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
+    const executableAppActionGroundingCatalog = [{ actionType: 'addMarker', intentPhrases: [] }];
     return {
         noop,
         sentinelHandlers,
+        assertCanonicalLlmActionStrategiesMock: vi.fn(),
+        getExecutableAppActionGroundingCatalogMock: vi.fn(() => executableAppActionGroundingCatalog),
+        executableAppActionGroundingCatalog,
         registerProductionCommandHandlersMock: vi.fn<(maps: HandlerMapSentinel[]) => void>(),
         configureCommandBatchIdempotencyMock: vi.fn(),
         canExecuteCommandBatchMock: vi.fn(() => true),
@@ -155,6 +163,9 @@ const {
         setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
         captureProjectRevisionMock: vi.fn<() => string>(() => 'revision-1'),
+        projectRevisionMatchesLiveIgnoringCommandCheckpointMock: vi.fn<(expectedRevision: string) => boolean>(
+            () => true
+        ),
         agentProjectInspectionSetProviderMock: vi.fn(),
         setArrangementEventBusMock: vi.fn<(eventBus: ArrangementEventBus) => void>(),
         setProjectIdentityTransitionDependenciesMock:
@@ -179,6 +190,7 @@ vi.mock('#/modules/AiGeneration/useCases', () => ({
 }));
 
 vi.mock('#/modules/AiRuntime/useCases', () => ({
+    assertCanonicalLlmActionStrategies: assertCanonicalLlmActionStrategiesMock,
     beginMixAnalysis: noop,
     completeMixAnalysis: noop,
     failMixAnalysis: noop,
@@ -287,6 +299,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     configureCommandBatchIdempotency: configureCommandBatchIdempotencyMock,
     commandProjectDivergencePort: { setProvider: noop },
     executeAppAction: noop,
+    getExecutableAppActionGroundingCatalog: getExecutableAppActionGroundingCatalogMock,
     getVersionedCommandBatchCommitDisposition: getVersionedCommandBatchCommitDispositionMock,
     registerProductionCommandHandlers: registerProductionCommandHandlersMock,
     getMacroHandlers: sentinelHandlers('Macro'),
@@ -297,7 +310,7 @@ vi.mock('#/modules/Command/useCases', () => ({
         setGuard: noop,
     },
     setActionHistoryMetadataPort: noop,
-    commandProjectRevisionPort: { setProvider: noop },
+    commandProjectRevisionPort: { setProvider: noop, setLiveMatchIgnoringCommandCheckpoint: noop },
     commandDeviceVersionsPort: { setDeviceTypeResolver: noop, setResolver: noop },
     commandTrackDefaultsPort: { setTrackColorProvider: noop },
     commandRuntimeRepairPort: commandRuntimeRepairPortMock,
@@ -324,6 +337,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     DOC_PREFIX_ROOT: 'root',
     agentProjectInspectionPort: { setProvider: agentProjectInspectionSetProviderMock },
     captureProjectRevision: captureProjectRevisionMock,
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint: projectRevisionMatchesLiveIgnoringCommandCheckpointMock,
     createCommandPreviewWorkspace: noop,
     createCommandRecoveryWorkspace: noop,
     getCrdtDoc: noop,
@@ -356,6 +370,7 @@ vi.mock('#/modules/GrandBoule/useCases', () => ({
     getGrandBouleHandlers: sentinelHandlers('GrandBoule'),
     initGrandBouleSubscribers: () => noop,
     setGrandBouleEventBus: noop,
+    prepareOfflineGrandBoule: noop,
 }));
 
 vi.mock('#/modules/Grinder/stores', () => ({ updateGrinderTelemetry: noop }));
@@ -427,6 +442,7 @@ vi.mock('#/modules/Proof/useCases', () => ({
     registerProofDevice: noop,
     unregisterProofDevice: noop,
     syncFullPatch: noop,
+    prepareOfflineProof: noop,
 }));
 
 vi.mock('#/modules/PunchRecording/useCases', () => ({
@@ -451,6 +467,7 @@ vi.mock('#/modules/Toaster/useCases', () => ({
     initToasterKitPersistence: noop,
     setToasterEventBus: noop,
     setToasterGrooveAssignmentExecutor: noop,
+    prepareOfflineToaster: noop,
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
@@ -512,6 +529,8 @@ vi.mock('../registerGlobalErrorHandlers', () => ({
 // dependency bootstrap.ts pulls in is already mocked by the time it runs.
 import '../bootstrap';
 
+const raveModelBootCalls = [...initRaveModelsMock.mock.calls];
+
 function getDurableAssetOwnerRecoveryAfterProjectLoad(): DurableAssetOwnerRecoveryAfterProjectLoad {
     const dependencyCall = setProjectIdentityTransitionDependenciesMock.mock.calls.at(0);
     if (!dependencyCall) {
@@ -568,6 +587,16 @@ describe('bootstrap', () => {
         'Rave',
         'ControlRoom',
     ];
+
+    it('validates LLM strategy names against the command catalogue before handler registration', () => {
+        expect(getExecutableAppActionGroundingCatalogMock).toHaveBeenCalledExactlyOnceWith();
+        expect(assertCanonicalLlmActionStrategiesMock).toHaveBeenCalledExactlyOnceWith(
+            executableAppActionGroundingCatalog
+        );
+        expect(assertCanonicalLlmActionStrategiesMock.mock.invocationCallOrder[0] ?? Infinity).toBeLessThan(
+            registerProductionCommandHandlersMock.mock.invocationCallOrder[0] ?? Infinity
+        );
+    });
 
     it('registers every module handler map exactly once, in bootstrap wiring order', () => {
         const registeredModuleIds = registerProductionCommandHandlersMock.mock.calls[0]?.[0].map(
@@ -864,6 +893,6 @@ describe('bootstrap', () => {
         // Without this call raveStore.models stays empty forever, which would
         // withhold the RAVE palette entries permanently rather than gating them
         // on real model presence.
-        expect(initRaveModelsMock).toHaveBeenCalledExactlyOnceWith();
+        expect(raveModelBootCalls).toEqual([[]]);
     });
 });

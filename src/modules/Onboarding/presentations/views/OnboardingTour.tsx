@@ -109,8 +109,13 @@ const getAnchorRect = (anchor: OnboardingAnchor): Rect | null => {
     if (typeof document === 'undefined') {
         return null;
     }
-    const element = document.querySelector<HTMLElement>(`[data-onboarding="${anchor}"]`);
-    if (!element) {
+    const element = Array.from(document.querySelectorAll<HTMLElement>(`[data-onboarding="${anchor}"]`)).find(
+        (candidate) => {
+            const rect = candidate.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+        }
+    );
+    if (element === undefined) {
         return null;
     }
     const rect = element.getBoundingClientRect();

@@ -9,6 +9,11 @@ import { undoLastAction } from '../aiPanelActions/undoLastAction';
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),
     undo: vi.fn(),
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    isAppActionCommittedError: vi.fn(() => false),
+    pushUndoEntry: vi.fn(),
+    resetActionReplayAuthority: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
 }));
 
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({

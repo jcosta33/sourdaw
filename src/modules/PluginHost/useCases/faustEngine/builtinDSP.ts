@@ -26,8 +26,11 @@ import stereoWidenerDsp from './dsp/stereo-widener.dsp?raw';
 import tapeDelayDsp from './dsp/tape-delay.dsp?raw';
 import zitaRev1Dsp from './dsp/zita-rev1.dsp?raw';
 import { registerFaustDSP } from './registerFaustDSP';
+import { registerSupersawUnison } from './registerSupersawUnison';
 
 export function registerBuiltinFaustDSP(): void {
+    registerSupersawUnison();
+
     // ── Zita-Rev1 algorithmic reverb ──────────────────────────
     registerFaustDSP('Zita-Rev1 Reverb', zitaRev1Dsp, [
         {
@@ -545,6 +548,28 @@ export function registerBuiltinFaustDSP(): void {
                 step: 0.01,
                 type: 'hslider',
             },
+
+            // Note-level controls the compiled node also exposes; copied from
+            // the .dsp so the registration covers every input control, not
+            // only the timbre block.
+            {
+                address: '/fm_synth/freq',
+                label: 'Freq',
+                min: 20,
+                max: 10000,
+                defaultValue: 440,
+                step: 0.1,
+                type: 'hslider',
+            },
+            {
+                address: '/fm_synth/gate',
+                label: 'Gate',
+                min: 0,
+                max: 1,
+                defaultValue: 0,
+                step: 1,
+                type: 'button',
+            },
         ],
         true
     );
@@ -583,6 +608,17 @@ export function registerBuiltinFaustDSP(): void {
                 type: 'hslider',
             },
             { address: '/Rhodes/gain', label: 'Gain', min: 0, max: 1, defaultValue: 0.5, step: 0.01, type: 'hslider' },
+            // Note-level controls the compiled node also exposes.
+            {
+                address: '/Rhodes/freq',
+                label: 'Freq',
+                min: 20,
+                max: 10000,
+                defaultValue: 440,
+                step: 0.1,
+                type: 'hslider',
+            },
+            { address: '/Rhodes/gate', label: 'Gate', min: 0, max: 1, defaultValue: 0, step: 1, type: 'button' },
         ],
         true
     );
@@ -1097,7 +1133,7 @@ export function registerBuiltinFaustDSP(): void {
             label: 'Threshold (dB)',
             min: -60,
             max: 0,
-            defaultValue: -20,
+            defaultValue: -15,
             step: 0.5,
             type: 'hslider',
         },
@@ -1107,6 +1143,15 @@ export function registerBuiltinFaustDSP(): void {
             min: 1,
             max: 20,
             defaultValue: 4,
+            step: 0.5,
+            type: 'hslider',
+        },
+        {
+            address: '/De-esser/reduction',
+            label: 'Reduction (dB)',
+            min: 0,
+            max: 20,
+            defaultValue: 6,
             step: 0.5,
             type: 'hslider',
         },

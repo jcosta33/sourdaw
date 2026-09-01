@@ -1,4 +1,4 @@
-import { promptDraftListeners } from './promptInjectionState';
+import { promptDraftListeners } from './promptDraftState';
 
 /** Seeds the canonical Prompt Bar draft; only explicit user submit starts a run. */
 export function injectPromptDraft(text: string): void {

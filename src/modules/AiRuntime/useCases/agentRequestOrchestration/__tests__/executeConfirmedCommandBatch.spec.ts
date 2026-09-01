@@ -18,6 +18,7 @@ import { executeConfirmedCommandBatch } from '../executeConfirmedCommandBatch';
 type ExecuteBatch = typeof executeVersionedCommandBatchEnvelope;
 type ExecuteBatchResult = Awaited<ReturnType<ExecuteBatch>>;
 type CommittedBatchResult = Extract<ExecuteBatchResult, { status: 'committed' }>;
+type CommittedWarningBatchResult = Extract<ExecuteBatchResult, { status: 'committed-with-warning' }>;
 type NarrowBatchResult<Result, Status> = Result extends { status: infer CandidateStatus }
     ? Status extends CandidateStatus
         ? Omit<Result, 'status'> & { status: Status }
@@ -27,6 +28,7 @@ type CancelledBatchResult = NarrowBatchResult<ExecuteBatchResult, 'cancelled'>;
 type PreviewedBatchResult = Pick<Extract<ExecuteBatchResult, { status: 'previewed' }>, 'status' | 'resource'>;
 type TestBatchExecutorResultByStatus = {
     committed: CommittedBatchResult;
+    'committed-with-warning': CommittedWarningBatchResult;
     cancelled: CancelledBatchResult;
     previewed: PreviewedBatchResult;
 };
@@ -45,20 +47,22 @@ type BindCancellation = typeof import('../../cancelAgentRun').agentRunCancellati
 type CancelRun = typeof import('../../cancelAgentRun').agentRunCancellation.cancel;
 type CaptureAuthorization = typeof import('#/modules/CrdtDocument/useCases').captureProjectMutationAuthorization;
 type CaptureRevision = typeof import('#/modules/CrdtDocument/useCases').captureProjectRevision;
-type CaptureUnownedMutations = typeof import('#/modules/CrdtDocument/useCases').captureUnownedProjectMutations;
 type RecordPostCommitRecoveryFailure =
     typeof import('../agentRunExecutionSettlement').agentRunExecutionSettlement.recordPostCommitRecoveryFailure;
 type RecordCommittedRecoveryFailure =
     typeof import('../agentRunExecutionSettlement').agentRunExecutionSettlement.recordCommittedRecoveryFailure;
+type GetArtifacts = typeof import('#/modules/AudioRendering/useCases').getAgentSectionRenderArtifacts;
+type RebindArtifacts = typeof import('#/modules/AudioRendering/useCases').rebindAgentProjectSectionArtifactRevisions;
+type AgentSectionRenderArtifact = ReturnType<GetArtifacts>[number];
 
 const mocks = vi.hoisted(() => ({
     bindCancellation: vi.fn<BindCancellation>(),
     cancelRun: vi.fn<CancelRun>(),
     captureAuthorization: vi.fn<CaptureAuthorization>(),
     captureRevision: vi.fn<CaptureRevision>(),
-    captureUnownedMutations: vi.fn<CaptureUnownedMutations>(),
     executeBatch: vi.fn<TestBatchExecutor>(),
-    getArtifacts: vi.fn(() => []),
+    getArtifacts: vi.fn<GetArtifacts>(),
+    rebindArtifacts: vi.fn<RebindArtifacts>(),
     issueApprovalBinding: vi.fn<ApprovalBindingIssuer>(),
     prepareContinuation: vi.fn<PrepareContinuation>(),
     prepareResourceLease: vi.fn<PrepareResourceLease>(),
@@ -75,7 +79,10 @@ const mocks = vi.hoisted(() => ({
 
 const collaboration = vi.hoisted(() => ({ value: undefined as { localPeerId: string } | undefined }));
 
-vi.mock('#/modules/AudioRendering/useCases', () => ({ getAgentSectionRenderArtifacts: mocks.getArtifacts }));
+vi.mock('#/modules/AudioRendering/useCases', () => ({
+    getAgentSectionRenderArtifacts: mocks.getArtifacts,
+    rebindAgentProjectSectionArtifactRevisions: mocks.rebindArtifacts,
+}));
 vi.mock('#/modules/Collaboration/stores', () => ({ collaborationStore: collaboration }));
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
@@ -84,7 +91,6 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectMutationAuthorization: mocks.captureAuthorization,
     captureProjectRevision: mocks.captureRevision,
-    captureUnownedProjectMutations: mocks.captureUnownedMutations,
 }));
 vi.mock('../../../stores/chatStore', () => ({
     setActiveAborter: mocks.setActiveAborter,
@@ -266,6 +272,227 @@ const lease = {
 
 let projectMutationAuthorized = true;
 
+function createTestAudioBuffer(sampleRate: number): AudioBuffer {
+    const channelData = new Float32Array(sampleRate);
+    return {
+        copyFromChannel(destination: Float32Array, _channelNumber: number, bufferOffset = 0): void {
+            destination.set(channelData.subarray(bufferOffset, bufferOffset + destination.length));
+        },
+        copyToChannel(source: Float32Array, _channelNumber: number, bufferOffset = 0): void {
+            channelData.set(source, bufferOffset);
+        },
+        duration: 1,
+        getChannelData: () => channelData,
+        length: channelData.length,
+        numberOfChannels: 2,
+        sampleRate,
+    };
+}
+
+function createRenderArtifact(input: {
+    jobId: string;
+    sectionId: string;
+    sectionName: string;
+    startBeat: number;
+    endBeat: number;
+    sampleRate: number;
+    tailSeconds: number;
+    sourceRevision: string;
+    renderedAt: number;
+}): AgentSectionRenderArtifact {
+    const frameCount = input.sampleRate;
+    return {
+        ...input,
+        owner: 'agent-section-render',
+        retention: 'session',
+        durationSeconds: 1,
+        frameCount,
+        channelCount: 2,
+        byteSize: frameCount * 2 * Float32Array.BYTES_PER_ELEMENT,
+        warnings: [],
+        buffer: createTestAudioBuffer(input.sampleRate),
+    };
+}
+
+function createRenderBatchFixture(
+    input: { duplicateSecondJobId?: boolean; pendingCommandIndex?: number; singleCommand?: boolean } = {}
+) {
+    const jobs = [
+        {
+            jobId: 'render-verse',
+            sectionId: 'section-verse',
+            sectionName: 'Verse',
+            startBeat: 0,
+            endBeat: 16,
+            sampleRate: 44_100,
+            tailSeconds: 0,
+        },
+        {
+            jobId: input.duplicateSecondJobId ? 'render-verse' : 'render-chorus',
+            sectionId: 'section-chorus',
+            sectionName: 'Chorus',
+            startBeat: 16,
+            endBeat: 32,
+            sampleRate: 48_000,
+            tailSeconds: 0.5,
+        },
+    ];
+    const actions = input.singleCommand
+        ? [
+              {
+                  type: 'renderProjectSections',
+                  payload: { sectionIds: jobs.map(({ sectionId }) => sectionId), jobs },
+              } satisfies AppAction,
+          ]
+        : jobs.map(
+              (job) =>
+                  ({
+                      type: 'renderProjectSections',
+                      payload: { sectionIds: [job.sectionId], jobs: [job] },
+                  }) satisfies AppAction
+          );
+    const commands = actions.map((renderAction, index) =>
+        createVersionedCommandEnvelope({
+            action: renderAction,
+            availableDeviceVersions: {},
+            expectedEffect: `Render ${jobs[index]?.sectionName ?? 'section'}.`,
+            normalizedProjectRevision: 'revision-1',
+            objectReferences: [
+                ...renderAction.payload.sectionIds.map((sectionId, sectionIndex) => ({
+                    argument: `sectionIds[${String(sectionIndex)}]`,
+                    id: sectionId,
+                    scope: 'stable' as const,
+                })),
+                ...renderAction.payload.jobs.flatMap((job, jobIndex) => [
+                    { argument: `jobs[${String(jobIndex)}].jobId`, id: job.jobId, scope: 'stable' as const },
+                    { argument: `jobs[${String(jobIndex)}].sectionId`, id: job.sectionId, scope: 'stable' as const },
+                ]),
+            ],
+            parameterUnits: renderAction.payload.jobs.flatMap((_job, jobIndex) => [
+                { argument: `jobs[${String(jobIndex)}].startBeat`, unit: 'beats' },
+                { argument: `jobs[${String(jobIndex)}].endBeat`, unit: 'beats' },
+                { argument: `jobs[${String(jobIndex)}].sampleRate`, unit: 'unitless' },
+                { argument: `jobs[${String(jobIndex)}].tailSeconds`, unit: 'seconds' },
+            ]),
+            reason: 'Create the confirmed section render.',
+            time: renderAction.payload.jobs.flatMap((job, jobIndex) => [
+                {
+                    argument: `jobs[${String(jobIndex)}].startBeat`,
+                    domain: 'musical' as const,
+                    unit: 'beats',
+                    value: job.startBeat,
+                },
+                {
+                    argument: `jobs[${String(jobIndex)}].endBeat`,
+                    domain: 'musical' as const,
+                    unit: 'beats',
+                    value: job.endBeat,
+                },
+                {
+                    argument: `jobs[${String(jobIndex)}].tailSeconds`,
+                    domain: 'absolute' as const,
+                    unit: 'seconds',
+                    value: job.tailSeconds,
+                },
+            ]),
+        })
+    );
+    const renderCommandBatch = compileVersionedCommandBatchEnvelope({
+        runId: 'run-1',
+        batchId: 'batch-render',
+        projectId: 'project-1',
+        baseRevision: 'revision-1',
+        intent: 'Render the approved project sections.',
+        commands: commands.map(serializeVersionedCommandEnvelope),
+    });
+    const parsed = parseVersionedCommandBatchEnvelope(renderCommandBatch.serialized, renderCommandBatch.authority);
+    if (parsed.status === 'invalid') {
+        throw new Error(parsed.reason);
+    }
+    const executedActions = actions.map((renderAction, index) => ({
+        action: renderAction,
+        receipt: {
+            commandId: commands[index]!.commandId,
+            schemaVersion: commands[index]!.schemaVersion,
+            applicationAssigned: { ids: [], timestamps: [] },
+        },
+    }));
+    const pendingCommand = input.pendingCommandIndex === undefined ? undefined : commands[input.pendingCommandIndex];
+    const warningDetails: CommittedWarningBatchResult['warningDetails'] = pendingCommand
+        ? [
+              {
+                  kind: 'external-effect',
+                  message: 'Renderer unavailable.',
+                  commandId: pendingCommand.commandId,
+                  pendingEffect: {
+                      commandId: pendingCommand.commandId,
+                      operation: 'renderProjectSections',
+                      reason: 'Renderer unavailable.',
+                      state: 'pending',
+                      kind: 'external-effect',
+                      remediation: 'reconcile',
+                  },
+              },
+          ]
+        : undefined;
+    const renderReceipt = createVerifiedBatchReceipt({
+        contentHash: 'receipt-render',
+        envelope: parsed.envelope,
+        observedBaseRevision: 'revision-1',
+        resultingRevision: 'revision-2',
+        result: pendingCommand
+            ? {
+                  status: 'committed-with-warning',
+                  actions: executedActions,
+                  warning: 'Renderer unavailable.',
+                  warningDetails,
+              }
+            : { status: 'committed', actions: executedActions },
+    });
+    const batchResult = pendingCommand
+        ? ({
+              status: 'committed-with-warning',
+              actions: executedActions.map(({ action: executedAction, receipt: commandReceipt }) => ({
+                  action: executedAction,
+                  label: executedAction.type,
+                  receipt: commandReceipt,
+              })),
+              receipt: renderReceipt,
+              warning: 'Renderer unavailable.',
+              warningDetails,
+          } satisfies CommittedWarningBatchResult)
+        : ({
+              status: 'committed',
+              actions: executedActions.map(({ action: executedAction, receipt: commandReceipt }) => ({
+                  action: executedAction,
+                  label: executedAction.type,
+                  receipt: commandReceipt,
+              })),
+              receipt: renderReceipt,
+          } satisfies CommittedBatchResult);
+    const renderConfirmation = {
+        ...confirmation,
+        actions,
+        approvalSnapshot: {
+            ...confirmation.approvalSnapshot,
+            actions,
+            actionLabels: ['Render Verse', 'Render Chorus'],
+            commandEnvelopes: commands.map(serializeVersionedCommandEnvelope),
+            commandBatch: renderCommandBatch,
+        },
+        groupId: 'batch-render',
+    } satisfies PendingAppActionConfirmation;
+    return {
+        actions,
+        batchResult,
+        commandBatch: renderCommandBatch,
+        commands,
+        confirmation: renderConfirmation,
+        jobs,
+        receipt: renderReceipt,
+    };
+}
+
 function execute(
     options: {
         trackedWorkLease?: AgentRunWorkLease | null;
@@ -290,7 +517,8 @@ beforeEach(() => {
     projectMutationAuthorized = true;
     mocks.captureAuthorization.mockReturnValue(() => projectMutationAuthorized);
     mocks.captureRevision.mockReturnValue('revision-2');
-    mocks.captureUnownedMutations.mockReturnValue(4);
+    mocks.getArtifacts.mockReturnValue([]);
+    mocks.rebindArtifacts.mockReset();
     mocks.prepareResourceLease.mockResolvedValue(undefined);
     mocks.protectResourceLease.mockReturnValue(undefined);
     mocks.prepareContinuation.mockReturnValue({ promote: () => undefined, discard: () => undefined });
@@ -338,6 +566,7 @@ describe('executeConfirmedCommandBatch', () => {
             });
             input.onProjectCommitPrepared?.();
             input.options?.onProjectCommitCheckpoint?.({ receipt });
+            input.options?.onProjectCommitFinalized?.({ receipt, revision: 'revision-checkpoint' });
             return completedBatchResult;
         });
 
@@ -347,6 +576,8 @@ describe('executeConfirmedCommandBatch', () => {
             status: 'completed',
             batchResult: completedBatchResult,
             group: { groupId: 'batch-1', groupLabel: 'Set tempo' },
+            committedProjectRevision: 'revision-checkpoint',
+            canRebindSectionRenderArtifacts: true,
             renderJobAttempts: 1,
             cancellationTriggeredByInvalidation: false,
             abortSignal: expect.objectContaining({ aborted: false }),
@@ -369,7 +600,14 @@ describe('executeConfirmedCommandBatch', () => {
                 signal: expect.any(AbortSignal),
             }),
         });
-        expect(mocks.prepareContinuation).toHaveBeenCalledWith({ runId: 'run-1', receipt, commandBatch });
+        expect(mocks.prepareContinuation).toHaveBeenCalledWith({
+            runId: 'run-1',
+            receipt,
+            commandBatch,
+            getFinalizedRevision: expect.any(Function),
+        });
+        expect(mocks.prepareContinuation.mock.calls[0]?.[0].getFinalizedRevision?.()).toBe('revision-checkpoint');
+        expect(mocks.captureAuthorization).toHaveBeenCalledOnce();
         expect(events).toEqual(['prepare', 'execute', 'protect', 'release-cancellation']);
         const boundController = mocks.bindCancellation.mock.calls[0]?.[0].controller;
         expect(mocks.bindCancellation).toHaveBeenCalledWith({
@@ -382,6 +620,501 @@ describe('executeConfirmedCommandBatch', () => {
         expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
         expect(mocks.setChatGenerating).toHaveBeenNthCalledWith(1, true);
         expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
+    });
+
+    it('keeps fresh render artifacts unrebound when Command denies finalization after a foreign project mutation', async () => {
+        mocks.getArtifacts.mockReturnValueOnce([]).mockReturnValueOnce([
+            createRenderArtifact({
+                jobId: 'render-1',
+                sectionId: 'section-1',
+                sectionName: 'Verse',
+                startBeat: 0,
+                endBeat: 16,
+                sampleRate: 44_100,
+                tailSeconds: 0,
+                renderedAt: 1,
+                sourceRevision: 'revision-before-command',
+            }),
+        ]);
+        const renderConfirmation = {
+            ...confirmation,
+            approvalSnapshot: {
+                ...confirmation.approvalSnapshot,
+                actions: [
+                    {
+                        type: 'renderProjectSections',
+                        payload: {
+                            sectionIds: ['section-1'],
+                            jobs: [
+                                {
+                                    jobId: 'render-1',
+                                    sectionId: 'section-1',
+                                    sectionName: 'Verse',
+                                    startBeat: 0,
+                                    endBeat: 16,
+                                    sampleRate: 44_100,
+                                    tailSeconds: 0,
+                                },
+                            ],
+                        },
+                    },
+                ],
+            },
+        } satisfies PendingAppActionConfirmation;
+        mocks.executeBatch.mockImplementation(async (input) => {
+            projectMutationAuthorized = false;
+            expect(input.options?.shouldFinalizeProjectCommit?.()).toBe(false);
+            input.options?.onProjectCommitCheckpoint?.({ receipt });
+            input.options?.onProjectCommitFinalizationUnavailable?.({
+                reason: 'The project changed outside the confirmed command before finalization evidence was recorded.',
+            });
+            return completedBatchResult;
+        });
+
+        const result = await execute({ confirmation: renderConfirmation });
+
+        expect(result).toMatchObject({
+            status: 'completed',
+            committedProjectRevision: null,
+            canRebindSectionRenderArtifacts: false,
+            finalizationEvidenceFailure:
+                'The project changed outside the confirmed command before finalization evidence was recorded.',
+        });
+        expect(mocks.rebindArtifacts).not.toHaveBeenCalled();
+        expect(mocks.prepareContinuation.mock.calls[0]?.[0].getFinalizedRevision?.()).toBeUndefined();
+    });
+
+    it('keeps exact final revision evidence when cancellation arrives during a post-commit effect', async () => {
+        mocks.executeBatch.mockImplementation(async (input) => {
+            const controller = mocks.bindCancellation.mock.calls[0]?.[0].controller;
+            controller?.abort('cancelled after project commit');
+            expect(input.options?.signal?.aborted).toBe(true);
+            expect(input.options?.shouldFinalizeProjectCommit?.()).toBe(true);
+            input.options?.onProjectCommitFinalized?.({ receipt, revision: 'revision-checkpoint' });
+            return completedBatchResult;
+        });
+
+        const result = await execute();
+
+        expect(result).toMatchObject({
+            status: 'completed',
+            committedProjectRevision: 'revision-checkpoint',
+            canRebindSectionRenderArtifacts: true,
+            finalizationEvidenceFailure: null,
+            abortSignal: expect.objectContaining({ aborted: true }),
+        });
+    });
+
+    it('keeps a rebind failure fail-closed after Command reports unavailable finalization evidence', async () => {
+        const fixture = createRenderBatchFixture({ pendingCommandIndex: 1 });
+        const verseArtifact = createRenderArtifact({
+            ...fixture.jobs[0]!,
+            renderedAt: 1,
+            sourceRevision: 'revision-before-command',
+        });
+        mocks.getArtifacts.mockReturnValueOnce([]).mockReturnValueOnce([verseArtifact]);
+        mocks.rebindArtifacts.mockImplementation(() => {
+            throw new Error('render artifact vanished');
+        });
+        mocks.executeBatch.mockImplementation(async (input) => {
+            input.options?.onProjectCommitCheckpoint?.({ receipt: fixture.receipt });
+            try {
+                input.options?.onProjectCommitFinalized?.({
+                    receipt: fixture.receipt,
+                    revision: 'revision-checkpoint',
+                });
+            } catch (error) {
+                input.options?.onProjectCommitFinalizationUnavailable?.({
+                    reason: error instanceof Error ? error.message : String(error),
+                });
+            }
+            return fixture.batchResult;
+        });
+
+        const result = await executeConfirmedCommandBatch({
+            confirmation: fixture.confirmation,
+            commandBatch: fixture.commandBatch,
+            approvedBatchId: 'batch-render',
+            trackedWorkLease: lease,
+            priorVerifiedBatchReceipt: null,
+            recoveringPendingEffects: false,
+        });
+        expect(result).toMatchObject({
+            status: 'completed',
+            committedProjectRevision: 'revision-checkpoint',
+            canRebindSectionRenderArtifacts: false,
+            finalizationEvidenceFailure: 'render artifact vanished',
+        });
+        expect(mocks.rebindArtifacts).toHaveBeenCalledWith({
+            artifacts: [
+                {
+                    job: fixture.jobs[0],
+                    renderedAt: 1,
+                    sourceRevision: 'revision-before-command',
+                },
+            ],
+            sourceRevision: 'revision-checkpoint',
+        });
+    });
+
+    it('rebinds every committed approved render action to the finalized revision', async () => {
+        const fixture = createRenderBatchFixture();
+        const artifacts = fixture.jobs.map((job, index) =>
+            createRenderArtifact({
+                ...job,
+                renderedAt: index + 1,
+                sourceRevision: 'revision-before-command',
+            })
+        );
+        mocks.getArtifacts.mockReturnValueOnce([]).mockReturnValueOnce(artifacts);
+        mocks.executeBatch.mockImplementation(async (input) => {
+            input.options?.onProjectCommitCheckpoint?.({ receipt: fixture.receipt });
+            input.options?.onProjectCommitFinalized?.({ receipt: fixture.receipt, revision: 'revision-checkpoint' });
+            return fixture.batchResult;
+        });
+
+        const result = await executeConfirmedCommandBatch({
+            confirmation: fixture.confirmation,
+            commandBatch: fixture.commandBatch,
+            approvedBatchId: 'batch-render',
+            trackedWorkLease: lease,
+            priorVerifiedBatchReceipt: null,
+            recoveringPendingEffects: false,
+        });
+        expect(result).toMatchObject({
+            status: 'completed',
+            canRebindSectionRenderArtifacts: true,
+            finalizationEvidenceFailure: null,
+        });
+        expect(mocks.rebindArtifacts).toHaveBeenCalledWith({
+            artifacts: fixture.jobs.map((job, index) => ({
+                job,
+                renderedAt: index + 1,
+                sourceRevision: 'revision-before-command',
+            })),
+            sourceRevision: 'revision-checkpoint',
+        });
+    });
+
+    it('does not require an artifact for a render command retained as a pending checkpoint effect', async () => {
+        const fixture = createRenderBatchFixture({ pendingCommandIndex: 1 });
+        const verseArtifact = createRenderArtifact({
+            ...fixture.jobs[0]!,
+            renderedAt: 1,
+            sourceRevision: 'revision-before-command',
+        });
+        mocks.getArtifacts.mockReturnValueOnce([]).mockReturnValueOnce([verseArtifact]);
+        mocks.executeBatch.mockImplementation(async (input) => {
+            input.options?.onProjectCommitCheckpoint?.({ receipt });
+            input.options?.onProjectCommitFinalized?.({ receipt: fixture.receipt, revision: 'revision-checkpoint' });
+            return fixture.batchResult;
+        });
+
+        const result = await executeConfirmedCommandBatch({
+            confirmation: fixture.confirmation,
+            commandBatch: fixture.commandBatch,
+            approvedBatchId: 'batch-render',
+            trackedWorkLease: lease,
+            priorVerifiedBatchReceipt: null,
+            recoveringPendingEffects: false,
+        });
+
+        expect(result).toMatchObject({ status: 'completed', canRebindSectionRenderArtifacts: true });
+        expect(mocks.rebindArtifacts).toHaveBeenCalledWith({
+            artifacts: [
+                {
+                    job: fixture.jobs[0],
+                    renderedAt: 1,
+                    sourceRevision: 'revision-before-command',
+                },
+            ],
+            sourceRevision: 'revision-checkpoint',
+        });
+    });
+
+    it('rebinds the successful job while a sibling job in the same pending render command remains missing', async () => {
+        const fixture = createRenderBatchFixture({ pendingCommandIndex: 0, singleCommand: true });
+        const verseArtifact = createRenderArtifact({
+            ...fixture.jobs[0]!,
+            renderedAt: 1,
+            sourceRevision: 'revision-before-command',
+        });
+        mocks.getArtifacts.mockReturnValueOnce([]).mockReturnValueOnce([verseArtifact]);
+        mocks.executeBatch.mockImplementation(async (input) => {
+            input.options?.onProjectCommitCheckpoint?.({ receipt: fixture.receipt });
+            input.options?.onProjectCommitFinalized?.({ receipt: fixture.receipt, revision: 'revision-checkpoint' });
+            return fixture.batchResult;
+        });
+
+        const result = await executeConfirmedCommandBatch({
+            confirmation: fixture.confirmation,
+            commandBatch: fixture.commandBatch,
+            approvedBatchId: 'batch-render',
+            trackedWorkLease: lease,
+            priorVerifiedBatchReceipt: null,
+            recoveringPendingEffects: false,
+        });
+
+        expect(result).toMatchObject({ status: 'completed', canRebindSectionRenderArtifacts: true });
+        expect(mocks.rebindArtifacts).toHaveBeenCalledWith({
+            artifacts: [
+                {
+                    job: fixture.jobs[0],
+                    renderedAt: 1,
+                    sourceRevision: 'revision-before-command',
+                },
+            ],
+            sourceRevision: 'revision-checkpoint',
+        });
+    });
+
+    it('withholds finalization when an exact matching render artifact predates execution', async () => {
+        const fixture = createRenderBatchFixture();
+        const verseArtifact = createRenderArtifact({
+            ...fixture.jobs[0]!,
+            renderedAt: 1,
+            sourceRevision: 'revision-before-command',
+        });
+        const chorusArtifact = createRenderArtifact({
+            ...fixture.jobs[1]!,
+            renderedAt: 2,
+            sourceRevision: 'revision-before-command',
+        });
+        mocks.getArtifacts.mockReturnValueOnce([verseArtifact]).mockReturnValueOnce([verseArtifact, chorusArtifact]);
+        mocks.executeBatch.mockImplementation(async (input) => {
+            try {
+                input.options?.onProjectCommitFinalized?.({
+                    receipt: fixture.receipt,
+                    revision: 'revision-checkpoint',
+                });
+            } catch (error) {
+                input.options?.onProjectCommitFinalizationUnavailable?.({
+                    reason: error instanceof Error ? error.message : String(error),
+                });
+            }
+            return fixture.batchResult;
+        });
+
+        const result = await executeConfirmedCommandBatch({
+            confirmation: fixture.confirmation,
+            commandBatch: fixture.commandBatch,
+            approvedBatchId: 'batch-render',
+            trackedWorkLease: lease,
+            priorVerifiedBatchReceipt: null,
+            recoveringPendingEffects: false,
+        });
+
+        expect(result).toMatchObject({
+            status: 'completed',
+            canRebindSectionRenderArtifacts: false,
+            finalizationEvidenceFailure:
+                'Exactly one fresh section render artifact is required for committed job render-verse.',
+        });
+        expect(mocks.rebindArtifacts).not.toHaveBeenCalled();
+    });
+
+    it('does not rebind preexisting artifacts that occupy a pending render command', async () => {
+        const fixture = createRenderBatchFixture({ pendingCommandIndex: 0, singleCommand: true });
+        const verseArtifact = createRenderArtifact({
+            ...fixture.jobs[0]!,
+            renderedAt: 1,
+            sourceRevision: 'revision-before-command',
+        });
+        const chorusArtifact = createRenderArtifact({
+            ...fixture.jobs[1]!,
+            renderedAt: 2,
+            sourceRevision: 'revision-before-command',
+        });
+        mocks.getArtifacts
+            .mockReturnValueOnce([verseArtifact, chorusArtifact])
+            .mockReturnValueOnce([verseArtifact, chorusArtifact]);
+        mocks.executeBatch.mockImplementation(async (input) => {
+            input.options?.onProjectCommitCheckpoint?.({ receipt: fixture.receipt });
+            input.options?.onProjectCommitFinalized?.({
+                receipt: fixture.receipt,
+                revision: 'revision-checkpoint',
+            });
+            return fixture.batchResult;
+        });
+
+        const result = await executeConfirmedCommandBatch({
+            confirmation: fixture.confirmation,
+            commandBatch: fixture.commandBatch,
+            approvedBatchId: 'batch-render',
+            trackedWorkLease: lease,
+            priorVerifiedBatchReceipt: null,
+            recoveringPendingEffects: false,
+        });
+
+        expect(result).toMatchObject({
+            status: 'completed',
+            canRebindSectionRenderArtifacts: true,
+            finalizationEvidenceFailure: null,
+        });
+        expect(mocks.rebindArtifacts).toHaveBeenCalledWith({
+            artifacts: [],
+            sourceRevision: 'revision-checkpoint',
+        });
+    });
+
+    it.each([
+        ['job ID', { jobId: 'wrong-job' }],
+        ['section ID', { sectionId: 'wrong-section' }],
+        ['section name', { sectionName: 'Wrong section' }],
+        ['start beat', { startBeat: 4 }],
+        ['end beat', { endBeat: 15 }],
+        ['sample rate', { sampleRate: 96_000 }],
+        ['tail seconds', { tailSeconds: 2 }],
+    ])('does not rebind a fresh render artifact with the wrong %s', async (_label, mutation) => {
+        const fixture = createRenderBatchFixture();
+        const verseArtifact = createRenderArtifact({
+            ...fixture.jobs[0]!,
+            ...mutation,
+            renderedAt: Date.now() + 1,
+            sourceRevision: 'revision-before-command',
+        });
+        const chorusArtifact = createRenderArtifact({
+            ...fixture.jobs[1]!,
+            renderedAt: Date.now() + 2,
+            sourceRevision: 'revision-before-command',
+        });
+        mocks.getArtifacts.mockReturnValueOnce([]).mockReturnValueOnce([verseArtifact, chorusArtifact]);
+        mocks.executeBatch.mockImplementation(async (input) => {
+            try {
+                input.options?.onProjectCommitFinalized?.({
+                    receipt: fixture.receipt,
+                    revision: 'revision-checkpoint',
+                });
+            } catch (error) {
+                input.options?.onProjectCommitFinalizationUnavailable?.({
+                    reason: error instanceof Error ? error.message : String(error),
+                });
+            }
+            return fixture.batchResult;
+        });
+
+        const result = await executeConfirmedCommandBatch({
+            confirmation: fixture.confirmation,
+            commandBatch: fixture.commandBatch,
+            approvedBatchId: 'batch-render',
+            trackedWorkLease: lease,
+            priorVerifiedBatchReceipt: null,
+            recoveringPendingEffects: false,
+        });
+
+        expect(result).toMatchObject({
+            status: 'completed',
+            canRebindSectionRenderArtifacts: false,
+            finalizationEvidenceFailure:
+                'Exactly one fresh section render artifact is required for committed job render-verse.',
+        });
+        expect(mocks.rebindArtifacts).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        [
+            'missing artifact',
+            createRenderBatchFixture(),
+            'Exactly one fresh section render artifact is required for committed job render-chorus.',
+        ],
+        [
+            'duplicate approved job identity',
+            createRenderBatchFixture({ duplicateSecondJobId: true }),
+            'The approved section render job identity is ambiguous: render-verse.',
+        ],
+        [
+            'mismatched action and command payloads',
+            (() => {
+                const fixture = createRenderBatchFixture();
+                fixture.confirmation.approvalSnapshot.actions.reverse();
+                return fixture;
+            })(),
+            expect.stringContaining('The approved render command payload does not match action'),
+        ],
+    ])('fails finalization evidence closed for %s', async (_label, fixture, expectedFailure) => {
+        const verseArtifact = createRenderArtifact({
+            ...fixture.jobs[0]!,
+            renderedAt: 1,
+            sourceRevision: 'revision-before-command',
+        });
+        mocks.getArtifacts.mockReturnValueOnce([]).mockReturnValueOnce([verseArtifact]);
+        mocks.executeBatch.mockImplementation(async (input) => {
+            input.options?.onProjectCommitCheckpoint?.({ receipt: fixture.receipt });
+            try {
+                input.options?.onProjectCommitFinalized?.({
+                    receipt: fixture.receipt,
+                    revision: 'revision-checkpoint',
+                });
+            } catch (error) {
+                input.options?.onProjectCommitFinalizationUnavailable?.({
+                    reason: error instanceof Error ? error.message : String(error),
+                });
+            }
+            return fixture.batchResult;
+        });
+
+        const result = await executeConfirmedCommandBatch({
+            confirmation: fixture.confirmation,
+            commandBatch: fixture.commandBatch,
+            approvedBatchId: 'batch-render',
+            trackedWorkLease: lease,
+            priorVerifiedBatchReceipt: null,
+            recoveringPendingEffects: false,
+        });
+
+        expect(result).toMatchObject({
+            status: 'completed',
+            canRebindSectionRenderArtifacts: false,
+            finalizationEvidenceFailure: expectedFailure,
+        });
+    });
+
+    it('fails finalization evidence closed when a committed job has duplicate fresh matching artifacts', async () => {
+        const fixture = createRenderBatchFixture();
+        const verseArtifact = createRenderArtifact({
+            ...fixture.jobs[0]!,
+            renderedAt: 1,
+            sourceRevision: 'revision-before-command',
+        });
+        const chorusArtifact = createRenderArtifact({
+            ...fixture.jobs[1]!,
+            renderedAt: 2,
+            sourceRevision: 'revision-before-command',
+        });
+        mocks.getArtifacts
+            .mockReturnValueOnce([])
+            .mockReturnValueOnce([verseArtifact, chorusArtifact, { ...chorusArtifact, renderedAt: 3 }]);
+        mocks.executeBatch.mockImplementation(async (input) => {
+            input.options?.onProjectCommitCheckpoint?.({ receipt: fixture.receipt });
+            try {
+                input.options?.onProjectCommitFinalized?.({
+                    receipt: fixture.receipt,
+                    revision: 'revision-checkpoint',
+                });
+            } catch (error) {
+                input.options?.onProjectCommitFinalizationUnavailable?.({
+                    reason: error instanceof Error ? error.message : String(error),
+                });
+            }
+            return fixture.batchResult;
+        });
+
+        const result = await executeConfirmedCommandBatch({
+            confirmation: fixture.confirmation,
+            commandBatch: fixture.commandBatch,
+            approvedBatchId: 'batch-render',
+            trackedWorkLease: lease,
+            priorVerifiedBatchReceipt: null,
+            recoveringPendingEffects: false,
+        });
+
+        expect(result).toMatchObject({
+            status: 'completed',
+            canRebindSectionRenderArtifacts: false,
+            finalizationEvidenceFailure:
+                'Exactly one fresh section render artifact is required for committed job render-chorus.',
+        });
+        expect(mocks.rebindArtifacts).not.toHaveBeenCalled();
     });
 
     it('should derive the approved batch group ID when confirmation metadata differs or is incomplete', async () => {
