@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, relative, resolve, sep } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseDocument } from 'yaml';
@@ -101,7 +101,10 @@ const NATIVE_PARITY_RUN_STEP = 'Run the addon parity specs';
 const NATIVE_ADDON_BUILD_COMMAND = 'node scripts/buildNativeAddon.ts';
 // The single path every addon-loading spec probes with `existsSync` to choose
 // between running and skipping. Requiring it after the build is what turns the
-// silent hosted skip this leg exists to end into a failure.
+// silent hosted skip this leg exists to end into a failure — so the presence
+// step is executed below against a tree with and without this file, never read
+// for a substring: a body that merely names the path and exits 0 reads exactly
+// like a working guard.
 const NATIVE_ADDON_ARTIFACT = 'crates/sourdaw-native/sourdaw-native.node';
 // What makes a spec addon-loading. Discovered rather than listed: a fourth
 // such spec added without this leg would otherwise skip on every hosted run
@@ -507,6 +510,31 @@ function assertPullRequestSecretScan(candidate: UnknownRecord): void {
     }
 }
 
+/**
+ * Runs the addon-presence step's own script in an empty tree, with and without
+ * the artifact every parity spec probes for. Absence must end the job: a guard
+ * that cannot fail leaves the specs skipping on every hosted run while this
+ * file stays green, which is the whole failure mode the step exists to close.
+ */
+function runAddonPresenceGuard(script: string, artifactPresent: boolean): number | null {
+    const directory = mkdtempSync(join(tmpdir(), 'sourdaw-health-addon-'));
+    try {
+        if (artifactPresent) {
+            const artifact = join(directory, NATIVE_ADDON_ARTIFACT);
+            mkdirSync(dirname(artifact), { recursive: true });
+            writeFileSync(artifact, '');
+        }
+        return spawnSync('bash', ['-c', script], {
+            cwd: directory,
+            encoding: 'utf8',
+            env: { ...process.env },
+            shell: false,
+        }).status;
+    } finally {
+        rmSync(directory, { recursive: true, force: true });
+    }
+}
+
 function addonLoadingSpecs(directory: string): string[] {
     return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
         const path = join(directory, entry.name);
@@ -534,8 +562,12 @@ function assertNativeParityJob(candidate: UnknownRecord): void {
     if (stringAt(stepNamed(job, NATIVE_PARITY_BUILD_STEP), 'run') !== NATIVE_ADDON_BUILD_COMMAND) {
         throw new Error('native parity must build the addon through the builder the desktop chain ships');
     }
-    if (!stringAt(stepNamed(job, NATIVE_PARITY_ADDON_STEP), 'run').includes(NATIVE_ADDON_ARTIFACT)) {
-        throw new Error('native parity must refuse a run the parity specs would skip');
+    const presenceGuard = stringAt(stepNamed(job, NATIVE_PARITY_ADDON_STEP), 'run');
+    if (runAddonPresenceGuard(presenceGuard, false) === 0) {
+        throw new Error('native parity must fail a run whose addon the parity specs would not find');
+    }
+    if (runAddonPresenceGuard(presenceGuard, true) !== 0) {
+        throw new Error('native parity must accept the addon its own builder produces');
     }
     const runStep = stepNamed(job, NATIVE_PARITY_RUN_STEP);
     if (runStep['continue-on-error'] !== undefined) {
@@ -1213,12 +1245,6 @@ describe('health gates workflow contract', () => {
             'native parity must build the addon through the builder the desktop chain ships'
         );
 
-        const unguarded = asRecord(structuredClone(workflow), 'unguarded native parity workflow');
-        stepNamed(jobAt(unguarded, NATIVE_PARITY_JOB), NATIVE_PARITY_ADDON_STEP).run = 'true';
-        expect(() => assertNativeParityJob(unguarded)).toThrow(
-            'native parity must refuse a run the parity specs would skip'
-        );
-
         const narrowedScope = asRecord(structuredClone(workflow), 'narrowed native parity scope');
         jobAt(narrowedScope, NATIVE_PARITY_JOB).if = "needs.decide.outputs.rust == 'true'";
         expect(() => assertNativeParityJob(narrowedScope)).toThrow(
@@ -1230,6 +1256,25 @@ describe('health gates workflow contract', () => {
         const dropped = addonLoadingSpecs(join(repositoryRoot, 'src'))[0] ?? '';
         runStep.run = stringAt(runStep, 'run').replace(dropped, '');
         expect(() => assertNativeParityJob(droppedSpec)).toThrow(`native parity must run ${dropped}`);
+    });
+
+    it('refuses an addon presence guard that cannot fail', () => {
+        // Executed, not read: each of these bodies names the artifact exactly as
+        // the real step does, and each would let the parity specs skip on every
+        // hosted run while a substring pin reported the leg intact.
+        const namingGuard = asRecord(structuredClone(workflow), 'path-naming native parity guard');
+        stepNamed(jobAt(namingGuard, NATIVE_PARITY_JOB), NATIVE_PARITY_ADDON_STEP).run =
+            `echo ${NATIVE_ADDON_ARTIFACT}; true`;
+        expect(() => assertNativeParityJob(namingGuard)).toThrow(
+            'native parity must fail a run whose addon the parity specs would not find'
+        );
+
+        const misdirectedGuard = asRecord(structuredClone(workflow), 'misdirected native parity guard');
+        stepNamed(jobAt(misdirectedGuard, NATIVE_PARITY_JOB), NATIVE_PARITY_ADDON_STEP).run =
+            `test -f ${NATIVE_ADDON_ARTIFACT}.built`;
+        expect(() => assertNativeParityJob(misdirectedGuard)).toThrow(
+            'native parity must accept the addon its own builder produces'
+        );
     });
 
     it('fetches immutable measurement provenance history only in the unit matrix', () => {
