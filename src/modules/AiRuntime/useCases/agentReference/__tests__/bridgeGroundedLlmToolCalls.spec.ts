@@ -2799,10 +2799,26 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'solo all tracks not including Vocals'
         );
 
-        expect(muted.actions).toEqual([]);
-        expect(muted.rejections.length).toBeGreaterThan(0);
-        expect(soloed.actions).toEqual([]);
-        expect(soloed.rejections.length).toBeGreaterThan(0);
+        expect(muted).toEqual({
+            actions: [],
+            rejections: [
+                {
+                    index: 0,
+                    name: 'muteTrack',
+                    reason: 'Provider mute scope is not explicitly universal',
+                },
+            ],
+        });
+        expect(soloed).toEqual({
+            actions: [],
+            rejections: [
+                {
+                    index: 0,
+                    name: 'soloTrack',
+                    reason: 'Provider solo scope is not explicitly universal',
+                },
+            ],
+        });
     });
 
     it('rejects solo-safe writes to a bus created earlier in the same provider plan', () => {
@@ -3493,6 +3509,45 @@ describe('bridgeGroundedLlmToolCalls', () => {
             [{ name: 'removeTrack', arguments: { trackId: 'track-guitar' } }],
             'delete Guitar and track-guitar',
             independentNameContext
+        );
+
+        expect(named.actions).toEqual([]);
+        expect(literal.actions).toEqual([]);
+        expect(named.rejections).toEqual([
+            {
+                index: 0,
+                name: 'removeTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+        expect(literal.rejections).toEqual([
+            {
+                index: 0,
+                name: 'removeTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+    });
+
+    it('rejects a single removeTrack when a nested name and a hyphenated literal id are both cited', () => {
+        const nestedNameContext = {
+            ...projectContext,
+            tracks: [
+                createTrack({ id: 'track-lead-guitar', name: 'Rhythm' }),
+                createTrack({ id: 'track-keys', name: 'Guitar' }),
+                createTrack({ id: 'track-aux', name: 'Lead Guitar' }),
+                master,
+            ],
+        };
+        const named = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: 'track-keys' } }],
+            'delete Guitar and track-lead-guitar',
+            nestedNameContext
+        );
+        const literal = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: 'track-lead-guitar' } }],
+            'delete Guitar and track-lead-guitar',
+            nestedNameContext
         );
 
         expect(named.actions).toEqual([]);

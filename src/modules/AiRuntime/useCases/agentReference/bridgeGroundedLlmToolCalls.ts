@@ -3287,6 +3287,10 @@ function resolveAgentReferenceArray({
     return { status: 'resolved', ids: [...assertedIds] };
 }
 
+function hasNotIncludingTrackControlRestriction(prompt: string): boolean {
+    return /\bnot\s+including\b/iu.test(prompt);
+}
+
 function groundToolCall({
     actionOrdinal,
     batchLocalBusBindings,
@@ -3304,6 +3308,12 @@ function groundToolCall({
     visiblePlannedTrackCreations,
     workflowCapabilityId,
 }: GroundToolCallInput): ToolCallResult | LlmActionRejection {
+    if (call.name === 'muteTrack' && hasNotIncludingTrackControlRestriction(prompt)) {
+        return rejection(index, call.name, 'Provider mute scope is not explicitly universal');
+    }
+    if (call.name === 'soloTrack' && hasNotIncludingTrackControlRestriction(prompt)) {
+        return rejection(index, call.name, 'Provider solo scope is not explicitly universal');
+    }
     if (call.name === 'stopPlayback' && !isExplicitStopPlaybackPrompt(prompt)) {
         return rejection(index, call.name, 'Provider action is not grounded in an explicit transport-stop request');
     }

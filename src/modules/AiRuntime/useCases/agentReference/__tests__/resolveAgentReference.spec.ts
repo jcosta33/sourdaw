@@ -434,6 +434,36 @@ describe('resolveAgentReference', () => {
         });
     });
 
+    it('does not treat list punctuation as collapsing a name into a hyphenated literal id', () => {
+        const projectState = createProjectState();
+        const firstTrack = projectState.tracks[0];
+        if (!firstTrack) {
+            throw new Error('Expected a track fixture');
+        }
+        const punctuationContext = {
+            ...projectState,
+            tracks: [
+                { ...firstTrack, id: 'track-lead-guitar', name: 'Rhythm' },
+                { ...firstTrack, id: 'track-keys', name: 'Guitar' },
+            ],
+        };
+
+        expect(resolveTrack('delete track-lead / Guitar', 'track-lead-guitar', punctuationContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('delete track-lead, Guitar', 'track-lead-guitar', punctuationContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(
+            resolveTrack('delete Guitar and track-lead-guitar', 'track-lead-guitar', punctuationContext)
+        ).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+    });
+
     it('resolves editable clips by literal ID, unique exact name, and one explicit selection', () => {
         expect(resolveClip('trim clip-intro start to beat 2', 'clip-intro')).toEqual({
             status: 'resolved',

@@ -64,8 +64,29 @@ function normalizeReferenceText(value: string): string {
         .trim();
 }
 
+function escapeRegExp(value: string): string {
+    return value.replaceAll(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+}
+
 function containsExactPhrase(prompt: string, reference: string): boolean {
     return getExactPhraseRanges(prompt, reference).length > 0;
+}
+
+function getContiguousReferenceRanges(prompt: string, reference: string): readonly { end: number; start: number }[] {
+    const tokens = normalizeReferenceText(reference)
+        .split(' ')
+        .filter((token) => token.length > 0);
+    if (tokens.length === 0) {
+        return [];
+    }
+    const needle = tokens.map((token) => escapeRegExp(token)).join('[\\s_-]+');
+    const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${needle}(?![\\p{L}\\p{N}])`, 'giu');
+    return [...prompt.matchAll(pattern)].flatMap((match) => {
+        if (match.index === undefined) {
+            return [];
+        }
+        return [{ start: match.index, end: match.index + match[0].length }];
+    });
 }
 
 function getExactPhraseRanges(prompt: string, reference: string): readonly { end: number; start: number }[] {
@@ -335,7 +356,7 @@ function removeExactNameEvidenceOverlappedByLiteralIds(
     evidenceById: Map<string, AgentReferenceEvidence>
 ): void {
     const literalIdRanges = candidates.flatMap((candidate) =>
-        evidenceById.get(candidate.id) === 'literal-id' ? [...getExactPhraseRanges(prompt, candidate.id)] : []
+        evidenceById.get(candidate.id) === 'literal-id' ? [...getContiguousReferenceRanges(prompt, candidate.id)] : []
     );
     if (literalIdRanges.length === 0) {
         return;
@@ -344,7 +365,7 @@ function removeExactNameEvidenceOverlappedByLiteralIds(
         if (evidenceById.get(candidate.id) !== 'exact-name') {
             continue;
         }
-        const nameRanges = getExactPhraseRanges(prompt, candidate.name);
+        const nameRanges = getContiguousReferenceRanges(prompt, candidate.name);
         if (nameRanges.length === 0) {
             continue;
         }
