@@ -243,8 +243,8 @@ type Input = {
     replyAuthorNodeId?: string | null;
     replyAuthorType?: string | null;
     resolveClientMutationId?: string;
-    resolveReceiptNodeId?: string;
-    resolveReceiptType?: string;
+    resolveReceiptNodeId?: string | null;
+    resolveReceiptType?: string | null;
     existingPendingReviewCount?: number;
     existingPendingReviewIds?: readonly string[];
     existingPendingReviewBody?: string;
@@ -761,9 +761,13 @@ function fakePort(input: Input = {}) {
             resolvedByLogin = 'renamed-author';
             resolvedByType = 'User';
             return {
-                resolvedByNodeId: input.resolveReceiptNodeId ?? resolvedByNodeId,
+                resolvedByNodeId: (input.resolveReceiptNodeId === undefined
+                    ? resolvedByNodeId
+                    : input.resolveReceiptNodeId) as never,
                 resolvedByLogin,
-                resolvedByType: input.resolveReceiptType ?? resolvedByType,
+                resolvedByType: (input.resolveReceiptType === undefined
+                    ? resolvedByType
+                    : input.resolveReceiptType) as never,
                 clientMutationId: input.resolveClientMutationId ?? `review-resolve:${id}`,
             };
         },
@@ -9153,6 +9157,22 @@ describe('review thread resolution', () => {
             )
         ).toEqual([]);
     });
+    it.each([
+        ['missing actor ID', { replyAuthorNodeId: null }],
+        ['missing actor type', { replyAuthorType: null }],
+    ])('rejects a reply receipt with %s before submit resolve delete or log', (_label, input) => {
+        const { port, calls, authorNodeId } = fakePort(input);
+        expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(/reply returned an invalid/i);
+        expect(
+            calls.filter(
+                (call) =>
+                    call.startsWith('submitReview:') ||
+                    call.startsWith('resolve:') ||
+                    call.startsWith('delete:') ||
+                    call.startsWith('log:')
+            )
+        ).toEqual([]);
+    });
     it('rejects a Done reply receipt attached to the wrong pending review before submit or resolve', () => {
         const { port, calls, authorNodeId, state } = fakePort({
             replyReceiptReviewId: 'PRR_wrong_pending',
@@ -9170,6 +9190,16 @@ describe('review thread resolution', () => {
             /resolve review thread returned an invalid/i
         );
         expect(calls.filter((call) => call.startsWith('unresolve:'))).toEqual([]);
+    });
+    it.each([
+        ['missing actor ID', { resolveReceiptNodeId: null }],
+        ['missing actor type', { resolveReceiptType: null }],
+    ])('rejects a resolution receipt with %s before success logging', (_label, input) => {
+        const { port, calls, authorNodeId } = fakePort({ existingReplyCount: 1, ...input });
+        expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(
+            /resolve review thread returned/i
+        );
+        expect(calls.filter((call) => call.startsWith('log:'))).toEqual([]);
     });
     it.each([
         ['wrong typename', { resolveReceiptType: 'Bot' }],
