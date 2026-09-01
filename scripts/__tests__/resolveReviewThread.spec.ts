@@ -1903,6 +1903,7 @@ describe('review thread resolution', () => {
     it('does not enter a resolution operation when the initial zero-ref CAS loses without a competing owner', () => {
         const repository = createTemporaryGitRepository();
         let entered = false;
+        const acquireCalls: string[][] = [];
         try {
             expect(() =>
                 withPullRequestReviewResolutionLock(
@@ -1914,12 +1915,25 @@ describe('review thread resolution', () => {
                         entered = true;
                     },
                     {
-                        acquireRef: () => false,
+                        acquireRef: (_primaryRoot, args) => {
+                            acquireCalls.push(args);
+                            return false;
+                        },
                         readOid: () => undefined,
                     }
                 )
             ).toThrow(/lock could not be acquired/);
             expect(entered).toBe(false);
+            expect(acquireCalls).toHaveLength(1);
+            const [ref, ownerOid, expectedZeroOid] = acquireCalls[0]!;
+            expect(ref).toBe('refs/sourdaw/review-resolution/pr-42');
+            expect(ownerOid).toMatch(/^[0-9a-f]{40}$/);
+            expect(expectedZeroOid).toBe('0'.repeat(ownerOid!.length));
+            expect(JSON.parse(gitCapture(repository, ['cat-file', 'blob', ownerOid!]))).toMatchObject({
+                version: 5,
+                threadId,
+                head,
+            });
             expect(readLockOid(repository, 42)).toBeUndefined();
         } finally {
             rmSync(repository, { recursive: true, force: true });
@@ -4077,7 +4091,10 @@ describe('review thread resolution', () => {
     it('adopts a dead standalone shared owner while reconciling a dead non-idle v5 owner before later PR work', async () => {
         const repository = createTemporaryGitRepository();
         try {
-            const sharedOwnerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(repository, 999999);
+            const sharedOwnerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(repository, 999999, {
+                threadId: otherThreadId,
+                head: movedHead,
+            });
             const reviewOwnerOid = writeLockOwnerBlob(repository, 999999, head, {
                 phase: 'deleteReply',
                 epoch: 1,
@@ -4142,6 +4159,46 @@ describe('review thread resolution', () => {
                     }
                 )
             ).toThrow(/lock ownership changed before recovery/);
+            expect(readLockOid(repository, 42)).toBe(reviewOwnerOid);
+            expect(readSharedMutationLockOid(repository, 42)).toBe(replacementSharedOwnerOid);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('uses the real ref transaction so a later shared update failure leaves the exact inner owner unchanged', () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const sharedOwnerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(repository, 999999);
+            const replacementSharedOwnerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(
+                repository,
+                999997
+            );
+            const reviewOwnerOid = writeLockOwnerBlob(repository, 999998, head, {
+                phase: 'deleteReply',
+                epoch: 1,
+                replyId,
+            });
+            updateSharedMutationLock(repository, 42, sharedOwnerOid);
+            updateLock(repository, 42, reviewOwnerOid);
+            let sharedRefChanged = false;
+
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    reviewOwnerOid,
+                    () => 'reconciled',
+                    (ownerFence) => {
+                        if (!sharedRefChanged && ownerFence.kind === 'pgid' && ownerFence.pgid === 999998) {
+                            sharedRefChanged = true;
+                            updateSharedMutationLock(repository, 42, replacementSharedOwnerOid, sharedOwnerOid);
+                        }
+                        return false;
+                    }
+                )
+            ).toThrow(/lock ownership changed before recovery/);
+            expect(sharedRefChanged).toBe(true);
             expect(readLockOid(repository, 42)).toBe(reviewOwnerOid);
             expect(readSharedMutationLockOid(repository, 42)).toBe(replacementSharedOwnerOid);
         } finally {

@@ -776,7 +776,11 @@ export function trustedSnapshotEnv(
     parent: NodeJS.ProcessEnv = process.env
 ): NodeJS.ProcessEnv {
     const env = trustedGitReadEnv(parent);
-    delete env[REVIEW_RESOLUTION_CHILD_ENV];
+    for (const key of Object.keys(env)) {
+        if (key.toUpperCase() === REVIEW_RESOLUTION_CHILD_ENV) {
+            delete env[key];
+        }
+    }
     if (snapshot.gateWorkflow !== undefined) {
         env[TRUSTED_GATE_WORKFLOW_ENV] = JSON.stringify(snapshot.gateWorkflow);
     }

@@ -1159,7 +1159,7 @@ describe('package scripts and gitignore', () => {
                 sources: new Map([
                     [
                         entryPath,
-                        `export async function ${runner}() { return process.env.SOURDAW_REVIEW_RESOLUTION_CHILD === undefined ? 0 : 23; }`,
+                        `export async function ${runner}() { return Object.keys(process.env).some((key) => key.toUpperCase() === 'SOURDAW_REVIEW_RESOLUTION_CHILD') ? 23 : 0; }`,
                     ],
                 ]),
                 launcher: {
@@ -1171,18 +1171,22 @@ describe('package scripts and gitignore', () => {
                 },
             };
 
-            const env = trustedSnapshotEnv(snapshot, { SOURDAW_REVIEW_RESOLUTION_CHILD: inheritedMarker });
-            const previousChildMarker = process.env.SOURDAW_REVIEW_RESOLUTION_CHILD;
+            const inheritedKey =
+                command === 'review:resolve' ? 'sOuRdAw_ReViEw_ReSoLuTiOn_ChIlD' : 'SoUrDaW_rEvIeW_rEsOlUtIoN_cHiLd';
+            const env = trustedSnapshotEnv(snapshot, { [inheritedKey]: inheritedMarker });
+            const previousChildMarker = process.env[inheritedKey];
 
             try {
-                process.env.SOURDAW_REVIEW_RESOLUTION_CHILD = inheritedMarker;
-                expect(env.SOURDAW_REVIEW_RESOLUTION_CHILD).toBeUndefined();
+                process.env[inheritedKey] = inheritedMarker;
+                expect(Object.keys(env).some((key) => key.toUpperCase() === 'SOURDAW_REVIEW_RESOLUTION_CHILD')).toBe(
+                    false
+                );
                 await expect(executeTrustedSnapshot(command, [], snapshot)).resolves.toBe(0);
             } finally {
                 if (previousChildMarker === undefined) {
-                    delete process.env.SOURDAW_REVIEW_RESOLUTION_CHILD;
+                    delete process.env[inheritedKey];
                 } else {
-                    process.env.SOURDAW_REVIEW_RESOLUTION_CHILD = previousChildMarker;
+                    process.env[inheritedKey] = previousChildMarker;
                 }
             }
         }

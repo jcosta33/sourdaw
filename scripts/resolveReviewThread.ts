@@ -3737,11 +3737,7 @@ function inspectRetainedSharedMutationLock(
             return { ref };
         }
         const sharedOwner = readPullRequestMutationLockOwner(primaryRoot, oid, number, gitPath);
-        if (
-            !isReviewResolutionPullRequestMutationLockOwner(sharedOwner) ||
-            sharedOwner.threadId !== owner.threadId ||
-            sharedOwner.head !== owner.head
-        ) {
+        if (!isReviewResolutionPullRequestMutationLockOwner(sharedOwner)) {
             fail(`${pullRequestReviewResolutionLockScope(number)} owner does not identify the retained delivery lock`);
         }
         if (ownerFenceIsLive(sharedOwner.ownerFence)) {
