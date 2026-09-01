@@ -612,10 +612,11 @@ describe('confirmed compound bus actions', () => {
             throw new Error('Expected vocals track.');
         }
         trackStore.set({ tracks: [{ ...vocals, muted: true }], selectedTrackId: vocals.id, ghostClips: [] });
+        flushTrackFixtureProjectWrite();
 
         await expect(
             confirmPendingChatActions({ confirmationId: 'confirmation-repeated-mute-conflict' })
-        ).resolves.toMatchObject({ status: 'failed' });
+        ).resolves.toMatchObject({ status: 'invalidated' });
         expect(trackStore.value?.tracks.find((track) => track.id === 'track-vocals')?.muted).toBe(true);
         expect(undoStore.value?.past).toEqual([]);
         expect(aiActionHistoryStore.value?.groups).toEqual([]);
