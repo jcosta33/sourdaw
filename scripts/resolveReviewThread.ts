@@ -988,7 +988,7 @@ function resolveReviewThreadWithinMutation(
             assertExpectedHeadAfterMutation(replyInspection.head, expectedHead);
             assertResolvableThread(replyInspection.thread, threadId);
         }
-        replyId = convergeReplyMarkers(threadId, replyInspection.thread, port, context, ['COMMENTED']);
+        replyId = convergeReplyMarkers(number, threadId, replyInspection.thread, port, context, ['COMMENTED']);
         const afterReview = port.inspect(number, threadId);
         assertExpectedHeadAfterMutation(afterReview.head, expectedHead);
         assertResolvableThread(afterReview.thread, threadId);
@@ -1679,6 +1679,7 @@ function requireOneReplyMarker(thread: ReviewThread | null, threadId: string): R
     return marker;
 }
 function convergeReplyMarkers(
+    number: number,
     threadId: string,
     thread: ReviewThread | null,
     port: ResolveReviewThreadPort,
@@ -1695,10 +1696,65 @@ function convergeReplyMarkers(
         requireCanonicalManagedReplyMarker(thread, threadId, context, allowedStates, true);
     for (const candidate of managed) {
         if (candidate.marker.id !== canonical.marker.id) {
+            assertDuplicateReplyDeletionStillSafe(
+                number,
+                threadId,
+                context,
+                port,
+                canonical,
+                candidate,
+                preferredReplyId
+            );
             port.deleteReply(candidate.marker.id);
         }
     }
     return canonical.marker.id;
+}
+
+function assertDuplicateReplyDeletionStillSafe(
+    number: number,
+    threadId: string,
+    context: ResolutionReviewContext,
+    port: ResolveReviewThreadPort,
+    canonical: ManagedReplyMarker,
+    candidate: ManagedReplyMarker,
+    preferredReplyId: string | undefined
+): void {
+    const latest = port.inspect(number, threadId);
+    assertExpectedHeadAfterMutation(latest.head, context.expectedHead);
+    if (latest.thread === null) {
+        fail(`review thread ${threadId} was not found on this pull request`);
+    }
+    assertManagedReplyMarkersReadable(latest.thread, context, ['PENDING', 'COMMENTED'], true);
+    const managed = managedReplyMarkers(latest.thread, context, ['PENDING', 'COMMENTED'], true);
+    const canonicalRemains = hasUnchangedManagedReplyMarker(managed, canonical);
+    const candidateRemains = hasUnchangedManagedReplyMarker(managed, candidate);
+    if (
+        preferredReplyId !== undefined &&
+        (canonical.marker.id !== preferredReplyId ||
+            !isImmutableEmptySubmittedReview(canonical.review) ||
+            !canonicalRemains)
+    ) {
+        fail(`review thread ${threadId} no longer has its immutable empty submitted-review envelope`);
+    }
+    if (!canonicalRemains || !candidateRemains) {
+        fail(`review thread ${threadId} duplicate reply markers changed before deletion`);
+    }
+}
+
+function hasUnchangedManagedReplyMarker(managed: ManagedReplyMarker[], expected: ManagedReplyMarker): boolean {
+    return managed.some(
+        (candidate) =>
+            candidate.marker.id === expected.marker.id &&
+            candidate.marker.fullDatabaseId === expected.marker.fullDatabaseId &&
+            candidate.review.id === expected.review.id &&
+            candidate.review.fullDatabaseId === expected.review.fullDatabaseId &&
+            candidate.review.state === expected.review.state &&
+            candidate.review.body === expected.review.body &&
+            candidate.review.commitOid === expected.review.commitOid &&
+            candidate.review.authorNodeId === expected.review.authorNodeId &&
+            candidate.review.authorType === expected.review.authorType
+    );
 }
 
 function assertPreservedImmutableEnvelopeBeforeConvergence(
@@ -2040,7 +2096,7 @@ function convergePendingReplyStateBeforeSubmit(
     }
     const pendingMarkers = managedReplyMarkers(working.thread, context, ['PENDING'], true);
     if (pendingMarkers.length > 1) {
-        convergeReplyMarkers(context.threadId, working.thread, port, context, ['PENDING']);
+        convergeReplyMarkers(number, context.threadId, working.thread, port, context, ['PENDING']);
         working = port.inspect(number, context.threadId);
         assertExpectedHeadAfterMutation(working.head, context.expectedHead);
     }
@@ -2216,7 +2272,7 @@ function repairCompletedResolution(
         thread = refresh();
         assertPreservedImmutableEnvelopeBeforeConvergence(thread, context, immutableEnvelope);
     }
-    convergeReplyMarkers(context.threadId, thread, port, context, ['COMMENTED'], immutableEnvelope?.marker.id);
+    convergeReplyMarkers(number, context.threadId, thread, port, context, ['COMMENTED'], immutableEnvelope?.marker.id);
     const verified = port.inspect(number, context.threadId);
     assertExpectedHeadAfterMutation(verified.head, context.expectedHead);
     if (verified.thread === null) {
@@ -5228,7 +5284,7 @@ function convergeSubmittedCommentedReplyMarkers(
         inspection = inspectReviewResolutionRecovery(number, owner, port);
     }
     if (managedReplyMarkers(inspection.thread!, context, ['COMMENTED'], false).length > 1) {
-        convergeReplyMarkers(owner.threadId, inspection.thread, port, context, ['COMMENTED']);
+        convergeReplyMarkers(number, owner.threadId, inspection.thread, port, context, ['COMMENTED']);
         inspection = inspectReviewResolutionRecovery(number, owner, port);
     }
     if (managedReplyMarkers(inspection.thread!, context, ['COMMENTED'], false).length !== 1) {
@@ -5439,7 +5495,7 @@ export function recoverReviewResolutionLockOwnerState(
             assertResolutionReceipt(receipt, resolveClientMutationId(owner.threadId));
             inspection = inspectReviewResolutionRecovery(number, owner, port);
             if (managedReplyMarkers(inspection.thread!, context, ['COMMENTED'], false).length > 1) {
-                convergeReplyMarkers(owner.threadId, inspection.thread, port, context, ['COMMENTED']);
+                convergeReplyMarkers(number, owner.threadId, inspection.thread, port, context, ['COMMENTED']);
                 inspection = inspectReviewResolutionRecovery(number, owner, port);
             }
             break;

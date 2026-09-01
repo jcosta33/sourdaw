@@ -12574,9 +12574,11 @@ describe('review thread resolution', () => {
         };
         expect(() => resolveReviewThread(42, threadId, movedHead, authorNodeId, port)).toThrow();
         expect(attemptedUpdate).toBe(false);
-        expect(calls.filter((call) => /^(updateReview|delete:|deleteReview|submit|resolve|log:)/.test(call))).toEqual(
-            []
-        );
+        expect(
+            calls.filter((call) =>
+                /^(createReview|reply:|updateReview|delete:|deleteReview|submit|resolve|log:)/.test(call)
+            )
+        ).toEqual([]);
     });
     it('retires a stale-head managed pending Done marker beside a current COMMENTED marker on a completed resolution', () => {
         const { port, calls, authorNodeId, state } = fakePort({
@@ -12934,11 +12936,64 @@ describe('review thread resolution', () => {
         expect(resolveReviewThread(42, threadId, head, authorNodeId, port)).toBe(
             `review-thread-resolution-reconciled-immutable-empty-submitted-review:42:${threadId}`
         );
-        expect(calls.filter((call) => call.startsWith('updateReview:'))).toEqual([]);
-        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual(['delete:PRRC_existing_1']);
+        expect(calls).toEqual([
+            'inspect:1',
+            `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${head}`,
+            'inspect:2',
+            'inspect:3',
+            'delete:PRRC_existing_1',
+            'inspect:4',
+            `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${head}`,
+            `log:review-thread-resolution-reconciled-immutable-empty-submitted-review:42:${threadId}`,
+        ]);
+        expect(state().reviews.find((review) => review.id === reviewId)).toMatchObject({
+            state: 'COMMENTED',
+            body: '',
+        });
         expect(state().comments.filter((comment) => comment.body === 'Done')).toEqual([
             expect.objectContaining({ id: replyId, reviewId }),
         ]);
+    });
+    it('fails without deletion when the preferred immutable marker disappears before duplicate convergence', () => {
+        const {
+            port: basePort,
+            calls,
+            authorNodeId,
+        } = fakePort({
+            isResolved: true,
+            initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+            initialResolvedByType: 'User',
+            existingReplyCount: 2,
+            existingReplyReviewBody: '',
+            secondaryReplyReviewBody: resolutionReviewSummary(pullRequestId, threadId, head),
+            existingReplyFullDatabaseIds: ['9223372036854775809', '9223372036854775808'],
+        });
+        let inspections = 0;
+        const port: ResolveReviewThreadPort = {
+            ...basePort,
+            inspect: (number, currentThreadId) => {
+                const inspection = basePort.inspect(number, currentThreadId);
+                inspections += 1;
+                if (inspections !== 3 || inspection.thread === null) {
+                    return inspection;
+                }
+                return {
+                    ...inspection,
+                    thread: {
+                        ...inspection.thread,
+                        comments: inspection.thread.comments.filter((comment) => comment.id !== replyId),
+                    },
+                };
+            },
+        };
+        expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(
+            /immutable empty submitted-review envelope/i
+        );
+        expect(
+            calls.filter((call) =>
+                /^(createReview|reply:|updateReview|delete:|deleteReview|submit|resolve|log:)/.test(call)
+            )
+        ).toEqual([]);
     });
     it('converges duplicate immutable Done markers from one submitted review before final reconciliation', () => {
         const {
@@ -12993,9 +13048,11 @@ describe('review thread resolution', () => {
         };
         expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow();
         expect(attemptedUpdate).toBe(false);
-        expect(calls.filter((call) => /^(updateReview|delete:|deleteReview|submit|resolve|log:)/.test(call))).toEqual(
-            []
-        );
+        expect(
+            calls.filter((call) =>
+                /^(createReview|reply:|updateReview|delete:|deleteReview|submit|resolve|log:)/.test(call)
+            )
+        ).toEqual([]);
     });
     it('fails closed when the immutable submitted-review envelope is attached to another thread', () => {
         const { port, calls, authorNodeId } = fakePort({
