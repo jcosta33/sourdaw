@@ -240,8 +240,8 @@ type Input = {
     deleteReplyAfterResolve?: boolean;
     editReplyAfterResolve?: boolean;
     replyClientMutationId?: string;
-    replyAuthorNodeId?: string;
-    replyAuthorType?: string;
+    replyAuthorNodeId?: string | null;
+    replyAuthorType?: string | null;
     resolveClientMutationId?: string;
     resolveReceiptNodeId?: string;
     resolveReceiptType?: string;
@@ -320,9 +320,9 @@ function fakePort(input: Input = {}) {
             id: rootId,
             fullDatabaseId: '9223372036854775807',
             body: 'review',
-            authorNodeId: input.rootAuthorNodeId ?? REVIEWER_BOT_NODE_ID,
+            authorNodeId: input.rootAuthorNodeId === undefined ? REVIEWER_BOT_NODE_ID : input.rootAuthorNodeId,
             authorLogin: reviewerLogin,
-            authorType: input.rootAuthorType ?? 'Bot',
+            authorType: input.rootAuthorType === undefined ? 'Bot' : input.rootAuthorType,
             reviewId: null,
         },
     ];
@@ -343,9 +343,9 @@ function fakePort(input: Input = {}) {
             id,
             fullDatabaseId,
             body: 'Done',
-            authorNodeId: input.replyAuthorNodeId ?? AUTHOR_BOT_NODE_ID,
+            authorNodeId: input.replyAuthorNodeId === undefined ? AUTHOR_BOT_NODE_ID : input.replyAuthorNodeId,
             authorLogin,
-            authorType: input.replyAuthorType ?? 'Bot',
+            authorType: input.replyAuthorType === undefined ? 'Bot' : input.replyAuthorType,
             reviewId: currentReviewId,
         });
     }
@@ -418,12 +418,20 @@ function fakePort(input: Input = {}) {
         const reviewCommitOid = useSecondaryReplyReview
             ? (input.secondaryReplyReviewCommitOid ?? input.existingReplyReviewCommitOid ?? head)
             : (input.existingReplyReviewCommitOid ?? head);
-        const reviewAuthorNodeId = useSecondaryReplyReview
-            ? (input.secondaryReplyReviewAuthorNodeId ?? input.existingReplyReviewAuthorNodeId ?? AUTHOR_BOT_NODE_ID)
-            : (input.existingReplyReviewAuthorNodeId ?? AUTHOR_BOT_NODE_ID);
-        const reviewAuthorType = useSecondaryReplyReview
-            ? (input.secondaryReplyReviewAuthorType ?? input.existingReplyReviewAuthorType ?? 'Bot')
-            : (input.existingReplyReviewAuthorType ?? 'Bot');
+        const existingReviewAuthorNodeId =
+            input.existingReplyReviewAuthorNodeId === undefined
+                ? AUTHOR_BOT_NODE_ID
+                : input.existingReplyReviewAuthorNodeId;
+        const existingReviewAuthorType =
+            input.existingReplyReviewAuthorType === undefined ? 'Bot' : input.existingReplyReviewAuthorType;
+        const reviewAuthorNodeId =
+            useSecondaryReplyReview && input.secondaryReplyReviewAuthorNodeId !== undefined
+                ? input.secondaryReplyReviewAuthorNodeId
+                : existingReviewAuthorNodeId;
+        const reviewAuthorType =
+            useSecondaryReplyReview && input.secondaryReplyReviewAuthorType !== undefined
+                ? input.secondaryReplyReviewAuthorType
+                : existingReviewAuthorType;
         if (!reviewMissing) {
             pushReview(configuredReviewId, reviewState, reviewBody, reviewCommitOid);
             reviews[reviews.length - 1]!.authorNodeId = reviewAuthorNodeId;
@@ -658,9 +666,9 @@ function fakePort(input: Input = {}) {
             return {
                 id: createdReplyId,
                 fullDatabaseId: createdReplyFullDatabaseId,
-                authorNodeId: input.replyAuthorNodeId ?? AUTHOR_BOT_NODE_ID,
+                authorNodeId: input.replyAuthorNodeId === undefined ? AUTHOR_BOT_NODE_ID : input.replyAuthorNodeId,
                 authorLogin,
-                authorType: input.replyAuthorType ?? 'Bot',
+                authorType: input.replyAuthorType === undefined ? 'Bot' : input.replyAuthorType,
                 reviewId: receiptReviewId,
                 reviewState: reviewById(receiptReviewId)?.state ?? null,
                 reviewBody: reviewById(receiptReviewId)?.body ?? null,
@@ -3700,6 +3708,127 @@ describe('review thread resolution', () => {
         }
     });
 
+    it('uses production liveness to retain a live detached standalone owner and recover it after worker death', async () => {
+        if (process.platform === 'win32') {
+            return;
+        }
+        const repository = createTemporaryGitRepository();
+        const previousGit = process.env.SOURDAW_TRUSTED_GIT_PATH;
+        const previousPs = process.env.SOURDAW_TRUSTED_PS_PATH;
+        let worker: ReturnType<typeof spawn> | undefined;
+        try {
+            process.env.SOURDAW_TRUSTED_GIT_PATH = systemGitPath();
+            process.env.SOURDAW_TRUSTED_PS_PATH = systemPsPath();
+            worker = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1_000)'], {
+                detached: true,
+                stdio: 'ignore',
+                shell: false,
+            });
+            if (worker.pid === undefined) {
+                throw new Error('detached worker did not report a PID');
+            }
+            const startedAt = spawnSync(systemPsPath(), ['-o', 'lstart=', '-p', String(worker.pid)], {
+                encoding: 'utf8',
+                shell: false,
+                env: { LC_ALL: 'C', LANG: 'C', TZ: 'UTC' },
+            }).stdout.trim();
+            const ownerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(repository, worker.pid, {
+                ownerFence: { kind: 'pgid', pgid: worker.pid, leaderStartedAt: startedAt },
+            });
+            updateSharedMutationLock(repository, 42, ownerOid);
+
+            const recoveryPort = {
+                gitPath: systemGitPath(),
+                readReviewResolutionLockOid: (primaryRoot: string, _ref: string, pullRequestNumber: number) =>
+                    readLockOid(primaryRoot, pullRequestNumber),
+                updateRef: updateGitRef,
+            };
+            expect(() =>
+                recoverStandaloneReviewResolutionSharedMutationLock(repository, 42, ownerOid, recoveryPort)
+            ).toThrow(/execution fence remains live/);
+            expect(readSharedMutationLockOid(repository, 42)).toBe(ownerOid);
+            worker.kill('SIGKILL');
+            await waitForExit(worker);
+            worker = undefined;
+
+            expect(
+                recoverStandaloneReviewResolutionSharedMutationLock(repository, 42, ownerOid, recoveryPort)
+            ).toContain('standalone-shared-lock-recovered');
+            await expect(withPullRequestMutationLock(repository, 42, async () => 'reacquired')).resolves.toBe(
+                'reacquired'
+            );
+        } finally {
+            if (worker !== undefined) {
+                worker.kill('SIGKILL');
+                await waitForExit(worker).catch(() => undefined);
+            }
+            if (previousGit === undefined) {
+                delete process.env.SOURDAW_TRUSTED_GIT_PATH;
+            } else {
+                process.env.SOURDAW_TRUSTED_GIT_PATH = previousGit;
+            }
+            if (previousPs === undefined) {
+                delete process.env.SOURDAW_TRUSTED_PS_PATH;
+            } else {
+                process.env.SOURDAW_TRUSTED_PS_PATH = previousPs;
+            }
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it.each([
+        ['pid', { kind: 'pid', pid: 999999 }],
+        ['detached POSIX process group', { kind: 'pgid', pgid: 999999 }],
+        ['Windows process tree', { kind: 'win32-process-tree', version: 1, rootPid: 999999, rootStartedAt: '1' }],
+    ] as const)('accepts a valid %s fence bound to the standalone owner', (_label, ownerFence) => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const ownerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(repository, 999999, {
+                ownerFence,
+            });
+            updateSharedMutationLock(repository, 42, ownerOid);
+
+            expect(
+                recoverStandaloneReviewResolutionSharedMutationLock(repository, 42, ownerOid, {
+                    ownerFenceIsLive: () => false,
+                    gitPath: systemGitPath(),
+                    readReviewResolutionLockOid: (primaryRoot, _ref, pullRequestNumber) =>
+                        readLockOid(primaryRoot, pullRequestNumber),
+                    updateRef: updateGitRef,
+                })
+            ).toContain('standalone-shared-lock-recovered');
+            expect(readSharedMutationLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it.each([
+        ['pid', { kind: 'pid', pid: 999998 }],
+        ['detached POSIX process group', { kind: 'pgid', pgid: 999998 }],
+        ['Windows process tree', { kind: 'win32-process-tree', version: 1, rootPid: 999998, rootStartedAt: '1' }],
+    ] as const)('rejects a %s fence that names another standalone owner', (_label, ownerFence) => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const ownerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(repository, 999999, {
+                ownerFence,
+            });
+            updateSharedMutationLock(repository, 42, ownerOid);
+
+            expect(() =>
+                recoverStandaloneReviewResolutionSharedMutationLock(repository, 42, ownerOid, {
+                    ownerFenceIsLive: () => false,
+                    gitPath: systemGitPath(),
+                    readReviewResolutionLockOid: (primaryRoot, _ref, pullRequestNumber) =>
+                        readLockOid(primaryRoot, pullRequestNumber),
+                })
+            ).toThrow(/delivery lock ownership is malformed/);
+            expect(readSharedMutationLockOid(repository, 42)).toBe(ownerOid);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it('preserves a paired shared owner when recovery is given its shared owner identity', () => {
         const repository = createTemporaryGitRepository();
         try {
@@ -3821,11 +3950,17 @@ describe('review thread resolution', () => {
     it.each([
         [
             'live execution fence',
-            () => writeStandaloneReviewResolutionSharedMutationLockOwnerBlob,
-            () => true,
+            (): typeof writeStandaloneReviewResolutionSharedMutationLockOwnerBlob =>
+                writeStandaloneReviewResolutionSharedMutationLockOwnerBlob,
+            (): boolean => true,
             /execution fence remains live/,
         ],
-        ['legacy untagged owner', () => writeSharedMutationLockOwnerBlob, () => false, /ownership is not recoverable/],
+        [
+            'legacy untagged owner',
+            (): typeof writeSharedMutationLockOwnerBlob => writeSharedMutationLockOwnerBlob,
+            (): boolean => false,
+            /ownership is not recoverable/,
+        ],
     ] as const)(
         'preserves a standalone shared owner with a %s',
         (_label, writeOwner, ownerFenceIsLive, errorPattern) => {
@@ -6387,6 +6522,31 @@ describe('review thread resolution', () => {
         }
     });
 
+    it('continues after acquisition without re-reading the owner blob', () => {
+        const repository = createTemporaryGitRepository();
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-resolution-no-owner-reread-'));
+        const git = join(root, 'git');
+        const catFileMarker = join(root, 'cat-file-entered');
+        try {
+            writeFileSync(
+                git,
+                `#!/bin/sh\nif [ "$1" = cat-file ]; then\nprintf entered > ${JSON.stringify(catFileMarker)}\nexit 91\nfi\nexec ${JSON.stringify(systemGitPath())} "$@"\n`,
+                { mode: 0o700 }
+            );
+            chmodSync(git, 0o700);
+            withTemporaryEnvironment({ SOURDAW_TRUSTED_GIT_PATH: git }, () => {
+                expect(withPullRequestReviewResolutionLock(repository, 42, threadId, head, () => 'complete')).toBe(
+                    'complete'
+                );
+            });
+            expect(existsSync(catFileMarker)).toBe(false);
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it('uses the launcher-resolved trusted Git path for review-resolution lock operations and ignores a hostile PATH git', () => {
         const repository = createTemporaryGitRepository();
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-resolution-trusted-git-'));
@@ -7397,7 +7557,14 @@ describe('review thread resolution', () => {
         try {
             const dependencies: ResolveReviewThreadCoordinatorDependencies = {
                 primaryRoot: () => repository,
-                serializeMutation: withPullRequestMutationLock,
+                serializeMutation: (primaryRoot, number, operation, options) =>
+                    withPullRequestMutationLock(primaryRoot, number, operation, {
+                        ...options,
+                        reviewResolution:
+                            options?.reviewResolution === undefined
+                                ? undefined
+                                : { ...options.reviewResolution, ownerFence: { kind: 'pid', pid: process.pid } },
+                    }),
                 authenticateAuthor: async () => ({
                     minted: { actorNodeId: AUTHOR_BOT_NODE_ID },
                     session: {
@@ -10835,6 +11002,43 @@ describe('review thread resolution', () => {
         const { port, calls, authorNodeId } = fakePort({ rootAuthorType: 'User' });
         expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(/root comment/i);
         expect(calls.filter((call) => !call.startsWith('inspect:'))).toEqual([]);
+    });
+    it('rejects a missing comment author before resolution or deletion', () => {
+        const { port, calls, authorNodeId } = fakePort({ rootAuthorNodeId: null });
+        expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(/author|root comment/i);
+        expect(calls.filter((call) => call.startsWith('resolve:') || call.startsWith('delete:'))).toEqual([]);
+    });
+    it('rejects a missing review author without resolving or releasing retained locks', () => {
+        const repository = createTemporaryGitRepository();
+        const { port, calls } = fakePort({ existingReplyCount: 1, existingReplyReviewAuthorNodeId: null });
+        try {
+            const sharedOwnerOid = writeSharedMutationLockOwnerBlob(repository, 999999);
+            updateSharedMutationLock(repository, 42, sharedOwnerOid);
+            const ownerOid = writeLockOwnerBlob(
+                repository,
+                999999,
+                head,
+                { phase: 'deleteReply', epoch: 1, replyId },
+                undefined,
+                undefined,
+                sharedOwnerOid
+            );
+            updateLock(repository, 42, ownerOid);
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    ownerOid,
+                    (owner) => recoverReviewResolutionLockOwnerState(42, owner, port),
+                    () => false
+                )
+            ).toThrow(/no review author/);
+            expect(calls.filter((call) => call.startsWith('resolve:') || call.startsWith('delete:'))).toEqual([]);
+            expect(readLockOid(repository, 42)).toBeDefined();
+            expect(readSharedMutationLockOid(repository, 42)).toBeDefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
     });
     it('reports original and compensation failure', () => {
         const { port, authorNodeId } = fakePort({

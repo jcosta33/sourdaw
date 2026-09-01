@@ -110,6 +110,16 @@ function isExecutionFence(value: unknown): value is PullRequestMutationLockOwner
     );
 }
 
+function isExecutionFenceBoundToOwnerPid(ownerFence: PullRequestMutationLockOwnerFence, pid: number): boolean {
+    if (ownerFence.kind === 'pid') {
+        return ownerFence.pid === pid;
+    }
+    if (ownerFence.kind === 'pgid') {
+        return ownerFence.pgid === pid;
+    }
+    return ownerFence.rootPid === pid;
+}
+
 function hasOwnerIdentity(
     value: Record<string, unknown>
 ): value is Record<string, unknown> & { pid: number; token: string } {
@@ -146,7 +156,8 @@ function parseMutationLockOwner(contents: string, number: number): PullRequestMu
         owner.threadId !== '' &&
         typeof owner.head === 'string' &&
         /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/iu.test(owner.head) &&
-        isExecutionFence(owner.ownerFence)
+        isExecutionFence(owner.ownerFence) &&
+        isExecutionFenceBoundToOwnerPid(owner.ownerFence, owner.pid)
     ) {
         return {
             version: 2,

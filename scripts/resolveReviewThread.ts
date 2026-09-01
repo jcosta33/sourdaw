@@ -1452,7 +1452,13 @@ function managedReplyReviewOrNull(
     allowEmptyBody: boolean
 ): PullRequestReview | null {
     const review = toReplyReviewOrNull(value);
-    if (review === null || !isAuthorBotActor(review.authorNodeId, review.authorType)) {
+    if (review === null) {
+        return null;
+    }
+    if (review.authorNodeId === null || review.authorType === null) {
+        fail('Done reply marker has no review author');
+    }
+    if (!isAuthorBotActor(review.authorNodeId, review.authorType)) {
         return null;
     }
     if (!allowedStates.includes(review.state)) {
@@ -3401,7 +3407,7 @@ function acquirePullRequestReviewResolutionLock(
     executionFence: ReviewResolutionExecutionFence,
     _platform: NodeJS.Platform,
     sharedMutationOwnerOid?: string
-): { ref: string; oid: string } {
+): { ref: string; oid: string; owner: CurrentReviewResolutionLockOwner } {
     const ref = pullRequestReviewResolutionLockRef(number);
     const commonOwner = {
         pid: executionFence.pid,
@@ -3421,7 +3427,7 @@ function acquirePullRequestReviewResolutionLock(
               };
     const oid = writeReviewResolutionLockOwner(primaryRoot, owner, number);
     if (updateReviewResolutionLockRef(primaryRoot, [ref, oid, '0'.repeat(oid.length)])) {
-        return { ref, oid };
+        return { ref, oid, owner };
     }
 
     const previousOid = readReviewResolutionLockOid(primaryRoot, ref, number);
@@ -3516,14 +3522,12 @@ export function withPullRequestReviewResolutionLock<Value>(
         platform,
         port.sharedMutationOwnerOid
     );
-    const activeOwner = readReviewResolutionLockOwner(primaryRoot, lock.oid, number);
-    assertJournaledReviewResolutionLockOwner(activeOwner);
     const active: ActiveReviewResolutionLock = {
         primaryRoot,
         number,
         ref: lock.ref,
         oid: lock.oid,
-        owner: activeOwner,
+        owner: lock.owner,
     };
     pushActiveReviewResolutionLock(active);
     try {
