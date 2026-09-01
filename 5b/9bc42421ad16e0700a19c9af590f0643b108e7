@@ -1,0 +1,35 @@
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/createLlmActionStrategyRegistry.spec.ts
+  s_a40848e8f8cca9::t_e7963f9bf420aa 1-32
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/transportTimelineStrategy.spec.ts
+  s_a40848e8f8cca9::t_e7963f9bf420aa 7,601-604
+  s_a40848e8f8cca9::t_f5268061270b65 605-607
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_a40848e8f8cca9::t_d0475ba08fcb33 22,381-383,386
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/markerSectionStrategy.spec.ts
+  s_a40848e8f8cca9::t_e7963f9bf420aa 1-6,8-29,34-50,52-65
+  s_a40848e8f8cca9::t_d9895544df50f7 7,51
+  s_a40848e8f8cca9::t_632845ebf16152 30-33
+src/modules/AiRuntime/transformers/llmActionStrategies/transportTimelineStrategy.ts
+  s_a40848e8f8cca9::t_fb2ece9136e12f 4,6-21,278-282,285,295-298
+src/modules/AiRuntime/transformers/llmActionStrategies/markerSectionStrategy.ts
+  s_a40848e8f8cca9::t_9ae51243255b4e 1-271
+  s_a40848e8f8cca9::t_6458d3524dca9b 272-275
+src/modules/AiRuntime/transformers/llmActionStrategies/createLlmActionStrategyRegistry.ts
+  s_a40848e8f8cca9::t_11e450f72f077d 1-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "5b9bc42421ad16e0700a19c9af590f0643b108e7",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
