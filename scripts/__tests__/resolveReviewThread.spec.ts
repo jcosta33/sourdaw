@@ -4074,6 +4074,81 @@ describe('review thread resolution', () => {
         }
     });
 
+    it('adopts a dead standalone shared owner while reconciling a dead non-idle v5 owner before later PR work', async () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const sharedOwnerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(repository, 999999);
+            const reviewOwnerOid = writeLockOwnerBlob(repository, 999999, head, {
+                phase: 'deleteReply',
+                epoch: 1,
+                replyId,
+            });
+            updateSharedMutationLock(repository, 42, sharedOwnerOid);
+            updateLock(repository, 42, reviewOwnerOid);
+
+            expect(() =>
+                recoverStandaloneReviewResolutionSharedMutationLock(repository, 42, sharedOwnerOid, {
+                    ownerFenceIsLive: () => false,
+                    gitPath: systemGitPath(),
+                })
+            ).toThrow(`recover with pnpm review:resolve:recover 42 --owner ${reviewOwnerOid}`);
+            expect(
+                recoverPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    reviewOwnerOid,
+                    () => 'reconciled',
+                    () => false
+                )
+            ).toBe('reconciled');
+            expect(readSharedMutationLockOid(repository, 42)).toBeUndefined();
+            expect(readLockOid(repository, 42)).toBeUndefined();
+            await expect(
+                withPullRequestMutationLock(repository, 42, () => Promise.resolve('later-mutation'))
+            ).resolves.toBe('later-mutation');
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('preserves the exact v5 owner when the adopted standalone shared owner changes before recovery claim', () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const sharedOwnerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(repository, 999999);
+            const replacementSharedOwnerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(
+                repository,
+                999998
+            );
+            const reviewOwnerOid = writeLockOwnerBlob(repository, 999999, head, {
+                phase: 'deleteReply',
+                epoch: 1,
+                replyId,
+            });
+            updateSharedMutationLock(repository, 42, sharedOwnerOid);
+            updateLock(repository, 42, reviewOwnerOid);
+
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    reviewOwnerOid,
+                    () => 'reconciled',
+                    () => false,
+                    {
+                        updateRefsTransaction: (primaryRoot) => {
+                            updateSharedMutationLock(primaryRoot, 42, replacementSharedOwnerOid, sharedOwnerOid);
+                            return false;
+                        },
+                    }
+                )
+            ).toThrow(/lock ownership changed before recovery/);
+            expect(readLockOid(repository, 42)).toBe(reviewOwnerOid);
+            expect(readSharedMutationLockOid(repository, 42)).toBe(replacementSharedOwnerOid);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it('preserves both refs for an unknown v5 journal state', () => {
         const repository = createTemporaryGitRepository();
         try {

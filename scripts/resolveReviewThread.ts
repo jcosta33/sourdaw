@@ -3613,7 +3613,7 @@ export function recoverPullRequestReviewResolutionLock<Value>(
         );
     }
     let owner = readReviewResolutionLockOwner(primaryRoot, currentOwnerOid, number);
-    const retainedSharedMutationLock = inspectRetainedSharedMutationLock(primaryRoot, number, owner);
+    const retainedSharedMutationLock = inspectRetainedSharedMutationLock(primaryRoot, number, owner, ownerFenceIsLive);
     if (ownerFenceIsLive(owner.ownerFence)) {
         return fail(
             `${pullRequestReviewResolutionLockScope(number)} lock is still held by live ${reviewResolutionOwnerFenceLabel(owner.ownerFence)}`
@@ -3726,16 +3726,28 @@ type RetainedSharedMutationLock = {
 function inspectRetainedSharedMutationLock(
     primaryRoot: string,
     number: number,
-    owner: ReviewResolutionLockOwner
+    owner: ReviewResolutionLockOwner,
+    ownerFenceIsLive: (ownerFence: ReviewResolutionLockOwnerFence) => boolean = reviewResolutionOwnerFenceIsLive
 ): RetainedSharedMutationLock {
     const ref = pullRequestMutationLockRef(number);
     const gitPath = trustedReviewResolutionGitPath();
     const oid = readPullRequestMutationLockOid(primaryRoot, ref, number, gitPath);
     if (owner.version !== 6) {
-        if (oid !== undefined) {
+        if (oid === undefined) {
+            return { ref };
+        }
+        const sharedOwner = readPullRequestMutationLockOwner(primaryRoot, oid, number, gitPath);
+        if (
+            !isReviewResolutionPullRequestMutationLockOwner(sharedOwner) ||
+            sharedOwner.threadId !== owner.threadId ||
+            sharedOwner.head !== owner.head
+        ) {
             fail(`${pullRequestReviewResolutionLockScope(number)} owner does not identify the retained delivery lock`);
         }
-        return { ref };
+        if (ownerFenceIsLive(sharedOwner.ownerFence)) {
+            fail(`${pullRequestReviewResolutionLockScope(number)} retained delivery lock execution fence remains live`);
+        }
+        return { ref, oid };
     }
     if (oid === undefined) {
         fail(`${pullRequestReviewResolutionLockScope(number)} retained delivery lock is not held`);
