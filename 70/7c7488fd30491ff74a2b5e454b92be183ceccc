@@ -1,0 +1,41 @@
+src/modules/AudioEngine/useCases/offlineRender/projectStripAutomationWrites.ts
+  s_9b530f08172a54::t_8c04bb6304a6ff 1-48,50-78,81-84,86-238
+  s_9b530f08172a54::t_9e0d107729e8f7 79-80,85
+  s_9b530f08172a54::t_b09daaf2c02c61 49
+src/modules/AudioEngine/useCases/livePlayback/readLiveAutomationWrites.ts
+  s_9b530f08172a54::t_5aa4e45e0f139a 1-49,52-57,60-85
+  s_9b530f08172a54::t_6d567d3ecce9e3 50-51
+  s_9b530f08172a54::t_d76306e368f4f4 58-59
+src/modules/AudioEngine/useCases/offlineRender/__tests__/projectStripAutomationWrites.spec.ts
+  s_9b530f08172a54::t_09cadc3020c0fe 1-246
+  s_9b530f08172a54::t_93463730df6e55 247-256
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveAutomationWrites.spec.ts
+  s_9b530f08172a54::t_d7e4bcfa28f358 1-263
+src/modules/AudioEngine/useCases/offlineRender/renderOfflineWithNativeEngine.ts
+  s_9b530f08172a54::t_35edb54bf02195 80
+  s_9b530f08172a54::t_63a22220d18a0f 252-283
+src/modules/AudioEngine/useCases/livePlayback/projectLiveGraphTopology.ts
+  s_9b530f08172a54::t_d2f109edb440fc 179-183
+src/modules/AudioEngine/useCases/livePlayback/admittedSendBusIds.ts
+  s_9b530f08172a54::t_0069529a67ad6d 1-28
+src/modules/AudioEngine/useCases/livePlayback/projectLiveAutomationWrites.ts
+  s_9b530f08172a54::t_2f314abb6e0679 103-104
+  s_9b530f08172a54::t_57d4fcb199238c 53
+  s_9b530f08172a54::t_4d6441028403f1 1-52,54-102,105-166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "707c7488fd30491ff74a2b5e454b92be183ceccc",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
