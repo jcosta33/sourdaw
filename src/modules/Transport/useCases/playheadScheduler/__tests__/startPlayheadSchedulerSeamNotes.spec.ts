@@ -51,7 +51,8 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     persistDeviceParam: vi.fn(),
     resolveEligibleDeviceWriteTarget: vi.fn(),
 }));
-vi.mock('#/modules/MIDI/stores', () => ({
+vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
     midiStore: {
         get value() {
             return midiStoreState.value;
@@ -125,6 +126,12 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     cacheAudioBuffer: vi.fn(),
     refreshSidechainAlignment: vi.fn(),
     scheduleAdjustmentLayers: vi.fn(),
+    createBufferSource: vi.fn(),
+    getCachedAudioBuffer: vi.fn(),
+    getFactoryDrumKitByIndex: vi.fn(),
+    // No native engine here: the cursor these seams are about follows the
+    // scheduler's own integration.
+    readNativeEnginePlayheadSeconds: (): number | null => null,
 }));
 /**
  * The observation point. Typed to the four arguments the assertions read, so
@@ -138,6 +145,7 @@ vi.mock('#/modules/Synth/useCases', () => ({
     scheduleDrumKitNote: vi.fn(),
     scheduleKitNote: vi.fn(),
     scheduleNote: scheduleNoteSpy,
+    getSynthParamsFromDevices: vi.fn(),
 }));
 vi.mock('#/modules/PluginHost/useCases', () => ({ isFaustInstrumentModule: () => false }));
 vi.mock('#/modules/Yeast/useCases', () => ({

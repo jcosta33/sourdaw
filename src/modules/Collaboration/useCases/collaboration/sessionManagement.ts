@@ -342,16 +342,41 @@ function setPeerSyncQuarantined(peerId: PeerId, isQuarantined: boolean): void {
             return state;
         }
         const alreadyListed = state.quarantinedPeerIds.includes(peerId);
-        if (alreadyListed === isQuarantined) {
+        const syncHealth = isQuarantined ? 'diverged' : 'converging';
+        const peerNeedsUpdate = state.peers.some((peer) => peer.id === peerId && peer.syncHealth !== syncHealth);
+        if (alreadyListed === isQuarantined && !peerNeedsUpdate) {
             return state;
+        }
+        let quarantinedPeerIds = state.quarantinedPeerIds;
+        if (alreadyListed !== isQuarantined) {
+            quarantinedPeerIds = isQuarantined
+                ? [...state.quarantinedPeerIds, peerId]
+                : state.quarantinedPeerIds.filter((param) => param !== peerId);
         }
         return {
             ...state,
-            quarantinedPeerIds: isQuarantined
-                ? [...state.quarantinedPeerIds, peerId]
-                : state.quarantinedPeerIds.filter((param) => param !== peerId),
+            peers: state.peers.map((peer) => (peer.id === peerId ? { ...peer, syncHealth } : peer)),
+            quarantinedPeerIds,
         };
     });
+}
+
+function reportSyncChannelQuarantine(quarantinedPeerId: PeerId): void {
+    const peerManager = sessionState.peerManager;
+    if (!peerManager) {
+        return;
+    }
+
+    for (const peerId of peerManager.getConnectedPeerIds()) {
+        void peerManager
+            .sendCrdtSync({
+                peerId,
+                message: { type: 'sync-channel-quarantined', peerId: quarantinedPeerId },
+            })
+            .catch((error: unknown) => {
+                logger.warn('[Collaboration] Failed to report quarantined sync channel to', peerId, error);
+            });
+    }
 }
 
 /**
@@ -425,6 +450,7 @@ function buildAutomergeSyncHooks(): AutomergeSyncHooks {
         },
         onSyncQuarantine: ({ peerId }) => {
             setPeerSyncQuarantined(peerId, true);
+            reportSyncChannelQuarantine(peerId);
         },
         onSyncQuarantineLifted: ({ peerId }) => {
             setPeerSyncQuarantined(peerId, false);
@@ -471,6 +497,7 @@ function getLocalPeerInfo(): CollaborationPeer {
         isConnected: true,
         lastSeen: Date.now(),
         latencyMs: null,
+        syncHealth: 'converging',
     };
 }
 
@@ -722,6 +749,22 @@ function handlePeerMessage({ peerId, message }: HandlePeerMessageInput): void {
         updatePeerLastSeen(peerId);
     } else if (message.type === 'peer-info') {
         addOrUpdatePeer({ senderPeerId: peerId, peer: message.peer });
+    } else if (message.type === 'sync-channel-quarantined') {
+        const state = collaborationStore.value;
+        if (
+            !state ||
+            typeof message.peerId !== 'string' ||
+            message.peerId.length === 0 ||
+            !isAcceptablePeerId(message.peerId)
+        ) {
+            return;
+        }
+        const senderIsConnected = state.peers.some((peer) => peer.id === peerId && peer.isConnected);
+        if (!senderIsConnected) {
+            return;
+        }
+        const quarantinedPeerId = message.peerId === state.localPeerId ? peerId : message.peerId;
+        setPeerSyncQuarantined(quarantinedPeerId, true);
     } else if (message.type === 'peer-leave') {
         // Only honor a self-leave: a peer may remove itself, never a third
         // party. Without this a hostile joiner could eject any other peer by
@@ -795,7 +838,6 @@ function handlePeerConnected(peerId: PeerId): void {
             ...state,
             connectionStatus: 'connected',
             error: recovered && state.error === HOST_DEPARTED_MESSAGE ? null : state.error,
-            quarantinedPeerIds: [],
         });
     }
 }
@@ -900,6 +942,10 @@ function addOrUpdatePeer({ senderPeerId, peer }: AddOrUpdatePeerInput): void {
         }
         const existingIndex = state.peers.findIndex((param) => param.id === peer.id);
         const trustedIsHost = existingIndex >= 0 ? state.peers[existingIndex]!.isHost : false;
+        let syncHealth: CollaborationPeer['syncHealth'] = 'converging';
+        if (state.quarantinedPeerIds.includes(peer.id) || peer.syncHealth === 'diverged') {
+            syncHealth = 'diverged';
+        }
         // Bound the sender-controlled display fields with the same limits
         // presence uses — peer-info is just another identity ingress, and this
         // record renders in the peer list and presence overlay.
@@ -910,6 +956,7 @@ function addOrUpdatePeer({ senderPeerId, peer }: AddOrUpdatePeerInput): void {
             isHost: trustedIsHost,
             isConnected: true,
             lastSeen: Date.now(),
+            syncHealth,
         };
         if (existingIndex >= 0) {
             const peers = state.peers.map((param) => (param.id === peer.id ? merged : param));
@@ -932,7 +979,11 @@ function removePeer(peerId: PeerId): void {
         if (!state) {
             return state;
         }
-        return { ...state, peers: state.peers.filter((param) => param.id !== peerId) };
+        return {
+            ...state,
+            peers: state.peers.filter((param) => param.id !== peerId),
+            quarantinedPeerIds: state.quarantinedPeerIds.filter((param) => param !== peerId),
+        };
     });
     sessionState.automergeSync?.forgetPeer(peerId);
     sessionState.peerManager?.removePeer(peerId);

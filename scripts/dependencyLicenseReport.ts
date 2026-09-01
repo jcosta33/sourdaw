@@ -1441,6 +1441,9 @@ export type DependencyLicenseArtifacts = {
 
 export type DependencyLicenseArtifactBuildOptions = {
     loadPnpmLockPackages?: (root: string) => PnpmLockPackages;
+    collectNpmDependencies?: (root: string) => DependencyLicenseRecord[];
+    collectNpmLockDependencies?: (root: string) => DependencyLicenseRecord[];
+    collectCargoDependencies?: (root: string) => DependencyLicenseRecord[];
 };
 
 export type GeneratedDependencyLicenseArtifacts = DependencyLicenseArtifacts & {
@@ -1451,15 +1454,17 @@ function resolveDependencyLicenseRecords(
     root: string,
     cargoRecords: DependencyLicenseRecord[],
     proofs: Readonly<Record<string, DependencyLicenseProof>>,
-    loadPnpmLockPackages: PnpmLockPackageReader
+    loadPnpmLockPackages: PnpmLockPackageReader,
+    collectors: Pick<
+        DependencyLicenseArtifactBuildOptions,
+        'collectNpmDependencies' | 'collectNpmLockDependencies'
+    > = {}
 ): DependencyLicenseRecord[] {
+    const collectNpm = collectors.collectNpmDependencies ?? collectNpmDependencyLicenses;
+    const collectNpmLock = collectors.collectNpmLockDependencies ?? collectNpmLockDependencyLicenses;
     return applyDependencyLicenseProofs(
         root,
-        mergeDependencyLicenseRecords([
-            ...collectNpmDependencyLicenses(root),
-            ...collectNpmLockDependencyLicenses(root),
-            ...cargoRecords,
-        ]),
+        mergeDependencyLicenseRecords([...collectNpm(root), ...collectNpmLock(root), ...cargoRecords]),
         proofs,
         loadPnpmLockPackages
     );
@@ -1545,11 +1550,13 @@ export function buildDependencyLicenseArtifacts(
 ): DependencyLicenseArtifacts {
     const manifest = readDependencyLicenseProofManifest(root);
     const loadPnpmLockPackages = reusePnpmLockPackages(options.loadPnpmLockPackages ?? pnpmLockPackages);
+    const collectCargo = options.collectCargoDependencies ?? collectCargoDependencyLicenses;
     const records = resolveDependencyLicenseRecords(
         root,
-        collectCargoDependencyLicenses(root),
+        collectCargo(root),
         manifest.packages,
-        loadPnpmLockPackages
+        loadPnpmLockPackages,
+        options
     );
     assertResolvedCargoEvidence(manifest.cargoRuntimeInventory, records);
     return renderDependencyLicenseArtifacts(root, records);

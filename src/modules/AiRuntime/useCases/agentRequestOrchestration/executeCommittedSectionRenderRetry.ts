@@ -5,7 +5,7 @@ import {
     finalizeRecoveredCommandBatchEffects,
     type createVerifiedBatchReceipt,
 } from '#/modules/Command/useCases';
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from '#/modules/CrdtDocument/useCases';
 
 import { chatStore, setChatGenerating, updateChatMessage } from '../../stores/chatStore';
 import {
@@ -37,12 +37,35 @@ function getReceiptIdentity(receipt: CommandVerifiedBatchReceipt): string {
     return `${receipt.schemaVersion}:${receipt.runId}:${receipt.batchId}:${receipt.outcome}`;
 }
 
-function completeDurableContinuation(receipt: CommandVerifiedBatchReceipt): void {
-    agentRunLifecycle.completePendingEffectContinuation({
+function retainFinalizedContinuationCrashWindow(receipt: CommandVerifiedBatchReceipt): void {
+    const continuation = agentRunLifecycle
+        .get(receipt.runId)
+        ?.pendingEffectContinuations.find((candidate) => candidate.batchId === receipt.batchId);
+    if (!continuation) {
+        return;
+    }
+    const { sourceRevision: _sourceRevision, ...crashWindowContinuation } = continuation;
+    agentRunLifecycle.recordPendingEffectContinuation({
         runId: receipt.runId,
-        batchId: receipt.batchId,
-        receiptIdentity: getReceiptIdentity(receipt),
+        continuation: {
+            ...crashWindowContinuation,
+            lastError: crashWindowContinuation.lastError,
+            recovery: 'manual-repair',
+        },
     });
+}
+
+function completeDurableContinuation(receipt: CommandVerifiedBatchReceipt): void {
+    try {
+        agentRunLifecycle.completePendingEffectContinuation({
+            runId: receipt.runId,
+            batchId: receipt.batchId,
+            receiptIdentity: getReceiptIdentity(receipt),
+        });
+    } catch (error) {
+        retainFinalizedContinuationCrashWindow(receipt);
+        throw error;
+    }
 }
 
 function getApprovedRenderEvidenceFailure(confirmation: PendingAppActionConfirmation): string | null {
@@ -245,7 +268,12 @@ function finishRetentionCapacityManualRepair(
         reason,
     });
     const surfacedError = [reason, persistenceWarning, manualRepairPersistenceWarning].filter(Boolean).join('\n\n');
-    updatePendingActionFollowUp({ confirmationId: confirmation.id, error: surfacedError, status: 'failed' });
+    updatePendingActionFollowUp({
+        confirmationId: confirmation.id,
+        error: surfacedError,
+        failureKind: 'retention-capacity',
+        status: 'failed',
+    });
     updatePendingActionConfirmationStatus({
         confirmationId: confirmation.id,
         status: manualRepairPersistenceWarning ? 'failed' : 'executed',
@@ -353,7 +381,7 @@ export async function executeCommittedSectionRenderRetry(input: {
         return finishAlreadyComplete(confirmation, durableReceipt, input.commandBatch);
     }
     const sourceRevision = confirmation.followUpProjectRevision;
-    if (!sourceRevision || captureProjectRevision() !== sourceRevision) {
+    if (!sourceRevision || !projectRevisionMatchesLiveIgnoringCommandCheckpoint(sourceRevision)) {
         return failStaleRevision(confirmation);
     }
     if (!canExecuteCommandBatchEffects()) {

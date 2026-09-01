@@ -22,7 +22,24 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    acceptsExternalPluginAutomationParameter: vi.fn(),
+    addTake: vi.fn(),
+    addTakeLane: vi.fn(),
+    applySoloLogic: vi.fn(),
+    clampDeviceParameterValue: vi.fn(),
+    clampExternalPluginAutomationValue: vi.fn(),
+    getEffectiveGain: vi.fn(),
+    getGainAtBeat: vi.fn(),
+    getSynthParamsForTrack: vi.fn(),
+    getTrackStoreState: vi.fn(),
+    isDeviceParameterAutomatable: vi.fn(),
+    projectTrackToLiveStrip: vi.fn(),
+    quantiseDeviceParameterValue: vi.fn(),
     resetArrangementStoresForProject: mocks.resetArrangementStoresForProject,
+    resolveClipsWithComping: vi.fn(),
+    startRecording: vi.fn(),
+    stopRecording: vi.fn(),
+    updateClip: vi.fn(),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {

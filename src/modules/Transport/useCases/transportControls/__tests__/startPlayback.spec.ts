@@ -26,6 +26,9 @@ vi.mock('../../../repositories/transport/updateTransportState', () => ({
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     resumeEngine: vi.fn(),
     startNativeLiveGraphSession: vi.fn(),
+    // The rate the native session is told to place its programme on. A device
+    // rate is all `startPlayback` reads, so a live context is not needed here.
+    getAudioContext: (): { sampleRate: number } => ({ sampleRate: 48_000 }),
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
@@ -200,7 +203,30 @@ describe('startPlayback', () => {
 
         startPlayback();
 
-        expect(startNativeLiveGraphSession).toHaveBeenCalledWith({ positionSeconds: 2 });
+        expect(startNativeLiveGraphSession).toHaveBeenCalledWith(expect.objectContaining({ positionSeconds: 2 }));
+    });
+
+    it('gives the native session the arrangement maps the engine has to follow', () => {
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: false,
+            playheadPosition: 0,
+            isLooping: true,
+            loopStart: 4,
+            loopEnd: 8,
+        });
+
+        startPlayback();
+
+        // Beats out, seconds in: at the default 120 BPM the loop spans beats
+        // 4..8, which is two to four seconds on the engine's clock.
+        expect(startNativeLiveGraphSession).toHaveBeenCalledWith(
+            expect.objectContaining({
+                transportMaps: expect.objectContaining({
+                    loopRegion: { enabled: true, startSeconds: 2, endSeconds: 4 },
+                }),
+            })
+        );
     });
 
     it('starts playback whatever the native engine answers, because it is not the audible path', async () => {

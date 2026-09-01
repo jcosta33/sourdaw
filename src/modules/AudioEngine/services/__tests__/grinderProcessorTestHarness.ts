@@ -56,6 +56,7 @@ const AUTOMATABLE_PARAM_COUNT = grinderAudioParamContract.length;
 export const grinderSetParamCalls: Array<{ name: string; value: number }> = [];
 export const grinderProcessSizes: number[] = [];
 export const grinderAutomatedProcessSizes: number[] = [];
+export let grinderResetCalls = 0;
 export let grinderRightPtrCalls = 0;
 let grinderLatencySamples = 0;
 let grinderLatencySamplesAfterSetParam: number | null = null;
@@ -80,6 +81,10 @@ class GrinderInstanceMock {
 
     get_automation_values_ptr(): number {
         return AUTOMATION_PTR;
+    }
+
+    reset(): void {
+        grinderResetCalls++;
     }
 
     set_param(name: string, value: number): void {
@@ -175,6 +180,7 @@ export function resetGrinderProcessorCalls(): void {
     grinderSetParamCalls.length = 0;
     grinderProcessSizes.length = 0;
     grinderAutomatedProcessSizes.length = 0;
+    grinderResetCalls = 0;
     grinderRightPtrCalls = 0;
     grinderLatencySamples = 0;
     grinderLatencySamplesAfterSetParam = null;

@@ -1,14 +1,15 @@
+import { type DeviceNoteExpressionRequest } from '../../repositories/deviceStrategy/AudioDeviceStrategy';
 import { type DeviceNodeEntry } from '../buildDeviceChain';
 
-/**
- * A pending note event for a worklet instrument. Collected across all tracks,
- * then scheduled via suspend()/resume() on the OfflineAudioContext as a single
- * deduplicated pass.
- */
-export type PendingWorkletEvent = {
+type PendingWorkletEventAddress = {
+    /** Seconds into the render at which the event applies. */
     time: number;
-    type: 'on' | 'off';
     pitch: number;
+};
+
+/** A pending note-on or note-off for a worklet instrument. */
+export type PendingNoteWorkletEvent = PendingWorkletEventAddress & {
+    type: 'on' | 'off';
     velocity: number;
     instrumentControls: NonNullable<DeviceNodeEntry['instrumentControls']>;
     isToaster: boolean;
@@ -24,6 +25,34 @@ export type PendingWorkletEvent = {
     /** Levain-only per-note voice articulation, resolved from MIDI project truth. */
     articulationId?: number;
 };
+
+/**
+ * A pending MPE expression update for a worklet instrument, in engine units.
+ *
+ * It carries its own dispatcher rather than reusing `instrumentControls`, which
+ * only ever exposed `noteOn`/`noteOff`. Expression reaches a device through the
+ * strategy's optional expression surface, so an event of this kind exists only
+ * for an instrument that genuinely voices it.
+ *
+ * `channel` is required here, unlike on a note: expression is addressed per note
+ * *instance*, and an engine matches it against a voice still held on that member
+ * channel. There is no "any channel" reading of an expression update.
+ */
+export type PendingExpressionWorkletEvent = PendingWorkletEventAddress & {
+    type: 'expression';
+    channel: number;
+    dispatch: (request: DeviceNoteExpressionRequest) => void;
+    bendSemitones: number;
+    pressure: number;
+    slide: number;
+};
+
+/**
+ * A pending event for a worklet instrument. Collected across all tracks, then
+ * dispatched frame-addressed on the OfflineAudioContext as a single ordered
+ * pass.
+ */
+export type PendingWorkletEvent = PendingNoteWorkletEvent | PendingExpressionWorkletEvent;
 
 /**
  * What a render actually put into the graph, accumulated as it schedules.

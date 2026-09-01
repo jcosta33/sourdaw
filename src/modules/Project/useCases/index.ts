@@ -1,5 +1,9 @@
 // Project/useCases — public contract surface for cross-module project access.
 export { newProject } from './projectPersistence/newProject';
+export { discardProjectChanges } from './projectPersistence/discardProjectChanges';
+export { getProjectSnapshotKey } from './projectPersistence/getProjectSnapshotKey';
+export { quiesceProjectSession } from './projectPersistence/quiesceProjectSession';
+export { cancelProjectSessionQuiesce } from './projectPersistence/cancelProjectSessionQuiesce';
 export { captureProjectTransitionAuthority } from './projectPersistence/captureProjectTransitionAuthority';
 export { saveProject } from './projectPersistence/saveProject/saveProject';
 export { markDirty } from './projectPersistence/saveProject/markDirty';
@@ -38,7 +42,7 @@ export { runProjectLoadTransaction } from './projectPersistence/helpers/runProje
 
 export { verifyAudioBufferReferences } from './projectPersistence/helpers/verifyAudioBufferReferences';
 
-export { getRecentProjects } from './recentProjects/helpers';
+export { getRecentProjects, recentProjectChanges } from './recentProjects/helpers';
 export { loadRecentProject } from './recentProjects/loadRecentProject';
 
 export { isNativeProjectRuntimeAvailable } from './isNativeProjectRuntimeAvailable'; // export-runtime check (ADR 0011 W4)

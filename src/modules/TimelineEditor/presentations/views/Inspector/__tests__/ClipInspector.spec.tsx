@@ -195,6 +195,11 @@ const commandMocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: commandMocks.executeAppAction,
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    isAppActionCommittedError: vi.fn(() => false),
+    pushUndoEntry: vi.fn(),
+    resetActionReplayAuthority: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
 }));
 
 describe('ClipInspector', () => {

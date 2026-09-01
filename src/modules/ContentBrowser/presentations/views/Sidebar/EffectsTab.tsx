@@ -4,6 +4,7 @@ import { Shield, Waves as WavesIcon, Gauge, Sparkles, AudioLines, Layers, Guitar
 
 import { DawSectionDivider } from '#/components/daw/DawSectionDivider';
 import { Stack } from '#/components/layout';
+import { logger } from '#/infra/logger/appLogger';
 import { compileLoadPresetActions, executeAddDeviceAction, getFactoryPresets } from '#/modules/Arrangement/useCases';
 import { PluginBrowser } from '#/modules/AudioEngine/presentations/views';
 import { MIDI_EFFECT_FACTORIES } from '#/modules/MIDI/useCases';
@@ -79,7 +80,10 @@ export const EffectsTab = ({
             notifyUser('Preset cannot be applied to the current track.', 'error');
             return;
         }
-        void executePresetLoad(plan).catch(() => {
+        void executePresetLoad(plan).catch((error) => {
+            // The toast names the outcome; the durable log keeps the reason the
+            // load was refused diagnosable.
+            logger.warn('executePresetLoad failed for FX preset:', error);
             notifyUser('Preset project changes require runtime retry or repair.', 'error');
         });
     };

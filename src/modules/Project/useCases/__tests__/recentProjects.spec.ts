@@ -6,7 +6,7 @@ import { stopPlayback } from '#/modules/Transport/useCases';
 import { readNamedProjectJson } from '../../repositories/project/readNamedProjectJson';
 import { setProjectIdentityTransitionDependencies } from '../projectPersistence/projectIdentityTransitionDependencies';
 import { addToRecentProjects } from '../recentProjects/addToRecentProjects';
-import { getRecentProjects } from '../recentProjects/helpers';
+import { getRecentProjects, recentProjectChanges } from '../recentProjects/helpers';
 import { loadRecentProject } from '../recentProjects/loadRecentProject';
 import { removeFromRecentProjects } from '../recentProjects/removeFromRecentProjects';
 
@@ -46,6 +46,9 @@ vi.mock('#/infra/logger/appLogger', () => ({
 
 vi.mock('#/modules/Transport/useCases', () => ({
     stopPlayback: vi.fn(),
+    defaultTransportState: { masterGain: 75, isPlaying: false },
+    ensureTrackStrips: vi.fn(),
+    restoreTimelineMapSnapshot: vi.fn(),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -61,6 +64,10 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),
     clearUndoHistory: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    isAppActionCommittedError: vi.fn(() => false),
+    pushUndoEntry: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
 }));
 
 vi.mock('../projectPersistence/helpers/verifyAudioBufferReferences', () => ({
@@ -108,6 +115,17 @@ describe('recentProjects injectables', () => {
         removeFromRecentProjects('k1');
 
         expect(storageMocks.mockSet).toHaveBeenCalledWith([{ name: 'B', key: 'k2', updatedAt: 2 }]);
+    });
+
+    it('notifies Project-owned recent-list subscribers after a storage write', () => {
+        const listener = vi.fn();
+        const unsubscribe = recentProjectChanges.subscribe(listener);
+
+        addToRecentProjects('My Song', 'key-a');
+        unsubscribe();
+        removeFromRecentProjects('key-a');
+
+        expect(listener).toHaveBeenCalledTimes(1);
     });
 
     it('should expose getRecentProjects from storage', () => {

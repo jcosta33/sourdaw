@@ -25,6 +25,7 @@ type ExecuteVersionedCommandBatchInput = {
             actions: readonly { action: AppAction; label: string; receipt?: VersionedCommandReceipt }[];
             pendingEffects: readonly PendingPostCommitEffect[];
         }) => void;
+        onCommitted?: (actions: readonly AppAction[]) => void;
         prepareValidation?: (input: { allowCompatibleProjectDivergence: boolean }) => CommandBatchValidationPreparation;
         requireCompensation?: boolean;
     };

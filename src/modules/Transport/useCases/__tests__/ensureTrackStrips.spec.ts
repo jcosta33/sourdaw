@@ -91,6 +91,15 @@ vi.mock('#/modules/Routing/useCases', () => ({
     setBusGain: mocks.setBusGain,
     setSend: mocks.setSend,
     wireSidechainRoutes: mocks.wireSidechainRoutes,
+    addSidechainRouteSnapshot: vi.fn(),
+    getAllSidechainRoutes: vi.fn(),
+    getSidechainRoutesForTrack: vi.fn(),
+    getSidechainTargetCapability: vi.fn(),
+    hydrateSidechainRoutes: vi.fn(),
+    removeSend: vi.fn(),
+    removeSidechainRoute: vi.fn(),
+    removeSidechainRouteSnapshot: vi.fn(),
+    restoreSidechainRoutes: vi.fn(),
 }));
 
 describe('ensureTrackStrips', () => {

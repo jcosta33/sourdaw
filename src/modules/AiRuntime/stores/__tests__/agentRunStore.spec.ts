@@ -1,8 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { type AgentRunPreparedStemImportRecoveryCapsule } from '../../models/AgentRun';
+import {
+    type AgentRunPendingEffectRecovery,
+    type AgentRunPreparedStemImportRecoveryCapsule,
+} from '../../models/AgentRun';
+import { MISSING_EXACT_CHECKPOINT_RECOVERY_REASON } from '../../models/GetPendingEffectRecoveryPolicy';
 import { agentRunLifecycle } from '../../useCases/agentRunLifecycle';
 import { persistAgentRunState, readAgentRunState, sanitizeAgentRunState } from '../agentRunStore';
+import { selectAgentRunPendingEffectRecoveries } from '../selectAgentRunPendingEffectRecoveries';
 
 const grants = {
     allowedOperationPrefixes: ['copyMidiArticulations'],
@@ -22,6 +27,23 @@ const pointTargetScope = {
     targetRanges: [{ startBeat: 4, endBeat: 4 }],
     protectedTargetIds: ['clip-chorus-one'],
     protectedRanges: [{ startBeat: 0, endBeat: 4 }],
+};
+
+const commandBatchAuthority = {
+    projectId: 'project-1',
+    baseRevision: 'revision-1',
+    scope: pointTargetScope,
+    grants,
+    budgets: {
+        maxCommands: 1,
+        maxCreatedTracks: 0,
+        maxDeletedObjects: 0,
+        maxAffectedTracks: 1,
+        maxAffectedClips: 0,
+        maxAutomationPoints: 0,
+        maxImportedAssets: 0,
+        maxRenderJobs: 0,
+    },
 };
 
 function createPreparedStemRecoveryCapsule(index: number): AgentRunPreparedStemImportRecoveryCapsule {
@@ -204,5 +226,58 @@ describe('agentRunStore', () => {
         ).toThrow('Agent run prepared-stem recovery ledger reached its persistent capacity');
         expect(readAgentRunState().preparedStemImportRecoveryLedger).toHaveLength(256);
         expect(readAgentRunState().preparedStemImportRecoveryLedger?.[0]).toEqual(admittedCapsules[0]);
+    });
+
+    it('hydrates legacy reconcile pending-effect recoveries as manual non-actionable guidance', () => {
+        agentRunLifecycle.create({
+            runId: 'legacy-run',
+            request: 'Recover a legacy pending external effect.',
+            mode: 'macro',
+            createdRevision: 'revision-1',
+            scope: pointTargetScope,
+            grants,
+            budgets: { limits: {}, consumed: {} },
+            createdAt: 1,
+        });
+        const legacyRecovery = {
+            runId: 'legacy-run',
+            checkpoint: 'durable',
+            batchId: 'batch-legacy',
+            effects: [
+                {
+                    commandId: 'command-add-device',
+                    kind: 'external-effect',
+                    operation: 'addDevice',
+                    reason: 'Runtime graph follow-up remained pending.',
+                    remediation: 'reconcile',
+                    state: 'pending',
+                },
+            ],
+            receiptIdentity: '1:legacy-run:batch-legacy:partially-committed',
+            recovery: 'reconcile-batch',
+            serializedBatch: 'serialized-batch',
+            authority: commandBatchAuthority,
+            lastError: null,
+        } satisfies AgentRunPendingEffectRecovery;
+
+        persistAgentRunState({
+            ...readAgentRunState(),
+            pendingEffectRecoveryLedger: [legacyRecovery],
+        });
+
+        const hydratedState = readAgentRunState();
+        expect(hydratedState.pendingEffectRecoveryLedger?.[0]).toMatchObject({
+            recovery: 'manual-repair',
+            lastError: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+        });
+        expect(selectAgentRunPendingEffectRecoveries(hydratedState)).toEqual([
+            expect.objectContaining({
+                runId: 'legacy-run',
+                batchId: 'batch-legacy',
+                recovery: 'manual-repair',
+                lastError: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+                effects: legacyRecovery.effects,
+            }),
+        ]);
     });
 });

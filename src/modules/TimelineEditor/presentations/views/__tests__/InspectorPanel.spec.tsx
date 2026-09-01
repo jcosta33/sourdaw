@@ -60,8 +60,16 @@ vi.mock('#/components/daw/DawHeaderBand', () => ({
 }));
 
 vi.mock('#/components/daw/DawPanelSurface', () => ({
-    DawPanelSurface: ({ children, 'aria-label': ariaLabel }: { children: React.ReactNode; 'aria-label'?: string }) => (
-        <div data-testid="panel-surface" aria-label={ariaLabel}>
+    DawPanelSurface: ({
+        children,
+        style,
+        'aria-label': ariaLabel,
+    }: {
+        children: React.ReactNode;
+        style?: React.CSSProperties;
+        'aria-label'?: string;
+    }) => (
+        <div data-testid="panel-surface" aria-label={ariaLabel} style={style}>
             {children}
         </div>
     ),
@@ -141,6 +149,11 @@ describe('InspectorPanel', () => {
         mockUseTracks.mockReturnValue({ tracks: [], selectedTrackId: null });
         render(<InspectorPanel />);
         expect(screen.getByText(/No track selected/i)).toBeInTheDocument();
+    });
+
+    it('honors a squeezed parent slot instead of forcing minWidth 200', () => {
+        render(<InspectorPanel style={{ width: 160, minWidth: 160 }} />);
+        expect(screen.getByTestId('panel-surface')).toHaveStyle({ width: '160px', minWidth: '160px' });
     });
 
     it('should render track inspector when track is selected', () => {

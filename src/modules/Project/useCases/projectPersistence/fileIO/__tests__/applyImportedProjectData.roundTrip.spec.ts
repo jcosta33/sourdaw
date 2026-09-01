@@ -122,15 +122,51 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),
     clearUndoHistory: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    isAppActionCommittedError: vi.fn(() => false),
+    pushUndoEntry: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRevision: vi.fn(),
     compactProject,
+    createCrdtDoc: vi.fn(),
+    DOC_BRANCHES: '__branches__',
+    DOC_PREFIX_ROOT: 'root',
+    getCrdtDoc: vi.fn(),
+    getCrdtDocIds: vi.fn(),
+    hasCrdtDoc: vi.fn(),
+    mutateCrdtDoc: vi.fn(),
     persistCrdtProject,
+    preserveBranchStateForSession: vi.fn(),
     projectActionHistoryToStore: vi.fn(),
+    removeCrdtDoc: vi.fn(),
+    replaceBranchState: vi.fn(),
+    replaceCrdtDoc: vi.fn(),
     resetCrdtProjectAuthority,
+    restoreBranchStateAfterSession: vi.fn(),
+    runCrdtPersistenceBarrier: vi.fn(),
+    sanitizeIncomingCrdtDocument: vi.fn(),
+    setupProjectionBridge: vi.fn(),
     startCrdtAutoSave,
+    subscribeToCrdtChanges: vi.fn(),
+    waitForCrdtDocumentTransition: vi.fn(),
 }));
-vi.mock('#/modules/Routing/useCases', () => ({ setSidechainRoutes }));
+vi.mock('#/modules/Routing/useCases', () => ({
+    addSidechainRouteSnapshot: vi.fn(),
+    ensureBusStrip: vi.fn(),
+    getAllSidechainRoutes: vi.fn(),
+    getSidechainRoutesForTrack: vi.fn(),
+    getSidechainTargetCapability: vi.fn(),
+    removeSend: vi.fn(),
+    removeSidechainRoute: vi.fn(),
+    removeSidechainRouteSnapshot: vi.fn(),
+    restoreSidechainRoutes: vi.fn(),
+    setBusGain: vi.fn(),
+    setSend: vi.fn(),
+    setSidechainRoutes,
+    wireSidechainRoutes: vi.fn(),
+}));
 vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Transport/useCases')>();
     return {

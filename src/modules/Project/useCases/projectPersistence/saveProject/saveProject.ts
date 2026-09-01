@@ -4,12 +4,12 @@ import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { captureProjectRevision, persistCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { NAMED_PROJECT_KEY_PREFIX } from '../../../models/ProjectData';
 import { writeNamedProjectJsonByKey } from '../../../repositories/project/writeNamedProjectJsonByKey';
 import { projectLoadFailureStore } from '../../../stores/projectLoadFailureStore';
 import { projectStore } from '../../../stores/projectStore';
 import { addToRecentProjects } from '../../recentProjects/addToRecentProjects';
 import { buildProjectData } from '../fileIO/buildProjectData';
+import { getProjectSnapshotKey } from '../getProjectSnapshotKey';
 import { migrateActiveProjectIdentity } from '../migrateActiveProjectIdentity';
 
 import { captureExternalPluginStates } from './captureExternalPluginStates';
@@ -57,7 +57,7 @@ export async function saveProject(): Promise<boolean> {
     // creation and preserved across renames and reloads) rather than the
     // mutable display name — so duplicate names don't collide and a rename
     // doesn't orphan the old key.
-    const recentKey = `${NAMED_PROJECT_KEY_PREFIX}${project.createdAt}`;
+    const recentKey = getProjectSnapshotKey(project.createdAt);
 
     try {
         await migrateActiveProjectIdentity();
@@ -77,6 +77,7 @@ export async function saveProject(): Promise<boolean> {
         if (!current || current.createdAt !== project.createdAt) {
             throw new Error('[saveProject] Active project changed before persistence');
         }
+        const persistedProject = current;
 
         // Keep the project dirty until every durable write succeeds. The
         // timestamp belongs to the snapshot being built, so publish it before
@@ -132,7 +133,7 @@ export async function saveProject(): Promise<boolean> {
         if (captureProjectRevision() !== snapshotRevision) {
             throw new Error('[saveProject] Project changed during named snapshot persistence');
         }
-        addToRecentProjects(project.name, recentKey);
+        addToRecentProjects(persistedProject.name, recentKey);
 
         // A save clears dirty only when the complete project authority still
         // matches the revision captured above. Any edit or project identity
@@ -141,10 +142,15 @@ export async function saveProject(): Promise<boolean> {
         const latest = projectStore.value;
         if (
             agentProjectRepairStateStore.value === null &&
-            latest?.createdAt === project.createdAt &&
+            latest?.createdAt === persistedProject.createdAt &&
+            latest.projectId === persistedProject.projectId &&
             captureProjectRevision() === snapshotRevision
         ) {
-            projectStore.set({ ...latest, dirty: false });
+            // The CRDT snapshot and named project file above establish the
+            // same durable identity that a freshly-created project is waiting
+            // for. Clear the transient pending bit only for this exact active
+            // project/revision; a newer project or edit keeps close blocked.
+            projectStore.set({ ...latest, dirty: false, identityPersistencePending: false });
         }
         return true;
     } catch (error) {

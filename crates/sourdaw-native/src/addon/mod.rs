@@ -477,11 +477,13 @@ impl SourdawNative {
         instance_id: String,
         sample_rate: f64,
     ) -> Result<Value> {
+        let windows = self.window_host();
         json(reason(
             commands::plugins::load_plugin(
                 PluginId(plugin_id),
                 PluginInstanceId(instance_id),
                 sample_rate,
+                windows.as_ref(),
                 &self.singletons.app_state,
             )
             .await,
@@ -694,6 +696,24 @@ impl SourdawNative {
     pub async fn engine_rt_diagnostics(&self) -> Result<Value> {
         json(reason(
             commands::engine_diagnostics::engine_rt_diagnostics(&self.singletons.app_state).await,
+        )?)
+    }
+
+    #[napi]
+    pub async fn engine_transport_position(&self) -> Result<Value> {
+        json(reason(
+            commands::engine_transport::engine_transport_position(&self.singletons.app_state).await,
+        )?)
+    }
+
+    #[napi]
+    pub async fn engine_transport_set_maps(&self, maps: Value) -> Result<Value> {
+        let payload = serde_json::from_value(maps).map_err(|error| {
+            Error::from_reason(format!("transport maps are malformed: {error}"))
+        })?;
+        json(reason(
+            commands::engine_transport::set_transport_maps(payload, &self.singletons.app_state)
+                .await,
         )?)
     }
 

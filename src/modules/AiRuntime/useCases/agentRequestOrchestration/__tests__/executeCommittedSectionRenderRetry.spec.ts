@@ -14,6 +14,7 @@ import { executeCommittedSectionRenderRetry } from '../executeCommittedSectionRe
 const mocks = vi.hoisted(() => ({
     canExecuteCommandBatchEffects: vi.fn(),
     captureRevision: vi.fn(),
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(),
     chatState: { value: { isGenerating: false } },
     completeContinuation: vi.fn(),
     finalizeCommandReceipt: vi.fn(),
@@ -47,7 +48,10 @@ vi.mock('#/modules/AudioRendering/useCases', () => ({
     retryAgentProjectSectionRenders: mocks.retryRenders,
 }));
 
-vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRevision: mocks.captureRevision }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRevision: mocks.captureRevision,
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint: mocks.projectRevisionMatchesLiveIgnoringCommandCheckpoint,
+}));
 
 vi.mock('../../../stores/chatStore', () => ({
     chatStore: mocks.chatState,
@@ -205,6 +209,7 @@ describe('executeCommittedSectionRenderRetry', () => {
         vi.clearAllMocks();
         mocks.chatState.value = { isGenerating: false };
         mocks.captureRevision.mockReturnValue('revision-source');
+        mocks.projectRevisionMatchesLiveIgnoringCommandCheckpoint.mockReturnValue(true);
         mocks.canExecuteCommandBatchEffects.mockReturnValue(true);
         mocks.completeContinuation.mockImplementation(() => undefined);
         mocks.finalizeCommandReceipt.mockImplementation(({ pendingReceipt }) =>
@@ -236,6 +241,7 @@ describe('executeCommittedSectionRenderRetry', () => {
         mocks.chatState.value = { isGenerating: false };
         mocks.project.mockReturnValue(projection(true));
         mocks.captureRevision.mockReturnValue('revision-changed');
+        mocks.projectRevisionMatchesLiveIgnoringCommandCheckpoint.mockReturnValue(false);
         const staleRevisionReason =
             'Project changed after the committed render receipt; the missing original artifacts cannot be recreated safely.';
         await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
@@ -316,10 +322,31 @@ describe('executeCommittedSectionRenderRetry', () => {
         mocks.completeContinuation.mockImplementation(() => {
             throw new Error('persistence unavailable');
         });
+        mocks.getRun.mockReturnValue({
+            budgetAttempts: [],
+            pendingEffectContinuations: [
+                {
+                    batchId: 'batch-retry',
+                    recovery: 'reconcile-batch',
+                    authority: input.commandBatch.authority,
+                    effects: [],
+                    lastError: null,
+                    receiptIdentity: 'pending-receipt',
+                    serializedBatch: input.commandBatch.serialized,
+                },
+            ],
+        });
 
         await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
             status: 'failed',
             reason: 'persistence unavailable',
+        });
+        expect(mocks.recordContinuation).toHaveBeenCalledWith({
+            runId: 'run-retry',
+            continuation: expect.objectContaining({
+                batchId: 'batch-retry',
+                recovery: 'manual-repair',
+            }),
         });
         expect(mocks.updateFollowUp).toHaveBeenCalledWith({
             confirmationId: 'confirmation-retry',
@@ -542,7 +569,11 @@ describe('executeCommittedSectionRenderRetry', () => {
             reason: 'Approved artifacts exceed retention capacity.',
         });
         expect(mocks.updateFollowUp).toHaveBeenLastCalledWith(
-            expect.objectContaining({ status: 'failed', error: 'Approved artifacts exceed retention capacity.' })
+            expect.objectContaining({
+                status: 'failed',
+                error: 'Approved artifacts exceed retention capacity.',
+                failureKind: 'retention-capacity',
+            })
         );
     });
 

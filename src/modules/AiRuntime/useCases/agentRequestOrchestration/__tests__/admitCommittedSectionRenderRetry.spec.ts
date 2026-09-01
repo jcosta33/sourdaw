@@ -178,7 +178,7 @@ function bindFinalizedCrashWindow(input: ReturnType<typeof createFixture>) {
             {
                 batchId: BATCH_ID,
                 receiptIdentity: pendingReceiptIdentity,
-                recovery: 'reconcile-batch',
+                recovery: 'manual-repair',
                 serializedBatch: input.commandBatch.serialized,
                 authority: input.commandBatch.authority,
                 effects: structuredClone(input.receipt.pendingEffects),
@@ -256,6 +256,7 @@ describe('admitCommittedSectionRenderRetry', () => {
         expect(mocks.getRun).toHaveBeenCalledOnce();
 
         bindTrackedRun(fixture);
+        mocks.getRun().pendingEffectContinuations[0]!.recovery = 'manual-repair';
         expect(
             admitCommittedSectionRenderRetry({
                 confirmation: fixture.confirmation,
@@ -312,6 +313,15 @@ describe('admitCommittedSectionRenderRetry', () => {
 
         expect(admitCommittedSectionRenderRetry({ confirmation: fixture.confirmation, phase: 'eligibility' })).toEqual({
             status: 'ineligible',
+        });
+        expect(mocks.getRun).not.toHaveBeenCalled();
+    });
+
+    it('requires proof for a valid eligible confirmation', () => {
+        const fixture = createFixture();
+
+        expect(admitCommittedSectionRenderRetry({ confirmation: fixture.confirmation, phase: 'eligibility' })).toEqual({
+            status: 'requires-proof',
         });
         expect(mocks.getRun).not.toHaveBeenCalled();
     });
@@ -541,7 +551,7 @@ describe('admitCommittedSectionRenderRetry', () => {
         finalizedReceipt.outcome = 'committed';
         finalizedReceipt.atomicity = 'atomic';
         finalizedReceipt.pendingEffects = [];
-        bindFinalizedCrashWindow(fixture);
+        const trackedRun = bindFinalizedCrashWindow(fixture);
 
         expect(
             admitCommittedSectionRenderRetry({
@@ -551,6 +561,16 @@ describe('admitCommittedSectionRenderRetry', () => {
                 phase: 'proof',
             })
         ).toEqual({ durableReceipt: finalizedReceipt, status: 'admitted' });
+
+        trackedRun.pendingEffectContinuations[0]!.recovery = 'reconcile-batch';
+        expect(
+            admitCommittedSectionRenderRetry({
+                confirmation: fixture.confirmation,
+                durableReceipt: finalizedReceipt,
+                expectedCommandBatch: fixture.commandBatch,
+                phase: 'proof',
+            })
+        ).toEqual({ status: 'proof-mismatch' });
     });
 
     it.each([
@@ -621,11 +641,6 @@ describe('admitCommittedSectionRenderRetry', () => {
             'wrong continuation receipt',
             (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
                 (run.pendingEffectContinuations[0]!.receiptIdentity = 'wrong'),
-        ],
-        [
-            'wrong continuation recovery',
-            (run: ReturnType<typeof bindFinalizedCrashWindow>) =>
-                (run.pendingEffectContinuations[0]!.recovery = 'manual-repair'),
         ],
         [
             'wrong continuation batch',
@@ -887,18 +902,6 @@ describe('admitCommittedSectionRenderRetry', () => {
                     ...mocks.getRun(),
                     pendingEffectContinuations: [
                         { ...mocks.getRun().pendingEffectContinuations[0], serializedBatch: 'stale-batch' },
-                    ],
-                });
-            },
-        ],
-        [
-            'manual-repair continuation',
-            (fixture: ReturnType<typeof createFixture>) => {
-                bindTrackedRun(fixture);
-                mocks.getRun.mockReturnValue({
-                    ...mocks.getRun(),
-                    pendingEffectContinuations: [
-                        { ...mocks.getRun().pendingEffectContinuations[0], recovery: 'manual-repair' },
                     ],
                 });
             },

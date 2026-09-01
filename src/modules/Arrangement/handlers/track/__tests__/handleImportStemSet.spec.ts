@@ -67,6 +67,15 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     setTrackSoloGate: mocks.setTrackSoloGate,
     updateDeviceBypass: mocks.updateDeviceBypass,
     updateDeviceParam: mocks.updateDeviceParam,
+    analyzePitchForClip: vi.fn(),
+    applyNoteExpression: vi.fn(),
+    audioEngine: {},
+    createRuntimeGraphTopologyFingerprint: vi.fn(),
+    getCompensationDelay: vi.fn(),
+    getDefaultBendRangeSemitones: vi.fn(),
+    getFactoryDrumKitByIndex: vi.fn(),
+    getLiveEngineSampleRate: vi.fn(),
+    reportBridgeRoundTripFrames: vi.fn(),
 }));
 vi.mock('#/modules/Collaboration/useCases', () => ({
     getAssetTransfer: () => ({
@@ -76,12 +85,14 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
 }));
 vi.mock('#/modules/PluginHost/useCases', () => ({
     activateExternalPlugin: mocks.activateExternalPlugin,
+    registerFaustDSP: vi.fn(),
 }));
 vi.mock('#/modules/Routing/useCases', () => ({
     getAllSidechainRoutes: () => [],
     removeSidechainRoute: () => null,
     setSend: mocks.setSend,
     wireSidechainRoutes: mocks.wireSidechainRoutes,
+    hydrateSidechainRoutes: vi.fn(),
 }));
 vi.mock('../../../useCases/publishTrackAdded', () => ({
     publishTrackAdded: mocks.publishTrackAdded,

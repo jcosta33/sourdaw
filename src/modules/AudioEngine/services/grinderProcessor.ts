@@ -380,6 +380,8 @@ class GrinderProcessor extends AudioWorkletProcessor {
                     }
                     this._initWasm(wasmModule);
                     wasmModule = null;
+                } else if (msg.type === 'reset' && this._instance !== null && !this._faulted) {
+                    this._instance.reset();
                 } else if (
                     msg.type === 'init-sab' &&
                     msg.sab instanceof SharedArrayBuffer &&

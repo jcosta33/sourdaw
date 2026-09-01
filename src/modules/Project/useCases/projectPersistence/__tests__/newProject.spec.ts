@@ -50,7 +50,14 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     resetAudioGraph: vi.fn(),
 }));
 
-vi.mock('#/modules/PluginHost/useCases', () => pluginHostMocks);
+vi.mock('#/modules/PluginHost/useCases', () => ({
+    unloadPlugin: pluginHostMocks.unloadPlugin,
+    activateExternalPlugin: vi.fn(),
+    findSupportedPlugin: vi.fn(),
+    isFaustInstrumentModule: vi.fn(),
+    registerFaustDSP: vi.fn(),
+    resetExternalPluginRuntimeForGraphRebuild: vi.fn(),
+}));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     compactProject: vi.fn().mockResolvedValue(undefined),
@@ -83,6 +90,11 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),
     clearUndoHistory: vi.fn(),
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    isAppActionCommittedError: vi.fn(() => false),
+    pushUndoEntry: vi.fn(),
+    resetActionReplayAuthority: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
 }));
 
 vi.mock('../../../repositories/project/removeProjectJson', () => ({

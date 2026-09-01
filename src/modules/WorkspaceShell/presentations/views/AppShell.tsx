@@ -1,4 +1,13 @@
-import { type ReactElement, type ReactNode, lazy, Suspense, useEffect, useState } from 'react';
+import {
+    type CSSProperties,
+    type ReactElement,
+    type ReactNode,
+    lazy,
+    Suspense,
+    useEffect,
+    useLayoutEffect,
+    useState,
+} from 'react';
 
 import { X } from 'lucide-react';
 
@@ -50,6 +59,11 @@ import { AutomationBottomPanel, ClipView, InspectorPanel } from '#/modules/Timel
 import { ToasterPanel } from '#/modules/Toaster/presentations/views';
 import { TunerPanel } from '#/modules/Tuner/presentations/views';
 import { YeastPanel } from '#/modules/Yeast/presentations/views';
+import {
+    allocateMainFirstWidths,
+    MIN_ARRANGE_COLUMN_WIDTH,
+    SHELL_RESIZE_HANDLE_WIDTH,
+} from '#/utils/Layout/allocateMainFirstWidths';
 import { clamp } from '#/utils/Math/clamp';
 
 import { alphaNoticeStore } from '../../stores/alphaNoticeStore';
@@ -83,6 +97,7 @@ import { ShortcutCheatSheet } from '../components/ShortcutCheatSheet';
 import { useActiveDevicePanel } from '../hooks/useActiveDevicePanel';
 import { useAppEventHandlers } from '../hooks/useAppEventHandlers';
 import { useAppInitialization } from '../hooks/useAppInitialization';
+import { useNativeApplicationMenu } from '../hooks/useNativeApplicationMenu';
 import { useProjectLoadFailure } from '../hooks/useProjectLoadFailure';
 import { useProjectState } from '../hooks/useProjectState';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
@@ -242,6 +257,15 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     // The cheat sheet owns its own '?' keydown toggle and is a leaf component, so it
     // cannot be read out of workspace state; it reports its open state up instead.
     const [cheatSheetOpen, setCheatSheetOpen] = useState(false);
+    const [shellViewportWidth, setShellViewportWidth] = useState(() => window.innerWidth);
+    useLayoutEffect(() => {
+        const sync = (): void => {
+            setShellViewportWidth(window.innerWidth);
+        };
+        window.addEventListener('resize', sync);
+        sync();
+        return () => window.removeEventListener('resize', sync);
+    }, []);
 
     // The onboarding tour is a full-screen aria-modal overlay that owns its own
     // state; read it here so the skip-link can be suppressed while it is up.
@@ -279,6 +303,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     // flipping these dialogs open.
     useAppInitialization();
     useGlobalKeyboardShortcuts();
+    useNativeApplicationMenu(project);
 
     useAppEventHandlers({
         onOpenExport: () => setExportOpen(true),
@@ -409,21 +434,59 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         );
     };
 
+    type ShellSideId = 'sidebar' | 'inspector' | 'chat' | 'ai';
+    const shellSides: { id: ShellSideId; preferred: number; min: number }[] = [];
+    if (sidebarOpen) {
+        shellSides.push({ id: 'sidebar', preferred: sidebarWidth, min: 180 });
+    }
+    if (inspectorOpen) {
+        shellSides.push({ id: 'inspector', preferred: inspectorWidth, min: 200 });
+    }
+    if (chatPanelOpen) {
+        shellSides.push({ id: 'chat', preferred: chatWidth, min: 200 });
+    }
+    if (aiPanelOpen) {
+        shellSides.push({ id: 'ai', preferred: aiWidth, min: 200 });
+    }
+    const shellAllocated = allocateMainFirstWidths({
+        available: shellViewportWidth - shellSides.length * SHELL_RESIZE_HANDLE_WIDTH,
+        minMain: MIN_ARRANGE_COLUMN_WIDTH,
+        sides: shellSides,
+    });
+    const allocatedShellWidth = (id: ShellSideId, fallback: number): number => {
+        const index = shellSides.findIndex((side) => side.id === id);
+        if (index < 0) {
+            return fallback;
+        }
+        return shellAllocated.sides[index] ?? fallback;
+    };
+    const shellSlotStyle = (displayed: number, preferred: number, comfortMin: number): CSSProperties => {
+        const squeezed = displayed < preferred || displayed < comfortMin;
+        return {
+            width: displayed,
+            minWidth: squeezed ? displayed : comfortMin,
+        };
+    };
+    const displayedSidebarWidth = allocatedShellWidth('sidebar', sidebarWidth);
+    const displayedInspectorWidth = allocatedShellWidth('inspector', inspectorWidth);
+    const displayedChatWidth = allocatedShellWidth('chat', chatWidth);
+    const displayedAiWidth = allocatedShellWidth('ai', aiWidth);
+
     const sidebarNode = (
         <Sidebar
-            style={{ width: sidebarWidth, minWidth: 180 }}
+            style={shellSlotStyle(displayedSidebarWidth, sidebarWidth, 180)}
             onClose={toggleSidebar}
             panelActions={SIDEBAR_PANEL_ACTIONS}
         />
     );
-    const inspectorNode = <InspectorPanel style={{ width: inspectorWidth, minWidth: 200 }} />;
-    const chatNode = <ChatPanel style={{ width: chatWidth, minWidth: 200 }} />;
+    const inspectorNode = <InspectorPanel style={shellSlotStyle(displayedInspectorWidth, inspectorWidth, 200)} />;
+    const chatNode = <ChatPanel style={shellSlotStyle(displayedChatWidth, chatWidth, 200)} />;
     const aiNode = (side: 'left' | 'right'): ReactNode => (
         <div
             className={`flex flex-col ${
                 side === 'left' ? 'border-r' : 'border-l'
             } border-border-hairline bg-surface-tray overflow-hidden`}
-            style={{ width: aiWidth, minWidth: 200 }}
+            style={shellSlotStyle(displayedAiWidth, aiWidth, 200)}
         >
             <GenerativeAiPanel />
         </div>
@@ -597,7 +660,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                     {renderSidePanel(aiPanelOpen, prefs.panelPlacementAi, 'left', aiNode('left'), onAiResize)}
 
                     {/* Center: vertical split — arrangement over mixer */}
-                    <Stack grow className="min-w-0 overflow-hidden">
+                    <Stack grow className="min-w-0 overflow-hidden" style={{ minWidth: MIN_ARRANGE_COLUMN_WIDTH }}>
                         {/* Main arrangement area */}
                         <main id="main-content" className="contain-strict flex-1 overflow-hidden min-h-0">
                             {children}

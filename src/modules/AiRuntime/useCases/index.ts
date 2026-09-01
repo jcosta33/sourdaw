@@ -29,6 +29,7 @@ export { isCloudAvailable } from './cloudApiManagement/isCloudAvailable';
 
 export { getProjectContext } from './getProjectContext';
 export { getAiRuntimeProtocolContracts } from './getAiRuntimeProtocolContracts';
+export { assertCanonicalLlmActionStrategies } from './assertCanonicalLlmActionStrategies';
 
 export { resolveBackend } from './llmOrchestration/backendResolution/helpers';
 export { isLlmAvailable } from './llmOrchestration/backendResolution/isLlmAvailable';
@@ -72,3 +73,5 @@ export { createAgentSagaStep } from './createAgentSagaStep';
 export { agentRunControls } from './getAgentRunControlProjection';
 export { deleteAgentRunArtifacts } from './deleteAgentRunArtifacts';
 export { getAgentRunSagaProjection } from './getAgentRunSagaProjection';
+export { settleRetainedSectionRenderManualReview } from './settleRetainedSectionRenderManualReview';
+export { selectRetainedSectionRenderManualReviews } from './selectRetainedSectionRenderManualReviews';

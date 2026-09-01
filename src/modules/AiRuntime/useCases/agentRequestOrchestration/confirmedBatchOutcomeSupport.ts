@@ -2,6 +2,8 @@ import { logger } from '#/infra/logger/appLogger';
 import { type createVerifiedBatchReceipt, parseVersionedCommandEnvelope } from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
+import { type AgentRunPendingEffect } from '../../models/AgentRun';
+import { getPendingEffectRecoveryPolicy } from '../../models/GetPendingEffectRecoveryPolicy';
 import { type PendingAppActionConfirmation } from '../../stores/pendingActionConfirmationStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { recordAgentRunReceiptSaga } from '../recordAgentRunReceiptSaga';
@@ -9,17 +11,26 @@ import { recordAgentRunReceiptSaga } from '../recordAgentRunReceiptSaga';
 import { AGENT_RUN_PERSISTENCE_WARNING } from './settleAgentRunWorkLeaseSafely';
 
 export type CommandVerifiedBatchReceipt = ReturnType<typeof createVerifiedBatchReceipt>;
-type PendingEffect = CommandVerifiedBatchReceipt['pendingEffects'][number];
 
 export type CommittedEffectFailureResult = {
     status: 'failed';
     durableCommit: true;
     reason: string;
-    effects: PendingEffect[];
+    effects: AgentRunPendingEffect[];
     continuation: {
         authority: 'authoritative-collaboration-host';
         idempotency: 'project-checkpoint';
         kind: 'reconcile-exact-batch' | 'manual-repair';
+    };
+};
+
+export type CommittedFinalizationEvidenceFailureResult = {
+    status: 'failed';
+    durableCommit: true;
+    reason: string;
+    recovery: {
+        kind: 'inspect-current-project';
+        replay: 'forbidden';
     };
 };
 
@@ -50,19 +61,34 @@ function getApprovalLabelsByCommandId(confirmation: PendingAppActionConfirmation
 
 function createCommittedEffectFailureResult(
     receipt: CommandVerifiedBatchReceipt,
-    reason = receipt.warnings[0] ?? receipt.modelSummary
+    reason = receipt.warnings[0] ?? receipt.modelSummary,
+    continuationKind?: CommittedEffectFailureResult['continuation']['kind'],
+    effects: readonly AgentRunPendingEffect[] = receipt.pendingEffects
 ): CommittedEffectFailureResult {
+    const recoveryPolicy = getPendingEffectRecoveryPolicy(effects);
     return {
         status: 'failed',
         durableCommit: true,
         reason,
-        effects: [...receipt.pendingEffects],
+        effects: structuredClone([...effects]),
         continuation: {
             authority: 'authoritative-collaboration-host',
             idempotency: 'project-checkpoint',
-            kind: receipt.pendingEffects.some(({ remediation }) => remediation === 'manual-repair')
-                ? 'manual-repair'
-                : 'reconcile-exact-batch',
+            kind:
+                continuationKind ??
+                (recoveryPolicy.recovery === 'manual-repair' ? 'manual-repair' : 'reconcile-exact-batch'),
+        },
+    };
+}
+
+function createCommittedFinalizationEvidenceFailureResult(reason: string): CommittedFinalizationEvidenceFailureResult {
+    return {
+        status: 'failed',
+        durableCommit: true,
+        reason,
+        recovery: {
+            kind: 'inspect-current-project',
+            replay: 'forbidden',
         },
     };
 }
@@ -96,6 +122,7 @@ function recordTrackedAgentRunReceipt(
 
 export const confirmedBatchOutcomeSupport = {
     createCommittedEffectFailureResult,
+    createCommittedFinalizationEvidenceFailureResult,
     getApprovalLabelsByCommandId,
     getVerifiedReceiptIdentity,
     recordTrackedAgentRunReceipt,

@@ -596,7 +596,7 @@ export const AutomationLaneRow = ({
                     } else if (isHovered || isSelected) {
                         nodeSize = 5;
                     }
-                    const renderIife_2 = () => {
+                    const nodeGlowFilter = (): string => {
                         if (isDragging) {
                             return `drop-shadow(0 0 8px ${curveColor})`;
                         }
@@ -648,7 +648,7 @@ export const AutomationLaneRow = ({
                                 strokeWidth={isDragging || isSelected ? 2 : 1.5}
                                 pointerEvents="none"
                                 style={{
-                                    filter: renderIife_2(),
+                                    filter: nodeGlowFilter(),
                                 }}
                             />
                             {point.curve !== 'linear' && !isDragging ? (

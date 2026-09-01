@@ -463,9 +463,9 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // hydrates, or writes a device or AudioEngine node.
         'src/modules/AiRuntime/useCases/compileAgentActionExecution.ts': 10,
         'src/modules/AiRuntime/useCases/compileAgentRiskApproval.ts': 1,
-        // Count provenance: 0 in code, was 3 — confirmation admission, and with
-        // it every `compileAgentRiskApproval` reference, moved to
-        // agentRequestOrchestration (#3048, #3052); that file is censused below.
+        // Count provenance: 0 in code, was 3 — confirmation admission moved to
+        // agentRequestOrchestration/resolveConfirmationAdmission (#3048), taking
+        // every `compileAgentRiskApproval` reference with it; censused below.
         // 'src/modules/AiRuntime/useCases/confirmPendingChatActions.ts': removed (0),
         'src/modules/AiRuntime/useCases/describeAgentRiskApproval.ts': 3,
         // Pending-effect continuation records keep only command-envelope types;
@@ -475,14 +475,15 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AiRuntime/useCases/validateAgentRiskApproval.ts': 7,
         'src/modules/AiRuntime/useCases/prepareAgentRunPendingEffectContinuation.ts': 2,
         'src/modules/AiRuntime/useCases/recordAgentRunPendingEffectContinuation.ts': 2,
-        // Count provenance: 0 in code, was 2 — the receipt saga's project half,
-        // and with it both `compileVersionedCommandBatchEnvelope` type
-        // references, moved to `projectAgentRunReceiptSaga.ts` (#3052).
+        // Count provenance: 0 in code, was 2 — pure receipt projection moved to
+        // projectAgentRunReceiptSaga (#3052), taking every
+        // `compileVersionedCommandBatchEnvelope` type reference with it;
+        // censused below. The wrapper delegates to agentRunLifecycle only.
         // 'src/modules/AiRuntime/useCases/recordAgentRunReceiptSaga.ts': removed (0),
-        // Count provenance: new file entry, measured 2 — a type-only import of
-        // `compileVersionedCommandBatchEnvelope` and the `ReturnType` projection
-        // that narrows its envelope to `authority` and `serialized`. Types only;
-        // the saga compiles no device and writes no engine state.
+        // Count provenance: new file entry, measured 2 — the
+        // `compileVersionedCommandBatchEnvelope` type import and one ReturnType
+        // projection, extracted from recordAgentRunReceiptSaga (#3052). Pure
+        // receipt projection; no device hydration or write.
         'src/modules/AiRuntime/useCases/projectAgentRunReceiptSaga.ts': 2,
         // Count provenance: 0 in code, was 5 — prompt plan materialization and
         // explain-response streaming were extracted to agentRequestOrchestration
@@ -631,13 +632,22 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // same import line, one ReturnType projection, and the one call.
         // Immutable Command-envelope compilation; no device hydration or write.
         'src/modules/AiRuntime/useCases/agentRequestOrchestration/materializePromptCommandPlan.ts': 4,
-        // Count provenance: new file entry, measured 3 — the
-        // `compileAgentRiskApproval` named import, its module path in that same
-        // import line, and the one call in the in-flight gate. These moved here
-        // from confirmPendingChatActions (#3048, #3052); the file compiles
-        // immutable approval metadata and holds no load, compile, or hydration
-        // sink.
+        // Count provenance: new file entry, measured 2 — the
+        // `compileVersionedCommandBatchEnvelope` type import and one ReturnType
+        // projection in the manual-repair missing-effects branch (#2988). Agent-run
+        // persistence only; no device hydration or write.
+        'src/modules/AiRuntime/useCases/agentRequestOrchestration/requireSectionRenderManualRepair.ts': 2,
+        // Count provenance: new file entry, measured 3 — the `compileAgentRiskApproval`
+        // import, its module path in that same import, and the one call in the
+        // in-flight gate, extracted from confirmPendingChatActions (#3048). Immutable
+        // approval metadata only; no device hydration or write.
         'src/modules/AiRuntime/useCases/agentRequestOrchestration/resolveConfirmationAdmission.ts': 3,
+        // Count provenance: new file entry, measured 2 — the
+        // `compileVersionedCommandBatchEnvelope` type import and one ReturnType
+        // projection in section-render command-id resolution, extracted from
+        // confirmPendingChatActions (#3147). Command settlement only; no device
+        // hydration or write.
+        'src/modules/AiRuntime/useCases/agentRequestOrchestration/settleConfirmedCommandExecution.ts': 2,
         // Count provenance: new file entry, measured 1 — the single
         // `providerProtocol.compileRequest` call, extracted from
         // sendChatMessage (#2975). Provider-request compilation only.
@@ -891,15 +901,12 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Arrangement/repositories/presets/presetHelpers/synth.ts': 1,
         'src/modules/Arrangement/repositories/presets/presetHelpers/tremolo.ts': 1,
         'src/modules/Arrangement/repositories/presets/stringsPresets.ts': 6,
-        // Count provenance: new file entry from #3047, measured 1 — the
-        // `devices: readonly Device[]` parameter type on the freeze
-        // compensation omit-list builder. Same class as
-        // `matchesMaterializedPresetDevices.ts` below: a static declaration on a
-        // pure function that returns device type strings and touches no device.
-        'src/modules/Arrangement/useCases/freezeBounce/freezeCompensationOmitTypes.ts': 1,
         // Count provenance: measured 1 — parameter type `devices:` on a catalog
         // equality predicate. No write.
         'src/modules/Arrangement/useCases/preset/matchesMaterializedPresetDevices.ts': 1,
+        // Count provenance: measured 1 — parameter type `devices:` on the
+        // compensation-omit helper (#3047). Read-only input; no store write.
+        'src/modules/Arrangement/useCases/freezeBounce/freezeCompensationOmitTypes.ts': 1,
         // Count provenance: measured 10 — factory sidebar preset literals
         // (`devices:` + empty `parameterValues:` per instrument). Catalog data,
         // same class as factoryPresets.ts.
@@ -971,6 +978,47 @@ const GUARDED_EXECUTABLE_PATHS = [
     'src/modules/Tuner/useCases/setA4Reference.ts',
 ] as const;
 
+// Raw-source tokens for every census the closure runs: sink regex families,
+// device-data property names and AST entry points, and the executable guard.
+// Files whose raw text contains none of these cannot contribute a match, so
+// they skip code preparation entirely. Comment-free censused files use raw
+// source as code and skip the printer. Sources with comment introducers still
+// require parsing so comment text is stripped before counting.
+const CENSUS_TOKENS = [
+    'persistDeviceParam',
+    'persistDevicePatch',
+    'updateDeviceParam',
+    'updateDevicePatch',
+    'addDeviceToStrip',
+    'setParam',
+    'setPadParam',
+    'loadToasterKitPreset',
+    'loadSamplesForInstrument',
+    'loadInstrument',
+    'audioDevice.loaded',
+    'compile',
+    'PatchWithAudio',
+    'Immediate',
+    'devices',
+    'parameterValues',
+    'updateTrack',
+    'trackStore',
+    'resolveEligibleDeviceWriteTarget',
+] as const;
+
+function rawSourceContainsCensusToken(source: string): boolean {
+    for (const token of CENSUS_TOKENS) {
+        if (source.includes(token)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function rawSourceContainsCommentIntroducer(source: string): boolean {
+    return source.includes('//') || source.includes('/*');
+}
+
 // Compiler-printer comment removal, not hand-rolled scanning: censused sources
 // carry comment-like text inside string literals (`'audio/*,.wav'` accept
 // filters), and only the parser reliably tells a comment from a string.
@@ -986,7 +1034,15 @@ function stripComments(path: string, source: string): string {
 }
 
 function productionSource(path: string, source: string): ProductionSource {
-    return { path, source, code: stripComments(path, source) };
+    let code = '';
+    if (rawSourceContainsCensusToken(source)) {
+        code = rawSourceContainsCommentIntroducer(source) ? stripComments(path, source) : source;
+    }
+    return {
+        path,
+        source,
+        code,
+    };
 }
 
 function productionSources(root: string): ProductionSource[] {
@@ -1359,6 +1415,34 @@ describe('device write boundary closure', () => {
     it('classifies every production sink by family, path, and exact count', () => {
         const files = readProductionSources(process.cwd());
         expect(() => assertProductionClosure(files)).not.toThrow();
+    });
+
+    it('skips comment stripping when raw source has no census tokens', () => {
+        const skipped = productionSource('src/modules/Arrangement/tokenless.ts', 'export const value = 1;');
+        expect(skipped.code).toBe('');
+        const sinkCounts = countByPath([skipped], SINK_DEFINITIONS['persistence-runtime']);
+        expect(sinkCounts['src/modules/Arrangement/tokenless.ts']).toBeUndefined();
+        const deviceDataCounts = countDeviceDataByPath([skipped]);
+        expect(deviceDataCounts['src/modules/Arrangement/tokenless.ts']).toBeUndefined();
+    });
+
+    it('uses raw source as code when a census token appears without comment introducers', () => {
+        const source = 'const devices: string[] = [];\nexport const count = devices.length;';
+        const parsed = productionSource('src/modules/Arrangement/tokenNoComments.ts', source);
+        expect(parsed.code).toBe(source);
+        const counts = countDeviceDataByPath([parsed]);
+        expect(counts['src/modules/Arrangement/tokenNoComments.ts']).toBe(1);
+    });
+
+    it('still strips comments when a census token appears only in a comment', () => {
+        const parsed = productionSource(
+            'src/modules/Arrangement/commentToken.ts',
+            '// persistDeviceParam is documented here\nexport const value = 1;'
+        );
+        expect(parsed.code).toBe('export const value = 1;\n');
+        expect(parsed.code).not.toContain('persistDeviceParam');
+        const counts = countByPath([parsed], SINK_DEFINITIONS['persistence-runtime']);
+        expect(counts['src/modules/Arrangement/commentToken.ts']).toBeUndefined();
     });
 
     it('does not count device-data properties quoted in comments', () => {

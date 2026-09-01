@@ -20,8 +20,47 @@ import { cancelPendingChatActions } from '../cancelPendingChatActions';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 
+import {
+    configureAiWorkflowCommandCheckpointRuntime,
+    resetAiWorkflowCommandCheckpointRuntime,
+} from './aiWorkflowCommandCheckpointRuntime';
+
 type ExecuteAppActionBatch = (typeof import('#/modules/Command/useCases'))['executeAppActionBatch'];
 type AppAction = Parameters<ExecuteAppActionBatch>[0][number];
+type BatchOutcome = Awaited<ReturnType<ExecuteAppActionBatch>>['status'];
+
+function createVerifiedTestReceipt(outcome: BatchOutcome) {
+    return {
+        schemaVersion: 1,
+        runId: 'test-run',
+        batchId: 'test-batch',
+        atomicity: 'atomic',
+        base: {
+            normalizedRevision: 'revision-1',
+            documentIdentityEpoch: null,
+            mutationEpoch: null,
+            documents: [],
+        },
+        observedBase: null,
+        resulting: null,
+        commandOutcomes: [],
+        affectedIds: [],
+        createdBindings: [],
+        errors: [],
+        links: { analysis: [], render: [] },
+        modelSummary: 'Verified test receipt',
+        outcome,
+        pendingEffects: [],
+        compensation: { available: false, commandIds: [] },
+        semanticDiff: null,
+        warnings: [],
+    };
+}
+
+type VerifiedTestReceipt = ReturnType<typeof createVerifiedTestReceipt>;
+type ProjectCommitFinalizationObserver = {
+    onProjectCommitFinalized?: (evidence: { receipt: VerifiedTestReceipt; revision: string }) => void;
+};
 
 const chatGenerationState = vi.hoisted(() => ({ value: false }));
 const projectMutationAuthorization = vi.hoisted(() => {
@@ -34,6 +73,7 @@ const projectMutationAuthorization = vi.hoisted(() => {
 
 const mocks = vi.hoisted(() => ({
     projectRevision: { value: 'revision-1' },
+    projectRevisionMatchesLive: vi.fn(() => true),
     unownedMutationEpoch: { value: 0 },
     executeAppAction: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     executeAppActionBatch: vi.fn<ExecuteAppActionBatch>(),
@@ -53,6 +93,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectMutationAuthorization: projectMutationAuthorization.capture,
     captureProjectRevision: () => mocks.projectRevision.value,
     captureUnownedProjectMutations: () => mocks.unownedMutationEpoch.value,
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint: mocks.projectRevisionMatchesLive,
 }));
 
 vi.mock('#/modules/Command/useCases', async (import_original) => ({
@@ -146,6 +187,7 @@ function proposePendingAppAction(
 
 describe('pending chat action confirmation', () => {
     beforeEach(() => {
+        configureAiWorkflowCommandCheckpointRuntime();
         commandBatchPreflightPort.setProvider(({ targetIds }) => ({
             audioGraphValid: true,
             availableAssetHashes: [],
@@ -190,7 +232,13 @@ describe('pending chat action confirmation', () => {
             })
         );
         mocks.executeVersionedCommandBatchEnvelope.mockImplementation(
-            async ({ serialized, options }: { serialized: string; options?: Parameters<ExecuteAppActionBatch>[1] }) => {
+            async ({
+                serialized,
+                options,
+            }: {
+                serialized: string;
+                options?: Parameters<ExecuteAppActionBatch>[1] & ProjectCommitFinalizationObserver;
+            }) => {
                 const result = await mocks.executeAppActionBatch(approvedActionsByBatch.get(serialized) ?? [], options);
                 if (
                     result.status !== 'committed' &&
@@ -200,39 +248,21 @@ describe('pending chat action confirmation', () => {
                 ) {
                     return result;
                 }
-                return {
-                    ...result,
-                    receipt: {
-                        schemaVersion: 1,
-                        runId: 'test-run',
-                        batchId: 'test-batch',
-                        atomicity: 'atomic',
-                        base: {
-                            normalizedRevision: 'revision-1',
-                            documentIdentityEpoch: null,
-                            mutationEpoch: null,
-                            documents: [],
-                        },
-                        observedBase: null,
-                        resulting: null,
-                        commandOutcomes: [],
-                        affectedIds: [],
-                        createdBindings: [],
-                        errors: [],
-                        links: { analysis: [], render: [] },
-                        modelSummary: 'Verified test receipt',
-                        outcome: result.status,
-                        pendingEffects: [],
-                        compensation: { available: false, commandIds: [] },
-                        semanticDiff: null,
-                        warnings: [],
-                    },
-                };
+                const receipt = createVerifiedTestReceipt(result.status);
+                if (result.status === 'committed' || result.status === 'committed-with-warning') {
+                    // Only a durable project commit reaches a checkpoint. The real
+                    // executor reports that checkpoint's exact revision here, and
+                    // the confirmation path refuses to report a clean commit
+                    // without it.
+                    options?.onProjectCommitFinalized?.({ receipt, revision: mocks.projectRevision.value });
+                }
+                return { ...result, receipt };
             }
         );
         mocks.describeAction.mockReturnValue('Remove track');
         mocks.generateGroupId.mockReturnValue({ groupId: 'group-1', groupLabel: 'delete drums' });
         mocks.projectRevision.value = 'revision-1';
+        mocks.projectRevisionMatchesLive.mockReturnValue(true);
         projectMutationAuthorization.isAuthorized.mockImplementation(
             () => mocks.projectRevision.value === 'revision-1'
         );
@@ -240,6 +270,7 @@ describe('pending chat action confirmation', () => {
     });
 
     afterEach(() => {
+        resetAiWorkflowCommandCheckpointRuntime();
         commandBatchPreflightPort.setProvider(null);
         clearHandlerRegistry();
         vi.restoreAllMocks();
@@ -260,9 +291,10 @@ describe('pending chat action confirmation', () => {
         expect(result).toEqual({ status: 'executed' });
         expect(projectMutationAuthorization.capture).toHaveBeenCalledOnce();
         expect(mocks.executeAppActionBatch.mock.calls[0]?.[0]).toEqual([pendingAction]);
-        // The undo group is the approved batch's own id, not a fresh id from
-        // `generateGroupId` — whose stand-in still answers `group-1`, so a
-        // regression back to a generated group cannot pass here.
+        // The undo group is the approved batch's own id, which the committed
+        // render retry admission matches against the envelope and receipt. The
+        // `generateGroupId` stand-in still answers `group-1`, so a regression
+        // back to a freshly generated group cannot pass here.
         expect(mocks.executeAppActionBatch.mock.calls[0]?.[1]).toMatchObject({
             groupId: 'confirm-1',
             groupLabel: 'delete drums',
@@ -302,6 +334,7 @@ describe('pending chat action confirmation', () => {
     it('invalidates an app-action proposal when the project revision changed before confirmation', async () => {
         proposePendingAppAction('confirm-stale');
         mocks.projectRevision.value = 'revision-2';
+        mocks.projectRevisionMatchesLive.mockReturnValue(false);
 
         const result = await confirmPendingChatActions({ confirmationId: 'confirm-stale' });
 

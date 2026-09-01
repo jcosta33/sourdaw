@@ -18,6 +18,8 @@ import {
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    commandProjectRevisionPort,
+    configureCommandBatchIdempotency,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -613,6 +615,21 @@ describe('bass compressor prompt workflow', () => {
         runtimeMocks.generateWebLlmCompletion.mockImplementation(createTurnTrackedWebLlmResponder());
         runtimeMocks.fetch.mockImplementation(createTurnTrackedHostedResponder());
         vi.stubGlobal('fetch', runtimeMocks.fetch);
+        // jsdom has no navigator.locks; the durable project checkpoint is
+        // written under that lock.
+        vi.stubGlobal('navigator', {
+            ...navigator,
+            locks: {
+                request: (_name: string, _options: LockOptions, task: () => unknown) => Promise.resolve(task()),
+            },
+        });
+        // Production shape, from `src/app/bootstrap.ts`. Only a batch executed
+        // under the durable idempotency ledger reaches a project checkpoint, and
+        // only a configured revision provider can expose that checkpoint's exact
+        // revision — which the confirmation path requires before it may report a
+        // clean commit.
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        commandProjectRevisionPort.setProvider(captureProjectRevision);
         await cloudSession.clear();
         await cloudSession.replace_runtime({
             provider: 'openai-compatible',
@@ -677,8 +694,10 @@ describe('bass compressor prompt workflow', () => {
         clearPendingActionConfirmations();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         configureAutomergeStoragePort(null);
+        commandProjectRevisionPort.setProvider(null);
         await cloudSession.clear();
         removeCrdtDoc('root');
+        localStorage.removeItem('sourdaw:command-batch-idempotency:v1');
         vi.unstubAllGlobals();
     });
 
@@ -1201,7 +1220,7 @@ describe('bass compressor prompt workflow', () => {
             continuation: {
                 authority: 'authoritative-collaboration-host',
                 idempotency: 'project-checkpoint',
-                kind: 'reconcile-exact-batch',
+                kind: 'manual-repair',
             },
         });
         expectRuntimeDeviceChain('track-bass-di', BASS_DI_INSERTED_DEVICE_IDS);
@@ -1252,7 +1271,7 @@ describe('bass compressor prompt workflow', () => {
             continuation: {
                 authority: 'authoritative-collaboration-host',
                 idempotency: 'project-checkpoint',
-                kind: 'reconcile-exact-batch',
+                kind: 'manual-repair',
             },
         });
         expectRuntimeDeviceChain('track-bass-di', BASS_DI_INSERTED_DEVICE_IDS);
@@ -1317,7 +1336,7 @@ describe('bass compressor prompt workflow', () => {
             continuation: {
                 authority: 'authoritative-collaboration-host',
                 idempotency: 'project-checkpoint',
-                kind: 'reconcile-exact-batch',
+                kind: 'manual-repair',
             },
         });
         expect(getTrack('track-bass-di').devices.map((device) => device.id)).toEqual([
@@ -1377,7 +1396,7 @@ describe('bass compressor prompt workflow', () => {
             continuation: {
                 authority: 'authoritative-collaboration-host',
                 idempotency: 'project-checkpoint',
-                kind: 'reconcile-exact-batch',
+                kind: 'manual-repair',
             },
         });
         const receipt = chatStore.value?.messages.find(

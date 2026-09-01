@@ -2,8 +2,8 @@
 //!
 //! `AudioPlugin` is what the application asks of *any* loaded plugin;
 //! `HostedPluginRuntime` is the extra surface the shared RT/control runtime
-//! owner (`SharedHostedPlugin` in `sourdaw-native`) drives. CLAP is the only
-//! implementation today. A second format implements these two traits and plugs
+//! owner (`SharedHostedPlugin` in `sourdaw-native`) drives. CLAP and VST3 both
+//! implement them today. A new format implements these two traits and plugs
 //! into the runtime owner without either of them changing.
 //!
 //! The value types below live here rather than in `clap_wrapper` because they
@@ -37,16 +37,13 @@ pub type LatencyChangeNotifier = Box<dyn Fn() + Send + Sync>;
 ///
 /// Every variant here is raised from a callback its format marks `[main-thread]`,
 /// and the wake behind them allocates. An ask a plugin may raise from the audio
-/// thread — `clap_host_params.request_flush`, which CLAP marks `[thread-safe]` —
-/// therefore has no variant here at all: it is recorded as a flag and read by the
-/// parameter drain, because a channel send on the render thread is a missed
+/// thread therefore has no variant here at all: `clap_host_params.request_flush`
+/// and `clap_host_gui.request_resize`, which CLAP marks `[thread-safe]`, are
+/// recorded as a flag or a size slot plus a process-wide hint and answered by
+/// the parameter drain, because a channel send on the render thread is a missed
 /// device period.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PluginHostRequest {
-    /// The plugin wants the window its editor is drawn into resized. The size
-    /// is recorded on the backend and read back by
-    /// [`AudioPlugin::apply_pending_editor_resize`].
-    EditorResize,
     /// The plugin's own state changed — a knob moved in its editor, a preset
     /// loaded inside it — so the project holding it has unsaved changes.
     StateDirty,

@@ -1,8 +1,10 @@
+import { type NoteExpressionControls } from '../../engine/noteExpression';
 import { type Device } from '../../models/TrackViewTypes';
 import { type OfflineDeviceNode } from '../devices/types';
 
 import {
     type AudioDeviceStrategy,
+    type DeviceNoteExpressionRequest,
     type DeviceNoteOffRequest,
     type DeviceNoteOnRequest,
     type OfflineAutomationBinding,
@@ -10,6 +12,21 @@ import {
 } from './AudioDeviceStrategy';
 import { findReleasedNativeDspDeviceFactory } from './findReleasedNativeDspDeviceFactory';
 import { type NativeDspNode } from './nativeDspDeviceFactories';
+
+/**
+ * A DSP node that carries the engine-side expression surface.
+ *
+ * `NativeDspNode` does not declare `noteExpression`, and Fermenter, Levain and
+ * Grand Boule still have one at runtime: the factory table's note binders build
+ * the bound node by spreading the engine node, which carries every method it did
+ * not rename. Narrowing to it is what lets this strategy forward expression
+ * without the declared type having to enumerate a surface only three devices own.
+ */
+type NoteExpressionCapableNode = NativeDspNode & NoteExpressionControls;
+
+function hasNoteExpressionSurface(node: NativeDspNode): node is NoteExpressionCapableNode {
+    return 'noteExpression' in node && typeof node.noteExpression === 'function';
+}
 
 export class NativeDspDeviceStrategy implements AudioDeviceStrategy {
     public readonly node: OfflineDeviceNode;
@@ -25,6 +42,13 @@ export class NativeDspDeviceStrategy implements AudioDeviceStrategy {
      * Bacteria, Grinder, Knead, ProofChamber and Scoring supply no `noteOn`.
      */
     public readonly acceptsNotes: boolean;
+    /**
+     * Assigned only when the node behind this strategy really voices per-note
+     * expression, unlike `noteOn`/`noteOff` below. A caller reads its presence
+     * to decide whether the instrument has an expression path at all, so a
+     * method defined on the prototype would claim one for Crumbs and Toaster.
+     */
+    public readonly noteExpression?: (request: DeviceNoteExpressionRequest) => void;
 
     constructor(private readonly dspNode: NativeDspNode) {
         this.runtimeFailure = dspNode.runtimeFailure;
@@ -40,6 +64,12 @@ export class NativeDspDeviceStrategy implements AudioDeviceStrategy {
         if (scheduleParam && acceptsScheduledParam) {
             this.acceptsScheduledParam = (name) => acceptsScheduledParam(name);
             this.scheduleParam = (name, segments) => scheduleParam(name, segments);
+        }
+        if (hasNoteExpressionSurface(dspNode)) {
+            const expressionNode = dspNode;
+            this.noteExpression = ({ noteOrPad, channel, bendSemitones, pressure, slide, sampleFrame }) => {
+                expressionNode.noteExpression(noteOrPad, channel, bendSemitones, pressure, slide, sampleFrame);
+            };
         }
     }
 

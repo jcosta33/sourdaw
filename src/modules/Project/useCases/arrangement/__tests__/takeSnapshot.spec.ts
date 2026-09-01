@@ -35,7 +35,8 @@ vi.mock('#/modules/Automation/stores', () => ({
     automationStore: mocks.automation_store,
 }));
 
-vi.mock('#/modules/MIDI/stores', () => ({
+vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
     midiStore: mocks.midi_store,
 }));
 

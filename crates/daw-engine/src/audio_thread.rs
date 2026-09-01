@@ -14,8 +14,9 @@ use crate::midi::diagnostics::{
     active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsSnapshot,
 };
 use crate::scheduler::{
-    graph_progress_channel, AudioScheduler, GraphCommand, GraphProgressSnapshot,
-    RetiredGraphObjects, RETIREMENT_QUEUE_CAPACITY,
+    graph_progress_channel, transport_position_channel, AudioScheduler, GraphCommand,
+    GraphProgressSnapshot, RetiredGraphObjects, TransportPositionSnapshot,
+    RETIREMENT_QUEUE_CAPACITY,
 };
 use crate::timeline::{timeline_rt_diagnostics_channel, TimelineRtDiagnosticsSnapshot};
 use rtrb::{Consumer, Producer, RingBuffer};
@@ -208,12 +209,14 @@ pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThr
     let (diagnostics_tx, _diagnostics_reader) = active_midi_rt_diagnostics_channel();
     let (timeline_diagnostics_tx, _timeline_diagnostics_reader) = timeline_rt_diagnostics_channel();
     let (graph_progress_tx, _graph_progress_reader) = graph_progress_channel();
+    let (transport_position_tx, _transport_position_reader) = transport_position_channel();
     let (engine_event_tx, _engine_event_rx) = engine_event_channel();
     spawn_audio_thread_with_diagnostics(
         command_rx,
         diagnostics_tx,
         timeline_diagnostics_tx,
         graph_progress_tx,
+        transport_position_tx,
         engine_event_tx,
         false,
     )
@@ -228,11 +231,13 @@ pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThr
 /// through a cell the factory fills before the ready handshake. The caller
 /// needs it because every graph command that names a time in seconds has to be
 /// converted to frames on *this* clock, and any other rate is a guess.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_audio_thread_with_diagnostics(
     command_rx: Consumer<GraphCommand>,
     midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
     timeline_rt_diagnostics_tx: Input<TimelineRtDiagnosticsSnapshot>,
     graph_progress_tx: Input<GraphProgressSnapshot>,
+    transport_position_tx: Input<TransportPositionSnapshot>,
     engine_event_tx: Producer<EngineEvent>,
     force_default_buffer: bool,
 ) -> Result<
@@ -258,6 +263,7 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
             midi_rt_diagnostics_tx,
             timeline_rt_diagnostics_tx,
             graph_progress_tx,
+            transport_position_tx,
             engine_event_tx,
             force_default_buffer,
             &sample_rate_slot,
@@ -419,6 +425,117 @@ pub(crate) fn new_bridge_round_trip_slot() -> Arc<AtomicUsize> {
     ))
 }
 
+/// The render callback's state and body, as a value the device seam wraps.
+///
+/// Named rather than written inline as a closure because it is the only place
+/// the engine's audio becomes the device's — the monitor gate included — and a
+/// boundary that exists in exactly one place has to be drivable without a
+/// device to be provable at all. The callback the backend carries is
+/// [`Self::render`] and nothing else, so a test driving this drives the
+/// production path: same command drain, same bridge service, same timeline
+/// render, same device write.
+///
+/// Runs on the audio thread: no heap allocation, no locks, no IPC — scratch is
+/// fixed-size and owned here, and every channel it publishes into is
+/// wait-free.
+pub(crate) struct DeviceRenderer {
+    scheduler: AudioScheduler,
+    left_scratch: Box<[f32; MAX_CALLBACK_FRAMES]>,
+    right_scratch: Box<[f32; MAX_CALLBACK_FRAMES]>,
+    /// What the callback publishes the settled bridge round trip into.
+    bridge_round_trip_slot: Arc<AtomicUsize>,
+}
+
+impl DeviceRenderer {
+    pub(crate) fn new(scheduler: AudioScheduler, bridge_round_trip_slot: Arc<AtomicUsize>) -> Self {
+        Self {
+            scheduler,
+            left_scratch: Box::new([0.0f32; MAX_CALLBACK_FRAMES]),
+            right_scratch: Box::new([0.0f32; MAX_CALLBACK_FRAMES]),
+            bridge_round_trip_slot,
+        }
+    }
+
+    /// Fill one device buffer: interleaved f32, a whole number of frames.
+    ///
+    /// `channels` arrives per call because a Windows device-invalidation
+    /// recovery may resume this same callback on an endpoint with a different
+    /// channel layout; the cpal backends pass a constant.
+    pub(crate) fn render(&mut self, data: &mut [f32], channels: usize) {
+        if channels == 0 {
+            return;
+        }
+
+        // 1. Process pending commands lock-free
+        self.scheduler.update_graph();
+
+        // The monitor gate, read once for this callback after the drain that
+        // can set it, so a session's shadow lands on the same block boundary
+        // as the topology it travelled with. A plain field read on a scheduler
+        // this callback already owns: no atomic, no lock, no allocation.
+        let shadowed = self.scheduler.monitor_shadowed();
+
+        // 2. Process ring-buffer audio bridges (production path)
+        // Reads input from worklets via main thread, processes through
+        // CLAP/VST3, writes output back for main thread to return.
+        // The device's frame count for this period is the budget:
+        // a bridge may spend it plus one quantum of catch-up, so a
+        // backlog never renders as one spike inside the deadline.
+        let callback_frames = data.len() / channels;
+        publish_bridge_round_trip(&self.bridge_round_trip_slot, callback_frames);
+        self.scheduler.process_audio_bridges(callback_frames);
+
+        // 3. Process the native effects chain (for standalone native rendering).
+        // Scratch is fixed-size and owned here, so no heap allocation occurs
+        // per buffer.
+        for chunk in data.chunks_mut(MAX_CALLBACK_FRAMES * channels) {
+            let frames = chunk.len() / channels;
+            let left = &mut self.left_scratch[..frames];
+            let right = &mut self.right_scratch[..frames];
+            left.fill(0.0);
+            right.fill(0.0);
+
+            // The timeline renders here, into scratch the
+            // callback owns: clips, track device chains, sends,
+            // buses and the master sum, then the master insert
+            // chain and the master fader. An engine with no
+            // tracks renders silence, exactly as before the
+            // timeline existed. process_block always renders a
+            // stereo pair regardless of the device's channel
+            // layout.
+            //
+            // It runs whether or not the monitor is shadowed: the gate
+            // silences the output, never the clock, so the playhead advances
+            // and a loop seam closes on its own sample either way.
+            self.scheduler.process_block(left, right, frames);
+
+            if shadowed {
+                // True zeros rather than a small gain, so "silent" is a thing
+                // a leak test can assert exactly and no residue can hide
+                // under a threshold.
+                chunk.fill(0.0);
+                continue;
+            }
+
+            // Adapt the rendered stereo pair to the device's actual
+            // channel count.
+            write_interleaved(chunk, left, right, channels, frames);
+        }
+
+        self.scheduler.publish_midi_rt_diagnostics();
+        self.scheduler.publish_timeline_rt_diagnostics();
+        // Published last, after every block of this callback:
+        // the snapshot's happens-before (GraphProgressSnapshot)
+        // holds because everything it vouches for has already
+        // been drained, rendered and popped above.
+        self.scheduler.publish_graph_progress();
+        // The cursor's channel, published on the same edge and for the same
+        // reason: one write per callback, after every block of it, so a reader
+        // between callbacks sees a position the engine actually reached.
+        self.scheduler.publish_transport_position();
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_audio_stream(
     command_rx: Consumer<GraphCommand>,
@@ -426,6 +543,7 @@ fn build_audio_stream(
     midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
     timeline_rt_diagnostics_tx: Input<TimelineRtDiagnosticsSnapshot>,
     graph_progress_tx: Input<GraphProgressSnapshot>,
+    transport_position_tx: Input<TransportPositionSnapshot>,
     mut engine_event_tx: Producer<EngineEvent>,
     force_default_buffer: bool,
     sample_rate_out: &OnceLock<f32>,
@@ -447,75 +565,19 @@ fn build_audio_stream(
 
     let sample_rate = negotiated.sample_rate;
     let _ = sample_rate_out.set(sample_rate);
-    let mut scheduler = AudioScheduler::with_rt_diagnostics(
+    let scheduler = AudioScheduler::with_rt_diagnostics(
         command_rx,
         retired_tx,
         sample_rate,
         midi_rt_diagnostics_tx,
         timeline_rt_diagnostics_tx,
         graph_progress_tx,
+        transport_position_tx,
     );
 
-    let mut left_scratch = Box::new([0.0f32; MAX_CALLBACK_FRAMES]);
-    let mut right_scratch = Box::new([0.0f32; MAX_CALLBACK_FRAMES]);
-
-    // The render callback. It runs on the audio thread, whichever backend
-    // carries it: no heap allocation, no locks, no IPC — scratch is fixed-size
-    // and captured, and every channel it publishes into is wait-free.
-    //
-    // `channels` arrives per call because a Windows device-invalidation
-    // recovery may resume this same callback on an endpoint with a different
-    // channel layout; the cpal backends pass a constant.
+    let mut renderer = DeviceRenderer::new(scheduler, bridge_round_trip_slot);
     let render: RenderFn = Box::new(move |data: &mut [f32], channels: usize| {
-        if channels == 0 {
-            return;
-        }
-
-        // 1. Process pending commands lock-free
-        scheduler.update_graph();
-
-        // 2. Process ring-buffer audio bridges (production path)
-        // Reads input from worklets via main thread, processes through
-        // CLAP/VST3, writes output back for main thread to return.
-        // The device's frame count for this period is the budget:
-        // a bridge may spend it plus one quantum of catch-up, so a
-        // backlog never renders as one spike inside the deadline.
-        let callback_frames = data.len() / channels;
-        publish_bridge_round_trip(&bridge_round_trip_slot, callback_frames);
-        scheduler.process_audio_bridges(callback_frames);
-
-        // 3. Process the native effects chain (for standalone native rendering).
-        // Scratch is fixed-size and captured by the callback, so no heap
-        // allocation occurs per buffer.
-        for chunk in data.chunks_mut(MAX_CALLBACK_FRAMES * channels) {
-            let frames = chunk.len() / channels;
-            let left = &mut left_scratch[..frames];
-            let right = &mut right_scratch[..frames];
-            left.fill(0.0);
-            right.fill(0.0);
-
-            // The timeline renders here, into scratch the
-            // callback owns: clips, track device chains, sends,
-            // buses and the master sum, then the master insert
-            // chain and the master fader. An engine with no
-            // tracks renders silence, exactly as before the
-            // timeline existed. process_block always renders a
-            // stereo pair regardless of the device's channel
-            // layout.
-            scheduler.process_block(left, right, frames);
-
-            // Adapt the rendered stereo pair to the device's actual
-            // channel count.
-            write_interleaved(chunk, left, right, channels, frames);
-        }
-
-        scheduler.publish_midi_rt_diagnostics();
-        scheduler.publish_timeline_rt_diagnostics();
-        // Published last, after every block of this callback:
-        // the snapshot's happens-before (GraphProgressSnapshot)
-        // holds because everything it vouches for has already
-        // been drained, rendered and popped above.
-        scheduler.publish_graph_progress();
+        renderer.render(data, channels);
     });
 
     // The backend may call this from the real-time thread — ALSA reports from
@@ -908,5 +970,205 @@ mod tests {
         dropped_rx
             .recv_timeout(Duration::from_secs(1))
             .expect("detached owner should finish after teardown unblocks");
+    }
+}
+
+/// The shadow monitor gate, driven through the production render callback.
+///
+/// [`DeviceRenderer::render`] is the callback the device seam carries, and the
+/// gate is applied there and nowhere else, so these drive that method directly
+/// with a device buffer of their own rather than a device.
+#[cfg(test)]
+mod shadow_monitor_tests {
+    use super::{new_bridge_round_trip_slot, DeviceRenderer};
+    use crate::midi::diagnostics::active_midi_rt_diagnostics_channel;
+    use crate::plugin_slot::TransportState;
+    use crate::scheduler::{
+        graph_progress_channel, transport_position_channel, AudioScheduler, GraphCommand,
+        GraphProgressReader, GraphProgressSnapshot, RetiredGraphObjects,
+    };
+    use crate::timeline::{
+        timeline_rt_diagnostics_channel, ClipPlacement, ClipPlayback, TimelineClip, TimelineTrack,
+    };
+    use crate::transport_map::{LoopRegion, MIN_LOOP_FRAMES};
+    use rtrb::{Consumer, Producer, RingBuffer};
+
+    const SAMPLE_RATE: f32 = 48_000.0;
+    const DEVICE_CHANNELS: usize = 2;
+    /// Loud enough that a leak of any size is unmistakable, and a value the
+    /// unity-rate render reproduces bit-exactly.
+    const MATERIAL_SAMPLE: f32 = 0.5;
+    const COMMAND_CAPACITY: usize = 32;
+
+    /// The render callback plus the control side of its command ring.
+    struct DeviceHarness {
+        command_tx: Producer<GraphCommand>,
+        retired_rx: Consumer<RetiredGraphObjects>,
+        renderer: DeviceRenderer,
+        progress: GraphProgressReader,
+    }
+
+    impl DeviceHarness {
+        fn new() -> Self {
+            let (command_tx, command_rx) = RingBuffer::new(COMMAND_CAPACITY);
+            let (retired_tx, retired_rx) = RingBuffer::new(COMMAND_CAPACITY + 1);
+            let (midi_diagnostics_tx, _midi_reader) = active_midi_rt_diagnostics_channel();
+            let (timeline_diagnostics_tx, _timeline_reader) = timeline_rt_diagnostics_channel();
+            let (graph_progress_tx, progress) = graph_progress_channel();
+            let (transport_position_tx, _position_reader) = transport_position_channel();
+            let scheduler = AudioScheduler::with_rt_diagnostics(
+                command_rx,
+                retired_tx,
+                SAMPLE_RATE,
+                midi_diagnostics_tx,
+                timeline_diagnostics_tx,
+                graph_progress_tx,
+                transport_position_tx,
+            );
+            Self {
+                command_tx,
+                retired_rx,
+                renderer: DeviceRenderer::new(scheduler, new_bridge_round_trip_slot()),
+                progress,
+            }
+        }
+
+        fn send(&mut self, command: GraphCommand) {
+            self.command_tx
+                .push(command)
+                .map_err(|_| "the command ring should hold this test's batch")
+                .expect("push");
+        }
+
+        /// One device callback of `frames`, returning the interleaved buffer
+        /// the device would have played.
+        fn render(&mut self, frames: usize) -> Vec<f32> {
+            let mut data = vec![0.0f32; frames * DEVICE_CHANNELS];
+            self.renderer.render(&mut data, DEVICE_CHANNELS);
+            // This thread is both the command side and the render side, so
+            // freeing here is safe and keeps the retirement ring from
+            // stalling the next drain.
+            while self.retired_rx.pop().is_ok() {}
+            data
+        }
+
+        fn progress(&mut self) -> GraphProgressSnapshot {
+            self.progress.snapshot()
+        }
+    }
+
+    /// A track holding one clip of constant material from frame zero, and a
+    /// rolling transport — the smallest schedule whose device output is
+    /// unmistakably non-zero.
+    fn schedule_rolling_material(harness: &mut DeviceHarness, frames: usize) {
+        harness.send(GraphCommand::AddTrack(TimelineTrack::new(1)));
+        harness.send(GraphCommand::AddClip(
+            1,
+            TimelineClip::new(
+                7,
+                vec![MATERIAL_SAMPLE; frames].into(),
+                vec![MATERIAL_SAMPLE; frames].into(),
+                ClipPlacement {
+                    start_frame: 0,
+                    source_offset_frames: 0,
+                    length_frames: frames as u64,
+                },
+                ClipPlayback::at_gain(1.0),
+            ),
+        ));
+        harness.send(GraphCommand::SetTransport(TransportState {
+            is_playing: true,
+            ..TransportState::default()
+        }));
+    }
+
+    /// The gate's whole claim, against the one schedule that proves both
+    /// halves: the same commands sound at the device unshadowed, and write
+    /// exact zeros shadowed. A gate that leaked would fail the second
+    /// assertion; one that over-muted — silencing the render rather than the
+    /// output — would fail the first.
+    #[test]
+    fn a_shadowed_monitor_writes_true_zeros_where_the_same_schedule_sounds() {
+        const FRAMES: usize = 512;
+
+        let mut audible = DeviceHarness::new();
+        schedule_rolling_material(&mut audible, FRAMES);
+        let heard = audible.render(FRAMES);
+
+        let mut shadowed = DeviceHarness::new();
+        schedule_rolling_material(&mut shadowed, FRAMES);
+        shadowed.send(GraphCommand::SetMonitorShadow(true));
+        let silent = shadowed.render(FRAMES);
+
+        assert!(
+            heard.iter().any(|sample| *sample != 0.0),
+            "the unshadowed schedule must reach the device, or the silent half proves nothing"
+        );
+        assert_eq!(heard[0], MATERIAL_SAMPLE);
+        assert!(
+            silent.iter().all(|sample| *sample == 0.0),
+            "a shadowed monitor writes true zeros, not a small gain"
+        );
+    }
+
+    /// The cutover the gate exists to make possible: lifting the shadow on a
+    /// rolling session restores the device output at the next block boundary,
+    /// with no restart and no reschedule.
+    #[test]
+    fn lifting_the_shadow_restores_the_device_output_mid_session() {
+        const FRAMES: usize = 512;
+
+        let mut harness = DeviceHarness::new();
+        schedule_rolling_material(&mut harness, FRAMES * 4);
+        harness.send(GraphCommand::SetMonitorShadow(true));
+        let while_shadowed = harness.render(FRAMES);
+
+        harness.send(GraphCommand::SetMonitorShadow(false));
+        let after_cutover = harness.render(FRAMES);
+
+        assert!(while_shadowed.iter().all(|sample| *sample == 0.0));
+        assert!(after_cutover.iter().any(|sample| *sample != 0.0));
+        assert_eq!(after_cutover[0], MATERIAL_SAMPLE);
+    }
+
+    /// The shadow silences the output, never the clock. A shadowed engine
+    /// still advances its playhead and still closes a loop seam on its own
+    /// sample, which is the whole reason the gate sits at the device write
+    /// rather than anywhere upstream of it.
+    #[test]
+    fn a_shadowed_engine_still_advances_the_playhead_and_walks_a_loop_seam() {
+        const FRAMES: usize = 512;
+        /// Past the first callback's end, so the seam falls inside the second
+        /// one and the test observes a callback that is split by it rather
+        /// than one that merely stops on it.
+        const LOOP_END: u64 = MIN_LOOP_FRAMES + 256;
+
+        let mut harness = DeviceHarness::new();
+        schedule_rolling_material(&mut harness, FRAMES * 4);
+        harness.send(GraphCommand::SetLoopRegion(LoopRegion {
+            enabled: true,
+            start_frame: 0,
+            end_frame: LOOP_END,
+        }));
+        harness.send(GraphCommand::SetMonitorShadow(true));
+
+        let first = harness.render(FRAMES);
+        let progressed = harness.progress();
+        assert!(first.iter().all(|sample| *sample == 0.0));
+        assert_eq!(progressed.playhead_frame, FRAMES as u64);
+        assert_eq!(progressed.loop_wraps, 0);
+
+        // The second callback crosses the region's end: the seam closes inside
+        // it, and the walk continues from the region's start.
+        let across_the_seam = harness.render(FRAMES);
+        let wrapped = harness.progress();
+
+        assert!(
+            across_the_seam.iter().all(|sample| *sample == 0.0),
+            "the seam must not leak a frame past the gate either"
+        );
+        assert_eq!(wrapped.loop_wraps, 1);
+        assert_eq!(wrapped.last_wrap_frame, LOOP_END);
+        assert_eq!(wrapped.playhead_frame, FRAMES as u64 * 2 - LOOP_END);
     }
 }

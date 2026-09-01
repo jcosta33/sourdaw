@@ -1,16 +1,13 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import {
     REQUIRED_REPOSITORY,
     REVIEWER_BOT_NODE_ID,
     assertRequiredRepository,
-    assertTrustedExecutingBlob,
     authenticateRole,
     isReviewerBotNodeId,
-    originMainBlob,
     parseJson,
     resolvePrimaryRoot,
     spawnCapture,
@@ -18,6 +15,11 @@ import {
 } from './githubAppIdentity.ts';
 import { composeReviewCommentBody, fail, type ReviewCommentContent } from './prContract.ts';
 import { reviewBundlePath } from './prepareReview.ts';
+import {
+    type PullRequestMutationSerialization,
+    type PullRequestRemoteMutationBoundary,
+    withPullRequestMutationLock,
+} from './pullRequestMutationLock.ts';
 
 export type ReviewEvent = 'APPROVE' | 'REQUEST_CHANGES';
 
@@ -61,6 +63,24 @@ export type PublishReviewPort = {
         comments: ReviewComment[];
     }) => { id: number; actorNodeId: string; login: string };
     log: (message: string) => void;
+};
+
+export type PublishReviewAuthentication = {
+    minted: { actorNodeId: string };
+    session: GhSession;
+};
+
+export type PublishReviewCoordinatorDependencies = {
+    primaryRoot: () => string;
+    serializeMutation: PullRequestMutationSerialization;
+    authenticateReviewer: (primaryRoot: string) => Promise<PublishReviewAuthentication>;
+    repositoryName: (session: GhSession, primaryRoot: string) => string;
+    reviewPort: (
+        session: GhSession,
+        primaryRoot: string,
+        markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt']
+    ) => PublishReviewPort;
+    publish: (number: number, port: PublishReviewPort) => number;
 };
 
 export function parsePublishReviewArgs(args: string[]): { number?: number; help: boolean } {
@@ -136,7 +156,8 @@ export function publishReview(number: number, port: PublishReviewPort): number {
 export function shellPort(
     session: GhSession,
     cwd: string = process.cwd(),
-    capture: typeof spawnCapture = spawnCapture
+    capture: typeof spawnCapture = spawnCapture,
+    markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt'] = () => undefined
 ): PublishReviewPort {
     const primaryRoot = resolvePrimaryRoot(
         (command, args, directory) => capture(command, args, { cwd: directory }),
@@ -163,6 +184,18 @@ export function shellPort(
             ),
         readReviewJson: (path) => JSON.parse(readFileSync(path, 'utf8')) as unknown,
         postReview: ({ number, commitId, event, body, comments }) => {
+            const input = JSON.stringify({
+                commit_id: commitId,
+                event,
+                body,
+                comments: comments.map((comment) => ({
+                    path: comment.path,
+                    line: comment.line,
+                    side: comment.side,
+                    body: composeReviewCommentBody(comment),
+                })),
+            });
+            markRemoteMutationAttempt();
             const response = parseJson<{
                 id: number;
                 state?: string;
@@ -170,17 +203,7 @@ export function shellPort(
             }>(
                 gh(
                     ['api', '--method', 'POST', `repos/${REQUIRED_REPOSITORY}/pulls/${number}/reviews`, '--input', '-'],
-                    JSON.stringify({
-                        commit_id: commitId,
-                        event,
-                        body,
-                        comments: comments.map((comment) => ({
-                            path: comment.path,
-                            line: comment.line,
-                            side: comment.side,
-                            body: composeReviewCommentBody(comment),
-                        })),
-                    })
+                    input
                 ),
                 'create review'
             );
@@ -272,8 +295,46 @@ function parseCommentEntries(entries: unknown[]): ReviewComment[] {
     });
 }
 
-async function main(): Promise<number> {
-    const parsed = parsePublishReviewArgs(process.argv.slice(2));
+export function defaultPublishReviewCoordinatorDependencies(): PublishReviewCoordinatorDependencies {
+    return {
+        primaryRoot: () => resolvePrimaryRoot(),
+        serializeMutation: withPullRequestMutationLock,
+        authenticateReviewer: (primaryRoot) => authenticateRole({ primaryRoot, role: 'reviewer' }),
+        repositoryName: (session, primaryRoot) =>
+            spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
+                env: session.env,
+                cwd: primaryRoot,
+            }),
+        reviewPort: (session, primaryRoot, markRemoteMutationAttempt) =>
+            shellPort(session, primaryRoot, spawnCapture, markRemoteMutationAttempt),
+        publish: publishReview,
+    };
+}
+
+export async function coordinatePublishReview(
+    number: number,
+    dependencies: PublishReviewCoordinatorDependencies = defaultPublishReviewCoordinatorDependencies()
+): Promise<void> {
+    const primaryRoot = dependencies.primaryRoot();
+    await dependencies.serializeMutation(primaryRoot, number, async ({ markRemoteMutationAttempt }) => {
+        const auth = await dependencies.authenticateReviewer(primaryRoot);
+        try {
+            if (!isReviewerBotNodeId(auth.minted.actorNodeId)) {
+                fail(`minted actor ${auth.minted.actorNodeId} is not ${REVIEWER_BOT_NODE_ID}`);
+            }
+            assertRequiredRepository(dependencies.repositoryName(auth.session, primaryRoot));
+            dependencies.publish(number, dependencies.reviewPort(auth.session, primaryRoot, markRemoteMutationAttempt));
+        } finally {
+            auth.session.dispose();
+        }
+    });
+}
+
+export async function runPublishReviewCli(
+    args: string[],
+    dependencies?: PublishReviewCoordinatorDependencies
+): Promise<number> {
+    const parsed = parsePublishReviewArgs(args);
     if (parsed.help) {
         console.log('Usage: pnpm review:publish <pr-number>');
         return 0;
@@ -281,37 +342,6 @@ async function main(): Promise<number> {
     if (parsed.number === undefined) {
         fail('usage: pnpm review:publish <pr-number>');
     }
-    const executingFile = fileURLToPath(import.meta.url);
-    const cwd = process.cwd();
-    assertTrustedExecutingBlob(
-        'scripts/publishReview.ts',
-        executingFile,
-        originMainBlob('scripts/publishReview.ts', cwd)
-    );
-    const primaryRoot = resolvePrimaryRoot();
-    const auth = await authenticateRole({ primaryRoot, role: 'reviewer' });
-    try {
-        if (!isReviewerBotNodeId(auth.minted.actorNodeId)) {
-            fail(`minted actor ${auth.minted.actorNodeId} is not ${REVIEWER_BOT_NODE_ID}`);
-        }
-        const repository = spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
-            env: auth.session.env,
-            cwd: primaryRoot,
-        });
-        assertRequiredRepository(repository);
-        publishReview(parsed.number, shellPort(auth.session));
-        return 0;
-    } finally {
-        auth.session.dispose();
-    }
-}
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    void main().then(
-        (code) => process.exit(code),
-        (error: unknown) => {
-            console.error(error instanceof Error ? error.message : error);
-            process.exit(1);
-        }
-    );
+    await coordinatePublishReview(parsed.number, dependencies);
+    return 0;
 }

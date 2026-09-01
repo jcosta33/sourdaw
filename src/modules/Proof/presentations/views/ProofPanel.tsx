@@ -472,8 +472,13 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     const targetLabel = TARGET_OPTIONS.find((option) => option.value === patch.target)?.label ?? patch.target;
 
     return (
-        <div className="proof-faceplate h-full min-h-0 overflow-hidden rounded-[26px] p-3">
-            <div className="grid h-full min-h-0 grid-cols-[15rem_minmax(0,1fr)_16rem] gap-3">
+        <div className="proof-faceplate h-full min-h-0 overflow-auto rounded-[26px] p-3">
+            {/* The desk column never shrinks below the EQ surface (500px
+                canvas plus section and desk padding); when the panel is
+                smaller than the rails plus that minimum, the faceplate
+                scrolls like a plugin window in any host instead of
+                crushing the controls into unreachable slivers. */}
+            <div className="grid h-full min-h-0 grid-cols-[15rem_minmax(34rem,1fr)_16rem] gap-3">
                 <DawPluginRail>
                     <SideCard
                         title="Mission"
@@ -557,7 +562,7 @@ export const ProofPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
                         <ProofDeskMetrics deviceId={deviceId} />
                     </Row>
 
-                    <div className="proof-window min-h-0 flex-1 overflow-auto p-3">
+                    <div className="proof-window min-h-40 flex-1 overflow-auto p-3">
                         <ProofLevelContent
                             patch={patch}
                             uiLevel={uiLevel}
@@ -993,10 +998,14 @@ const Level3Build = ({
     gestureAuthority?: GestureAuthority;
     onPatchChange: ProofPatchChange;
 }): ReactElement => {
+    // The desk window (the level's overflow-auto host) owns all scrolling.
+    // An inner scroll or clip box here would zero the module column's
+    // automatic minimum size, letting the fixed-width meter aside crush it
+    // and paint over the module surfaces at constrained panel sizes.
     return (
-        <Row align="stretch" grow className="min-h-0 overflow-hidden">
-            {/* Module controls — scrollable */}
-            <Stack grow gap={3} className="overflow-y-auto py-2">
+        <Row align="stretch" className="min-w-fit">
+            {/* Module controls */}
+            <Stack grow gap={3} className="py-2">
                 <ProofEqSection
                     patch={patch}
                     gestureOwner={gestureOwner}
@@ -1328,10 +1337,12 @@ const Level5Lab = ({ patch, deviceId }: { patch: ProofPatch; deviceId: string })
     const targetLufs = patch.targetLufs;
     const { status, fftData, fftVersion, sampleRate, fftSize } = useProofAnalyser();
 
+    // Same contract as Level3Build: the desk window owns all scrolling, so
+    // the fixed-width gain comparison can never crush the metering column.
     return (
-        <Row align="stretch" grow className="min-h-0 overflow-hidden">
+        <Row align="stretch" className="min-w-fit">
             {/* Left: Advanced metering dashboard */}
-            <Stack grow gap={3} className="overflow-y-auto py-2 px-3">
+            <Stack grow gap={3} className="py-2 px-3">
                 {/* Loudness history */}
                 <div>
                     <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-wider mb-1 block">
