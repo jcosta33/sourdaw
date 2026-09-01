@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { defaultProjectStoreState, projectLoadFailureStore, projectStore } from '#/modules/Project/stores';
+import { type ActionHandler } from '#/utils/handlerContract';
 
 import { useGlobalKeyboardShortcuts } from '../keyboardShortcutsContract';
 
@@ -36,6 +37,14 @@ function lastIsInput(): boolean {
     return Boolean(calls[calls.length - 1]![0].isInput);
 }
 
+function stubTogglePlaybackHandler(): ActionHandler {
+    return {
+        undoable: false,
+        execute: () => {},
+        describe: () => ({ label: 'togglePlayback' }),
+    };
+}
+
 describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', () => {
     let cleanupNodes: HTMLElement[] = [];
 
@@ -65,7 +74,7 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
             loading: false,
             initialized: true,
         });
-        registerHandlerMap({ togglePlayback: () => undefined });
+        registerHandlerMap({ togglePlayback: stubTogglePlaybackHandler() });
     }
 
     function mount(node: HTMLElement): HTMLElement {
@@ -85,7 +94,7 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
     it('routes no shortcut to the app while the project is still loading', () => {
         render(<Host />);
         const button = mount(document.createElement('button'));
-        registerHandlerMap({ togglePlayback: () => undefined });
+        registerHandlerMap({ togglePlayback: stubTogglePlaybackHandler() });
 
         dispatchSpace(button);
 
