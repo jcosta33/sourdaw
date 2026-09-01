@@ -251,6 +251,17 @@ describe('resolveAgentReference', () => {
         });
     });
 
+    it('grounds an accent-insensitive exact display name', () => {
+        const project = createProjectState();
+        project.tracks = [{ ...project.tracks[0]!, id: 'track-cafe', name: 'Café' }];
+
+        expect(resolveTrack('mute Cafe', 'track-cafe', project)).toEqual({
+            status: 'resolved',
+            id: 'track-cafe',
+            evidence: 'exact-name',
+        });
+    });
+
     it('applies capability kind filtering before target evidence is accepted', () => {
         const project = createProjectState();
         project.tracks = [
