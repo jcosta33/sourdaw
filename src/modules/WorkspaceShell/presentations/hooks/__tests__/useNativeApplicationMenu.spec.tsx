@@ -82,7 +82,19 @@ vi.mock('#/modules/Project/stores', () => ({
         },
     },
 }));
-vi.mock('#/modules/Project/useCases', () => projectActions);
+vi.mock('#/modules/Project/useCases', () => ({
+    cancelProjectSessionQuiesce: projectActions.cancelProjectSessionQuiesce,
+    discardProjectChanges: projectActions.discardProjectChanges,
+    exportProjectFile: projectActions.exportProjectFile,
+    getProjectSnapshotKey: projectActions.getProjectSnapshotKey,
+    getRecentProjects: projectActions.getRecentProjects,
+    loadRecentProject: projectActions.loadRecentProject,
+    newProject: projectActions.newProject,
+    pickAndImportProjectFile: projectActions.pickAndImportProjectFile,
+    quiesceProjectSession: projectActions.quiesceProjectSession,
+    recentProjectChanges: projectActions.recentProjectChanges,
+    saveProject: projectActions.saveProject,
+}));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: crdt.captureProjectRevision,
     subscribeToCrdtChanges: crdt.subscribeToCrdtChanges,
