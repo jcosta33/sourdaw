@@ -1039,7 +1039,7 @@ function createFakeGhExecutable(responsesByKey: Record<string, string | string[]
             `const countsPath = ${JSON.stringify(join(root, 'counts.json'))};`,
             'const fs = require("node:fs");',
             'const args = process.argv.slice(2);',
-            "if (args[0] === 'api' && args[1] === '--method' && args[2] === 'PATCH') {",
+            "if (args[0] === 'api' && args[1] === '--method' && args[2] === 'PUT') {",
             '  const endpoint = args[3];',
             '  const bodyIndex = args.findIndex((value, index) => value === "-f" && args[index + 1]?.startsWith("body="));',
             '  if (typeof endpoint !== "string" || bodyIndex < 0) { console.error(`invalid review update ${JSON.stringify(args)}`); process.exit(1); }',
@@ -1160,7 +1160,7 @@ function createFailingReviewResolutionMutationGhExecutable(
             `const queryPattern = ${JSON.stringify(queryPattern)};`,
             `const transportLabel = ${JSON.stringify(transportLabel)};`,
             'const args = process.argv.slice(2);',
-            `if (${JSON.stringify(mutation)} === 'updateReviewBody' && args[0] === 'api' && args[1] === '--method' && args[2] === 'PATCH' && typeof args[3] === 'string' && args[3].includes('/reviews/')) { fs.writeFileSync(calledPath, '1'); console.error(\`${transportLabel} mutation transport lost\`); process.exit(1); }`,
+            `if (${JSON.stringify(mutation)} === 'updateReviewBody' && args[0] === 'api' && args[1] === '--method' && args[2] === 'PUT' && typeof args[3] === 'string' && args[3].includes('/reviews/')) { fs.writeFileSync(calledPath, '1'); console.error(\`${transportLabel} mutation transport lost\`); process.exit(1); }`,
             "if (args[0] !== 'api' || args[1] !== 'graphql') { console.error(`unexpected gh args ${JSON.stringify(args)}`); process.exit(1); }",
             'const queryArg = args.find((value) => value.startsWith("query="));',
             "if (queryArg === undefined) { console.error('missing query'); process.exit(1); }",
@@ -5102,6 +5102,100 @@ describe('review thread resolution', () => {
         }
     });
 
+    it.each([
+        ['a landed review', resolutionReviewSummary(pullRequestId, threadId, head)],
+        ['an unlanded review', ''],
+    ])('preserves the recovery lock when the journaled decimal ID does not match %s', (_label, existingReviewBody) => {
+        const repository = createTemporaryGitRepository();
+        const mutation = {
+            phase: 'updateReviewBody' as const,
+            epoch: 1,
+            reviewId,
+            reviewDatabaseId: '9002',
+            body: resolutionReviewSummary(pullRequestId, threadId, head),
+        };
+        const { port, calls } = fakePort({
+            existingReplyCount: 1,
+            existingReplyReviewState: 'PENDING',
+            existingReplyReviewBody: existingReviewBody,
+        });
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, mutation);
+            updateLock(repository, 42, ownerOid);
+
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) =>
+                    recoverReviewResolutionLockOwnerState(42, owner, port)
+                )
+            ).toThrow(/could not prove an unlanded historical review/i);
+            expect(calls).toEqual(['inspect:1']);
+            expect(requireLockOwner(repository, 42)).toMatchObject({ threadId, head, mutation });
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('replays a shell-backed lost update-review-body response with the inspected review and releases the lock', () => {
+        const repository = createTemporaryGitRepository();
+        const body = resolutionReviewSummary(pullRequestId, threadId, head);
+        const fakeGh = createFakeGhExecutable({
+            [`updateReview:repos/${REQUIRED_REPOSITORY}/pulls/42/reviews/9223372036854775808:${body}`]: `{"id":9223372036854775808,"node_id":${JSON.stringify(reviewId)},"body":${JSON.stringify(body)},"state":"PENDING","commit_id":${JSON.stringify(head)},"user":{"node_id":${JSON.stringify(AUTHOR_BOT_NODE_ID)},"login":"renamed-author","type":"Bot"}}`,
+        });
+        const {
+            port: fakePortForInspection,
+            calls,
+            state,
+        } = fakePort({
+            existingReplyCount: 1,
+            existingReplyReviewState: 'PENDING',
+            existingReplyReviewBody: '',
+        });
+        const shellBackedPort = shellPort(
+            { configDir: repository, env: { SOURDAW_TRUSTED_GH_PATH: fakeGh.executable }, dispose() {} },
+            repository
+        );
+        const port: ResolveReviewThreadPort = {
+            ...fakePortForInspection,
+            updateReviewBody: (currentReviewId, currentBody, reviewCommitOid, inspectedReview) => {
+                const receipt = shellBackedPort.updateReviewBody(
+                    currentReviewId,
+                    currentBody,
+                    reviewCommitOid,
+                    inspectedReview
+                );
+                fakePortForInspection.updateReviewBody(currentReviewId, currentBody, reviewCommitOid, inspectedReview);
+                return receipt;
+            },
+        };
+        try {
+            const mutation = {
+                phase: 'updateReviewBody' as const,
+                epoch: 1,
+                reviewId,
+                reviewDatabaseId: '9223372036854775808',
+                body,
+            };
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, mutation);
+            updateLock(repository, 42, ownerOid);
+
+            const inspection = recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) =>
+                recoverReviewResolutionLockOwnerState(42, owner, port)
+            );
+            expect(calls).toEqual([
+                'inspect:1',
+                `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${head}`,
+                `updateReview:${reviewId}`,
+                'inspect:2',
+            ]);
+            expect(inspection.pendingReviews).toEqual([expect.objectContaining({ id: reviewId, body })]);
+            expect(state().updatedReviewCommitOids).toEqual([{ reviewId, reviewCommitOid: head }]);
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+            rmSync(fakeGh.root, { recursive: true, force: true });
+        }
+    });
+
     it('replays an unlanded H1 review-body update at H2 after proving the historical review and current attachment', () => {
         const repository = createTemporaryGitRepository();
         const { port, calls, state } = fakePort({
@@ -8567,7 +8661,7 @@ describe('review thread resolution', () => {
             [
                 'api',
                 '--method',
-                'PATCH',
+                'PUT',
                 `repos/${REQUIRED_REPOSITORY}/pulls/42/reviews/9223372036854775807`,
                 '-f',
                 `body=${body}`,
@@ -8628,6 +8722,7 @@ describe('review thread resolution', () => {
         }
     });
     it.each([
+        ['wrong decimal review ID', { id: 9002 }],
         ['wrong review node ID', { node_id: 'PRR_foreign' }],
         ['foreign actor', { user: { node_id: REVIEWER_BOT_NODE_ID, login: 'renamed-reviewer', type: 'Bot' } }],
     ])('rejects a %s REST update receipt', (_label, override) => {

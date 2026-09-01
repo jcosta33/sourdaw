@@ -4641,6 +4641,8 @@ function hasRecoveredReviewResolutionMutation(
                 inspection.pendingReviews.some(
                     (review) =>
                         review.id === mutation.reviewId &&
+                        (mutation.reviewDatabaseId === undefined ||
+                            review.fullDatabaseId === mutation.reviewDatabaseId) &&
                         review.body === mutation.body &&
                         review.commitOid === mutation.reviewCommitOid &&
                         isAuthorBotActor(review.authorNodeId, review.authorType)
@@ -4648,6 +4650,8 @@ function hasRecoveredReviewResolutionMutation(
                 managedReplyMarkers(thread, context, ['PENDING', 'COMMENTED'], true).some(
                     (candidate) =>
                         candidate.review.id === mutation.reviewId &&
+                        (mutation.reviewDatabaseId === undefined ||
+                            candidate.review.fullDatabaseId === mutation.reviewDatabaseId) &&
                         candidate.review.body === mutation.body &&
                         candidate.review.commitOid === mutation.reviewCommitOid
                 )
@@ -4786,6 +4790,7 @@ function requireReplayableHistoricalReviewBodyUpdate(
     if (
         review === null ||
         review.id !== mutation.reviewId ||
+        (mutation.reviewDatabaseId !== undefined && review.fullDatabaseId !== mutation.reviewDatabaseId) ||
         !['PENDING', 'COMMENTED'].includes(review.state) ||
         review.body.trim() !== '' ||
         review.commitOid !== mutation.reviewCommitOid ||
@@ -5441,7 +5446,7 @@ export function updateReviewBody(
     const response = gh([
         'api',
         '--method',
-        'PATCH',
+        'PUT',
         `repos/${REQUIRED_REPOSITORY}/pulls/${number}/reviews/${review.fullDatabaseId}`,
         '-f',
         `body=${body}`,
