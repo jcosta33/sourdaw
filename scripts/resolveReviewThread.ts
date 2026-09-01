@@ -925,6 +925,7 @@ function resolveReviewThreadWithinMutation(
         );
         let canonicalReply = canonical.marker;
         let canonicalReview = canonical.review;
+        const canonicalWasCommented = canonicalReview.state === 'COMMENTED';
         if (canonicalReview.body.trim() === '') {
             reviewUpdateAttempted = true;
             const canonicalReviewCommitOid = requireReviewCommitOid(canonicalReview, `Done reply ${canonicalReply.id}`);
@@ -993,6 +994,26 @@ function resolveReviewThreadWithinMutation(
                 canonicalReviewCommitOid,
                 'submit review'
             );
+            replyInspection = port.inspect(number, threadId);
+            assertExpectedHeadAfterMutation(replyInspection.head, expectedHead);
+            assertResolvableThread(replyInspection.thread, threadId);
+        }
+        const repairedCurrentHeadEmptyDuplicates = canonicalWasCommented
+            ? repairManagedCommentedReviewEnvelopes(
+                  number,
+                  threadId,
+                  replyInspection.thread,
+                  port,
+                  context,
+                  ['COMMENTED'],
+                  () => {
+                      reviewUpdateAttempted = true;
+                  },
+                  undefined,
+                  true
+              )
+            : false;
+        if (repairedCurrentHeadEmptyDuplicates) {
             replyInspection = port.inspect(number, threadId);
             assertExpectedHeadAfterMutation(replyInspection.head, expectedHead);
             assertResolvableThread(replyInspection.thread, threadId);
@@ -1919,7 +1940,6 @@ function assertPreservedImmutableEnvelopeBeforeConvergence(
     const preserved = managed.filter(
         (candidate) =>
             matchesReviewResolutionMarkerSnapshot(candidate, snapshot) &&
-            candidate.currentHead &&
             isImmutableEmptySubmittedReview(candidate.review)
     );
     if (
@@ -1941,7 +1961,8 @@ function repairManagedCommentedReviewEnvelopes(
     context: ResolutionReviewContext,
     allowedStates: string[] = ['COMMENTED'],
     beforeUpdate?: () => void,
-    preservedImmutableReviewId?: string
+    preservedImmutableReviewId?: string,
+    repairCurrentHeadEmptySubmittedEnvelopes: boolean = false
 ): boolean {
     if (thread === null) {
         fail(`review thread ${threadId} was not found on this pull request`);
@@ -1952,7 +1973,8 @@ function repairManagedCommentedReviewEnvelopes(
         if (
             repairedReviewIds.has(candidate.review.id) ||
             candidate.review.id === preservedImmutableReviewId ||
-            isImmutableEmptySubmittedReview(candidate.review) ||
+            (isImmutableEmptySubmittedReview(candidate.review) &&
+                (!repairCurrentHeadEmptySubmittedEnvelopes || !candidate.currentHead)) ||
             candidate.review.body.trim() !== ''
         ) {
             continue;
@@ -1986,9 +2008,7 @@ function hasExactImmutableEmptySubmittedReviewEnvelope(
     port: ResolveReviewThreadPort
 ): ManagedReplyMarker | undefined {
     const commented = managedReplyMarkers(thread, context, ['COMMENTED'], true);
-    const immutable = commented.filter(
-        (candidate) => candidate.currentHead && isImmutableEmptySubmittedReview(candidate.review)
-    );
+    const immutable = commented.filter((candidate) => isImmutableEmptySubmittedReview(candidate.review));
     if (immutable.length === 0) {
         return undefined;
     }
@@ -5784,7 +5804,10 @@ export function recoverReviewResolutionLockOwnerState(
                 mutation,
                 port
             );
-            if (isImmutableEmptySubmittedReview(review)) {
+            if (
+                isImmutableEmptySubmittedReview(review) &&
+                (mutation.marker !== undefined || mutation.reviewDatabaseId !== undefined)
+            ) {
                 fail(unreconciledReviewResolutionMutationMessage(number, mutation));
             }
             const updated = port.updateReviewBody(mutation.reviewId, mutation.body, mutation.reviewCommitOid, review);
