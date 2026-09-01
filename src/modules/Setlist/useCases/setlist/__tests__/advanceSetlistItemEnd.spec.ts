@@ -8,6 +8,7 @@ import { stopPlayback } from '#/modules/Transport/useCases';
 import { setlistStore, type SetlistItem, type SetlistState } from '../../../stores/setlistStore';
 import { advanceSetlistItemEnd } from '../advanceSetlistItemEnd';
 import { goToItem } from '../goToItem';
+import { removeSetlistItem } from '../removeSetlistItem';
 
 type EventBusShape = {
     emit: ReturnType<typeof vi.fn>;
@@ -18,6 +19,10 @@ const stopPlaybackMock = vi.hoisted(() => vi.fn(() => Promise.resolve()));
 const transportRuntime = vi.hoisted(() => ({
     isPlaying: false,
     tempo: 120,
+}));
+
+vi.mock('#/modules/Command/useCases', () => ({
+    pushUndoEntry: vi.fn(),
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
@@ -95,6 +100,9 @@ describe('advanceSetlistItemEnd', () => {
         stopPlaybackMock.mockClear();
         transportRuntime.isPlaying = false;
         transportRuntime.tempo = 120;
+        // Relocate while parked so any prior arm (pause-kept) is wiped between tests.
+        playheadPositionRef.current = Number.POSITIVE_INFINITY;
+        advanceSetlistItemEnd();
         playheadPositionRef.current = 0;
         seed();
         injectEventBus();
@@ -300,5 +308,121 @@ describe('advanceSetlistItemEnd', () => {
         vi.runOnlyPendingTimers();
 
         expect(setlistStore.value?.currentIndex).toBe(1);
+    });
+
+    it('preserves duration arm across pause/resume without relocating the playhead', () => {
+        seed({
+            autoAdvance: false,
+            currentIndex: 0,
+            items: [makeItem({ id: 'a', autoStop: true, estimatedDuration: 4 })],
+        });
+        armAtBeat(0);
+        playheadPositionRef.current = 6;
+        advanceSetlistItemEnd();
+
+        setPlaying(false);
+        advanceSetlistItemEnd();
+
+        setPlaying(true);
+        advanceSetlistItemEnd();
+
+        playheadPositionRef.current = 8;
+        advanceSetlistItemEnd();
+
+        expect(stopPlayback).toHaveBeenCalledTimes(1);
+    });
+
+    it('starts a fresh duration after stop relocates the playhead while parked', () => {
+        seed({
+            autoAdvance: false,
+            currentIndex: 0,
+            items: [makeItem({ id: 'a', autoStop: true, estimatedDuration: 4 })],
+        });
+        armAtBeat(0);
+        playheadPositionRef.current = 6;
+        advanceSetlistItemEnd();
+
+        setPlaying(false);
+        playheadPositionRef.current = 0;
+        advanceSetlistItemEnd();
+
+        setPlaying(true);
+        advanceSetlistItemEnd();
+
+        playheadPositionRef.current = 8;
+        advanceSetlistItemEnd();
+
+        expect(stopPlayback).toHaveBeenCalledTimes(1);
+    });
+
+    it('clears a pending gap timer when paused so nextItem does not fire while parked', () => {
+        seed({
+            autoAdvance: true,
+            currentIndex: 0,
+            items: [
+                makeItem({ id: 'a', autoStop: false, gapSeconds: 2, estimatedDuration: 4 }),
+                makeItem({ id: 'b', autoStop: false, estimatedDuration: 4 }),
+            ],
+        });
+        armAtBeat(0);
+        playheadPositionRef.current = 8;
+        advanceSetlistItemEnd();
+
+        expect(setlistStore.value?.currentIndex).toBe(0);
+
+        setPlaying(false);
+        advanceSetlistItemEnd();
+
+        vi.advanceTimersByTime(2000);
+
+        expect(setlistStore.value?.currentIndex).toBe(0);
+        expect(stopPlayback).not.toHaveBeenCalled();
+    });
+
+    it('does not advance past the successor when the ended item is removed during the gap', () => {
+        seed({
+            autoAdvance: true,
+            currentIndex: 0,
+            items: [
+                makeItem({ id: 'a', autoStop: false, gapSeconds: 2, estimatedDuration: 4 }),
+                makeItem({ id: 'b', autoStop: false, estimatedDuration: 4 }),
+                makeItem({ id: 'c', autoStop: false, estimatedDuration: 4 }),
+            ],
+        });
+        armAtBeat(0);
+        playheadPositionRef.current = 8;
+        advanceSetlistItemEnd();
+
+        removeSetlistItem('a');
+        expect(setlistStore.value?.currentIndex).toBe(0);
+        expect(setlistStore.value?.items.map((item) => item.id)).toEqual(['b', 'c']);
+
+        vi.advanceTimersByTime(2000);
+
+        expect(setlistStore.value?.currentIndex).toBe(0);
+        expect(setlistStore.value?.items[0]?.id).toBe('b');
+    });
+
+    it('does not advance when autoAdvance is turned off during the gap', () => {
+        seed({
+            autoAdvance: true,
+            currentIndex: 0,
+            items: [
+                makeItem({ id: 'a', autoStop: false, gapSeconds: 2, estimatedDuration: 4 }),
+                makeItem({ id: 'b', autoStop: false, estimatedDuration: 4 }),
+            ],
+        });
+        armAtBeat(0);
+        playheadPositionRef.current = 8;
+        advanceSetlistItemEnd();
+
+        const latest = setlistStore.value;
+        expect(latest).not.toBeNull();
+        setlistStore.set({ ...latest!, autoAdvance: false });
+
+        vi.advanceTimersByTime(2000);
+
+        expect(setlistStore.value?.currentIndex).toBe(0);
+        expect(stopPlayback).not.toHaveBeenCalled();
     });
 });

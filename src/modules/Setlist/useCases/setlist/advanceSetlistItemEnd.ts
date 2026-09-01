@@ -9,6 +9,7 @@ let startBeat: number | null = null;
 let armedIndex: number | null = null;
 let wasPlaying = false;
 let itemEndConsumed = false;
+let lastPlayingBeat: number | null = null;
 let pendingAdvanceTimer: ReturnType<typeof setTimeout> | null = null;
 
 function clearPendingAdvanceTimer(): void {
@@ -19,6 +20,13 @@ function clearPendingAdvanceTimer(): void {
     pendingAdvanceTimer = null;
 }
 
+function clearArm(): void {
+    startBeat = null;
+    armedIndex = null;
+    itemEndConsumed = false;
+    lastPlayingBeat = null;
+}
+
 function armItemStart(currentBeat: number, currentIndex: number): void {
     startBeat = currentBeat;
     armedIndex = currentIndex;
@@ -26,12 +34,24 @@ function armItemStart(currentBeat: number, currentIndex: number): void {
     clearPendingAdvanceTimer();
 }
 
-function scheduleAdvanceAfterGap(fromIndex: number, gapSeconds: number): void {
+function scheduleAdvanceAfterGap(
+    fromIndex: number,
+    gapSeconds: number,
+    endedItemId: string,
+    autoAdvanceWhenScheduled: boolean
+): void {
     const delayMs = Math.max(0, gapSeconds) * 1000;
     pendingAdvanceTimer = setTimeout(() => {
         pendingAdvanceTimer = null;
         const latest = setlistStore.value;
-        if (!latest || latest.currentIndex !== fromIndex) {
+        if (!latest || !autoAdvanceWhenScheduled || !latest.autoAdvance) {
+            return;
+        }
+        if (latest.currentIndex !== fromIndex) {
+            return;
+        }
+        const itemAtIndex = latest.items[fromIndex];
+        if (itemAtIndex === undefined || itemAtIndex.id !== endedItemId) {
             return;
         }
         nextItem();
@@ -48,10 +68,12 @@ export function advanceSetlistItemEnd(): void {
 
     if (!transport.isPlaying) {
         wasPlaying = false;
-        startBeat = null;
-        armedIndex = null;
-        itemEndConsumed = false;
+        // Stop/pause during a gap must not advance after the delay.
         clearPendingAdvanceTimer();
+        // Stop relocates the playhead; pause keeps it. Wipe the arm only on relocate.
+        if (lastPlayingBeat !== null && currentBeat !== lastPlayingBeat) {
+            clearArm();
+        }
         return;
     }
 
@@ -65,11 +87,15 @@ export function advanceSetlistItemEnd(): void {
 
     if (!wasPlaying) {
         wasPlaying = true;
-        if (currentItem !== undefined) {
+        lastPlayingBeat = currentBeat;
+        // Re-arm only when unset (pause kept the arm) or after a stop relocate wiped it.
+        if (currentItem !== undefined && (startBeat === null || armedIndex === null)) {
             armItemStart(currentBeat, currentIndex);
         }
         return;
     }
+
+    lastPlayingBeat = currentBeat;
 
     if (currentItem === undefined) {
         return;
@@ -126,7 +152,7 @@ export function advanceSetlistItemEnd(): void {
     }
 
     if (currentIndex + 1 < items.length) {
-        scheduleAdvanceAfterGap(currentIndex, currentItem.gapSeconds);
+        scheduleAdvanceAfterGap(currentIndex, currentItem.gapSeconds, currentItem.id, setlist.autoAdvance);
         return;
     }
 
