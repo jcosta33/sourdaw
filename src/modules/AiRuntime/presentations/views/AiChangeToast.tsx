@@ -35,6 +35,7 @@ export const AiChangeToast = (): ReactElement | null => {
     }
 
     const latest = changes[0]!;
+    const isAppliedChange = latest.kind === 'applied-change';
     const detailRows = latest.details.map((detail, detail_position) => {
         const occurrence = latest.details
             .slice(0, detail_position)
@@ -52,13 +53,15 @@ export const AiChangeToast = (): ReactElement | null => {
             aria-live="polite"
         >
             <Row align="start" gap={2}>
-                <Row
-                    justify="center"
-                    shrink={false}
-                    className="mt-0.5 size-5 rounded-full bg-[var(--color-state-success)]/20"
-                >
-                    <Check className="size-3 text-[var(--color-state-success)]" />
-                </Row>
+                {isAppliedChange ? (
+                    <Row
+                        justify="center"
+                        shrink={false}
+                        className="mt-0.5 size-5 rounded-full bg-[var(--color-state-success)]/20"
+                    >
+                        <Check className="size-3 text-[var(--color-state-success)]" />
+                    </Row>
+                ) : null}
                 <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium text-foreground">{latest.summary}</p>
                     {latest.details.length > 0 ? (
@@ -71,16 +74,18 @@ export const AiChangeToast = (): ReactElement | null => {
                         </Stack>
                     ) : null}
                     <Row align="stretch" gap={1} className="mt-2">
-                        <Button
-                            variant="ghost"
-                            size="xs"
-                            onClick={() => {
-                                undoLastAction();
-                                setChanges((prev) => prev.slice(1));
-                            }}
-                        >
-                            <Undo2 className="size-3 mr-1" /> Undo
-                        </Button>
+                        {isAppliedChange ? (
+                            <Button
+                                variant="ghost"
+                                size="xs"
+                                onClick={() => {
+                                    undoLastAction();
+                                    setChanges((prev) => prev.slice(1));
+                                }}
+                            >
+                                <Undo2 className="size-3 mr-1" /> Undo
+                            </Button>
+                        ) : null}
                         <Button variant="ghost" size="xs" onClick={() => setChanges((prev) => prev.slice(1))}>
                             <X className="size-3 mr-1" /> Dismiss
                         </Button>
