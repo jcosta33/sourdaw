@@ -19,11 +19,15 @@
  * closes where `X-Frame-Options` cannot (multiple ancestors, no `'self'`-only
  * nuance); `frame-src 'self'`, so `src/app/browserDisplayScaleHost.ts` can
  * frame the same-origin document it hosts for every top-level web session;
- * `script-src`'s `blob:`, so `@grame/faustwasm` can load its
+ * and `script-src`'s `blob:`, so `@grame/faustwasm` can load its
  * `URL.createObjectURL` compiler module and register its blob-URL
- * `AudioWorklet`s; and `connect-src`'s `[::1]` loopback entry, which
- * `configureCloudProvider.ts` and `providerAdapterRegistry.ts` accept as a
- * loopback provider host and Electron's list omits.
+ * `AudioWorklet`s.
+ *
+ * `connect-src` carries no `[::1]` entry: CSP source-list grammar (CSP3
+ * `host-char` is `ALPHA / DIGIT / "-"`) cannot express an IPv6 literal, so a
+ * browser drops the token and the origin is unreachable regardless of intent.
+ * `[::1]` is therefore deliberately absent here; the UI-side acceptance of
+ * that loopback host is tracked in its own issue, #3334.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -37,7 +41,10 @@ type VercelConfig = { headers?: VercelHeaderRule[] };
 const MAGENTA_DDSP_CSP_SOURCE = 'https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/';
 
 /**
- * `PRODUCTION_CSP`'s `connect-src`, copied here rather than imported.
+ * `PRODUCTION_CSP`'s `connect-src`, copied here rather than imported. This is
+ * also the hosted deployment's own `connect-src` — the two shells carry the
+ * exact same list, because `[::1]` has no CSP source-list representation
+ * (see the file-level comment) and so cannot appear on either side.
  *
  * `electron/protocol.ts` imports Electron's `app`/`net`/`protocol` at module
  * load time, so pulling the constant in requires the same `vi.mock('electron',
@@ -56,16 +63,6 @@ const ELECTRON_CONNECT_SRC = [
     'https://raw.githubusercontent.com',
     MAGENTA_DDSP_CSP_SOURCE,
 ];
-
-/**
- * The hosted deployment's own `connect-src`: `ELECTRON_CONNECT_SRC` with the
- * `[::1]` loopback literal inserted after `127.0.0.1`. `configureCloudProvider.ts`
- * and `providerAdapterRegistry.ts` both accept `[::1]` as a loopback provider
- * host alongside `localhost`/`127.0.0.1`; Electron's list omits it.
- */
-const HOSTED_CONNECT_SRC = ELECTRON_CONNECT_SRC.flatMap((source) =>
-    source === 'http://127.0.0.1:*' ? [source, 'http://[::1]:*'] : [source]
-);
 
 function readVercelConfig(): VercelConfig {
     const raw = readFileSync(join(import.meta.dirname, '../../vercel.json'), 'utf8');
@@ -88,11 +85,14 @@ function findHeaderValue(headers: VercelHeaderEntry[], key: string): string {
     return entry.value;
 }
 
+// A browser enforces only the first occurrence of a repeated directive name
+// and ignores every later one, so a duplicate is kept here on the same terms
+// rather than letting a later entry silently win.
 function parseCsp(policy: string): Map<string, string[]> {
     const directives = new Map<string, string[]>();
     for (const entry of policy.split(';')) {
         const [name, ...sources] = entry.trim().split(/\s+/u);
-        if (name !== undefined && name !== '') {
+        if (name !== undefined && name !== '' && !directives.has(name)) {
             directives.set(name, sources);
         }
     }
@@ -108,6 +108,31 @@ describe('the hosted web build Content-Security-Policy', () => {
     it('still carries the isolation headers the audio engine needs', () => {
         expect(findHeaderValue(headers, 'Cross-Origin-Opener-Policy')).toBe('same-origin');
         expect(findHeaderValue(headers, 'Cross-Origin-Embedder-Policy')).toBe('require-corp');
+    });
+
+    it('carries exactly the enumerated directives -- an appended directive must fail this spec', () => {
+        expect([...directives.keys()].sort()).toEqual([
+            'base-uri',
+            'connect-src',
+            'default-src',
+            'form-action',
+            'frame-ancestors',
+            'frame-src',
+            'img-src',
+            'media-src',
+            'object-src',
+            'script-src',
+            'style-src',
+            'worker-src',
+        ]);
+    });
+
+    it('never repeats a directive name -- a duplicate silently loses to first-match browser enforcement', () => {
+        const names = csp
+            .split(';')
+            .map((entry) => entry.trim().split(/\s+/u)[0])
+            .filter((name): name is string => name !== undefined && name !== '');
+        expect(new Set(names).size).toBe(names.length);
     });
 
     it('closes the directives an injected document would reach for', () => {
@@ -143,24 +168,26 @@ describe('the hosted web build Content-Security-Policy', () => {
     it('admits only the enumerated provider and model hosts on connect-src', () => {
         // Each source is a host renderer code in this build actually
         // fetches: loopback HTTP for a user-run OpenAI-compatible LLM server
-        // (Ollama/LM Studio) — `configureCloudProvider.ts` and
-        // `providerAdapterRegistry.ts` accept exactly
-        // `localhost`/`127.0.0.1`/`[::1]` for unauthenticated HTTP, and a
-        // hosted `https:` provider is refused outright on the web build
-        // (`setCloudProviderConfig.ts` gates every adapter-backed provider,
-        // Anthropic included, behind `isDesktopRuntime()`, so there is no
-        // hosted-provider `fetch` for this deployment to allow); Hugging
-        // Face plus its CDN redirect hosts for Kokoro/WebLLM model
-        // artifacts; raw.githubusercontent.com for the MLC wasm runtime; and
-        // only the exact Magenta DDSP checkpoint path whose artifacts are
-        // sha256-pinned. A host with no consumer stays out, and a bare
-        // `https:` is an open exfiltration channel that must never return.
-        // The wildcard port on every loopback entry is a deliberately
-        // accepted risk on this public origin rather than an Electron-only
-        // convenience: a user-run local server binds whatever port it
-        // chooses, so the port cannot be narrowed further without breaking
-        // the feature.
-        expect(directives.get('connect-src')).toEqual(HOSTED_CONNECT_SRC);
+        // (Ollama/LM Studio) — `configureCloudProvider.ts` accepts exactly
+        // `localhost`/`127.0.0.1`/`[::1]` for unauthenticated HTTP, but CSP
+        // source-list grammar cannot express the `[::1]` literal (see the
+        // file-level comment), so that loopback path is unreachable on this
+        // deployment regardless of what the origin config allows — tracked
+        // in its own issue, #3334. A hosted `https:` provider is refused
+        // outright on the web build (`setCloudProviderConfig.ts` gates every
+        // adapter-backed provider, Anthropic included, behind
+        // `isDesktopRuntime()`, so there is no hosted-provider `fetch` for
+        // this deployment to allow); Hugging Face plus its CDN redirect
+        // hosts for Kokoro/WebLLM model artifacts; raw.githubusercontent.com
+        // for the MLC wasm runtime; and only the exact Magenta DDSP
+        // checkpoint path whose artifacts are sha256-pinned. A host with no
+        // consumer stays out, and a bare `https:` is an open exfiltration
+        // channel that must never return. The wildcard port on every
+        // loopback entry is a deliberately accepted risk on this public
+        // origin rather than an Electron-only convenience: a user-run local
+        // server binds whatever port it chooses, so the port cannot be
+        // narrowed further without breaking the feature.
+        expect(directives.get('connect-src')).toEqual(ELECTRON_CONNECT_SRC);
     });
 
     it('carries the same style/img/media/base-uri/form-action directives as the Electron shell', () => {
