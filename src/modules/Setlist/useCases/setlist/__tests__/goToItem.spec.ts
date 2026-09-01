@@ -202,11 +202,13 @@ describe('goToItem', () => {
     it('should still update index and apply time signature when setTempo refuses with TempoRampWrite', () => {
         const items = [
             baseItem({
+                id: 'a',
                 bpm: 140,
                 timeSignature: { numerator: 3, denominator: 4 },
             }),
+            baseItem({ id: 'b' }),
         ];
-        setlistStoreMock.value = baseState(items, 0);
+        setlistStoreMock.value = baseState(items, 1);
 
         mocks.setTempo.mockImplementation(() => {
             throw createAppError('TempoRampWrite', 'Cannot set tempo here', {
@@ -218,7 +220,30 @@ describe('goToItem', () => {
         injectGoToItem();
 
         expect(() => goToItem(0)).not.toThrow();
+        expect(mocks.setTempo).toHaveBeenCalledWith({ bpm: 140 });
+        expect(setlistStore.set).toHaveBeenCalled();
         expect(setlistStore.value?.currentIndex).toBe(0);
         expect(mocks.setTimeSignature).toHaveBeenCalledWith(3, 4);
+    });
+
+    it('should rethrow non-TempoRampWrite errors from setTempo and skip time signature', () => {
+        const items = [
+            baseItem({
+                bpm: 140,
+                timeSignature: { numerator: 3, denominator: 4 },
+            }),
+        ];
+        setlistStoreMock.value = baseState(items, 0);
+
+        const boom = new Error('transport failed');
+        mocks.setTempo.mockImplementation(() => {
+            throw boom;
+        });
+
+        injectGoToItem();
+
+        expect(() => goToItem(0)).toThrow(boom);
+        expect(mocks.setTempo).toHaveBeenCalledWith({ bpm: 140 });
+        expect(mocks.setTimeSignature).not.toHaveBeenCalled();
     });
 });
