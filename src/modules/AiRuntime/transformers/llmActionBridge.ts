@@ -19,6 +19,12 @@ import { type SyncopatedArpeggioCapability } from '../models/SyncopatedArpeggioC
 import { type WholeProjectVibeMixCapability } from '../models/WholeProjectVibeMixPlan';
 import { normalizeSafeProjectName } from '../validators/normalizeSafeProjectName';
 
+import {
+    type LlmActionBridgeResult,
+    type LlmActionRejection,
+    type MarkerPlanningSignature,
+    type SectionPlanningSignature,
+} from './llmActionBridgeContracts';
 import { bridgeMarkerSectionToolCall } from './llmActionStrategies/markerSectionStrategy';
 import { bridgeTransportTimelineToolCall } from './llmActionStrategies/transportTimelineStrategy';
 import { type ToolCallResult } from './toolCallParser';
@@ -27,30 +33,12 @@ type ExecutableTrackKind = 'audio' | 'midi' | 'folder';
 type NormalizationMode = 'peak' | 'rms' | 'lufs';
 const executableTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'folder']);
 
-export type LlmActionRejection = {
-    index: number;
-    name: string;
-    reason: string;
-};
-
-export type LlmActionBridgeResult = {
-    actions: RuntimeAction[];
-    rejections: LlmActionRejection[];
-};
-
-export type MarkerPlanningSignature = {
-    beat: number;
-    color?: string;
-    markerId?: string;
-    name: string;
-};
-
-export type SectionPlanningSignature = {
-    endBeat: number;
-    name: string;
-    sectionId?: string;
-    startBeat: number;
-};
+export type {
+    LlmActionBridgeResult,
+    LlmActionRejection,
+    MarkerPlanningSignature,
+    SectionPlanningSignature,
+} from './llmActionBridgeContracts';
 
 type BridgeLlmToolCallsInput = {
     calls: readonly ToolCallResult[];

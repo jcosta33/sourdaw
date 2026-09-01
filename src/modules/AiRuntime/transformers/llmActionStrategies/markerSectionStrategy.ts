@@ -7,9 +7,9 @@ import {
     type LlmActionRejection,
     type MarkerPlanningSignature,
     type SectionPlanningSignature,
-} from '../llmActionBridge';
+} from '../llmActionBridgeContracts';
 import { type ToolCallResult } from '../toolCallParser';
-import { createLlmActionStrategyRegistry, type LlmActionStrategyDefinition } from './createLlmActionStrategyRegistry';
+import { createLlmActionStrategyRegistry } from './createLlmActionStrategyRegistry';
 
 export const markerSectionActionNames = [
     'addMarker',
