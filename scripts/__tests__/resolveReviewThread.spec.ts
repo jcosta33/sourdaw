@@ -642,9 +642,12 @@ function fakePort(input: Input = {}) {
                 state: input.createReceiptState ?? 'PENDING',
                 body: input.createReceiptBody ?? body,
                 commitOid: input.createReceiptCommitOid ?? commitOid,
-                authorNodeId: input.createReceiptAuthorNodeId ?? AUTHOR_BOT_NODE_ID,
+                authorNodeId:
+                    input.createReceiptAuthorNodeId === undefined
+                        ? AUTHOR_BOT_NODE_ID
+                        : input.createReceiptAuthorNodeId,
                 authorLogin,
-                authorType: input.createReceiptAuthorType ?? 'Bot',
+                authorType: input.createReceiptAuthorType === undefined ? 'Bot' : input.createReceiptAuthorType,
                 clientMutationId: input.createClientMutationId ?? `review-create:${threadId}`,
             };
         },
@@ -704,9 +707,13 @@ function fakePort(input: Input = {}) {
                 state: input.submitReceiptState ?? review.state,
                 body: input.submitReceiptBody ?? review.body,
                 commitOid: input.submitReceiptCommitOid ?? review.commitOid,
-                authorNodeId: input.submitReceiptAuthorNodeId ?? review.authorNodeId,
+                authorNodeId:
+                    input.submitReceiptAuthorNodeId === undefined
+                        ? review.authorNodeId
+                        : input.submitReceiptAuthorNodeId,
                 authorLogin: review.authorLogin,
-                authorType: input.submitReceiptAuthorType ?? review.authorType,
+                authorType:
+                    input.submitReceiptAuthorType === undefined ? review.authorType : input.submitReceiptAuthorType,
                 clientMutationId: input.submitClientMutationId ?? `review-submit:${currentReviewId}`,
             };
         },
@@ -729,9 +736,13 @@ function fakePort(input: Input = {}) {
                 state: input.updateReceiptState ?? review.state,
                 body: input.updateReceiptBody ?? review.body,
                 commitOid: input.updateReceiptCommitOid ?? review.commitOid,
-                authorNodeId: input.updateReceiptAuthorNodeId ?? review.authorNodeId,
+                authorNodeId:
+                    input.updateReceiptAuthorNodeId === undefined
+                        ? review.authorNodeId
+                        : input.updateReceiptAuthorNodeId,
                 authorLogin: review.authorLogin,
-                authorType: input.updateReceiptAuthorType ?? review.authorType,
+                authorType:
+                    input.updateReceiptAuthorType === undefined ? review.authorType : input.updateReceiptAuthorType,
                 clientMutationId: input.updateClientMutationId ?? `review-update:${currentReviewId}`,
             };
         },
@@ -1837,33 +1848,49 @@ function writeRecoverReviewResolutionSnapshot(snapshotRoot: string): string {
 describe('review thread resolution', () => {
     it('serializes one review-resolution mutation per PR, refuses same-PR different-thread contenders, and releases after failure', () => {
         const repository = createTemporaryGitRepository();
+        const executionFence = {
+            pid: process.pid,
+            ownerFence: { kind: 'pgid' as const, pgid: process.pid, leaderStartedAt: '1' },
+        };
         try {
             expect(() =>
-                withPullRequestReviewResolutionLock(repository, 42, threadId, head, () => {
-                    const previousOwnerOid = readLockOid(repository, 42);
-                    expect(previousOwnerOid).toBeDefined();
-                    expect(() =>
-                        resolveReviewThread(42, `${threadId}_other`, head, AUTHOR_BOT_NODE_ID, {
-                            ...fakePort().port,
-                            serializeReviewThreadMutation: (number, currentThreadId, expectedHead, operation) =>
-                                withPullRequestReviewResolutionLock(
-                                    repository,
-                                    number,
-                                    currentThreadId,
-                                    expectedHead,
-                                    operation
-                                ),
-                        })
-                    ).toThrow(
-                        `review resolution on PR #42 is already being resolved by process group ${readProcessGroupId(process.pid)}; exact previous owner ${previousOwnerOid}; recover with pnpm review:resolve:recover 42 --owner ${previousOwnerOid}`
-                    );
-                    expect(withPullRequestReviewResolutionLock(repository, 43, threadId, head, () => 'other-pr')).toBe(
-                        'other-pr'
-                    );
-                    throw new Error('boom');
-                })
+                withPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    threadId,
+                    head,
+                    () => {
+                        const previousOwnerOid = readLockOid(repository, 42);
+                        expect(previousOwnerOid).toBeDefined();
+                        expect(() =>
+                            resolveReviewThread(42, `${threadId}_other`, head, AUTHOR_BOT_NODE_ID, {
+                                ...fakePort().port,
+                                serializeReviewThreadMutation: (number, currentThreadId, expectedHead, operation) =>
+                                    withPullRequestReviewResolutionLock(
+                                        repository,
+                                        number,
+                                        currentThreadId,
+                                        expectedHead,
+                                        operation,
+                                        { executionFence }
+                                    ),
+                            })
+                        ).toThrow(
+                            `review resolution on PR #42 is already being resolved by process group ${process.pid}; exact previous owner ${previousOwnerOid}; recover with pnpm review:resolve:recover 42 --owner ${previousOwnerOid}`
+                        );
+                        expect(
+                            withPullRequestReviewResolutionLock(repository, 43, threadId, head, () => 'other-pr', {
+                                executionFence,
+                            })
+                        ).toBe('other-pr');
+                        throw new Error('boom');
+                    },
+                    { executionFence }
+                )
             ).toThrow(/boom/);
-            expect(withPullRequestReviewResolutionLock(repository, 42, threadId, head, () => 'ok')).toBe('ok');
+            expect(
+                withPullRequestReviewResolutionLock(repository, 42, threadId, head, () => 'ok', { executionFence })
+            ).toBe('ok');
         } finally {
             rmSync(repository, { recursive: true, force: true });
         }
@@ -3040,6 +3067,67 @@ describe('review thread resolution', () => {
         }
     });
 
+    it.each([
+        ['POSIX process group', { kind: 'pgid', pgid: 999998 }],
+        ['process', { kind: 'pid', pid: 999998 }],
+        ['Windows process tree', { kind: 'win32-process-tree', version: 1, rootPid: 999998, rootStartedAt: '1' }],
+    ] as const)('rejects a v5 owner whose %s fence names another process', (_label, ownerFence) => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, { phase: 'idle', epoch: 0 }, ownerFence);
+            updateLock(repository, 42, ownerOid);
+
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    ownerOid,
+                    () => 'unexpected',
+                    () => false
+                )
+            ).toThrow(/lock ownership is malformed/i);
+            expect(readLockOid(repository, 42)).toBe(ownerOid);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it.each([
+        ['POSIX process group', { kind: 'pgid', pgid: 999998 }],
+        ['process', { kind: 'pid', pid: 999998 }],
+        ['Windows process tree', { kind: 'win32-process-tree', version: 1, rootPid: 999998, rootStartedAt: '1' }],
+    ] as const)('rejects a v6 owner whose %s fence names another process', (_label, ownerFence) => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const sharedOwnerOid = writeSharedMutationLockOwnerBlob(repository, 999999);
+            const ownerOid = writeLockOwnerBlob(
+                repository,
+                999999,
+                head,
+                { phase: 'idle', epoch: 0 },
+                ownerFence,
+                undefined,
+                sharedOwnerOid
+            );
+            updateSharedMutationLock(repository, 42, sharedOwnerOid);
+            updateLock(repository, 42, ownerOid);
+
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    ownerOid,
+                    () => 'unexpected',
+                    () => false
+                )
+            ).toThrow(/lock ownership is malformed/i);
+            expect(readLockOid(repository, 42)).toBe(ownerOid);
+            expect(readSharedMutationLockOid(repository, 42)).toBe(sharedOwnerOid);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it('identifies the exact live Windows root and treats absent or reused roots as recoverable', () => {
         const ownerFence = {
             kind: 'win32-process-tree' as const,
@@ -3450,7 +3538,6 @@ describe('review thread resolution', () => {
 
     it('claims the exact dead PR lock owner before reconciliation so concurrent recovery sees a live holder', () => {
         const repository = createTemporaryGitRepository();
-        const currentPgid = readProcessGroupId(process.pid);
         try {
             const ownerOid = writeLockOwnerBlob(repository, 999999, head, {
                 phase: 'createPendingReview',
@@ -3467,7 +3554,7 @@ describe('review thread resolution', () => {
                             threadId,
                             head,
                             pid: process.pid,
-                            ownerFence: { kind: 'pgid', pgid: currentPgid },
+                            ownerFence: { kind: 'pgid', pgid: process.pid },
                             mutation: { phase: 'createPendingReview', epoch: 1 },
                         });
                         const claimedOwnerOid = readLockOid(repository, 42);
@@ -3479,14 +3566,20 @@ describe('review thread resolution', () => {
                                 42,
                                 claimedOwnerOid!,
                                 () => 'nested recovery must not start',
-                                (ownerFence) => ownerFence.kind === 'pgid' && ownerFence.pgid === currentPgid
+                                (ownerFence) => ownerFence.kind === 'pgid' && ownerFence.pgid === process.pid
                             )
                         ).toThrow(
-                            `review resolution on PR #42 lock is still held by live process group ${currentPgid}`
+                            `review resolution on PR #42 lock is still held by live process group ${process.pid}`
                         );
                         return 'outer recovery claimed the lock';
                     },
-                    (ownerFence) => ownerFence.kind === 'pgid' && ownerFence.pgid === currentPgid
+                    (ownerFence) => ownerFence.kind === 'pgid' && ownerFence.pgid === process.pid,
+                    {
+                        executionFence: {
+                            pid: process.pid,
+                            ownerFence: { kind: 'pgid', pgid: process.pid, leaderStartedAt: '1' },
+                        },
+                    }
                 )
             ).toBe('outer recovery claimed the lock');
             expect(readLockOid(repository, 42)).toBeUndefined();
@@ -3833,7 +3926,15 @@ describe('review thread resolution', () => {
         const repository = createTemporaryGitRepository();
         try {
             const sharedOwnerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(repository, 999999);
-            const reviewOwnerOid = writeLockOwnerBlob(repository, 999999, head);
+            const reviewOwnerOid = writeLockOwnerBlob(
+                repository,
+                999999,
+                head,
+                undefined,
+                undefined,
+                undefined,
+                sharedOwnerOid
+            );
             updateSharedMutationLock(repository, 42, sharedOwnerOid);
             updateLock(repository, 42, reviewOwnerOid);
 
@@ -3846,6 +3947,90 @@ describe('review thread resolution', () => {
             ).toThrow(/has a paired review-resolution lock/);
             expect(readSharedMutationLockOid(repository, 42)).toBe(sharedOwnerOid);
             expect(readLockOid(repository, 42)).toBe(reviewOwnerOid);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('releases a dead standalone shared owner while preserving an unrelated v5 inner owner for recovery', () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const sharedOwnerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(repository, 999999);
+            const reviewOwnerOid = writeLockOwnerBlob(repository, 999999, head, { phase: 'idle', epoch: 0 });
+            updateSharedMutationLock(repository, 42, sharedOwnerOid);
+            updateLock(repository, 42, reviewOwnerOid);
+
+            expect(
+                recoverStandaloneReviewResolutionSharedMutationLock(repository, 42, sharedOwnerOid, {
+                    ownerFenceIsLive: () => false,
+                    gitPath: systemGitPath(),
+                })
+            ).toContain('standalone-shared-lock-recovered');
+            expect(readSharedMutationLockOid(repository, 42)).toBeUndefined();
+            expect(readLockOid(repository, 42)).toBe(reviewOwnerOid);
+            expect(
+                recoverPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    reviewOwnerOid,
+                    () => 'reconciled',
+                    () => false
+                )
+            ).toBe('reconciled');
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('releases a dead standalone shared owner while preserving a v6 inner owner bound to another shared owner', () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const sharedOwnerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(repository, 999999);
+            const otherSharedOwnerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(repository, 999998);
+            const reviewOwnerOid = writeLockOwnerBlob(
+                repository,
+                999999,
+                head,
+                { phase: 'idle', epoch: 0 },
+                undefined,
+                undefined,
+                otherSharedOwnerOid
+            );
+            updateSharedMutationLock(repository, 42, sharedOwnerOid);
+            updateLock(repository, 42, reviewOwnerOid);
+
+            expect(
+                recoverStandaloneReviewResolutionSharedMutationLock(repository, 42, sharedOwnerOid, {
+                    ownerFenceIsLive: () => false,
+                    gitPath: systemGitPath(),
+                })
+            ).toContain('standalone-shared-lock-recovered');
+            expect(readSharedMutationLockOid(repository, 42)).toBeUndefined();
+            expect(readLockOid(repository, 42)).toBe(reviewOwnerOid);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('preserves both owners when an unrelated inner owner changes before standalone release', () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const sharedOwnerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(repository, 999999);
+            const reviewOwnerOid = writeLockOwnerBlob(repository, 999999, head, { phase: 'idle', epoch: 0 });
+            const replacementOwnerOid = writeLockOwnerBlob(repository, 999998, head, { phase: 'idle', epoch: 0 });
+            updateSharedMutationLock(repository, 42, sharedOwnerOid);
+            updateLock(repository, 42, reviewOwnerOid);
+
+            expect(() =>
+                recoverStandaloneReviewResolutionSharedMutationLock(repository, 42, sharedOwnerOid, {
+                    ownerFenceIsLive: () => false,
+                    gitPath: systemGitPath(),
+                    beforeExactRelease: () => updateLock(repository, 42, replacementOwnerOid, reviewOwnerOid),
+                })
+            ).toThrow(/ownership changed before release/);
+            expect(readSharedMutationLockOid(repository, 42)).toBe(sharedOwnerOid);
+            expect(readLockOid(repository, 42)).toBe(replacementOwnerOid);
         } finally {
             rmSync(repository, { recursive: true, force: true });
         }
@@ -7582,15 +7767,35 @@ describe('review thread resolution', () => {
                     markRemoteMutationAttempt,
                     sharedMutationOwnerOid,
                     registerSuccessfulCompletion
-                ) =>
-                    shellPort(
+                ) => {
+                    const port = shellPort(
                         session,
                         primaryRoot,
                         markRemoteMutationAttempt,
                         undefined,
                         sharedMutationOwnerOid,
                         registerSuccessfulCompletion
-                    ),
+                    );
+                    return {
+                        ...port,
+                        serializeReviewThreadMutation: (number, exactThreadId, expectedHead, operation) =>
+                            withPullRequestReviewResolutionLock(
+                                primaryRoot,
+                                number,
+                                exactThreadId,
+                                expectedHead,
+                                operation,
+                                {
+                                    executionFence: {
+                                        pid: process.pid,
+                                        ownerFence: { kind: 'pgid', pgid: process.pid, leaderStartedAt: '1' },
+                                    },
+                                    sharedMutationOwnerOid,
+                                    registerSuccessfulCompletion,
+                                }
+                            ),
+                    };
+                },
                 resolve: (number, exactThreadId, expectedHead, _authorNodeId, port) =>
                     port.serializeReviewThreadMutation(number, exactThreadId, expectedHead, () => 'inner-complete'),
             };
@@ -7797,6 +8002,32 @@ describe('review thread resolution', () => {
                 },
             },
         ],
+        [
+            'missing author',
+            {
+                data: {
+                    deletePullRequestReviewComment: {
+                        clientMutationId: replyId,
+                        pullRequestReviewComment: { id: replyId, body: 'Done', author: null },
+                    },
+                },
+            },
+        ],
+        [
+            'missing author ID',
+            {
+                data: {
+                    deletePullRequestReviewComment: {
+                        clientMutationId: replyId,
+                        pullRequestReviewComment: {
+                            id: replyId,
+                            body: 'Done',
+                            author: { id: null, login: 'renamed-author', __typename: 'Bot' },
+                        },
+                    },
+                },
+            },
+        ],
     ])('rejects a %s delete-reply receipt', (_case, response) => {
         expect(() => deleteReply(replyId, () => JSON.stringify(response))).toThrow(
             /delete review reply returned an invalid result/i
@@ -7959,6 +8190,40 @@ describe('review thread resolution', () => {
                             body: pendingReviewBody(head),
                             commit: { oid: head },
                             author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: 'Bot' },
+                        },
+                    },
+                },
+            },
+        ],
+        [
+            'missing author',
+            {
+                data: {
+                    deletePullRequestReview: {
+                        clientMutationId: reviewId,
+                        pullRequestReview: {
+                            id: reviewId,
+                            state: 'PENDING',
+                            body: pendingReviewBody(head),
+                            commit: { oid: head },
+                            author: null,
+                        },
+                    },
+                },
+            },
+        ],
+        [
+            'missing author type',
+            {
+                data: {
+                    deletePullRequestReview: {
+                        clientMutationId: reviewId,
+                        pullRequestReview: {
+                            id: reviewId,
+                            state: 'PENDING',
+                            body: pendingReviewBody(head),
+                            commit: { oid: head },
+                            author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: null },
                         },
                     },
                 },
@@ -9468,6 +9733,8 @@ describe('review thread resolution', () => {
     it.each([
         ['wrong immutable actor ID', { submitReceiptAuthorNodeId: REVIEWER_BOT_NODE_ID }],
         ['non-Bot type', { submitReceiptAuthorType: 'User' as const }],
+        ['missing actor ID', { submitReceiptAuthorNodeId: null }],
+        ['missing actor type', { submitReceiptAuthorType: null }],
         ['wrong body', { submitReceiptBody: 'wrong body' }],
         ['wrong state', { submitReceiptState: 'PENDING' as const }],
         ['wrong commit OID', { submitReceiptCommitOid: movedHead }],
@@ -9502,6 +9769,8 @@ describe('review thread resolution', () => {
     it.each([
         ['wrong immutable actor ID', { createReceiptAuthorNodeId: REVIEWER_BOT_NODE_ID }],
         ['non-Bot type', { createReceiptAuthorType: 'User' as const }],
+        ['missing actor ID', { createReceiptAuthorNodeId: null }],
+        ['missing actor type', { createReceiptAuthorType: null }],
         ['wrong body', { createReceiptBody: 'wrong body' }],
         ['wrong state', { createReceiptState: 'COMMENTED' as const }],
         ['wrong commit OID', { createReceiptCommitOid: movedHead }],
@@ -10535,6 +10804,8 @@ describe('review thread resolution', () => {
         ['client mutation id', { updateClientMutationId: 'wrong' }],
         ['wrong immutable actor ID', { updateReceiptAuthorNodeId: REVIEWER_BOT_NODE_ID }],
         ['non-Bot type', { updateReceiptAuthorType: 'User' as const }],
+        ['missing actor ID', { updateReceiptAuthorNodeId: null }],
+        ['missing actor type', { updateReceiptAuthorType: null }],
     ])('rejects an update-review-body receipt with %s before submit resolve delete or log', (_case, overrides) => {
         const { port, calls, authorNodeId } = fakePort({
             existingReplyCount: 1,
