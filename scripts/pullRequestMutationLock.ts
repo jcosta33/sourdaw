@@ -12,8 +12,12 @@ type PullRequestMutationLockOwner = {
 export type PullRequestMutationSerialization = <Value>(
     primaryRoot: string,
     number: number,
-    operation: () => Promise<Value>
+    operation: (boundary: PullRequestRemoteMutationBoundary) => Promise<Value>
 ) => Promise<Value>;
+
+export type PullRequestRemoteMutationBoundary = {
+    markRemoteMutationAttempt: () => void;
+};
 
 const LOCK_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
@@ -137,12 +141,22 @@ function releaseMutationLock(primaryRoot: string, ref: string, oid: string, numb
 export async function withPullRequestMutationLock<Value>(
     primaryRoot: string,
     number: number,
-    operation: () => Promise<Value>
+    operation: (boundary: PullRequestRemoteMutationBoundary) => Promise<Value>
 ): Promise<Value> {
     const lock = acquireMutationLock(primaryRoot, number);
+    let remoteMutationAttempted = false;
+    let succeeded = false;
     try {
-        return await operation();
+        const result = await operation({
+            markRemoteMutationAttempt: () => {
+                remoteMutationAttempted = true;
+            },
+        });
+        succeeded = true;
+        return result;
     } finally {
-        releaseMutationLock(primaryRoot, lock.ref, lock.oid, number);
+        if (succeeded || !remoteMutationAttempted) {
+            releaseMutationLock(primaryRoot, lock.ref, lock.oid, number);
+        }
     }
 }

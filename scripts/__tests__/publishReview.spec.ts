@@ -88,7 +88,9 @@ describe('review publish', () => {
             serializeMutation: async (_primaryRoot, number, operation) => {
                 calls.push(`lock:${number}:acquire`);
                 try {
-                    return await operation();
+                    return await operation({
+                        markRemoteMutationAttempt: () => calls.push('attempt'),
+                    });
                 } finally {
                     calls.push(`lock:${number}:release`);
                 }
@@ -108,7 +110,13 @@ describe('review publish', () => {
                 calls.push('repository');
                 return 'jcosta33/sourdaw';
             },
-            reviewPort: () => fencedPort,
+            reviewPort: (_session, _primaryRoot, markRemoteMutationAttempt) => ({
+                ...fencedPort,
+                postReview: (review) => {
+                    markRemoteMutationAttempt();
+                    return fencedPort.postReview(review);
+                },
+            }),
             publish: publishReview,
         };
 
@@ -120,6 +128,7 @@ describe('review publish', () => {
             'repository',
             'head',
             'head',
+            'attempt',
             'post',
             'dispose',
             'lock:42:release',
@@ -131,7 +140,8 @@ describe('review publish', () => {
         const forwarded: number[] = [];
         const dependencies: PublishReviewCoordinatorDependencies = {
             primaryRoot: () => '/repo',
-            serializeMutation: async (_primaryRoot, _number, operation) => operation(),
+            serializeMutation: async (_primaryRoot, _number, operation) =>
+                operation({ markRemoteMutationAttempt: () => undefined }),
             authenticateReviewer: async () => ({
                 minted: { actorNodeId: REVIEWER_BOT_NODE_ID },
                 session: { configDir: '/tmp/sourdaw-reviewer', env: {}, dispose: () => undefined },
@@ -144,9 +154,9 @@ describe('review publish', () => {
             },
         };
 
-        await expect(runPublishReviewCli(['3239'], dependencies)).resolves.toBe(0);
+        await expect(runPublishReviewCli(['7819'], dependencies)).resolves.toBe(0);
 
-        expect(forwarded).toEqual([3239]);
+        expect(forwarded).toEqual([7819]);
     });
 
     it('posts as the reviewer bot on the bundle head and prints the review id', () => {
@@ -397,16 +407,27 @@ describe('shellPort postReview state verification', () => {
     });
 
     it('posts successfully when the recorded state agrees with the requested event', () => {
-        const capture = fakeCapture({
-            id: 42,
-            state: 'CHANGES_REQUESTED',
-            user: { node_id: REVIEWER_BOT_NODE_ID, login: 'renamed-reviewer[bot]' },
-        });
-        const port = shellPort(session, process.cwd(), capture);
+        const events: string[] = [];
+        const capture = (command: string, args: string[]): string => {
+            if (command === 'git' && args[0] === 'rev-parse') {
+                return `${process.cwd()}/.git`;
+            }
+            if (command === 'gh' && args[0] === 'api') {
+                events.push('post');
+                return JSON.stringify({
+                    id: 42,
+                    state: 'CHANGES_REQUESTED',
+                    user: { node_id: REVIEWER_BOT_NODE_ID, login: 'renamed-reviewer[bot]' },
+                });
+            }
+            throw new Error(`unexpected command in test: ${command} ${args.join(' ')}`);
+        };
+        const port = shellPort(session, process.cwd(), capture, () => events.push('attempt'));
 
         expect(
             port.postReview({ number: 42, commitId: 'sha', event: 'REQUEST_CHANGES', body: 'no', comments: [] })
         ).toEqual({ id: 42, actorNodeId: REVIEWER_BOT_NODE_ID, login: 'renamed-reviewer[bot]' });
+        expect(events).toEqual(['attempt', 'post']);
     });
 
     it('posts successfully when APPROVE is recorded as APPROVED', () => {

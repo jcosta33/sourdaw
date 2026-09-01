@@ -278,7 +278,9 @@ describe('review thread resolution', () => {
             serializeMutation: async (_primaryRoot, number, operation) => {
                 calls.push(`lock:${number}:acquire`);
                 try {
-                    return await operation();
+                    return await operation({
+                        markRemoteMutationAttempt: () => calls.push('attempt'),
+                    });
                 } finally {
                     calls.push(`lock:${number}:release`);
                 }
@@ -298,7 +300,21 @@ describe('review thread resolution', () => {
                 calls.push('repository');
                 return 'jcosta33/sourdaw';
             },
-            threadPort: () => fencedPort,
+            threadPort: (_session, _primaryRoot, markRemoteMutationAttempt) => ({
+                ...fencedPort,
+                replyDone: (id) => {
+                    markRemoteMutationAttempt();
+                    return fencedPort.replyDone(id);
+                },
+                resolve: (id) => {
+                    markRemoteMutationAttempt();
+                    return fencedPort.resolve(id);
+                },
+                deleteReply: (id) => {
+                    markRemoteMutationAttempt();
+                    fencedPort.deleteReply(id);
+                },
+            }),
             resolve: resolveReviewThread,
         };
 
@@ -309,9 +325,11 @@ describe('review thread resolution', () => {
             'authenticate',
             'repository',
             'inspect',
+            'attempt',
             'reply',
             'inspect',
             'inspect',
+            'attempt',
             'resolve',
             'inspect',
             'log',
@@ -325,7 +343,8 @@ describe('review thread resolution', () => {
         let forwarded: { number: number; threadId: string; expectedHead: string } | undefined;
         const dependencies: ResolveReviewThreadCoordinatorDependencies = {
             primaryRoot: () => '/repo',
-            serializeMutation: async (_primaryRoot, _number, operation) => operation(),
+            serializeMutation: async (_primaryRoot, _number, operation) =>
+                operation({ markRemoteMutationAttempt: () => undefined }),
             authenticateAuthor: async () => ({
                 minted: { actorNodeId: AUTHOR_BOT_NODE_ID },
                 session: { configDir: '/tmp/sourdaw-author', env: {}, dispose: () => undefined },
@@ -338,11 +357,16 @@ describe('review thread resolution', () => {
             },
         };
 
+        const requestedThreadId = 'PRRT_cli_forwarding_distinct';
+        const requestedHead = 'c'.repeat(40);
         await expect(
-            runResolveReviewThreadCli(['3239', '--thread', threadId, '--head', head], dependencies)
+            runResolveReviewThreadCli(
+                ['7819', '--thread', requestedThreadId, '--head', requestedHead],
+                dependencies
+            )
         ).resolves.toBe(0);
 
-        expect(forwarded).toEqual({ number: 3239, threadId, expectedHead: head });
+        expect(forwarded).toEqual({ number: 7819, threadId: requestedThreadId, expectedHead: requestedHead });
     });
 
     it('uses supported GraphQL reply and deletion input fields', () => {
@@ -409,9 +433,13 @@ describe('review thread resolution', () => {
             },
         ],
     ])('rejects a %s delete-reply receipt', (_case, response) => {
-        expect(() => deleteReply(replyId, () => JSON.stringify(response))).toThrow(
-            /delete review reply returned an invalid result/i
-        );
+        let attempted = false;
+        expect(() =>
+            deleteReply(replyId, () => JSON.stringify(response), () => {
+                attempted = true;
+            })
+        ).toThrow(/delete review reply returned an invalid result/i);
+        expect(attempted).toBe(true);
     });
     it('finds the requested thread on a later page and paginates its comments', () => {
         let call = 0;

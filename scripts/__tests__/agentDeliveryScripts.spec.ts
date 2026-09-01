@@ -1594,13 +1594,18 @@ describe('package scripts and gitignore', () => {
         }
     });
 
-    it('releases the current delivery token after success and failure', async () => {
+    it('releases the current delivery token after success and a pre-mutation failure', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
         initializeDeliveryLockRepository(root);
 
         try {
             const sentinel = Symbol('delivery-result');
-            await expect(withPullRequestDeliveryLock(root, 2495, async () => sentinel)).resolves.toBe(sentinel);
+            await expect(
+                withPullRequestDeliveryLock(root, 2495, async ({ markRemoteMutationAttempt }) => {
+                    markRemoteMutationAttempt();
+                    return sentinel;
+                })
+            ).resolves.toBe(sentinel);
             expect(deliveryLockExists(root, 2495)).toBe(false);
 
             await expect(
@@ -1609,6 +1614,33 @@ describe('package scripts and gitignore', () => {
                 })
             ).rejects.toThrow('delivery failed');
             expect(deliveryLockExists(root, 2495)).toBe(false);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('retains the exact owner after an attempted mutation error and refuses reacquisition', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+        initializeDeliveryLockRepository(root);
+        let reacquired = false;
+
+        try {
+            await expect(
+                withPullRequestDeliveryLock(root, 2495, async ({ markRemoteMutationAttempt }) => {
+                    markRemoteMutationAttempt();
+                    throw new Error('remote result is indeterminate');
+                })
+            ).rejects.toThrow('remote result is indeterminate');
+            const retainedOwnerOid = readDeliveryLockOid(root, 2495);
+            expect(retainedOwnerOid).not.toBe('');
+
+            await expect(
+                withPullRequestDeliveryLock(root, 2495, async () => {
+                    reacquired = true;
+                })
+            ).rejects.toThrow(/already being delivered/);
+            expect(reacquired).toBe(false);
+            expect(readDeliveryLockOid(root, 2495)).toBe(retainedOwnerOid);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
@@ -1709,7 +1741,9 @@ describe('package scripts and gitignore', () => {
             serializeDelivery: async (_primaryRoot, number, operation) => {
                 seen.push(`lock:${number}:acquire`);
                 try {
-                    return await operation();
+                    return await operation({
+                        markRemoteMutationAttempt: () => seen.push(`lock:${number}:attempt`),
+                    });
                 } finally {
                     seen.push(`lock:${number}:release`);
                 }
@@ -1746,7 +1780,7 @@ describe('package scripts and gitignore', () => {
                 return trackerPort;
             },
             completeIssue: (issue, login, port) => {
-                expect(port).toBe(trackerPort);
+                expect(port).not.toBe(trackerPort);
                 port.update(issue, { state: 'CLOSED', stateReason: 'COMPLETED' });
                 seen.push(`complete:${login}`);
             },
@@ -1765,6 +1799,7 @@ describe('package scripts and gitignore', () => {
             'repository:ghs_author',
             'tracker:ghs_tracker',
             'delivery:ghs_author',
+            'lock:2495:attempt',
             `complete:${AUTHOR_BOT_NODE_ID}`,
             'lock:2495:release',
         ]);

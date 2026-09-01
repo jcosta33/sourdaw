@@ -13,7 +13,11 @@ import {
     type GhSession,
 } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
-import { type PullRequestMutationSerialization, withPullRequestMutationLock } from './pullRequestMutationLock.ts';
+import {
+    type PullRequestMutationSerialization,
+    type PullRequestRemoteMutationBoundary,
+    withPullRequestMutationLock,
+} from './pullRequestMutationLock.ts';
 
 export type ReviewComment = {
     id: string;
@@ -67,7 +71,11 @@ export type ResolveReviewThreadCoordinatorDependencies = {
     serializeMutation: PullRequestMutationSerialization;
     authenticateAuthor: (primaryRoot: string) => Promise<ResolveReviewThreadAuthentication>;
     repositoryName: (session: GhSession, primaryRoot: string) => string;
-    threadPort: (session: GhSession, primaryRoot: string) => ResolveReviewThreadPort;
+    threadPort: (
+        session: GhSession,
+        primaryRoot: string,
+        markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt']
+    ) => ResolveReviewThreadPort;
     resolve: (
         number: number,
         threadId: string,
@@ -452,7 +460,11 @@ function findReusableReply(thread: ReviewThread | null): ReviewComment | undefin
     return markers[0];
 }
 
-export function shellPort(session: GhSession, cwd: string = process.cwd()): ResolveReviewThreadPort {
+export function shellPort(
+    session: GhSession,
+    cwd: string = process.cwd(),
+    markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt'] = () => undefined
+): ResolveReviewThreadPort {
     const primaryRoot = resolvePrimaryRoot(
         (command, args, directory) => spawnCapture(command, args, { cwd: directory }),
         cwd
@@ -460,9 +472,9 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Reso
     const gh = (args: string[]) => spawnCapture('gh', args, { cwd: primaryRoot, env: session.env });
     return {
         inspect: (number, id) => inspectReviewThread(number, id, gh),
-        replyDone: (id) => mutationReply(id, gh),
-        resolve: (id) => resolveThread(id, gh),
-        deleteReply: (id) => deleteReply(id, gh),
+        replyDone: (id) => mutationReply(id, gh, markRemoteMutationAttempt),
+        resolve: (id) => resolveThread(id, gh, markRemoteMutationAttempt),
+        deleteReply: (id) => deleteReply(id, gh, markRemoteMutationAttempt),
         log: (message) => console.log(message),
     };
 }
@@ -632,10 +644,15 @@ function toReviewComment(value: unknown): ReviewComment {
         authorType: typeof comment.author?.__typename === 'string' ? comment.author.__typename : null,
     };
 }
-function mutationReply(threadId: string, gh: Gh): ReviewReply {
+function mutationReply(
+    threadId: string,
+    gh: Gh,
+    markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt']
+): ReviewReply {
     const clientMutationId = replyClientMutationId(threadId);
     const query =
         'mutation($threadId:ID!,$body:String!,$clientMutationId:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$threadId,body:$body,clientMutationId:$clientMutationId}){clientMutationId comment{id fullDatabaseId body author{login __typename ... on Bot{id}}}}}';
+    markRemoteMutationAttempt();
     const response = graphql(
         gh,
         query,
@@ -676,9 +693,14 @@ function mutationReply(threadId: string, gh: Gh): ReviewReply {
         clientMutationId,
     };
 }
-function resolveThread(threadId: string, gh: Gh): ReviewResolutionReceipt {
+function resolveThread(
+    threadId: string,
+    gh: Gh,
+    markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt']
+): ReviewResolutionReceipt {
     const clientMutationId = resolveClientMutationId(threadId);
     const query = `mutation($threadId:ID!,$clientMutationId:String!){resolveReviewThread(input:{threadId:$threadId,clientMutationId:$clientMutationId}){clientMutationId thread{id isResolved resolvedBy{id login __typename}}}}`;
+    markRemoteMutationAttempt();
     const response = graphql(
         gh,
         query,
@@ -717,7 +739,12 @@ function resolveThread(threadId: string, gh: Gh): ReviewResolutionReceipt {
         clientMutationId,
     };
 }
-export function deleteReply(replyId: string, gh: Gh): void {
+export function deleteReply(
+    replyId: string,
+    gh: Gh,
+    markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt'] = () => undefined
+): void {
+    markRemoteMutationAttempt();
     const response = graphql(
         gh,
         'mutation($replyId:ID!,$clientMutationId:String!){deletePullRequestReviewComment(input:{id:$replyId,clientMutationId:$clientMutationId}){clientMutationId pullRequestReviewComment{id body author{login __typename ... on Bot{id}}}}}',
@@ -759,7 +786,8 @@ export function defaultResolveReviewThreadCoordinatorDependencies(): ResolveRevi
                 env: session.env,
                 cwd: primaryRoot,
             }),
-        threadPort: (session, primaryRoot) => shellPort(session, primaryRoot),
+        threadPort: (session, primaryRoot, markRemoteMutationAttempt) =>
+            shellPort(session, primaryRoot, markRemoteMutationAttempt),
         resolve: resolveReviewThread,
     };
 }
@@ -771,7 +799,7 @@ export async function coordinateResolveReviewThread(
     dependencies: ResolveReviewThreadCoordinatorDependencies = defaultResolveReviewThreadCoordinatorDependencies()
 ): Promise<void> {
     const primaryRoot = dependencies.primaryRoot();
-    await dependencies.serializeMutation(primaryRoot, number, async () => {
+    await dependencies.serializeMutation(primaryRoot, number, async ({ markRemoteMutationAttempt }) => {
         const auth = await dependencies.authenticateAuthor(primaryRoot);
         try {
             if (!isAuthorBotNodeId(auth.minted.actorNodeId)) {
@@ -783,7 +811,7 @@ export async function coordinateResolveReviewThread(
                 threadId,
                 expectedHead,
                 auth.minted.actorNodeId,
-                dependencies.threadPort(auth.session, primaryRoot)
+                dependencies.threadPort(auth.session, primaryRoot, markRemoteMutationAttempt)
             );
         } finally {
             auth.session.dispose();

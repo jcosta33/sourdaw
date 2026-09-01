@@ -89,24 +89,28 @@ type MergeSettings = {
     delete_branch_on_merge: boolean;
 };
 
-function mergePolicyPort(settings: string | Error) {
+function mergePolicyPort(settings: string | Error, markRemoteMutationAttempt: () => void = () => undefined) {
     const captures: Array<{ command: string; args: string[] }> = [];
-    const port = shellPort('jcosta33/sourdaw', {
-        capture: (command, args) => {
-            captures.push({ command, args });
-            if (args.join(' ') === 'api repos/jcosta33/sourdaw') {
-                if (settings instanceof Error) {
-                    throw settings;
+    const port = shellPort(
+        'jcosta33/sourdaw',
+        {
+            capture: (command, args) => {
+                captures.push({ command, args });
+                if (args.join(' ') === 'api repos/jcosta33/sourdaw') {
+                    if (settings instanceof Error) {
+                        throw settings;
+                    }
+                    return settings;
                 }
-                return settings;
-            }
-            if (args.includes('repos/jcosta33/sourdaw/pulls/42/merge')) {
-                return JSON.stringify({ merged: true, message: 'merged' });
-            }
-            throw new Error(`unexpected capture: ${command} ${args.join(' ')}`);
+                if (args.includes('repos/jcosta33/sourdaw/pulls/42/merge')) {
+                    return JSON.stringify({ merged: true, message: 'merged' });
+                }
+                throw new Error(`unexpected capture: ${command} ${args.join(' ')}`);
+            },
+            run: () => undefined,
         },
-        run: () => undefined,
-    });
+        { markRemoteMutationAttempt }
+    );
     return { captures, port };
 }
 
@@ -3005,6 +3009,54 @@ describe('delivery shell boundary', () => {
         });
     });
 
+    it('marks every delivery write immediately before invoking GitHub', () => {
+        const events: string[] = [];
+        const port = shellPort(
+            'jcosta33/sourdaw',
+            {
+                capture: (command, args) => {
+                    const joined = args.join(' ');
+                    if (joined === 'api repos/jcosta33/sourdaw') {
+                        events.push('policy');
+                        return mergeSettings({
+                            allow_merge_commit: false,
+                            allow_rebase_merge: false,
+                            allow_squash_merge: true,
+                            delete_branch_on_merge: false,
+                        });
+                    }
+                    if (joined.includes('/pulls/42/merge')) {
+                        events.push('merge');
+                        return JSON.stringify({ merged: true, message: 'merged' });
+                    }
+                    if (joined.includes('/issues/42/comments')) {
+                        events.push('receipt');
+                        return JSON.stringify({
+                            node_id: 'IC_delivery_receipt',
+                            body: 'receipt',
+                            user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]', type: 'Bot' },
+                            created_at: '2026-08-31T10:00:00Z',
+                            updated_at: '2026-08-31T10:00:00Z',
+                        });
+                    }
+                    throw new Error(`unexpected capture: ${command} ${joined}`);
+                },
+                run: (command, args) => {
+                    expect(command).toBe('gh');
+                    expect(args).toContain('PATCH');
+                    events.push('retarget');
+                },
+            },
+            { markRemoteMutationAttempt: () => events.push('attempt') }
+        );
+
+        port.merge(42, 'head', false);
+        port.retarget(43, 'main');
+        port.addDeliveryReceipt(42, 'receipt');
+
+        expect(events).toEqual(['policy', 'attempt', 'merge', 'attempt', 'retarget', 'attempt', 'receipt']);
+    });
+
     it.each([
         [
             'uses squash when it is the only enabled method',
@@ -3081,9 +3133,13 @@ describe('delivery shell boundary', () => {
     });
 
     it('rejects malformed repository merge settings', () => {
-        const { captures, port } = mergePolicyPort('{"allow_merge_commit":true}');
+        let attempted = false;
+        const { captures, port } = mergePolicyPort('{"allow_merge_commit":true}', () => {
+            attempted = true;
+        });
 
         expect(() => port.merge(42, 'head', false)).toThrow(/cannot prove repository merge settings/);
+        expect(attempted).toBe(false);
         expect(captures).not.toContainEqual(
             expect.objectContaining({ args: expect.arrayContaining(['repos/jcosta33/sourdaw/pulls/42/merge']) })
         );

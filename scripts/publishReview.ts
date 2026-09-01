@@ -15,7 +15,11 @@ import {
 } from './githubAppIdentity.ts';
 import { composeReviewCommentBody, fail, type ReviewCommentContent } from './prContract.ts';
 import { reviewBundlePath } from './prepareReview.ts';
-import { type PullRequestMutationSerialization, withPullRequestMutationLock } from './pullRequestMutationLock.ts';
+import {
+    type PullRequestMutationSerialization,
+    type PullRequestRemoteMutationBoundary,
+    withPullRequestMutationLock,
+} from './pullRequestMutationLock.ts';
 
 export type ReviewEvent = 'APPROVE' | 'REQUEST_CHANGES';
 
@@ -71,7 +75,11 @@ export type PublishReviewCoordinatorDependencies = {
     serializeMutation: PullRequestMutationSerialization;
     authenticateReviewer: (primaryRoot: string) => Promise<PublishReviewAuthentication>;
     repositoryName: (session: GhSession, primaryRoot: string) => string;
-    reviewPort: (session: GhSession, primaryRoot: string) => PublishReviewPort;
+    reviewPort: (
+        session: GhSession,
+        primaryRoot: string,
+        markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt']
+    ) => PublishReviewPort;
     publish: (number: number, port: PublishReviewPort) => number;
 };
 
@@ -148,7 +156,8 @@ export function publishReview(number: number, port: PublishReviewPort): number {
 export function shellPort(
     session: GhSession,
     cwd: string = process.cwd(),
-    capture: typeof spawnCapture = spawnCapture
+    capture: typeof spawnCapture = spawnCapture,
+    markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt'] = () => undefined
 ): PublishReviewPort {
     const primaryRoot = resolvePrimaryRoot(
         (command, args, directory) => capture(command, args, { cwd: directory }),
@@ -175,6 +184,18 @@ export function shellPort(
             ),
         readReviewJson: (path) => JSON.parse(readFileSync(path, 'utf8')) as unknown,
         postReview: ({ number, commitId, event, body, comments }) => {
+            const input = JSON.stringify({
+                commit_id: commitId,
+                event,
+                body,
+                comments: comments.map((comment) => ({
+                    path: comment.path,
+                    line: comment.line,
+                    side: comment.side,
+                    body: composeReviewCommentBody(comment),
+                })),
+            });
+            markRemoteMutationAttempt();
             const response = parseJson<{
                 id: number;
                 state?: string;
@@ -182,17 +203,7 @@ export function shellPort(
             }>(
                 gh(
                     ['api', '--method', 'POST', `repos/${REQUIRED_REPOSITORY}/pulls/${number}/reviews`, '--input', '-'],
-                    JSON.stringify({
-                        commit_id: commitId,
-                        event,
-                        body,
-                        comments: comments.map((comment) => ({
-                            path: comment.path,
-                            line: comment.line,
-                            side: comment.side,
-                            body: composeReviewCommentBody(comment),
-                        })),
-                    })
+                    input
                 ),
                 'create review'
             );
@@ -294,7 +305,8 @@ export function defaultPublishReviewCoordinatorDependencies(): PublishReviewCoor
                 env: session.env,
                 cwd: primaryRoot,
             }),
-        reviewPort: (session, primaryRoot) => shellPort(session, primaryRoot),
+        reviewPort: (session, primaryRoot, markRemoteMutationAttempt) =>
+            shellPort(session, primaryRoot, spawnCapture, markRemoteMutationAttempt),
         publish: publishReview,
     };
 }
@@ -304,14 +316,17 @@ export async function coordinatePublishReview(
     dependencies: PublishReviewCoordinatorDependencies = defaultPublishReviewCoordinatorDependencies()
 ): Promise<void> {
     const primaryRoot = dependencies.primaryRoot();
-    await dependencies.serializeMutation(primaryRoot, number, async () => {
+    await dependencies.serializeMutation(primaryRoot, number, async ({ markRemoteMutationAttempt }) => {
         const auth = await dependencies.authenticateReviewer(primaryRoot);
         try {
             if (!isReviewerBotNodeId(auth.minted.actorNodeId)) {
                 fail(`minted actor ${auth.minted.actorNodeId} is not ${REVIEWER_BOT_NODE_ID}`);
             }
             assertRequiredRepository(dependencies.repositoryName(auth.session, primaryRoot));
-            dependencies.publish(number, dependencies.reviewPort(auth.session, primaryRoot));
+            dependencies.publish(
+                number,
+                dependencies.reviewPort(auth.session, primaryRoot, markRemoteMutationAttempt)
+            );
         } finally {
             auth.session.dispose();
         }

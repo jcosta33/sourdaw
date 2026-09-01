@@ -28,7 +28,11 @@ import {
     parseDeliveryReceipt,
     type DeliveryReceiptPayload,
 } from './prContract.ts';
-import { type PullRequestMutationSerialization, withPullRequestMutationLock } from './pullRequestMutationLock.ts';
+import {
+    type PullRequestMutationSerialization,
+    type PullRequestRemoteMutationBoundary,
+    withPullRequestMutationLock,
+} from './pullRequestMutationLock.ts';
 import { shellPort as trackerIssueShellPort } from './reconcileTrackerIssue.ts';
 import { completeTrackerIssue, type ReconcileTrackerIssuePort } from './trackerIssueReconciliation.ts';
 
@@ -1355,7 +1359,11 @@ function readCompleteReviewState(
 export function shellPort(
     repository: string,
     shell: ShellRunner = { capture, run },
-    options: { gitToken?: string; helperDir?: string } = {}
+    options: {
+        gitToken?: string;
+        helperDir?: string;
+        markRemoteMutationAttempt?: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt'];
+    } = {}
 ): DeliveryPort {
     const [owner, name] = repository.split('/');
     if (owner === undefined || name === undefined) {
@@ -1504,6 +1512,7 @@ export function shellPort(
             if (hasDependents && policy.deletesMergedBranches) {
                 fail('automatic merged-branch deletion must be disabled before delivering a stacked PR');
             }
+            options.markRemoteMutationAttempt?.();
             const result = parseJson<{ merged: boolean; message: string }>(
                 shell.capture('gh', [
                     'api',
@@ -1521,7 +1530,8 @@ export function shellPort(
                 fail(`PR #${number} was not merged: ${result.message}`);
             }
         },
-        retarget: (number, baseBranch) =>
+        retarget: (number, baseBranch) => {
+            options.markRemoteMutationAttempt?.();
             shell.run('gh', [
                 'api',
                 '--method',
@@ -1530,7 +1540,8 @@ export function shellPort(
                 '-f',
                 `base=${baseBranch}`,
                 '--silent',
-            ]),
+            ]);
+        },
         // REST issue comments are returned in ascending comment-ID order. Pagination, flattening,
         // and filtering preserve that immutable order; receipt authority must never sort by time.
         deliveryReceipts: (number) => {
@@ -1552,8 +1563,9 @@ export function shellPort(
             }
             return comments;
         },
-        addDeliveryReceipt: (number, body) =>
-            toDeliveryReceiptComment(
+        addDeliveryReceipt: (number, body) => {
+            options.markRemoteMutationAttempt?.();
+            return toDeliveryReceiptComment(
                 parseJson<unknown>(
                     shell.capture('gh', [
                         'api',
@@ -1565,7 +1577,8 @@ export function shellPort(
                     ]),
                     `delivery receipt for PR #${number}`
                 )
-            ),
+            );
+        },
         log: (message) => console.log(message),
     };
 }
@@ -1601,7 +1614,12 @@ export type DeliveryCoordinatorDependencies = {
     authenticateAuthor: (primaryRoot: string) => Promise<DeliveryAuthentication>;
     authenticateTracker: (primaryRoot: string) => Promise<DeliveryAuthentication>;
     repositoryName: (session: DeliveryAuthentication['session'], primaryRoot: string) => string;
-    deliveryPort: (repository: string, authentication: DeliveryAuthentication, primaryRoot: string) => DeliveryPort;
+    deliveryPort: (
+        repository: string,
+        authentication: DeliveryAuthentication,
+        primaryRoot: string,
+        markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt']
+    ) => DeliveryPort;
     trackerPort: (session: DeliveryAuthentication['session']) => ReconcileTrackerIssuePort;
     completeIssue: (issueNumber: number, actorNodeId: string, port: ReconcileTrackerIssuePort) => void;
     deliver: (number: number, port: DeliveryPort, tracker: TrackerCompletionPort) => void;
@@ -1618,7 +1636,7 @@ function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinato
                 env: session.env,
                 cwd: primaryRoot,
             }),
-        deliveryPort: (repository, authentication, primaryRoot) => {
+        deliveryPort: (repository, authentication, primaryRoot, markRemoteMutationAttempt) => {
             const shell: ShellRunner = {
                 capture: (command, args) =>
                     spawnCapture(command, args, { env: authentication.session.env, cwd: primaryRoot }),
@@ -1627,6 +1645,7 @@ function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinato
             return shellPort(repository, shell, {
                 gitToken: authentication.minted.token,
                 helperDir: authentication.session.configDir,
+                markRemoteMutationAttempt,
             });
         },
         trackerPort: (session) => trackerIssueShellPort(session, cwd),
@@ -1635,12 +1654,29 @@ function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinato
     };
 }
 
+function markTrackerMutationAttempts(
+    port: ReconcileTrackerIssuePort,
+    markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt']
+): ReconcileTrackerIssuePort {
+    return {
+        ...port,
+        update: (number, input) => {
+            markRemoteMutationAttempt();
+            return port.update(number, input);
+        },
+        comment: (number, body) => {
+            markRemoteMutationAttempt();
+            return port.comment(number, body);
+        },
+    };
+}
+
 export async function coordinateDelivery(
     number: number,
     dependencies: DeliveryCoordinatorDependencies = defaultDeliveryCoordinatorDependencies(process.cwd())
 ): Promise<void> {
     const primaryRoot = dependencies.primaryRoot();
-    await dependencies.serializeDelivery(primaryRoot, number, async () => {
+    await dependencies.serializeDelivery(primaryRoot, number, async ({ markRemoteMutationAttempt }) => {
         const authorAuth = await dependencies.authenticateAuthor(primaryRoot);
         let trackerAuth: DeliveryAuthentication | undefined;
         try {
@@ -1651,11 +1687,18 @@ export async function coordinateDelivery(
             assertRequiredRepository(repository);
             const authenticatedTracker = await dependencies.authenticateTracker(primaryRoot);
             trackerAuth = authenticatedTracker;
-            const trackerPort = dependencies.trackerPort(authenticatedTracker.session);
-            dependencies.deliver(number, dependencies.deliveryPort(repository, authorAuth, primaryRoot), {
-                complete: (issueNumber) =>
-                    dependencies.completeIssue(issueNumber, authenticatedTracker.minted.actorNodeId, trackerPort),
-            });
+            const trackerPort = markTrackerMutationAttempts(
+                dependencies.trackerPort(authenticatedTracker.session),
+                markRemoteMutationAttempt
+            );
+            dependencies.deliver(
+                number,
+                dependencies.deliveryPort(repository, authorAuth, primaryRoot, markRemoteMutationAttempt),
+                {
+                    complete: (issueNumber) =>
+                        dependencies.completeIssue(issueNumber, authenticatedTracker.minted.actorNodeId, trackerPort),
+                }
+            );
         } finally {
             trackerAuth?.session.dispose();
             authorAuth.session.dispose();
