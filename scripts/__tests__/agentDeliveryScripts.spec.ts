@@ -829,6 +829,7 @@ describe('package scripts and gitignore', () => {
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/recoverReviewResolutionLock.ts',
             'scripts/resolveReviewThread.ts',
+            'scripts/pullRequestMutationLock.ts',
             'scripts/githubAppIdentity.ts',
             'scripts/prContract.ts',
         ]);
@@ -2500,6 +2501,7 @@ describe('package scripts and gitignore', () => {
                 seen.push(`lock:${number}:acquire`);
                 try {
                     return await operation({
+                        ownerOid: 'f'.repeat(40),
                         markRemoteMutationAttempt: () => undefined,
                     });
                 } finally {

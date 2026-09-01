@@ -105,6 +105,7 @@ describe('review publish', () => {
                 calls.push(`lock:${number}:acquire`);
                 try {
                     return await operation({
+                        ownerOid: 'f'.repeat(40),
                         markRemoteMutationAttempt: () => calls.push('attempt'),
                     });
                 } finally {
@@ -157,7 +158,7 @@ describe('review publish', () => {
         const dependencies: PublishReviewCoordinatorDependencies = {
             primaryRoot: () => '/repo',
             serializeMutation: async (_primaryRoot, _number, operation) =>
-                operation({ markRemoteMutationAttempt: () => undefined }),
+                operation({ ownerOid: 'f'.repeat(40), markRemoteMutationAttempt: () => undefined }),
             authenticateReviewer: async () => ({
                 minted: { actorNodeId: REVIEWER_BOT_NODE_ID },
                 session: { configDir: '/tmp/sourdaw-reviewer', env: {}, dispose: () => undefined },

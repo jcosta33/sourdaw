@@ -6,11 +6,11 @@ import { basename, delimiter, dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { AUTHOR_BOT_NODE_ID, REQUIRED_REPOSITORY, REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
+import { withPullRequestMutationLock } from '../pullRequestMutationLock.ts';
 import {
     parseRecoverReviewResolutionLockArgs,
     runRecoverReviewResolutionLockCli,
 } from '../recoverReviewResolutionLock.ts';
-import { withPullRequestMutationLock } from '../pullRequestMutationLock.ts';
 import {
     assertDetachedReviewResolutionChild,
     type DeletePendingReviewOptions,
@@ -115,6 +115,7 @@ type TestLockOwnerRecord = {
     threadId: string;
     head: string;
     token: string;
+    sharedMutationOwnerOid?: string;
     mutation?: {
         phase?: string;
         epoch?: number;
@@ -1124,6 +1125,10 @@ function reviewResolutionLockRef(number: number): string {
     return `refs/sourdaw/review-resolution/pr-${number}`;
 }
 
+function sharedMutationLockRef(number: number): string {
+    return `refs/sourdaw/delivery/pr-${number}`;
+}
+
 function gitCapture(repository: string, args: string[], input?: string): string {
     const result = spawnSync('git', args, {
         cwd: repository,
@@ -1156,6 +1161,40 @@ function readLockOid(repository: string, number: number): string | undefined {
         throw new Error(result.stderr || result.stdout || 'git show-ref failed');
     }
     return result.stdout.trim();
+}
+
+function readSharedMutationLockOid(repository: string, number: number): string | undefined {
+    const result = spawnSync('git', ['rev-parse', '--verify', '--quiet', sharedMutationLockRef(number)], {
+        cwd: repository,
+        encoding: 'utf8',
+        shell: false,
+    });
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status === 1) {
+        return undefined;
+    }
+    if (result.status !== 0) {
+        throw new Error(result.stderr || result.stdout || 'git show-ref failed');
+    }
+    return result.stdout.trim();
+}
+
+function writeSharedMutationLockOwnerBlob(repository: string, pid: number): string {
+    return gitCapture(
+        repository,
+        ['hash-object', '-w', '--stdin'],
+        JSON.stringify({ version: 1, pid, token: '22222222-2222-4222-8222-222222222222' })
+    );
+}
+
+function updateSharedMutationLock(repository: string, number: number, nextOid: string, previousOid?: string): void {
+    const args =
+        previousOid === undefined
+            ? [sharedMutationLockRef(number), nextOid, '0'.repeat(nextOid.length)]
+            : [sharedMutationLockRef(number), nextOid, previousOid];
+    gitCapture(repository, ['update-ref', ...args]);
 }
 
 function readLockOwner(repository: string, number: number): TestLockOwnerRecord | undefined {
@@ -1239,7 +1278,8 @@ function writeLockOwnerBlob(
         pgid: pid,
         leaderStartedAt: 'Mon Aug 31 12:00:00 2026',
     },
-    legacyUnjournaled?: unknown
+    legacyUnjournaled?: unknown,
+    sharedMutationOwnerOid?: string
 ): string {
     let journaledMutation = mutation;
     if (mutation.phase === 'createPendingReview') {
@@ -1281,13 +1321,14 @@ function writeLockOwnerBlob(
         repository,
         ['hash-object', '-w', '--stdin'],
         JSON.stringify({
-            version: 5,
+            version: sharedMutationOwnerOid === undefined ? 5 : 6,
             pid,
             ownerFence,
             threadId,
             head: currentHead,
             token: '11111111-1111-4111-8111-111111111111',
             mutation: journaledMutation,
+            ...(sharedMutationOwnerOid === undefined ? {} : { sharedMutationOwnerOid }),
             ...(legacyUnjournaled === undefined ? {} : { legacyUnjournaled }),
         })
     );
@@ -1299,18 +1340,6 @@ function updateLock(repository: string, number: number, nextOid: string, previou
             ? [reviewResolutionLockRef(number), nextOid, '0'.repeat(nextOid.length)]
             : [reviewResolutionLockRef(number), nextOid, previousOid];
     gitCapture(repository, ['update-ref', ...args]);
-}
-
-function tryUpdateLockRef(repository: string, args: string[]): boolean {
-    const result = spawnSync('git', ['update-ref', ...args], {
-        cwd: repository,
-        encoding: 'utf8',
-        shell: false,
-    });
-    if (result.error !== undefined) {
-        throw result.error;
-    }
-    return result.status === 0;
 }
 
 async function waitForExit(child: ReturnType<typeof spawn>): Promise<void> {
@@ -1451,6 +1480,10 @@ function writeResolveReviewSnapshot(snapshotRoot: string): string {
         readFileSync(join(import.meta.dirname, '../resolveReviewThread.ts'))
     );
     writeFileSync(join(scriptsRoot, 'prContract.ts'), readFileSync(join(import.meta.dirname, '../prContract.ts')));
+    writeFileSync(
+        join(scriptsRoot, 'pullRequestMutationLock.ts'),
+        readFileSync(join(import.meta.dirname, '../pullRequestMutationLock.ts'))
+    );
     writeFileSync(
         join(scriptsRoot, 'githubAppIdentity.ts'),
         [
@@ -1663,6 +1696,10 @@ function writeRecoverReviewResolutionSnapshot(snapshotRoot: string): string {
         readFileSync(join(import.meta.dirname, '../recoverReviewResolutionLock.ts'))
     );
     writeFileSync(join(scriptsRoot, 'prContract.ts'), readFileSync(join(import.meta.dirname, '../prContract.ts')));
+    writeFileSync(
+        join(scriptsRoot, 'pullRequestMutationLock.ts'),
+        readFileSync(join(import.meta.dirname, '../pullRequestMutationLock.ts'))
+    );
     writeFileSync(
         join(scriptsRoot, 'githubAppIdentity.ts'),
         [
@@ -3396,6 +3433,180 @@ describe('review thread resolution', () => {
             rmSync(repository, { recursive: true, force: true });
         }
     });
+
+    it('persists the exact shared mutation owner through the production review-resolution lock port', () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const sharedOwnerOid = writeSharedMutationLockOwnerBlob(repository, process.pid);
+            updateSharedMutationLock(repository, 42, sharedOwnerOid);
+            const session: GhSession = { configDir: repository, env: {}, dispose() {} };
+            const port = shellPort(session, repository, () => undefined, undefined, sharedOwnerOid);
+
+            expect(
+                port.serializeReviewThreadMutation(42, threadId, head, () => {
+                    expect(requireLockOwner(repository, 42)).toMatchObject({
+                        version: 6,
+                        sharedMutationOwnerOid: sharedOwnerOid,
+                    });
+                    return 'serialized';
+                })
+            ).toBe('serialized');
+            expect(readLockOid(repository, 42)).toBeUndefined();
+            expect(readSharedMutationLockOid(repository, 42)).toBe(sharedOwnerOid);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('claims and releases the exact review-resolution and shared mutation owners after successful recovery', async () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const sharedOwnerOid = writeSharedMutationLockOwnerBlob(repository, 999999);
+            updateSharedMutationLock(repository, 42, sharedOwnerOid);
+            const ownerOid = writeLockOwnerBlob(
+                repository,
+                999999,
+                head,
+                { phase: 'resolveThread', epoch: 1 },
+                undefined,
+                undefined,
+                sharedOwnerOid
+            );
+            updateLock(repository, 42, ownerOid);
+
+            expect(
+                recoverPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    ownerOid,
+                    (owner) => {
+                        const claimedReviewOwnerOid = readLockOid(repository, 42);
+                        const claimedSharedOwnerOid = readSharedMutationLockOid(repository, 42);
+                        expect(claimedReviewOwnerOid).toBeDefined();
+                        expect(claimedReviewOwnerOid).not.toBe(ownerOid);
+                        expect(claimedSharedOwnerOid).toBeDefined();
+                        expect(claimedSharedOwnerOid).not.toBe(sharedOwnerOid);
+                        expect(owner).toMatchObject({
+                            version: 6,
+                            sharedMutationOwnerOid: claimedSharedOwnerOid,
+                            mutation: { phase: 'resolveThread', epoch: 1 },
+                        });
+                        return 'reconciled';
+                    },
+                    () => false
+                )
+            ).toBe('reconciled');
+            expect(readLockOid(repository, 42)).toBeUndefined();
+            expect(readSharedMutationLockOid(repository, 42)).toBeUndefined();
+            await expect(withPullRequestMutationLock(repository, 42, async () => 'fresh')).resolves.toBe('fresh');
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('preserves both exact claimed owners and refuses reacquisition after ambiguous recovery failure', async () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const sharedOwnerOid = writeSharedMutationLockOwnerBlob(repository, 999999);
+            updateSharedMutationLock(repository, 42, sharedOwnerOid);
+            const ownerOid = writeLockOwnerBlob(
+                repository,
+                999999,
+                head,
+                { phase: 'resolveThread', epoch: 1 },
+                undefined,
+                undefined,
+                sharedOwnerOid
+            );
+            updateLock(repository, 42, ownerOid);
+            let claimedReviewOwnerOid: string | undefined;
+            let claimedSharedOwnerOid: string | undefined;
+
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    ownerOid,
+                    (owner) => {
+                        claimedReviewOwnerOid = readLockOid(repository, 42);
+                        claimedSharedOwnerOid = readSharedMutationLockOid(repository, 42);
+                        expect(owner).toMatchObject({
+                            version: 6,
+                            sharedMutationOwnerOid: claimedSharedOwnerOid,
+                        });
+                        throw new Error('remote mutation outcome is ambiguous');
+                    },
+                    () => false
+                )
+            ).toThrow(/preserved exact lock owner/);
+            expect(claimedReviewOwnerOid).toBeDefined();
+            expect(claimedSharedOwnerOid).toBeDefined();
+            expect(readLockOid(repository, 42)).toBe(claimedReviewOwnerOid);
+            expect(readSharedMutationLockOid(repository, 42)).toBe(claimedSharedOwnerOid);
+            expect(requireLockOwner(repository, 42)).toMatchObject({
+                version: 6,
+                sharedMutationOwnerOid: claimedSharedOwnerOid,
+            });
+            await expect(withPullRequestMutationLock(repository, 42, async () => 'must not run')).rejects.toThrow(
+                'PR #42 is already being delivered by process'
+            );
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it.each(['missing', 'changed', 'malformed'] as const)(
+        'refuses %s shared mutation ownership before recovery reconciliation',
+        (condition) => {
+            const repository = createTemporaryGitRepository();
+            try {
+                const validSharedOwnerOid = writeSharedMutationLockOwnerBlob(repository, 999999);
+                let recordedSharedOwnerOid = validSharedOwnerOid;
+                let actualSharedOwnerOid: string | undefined;
+                if (condition === 'changed') {
+                    actualSharedOwnerOid = writeSharedMutationLockOwnerBlob(repository, 1_000_000);
+                    updateSharedMutationLock(repository, 42, actualSharedOwnerOid);
+                } else if (condition === 'malformed') {
+                    recordedSharedOwnerOid = gitCapture(
+                        repository,
+                        ['hash-object', '-w', '--stdin'],
+                        JSON.stringify({ version: 1, pid: 999999, token: 'not-a-valid-token' })
+                    );
+                    actualSharedOwnerOid = recordedSharedOwnerOid;
+                    updateSharedMutationLock(repository, 42, actualSharedOwnerOid);
+                }
+                const ownerOid = writeLockOwnerBlob(
+                    repository,
+                    999999,
+                    head,
+                    { phase: 'resolveThread', epoch: 1 },
+                    undefined,
+                    undefined,
+                    recordedSharedOwnerOid
+                );
+                updateLock(repository, 42, ownerOid);
+                let reconciled = false;
+
+                expect(() =>
+                    recoverPullRequestReviewResolutionLock(
+                        repository,
+                        42,
+                        ownerOid,
+                        () => {
+                            reconciled = true;
+                            return 'must not reconcile';
+                        },
+                        () => false
+                    )
+                ).toThrow(/retained delivery lock|delivery lock ownership is malformed/);
+                expect(reconciled).toBe(false);
+                expect(readLockOid(repository, 42)).toBe(ownerOid);
+                expect(readSharedMutationLockOid(repository, 42)).toBe(actualSharedOwnerOid);
+            } finally {
+                rmSync(repository, { recursive: true, force: true });
+            }
+        }
+    );
 
     it('preserves an absent create-pending-review recovery phase without replaying it', () => {
         const repository = createTemporaryGitRepository();
@@ -5311,9 +5522,9 @@ describe('review thread resolution', () => {
                     },
                     () => false,
                     {
-                        updateRef: (primaryRoot, args) => {
+                        updateRefsTransaction: (primaryRoot) => {
                             updateLock(primaryRoot, 42, replacementOwnerOid, ownerOid);
-                            return tryUpdateLockRef(primaryRoot, args);
+                            return false;
                         },
                     }
                 )
@@ -6600,6 +6811,7 @@ describe('review thread resolution', () => {
                 calls.push(`lock:${number}:acquire`);
                 try {
                     return await operation({
+                        ownerOid: 'f'.repeat(40),
                         markRemoteMutationAttempt: () => calls.push('attempt'),
                     });
                 } finally {
@@ -6621,8 +6833,8 @@ describe('review thread resolution', () => {
                 calls.push('repository');
                 return 'jcosta33/sourdaw';
             },
-            threadPort: (_session, _primaryRoot, markRemoteMutationAttempt) => {
-                calls.push('port');
+            threadPort: (_session, _primaryRoot, markRemoteMutationAttempt, sharedMutationOwnerOid) => {
+                calls.push(`port:${sharedMutationOwnerOid}`);
                 return {
                     ...port,
                     resolve: (id) => {
@@ -6645,7 +6857,7 @@ describe('review thread resolution', () => {
             'lock:42:acquire',
             'authenticate',
             'repository',
-            'port',
+            `port:${'f'.repeat(40)}`,
             `resolve:42:${threadId}:${head}`,
             'attempt',
             'remote',
@@ -6660,7 +6872,7 @@ describe('review thread resolution', () => {
         const dependencies: ResolveReviewThreadCoordinatorDependencies = {
             primaryRoot: () => '/repo',
             serializeMutation: async (_primaryRoot, _number, operation) =>
-                operation({ markRemoteMutationAttempt: () => undefined }),
+                operation({ ownerOid: 'f'.repeat(40), markRemoteMutationAttempt: () => undefined }),
             authenticateAuthor: async () => ({
                 minted: { actorNodeId: AUTHOR_BOT_NODE_ID },
                 session: { configDir: '/tmp/sourdaw-author', env: {}, dispose: () => undefined },
@@ -6675,13 +6887,7 @@ describe('review thread resolution', () => {
 
         const requestedThreadId = 'PRRT_cli_forwarding_distinct';
         const requestedHead = 'c'.repeat(40);
-        const parsed = parseResolveReviewThreadArgs([
-            '7819',
-            '--thread',
-            requestedThreadId,
-            '--head',
-            requestedHead,
-        ]);
+        const parsed = parseResolveReviewThreadArgs(['7819', '--thread', requestedThreadId, '--head', requestedHead]);
         expect(parsed).toEqual({ number: 7819, threadId: requestedThreadId, head: requestedHead, help: false });
         if (parsed.number === undefined || parsed.threadId === undefined || parsed.head === undefined) {
             throw new Error('valid resolution arguments were not parsed');

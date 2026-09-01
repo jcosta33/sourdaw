@@ -15,12 +15,7 @@ import { delimiter, dirname, isAbsolute, join, posix, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url';
 
 export type TrustedGithubWriteCommand =
-    | 'deliver'
-    | 'issue:reconcile'
-    | 'lane:publish'
-    | 'review:publish'
-    | 'review:resolve'
-    | 'review:resolve:recover';
+    'deliver' | 'issue:reconcile' | 'lane:publish' | 'review:publish' | 'review:resolve' | 'review:resolve:recover';
 
 export const BOOTSTRAP_PATH = 'scripts/trustedGithubWriteBootstrap.ts';
 export const HEALTH_GATES_WORKFLOW_PATH = '.github/workflows/health-gates.yml';

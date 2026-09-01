@@ -5,6 +5,7 @@ import { mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
 import {
     AUTHOR_BOT_NODE_ID,
     REQUIRED_REPOSITORY,
@@ -24,7 +25,11 @@ import { fail } from './prContract.ts';
 import {
     type PullRequestMutationSerialization,
     type PullRequestRemoteMutationBoundary,
+    pullRequestMutationLockRef,
+    readPullRequestMutationLockOid,
+    readPullRequestMutationLockOwner,
     withPullRequestMutationLock,
+    writePullRequestMutationLockOwner,
 } from './pullRequestMutationLock.ts';
 
 export type ReviewComment = {
@@ -187,8 +192,7 @@ export type ReviewResolutionLockOwnerFence =
           rootPid: number;
           rootStartedAt: string;
       };
-type CurrentReviewResolutionLockOwner = {
-    version: 5;
+type ReviewResolutionLockOwnerBase = {
     pid: number;
     ownerFence: ReviewResolutionLockOwnerFence;
     threadId: string;
@@ -196,6 +200,14 @@ type CurrentReviewResolutionLockOwner = {
     token: string;
     mutation: ReviewResolutionLockMutation;
 };
+type SingleRefReviewResolutionLockOwner = ReviewResolutionLockOwnerBase & {
+    version: 5;
+};
+type DualRefReviewResolutionLockOwner = ReviewResolutionLockOwnerBase & {
+    version: 6;
+    sharedMutationOwnerOid: string;
+};
+type CurrentReviewResolutionLockOwner = SingleRefReviewResolutionLockOwner | DualRefReviewResolutionLockOwner;
 type LegacyReviewResolutionLockOwner = {
     version: 2 | 3 | 4;
     pid: number;
@@ -264,7 +276,8 @@ export type ResolveReviewThreadCoordinatorDependencies = {
     threadPort: (
         session: GhSession,
         primaryRoot: string,
-        markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt']
+        markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt'],
+        sharedMutationOwnerOid: string
     ) => ResolveReviewThreadPort;
     resolve: (
         number: number,
@@ -286,7 +299,8 @@ export type ResolveReviewThreadCliDependencies = {
     createPort?: (
         session: GhSession,
         primaryRoot: string,
-        markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt']
+        markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt'],
+        sharedMutationOwnerOid: string
     ) => ResolveReviewThreadPort;
 };
 const usage = 'usage: pnpm review:resolve <pr-number> --thread <graphql-thread-node-id> --head <40-hex-sha>';
@@ -321,9 +335,11 @@ type ReviewResolutionLockInspectionPort = {
     release?: (primaryRoot: string, ref: string, oid: string, number: number) => void;
     executionFence?: ReviewResolutionExecutionFence;
     platform?: NodeJS.Platform;
+    sharedMutationOwnerOid?: string;
 };
 type ReviewResolutionLockRecoveryPort = {
     updateRef?: (primaryRoot: string, args: string[]) => boolean;
+    updateRefsTransaction?: (primaryRoot: string, commands: string[]) => boolean;
     executionFence?: ReviewResolutionExecutionFence;
     platform?: NodeJS.Platform;
 };
@@ -647,8 +663,8 @@ function resolveReviewThreadCliDependencies(
                 })),
         createPort:
             dependencies?.createPort ??
-            ((session, primaryRoot, markRemoteMutationAttempt) =>
-                shellPort(session, primaryRoot, markRemoteMutationAttempt)),
+            ((session, primaryRoot, markRemoteMutationAttempt, sharedMutationOwnerOid) =>
+                shellPort(session, primaryRoot, markRemoteMutationAttempt, spawnCapture, sharedMutationOwnerOid)),
     };
 }
 
@@ -2107,7 +2123,8 @@ export function shellPort(
     session: GhSession,
     cwd: string = process.cwd(),
     markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt'] = () => undefined,
-    capture: typeof spawnCapture = spawnCapture
+    capture: typeof spawnCapture = spawnCapture,
+    sharedMutationOwnerOid?: string
 ): ResolveReviewThreadPort {
     const primaryRoot = resolvePrimaryRoot(
         (command, args, directory) => capture(command, args, { cwd: directory }),
@@ -2222,7 +2239,14 @@ export function shellPort(
             return deletePendingReview(id, mutationGh);
         },
         serializeReviewThreadMutation: (number, threadId, expectedHead, operation) =>
-            withPullRequestReviewResolutionLock(primaryRoot, number, threadId, expectedHead, operation),
+            withPullRequestReviewResolutionLock(
+                primaryRoot,
+                number,
+                threadId,
+                expectedHead,
+                operation,
+                sharedMutationOwnerOid === undefined ? {} : { sharedMutationOwnerOid }
+            ),
         log: (message) => console.log(message),
     };
 }
@@ -2305,7 +2329,11 @@ function parseReviewResolutionLockOwner(contents: string, number: number): Revie
         typeof value !== 'object' ||
         value === null ||
         !('version' in value) ||
-        (value.version !== 2 && value.version !== 3 && value.version !== 4 && value.version !== 5) ||
+        (value.version !== 2 &&
+            value.version !== 3 &&
+            value.version !== 4 &&
+            value.version !== 5 &&
+            value.version !== 6) ||
         !('pid' in value) ||
         typeof value.pid !== 'number' ||
         !Number.isSafeInteger(value.pid) ||
@@ -2324,7 +2352,7 @@ function parseReviewResolutionLockOwner(contents: string, number: number): Revie
     }
     const label = `${scope} lock ownership is malformed`;
     let ownerFence: ReviewResolutionLockOwnerFence;
-    if (value.version === 4 || value.version === 5) {
+    if (value.version === 4 || value.version === 5 || value.version === 6) {
         ownerFence = parseReviewResolutionLockOwnerFence(
             (value as { ownerFence?: unknown }).ownerFence,
             label,
@@ -2352,9 +2380,29 @@ function parseReviewResolutionLockOwner(contents: string, number: number): Revie
         head: canonicalGitObjectId(value.head, label),
         token: value.token,
     };
-    if (value.version === 5) {
+    if (value.version === 5 || value.version === 6) {
         const mutation = parseReviewResolutionLockMutation((value as { mutation?: unknown }).mutation, label);
         if (hasLegacyUnjournaled) {
+            fail(label);
+        }
+        const hasSharedMutationOwnerOid = 'sharedMutationOwnerOid' in value;
+        const sharedMutationOwnerValue = (value as { sharedMutationOwnerOid?: unknown }).sharedMutationOwnerOid;
+        const sharedMutationOwnerOid =
+            hasSharedMutationOwnerOid && typeof sharedMutationOwnerValue === 'string'
+                ? reviewResolutionLockObjectId(sharedMutationOwnerValue, number)
+                : undefined;
+        if (value.version === 6) {
+            if (!hasSharedMutationOwnerOid || sharedMutationOwnerOid === undefined) {
+                fail(label);
+            }
+            return {
+                version: 6,
+                ...common,
+                mutation,
+                sharedMutationOwnerOid,
+            };
+        }
+        if (hasSharedMutationOwnerOid) {
             fail(label);
         }
         return {
@@ -3066,6 +3114,18 @@ function updateReviewResolutionLockRef(primaryRoot: string, args: string[]): boo
     return result.status === 0;
 }
 
+function updateReviewResolutionLockRefsTransaction(primaryRoot: string, commands: string[]): boolean {
+    const result = reviewResolutionLockGit(
+        primaryRoot,
+        ['update-ref', '--stdin'],
+        ['start', ...commands, 'prepare', 'commit', ''].join('\n')
+    );
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    return result.status === 0;
+}
+
 function currentPosixProcessGroupFence(
     pid: number,
     env: NodeJS.ProcessEnv = process.env
@@ -3188,10 +3248,8 @@ function replaceActiveReviewResolutionLockMutation(
     mutation: ReviewResolutionLockMutation,
     number: number
 ): void {
-    const nextOwner: CurrentReviewResolutionLockOwner = {
-        ...active.owner,
-        mutation,
-    };
+    const nextOwner: CurrentReviewResolutionLockOwner =
+        active.owner.version === 6 ? { ...active.owner, mutation } : { ...active.owner, mutation };
     const nextOid = writeReviewResolutionLockOwner(primaryRoot, nextOwner, number);
     if (!updateReviewResolutionLockRef(primaryRoot, [active.ref, nextOid, active.oid])) {
         fail(`${pullRequestReviewResolutionLockScope(number)} lock ownership changed before mutation`);
@@ -3265,18 +3323,26 @@ function acquirePullRequestReviewResolutionLock(
     threadId: string,
     expectedHead: string,
     executionFence: ReviewResolutionExecutionFence,
-    _platform: NodeJS.Platform
+    _platform: NodeJS.Platform,
+    sharedMutationOwnerOid?: string
 ): { ref: string; oid: string } {
     const ref = pullRequestReviewResolutionLockRef(number);
-    const owner: CurrentReviewResolutionLockOwner = {
-        version: 5,
+    const commonOwner = {
         pid: executionFence.pid,
         ownerFence: executionFence.ownerFence,
         threadId,
         head: expectedHead,
         token: randomUUID(),
         mutation: { phase: 'idle', epoch: 0 },
-    };
+    } satisfies ReviewResolutionLockOwnerBase;
+    const owner: CurrentReviewResolutionLockOwner =
+        sharedMutationOwnerOid === undefined
+            ? { version: 5, ...commonOwner }
+            : {
+                  version: 6,
+                  ...commonOwner,
+                  sharedMutationOwnerOid: reviewResolutionLockObjectId(sharedMutationOwnerOid, number),
+              };
     const oid = writeReviewResolutionLockOwner(primaryRoot, owner, number);
     if (updateReviewResolutionLockRef(primaryRoot, [ref, oid, '0'.repeat(oid.length)])) {
         return { ref, oid };
@@ -3371,10 +3437,11 @@ export function withPullRequestReviewResolutionLock<Value>(
             port.executionFence ?? currentReviewResolutionExecutionFence(platform),
             platform
         ),
-        platform
+        platform,
+        port.sharedMutationOwnerOid
     );
     const activeOwner = readReviewResolutionLockOwner(primaryRoot, lock.oid, number);
-    assertV5ReviewResolutionLockOwner(activeOwner);
+    assertJournaledReviewResolutionLockOwner(activeOwner);
     const active: ActiveReviewResolutionLock = {
         primaryRoot,
         number,
@@ -3434,6 +3501,7 @@ export function recoverPullRequestReviewResolutionLock<Value>(
         );
     }
     let owner = readReviewResolutionLockOwner(primaryRoot, currentOwnerOid, number);
+    const retainedSharedMutationLock = inspectRetainedSharedMutationLock(primaryRoot, number, owner);
     if (ownerFenceIsLive(owner.ownerFence)) {
         return fail(
             `${pullRequestReviewResolutionLockScope(number)} lock is still held by live ${reviewResolutionOwnerFenceLabel(owner.ownerFence)}`
@@ -3468,7 +3536,7 @@ export function recoverPullRequestReviewResolutionLock<Value>(
         owner = upgradedOwner;
         currentOwnerOid = upgradedOid;
     }
-    assertV5ReviewResolutionLockOwner(owner);
+    assertJournaledReviewResolutionLockOwner(owner);
     const platform = port.platform ?? process.platform;
     const claimed = claimRecoveringPullRequestReviewResolutionLock(
         primaryRoot,
@@ -3480,7 +3548,8 @@ export function recoverPullRequestReviewResolutionLock<Value>(
             port.executionFence ?? currentReviewResolutionExecutionFence(platform),
             platform
         ),
-        port.updateRef ?? updateReviewResolutionLockRef
+        retainedSharedMutationLock,
+        port.updateRefsTransaction ?? updateReviewResolutionLockRefsTransaction
     );
     const active: ActiveReviewResolutionLock = {
         primaryRoot,
@@ -3492,13 +3561,14 @@ export function recoverPullRequestReviewResolutionLock<Value>(
     pushActiveReviewResolutionLock(active);
     try {
         const reconciled = reconcile(active.owner);
+        releaseRecoveredReviewResolutionLocks(primaryRoot, active);
         popActiveReviewResolutionLock(active);
-        releasePullRequestReviewResolutionLock(primaryRoot, active.ref, active.oid, number);
         return reconciled;
     } catch (error) {
         let latestOwnerOid: string | undefined;
         try {
             latestOwnerOid = readReviewResolutionLockOid(primaryRoot, active.ref, number);
+            assertRetainedSharedMutationLock(primaryRoot, number, active.owner);
         } catch (inspectionError) {
             popActiveReviewResolutionLockIfPresent(active);
             return preserveReviewResolutionLockAfterInspectionFailure(number, active, error, inspectionError);
@@ -3516,10 +3586,10 @@ export function recoverPullRequestReviewResolutionLock<Value>(
     }
 }
 
-function assertV5ReviewResolutionLockOwner(
+function assertJournaledReviewResolutionLockOwner(
     owner: ReviewResolutionLockOwner
 ): asserts owner is CurrentReviewResolutionLockOwner {
-    if (owner.version === 5) {
+    if (owner.version === 5 || owner.version === 6) {
         return;
     }
     if (owner.legacyUnjournaled === true) {
@@ -3531,6 +3601,85 @@ function assertV5ReviewResolutionLockOwner(
 function unjournaledLegacyReviewResolutionLockOwnerMessage(version: 2 | 3 | 4): string {
     return `review-resolution recovery refuses an unjournaled legacy v${version} lock owner without positive landed-mutation proof`;
 }
+
+type RetainedSharedMutationLock = {
+    ref: string;
+    oid?: string;
+};
+
+function inspectRetainedSharedMutationLock(
+    primaryRoot: string,
+    number: number,
+    owner: ReviewResolutionLockOwner
+): RetainedSharedMutationLock {
+    const ref = pullRequestMutationLockRef(number);
+    const gitPath = trustedReviewResolutionGitPath();
+    const oid = readPullRequestMutationLockOid(primaryRoot, ref, number, gitPath);
+    if (owner.version !== 6) {
+        if (oid !== undefined) {
+            fail(`${pullRequestReviewResolutionLockScope(number)} owner does not identify the retained delivery lock`);
+        }
+        return { ref };
+    }
+    if (oid === undefined) {
+        fail(`${pullRequestReviewResolutionLockScope(number)} retained delivery lock is not held`);
+    }
+    if (oid !== owner.sharedMutationOwnerOid) {
+        fail(
+            `${pullRequestReviewResolutionLockScope(number)} retained delivery lock ownership changed before recovery`
+        );
+    }
+    const sharedOwner = readPullRequestMutationLockOwner(primaryRoot, oid, number, gitPath);
+    if (sharedOwner.pid !== owner.pid) {
+        fail(`${pullRequestReviewResolutionLockScope(number)} retained delivery lock owner does not match`);
+    }
+    return { ref, oid };
+}
+
+function assertRetainedSharedMutationLock(
+    primaryRoot: string,
+    number: number,
+    owner: CurrentReviewResolutionLockOwner
+): void {
+    if (owner.version === 5) {
+        return;
+    }
+    inspectRetainedSharedMutationLock(primaryRoot, number, owner);
+}
+
+function recoveredReviewResolutionLockOwner(
+    owner: CurrentReviewResolutionLockOwner,
+    executionFence: ReviewResolutionExecutionFence,
+    sharedMutationOwnerOid: string
+): DualRefReviewResolutionLockOwner {
+    return {
+        version: 6,
+        pid: executionFence.pid,
+        ownerFence: executionFence.ownerFence,
+        threadId: owner.threadId,
+        head: owner.head,
+        token: owner.token,
+        mutation: owner.mutation,
+        sharedMutationOwnerOid,
+    };
+}
+
+function releaseRecoveredReviewResolutionLocks(primaryRoot: string, active: ActiveReviewResolutionLock): void {
+    if (active.owner.version === 5) {
+        releasePullRequestReviewResolutionLock(primaryRoot, active.ref, active.oid, active.number);
+        return;
+    }
+    const sharedRef = pullRequestMutationLockRef(active.number);
+    if (
+        !updateReviewResolutionLockRefsTransaction(primaryRoot, [
+            `delete ${active.ref} ${active.oid}`,
+            `delete ${sharedRef} ${active.owner.sharedMutationOwnerOid}`,
+        ])
+    ) {
+        fail(`${pullRequestReviewResolutionLockScope(active.number)} lock ownership changed before release`);
+    }
+}
+
 function claimRecoveringPullRequestReviewResolutionLock(
     primaryRoot: string,
     ref: string,
@@ -3538,15 +3687,24 @@ function claimRecoveringPullRequestReviewResolutionLock(
     owner: CurrentReviewResolutionLockOwner,
     number: number,
     executionFence: ReviewResolutionExecutionFence,
-    updateRef: (primaryRoot: string, args: string[]) => boolean
+    retainedSharedMutationLock: RetainedSharedMutationLock,
+    updateRefsTransaction: (primaryRoot: string, commands: string[]) => boolean
 ): { oid: string; owner: CurrentReviewResolutionLockOwner } {
-    const claimedOwner: CurrentReviewResolutionLockOwner = {
-        ...owner,
-        pid: executionFence.pid,
-        ownerFence: executionFence.ownerFence,
-    };
+    const claimedSharedMutationOwnerOid = writePullRequestMutationLockOwner(
+        primaryRoot,
+        { version: 1, pid: executionFence.pid, token: randomUUID() },
+        number,
+        trustedReviewResolutionGitPath()
+    );
+    const claimedOwner = recoveredReviewResolutionLockOwner(owner, executionFence, claimedSharedMutationOwnerOid);
     const claimedOid = writeReviewResolutionLockOwner(primaryRoot, claimedOwner, number);
-    if (!updateRef(primaryRoot, [ref, claimedOid, currentOwnerOid])) {
+    const previousSharedMutationOwnerOid =
+        retainedSharedMutationLock.oid ?? '0'.repeat(claimedSharedMutationOwnerOid.length);
+    const claimed = updateRefsTransaction(primaryRoot, [
+        `update ${ref} ${claimedOid} ${currentOwnerOid}`,
+        `update ${retainedSharedMutationLock.ref} ${claimedSharedMutationOwnerOid} ${previousSharedMutationOwnerOid}`,
+    ]);
+    if (!claimed) {
         const winningOwnerOid = readReviewResolutionLockOid(primaryRoot, ref, number);
         if (winningOwnerOid === undefined) {
             fail(`${pullRequestReviewResolutionLockScope(number)} lock is not held after recovery claim`);
@@ -4110,7 +4268,7 @@ export function assertRecoverableReviewResolutionLockOwner(
     port: ResolveReviewThreadPort,
     _primaryRoot: string = process.cwd()
 ): void {
-    assertV5ReviewResolutionLockOwner(owner);
+    assertJournaledReviewResolutionLockOwner(owner);
     const thread = inspection.thread;
     if (thread === null || thread.id !== owner.threadId) {
         fail(`review thread ${owner.threadId} was not found on this pull request`);
@@ -4339,7 +4497,7 @@ export function reviewResolutionRecoveryResult(
     owner: ReviewResolutionLockOwner,
     inspection: ReviewThreadInspection
 ): ReviewResolutionRecoveryResult {
-    assertV5ReviewResolutionLockOwner(owner);
+    assertJournaledReviewResolutionLockOwner(owner);
     return { kind: 'reconciled', inspection };
 }
 
@@ -4351,7 +4509,7 @@ export function retireUnseenReviewResolutionLockOwnerState(
     primaryRoot: string = process.cwd(),
     retirementClock: ReviewResolutionRetirementClock = systemReviewResolutionRetirementClock
 ): ReviewThreadInspection {
-    assertV5ReviewResolutionLockOwner(owner);
+    assertJournaledReviewResolutionLockOwner(owner);
     if (
         owner.mutation.phase !== 'createPendingReview' &&
         owner.mutation.phase !== 'createPendingReviewSettlement' &&
@@ -4700,7 +4858,7 @@ export function recoverReviewResolutionLockOwnerState(
     clock: ReviewResolutionRecoveryClock = systemReviewResolutionRecoveryClock,
     primaryRoot: string = process.cwd()
 ): ReviewThreadInspection {
-    assertV5ReviewResolutionLockOwner(owner);
+    assertJournaledReviewResolutionLockOwner(owner);
     let inspection = inspectReviewResolutionRecovery(number, owner, port);
     if (owner.mutation.phase === 'idle') {
         return inspection;
@@ -5239,8 +5397,8 @@ export function defaultResolveReviewThreadCoordinatorDependencies(): ResolveRevi
                 env: session.env,
                 cwd: primaryRoot,
             }),
-        threadPort: (session, primaryRoot, markRemoteMutationAttempt) =>
-            shellPort(session, primaryRoot, markRemoteMutationAttempt),
+        threadPort: (session, primaryRoot, markRemoteMutationAttempt, sharedMutationOwnerOid) =>
+            shellPort(session, primaryRoot, markRemoteMutationAttempt, spawnCapture, sharedMutationOwnerOid),
         resolve: resolveReviewThread,
     };
 }
@@ -5252,7 +5410,7 @@ export async function coordinateResolveReviewThread(
     dependencies: ResolveReviewThreadCoordinatorDependencies = defaultResolveReviewThreadCoordinatorDependencies()
 ): Promise<void> {
     const primaryRoot = dependencies.primaryRoot();
-    await dependencies.serializeMutation(primaryRoot, number, async ({ markRemoteMutationAttempt }) => {
+    await dependencies.serializeMutation(primaryRoot, number, async ({ markRemoteMutationAttempt, ownerOid }) => {
         const auth = await dependencies.authenticateAuthor(primaryRoot);
         try {
             if (!isAuthorBotNodeId(auth.minted.actorNodeId)) {
@@ -5264,7 +5422,7 @@ export async function coordinateResolveReviewThread(
                 threadId,
                 expectedHead,
                 auth.minted.actorNodeId,
-                dependencies.threadPort(auth.session, primaryRoot, markRemoteMutationAttempt)
+                dependencies.threadPort(auth.session, primaryRoot, markRemoteMutationAttempt, ownerOid)
             );
         } finally {
             auth.session.dispose();

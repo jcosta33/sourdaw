@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 
 import { fail } from './prContract.ts';
 
-type PullRequestMutationLockOwner = {
+export type PullRequestMutationLockOwner = {
     version: 1;
     pid: number;
     token: string;
@@ -17,20 +17,21 @@ export type PullRequestMutationSerialization = <Value>(
 
 export type PullRequestRemoteMutationBoundary = {
     markRemoteMutationAttempt: () => void;
+    ownerOid: string;
 };
 
 const LOCK_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 // Keep the established ref namespace so a delivery crash from an older command remains a fence.
-function mutationLockRef(number: number): string {
+export function pullRequestMutationLockRef(number: number): string {
     if (!Number.isSafeInteger(number) || number <= 0) {
         fail('delivery lock requires a positive pull-request number');
     }
     return `refs/sourdaw/delivery/pr-${number}`;
 }
 
-function mutationLockGit(primaryRoot: string, args: string[], input?: string) {
-    return spawnSync('git', args, {
+function mutationLockGit(primaryRoot: string, args: string[], input?: string, gitPath: string = 'git') {
+    return spawnSync(gitPath, args, {
         cwd: primaryRoot,
         encoding: 'utf8',
         shell: false,
@@ -72,8 +73,13 @@ function mutationLockObjectId(value: string, number: number): string {
     return oid;
 }
 
-function writeMutationLockOwner(primaryRoot: string, owner: PullRequestMutationLockOwner, number: number): string {
-    const result = mutationLockGit(primaryRoot, ['hash-object', '-w', '--stdin'], JSON.stringify(owner));
+export function writePullRequestMutationLockOwner(
+    primaryRoot: string,
+    owner: PullRequestMutationLockOwner,
+    number: number,
+    gitPath: string = 'git'
+): string {
+    const result = mutationLockGit(primaryRoot, ['hash-object', '-w', '--stdin'], JSON.stringify(owner), gitPath);
     if (result.error !== undefined) {
         throw result.error;
     }
@@ -83,8 +89,13 @@ function writeMutationLockOwner(primaryRoot: string, owner: PullRequestMutationL
     return mutationLockObjectId(result.stdout, number);
 }
 
-function readMutationLockOid(primaryRoot: string, ref: string, number: number): string | undefined {
-    const result = mutationLockGit(primaryRoot, ['show-ref', '--verify', '--hash', ref]);
+export function readPullRequestMutationLockOid(
+    primaryRoot: string,
+    ref: string,
+    number: number,
+    gitPath: string = 'git'
+): string | undefined {
+    const result = mutationLockGit(primaryRoot, ['rev-parse', '--verify', '--quiet', ref], undefined, gitPath);
     if (result.error !== undefined) {
         throw result.error;
     }
@@ -97,8 +108,13 @@ function readMutationLockOid(primaryRoot: string, ref: string, number: number): 
     return mutationLockObjectId(result.stdout, number);
 }
 
-function readMutationLockOwner(primaryRoot: string, oid: string, number: number): PullRequestMutationLockOwner {
-    const result = mutationLockGit(primaryRoot, ['cat-file', 'blob', oid]);
+export function readPullRequestMutationLockOwner(
+    primaryRoot: string,
+    oid: string,
+    number: number,
+    gitPath: string = 'git'
+): PullRequestMutationLockOwner {
+    const result = mutationLockGit(primaryRoot, ['cat-file', 'blob', oid], undefined, gitPath);
     if (result.error !== undefined) {
         throw result.error;
     }
@@ -117,18 +133,18 @@ function updateMutationLockRef(primaryRoot: string, args: string[]): boolean {
 }
 
 function acquireMutationLock(primaryRoot: string, number: number): { ref: string; oid: string } {
-    const ref = mutationLockRef(number);
+    const ref = pullRequestMutationLockRef(number);
     const owner: PullRequestMutationLockOwner = { version: 1, pid: process.pid, token: randomUUID() };
-    const oid = writeMutationLockOwner(primaryRoot, owner, number);
+    const oid = writePullRequestMutationLockOwner(primaryRoot, owner, number);
     if (updateMutationLockRef(primaryRoot, [ref, oid, '0'.repeat(oid.length)])) {
         return { ref, oid };
     }
 
-    const previousOid = readMutationLockOid(primaryRoot, ref, number);
+    const previousOid = readPullRequestMutationLockOid(primaryRoot, ref, number);
     if (previousOid === undefined) {
         fail(`PR #${number} delivery lock could not be acquired`);
     }
-    const previousOwner = readMutationLockOwner(primaryRoot, previousOid, number);
+    const previousOwner = readPullRequestMutationLockOwner(primaryRoot, previousOid, number);
     return fail(`PR #${number} is already being delivered by process ${previousOwner.pid}`);
 }
 
@@ -148,6 +164,7 @@ export async function withPullRequestMutationLock<Value>(
     let succeeded = false;
     try {
         const result = await operation({
+            ownerOid: lock.oid,
             markRemoteMutationAttempt: () => {
                 remoteMutationAttempted = true;
             },
