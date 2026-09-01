@@ -1,4 +1,4 @@
-import { failProjectIdentityTransitionDependencies } from '#/modules/Project/events';
+import { failProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 
 export function rejectIdentityTransitionOnBootstrapFailure(reason: unknown): void {
     failProjectIdentityTransitionDependencies(reason);

@@ -1,5 +1,4 @@
 import { mountBrowserDisplayScaleHost, resetBrowserDisplayScaleForChildStartup } from './browserDisplayScaleHost';
-import { rejectIdentityTransitionOnBootstrapFailure } from './rejectIdentityTransitionOnBootstrapFailure';
 import { reloadApplication } from './reloadApplication';
 import { resolveAppComposition } from './resolveAppComposition';
 
@@ -30,7 +29,9 @@ async function renderApplication(): Promise<void> {
                 reject(error);
             })
             .catch(() => {
-                rejectIdentityTransitionOnBootstrapFailure(error);
+                void import('#/modules/Project/useCases').then(({ failProjectIdentityTransitionDependencies }) => {
+                    failProjectIdentityTransitionDependencies(error);
+                });
             });
     });
     const [, { createRoot }, { App }, { registerNotificationEventBus }] = await Promise.all([

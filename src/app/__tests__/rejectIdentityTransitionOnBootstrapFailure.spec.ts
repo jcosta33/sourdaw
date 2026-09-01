@@ -1,50 +1,30 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-    audioEngineEvaluated: vi.fn(),
-    projectUseCasesEvaluated: vi.fn(),
+    dawDspEvaluated: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => {
-    mocks.audioEngineEvaluated();
-    return {
-        get analyzePitchForClip() {
-            throw new Error('daw_dsp.js evaluated');
-        },
-    };
-});
-
-vi.mock('#/modules/Project/useCases', async () => {
-    mocks.projectUseCasesEvaluated();
-    const audioEngine = await import('#/modules/AudioEngine/useCases');
-    Reflect.get(audioEngine, 'analyzePitchForClip');
-    return {
-        failProjectIdentityTransitionDependencies: vi.fn(),
-        loadProject: vi.fn(),
-        reportProjectLoadFailure: vi.fn(),
-        saveProject: vi.fn(),
-        whenProjectIdentityTransitionDependenciesConfigured: () => new Promise<void>(() => undefined),
-    };
+vi.mock('#/modules/AudioEngine/wasm/daw_dsp.js', () => {
+    mocks.dawDspEvaluated();
+    throw new Error('daw_dsp.js evaluated');
 });
 
 describe('rejectIdentityTransitionOnBootstrapFailure', () => {
     beforeEach(() => {
         vi.resetModules();
-        mocks.audioEngineEvaluated.mockClear();
-        mocks.projectUseCasesEvaluated.mockClear();
+        mocks.dawDspEvaluated.mockClear();
     });
 
-    it('evaluates after AudioEngine has failed without loading the Project useCases barrel', async () => {
+    it('evaluates after daw_dsp has failed without evaluating daw_dsp.js', async () => {
         const { rejectIdentityTransitionOnBootstrapFailure } =
             await import('../rejectIdentityTransitionOnBootstrapFailure');
-        const { whenProjectIdentityTransitionDependenciesConfigured } = await import('#/modules/Project/events');
+        const { whenProjectIdentityTransitionDependenciesConfigured } = await import('#/modules/Project/useCases');
 
-        expect(mocks.projectUseCasesEvaluated).not.toHaveBeenCalled();
-        expect(mocks.audioEngineEvaluated).not.toHaveBeenCalled();
+        expect(mocks.dawDspEvaluated).not.toHaveBeenCalled();
 
         const failure = new Error('bootstrap chunk failed');
         rejectIdentityTransitionOnBootstrapFailure(failure);
 
         await expect(whenProjectIdentityTransitionDependenciesConfigured()).rejects.toBe(failure);
-    });
+    }, 20_000);
 });

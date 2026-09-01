@@ -1,2 +1,1 @@
-export { failProjectIdentityTransitionDependencies } from './failProjectIdentityTransitionDependencies';
-export { whenProjectIdentityTransitionDependenciesConfigured } from './whenProjectIdentityTransitionDependenciesConfigured';
+// No events defined in Project module

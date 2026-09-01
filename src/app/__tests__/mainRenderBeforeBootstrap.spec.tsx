@@ -106,14 +106,6 @@ vi.mock('#/modules/AiRuntime/useCases', async () => {
     };
 });
 
-vi.mock('#/modules/Project/events', () => ({
-    failProjectIdentityTransitionDependencies: (reason: unknown) => {
-        mocks.failIdentityTransition(reason);
-        mocks.identity.fail(reason);
-    },
-    whenProjectIdentityTransitionDependenciesConfigured: () => mocks.identity.ready,
-}));
-
 vi.mock('#/modules/Project/useCases', () => ({
     failProjectIdentityTransitionDependencies: (reason: unknown) => {
         mocks.failIdentityTransition(reason);
