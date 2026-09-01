@@ -735,7 +735,10 @@ function resolveReviewThreadWithinMutation(
     assertExpectedHead(before.head, expectedHead);
     const context = resolutionReviewContext(before.pullRequestId, threadId, expectedHead);
     if (before.thread?.isResolved) {
-        repairCompletedResolution(number, before, context, port);
+        const immutableEmptySubmittedReview = repairCompletedResolution(number, before, context, port);
+        if (immutableEmptySubmittedReview) {
+            return logImmutableEmptySubmittedReviewReconciliation(number, threadId, port);
+        }
         return logResolutionSuccess(number, threadId, port);
     }
     assertResolvableThread(before.thread, threadId);
@@ -1035,6 +1038,16 @@ function logResolutionSuccess(number: number, threadId: string, port: ResolveRev
     const success = `review-thread-resolved:${number}:${threadId}`;
     port.log(success);
     return success;
+}
+
+function logImmutableEmptySubmittedReviewReconciliation(
+    number: number,
+    threadId: string,
+    port: ResolveReviewThreadPort
+): string {
+    const outcome = `review-thread-resolution-reconciled-immutable-empty-submitted-review:${number}:${threadId}`;
+    port.log(outcome);
+    return outcome;
 }
 
 function compensateResolution(
@@ -1717,6 +1730,28 @@ function repairManagedCommentedReviewEnvelopes(
     }
     return updated;
 }
+
+function isImmutableEmptySubmittedReview(review: PullRequestReview): boolean {
+    return review.state === 'COMMENTED' && review.body === '';
+}
+
+function hasExactImmutableEmptySubmittedReviewEnvelope(
+    number: number,
+    thread: ReviewThread,
+    context: ResolutionReviewContext,
+    port: ResolveReviewThreadPort
+): boolean {
+    const managed = managedReplyMarkers(thread, context, ['COMMENTED'], true);
+    if (managed.length !== 1) {
+        return false;
+    }
+    const [candidate] = managed;
+    if (candidate === undefined || !candidate.currentHead || !isImmutableEmptySubmittedReview(candidate.review)) {
+        return false;
+    }
+    assertExclusiveBackfillReviewAttachment(number, candidate.review.id, context, port);
+    return true;
+}
 function isExactPendingReview(review: PullRequestReview, context: ResolutionReviewContext): boolean {
     return (
         review.state === 'PENDING' &&
@@ -2005,7 +2040,7 @@ function repairCompletedResolution(
     inspection: ReviewThreadInspection,
     context: ResolutionReviewContext,
     port: ResolveReviewThreadPort
-): void {
+): boolean {
     let working = inspection;
     let thread = inspection.thread;
     if (thread === null) {
@@ -2013,6 +2048,9 @@ function repairCompletedResolution(
     }
     assertCompletedResolution(thread, context.threadId);
     assertManagedReplyMarkersReadable(thread, context, ['PENDING', 'COMMENTED'], true);
+    if (hasExactImmutableEmptySubmittedReviewEnvelope(number, thread, context, port)) {
+        return true;
+    }
     const refresh = (): ReviewThread => {
         working = port.inspect(number, context.threadId);
         assertExpectedHeadAfterMutation(working.head, context.expectedHead);
@@ -2086,7 +2124,7 @@ function repairCompletedResolution(
     const duplicateMarkers = managedReplyMarkers(thread, context, ['COMMENTED'], false);
     if (duplicateMarkers.length <= 1) {
         assertCommentedResolutionReply(requireOneReplyMarker(thread, context.threadId), context);
-        return;
+        return false;
     }
     convergeReplyMarkers(context.threadId, thread, port, context, ['COMMENTED']);
     const verified = port.inspect(number, context.threadId);
@@ -2096,6 +2134,7 @@ function repairCompletedResolution(
     }
     assertCompletedResolution(verified.thread, context.threadId);
     assertCommentedResolutionReply(requireOneReplyMarker(verified.thread, context.threadId), context);
+    return false;
 }
 function assertFinalResolution(
     thread: ReviewThread | null,
@@ -4599,6 +4638,22 @@ function assertExactRecoveredMutationAfterHeadDrift(
     }
 }
 
+function hasExactImmutableEmptySubmittedReviewRecovery(
+    number: number,
+    owner: CurrentReviewResolutionLockOwner,
+    inspection: ReviewThreadInspection,
+    context: ResolutionReviewContext,
+    thread: ReviewThread,
+    mutation: Extract<ReviewResolutionLockMutation, { phase: 'updateReviewBody' }>,
+    port: ResolveReviewThreadPort
+): boolean {
+    if (!thread.isResolved || !isAuthorResolutionActor(thread.resolvedByNodeId, thread.resolvedByType)) {
+        return false;
+    }
+    const review = requireReplayableHistoricalReviewBodyUpdate(number, owner, inspection, context, mutation, port);
+    return isImmutableEmptySubmittedReview(review);
+}
+
 function hasRecoveredReviewResolutionMutation(
     number: number,
     owner: CurrentReviewResolutionLockOwner,
@@ -4636,8 +4691,8 @@ function hasRecoveredReviewResolutionMutation(
                     candidate.review.body === mutation.body &&
                     candidate.review.commitOid === mutation.reviewCommitOid
             );
-        case 'updateReviewBody':
-            return (
+        case 'updateReviewBody': {
+            const landed =
                 inspection.pendingReviews.some(
                     (review) =>
                         review.id === mutation.reviewId &&
@@ -4654,8 +4709,20 @@ function hasRecoveredReviewResolutionMutation(
                             candidate.review.fullDatabaseId === mutation.reviewDatabaseId) &&
                         candidate.review.body === mutation.body &&
                         candidate.review.commitOid === mutation.reviewCommitOid
-                )
+                );
+            if (landed) {
+                return true;
+            }
+            return hasExactImmutableEmptySubmittedReviewRecovery(
+                number,
+                owner,
+                inspection,
+                context,
+                thread,
+                mutation,
+                port
             );
+        }
         case 'resolveThread':
             return (
                 thread.isResolved &&
@@ -5160,6 +5227,10 @@ export function recoverReviewResolutionLockOwnerState(
                 mutation,
                 port
             );
+            if (isImmutableEmptySubmittedReview(review) && inspection.thread!.isResolved) {
+                assertCompletedResolution(inspection.thread!, owner.threadId);
+                break;
+            }
             const updated = port.updateReviewBody(mutation.reviewId, mutation.body, mutation.reviewCommitOid, review);
             assertProvenReviewBodyReceipt(updated, review, mutation.body);
             inspection = inspectReviewResolutionRecovery(number, owner, port);
