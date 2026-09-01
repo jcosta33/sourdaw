@@ -1,3 +1,4 @@
+import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
 import { HostedToolCallingProtocolError } from '../../../errors/HostedToolCallingProtocolError';
 import { ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
@@ -162,7 +163,10 @@ export async function generateOpenAiCompatibleToolCalls({
         onBodyChunk: (chunk) => chunks.push(chunk),
     });
     if (response.status < 200 || response.status >= 300) {
-        throw new Error(`Hosted AI tool request failed with status ${String(response.status)}`);
+        throw new HostedAiHttpStatusError(
+            response.status,
+            `Hosted AI tool request failed with status ${String(response.status)}`
+        );
     }
     let payload: unknown;
     try {

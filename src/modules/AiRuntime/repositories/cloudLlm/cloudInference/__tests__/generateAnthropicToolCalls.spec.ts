@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { isHostedAiHttpStatusError } from '../../../../errors/HostedAiHttpStatusError';
 import { generateAnthropicToolCalls } from '../generateAnthropicToolCalls';
 
 const requestProvider = vi.hoisted(() => vi.fn());
@@ -91,15 +92,22 @@ describe('generateAnthropicToolCalls', () => {
 
     it('reports only the provider status on failure', async () => {
         returnPayload({ private: 'provider detail' }, 401);
-        await expect(
-            generateAnthropicToolCalls({
-                runtime,
-                systemPrompt: 'system',
-                userMessage: 'faster',
-                toolSchemas,
-                signal: new AbortController().signal,
-            })
-        ).rejects.toThrow('status 401');
+        const error = await generateAnthropicToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'faster',
+            toolSchemas,
+            signal: new AbortController().signal,
+        }).catch((error: unknown) => error);
+
+        expect(isHostedAiHttpStatusError(error)).toBe(true);
+        if (!isHostedAiHttpStatusError(error)) {
+            return;
+        }
+        expect(error.message).toContain('status 401');
+        expect(error.status).toBe(401);
+        expect(error.message).not.toContain('provider detail');
+        expect(error.message).not.toContain('private');
     });
 
     it('rejects a successful response with the wrong content type', async () => {

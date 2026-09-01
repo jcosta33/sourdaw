@@ -4,6 +4,7 @@ import { selectExecutableAppActionToolSchemasForPrompt } from '#/modules/Command
 
 import { isAiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
+import { snapshotHostedAiHttpStatus } from '../../errors/HostedAiHttpStatusError';
 import { createModelProviderFailureError, isModelProviderFailureError } from '../../errors/ModelProviderFailureError';
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
 import { REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
@@ -44,6 +45,27 @@ function createToolPlanningAbortError(): Error {
     const error = new Error('AI tool planning aborted');
     error.name = 'AbortError';
     return error;
+}
+
+function hostedAiHttpSafeMessage(status: number): string {
+    if (status === 401 || status === 403) {
+        return `Hosted AI request failed (HTTP ${String(status)}) — check your API key.`;
+    }
+    if (status === 404) {
+        return 'Hosted AI request failed (HTTP 404) — the model or endpoint was not found.';
+    }
+    if (status === 429) {
+        return 'Hosted AI request failed (HTTP 429) — rate limited; retry later.';
+    }
+    return `Hosted AI request failed (HTTP ${String(status)}).`;
+}
+
+function hostedAiHttpFailure(status: number): Pick<ModelProviderFailure, 'code' | 'retryable' | 'safeMessage'> {
+    return {
+        code: `hosted-http-${String(status)}`,
+        retryable: status === 429 || status === 503,
+        safeMessage: hostedAiHttpSafeMessage(status),
+    };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -138,18 +160,23 @@ function preSessionProviderResult(input: {
             retryable: true,
             safeMessage: 'The model provider request was cancelled.',
         };
-    } else if (normalizedFailure === null) {
-        failure = {
-            code: 'provider-attempt-failed',
-            retryable: true,
-            safeMessage: 'The model provider request failed before its session started.',
-        };
-    } else {
+    } else if (normalizedFailure !== null) {
         failure = {
             code: normalizedFailure.code,
             retryable: normalizedFailure.retryable,
             safeMessage: normalizedFailure.message,
         };
+    } else {
+        const httpStatus = snapshotHostedAiHttpStatus(input.error);
+        if (httpStatus !== null) {
+            failure = hostedAiHttpFailure(httpStatus);
+        } else {
+            failure = {
+                code: 'provider-attempt-failed',
+                retryable: true,
+                safeMessage: 'The model provider request failed before its session started.',
+            };
+        }
     }
     const dataCategories = input.attempt.request.dataCategories;
     return {
@@ -551,14 +578,22 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             },
                         });
                     } else {
-                        failedResult = providerSource.finish({
-                            reason: 'error',
-                            failure: {
-                                code: 'provider-attempt-failed',
-                                retryable: true,
-                                safeMessage: 'The model provider request failed.',
-                            },
-                        });
+                        const httpStatus = snapshotHostedAiHttpStatus(error);
+                        if (httpStatus !== null) {
+                            failedResult = providerSource.finish({
+                                reason: 'error',
+                                failure: hostedAiHttpFailure(httpStatus),
+                            });
+                        } else {
+                            failedResult = providerSource.finish({
+                                reason: 'error',
+                                failure: {
+                                    code: 'provider-attempt-failed',
+                                    retryable: true,
+                                    safeMessage: 'The model provider request failed.',
+                                },
+                            });
+                        }
                     }
                     reportProviderResult(failedResult);
                     if (failedResult.failure !== null) {

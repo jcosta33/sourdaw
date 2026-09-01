@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { isHostedAiHttpStatusError } from '../../../../errors/HostedAiHttpStatusError';
 import { type OpenAiCompatibleCloudRuntime } from '../../cloudSession';
 import { generateOpenAiCompatibleToolCalls } from '../generateOpenAiCompatibleToolCalls';
 
@@ -234,14 +235,21 @@ describe('generateOpenAiCompatibleToolCalls', () => {
     it('reports status without echoing credentials or provider response bodies', async () => {
         vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response('key=sk-secret', { status: 401 })));
 
-        await expect(
-            generateOpenAiCompatibleToolCalls({
-                runtime,
-                systemPrompt: 'system',
-                userMessage: 'mute drums',
-                toolSchemas: tools,
-            })
-        ).rejects.toThrow('Hosted AI tool request failed with status 401');
+        const error = await generateOpenAiCompatibleToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'mute drums',
+            toolSchemas: tools,
+        }).catch((error: unknown) => error);
+
+        expect(isHostedAiHttpStatusError(error)).toBe(true);
+        if (!isHostedAiHttpStatusError(error)) {
+            return;
+        }
+        expect(error.message).toBe('Hosted AI tool request failed with status 401');
+        expect(error.status).toBe(401);
+        expect(error.message).not.toContain('key=sk-secret');
+        expect(error.message).not.toContain('sk-secret');
     });
 
     it('rejects tool calls from a token-limited response', async () => {
