@@ -162,6 +162,11 @@ vi.mock('../../../useCases/clipEditing/reverseClip', () => ({
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),
     pushUndoEntry: vi.fn(),
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    clearUndoHistory: vi.fn(),
+    isAppActionCommittedError: vi.fn(() => false),
+    resetActionReplayAuthority: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
 }));
 
 vi.mock('#/modules/AudioAnalysis/useCases', () => ({
