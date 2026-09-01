@@ -92,7 +92,7 @@ function bridge(call: { arguments: Record<string, unknown>; name: string }, cont
 function expectRejected(
     name: CoreAutomationCallName,
     argumentsPayload: Record<string, unknown>,
-    reason = rejectionReasons[name],
+    reason: string = rejectionReasons[name],
     context = projectContext
 ) {
     expect(bridge({ name, arguments: argumentsPayload }, context)).toEqual({ index: 11, name, reason });
@@ -315,11 +315,11 @@ describe('coreAutomationStrategy', () => {
     });
 
     it('requires populated lanes for inversion, at least two points for reversal, and valid optional thinning', () => {
-        const emptyContext = {
+        const emptyContext: ProjectContext = {
             ...projectContext,
             automationLanes: [{ ...projectContext.automationLanes![0]!, points: [] }],
         };
-        const onePointContext = {
+        const onePointContext: ProjectContext = {
             ...projectContext,
             automationLanes: [
                 { ...projectContext.automationLanes![0]!, points: [{ beat: 0, value: 0.5, curve: 'linear' }] },
