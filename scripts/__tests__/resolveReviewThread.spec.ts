@@ -375,10 +375,7 @@ describe('review thread resolution', () => {
         const requestedThreadId = 'PRRT_cli_forwarding_distinct';
         const requestedHead = 'c'.repeat(40);
         await expect(
-            runResolveReviewThreadCli(
-                ['7819', '--thread', requestedThreadId, '--head', requestedHead],
-                dependencies
-            )
+            runResolveReviewThreadCli(['7819', '--thread', requestedThreadId, '--head', requestedHead], dependencies)
         ).resolves.toBe(0);
 
         expect(forwarded).toEqual({ number: 7819, threadId: requestedThreadId, expectedHead: requestedHead });
@@ -498,9 +495,13 @@ describe('review thread resolution', () => {
     ])('rejects a %s delete-reply receipt', (_case, response) => {
         let attempted = false;
         expect(() =>
-            deleteReply(replyId, () => JSON.stringify(response), () => {
-                attempted = true;
-            })
+            deleteReply(
+                replyId,
+                () => JSON.stringify(response),
+                () => {
+                    attempted = true;
+                }
+            )
         ).toThrow(/delete review reply returned an invalid result/i);
         expect(attempted).toBe(true);
     });

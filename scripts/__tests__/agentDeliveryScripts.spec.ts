@@ -1671,11 +1671,7 @@ describe('package scripts and gitignore', () => {
         }
     });
 
-    it.each<[
-        string,
-        (port: DeliveryPort) => void,
-        (command: string, args: string[]) => boolean,
-    ]>([
+    it.each<[string, (port: DeliveryPort) => void, (command: string, args: string[]) => boolean]>([
         [
             'delivery receipt creation',
             (port) => {
@@ -1692,9 +1688,7 @@ describe('package scripts and gitignore', () => {
                 port.merge(2495, 'head', false);
             },
             (command, args) =>
-                command === 'gh' &&
-                args.includes('PUT') &&
-                args.includes('repos/jcosta33/sourdaw/pulls/2495/merge'),
+                command === 'gh' && args.includes('PUT') && args.includes('repos/jcosta33/sourdaw/pulls/2495/merge'),
         ],
         [
             'dependent retarget',
@@ -1704,43 +1698,40 @@ describe('package scripts and gitignore', () => {
             (command, args) =>
                 command === 'gh' && args.includes('PATCH') && args.includes('repos/jcosta33/sourdaw/pulls/2496'),
         ],
-    ])(
-        'retains the exact owner when production %s dispatch is indeterminate',
-        async (_label, mutate, isDispatch) => {
-            let dispatched = 0;
-            await expectAmbiguousDeliveryMutationRetainsOwner(async (root, number) => {
-                await withPullRequestDeliveryLock(root, number, async ({ markRemoteMutationAttempt }) => {
-                    const failDispatch = (command: string, args: string[]): never => {
-                        if (!isDispatch(command, args)) {
-                            throw new Error(`unexpected command in test: ${command} ${args.join(' ')}`);
-                        }
-                        dispatched += 1;
-                        throw new Error('remote mutation result is indeterminate');
-                    };
-                    const port = shellPort(
-                        'jcosta33/sourdaw',
-                        {
-                            capture: (command, args) => {
-                                if (args.join(' ') === 'api repos/jcosta33/sourdaw') {
-                                    return JSON.stringify({
-                                        allow_merge_commit: false,
-                                        allow_rebase_merge: false,
-                                        allow_squash_merge: true,
-                                        delete_branch_on_merge: false,
-                                    });
-                                }
-                                return failDispatch(command, args);
-                            },
-                            run: failDispatch,
+    ])('retains the exact owner when production %s dispatch is indeterminate', async (_label, mutate, isDispatch) => {
+        let dispatched = 0;
+        await expectAmbiguousDeliveryMutationRetainsOwner(async (root, number) => {
+            await withPullRequestDeliveryLock(root, number, async ({ markRemoteMutationAttempt }) => {
+                const failDispatch = (command: string, args: string[]): never => {
+                    if (!isDispatch(command, args)) {
+                        throw new Error(`unexpected command in test: ${command} ${args.join(' ')}`);
+                    }
+                    dispatched += 1;
+                    throw new Error('remote mutation result is indeterminate');
+                };
+                const port = shellPort(
+                    'jcosta33/sourdaw',
+                    {
+                        capture: (command, args) => {
+                            if (args.join(' ') === 'api repos/jcosta33/sourdaw') {
+                                return JSON.stringify({
+                                    allow_merge_commit: false,
+                                    allow_rebase_merge: false,
+                                    allow_squash_merge: true,
+                                    delete_branch_on_merge: false,
+                                });
+                            }
+                            return failDispatch(command, args);
                         },
-                        { markRemoteMutationAttempt }
-                    );
-                    mutate(port);
-                });
+                        run: failDispatch,
+                    },
+                    { markRemoteMutationAttempt }
+                );
+                mutate(port);
             });
-            expect(dispatched).toBe(1);
-        }
-    );
+        });
+        expect(dispatched).toBe(1);
+    });
 
     it.each<[string, (port: ReconcileTrackerIssuePort) => void, 'PATCH' | 'POST']>([
         [

@@ -323,10 +323,7 @@ export async function coordinatePublishReview(
                 fail(`minted actor ${auth.minted.actorNodeId} is not ${REVIEWER_BOT_NODE_ID}`);
             }
             assertRequiredRepository(dependencies.repositoryName(auth.session, primaryRoot));
-            dependencies.publish(
-                number,
-                dependencies.reviewPort(auth.session, primaryRoot, markRemoteMutationAttempt)
-            );
+            dependencies.publish(number, dependencies.reviewPort(auth.session, primaryRoot, markRemoteMutationAttempt));
         } finally {
             auth.session.dispose();
         }
