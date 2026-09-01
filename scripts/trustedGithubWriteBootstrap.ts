@@ -14,7 +14,8 @@ import { tmpdir } from 'node:os';
 import { delimiter, dirname, isAbsolute, join, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export type TrustedGithubWriteCommand = 'deliver' | 'issue:reconcile' | 'lane:publish';
+export type TrustedGithubWriteCommand =
+    'deliver' | 'issue:reconcile' | 'lane:publish' | 'review:publish' | 'review:resolve';
 
 export const BOOTSTRAP_PATH = 'scripts/trustedGithubWriteBootstrap.ts';
 export const HEALTH_GATES_WORKFLOW_PATH = '.github/workflows/health-gates.yml';
@@ -70,6 +71,7 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
     deliver: [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/deliverPullRequest.ts',
+        'scripts/pullRequestMutationLock.ts',
         'scripts/reconcileTrackerIssue.ts',
         'scripts/trackerIssueReconciliation.ts',
         'scripts/githubAppIdentity.ts',
@@ -88,12 +90,29 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
     ],
+    'review:publish': [
+        'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/publishReview.ts',
+        'scripts/prepareReview.ts',
+        'scripts/pullRequestMutationLock.ts',
+        'scripts/githubAppIdentity.ts',
+        'scripts/prContract.ts',
+    ],
+    'review:resolve': [
+        'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/resolveReviewThread.ts',
+        'scripts/pullRequestMutationLock.ts',
+        'scripts/githubAppIdentity.ts',
+        'scripts/prContract.ts',
+    ],
 };
 
 const commandEntries: Record<TrustedGithubWriteCommand, { path: string; runner: string }> = {
     deliver: { path: 'scripts/deliverPullRequest.ts', runner: 'runDeliverCli' },
     'issue:reconcile': { path: 'scripts/reconcileTrackerIssue.ts', runner: 'runReconcileTrackerIssueCli' },
     'lane:publish': { path: 'scripts/publishLane.ts', runner: 'runPublishLaneCli' },
+    'review:publish': { path: 'scripts/publishReview.ts', runner: 'runPublishReviewCli' },
+    'review:resolve': { path: 'scripts/resolveReviewThread.ts', runner: 'runResolveReviewThreadCli' },
 };
 
 export function trustedDependencyPaths(command: TrustedGithubWriteCommand): readonly string[] {
@@ -131,8 +150,8 @@ export function assertTrustedSourceGraph(
  * repository's packages do resolve, and it is the one source the snapshot writes and never imports —
  * which the second rule keeps true — so its `yaml` dependency never resolves from a snapshot at all.
  * What holds that parser behind a dynamic call is not this check but the reason it is written that
- * way: a static bare dependency would load for `lane:publish` and `issue:reconcile` too, which read
- * no workflow and must not fail over a package they never use. The spec pins that shape separately.
+ * way: a static bare dependency would load for every non-delivery command too, though none reads a
+ * workflow or may fail over a package it never uses. The spec pins that shape separately.
  */
 function assertSnapshotResolvableImports(path: string, source: string, pathSet: ReadonlySet<string>): void {
     for (const dependency of localModuleDependencies(path, source)) {
@@ -588,8 +607,8 @@ function errorDetail(error: unknown): string {
  * protected primary checkout where it resolves.
  *
  * It is imported here rather than at the top of the file for two reasons. Only `deliver` needs a
- * workflow, so `lane:publish` and `issue:reconcile` must not fail to start over a package neither
- * one reads. And a failure to resolve it arrives as a rejected promise the caller turns into a
+ * workflow, so every other command must not fail to start over a package it never reads. And a
+ * failure to resolve it arrives as a rejected promise the caller turns into a
  * refusal, where a static import would instead kill the process with `ERR_MODULE_NOT_FOUND` — the
  * merge gate must refuse when it cannot parse the workflow, never crash past the question.
  */
@@ -777,14 +796,15 @@ function captureGit(repositoryRoot: string, gitPath: string, args: string[]): st
 export function trustedGitReadEnv(parent: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
     const env: NodeJS.ProcessEnv = { ...parent };
     for (const key of Object.keys(env)) {
+        const normalizedKey = key.toUpperCase();
         if (
-            key.startsWith('GIT_') ||
-            key.startsWith('GH_') ||
-            key.startsWith('GITHUB_') ||
-            key.startsWith('SOURDAW_GITHUB_APP_') ||
-            key.startsWith('SOURDAW_TRUSTED_') ||
-            key.startsWith('NODE_') ||
-            key === 'SSH_AUTH_SOCK'
+            normalizedKey.startsWith('GIT_') ||
+            normalizedKey.startsWith('GH_') ||
+            normalizedKey.startsWith('GITHUB_') ||
+            normalizedKey.startsWith('SOURDAW_GITHUB_APP_') ||
+            normalizedKey.startsWith('SOURDAW_TRUSTED_') ||
+            normalizedKey.startsWith('NODE_') ||
+            normalizedKey === 'SSH_AUTH_SOCK'
         ) {
             delete env[key];
         }
@@ -855,10 +875,18 @@ function defaultPort(binding: TrustedLauncherBinding): TrustedSourcePort {
 }
 
 function parseCommand(value: string | undefined): TrustedGithubWriteCommand {
-    if (value === 'deliver' || value === 'issue:reconcile' || value === 'lane:publish') {
+    if (
+        value === 'deliver' ||
+        value === 'issue:reconcile' ||
+        value === 'lane:publish' ||
+        value === 'review:publish' ||
+        value === 'review:resolve'
+    ) {
         return value;
     }
-    throw new Error('usage: trustedGithubWriteBootstrap.ts <deliver|issue:reconcile|lane:publish> [args...]');
+    throw new Error(
+        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:reconcile|lane:publish|review:publish|review:resolve> [args...]'
+    );
 }
 
 async function main(): Promise<number> {

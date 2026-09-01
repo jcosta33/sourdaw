@@ -1,22 +1,23 @@
 #!/usr/bin/env node
-import { fileURLToPath } from 'node:url';
-
 import {
     AUTHOR_BOT_NODE_ID,
     REQUIRED_REPOSITORY,
     REVIEWER_BOT_NODE_ID,
     assertRequiredRepository,
-    assertTrustedExecutingBlob,
     authenticateRole,
     isAuthorBotNodeId,
     isReviewerBotNodeId,
-    originMainBlob,
     parseGraphqlResponse,
     resolvePrimaryRoot,
     spawnCapture,
     type GhSession,
 } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
+import {
+    type PullRequestMutationSerialization,
+    type PullRequestRemoteMutationBoundary,
+    withPullRequestMutationLock,
+} from './pullRequestMutationLock.ts';
 
 export type ReviewComment = {
     id: string;
@@ -60,6 +61,28 @@ export type ResolveReviewThreadPort = {
     resolve: (threadId: string) => ReviewResolutionReceipt;
     deleteReply: (replyId: string) => void;
     log: (message: string) => void;
+};
+export type ResolveReviewThreadAuthentication = {
+    minted: { actorNodeId: string };
+    session: GhSession;
+};
+export type ResolveReviewThreadCoordinatorDependencies = {
+    primaryRoot: () => string;
+    serializeMutation: PullRequestMutationSerialization;
+    authenticateAuthor: (primaryRoot: string) => Promise<ResolveReviewThreadAuthentication>;
+    repositoryName: (session: GhSession, primaryRoot: string) => string;
+    threadPort: (
+        session: GhSession,
+        primaryRoot: string,
+        markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt']
+    ) => ResolveReviewThreadPort;
+    resolve: (
+        number: number,
+        threadId: string,
+        expectedHead: string,
+        authorNodeId: string,
+        port: ResolveReviewThreadPort
+    ) => string;
 };
 export type ResolveReviewThreadArgs = { number?: number; threadId?: string; head?: string; help: boolean };
 const usage = 'usage: pnpm review:resolve <pr-number> --thread <graphql-thread-node-id> --head <40-hex-sha>';
@@ -437,17 +460,22 @@ function findReusableReply(thread: ReviewThread | null): ReviewComment | undefin
     return markers[0];
 }
 
-export function shellPort(session: GhSession, cwd: string = process.cwd()): ResolveReviewThreadPort {
+export function shellPort(
+    session: GhSession,
+    cwd: string = process.cwd(),
+    markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt'] = () => undefined,
+    capture: typeof spawnCapture = spawnCapture
+): ResolveReviewThreadPort {
     const primaryRoot = resolvePrimaryRoot(
-        (command, args, directory) => spawnCapture(command, args, { cwd: directory }),
+        (command, args, directory) => capture(command, args, { cwd: directory }),
         cwd
     );
-    const gh = (args: string[]) => spawnCapture('gh', args, { cwd: primaryRoot, env: session.env });
+    const gh = (args: string[]) => capture('gh', args, { cwd: primaryRoot, env: session.env });
     return {
         inspect: (number, id) => inspectReviewThread(number, id, gh),
-        replyDone: (id) => mutationReply(id, gh),
-        resolve: (id) => resolveThread(id, gh),
-        deleteReply: (id) => deleteReply(id, gh),
+        replyDone: (id) => mutationReply(id, gh, markRemoteMutationAttempt),
+        resolve: (id) => resolveThread(id, gh, markRemoteMutationAttempt),
+        deleteReply: (id) => deleteReply(id, gh, markRemoteMutationAttempt),
         log: (message) => console.log(message),
     };
 }
@@ -617,10 +645,15 @@ function toReviewComment(value: unknown): ReviewComment {
         authorType: typeof comment.author?.__typename === 'string' ? comment.author.__typename : null,
     };
 }
-function mutationReply(threadId: string, gh: Gh): ReviewReply {
+function mutationReply(
+    threadId: string,
+    gh: Gh,
+    markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt']
+): ReviewReply {
     const clientMutationId = replyClientMutationId(threadId);
     const query =
         'mutation($threadId:ID!,$body:String!,$clientMutationId:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$threadId,body:$body,clientMutationId:$clientMutationId}){clientMutationId comment{id fullDatabaseId body author{login __typename ... on Bot{id}}}}}';
+    markRemoteMutationAttempt();
     const response = graphql(
         gh,
         query,
@@ -661,9 +694,14 @@ function mutationReply(threadId: string, gh: Gh): ReviewReply {
         clientMutationId,
     };
 }
-function resolveThread(threadId: string, gh: Gh): ReviewResolutionReceipt {
+function resolveThread(
+    threadId: string,
+    gh: Gh,
+    markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt']
+): ReviewResolutionReceipt {
     const clientMutationId = resolveClientMutationId(threadId);
     const query = `mutation($threadId:ID!,$clientMutationId:String!){resolveReviewThread(input:{threadId:$threadId,clientMutationId:$clientMutationId}){clientMutationId thread{id isResolved resolvedBy{id login __typename}}}}`;
+    markRemoteMutationAttempt();
     const response = graphql(
         gh,
         query,
@@ -702,7 +740,12 @@ function resolveThread(threadId: string, gh: Gh): ReviewResolutionReceipt {
         clientMutationId,
     };
 }
-export function deleteReply(replyId: string, gh: Gh): void {
+export function deleteReply(
+    replyId: string,
+    gh: Gh,
+    markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt'] = () => undefined
+): void {
+    markRemoteMutationAttempt();
     const response = graphql(
         gh,
         'mutation($replyId:ID!,$clientMutationId:String!){deletePullRequestReviewComment(input:{id:$replyId,clientMutationId:$clientMutationId}){clientMutationId pullRequestReviewComment{id body author{login __typename ... on Bot{id}}}}}',
@@ -733,8 +776,55 @@ export function deleteReply(replyId: string, gh: Gh): void {
         fail(`delete review reply returned an invalid result for ${replyId}`);
     }
 }
-async function main(): Promise<number> {
-    const parsed = parseResolveReviewThreadArgs(process.argv.slice(2));
+
+export function defaultResolveReviewThreadCoordinatorDependencies(): ResolveReviewThreadCoordinatorDependencies {
+    return {
+        primaryRoot: () => resolvePrimaryRoot(),
+        serializeMutation: withPullRequestMutationLock,
+        authenticateAuthor: (primaryRoot) => authenticateRole({ primaryRoot, role: 'author' }),
+        repositoryName: (session, primaryRoot) =>
+            spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
+                env: session.env,
+                cwd: primaryRoot,
+            }),
+        threadPort: (session, primaryRoot, markRemoteMutationAttempt) =>
+            shellPort(session, primaryRoot, markRemoteMutationAttempt),
+        resolve: resolveReviewThread,
+    };
+}
+
+export async function coordinateResolveReviewThread(
+    number: number,
+    threadId: string,
+    expectedHead: string,
+    dependencies: ResolveReviewThreadCoordinatorDependencies = defaultResolveReviewThreadCoordinatorDependencies()
+): Promise<void> {
+    const primaryRoot = dependencies.primaryRoot();
+    await dependencies.serializeMutation(primaryRoot, number, async ({ markRemoteMutationAttempt }) => {
+        const auth = await dependencies.authenticateAuthor(primaryRoot);
+        try {
+            if (!isAuthorBotNodeId(auth.minted.actorNodeId)) {
+                fail(`minted actor ${auth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
+            }
+            assertRequiredRepository(dependencies.repositoryName(auth.session, primaryRoot));
+            dependencies.resolve(
+                number,
+                threadId,
+                expectedHead,
+                auth.minted.actorNodeId,
+                dependencies.threadPort(auth.session, primaryRoot, markRemoteMutationAttempt)
+            );
+        } finally {
+            auth.session.dispose();
+        }
+    });
+}
+
+export async function runResolveReviewThreadCli(
+    args: string[],
+    dependencies?: ResolveReviewThreadCoordinatorDependencies
+): Promise<number> {
+    const parsed = parseResolveReviewThreadArgs(args);
     if (parsed.help) {
         console.log(`Usage: ${usage.slice('usage: '.length)}`);
         return 0;
@@ -742,42 +832,6 @@ async function main(): Promise<number> {
     if (parsed.number === undefined || parsed.threadId === undefined || parsed.head === undefined) {
         fail(usage);
     }
-    const cwd = process.cwd();
-    assertTrustedExecutingBlob(
-        'scripts/resolveReviewThread.ts',
-        fileURLToPath(import.meta.url),
-        originMainBlob('scripts/resolveReviewThread.ts', cwd)
-    );
-    const primaryRoot = resolvePrimaryRoot();
-    const auth = await authenticateRole({ primaryRoot, role: 'author' });
-    try {
-        if (!isAuthorBotNodeId(auth.minted.actorNodeId)) {
-            fail(`minted actor ${auth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
-        }
-        assertRequiredRepository(
-            spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
-                env: auth.session.env,
-                cwd: primaryRoot,
-            })
-        );
-        resolveReviewThread(
-            parsed.number,
-            parsed.threadId,
-            parsed.head,
-            auth.minted.actorNodeId,
-            shellPort(auth.session)
-        );
-        return 0;
-    } finally {
-        auth.session.dispose();
-    }
-}
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    void main().then(
-        (code) => process.exit(code),
-        (error: unknown) => {
-            console.error(error instanceof Error ? error.message : error);
-            process.exit(1);
-        }
-    );
+    await coordinateResolveReviewThread(parsed.number, parsed.threadId, parsed.head, dependencies);
+    return 0;
 }

@@ -160,7 +160,7 @@
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
                 "sha256:03be9429f428e7f8f427a01a79317eef00dd6ab5dc2ffb130c4a6300f579fead:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:1f93ad1e6024f11cd8fe2e05b97b32d64c55fdb901bc2025dbb136700c8ab50d:release/dependency-license-proofs.json"
+                "sha256:abea0a83b9e3dcb144eb95bec19d355516e8d7ab73070059706de001cfa00c98:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1686,7 +1686,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "a6651557fe8dc64a1babbf4016a46e4921b9984d7a1317139f646cfafd154f7e"
+            "sha256": "2331223744febd180ffa8fac079b847b717fc3ca81bc2570659105241c114f73"
         },
         {
             "path": "server/package.json",

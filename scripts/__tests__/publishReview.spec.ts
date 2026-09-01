@@ -1,13 +1,23 @@
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
 import {
+    coordinatePublishReview,
+    defaultPublishReviewCoordinatorDependencies,
     parsePublishReviewArgs,
     parseReviewDocument,
     publishReview,
+    runPublishReviewCli,
     shellPort,
+    type PublishReviewCoordinatorDependencies,
     type PublishReviewPort,
 } from '../publishReview.ts';
+import { withPullRequestMutationLock } from '../pullRequestMutationLock.ts';
 
 const validComment = {
     path: 'scripts/deliverPullRequest.ts',
@@ -17,6 +27,17 @@ const validComment = {
     consequence: 'A stale COMMENT could ship',
     done: 'Require reviewer APPROVED on this head',
 };
+
+function runGit(root: string, args: string[]): string {
+    const result = spawnSync('git', args, { cwd: root, encoding: 'utf8', shell: false });
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status !== 0) {
+        throw new Error(`git ${args.join(' ')} failed: ${result.stderr}`);
+    }
+    return result.stdout.trim();
+}
 
 function fakePort(
     input: {
@@ -63,6 +84,97 @@ function fakePort(
 }
 
 describe('review publish', () => {
+    it('holds the per-PR mutation fence across head validation and review creation', async () => {
+        expect(defaultPublishReviewCoordinatorDependencies().serializeMutation).toBe(withPullRequestMutationLock);
+        const { port } = fakePort();
+        const calls: string[] = [];
+        const fencedPort: PublishReviewPort = {
+            ...port,
+            currentHead: (number) => {
+                calls.push('head');
+                return port.currentHead(number);
+            },
+            postReview: (review) => {
+                calls.push('post');
+                return port.postReview(review);
+            },
+        };
+        const dependencies: PublishReviewCoordinatorDependencies = {
+            primaryRoot: () => '/repo',
+            serializeMutation: async (_primaryRoot, number, operation) => {
+                calls.push(`lock:${number}:acquire`);
+                try {
+                    return await operation({
+                        markRemoteMutationAttempt: () => calls.push('attempt'),
+                    });
+                } finally {
+                    calls.push(`lock:${number}:release`);
+                }
+            },
+            authenticateReviewer: async () => {
+                calls.push('authenticate');
+                return {
+                    minted: { actorNodeId: REVIEWER_BOT_NODE_ID },
+                    session: {
+                        configDir: '/tmp/sourdaw-reviewer',
+                        env: {},
+                        dispose: () => calls.push('dispose'),
+                    },
+                };
+            },
+            repositoryName: () => {
+                calls.push('repository');
+                return 'jcosta33/sourdaw';
+            },
+            reviewPort: (_session, _primaryRoot, markRemoteMutationAttempt) => ({
+                ...fencedPort,
+                postReview: (review) => {
+                    markRemoteMutationAttempt();
+                    return fencedPort.postReview(review);
+                },
+            }),
+            publish: publishReview,
+        };
+
+        await coordinatePublishReview(42, dependencies);
+
+        expect(calls).toEqual([
+            'lock:42:acquire',
+            'authenticate',
+            'repository',
+            'head',
+            'head',
+            'attempt',
+            'post',
+            'dispose',
+            'lock:42:release',
+        ]);
+    });
+
+    it('forwards the exact valid CLI pull-request number to the live coordinator', async () => {
+        const { port } = fakePort();
+        const forwarded: number[] = [];
+        const dependencies: PublishReviewCoordinatorDependencies = {
+            primaryRoot: () => '/repo',
+            serializeMutation: async (_primaryRoot, _number, operation) =>
+                operation({ markRemoteMutationAttempt: () => undefined }),
+            authenticateReviewer: async () => ({
+                minted: { actorNodeId: REVIEWER_BOT_NODE_ID },
+                session: { configDir: '/tmp/sourdaw-reviewer', env: {}, dispose: () => undefined },
+            }),
+            repositoryName: () => 'jcosta33/sourdaw',
+            reviewPort: () => port,
+            publish: (number) => {
+                forwarded.push(number);
+                return 99;
+            },
+        };
+
+        await expect(runPublishReviewCli(['7819'], dependencies)).resolves.toBe(0);
+
+        expect(forwarded).toEqual([7819]);
+    });
+
     it('posts as the reviewer bot on the bundle head and prints the review id', () => {
         const { port, calls, logs } = fakePort();
 
@@ -311,16 +423,77 @@ describe('shellPort postReview state verification', () => {
     });
 
     it('posts successfully when the recorded state agrees with the requested event', () => {
-        const capture = fakeCapture({
-            id: 42,
-            state: 'CHANGES_REQUESTED',
-            user: { node_id: REVIEWER_BOT_NODE_ID, login: 'renamed-reviewer[bot]' },
-        });
-        const port = shellPort(session, process.cwd(), capture);
+        const events: string[] = [];
+        const capture = (command: string, args: string[]): string => {
+            if (command === 'git' && args[0] === 'rev-parse') {
+                return `${process.cwd()}/.git`;
+            }
+            if (command === 'gh' && args[0] === 'api') {
+                events.push('post');
+                return JSON.stringify({
+                    id: 42,
+                    state: 'CHANGES_REQUESTED',
+                    user: { node_id: REVIEWER_BOT_NODE_ID, login: 'renamed-reviewer[bot]' },
+                });
+            }
+            throw new Error(`unexpected command in test: ${command} ${args.join(' ')}`);
+        };
+        const port = shellPort(session, process.cwd(), capture, () => events.push('attempt'));
 
         expect(
             port.postReview({ number: 42, commitId: 'sha', event: 'REQUEST_CHANGES', body: 'no', comments: [] })
         ).toEqual({ id: 42, actorNodeId: REVIEWER_BOT_NODE_ID, login: 'renamed-reviewer[bot]' });
+        expect(events).toEqual(['attempt', 'post']);
+    });
+
+    it('retains the exact shared owner when the production review POST becomes indeterminate', async () => {
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-publish-lock-'));
+        runGit(primaryRoot, ['init', '-b', 'main']);
+        const number = 7819;
+        const ref = `refs/sourdaw/delivery/pr-${number}`;
+        let postAttempted = false;
+        let reacquired = false;
+
+        try {
+            await expect(
+                withPullRequestMutationLock(primaryRoot, number, async ({ markRemoteMutationAttempt }) => {
+                    const port = shellPort(
+                        session,
+                        primaryRoot,
+                        (command, args) => {
+                            if (command === 'git' && args[0] === 'rev-parse') {
+                                return `${primaryRoot}/.git`;
+                            }
+                            if (command === 'gh' && args[0] === 'api') {
+                                postAttempted = true;
+                                throw new Error('review POST result is indeterminate');
+                            }
+                            throw new Error(`unexpected command in test: ${command} ${args.join(' ')}`);
+                        },
+                        markRemoteMutationAttempt
+                    );
+                    port.postReview({
+                        number,
+                        commitId: 'a'.repeat(40),
+                        event: 'APPROVE',
+                        body: 'Attacked the owner fence; it held.',
+                        comments: [],
+                    });
+                })
+            ).rejects.toThrow('review POST result is indeterminate');
+            expect(postAttempted).toBe(true);
+            const retainedOwnerOid = runGit(primaryRoot, ['show-ref', '--verify', '--hash', ref]);
+
+            await expect(
+                withPullRequestMutationLock(primaryRoot, number, async () => {
+                    reacquired = true;
+                })
+            ).rejects.toThrow(/already being delivered/);
+            expect(reacquired).toBe(false);
+            expect(runGit(primaryRoot, ['show-ref', '--verify', '--hash', ref])).toBe(retainedOwnerOid);
+        } finally {
+            rmSync(primaryRoot, { recursive: true, force: true });
+        }
     });
 
     it('posts successfully when APPROVE is recorded as APPROVED', () => {

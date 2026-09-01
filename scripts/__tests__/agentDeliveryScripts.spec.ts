@@ -25,9 +25,20 @@ import {
     withPullRequestDeliveryLock,
 } from '../deliverPullRequest.ts';
 import { AUTHOR_BOT_NODE_ID } from '../githubAppIdentity.ts';
+import {
+    coordinatePublishReview,
+    runPublishReviewCli,
+    type PublishReviewCoordinatorDependencies,
+} from '../publishReview.ts';
 import { githubTrackerIssuePort } from '../reconcileTrackerIssue.ts';
 import {
+    coordinateResolveReviewThread,
+    runResolveReviewThreadCli,
+    type ResolveReviewThreadCoordinatorDependencies,
+} from '../resolveReviewThread.ts';
+import {
     BOOTSTRAP_PATH,
+    assertTrustedSourceGraph,
     executeTrustedSnapshot,
     resolveTrustedLauncherBinding,
     runTrustedGithubWriteCommand,
@@ -83,6 +94,31 @@ function deliveryLockExists(root: string, number: number): boolean {
         return true;
     } catch {
         return false;
+    }
+}
+
+async function expectAmbiguousDeliveryMutationRetainsOwner(
+    operation: (root: string, number: number) => Promise<void>
+): Promise<void> {
+    const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+    const number = 2495;
+    initializeDeliveryLockRepository(root);
+    let reacquired = false;
+
+    try {
+        await expect(operation(root, number)).rejects.toThrow('remote mutation result is indeterminate');
+        const retainedOwnerOid = readDeliveryLockOid(root, number);
+        expect(retainedOwnerOid).not.toBe('');
+
+        await expect(
+            withPullRequestDeliveryLock(root, number, async () => {
+                reacquired = true;
+            })
+        ).rejects.toThrow(/already being delivered/);
+        expect(reacquired).toBe(false);
+        expect(readDeliveryLockOid(root, number)).toBe(retainedOwnerOid);
+    } finally {
+        rmSync(root, { recursive: true, force: true });
     }
 }
 
@@ -322,6 +358,62 @@ function trustedPublishFixture(root: string, policy: string): void {
     runGit(root, ['config', 'user.email', 'fixture@example.com']);
     runGit(root, ['add', '.']);
     runGit(root, ['commit', '--no-gpg-sign', '-m', 'test: trusted publishing fixture']);
+    runGit(root, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+}
+
+function trustedReviewMutationFixture(root: string, mutationLog: string): void {
+    mkdirSync(join(root, 'scripts'), { recursive: true });
+    writeFileSync(
+        join(root, 'package.json'),
+        JSON.stringify({
+            type: 'module',
+            private: true,
+            scripts: {
+                'review:publish': 'node scripts/trustedGithubWriteBootstrap.ts review:publish',
+                'review:resolve': 'node scripts/trustedGithubWriteBootstrap.ts review:resolve',
+            },
+        })
+    );
+    writeFileSync(
+        join(root, 'scripts/trustedGithubWriteBootstrap.ts'),
+        readFileSync(join(import.meta.dirname, '../trustedGithubWriteBootstrap.ts'), 'utf8')
+    );
+    writeFileSync(
+        join(root, 'scripts/pullRequestMutationLock.ts'),
+        [
+            "import { appendFileSync } from 'node:fs';",
+            'export async function withPullRequestMutationLock(_primaryRoot, _number, operation) {',
+            `    appendFileSync(${JSON.stringify(mutationLog)}, 'pinned-lock\\n');`,
+            '    return operation();',
+            '}',
+        ].join('\n')
+    );
+    for (const [path, runner, label] of [
+        ['publishReview.ts', 'runPublishReviewCli', 'publish'],
+        ['resolveReviewThread.ts', 'runResolveReviewThreadCli', 'resolve'],
+    ] as const) {
+        writeFileSync(
+            join(root, 'scripts', path),
+            [
+                "import { appendFileSync } from 'node:fs';",
+                "import { withPullRequestMutationLock } from './pullRequestMutationLock.ts';",
+                `export async function ${runner}(args) {`,
+                '    await withPullRequestMutationLock(process.cwd(), 3239, async () => {',
+                `        appendFileSync(${JSON.stringify(mutationLog)}, ${JSON.stringify(`${label}:auth:`)} + JSON.stringify(args) + '\\n');`,
+                '    });',
+                '    return 0;',
+                '}',
+            ].join('\n')
+        );
+    }
+    for (const path of ['githubAppIdentity.ts', 'prContract.ts', 'prepareReview.ts']) {
+        writeFileSync(join(root, 'scripts', path), 'export {};\n');
+    }
+    runGit(root, ['init', '-b', 'main']);
+    runGit(root, ['config', 'user.name', 'Fixture']);
+    runGit(root, ['config', 'user.email', 'fixture@example.com']);
+    runGit(root, ['add', '.']);
+    runGit(root, ['commit', '--no-gpg-sign', '-m', 'test: trusted review mutation fixture']);
     runGit(root, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
 }
 
@@ -602,8 +694,8 @@ describe('package scripts and gitignore', () => {
         expect(pkg.scripts['lane:open']).toBe('node scripts/openLane.ts');
         expect(pkg.scripts['lane:publish']).toBe('node scripts/trustedGithubWriteBootstrap.ts lane:publish');
         expect(pkg.scripts['review:prepare']).toBe('node scripts/prepareReview.ts');
-        expect(pkg.scripts['review:publish']).toBe('node scripts/publishReview.ts');
-        expect(pkg.scripts['review:resolve']).toBe('node scripts/resolveReviewThread.ts');
+        expect(pkg.scripts['review:publish']).toBe('node scripts/trustedGithubWriteBootstrap.ts review:publish');
+        expect(pkg.scripts['review:resolve']).toBe('node scripts/trustedGithubWriteBootstrap.ts review:resolve');
         expect(pkg.scripts['pr:supersede']).toBe('node scripts/supersedePullRequest.ts');
         expect(pkg.scripts['issue:reconcile']).toBe('node scripts/trustedGithubWriteBootstrap.ts issue:reconcile');
         expect(pkg.scripts['lane:remove']).toBe('node scripts/removeLane.ts');
@@ -695,6 +787,7 @@ describe('package scripts and gitignore', () => {
             'prepareReview.ts',
             'publishReview.ts',
             'deliverPullRequest.ts',
+            'pullRequestMutationLock.ts',
             'removeLane.ts',
             'resolveReviewThread.ts',
             'supersedePullRequest.ts',
@@ -721,6 +814,7 @@ describe('package scripts and gitignore', () => {
         expect(paths).toEqual([
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/deliverPullRequest.ts',
+            'scripts/pullRequestMutationLock.ts',
             'scripts/reconcileTrackerIssue.ts',
             'scripts/trackerIssueReconciliation.ts',
             'scripts/githubAppIdentity.ts',
@@ -761,6 +855,62 @@ describe('package scripts and gitignore', () => {
             })
         ).rejects.toThrow(/imports unchecked local dependency scripts\/unchecked\.ts/);
         expect(executedUncheckedDependency).toBe(false);
+    });
+
+    it('pins complete and exact reviewer-mutation source closures', async () => {
+        const repositoryRoot = join(import.meta.dirname, '..', '..');
+        const cases = [
+            {
+                command: 'review:publish' as const,
+                entry: 'scripts/publishReview.ts',
+                lock: 'scripts/pullRequestMutationLock.ts',
+                expected: [
+                    'scripts/trustedGithubWriteBootstrap.ts',
+                    'scripts/publishReview.ts',
+                    'scripts/prepareReview.ts',
+                    'scripts/pullRequestMutationLock.ts',
+                    'scripts/githubAppIdentity.ts',
+                    'scripts/prContract.ts',
+                ],
+            },
+            {
+                command: 'review:resolve' as const,
+                entry: 'scripts/resolveReviewThread.ts',
+                lock: 'scripts/pullRequestMutationLock.ts',
+                expected: [
+                    'scripts/trustedGithubWriteBootstrap.ts',
+                    'scripts/resolveReviewThread.ts',
+                    'scripts/pullRequestMutationLock.ts',
+                    'scripts/githubAppIdentity.ts',
+                    'scripts/prContract.ts',
+                ],
+            },
+        ];
+
+        for (const { command, entry, lock, expected } of cases) {
+            const paths = trustedDependencyPaths(command);
+            expect(paths).toEqual(expected);
+            const sources = new Map(paths.map((path) => [path, readFileSync(join(repositoryRoot, path), 'utf8')]));
+            expect(() => assertTrustedSourceGraph(command, sources)).not.toThrow();
+            await expect(executeTrustedSnapshot(command, ['--help'], { commit: 'pinned-sha', sources })).resolves.toBe(
+                0
+            );
+
+            const incomplete = new Map(sources);
+            incomplete.delete(lock);
+            expect(() => assertTrustedSourceGraph(command, incomplete)).toThrow(`trusted snapshot is missing ${lock}`);
+
+            const extra = new Map(sources).set('scripts/unexpected.ts', 'export {};');
+            expect(() => assertTrustedSourceGraph(command, extra)).toThrow(
+                'trusted snapshot contains unexpected source scripts/unexpected.ts'
+            );
+
+            const unresolvable = new Map(sources);
+            unresolvable.set(entry, `${sources.get(entry) ?? ''}\nimport './unchecked.ts';\n`);
+            expect(() => assertTrustedSourceGraph(command, unresolvable)).toThrow(
+                `${entry} imports unchecked local dependency scripts/unchecked.ts`
+            );
+        }
     });
 
     /**
@@ -821,8 +971,8 @@ describe('package scripts and gitignore', () => {
     /**
      * The exemption above is only sound while the loader itself needs it, and it does: `deliver`
      * parses the gating workflow with the repository's YAML package, which no snapshot can reach.
-     * Behind a dynamic call, because `lane:publish` and `issue:reconcile` read no workflow and must
-     * not fail to start over a package neither one uses.
+     * Behind a dynamic call, because no non-delivery command reads a workflow or may fail to start
+     * over a package it never uses.
      */
     it('imports the yaml parser only from the loader, and never statically', () => {
         const loader = readFileSync(join(import.meta.dirname, '../trustedGithubWriteBootstrap.ts'), 'utf8');
@@ -908,24 +1058,29 @@ describe('package scripts and gitignore', () => {
     it('resolves the trusted snapshot with no inherited Git or GitHub routing', () => {
         const env = trustedGitReadEnv({
             PATH: '/usr/bin',
-            GIT_DIR: '/hostile/.git',
-            GIT_WORK_TREE: '/hostile',
-            GH_TOKEN: 'personal',
-            GITHUB_TOKEN: 'actions',
-            SOURDAW_GITHUB_APP_PRIVATE_KEY: 'secret',
-            SOURDAW_TRUSTED_REPOSITORY_ROOT: '/repo',
-            NODE_OPTIONS: '--import=/hostile/preload.mjs',
-            NODE_PATH: '/hostile/modules',
+            Git_Dir: '/hostile/.git',
+            gIt_Work_Tree: '/hostile',
+            Gh_Token: 'personal',
+            Github_Token: 'actions',
+            Sourdaw_Github_App_Private_Key: 'secret',
+            Sourdaw_Trusted_Repository_Root: '/repo',
+            Node_Options: '--import=/hostile/preload.mjs',
+            nOdE_Path: '/hostile/modules',
+            Ssh_Auth_Sock: '/hostile/agent.sock',
+            SOURDAW_RENDER_PROFILE: 'focused',
         });
 
-        expect(env.GIT_DIR).toBeUndefined();
-        expect(env.GIT_WORK_TREE).toBeUndefined();
-        expect(env.GH_TOKEN).toBeUndefined();
-        expect(env.GITHUB_TOKEN).toBeUndefined();
-        expect(env.SOURDAW_GITHUB_APP_PRIVATE_KEY).toBeUndefined();
-        expect(env.SOURDAW_TRUSTED_REPOSITORY_ROOT).toBeUndefined();
-        expect(env.NODE_OPTIONS).toBeUndefined();
-        expect(env.NODE_PATH).toBeUndefined();
+        expect(env.Git_Dir).toBeUndefined();
+        expect(env.gIt_Work_Tree).toBeUndefined();
+        expect(env.Gh_Token).toBeUndefined();
+        expect(env.Github_Token).toBeUndefined();
+        expect(env.Sourdaw_Github_App_Private_Key).toBeUndefined();
+        expect(env.Sourdaw_Trusted_Repository_Root).toBeUndefined();
+        expect(env.Node_Options).toBeUndefined();
+        expect(env.nOdE_Path).toBeUndefined();
+        expect(env.Ssh_Auth_Sock).toBeUndefined();
+        expect(env.SOURDAW_RENDER_PROFILE).toBe('focused');
+        expect(env.PATH).toBe('/usr/bin');
         expect(env.GIT_CONFIG_GLOBAL).toBe('/dev/null');
         expect(env.GIT_CONFIG_SYSTEM).toBe('/dev/null');
     });
@@ -1028,28 +1183,31 @@ describe('package scripts and gitignore', () => {
     });
 
     /**
-     * `lane:publish` and `issue:reconcile` decide no merge, so neither reads a workflow. A launcher
-     * that read one for every command would make them fail over a file and a parser they never use.
+     * Only `deliver` decides a merge, so no other command reads a workflow. A launcher that read one
+     * for every command would make them fail over a file and a parser they never use.
      */
-    it.each(['lane:publish', 'issue:reconcile'] as const)('reads no gating workflow for %s', async (command) => {
-        const originReads: string[] = [];
-        let gateWorkflow: unknown = 'unset';
+    it.each(['lane:publish', 'issue:reconcile', 'review:publish', 'review:resolve'] as const)(
+        'reads no gating workflow for %s',
+        async (command) => {
+            const originReads: string[] = [];
+            let gateWorkflow: unknown = 'unset';
 
-        await runTrustedGithubWriteCommand(command, [], {
-            resolveOriginMain: () => 'pinned-sha',
-            readOriginSource: (_commit, path) => {
-                originReads.push(path);
-                return 'trusted';
-            },
-            executeSnapshot: async (_command, _args, snapshot) => {
-                gateWorkflow = snapshot.gateWorkflow;
-                return 0;
-            },
-        });
+            await runTrustedGithubWriteCommand(command, [], {
+                resolveOriginMain: () => 'pinned-sha',
+                readOriginSource: (_commit, path) => {
+                    originReads.push(path);
+                    return 'trusted';
+                },
+                executeSnapshot: async (_command, _args, snapshot) => {
+                    gateWorkflow = snapshot.gateWorkflow;
+                    return 0;
+                },
+            });
 
-        expect(originReads).toEqual([...trustedDependencyPaths(command)]);
-        expect(gateWorkflow).toBeUndefined();
-    });
+            expect(originReads).toEqual([...trustedDependencyPaths(command)]);
+            expect(gateWorkflow).toBeUndefined();
+        }
+    );
 
     it('binds the launcher to the primary checkout instead of a worktree alias', () => {
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-launcher-root-'));
@@ -1067,7 +1225,13 @@ describe('package scripts and gitignore', () => {
     });
 
     it('keeps the loader inside its own trusted closure', () => {
-        for (const command of ['deliver', 'issue:reconcile', 'lane:publish'] as const) {
+        for (const command of [
+            'deliver',
+            'issue:reconcile',
+            'lane:publish',
+            'review:publish',
+            'review:resolve',
+        ] as const) {
             expect(trustedDependencyPaths(command)).toContain(BOOTSTRAP_PATH);
         }
     });
@@ -1163,6 +1327,91 @@ describe('package scripts and gitignore', () => {
         ).resolves.toBe(0);
     });
 
+    it.each([
+        {
+            command: 'review:publish' as const,
+            entry: 'scripts/publishReview.ts',
+            runner: 'runPublishReviewCli',
+            args: ['3239', 'value with spaces'],
+        },
+        {
+            command: 'review:resolve' as const,
+            entry: 'scripts/resolveReviewThread.ts',
+            runner: 'runResolveReviewThreadCli',
+            args: ['3239', '--thread', 'PRRT_example', '--head', 'a'.repeat(40)],
+        },
+    ])('imports the $command entry and forwards its exact arguments', async ({ command, entry, runner, args }) => {
+        const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-review-entry-'));
+        const recordPath = join(fixtureRoot, 'args.json');
+        try {
+            const source = [
+                "import { writeFileSync } from 'node:fs';",
+                `export async function ${runner}(args) {`,
+                `    writeFileSync(${JSON.stringify(recordPath)}, JSON.stringify(args));`,
+                '    return 0;',
+                '}',
+            ].join('\n');
+            await expect(
+                executeTrustedSnapshot(command, args, {
+                    commit: 'pinned-sha',
+                    sources: new Map([[entry, source]]),
+                })
+            ).resolves.toBe(0);
+            expect(JSON.parse(readFileSync(recordPath, 'utf8'))).toEqual(args);
+            expect(command === 'review:publish' ? runPublishReviewCli : runResolveReviewThreadCli).toBeTypeOf(
+                'function'
+            );
+        } finally {
+            rmSync(fixtureRoot, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses lane-mutated reviewer closures and executes only the pinned lock from the primary route', () => {
+        const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-review-route-'));
+        const primary = join(fixtureRoot, 'primary');
+        const lane = join(fixtureRoot, 'lane');
+        const mutationLog = join(fixtureRoot, 'mutations.log');
+        mkdirSync(primary);
+        try {
+            trustedReviewMutationFixture(primary, mutationLog);
+            runGit(primary, ['worktree', 'add', '-b', 'agent/test/reviewer-route', lane]);
+            for (const entry of ['publishReview.ts', 'resolveReviewThread.ts']) {
+                expect(readFileSync(join(lane, 'scripts', entry), 'utf8')).toBe(
+                    runGit(primary, ['show', `refs/remotes/origin/main:scripts/${entry}`])
+                );
+            }
+            writeFileSync(
+                join(lane, 'scripts/pullRequestMutationLock.ts'),
+                'export async function withPullRequestMutationLock(_root, _number, operation) { return operation(); }\n'
+            );
+
+            const publishArgs = ['3239', 'publish value with spaces'];
+            const resolveArgs = ['3239', '--thread', 'PRRT_example', '--head', 'a'.repeat(40)];
+            runPackageRoute(primary, ['review:publish', ...publishArgs]);
+            runPackageRoute(primary, ['review:resolve', ...resolveArgs]);
+            expect(readFileSync(mutationLog, 'utf8')).toBe(
+                [
+                    'pinned-lock',
+                    `publish:auth:${JSON.stringify(publishArgs)}`,
+                    'pinned-lock',
+                    `resolve:auth:${JSON.stringify(resolveArgs)}`,
+                    '',
+                ].join('\n')
+            );
+
+            const beforeLaneAttempts = readFileSync(mutationLog, 'utf8');
+            expect(() => runPackageRoute(lane, ['review:publish', ...publishArgs])).toThrow(
+                /protected primary checkout/
+            );
+            expect(() => runPackageRoute(lane, ['review:resolve', ...resolveArgs])).toThrow(
+                /protected primary checkout/
+            );
+            expect(readFileSync(mutationLog, 'utf8')).toBe(beforeLaneAttempts);
+        } finally {
+            rmSync(fixtureRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+        }
+    }, 15_000);
+
     it('refuses a live delivery owner before authentication or delivery starts', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
         initializeDeliveryLockRepository(root);
@@ -1189,6 +1438,56 @@ describe('package scripts and gitignore', () => {
                 await expect(coordinateDelivery(2495, dependencies)).rejects.toThrow(/already being delivered/);
             });
             expect(entered).toEqual([]);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses reviewer mutations before remote work while delivery owns the same PR fence', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+        initializeDeliveryLockRepository(root);
+        const entered: string[] = [];
+        const publishDependencies: PublishReviewCoordinatorDependencies = {
+            primaryRoot: () => root,
+            serializeMutation: withPullRequestDeliveryLock,
+            authenticateReviewer: async () => {
+                entered.push('publish:authenticate');
+                return expect.fail('reviewer authentication should not start');
+            },
+            repositoryName: () => expect.fail('publish repository lookup should not start'),
+            reviewPort: () => expect.fail('publish port should not be created'),
+            publish: () => {
+                entered.push('publish:post');
+                return expect.fail('review creation should not start');
+            },
+        };
+        const resolveDependencies: ResolveReviewThreadCoordinatorDependencies = {
+            primaryRoot: () => root,
+            serializeMutation: withPullRequestDeliveryLock,
+            authenticateAuthor: async () => {
+                entered.push('resolve:authenticate');
+                return expect.fail('author authentication should not start');
+            },
+            repositoryName: () => expect.fail('resolve repository lookup should not start'),
+            threadPort: () => expect.fail('resolve port should not be created'),
+            resolve: () => {
+                entered.push('resolve:mutate');
+                return expect.fail('reply or resolution should not start');
+            },
+        };
+
+        try {
+            await withPullRequestDeliveryLock(root, 2495, async () => {
+                await expect(coordinatePublishReview(2495, publishDependencies)).rejects.toThrow(
+                    /already being delivered/
+                );
+                await expect(
+                    coordinateResolveReviewThread(2495, 'PRRT_example', 'a'.repeat(40), resolveDependencies)
+                ).rejects.toThrow(/already being delivered/);
+                expect(entered).toEqual([]);
+                expect(deliveryLockExists(root, 2495)).toBe(true);
+            });
+            expect(deliveryLockExists(root, 2495)).toBe(false);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
@@ -1320,13 +1619,18 @@ describe('package scripts and gitignore', () => {
         }
     });
 
-    it('releases the current delivery token after success and failure', async () => {
+    it('releases the current delivery token after success and a pre-mutation failure', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
         initializeDeliveryLockRepository(root);
 
         try {
             const sentinel = Symbol('delivery-result');
-            await expect(withPullRequestDeliveryLock(root, 2495, async () => sentinel)).resolves.toBe(sentinel);
+            await expect(
+                withPullRequestDeliveryLock(root, 2495, async ({ markRemoteMutationAttempt }) => {
+                    markRemoteMutationAttempt();
+                    return sentinel;
+                })
+            ).resolves.toBe(sentinel);
             expect(deliveryLockExists(root, 2495)).toBe(false);
 
             await expect(
@@ -1339,6 +1643,165 @@ describe('package scripts and gitignore', () => {
             rmSync(root, { recursive: true, force: true });
         }
     });
+
+    it('retains the exact owner after an attempted mutation error and refuses reacquisition', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+        initializeDeliveryLockRepository(root);
+        let reacquired = false;
+
+        try {
+            await expect(
+                withPullRequestDeliveryLock(root, 2495, async ({ markRemoteMutationAttempt }) => {
+                    markRemoteMutationAttempt();
+                    throw new Error('remote result is indeterminate');
+                })
+            ).rejects.toThrow('remote result is indeterminate');
+            const retainedOwnerOid = readDeliveryLockOid(root, 2495);
+            expect(retainedOwnerOid).not.toBe('');
+
+            await expect(
+                withPullRequestDeliveryLock(root, 2495, async () => {
+                    reacquired = true;
+                })
+            ).rejects.toThrow(/already being delivered/);
+            expect(reacquired).toBe(false);
+            expect(readDeliveryLockOid(root, 2495)).toBe(retainedOwnerOid);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it.each<[string, (port: DeliveryPort) => void, (command: string, args: string[]) => boolean]>([
+        [
+            'delivery receipt creation',
+            (port) => {
+                port.addDeliveryReceipt(2495, 'receipt');
+            },
+            (command, args) =>
+                command === 'gh' &&
+                args.includes('POST') &&
+                args.includes('repos/jcosta33/sourdaw/issues/2495/comments'),
+        ],
+        [
+            'squash merge',
+            (port) => {
+                port.merge(2495, 'head', false);
+            },
+            (command, args) =>
+                command === 'gh' && args.includes('PUT') && args.includes('repos/jcosta33/sourdaw/pulls/2495/merge'),
+        ],
+        [
+            'dependent retarget',
+            (port) => {
+                port.retarget(2496, 'main');
+            },
+            (command, args) =>
+                command === 'gh' && args.includes('PATCH') && args.includes('repos/jcosta33/sourdaw/pulls/2496'),
+        ],
+    ])('retains the exact owner when production %s dispatch is indeterminate', async (_label, mutate, isDispatch) => {
+        let dispatched = 0;
+        await expectAmbiguousDeliveryMutationRetainsOwner(async (root, number) => {
+            await withPullRequestDeliveryLock(root, number, async ({ markRemoteMutationAttempt }) => {
+                const failDispatch = (command: string, args: string[]): never => {
+                    if (!isDispatch(command, args)) {
+                        throw new Error(`unexpected command in test: ${command} ${args.join(' ')}`);
+                    }
+                    dispatched += 1;
+                    throw new Error('remote mutation result is indeterminate');
+                };
+                const port = shellPort(
+                    'jcosta33/sourdaw',
+                    {
+                        capture: (command, args) => {
+                            if (args.join(' ') === 'api repos/jcosta33/sourdaw') {
+                                return JSON.stringify({
+                                    allow_merge_commit: false,
+                                    allow_rebase_merge: false,
+                                    allow_squash_merge: true,
+                                    delete_branch_on_merge: false,
+                                });
+                            }
+                            return failDispatch(command, args);
+                        },
+                        run: failDispatch,
+                    },
+                    { markRemoteMutationAttempt }
+                );
+                mutate(port);
+            });
+        });
+        expect(dispatched).toBe(1);
+    });
+
+    it.each<[string, (port: ReconcileTrackerIssuePort) => void, 'PATCH' | 'POST']>([
+        [
+            'tracker issue update',
+            (port) => {
+                port.update(2406, { state: 'CLOSED', stateReason: 'COMPLETED' });
+            },
+            'PATCH',
+        ],
+        [
+            'tracker issue comment',
+            (port) => {
+                port.comment(2406, 'delivery completed');
+            },
+            'POST',
+        ],
+    ])(
+        'retains the exact owner when production %s dispatch is indeterminate',
+        async (_label, mutate, expectedMethod) => {
+            let dispatched = 0;
+            await expectAmbiguousDeliveryMutationRetainsOwner(async (root, number) => {
+                const authentication: DeliveryAuthentication = {
+                    minted: {
+                        token: 'ghs_delivery',
+                        login: 'renamed-author[bot]',
+                        actorNodeId: AUTHOR_BOT_NODE_ID,
+                        permissions: {},
+                    },
+                    session: { configDir: '/tmp/sourdaw-delivery', env: {}, dispose: () => undefined },
+                };
+                const unusedPort: DeliveryPort = {
+                    fetch: () => expect.fail('delivery domain should not run'),
+                    pullRequest: () => expect.fail('delivery domain should not run'),
+                    gateRequiredCheckNames: () => expect.fail('delivery domain should not run'),
+                    headCheckRuns: () => expect.fail('delivery domain should not run'),
+                    reviewState: () => expect.fail('delivery domain should not run'),
+                    dependents: () => expect.fail('delivery domain should not run'),
+                    repositoryDeletesMergedBranches: () => expect.fail('delivery domain should not run'),
+                    merge: () => expect.fail('delivery domain should not run'),
+                    retarget: () => expect.fail('delivery domain should not run'),
+                    deliveryReceipts: () => expect.fail('delivery domain should not run'),
+                    addDeliveryReceipt: () => expect.fail('delivery domain should not run'),
+                    log: () => expect.fail('delivery domain should not run'),
+                };
+                const dependencies: DeliveryCoordinatorDependencies = {
+                    primaryRoot: () => root,
+                    serializeDelivery: withPullRequestDeliveryLock,
+                    authenticateAuthor: async () => authentication,
+                    authenticateTracker: async () => authentication,
+                    repositoryName: () => 'jcosta33/sourdaw',
+                    deliveryPort: () => unusedPort,
+                    trackerPort: () =>
+                        githubTrackerIssuePort(
+                            (args) => {
+                                if (!args.includes(expectedMethod)) {
+                                    throw new Error(`unexpected tracker command in test: ${args.join(' ')}`);
+                                }
+                                dispatched += 1;
+                                throw new Error('remote mutation result is indeterminate');
+                            },
+                            (operation) => operation()
+                        ),
+                    completeIssue: (_issueNumber, _actorNodeId, port) => mutate(port),
+                    deliver: (_number, _port, tracker) => tracker.complete(2406),
+                };
+                await coordinateDelivery(number, dependencies);
+            });
+            expect(dispatched).toBe(1);
+        }
+    );
 
     it('does not release a delivery lock whose ownership token changed', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
@@ -1435,7 +1898,9 @@ describe('package scripts and gitignore', () => {
             serializeDelivery: async (_primaryRoot, number, operation) => {
                 seen.push(`lock:${number}:acquire`);
                 try {
-                    return await operation();
+                    return await operation({
+                        markRemoteMutationAttempt: () => undefined,
+                    });
                 } finally {
                     seen.push(`lock:${number}:release`);
                 }
@@ -1472,7 +1937,7 @@ describe('package scripts and gitignore', () => {
                 return trackerPort;
             },
             completeIssue: (issue, login, port) => {
-                expect(port).toBe(trackerPort);
+                expect(port).not.toBe(trackerPort);
                 port.update(issue, { state: 'CLOSED', stateReason: 'COMPLETED' });
                 seen.push(`complete:${login}`);
             },
