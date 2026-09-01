@@ -1,7 +1,8 @@
 import { getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCases';
-import { type ProjectContext } from '../../../models/ProjectContext';
 
+import { type ProjectContext } from '../../../models/ProjectContext';
 import { resolveAgentReference } from '../resolveAgentReference';
+
 import {
     createPostTargetScopeAdmissionStrategyRegistry,
     postTargetScopeActionNames,
