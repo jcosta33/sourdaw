@@ -50,6 +50,12 @@ vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.executeAppAction,
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    clearUndoHistory: vi.fn(),
+    isAppActionCommittedError: vi.fn(() => false),
+    pushUndoEntry: vi.fn(),
+    resetActionReplayAuthority: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
 }));
 
 vi.mock('#/utils/Notification/confirmUser', () => ({

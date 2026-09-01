@@ -50,7 +50,14 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     resetAudioGraph: vi.fn(),
 }));
 
-vi.mock('#/modules/PluginHost/useCases', () => pluginHostMocks);
+vi.mock('#/modules/PluginHost/useCases', () => ({
+    unloadPlugin: pluginHostMocks.unloadPlugin,
+    activateExternalPlugin: vi.fn(),
+    findSupportedPlugin: vi.fn(),
+    isFaustInstrumentModule: vi.fn(),
+    registerFaustDSP: vi.fn(),
+    resetExternalPluginRuntimeForGraphRebuild: vi.fn(),
+}));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     compactProject: vi.fn().mockResolvedValue(undefined),

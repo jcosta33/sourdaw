@@ -31,6 +31,12 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
     resetMidiState: vi.fn(),
+    adaptGrooveTemplateForConsumer: vi.fn(),
+    getGrooveTemplate: vi.fn(),
+    getScopedGrooveAssignment: vi.fn(),
+    getScopedGrooveConsumerId: vi.fn(),
+    getStraightGrooveTemplateId: vi.fn(),
+    restoreGrooveAssignment: vi.fn(),
 }));
 vi.mock('#/modules/Yeast/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Yeast/useCases')>()),
