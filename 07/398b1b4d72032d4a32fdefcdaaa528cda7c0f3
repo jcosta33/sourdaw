@@ -1,0 +1,21 @@
+src/modules/AudioEngine/useCases/offlineRender/__tests__/projectNativeClipFade.spec.ts
+  s_9b530f08172a54::t_ee18d6c2b8b3f2 1-195
+src/modules/AudioEngine/useCases/offlineRender/projectNativeClipFade.ts
+  s_9b530f08172a54::t_7362847dca2f5f 10-27,41-51,63-64,85-95,101-108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "07398b1b4d72032d4a32fdefcdaaa528cda7c0f3",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
