@@ -539,11 +539,13 @@ describe('TransportBar', () => {
 
         const punchTrigger = screen.getByRole('button', { name: 'Punch recording settings' });
         fireEvent.click(punchTrigger);
-        expect(screen.getByRole('dialog', { name: 'Punch recording settings' })).toBeInTheDocument();
+        const punchDialog = screen.getByRole('dialog', { name: 'Punch recording settings' });
+        expect(punchDialog).toBeInTheDocument();
         expect(moreTrigger).toHaveAttribute('aria-expanded', 'true');
 
-        punchTrigger.focus();
-        fireEvent.keyDown(punchTrigger, { key: 'Escape' });
+        // Playwright sends Escape to the focused portaled surface, not the trigger.
+        punchDialog.focus();
+        fireEvent.keyDown(punchDialog, { key: 'Escape' });
         expect(screen.queryByRole('dialog', { name: 'Punch recording settings' })).not.toBeInTheDocument();
         expect(moreTrigger).toHaveAttribute('aria-expanded', 'true');
 
@@ -555,5 +557,34 @@ describe('TransportBar', () => {
         });
         expect(moreTrigger).toHaveAttribute('aria-expanded', 'false');
         expect(moreTrigger).toHaveFocus();
+    });
+
+    it('closes nested punch settings on Escape when a capture listener preventDefaults', () => {
+        setViewportWidth(VIEWPORT_COMPACT_WIDTH);
+        renderTransportBar();
+
+        const moreTrigger = screen.getByRole('button', { name: 'More transport controls' });
+        fireEvent.click(moreTrigger);
+        const punchTrigger = screen.getByRole('button', { name: 'Punch recording settings' });
+        fireEvent.click(punchTrigger);
+        const punchDialog = screen.getByRole('dialog', { name: 'Punch recording settings' });
+
+        // A window-capture listener that preventDefaults Escape is the nested
+        // Radix / sibling-handler case: Punch must still close and More stay.
+        const swallowEscape = (event: KeyboardEvent): void => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+            }
+        };
+        window.addEventListener('keydown', swallowEscape, true);
+        try {
+            punchDialog.focus();
+            fireEvent.keyDown(punchDialog, { key: 'Escape' });
+        } finally {
+            window.removeEventListener('keydown', swallowEscape, true);
+        }
+
+        expect(screen.queryByRole('dialog', { name: 'Punch recording settings' })).not.toBeInTheDocument();
+        expect(moreTrigger).toHaveAttribute('aria-expanded', 'true');
     });
 });

@@ -9,11 +9,11 @@ test.describe('Punch recording pre-roll / post-roll — test-id targeted', () =>
     });
 
     test('pre-roll and post-roll number inputs commit new values via test ID', async ({ page }) => {
+        await page.getByRole('button', { name: 'Punch recording settings' }).click();
         const preRoll = page.getByTestId('punch-pre-roll');
         const postRoll = page.getByTestId('punch-post-roll');
 
-        // The punch cluster lives in the transport bar's second row and mounts
-        // with the workspace — both fields must be present number inputs.
+        // Compact punch keeps In/Out/Pre/Post in Punch recording settings.
         await expect(preRoll).toBeVisible({ timeout: 10_000 });
         await expect(postRoll).toBeVisible({ timeout: 10_000 });
         await expect(preRoll).toHaveValue('4');
@@ -37,6 +37,7 @@ test.describe('Punch recording pre-roll / post-roll — test-id targeted', () =>
         const panel = page.getByRole('group', { name: 'Punch recording controls' });
         await expect(panel).toBeVisible({ timeout: 10_000 });
 
+        await page.getByRole('button', { name: 'Punch recording settings' }).click();
         const mark = page.getByRole('button', { name: 'Mark punch region from current capture' });
         await expect(mark).toBeAttached();
 

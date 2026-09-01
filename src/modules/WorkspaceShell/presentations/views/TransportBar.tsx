@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type MouseEvent, type ReactElement, useEffect, useRef, useState } from 'react';
+import { type MouseEvent, type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { Ellipsis } from 'lucide-react';
 
@@ -49,13 +49,15 @@ const isCompactLayoutViewport = (): boolean => {
 /** Lit-edge separator that follows the NW light source model from the design system */
 const Sep = (): ReactElement => <div className="mx-0.5 h-5 w-px shrink-0 daw-seam" />;
 
-const hasOpenNestedDisclosure = (surface: HTMLElement): boolean => {
-    return surface.querySelector('button[aria-haspopup][aria-expanded="true"]') !== null;
+const findOpenNestedTrigger = (surface: HTMLElement): HTMLElement | null => {
+    const trigger = surface.querySelector('button[aria-haspopup][aria-expanded="true"]');
+    return trigger instanceof HTMLElement ? trigger : null;
 };
 
 export const TransportBar = (): ReactElement => {
     const moreContainerRef = useRef<HTMLElement>(null);
     const moreTriggerRef = useRef<HTMLButtonElement>(null);
+    const moreSurfaceRef = useRef<HTMLDivElement>(null);
     const moreOpenRef = useRef(false);
     const restoreFocusAfterModeChangeRef = useRef(false);
     const [moreOpen, setMoreOpen] = useState(false);
@@ -146,23 +148,41 @@ export const TransportBar = (): ReactElement => {
         setMoreOpen(open);
     };
 
-    const closeMoreOnNestedTriggerEscape = (event: KeyboardEvent<HTMLDivElement>): void => {
-        if (event.key !== 'Escape' || !(event.target instanceof Element)) {
-            return;
+    useEffect(() => {
+        if (!moreOpen) {
+            return undefined;
         }
-        const moreSurface = event.currentTarget;
-        if (hasOpenNestedDisclosure(moreSurface)) {
-            return;
-        }
-        const nestedTrigger = event.target.closest('button[aria-haspopup]');
-        if (nestedTrigger === null || !moreSurface.contains(nestedTrigger)) {
-            return;
-        }
-        event.preventDefault();
-        event.stopPropagation();
-        setMorePopoverOpen(false);
-        window.requestAnimationFrame(() => moreTriggerRef.current?.focus());
-    };
+        const closeNestedDisclosureOrMoreOnEscape = (event: KeyboardEvent): void => {
+            if (event.key !== 'Escape' || !(event.target instanceof Element)) {
+                return;
+            }
+            const moreSurface = moreSurfaceRef.current;
+            if (moreSurface === null) {
+                return;
+            }
+            const openNestedTrigger = findOpenNestedTrigger(moreSurface);
+            if (openNestedTrigger !== null) {
+                event.preventDefault();
+                event.stopPropagation();
+                openNestedTrigger.click();
+                openNestedTrigger.focus();
+                return;
+            }
+            const nestedTrigger = event.target.closest('button[aria-haspopup]');
+            if (nestedTrigger === null || !moreSurface.contains(nestedTrigger)) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            moreOpenRef.current = false;
+            setMoreOpen(false);
+            window.requestAnimationFrame(() => moreTriggerRef.current?.focus());
+        };
+        window.addEventListener('keydown', closeNestedDisclosureOrMoreOnEscape, true);
+        return () => {
+            window.removeEventListener('keydown', closeNestedDisclosureOrMoreOnEscape, true);
+        };
+    }, [moreOpen]);
 
     return (
         <Stack
@@ -325,11 +345,7 @@ export const TransportBar = (): ReactElement => {
                                     <Ellipsis className="size-3.5" aria-hidden="true" />
                                 </Button>
                             </PopoverTrigger>
-                            <PopoverContent
-                                align="end"
-                                aria-label="More transport controls"
-                                onKeyDownCapture={closeMoreOnNestedTriggerEscape}
-                            >
+                            <PopoverContent ref={moreSurfaceRef} align="end" aria-label="More transport controls">
                                 <div className="space-y-2">
                                     <TempoEditor />
                                     <PunchRecordingControls compact />
