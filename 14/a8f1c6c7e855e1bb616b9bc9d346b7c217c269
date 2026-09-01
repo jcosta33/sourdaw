@@ -1,0 +1,20 @@
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgramme.spec.ts
+  s_9b530f08172a54::t_0862655ff14c68 454-460,484
+  s_9b530f08172a54::t_6d64f20daf5b78 29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "14a8f1c6c7e855e1bb616b9bc9d346b7c217c269",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
