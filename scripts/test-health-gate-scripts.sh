@@ -187,6 +187,7 @@ const workflow = parse(readFileSync(process.env.WORKFLOW_PATH, 'utf8'));
 const nightly = parse(readFileSync(process.env.NIGHTLY_PATH, 'utf8'));
 const gitleaksHelper = readFileSync(`${process.env.REPO_ROOT}/scripts/run-gitleaks-history-scan.sh`, 'utf8');
 const gitleaksConfig = readFileSync(`${process.env.REPO_ROOT}/.gitleaks.toml`, 'utf8');
+const gitleaksIgnore = readFileSync(`${process.env.REPO_ROOT}/.gitleaksignore`, 'utf8');
 const failures = [];
 
 function expect(condition, message) {
@@ -194,6 +195,13 @@ function expect(condition, message) {
         failures.push(message);
     }
 }
+
+expect(
+    gitleaksIgnore ===
+        'd0778b1ccdc63a5734b5815b682c9ff1a1ac10bc:scripts/__tests__/resolveReviewThread.spec.ts:generic-api-key:3288\n' +
+            'd0778b1ccdc63a5734b5815b682c9ff1a1ac10bc:scripts/__tests__/resolveReviewThread.spec.ts:generic-api-key:3355\n',
+    '.gitleaksignore must contain exactly the two approved resolver-test fingerprints'
+);
 
 function expectNightlyDoesNotMintGate(jobs) {
     expect(jobs?.gate === undefined, 'nightly must not mint Gate');
