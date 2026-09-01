@@ -2161,27 +2161,23 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'transpose notes in Piano MIDI by -7 semitones',
             context
         );
-        const selectedNoteScopePhrases = [
-            'selected notes',
-            'selected MIDI notes',
-            'current notes',
-            'current MIDI notes',
-            'these notes',
-            'these MIDI notes',
-            'notes that are selected',
-            'MIDI notes that are selected',
-            'notes currently selected',
-            'MIDI notes currently selected',
-            'note selection',
-            'selection of notes',
-            'selection of MIDI notes',
+        const selectedNoteScopePrompts = [
+            'transpose notes in Piano MIDI by 7 semitones, but only the selected notes',
+            'transpose notes in Piano MIDI by 7 semitones, but only the selected MIDI notes',
+            'transpose notes in Piano MIDI by 7 semitones, but only the current notes',
+            'transpose notes in Piano MIDI by 7 semitones, but only the current MIDI notes',
+            'transpose notes in Piano MIDI by 7 semitones, but only these notes',
+            'transpose notes in Piano MIDI by 7 semitones, but only these MIDI notes',
+            'transpose notes in Piano MIDI by 7 semitones, but only notes that are selected',
+            'transpose notes in Piano MIDI by 7 semitones, but only MIDI notes that are selected',
+            'transpose notes in Piano MIDI by 7 semitones, but only notes currently selected',
+            'transpose notes in Piano MIDI by 7 semitones, but only MIDI notes currently selected',
+            'transpose notes in Piano MIDI by 7 semitones, but only the note selection',
+            'transpose notes in Piano MIDI by 7 semitones, but only the selection of notes',
+            'transpose notes in Piano MIDI by 7 semitones, but only the selection of MIDI notes',
         ] as const;
-        const selectedNoteScopeResults = selectedNoteScopePhrases.map((phrase) =>
-            bridge(
-                [{ name: 'transposeNotes', arguments: { clipId: 'clip-midi', semitones: 7 } }],
-                `transpose notes in Piano MIDI by 7 semitones, but only the ${phrase}`,
-                context
-            )
+        const selectedNoteScopeResults = selectedNoteScopePrompts.map((prompt) =>
+            bridge([{ name: 'transposeNotes', arguments: { clipId: 'clip-midi', semitones: 7 } }], prompt, context)
         );
         const selectedNotesWithWrongValue = bridge(
             [{ name: 'transposeNotes', arguments: { clipId: 'clip-midi', semitones: 8 } }],
@@ -2753,6 +2749,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'clear all solos on these tracks',
             'clear all solos on those tracks',
             'clear all solos on the track selection',
+            'clear all solos on track-vocals',
         ] as const;
 
         expect(enable.actions).toEqual([{ type: 'setSoloSafe', payload: { trackId: vocals.id, soloSafe: true } }]);
@@ -3260,6 +3257,17 @@ describe('bridgeGroundedLlmToolCalls', () => {
                 ],
             }
         );
+        const multipleReferencedGroups = bridge(
+            [{ name: 'removeFromVca', arguments: { trackId: vocals.id } }],
+            'unassign Vocals from Drum VCA and Vocal VCA',
+            {
+                ...projectContext,
+                vcaGroups: [
+                    ...(projectContext.vcaGroups ?? []),
+                    { id: 'vca-vocals', name: 'Vocal VCA', gain: 1, muted: false, trackIds: [] },
+                ],
+            }
+        );
         const duplicateNameContext = {
             ...projectContext,
             tracks: [...projectContext.tracks, createTrack({ id: 'track-guitar-2', name: 'Guitar' })],
@@ -3303,6 +3311,14 @@ describe('bridgeGroundedLlmToolCalls', () => {
         ).toEqual([[], [], [], [], [], [], [], [], [], [], [], []]);
         expect(multipleCurrentGroups.actions).toEqual([]);
         expect(multipleCurrentGroups.rejections).toEqual([
+            {
+                index: 0,
+                name: 'removeFromVca',
+                reason: 'Provider VCA group reference does not match the track current membership',
+            },
+        ]);
+        expect(multipleReferencedGroups.actions).toEqual([]);
+        expect(multipleReferencedGroups.rejections).toEqual([
             {
                 index: 0,
                 name: 'removeFromVca',
