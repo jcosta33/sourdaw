@@ -261,6 +261,37 @@ describe('advanceSetlistItemEnd', () => {
         expect(stopPlayback).not.toHaveBeenCalled();
     });
 
+    it('restores a wrap-protected gap after pause/resume without cancelling nextItem', () => {
+        seed({
+            autoAdvance: true,
+            currentIndex: 0,
+            items: [
+                makeItem({ id: 'a', autoStop: false, gapSeconds: 2, estimatedDuration: 4 }),
+                makeItem({ id: 'b', autoStop: false, gapSeconds: 0, estimatedDuration: 4 }),
+            ],
+        });
+        armAtBeat(8);
+        playheadPositionRef.current = 16;
+        advanceSetlistItemEnd();
+
+        playheadPositionRef.current = 0;
+        advanceSetlistItemEnd();
+
+        setPlaying(false);
+        advanceSetlistItemEnd();
+
+        vi.advanceTimersByTime(2000);
+        expect(setlistStore.value?.currentIndex).toBe(0);
+
+        setPlaying(true);
+        advanceSetlistItemEnd();
+
+        vi.advanceTimersByTime(2000);
+
+        expect(setlistStore.value?.currentIndex).toBe(1);
+        expect(stopPlayback).not.toHaveBeenCalled();
+    });
+
     it('ends only after beat-derived elapsed time reaches estimatedDuration, not beat delta alone', () => {
         seed({
             autoAdvance: true,
@@ -439,6 +470,37 @@ describe('advanceSetlistItemEnd', () => {
 
         expect(setlistStore.value?.currentIndex).toBe(0);
         expect(setlistStore.value?.items[0]?.id).toBe('b');
+    });
+
+    it('re-arms the successor after remove-during-gap aborts so it can still auto-advance', () => {
+        seed({
+            autoAdvance: true,
+            currentIndex: 0,
+            items: [
+                makeItem({ id: 'a', autoStop: false, gapSeconds: 2, estimatedDuration: 4 }),
+                makeItem({ id: 'b', autoStop: false, estimatedDuration: 4 }),
+                makeItem({ id: 'c', autoStop: false, estimatedDuration: 4 }),
+            ],
+        });
+        armAtBeat(0);
+        playheadPositionRef.current = 8;
+        advanceSetlistItemEnd();
+
+        removeSetlistItem('a');
+        expect(setlistStore.value?.currentIndex).toBe(0);
+        expect(setlistStore.value?.items[0]?.id).toBe('b');
+
+        vi.advanceTimersByTime(2000);
+
+        expect(setlistStore.value?.currentIndex).toBe(0);
+        expect(setlistStore.value?.items[0]?.id).toBe('b');
+
+        playheadPositionRef.current = 16;
+        advanceSetlistItemEnd();
+        vi.runOnlyPendingTimers();
+
+        expect(setlistStore.value?.currentIndex).toBe(1);
+        expect(setlistStore.value?.items[1]?.id).toBe('c');
     });
 
     it('does not advance when autoAdvance is turned off during the gap', () => {

@@ -5,12 +5,22 @@ import { setlistStore } from '../../stores/setlistStore';
 
 import { nextItem } from './nextItem';
 
+type PendingGap = {
+    fromIndex: number;
+    endedItemId: string;
+    autoAdvance: boolean;
+    delayMs: number;
+};
+
 let startBeat: number | null = null;
 let armedIndex: number | null = null;
+let armedItemId: string | null = null;
 let wasPlaying = false;
 let itemEndConsumed = false;
 let lastPlayingBeat: number | null = null;
 let pendingAdvanceTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingGap: PendingGap | null = null;
+let frozenGap: PendingGap | null = null;
 
 function clearPendingAdvanceTimer(): void {
     if (pendingAdvanceTimer === null) {
@@ -23,39 +33,62 @@ function clearPendingAdvanceTimer(): void {
 function clearArm(): void {
     startBeat = null;
     armedIndex = null;
+    armedItemId = null;
     itemEndConsumed = false;
     lastPlayingBeat = null;
-}
-
-function armItemStart(currentBeat: number, currentIndex: number): void {
-    startBeat = currentBeat;
-    armedIndex = currentIndex;
-    itemEndConsumed = false;
+    pendingGap = null;
+    frozenGap = null;
     clearPendingAdvanceTimer();
 }
 
-function scheduleAdvanceAfterGap(
-    fromIndex: number,
-    gapSeconds: number,
-    endedItemId: string,
-    autoAdvanceWhenScheduled: boolean
-): void {
-    const delayMs = Math.max(0, gapSeconds) * 1000;
+function armItemStart(currentBeat: number, currentIndex: number, itemId: string): void {
+    startBeat = currentBeat;
+    armedIndex = currentIndex;
+    armedItemId = itemId;
+    itemEndConsumed = false;
+    pendingGap = null;
+    frozenGap = null;
+    clearPendingAdvanceTimer();
+}
+
+function reArmCurrentItem(currentBeat: number): void {
+    const latest = setlistStore.value;
+    if (!latest) {
+        clearArm();
+        return;
+    }
+    const item = latest.items[latest.currentIndex];
+    if (item === undefined) {
+        clearArm();
+        return;
+    }
+    armItemStart(currentBeat, latest.currentIndex, item.id);
+}
+
+function scheduleAdvanceAfterGap(gap: PendingGap): void {
+    pendingGap = gap;
     pendingAdvanceTimer = setTimeout(() => {
         pendingAdvanceTimer = null;
+        const scheduled = pendingGap;
+        pendingGap = null;
+        if (scheduled === null) {
+            return;
+        }
         const latest = setlistStore.value;
-        if (!latest || !autoAdvanceWhenScheduled || !latest.autoAdvance) {
+        if (!latest || !scheduled.autoAdvance || !latest.autoAdvance) {
             return;
         }
-        if (latest.currentIndex !== fromIndex) {
+        if (latest.currentIndex !== scheduled.fromIndex) {
             return;
         }
-        const itemAtIndex = latest.items[fromIndex];
-        if (itemAtIndex === undefined || itemAtIndex.id !== endedItemId) {
+        const itemAtIndex = latest.items[scheduled.fromIndex];
+        if (itemAtIndex === undefined || itemAtIndex.id !== scheduled.endedItemId) {
+            // Successor inherited the index; do not leave consumed arm stuck on it.
+            reArmCurrentItem(playheadPositionRef.current);
             return;
         }
         nextItem();
-    }, delayMs);
+    }, gap.delayMs);
 }
 
 export function advanceSetlistItemEnd(): void {
@@ -68,12 +101,13 @@ export function advanceSetlistItemEnd(): void {
 
     if (!transport.isPlaying) {
         wasPlaying = false;
-        const hadPendingGap = pendingAdvanceTimer !== null;
         // Stop/pause during a gap must not advance after the delay.
-        clearPendingAdvanceTimer();
-        // Pause during a pending gap must not leave consumed=true with no timer.
-        if (hadPendingGap) {
-            itemEndConsumed = false;
+        if (pendingAdvanceTimer !== null && pendingGap !== null) {
+            frozenGap = pendingGap;
+            clearPendingAdvanceTimer();
+            // Keep itemEndConsumed so wrap-during-gap protection survives pause.
+        } else {
+            clearPendingAdvanceTimer();
         }
         // Stop relocates the playhead; pause keeps it. Wipe the arm only on relocate.
         if (lastPlayingBeat !== null && currentBeat !== lastPlayingBeat) {
@@ -93,9 +127,15 @@ export function advanceSetlistItemEnd(): void {
     if (!wasPlaying) {
         wasPlaying = true;
         lastPlayingBeat = currentBeat;
+        if (frozenGap !== null) {
+            const gap = frozenGap;
+            frozenGap = null;
+            scheduleAdvanceAfterGap(gap);
+            return;
+        }
         // Re-arm only when unset (pause kept the arm) or after a stop relocate wiped it.
-        if (currentItem !== undefined && (startBeat === null || armedIndex === null)) {
-            armItemStart(currentBeat, currentIndex);
+        if (currentItem !== undefined && (startBeat === null || armedIndex === null || armedItemId === null)) {
+            armItemStart(currentBeat, currentIndex, currentItem.id);
         }
         return;
     }
@@ -106,8 +146,8 @@ export function advanceSetlistItemEnd(): void {
         return;
     }
 
-    if (armedIndex !== currentIndex) {
-        armItemStart(currentBeat, currentIndex);
+    if (armedIndex !== currentIndex || armedItemId !== currentItem.id) {
+        armItemStart(currentBeat, currentIndex, currentItem.id);
         return;
     }
 
@@ -117,7 +157,7 @@ export function advanceSetlistItemEnd(): void {
         if (itemEndConsumed) {
             return;
         }
-        armItemStart(currentBeat, currentIndex);
+        armItemStart(currentBeat, currentIndex, currentItem.id);
         return;
     }
 
@@ -126,7 +166,7 @@ export function advanceSetlistItemEnd(): void {
     }
 
     if (startBeat === null) {
-        armItemStart(currentBeat, currentIndex);
+        armItemStart(currentBeat, currentIndex, currentItem.id);
         return;
     }
 
@@ -157,7 +197,12 @@ export function advanceSetlistItemEnd(): void {
     }
 
     if (currentIndex + 1 < items.length) {
-        scheduleAdvanceAfterGap(currentIndex, currentItem.gapSeconds, currentItem.id, setlist.autoAdvance);
+        scheduleAdvanceAfterGap({
+            fromIndex: currentIndex,
+            endedItemId: currentItem.id,
+            autoAdvance: setlist.autoAdvance,
+            delayMs: Math.max(0, currentItem.gapSeconds) * 1000,
+        });
         return;
     }
 
