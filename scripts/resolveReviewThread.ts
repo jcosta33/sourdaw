@@ -23,7 +23,9 @@ import {
 } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
 import {
+    isReviewResolutionPullRequestMutationLockOwner,
     type PullRequestMutationSerialization,
+    type PullRequestMutationLockOwnerFence,
     type PullRequestRemoteMutationBoundary,
     pullRequestMutationLockRef,
     readPullRequestMutationLockOid,
@@ -176,22 +178,7 @@ export type DeletePendingReviewOptions = {
     allowedAttachedThreadIds?: string[];
     snapshotHead?: string;
 };
-export type ReviewResolutionLockOwnerFence =
-    | {
-          kind: 'pgid';
-          pgid: number;
-          leaderStartedAt?: string;
-      }
-    | {
-          kind: 'pid';
-          pid: number;
-      }
-    | {
-          kind: 'win32-process-tree';
-          version: 1;
-          rootPid: number;
-          rootStartedAt: string;
-      };
+export type ReviewResolutionLockOwnerFence = PullRequestMutationLockOwnerFence;
 type ReviewResolutionLockOwnerBase = {
     pid: number;
     ownerFence: ReviewResolutionLockOwnerFence;
@@ -3151,6 +3138,70 @@ function updateReviewResolutionLockRefsTransaction(primaryRoot: string, commands
     return result.status === 0;
 }
 
+export type StandaloneReviewResolutionSharedLockRecoveryPort = {
+    ownerFenceIsLive?: (ownerFence: ReviewResolutionLockOwnerFence) => boolean;
+    beforeExactRelease?: () => void;
+    updateRef?: (primaryRoot: string, args: string[]) => boolean;
+    gitPath?: string;
+    readReviewResolutionLockOid?: (primaryRoot: string, ref: string, number: number) => string | undefined;
+};
+
+export function recoverStandaloneReviewResolutionSharedMutationLock(
+    primaryRoot: string,
+    number: number,
+    expectedSharedOwnerOid: string,
+    port: StandaloneReviewResolutionSharedLockRecoveryPort = {}
+): string | undefined {
+    const reviewResolutionRef = pullRequestReviewResolutionLockRef(number);
+    const readInnerRef = port.readReviewResolutionLockOid ?? readReviewResolutionLockOid;
+    const sharedRef = pullRequestMutationLockRef(number);
+    const expectedOid = reviewResolutionLockObjectId(expectedSharedOwnerOid, number);
+    const gitPath = port.gitPath ?? trustedReviewResolutionGitPath();
+    if (readInnerRef(primaryRoot, reviewResolutionRef, number) !== undefined) {
+        const pairedSharedOwnerOid = readPullRequestMutationLockOid(primaryRoot, sharedRef, number, gitPath);
+        if (pairedSharedOwnerOid === expectedOid) {
+            const pairedSharedOwner = readPullRequestMutationLockOwner(
+                primaryRoot,
+                pairedSharedOwnerOid,
+                number,
+                gitPath
+            );
+            if (isReviewResolutionPullRequestMutationLockOwner(pairedSharedOwner)) {
+                fail(
+                    `${pullRequestReviewResolutionLockScope(number)} standalone shared lock has a paired review-resolution lock`
+                );
+            }
+        }
+        return undefined;
+    }
+    const currentOid = readPullRequestMutationLockOid(primaryRoot, sharedRef, number, gitPath);
+    if (currentOid === undefined) {
+        fail(`${pullRequestReviewResolutionLockScope(number)} standalone shared lock is not held`);
+    }
+    if (currentOid !== expectedOid) {
+        fail(
+            `${pullRequestReviewResolutionLockScope(number)} standalone shared lock ownership changed before recovery`
+        );
+    }
+    const owner = readPullRequestMutationLockOwner(primaryRoot, currentOid, number, gitPath);
+    if (!isReviewResolutionPullRequestMutationLockOwner(owner)) {
+        fail(`${pullRequestReviewResolutionLockScope(number)} standalone shared lock ownership is not recoverable`);
+    }
+    if ((port.ownerFenceIsLive ?? reviewResolutionOwnerFenceIsLive)(owner.ownerFence)) {
+        fail(`${pullRequestReviewResolutionLockScope(number)} standalone shared lock execution fence remains live`);
+    }
+    port.beforeExactRelease?.();
+    if (readInnerRef(primaryRoot, reviewResolutionRef, number) !== undefined) {
+        fail(
+            `${pullRequestReviewResolutionLockScope(number)} standalone shared lock gained a paired review-resolution lock`
+        );
+    }
+    if (!(port.updateRef ?? updateReviewResolutionLockRef)(primaryRoot, ['-d', sharedRef, currentOid])) {
+        fail(`${pullRequestReviewResolutionLockScope(number)} standalone shared lock ownership changed before release`);
+    }
+    return `review-resolution-standalone-shared-lock-recovered:${number}:${owner.threadId}:${owner.head}`;
+}
+
 function currentPosixProcessGroupFence(
     pid: number,
     env: NodeJS.ProcessEnv = process.env
@@ -5495,6 +5546,15 @@ export async function coordinateResolveReviewThread(
             } finally {
                 auth.session.dispose();
             }
+        },
+        {
+            reviewResolution: {
+                threadId,
+                head: expectedHead,
+                ownerFence: () =>
+                    assertReviewResolutionExecutionFence(currentReviewResolutionExecutionFence(), process.platform)
+                        .ownerFence,
+            },
         }
     );
 }

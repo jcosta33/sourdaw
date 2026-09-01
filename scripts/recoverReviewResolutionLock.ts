@@ -17,6 +17,7 @@ import {
     assertDetachedReviewResolutionChild,
     assertTrustedReviewResolutionLauncher,
     inspectReviewThread,
+    recoverStandaloneReviewResolutionSharedMutationLock,
     requiredTrustedReviewResolutionOriginCommit,
     recoverReviewResolutionLockOwnerState,
     retireUnseenReviewResolutionLockOwnerState,
@@ -64,6 +65,7 @@ export type ReviewResolutionRecoveryDependencies = {
         expectedOwnerOid: string,
         reconcile: (owner: ReviewResolutionLockOwner) => Value
     ) => Value;
+    recoverStandaloneSharedLock?: (primaryRoot: string, number: number, expectedOwnerOid: string) => string | undefined;
 };
 type ResolvedReviewResolutionRecoveryDependencies = {
     trustedLauncher?: ReviewResolutionTrustedLauncher;
@@ -89,6 +91,7 @@ type ResolvedReviewResolutionRecoveryDependencies = {
         expectedOwnerOid: string,
         reconcile: (owner: ReviewResolutionLockOwner) => Value
     ) => Value;
+    recoverStandaloneSharedLock: (primaryRoot: string, number: number, expectedOwnerOid: string) => string | undefined;
 };
 
 const usage = 'usage: pnpm review:resolve:recover <pr-number> --owner <lock-object-id> [--retire-unseen]';
@@ -138,6 +141,11 @@ function resolveRecoveryDependencies(
         clock: dependencies.clock ?? { now: () => Date.now() },
         retirementClock: dependencies.retirementClock,
         recoverLock: dependencies.recoverLock ?? recoverPullRequestReviewResolutionLock,
+        recoverStandaloneSharedLock:
+            dependencies.recoverStandaloneSharedLock ??
+            (dependencies.trustedLauncher === undefined
+                ? () => undefined
+                : recoverStandaloneReviewResolutionSharedMutationLock),
     };
 }
 
@@ -198,6 +206,15 @@ async function runRecoverReviewResolutionLockCliResolved(
         fail(usage);
     }
     const primaryRoot = resolvedDependencies.trustedPrimaryRoot();
+    const standaloneSummary = resolvedDependencies.recoverStandaloneSharedLock(
+        primaryRoot,
+        parsed.number,
+        parsed.owner
+    );
+    if (standaloneSummary !== undefined) {
+        console.log(standaloneSummary);
+        return 0;
+    }
     const auth = await resolvedDependencies.authenticateAuthor(primaryRoot);
     try {
         if (!isAuthorBotNodeId(auth.minted.actorNodeId)) {

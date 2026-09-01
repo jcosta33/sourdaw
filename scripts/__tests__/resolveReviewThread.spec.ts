@@ -29,6 +29,7 @@ import {
     deletePendingReview,
     submitReview,
     recoverPullRequestReviewResolutionLock,
+    recoverStandaloneReviewResolutionSharedMutationLock,
     recoverReviewResolutionLockOwnerState,
     withPullRequestReviewResolutionLock,
     type ReviewResolutionLockOwner,
@@ -235,6 +236,7 @@ type Input = {
     resolvedByLoginAfterResolve?: string | null;
     resolvedByTypeAfterResolve?: string | null;
     existingReplyCount?: number;
+    reverseExistingReplyOrder?: boolean;
     deleteReplyAfterResolve?: boolean;
     editReplyAfterResolve?: boolean;
     replyClientMutationId?: string;
@@ -432,6 +434,15 @@ function fakePort(input: Input = {}) {
             String(9223372036854775808n + BigInt(replyIndex)),
             configuredReviewId
         );
+    }
+    if (input.reverseExistingReplyOrder) {
+        const existingReplies = comments.filter(
+            (comment) => comment.id === replyId || comment.id.startsWith('PRRC_existing_')
+        );
+        const otherComments = comments.filter(
+            (comment) => comment.id !== replyId && !comment.id.startsWith('PRRC_existing_')
+        );
+        comments.splice(0, comments.length, ...otherComments, ...existingReplies.reverse());
     }
     if (input.addPendingReplyMarkerToResolvedThread) {
         pushReview('PRR_resolved_pending', 'PENDING', expectedReviewBody, head);
@@ -1189,12 +1200,54 @@ function writeSharedMutationLockOwnerBlob(repository: string, pid: number): stri
     );
 }
 
+function writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(
+    repository: string,
+    pid: number,
+    options: {
+        number?: number;
+        threadId?: string;
+        head?: string;
+        ownerFence?: ReviewResolutionLockOwnerFence;
+        version?: 1 | 2;
+    } = {}
+): string {
+    if (options.version === 1) {
+        return writeSharedMutationLockOwnerBlob(repository, pid);
+    }
+    return gitCapture(
+        repository,
+        ['hash-object', '-w', '--stdin'],
+        JSON.stringify({
+            version: 2,
+            pid,
+            token: `00000000-0000-4000-8000-${String(pid).padStart(12, '0')}`,
+            operation: 'review-resolution',
+            number: options.number ?? 42,
+            threadId: options.threadId ?? threadId,
+            head: options.head ?? head,
+            ownerFence: options.ownerFence ?? { kind: 'pid', pid },
+        })
+    );
+}
+
 function updateSharedMutationLock(repository: string, number: number, nextOid: string, previousOid?: string): void {
     const args =
         previousOid === undefined
             ? [sharedMutationLockRef(number), nextOid, '0'.repeat(nextOid.length)]
             : [sharedMutationLockRef(number), nextOid, previousOid];
     gitCapture(repository, ['update-ref', ...args]);
+}
+
+function updateGitRef(repository: string, args: string[]): boolean {
+    const result = spawnSync(systemGitPath(), ['update-ref', ...args], {
+        cwd: repository,
+        encoding: 'utf8',
+        shell: false,
+    });
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    return result.status === 0;
 }
 
 function readLockOwner(repository: string, number: number): TestLockOwnerRecord | undefined {
@@ -3622,6 +3675,252 @@ describe('review thread resolution', () => {
         }
     });
 
+    it('recovers a dead standalone review-resolution shared owner before a later mutation reacquires it', async () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const ownerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(repository, 999999);
+            updateSharedMutationLock(repository, 42, ownerOid);
+
+            expect(
+                recoverStandaloneReviewResolutionSharedMutationLock(repository, 42, ownerOid, {
+                    ownerFenceIsLive: () => false,
+                    gitPath: systemGitPath(),
+                    readReviewResolutionLockOid: (primaryRoot, _ref, pullRequestNumber) =>
+                        readLockOid(primaryRoot, pullRequestNumber),
+                    updateRef: updateGitRef,
+                })
+            ).toBe(`review-resolution-standalone-shared-lock-recovered:42:${threadId}:${head}`);
+            expect(readLockOid(repository, 42)).toBeUndefined();
+            expect(readSharedMutationLockOid(repository, 42)).toBeUndefined();
+            await expect(withPullRequestMutationLock(repository, 42, async () => 'reacquired')).resolves.toBe(
+                'reacquired'
+            );
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('preserves a paired shared owner when recovery is given its shared owner identity', () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const sharedOwnerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(repository, 999999);
+            const reviewOwnerOid = writeLockOwnerBlob(repository, 999999, head);
+            updateSharedMutationLock(repository, 42, sharedOwnerOid);
+            updateLock(repository, 42, reviewOwnerOid);
+
+            expect(() =>
+                recoverStandaloneReviewResolutionSharedMutationLock(repository, 42, sharedOwnerOid, {
+                    gitPath: systemGitPath(),
+                    readReviewResolutionLockOid: (primaryRoot, _ref, pullRequestNumber) =>
+                        readLockOid(primaryRoot, pullRequestNumber),
+                })
+            ).toThrow(/has a paired review-resolution lock/);
+            expect(readSharedMutationLockOid(repository, 42)).toBe(sharedOwnerOid);
+            expect(readLockOid(repository, 42)).toBe(reviewOwnerOid);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('preserves a changed standalone shared owner before recovery', () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const expectedOwnerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(repository, 999999);
+            const currentOwnerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(repository, 999998);
+            updateSharedMutationLock(repository, 42, currentOwnerOid);
+
+            expect(() =>
+                recoverStandaloneReviewResolutionSharedMutationLock(repository, 42, expectedOwnerOid, {
+                    gitPath: systemGitPath(),
+                    readReviewResolutionLockOid: (primaryRoot, _ref, pullRequestNumber) =>
+                        readLockOid(primaryRoot, pullRequestNumber),
+                })
+            ).toThrow(/ownership changed before recovery/);
+            expect(readSharedMutationLockOid(repository, 42)).toBe(currentOwnerOid);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('records the review-resolution identity in the initial shared owner', async () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            await withPullRequestMutationLock(
+                repository,
+                42,
+                async ({ ownerOid }) => {
+                    expect(JSON.parse(gitCapture(repository, ['cat-file', 'blob', ownerOid]))).toEqual({
+                        version: 2,
+                        pid: process.pid,
+                        token: expect.stringMatching(/^[0-9a-f-]{36}$/iu),
+                        operation: 'review-resolution',
+                        number: 42,
+                        threadId,
+                        head,
+                        ownerFence: { kind: 'pid', pid: process.pid },
+                    });
+                },
+                { reviewResolution: { threadId, head, ownerFence: { kind: 'pid', pid: process.pid } } }
+            );
+            expect(readSharedMutationLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('runs standalone shared-owner recovery before authentication or remote setup', async () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const ownerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(repository, 999999);
+            updateSharedMutationLock(repository, 42, ownerOid);
+            const calls: string[] = [];
+            const logs: string[] = [];
+            const originalLog = console.log;
+            console.log = (message?: unknown) => logs.push(String(message));
+            try {
+                await expect(
+                    runRecoverReviewResolutionLockCli(['42', '--owner', ownerOid], {
+                        trustedPrimaryRoot: () => repository,
+                        recoverStandaloneSharedLock: (primaryRoot, number, expectedOwnerOid) =>
+                            recoverStandaloneReviewResolutionSharedMutationLock(primaryRoot, number, expectedOwnerOid, {
+                                ownerFenceIsLive: () => false,
+                                gitPath: systemGitPath(),
+                                readReviewResolutionLockOid: (root, _ref, pullRequestNumber) =>
+                                    readLockOid(root, pullRequestNumber),
+                                updateRef: updateGitRef,
+                            }),
+                        authenticateAuthor: async () => {
+                            calls.push('authenticate');
+                            throw new Error('authentication must not run');
+                        },
+                        repositoryName: () => {
+                            calls.push('repository');
+                            return REQUIRED_REPOSITORY;
+                        },
+                        gh: () => {
+                            calls.push('gh');
+                            return () => '';
+                        },
+                        createPort: () => {
+                            calls.push('port');
+                            return fakePort().port;
+                        },
+                    })
+                ).resolves.toBe(0);
+            } finally {
+                console.log = originalLog;
+            }
+            expect(calls).toEqual([]);
+            expect(logs).toEqual([`review-resolution-standalone-shared-lock-recovered:42:${threadId}:${head}`]);
+            expect(readSharedMutationLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it.each([
+        [
+            'live execution fence',
+            () => writeStandaloneReviewResolutionSharedMutationLockOwnerBlob,
+            () => true,
+            /execution fence remains live/,
+        ],
+        ['legacy untagged owner', () => writeSharedMutationLockOwnerBlob, () => false, /ownership is not recoverable/],
+    ] as const)(
+        'preserves a standalone shared owner with a %s',
+        (_label, writeOwner, ownerFenceIsLive, errorPattern) => {
+            const repository = createTemporaryGitRepository();
+            try {
+                const ownerOid = writeOwner()(repository, 999999);
+                updateSharedMutationLock(repository, 42, ownerOid);
+
+                expect(() =>
+                    recoverStandaloneReviewResolutionSharedMutationLock(repository, 42, ownerOid, {
+                        ownerFenceIsLive,
+                        gitPath: systemGitPath(),
+                        readReviewResolutionLockOid: (primaryRoot, _ref, pullRequestNumber) =>
+                            readLockOid(primaryRoot, pullRequestNumber),
+                    })
+                ).toThrow(errorPattern);
+                expect(readLockOid(repository, 42)).toBeUndefined();
+                expect(readSharedMutationLockOid(repository, 42)).toBe(ownerOid);
+            } finally {
+                rmSync(repository, { recursive: true, force: true });
+            }
+        }
+    );
+
+    it('preserves a standalone shared owner when a paired review-resolution lock appears before release', () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const sharedOwnerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(repository, 999999);
+            updateSharedMutationLock(repository, 42, sharedOwnerOid);
+            let pairedOwnerOid: string | undefined;
+
+            expect(() =>
+                recoverStandaloneReviewResolutionSharedMutationLock(repository, 42, sharedOwnerOid, {
+                    ownerFenceIsLive: () => false,
+                    gitPath: systemGitPath(),
+                    readReviewResolutionLockOid: (primaryRoot, _ref, pullRequestNumber) =>
+                        readLockOid(primaryRoot, pullRequestNumber),
+                    beforeExactRelease: () => {
+                        pairedOwnerOid = writeLockOwnerBlob(repository, process.pid, head);
+                        updateLock(repository, 42, pairedOwnerOid);
+                    },
+                })
+            ).toThrow(/gained a paired review-resolution lock/);
+            expect(readSharedMutationLockOid(repository, 42)).toBe(sharedOwnerOid);
+            expect(readLockOid(repository, 42)).toBe(pairedOwnerOid);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('preserves a malformed standalone shared owner', () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const ownerOid = gitCapture(repository, ['hash-object', '-w', '--stdin'], '{"version":2}');
+            updateSharedMutationLock(repository, 42, ownerOid);
+
+            expect(() =>
+                recoverStandaloneReviewResolutionSharedMutationLock(repository, 42, ownerOid, {
+                    ownerFenceIsLive: () => false,
+                    gitPath: systemGitPath(),
+                    readReviewResolutionLockOid: (primaryRoot, _ref, pullRequestNumber) =>
+                        readLockOid(primaryRoot, pullRequestNumber),
+                })
+            ).toThrow(/delivery lock ownership is malformed/);
+            expect(readSharedMutationLockOid(repository, 42)).toBe(ownerOid);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('preserves a substituted standalone shared owner when its exact release fails', () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const ownerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(repository, 999999);
+            const replacementOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(repository, 999998);
+            updateSharedMutationLock(repository, 42, ownerOid);
+
+            expect(() =>
+                recoverStandaloneReviewResolutionSharedMutationLock(repository, 42, ownerOid, {
+                    ownerFenceIsLive: () => false,
+                    gitPath: systemGitPath(),
+                    readReviewResolutionLockOid: (primaryRoot, _ref, pullRequestNumber) =>
+                        readLockOid(primaryRoot, pullRequestNumber),
+                    updateRef: (primaryRoot) => {
+                        updateSharedMutationLock(primaryRoot, 42, replacementOid, ownerOid);
+                        return false;
+                    },
+                })
+            ).toThrow(/ownership changed before release/);
+            expect(readSharedMutationLockOid(repository, 42)).toBe(replacementOid);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it('preserves both exact claimed owners and refuses reacquisition after ambiguous recovery failure', async () => {
         const repository = createTemporaryGitRepository();
         try {
@@ -4810,7 +5109,11 @@ describe('review thread resolution', () => {
 
     it('recovers a lost delete response with duplicate canonical markers by converging before release', () => {
         const repository = createTemporaryGitRepository();
-        const { port, calls, state } = fakePort({ existingReplyCount: 3, existingReplyReviewState: 'COMMENTED' });
+        const { port, calls, state } = fakePort({
+            existingReplyCount: 3,
+            existingReplyReviewState: 'COMMENTED',
+            reverseExistingReplyOrder: true,
+        });
         try {
             const sharedOwnerOid = writeSharedMutationLockOwnerBlob(repository, 999999);
             updateSharedMutationLock(repository, 42, sharedOwnerOid);
@@ -7024,10 +7327,12 @@ describe('review thread resolution', () => {
         expect(defaultResolveReviewThreadCoordinatorDependencies().serializeMutation).toBe(withPullRequestMutationLock);
         const { port } = fakePort();
         const calls: string[] = [];
+        let lockOptions: { reviewResolution?: { threadId: string; head: string } } | undefined;
         const dependencies: ResolveReviewThreadCoordinatorDependencies = {
             primaryRoot: () => '/repo',
-            serializeMutation: async (_primaryRoot, number, operation) => {
+            serializeMutation: async (_primaryRoot, number, operation, options) => {
                 calls.push(`lock:${number}:acquire`);
+                lockOptions = options;
                 try {
                     return await operation({
                         ownerOid: 'f'.repeat(40),
@@ -7073,6 +7378,7 @@ describe('review thread resolution', () => {
 
         await coordinateResolveReviewThread(42, threadId, head, dependencies);
 
+        expect(lockOptions).toMatchObject({ reviewResolution: { threadId, head, ownerFence: expect.any(Function) } });
         expect(calls).toEqual([
             'lock:42:acquire',
             'authenticate',
