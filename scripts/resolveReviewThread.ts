@@ -5425,12 +5425,105 @@ export function submitReview(reviewId: string, body: string, gh: Gh): ReviewEnve
         clientMutationId: responseClientMutationId,
     };
 }
-function decimalRestReviewId(response: string, label: string): string {
-    const match = /^\s*\{\s*"id"\s*:\s*([1-9][0-9]*)\s*[,:}]/.exec(response);
-    if (match?.[1] === undefined) {
+function skipJsonWhitespace(value: string, start: number): number {
+    let index = start;
+    while (index < value.length && /\s/.test(value[index]!)) {
+        index += 1;
+    }
+    return index;
+}
+
+function jsonStringEnd(value: string, start: number, label: string): number {
+    if (value[start] !== '"') {
         fail(label);
     }
-    return match[1];
+    for (let index = start + 1; index < value.length; index += 1) {
+        if (value[index] === '\\') {
+            index += 1;
+            continue;
+        }
+        if (value[index] === '"') {
+            return index + 1;
+        }
+    }
+    return fail(label);
+}
+
+function topLevelJsonValueEnd(value: string, start: number, label: string): number {
+    let depth = 0;
+    for (let index = start; index < value.length; index += 1) {
+        const current = value[index];
+        if (current === '"') {
+            index = jsonStringEnd(value, index, label) - 1;
+            continue;
+        }
+        if (current === '{' || current === '[') {
+            depth += 1;
+            continue;
+        }
+        if (current === '}' || current === ']') {
+            if (depth === 0) {
+                return index;
+            }
+            depth -= 1;
+            continue;
+        }
+        if (current === ',' && depth === 0) {
+            return index;
+        }
+    }
+    return fail(label);
+}
+
+function decimalRestReviewId(response: string, label: string): string {
+    let index = skipJsonWhitespace(response, 0);
+    if (response[index] !== '{') {
+        return fail(label);
+    }
+    index += 1;
+    let id: string | undefined;
+    for (;;) {
+        index = skipJsonWhitespace(response, index);
+        if (response[index] === '}') {
+            break;
+        }
+        const keyStart = index;
+        const keyEnd = jsonStringEnd(response, keyStart, label);
+        let key: unknown;
+        try {
+            key = JSON.parse(response.slice(keyStart, keyEnd));
+        } catch {
+            return fail(label);
+        }
+        if (typeof key !== 'string') {
+            return fail(label);
+        }
+        index = skipJsonWhitespace(response, keyEnd);
+        if (response[index] !== ':') {
+            return fail(label);
+        }
+        const valueStart = skipJsonWhitespace(response, index + 1);
+        const valueEnd = topLevelJsonValueEnd(response, valueStart, label);
+        if (key === 'id') {
+            const candidate = response.slice(valueStart, valueEnd).trim();
+            if (id !== undefined || !/^[1-9][0-9]*$/.test(candidate)) {
+                return fail(label);
+            }
+            id = candidate;
+        }
+        index = skipJsonWhitespace(response, valueEnd);
+        if (response[index] === '}') {
+            break;
+        }
+        if (response[index] !== ',') {
+            return fail(label);
+        }
+        index += 1;
+    }
+    if (id === undefined || skipJsonWhitespace(response, index + 1) !== response.length) {
+        return fail(label);
+    }
+    return id;
 }
 
 export function updateReviewBody(

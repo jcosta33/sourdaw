@@ -289,6 +289,7 @@ type Input = {
     failUpdateReviewBodyIds?: readonly string[];
     updateClientMutationId?: string;
     updateReceiptReviewId?: string;
+    updateReceiptFullDatabaseId?: string;
     updateReceiptBody?: string;
     updateReceiptCommitOid?: string | null;
     updateReceiptState?: ReviewState;
@@ -745,7 +746,10 @@ function fakePort(input: Input = {}) {
             review.body = body;
             return {
                 id: input.updateReceiptReviewId ?? currentReviewId,
-                fullDatabaseId: review.fullDatabaseId,
+                fullDatabaseId:
+                    input.updateReceiptFullDatabaseId === undefined
+                        ? review.fullDatabaseId
+                        : input.updateReceiptFullDatabaseId,
                 state: input.updateReceiptState ?? review.state,
                 body: input.updateReceiptBody ?? review.body,
                 commitOid: input.updateReceiptCommitOid ?? review.commitOid,
@@ -1079,6 +1083,8 @@ function createFakeGhExecutable(responsesByKey: Record<string, string | string[]
             "if (queryArg === undefined) { console.error('missing query'); process.exit(1); }",
             'const query = queryArg.slice("query=".length);',
             "if (query.includes('comments(first:100') && !query.includes('pullRequestReview{id fullDatabaseId state body commit{oid} author{login __typename ... on Bot{id}}}')) { console.error('review inspection omitted the decimal review identity'); process.exit(1); }",
+            "if (query.includes('node(id:$reviewId){... on PullRequestReview') && !query.includes('id fullDatabaseId state body commit{oid} author{login __typename ... on Bot{id}} pullRequest{id}')) { console.error('review lookup omitted the decimal review identity'); process.exit(1); }",
+            "if (query.includes('reviews(first:100') && !query.includes('nodes{id fullDatabaseId state body commit{oid} author{login __typename ... on Bot{id}}}')) { console.error('pending-review inspection omitted the decimal review identity'); process.exit(1); }",
             'const fields = new Map();',
             'for (let index = 0; index < args.length; index += 1) {',
             "  if (args[index] !== '-F' && args[index] !== '-f') continue;",
@@ -1346,6 +1352,7 @@ function writeLegacyLockOwnerBlob(
         phase: string;
         epoch: number;
         reviewId?: string;
+        reviewDatabaseId?: string;
         replyId?: string;
         body?: string;
         pendingReviewIds?: readonly string[];
@@ -1380,6 +1387,7 @@ function writeLockOwnerBlob(
         phase: string;
         epoch: number;
         reviewId?: string;
+        reviewDatabaseId?: string;
         replyId?: string;
         body?: string;
         reviewCommitOid?: string;
@@ -5219,6 +5227,79 @@ describe('review thread resolution', () => {
         }
     });
 
+    it('replays a shell-inspected large decimal review identity through lookup, pending review, and exact PUT recovery', () => {
+        const repository = createTemporaryGitRepository();
+        const fullDatabaseId = '9223372036854775807';
+        const body = resolutionReviewSummary(pullRequestId, threadId, head);
+        const pendingReview = {
+            id: reviewId,
+            fullDatabaseId,
+            state: 'PENDING',
+            body: '',
+            commit: { oid: head },
+            author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: 'Bot' },
+        };
+        const linkedReply = {
+            id: replyId,
+            fullDatabaseId: '9223372036854775808',
+            body: 'Done',
+            author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: 'Bot' },
+            pullRequestReview: pendingReview,
+        };
+        const updatedPendingReview = { ...pendingReview, body };
+        const updatedLinkedReply = {
+            ...linkedReply,
+            pullRequestReview: updatedPendingReview,
+        };
+        const reviewLookup = JSON.stringify({
+            data: {
+                repository: { pullRequest: { id: pullRequestId, headRefOid: head } },
+                node: { ...pendingReview, pullRequest: { id: pullRequestId } },
+            },
+        });
+        const fakeGh = createFakeGhExecutable({
+            'threads:': [
+                threadPage([{ id: threadId, isResolved: false, resolvedBy: null }], false, null),
+                threadPage([{ id: threadId, isResolved: false, resolvedBy: null }], false, null),
+                threadPage([{ id: threadId, isResolved: false, resolvedBy: null }], false, null),
+            ],
+            [`comments:${threadId}:`]: [
+                commentPage([root, linkedReply], false, null),
+                commentPage([root, linkedReply], false, null),
+                commentPage([root, updatedLinkedReply], false, null),
+            ],
+            'reviews:': [reviewPage([pendingReview], false, null), reviewPage([updatedPendingReview], false, null)],
+            [`threadResolution:${threadId}`]: [threadResolutionPage(), threadResolutionPage()],
+            [`review:${reviewId}`]: reviewLookup,
+            [`updateReview:repos/${REQUIRED_REPOSITORY}/pulls/42/reviews/${fullDatabaseId}:${body}`]: `{"id":${fullDatabaseId},"node_id":${JSON.stringify(reviewId)},"body":${JSON.stringify(body)},"state":"PENDING","commit_id":${JSON.stringify(head)},"user":{"node_id":${JSON.stringify(AUTHOR_BOT_NODE_ID)},"login":"renamed-author","type":"Bot"}}`,
+        });
+        const port = shellPort(
+            { configDir: repository, env: { SOURDAW_TRUSTED_GH_PATH: fakeGh.executable }, dispose() {} },
+            repository
+        );
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, {
+                phase: 'updateReviewBody',
+                epoch: 1,
+                reviewId,
+                reviewDatabaseId: fullDatabaseId,
+                body,
+            });
+            updateLock(repository, 42, ownerOid);
+
+            const inspection = recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) =>
+                recoverReviewResolutionLockOwnerState(42, owner, port)
+            );
+            expect(inspection.pendingReviews).toEqual([
+                expect.objectContaining({ id: reviewId, fullDatabaseId, body }),
+            ]);
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+            rmSync(fakeGh.root, { recursive: true, force: true });
+        }
+    });
+
     it('replays an unlanded H1 review-body update at H2 after proving the historical review and current attachment', () => {
         const repository = createTemporaryGitRepository();
         const { port, calls, state } = fakePort({
@@ -5710,6 +5791,7 @@ describe('review thread resolution', () => {
     it.each([
         ['client mutation id', { updateClientMutationId: 'wrong' }],
         ['review identity', { updateReceiptReviewId: 'PRR_wrong' }],
+        ['decimal review identity', { updateReceiptFullDatabaseId: '9223372036854775810' }],
         ['body', { updateReceiptBody: 'wrong body' }],
         ['state', { updateReceiptState: 'COMMENTED' }],
         ['historical commit', { updateReceiptCommitOid: movedHead }],
@@ -8690,6 +8772,55 @@ describe('review thread resolution', () => {
                 `body=${body}`,
             ],
         ]);
+    });
+    it('accepts an exact decimal REST review ID after valid response properties are reordered', () => {
+        const body = resolutionReviewSummary(pullRequestId, threadId, head);
+        expect(
+            updateReviewBody(
+                42,
+                {
+                    id: reviewId,
+                    fullDatabaseId: '9223372036854775807',
+                    body: '',
+                    state: 'COMMENTED',
+                    commitOid: head,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author',
+                    authorType: 'Bot',
+                },
+                body,
+                () =>
+                    `{"node_id":${JSON.stringify(reviewId)},"body":${JSON.stringify(body)},"state":"COMMENTED","commit_id":${JSON.stringify(head)},"user":{"id":9001,"node_id":${JSON.stringify(AUTHOR_BOT_NODE_ID)},"login":"renamed-author","type":"Bot"},"id":9223372036854775807}`
+            )
+        ).toMatchObject({ id: reviewId, fullDatabaseId: '9223372036854775807', body });
+    });
+    it.each([
+        [
+            'only a nested decimal ID',
+            `{"node_id":${JSON.stringify(reviewId)},"body":"body","state":"COMMENTED","commit_id":${JSON.stringify(head)},"user":{"id":9223372036854775807,"node_id":${JSON.stringify(AUTHOR_BOT_NODE_ID)},"type":"Bot"}}`,
+        ],
+        [
+            'duplicate top-level decimal IDs',
+            `{"id":9223372036854775807,"node_id":${JSON.stringify(reviewId)},"body":"body","state":"COMMENTED","commit_id":${JSON.stringify(head)},"user":{"node_id":${JSON.stringify(AUTHOR_BOT_NODE_ID)},"type":"Bot"},"id":9223372036854775807}`,
+        ],
+    ])('rejects a REST update receipt with %s', (_label, response) => {
+        expect(() =>
+            updateReviewBody(
+                42,
+                {
+                    id: reviewId,
+                    fullDatabaseId: '9223372036854775807',
+                    body: '',
+                    state: 'COMMENTED',
+                    commitOid: head,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author',
+                    authorType: 'Bot',
+                },
+                'body',
+                () => response
+            )
+        ).toThrow(/update review body returned an invalid result/i);
     });
     it('refuses a submitted review without a decimal database identity before the REST update', () => {
         const ghCalls: string[][] = [];
