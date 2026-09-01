@@ -92,6 +92,22 @@ describe('agent tool catalog', () => {
             additionalProperties: false,
         });
         expect(catalogSchema?.function.parameters.properties).not.toHaveProperty('intent');
+        expect(catalogSchema?.function.parameters.properties.category).toEqual({
+            type: 'string',
+            enum: [
+                'query',
+                'resolve',
+                'capability',
+                'catalog',
+                'preview',
+                'command',
+                'commit',
+                'history',
+                'render',
+                'analysis',
+                'approval',
+            ],
+        });
         expect(indexSchema?.function.parameters).toMatchObject({
             properties: { intent: { type: 'string' } },
             required: ['intent'],

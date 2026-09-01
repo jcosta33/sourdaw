@@ -33,7 +33,7 @@ type IntentCatalogPage = { cursor?: string; limit?: number };
 
 type IntentCatalogCursor = {
     schemaVersion: 1;
-    intent: string;
+    intentFingerprint: string;
     resultSetFingerprint: string;
     offset: number;
 };
@@ -109,11 +109,11 @@ function decodeCursor(cursor: string): IntentCatalogCursor | null {
             !isRecord(value) ||
             Object.keys(value).length !== 4 ||
             !('schemaVersion' in value) ||
-            !('intent' in value) ||
+            !('intentFingerprint' in value) ||
             !('resultSetFingerprint' in value) ||
             !('offset' in value) ||
             value.schemaVersion !== 1 ||
-            typeof value.intent !== 'string' ||
+            typeof value.intentFingerprint !== 'string' ||
             typeof value.resultSetFingerprint !== 'string' ||
             typeof value.offset !== 'number' ||
             !Number.isSafeInteger(value.offset) ||
@@ -123,7 +123,7 @@ function decodeCursor(cursor: string): IntentCatalogCursor | null {
         }
         return {
             schemaVersion: 1,
-            intent: value.intent,
+            intentFingerprint: value.intentFingerprint,
             resultSetFingerprint: value.resultSetFingerprint,
             offset: value.offset,
         };
@@ -150,9 +150,17 @@ function resultSetFingerprint(names: readonly string[]): string {
     return `${String(names.length)}-${String(hash >>> 0)}`;
 }
 
+function intentFingerprint(intent: string): string {
+    let hash = 2_166_136_261;
+    for (const character of intent) {
+        hash = Math.imul(hash ^ character.charCodeAt(0), 16_777_619);
+    }
+    return `${String(intent.length)}-${String(hash >>> 0)}`;
+}
+
 function pageOffset(input: {
     cursor: string | undefined;
-    intent: string;
+    intentFingerprint: string;
     resultSetFingerprint: string;
     total: number;
 }): number {
@@ -162,7 +170,7 @@ function pageOffset(input: {
     const cursor = decodeCursor(input.cursor);
     if (
         cursor === null ||
-        cursor.intent !== input.intent ||
+        cursor.intentFingerprint !== input.intentFingerprint ||
         cursor.resultSetFingerprint !== input.resultSetFingerprint ||
         cursor.offset > input.total
     ) {
@@ -237,9 +245,10 @@ export function getExecutableAppActionIntentCatalog(input: { intent?: string; pa
         .map(({ entry }) => entry);
     const names = entries.map((entry) => entry.name);
     const fingerprint = resultSetFingerprint(names);
+    const currentIntentFingerprint = intentFingerprint(intent);
     const offset = pageOffset({
         cursor: input.page?.cursor,
-        intent,
+        intentFingerprint: currentIntentFingerprint,
         resultSetFingerprint: fingerprint,
         total: names.length,
     });
@@ -255,7 +264,12 @@ export function getExecutableAppActionIntentCatalog(input: { intent?: string; pa
         items: structuredClone(items),
         nextCursor:
             nextOffset < entries.length
-                ? encodeCursor({ schemaVersion: 1, intent, resultSetFingerprint: fingerprint, offset: nextOffset })
+                ? encodeCursor({
+                      schemaVersion: 1,
+                      intentFingerprint: currentIntentFingerprint,
+                      resultSetFingerprint: fingerprint,
+                      offset: nextOffset,
+                  })
                 : null,
         page: { limit, offset, total: entries.length },
         truncated: nextOffset < entries.length,

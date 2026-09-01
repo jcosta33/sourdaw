@@ -5,7 +5,7 @@ import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 
 type CatalogCursor = {
     schemaVersion: number;
-    intent: string;
+    intentFingerprint: string;
     resultSetFingerprint: string;
     offset: number;
 };
@@ -23,7 +23,7 @@ function decodeCursor(cursor: string): CatalogCursor {
     if (
         !isRecord(value) ||
         typeof value.schemaVersion !== 'number' ||
-        typeof value.intent !== 'string' ||
+        typeof value.intentFingerprint !== 'string' ||
         typeof value.resultSetFingerprint !== 'string' ||
         typeof value.offset !== 'number'
     ) {
@@ -31,7 +31,7 @@ function decodeCursor(cursor: string): CatalogCursor {
     }
     return {
         schemaVersion: value.schemaVersion,
-        intent: value.intent,
+        intentFingerprint: value.intentFingerprint,
         resultSetFingerprint: value.resultSetFingerprint,
         offset: value.offset,
     };
@@ -86,13 +86,6 @@ describe('intent command catalog', () => {
                     status: 'success',
                     data: {
                         schema: 'sourdaw.intent-command-catalog',
-                        items: [
-                            {
-                                name: 'setTempo',
-                                purpose: expect.any(String),
-                                semanticCategories: expect.arrayContaining(['tempo']),
-                            },
-                        ],
                         page: { limit: 1, offset: 0 },
                     },
                 },
@@ -114,6 +107,22 @@ describe('intent command catalog', () => {
         });
 
         const indexReceipt = result.receipts[0];
+        if (!isRecord(indexReceipt?.data) || !Array.isArray(indexReceipt.data.items)) {
+            throw new Error('Expected command-index receipt data.');
+        }
+        const indexItem = indexReceipt.data.items[0];
+        if (!isRecord(indexItem)) {
+            throw new Error('Expected a command-index item.');
+        }
+        expect(Object.keys(indexItem).sort()).toEqual(['name', 'purpose', 'semanticCategories']);
+        expect(indexReceipt.data.items).toEqual([
+            {
+                name: 'setTempo',
+                purpose: expect.any(String),
+                semanticCategories: expect.any(Array),
+            },
+        ]);
+        expect(indexReceipt.toolName).toBe(AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME);
         expect(JSON.stringify(indexReceipt)).not.toContain('"parameters"');
     });
 
@@ -210,6 +219,54 @@ describe('intent command catalog', () => {
         expect(nextPage.receipts[0]).toMatchObject({ data: { items: [{ name: 'addTrack' }] } });
     });
 
+    it('keeps maximum multibyte intent cursors within the public limit', async () => {
+        const intent = `operation ${'界'.repeat(502)}`;
+        const firstPage = await runApplicationOwnedToolLoop({
+            loopId: 'intent-command-catalog-maximum-multibyte-first',
+            terminalToolNames: new Set(['command.batch.propose']),
+            requestTurn: vi
+                .fn()
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'maximum-multibyte-first',
+                            name: AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+                            arguments: { intent, page: { limit: 1 } },
+                        },
+                    ],
+                })
+                .mockResolvedValueOnce({ status: 'complete', toolCalls: [] }),
+        });
+        const firstData = firstPage.receipts[0]?.data;
+        if (!isRecord(firstData) || typeof firstData.nextCursor !== 'string') {
+            throw new Error('Expected a maximum-multibyte command-index cursor.');
+        }
+        expect(firstData.nextCursor.length).toBeLessThanOrEqual(2048);
+
+        const nextPage = await runApplicationOwnedToolLoop({
+            loopId: 'intent-command-catalog-maximum-multibyte-next',
+            terminalToolNames: new Set(['command.batch.propose']),
+            requestTurn: vi
+                .fn()
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'maximum-multibyte-next',
+                            name: AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+                            arguments: { intent, page: { cursor: firstData.nextCursor, limit: 1 } },
+                        },
+                    ],
+                })
+                .mockResolvedValueOnce({ status: 'complete', toolCalls: [] }),
+        });
+
+        expect(nextPage).toMatchObject({
+            receipts: [{ callId: 'maximum-multibyte-next', status: 'success', data: { page: { offset: 1 } } }],
+        });
+    });
+
     it.each([
         { label: 'missing command-index intent', name: AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME, arguments: {} },
         {
@@ -221,6 +278,11 @@ describe('intent command catalog', () => {
             label: 'catalog command-index category',
             name: 'agent.catalog.discover',
             arguments: { category: 'command-index', names: ['setTempo'] },
+        },
+        {
+            label: 'command-index page extras',
+            name: AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+            arguments: { intent: 'tempo', page: { limit: 1, unexpected: true } },
         },
         {
             label: 'command intent',
@@ -318,7 +380,8 @@ describe('intent command catalog', () => {
         const cursor = decodeCursor(catalog.nextCursor);
         const tamperedCursors = [
             encodeCursor({ ...cursor, unexpected: true }),
-            encodeCursor({ ...cursor, intent: 'tempo' }),
+            encodeCursor({ ...cursor, intentFingerprint: 'different' }),
+            encodeCursor({ ...cursor, offset: -1 }),
             encodeCursor({ ...cursor, resultSetFingerprint: 'different' }),
             encodeCursor({ ...cursor, offset: catalog.page.total + 1 }),
         ];
@@ -469,6 +532,56 @@ describe('intent command catalog', () => {
                     status: 'success',
                     data: { items: [{ name: 'removeMarker' }] },
                 },
+            ],
+        });
+    });
+
+    it('normalizes copy inflections before ranking clip commands', async () => {
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'intent-command-catalog-copy-clip',
+            terminalToolNames: new Set(['command.batch.propose']),
+            requestTurn: vi
+                .fn()
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'copy-clip-index',
+                            name: AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+                            arguments: { intent: 'copies a clip', page: { limit: 1 } },
+                        },
+                    ],
+                })
+                .mockResolvedValueOnce({ status: 'complete', toolCalls: [] }),
+        });
+
+        expect(result).toMatchObject({
+            receipts: [{ callId: 'copy-clip-index', status: 'success', data: { items: [{ name: 'duplicateClip' }] } }],
+        });
+    });
+
+    it('returns purpose-only command matches', async () => {
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'intent-command-catalog-purpose-only',
+            terminalToolNames: new Set(['command.batch.propose']),
+            requestTurn: vi
+                .fn()
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'purpose-only-index',
+                            name: AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+                            arguments: { intent: 'classify', page: { limit: 1 } },
+                        },
+                    ],
+                })
+                .mockResolvedValueOnce({ status: 'complete', toolCalls: [] }),
+        });
+
+        expect(result).toMatchObject({
+            receipts: [
+                { callId: 'purpose-only-index', status: 'success', data: { items: [{ name: 'importStemSet' }] } },
             ],
         });
     });
