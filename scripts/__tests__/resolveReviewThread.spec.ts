@@ -4044,6 +4044,57 @@ describe('review thread resolution', () => {
         }
     });
 
+    it('preserves both owners when an unrelated v5 inner execution fence remains live', () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const sharedOwnerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(repository, 999999);
+            const reviewOwnerOid = writeLockOwnerBlob(repository, 999998, head, { phase: 'idle', epoch: 0 });
+            updateSharedMutationLock(repository, 42, sharedOwnerOid);
+            updateLock(repository, 42, reviewOwnerOid);
+
+            expect(() =>
+                recoverStandaloneReviewResolutionSharedMutationLock(repository, 42, sharedOwnerOid, {
+                    ownerFenceIsLive: (ownerFence) => ownerFence.kind === 'pgid' && ownerFence.pgid === 999998,
+                    gitPath: systemGitPath(),
+                })
+            ).toThrow(/inner execution fence remains live/);
+            expect(readSharedMutationLockOid(repository, 42)).toBe(sharedOwnerOid);
+            expect(readLockOid(repository, 42)).toBe(reviewOwnerOid);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('uses one exact transaction to prove no inner lock exists before deleting a standalone shared owner', () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const sharedOwnerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(repository, 999999);
+            updateSharedMutationLock(repository, 42, sharedOwnerOid);
+            let commands: string[] | undefined;
+
+            expect(() =>
+                recoverStandaloneReviewResolutionSharedMutationLock(repository, 42, sharedOwnerOid, {
+                    ownerFenceIsLive: () => false,
+                    gitPath: systemGitPath(),
+                    readReviewResolutionLockOid: (primaryRoot, _ref, pullRequestNumber) =>
+                        readLockOid(primaryRoot, pullRequestNumber),
+                    updateRefsTransaction: (_primaryRoot, transactionCommands) => {
+                        commands = transactionCommands;
+                        return false;
+                    },
+                })
+            ).toThrow(/ownership changed before release/);
+            expect(commands).toEqual([
+                `verify refs/sourdaw/review-resolution/pr-42 ${'0'.repeat(sharedOwnerOid.length)}`,
+                `delete refs/sourdaw/delivery/pr-42 ${sharedOwnerOid}`,
+            ]);
+            expect(readSharedMutationLockOid(repository, 42)).toBe(sharedOwnerOid);
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it('preserves a dead standalone shared owner when a v6 inner owner retains another shared owner', () => {
         const repository = createTemporaryGitRepository();
         try {
@@ -4231,7 +4282,7 @@ describe('review thread resolution', () => {
         }
     );
 
-    it('preserves a standalone shared owner when a paired review-resolution lock appears before release', () => {
+    it('preserves both refs when a legacy inner owner appears between the absence proof and exact release', () => {
         const repository = createTemporaryGitRepository();
         try {
             const sharedOwnerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(repository, 999999);
@@ -4249,7 +4300,7 @@ describe('review thread resolution', () => {
                         updateLock(repository, 42, pairedOwnerOid);
                     },
                 })
-            ).toThrow(/gained a paired review-resolution lock/);
+            ).toThrow(/ownership changed before release/);
             expect(readSharedMutationLockOid(repository, 42)).toBe(sharedOwnerOid);
             expect(readLockOid(repository, 42)).toBe(pairedOwnerOid);
         } finally {
@@ -4290,7 +4341,7 @@ describe('review thread resolution', () => {
                     gitPath: systemGitPath(),
                     readReviewResolutionLockOid: (primaryRoot, _ref, pullRequestNumber) =>
                         readLockOid(primaryRoot, pullRequestNumber),
-                    updateRef: (primaryRoot) => {
+                    updateRefsTransaction: (primaryRoot) => {
                         updateSharedMutationLock(primaryRoot, 42, replacementOid, ownerOid);
                         return false;
                     },

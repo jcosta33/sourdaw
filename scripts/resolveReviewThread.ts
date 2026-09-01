@@ -3208,27 +3208,20 @@ export function recoverStandaloneReviewResolutionSharedMutationLock(
                 `${pullRequestReviewResolutionLockScope(number)} standalone shared lock has a non-current review-resolution lock`
             );
         }
-    }
-    port.beforeExactRelease?.();
-    if (innerOwnerOid !== undefined) {
-        if (
-            !(port.updateRefsTransaction ?? updateReviewResolutionLockRefsTransaction)(primaryRoot, [
-                `verify ${reviewResolutionRef} ${innerOwnerOid}`,
-                `delete ${sharedRef} ${currentOid}`,
-            ])
-        ) {
+        if ((port.ownerFenceIsLive ?? reviewResolutionOwnerFenceIsLive)(innerOwner.ownerFence)) {
             fail(
-                `${pullRequestReviewResolutionLockScope(number)} standalone shared lock ownership changed before release`
+                `${pullRequestReviewResolutionLockScope(number)} standalone shared lock inner execution fence remains live`
             );
         }
-        return `review-resolution-standalone-shared-lock-recovered:${number}:${owner.threadId}:${owner.head}`;
     }
-    if (readInnerRef(primaryRoot, reviewResolutionRef, number) !== undefined) {
-        fail(
-            `${pullRequestReviewResolutionLockScope(number)} standalone shared lock gained a paired review-resolution lock`
-        );
-    }
-    if (!(port.updateRef ?? updateReviewResolutionLockRef)(primaryRoot, ['-d', sharedRef, currentOid])) {
+    port.beforeExactRelease?.();
+    const expectedInnerOid = innerOwnerOid ?? '0'.repeat(currentOid.length);
+    if (
+        !(port.updateRefsTransaction ?? updateReviewResolutionLockRefsTransaction)(primaryRoot, [
+            `verify ${reviewResolutionRef} ${expectedInnerOid}`,
+            `delete ${sharedRef} ${currentOid}`,
+        ])
+    ) {
         fail(`${pullRequestReviewResolutionLockScope(number)} standalone shared lock ownership changed before release`);
     }
     return `review-resolution-standalone-shared-lock-recovered:${number}:${owner.threadId}:${owner.head}`;
