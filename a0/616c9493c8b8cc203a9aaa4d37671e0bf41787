@@ -1,0 +1,52 @@
+src/modules/AiRuntime/useCases/getAgentToolCatalogEntries.ts
+  s_a40848e8f8cca9::t_3842037625ce61 35
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_a40848e8f8cca9::t_0e3153da87922c 19-31,71-79,90,92,114-115,132
+  s_a40848e8f8cca9::t_0ed1f5727663b0 11,80-89,91,93-113,133
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_a40848e8f8cca9::t_5d9ec96b955136 17,557,575,621-675,677-680,684,698,738,964
+  s_a40848e8f8cca9::t_ff4d1f6d62d160 718
+  s_a40848e8f8cca9::t_05bbe9e9096fec 533
+  s_a40848e8f8cca9::t_6044770e3f8d76 516,528,530-532
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  s_a40848e8f8cca9::t_b6f956c4c72914 8-12,85-87,90-93,95-98,145
+  s_a40848e8f8cca9::t_abdf35e50b53cc 81-84,88-89,99
+  s_a40848e8f8cca9::t_ff4d1f6d62d160 94,100-101
+  s_9b530f08172a54::t_88ce91647eb533 102-103
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_a40848e8f8cca9::t_63b9c12206991b 351
+src/modules/AiRuntime/useCases/__tests__/intentCommandCatalog.spec.ts
+  s_a40848e8f8cca9::t_f32134602a47be 6-19,23-48,209-213,232-238,240-259,262-281,283-293
+  s_a40848e8f8cca9::t_e951a83d6aa579 3,58-59,161-162,189,192,214,230-231,239,260-261,282,427-428,457-458
+  s_a40848e8f8cca9::t_d258ebba80ee8c 20-22,215-229
+  s_a40848e8f8cca9::t_529a867577fc27 294,296-413
+  s_9b530f08172a54::t_45bf48ed5903fb 295
+src/modules/Command/useCases/getExecutableAppActionIntentCatalog.ts
+  s_a40848e8f8cca9::t_7ee63b6ce3c1b8 48-50,53-55,178,180-181,184,187,191-217
+  s_a40848e8f8cca9::t_b8ef640d50f9cc 51-52
+  s_a40848e8f8cca9::t_1e81e46c35b02f 218-219
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "a0616c9493c8b8cc203a9aaa4d37671e0bf41787",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
