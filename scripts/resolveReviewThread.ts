@@ -1672,9 +1672,12 @@ function hasExactImmutableDeleteReplySurvivor(
     }
     const managed = managedReplyMarkers(thread, context, ['COMMENTED'], true);
     return (
-        managed.length === 1 &&
-        matchesReviewResolutionMarkerSnapshot(managed[0]!, mutation.immutableEnvelope) &&
-        isImmutableEmptySubmittedReview(managed[0]!.review)
+        thread.comments.every((comment) => comment.id !== mutation.replyId) &&
+        managed.some(
+            (candidate) =>
+                matchesReviewResolutionMarkerSnapshot(candidate, mutation.immutableEnvelope!) &&
+                isImmutableEmptySubmittedReview(candidate.review)
+        )
     );
 }
 
@@ -1817,7 +1820,6 @@ function matchesReviewResolutionMarkerSnapshot(
         candidate.review.body === expected.reviewBody &&
         candidate.review.commitOid === expected.reviewCommitOid &&
         candidate.review.authorNodeId === expected.reviewAuthorNodeId &&
-        candidate.review.authorLogin === expected.reviewAuthorLogin &&
         candidate.review.authorType === expected.reviewAuthorType
     );
 }
@@ -2325,7 +2327,13 @@ function repairCompletedResolution(
             }
             const reply = requireOneReplyMarker(terminal.thread, context.threadId);
             const review = requireReplyReview(reply, context, ['COMMENTED'], true, null);
-            if (review.id !== immutableEnvelope.review.id || !isImmutableEmptySubmittedReview(review)) {
+            if (
+                !matchesReviewResolutionMarkerSnapshot(
+                    { marker: reply, review, currentHead: review.commitOid === context.expectedHead },
+                    reviewResolutionMarkerSnapshot(immutableEnvelope)
+                ) ||
+                !isImmutableEmptySubmittedReview(review)
+            ) {
                 fail(`review thread ${context.threadId} no longer has its immutable empty submitted-review envelope`);
             }
             assertExclusiveBackfillReviewAttachment(number, review.id, context, port);
@@ -5568,6 +5576,9 @@ export function recoverReviewResolutionLockOwnerState(
                         )
                     ) {
                         fail(unreconciledReviewResolutionMutationMessage(number, mutation));
+                    }
+                    if (inspection.head !== owner.head) {
+                        break;
                     }
                     if (!repairCompletedResolution(number, inspection, freshContext, port)) {
                         fail(unreconciledReviewResolutionMutationMessage(number, mutation));

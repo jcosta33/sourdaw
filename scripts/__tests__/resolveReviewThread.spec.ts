@@ -1130,6 +1130,7 @@ function createFakeGhExecutable(responsesByKey: Record<string, string | string[]
             "else if (query === 'mutation($reviewId:ID!,$body:String!,$clientMutationId:String!){submitPullRequestReview(input:{pullRequestReviewId:$reviewId,event:COMMENT,body:$body,clientMutationId:$clientMutationId}){clientMutationId pullRequestReview{id state body commit{oid} author{login __typename ... on Bot{id}}}}}') key = `submitReview:${fields.get('reviewId') ?? ''}:${fields.get('body') ?? ''}:${fields.get('clientMutationId') ?? ''}`;",
             "else if (query === 'mutation($reviewId:ID!,$body:String!,$clientMutationId:String!){updatePullRequestReview(input:{pullRequestReviewId:$reviewId,body:$body,clientMutationId:$clientMutationId}){clientMutationId pullRequestReview{id state body commit{oid} author{login __typename ... on Bot{id}}}}}') key = `updateReview:${fields.get('reviewId') ?? ''}:${fields.get('body') ?? ''}:${fields.get('clientMutationId') ?? ''}`;",
             "else if (query === 'mutation($threadId:ID!,$reviewId:ID!,$body:String!,$clientMutationId:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewId:$reviewId,pullRequestReviewThreadId:$threadId,body:$body,clientMutationId:$clientMutationId}){clientMutationId comment{id fullDatabaseId body author{login __typename ... on Bot{id}} pullRequestReview{id state body commit{oid} author{login __typename ... on Bot{id}}}}}}') key = `reply:${fields.get('threadId') ?? ''}:${fields.get('reviewId') ?? ''}:${fields.get('body') ?? ''}:${fields.get('clientMutationId') ?? ''}`;",
+            "else if (query.includes('deletePullRequestReviewComment')) key = `deleteReply:${fields.get('replyId') ?? ''}`;",
             "else if (query.includes('node(id:$threadId){... on PullRequestReviewThread{id isResolved resolvedBy{id login __typename}}')) key = `threadResolution:${fields.get('threadId') ?? ''}`;",
             "const expected = query.includes('addPullRequestReview(input:{') ? ['pullRequestId','body','commitOid','clientMutationId'] : query.includes('submitPullRequestReview(input:{') || query.includes('updatePullRequestReview(input:{') ? ['reviewId','body','clientMutationId'] : query.includes('addPullRequestReviewThreadReply(input:{') ? ['threadId','reviewId','body','clientMutationId'] : undefined;",
             'if (expected !== undefined && (fields.size !== expected.length || expected.some((name) => !fields.has(name)))) { console.error(`invalid mutation fields ${JSON.stringify([...fields.keys()])}`); process.exit(1); }',
@@ -5351,6 +5352,99 @@ describe('review thread resolution', () => {
         }
     );
 
+    it('releases an exact immutable H1 envelope after the pull request moves to H2 without mutation', () => {
+        const repository = createTemporaryGitRepository();
+        const { port, calls } = fakePort({
+            heads: [movedHead, movedHead, movedHead],
+            expectedAttachedReviewThreadInspectionHead: movedHead,
+            expectedPullRequestReviewInspectionPullRequestId: pullRequestId,
+            expectedPullRequestReviewInspectionHead: movedHead,
+            isResolved: true,
+            initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+            initialResolvedByType: 'User',
+            existingReplyCount: 1,
+            existingReplyReviewState: 'COMMENTED',
+            existingReplyReviewBody: '',
+            existingReplyReviewCommitOid: head,
+        });
+        const mutation = {
+            phase: 'updateReviewBody' as const,
+            epoch: 1,
+            reviewId,
+            reviewDatabaseId: '9223372036854775808',
+            reviewCommitOid: head,
+            body: resolutionReviewSummary(pullRequestId, threadId, head),
+            marker: immutableEnvelopeSnapshot(),
+        };
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, mutation);
+            updateLock(repository, 42, ownerOid);
+
+            const inspection = recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) =>
+                recoverReviewResolutionLockOwnerState(42, owner, port)
+            );
+
+            expect(inspection.head).toBe(movedHead);
+            expect(
+                calls.filter((call) =>
+                    /^(createReview|reply:|updateReview|delete:|deleteReview|submit|resolve|log:)/.test(call)
+                )
+            ).toEqual([]);
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('treats an immutable envelope with a renamed author login as the same receipt', () => {
+        const repository = createTemporaryGitRepository();
+        const { port: basePort } = fakePort({
+            isResolved: true,
+            initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+            initialResolvedByType: 'User',
+            existingReplyCount: 1,
+            existingReplyReviewState: 'COMMENTED',
+            existingReplyReviewBody: '',
+        });
+        const port: ResolveReviewThreadPort = {
+            ...basePort,
+            inspect: (number, currentThreadId) => {
+                const inspection = basePort.inspect(number, currentThreadId);
+                if (inspection.thread === null) {
+                    return inspection;
+                }
+                return {
+                    ...inspection,
+                    thread: {
+                        ...inspection.thread,
+                        comments: inspection.thread.comments.map((comment) =>
+                            comment.id === replyId ? { ...comment, reviewAuthorLogin: 'renamed-again[bot]' } : comment
+                        ),
+                    },
+                };
+            },
+        };
+        const mutation = {
+            phase: 'updateReviewBody' as const,
+            epoch: 1,
+            reviewId,
+            reviewDatabaseId: '9223372036854775808',
+            reviewCommitOid: head,
+            body: resolutionReviewSummary(pullRequestId, threadId, head),
+            marker: immutableEnvelopeSnapshot(),
+        };
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, mutation);
+            updateLock(repository, 42, ownerOid);
+            recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) =>
+                recoverReviewResolutionLockOwnerState(42, owner, port)
+            );
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it('retains the immutable update-recovery lock when its exact remote review lookup is missing', () => {
         const repository = createTemporaryGitRepository();
         const {
@@ -6979,6 +7073,42 @@ describe('review thread resolution', () => {
             expect(readLockOid(repository, 42)).toBeUndefined();
         } finally {
             rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('persists the exact immutable delete envelope before recovering a lost shell-backed delete response', () => {
+        const repository = createTemporaryGitRepository();
+        const fakeGh = createFakeGhExecutable({ 'deleteReply:PRRC_existing_1': 'not-json' });
+        const { port: basePort } = fakePort({
+            isResolved: true,
+            initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+            initialResolvedByType: 'User',
+            existingReplyCount: 3,
+            existingReplyReviewState: 'COMMENTED',
+            existingReplyReviewBody: '',
+            secondaryReplyReviewBody: resolutionReviewSummary(pullRequestId, threadId, head),
+        });
+        const deletePort = shellPort(
+            { configDir: repository, env: { SOURDAW_TRUSTED_GH_PATH: fakeGh.executable }, dispose() {} },
+            repository
+        );
+        const port: ResolveReviewThreadPort = {
+            ...basePort,
+            deleteReply: deletePort.deleteReply,
+            serializeReviewThreadMutation: (number, currentThreadId, expectedHead, operation) =>
+                withPullRequestReviewResolutionLock(repository, number, currentThreadId, expectedHead, operation),
+        };
+        try {
+            expect(() => resolveReviewThread(42, threadId, head, AUTHOR_BOT_NODE_ID, port)).toThrow();
+            const owner = requireLockOwner(repository, 42);
+            expect(owner.mutation).toMatchObject({
+                phase: 'deleteReply',
+                replyId: 'PRRC_existing_1',
+                immutableEnvelope: immutableEnvelopeSnapshot(),
+            });
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+            rmSync(fakeGh.root, { recursive: true, force: true });
         }
     });
 
