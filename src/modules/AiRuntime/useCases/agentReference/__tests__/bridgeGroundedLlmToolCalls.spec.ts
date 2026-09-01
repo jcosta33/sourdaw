@@ -2773,6 +2773,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'clear all solos and mute Guitar but preserve Vocals soloed',
             'clear all solos and mute Guitar but retain Vocals soloed',
             'clear all solos while leaving Vocals soloed, and mute Guitar',
+            'clear all solos while preserving Unnamed solo, and mute Guitar',
             'clear all solos, while keeping Vocals soloed, and mute Guitar',
         ] as const;
         const continuativeRestrictionPrefixes = [
