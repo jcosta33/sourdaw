@@ -3,6 +3,7 @@ import { getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCas
 import { type ProjectContext } from '../../../models/ProjectContext';
 import { resolveAgentReference } from '../resolveAgentReference';
 
+import { collectClearSolosRestrictionClauses } from './collectClearSolosRestrictionClauses';
 import {
     createPostTargetScopeAdmissionStrategyRegistry,
     postTargetScopeActionNames,
@@ -134,6 +135,20 @@ const universalClearSolosIntentPhrases: ReadonlySet<string> = new Set([
     'unsolo everything',
 ]);
 
+function promptHasForeignControlIntent(prompt: string): boolean {
+    const catalog = getExecutableAppActionGroundingCatalog();
+    const normalized = ` ${normalizePromptText(prompt)} `;
+    return catalog.some((entry) => {
+        if (entry.actionType === 'clearSolos') {
+            return false;
+        }
+        return entry.intentPhrases.some((phrase) => {
+            const normalizedPhrase = normalizePromptText(phrase);
+            return normalizedPhrase.length > 0 && normalized.includes(` ${normalizedPhrase} `);
+        });
+    });
+}
+
 function isUniversalClearSolosScope(
     actionScope: PostTargetActionScope,
     context: ProjectContext,
@@ -142,17 +157,21 @@ function isUniversalClearSolosScope(
     if (!universalClearSolosIntentPhrases.has(normalizePromptText(actionScope.matchedIntentPhrase))) {
         return false;
     }
-    const restrictionEvidence = normalizePromptText(prompt);
-    const hasRestriction = hasTrackControlRestriction(prompt);
+    const hasForeignControlIntent = promptHasForeignControlIntent(prompt);
+    const restrictionEvidence = normalizePromptText(hasForeignControlIntent ? actionScope.text : prompt);
+    const hasRestriction =
+        collectClearSolosRestrictionClauses(hasForeignControlIntent ? actionScope.text : prompt).length > 0 ||
+        (!hasForeignControlIntent && hasTrackControlRestriction(prompt));
     const hasRelativeTrackReference =
         /\b(?:selected|current|this|that|these|those)\s+tracks?\b/u.test(restrictionEvidence) ||
         /\btrack\s+selection\b/u.test(restrictionEvidence);
     if (hasRestriction || hasRelativeTrackReference) {
         return false;
     }
+    const leftoverText = hasForeignControlIntent ? actionScope.text : prompt;
     const trackReferences = context.tracks.flatMap((track) => [track.id, track.name]);
     return !trackReferences.some((reference) =>
-        hasReferenceOutsideMatchedIntent(prompt, actionScope.matchedIntentPhrase, reference)
+        hasReferenceOutsideMatchedIntent(leftoverText, actionScope.matchedIntentPhrase, reference)
     );
 }
 

@@ -182,10 +182,8 @@ describe('createNativeOfflineGraphBackend', () => {
     it('rejects with the native refusal reason and rolls the batch back whole', async () => {
         const transport = scriptedTransport({
             refuseMap: (input) =>
-                input.batch.commands.some(
-                    (command) => command.kind === 'schedule-clip' && command.playback.playbackRate !== 1
-                )
-                    ? 'commands[0]: schedule-clip: stretched-clip-unsupported — playbackRate 0.5 refused'
+                input.batch.commands.some((command) => command.kind === 'schedule-clip' && command.playback.gain < 0)
+                    ? 'commands[0]: schedule-clip: clip gain is negative'
                     : undefined,
         });
         const backend = createNativeOfflineGraphBackend({ sampleRate: SAMPLE_RATE, transport });
@@ -196,7 +194,7 @@ describe('createNativeOfflineGraphBackend', () => {
             commands: [
                 {
                     ...clipCommand('take-1', stereoBuffer([0], [0])),
-                    playback: { ...clipCommand('take-1').playback, playbackRate: 0.5 },
+                    playback: { ...clipCommand('take-1').playback, gain: -1 },
                 },
             ],
         });
@@ -206,7 +204,7 @@ describe('createNativeOfflineGraphBackend', () => {
         expect(refused).toEqual({
             acceptance: 'rejected',
             application: 'not-applied',
-            reason: 'commands[0]: schedule-clip: stretched-clip-unsupported — playbackRate 0.5 refused',
+            reason: 'commands[0]: schedule-clip: clip gain is negative',
         });
         // Rollback: the refused command never enters a later wire batch.
         await backend.render(4);
@@ -225,7 +223,7 @@ describe('createNativeOfflineGraphBackend', () => {
             commands: [
                 {
                     ...clipCommand('take-2', material),
-                    playback: { ...clipCommand('take-2', material).playback, playbackRate: 0.5 },
+                    playback: { ...clipCommand('take-2', material).playback, gain: -1 },
                 },
             ],
         });

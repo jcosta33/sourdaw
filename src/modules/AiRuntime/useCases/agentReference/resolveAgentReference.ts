@@ -59,7 +59,9 @@ const reservedClipReferenceWords: ReadonlySet<string> = new Set([
 
 function normalizeReferenceText(value: string): string {
     return value
+        .normalize('NFKD')
         .toLocaleLowerCase()
+        .replaceAll(/\p{M}/gu, '')
         .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
         .trim();
 }

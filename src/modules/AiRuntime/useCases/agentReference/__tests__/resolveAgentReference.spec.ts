@@ -255,6 +255,17 @@ describe('resolveAgentReference', () => {
         });
     });
 
+    it('grounds an accent-insensitive exact display name', () => {
+        const project = createProjectState();
+        project.tracks = [{ ...project.tracks[0]!, id: 'track-cafe', name: 'Café' }];
+
+        expect(resolveTrack('mute Cafe', 'track-cafe', project)).toEqual({
+            status: 'resolved',
+            id: 'track-cafe',
+            evidence: 'exact-name',
+        });
+    });
+
     it('applies capability kind filtering before target evidence is accepted', () => {
         const project = createProjectState();
         project.tracks = [
@@ -596,6 +607,85 @@ describe('resolveAgentReference', () => {
             status: 'rejected',
             reason: 'ambiguous-target',
         });
+    });
+
+    it('lets a literal track ID take precedence over an overlapping display name without hiding another target', () => {
+        const project = createProjectState();
+        const guitar = {
+            ...project.tracks[0]!,
+            id: 'track-guitar',
+            name: 'Track Guitar',
+        };
+        const overlappingName = {
+            ...project.tracks[0]!,
+            id: 'track-guitar-two',
+            name: 'Track Guitar',
+        };
+        const guitarist = {
+            ...project.tracks[0]!,
+            id: 'track-guitarist',
+            name: 'Track Guitarist',
+        };
+        const namedGuitar = {
+            ...project.tracks[0]!,
+            id: 'track-guitar-name',
+            name: 'Guitar',
+        };
+        const context = { ...project, tracks: [guitar, overlappingName, guitarist, namedGuitar] };
+
+        expect(resolveTrack('mute track-guitar', guitar.id, context)).toEqual({
+            status: 'resolved',
+            id: guitar.id,
+            evidence: 'literal-id',
+        });
+        expect(resolveTrack('mute track-guitar and Track Guitar', guitar.id, context)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('mute Track Guitar', guitar.id, context)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('mute track-guitarist and Guitar', guitarist.id, context)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('mute track-guitar plus Guitar', guitar.id, context)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+    });
+
+    it('grounds dotted-I literal IDs with symmetric Unicode reference spans', () => {
+        const project = createProjectState();
+        const dottedI = {
+            ...project.tracks[0]!,
+            id: 'track-İ',
+            name: 'İzmir',
+        };
+
+        expect(resolveTrack('mute track-i', dottedI.id, { ...project, tracks: [dottedI] })).toEqual({
+            status: 'resolved',
+            id: dottedI.id,
+            evidence: 'literal-id',
+        });
+    });
+
+    it('does not ground literal IDs embedded in astral Unicode letters', () => {
+        const project = createProjectState();
+        const guitar = {
+            ...project.tracks[0]!,
+            id: 'track-guitar',
+            name: 'Bass',
+        };
+        const context = { ...project, tracks: [guitar] };
+
+        for (const prompt of ['mute 𐐀track-guitar', 'mute track-guitar𐐀']) {
+            expect(resolveTrack(prompt, guitar.id, context), prompt).toEqual({
+                status: 'rejected',
+                reason: 'ungrounded-target',
+            });
+        }
     });
 
     it('resolves editable clips by literal ID, unique exact name, and one explicit selection', () => {

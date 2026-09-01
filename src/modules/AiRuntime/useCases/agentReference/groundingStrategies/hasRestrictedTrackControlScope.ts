@@ -8,12 +8,12 @@ type TrackControlRestrictionContext = {
 };
 
 export function hasRestrictedTrackControlScope(prompt: string, context: TrackControlRestrictionContext): boolean {
-    if (hasTrackControlRestriction(prompt)) {
-        return true;
-    }
     const intentPhrases = [...prompt.matchAll(universalTrackControlIntentPattern)].map((match) => match[0]);
     if (intentPhrases.length === 0) {
         return false;
+    }
+    if (hasTrackControlRestriction(prompt)) {
+        return true;
     }
     const trackReferences = context.tracks.flatMap((track) => [track.id, track.name]);
     return intentPhrases.some((intentPhrase) =>
