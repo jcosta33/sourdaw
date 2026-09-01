@@ -242,6 +242,18 @@ describe('coreAutomationStrategy', () => {
     });
 
     it('requires changed boolean lane enablement and a changed supported track mode', () => {
+        expect(
+            bridge(
+                { name: 'setAutomationLaneEnabled', arguments: { laneId, enabled: true } },
+                {
+                    ...projectContext,
+                    automationLanes: [{ ...projectContext.automationLanes![0]!, enabled: false }],
+                }
+            )
+        ).toEqual({
+            type: 'setAutomationLaneEnabled',
+            payload: { laneId, enabled: true },
+        });
         for (const argumentsPayload of [
             { laneId: 'missing', enabled: false },
             { laneId, enabled: 'false' },
@@ -287,6 +299,10 @@ describe('coreAutomationStrategy', () => {
         expect(bridge({ name: 'stretchAutomation', arguments: { laneId, factor: 16 } })).toEqual({
             type: 'stretchAutomation',
             payload: { laneId, factor: 16 },
+        });
+        expect(bridge({ name: 'stretchAutomation', arguments: { laneId, factor: 0.5 } })).toEqual({
+            type: 'stretchAutomation',
+            payload: { laneId, factor: 0.5 },
         });
         for (const name of ['scaleAutomation', 'stretchAutomation'] as const) {
             for (const factor of [0, -0.01, 16.01, 1, Number.NaN, '2', true]) {
@@ -349,6 +365,10 @@ describe('coreAutomationStrategy', () => {
         expect(bridge({ name: 'quantizeAutomation', arguments: { laneId, gridSize: 64 } })).toEqual({
             type: 'quantizeAutomation',
             payload: { laneId, gridSize: 64 },
+        });
+        expect(bridge({ name: 'quantizeAutomation', arguments: { laneId, gridSize: 0.5 } })).toEqual({
+            type: 'quantizeAutomation',
+            payload: { laneId, gridSize: 0.5 },
         });
         for (const gridSize of [0, -0.01, 64.01, Number.NaN, '1', true]) {
             expectRejected('quantizeAutomation', { laneId, gridSize });
