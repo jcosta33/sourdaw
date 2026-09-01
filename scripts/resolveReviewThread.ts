@@ -160,7 +160,7 @@ export type ReviewResolutionLockMutation =
           reviewCommitOid: string;
           marker?: ReviewResolutionMarkerSnapshot;
       }
-    | { phase: 'resolveThread'; epoch: number }
+    | { phase: 'resolveThread'; epoch: number; immutableEnvelope?: ReviewResolutionMarkerSnapshot }
     | {
           phase: 'deleteReply';
           epoch: number;
@@ -275,7 +275,7 @@ export type ResolveReviewThreadPort = {
         expectedReview?: PullRequestReview,
         expectedMarker?: ReviewComment
     ) => ReviewEnvelopeReceipt;
-    resolve: (threadId: string) => ReviewResolutionReceipt;
+    resolve: (threadId: string, immutableEnvelope?: ReviewResolutionMarkerSnapshot) => ReviewResolutionReceipt;
     deleteReply: (replyId: string, immutableEnvelope?: ManagedReplyMarker, target?: ManagedReplyMarker) => void;
     deletePendingReview: (reviewId: string, options?: DeletePendingReviewOptions) => void;
     serializeReviewThreadMutation: <Value>(
@@ -908,7 +908,7 @@ function resolveReviewThreadWithinMutation(
         if (immutableUnresolvedEnvelope !== undefined) {
             replyId = immutableUnresolvedEnvelope.marker.id;
             resolveAttempted = true;
-            const resolveReceipt = port.resolve(threadId);
+            const resolveReceipt = port.resolve(threadId, reviewResolutionMarkerSnapshot(immutableUnresolvedEnvelope));
             assertResolutionReceipt(resolveReceipt, resolveClientMutationId(threadId));
             resolutionReceipt = resolveReceipt;
             const resolvedInspection = port.inspect(number, threadId);
@@ -2694,13 +2694,14 @@ export function shellPort(
             markRemoteMutationAttempt();
             return updateReviewBody(active.number, expectedReview, body, mutationGh);
         },
-        resolve: (id) => {
+        resolve: (id, immutableEnvelope) => {
             const active = activeReviewResolutionLocks.at(-1);
             if (active === undefined) {
                 fail('thread resolution is not fenced by the active review-resolution lock');
             }
             advanceActiveReviewResolutionLockMutation(primaryRoot, active.number, {
                 phase: 'resolveThread',
+                ...(immutableEnvelope === undefined ? {} : { immutableEnvelope }),
             });
             markRemoteMutationAttempt();
             return resolveThread(id, mutationGh);
@@ -3118,8 +3119,18 @@ function parseReviewResolutionLockMutation(value: unknown, label: string): Revie
         fail(label);
     }
     const phase = (value as { phase: string }).phase;
-    if (phase === 'idle' || phase === 'resolveThread') {
+    if (phase === 'idle') {
         return { phase, epoch };
+    }
+    if (phase === 'resolveThread') {
+        const immutableEnvelope = (value as { immutableEnvelope?: unknown }).immutableEnvelope;
+        return {
+            phase,
+            epoch,
+            ...(immutableEnvelope === undefined
+                ? {}
+                : { immutableEnvelope: parseReviewResolutionMarkerSnapshot(immutableEnvelope, label) }),
+        };
     }
     if (phase === 'createPendingReview') {
         const pullRequestId = (value as { pullRequestId?: unknown }).pullRequestId;
@@ -5327,6 +5338,40 @@ function hasExactImmutableEmptySubmittedReviewTerminal(
     );
 }
 
+function hasExactImmutableResolveThreadEnvelope(
+    number: number,
+    owner: CurrentReviewResolutionLockOwner,
+    inspection: ReviewThreadInspection,
+    context: ResolutionReviewContext,
+    thread: ReviewThread,
+    immutableEnvelope: ReviewResolutionMarkerSnapshot,
+    expectedResolved: boolean,
+    port: ResolveReviewThreadPort
+): boolean {
+    if (inspection.head !== owner.head || thread.isResolved !== expectedResolved) {
+        return false;
+    }
+    if (expectedResolved) {
+        assertCompletedResolution(thread, owner.threadId);
+    }
+    assertManagedReplyMarkersReadable(thread, context, ['PENDING', 'COMMENTED'], true);
+    const managed = managedReplyMarkers(thread, context, ['COMMENTED'], true);
+    if (managed.length !== 1 || hasBlockingAuthorPendingReview(inspection.pendingReviews, thread, context)) {
+        return false;
+    }
+    const [candidate] = managed;
+    if (
+        candidate === undefined ||
+        !candidate.currentHead ||
+        !isImmutableEmptySubmittedReview(candidate.review) ||
+        !matchesReviewResolutionMarkerSnapshot(candidate, immutableEnvelope)
+    ) {
+        return false;
+    }
+    assertExclusiveBackfillReviewAttachment(number, candidate.review.id, context, port, inspection.head);
+    return true;
+}
+
 function hasRecoveredReviewResolutionMutation(
     number: number,
     owner: CurrentReviewResolutionLockOwner,
@@ -5397,6 +5442,18 @@ function hasRecoveredReviewResolutionMutation(
             );
         }
         case 'resolveThread':
+            if (mutation.immutableEnvelope !== undefined) {
+                return hasExactImmutableResolveThreadEnvelope(
+                    number,
+                    owner,
+                    inspection,
+                    context,
+                    thread,
+                    mutation.immutableEnvelope,
+                    true,
+                    port
+                );
+            }
             return (
                 thread.isResolved &&
                 isAuthorResolutionActor(thread.resolvedByNodeId, thread.resolvedByType) &&
@@ -6012,6 +6069,55 @@ export function recoverReviewResolutionLockOwnerState(
             break;
         }
         case 'resolveThread': {
+            if (mutation.immutableEnvelope !== undefined) {
+                if (
+                    hasExactImmutableResolveThreadEnvelope(
+                        number,
+                        owner,
+                        inspection,
+                        context,
+                        inspection.thread!,
+                        mutation.immutableEnvelope,
+                        true,
+                        port
+                    )
+                ) {
+                    break;
+                }
+                if (
+                    !hasExactImmutableResolveThreadEnvelope(
+                        number,
+                        owner,
+                        inspection,
+                        context,
+                        inspection.thread!,
+                        mutation.immutableEnvelope,
+                        false,
+                        port
+                    )
+                ) {
+                    fail(unreconciledReviewResolutionMutationMessage(number, mutation));
+                }
+                const receipt = port.resolve(owner.threadId, mutation.immutableEnvelope);
+                assertResolutionReceipt(receipt, resolveClientMutationId(owner.threadId));
+                inspection = inspectReviewResolutionRecovery(number, owner, port);
+                const terminalContext = resolutionReviewContext(inspection.pullRequestId, owner.threadId, owner.head);
+                if (
+                    !hasExactImmutableResolveThreadEnvelope(
+                        number,
+                        owner,
+                        inspection,
+                        terminalContext,
+                        inspection.thread!,
+                        mutation.immutableEnvelope,
+                        true,
+                        port
+                    )
+                ) {
+                    fail(unreconciledReviewResolutionMutationMessage(number, mutation));
+                }
+                break;
+            }
             if (hasRecoveredReviewResolutionMutation(number, owner, inspection, context, inspection.thread!, port)) {
                 break;
             }
