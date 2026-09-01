@@ -55,10 +55,20 @@ describe('resolveAppComposition', () => {
         expect(resolveAppComposition({ ...topLevelWebDocument, isTopLevel: false })).toBe('application');
     });
 
-    it('runs the application in a named host frame even if the document reports as top-level after reload', () => {
+    it('hosts a top-level Chrome document even when its window is named like the application frame', () => {
         expect(
             resolveAppComposition({
                 ...topLevelWebDocument,
+                windowName: BROWSER_APPLICATION_FRAME_NAME,
+            })
+        ).toBe('browser-host');
+    });
+
+    it('runs the application in a nested document named as the application frame', () => {
+        expect(
+            resolveAppComposition({
+                ...topLevelWebDocument,
+                isTopLevel: false,
                 windowName: BROWSER_APPLICATION_FRAME_NAME,
             })
         ).toBe('application');

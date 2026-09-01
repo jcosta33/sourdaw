@@ -2,7 +2,12 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
-import { resumeEngine, requestMicPermission, syncNativeTimelineSamples } from '#/modules/AudioEngine/useCases';
+import {
+    initializeAudioEngine,
+    resumeEngine,
+    requestMicPermission,
+    syncNativeTimelineSamples,
+} from '#/modules/AudioEngine/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
 import { finishProjectLoading, loadProject, saveProject } from '#/modules/Project/useCases';
 import { syncTransportMapsToNativeSession } from '#/modules/Transport/useCases';
@@ -46,10 +51,31 @@ vi.mock('#/modules/Project/stores', () => ({
         set: projectStoreMock.set,
     },
 }));
+const identityTransitionReady = vi.hoisted(() => {
+    let release: (() => void) | undefined;
+    return {
+        hold(): void {
+            this.ready = new Promise<void>((resolve) => {
+                release = resolve;
+            });
+        },
+        release(): void {
+            release?.();
+            this.ready = Promise.resolve();
+        },
+        reset(): void {
+            this.ready = Promise.resolve();
+            release = undefined;
+        },
+        ready: Promise.resolve(),
+    };
+});
+
 vi.mock('#/modules/Project/useCases', () => ({
     loadProject: vi.fn().mockResolvedValue(undefined),
     finishProjectLoading: vi.fn(),
     saveProject: vi.fn(),
+    whenProjectIdentityTransitionDependenciesConfigured: () => identityTransitionReady.ready,
 }));
 vi.mock('#/modules/SampleLibrary/useCases', () => ({
     restoreLibrary: vi.fn().mockResolvedValue(undefined),
@@ -81,6 +107,7 @@ vi.mock('#/modules/Preferences/stores', () => ({
 beforeEach(() => {
     transportStateMock.current = null;
     preferenceListeners.clear();
+    identityTransitionReady.reset();
 });
 
 describe('useAppInitialization — first-gesture engine resume', () => {
@@ -504,6 +531,23 @@ describe('useAppInitialization — Project loading boundary', () => {
         });
         expect(finishProjectLoading).not.toHaveBeenCalled();
         expect(projectStoreMock.set).not.toHaveBeenCalled();
+    });
+
+    it('does not load a project while identity-transition configuration is withheld', async () => {
+        identityTransitionReady.hold();
+
+        renderHook(() => useAppInitialization());
+
+        await waitFor(() => {
+            expect(initializeAudioEngine).toHaveBeenCalledOnce();
+        });
+        expect(loadProject).not.toHaveBeenCalled();
+
+        identityTransitionReady.release();
+
+        await waitFor(() => {
+            expect(loadProject).toHaveBeenCalledTimes(1);
+        });
     });
 
     it('surfaces corrupt or rootless persistence instead of completing first-run startup', async () => {

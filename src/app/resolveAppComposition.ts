@@ -27,8 +27,7 @@ export function resolveAppComposition({
     }
 
     const usesDirectDevelopmentViewport = isDevelopment && windowName === DIRECT_E2E_VIEWPORT_NAME;
-    const isNamedApplicationFrame = windowName === BROWSER_APPLICATION_FRAME_NAME;
-    if (!isTopLevel || usesDirectDevelopmentViewport || isNamedApplicationFrame) {
+    if (!isTopLevel || usesDirectDevelopmentViewport) {
         return 'application';
     }
 

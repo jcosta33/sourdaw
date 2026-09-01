@@ -13,6 +13,7 @@ import { projectStore, type ProjectStoreState } from '../../../stores/projectSto
 import { runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
 import { loadProject } from '../loadProject';
 import { setProjectIdentityTransitionDependencies } from '../projectIdentityTransitionDependencies';
+import { resetProjectIdentityTransitionDependencies } from '../resetProjectIdentityTransitionDependencies';
 
 const CANONICAL_PROJECT_ID = '405e744b-dead-843a-9395-86fdcd66368c';
 
@@ -211,6 +212,31 @@ describe('loadProject', () => {
         expect(loadCrdtProject).not.toHaveBeenCalled();
         expect(createCrdtProject).not.toHaveBeenCalled();
         expect(projectCrdtToStores).not.toHaveBeenCalled();
+    });
+
+    it('does not take the unconfigured leave path while identity-transition deps are withheld', async () => {
+        resetProjectIdentityTransitionDependencies();
+        const leaveCollaborationSession = vi.fn(() => Promise.resolve());
+
+        const loading = loadProject();
+        let settled: boolean | 'pending' = 'pending';
+        void loading.then((value) => {
+            settled = value;
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(settled).toBe('pending');
+        expect(loadCrdtProject).not.toHaveBeenCalled();
+
+        setProjectIdentityTransitionDependencies({
+            leaveCollaborationSession,
+            resumeDurableAssetOwnerHandoffsAfterProjectLoad: mocks.resumeDurableAssetOwnerHandoffsAfterProjectLoad,
+        });
+
+        await expect(loading).resolves.toBe(true);
+        expect(leaveCollaborationSession).toHaveBeenCalledOnce();
+        expect(loadCrdtProject).toHaveBeenCalledOnce();
     });
 
     it('removes validated legacy chord data only after its restore action commits', async () => {
