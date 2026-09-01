@@ -3403,7 +3403,11 @@ function groundToolCall({
             continue;
         }
         const targetPrompt =
-            call.name === 'removeTrack' || targetRule.capability === 'removable-track'
+            call.name === 'removeTrack' ||
+            targetRule.capability === 'removable-track' ||
+            ((call.name === 'muteTrack' || call.name === 'soloTrack') &&
+                sameActionCallCount === 1 &&
+                plannedActionNames.length === 1)
                 ? prompt
                 : getTargetPromptScope(actionScope, targetRule.promptRole);
         if (

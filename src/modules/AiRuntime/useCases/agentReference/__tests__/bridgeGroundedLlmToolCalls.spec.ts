@@ -2803,9 +2803,6 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'mute all tracks save for Vocals',
             'mute all tracks with exception of Vocals',
             'mute all tracks with the exception of Vocals',
-            'mute all tracks but Vocals',
-            'mute all tracks, Vocals stays unmuted',
-            'mute all tracks; Vocals remains',
         ];
         const restrictedSoloPrompts = [
             'solo all tracks not including Vocals',
@@ -2820,9 +2817,6 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'solo all tracks save for Vocals',
             'solo all tracks with exception of Vocals',
             'solo all tracks with the exception of Vocals',
-            'solo all tracks but Vocals',
-            'solo all tracks, Vocals stays unmuted',
-            'solo all tracks; Vocals remains',
         ];
 
         for (const prompt of restrictedMutePrompts) {
@@ -2838,6 +2832,44 @@ describe('bridgeGroundedLlmToolCalls', () => {
             });
         }
         for (const prompt of restrictedSoloPrompts) {
+            expect(bridge([{ name: 'soloTrack', arguments: { trackId: vocals.id, soloed: true } }], prompt)).toEqual({
+                actions: [],
+                rejections: [
+                    {
+                        index: 0,
+                        name: 'soloTrack',
+                        reason: 'Provider solo scope is not explicitly universal',
+                    },
+                ],
+            });
+        }
+    });
+
+    it('rejects leftover mute and solo scopes that remain after the universal clause', () => {
+        const leftoverMutePrompts = [
+            'mute all tracks but Vocals',
+            'mute all tracks, Vocals stays unmuted',
+            'mute all tracks; Vocals remains',
+        ];
+        const leftoverSoloPrompts = [
+            'solo all tracks but Vocals',
+            'solo all tracks, Vocals stays unmuted',
+            'solo all tracks; Vocals remains',
+        ];
+
+        for (const prompt of leftoverMutePrompts) {
+            expect(bridge([{ name: 'muteTrack', arguments: { trackId: vocals.id, muted: true } }], prompt)).toEqual({
+                actions: [],
+                rejections: [
+                    {
+                        index: 0,
+                        name: 'muteTrack',
+                        reason: 'Provider mute scope is not explicitly universal',
+                    },
+                ],
+            });
+        }
+        for (const prompt of leftoverSoloPrompts) {
             expect(bridge([{ name: 'soloTrack', arguments: { trackId: vocals.id, soloed: true } }], prompt)).toEqual({
                 actions: [],
                 rejections: [
@@ -2906,6 +2938,15 @@ describe('bridgeGroundedLlmToolCalls', () => {
             if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
                 throw new Error(compiled.status === 'rejected' ? compiled.reason : 'Expected compiler evidence');
             }
+            expect(
+                compiled.compilerEvidence.commands.map((command) => ({
+                    name: command.name,
+                    trackId: command.arguments.trackId,
+                }))
+            ).toEqual([
+                { name: actionName, trackId: vocals.id },
+                { name: actionName, trackId: guitar.id },
+            ]);
             const result = bridgeGroundedLlmToolCalls({
                 calls: compiled.compilerEvidence.commands,
                 compilerEvidence: compiled.compilerEvidence,
@@ -2917,12 +2958,13 @@ describe('bridgeGroundedLlmToolCalls', () => {
                 actionName === 'soloTrack'
                     ? 'Provider solo scope is not explicitly universal'
                     : 'Provider mute scope is not explicitly universal';
-            const controlRejections = result.rejections.filter((rejection) => rejection.name === actionName);
             expect(
                 result.actions.filter((action) => action.type === 'muteTrack' || action.type === 'soloTrack')
             ).toEqual([]);
-            expect(controlRejections.length).toBeGreaterThan(0);
-            expect(controlRejections.every((rejection) => rejection.reason === expectedReason)).toBe(true);
+            expect(result.rejections).toEqual([
+                { index: 0, name: actionName, reason: expectedReason },
+                { index: 1, name: actionName, reason: expectedReason },
+            ]);
         }
     });
 
@@ -3746,6 +3788,79 @@ describe('bridgeGroundedLlmToolCalls', () => {
                 reason: 'Target trackId is ambiguous in the user request',
             },
         ]);
+    });
+
+    it('rejects muteTrack and soloTrack when a slash or spaced nested name and a hyphenated literal id are both cited', () => {
+        const dualCitationContext = {
+            ...projectContext,
+            tracks: [
+                createTrack({ id: 'track-lead-guitar', name: 'Rhythm' }),
+                createTrack({ id: 'track-aux', name: 'Lead Guitar' }),
+                master,
+            ],
+        };
+        const prompts = ['mute Lead/Guitar and track-lead-guitar', 'mute Lead Guitar and track-lead-guitar'] as const;
+        const soloPrompts = [
+            'solo Lead/Guitar and track-lead-guitar',
+            'solo Lead Guitar and track-lead-guitar',
+        ] as const;
+
+        for (const prompt of prompts) {
+            const named = bridge(
+                [{ name: 'muteTrack', arguments: { trackId: 'track-aux', muted: true } }],
+                prompt,
+                dualCitationContext
+            );
+            const literal = bridge(
+                [{ name: 'muteTrack', arguments: { trackId: 'track-lead-guitar', muted: true } }],
+                prompt,
+                dualCitationContext
+            );
+            expect(named.actions).toEqual([]);
+            expect(literal.actions).toEqual([]);
+            expect(named.rejections).toEqual([
+                {
+                    index: 0,
+                    name: 'muteTrack',
+                    reason: 'Target trackId is ambiguous in the user request',
+                },
+            ]);
+            expect(literal.rejections).toEqual([
+                {
+                    index: 0,
+                    name: 'muteTrack',
+                    reason: 'Target trackId is ambiguous in the user request',
+                },
+            ]);
+        }
+        for (const prompt of soloPrompts) {
+            const named = bridge(
+                [{ name: 'soloTrack', arguments: { trackId: 'track-aux', soloed: true } }],
+                prompt,
+                dualCitationContext
+            );
+            const literal = bridge(
+                [{ name: 'soloTrack', arguments: { trackId: 'track-lead-guitar', soloed: true } }],
+                prompt,
+                dualCitationContext
+            );
+            expect(named.actions).toEqual([]);
+            expect(literal.actions).toEqual([]);
+            expect(named.rejections).toEqual([
+                {
+                    index: 0,
+                    name: 'soloTrack',
+                    reason: 'Target trackId is ambiguous in the user request',
+                },
+            ]);
+            expect(literal.rejections).toEqual([
+                {
+                    index: 0,
+                    name: 'soloTrack',
+                    reason: 'Target trackId is ambiguous in the user request',
+                },
+            ]);
+        }
     });
 
     it('grounds muteTrack to the exact name when a whitespace-separated kind and name is not a hyphenated id', () => {
