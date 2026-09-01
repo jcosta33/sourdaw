@@ -1,5 +1,9 @@
 import { getAgentBuiltinDeviceFactoryManifest } from '#/modules/Arrangement/useCases';
 import { getAgentBuiltinDeviceRuntimeManifest } from '#/modules/AudioEngine/useCases';
+import {
+    getExecutableAppActionIntentCatalogUnicodeLength,
+    MAX_EXECUTABLE_APP_ACTION_INTENT_CATALOG_INTENT_LENGTH,
+} from '#/modules/Command/useCases';
 import { getAgentDeviceFactoryManifest } from '#/modules/PluginHost/useCases';
 import { getProjectProtocolContracts, querySemanticProject } from '#/modules/Project/useCases';
 
@@ -38,7 +42,6 @@ const MAX_CALL_ID_LENGTH = 256;
 const MAX_FILTER_STRING_LENGTH = 256;
 const MAX_CURSOR_LENGTH = 256;
 const MAX_CATALOG_CURSOR_LENGTH = 2048;
-const MAX_CATALOG_INTENT_LENGTH = 512;
 const MAX_REVISION_LENGTH = 65_536;
 const CATALOG_CURSOR_PATTERN = /^[A-Za-z0-9_-]+$/;
 
@@ -631,7 +634,14 @@ function parseCommandIndexSearchArguments(argumentsValue: Record<string, unknown
         };
     }
     const intent = argumentsValue.intent;
-    if (typeof intent !== 'string' || intent.length === 0 || intent.length > MAX_CATALOG_INTENT_LENGTH) {
+    if (typeof intent !== 'string') {
+        return {
+            status: 'invalid',
+            reason: 'agent.command-index.search intent does not match the strict catalog contract',
+        };
+    }
+    const intentLength = getExecutableAppActionIntentCatalogUnicodeLength(intent);
+    if (intentLength === 0 || intentLength > MAX_EXECUTABLE_APP_ACTION_INTENT_CATALOG_INTENT_LENGTH) {
         return {
             status: 'invalid',
             reason: 'agent.command-index.search intent does not match the strict catalog contract',

@@ -1,7 +1,10 @@
 import { getExecutableCommandRegistrations } from './getExecutableCommandRegistrations';
+import {
+    getExecutableAppActionIntentCatalogUnicodeLength,
+    MAX_EXECUTABLE_APP_ACTION_INTENT_CATALOG_INTENT_LENGTH,
+} from './getExecutableAppActionIntentCatalogUnicodeLength';
 
 const MAX_CATALOG_PAGE_SIZE = 8;
-const MAX_INTENT_LENGTH = 512;
 const MAX_CURSOR_LENGTH = 2048;
 const CURSOR_PATTERN = /^[A-Za-z0-9_-]+$/;
 const GRAMMATICAL_QUERY_STOP_WORDS = new Set([
@@ -72,11 +75,12 @@ function semanticCategories(input: {
     return ['operation', ...new Set(candidates.filter((word) => !SEMANTIC_CATEGORY_NOISE_WORDS.has(word)))].slice(0, 8);
 }
 
-function normalizedIntent(value: string | undefined): string {
-    if (value === undefined) {
-        return '';
+function normalizedIntent(value: string): string {
+    if (typeof value !== 'string') {
+        throw new TypeError('Command catalog intent does not match the strict catalog contract.');
     }
-    if (value.length === 0 || value.length > MAX_INTENT_LENGTH) {
+    const length = getExecutableAppActionIntentCatalogUnicodeLength(value);
+    if (length === 0 || length > MAX_EXECUTABLE_APP_ACTION_INTENT_CATALOG_INTENT_LENGTH) {
         throw new Error('Command catalog intent does not match the strict catalog contract.');
     }
     const terms = words(value).filter((word) => !GRAMMATICAL_QUERY_STOP_WORDS.has(word));
@@ -225,7 +229,7 @@ function inflectionVariants(term: string): readonly string[] {
     return [...variants];
 }
 
-export function getExecutableAppActionIntentCatalog(input: { intent?: string; page?: IntentCatalogPage }) {
+export function getExecutableAppActionIntentCatalog(input: { intent: string; page?: IntentCatalogPage }) {
     const intent = normalizedIntent(input.intent);
     const entries = getExecutableCommandRegistrations()
         .map((registration, index) => {
@@ -240,7 +244,7 @@ export function getExecutableAppActionIntentCatalog(input: { intent?: string; pa
             };
             return { entry, index, score: intentScore(entry, intent) };
         })
-        .filter(({ score }) => intent.length === 0 || score > 0)
+        .filter(({ score }) => score > 0)
         .sort((left, right) => right.score - left.score || left.index - right.index)
         .map(({ entry }) => entry);
     const names = entries.map((entry) => entry.name);

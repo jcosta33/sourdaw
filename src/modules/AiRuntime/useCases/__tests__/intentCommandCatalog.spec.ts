@@ -3,6 +3,16 @@ import { describe, expect, it, vi } from 'vitest';
 import { AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME } from '../agentToolCatalog';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 
+const { mockGetAgentToolCatalogEntries } = vi.hoisted(() => ({
+    mockGetAgentToolCatalogEntries: vi.fn(),
+}));
+
+vi.mock('../getAgentToolCatalogEntries', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../getAgentToolCatalogEntries')>();
+    mockGetAgentToolCatalogEntries.mockImplementation(original.getAgentToolCatalogEntries);
+    return { ...original, getAgentToolCatalogEntries: mockGetAgentToolCatalogEntries };
+});
+
 type CatalogCursor = {
     schemaVersion: number;
     intentFingerprint: string;
@@ -268,7 +278,33 @@ describe('intent command catalog', () => {
     });
 
     it.each([
+        { label: '512 astral characters', intent: '𐐀'.repeat(512), status: 'success' },
+        { label: '513 astral characters', intent: '𐐀'.repeat(513), status: 'failure' },
+    ])('uses JSON Schema Unicode length admission for $label', async ({ intent, status }) => {
+        const result = await runApplicationOwnedToolLoop({
+            loopId: `intent-command-catalog-unicode-${status}`,
+            terminalToolNames: new Set(['command.batch.propose']),
+            requestTurn: vi
+                .fn()
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        { id: `unicode-${status}`, name: AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME, arguments: { intent } },
+                    ],
+                })
+                .mockResolvedValueOnce({ status: 'complete', toolCalls: [] }),
+        });
+
+        expect(result.receipts[0]).toMatchObject({ callId: `unicode-${status}`, status });
+    });
+
+    it.each([
         { label: 'missing command-index intent', name: AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME, arguments: {} },
+        {
+            label: 'command-index category',
+            name: AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+            arguments: { intent: 'tempo', category: 'command' },
+        },
         {
             label: 'command-index names',
             name: AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
@@ -380,8 +416,11 @@ describe('intent command catalog', () => {
         const cursor = decodeCursor(catalog.nextCursor);
         const tamperedCursors = [
             encodeCursor({ ...cursor, unexpected: true }),
+            encodeCursor({ ...cursor, schemaVersion: 2 }),
             encodeCursor({ ...cursor, intentFingerprint: 'different' }),
             encodeCursor({ ...cursor, offset: -1 }),
+            encodeCursor({ ...cursor, offset: 1.5 }),
+            encodeCursor({ ...cursor, offset: Number.MAX_SAFE_INTEGER + 1 }),
             encodeCursor({ ...cursor, resultSetFingerprint: 'different' }),
             encodeCursor({ ...cursor, offset: catalog.page.total + 1 }),
         ];
@@ -584,5 +623,150 @@ describe('intent command catalog', () => {
                 { callId: 'purpose-only-index', status: 'success', data: { items: [{ name: 'importStemSet' }] } },
             ],
         });
+    });
+
+    it('rejects a command schema that changes after exact disclosure and before proposal grounding', async () => {
+        const originalImplementation = mockGetAgentToolCatalogEntries.getMockImplementation();
+        if (originalImplementation === undefined) {
+            throw new Error('Expected the catalog implementation.');
+        }
+        let commandSchemaReads = 0;
+        mockGetAgentToolCatalogEntries.mockImplementation((input) => {
+            const catalog = originalImplementation(input);
+            if (input.category !== 'command' || input.names[0] !== 'setTempo') {
+                return catalog;
+            }
+            commandSchemaReads += 1;
+            if (commandSchemaReads !== 2) {
+                return catalog;
+            }
+            return {
+                ...catalog,
+                items: catalog.items.map((item) => ({
+                    ...item,
+                    function: { ...item.function, description: `${item.function.description} Changed.` },
+                })),
+            };
+        });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'intent-command-catalog-stale-schema',
+            terminalToolNames: new Set(['command.batch.propose']),
+            requestTurn: vi
+                .fn()
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'exact-schema',
+                            name: 'agent.catalog.discover',
+                            arguments: { category: 'command', names: ['setTempo'] },
+                        },
+                    ],
+                })
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'stale-proposal',
+                            name: 'command.batch.propose',
+                            arguments: { commands: [{ name: 'setTempo', arguments: { bpm: 128 } }] },
+                        },
+                    ],
+                }),
+        });
+
+        expect(result).toMatchObject({
+            status: 'rejected',
+            reason: 'Provider command proposal referenced a stale catalog command schema.',
+            receipts: [{ callId: 'exact-schema', status: 'success' }],
+        });
+    });
+
+    it('keeps the complete outer receipt identity for command-index success and failure', async () => {
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'receipt-success',
+                        name: AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+                        arguments: { intent: 'tempo' },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [{ id: 'receipt-failure', name: AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME, arguments: {} }],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'intent-command-catalog-receipt-identity',
+            terminalToolNames: new Set(['command.batch.propose']),
+            requestTurn,
+        });
+
+        expect(result.receipts).toEqual([
+            expect.objectContaining({
+                schema: 'sourdaw.application-tool-receipt',
+                schemaVersion: 1,
+                callId: 'receipt-success',
+                toolName: AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+                turn: 1,
+                status: 'success',
+                revision: null,
+                data: expect.any(Object),
+                summary: expect.any(String),
+                warnings: expect.any(Array),
+                error: null,
+            }),
+            expect.objectContaining({
+                schema: 'sourdaw.application-tool-receipt',
+                schemaVersion: 1,
+                callId: 'receipt-failure',
+                toolName: AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+                turn: 2,
+                status: 'failure',
+                revision: null,
+                data: null,
+                summary: expect.any(String),
+                warnings: [],
+                error: expect.objectContaining({
+                    code: 'invalid-tool-arguments',
+                    safeMessage: expect.any(String),
+                    retryable: true,
+                }),
+            }),
+        ]);
+        expect(result.receipts.map((receipt) => Object.keys(receipt).sort())).toEqual([
+            [
+                'callId',
+                'data',
+                'error',
+                'revision',
+                'schema',
+                'schemaVersion',
+                'status',
+                'summary',
+                'toolName',
+                'turn',
+                'warnings',
+            ],
+            [
+                'callId',
+                'data',
+                'error',
+                'revision',
+                'schema',
+                'schemaVersion',
+                'status',
+                'summary',
+                'toolName',
+                'turn',
+                'warnings',
+            ],
+        ]);
     });
 });

@@ -108,8 +108,19 @@ describe('agent tool catalog', () => {
                 'approval',
             ],
         });
-        expect(indexSchema?.function.parameters).toMatchObject({
-            properties: { intent: { type: 'string' } },
+        expect(indexSchema?.function.parameters).toEqual({
+            type: 'object',
+            properties: {
+                intent: { type: 'string', minLength: 1, maxLength: 512 },
+                page: {
+                    type: 'object',
+                    properties: {
+                        limit: { type: 'integer', minimum: 1, maximum: 8 },
+                        cursor: { type: 'string', maxLength: 2048 },
+                    },
+                    additionalProperties: false,
+                },
+            },
             required: ['intent'],
             additionalProperties: false,
         });
