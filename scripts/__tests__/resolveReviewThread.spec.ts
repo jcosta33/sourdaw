@@ -4036,9 +4036,9 @@ describe('review thread resolution', () => {
                 )
             ).toBe('reconciled');
             expect(readLockOid(repository, 42)).toBeUndefined();
-            await expect(withPullRequestMutationLock(repository, 42, () => 'later-mutation')).resolves.toBe(
-                'later-mutation'
-            );
+            await expect(
+                withPullRequestMutationLock(repository, 42, () => Promise.resolve('later-mutation'))
+            ).resolves.toBe('later-mutation');
         } finally {
             rmSync(repository, { recursive: true, force: true });
         }
