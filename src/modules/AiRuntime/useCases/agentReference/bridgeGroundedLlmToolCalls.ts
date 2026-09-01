@@ -50,6 +50,7 @@ import {
     type SyncopatedArpeggioRequestScope,
 } from './getSyncopatedArpeggioPromptScope';
 import { getWholeProjectVibeMixScope } from './getWholeProjectVibeMixScope';
+import { hasTrackControlRestriction } from './groundingStrategies/hasTrackControlRestriction';
 import { groundPostTargetScopeAdmission } from './groundingStrategies/postTargetScopeAdmissionStrategy';
 import { resolveAgentReference } from './resolveAgentReference';
 
@@ -3287,10 +3288,6 @@ function resolveAgentReferenceArray({
     return { status: 'resolved', ids: [...assertedIds] };
 }
 
-function hasNotIncludingTrackControlRestriction(prompt: string): boolean {
-    return /\b(?:except|excluding|all\s+but|not\s+including)\b/iu.test(prompt);
-}
-
 function groundToolCall({
     actionOrdinal,
     batchLocalBusBindings,
@@ -3308,10 +3305,10 @@ function groundToolCall({
     visiblePlannedTrackCreations,
     workflowCapabilityId,
 }: GroundToolCallInput): ToolCallResult | LlmActionRejection {
-    if (call.name === 'muteTrack' && hasNotIncludingTrackControlRestriction(prompt)) {
+    if (call.name === 'muteTrack' && hasTrackControlRestriction(prompt)) {
         return rejection(index, call.name, 'Provider mute scope is not explicitly universal');
     }
-    if (call.name === 'soloTrack' && hasNotIncludingTrackControlRestriction(prompt)) {
+    if (call.name === 'soloTrack' && hasTrackControlRestriction(prompt)) {
         return rejection(index, call.name, 'Provider solo scope is not explicitly universal');
     }
     if (call.name === 'stopPlayback' && !isExplicitStopPlaybackPrompt(prompt)) {

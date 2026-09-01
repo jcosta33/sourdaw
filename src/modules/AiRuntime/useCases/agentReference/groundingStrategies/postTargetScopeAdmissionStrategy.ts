@@ -12,6 +12,7 @@ import {
     type PostTargetScopeAdmissionStrategy,
     type PostTargetScopeAdmissionStrategyDefinition,
 } from './createPostTargetScopeAdmissionStrategyRegistry';
+import { hasTrackControlRestriction } from './hasTrackControlRestriction';
 
 type PostTargetActionScope = PostTargetScopeAdmissionInput['actionScope'];
 
@@ -132,16 +133,6 @@ const universalClearSolosIntentPhrases: ReadonlySet<string> = new Set([
     'unsolo everything',
 ]);
 
-const clearSolosRestrictionPatterns: readonly RegExp[] = [
-    /\b(?:except|excluding|besides|minus)\b/u,
-    /\b(?:other|rather)\s+than\b/u,
-    /\bapart\s+from\b/u,
-    /\bsave\s+for\b/u,
-    /\bwith\s+(?:the\s+)?exception\s+of\b/u,
-    /\b(?:all\s+but|but\s+not|not\s+including)\b/u,
-    /\b(?:keep|leave|preserve|retain)\b/u,
-];
-
 function hasReferenceOutsideMatchedIntent(text: string, intentPhrase: string, reference: string): boolean {
     const normalizedText = normalizePromptText(text);
     const normalizedIntent = normalizePromptText(intentPhrase);
@@ -174,7 +165,7 @@ function isUniversalClearSolosScope(
         return false;
     }
     const restrictionEvidence = normalizePromptText(prompt);
-    const hasRestriction = clearSolosRestrictionPatterns.some((pattern) => pattern.test(restrictionEvidence));
+    const hasRestriction = hasTrackControlRestriction(prompt);
     const hasRelativeTrackReference =
         /\b(?:selected|current|this|that|these|those)\s+tracks?\b/u.test(restrictionEvidence) ||
         /\btrack\s+selection\b/u.test(restrictionEvidence);

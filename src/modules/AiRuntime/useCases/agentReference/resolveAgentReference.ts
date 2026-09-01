@@ -72,14 +72,18 @@ function containsExactPhrase(prompt: string, reference: string): boolean {
     return getExactPhraseRanges(prompt, reference).length > 0;
 }
 
-function getContiguousReferenceRanges(prompt: string, reference: string): readonly { end: number; start: number }[] {
+function getTokenReferenceRanges(
+    prompt: string,
+    reference: string,
+    tokenJoiner: string
+): readonly { end: number; start: number }[] {
     const tokens = normalizeReferenceText(reference)
         .split(' ')
         .filter((token) => token.length > 0);
     if (tokens.length === 0) {
         return [];
     }
-    const needle = tokens.map((token) => escapeRegExp(token)).join('[-_]+');
+    const needle = tokens.map((token) => escapeRegExp(token)).join(tokenJoiner);
     const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${needle}(?![\\p{L}\\p{N}])`, 'giu');
     return [...prompt.matchAll(pattern)].flatMap((match) => {
         if (match.index === undefined) {
@@ -87,6 +91,14 @@ function getContiguousReferenceRanges(prompt: string, reference: string): readon
         }
         return [{ start: match.index, end: match.index + match[0].length }];
     });
+}
+
+function getContiguousReferenceRanges(prompt: string, reference: string): readonly { end: number; start: number }[] {
+    return getTokenReferenceRanges(prompt, reference, '[-_]+');
+}
+
+function getExactNameOverlapRanges(prompt: string, reference: string): readonly { end: number; start: number }[] {
+    return getTokenReferenceRanges(prompt, reference, '[\\s_-]+');
 }
 
 function getExactPhraseRanges(prompt: string, reference: string): readonly { end: number; start: number }[] {
@@ -365,7 +377,7 @@ function removeExactNameEvidenceOverlappedByLiteralIds(
         if (evidenceById.get(candidate.id) !== 'exact-name') {
             continue;
         }
-        const nameRanges = getContiguousReferenceRanges(prompt, candidate.name);
+        const nameRanges = getExactNameOverlapRanges(prompt, candidate.name);
         if (nameRanges.length === 0) {
             continue;
         }

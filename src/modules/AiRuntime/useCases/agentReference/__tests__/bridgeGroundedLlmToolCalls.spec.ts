@@ -2795,12 +2795,28 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'mute all tracks except Vocals',
             'mute all tracks excluding Vocals',
             'mute all tracks all but Vocals',
+            'mute all tracks besides Vocals',
+            'mute all tracks minus Vocals',
+            'mute all tracks other than Vocals',
+            'mute all tracks rather than Vocals',
+            'mute all tracks apart from Vocals',
+            'mute all tracks save for Vocals',
+            'mute all tracks with exception of Vocals',
+            'mute all tracks with the exception of Vocals',
         ];
         const restrictedSoloPrompts = [
             'solo all tracks not including Vocals',
             'solo all tracks except Vocals',
             'solo all tracks excluding Vocals',
             'solo all tracks all but Vocals',
+            'solo all tracks besides Vocals',
+            'solo all tracks minus Vocals',
+            'solo all tracks other than Vocals',
+            'solo all tracks rather than Vocals',
+            'solo all tracks apart from Vocals',
+            'solo all tracks save for Vocals',
+            'solo all tracks with exception of Vocals',
+            'solo all tracks with the exception of Vocals',
         ];
 
         for (const prompt of restrictedMutePrompts) {
@@ -3556,6 +3572,43 @@ describe('bridgeGroundedLlmToolCalls', () => {
             [{ name: 'removeTrack', arguments: { trackId: 'track-lead-guitar' } }],
             'delete Guitar and track-lead-guitar',
             nestedNameContext
+        );
+        expect(named.actions).toEqual([]);
+        expect(literal.actions).toEqual([]);
+        expect(named.rejections).toEqual([
+            {
+                index: 0,
+                name: 'removeTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+        expect(literal.rejections).toEqual([
+            {
+                index: 0,
+                name: 'removeTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+    });
+
+    it('rejects a single removeTrack when a spaced nested name and a hyphenated literal id are both cited', () => {
+        const spacedNestedNameContext = {
+            ...projectContext,
+            tracks: [
+                createTrack({ id: 'track-lead-guitar', name: 'Rhythm' }),
+                createTrack({ id: 'track-aux', name: 'Lead Guitar' }),
+                master,
+            ],
+        };
+        const named = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: 'track-aux' } }],
+            'delete Lead Guitar and track-lead-guitar',
+            spacedNestedNameContext
+        );
+        const literal = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: 'track-lead-guitar' } }],
+            'delete Lead Guitar and track-lead-guitar',
+            spacedNestedNameContext
         );
 
         expect(named.actions).toEqual([]);
