@@ -3208,6 +3208,11 @@ export function recoverStandaloneReviewResolutionSharedMutationLock(
                 `${pullRequestReviewResolutionLockScope(number)} standalone shared lock has a non-current review-resolution lock`
             );
         }
+        if (innerOwner.mutation.phase !== 'idle') {
+            fail(
+                `${pullRequestReviewResolutionLockScope(number)} standalone shared lock preserves a non-idle review-resolution lock; recover with ${reviewResolutionRecoveryCommand(number, innerOwnerOid)}`
+            );
+        }
         if ((port.ownerFenceIsLive ?? reviewResolutionOwnerFenceIsLive)(innerOwner.ownerFence)) {
             fail(
                 `${pullRequestReviewResolutionLockScope(number)} standalone shared lock inner execution fence remains live`

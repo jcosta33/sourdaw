@@ -4044,6 +4044,67 @@ describe('review thread resolution', () => {
         }
     });
 
+    it.each([
+        {
+            phase: 'createPendingReview' as const,
+            epoch: 1,
+            pullRequestId,
+            body: pendingReviewBody(head),
+            reviewCommitOid: head,
+        },
+        { phase: 'deleteReply' as const, epoch: 1, replyId },
+    ])('preserves both refs for a dead unrelated v5 %s journal', (mutation) => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const sharedOwnerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(repository, 999999);
+            const reviewOwnerOid = writeLockOwnerBlob(repository, 999999, head, mutation);
+            updateSharedMutationLock(repository, 42, sharedOwnerOid);
+            updateLock(repository, 42, reviewOwnerOid);
+
+            expect(() =>
+                recoverStandaloneReviewResolutionSharedMutationLock(repository, 42, sharedOwnerOid, {
+                    ownerFenceIsLive: () => false,
+                    gitPath: systemGitPath(),
+                })
+            ).toThrow(`recover with pnpm review:resolve:recover 42 --owner ${reviewOwnerOid}`);
+            expect(readSharedMutationLockOid(repository, 42)).toBe(sharedOwnerOid);
+            expect(readLockOid(repository, 42)).toBe(reviewOwnerOid);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('preserves both refs for an unknown v5 journal state', () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const sharedOwnerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(repository, 999999);
+            const knownOwnerOid = writeLockOwnerBlob(repository, 999999, head, { phase: 'idle', epoch: 0 });
+            const unknownOwner = JSON.parse(gitCapture(repository, ['cat-file', 'blob', knownOwnerOid])) as Record<
+                string,
+                unknown
+            >;
+            unknownOwner.mutation = { phase: 'unknown', epoch: 1 };
+            const unknownOwnerOid = gitCapture(
+                repository,
+                ['hash-object', '-w', '--stdin'],
+                JSON.stringify(unknownOwner)
+            );
+            updateSharedMutationLock(repository, 42, sharedOwnerOid);
+            updateLock(repository, 42, unknownOwnerOid);
+
+            expect(() =>
+                recoverStandaloneReviewResolutionSharedMutationLock(repository, 42, sharedOwnerOid, {
+                    ownerFenceIsLive: () => false,
+                    gitPath: systemGitPath(),
+                })
+            ).toThrow(/lock ownership is malformed/);
+            expect(readSharedMutationLockOid(repository, 42)).toBe(sharedOwnerOid);
+            expect(readLockOid(repository, 42)).toBe(unknownOwnerOid);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it('preserves both owners when an unrelated v5 inner execution fence remains live', () => {
         const repository = createTemporaryGitRepository();
         try {
@@ -6619,6 +6680,46 @@ describe('review thread resolution', () => {
             expect(logs).toEqual([`review-resolution-lock-recovered:42:${threadId}:${head}:${head}:unresolved:0`]);
             expect(readLockOid(repository, 42)).toBeUndefined();
             expect(readSharedMutationLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('reports a canonical resolved recovery summary with the exact pending-review count', async () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, { phase: 'idle', epoch: 0 });
+            updateLock(repository, 42, ownerOid);
+            const session: GhSession = { configDir: repository, env: {}, dispose() {} };
+            const { port } = fakePort({
+                isResolved: true,
+                initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+                initialResolvedByType: 'User',
+                existingPendingReviewCount: 2,
+            });
+            const dependencies = {
+                trustedPrimaryRoot: () => repository,
+                authenticateAuthor: async () => ({ minted: { actorNodeId: AUTHOR_BOT_NODE_ID }, session }),
+                repositoryName: () => REQUIRED_REPOSITORY,
+                gh: () => () => '',
+                createPort: () => port,
+                recoverLock: (primaryRoot, number, owner, reconcile) =>
+                    recoverPullRequestReviewResolutionLock(primaryRoot, number, owner, reconcile, () => false),
+            } satisfies Parameters<typeof runRecoverReviewResolutionLockCli>[1];
+            const logs: string[] = [];
+            const originalLog = console.log;
+            console.log = (message?: unknown) => {
+                logs.push(String(message));
+            };
+            try {
+                await expect(
+                    runRecoverReviewResolutionLockCli(['42', '--owner', ownerOid], dependencies)
+                ).resolves.toBe(0);
+            } finally {
+                console.log = originalLog;
+            }
+            expect(logs).toEqual([`review-resolution-lock-recovered:42:${threadId}:${head}:${head}:resolved:2`]);
+            expect(readLockOid(repository, 42)).toBeUndefined();
         } finally {
             rmSync(repository, { recursive: true, force: true });
         }
