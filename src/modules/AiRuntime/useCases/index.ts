@@ -58,7 +58,6 @@ export { runAiActionWithToast } from './runAiActionWithToast';
 export { isVoiceInputAvailable } from './voiceInput/isVoiceInputAvailable';
 export { initializeVoiceInputAvailability } from './voiceInput/initializeVoiceInputAvailability';
 export { toggleVoiceInput } from './voiceToggle/toggleVoiceInput';
-export { onVoiceToggle } from './voiceToggle/onVoiceToggle';
 export { setVoiceToggleEventBus } from './voiceToggle/voiceToggleEventBus';
 export { getAgentExecutionModeAuthority } from './getAgentExecutionModeAuthority';
 export { getAgentExecutionModeFailure } from './getAgentExecutionModeFailure';

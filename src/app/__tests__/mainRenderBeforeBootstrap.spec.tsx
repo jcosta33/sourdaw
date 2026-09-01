@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => {
         resetDisplayScaleForStartup: vi.fn(),
         resolveAppComposition: vi.fn(),
         toasts: [] as Array<{ message: string; level: string }>,
+        bindVoiceToggleEventBus: (_eventBus: unknown): void => undefined,
     };
 });
 
@@ -69,7 +70,9 @@ vi.mock('#/modules/AiRuntime/useCases', async () => {
     const { setVoiceToggleEventBus } = await import('../../modules/AiRuntime/useCases/voiceToggle/voiceToggleEventBus');
     const { onVoiceToggle } = await import('../../modules/AiRuntime/useCases/voiceToggle/onVoiceToggle');
     return {
-        setVoiceToggleEventBus,
+        setVoiceToggleEventBus: (eventBus: Parameters<typeof setVoiceToggleEventBus>[0]) => {
+            mocks.bindVoiceToggleEventBus(eventBus);
+        },
         onVoiceToggle,
     };
 });
@@ -151,7 +154,7 @@ vi.mock('react-dom/client', async (importOriginal) => {
 });
 
 describe('app main first paint', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
         vi.clearAllMocks();
         vi.resetModules();
         mocks.bootstrapFailure = null;
@@ -166,6 +169,9 @@ describe('app main first paint', () => {
         } catch {
             // ignore
         }
+        const { setVoiceToggleEventBus } =
+            await import('../../modules/AiRuntime/useCases/voiceToggle/voiceToggleEventBus');
+        mocks.bindVoiceToggleEventBus = setVoiceToggleEventBus;
     });
 
     it('renders the child application while bootstrap is still loading', async () => {
@@ -226,7 +232,7 @@ describe('app main first paint', () => {
         const { onZoomToFit } = await import('#/modules/WorkspaceShell/useCases');
         expect(() => onZoomToFit(() => undefined)).not.toThrow();
 
-        const { onVoiceToggle } = await import('#/modules/AiRuntime/useCases');
+        const { onVoiceToggle } = await import('../../modules/AiRuntime/useCases/voiceToggle/onVoiceToggle');
         expect(() => onVoiceToggle(() => undefined)).not.toThrow();
     });
 });
