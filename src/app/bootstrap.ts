@@ -4,6 +4,7 @@ import { setRuntimeLogger } from '#/infra/logger/runtimeLogger';
 import { flushDeferredStorageNotice } from '#/infra/store/storage/storageFullNotice';
 import {
     beginMixAnalysis,
+    assertCanonicalLlmActionStrategies,
     completeMixAnalysis,
     failMixAnalysis,
     initializeVoiceInputAvailability,
@@ -75,6 +76,7 @@ import {
     configureCommandBatchIdempotency,
     commandDeviceVersionsPort,
     executeAppAction,
+    getExecutableAppActionGroundingCatalog,
     registerProductionCommandHandlers,
     productionBriefAdmissionPort,
     setActionHistoryMetadataPort,
@@ -456,6 +458,7 @@ configureAudioDeviceRuntimeSink({
     updateTunerTelemetry,
 });
 
+assertCanonicalLlmActionStrategies(getExecutableAppActionGroundingCatalog());
 registerProductionCommandHandlers(getProductionCommandHandlerMaps({ canMutateBranchMetadata }));
 
 initToasterSubscribers({ eventBus, logger });

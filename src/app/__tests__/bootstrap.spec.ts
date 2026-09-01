@@ -57,6 +57,9 @@ type RuntimeSinkUnderTest = {
 const {
     noop,
     sentinelHandlers,
+    assertCanonicalLlmActionStrategiesMock,
+    getExecutableAppActionGroundingCatalogMock,
+    executableAppActionGroundingCatalog,
     registerProductionCommandHandlersMock,
     configureCommandBatchIdempotencyMock,
     initBrowserAiMock,
@@ -107,9 +110,13 @@ const {
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
+    const executableAppActionGroundingCatalog = [{ actionType: 'addMarker', intentPhrases: [] }];
     return {
         noop,
         sentinelHandlers,
+        assertCanonicalLlmActionStrategiesMock: vi.fn(),
+        getExecutableAppActionGroundingCatalogMock: vi.fn(() => executableAppActionGroundingCatalog),
+        executableAppActionGroundingCatalog,
         registerProductionCommandHandlersMock: vi.fn<(maps: HandlerMapSentinel[]) => void>(),
         configureCommandBatchIdempotencyMock: vi.fn(),
         canExecuteCommandBatchMock: vi.fn(() => true),
@@ -183,6 +190,7 @@ vi.mock('#/modules/AiGeneration/useCases', () => ({
 }));
 
 vi.mock('#/modules/AiRuntime/useCases', () => ({
+    assertCanonicalLlmActionStrategies: assertCanonicalLlmActionStrategiesMock,
     beginMixAnalysis: noop,
     completeMixAnalysis: noop,
     failMixAnalysis: noop,
@@ -291,6 +299,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     configureCommandBatchIdempotency: configureCommandBatchIdempotencyMock,
     commandProjectDivergencePort: { setProvider: noop },
     executeAppAction: noop,
+    getExecutableAppActionGroundingCatalog: getExecutableAppActionGroundingCatalogMock,
     getVersionedCommandBatchCommitDisposition: getVersionedCommandBatchCommitDispositionMock,
     registerProductionCommandHandlers: registerProductionCommandHandlersMock,
     getMacroHandlers: sentinelHandlers('Macro'),
@@ -578,6 +587,16 @@ describe('bootstrap', () => {
         'Rave',
         'ControlRoom',
     ];
+
+    it('validates LLM strategy names against the command catalogue before handler registration', () => {
+        expect(getExecutableAppActionGroundingCatalogMock).toHaveBeenCalledExactlyOnceWith();
+        expect(assertCanonicalLlmActionStrategiesMock).toHaveBeenCalledExactlyOnceWith(
+            executableAppActionGroundingCatalog
+        );
+        expect(assertCanonicalLlmActionStrategiesMock.mock.invocationCallOrder[0] ?? Infinity).toBeLessThan(
+            registerProductionCommandHandlersMock.mock.invocationCallOrder[0] ?? Infinity
+        );
+    });
 
     it('registers every module handler map exactly once, in bootstrap wiring order', () => {
         const registeredModuleIds = registerProductionCommandHandlersMock.mock.calls[0]?.[0].map(

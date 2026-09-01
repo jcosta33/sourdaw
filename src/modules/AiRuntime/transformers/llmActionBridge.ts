@@ -1,6 +1,5 @@
 import { FADER_MAX_GAIN, VCA_MAX_GAIN } from '#/utils/audioLevelLaw';
 import { getSidechainTargetCapability } from '#/utils/getSidechainTargetCapability';
-import { resolveMarkerColorValue } from '#/utils/markerColorPalette';
 import { wouldCreateRoutingCycle } from '#/utils/routingCycle';
 
 import { type ArticulationTransferCapability } from '../models/ArticulationTransferCapability';
@@ -20,6 +19,13 @@ import { type SyncopatedArpeggioCapability } from '../models/SyncopatedArpeggioC
 import { type WholeProjectVibeMixCapability } from '../models/WholeProjectVibeMixPlan';
 import { normalizeSafeProjectName } from '../validators/normalizeSafeProjectName';
 
+import {
+    type LlmActionBridgeResult,
+    type LlmActionRejection,
+    type MarkerPlanningSignature,
+    type SectionPlanningSignature,
+} from './llmActionBridgeContracts';
+import { bridgeMarkerSectionToolCall } from './llmActionStrategies/markerSectionStrategy';
 import { bridgeTransportTimelineToolCall } from './llmActionStrategies/transportTimelineStrategy';
 import { type ToolCallResult } from './toolCallParser';
 
@@ -27,30 +33,12 @@ type ExecutableTrackKind = 'audio' | 'midi' | 'folder';
 type NormalizationMode = 'peak' | 'rms' | 'lufs';
 const executableTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'folder']);
 
-export type LlmActionRejection = {
-    index: number;
-    name: string;
-    reason: string;
-};
-
-export type LlmActionBridgeResult = {
-    actions: RuntimeAction[];
-    rejections: LlmActionRejection[];
-};
-
-export type MarkerPlanningSignature = {
-    beat: number;
-    color?: string;
-    markerId?: string;
-    name: string;
-};
-
-export type SectionPlanningSignature = {
-    endBeat: number;
-    name: string;
-    sectionId?: string;
-    startBeat: number;
-};
+export type {
+    LlmActionBridgeResult,
+    LlmActionRejection,
+    MarkerPlanningSignature,
+    SectionPlanningSignature,
+} from './llmActionBridgeContracts';
 
 type BridgeLlmToolCallsInput = {
     calls: readonly ToolCallResult[];
@@ -378,159 +366,12 @@ function bridgeToolCall({
         return transportTimelineResult;
     }
 
+    const markerSectionResult = bridgeMarkerSectionToolCall({ call, index, markerSignatures, sectionSignatures });
+    if (markerSectionResult !== null) {
+        return markerSectionResult;
+    }
+
     const args = call.arguments;
-
-    if (call.name === 'addMarker') {
-        const name = normalizeSafeProjectName(args.name);
-        if (!hasExactKeys(args, ['beat', 'name']) || !isFiniteNumber(args.beat) || args.beat < 0 || !name) {
-            return rejection(
-                index,
-                call.name,
-                'Expected only a nonnegative finite beat and a safe explicit marker name'
-            );
-        }
-        const alreadyExists = markerSignatures.some(
-            (marker) => marker.beat === args.beat && normalizeMarkerName(marker.name) === normalizeMarkerName(name)
-        );
-        if (alreadyExists) {
-            return rejection(index, call.name, 'Requested marker already exists at that beat');
-        }
-        return { type: 'addMarker', payload: { beat: args.beat, name } };
-    }
-
-    if (call.name === 'removeMarker') {
-        const name = normalizeSafeProjectName(args.name);
-        if (!hasExactKeys(args, ['beat', 'name']) || !isFiniteNumber(args.beat) || args.beat < 0 || !name) {
-            return rejection(
-                index,
-                call.name,
-                'Expected only a nonnegative finite beat and a safe explicit marker name'
-            );
-        }
-        const matches = markerSignatures.filter(
-            (marker) =>
-                marker.markerId !== undefined &&
-                marker.beat === args.beat &&
-                normalizeMarkerName(marker.name) === normalizeMarkerName(name)
-        );
-        const match = matches[0];
-        if (matches.length !== 1 || match?.markerId === undefined) {
-            return rejection(index, call.name, 'Requested marker does not resolve to exactly one local marker');
-        }
-        return { type: 'removeMarker', payload: { markerId: match.markerId } };
-    }
-
-    if (call.name === 'setMarkerColor') {
-        const name = normalizeSafeProjectName(args.name);
-        const color = typeof args.color === 'string' ? resolveMarkerColorValue(args.color) : null;
-        if (
-            !hasExactKeys(args, ['beat', 'name', 'color']) ||
-            !isFiniteNumber(args.beat) ||
-            args.beat < 0 ||
-            !name ||
-            color === null
-        ) {
-            return rejection(
-                index,
-                call.name,
-                'Expected only a nonnegative finite beat, a safe explicit marker name, and a named marker palette color'
-            );
-        }
-        const matches = markerSignatures.filter(
-            (marker) =>
-                marker.markerId !== undefined &&
-                marker.beat === args.beat &&
-                normalizeMarkerName(marker.name) === normalizeMarkerName(name)
-        );
-        const match = matches[0];
-        if (matches.length !== 1 || match?.markerId === undefined) {
-            return rejection(index, call.name, 'Requested marker does not resolve to exactly one local marker');
-        }
-        if (match.color === color) {
-            return rejection(index, call.name, 'Requested marker already has that color');
-        }
-        return { type: 'setMarkerColor', payload: { markerId: match.markerId, color } };
-    }
-
-    if (call.name === 'addSection') {
-        const name = normalizeSafeProjectName(args.name);
-        if (
-            !hasExactKeys(args, ['startBeat', 'endBeat', 'name']) ||
-            !isFiniteNumber(args.startBeat) ||
-            !isFiniteNumber(args.endBeat) ||
-            args.startBeat < 0 ||
-            args.endBeat <= args.startBeat ||
-            !name
-        ) {
-            return rejection(
-                index,
-                call.name,
-                'Expected only a valid finite beat range and a safe explicit section name'
-            );
-        }
-        const alreadyExists = sectionSignatures.some(
-            (section) =>
-                section.startBeat === args.startBeat &&
-                section.endBeat === args.endBeat &&
-                normalizeMarkerName(section.name) === normalizeMarkerName(name)
-        );
-        if (alreadyExists) {
-            return rejection(index, call.name, 'Requested section already exists at that range');
-        }
-        return { type: 'addSection', payload: { startBeat: args.startBeat, endBeat: args.endBeat, name } };
-    }
-
-    if (call.name === 'removeSection' || call.name === 'renameSection') {
-        let expectedKeys = ['startBeat', 'endBeat', 'name'];
-        if (call.name === 'renameSection') {
-            expectedKeys = [...expectedKeys, 'newName'];
-        }
-        const name = normalizeSafeProjectName(args.name);
-        const newName = call.name === 'renameSection' ? normalizeSafeProjectName(args.newName) : null;
-        if (
-            !hasExactKeys(args, expectedKeys) ||
-            !isFiniteNumber(args.startBeat) ||
-            !isFiniteNumber(args.endBeat) ||
-            args.startBeat < 0 ||
-            args.endBeat <= args.startBeat ||
-            !name ||
-            (call.name === 'renameSection' && (!newName || normalizeMarkerName(newName) === normalizeMarkerName(name)))
-        ) {
-            return rejection(
-                index,
-                call.name,
-                'Expected only one exact section range and label plus a changed safe replacement label when renaming'
-            );
-        }
-        const matches = sectionSignatures.filter(
-            (section) =>
-                section.sectionId !== undefined &&
-                section.startBeat === args.startBeat &&
-                section.endBeat === args.endBeat &&
-                normalizeMarkerName(section.name) === normalizeMarkerName(name)
-        );
-        const match = matches[0];
-        if (matches.length !== 1 || match?.sectionId === undefined) {
-            return rejection(index, call.name, 'Requested section does not resolve to exactly one local section');
-        }
-        if (call.name === 'removeSection') {
-            return { type: 'removeSection', payload: { sectionId: match.sectionId } };
-        }
-        if (!newName) {
-            return rejection(index, call.name, 'Expected a safe replacement section label');
-        }
-        const destinationExists = sectionSignatures.some(
-            (section) =>
-                section.sectionId !== match.sectionId &&
-                section.startBeat === match.startBeat &&
-                section.endBeat === match.endBeat &&
-                normalizeMarkerName(section.name) === normalizeMarkerName(newName)
-        );
-        if (destinationExists) {
-            return rejection(index, call.name, 'Replacement section label already exists at that range');
-        }
-        return { type: 'renameSection', payload: { sectionId: match.sectionId, name: newName } };
-    }
 
     if (call.name === 'setMasterGain') {
         // `gain` here is the same linear-amplitude fraction as `setTrackGain`'s,

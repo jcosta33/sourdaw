@@ -4,9 +4,9 @@ import { createPunchRegionPatch } from '#/modules/Transport/useCases';
 
 import { type ProjectContext } from '../../../models/ProjectContext';
 import { type RuntimeAction } from '../../../models/RuntimeAction';
+import { createLlmActionStrategyRegistry } from '../createLlmActionStrategyRegistry';
 import {
     bridgeTransportTimelineToolCall,
-    createLlmActionStrategyRegistry,
     transportTimelineStrategyRegistry,
     type TransportTimelineCallName,
 } from '../transportTimelineStrategy';
@@ -598,10 +598,13 @@ describe('transportTimelineStrategy', () => {
 
     it('rejects duplicate strategy names', () => {
         expect(() =>
-            createLlmActionStrategyRegistry([
-                { name: 'setTempo', transform: () => ({ type: 'setTempo', payload: { bpm: 120 } }) },
-                { name: 'setTempo', transform: () => ({ type: 'setTempo', payload: { bpm: 128 } }) },
-            ])
+            createLlmActionStrategyRegistry(
+                [
+                    { name: 'setTempo', transform: () => ({ type: 'setTempo', payload: { bpm: 120 } }) },
+                    { name: 'setTempo', transform: () => ({ type: 'setTempo', payload: { bpm: 128 } }) },
+                ],
+                ['setTempo']
+            )
         ).toThrow('Duplicate LLM action strategy: setTempo');
     });
 
