@@ -2,13 +2,13 @@ import { resolveMarkerColorValue } from '#/utils/markerColorPalette';
 
 import { type RuntimeAction } from '../../models/RuntimeAction';
 import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
-
 import {
     type LlmActionRejection,
     type MarkerPlanningSignature,
     type SectionPlanningSignature,
 } from '../llmActionBridgeContracts';
 import { type ToolCallResult } from '../toolCallParser';
+
 import { createLlmActionStrategyRegistry } from './createLlmActionStrategyRegistry';
 
 export const markerSectionActionNames = [
