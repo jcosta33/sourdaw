@@ -26,6 +26,7 @@ import {
     type OfflinePpqEndpointProjector,
     type OfflineTempoAtBeatResolver,
 } from '../../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
+import { MICRO_FADE_SECONDS } from '../../offlineRender/constants';
 import { projectLiveGraphProgramme } from '../projectLiveGraphProgramme';
 
 const SAMPLE_RATE = 48_000;
@@ -450,8 +451,13 @@ describe('projectLiveGraphProgramme — fades the engine can take', () => {
     it('pulls a slipped clip’s fade-in up to the first frame anyone hears', () => {
         // A negative `audioOffsetBeats` puts the clip's head before the start
         // of its material, so the sound begins a silent span later than the
-        // clip does. The mapper refuses a fade-in that reaches full before the
-        // clip starts, and the fade is over before the sound begins anyway.
+        // clip does, and the clip's 0.5-beat fade-in is entirely inside that
+        // silent pre-roll — it requests a non-positive duration once measured
+        // from the playback's own start. The shared fade law
+        // (`clampClipFadeInDurationSeconds`) floors that to the anti-click
+        // micro-fade rather than dropping it, so the ramp collapses to the
+        // first audible frame plus `MICRO_FADE_SECONDS`, not vanishing — the
+        // same floor the Web Audio legs and the engine's own resolve apply.
         const programme = projectProgramme({
             stripTracks: [
                 createTrack({
@@ -475,7 +481,7 @@ describe('projectLiveGraphProgramme — fades the engine can take', () => {
         const playback = programme.playbacksByStripId.get('audio-1')?.[0];
         // One beat of pre-roll at 120 BPM: the sound starts half a second late.
         expect(playback?.startTime).toBe(2 * SECONDS_PER_BEAT + SECONDS_PER_BEAT);
-        expect(playback?.fade.fadeIn).toEqual({ reachesFullAt: playback?.startTime });
+        expect(playback?.fade.fadeIn?.reachesFullAt).toBeCloseTo((playback?.startTime ?? 0) + MICRO_FADE_SECONDS, 10);
     });
 
     it('pulls a truncated clip’s fade-out back to the last frame anyone hears', () => {
