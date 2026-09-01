@@ -5328,7 +5328,7 @@ describe('review thread resolution', () => {
         }
     });
 
-    it('retains the exact recovery owner when terminal inspection finds an unrelated pending author review', () => {
+    it('retains the exact recovery owner when the fourth terminal inspection finds an unrelated pending author review', () => {
         const repository = createTemporaryGitRepository();
         const { port: basePort, calls } = fakePort({
             isResolved: true,
@@ -5344,7 +5344,7 @@ describe('review thread resolution', () => {
             inspect: (number, currentThreadId) => {
                 const inspection = basePort.inspect(number, currentThreadId);
                 inspections += 1;
-                if (inspections !== 3) {
+                if (inspections !== 4) {
                     return inspection;
                 }
                 return {
@@ -5384,6 +5384,79 @@ describe('review thread resolution', () => {
                     return recoverReviewResolutionLockOwnerState(42, owner, port);
                 })
             ).toThrow(/non-reusable pending author review/i);
+            expect(
+                calls.filter((call) =>
+                    /^(createReview|reply:|updateReview|delete:|deleteReview|submit|resolve|log:)/.test(call)
+                )
+            ).toEqual([]);
+            expect(retainedOwnerOid).toEqual(expect.any(String));
+            expect(readLockOid(repository, 42)).toBe(retainedOwnerOid);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('retains the exact recovery owner when late duplicate convergence finds a foreign review envelope', () => {
+        const repository = createTemporaryGitRepository();
+        const { port: basePort, calls } = fakePort({
+            isResolved: true,
+            initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+            initialResolvedByType: 'User',
+            existingReplyCount: 2,
+            existingReplyReviewState: 'COMMENTED',
+            existingReplyReviewBody: '',
+            secondaryReplyReviewBody: resolutionReviewSummary(pullRequestId, threadId, head),
+        });
+        let inspections = 0;
+        const port: ResolveReviewThreadPort = {
+            ...basePort,
+            inspect: (number, currentThreadId) => {
+                const inspection = basePort.inspect(number, currentThreadId);
+                inspections += 1;
+                const duplicate = inspection.thread?.comments.find((comment) => comment.id === 'PRRC_existing_1');
+                if (inspections !== 3 || inspection.thread === null || duplicate === undefined) {
+                    return inspection;
+                }
+                return {
+                    ...inspection,
+                    thread: {
+                        ...inspection.thread,
+                        comments: [
+                            ...inspection.thread.comments,
+                            {
+                                ...duplicate,
+                                id: 'PRRC_foreign_late',
+                                fullDatabaseId: '9223372036854775898',
+                                reviewId: 'PRR_foreign_late',
+                                reviewFullDatabaseId: '9223372036854775897',
+                                reviewAuthorNodeId: REVIEWER_BOT_NODE_ID,
+                                reviewAuthorLogin: 'renamed-reviewer[bot]',
+                                reviewAuthorType: 'Bot',
+                            },
+                        ],
+                    },
+                };
+            },
+        };
+        const mutation = {
+            phase: 'updateReviewBody' as const,
+            epoch: 1,
+            reviewId,
+            reviewDatabaseId: '9223372036854775808',
+            reviewCommitOid: head,
+            body: resolutionReviewSummary(pullRequestId, threadId, head),
+        };
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, mutation);
+            updateLock(repository, 42, ownerOid);
+            let retainedOwnerOid: string | undefined;
+
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) => {
+                    retainedOwnerOid = readLockOid(repository, 42);
+                    return recoverReviewResolutionLockOwnerState(42, owner, port);
+                })
+            ).toThrow(/non-author review/i);
             expect(
                 calls.filter((call) =>
                     /^(createReview|reply:|updateReview|delete:|deleteReview|submit|resolve|log:)/.test(call)
@@ -5456,7 +5529,11 @@ describe('review thread resolution', () => {
                         return recoverReviewResolutionLockOwnerState(42, owner, port);
                     })
                 ).toThrow(/not resolved by/i);
-                expect(calls.filter((call) => call.startsWith('updateReview:'))).toEqual([]);
+                expect(
+                    calls.filter((call) =>
+                        /^(createReview|reply:|updateReview|delete:|deleteReview|submit|resolve|log:)/.test(call)
+                    )
+                ).toEqual([]);
                 expect(retainedOwnerOid).toEqual(expect.any(String));
                 expect(readLockOid(repository, 42)).toBe(retainedOwnerOid);
                 expect(requireLockOwner(repository, 42)).toMatchObject({ threadId, head, mutation });
@@ -5595,7 +5672,11 @@ describe('review thread resolution', () => {
                         return recoverReviewResolutionLockOwnerState(42, owner, port);
                     })
                 ).toThrow(/non-author review|unreconciled in-flight|could not prove an unlanded historical review/i);
-                expect(calls.filter((call) => call.startsWith('updateReview:'))).toEqual([]);
+                expect(
+                    calls.filter((call) =>
+                        /^(createReview|reply:|updateReview|delete:|deleteReview|submit|resolve|log:)/.test(call)
+                    )
+                ).toEqual([]);
                 expect(retainedOwnerOid).toEqual(expect.any(String));
                 expect(readLockOid(repository, 42)).toBe(retainedOwnerOid);
                 expect(requireLockOwner(repository, 42)).toMatchObject({ threadId, head, mutation });
@@ -5658,12 +5739,20 @@ describe('review thread resolution', () => {
             const ownerOid = writeLockOwnerBlob(repository, 999999, head, mutation);
             updateLock(repository, 42, ownerOid);
 
+            let retainedOwnerOid: string | undefined;
             expect(() =>
-                recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) =>
-                    recoverReviewResolutionLockOwnerState(42, owner, port)
-                )
+                recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) => {
+                    retainedOwnerOid = readLockOid(repository, 42);
+                    return recoverReviewResolutionLockOwnerState(42, owner, port);
+                })
             ).toThrow(/non-author review|could not prove an unlanded historical review/i);
-            expect(calls.filter((call) => call.startsWith('updateReview:'))).toEqual([]);
+            expect(
+                calls.filter((call) =>
+                    /^(createReview|reply:|updateReview|delete:|deleteReview|submit|resolve|log:)/.test(call)
+                )
+            ).toEqual([]);
+            expect(retainedOwnerOid).toEqual(expect.any(String));
+            expect(readLockOid(repository, 42)).toBe(retainedOwnerOid);
             expect(requireLockOwner(repository, 42)).toMatchObject({ threadId, head, mutation });
         } finally {
             rmSync(repository, { recursive: true, force: true });

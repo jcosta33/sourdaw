@@ -1700,6 +1700,34 @@ function convergeReplyMarkers(
     }
     return canonical.marker.id;
 }
+
+function assertPreservedImmutableEnvelopeBeforeConvergence(
+    thread: ReviewThread,
+    context: ResolutionReviewContext,
+    immutableEnvelope: ManagedReplyMarker
+): void {
+    assertManagedReplyMarkersReadable(thread, context, ['COMMENTED'], true);
+    const managed = managedReplyMarkers(thread, context, ['COMMENTED'], true);
+    const preserved = managed.filter(
+        (candidate) =>
+            candidate.marker.id === immutableEnvelope.marker.id &&
+            candidate.review.id === immutableEnvelope.review.id &&
+            candidate.review.fullDatabaseId === immutableEnvelope.review.fullDatabaseId &&
+            candidate.review.commitOid === immutableEnvelope.review.commitOid &&
+            candidate.currentHead &&
+            isImmutableEmptySubmittedReview(candidate.review)
+    );
+    if (
+        preserved.length !== 1 ||
+        managed.some(
+            (candidate) =>
+                candidate.review.id !== immutableEnvelope.review.id && isImmutableEmptySubmittedReview(candidate.review)
+        )
+    ) {
+        fail(`review thread ${context.threadId} no longer has its immutable empty submitted-review envelope`);
+    }
+}
+
 function repairManagedCommentedReviewEnvelopes(
     number: number,
     threadId: string,
@@ -2183,6 +2211,10 @@ function repairCompletedResolution(
         }
         assertCommentedResolutionReply(requireOneReplyMarker(thread, context.threadId), context);
         return false;
+    }
+    if (immutableEnvelope !== undefined) {
+        thread = refresh();
+        assertPreservedImmutableEnvelopeBeforeConvergence(thread, context, immutableEnvelope);
     }
     convergeReplyMarkers(context.threadId, thread, port, context, ['COMMENTED'], immutableEnvelope?.marker.id);
     const verified = port.inspect(number, context.threadId);
@@ -5373,6 +5405,11 @@ export function recoverReviewResolutionLockOwnerState(
                         !isImmutableEmptySubmittedReview(terminalMarkers[0].review)
                     ) {
                         fail(unreconciledReviewResolutionMutationMessage(number, mutation));
+                    }
+                    if (
+                        hasBlockingAuthorPendingReview(inspection.pendingReviews, inspection.thread!, terminalContext)
+                    ) {
+                        fail(`review thread ${owner.threadId} has a non-reusable pending author review`);
                     }
                 }
                 break;
