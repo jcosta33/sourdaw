@@ -1705,8 +1705,10 @@ function immutableDeleteReplyTargetIsAbsent(
     thread: ReviewThread,
     mutation: Extract<ReviewResolutionLockMutation, { phase: 'deleteReply' }>
 ): boolean {
-    const targetId = mutation.target?.markerId ?? mutation.replyId;
-    return thread.comments.every((comment) => comment.id !== targetId);
+    if (mutation.immutableEnvelope === undefined) {
+        return thread.comments.every((comment) => comment.id !== mutation.replyId);
+    }
+    return thread.comments.every((comment) => comment.id !== (mutation.target?.markerId ?? mutation.replyId));
 }
 
 function hasExactImmutableDeleteReplyTerminal(
@@ -2307,6 +2309,17 @@ function repairCompletedResolution(
     assertCompletedResolution(thread, context.threadId);
     assertManagedReplyMarkersReadable(thread, context, ['PENDING', 'COMMENTED'], true);
     const immutableEnvelope = hasExactImmutableEmptySubmittedReviewEnvelope(number, thread, context, port);
+    const retired = retireRetirableStaleUnattachedPendingReview(number, context.threadId, working, context, port);
+    if (retired.deleted) {
+        working = retired.working;
+        thread = working.thread;
+        if (thread === null) {
+            fail(`review thread ${context.threadId} was not found on this pull request`);
+        }
+    }
+    if (hasBlockingAuthorPendingReview(working.pendingReviews, thread, context)) {
+        fail(`review thread ${context.threadId} has a non-reusable pending author review`);
+    }
     const refresh = (): ReviewThread => {
         working = port.inspect(number, context.threadId);
         assertExpectedHeadAfterMutation(working.head, context.expectedHead);
@@ -2363,11 +2376,6 @@ function repairCompletedResolution(
         immutableEnvelope !== undefined
     );
     if (pendingReviewDeleted) {
-        thread = refresh();
-    }
-    const retired = retireRetirableStaleUnattachedPendingReview(number, context.threadId, working, context, port);
-    if (retired.deleted) {
-        working = retired.working;
         thread = refresh();
     }
     const pendingReplies = managedReplyMarkers(thread, context, ['PENDING'], false);
@@ -3165,14 +3173,21 @@ function parseReviewResolutionLockMutation(value: unknown, label: string): Revie
         }
         const immutableEnvelope = (value as { immutableEnvelope?: unknown }).immutableEnvelope;
         const target = (value as { target?: unknown }).target;
+        if (target !== undefined && immutableEnvelope === undefined) {
+            fail(label);
+        }
+        const parsedImmutableEnvelope =
+            immutableEnvelope === undefined ? undefined : parseReviewResolutionMarkerSnapshot(immutableEnvelope, label);
+        const parsedTarget = target === undefined ? undefined : parseReviewResolutionMarkerSnapshot(target, label);
+        if (parsedTarget !== undefined && parsedTarget.markerId !== replyId) {
+            fail(label);
+        }
         return {
             phase,
             epoch,
             replyId,
-            ...(immutableEnvelope === undefined
-                ? {}
-                : { immutableEnvelope: parseReviewResolutionMarkerSnapshot(immutableEnvelope, label) }),
-            ...(target === undefined ? {} : { target: parseReviewResolutionMarkerSnapshot(target, label) }),
+            ...(parsedImmutableEnvelope === undefined ? {} : { immutableEnvelope: parsedImmutableEnvelope }),
+            ...(parsedTarget === undefined ? {} : { target: parsedTarget }),
         };
     }
     if (phase === 'deletePendingReview') {

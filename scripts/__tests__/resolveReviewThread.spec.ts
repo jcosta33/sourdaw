@@ -5282,6 +5282,58 @@ describe('review thread resolution', () => {
         }
     });
 
+    it.each([
+        ['marker ID', { markerId: 'PRRC_drifted' }],
+        ['marker decimal ID', { markerFullDatabaseId: '9223372036854775809' }],
+        ['review ID', { reviewId: 'PRR_drifted' }],
+        ['review decimal ID', { reviewFullDatabaseId: '9223372036854775809' }],
+        ['review state', { reviewState: 'PENDING' }],
+        ['review body', { reviewBody: 'drifted body' }],
+        ['review commit', { reviewCommitOid: movedHead }],
+        ['review actor ID', { reviewAuthorNodeId: REVIEWER_BOT_NODE_ID }],
+        ['review actor type', { reviewAuthorType: 'User' }],
+    ] as const)('retains immutable update recovery when its persisted %s snapshot drifts', (_label, drift) => {
+        const repository = createTemporaryGitRepository();
+        const { port, calls } = fakePort({
+            isResolved: true,
+            initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+            initialResolvedByType: 'User',
+            existingReplyCount: 1,
+            existingReplyReviewState: 'COMMENTED',
+            existingReplyReviewBody: '',
+        });
+        const mutation = {
+            phase: 'updateReviewBody' as const,
+            epoch: 1,
+            reviewId,
+            reviewDatabaseId: '9223372036854775808',
+            reviewCommitOid: head,
+            body: resolutionReviewSummary(pullRequestId, threadId, head),
+            marker: immutableEnvelopeSnapshot(drift),
+        };
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, mutation);
+            updateLock(repository, 42, ownerOid);
+            let retainedOwnerOid: string | undefined;
+
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) => {
+                    retainedOwnerOid = readLockOid(repository, 42);
+                    return recoverReviewResolutionLockOwnerState(42, owner, port);
+                })
+            ).toThrow(/unreconciled in-flight|immutable/i);
+            expect(
+                calls.filter((call) =>
+                    /^(createReview|reply:|updateReview|delete:|deleteReview|submit|resolve|log:)/.test(call)
+                )
+            ).toEqual([]);
+            expect(retainedOwnerOid).toEqual(expect.any(String));
+            expect(readLockOid(repository, 42)).toBe(retainedOwnerOid);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it.each([2, 4])(
         'retains the immutable update-recovery lock when its captured marker is replaced on terminal inspection %i',
         (replacementInspection) => {
@@ -7123,6 +7175,52 @@ describe('review thread resolution', () => {
             expect(calls).toEqual(['inspect:1']);
             expect(readLockOid(repository, 42)).toBeDefined();
             expect(readSharedMutationLockOid(repository, 42)).toBeDefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it.each([
+        ['a target without an immutable envelope', { target: immutableEnvelopeSnapshot() }],
+        [
+            'a target whose marker ID differs from replyId',
+            {
+                immutableEnvelope: immutableEnvelopeSnapshot(),
+                target: immutableEnvelopeSnapshot({ markerId: 'PRRC_different_target' }),
+            },
+        ],
+        [
+            'a malformed immutable marker snapshot',
+            { immutableEnvelope: immutableEnvelopeSnapshot({ markerFullDatabaseId: 'not-a-decimal-id' }) },
+        ],
+    ] as const)('retains an invalid delete journal with %s before recovery', (_label, invalidJournal) => {
+        const repository = createTemporaryGitRepository();
+        const { calls } = fakePort({ existingReplyCount: 2, existingReplyReviewState: 'COMMENTED' });
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, {
+                phase: 'deleteReply',
+                epoch: 1,
+                replyId,
+                ...invalidJournal,
+            });
+            updateLock(repository, 42, ownerOid);
+            let reconciled = false;
+
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    ownerOid,
+                    () => {
+                        reconciled = true;
+                        return 'unsafe recovery';
+                    },
+                    () => false
+                )
+            ).toThrow(/lock ownership is malformed/i);
+            expect(reconciled).toBe(false);
+            expect(calls).toEqual([]);
+            expect(readLockOid(repository, 42)).toBe(ownerOid);
         } finally {
             rmSync(repository, { recursive: true, force: true });
         }
@@ -14365,6 +14463,34 @@ describe('review thread resolution', () => {
             ])
         );
         expect(state().reviews).toHaveLength(2);
+    });
+    it('rejects a blocking author pending review before backfilling a mutable completed-review envelope', () => {
+        const { port, calls, authorNodeId, state } = fakePort({
+            isResolved: true,
+            initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+            initialResolvedByType: 'User',
+            existingReplyCount: 1,
+            existingReplyReviewBody: ' ',
+            existingPendingReviewCount: 1,
+            existingPendingReviewIds: ['PRR_blocking'],
+            existingPendingReviewCommitOid: movedHead,
+            existingPendingReviewBody: 'unrelated moved pending body',
+        });
+
+        expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(
+            /non-reusable pending author review/i
+        );
+        expect(
+            calls.filter((call) =>
+                /^(createReview|reply:|updateReview|delete:|deleteReview|submit|resolve|log:)/.test(call)
+            )
+        ).toEqual([]);
+        expect(state().reviews).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ id: reviewId, body: ' ', state: 'COMMENTED' }),
+                expect.objectContaining({ id: 'PRR_blocking', body: 'unrelated moved pending body', state: 'PENDING' }),
+            ])
+        );
     });
     it.each([
         ['review identity', { updateReceiptReviewId: 'PRR_wrong' }],
