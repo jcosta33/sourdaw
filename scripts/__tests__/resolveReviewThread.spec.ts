@@ -3963,7 +3963,11 @@ describe('review thread resolution', () => {
                 existingReplyReviewState: 'COMMENTED',
             },
         ],
-        ['delete reply', { phase: 'deleteReply', epoch: 1, replyId }, {}],
+        [
+            'delete reply',
+            { phase: 'deleteReply', epoch: 1, replyId: 'PRRC_deleted' },
+            { existingReplyCount: 1, existingReplyReviewState: 'COMMENTED' },
+        ],
         [
             'delete pending review',
             { phase: 'deletePendingReview', epoch: 1, reviewId, allowedAttachedThreadIds: [], snapshotHead: head },
@@ -3978,7 +3982,11 @@ describe('review thread resolution', () => {
             recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) =>
                 recoverReviewResolutionLockOwnerState(42, owner, port)
             );
-            expect(calls).toEqual(['inspect:1']);
+            if (mutation.phase === 'deleteReply') {
+                expect(calls).toContain(`resolve:${threadId}`);
+            } else {
+                expect(calls).toEqual(['inspect:1']);
+            }
             expect(readLockOid(repository, 42)).toBeUndefined();
         } finally {
             rmSync(repository, { recursive: true, force: true });
@@ -4273,7 +4281,7 @@ describe('review thread resolution', () => {
             };
             const { port, calls } = fakePort({
                 heads: [movedHead],
-                existingReplyCount: 1,
+                existingReplyCount: 2,
                 existingReplyReviewState: 'PENDING',
                 existingReplyReviewBody:
                     phase === 'updateReviewBody' ? '' : resolutionReviewSummary(pullRequestId, threadId, head),
@@ -4595,7 +4603,7 @@ describe('review thread resolution', () => {
     it('replays an absent delete-reply recovery phase and releases after the obsolete Done marker is removed', () => {
         const repository = createTemporaryGitRepository();
         const { port, calls, state } = fakePort({
-            existingReplyCount: 1,
+            existingReplyCount: 2,
             existingReplyReviewState: 'COMMENTED',
         });
         try {
@@ -4609,9 +4617,46 @@ describe('review thread resolution', () => {
                 recoverReviewResolutionLockOwnerState(42, owner, port)
             );
             expect(calls).toEqual(['inspect:1', `delete:${replyId}`, 'inspect:2']);
-            expect(inspection.thread?.comments.map((comment) => comment.id)).toEqual([rootId]);
-            expect(state().comments.map((comment) => comment.id)).toEqual([rootId]);
+            expect(inspection.thread?.comments.map((comment) => comment.id)).toEqual([rootId, 'PRRC_existing_1']);
+            expect(state().comments.map((comment) => comment.id)).toEqual([rootId, 'PRRC_existing_1']);
             expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it.each([
+        ['the only canonical marker', replyId, { existingReplyCount: 1 }],
+        ['an already-absent target without a canonical marker', 'PRRC_absent', { existingReplyCount: 0 }],
+    ] as const)('preserves both recovery locks without deleting %s', (_label, targetReplyId, input) => {
+        const repository = createTemporaryGitRepository();
+        const { port, calls } = fakePort(input);
+        try {
+            const sharedOwnerOid = writeSharedMutationLockOwnerBlob(repository, 999999);
+            updateSharedMutationLock(repository, 42, sharedOwnerOid);
+            const ownerOid = writeLockOwnerBlob(
+                repository,
+                999999,
+                head,
+                { phase: 'deleteReply', epoch: 1, replyId: targetReplyId },
+                undefined,
+                undefined,
+                sharedOwnerOid
+            );
+            updateLock(repository, 42, ownerOid);
+
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    ownerOid,
+                    (owner) => recoverReviewResolutionLockOwnerState(42, owner, port),
+                    () => false
+                )
+            ).toThrow(/unreconciled in-flight deleteReply mutation/);
+            expect(calls).toEqual(['inspect:1']);
+            expect(readLockOid(repository, 42)).toBeDefined();
+            expect(readSharedMutationLockOid(repository, 42)).toBeDefined();
         } finally {
             rmSync(repository, { recursive: true, force: true });
         }
@@ -4619,7 +4664,7 @@ describe('review thread resolution', () => {
 
     it('continues same-head recovery after a landed reply deletion to converge and resolve', () => {
         const repository = createTemporaryGitRepository();
-        const { port, calls, state } = fakePort({ existingReplyCount: 3, existingReplyReviewState: 'COMMENTED' });
+        const { port, calls, state } = fakePort({ existingReplyCount: 2, existingReplyReviewState: 'COMMENTED' });
         try {
             port.deleteReply(replyId);
             calls.length = 0;
@@ -4770,11 +4815,15 @@ describe('review thread resolution', () => {
             try {
                 const ownerOid = writeLockOwnerBlob(repository, 999999, head, mutation);
                 updateLock(repository, 42, ownerOid);
+                const expectedFailure =
+                    mutation.phase === 'deleteReply'
+                        ? /unreconciled in-flight deleteReply mutation/
+                        : /head changed while reconciling review resolution/i;
                 expect(() =>
                     recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) =>
                         recoverReviewResolutionLockOwnerState(42, owner, port)
                     )
-                ).toThrow(/head changed while reconciling review resolution/i);
+                ).toThrow(expectedFailure);
                 expect(calls).toEqual(['inspect:1']);
                 expect(calls.filter((call) => expectedMutationCalls.includes(call))).toEqual([]);
                 const preservedOwnerOid = readLockOid(repository, 42);
@@ -6813,6 +6862,7 @@ describe('review thread resolution', () => {
                     return await operation({
                         ownerOid: 'f'.repeat(40),
                         markRemoteMutationAttempt: () => calls.push('attempt'),
+                        registerSuccessfulCompletion: () => undefined,
                     });
                 } finally {
                     calls.push(`lock:${number}:release`);
@@ -6866,13 +6916,81 @@ describe('review thread resolution', () => {
         ]);
     });
 
+    it('retains both locks when author-session disposal fails after the inner resolution succeeds', async () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const dependencies: ResolveReviewThreadCoordinatorDependencies = {
+                primaryRoot: () => repository,
+                serializeMutation: withPullRequestMutationLock,
+                authenticateAuthor: async () => ({
+                    minted: { actorNodeId: AUTHOR_BOT_NODE_ID },
+                    session: {
+                        configDir: repository,
+                        env: {},
+                        dispose: () => {
+                            throw new Error('author session disposal failed');
+                        },
+                    },
+                }),
+                repositoryName: () => REQUIRED_REPOSITORY,
+                threadPort: (
+                    session,
+                    primaryRoot,
+                    markRemoteMutationAttempt,
+                    sharedMutationOwnerOid,
+                    registerSuccessfulCompletion
+                ) =>
+                    shellPort(
+                        session,
+                        primaryRoot,
+                        markRemoteMutationAttempt,
+                        undefined,
+                        sharedMutationOwnerOid,
+                        registerSuccessfulCompletion
+                    ),
+                resolve: (number, exactThreadId, expectedHead, _authorNodeId, port) =>
+                    port.serializeReviewThreadMutation(number, exactThreadId, expectedHead, () => 'inner-complete'),
+            };
+
+            await expect(coordinateResolveReviewThread(42, threadId, head, dependencies)).rejects.toThrow(
+                'author session disposal failed'
+            );
+            const ownerOid = readLockOid(repository, 42);
+            const sharedOwnerOid = readSharedMutationLockOid(repository, 42);
+            expect(ownerOid).toBeDefined();
+            expect(sharedOwnerOid).toBeDefined();
+            expect(requireLockOwner(repository, 42)).toMatchObject({
+                version: 6,
+                sharedMutationOwnerOid: sharedOwnerOid,
+            });
+
+            expect(
+                recoverPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    ownerOid!,
+                    () => 'recovered',
+                    () => false
+                )
+            ).toBe('recovered');
+            expect(readLockOid(repository, 42)).toBeUndefined();
+            expect(readSharedMutationLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it('forwards exact parsed pull-request, thread, and head arguments to the live coordinator', async () => {
         const { port } = fakePort();
         let forwarded: { number: number; threadId: string; expectedHead: string } | undefined;
         const dependencies: ResolveReviewThreadCoordinatorDependencies = {
             primaryRoot: () => '/repo',
             serializeMutation: async (_primaryRoot, _number, operation) =>
-                operation({ ownerOid: 'f'.repeat(40), markRemoteMutationAttempt: () => undefined }),
+                operation({
+                    ownerOid: 'f'.repeat(40),
+                    markRemoteMutationAttempt: () => undefined,
+                    registerSuccessfulCompletion: () => undefined,
+                }),
             authenticateAuthor: async () => ({
                 minted: { actorNodeId: AUTHOR_BOT_NODE_ID },
                 session: { configDir: '/tmp/sourdaw-author', env: {}, dispose: () => undefined },

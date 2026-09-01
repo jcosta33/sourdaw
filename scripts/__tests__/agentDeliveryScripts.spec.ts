@@ -2503,6 +2503,7 @@ describe('package scripts and gitignore', () => {
                     return await operation({
                         ownerOid: 'f'.repeat(40),
                         markRemoteMutationAttempt: () => undefined,
+                        registerSuccessfulCompletion: () => undefined,
                     });
                 } finally {
                     seen.push(`lock:${number}:release`);

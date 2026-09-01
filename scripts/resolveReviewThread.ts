@@ -277,7 +277,8 @@ export type ResolveReviewThreadCoordinatorDependencies = {
         session: GhSession,
         primaryRoot: string,
         markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt'],
-        sharedMutationOwnerOid: string
+        sharedMutationOwnerOid: string,
+        registerSuccessfulCompletion: PullRequestRemoteMutationBoundary['registerSuccessfulCompletion']
     ) => ResolveReviewThreadPort;
     resolve: (
         number: number,
@@ -300,7 +301,8 @@ export type ResolveReviewThreadCliDependencies = {
         session: GhSession,
         primaryRoot: string,
         markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt'],
-        sharedMutationOwnerOid: string
+        sharedMutationOwnerOid: string,
+        registerSuccessfulCompletion: PullRequestRemoteMutationBoundary['registerSuccessfulCompletion']
     ) => ResolveReviewThreadPort;
 };
 const usage = 'usage: pnpm review:resolve <pr-number> --thread <graphql-thread-node-id> --head <40-hex-sha>';
@@ -336,6 +338,7 @@ type ReviewResolutionLockInspectionPort = {
     executionFence?: ReviewResolutionExecutionFence;
     platform?: NodeJS.Platform;
     sharedMutationOwnerOid?: string;
+    registerSuccessfulCompletion?: PullRequestRemoteMutationBoundary['registerSuccessfulCompletion'];
 };
 type ReviewResolutionLockRecoveryPort = {
     updateRef?: (primaryRoot: string, args: string[]) => boolean;
@@ -663,8 +666,15 @@ function resolveReviewThreadCliDependencies(
                 })),
         createPort:
             dependencies?.createPort ??
-            ((session, primaryRoot, markRemoteMutationAttempt, sharedMutationOwnerOid) =>
-                shellPort(session, primaryRoot, markRemoteMutationAttempt, spawnCapture, sharedMutationOwnerOid)),
+            ((session, primaryRoot, markRemoteMutationAttempt, sharedMutationOwnerOid, registerSuccessfulCompletion) =>
+                shellPort(
+                    session,
+                    primaryRoot,
+                    markRemoteMutationAttempt,
+                    spawnCapture,
+                    sharedMutationOwnerOid,
+                    registerSuccessfulCompletion
+                )),
     };
 }
 
@@ -1594,6 +1604,19 @@ function hasCanonicalCommentedReview(comment: ReviewComment, context: Resolution
         isAuthorBotActor(comment.reviewAuthorNodeId, comment.reviewAuthorType)
     );
 }
+
+function hasOneCanonicalCommentedReplyAfterExcluding(
+    thread: ReviewThread,
+    context: ResolutionReviewContext,
+    excludedReplyId: string
+): boolean {
+    return (
+        managedReplyMarkers(thread, context, ['COMMENTED'], false).filter(
+            (candidate) => candidate.marker.id !== excludedReplyId
+        ).length === 1
+    );
+}
+
 function validatedReplyMarkers(thread: ReviewThread): ReviewComment[] {
     const owned = thread.comments.filter((comment) => isAuthorBotNodeId(comment.authorNodeId));
     for (const comment of owned) {
@@ -2124,7 +2147,8 @@ export function shellPort(
     cwd: string = process.cwd(),
     markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt'] = () => undefined,
     capture: typeof spawnCapture = spawnCapture,
-    sharedMutationOwnerOid?: string
+    sharedMutationOwnerOid?: string,
+    registerSuccessfulCompletion?: PullRequestRemoteMutationBoundary['registerSuccessfulCompletion']
 ): ResolveReviewThreadPort {
     const primaryRoot = resolvePrimaryRoot(
         (command, args, directory) => capture(command, args, { cwd: directory }),
@@ -2245,7 +2269,7 @@ export function shellPort(
                 threadId,
                 expectedHead,
                 operation,
-                sharedMutationOwnerOid === undefined ? {} : { sharedMutationOwnerOid }
+                sharedMutationOwnerOid === undefined ? {} : { sharedMutationOwnerOid, registerSuccessfulCompletion }
             ),
         log: (message) => console.log(message),
     };
@@ -3453,6 +3477,10 @@ export function withPullRequestReviewResolutionLock<Value>(
     try {
         const result = operation();
         popActiveReviewResolutionLock(active);
+        if (active.owner.version === 6 && port.registerSuccessfulCompletion !== undefined) {
+            port.registerSuccessfulCompletion(() => releaseReviewResolutionAndSharedMutationLocks(primaryRoot, active));
+            return result;
+        }
         release(primaryRoot, active.ref, active.oid, number);
         return result;
     } catch (error) {
@@ -3561,7 +3589,7 @@ export function recoverPullRequestReviewResolutionLock<Value>(
     pushActiveReviewResolutionLock(active);
     try {
         const reconciled = reconcile(active.owner);
-        releaseRecoveredReviewResolutionLocks(primaryRoot, active);
+        releaseReviewResolutionAndSharedMutationLocks(primaryRoot, active);
         popActiveReviewResolutionLock(active);
         return reconciled;
     } catch (error) {
@@ -3664,7 +3692,7 @@ function recoveredReviewResolutionLockOwner(
     };
 }
 
-function releaseRecoveredReviewResolutionLocks(primaryRoot: string, active: ActiveReviewResolutionLock): void {
+function releaseReviewResolutionAndSharedMutationLocks(primaryRoot: string, active: ActiveReviewResolutionLock): void {
     if (active.owner.version === 5) {
         releasePullRequestReviewResolutionLock(primaryRoot, active.ref, active.oid, active.number);
         return;
@@ -4482,7 +4510,10 @@ function hasRecoveredReviewResolutionMutation(
                 managedReplyMarkers(thread, context, ['COMMENTED'], false).length === 1
             );
         case 'deleteReply':
-            return thread.comments.every((comment) => comment.id !== mutation.replyId);
+            return (
+                thread.comments.every((comment) => comment.id !== mutation.replyId) &&
+                hasOneCanonicalCommentedReplyAfterExcluding(thread, context, mutation.replyId)
+            );
         case 'deletePendingReview':
             return (
                 port.inspectPullRequestReview(number, mutation.reviewId, inspection.pullRequestId, inspection.head) ===
@@ -4994,6 +5025,9 @@ export function recoverReviewResolutionLockOwnerState(
             break;
         }
         case 'deleteReply':
+            if (!hasOneCanonicalCommentedReplyAfterExcluding(inspection.thread!, context, mutation.replyId)) {
+                fail(unreconciledReviewResolutionMutationMessage(number, mutation));
+            }
             if (hasRecoveredReviewResolutionMutation(number, owner, inspection, context, inspection.thread!, port)) {
                 if (
                     inspection.head === owner.head &&
@@ -5397,8 +5431,21 @@ export function defaultResolveReviewThreadCoordinatorDependencies(): ResolveRevi
                 env: session.env,
                 cwd: primaryRoot,
             }),
-        threadPort: (session, primaryRoot, markRemoteMutationAttempt, sharedMutationOwnerOid) =>
-            shellPort(session, primaryRoot, markRemoteMutationAttempt, spawnCapture, sharedMutationOwnerOid),
+        threadPort: (
+            session,
+            primaryRoot,
+            markRemoteMutationAttempt,
+            sharedMutationOwnerOid,
+            registerSuccessfulCompletion
+        ) =>
+            shellPort(
+                session,
+                primaryRoot,
+                markRemoteMutationAttempt,
+                spawnCapture,
+                sharedMutationOwnerOid,
+                registerSuccessfulCompletion
+            ),
         resolve: resolveReviewThread,
     };
 }
@@ -5410,24 +5457,34 @@ export async function coordinateResolveReviewThread(
     dependencies: ResolveReviewThreadCoordinatorDependencies = defaultResolveReviewThreadCoordinatorDependencies()
 ): Promise<void> {
     const primaryRoot = dependencies.primaryRoot();
-    await dependencies.serializeMutation(primaryRoot, number, async ({ markRemoteMutationAttempt, ownerOid }) => {
-        const auth = await dependencies.authenticateAuthor(primaryRoot);
-        try {
-            if (!isAuthorBotNodeId(auth.minted.actorNodeId)) {
-                fail(`minted actor ${auth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
+    await dependencies.serializeMutation(
+        primaryRoot,
+        number,
+        async ({ markRemoteMutationAttempt, ownerOid, registerSuccessfulCompletion }) => {
+            const auth = await dependencies.authenticateAuthor(primaryRoot);
+            try {
+                if (!isAuthorBotNodeId(auth.minted.actorNodeId)) {
+                    fail(`minted actor ${auth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
+                }
+                assertRequiredRepository(dependencies.repositoryName(auth.session, primaryRoot));
+                dependencies.resolve(
+                    number,
+                    threadId,
+                    expectedHead,
+                    auth.minted.actorNodeId,
+                    dependencies.threadPort(
+                        auth.session,
+                        primaryRoot,
+                        markRemoteMutationAttempt,
+                        ownerOid,
+                        registerSuccessfulCompletion
+                    )
+                );
+            } finally {
+                auth.session.dispose();
             }
-            assertRequiredRepository(dependencies.repositoryName(auth.session, primaryRoot));
-            dependencies.resolve(
-                number,
-                threadId,
-                expectedHead,
-                auth.minted.actorNodeId,
-                dependencies.threadPort(auth.session, primaryRoot, markRemoteMutationAttempt, ownerOid)
-            );
-        } finally {
-            auth.session.dispose();
         }
-    });
+    );
 }
 
 export async function runResolveReviewThreadCli(

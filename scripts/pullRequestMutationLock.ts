@@ -18,6 +18,7 @@ export type PullRequestMutationSerialization = <Value>(
 export type PullRequestRemoteMutationBoundary = {
     markRemoteMutationAttempt: () => void;
     ownerOid: string;
+    registerSuccessfulCompletion: (cleanup: () => void) => void;
 };
 
 const LOCK_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -162,17 +163,26 @@ export async function withPullRequestMutationLock<Value>(
     const lock = acquireMutationLock(primaryRoot, number);
     let remoteMutationAttempted = false;
     let succeeded = false;
+    let successfulCompletion: (() => void) | undefined;
     try {
         const result = await operation({
             ownerOid: lock.oid,
             markRemoteMutationAttempt: () => {
                 remoteMutationAttempted = true;
             },
+            registerSuccessfulCompletion: (cleanup) => {
+                if (successfulCompletion !== undefined) {
+                    fail(`PR #${number} delivery lock already has a successful-completion cleanup`);
+                }
+                successfulCompletion = cleanup;
+            },
         });
         succeeded = true;
         return result;
     } finally {
-        if (succeeded || !remoteMutationAttempted) {
+        if (succeeded && successfulCompletion !== undefined) {
+            successfulCompletion();
+        } else if (succeeded || (!remoteMutationAttempted && successfulCompletion === undefined)) {
             releaseMutationLock(primaryRoot, lock.ref, lock.oid, number);
         }
     }
