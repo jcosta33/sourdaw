@@ -2304,12 +2304,16 @@ describe('review thread resolution', () => {
         const session: GhSession = { configDir: process.cwd(), env: {}, dispose() {} };
         const fake = fakePort();
         const calls: string[] = [];
+        const trustedLauncher = {
+            primaryRoot: process.cwd(),
+            gitPath: trustedGitPath,
+            ghPath: trustedGhPath,
+            psPath: trustedPsPath,
+        };
         const resolveDependencies = {
-            trustedLauncher: {
-                primaryRoot: process.cwd(),
-                gitPath: trustedGitPath,
-                ghPath: trustedGhPath,
-                psPath: trustedPsPath,
+            get trustedLauncher() {
+                calls.push('resolve:trustedLauncher');
+                return trustedLauncher;
             },
             authenticateAuthor: async () => {
                 calls.push('resolve:authenticateAuthor');
