@@ -2754,20 +2754,6 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
         reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
     },
     {
-        spec: 'src/modules/TimelineEditor/presentations/views/ClipView/__tests__/WaveformEditor.spec.tsx',
-        barrel: '#/modules/Command/useCases',
-        missingKeys: [
-            'REDO_NOT_APPLIED',
-            'clearUndoHistory',
-            'createAppActionCommittedError',
-            'isAppActionCommittedError',
-            'pushUndoEntry',
-            'resetActionReplayAuthority',
-            'syncActionReplayMetadata',
-        ],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
-    {
         spec: 'src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipAudioAiSection.spec.tsx',
         barrel: '#/modules/AudioEngine/useCases',
         missingKeys: [
