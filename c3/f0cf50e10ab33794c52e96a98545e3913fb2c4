@@ -1,0 +1,42 @@
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_a40848e8f8cca9::t_b4f6b5d19e5407 637-643
+  s_a40848e8f8cca9::t_439883d2269419 3-6,644
+src/modules/Command/useCases/__tests__/getExecutableAppActionIntentCatalog.spec.ts
+  s_a40848e8f8cca9::t_3677bc2b08c466 6-7
+  s_a40848e8f8cca9::t_eeb7975766d832 1-5,8-13,15-16,18-36,38-39
+  s_a40848e8f8cca9::t_4c05c3174a5f23 14,17,37
+  s_a40848e8f8cca9::t_69764b63f896f1 40-42
+src/modules/AiRuntime/useCases/__tests__/intentCommandCatalog.spec.ts
+  s_a40848e8f8cca9::t_d826303d3d9681 6-15,280,283-300,303-307,419,422-423,627-717
+  s_a40848e8f8cca9::t_4c05c3174a5f23 281-282
+  s_a40848e8f8cca9::t_f5b7e0b78f4db2 718-771
+src/modules/Command/useCases/index.ts
+  s_a40848e8f8cca9::t_0b8a4a7e78dcda 37
+  s_a40848e8f8cca9::t_3677bc2b08c466 34,36
+  s_a40848e8f8cca9::t_439883d2269419 35
+src/modules/Command/useCases/getExecutableAppActionIntentCatalogUnicodeLength.ts
+  s_a40848e8f8cca9::t_0b8a4a7e78dcda 1-5
+src/modules/Command/useCases/getExecutableAppActionIntentCatalog.ts
+  s_a40848e8f8cca9::t_3677bc2b08c466 78,232,247
+  s_a40848e8f8cca9::t_0b8a4a7e78dcda 2-5
+  s_a40848e8f8cca9::t_98a2147b02e91a 80
+  s_a40848e8f8cca9::t_b4f6b5d19e5407 79,82-83
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  s_a40848e8f8cca9::t_eeb7975766d832 111-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "c3f0cf50e10ab33794c52e96a98545e3913fb2c4",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
