@@ -1,0 +1,36 @@
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_42191cf0ac245f 1662
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_a40848e8f8cca9::t_4f7fd59b38aba6 2766-2770,2779-2788,2885,2901-2914
+  s_a40848e8f8cca9::t_81fc7619f1fbb2 2915-2917
+  s_02624d84e74dc2::t_cd71eb21229bc6 2918-2923
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/collectClearSolosRestrictionClauses.ts
+  s_a40848e8f8cca9::t_42191cf0ac245f 4,7-17,25-27,29,32,35-36
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/__tests__/postTargetScopeAdmissionStrategy.spec.ts
+  s_a40848e8f8cca9::t_10b4f1281fe4d1 116
+  s_a40848e8f8cca9::t_4f7fd59b38aba6 117-119
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "2e2cb8e1acc3fcaf1ccf526fae36d4ae6bfbab88",
+  "prompts": {},
+  "sessions": {
+    "s_02624d84e74dc2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a05e6d-c912-70b2-b78c-928715b85b07",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
