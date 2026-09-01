@@ -9,14 +9,20 @@ export class HostedAiHttpStatusError extends Error {
 }
 
 function isFiniteHttpStatus(status: unknown): status is number {
-    return Number.isInteger(status) && status >= 100 && status <= 599;
+    return typeof status === 'number' && Number.isInteger(status) && status >= 100 && status <= 599;
 }
 
 export function snapshotHostedAiHttpStatus(error: unknown): number | null {
-    if (!(error instanceof Error && error.name === 'HostedAiHttpStatusError' && 'status' in error)) {
+    if (!(error instanceof Error)) {
         return null;
     }
-    const status = (error as HostedAiHttpStatusError).status;
+    if (error.name !== 'HostedAiHttpStatusError') {
+        return null;
+    }
+    if (!('status' in error)) {
+        return null;
+    }
+    const status: unknown = error.status;
     return isFiniteHttpStatus(status) ? status : null;
 }
 
