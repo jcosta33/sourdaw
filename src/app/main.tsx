@@ -28,11 +28,13 @@ async function renderApplication(): Promise<void> {
             failProjectIdentityTransitionDependencies(error);
         });
     });
-    const [, { createRoot }, { App }] = await Promise.all([
+    const [, { createRoot }, { App }, { registerNotificationEventBus }] = await Promise.all([
         import('#/styles/main.css'),
         import('react-dom/client'),
         import('./App'),
+        import('./registerNotificationEventBus'),
     ]);
+    registerNotificationEventBus();
     createRoot(root).render(<App />);
 }
 
