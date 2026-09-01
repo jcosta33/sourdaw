@@ -2755,11 +2755,21 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'clear all solos and mute Guitar and leave Vocals soloed',
             soloedContext
         );
+        const unrelatedMuteContinuation = bridge(
+            [
+                { name: 'clearSolos', arguments: {} },
+                { name: 'muteTrack', arguments: { trackId: guitar.id, muted: true } },
+            ],
+            'clear all solos and leave Vocals muted, and mute Guitar',
+            soloedContext
+        );
         const restrictedMultiActionPrompts = [
             'clear all solos and mute Guitar but leave Vocals soloed',
             'clear all solos and mute Guitar but preserve Vocals soloed',
             'clear all solos and mute Guitar but retain Vocals soloed',
             'clear all solos and mute Guitar but not Vocals',
+            'clear all solos while leaving Vocals soloed, and mute Guitar',
+            'clear all solos, while keeping Vocals soloed, and mute Guitar',
         ] as const;
         const vocabularyCollisionContext = {
             ...soloedContext,
@@ -2851,6 +2861,10 @@ describe('bridgeGroundedLlmToolCalls', () => {
             { type: 'muteTrack', payload: { trackId: guitar.id, muted: true } },
         ]);
         expect(andLeaveRestrictedMultiAction.actions).toEqual([
+            { type: 'muteTrack', payload: { trackId: guitar.id, muted: true } },
+        ]);
+        expect(unrelatedMuteContinuation.actions).toEqual([
+            { type: 'clearSolos' },
             { type: 'muteTrack', payload: { trackId: guitar.id, muted: true } },
         ]);
         expect(vocabularyCollision.actions).toEqual([{ type: 'clearSolos' }]);

@@ -105,6 +105,21 @@ function getExactPhraseSpans(prompt: string, reference: string): ReferenceSpan[]
     return spans;
 }
 
+function getCodePointBefore(value: string, index: number): string {
+    if (index === 0) {
+        return '';
+    }
+    const precedingCodeUnit = value.charCodeAt(index - 1);
+    const start = precedingCodeUnit >= 0xdc00 && precedingCodeUnit <= 0xdfff ? Math.max(0, index - 2) : index - 1;
+    const codePoint = value.codePointAt(start);
+    return codePoint === undefined ? '' : String.fromCodePoint(codePoint);
+}
+
+function getCodePointAt(value: string, index: number): string {
+    const codePoint = value.codePointAt(index);
+    return codePoint === undefined ? '' : String.fromCodePoint(codePoint);
+}
+
 function getLiteralIdSpans(prompt: string, id: string): ReferenceSpan[] {
     const normalizedId = normalizeSourceSpelling(id);
     if (normalizedId.length === 0) {
@@ -131,8 +146,8 @@ function getLiteralIdSpans(prompt: string, id: string): ReferenceSpan[] {
     let start = value.indexOf(normalizedId);
     while (start >= 0) {
         const end = start + normalizedId.length;
-        const previousCharacter = value[start - 1] ?? '';
-        const nextCharacter = value[end] ?? '';
+        const previousCharacter = getCodePointBefore(value, start);
+        const nextCharacter = getCodePointAt(value, end);
         if (!/[\p{L}\p{N}]/u.test(previousCharacter) && !/[\p{L}\p{N}]/u.test(nextCharacter)) {
             spans.push({ start: sourceStarts[start]!, end: sourceEnds[end - 1]! });
         }
@@ -484,8 +499,8 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
         }
     }
 
-    removeOverlappedExactNameEvidence(candidates, evidenceById);
     removeExactNameEvidenceOverlappedByLiteralId(candidates, evidenceById, input.prompt);
+    removeOverlappedExactNameEvidence(candidates, evidenceById);
 
     if (evidenceById.size === 0) {
         return { status: 'rejected', reason: 'ungrounded-target' };

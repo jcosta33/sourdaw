@@ -394,6 +394,10 @@ describe('resolveAgentReference', () => {
             status: 'rejected',
             reason: 'ambiguous-target',
         });
+        expect(resolveTrack('mute track-guitar plus Guitar', guitar.id, context)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
     });
 
     it('grounds dotted-I literal IDs with symmetric Unicode reference spans', () => {
@@ -409,6 +413,23 @@ describe('resolveAgentReference', () => {
             id: dottedI.id,
             evidence: 'literal-id',
         });
+    });
+
+    it('does not ground literal IDs embedded in astral Unicode letters', () => {
+        const project = createProjectState();
+        const guitar = {
+            ...project.tracks[0]!,
+            id: 'track-guitar',
+            name: 'Bass',
+        };
+        const context = { ...project, tracks: [guitar] };
+
+        for (const prompt of ['mute 𐐀track-guitar', 'mute track-guitar𐐀']) {
+            expect(resolveTrack(prompt, guitar.id, context), prompt).toEqual({
+                status: 'rejected',
+                reason: 'ungrounded-target',
+            });
+        }
     });
 
     it('resolves editable clips by literal ID, unique exact name, and one explicit selection', () => {

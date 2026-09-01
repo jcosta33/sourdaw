@@ -98,7 +98,7 @@ describe('post-target scope admission strategies', () => {
         expect(groundPostTargetScopeAdmission({ ...input, actionName: 'setTempo' })).toBeNull();
     });
 
-    it('collects clear-solos restrictions without retaining adjacent action clauses', () => {
+    it('collects only solo-specific clear-solos restrictions without retaining adjacent action clauses', () => {
         expect(
             collectClearSolosRestrictionClauses(
                 'clear all solos, not including Vocals, and mute Guitar but leave Keys soloed'
@@ -107,5 +107,11 @@ describe('post-target scope admission strategies', () => {
         expect(collectClearSolosRestrictionClauses('clear all solos and retain Lead soloed')).toEqual([
             'and retain Lead soloed',
         ]);
+        expect(collectClearSolosRestrictionClauses('clear all solos while keeping Lead soloed, mute Guitar')).toEqual([
+            'while keeping Lead soloed',
+        ]);
+        expect(collectClearSolosRestrictionClauses('clear all solos and leave Keys muted, then mute Guitar')).toEqual(
+            []
+        );
     });
 });
