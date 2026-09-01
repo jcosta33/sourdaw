@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     resetBrowserDisplayScaleForChildStartup: vi.fn(),
     resetDisplayScaleForStartup: vi.fn(),
     resolveAppComposition: vi.fn(),
+    setCommandEventBus: vi.fn(),
     setNotificationEventBus: vi.fn(),
     setVoiceToggleEventBus: vi.fn(),
     setWebMidiRuntimeEventBus: vi.fn(),
@@ -28,6 +29,7 @@ function expectFirstPaintBusesRegisteredBeforeRender(): void {
     expect(mocks.setVoiceToggleEventBus).toHaveBeenCalledOnce();
     expect(mocks.setNotificationEventBus).toHaveBeenCalledOnce();
     expect(mocks.setWebMidiRuntimeEventBus).toHaveBeenCalledOnce();
+    expect(mocks.setCommandEventBus).toHaveBeenCalledOnce();
     const renderOrder = mocks.render.mock.invocationCallOrder[0];
     expect(renderOrder).toBeDefined();
     if (renderOrder === undefined) {
@@ -38,6 +40,7 @@ function expectFirstPaintBusesRegisteredBeforeRender(): void {
         mocks.setVoiceToggleEventBus,
         mocks.setNotificationEventBus,
         mocks.setWebMidiRuntimeEventBus,
+        mocks.setCommandEventBus,
     ]) {
         const order = setter.mock.invocationCallOrder[0];
         expect(order).toBeDefined();
@@ -77,6 +80,10 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
 
 vi.mock('#/modules/MIDI/useCases', () => ({
     setWebMidiRuntimeEventBus: mocks.setWebMidiRuntimeEventBus,
+}));
+
+vi.mock('#/modules/Command/useCases', () => ({
+    setCommandEventBus: mocks.setCommandEventBus,
 }));
 
 vi.mock('#/utils/Notification/notificationEventBus', () => ({
@@ -119,6 +126,7 @@ describe('app main composition', () => {
         expect(mocks.setVoiceToggleEventBus).not.toHaveBeenCalled();
         expect(mocks.setNotificationEventBus).not.toHaveBeenCalled();
         expect(mocks.setWebMidiRuntimeEventBus).not.toHaveBeenCalled();
+        expect(mocks.setCommandEventBus).not.toHaveBeenCalled();
     });
 
     it('initializes the application directly in a desktop renderer', async () => {
@@ -203,5 +211,6 @@ describe('app main composition', () => {
         expect(mocks.setVoiceToggleEventBus).not.toHaveBeenCalled();
         expect(mocks.setNotificationEventBus).not.toHaveBeenCalled();
         expect(mocks.setWebMidiRuntimeEventBus).not.toHaveBeenCalled();
+        expect(mocks.setCommandEventBus).not.toHaveBeenCalled();
     });
 });

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { onNotification as OnNotification } from '#/infra/dialogService/onNotification';
 import type { setVoiceToggleEventBus } from '#/modules/AiRuntime/useCases';
+import type { setCommandEventBus } from '#/modules/Command/useCases';
 import type { setWebMidiRuntimeEventBus } from '#/modules/MIDI/useCases';
 import type { setWorkspaceEventBus } from '#/modules/WorkspaceShell/useCases';
 
@@ -33,10 +34,12 @@ const mocks = vi.hoisted(() => {
     const bindWorkspaceEventBus: typeof setWorkspaceEventBus = (_eventBus) => undefined;
     const bindVoiceToggleEventBus: typeof setVoiceToggleEventBus = (_eventBus) => undefined;
     const bindWebMidiRuntimeEventBus: typeof setWebMidiRuntimeEventBus = (_input) => undefined;
+    const bindCommandEventBus: typeof setCommandEventBus = (_eventBus) => undefined;
 
     return {
         bootstrap: vi.fn(),
         bootstrapFailure: null as Error | null,
+        bindCommandEventBus,
         bindVoiceToggleEventBus,
         bindWebMidiRuntimeEventBus,
         bindWorkspaceEventBus,
@@ -49,6 +52,7 @@ const mocks = vi.hoisted(() => {
         resetDisplayScaleForStartup: vi.fn(),
         resolveAppComposition: vi.fn(),
         sharedEventBus: null as BoundNotifyBus | null,
+        setCommandEventBus: vi.fn(),
         setNotificationEventBus: vi.fn(),
         setVoiceToggleEventBus: vi.fn(),
         setWebMidiRuntimeEventBus: vi.fn(),
@@ -109,6 +113,7 @@ vi.mock('#/modules/Project/useCases', () => ({
     },
     whenProjectIdentityTransitionDependenciesConfigured: () => mocks.identity.ready,
     loadProject: vi.fn(),
+    reportProjectLoadFailure: vi.fn(),
     saveProject: vi.fn(),
 }));
 
@@ -130,6 +135,16 @@ vi.mock('#/modules/MIDI/useCases', async () => {
         setWebMidiRuntimeEventBus: (input: Parameters<typeof setWebMidiRuntimeEventBus>[0]) => {
             mocks.setWebMidiRuntimeEventBus(input);
             mocks.bindWebMidiRuntimeEventBus(input);
+        },
+    };
+});
+
+vi.mock('#/modules/Command/useCases', async () => {
+    const { setCommandEventBus } = await import('../../modules/Command/useCases/commandEventBus');
+    return {
+        setCommandEventBus: (eventBus: Parameters<typeof setCommandEventBus>[0]) => {
+            mocks.setCommandEventBus(eventBus);
+            mocks.bindCommandEventBus(eventBus);
         },
     };
 });
@@ -185,6 +200,7 @@ function expectMountBusesBoundBeforeRender(): void {
     expect(mocks.setVoiceToggleEventBus).toHaveBeenCalledOnce();
     expect(mocks.setNotificationEventBus).toHaveBeenCalledOnce();
     expect(mocks.setWebMidiRuntimeEventBus).toHaveBeenCalledOnce();
+    expect(mocks.setCommandEventBus).toHaveBeenCalledOnce();
 
     const renderOrder = mocks.render.mock.invocationCallOrder[0];
     expect(renderOrder).toBeDefined();
@@ -196,6 +212,7 @@ function expectMountBusesBoundBeforeRender(): void {
         mocks.setVoiceToggleEventBus,
         mocks.setNotificationEventBus,
         mocks.setWebMidiRuntimeEventBus,
+        mocks.setCommandEventBus,
     ]) {
         const order = setter.mock.invocationCallOrder[0];
         expect(order).toBeDefined();
@@ -211,6 +228,7 @@ function expectMountBusesBoundBeforeRender(): void {
     expect(mocks.setVoiceToggleEventBus).toHaveBeenCalledWith(boundBus);
     expect(mocks.setNotificationEventBus).toHaveBeenCalledWith(boundBus);
     expect(mocks.setWebMidiRuntimeEventBus).toHaveBeenCalledWith({ eventBus: boundBus });
+    expect(mocks.setCommandEventBus).toHaveBeenCalledWith(boundBus);
 }
 
 describe('app main first paint', () => {
@@ -234,9 +252,11 @@ describe('app main first paint', () => {
             await import('../../modules/AiRuntime/useCases/voiceToggle/voiceToggleEventBus');
         const { setWebMidiRuntimeEventBus } =
             await import('../../modules/MIDI/useCases/webMidiInput/setWebMidiRuntimeEventBus');
+        const { setCommandEventBus } = await import('../../modules/Command/useCases/commandEventBus');
         mocks.bindWorkspaceEventBus = setWorkspaceEventBus;
         mocks.bindVoiceToggleEventBus = setVoiceToggleEventBus;
         mocks.bindWebMidiRuntimeEventBus = setWebMidiRuntimeEventBus;
+        mocks.bindCommandEventBus = setCommandEventBus;
         const { Container } = await import('#/infra/di/Container');
         Container.clear();
         const notificationEventBus = await import('#/utils/Notification/notificationEventBus');

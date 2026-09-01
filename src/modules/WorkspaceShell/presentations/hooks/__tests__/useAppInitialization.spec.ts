@@ -9,7 +9,7 @@ import {
     syncNativeTimelineSamples,
 } from '#/modules/AudioEngine/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
-import { finishProjectLoading, loadProject, saveProject } from '#/modules/Project/useCases';
+import { finishProjectLoading, loadProject, reportProjectLoadFailure, saveProject } from '#/modules/Project/useCases';
 import { syncTransportMapsToNativeSession } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -78,6 +78,7 @@ const identityTransitionReady = vi.hoisted(() => {
 vi.mock('#/modules/Project/useCases', () => ({
     loadProject: vi.fn().mockResolvedValue(undefined),
     finishProjectLoading: vi.fn(),
+    reportProjectLoadFailure: vi.fn(),
     saveProject: vi.fn(),
     whenProjectIdentityTransitionDependenciesConfigured: () => identityTransitionReady.ready,
 }));
@@ -561,6 +562,10 @@ describe('useAppInitialization — Project loading boundary', () => {
 
         await waitFor(() => {
             expect(notifyUser).toHaveBeenCalledWith('App failed to load — please reload the page.', 'error');
+        });
+        expect(reportProjectLoadFailure).toHaveBeenCalledWith({
+            message: 'App failed to load — please reload the page.',
+            projectName: 'Untitled Project',
         });
         expect(loadProject).not.toHaveBeenCalled();
     });

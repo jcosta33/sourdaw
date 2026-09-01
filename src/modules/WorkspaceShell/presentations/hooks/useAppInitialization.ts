@@ -14,6 +14,7 @@ import { preferencesStore } from '#/modules/Preferences/stores';
 import { projectStore } from '#/modules/Project/stores';
 import {
     loadProject,
+    reportProjectLoadFailure,
     saveProject,
     whenProjectIdentityTransitionDependenciesConfigured,
 } from '#/modules/Project/useCases';
@@ -71,7 +72,12 @@ export const useAppInitialization = (): void => {
                 ensureTrackStrips();
             } catch (error) {
                 logger.error(new Error('App initialization failed', { cause: error }));
-                notifyUser('App failed to load — please reload the page.', 'error');
+                const message = 'App failed to load — please reload the page.';
+                notifyUser(message, 'error');
+                reportProjectLoadFailure({
+                    message,
+                    projectName: projectStore.value?.name ?? 'Untitled Project',
+                });
             }
         })();
 

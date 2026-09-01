@@ -18,6 +18,7 @@ export { failProjectIdentityTransitionDependencies } from './projectPersistence/
 export { renameProject } from './projectPersistence/saveProject/renameProject';
 export { importSclFile } from './importSclFile';
 export { finishProjectLoading } from './finishProjectLoading';
+export { reportProjectLoadFailure } from './reportProjectLoadFailure';
 export { setProjectKeyRoot } from './setProjectKeyRoot';
 export { setProjectScaleName } from './setProjectScaleName';
 export { pickFiles } from './fileDialog';
