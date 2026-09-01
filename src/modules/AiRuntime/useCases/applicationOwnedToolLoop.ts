@@ -654,6 +654,7 @@ function executeCatalogDiscovery(call: ToolCallResult, callId: string, turn: num
     }
     try {
         const catalog = getAgentToolCatalogEntries(parsed.input);
+        const isCommandIndex = catalog.category === 'command-index';
         return {
             schema: 'sourdaw.application-tool-receipt',
             schemaVersion: 1,
@@ -663,9 +664,15 @@ function executeCatalogDiscovery(call: ToolCallResult, callId: string, turn: num
             status: 'success',
             revision: null,
             data: catalog,
-            summary: `${catalog.category}: ${String(catalog.items.length)} schema(s)`,
+            summary: isCommandIndex
+                ? `command-index: ${String(catalog.items.length)} command(s)`
+                : `${catalog.category}: ${String(catalog.items.length)} schema(s)`,
             warnings: catalog.truncated
-                ? ['Catalog page is truncated; continue only this exact requested name set.']
+                ? [
+                      isCommandIndex
+                          ? 'Command index page is truncated; continue with the same intent and cursor.'
+                          : 'Catalog page is truncated; continue only this exact requested name set.',
+                  ]
                 : [],
             error: null,
         };

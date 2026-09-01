@@ -213,6 +213,7 @@ export function getExecutableAppActionIntentCatalog(input: { intent?: string; pa
     return {
         schema: 'sourdaw.intent-command-catalog',
         schemaVersion: 1 as const,
+        category: 'command-index' as const,
         intent,
         items: structuredClone(items),
         nextCursor:

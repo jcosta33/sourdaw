@@ -121,10 +121,16 @@ describe('intent command catalog', () => {
                 })
                 .mockResolvedValueOnce({ status: 'complete', toolCalls: [] }),
         });
-        const firstCatalog = firstPage.receipts[0]?.data as { nextCursor: string | null };
+        const firstReceipt = firstPage.receipts[0];
+        const firstCatalog = firstReceipt?.data as { category: string; nextCursor: string | null };
 
+        expect(firstCatalog.category).toBe('command-index');
         expect(firstCatalog.nextCursor).not.toBeNull();
         expect(firstCatalog.nextCursor?.length).toBeLessThanOrEqual(2048);
+        expect(firstReceipt).toMatchObject({
+            summary: 'command-index: 1 command(s)',
+            warnings: ['Command index page is truncated; continue with the same intent and cursor.'],
+        });
 
         const nextPage = await runApplicationOwnedToolLoop({
             loopId: 'intent-command-catalog-broad-next-page',
