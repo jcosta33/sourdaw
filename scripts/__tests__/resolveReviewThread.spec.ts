@@ -1,4 +1,6 @@
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -13,6 +15,7 @@ import {
     resolveReviewThread,
     runResolveReviewThreadCli,
     deleteReply,
+    shellPort,
     type ResolveReviewThreadCoordinatorDependencies,
     type ResolveReviewThreadPort,
 } from '../resolveReviewThread.ts';
@@ -22,6 +25,18 @@ const movedHead = 'b'.repeat(40);
 const threadId = 'PRRT_kwDOExample';
 const rootId = 'PRRC_root';
 const replyId = 'PRRC_reply';
+
+function runGit(root: string, args: string[]): string {
+    const result = spawnSync('git', args, { cwd: root, encoding: 'utf8', shell: false });
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status !== 0) {
+        throw new Error(`git ${args.join(' ')} failed: ${result.stderr}`);
+    }
+    return result.stdout.trim();
+}
+
 type Input = {
     heads?: string[];
     authorNodeId?: string;
@@ -367,6 +382,54 @@ describe('review thread resolution', () => {
         ).resolves.toBe(0);
 
         expect(forwarded).toEqual({ number: 7819, threadId: requestedThreadId, expectedHead: requestedHead });
+    });
+
+    it.each<[string, (port: ResolveReviewThreadPort) => void]>([
+        ['Done reply', (port) => port.replyDone(threadId)],
+        ['thread resolution', (port) => port.resolve(threadId)],
+        ['compensation delete', (port) => port.deleteReply(replyId)],
+    ])('retains the exact shared owner when the production %s result is indeterminate', async (label, mutate) => {
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-resolve-lock-'));
+        runGit(primaryRoot, ['init', '-b', 'main']);
+        const number = 7820;
+        const ref = `refs/sourdaw/delivery/pr-${number}`;
+        let dispatched = 0;
+        let reacquired = false;
+
+        try {
+            await expect(
+                withPullRequestMutationLock(primaryRoot, number, async ({ markRemoteMutationAttempt }) => {
+                    const port = shellPort(
+                        { configDir: '/tmp/sourdaw-author', env: {}, dispose: () => undefined },
+                        primaryRoot,
+                        markRemoteMutationAttempt,
+                        (command, args) => {
+                            if (command === 'git' && args[0] === 'rev-parse') {
+                                return `${primaryRoot}/.git`;
+                            }
+                            if (command === 'gh' && args[0] === 'api') {
+                                dispatched += 1;
+                                throw new Error(`${label} result is indeterminate`);
+                            }
+                            throw new Error(`unexpected command in test: ${command} ${args.join(' ')}`);
+                        }
+                    );
+                    mutate(port);
+                })
+            ).rejects.toThrow(`${label} result is indeterminate`);
+            expect(dispatched).toBe(1);
+            const retainedOwnerOid = runGit(primaryRoot, ['show-ref', '--verify', '--hash', ref]);
+
+            await expect(
+                withPullRequestMutationLock(primaryRoot, number, async () => {
+                    reacquired = true;
+                })
+            ).rejects.toThrow(/already being delivered/);
+            expect(reacquired).toBe(false);
+            expect(runGit(primaryRoot, ['show-ref', '--verify', '--hash', ref])).toBe(retainedOwnerOid);
+        } finally {
+            rmSync(primaryRoot, { recursive: true, force: true });
+        }
     });
 
     it('uses supported GraphQL reply and deletion input fields', () => {

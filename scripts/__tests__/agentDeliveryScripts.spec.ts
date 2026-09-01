@@ -1766,6 +1766,13 @@ describe('package scripts and gitignore', () => {
                         if (args.includes('--paginate')) {
                             return JSON.stringify([[]]);
                         }
+                        if (args.includes('POST')) {
+                            return JSON.stringify({
+                                node_id: 'IC_tracker_marker',
+                                body: 'marker coverage',
+                                user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]', type: 'Bot' },
+                            });
+                        }
                         return JSON.stringify({
                             node_id: 'I_2406',
                             number: 2406,
@@ -1782,6 +1789,7 @@ describe('package scripts and gitignore', () => {
             completeIssue: (issue, login, port) => {
                 expect(port).not.toBe(trackerPort);
                 port.update(issue, { state: 'CLOSED', stateReason: 'COMPLETED' });
+                port.comment(issue, 'marker coverage');
                 seen.push(`complete:${login}`);
             },
             deliver: (_number, port, completion) => {
@@ -1799,6 +1807,7 @@ describe('package scripts and gitignore', () => {
             'repository:ghs_author',
             'tracker:ghs_tracker',
             'delivery:ghs_author',
+            'lock:2495:attempt',
             'lock:2495:attempt',
             `complete:${AUTHOR_BOT_NODE_ID}`,
             'lock:2495:release',
@@ -1819,6 +1828,17 @@ describe('package scripts and gitignore', () => {
             },
             {
                 args: ['api', '--paginate', '--slurp', 'repos/jcosta33/sourdaw/issues/2406/comments?per_page=100'],
+                token: 'ghs_tracker',
+            },
+            {
+                args: [
+                    'api',
+                    '--method',
+                    'POST',
+                    'repos/jcosta33/sourdaw/issues/2406/comments',
+                    '-f',
+                    'body=marker coverage',
+                ],
                 token: 'ghs_tracker',
             },
         ]);

@@ -463,13 +463,14 @@ function findReusableReply(thread: ReviewThread | null): ReviewComment | undefin
 export function shellPort(
     session: GhSession,
     cwd: string = process.cwd(),
-    markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt'] = () => undefined
+    markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt'] = () => undefined,
+    capture: typeof spawnCapture = spawnCapture
 ): ResolveReviewThreadPort {
     const primaryRoot = resolvePrimaryRoot(
-        (command, args, directory) => spawnCapture(command, args, { cwd: directory }),
+        (command, args, directory) => capture(command, args, { cwd: directory }),
         cwd
     );
-    const gh = (args: string[]) => spawnCapture('gh', args, { cwd: primaryRoot, env: session.env });
+    const gh = (args: string[]) => capture('gh', args, { cwd: primaryRoot, env: session.env });
     return {
         inspect: (number, id) => inspectReviewThread(number, id, gh),
         replyDone: (id) => mutationReply(id, gh, markRemoteMutationAttempt),
