@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 const UNDO_SESSION_KEY = 'sourdaw-undo-session';
+// Large enough to hold a halved mirror, far too small for the whole stack the
+// oversized case pushes, so a refusal has to shrink the mirror to land at all.
+const MIRROR_QUOTA_BYTES = 4096;
+const OVERSIZED_STACK_ENTRY_COUNT = 60;
 const SUPPORTED_SESSION_ACTION_TYPES = [
     'replayGeneratedMidi',
     'setMasterGain',
@@ -47,6 +51,19 @@ function parsePersistedUndoState(raw: string | null): Record<string, unknown> {
         throw new Error('Expected persisted undo state to be an object');
     }
     return parsed;
+}
+
+function persistedEntryLabels(stack: unknown): string[] {
+    if (!Array.isArray(stack)) {
+        throw new TypeError('Expected a persisted undo stack to be an array');
+    }
+    const entries: unknown[] = stack;
+    return entries.map((entry) => {
+        if (!isRecord(entry) || typeof entry.label !== 'string') {
+            throw new TypeError('Expected a persisted undo entry to carry a label');
+        }
+        return entry.label;
+    });
 }
 
 describe('undoStore / pushUndo', () => {
@@ -336,6 +353,51 @@ describe('undoStore / pushUndo', () => {
 
         const reloaded = await loadSubject();
         expect(reloaded.undoStore.value).toEqual({ past: [], future: [] });
+    });
+
+    it('should shrink a refused mirror until it fits and keep the entries nearest the present', async () => {
+        const { createUndoEntry, pushUndo } = await loadSubject();
+        // Storage that refuses only what exceeds its quota, so the write lands
+        // exactly when the mirror has shrunk enough to fit.
+        const originalSetItem = Storage.prototype.setItem;
+        const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+            this: Storage,
+            key: string,
+            value: string
+        ): undefined {
+            if (key === UNDO_SESSION_KEY && value.length > MIRROR_QUOTA_BYTES) {
+                throw new DOMException('quota exceeded', 'QuotaExceededError');
+            }
+            originalSetItem.call(this, key, value);
+            return undefined;
+        });
+        const pushedLabels = Array.from({ length: OVERSIZED_STACK_ENTRY_COUNT }, (_, index) => `entry-${index}`);
+        try {
+            for (const label of pushedLabels) {
+                pushUndo(
+                    createUndoEntry(
+                        label,
+                        { type: 'setTempo', payload: { bpm: 120 } },
+                        { type: 'setTempo', payload: { bpm: 110 } }
+                    )
+                );
+            }
+            await flushPersistence();
+        } finally {
+            setItem.mockRestore();
+        }
+
+        const parsed = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        const survivingLabels = persistedEntryLabels(parsed.past);
+        expect(survivingLabels.length).toBeGreaterThan(0);
+        expect(survivingLabels.length).toBeLessThan(pushedLabels.length);
+        // Undo pops the tail of `past`, so the entries a shrunken mirror keeps
+        // are the newest ones, with the older tail dropped.
+        expect(survivingLabels).toEqual(pushedLabels.slice(-survivingLabels.length));
+        expect(persistedEntryLabels(parsed.future)).toEqual([]);
+
+        const reloaded = await loadSubject();
+        expect(reloaded.undoStore.value?.past.map((entry) => entry.label)).toEqual(survivingLabels);
     });
 
     it('should drop a hydrated entry whose arguments fail the current contract and every entry behind it', async () => {
