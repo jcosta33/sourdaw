@@ -5171,8 +5171,96 @@ describe('review thread resolution', () => {
                 'inspect:2',
                 `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${head}`,
                 `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${head}`,
+                'inspect:3',
+                `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${head}`,
+                `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${head}`,
             ]);
             expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('reconciles only the canonical managed pending review before releasing an immutable submitted-review recovery lock', () => {
+        const repository = createTemporaryGitRepository();
+        const {
+            port: basePort,
+            calls,
+            state,
+        } = fakePort({
+            isResolved: true,
+            initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+            initialResolvedByType: 'User',
+            existingReplyCount: 1,
+            existingReplyReviewState: 'COMMENTED',
+            existingReplyReviewBody: '',
+            addPendingReplyMarkerToResolvedThread: true,
+        });
+        const port: ResolveReviewThreadPort = {
+            ...basePort,
+            updateReviewBody: () => {
+                throw new Error('immutable submitted review must not be updated');
+            },
+        };
+        const mutation = {
+            phase: 'updateReviewBody' as const,
+            epoch: 1,
+            reviewId,
+            reviewDatabaseId: '9223372036854775808',
+            reviewCommitOid: head,
+            body: resolutionReviewSummary(pullRequestId, threadId, head),
+        };
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, mutation);
+            updateLock(repository, 42, ownerOid);
+
+            recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) =>
+                recoverReviewResolutionLockOwnerState(42, owner, port)
+            );
+
+            expect(calls).toContain('deleteReview:PRR_resolved_pending');
+            expect(calls.filter((call) => call.startsWith('updateReview:'))).toEqual([]);
+            expect(state().reviews).toEqual([expect.objectContaining({ id: reviewId, state: 'COMMENTED', body: '' })]);
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('preserves an immutable submitted-review recovery lock when an unrelated moved-head pending review remains', () => {
+        const repository = createTemporaryGitRepository();
+        const mutation = {
+            phase: 'updateReviewBody' as const,
+            epoch: 1,
+            reviewId,
+            reviewCommitOid: head,
+            body: resolutionReviewSummary(pullRequestId, threadId, head),
+        };
+        const { port, calls } = fakePort({
+            isResolved: true,
+            initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+            initialResolvedByType: 'User',
+            existingReplyCount: 1,
+            existingReplyReviewState: 'COMMENTED',
+            existingReplyReviewBody: '',
+            existingPendingReviewCount: 1,
+            existingPendingReviewIds: ['PRR_blocking'],
+            existingPendingReviewCommitOid: movedHead,
+            existingPendingReviewBody: 'unrelated moved pending body',
+        });
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, mutation);
+            updateLock(repository, 42, ownerOid);
+
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) =>
+                    recoverReviewResolutionLockOwnerState(42, owner, port)
+                )
+            ).toThrow(/non-reusable pending author review/i);
+            expect(
+                calls.filter((call) => call.startsWith('deleteReview:') || call.startsWith('updateReview:'))
+            ).toEqual([]);
+            expect(requireLockOwner(repository, 42)).toMatchObject({ threadId, head, mutation });
         } finally {
             rmSync(repository, { recursive: true, force: true });
         }
@@ -5236,6 +5324,71 @@ describe('review thread resolution', () => {
                         recoverReviewResolutionLockOwnerState(42, owner, port)
                     )
                 ).toThrow(/not resolved by/i);
+                expect(calls.filter((call) => call.startsWith('updateReview:'))).toEqual([]);
+                expect(requireLockOwner(repository, 42)).toMatchObject({ threadId, head, mutation });
+            } finally {
+                rmSync(repository, { recursive: true, force: true });
+            }
+        }
+    );
+
+    it.each([
+        ['review author node', { reviewAuthorNodeId: REVIEWER_BOT_NODE_ID }],
+        ['review author typename', { reviewAuthorType: 'User' }],
+        ['review commit', { reviewCommitOid: movedHead }],
+        ['review decimal identity', { reviewFullDatabaseId: '9223372036854775809' }],
+    ] as const)(
+        'preserves an immutable submitted-review recovery lock when the fresh marker has the wrong %s',
+        (_label, override) => {
+            const repository = createTemporaryGitRepository();
+            const { port: basePort, calls } = fakePort({
+                isResolved: true,
+                initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+                initialResolvedByType: 'User',
+                existingReplyCount: 1,
+                existingReplyReviewState: 'COMMENTED',
+                existingReplyReviewBody: '',
+            });
+            let inspections = 0;
+            const port: ResolveReviewThreadPort = {
+                ...basePort,
+                inspect: (number, currentThreadId) => {
+                    const inspection = basePort.inspect(number, currentThreadId);
+                    inspections += 1;
+                    if (inspections !== 2 || inspection.thread === null) {
+                        return inspection;
+                    }
+                    return {
+                        ...inspection,
+                        thread: {
+                            ...inspection.thread,
+                            comments: inspection.thread.comments.map((comment) =>
+                                comment.id === replyId ? { ...comment, ...override } : comment
+                            ),
+                        },
+                    };
+                },
+                updateReviewBody: () => {
+                    throw new Error('immutable submitted review must not be updated');
+                },
+            };
+            const mutation = {
+                phase: 'updateReviewBody' as const,
+                epoch: 1,
+                reviewId,
+                reviewDatabaseId: '9223372036854775808',
+                reviewCommitOid: head,
+                body: resolutionReviewSummary(pullRequestId, threadId, head),
+            };
+            try {
+                const ownerOid = writeLockOwnerBlob(repository, 999999, head, mutation);
+                updateLock(repository, 42, ownerOid);
+
+                expect(() =>
+                    recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) =>
+                        recoverReviewResolutionLockOwnerState(42, owner, port)
+                    )
+                ).toThrow(/non-author review|unreconciled in-flight|could not prove an unlanded historical review/i);
                 expect(calls.filter((call) => call.startsWith('updateReview:'))).toEqual([]);
                 expect(requireLockOwner(repository, 42)).toMatchObject({ threadId, head, mutation });
             } finally {
@@ -12371,6 +12524,51 @@ describe('review thread resolution', () => {
             }),
         ]);
     });
+    it('preserves one immutable submitted-review envelope while converging a nonempty duplicate marker', () => {
+        const {
+            port: basePort,
+            calls,
+            authorNodeId,
+            state,
+        } = fakePort({
+            isResolved: true,
+            initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+            initialResolvedByType: 'User',
+            existingReplyCount: 2,
+            existingReplyReviewBody: '',
+            secondaryReplyReviewBody: resolutionReviewSummary(pullRequestId, threadId, head),
+        });
+        const port: ResolveReviewThreadPort = {
+            ...basePort,
+            updateReviewBody: () => {
+                throw new Error('immutable submitted review must not be updated');
+            },
+        };
+        expect(resolveReviewThread(42, threadId, head, authorNodeId, port)).toBe(
+            `review-thread-resolution-reconciled-immutable-empty-submitted-review:42:${threadId}`
+        );
+        expect(calls.filter((call) => call.startsWith('updateReview:'))).toEqual([]);
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual(['delete:PRRC_existing_1']);
+        expect(state().comments.filter((comment) => comment.body === 'Done')).toEqual([
+            expect.objectContaining({ id: replyId, reviewId }),
+        ]);
+    });
+    it('fails closed when the immutable submitted-review envelope is attached to another thread', () => {
+        const { port, calls, authorNodeId } = fakePort({
+            isResolved: true,
+            initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+            initialResolvedByType: 'User',
+            existingReplyCount: 1,
+            existingReplyReviewBody: '',
+            attachedReviewThreadIdsByReviewId: { [reviewId]: ['PRRT_foreign'] },
+        });
+        expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(
+            /attached review-thread comments/i
+        );
+        expect(calls.filter((call) => !call.startsWith('inspect:'))).toEqual([
+            `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${head}`,
+        ]);
+    });
     it('retires a stale unattached pending review before reconciling an immutable submitted-review envelope', () => {
         const {
             port: basePort,
@@ -12417,12 +12615,15 @@ describe('review thread resolution', () => {
             existingReplyReviewBody: '',
             existingPendingReviewCount: 1,
             existingPendingReviewIds: ['PRR_blocking'],
-            existingPendingReviewBody: 'unrelated pending body',
+            existingPendingReviewCommitOid: movedHead,
+            existingPendingReviewBody: 'unrelated moved pending body',
         });
         expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(
             /non-reusable pending author review/i
         );
-        expect(calls.filter((call) => call.startsWith('updateReview:'))).toEqual([]);
+        expect(calls.filter((call) => call.startsWith('updateReview:') || call.startsWith('deleteReview:'))).toEqual(
+            []
+        );
     });
     it.each([
         ['review identity', { updateReceiptReviewId: 'PRR_wrong' }],
