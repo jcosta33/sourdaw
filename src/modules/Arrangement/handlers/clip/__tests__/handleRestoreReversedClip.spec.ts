@@ -84,6 +84,45 @@ describe('handleRestoreReversedClip', () => {
         });
     });
 
+    it('restores audioOffsetBeats when the payload carries it', () => {
+        const reversedClip = makeClip({ audioOffsetBeats: 2 });
+        setClip(reversedClip);
+
+        const result = handleRestoreReversedClip.execute({
+            type: 'restoreReversedClip',
+            payload: {
+                clipId: 'c1',
+                expectedAudioBufferId: 'reversed-1',
+                audioBufferId: 'buffer-1',
+                name: 'Verse',
+                audioOffsetBeats: 0.5,
+            },
+        });
+
+        expect(result).toEqual({ status: 'written' });
+        expect(publishedUpdate(reversedClip)).toMatchObject({ audioOffsetBeats: 0.5 });
+    });
+
+    it('leaves audioOffsetBeats untouched on a legacy payload that predates the offset field', () => {
+        const reversedClip = makeClip({ audioOffsetBeats: 2 });
+        setClip(reversedClip);
+
+        const result = handleRestoreReversedClip.execute({
+            type: 'restoreReversedClip',
+            payload: {
+                clipId: 'c1',
+                expectedAudioBufferId: 'reversed-1',
+                audioBufferId: 'buffer-1',
+                name: 'Verse',
+                fadeInBeats: 0.25,
+                fadeOutBeats: 1.5,
+            },
+        });
+
+        expect(result).toEqual({ status: 'written' });
+        expect(publishedUpdate(reversedClip)).toMatchObject({ audioOffsetBeats: 2 });
+    });
+
     it('leaves fades untouched on a legacy payload that predates the fade fields', () => {
         const reversedClip = makeClip();
         setClip(reversedClip);
