@@ -1,3 +1,8 @@
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
@@ -22,6 +27,17 @@ const validComment = {
     consequence: 'A stale COMMENT could ship',
     done: 'Require reviewer APPROVED on this head',
 };
+
+function runGit(root: string, args: string[]): string {
+    const result = spawnSync('git', args, { cwd: root, encoding: 'utf8', shell: false });
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status !== 0) {
+        throw new Error(`git ${args.join(' ')} failed: ${result.stderr}`);
+    }
+    return result.stdout.trim();
+}
 
 function fakePort(
     input: {
@@ -428,6 +444,56 @@ describe('shellPort postReview state verification', () => {
             port.postReview({ number: 42, commitId: 'sha', event: 'REQUEST_CHANGES', body: 'no', comments: [] })
         ).toEqual({ id: 42, actorNodeId: REVIEWER_BOT_NODE_ID, login: 'renamed-reviewer[bot]' });
         expect(events).toEqual(['attempt', 'post']);
+    });
+
+    it('retains the exact shared owner when the production review POST becomes indeterminate', async () => {
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-publish-lock-'));
+        runGit(primaryRoot, ['init', '-b', 'main']);
+        const number = 7819;
+        const ref = `refs/sourdaw/delivery/pr-${number}`;
+        let postAttempted = false;
+        let reacquired = false;
+
+        try {
+            await expect(
+                withPullRequestMutationLock(primaryRoot, number, async ({ markRemoteMutationAttempt }) => {
+                    const port = shellPort(
+                        session,
+                        primaryRoot,
+                        (command, args) => {
+                            if (command === 'git' && args[0] === 'rev-parse') {
+                                return `${primaryRoot}/.git`;
+                            }
+                            if (command === 'gh' && args[0] === 'api') {
+                                postAttempted = true;
+                                throw new Error('review POST result is indeterminate');
+                            }
+                            throw new Error(`unexpected command in test: ${command} ${args.join(' ')}`);
+                        },
+                        markRemoteMutationAttempt
+                    );
+                    port.postReview({
+                        number,
+                        commitId: 'a'.repeat(40),
+                        event: 'APPROVE',
+                        body: 'Attacked the owner fence; it held.',
+                        comments: [],
+                    });
+                })
+            ).rejects.toThrow('review POST result is indeterminate');
+            expect(postAttempted).toBe(true);
+            const retainedOwnerOid = runGit(primaryRoot, ['show-ref', '--verify', '--hash', ref]);
+
+            await expect(
+                withPullRequestMutationLock(primaryRoot, number, async () => {
+                    reacquired = true;
+                })
+            ).rejects.toThrow(/already being delivered/);
+            expect(reacquired).toBe(false);
+            expect(runGit(primaryRoot, ['show-ref', '--verify', '--hash', ref])).toBe(retainedOwnerOid);
+        } finally {
+            rmSync(primaryRoot, { recursive: true, force: true });
+        }
     });
 
     it('posts successfully when APPROVE is recorded as APPROVED', () => {
