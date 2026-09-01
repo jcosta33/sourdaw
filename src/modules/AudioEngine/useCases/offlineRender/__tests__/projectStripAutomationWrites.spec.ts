@@ -50,11 +50,11 @@ function createTrack(overrides?: Partial<Track>): Track {
         followChordTrack: false,
         midiFx: [],
         ...overrides,
-    } as Track;
+    };
 }
 
-function point(beat: number, value: number): AutomationPoint {
-    return { beat, value, curve: 'step', tension: 0 };
+function point(beat: number, value: number, curve: AutomationPoint['curve'] = 'step'): AutomationPoint {
+    return { beat, value, curve, tension: 0 };
 }
 
 /**
@@ -85,7 +85,6 @@ const baseInput: Omit<StripAutomationWritesInput, 'track' | 'lanes' | 'admittedS
     compensationDelaySec: 0,
     vcaMultiplier: 1,
     slewTickSeconds: 0.01,
-    clipBoundsById: new Map(),
     resolveLaneCeiling: (candidate) => candidate.maxValue,
 };
 
@@ -205,6 +204,43 @@ describe('projectStripAutomationWrites — the seam-value inversions', () => {
         // project scale by the inverse of the same factor a real
         // `StereoPannerNode`'s nominal range implies.
         expect((write as { value: number }).value).toBeCloseTo(panValue * 50, 10);
+    });
+
+    it('collapses every fader write to exactly 0 under a zero VCA multiplier, never NaN', () => {
+        const track = createTrack();
+        const vcaMultiplier = 0;
+        // A non-silent, moving lane: `clampFaderGain(value * 0)` records 0 at
+        // every sampled point regardless, so the seam's zero-multiplier branch
+        // is what has to hold the write at 0 rather than divide by 0.
+        const lanes: AutomationLane[] = [
+            lane({
+                parameterId: 'gain',
+                points: [point(0, 0.5, 'linear'), point(4, 1.5, 'linear')],
+                minValue: 0,
+                maxValue: 2,
+            }),
+        ];
+
+        const result = projectStripAutomationWrites({
+            ...baseInput,
+            track,
+            admittedSendBusIds: [],
+            lanes,
+            vcaMultiplier,
+        });
+
+        expect(result.outcome).toBe('converted');
+        if (result.outcome !== 'converted') {
+            throw new Error('unreachable: asserted above');
+        }
+        const faderEntry = result.entries.find((entry) => entry.target.kind === 'track-fader');
+        expect(faderEntry).toBeDefined();
+        expect(faderEntry!.writes.length).toBeGreaterThan(0);
+        // `seamFaderValue`'s guard returns 0 explicitly for a zero multiplier;
+        // `recorded / vcaMultiplier` would divide 0 by 0 and write NaN instead.
+        for (const write of faderEntry!.writes) {
+            expect((write as { value: number }).value).toBe(0);
+        }
     });
 });
 

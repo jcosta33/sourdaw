@@ -61,7 +61,6 @@ export type StripAutomationWritesInput = Readonly<{
     compensationDelaySec: number;
     vcaMultiplier: number;
     slewTickSeconds: number;
-    clipBoundsById: Map<string, { startBeat: number; endBeat: number }>;
     resolveLaneCeiling: (lane: Pick<AutomationLane, 'parameterId' | 'minValue' | 'maxValue' | 'clipId'>) => number;
 }>;
 
@@ -119,7 +118,6 @@ export function projectStripAutomationWrites(input: StripAutomationWritesInput):
         compensationDelaySec,
         vcaMultiplier,
         slewTickSeconds,
-        clipBoundsById,
         resolveLaneCeiling,
     } = input;
 
@@ -127,6 +125,14 @@ export function projectStripAutomationWrites(input: StripAutomationWritesInput):
     // (`scheduleTrackClips`); the mixdown always includes mixer lanes.
     if (track.automationMode === 'off') {
         return { outcome: 'converted', entries: [] };
+    }
+
+    // Both callers (the export and the live producer) build this from the
+    // same `track.clips`; building it here once removes the duplicated loop
+    // each used to carry just to hand this map back in.
+    const clipBoundsById = new Map<string, { startBeat: number; endBeat: number }>();
+    for (const clip of track.clips) {
+        clipBoundsById.set(clip.id, { startBeat: clip.startBeat, endBeat: clip.endBeat });
     }
 
     const gainRecorder = createAutomationRecorder();

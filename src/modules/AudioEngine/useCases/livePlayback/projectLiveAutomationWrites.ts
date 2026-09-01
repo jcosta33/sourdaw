@@ -50,6 +50,7 @@
  */
 
 import { type Track } from '#/modules/Arrangement/stores';
+import { resolveLinkedLane } from '#/utils/automationLaneLink';
 
 import { type AudioGraphParameterWrite, type AudioGraphStripParameterTarget } from '../../models/AudioGraphBackend';
 import { type AutomationLane } from '../../models/AutomationViewTypes';
@@ -104,22 +105,44 @@ const DEVICE_AUTOMATION_EXCLUSION_REASON = 'device parameter automation has no n
  * send — the device-parameter family `projectStripAutomationWrites` silently
  * drops today, matching main. This producer names each one as its own
  * exclusion rather than let it vanish with no signal (#3068).
+ *
+ * Mirrors `scheduleTrackAutomation`'s own drop conditions
+ * (`repositories/offlineScheduler/automationScheduling.ts`) so this never
+ * excludes a lane the scheduler would never have carried anyway: a clip-scoped
+ * lane whose clip is not in `clipBoundsById` (the clip was removed or never
+ * built), and a lane that resolves — after following its link chain — to no
+ * points at all.
  */
-function deviceParameterLanes(lanes: readonly AutomationLane[], trackId: string): readonly AutomationLane[] {
-    return lanes.filter(
-        (lane) =>
-            lane.trackId === trackId &&
-            lane.enabled !== false &&
-            !KNOWN_STRIP_PARAMETER_IDS.has(lane.parameterId) &&
-            !lane.parameterId.startsWith(SEND_PARAMETER_PREFIX)
-    );
+function deviceParameterLanes(
+    lanes: readonly AutomationLane[],
+    laneById: ReadonlyMap<string, AutomationLane>,
+    trackId: string,
+    clipBoundsById: ReadonlyMap<string, { startBeat: number; endBeat: number }>
+): readonly AutomationLane[] {
+    return lanes.filter((lane) => {
+        if (lane.trackId !== trackId || lane.enabled === false) {
+            return false;
+        }
+        if (KNOWN_STRIP_PARAMETER_IDS.has(lane.parameterId) || lane.parameterId.startsWith(SEND_PARAMETER_PREFIX)) {
+            return false;
+        }
+        if (lane.clipId && !clipBoundsById.has(lane.clipId)) {
+            return false;
+        }
+        const resolved = resolveLinkedLane(lane.id, (id) => laneById.get(id));
+        if (!resolved) {
+            return false;
+        }
+        const sourceLane = laneById.get(resolved.sourceLaneId);
+        return sourceLane !== undefined && sourceLane.points.length > 0;
+    });
 }
 
-/**
- * `automationMode: 'off'` produces no writes at all — enforced inside
- * `projectStripAutomationWrites` itself, so this producer states the rule
- * once rather than re-checking a field the shared extraction already reads.
- */
+function assertNever(value: never): never {
+    throw new Error(`Unknown automation write shape: ${JSON.stringify(value)}`);
+}
+
+/** Shifts a region-relative write onto the absolute engine clock (see the header). */
 function offsetWrite(write: AudioGraphParameterWrite, offsetSeconds: number): AudioGraphParameterWrite {
     switch (write.shape) {
         case 'ramp-to':
@@ -129,7 +152,7 @@ function offsetWrite(write: AudioGraphParameterWrite, offsetSeconds: number): Au
         case 'hold':
             return { ...write, time: write.time + offsetSeconds };
         default:
-            return write;
+            return assertNever(write);
     }
 }
 
@@ -151,24 +174,28 @@ export function projectLiveAutomationWrites(input: LiveAutomationWritesInput): L
 
     const busStripIds = new Set(stripTracks.filter((track) => track.kind === 'bus').map((track) => track.id));
     const durationSeconds = Math.max(0, regionEndSeconds - regionStartSeconds);
+    const laneById = new Map<string, AutomationLane>();
+    for (const lane of lanes) {
+        laneById.set(lane.id, lane);
+    }
 
     const entries: LiveAutomationWritesEntry[] = [];
     const exclusions: LiveAutomationWritesExclusion[] = [];
 
     for (const track of stripTracks) {
-        // `automationMode: 'off'` reads no lane at all, the orphan device lane
-        // included — matching `projectStripAutomationWrites`'s own guard, so a
-        // strip with automation turned off never earns an exclusion for a
-        // lane it was never going to read.
-        if (track.automationMode !== 'off') {
-            for (const lane of deviceParameterLanes(lanes, track.id)) {
-                exclusions.push({ stripId: track.id, subjectId: lane.id, reason: DEVICE_AUTOMATION_EXCLUSION_REASON });
-            }
-        }
-
         const clipBoundsById = new Map<string, { startBeat: number; endBeat: number }>();
         for (const clip of track.clips) {
             clipBoundsById.set(clip.id, { startBeat: clip.startBeat, endBeat: clip.endBeat });
+        }
+
+        // `automationMode: 'off'` produces no writes at all — enforced inside
+        // `projectStripAutomationWrites` itself, and it reads no lane at all,
+        // the orphan device lane included. So a strip with automation turned
+        // off never earns an exclusion for a lane it was never going to read.
+        if (track.automationMode !== 'off') {
+            for (const lane of deviceParameterLanes(lanes, laneById, track.id, clipBoundsById)) {
+                exclusions.push({ stripId: track.id, subjectId: lane.id, reason: DEVICE_AUTOMATION_EXCLUSION_REASON });
+            }
         }
 
         const projected = projectStripAutomationWrites({
@@ -184,7 +211,6 @@ export function projectLiveAutomationWrites(input: LiveAutomationWritesInput): L
             compensationDelaySec: compensationDelaySeconds(track.id),
             vcaMultiplier: vcaMultiplierByTrackId.get(track.id) ?? 1,
             slewTickSeconds,
-            clipBoundsById,
             resolveLaneCeiling,
         });
 

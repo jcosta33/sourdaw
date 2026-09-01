@@ -50,7 +50,7 @@ function createTrack(overrides?: Partial<Track>): Track {
         followChordTrack: false,
         midiFx: [],
         ...overrides,
-    } as Track;
+    };
 }
 
 function point(beat: number, value: number, curve: AutomationPoint['curve'] = 'step'): AutomationPoint {
@@ -172,10 +172,14 @@ describe('projectLiveAutomationWrites — absolute-time offset', () => {
 });
 
 describe('projectLiveAutomationWrites — automationMode off', () => {
-    it('produces no entries and no exclusions for a strip with automationMode off', () => {
+    it('produces no entries and no exclusions for a strip with automationMode off, orphan device lane included', () => {
         const track = createTrack({ automationMode: 'off' });
         const lanes: AutomationLane[] = [
             lane({ trackId: track.id, parameterId: 'gain', points: [point(0, 0.5, 'step')] }),
+            // An off strip reads no lane at all — the device-lane exclusion
+            // loop must not fire either, or removing the `automationMode !==
+            // 'off'` guard around it would still pass this test.
+            lane({ trackId: track.id, parameterId: 'grinder-1:cutoff', points: [point(0, 0.3, 'step')] }),
         ];
 
         const result = projectLiveAutomationWrites({
@@ -261,6 +265,53 @@ describe('projectLiveAutomationWrites — device-lane exclusion', () => {
         const faderEntry = result.entries.find((entry) => entry.target.kind === 'track-fader');
         expect(faderEntry).toBeDefined();
         expect(faderEntry!.writes).toHaveLength(1);
+    });
+
+    it('does not exclude an enabled device lane with no points, but does once it carries one', () => {
+        // Mirrors `scheduleTrackAutomation`'s own drop condition: a lane
+        // resolving to an empty source is one the scheduler was never going
+        // to carry, so this producer must not flag it as an exclusion either.
+        const track = createTrack();
+        const emptyLanes: AutomationLane[] = [
+            lane({ trackId: track.id, parameterId: 'gain', points: [point(0, 0.5, 'step')] }),
+            lane({ trackId: track.id, parameterId: 'grinder-1:cutoff', points: [] }),
+        ];
+
+        const emptyResult = projectLiveAutomationWrites({
+            ...baseInput,
+            stripTracks: [track],
+            lanes: emptyLanes,
+            regionStartSeconds: 0,
+            regionEndSeconds: 4,
+        });
+
+        expect(emptyResult.exclusions).toEqual([]);
+
+        const populatedLane = lane({
+            trackId: track.id,
+            parameterId: 'grinder-1:cutoff',
+            points: [point(0, 0.3, 'step')],
+        });
+        const populatedLanes: AutomationLane[] = [
+            lane({ trackId: track.id, parameterId: 'gain', points: [point(0, 0.5, 'step')] }),
+            populatedLane,
+        ];
+
+        const populatedResult = projectLiveAutomationWrites({
+            ...baseInput,
+            stripTracks: [track],
+            lanes: populatedLanes,
+            regionStartSeconds: 0,
+            regionEndSeconds: 4,
+        });
+
+        expect(populatedResult.exclusions).toEqual([
+            {
+                stripId: track.id,
+                subjectId: populatedLane.id,
+                reason: 'device parameter automation has no native body yet (#3124)',
+            },
+        ]);
     });
 });
 

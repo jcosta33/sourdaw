@@ -252,10 +252,6 @@ export async function renderOfflineWithNativeEngine(
         // `projectStripAutomationWrites` shares this projection with the live
         // producer — see that module's header for the recorder/convert
         // relationship this used to inline here.
-        const clipBoundsById = new Map<string, { startBeat: number; endBeat: number }>();
-        for (const clip of track.clips) {
-            clipBoundsById.set(clip.id, { startBeat: clip.startBeat, endBeat: clip.endBeat });
-        }
         const automation = projectStripAutomationWrites({
             track,
             admittedSendBusIds: sendCommands({ track, busStripIds: busIds }).map((command) => command.busId),
@@ -271,7 +267,6 @@ export async function renderOfflineWithNativeEngine(
             slewTickSeconds: automationSlewTickSecondsForGrain(
                 transportStore.value?.scheduleGrainMs ?? defaultTransportState.scheduleGrainMs
             ),
-            clipBoundsById,
             // The native fold shares this scheduler with the Web Audio path,
             // so it takes the same lane law rather than a second copy.
             resolveLaneCeiling: getAutomationLaneCeiling,
