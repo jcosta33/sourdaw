@@ -127,17 +127,24 @@ describe('post-target scope admission strategies', () => {
         expect(collectClearSolosRestrictionClauses('clear all solos and leave Keys muted, then mute Guitar')).toEqual(
             []
         );
-        const bulkMutePrompt = 'clear all solos and mute every track except Vocals';
-        expect(
-            collectClearSolosRestrictionClauses(bulkMutePrompt, [
-                { actionType: 'clearSolos', start: 0, end: bulkMutePrompt.indexOf(' and mute') },
-                {
-                    actionType: 'muteTrack',
-                    start: bulkMutePrompt.indexOf('mute every track'),
-                    end: bulkMutePrompt.length,
-                },
-            ])
-        ).toEqual([]);
+        for (const [actionType, actionText] of [
+            ['muteTrack', 'mute every track'],
+            ['armTrack', 'arm every track'],
+            ['soloTrack', 'solo every track'],
+        ] as const) {
+            const adjacentBulkPrompt = `clear all solos and ${actionText} except Vocals`;
+            expect(
+                collectClearSolosRestrictionClauses(adjacentBulkPrompt, [
+                    { actionType: 'clearSolos', start: 0, end: adjacentBulkPrompt.indexOf(' and ') },
+                    {
+                        actionType,
+                        start: adjacentBulkPrompt.indexOf(actionText),
+                        end: adjacentBulkPrompt.length,
+                    },
+                ]),
+                actionText
+            ).toEqual([]);
+        }
         expect(collectClearSolosRestrictionClauses('clear all solos but keep Vocals and Guitar soloed')).toEqual([
             'but keep Vocals and Guitar soloed',
         ]);

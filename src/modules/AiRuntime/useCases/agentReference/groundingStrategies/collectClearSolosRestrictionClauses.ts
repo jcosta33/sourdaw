@@ -4,8 +4,6 @@ const clearSolosRestrictionStartPattern =
 const clearSolosIntentPattern = /\b(?:clear\s+all\s+solos|unsolo\s+all\s+tracks|unsolo\s+everything)\b/iu;
 const clearSolosContinuativePattern = /(?:keep(?:ing)?|leav(?:e|ing)|preserv(?:e|ing)|retain(?:ing)?)/iu;
 const clearSolosStatePattern = /\bsolo(?:ed)?\b/iu;
-const bulkTrackScopePattern = /\b(?:all|every)\s+tracks?\b/iu;
-const bulkTrackActionTypes: ReadonlySet<string> = new Set(['muteTrack', 'soloTrack']);
 
 export type ClearSolosRestrictionActionSpan = {
     actionType: string;
@@ -18,17 +16,6 @@ function getOwningActionSpan(
     index: number
 ): ClearSolosRestrictionActionSpan | null {
     return actionSpans.find((span) => span.start <= index && index < span.end) ?? null;
-}
-
-function isOwnedByAdjacentBulkTrackAction(
-    text: string,
-    restrictionIndex: number,
-    owner: ClearSolosRestrictionActionSpan | null
-): boolean {
-    if (!owner || !bulkTrackActionTypes.has(owner.actionType)) {
-        return false;
-    }
-    return bulkTrackScopePattern.test(text.slice(owner.start, restrictionIndex));
 }
 
 export function collectClearSolosRestrictionClauses(
@@ -49,11 +36,7 @@ export function collectClearSolosRestrictionClauses(
         if (clause.length === 0 || (isContinuative && !clearSolosStatePattern.test(clause))) {
             continue;
         }
-        if (
-            isContinuative ||
-            owner?.actionType === 'clearSolos' ||
-            !isOwnedByAdjacentBulkTrackAction(text, match.index, owner)
-        ) {
+        if (isContinuative || owner?.actionType === 'clearSolos') {
             clauses.push(clause);
         }
     }

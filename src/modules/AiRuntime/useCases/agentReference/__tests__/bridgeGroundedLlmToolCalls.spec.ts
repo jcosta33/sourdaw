@@ -2772,7 +2772,6 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'clear all solos and mute Guitar but leave Vocals soloed',
             'clear all solos and mute Guitar but preserve Vocals soloed',
             'clear all solos and mute Guitar but retain Vocals soloed',
-            'clear all solos and mute Guitar but not Vocals',
             'clear all solos while leaving Vocals soloed, and mute Guitar',
             'clear all solos, while keeping Vocals soloed, and mute Guitar',
         ] as const;
@@ -2948,6 +2947,9 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'clear all solos and mute every track, except Vocals',
             'clear all solos and mute every track; except Vocals',
             'clear all solos and unmute every track, except Vocals',
+            'clear all solos and mute Guitar but not Vocals',
+            'clear all solos and arm every track except Vocals',
+            'clear all solos and solo every track except Vocals',
         ]) {
             expect(bridge([{ name: 'clearSolos', arguments: {} }], prompt, soloedContext).actions, prompt).toEqual([
                 { type: 'clearSolos' },
