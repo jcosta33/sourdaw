@@ -521,8 +521,11 @@ function slotOverflowTrack(): Track {
 /**
  * A track carrying one clip at a non-unity `playbackRate` (#3068): varispeed,
  * not stretch (`crates/daw-engine/src/timeline.rs`, `ClipPlayback` doc). The
- * clip is one beat (0.5 s) at 120 bpm, reading `mat-a` (2 s) at 1.5x — 0.75 s
- * of material, comfortably inside it.
+ * clip is two beats (1.0 s) at 120 bpm, reading `mat-a` (2 s) at 1.5x — 1.5 s
+ * of material, leaving 0.5 s of margin. The rate must stay below 2.0 for this
+ * fixture to remain a pure rate-parity case: at or past 2.0 the read reaches
+ * the end of `mat-a` and the fixture would measure material exhaustion
+ * instead.
  *
  * `unity` swaps the rate back to 1 with everything else held fixed, so a
  * render of this track can be compared against its own unstretched twin: a
