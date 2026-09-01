@@ -129,6 +129,11 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     closeScratchPad: vi.fn(),
     setSessionViewWidth: vi.fn(),
     setTrackListWidth: vi.fn(),
+    closeCollaborationPanel: vi.fn(),
+    onScrollToPlayhead: vi.fn(),
+    onZoomToFit: vi.fn(),
+    onZoomToSelection: vi.fn(),
+    setWorkspaceMode: vi.fn(),
 }));
 
 vi.mock('../../components/ResizeHandle', () => ({
