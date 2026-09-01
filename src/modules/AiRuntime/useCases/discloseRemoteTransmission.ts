@@ -5,6 +5,7 @@ import {
 } from '../models/AgentDataPolicy';
 
 import { agentRunLifecycle } from './agentRunLifecycle';
+import { HOSTED_AI_PRIVACY_DISCLOSURE_SUMMARY } from './aiChangeNotificationState';
 import { notifyAiChange } from './notifyAiChange';
 
 type Admission = {
@@ -41,7 +42,7 @@ function publishRemoteTransmissionDisclosure(input: {
         return false;
     }
     admission.published = true;
-    notifyAiChange('Hosted AI privacy disclosure', [formatRemoteTransmissionDisclosure(admission.categories)]);
+    notifyAiChange(HOSTED_AI_PRIVACY_DISCLOSURE_SUMMARY, [formatRemoteTransmissionDisclosure(admission.categories)]);
     if (input.runId !== undefined) {
         agentRunLifecycle.recordProviderUsage({
             runId: input.runId,

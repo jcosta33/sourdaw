@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { HOSTED_AI_PRIVACY_DISCLOSURE_SUMMARY } from '../../../useCases/aiChangeNotificationState';
 import { type AiChangeNotification } from '../../../useCases/notifyAiChange';
 import { AiChangeToast } from '../AiChangeToast';
 
@@ -22,14 +23,29 @@ vi.mock('../../../useCases/subscribeAiChangeNotification', () => ({
 type CreateNotificationInput = {
     summary: string;
     details: string[];
+    kind: 'applied-change' | 'notice';
 };
 
-const createNotification = ({ summary, details }: CreateNotificationInput): AiChangeNotification => {
+const createNotification = ({ summary, details, kind }: CreateNotificationInput): AiChangeNotification => {
     return {
         id: `test-${summary}`,
         summary,
         details,
         timestamp: 1_700_000_000_000,
+        kind,
+    };
+};
+
+const captureNotificationHandler = (): { emit: AiChangeNotificationHandler } => {
+    let capturedHandler: AiChangeNotificationHandler = () => {};
+    mockSubscribeAiChangeNotification.mockImplementation((handler: AiChangeNotificationHandler) => {
+        capturedHandler = handler;
+        return vi.fn();
+    });
+    return {
+        emit: (notification) => {
+            capturedHandler(notification);
+        },
     };
 };
 
@@ -55,16 +71,18 @@ describe('AiChangeToast', () => {
     });
 
     it('should render toast when changes are present', () => {
-        let capturedHandler: (data: AiChangeNotification) => void = () => {};
-        mockSubscribeAiChangeNotification.mockImplementation((handler: (data: AiChangeNotification) => void) => {
-            capturedHandler = handler;
-            return vi.fn();
-        });
+        const { emit } = captureNotificationHandler();
 
         render(<AiChangeToast />);
 
         act(() => {
-            capturedHandler(createNotification({ summary: 'Test change summary', details: ['Detail 1', 'Detail 2'] }));
+            emit(
+                createNotification({
+                    summary: 'Test change summary',
+                    details: ['Detail 1', 'Detail 2'],
+                    kind: 'applied-change',
+                })
+            );
         });
 
         expect(screen.getByRole('status')).toBeInTheDocument();
@@ -72,21 +90,18 @@ describe('AiChangeToast', () => {
     });
 
     it('should render duplicate details without duplicate-key warnings', () => {
-        let capturedHandler: (data: AiChangeNotification) => void = () => {};
+        const { emit } = captureNotificationHandler();
         const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-        mockSubscribeAiChangeNotification.mockImplementation((handler: (data: AiChangeNotification) => void) => {
-            capturedHandler = handler;
-            return vi.fn();
-        });
 
         try {
             render(<AiChangeToast />);
 
             act(() => {
-                capturedHandler(
+                emit(
                     createNotification({
                         summary: 'Duplicate detail summary',
                         details: ['Repeated detail', 'Repeated detail'],
+                        kind: 'applied-change',
                     })
                 );
             });
@@ -104,55 +119,112 @@ describe('AiChangeToast', () => {
     });
 
     it('should call undoLastAction when undo button is clicked', () => {
-        let capturedHandler: (data: AiChangeNotification) => void = () => {};
-        mockSubscribeAiChangeNotification.mockImplementation((handler: (data: AiChangeNotification) => void) => {
-            capturedHandler = handler;
-            return vi.fn();
-        });
+        const { emit } = captureNotificationHandler();
 
         render(<AiChangeToast />);
 
         act(() => {
-            capturedHandler(createNotification({ summary: 'Test change', details: [] }));
+            emit(
+                createNotification({
+                    summary: 'Test change',
+                    details: ['Added track Drums'],
+                    kind: 'applied-change',
+                })
+            );
         });
 
-        const undoButton = screen.getByText(/Undo/i);
+        const undoButton = screen.getByRole('button', { name: /Undo/i });
         fireEvent.click(undoButton);
         expect(mockUndoLastAction).toHaveBeenCalled();
     });
 
-    it('should dismiss toast when dismiss button is clicked', () => {
-        let capturedHandler: (data: AiChangeNotification) => void = () => {};
-        mockSubscribeAiChangeNotification.mockImplementation((handler: (data: AiChangeNotification) => void) => {
-            capturedHandler = handler;
-            return vi.fn();
+    it('should not show Undo or Check for a hosted privacy disclosure with details', () => {
+        const { emit } = captureNotificationHandler();
+        const { container } = render(<AiChangeToast />);
+
+        act(() => {
+            emit(
+                createNotification({
+                    summary: HOSTED_AI_PRIVACY_DISCLOSURE_SUMMARY,
+                    details: ['Prompt text may leave this device.'],
+                    kind: 'notice',
+                })
+            );
         });
+
+        expect(screen.getByRole('status')).toBeInTheDocument();
+        expect(screen.getByText(HOSTED_AI_PRIVACY_DISCLOSURE_SUMMARY)).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Undo/i })).not.toBeInTheDocument();
+        expect(container.querySelector('svg.lucide-check')).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: /Dismiss/i }));
+
+        expect(screen.queryByRole('status')).toBeNull();
+        expect(mockUndoLastAction).not.toHaveBeenCalled();
+    });
+
+    it('should not show Undo or Check for an empty-details command failure', () => {
+        const { emit } = captureNotificationHandler();
+        const { container } = render(<AiChangeToast />);
+
+        act(() => {
+            emit(
+                createNotification({
+                    summary: 'Command not executed: the confirmed changes could not be applied.',
+                    details: [],
+                    kind: 'notice',
+                })
+            );
+        });
+
+        expect(
+            screen.getByText('Command not executed: the confirmed changes could not be applied.')
+        ).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Undo/i })).not.toBeInTheDocument();
+        expect(container.querySelector('svg.lucide-check')).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: /Dismiss/i }));
+
+        expect(screen.queryByRole('status')).toBeNull();
+        expect(mockUndoLastAction).not.toHaveBeenCalled();
+    });
+
+    it('should dismiss toast when dismiss button is clicked', () => {
+        const { emit } = captureNotificationHandler();
 
         render(<AiChangeToast />);
 
         act(() => {
-            capturedHandler(createNotification({ summary: 'Test change', details: [] }));
+            emit(
+                createNotification({
+                    summary: 'Test change',
+                    details: [],
+                    kind: 'notice',
+                })
+            );
         });
 
         expect(screen.getByRole('status')).toBeInTheDocument();
 
-        const dismissButton = screen.getByText(/Dismiss/i);
+        const dismissButton = screen.getByRole('button', { name: /Dismiss/i });
         fireEvent.click(dismissButton);
 
         expect(screen.queryByRole('status')).toBeNull();
     });
 
     it('should have correct aria attributes for accessibility', () => {
-        let capturedHandler: (data: AiChangeNotification) => void = () => {};
-        mockSubscribeAiChangeNotification.mockImplementation((handler: (data: AiChangeNotification) => void) => {
-            capturedHandler = handler;
-            return vi.fn();
-        });
+        const { emit } = captureNotificationHandler();
 
         render(<AiChangeToast />);
 
         act(() => {
-            capturedHandler(createNotification({ summary: 'Test change', details: [] }));
+            emit(
+                createNotification({
+                    summary: 'Test change',
+                    details: [],
+                    kind: 'notice',
+                })
+            );
         });
 
         const toast = screen.getByRole('status');
@@ -160,16 +232,18 @@ describe('AiChangeToast', () => {
     });
 
     it('should auto-dismiss after 5 seconds', () => {
-        let capturedHandler: (data: AiChangeNotification) => void = () => {};
-        mockSubscribeAiChangeNotification.mockImplementation((handler: (data: AiChangeNotification) => void) => {
-            capturedHandler = handler;
-            return vi.fn();
-        });
+        const { emit } = captureNotificationHandler();
 
         render(<AiChangeToast />);
 
         act(() => {
-            capturedHandler(createNotification({ summary: 'Auto dismiss test', details: [] }));
+            emit(
+                createNotification({
+                    summary: 'Auto dismiss test',
+                    details: [],
+                    kind: 'notice',
+                })
+            );
         });
 
         expect(screen.getByText('Auto dismiss test')).toBeInTheDocument();
