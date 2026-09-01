@@ -17,7 +17,22 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     setTrackState: mocks.setTrackState,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({ waitForDevices: mocks.waitForDevices }));
-vi.mock('#/modules/Routing/useCases', () => ({ addSidechainRoute: mocks.addSidechainRoute }));
+vi.mock('#/modules/Routing/useCases', () => ({
+    addSidechainRoute: mocks.addSidechainRoute,
+    addSidechainRouteSnapshot: vi.fn(),
+    ensureBusStrip: vi.fn(),
+    getAllSidechainRoutes: vi.fn(),
+    getSidechainRoutesForTrack: vi.fn(),
+    getSidechainTargetCapability: vi.fn(),
+    hydrateSidechainRoutes: vi.fn(),
+    removeSend: vi.fn(),
+    removeSidechainRoute: vi.fn(),
+    removeSidechainRouteSnapshot: vi.fn(),
+    restoreSidechainRoutes: vi.fn(),
+    setBusGain: vi.fn(),
+    setSend: vi.fn(),
+    wireSidechainRoutes: vi.fn(),
+}));
 vi.mock('#/modules/Transport/useCases', () => ({ ensureTrackStrips: mocks.ensureTrackStrips }));
 vi.mock('../../../demoProjects/demoUtils/syncArrangement', () => ({ syncArrangement: mocks.syncArrangement }));
 
