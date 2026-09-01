@@ -2,7 +2,8 @@
  * `projectLiveAutomationWrites` is the live twin of the export's per-strip
  * automation projection (#3068): same law, shared via
  * `projectStripAutomationWrites`, but writes land in absolute engine-clock
- * seconds and a declined strip is excluded rather than refusing the batch.
+ * seconds, an orphan device lane is excluded by name rather than silently
+ * dropped, and a declined strip is excluded rather than refusing the batch.
  * These specs pin exactly that seam — clipping and time-shifting are
  * `compileAutomationEvents`'s own contract, pinned by its own specs.
  */
@@ -190,18 +191,28 @@ describe('projectLiveAutomationWrites — automationMode off', () => {
 });
 
 describe('projectLiveAutomationWrites — device-lane exclusion', () => {
-    it('excludes only the strip carrying the device lane, converting its neighbour', () => {
-        const declinedTrack = createTrack({ id: 'track-declined', name: 'Synth' });
-        const convertedTrack = createTrack({ id: 'track-converted', name: 'Vox' });
+    it('names the orphan lane, not the strip, and still converts the strip’s fader', () => {
+        // The shape `prepareRemoveDevice.ts` leaves behind: the device is gone,
+        // its lane is not. `projectStripAutomationWrites` silently drops it
+        // (matching main); this producer is the one with an exclusion channel,
+        // so it must name the lane the writer cannot carry while still moving
+        // the fader the web live path keeps moving.
+        const track = createTrack({ id: 'track-declined', name: 'Synth' });
+        const otherTrack = createTrack({ id: 'track-converted', name: 'Vox' });
+        const deviceLane = lane({
+            trackId: track.id,
+            parameterId: 'grinder-1:cutoff',
+            points: [point(0, 0.3, 'step')],
+        });
         const lanes: AutomationLane[] = [
-            lane({ trackId: declinedTrack.id, parameterId: 'gain', points: [point(0, 0.5, 'step')] }),
-            lane({ trackId: declinedTrack.id, parameterId: 'grinder-1:cutoff', points: [point(0, 0.3, 'step')] }),
-            lane({ trackId: convertedTrack.id, parameterId: 'gain', points: [point(0, 0.6, 'step')] }),
+            lane({ trackId: track.id, parameterId: 'gain', points: [point(0, 0.5, 'step')] }),
+            deviceLane,
+            lane({ trackId: otherTrack.id, parameterId: 'gain', points: [point(0, 0.6, 'step')] }),
         ];
 
         const result = projectLiveAutomationWrites({
             ...baseInput,
-            stripTracks: [declinedTrack, convertedTrack],
+            stripTracks: [track, otherTrack],
             lanes,
             regionStartSeconds: 0,
             regionEndSeconds: 4,
@@ -209,21 +220,47 @@ describe('projectLiveAutomationWrites — device-lane exclusion', () => {
 
         expect(result.exclusions).toEqual([
             {
-                stripId: declinedTrack.id,
-                subjectId: declinedTrack.id,
-                reason: `automation on track "${declinedTrack.name}": device parameter automation has no native body yet (#3124)`,
+                stripId: track.id,
+                subjectId: deviceLane.id,
+                reason: 'device parameter automation has no native body yet (#3124)',
             },
         ]);
+        const declinedFader = result.entries.find(
+            (entry) => entry.target.kind === 'track-fader' && entry.target.trackId === track.id
+        );
+        expect(declinedFader).toBeDefined();
+        expect(declinedFader!.writes).toHaveLength(1);
         expect(
             result.entries.some(
-                (entry) => entry.target.kind === 'track-fader' && entry.target.trackId === convertedTrack.id
+                (entry) => entry.target.kind === 'track-fader' && entry.target.trackId === otherTrack.id
             )
         ).toBe(true);
-        expect(
-            result.entries.some(
-                (entry) => entry.target.kind === 'track-fader' && entry.target.trackId === declinedTrack.id
-            )
-        ).toBe(false);
+    });
+
+    it('does not exclude a disabled device lane, and still converts the strip’s fader', () => {
+        const track = createTrack();
+        const lanes: AutomationLane[] = [
+            lane({ trackId: track.id, parameterId: 'gain', points: [point(0, 0.5, 'step')] }),
+            lane({
+                trackId: track.id,
+                parameterId: 'grinder-1:cutoff',
+                points: [point(0, 0.3, 'step')],
+                enabled: false,
+            }),
+        ];
+
+        const result = projectLiveAutomationWrites({
+            ...baseInput,
+            stripTracks: [track],
+            lanes,
+            regionStartSeconds: 0,
+            regionEndSeconds: 4,
+        });
+
+        expect(result.exclusions).toEqual([]);
+        const faderEntry = result.entries.find((entry) => entry.target.kind === 'track-fader');
+        expect(faderEntry).toBeDefined();
+        expect(faderEntry!.writes).toHaveLength(1);
     });
 });
 

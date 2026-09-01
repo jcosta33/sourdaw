@@ -33,12 +33,20 @@
  * commands: a send the topology dropped gets no target here either, or the
  * automation would name a path the graph never built.
  *
- * A strip the extraction declines — today, a device-parameter lane
- * (`projectStripAutomationWrites`'s own refusal, #3124) or a malformed
- * recorded event stream — is excluded, not thrown and not a whole-batch
- * refusal: the same law `projectLiveGraphProgramme` applies to a clip it
- * cannot carry. One strip's automation failing to compile must not silence a
- * session that could otherwise play.
+ * A device-parameter lane (#3124) is detected here, not by the extraction:
+ * `projectStripAutomationWrites` resolves it against an empty device chain
+ * and silently drops it, matching what main did for an orphan lane left
+ * behind by `prepareRemoveDevice.ts` (which deletes the device, never its
+ * lanes). Live has an exclusion channel the export does not, so this producer
+ * names each such lane on its own — one exclusion per lane, keyed to that
+ * lane — while still emitting the strip's converted fader/pan/send entries:
+ * one lane the writer cannot carry must not silence the rest of the strip.
+ *
+ * A strip the extraction declines outright — today, only a malformed
+ * recorded event stream — is excluded whole, keyed to the strip itself: the
+ * same law `projectLiveGraphProgramme` applies to a clip it cannot carry. One
+ * strip's automation failing to compile must not silence a session that
+ * could otherwise play.
  */
 
 import { type Track } from '#/modules/Arrangement/stores';
@@ -54,7 +62,7 @@ import { admittedSendBusIds } from './admittedSendBusIds';
 
 export type LiveAutomationWritesExclusion = Readonly<{
     stripId: string;
-    /** There is no narrower subject than the strip: its whole automation was declined. */
+    /** The lane the writer cannot carry, or the strip when its whole automation stream was declined. */
     subjectId: string;
     reason: string;
 }>;
@@ -86,6 +94,26 @@ export type LiveAutomationWritesInput = Readonly<{
     slewTickSeconds: number;
     resolveLaneCeiling: StripAutomationWritesInput['resolveLaneCeiling'];
 }>;
+
+const KNOWN_STRIP_PARAMETER_IDS = new Set(['gain', 'pan']);
+const SEND_PARAMETER_PREFIX = 'send:';
+const DEVICE_AUTOMATION_EXCLUSION_REASON = 'device parameter automation has no native body yet (#3124)';
+
+/**
+ * Enabled lanes on this strip that name neither the fader, the pan, nor a
+ * send — the device-parameter family `projectStripAutomationWrites` silently
+ * drops today, matching main. This producer names each one as its own
+ * exclusion rather than let it vanish with no signal (#3068).
+ */
+function deviceParameterLanes(lanes: readonly AutomationLane[], trackId: string): readonly AutomationLane[] {
+    return lanes.filter(
+        (lane) =>
+            lane.trackId === trackId &&
+            lane.enabled !== false &&
+            !KNOWN_STRIP_PARAMETER_IDS.has(lane.parameterId) &&
+            !lane.parameterId.startsWith(SEND_PARAMETER_PREFIX)
+    );
+}
 
 /**
  * `automationMode: 'off'` produces no writes at all — enforced inside
@@ -128,6 +156,16 @@ export function projectLiveAutomationWrites(input: LiveAutomationWritesInput): L
     const exclusions: LiveAutomationWritesExclusion[] = [];
 
     for (const track of stripTracks) {
+        // `automationMode: 'off'` reads no lane at all, the orphan device lane
+        // included — matching `projectStripAutomationWrites`'s own guard, so a
+        // strip with automation turned off never earns an exclusion for a
+        // lane it was never going to read.
+        if (track.automationMode !== 'off') {
+            for (const lane of deviceParameterLanes(lanes, track.id)) {
+                exclusions.push({ stripId: track.id, subjectId: lane.id, reason: DEVICE_AUTOMATION_EXCLUSION_REASON });
+            }
+        }
+
         const clipBoundsById = new Map<string, { startBeat: number; endBeat: number }>();
         for (const clip of track.clips) {
             clipBoundsById.set(clip.id, { startBeat: clip.startBeat, endBeat: clip.endBeat });

@@ -208,9 +208,16 @@ describe('projectStripAutomationWrites — the seam-value inversions', () => {
     });
 });
 
-describe('projectStripAutomationWrites — device automation has no native body (#3124)', () => {
-    it('declines a track carrying an enabled lane outside the fader, pan, and admitted-send families', () => {
-        const track = createTrack({ name: 'Synth Bus' });
+describe('projectStripAutomationWrites — an orphan device lane (#3124)', () => {
+    it('silently drops an enabled lane outside the fader, pan, and admitted-send families, matching main', () => {
+        // A device lane with no device left to resolve against — the shape
+        // `prepareRemoveDevice.ts` leaves behind, since it deletes the device
+        // and never the lane. `scheduleTrackAutomation` resolves it against an
+        // empty device chain, finds nothing, and drops it; this projection
+        // must reproduce exactly that, never decline the whole strip over it
+        // (the live producer detects and names the lane on its own — see
+        // `projectLiveAutomationWrites.spec.ts`).
+        const track = createTrack();
         const lanes: AutomationLane[] = [
             lane({ parameterId: 'gain', points: [point(0, 0.8)] }),
             lane({ parameterId: 'grinder-1:cutoff', points: [point(0, 0.3)] }),
@@ -218,21 +225,12 @@ describe('projectStripAutomationWrites — device automation has no native body 
 
         const result = projectStripAutomationWrites({ ...baseInput, track, admittedSendBusIds: [], lanes });
 
-        expect(result).toEqual({
-            outcome: 'declined',
-            reason: 'automation on track "Synth Bus": device parameter automation has no native body yet (#3124)',
-        });
-    });
-
-    it('does not decline a disabled device lane, matching scheduleTrackAutomation’s own enabled filter', () => {
-        const track = createTrack();
-        const lanes: AutomationLane[] = [
-            lane({ parameterId: 'grinder-1:cutoff', points: [point(0, 0.3)], enabled: false }),
-        ];
-
-        const result = projectStripAutomationWrites({ ...baseInput, track, admittedSendBusIds: [], lanes });
-
-        expect(result).toEqual({ outcome: 'converted', entries: [] });
+        expect(result.outcome).toBe('converted');
+        if (result.outcome !== 'converted') {
+            throw new Error('unreachable: asserted above');
+        }
+        expect(result.entries.map((entry) => entry.target.kind)).toEqual(['track-fader']);
+        expect(result.entries[0]!.writes).toHaveLength(1);
     });
 });
 

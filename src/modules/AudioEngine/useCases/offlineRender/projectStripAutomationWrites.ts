@@ -85,47 +85,25 @@ function seamPanValue(recorded: number): number {
     return recorded * 50;
 }
 
-const KNOWN_STRIP_PARAMETER_IDS = new Set(['gain', 'pan']);
-const SEND_PARAMETER_PREFIX = 'send:';
-
 /**
  * No built-in device has a native automation body yet (#3124). `deviceEntries`
  * stays empty below because there is nothing to resolve a device lane
  * against, so this law's `acceptsAutomation` never actually runs — it exists
- * to state the refusal explicitly, matching {@link findDeviceParameterLane},
- * rather than leave it as an implication of an empty list.
+ * to state the refusal explicitly rather than leave it as an implication of
+ * an empty list. `scheduleTrackAutomation` resolves a device-parameter lane
+ * against `deviceEntries`, finds nothing, and silently drops it — the same
+ * outcome main gave a project holding an orphan lane on a device the user has
+ * since removed (`prepareRemoveDevice.ts` deletes the device, never its
+ * lanes). This projection preserves that silent drop rather than declining
+ * the whole strip over it; the live producer detects and excludes such a lane
+ * on its own (`projectLiveAutomationWrites.ts`), because live has an
+ * exclusion channel this shared, byte-identical-with-main extraction does not.
  */
 const REFUSE_DEVICE_AUTOMATION: OfflineDeviceAutomationLaw = {
     acceptsAutomation: () => false,
     clampValue: ({ value }) => value,
     quantiseValue: ({ value }) => value,
 };
-
-/**
- * An enabled lane on this track that names neither the fader, the pan, nor a
- * send — the device-parameter family `scheduleTrackAutomation` would
- * otherwise resolve against `deviceEntries` and silently find nothing for.
- *
- * Declining explicitly here, instead of relying on that silent miss, is what
- * gives the live producer a reason to exclude just this strip rather than
- * drop the lane with no signal at all (#3068). It costs the export nothing:
- * `selectOfflineRenderEngine`'s content gate refuses native rendering for any
- * project carrying a device before this projection ever runs, so no
- * renderable track reaching here can hold a genuine device-parameter lane.
- *
- * A `send:`-prefixed lane is never mistaken for one, whether or not its bus
- * was admitted — an unadmitted send lane is legacy drift with its own silent
- * drop today (its target has no built bus either), not a device refusal.
- */
-function findDeviceParameterLane(lanes: readonly AutomationLane[], trackId: string): AutomationLane | undefined {
-    return lanes.find(
-        (lane) =>
-            lane.trackId === trackId &&
-            lane.enabled !== false &&
-            !KNOWN_STRIP_PARAMETER_IDS.has(lane.parameterId) &&
-            !lane.parameterId.startsWith(SEND_PARAMETER_PREFIX)
-    );
-}
 
 export function projectStripAutomationWrites(input: StripAutomationWritesInput): StripAutomationWritesResult {
     const {
@@ -151,14 +129,6 @@ export function projectStripAutomationWrites(input: StripAutomationWritesInput):
         return { outcome: 'converted', entries: [] };
     }
 
-    const deviceLane = findDeviceParameterLane(lanes, track.id);
-    if (deviceLane) {
-        return {
-            outcome: 'declined',
-            reason: `automation on track "${track.name}": device parameter automation has no native body yet (#3124)`,
-        };
-    }
-
     const gainRecorder = createAutomationRecorder();
     const panRecorder = createAutomationRecorder();
     const sendRecorders: { busId: string; recorder: AutomationRecorder }[] = [];
@@ -175,11 +145,11 @@ export function projectStripAutomationWrites(input: StripAutomationWritesInput):
         trackGainNode: { gain: gainRecorder.param },
         trackPanNode: { pan: panRecorder.param },
         sendAutomationParams,
-        // The content gate admits device-free tracks only on the export, and
-        // `findDeviceParameterLane` above has already declined a live strip
-        // whose lanes would resolve here — so a device lane has nothing to
-        // resolve against, the same outcome the web path reaches with an
-        // empty chain.
+        // The content gate admits device-free tracks only on the export, so a
+        // device-parameter lane on an exported track has nothing to resolve
+        // against here — the same outcome the web path reaches with an empty
+        // chain, and main's silent drop for an orphan lane on a device the
+        // user has since removed (see `REFUSE_DEVICE_AUTOMATION` above).
         deviceEntries: [],
         durationSeconds,
         defaultTempo,
