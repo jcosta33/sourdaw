@@ -58,6 +58,18 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     setTrackSolo: vi.fn(),
 }));
 vi.mock('#/modules/Routing/useCases', () => ({
+    addSidechainRoute: vi.fn(),
+    addSidechainRouteSnapshot: vi.fn(),
+    ensureBusStrip: vi.fn(),
+    getSidechainRoutesForTrack: vi.fn(),
+    getSidechainTargetCapability: vi.fn(),
+    hydrateSidechainRoutes: vi.fn(),
+    removeSend: vi.fn(),
+    removeSidechainRoute: vi.fn(),
+    removeSidechainRouteSnapshot: vi.fn(),
+    setBusGain: vi.fn(),
+    setSend: vi.fn(),
+    setSidechainRoutes: vi.fn(),
     getAllSidechainRoutes: vi.fn(() => []),
     wireSidechainRoutes: vi.fn(),
     // Returns the finalizer the restore handler pushes straight into its
