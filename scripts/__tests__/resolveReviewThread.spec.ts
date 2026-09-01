@@ -3952,6 +3952,34 @@ describe('review thread resolution', () => {
         }
     });
 
+    it('routes an exact paired inner owner away from standalone shared recovery', () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const sharedOwnerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(repository, 999999);
+            const reviewOwnerOid = writeLockOwnerBlob(
+                repository,
+                999999,
+                head,
+                { phase: 'idle', epoch: 0 },
+                undefined,
+                undefined,
+                sharedOwnerOid
+            );
+            updateSharedMutationLock(repository, 42, sharedOwnerOid);
+            updateLock(repository, 42, reviewOwnerOid);
+
+            expect(
+                recoverStandaloneReviewResolutionSharedMutationLock(repository, 42, reviewOwnerOid, {
+                    gitPath: systemGitPath(),
+                })
+            ).toBeUndefined();
+            expect(readLockOid(repository, 42)).toBe(reviewOwnerOid);
+            expect(readSharedMutationLockOid(repository, 42)).toBe(sharedOwnerOid);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it('releases a dead standalone shared owner while preserving an unrelated v5 inner owner for recovery', () => {
         const repository = createTemporaryGitRepository();
         try {

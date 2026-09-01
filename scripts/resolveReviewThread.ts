@@ -3169,6 +3169,9 @@ export function recoverStandaloneReviewResolutionSharedMutationLock(
     const gitPath = port.gitPath ?? trustedReviewResolutionGitPath();
     const innerOwnerOid = readInnerRef(primaryRoot, reviewResolutionRef, number);
     const currentOid = readPullRequestMutationLockOid(primaryRoot, sharedRef, number, gitPath);
+    if (innerOwnerOid === expectedOid) {
+        return undefined;
+    }
     if (currentOid === undefined) {
         if (innerOwnerOid !== undefined) {
             return undefined;
