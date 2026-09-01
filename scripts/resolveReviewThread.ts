@@ -3026,6 +3026,18 @@ function parseReviewResolutionMarkerSnapshot(value: unknown, label: string): Rev
     };
 }
 
+function hasDistinctDeleteReplyMarkerSnapshots(
+    immutableEnvelope: ReviewResolutionMarkerSnapshot,
+    target: ReviewResolutionMarkerSnapshot
+): boolean {
+    return (
+        immutableEnvelope.markerId !== target.markerId &&
+        immutableEnvelope.markerFullDatabaseId !== target.markerFullDatabaseId &&
+        (immutableEnvelope.reviewId === target.reviewId) ===
+            (immutableEnvelope.reviewFullDatabaseId === target.reviewFullDatabaseId)
+    );
+}
+
 function parseReviewResolutionLockMutation(value: unknown, label: string): ReviewResolutionLockMutation {
     if (typeof value !== 'object' || value === null || typeof (value as { phase?: unknown }).phase !== 'string') {
         fail(label);
@@ -3180,6 +3192,13 @@ function parseReviewResolutionLockMutation(value: unknown, label: string): Revie
             immutableEnvelope === undefined ? undefined : parseReviewResolutionMarkerSnapshot(immutableEnvelope, label);
         const parsedTarget = target === undefined ? undefined : parseReviewResolutionMarkerSnapshot(target, label);
         if (parsedTarget !== undefined && parsedTarget.markerId !== replyId) {
+            fail(label);
+        }
+        if (
+            parsedImmutableEnvelope !== undefined &&
+            parsedTarget !== undefined &&
+            !hasDistinctDeleteReplyMarkerSnapshots(parsedImmutableEnvelope, parsedTarget)
+        ) {
             fail(label);
         }
         return {

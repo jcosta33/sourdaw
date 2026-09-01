@@ -7193,6 +7193,10 @@ describe('review thread resolution', () => {
             'a malformed immutable marker snapshot',
             { immutableEnvelope: immutableEnvelopeSnapshot({ markerFullDatabaseId: 'not-a-decimal-id' }) },
         ],
+        [
+            'identical immutable survivor and delete target snapshots',
+            { immutableEnvelope: immutableEnvelopeSnapshot(), target: immutableEnvelopeSnapshot() },
+        ],
     ] as const)('retains an invalid delete journal with %s before recovery', (_label, invalidJournal) => {
         const repository = createTemporaryGitRepository();
         const { calls } = fakePort({ existingReplyCount: 2, existingReplyReviewState: 'COMMENTED' });
@@ -7221,6 +7225,42 @@ describe('review thread resolution', () => {
             expect(reconciled).toBe(false);
             expect(calls).toEqual([]);
             expect(readLockOid(repository, 42)).toBe(ownerOid);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('accepts a distinct same-review immutable delete journal', () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const target = immutableEnvelopeSnapshot({
+                markerId: 'PRRC_distinct_target',
+                markerFullDatabaseId: '9223372036854775809',
+            });
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, {
+                phase: 'deleteReply',
+                epoch: 1,
+                replyId: target.markerId,
+                immutableEnvelope: immutableEnvelopeSnapshot(),
+                target,
+            });
+            updateLock(repository, 42, ownerOid);
+            let reconciled = false;
+
+            expect(
+                recoverPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    ownerOid,
+                    () => {
+                        reconciled = true;
+                        return 'valid duplicate journal';
+                    },
+                    () => false
+                )
+            ).toBe('valid duplicate journal');
+            expect(reconciled).toBe(true);
+            expect(readLockOid(repository, 42)).toBeUndefined();
         } finally {
             rmSync(repository, { recursive: true, force: true });
         }
