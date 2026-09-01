@@ -10,6 +10,7 @@ import {
 } from '#/modules/Arrangement/useCases';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { defaultWorkspaceState } from '#/modules/WorkspaceShell/stores';
+import { ARRANGE_RESIZE_HANDLE_WIDTH, MIN_TIMELINE_COLUMN_WIDTH } from '#/utils/Layout/allocateMainFirstWidths';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Clip, type Track } from '../../../models/TrackViewTypes';
@@ -573,5 +574,34 @@ describe('ArrangeView', () => {
 
         expect(screen.getByTestId('timeline-minimap')).toHaveAttribute('data-height', '88');
         expect(screen.getByTestId('track-list-view')).toHaveAttribute('data-extra-height', '128');
+    });
+
+    it('keeps a positive timeline column when the arrange row is narrower than the open track list', () => {
+        // Leftover after default sidebar+inspector at a 640px CSS (200% UI scale) viewport.
+        Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+            configurable: true,
+            get: () => 150,
+        });
+        vi.mocked(useWorkspaceState).mockReturnValue({
+            ...defaultWorkspaceState,
+            trackListOpen: true,
+            trackListWidth: 220,
+            scratchPadOpen: false,
+            scratchPadHeight: 150,
+        });
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ clipEndBeat: 32 })],
+            selectedTrackId: 'track-1',
+        });
+
+        render(<ArrangeView />);
+
+        const trackListWidth = Number.parseFloat(screen.getByTestId('track-list-view').style.width);
+        const timelineColumn = screen.getByTestId('timeline-surface').parentElement;
+        expect(trackListWidth).toBeGreaterThan(0);
+        expect(trackListWidth).toBeLessThan(220);
+        expect(trackListWidth + ARRANGE_RESIZE_HANDLE_WIDTH + MIN_TIMELINE_COLUMN_WIDTH).toBeLessThanOrEqual(150);
+        expect(timelineColumn).toHaveClass('min-w-0');
+        expect(timelineColumn).toHaveStyle({ minWidth: `${MIN_TIMELINE_COLUMN_WIDTH}px` });
     });
 });
