@@ -125,6 +125,49 @@ describe('post-target scope admission strategies', () => {
                 prompt: 'clear all solos but not Unnamed',
             })
         ).toBe('Provider clear-solos scope is not explicitly universal');
+
+        const unnamedContext: ProjectContext = {
+            ...context,
+            tracks: [
+                {
+                    id: 'track-unnamed',
+                    name: 'Unnamed',
+                    kind: 'audio',
+                    muted: false,
+                    soloed: true,
+                    soloSafe: false,
+                    armed: false,
+                    gain: 0.8,
+                    pan: 0,
+                    automationMode: 'read',
+                    outputId: 'master',
+                    clipCount: 0,
+                    deviceCount: 0,
+                    clips: [],
+                    devices: [],
+                    sends: [],
+                },
+            ],
+        };
+        const leftoverTrackInput = { ...input, context: unnamedContext };
+        expect(
+            groundPostTargetScopeAdmission({
+                ...leftoverTrackInput,
+                prompt: 'clear all solos but Unnamed',
+            })
+        ).toBe('Provider clear-solos scope is not explicitly universal');
+        expect(
+            groundPostTargetScopeAdmission({
+                ...leftoverTrackInput,
+                prompt: 'clear all solos, Unnamed stays soloed',
+            })
+        ).toBe('Provider clear-solos scope is not explicitly universal');
+        expect(
+            groundPostTargetScopeAdmission({
+                ...leftoverTrackInput,
+                prompt: 'clear all solos; Unnamed remains',
+            })
+        ).toBe('Provider clear-solos scope is not explicitly universal');
     });
 
     it('rejects a dual VCA group reference that lives outside the split clause', () => {

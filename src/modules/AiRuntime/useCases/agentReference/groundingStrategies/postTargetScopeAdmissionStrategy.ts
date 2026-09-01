@@ -183,7 +183,7 @@ function isUniversalClearSolosScope(
     }
     const trackReferences = context.tracks.flatMap((track) => [track.id, track.name]);
     return !trackReferences.some((reference) =>
-        hasReferenceOutsideMatchedIntent(actionScope.text, actionScope.matchedIntentPhrase, reference)
+        hasReferenceOutsideMatchedIntent(prompt, actionScope.matchedIntentPhrase, reference)
     );
 }
 

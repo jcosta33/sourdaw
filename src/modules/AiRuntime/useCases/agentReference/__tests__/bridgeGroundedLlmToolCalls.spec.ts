@@ -2699,9 +2699,13 @@ describe('bridgeGroundedLlmToolCalls', () => {
     );
 
     it('grounds explicit solo-safe polarity and targetless clear-all intent', () => {
+        const unnamed = createTrack({ id: 'track-unnamed', name: 'Unnamed' });
         const soloedContext = {
             ...projectContext,
-            tracks: projectContext.tracks.map((track) => (track.id === vocals.id ? { ...track, soloed: true } : track)),
+            tracks: [
+                ...projectContext.tracks.map((track) => (track.id === vocals.id ? { ...track, soloed: true } : track)),
+                unnamed,
+            ],
         };
         const enable = bridge(
             [{ name: 'setSoloSafe', arguments: { trackId: vocals.id, soloSafe: true } }],
@@ -2743,6 +2747,9 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'clear all solos with exception of Unnamed',
             'clear all solos with the exception of Unnamed',
             'clear all solos all but Unnamed',
+            'clear all solos but Unnamed',
+            'clear all solos, Unnamed stays soloed',
+            'clear all solos; Unnamed remains',
             'clear all solos but not Unnamed',
             'clear all solos not including Unnamed',
             'clear all solos but keep Unnamed soloed',
@@ -2780,6 +2787,22 @@ describe('bridgeGroundedLlmToolCalls', () => {
                 ],
             });
         }
+    });
+
+    it('rejects restricted mute and solo not-including scopes', () => {
+        const muted = bridge(
+            [{ name: 'muteTrack', arguments: { trackId: vocals.id, muted: true } }],
+            'mute all tracks not including Vocals'
+        );
+        const soloed = bridge(
+            [{ name: 'soloTrack', arguments: { trackId: vocals.id, soloed: true } }],
+            'solo all tracks not including Vocals'
+        );
+
+        expect(muted.actions).toEqual([]);
+        expect(muted.rejections.length).toBeGreaterThan(0);
+        expect(soloed.actions).toEqual([]);
+        expect(soloed.rejections.length).toBeGreaterThan(0);
     });
 
     it('rejects solo-safe writes to a bus created earlier in the same provider plan', () => {

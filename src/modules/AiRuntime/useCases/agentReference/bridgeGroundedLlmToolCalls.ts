@@ -1206,7 +1206,13 @@ function hasUnsafeControlCue(
     for (const match of commandSource.matchAll(
         /\b(?:do\s+not|don(?:['’]t|t)|don\s+t|if|unless|maybe|never|not|perhaps)\b/giu
     )) {
-        if (/^not$/iu.test(match[0]) && /^\s+including\b/iu.test(commandSource.slice(match.index + match[0].length))) {
+        const isClearSolosNotIncludingRestriction =
+            /^not$/iu.test(match[0]) &&
+            /^\s+including\b/iu.test(commandSource.slice(match.index + match[0].length)) &&
+            carrierPhrases.some((phrase) =>
+                ['clear all solos', 'unsolo all tracks', 'unsolo everything'].includes(normalizePromptText(phrase))
+            );
+        if (isClearSolosNotIncludingRestriction) {
             continue;
         }
         if (
