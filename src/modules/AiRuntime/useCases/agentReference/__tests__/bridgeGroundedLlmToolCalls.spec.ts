@@ -2729,15 +2729,31 @@ describe('bridgeGroundedLlmToolCalls', () => {
         );
         const hallucinatedClear = bridge([{ name: 'clearSolos', arguments: {} }], 'mute Vocals', soloedContext);
         const restrictedClearPrompts = [
-            'clear solos on Vocals',
-            'clear solos from Vocals',
-            'clear all solos except Vocals',
-            'unsolo everything except Drums',
-            'clear solos but keep Vocals soloed',
-            'clear all solos besides the selected track',
-            'unsolo everything save for the selected track',
-            'clear all solos with the exception of the selected track',
-        ];
+            'clear all solos except Unnamed',
+            'clear all solos excluding Unnamed',
+            'clear all solos besides Unnamed',
+            'clear all solos minus Unnamed',
+            'clear all solos other than Unnamed',
+            'clear all solos rather than Unnamed',
+            'clear all solos apart from Unnamed',
+            'clear all solos save for Unnamed',
+            'clear all solos with exception of Unnamed',
+            'clear all solos with the exception of Unnamed',
+            'clear all solos all but Unnamed',
+            'clear all solos but not Unnamed',
+            'clear all solos not including Unnamed',
+            'clear all solos but keep Unnamed soloed',
+            'clear all solos but leave Unnamed soloed',
+            'clear all solos but preserve Unnamed soloed',
+            'clear all solos but retain Unnamed soloed',
+            'clear all solos on the selected track',
+            'clear all solos on the current track',
+            'clear all solos on this track',
+            'clear all solos on that track',
+            'clear all solos on these tracks',
+            'clear all solos on those tracks',
+            'clear all solos on the track selection',
+        ] as const;
 
         expect(enable.actions).toEqual([{ type: 'setSoloSafe', payload: { trackId: vocals.id, soloSafe: true } }]);
         expect(wrongPolarity.actions).toEqual([]);
@@ -2749,7 +2765,16 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(scopedVocabularyCollisions.map((result) => result.actions)).toEqual([[], []]);
         expect(hallucinatedClear.actions).toEqual([]);
         for (const prompt of restrictedClearPrompts) {
-            expect(bridge([{ name: 'clearSolos', arguments: {} }], prompt, soloedContext).actions).toEqual([]);
+            expect(bridge([{ name: 'clearSolos', arguments: {} }], prompt, soloedContext)).toEqual({
+                actions: [],
+                rejections: [
+                    {
+                        index: 0,
+                        name: 'clearSolos',
+                        reason: 'Provider clear-solos scope is not explicitly universal',
+                    },
+                ],
+            });
         }
     });
 
