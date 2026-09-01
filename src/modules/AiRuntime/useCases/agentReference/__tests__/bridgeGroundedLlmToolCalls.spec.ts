@@ -2171,6 +2171,16 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'transpose notes in Piano MIDI by 7 semitones, but only the selected MIDI notes',
             context
         );
+        const noteSelection = bridge(
+            [{ name: 'transposeNotes', arguments: { clipId: 'clip-midi', semitones: 7 } }],
+            'transpose notes in Piano MIDI by 7 semitones, but only the note selection',
+            context
+        );
+        const midiNoteSelection = bridge(
+            [{ name: 'transposeNotes', arguments: { clipId: 'clip-midi', semitones: 7 } }],
+            'transpose notes in Piano MIDI by 7 semitones, but only the selection of MIDI notes',
+            context
+        );
         const selectedNotesWithWrongValue = bridge(
             [{ name: 'transposeNotes', arguments: { clipId: 'clip-midi', semitones: 8 } }],
             'transpose notes in Piano MIDI by 7 semitones, but only the selected notes',
@@ -2205,6 +2215,10 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(selectedNotes.rejections[0]?.reason).toContain('Selected-note edits are not supported');
         expect(selectedMidiNotes.actions).toEqual([]);
         expect(selectedMidiNotes.rejections[0]?.reason).toContain('Selected-note edits are not supported');
+        expect(noteSelection.actions).toEqual([]);
+        expect(noteSelection.rejections[0]?.reason).toContain('Selected-note edits are not supported');
+        expect(midiNoteSelection.actions).toEqual([]);
+        expect(midiNoteSelection.rejections[0]?.reason).toContain('Selected-note edits are not supported');
         expect(selectedNotesWithWrongValue.actions).toEqual([]);
         expect(selectedNotesWithWrongValue.rejections[0]?.reason).toContain('Selected-note edits are not supported');
         expect(wrongValue.actions).toEqual([]);
@@ -2695,6 +2709,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'do not enable solo safe on Vocals'
         );
         const clear = bridge([{ name: 'clearSolos', arguments: {} }], 'clear all solos', soloedContext);
+        const clearAllTracks = bridge([{ name: 'clearSolos', arguments: {} }], 'unsolo all tracks', soloedContext);
         const clearEverything = bridge([{ name: 'clearSolos', arguments: {} }], 'unsolo everything', soloedContext);
         const vocabularyCollisionContext = {
             ...soloedContext,
@@ -2724,6 +2739,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(wrongPolarity.actions).toEqual([]);
         expect(negated.actions).toEqual([]);
         expect(clear.actions).toEqual([{ type: 'clearSolos' }]);
+        expect(clearAllTracks.actions).toEqual([{ type: 'clearSolos' }]);
         expect(clearEverything.actions).toEqual([{ type: 'clearSolos' }]);
         expect(vocabularyCollision.actions).toEqual([{ type: 'clearSolos' }]);
         expect(scopedVocabularyCollisions.map((result) => result.actions)).toEqual([[], []]);
@@ -3204,6 +3220,17 @@ describe('bridgeGroundedLlmToolCalls', () => {
                 ],
             }
         );
+        const multipleCurrentGroups = bridge(
+            [{ name: 'removeFromVca', arguments: { trackId: vocals.id } }],
+            'unassign Vocals from Drum VCA',
+            {
+                ...projectContext,
+                vcaGroups: [
+                    ...(projectContext.vcaGroups ?? []),
+                    { id: 'vca-vocals', name: 'Vocal VCA', gain: 1, muted: false, trackIds: [vocals.id] },
+                ],
+            }
+        );
         const duplicateNameContext = {
             ...projectContext,
             tracks: [...projectContext.tracks, createTrack({ id: 'track-guitar-2', name: 'Guitar' })],
@@ -3245,6 +3272,14 @@ describe('bridgeGroundedLlmToolCalls', () => {
                 reservedWrongRemovalGroup,
             ].map((result) => result.actions)
         ).toEqual([[], [], [], [], [], [], [], [], [], [], [], []]);
+        expect(multipleCurrentGroups.actions).toEqual([]);
+        expect(multipleCurrentGroups.rejections).toEqual([
+            {
+                index: 0,
+                name: 'removeFromVca',
+                reason: 'Provider VCA group reference does not match the track current membership',
+            },
+        ]);
     });
 
     it('grounds arm polarity to eligible named or selected tracks and respects cancellation', () => {
