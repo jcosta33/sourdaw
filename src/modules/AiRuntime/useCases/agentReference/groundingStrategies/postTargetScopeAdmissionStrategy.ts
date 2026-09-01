@@ -2,6 +2,7 @@ import { getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCas
 
 import { type ProjectContext } from '../../../models/ProjectContext';
 
+import { resolveAgentReference } from '../resolveAgentReference';
 import {
     createPostTargetScopeAdmissionStrategyRegistry,
     type PostTargetScopeActionName,
@@ -10,7 +11,6 @@ import {
     type PostTargetScopeAdmissionStrategy,
     type PostTargetScopeAdmissionStrategyDefinition,
 } from './createPostTargetScopeAdmissionStrategyRegistry';
-import { resolveAgentReference } from '../resolveAgentReference';
 
 type PostTargetActionScope = PostTargetScopeAdmissionInput['actionScope'];
 
