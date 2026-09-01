@@ -1,0 +1,40 @@
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/masterVcaStrategy.spec.ts
+  s_a40848e8f8cca9::t_774befd1975f92 1-280
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_a40848e8f8cca9::t_8bf35ba3e95fb9 1,29,329-331,334
+src/modules/AiRuntime/transformers/llmActionStrategies/masterVcaStrategy.ts
+  s_a40848e8f8cca9::t_8bf35ba3e95fb9 1-4,6-155,159-174,181-222
+  s_a40848e8f8cca9::t_3d23cead239257 5,156-158,175-180
+src/modules/AiRuntime/useCases/assertCanonicalLlmActionStrategies.ts
+  s_a40848e8f8cca9::t_8bf35ba3e95fb9 2,5
+  s_a40848e8f8cca9::t_381d729c8e2108 6-8
+  s_43c1202a8849bc::t_4f917d03d010c4 9
+src/modules/AiRuntime/useCases/__tests__/assertCanonicalLlmActionStrategies.spec.ts
+  s_a40848e8f8cca9::t_8bf35ba3e95fb9 6,10
+  s_a40848e8f8cca9::t_7d53d1fa5a7a8f 11-13
+  s_43c1202a8849bc::t_2ff54c9e51da68 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "436103e75eeadb9e3d52688a78cf577a18935944",
+  "prompts": {},
+  "sessions": {
+    "s_43c1202a8849bc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a05d27-0155-7ce1-85de-5da700137740",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
