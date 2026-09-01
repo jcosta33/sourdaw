@@ -1,0 +1,27 @@
+src/modules/DawInterchange/useCases/__tests__/extractDawProjectZipEntries.spec.ts
+  s_bbdfb911119c4f::t_fde99ead3bb808 158-164
+src/modules/DawInterchange/useCases/readDawProjectZip.ts
+  s_bbdfb911119c4f::t_549106ecf4e14f 55-58,64-75
+  s_bbdfb911119c4f::t_b06f17756965d6 1-2,16-17
+  s_bbdfb911119c4f::t_12e256dc9c36ae 76-78
+src/modules/DawInterchange/useCases/__tests__/readDawProjectZip.spec.ts
+  s_bbdfb911119c4f::t_e35cfa57e1a68a 76-82,84-87,89
+  s_bbdfb911119c4f::t_ea88119c9987b9 83,88
+  s_bbdfb911119c4f::t_a69b0fc39554b0 73-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "8fa5afb5c77bfa35ede61fd084a28544e378d48e",
+  "prompts": {},
+  "sessions": {
+    "s_bbdfb911119c4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fa21d5-2a8a-4f80-98ab-b72059373843",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
