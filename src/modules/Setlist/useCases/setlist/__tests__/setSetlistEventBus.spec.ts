@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import type { MidiOutPayload } from '#/modules/WorkspaceShell/events';
-
 import { SetlistEventBus } from '../setlistEventBus';
+
+import type { MidiOutPayload } from '#/modules/WorkspaceShell/events';
 
 vi.mock('../advanceSetlistItemEnd', () => ({
     advanceSetlistItemEnd: vi.fn(),
