@@ -1,16 +1,12 @@
 #!/usr/bin/env node
-import { fileURLToPath } from 'node:url';
-
 import {
     AUTHOR_BOT_NODE_ID,
     REQUIRED_REPOSITORY,
     REVIEWER_BOT_NODE_ID,
     assertRequiredRepository,
-    assertTrustedExecutingBlob,
     authenticateRole,
     isAuthorBotNodeId,
     isReviewerBotNodeId,
-    originMainBlob,
     parseGraphqlResponse,
     resolvePrimaryRoot,
     spawnCapture,
@@ -795,8 +791,11 @@ export async function coordinateResolveReviewThread(
     });
 }
 
-async function main(): Promise<number> {
-    const parsed = parseResolveReviewThreadArgs(process.argv.slice(2));
+export async function runResolveReviewThreadCli(
+    args: string[],
+    dependencies?: ResolveReviewThreadCoordinatorDependencies
+): Promise<number> {
+    const parsed = parseResolveReviewThreadArgs(args);
     if (parsed.help) {
         console.log(`Usage: ${usage.slice('usage: '.length)}`);
         return 0;
@@ -804,21 +803,6 @@ async function main(): Promise<number> {
     if (parsed.number === undefined || parsed.threadId === undefined || parsed.head === undefined) {
         fail(usage);
     }
-    const cwd = process.cwd();
-    assertTrustedExecutingBlob(
-        'scripts/resolveReviewThread.ts',
-        fileURLToPath(import.meta.url),
-        originMainBlob('scripts/resolveReviewThread.ts', cwd)
-    );
-    await coordinateResolveReviewThread(parsed.number, parsed.threadId, parsed.head);
+    await coordinateResolveReviewThread(parsed.number, parsed.threadId, parsed.head, dependencies);
     return 0;
-}
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    void main().then(
-        (code) => process.exit(code),
-        (error: unknown) => {
-            console.error(error instanceof Error ? error.message : error);
-            process.exit(1);
-        }
-    );
 }

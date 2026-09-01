@@ -1,16 +1,13 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import {
     REQUIRED_REPOSITORY,
     REVIEWER_BOT_NODE_ID,
     assertRequiredRepository,
-    assertTrustedExecutingBlob,
     authenticateRole,
     isReviewerBotNodeId,
-    originMainBlob,
     parseJson,
     resolvePrimaryRoot,
     spawnCapture,
@@ -321,8 +318,11 @@ export async function coordinatePublishReview(
     });
 }
 
-async function main(): Promise<number> {
-    const parsed = parsePublishReviewArgs(process.argv.slice(2));
+export async function runPublishReviewCli(
+    args: string[],
+    dependencies?: PublishReviewCoordinatorDependencies
+): Promise<number> {
+    const parsed = parsePublishReviewArgs(args);
     if (parsed.help) {
         console.log('Usage: pnpm review:publish <pr-number>');
         return 0;
@@ -330,23 +330,6 @@ async function main(): Promise<number> {
     if (parsed.number === undefined) {
         fail('usage: pnpm review:publish <pr-number>');
     }
-    const executingFile = fileURLToPath(import.meta.url);
-    const cwd = process.cwd();
-    assertTrustedExecutingBlob(
-        'scripts/publishReview.ts',
-        executingFile,
-        originMainBlob('scripts/publishReview.ts', cwd)
-    );
-    await coordinatePublishReview(parsed.number);
+    await coordinatePublishReview(parsed.number, dependencies);
     return 0;
-}
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    void main().then(
-        (code) => process.exit(code),
-        (error: unknown) => {
-            console.error(error instanceof Error ? error.message : error);
-            process.exit(1);
-        }
-    );
 }
