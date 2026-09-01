@@ -66,7 +66,6 @@ import {
 } from '../../models/AudioGraphBackend';
 import { createNativeOfflineGraphBackend } from '../../repositories/nativeGraph/createNativeOfflineGraphBackend';
 import { type NativeGraphTransport } from '../../repositories/nativeGraph/nativeGraphTransport';
-import { scheduleTrackAutomation } from '../../repositories/offlineScheduler/automationScheduling';
 import {
     type OfflinePpqEndpointProjector,
     type OfflineTempoAtBeatResolver,
@@ -76,10 +75,9 @@ import { getCompensationDelay } from '../latencyCompensation/compensation/getCom
 
 import { admitNativeClipExpansion, MAX_NATIVE_TRACK_CLIPS } from './admitNativeClipExpansion';
 import { checkCancel } from './checkCancel';
-import { convertRecordedAutomationEvents } from './convertRecordedAutomationEvents';
-import { createAutomationRecorder, type AutomationRecorder } from './createAutomationRecorder';
 import { projectNativeClipFade } from './projectNativeClipFade';
 import { projectOfflineAudioClipPlaybacks } from './projectOfflineAudioClipPlaybacks';
+import { projectStripAutomationWrites } from './projectStripAutomationWrites';
 import { resolveOutputTarget } from './resolveOutputTarget';
 import { resolveTrackClipsWithComping } from './resolveTrackClipsWithComping';
 
@@ -150,26 +148,6 @@ function sendCommands(input: { track: Track; busStripIds: ReadonlySet<string> })
             tap: send.preFader ? 'pre-fader' : 'post-fader',
             level: send.level,
         }));
-}
-
-/**
- * Fader node-domain back to the seam's stored linear amplitude.
- *
- * The scheduler recorded `clampFaderGain(converted * vcaMultiplier)`; the seam
- * wants the value **pre-clamp and pre-VCA**, because the backend folds the VCA
- * and applies the fader clamp itself (`AudioGraphStripParameterTarget`).
- * Dividing the multiplier back out is exact under the round trip: the backend
- * computes `clamp(seam * vca) = clamp(clamp(x * vca)) = clamp(x * vca)`, the
- * very value the web path wrote. A zero multiplier silences the strip whatever
- * the lane holds, so any finite seam value is faithful — `0` is used.
- */
-function seamFaderValue(recorded: number, vcaMultiplier: number): number {
-    return vcaMultiplier === 0 ? 0 : recorded / vcaMultiplier;
-}
-
-/** Pan node-domain (−1…1) back to the seam's −50…50 project scale. */
-function seamPanValue(recorded: number): number {
-    return recorded * 50;
 }
 
 export async function renderOfflineWithNativeEngine(
@@ -271,89 +249,38 @@ export async function renderOfflineWithNativeEngine(
 
         // The same lane set, gate and grain the web scheduler reads
         // (`scheduleTrackClips`); the mixdown always includes mixer lanes.
-        const trackReadsAutomation = track.automationMode !== 'off';
-        if (trackReadsAutomation) {
-            const clipBoundsById = new Map<string, { startBeat: number; endBeat: number }>();
-            for (const clip of track.clips) {
-                clipBoundsById.set(clip.id, { startBeat: clip.startBeat, endBeat: clip.endBeat });
-            }
-            const gainRecorder = createAutomationRecorder();
-            const panRecorder = createAutomationRecorder();
-            const sendRecorders: { busId: string; recorder: AutomationRecorder }[] = [];
-            const sendAutomationParams = new Map<string, AudioParam>();
-            for (const command of sendCommands({ track, busStripIds: busIds })) {
-                const recorder = createAutomationRecorder();
-                sendRecorders.push({ busId: command.busId, recorder });
-                sendAutomationParams.set(`send:${command.busId}`, recorder.param);
-            }
-
-            scheduleTrackAutomation({
-                lanes: automationStore.value?.lanes ?? [],
-                trackId: track.id,
-                trackGainNode: { gain: gainRecorder.param },
-                trackPanNode: { pan: panRecorder.param },
-                sendAutomationParams,
-                // The content gate admits device-free tracks only, so a device
-                // lane has nothing to resolve against — the same outcome the
-                // web path reaches with an empty chain.
-                deviceEntries: [],
-                durationSeconds,
-                defaultTempo,
-                changes,
-                slewTickSeconds: automationSlewTickSecondsForGrain(
-                    transportStore.value?.scheduleGrainMs ?? defaultTransportState.scheduleGrainMs
-                ),
-                deviceParameterLaw: {
-                    acceptsAutomation: () => false,
-                    clampValue: ({ value }) => value,
-                    quantiseValue: ({ value }) => value,
-                },
-                regionStartSeconds: regionStartSec,
-                projectBeatToSeconds,
-                sampleRate,
-                compensationDelaySec: compensationDelay,
-                clipBoundsById,
-                vcaMultiplier,
-                // The native fold shares this scheduler with the Web Audio
-                // path, so it takes the same lane law rather than a second copy.
-                resolveLaneCeiling: getAutomationLaneCeiling,
-            });
-
-            const conversions: {
-                target: AudioGraphStripParameterTarget;
-                recorder: AutomationRecorder;
-                valueToSeam: (value: number) => number;
-            }[] = [
-                {
-                    target: { kind: 'track-fader', trackId: track.id },
-                    recorder: gainRecorder,
-                    valueToSeam: (value) => seamFaderValue(value, vcaMultiplier),
-                },
-                {
-                    target: { kind: 'track-pan', trackId: track.id },
-                    recorder: panRecorder,
-                    valueToSeam: seamPanValue,
-                },
-                ...sendRecorders.map(({ busId, recorder }) => ({
-                    target: { kind: 'track-send-level', trackId: track.id, busId } as const,
-                    recorder,
-                    valueToSeam: (value: number) => value,
-                })),
-            ];
-            for (const { target, recorder, valueToSeam } of conversions) {
-                const converted = convertRecordedAutomationEvents({
-                    events: recorder.events,
-                    sampleRate,
-                    valueToSeam,
-                });
-                if (converted.outcome === 'declined') {
-                    return {
-                        outcome: 'declined',
-                        reason: `automation on track "${track.name}": ${converted.reason}`,
-                    };
-                }
-                commands.push(...writeCommands(target, converted.writes));
-            }
+        // `projectStripAutomationWrites` shares this projection with the live
+        // producer — see that module's header for the recorder/convert
+        // relationship this used to inline here.
+        const clipBoundsById = new Map<string, { startBeat: number; endBeat: number }>();
+        for (const clip of track.clips) {
+            clipBoundsById.set(clip.id, { startBeat: clip.startBeat, endBeat: clip.endBeat });
+        }
+        const automation = projectStripAutomationWrites({
+            track,
+            admittedSendBusIds: sendCommands({ track, busStripIds: busIds }).map((command) => command.busId),
+            lanes: automationStore.value?.lanes ?? [],
+            regionStartSeconds: regionStartSec,
+            durationSeconds,
+            defaultTempo,
+            changes,
+            projectBeatToSeconds,
+            sampleRate,
+            compensationDelaySec: compensationDelay,
+            vcaMultiplier,
+            slewTickSeconds: automationSlewTickSecondsForGrain(
+                transportStore.value?.scheduleGrainMs ?? defaultTransportState.scheduleGrainMs
+            ),
+            clipBoundsById,
+            // The native fold shares this scheduler with the Web Audio path,
+            // so it takes the same lane law rather than a second copy.
+            resolveLaneCeiling: getAutomationLaneCeiling,
+        });
+        if (automation.outcome === 'declined') {
+            return automation;
+        }
+        for (const { target, writes } of automation.entries) {
+            commands.push(...writeCommands(target, writes));
         }
 
         // What the native strip has left to hold, counted down across the

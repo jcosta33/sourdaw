@@ -1,0 +1,256 @@
+/**
+ * `projectStripAutomationWrites` is the export's per-strip automation
+ * projection, extracted out of `renderOfflineWithNativeEngine.ts` so the live
+ * producer can share it (#3068). These specs pin its own contract directly,
+ * with plain lane fixtures and no store or backend — the parity between this
+ * projection and the actual export is `renderOfflineNativeParity.spec.ts`'s
+ * job, not this file's.
+ */
+
+import { describe, expect, it } from 'vitest';
+
+import { type Track } from '#/modules/Arrangement/stores';
+import { clampFaderGain, dbToGain, FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+
+import { type AutomationLane, type AutomationPoint } from '../../../models/AutomationViewTypes';
+import { projectStripAutomationWrites, type StripAutomationWritesInput } from '../projectStripAutomationWrites';
+
+function createTrack(overrides?: Partial<Track>): Track {
+    return {
+        id: 'track-1',
+        name: 'Track 1',
+        kind: 'audio',
+        muted: false,
+        soloed: false,
+        armed: false,
+        gain: 0.8,
+        pan: 0,
+        color: '#ff0000',
+        clips: [],
+        devices: [],
+        sends: [],
+        frozen: false,
+        freezeState: { status: 'unfrozen' },
+        parentId: null,
+        collapsed: false,
+        inputMonitoring: 'auto',
+        hidden: false,
+        disabled: false,
+        height: 80,
+        outputId: 'hw_out',
+        automationMode: 'read',
+        groupId: null,
+        soloSafe: false,
+        notes: '',
+        inputId: null,
+        activeAlternativeId: 'alt-1',
+        alternatives: [{ id: 'alt-1', name: 'Alternative 1', clips: [] }],
+        vcaGroupId: null,
+        midiOutputTrackId: null,
+        followChordTrack: false,
+        midiFx: [],
+        ...overrides,
+    } as Track;
+}
+
+function point(beat: number, value: number): AutomationPoint {
+    return { beat, value, curve: 'step', tension: 0 };
+}
+
+/**
+ * A single-point lane is deliberately simple: `compileAutomationEvents` never
+ * enters its interpolation loop for one point, so it emits exactly one `set`
+ * event carrying the point's own value at the region's own start — nothing
+ * here depends on curve or interpolation behaviour this module does not own.
+ */
+function lane(overrides: Partial<AutomationLane> & Pick<AutomationLane, 'parameterId' | 'points'>): AutomationLane {
+    return {
+        id: `lane-${overrides.parameterId}`,
+        trackId: 'track-1',
+        parameterName: overrides.parameterId,
+        enabled: true,
+        minValue: 0,
+        maxValue: 1,
+        ...overrides,
+    };
+}
+
+const baseInput: Omit<StripAutomationWritesInput, 'track' | 'lanes' | 'admittedSendBusIds'> = {
+    regionStartSeconds: 0,
+    durationSeconds: 4,
+    defaultTempo: 120,
+    changes: [],
+    projectBeatToSeconds: (beat) => beat,
+    sampleRate: 48_000,
+    compensationDelaySec: 0,
+    vcaMultiplier: 1,
+    slewTickSeconds: 0.01,
+    clipBoundsById: new Map(),
+    resolveLaneCeiling: (candidate) => candidate.maxValue,
+};
+
+describe('projectStripAutomationWrites — the target table', () => {
+    it('projects one target for the fader, the pan, and each admitted send bus', () => {
+        const track = createTrack();
+        const lanes: AutomationLane[] = [
+            lane({ parameterId: 'gain', points: [point(0, 0.7)], minValue: 0, maxValue: FADER_MAX_GAIN }),
+            lane({ parameterId: 'pan', points: [point(0, 0.25)], minValue: -1, maxValue: 1 }),
+            lane({ parameterId: 'send:bus-a', points: [point(0, 0.6)], minValue: 0, maxValue: 1 }),
+        ];
+
+        const result = projectStripAutomationWrites({
+            ...baseInput,
+            track,
+            admittedSendBusIds: ['bus-a'],
+            lanes,
+        });
+
+        expect(result.outcome).toBe('converted');
+        if (result.outcome !== 'converted') {
+            throw new Error('unreachable: asserted above');
+        }
+        expect(result.entries.map((entry) => entry.target)).toEqual([
+            { kind: 'track-fader', trackId: track.id },
+            { kind: 'track-pan', trackId: track.id },
+            { kind: 'track-send-level', trackId: track.id, busId: 'bus-a' },
+        ]);
+        // Every write's own value law is pinned separately below — this test
+        // is about which targets exist, not what they carry.
+        for (const entry of result.entries) {
+            expect(entry.writes).toHaveLength(1);
+        }
+    });
+
+    it('projects a send-level target per admitted bus, and nothing for an unadmitted one', () => {
+        const track = createTrack();
+        const lanes: AutomationLane[] = [
+            lane({ parameterId: 'send:bus-a', points: [point(0, 0.4)], minValue: 0, maxValue: 1 }),
+            lane({ parameterId: 'send:bus-b', points: [point(0, 0.9)], minValue: 0, maxValue: 1 }),
+            // Never admitted: the topology never built this bus, so the
+            // extraction gives it no recorder and no target, exactly as it
+            // gives the export no `add-send` command for it.
+            lane({ parameterId: 'send:bus-c', points: [point(0, 0.5)], minValue: 0, maxValue: 1 }),
+        ];
+
+        const result = projectStripAutomationWrites({
+            ...baseInput,
+            track,
+            admittedSendBusIds: ['bus-a', 'bus-b'],
+            lanes,
+        });
+
+        expect(result.outcome).toBe('converted');
+        if (result.outcome !== 'converted') {
+            throw new Error('unreachable: asserted above');
+        }
+        expect(result.entries.map((entry) => entry.target)).toEqual([
+            { kind: 'track-send-level', trackId: track.id, busId: 'bus-a' },
+            { kind: 'track-send-level', trackId: track.id, busId: 'bus-b' },
+        ]);
+    });
+});
+
+describe('projectStripAutomationWrites — the seam-value inversions', () => {
+    it('rounds a decibel fader value through clampFaderGain and the VCA-multiplier inversion', () => {
+        const track = createTrack();
+        const vcaMultiplier = 0.5;
+        const faderDb = -6;
+        const lanes: AutomationLane[] = [
+            lane({ parameterId: 'gain', points: [point(0, faderDb)], minValue: -60, maxValue: 6 }),
+        ];
+
+        const result = projectStripAutomationWrites({
+            ...baseInput,
+            track,
+            admittedSendBusIds: [],
+            lanes,
+            vcaMultiplier,
+        });
+
+        expect(result.outcome).toBe('converted');
+        if (result.outcome !== 'converted') {
+            throw new Error('unreachable: asserted above');
+        }
+        const faderEntry = result.entries.find((entry) => entry.target.kind === 'track-fader');
+        expect(faderEntry).toBeDefined();
+        const write = faderEntry!.writes[0];
+        expect(write?.shape).toBe('step');
+        // The scheduler recorded `clampFaderGain(dbToGain(value) * vcaMultiplier)`
+        // in node domain; the seam divides the multiplier back out
+        // (`seamFaderValue`). Neither factor clips here, so the round trip
+        // lands back on the dB value's own linear gain.
+        const nodeGain = clampFaderGain(dbToGain(faderDb) * vcaMultiplier);
+        expect((write as { value: number }).value).toBeCloseTo(nodeGain / vcaMultiplier, 10);
+        expect((write as { value: number }).value).toBeCloseTo(dbToGain(faderDb), 10);
+    });
+
+    it('rounds a pan value back to the project scale through the ×50 inversion', () => {
+        const track = createTrack();
+        const panValue = -0.4;
+        const lanes: AutomationLane[] = [
+            lane({ parameterId: 'pan', points: [point(0, panValue)], minValue: -1, maxValue: 1 }),
+        ];
+
+        const result = projectStripAutomationWrites({ ...baseInput, track, admittedSendBusIds: [], lanes });
+
+        expect(result.outcome).toBe('converted');
+        if (result.outcome !== 'converted') {
+            throw new Error('unreachable: asserted above');
+        }
+        const panEntry = result.entries.find((entry) => entry.target.kind === 'track-pan');
+        const write = panEntry!.writes[0];
+        expect(write?.shape).toBe('step');
+        // Pan carries no `valueTransform`, so the recorded node-domain value is
+        // the lane's own point value; `seamPanValue` maps it onto the −50…50
+        // project scale by the inverse of the same factor a real
+        // `StereoPannerNode`'s nominal range implies.
+        expect((write as { value: number }).value).toBeCloseTo(panValue * 50, 10);
+    });
+});
+
+describe('projectStripAutomationWrites — device automation has no native body (#3124)', () => {
+    it('declines a track carrying an enabled lane outside the fader, pan, and admitted-send families', () => {
+        const track = createTrack({ name: 'Synth Bus' });
+        const lanes: AutomationLane[] = [
+            lane({ parameterId: 'gain', points: [point(0, 0.8)] }),
+            lane({ parameterId: 'grinder-1:cutoff', points: [point(0, 0.3)] }),
+        ];
+
+        const result = projectStripAutomationWrites({ ...baseInput, track, admittedSendBusIds: [], lanes });
+
+        expect(result).toEqual({
+            outcome: 'declined',
+            reason: 'automation on track "Synth Bus": device parameter automation has no native body yet (#3124)',
+        });
+    });
+
+    it('does not decline a disabled device lane, matching scheduleTrackAutomation’s own enabled filter', () => {
+        const track = createTrack();
+        const lanes: AutomationLane[] = [
+            lane({ parameterId: 'grinder-1:cutoff', points: [point(0, 0.3)], enabled: false }),
+        ];
+
+        const result = projectStripAutomationWrites({ ...baseInput, track, admittedSendBusIds: [], lanes });
+
+        expect(result).toEqual({ outcome: 'converted', entries: [] });
+    });
+});
+
+describe('projectStripAutomationWrites — no lanes', () => {
+    it('converts a track carrying no automation lanes into zero entries', () => {
+        const track = createTrack();
+
+        const result = projectStripAutomationWrites({ ...baseInput, track, admittedSendBusIds: [], lanes: [] });
+
+        expect(result).toEqual({ outcome: 'converted', entries: [] });
+    });
+
+    it('converts a track whose automationMode is off into zero entries without reading its lanes', () => {
+        const track = createTrack({ automationMode: 'off' });
+        const lanes: AutomationLane[] = [lane({ parameterId: 'gain', points: [point(0, 0.8)] })];
+
+        const result = projectStripAutomationWrites({ ...baseInput, track, admittedSendBusIds: [], lanes });
+
+        expect(result).toEqual({ outcome: 'converted', entries: [] });
+    });
+});
