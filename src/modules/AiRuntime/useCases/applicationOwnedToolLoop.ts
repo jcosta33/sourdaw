@@ -37,6 +37,7 @@ const MAX_CALL_ID_LENGTH = 256;
 const MAX_FILTER_STRING_LENGTH = 256;
 const MAX_CURSOR_LENGTH = 256;
 const MAX_CATALOG_CURSOR_LENGTH = 2048;
+const MAX_CATALOG_INTENT_LENGTH = 512;
 const MAX_REVISION_LENGTH = 65_536;
 const CATALOG_CURSOR_PATTERN = /^[A-Za-z0-9_-]+$/;
 
@@ -511,12 +512,13 @@ function executeDeviceManifest(call: ToolCallResult, callId: string, turn: numbe
     };
 }
 
-const catalogCategories = new Set([
+const catalogCategories = new Set<Parameters<typeof getAgentToolCatalogEntries>[0]['category']>([
     'query',
     'resolve',
     'capability',
     'catalog',
     'preview',
+    'command-index',
     'command',
     'commit',
     'history',
@@ -525,40 +527,72 @@ const catalogCategories = new Set([
     'approval',
 ]);
 
+function isCatalogCategory(value: unknown): value is Parameters<typeof getAgentToolCatalogEntries>[0]['category'] {
+    return typeof value === 'string' && catalogCategories.has(value);
+}
+
 function parseCatalogDiscoveryArguments(argumentsValue: Record<string, unknown>):
     | {
           status: 'valid';
-          category: Parameters<typeof getAgentToolCatalogEntries>[0]['category'];
-          names: string[];
-          page?: { cursor?: string; limit?: number };
+          input: Parameters<typeof getAgentToolCatalogEntries>[0];
       }
     | { status: 'invalid'; reason: string } {
-    if (Object.keys(argumentsValue).some((key) => key !== 'category' && key !== 'names' && key !== 'page')) {
+    if (
+        Object.keys(argumentsValue).some(
+            (key) => key !== 'category' && key !== 'intent' && key !== 'names' && key !== 'page'
+        )
+    ) {
         return {
             status: 'invalid',
             reason: 'agent.catalog.discover arguments do not match the strict catalog contract',
         };
     }
     const category = argumentsValue.category;
-    if (typeof category !== 'string' || !catalogCategories.has(category)) {
+    if (!isCatalogCategory(category)) {
         return { status: 'invalid', reason: 'agent.catalog.discover category is unavailable' };
     }
+    const isCommandIndex = category === 'command-index';
+    const intentValue = argumentsValue.intent;
+    const intent = typeof intentValue === 'string' ? intentValue : null;
+    if (isCommandIndex && intent === null) {
+        return {
+            status: 'invalid',
+            reason: 'agent.catalog.discover command-index intent does not match the strict catalog contract',
+        };
+    }
+    if (
+        isCommandIndex &&
+        (argumentsValue.names !== undefined || intent.length === 0 || intent.length > MAX_CATALOG_INTENT_LENGTH)
+    ) {
+        return {
+            status: 'invalid',
+            reason: 'agent.catalog.discover command-index intent does not match the strict catalog contract',
+        };
+    }
     const namesValue = argumentsValue.names;
-    if (!Array.isArray(namesValue) || namesValue.length === 0 || namesValue.length > 8) {
+    if (!isCommandIndex && (!Array.isArray(namesValue) || namesValue.length === 0 || namesValue.length > 8)) {
         return {
             status: 'invalid',
             reason: 'agent.catalog.discover names do not match the strict catalog contract',
         };
     }
     const names: string[] = [];
-    for (const name of namesValue) {
-        if (typeof name !== 'string' || name.length === 0 || name.length > 128 || names.includes(name)) {
-            return {
-                status: 'invalid',
-                reason: 'agent.catalog.discover names do not match the strict catalog contract',
-            };
+    if (Array.isArray(namesValue)) {
+        for (const name of namesValue) {
+            if (typeof name !== 'string' || name.length === 0 || name.length > 128 || names.includes(name)) {
+                return {
+                    status: 'invalid',
+                    reason: 'agent.catalog.discover names do not match the strict catalog contract',
+                };
+            }
+            names.push(name);
         }
-        names.push(name);
+    }
+    if (!isCommandIndex && intentValue !== undefined) {
+        return {
+            status: 'invalid',
+            reason: 'agent.catalog.discover intent is available only for command-index',
+        };
     }
     const pageValue = argumentsValue.page;
     let page: { cursor?: string; limit?: number } | undefined;
@@ -590,11 +624,19 @@ function parseCatalogDiscoveryArguments(argumentsValue: Record<string, unknown>)
             page.limit = pageValue.limit;
         }
     }
+    if (category === 'command-index') {
+        return {
+            status: 'valid',
+            input: { category: 'command-index', intent, ...(page === undefined ? {} : { page }) },
+        };
+    }
     return {
         status: 'valid',
-        category: category as Parameters<typeof getAgentToolCatalogEntries>[0]['category'],
-        names,
-        ...(page === undefined ? {} : { page }),
+        input: {
+            category,
+            names,
+            ...(page === undefined ? {} : { page }),
+        },
     };
 }
 
@@ -611,7 +653,7 @@ function executeCatalogDiscovery(call: ToolCallResult, callId: string, turn: num
         });
     }
     try {
-        const catalog = getAgentToolCatalogEntries(parsed);
+        const catalog = getAgentToolCatalogEntries(parsed.input);
         return {
             schema: 'sourdaw.application-tool-receipt',
             schemaVersion: 1,

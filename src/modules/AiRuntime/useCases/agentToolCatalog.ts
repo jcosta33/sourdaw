@@ -72,7 +72,7 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
         ),
         tool(
             AGENT_CATALOG_DISCOVERY_TOOL_NAME,
-            'Discover current high-level tool or command schemas. Command schemas are returned only for explicitly requested operation names.',
+            'Search the compact command index by high-level intent, then request exact command schemas by canonical names. Primitive schemas are returned only for explicitly requested operation names.',
             {
                 category: {
                     type: 'string',
@@ -82,6 +82,7 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
                         'capability',
                         'catalog',
                         'preview',
+                        'command-index',
                         'command',
                         'commit',
                         'history',
@@ -96,6 +97,7 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
                     maxItems: MAX_DISCOVERED_SCHEMAS,
                     items: { type: 'string', maxLength: 128 },
                 },
+                intent: { type: 'string', minLength: 1, maxLength: 512 },
                 page: {
                     type: 'object',
                     properties: {
@@ -105,7 +107,7 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
                     additionalProperties: false,
                 },
             },
-            ['category', 'names']
+            ['category']
         ),
         tool(
             AGENT_DEVICE_MANIFEST_TOOL_NAME,
