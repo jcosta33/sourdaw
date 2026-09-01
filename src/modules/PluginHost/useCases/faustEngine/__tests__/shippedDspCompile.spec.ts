@@ -8,6 +8,7 @@ import { FaustMonoDspGenerator, type IFaustCompiler } from '@grame/faustwasm/dis
 import { describe, expect, it, beforeAll } from 'vitest';
 
 import { getPluginById } from '#/modules/Arrangement/useCases';
+import { registerProSynthInstruments } from '#/modules/Synth/useCases';
 
 import { type FaustModule } from '../../../models/FaustEngineTypes';
 import { loadFaustCompilerForSpec } from '../../../testing/loadFaustCompilerForSpec';
@@ -20,6 +21,13 @@ import { faustEngineState } from '../faustEngineState';
  * cannot compile — and would be silently skipped by faustDeviceFactory — fails
  * CI instead of shipping dead (audit #508 row 7: spring-reverb.dsp had four
  * undefined free identifiers while factory templates referenced the device).
+ *
+ * A shipped .dsp lives in one of two directories, and both are scanned:
+ * PluginHost's faustEngine/dsp (registered by builtinDSP.ts) and Synth's
+ * useCases/dsp (registered by proSynthInstruments.ts). Scanning only the first
+ * let supersaw-unison ship freq and gate controls no descriptor declared
+ * (#3172) — the registration and the partial descriptor were mutually
+ * consistent, so only compiling the DSP contradicts them.
  *
  * It also holds the two parameter tables that describe these modules against
  * what the compiler actually produced.
@@ -37,16 +45,16 @@ import { faustEngineState } from '../faustEngineState';
  * control the compiled node exposes must be declared, or it is a repair that
  * exists in the DSP and is invisible in the product.
  *
- * `builtinDSP.ts`'s own `paramDescriptors` are compared as well, for address
- * resolution only. That table has NO runtime reader today — `getFaustModule`
- * and `getFaustModules` are called from specs and nothing else — so this is a
- * consistency check on a description, not a contract the product depends on;
- * `builtinDSP.ts` earns its place by registering the DSP SOURCE, which
- * `compileFaustDSP` does read. Removing the dead descriptor arrays is filed
- * separately rather than smuggled in here.
+ * The registration sites' own `paramDescriptors` (builtinDSP.ts and
+ * proSynthInstruments.ts) are compared as well, for address resolution only.
+ * That table has NO runtime reader today, so this is a consistency check on a
+ * description, not a contract the product depends on; the registration files
+ * earn their place by registering the DSP SOURCE, which `compileFaustDSP` does
+ * read. Removing the dead descriptor arrays is filed separately rather than
+ * smuggled in here.
  */
 
-const DSP_DIR = 'src/modules/PluginHost/useCases/faustEngine/dsp';
+const DSP_DIRS = ['src/modules/PluginHost/useCases/faustEngine/dsp', 'src/modules/Synth/useCases/dsp'];
 const COMPILE_TIMEOUT_MS = 300_000;
 
 /**
@@ -158,9 +166,12 @@ describe('shipped Faust DSP compile', () => {
     beforeAll(async () => {
         compiler = await loadFaustCompilerForSpec();
         registerBuiltinFaustDSP();
+        // Synth's dsp directory registers through its own site, so it must run
+        // too or every Synth .dsp would fail the registration test below.
+        registerProSynthInstruments();
 
-        // `builtinDSP.ts` imports each .dsp with `?raw`, so the registered
-        // source is byte-identical to the file it came from.
+        // Both registration sites import each .dsp with `?raw`, so the
+        // registered source is byte-identical to the file it came from.
         const moduleBySource = new Map<string, FaustModule>();
         for (const module of faustEngineState.modules.values()) {
             moduleBySource.set(module.dspCode, module);
@@ -169,28 +180,33 @@ describe('shipped Faust DSP compile', () => {
         const failures: Record<string, string> = {};
         const params: Record<string, CompiledParam[]> = {};
         const moduleOf: Record<string, FaustModule> = {};
-        const files = readdirSync(DSP_DIR)
-            .filter((name) => name.endsWith('.dsp'))
-            .sort();
-        for (const file of files) {
-            const dspCode = readFileSync(join(DSP_DIR, file), 'utf8');
+        // Collected as {dir, name} pairs because the source must be read from
+        // its own directory while every table below stays keyed by file name,
+        // which is unique across the two shipped directories.
+        const shipped = DSP_DIRS.flatMap((dir) =>
+            readdirSync(dir)
+                .filter((name) => name.endsWith('.dsp'))
+                .map((name) => ({ dir, name }))
+        ).sort((left, right) => left.name.localeCompare(right.name));
+        for (const { dir, name } of shipped) {
+            const dspCode = readFileSync(join(dir, name), 'utf8');
             const module = moduleBySource.get(dspCode);
             if (module) {
-                moduleOf[file] = module;
+                moduleOf[name] = module;
             }
             // Same processor name compileFaustDSP.ts uses, so the compiled
             // addresses are the ones the running app resolves against.
-            const processorName = module ? module.name.replaceAll(/\s+/g, '_') : file.replace(/\.dsp$/, '');
+            const processorName = module ? module.name.replaceAll(/\s+/g, '_') : name.replace(/\.dsp$/, '');
             const generator = new FaustMonoDspGenerator();
             try {
                 const result = await generator.compile(compiler, processorName, dspCode, '-I libraries/');
                 if (result) {
-                    params[file] = paramsOf(generator);
+                    params[name] = paramsOf(generator);
                 } else {
-                    failures[file] = 'compile returned null';
+                    failures[name] = 'compile returned null';
                 }
             } catch (error) {
-                failures[file] = error instanceof Error ? error.message : String(error);
+                failures[name] = error instanceof Error ? error.message : String(error);
             }
         }
         compiled = { failures, params, moduleOf };
@@ -276,9 +292,9 @@ describe('shipped Faust DSP compile', () => {
         expect(undeclared).toEqual({});
     });
 
-    it('resolves every address declared in builtinDSP.ts against the compiled node', () => {
+    it('resolves every address the registrations declare against the compiled node', () => {
         // The check that would have caught #2300. Failure names the device and
-        // the declared addresses whose last segment no built-in parameter
+        // the declared addresses whose last segment no compiled parameter
         // carries — exactly the ones faustDeviceFactory would drop into a warn.
         const unresolved: Record<string, string[]> = {};
         for (const [file, module] of Object.entries(compiled.moduleOf)) {
@@ -345,7 +361,7 @@ describe('shipped Faust DSP compile', () => {
     });
 
     it('de-esser.dsp compiles and exposes the params its descriptors declare', () => {
-        // builtinDSP.ts declares /De-esser/{frequency,bandwidth,threshold,ratio,listen}.
+        // builtinDSP.ts declares /De-esser/{frequency,bandwidth,threshold,ratio,reduction,listen}.
         expect(compiled.failures['de-esser.dsp']).toBeUndefined();
         expect(bareNamesOf('de-esser.dsp', compiled)).toEqual([
             'bandwidth',

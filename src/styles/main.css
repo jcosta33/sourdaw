@@ -17,33 +17,164 @@
     }
 }
 
-@media (display-mode: window-controls-overlay) {
-    .desktop-titlebar-region {
-        margin-left: env(titlebar-area-x, 0px);
-        width: env(titlebar-area-width, 100%);
-        -webkit-app-region: drag;
-        app-region: drag;
-    }
-
-    .desktop-titlebar-region :is(a, button, input, label, select, textarea, [role='button'], [tabindex]) {
-        -webkit-app-region: no-drag;
-        app-region: no-drag;
-    }
-}
-
 /*
- * The media query above only matches under the macOS window-controls overlay.
- * On the frameless Linux build it never matches, so the titlebar row opts into
- * the same drag contract through an un-gated modifier class instead.
+ * Which platform chrome the shell runs is decided by the renderer, not by CSS:
+ * Electron reports `display-mode: browser` on every platform, so a
+ * `(display-mode: window-controls-overlay)` query never matches and would gate
+ * these rules out of existence. The titlebar row carries the matching modifier
+ * class instead.
  */
+
+/* Both desktop chromes hand the titlebar row to the window manager. */
+.desktop-titlebar-region--overlay,
 .desktop-titlebar-region--frameless {
     -webkit-app-region: drag;
     app-region: drag;
 }
 
-.desktop-titlebar-region--frameless :is(a, button, input, label, select, textarea, [role='button'], [tabindex]) {
+/*
+ * Everything clickable in that row takes its clicks back, stated once so the
+ * two chromes cannot drift apart. The window manager swallows a press on a drag
+ * region as the start of a window move, so anything missing from this list
+ * stops responding altogether.
+ *
+ * Popup surfaces are named by ARIA role rather than by tag: the row hosts menus,
+ * listboxes and dialogs rendered inline, whose rows are plain divs carrying
+ * `onClick`. Opting a surface out clears its whole rectangle, so every control
+ * inside it stays clickable whatever it is built from.
+ */
+:is(.desktop-titlebar-region--overlay, .desktop-titlebar-region--frameless)
+    :is(
+        a,
+        button,
+        input,
+        label,
+        select,
+        textarea,
+        [role='button'],
+        [role='dialog'],
+        [role='listbox'],
+        [role='menu'],
+        [tabindex]
+    ) {
     -webkit-app-region: no-drag;
     app-region: no-drag;
+}
+
+/*
+ * macOS only: the native traffic lights are drawn over the app's own titlebar
+ * band, so the row starts where the overlay ends. The `titlebar-area-*` env
+ * values are populated whenever an overlay is present; the fallbacks cover a
+ * context without one, such as the browser build sharing this stylesheet.
+ */
+.desktop-titlebar-region--overlay {
+    margin-left: env(titlebar-area-x, 0px);
+    width: env(titlebar-area-width, 100%);
+}
+
+/* The transport header owns its fit modes. These are container, not viewport,
+ * queries because browser display scale and docked desktop sessions change the
+ * renderer width without changing the outer window. */
+.transport-bar {
+    container-type: inline-size;
+}
+
+.transport-bar__title-row,
+.transport-bar__action-row {
+    display: grid;
+    align-items: center;
+    column-gap: 0.5rem;
+    min-width: 0;
+}
+
+.transport-bar__title-row {
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 40vw) minmax(0, 1fr);
+}
+
+.transport-bar__title-project,
+.transport-bar__title-prompt,
+.transport-bar__title-panels,
+.transport-bar__action-left,
+.transport-bar__action-right {
+    min-width: 0;
+}
+
+.transport-bar__title-prompt > :first-child {
+    min-width: 0;
+}
+
+.transport-bar__action-row {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    flex: 1;
+}
+
+.transport-bar__action-detail {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-width: 0;
+}
+
+.transport-bar__action-more {
+    display: inline-flex;
+}
+
+@container (max-width: 1199px) {
+    .transport-bar__title-row {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
+    }
+
+    .transport-bar__action-row {
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    }
+
+    .transport-bar__project-menu-control {
+        min-width: 0;
+        max-width: 11rem;
+        flex-shrink: 1;
+    }
+
+    .transport-bar__project-name {
+        min-width: 0;
+        max-width: calc(100% - 1.5rem);
+        flex-shrink: 1;
+        overflow: hidden;
+    }
+
+    .transport-bar__project-name-input {
+        width: 100%;
+    }
+
+}
+
+@container (max-width: 739px) {
+    .transport-bar__action-row {
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    }
+
+    .transport-bar__project-menu-control {
+        max-width: 7.5rem;
+    }
+}
+
+@container (max-width: 479px) {
+    .transport-bar__playhead {
+        display: none;
+    }
+
+    .transport-bar__action-row {
+        grid-template-columns: auto 1fr auto;
+    }
+}
+
+@container (max-width: 319px) {
+    .transport-bar__title-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .transport-bar__title-prompt {
+        display: none;
+    }
 }
 
 /* ── DAW-specific utilities ────────────────────────────────────────────── */
@@ -56,43 +187,43 @@
 @utility channel-inset {
     box-shadow:
         inset 0 1px 3px rgba(0, 0, 0, 0.8),
-        0 1px 0 rgba(255, 255, 255, 0.04);
+        0 1px 0 rgba(255, 249, 242, 0.04);
 }
 
 @utility daw-panel-surface {
     background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.012)),
+        linear-gradient(180deg, rgba(255, 249, 242, 0.03), rgba(255, 249, 242, 0.012)),
         linear-gradient(180deg, var(--color-bg-panelRaised), var(--color-bg-panel));
     border: 1px solid var(--color-border-soft);
     border-top-color: var(--color-light-edge);
     border-bottom-color: rgba(0, 0, 0, 0.34);
     box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        inset 0 1px 0 rgba(255, 249, 242, 0.05),
         inset 0 -1px 0 rgba(0, 0, 0, 0.38),
         0 1px 2px rgba(0, 0, 0, 0.32);
 }
 
 @utility daw-inset-surface {
     background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.008)),
+        linear-gradient(180deg, rgba(255, 249, 242, 0.02), rgba(255, 249, 242, 0.008)),
         linear-gradient(180deg, rgba(0, 0, 0, 0.18), transparent 24%), var(--color-bg-panelInset);
     border: 1px solid rgba(0, 0, 0, 0.56);
     border-top-color: rgba(0, 0, 0, 0.76);
-    border-bottom-color: rgba(255, 255, 255, 0.04);
+    border-bottom-color: rgba(255, 249, 242, 0.04);
     box-shadow:
         inset 0 2px 4px rgba(0, 0, 0, 0.7),
-        inset 0 1px 0 rgba(255, 255, 255, 0.03),
-        0 1px 0 rgba(255, 255, 255, 0.02);
+        inset 0 1px 0 rgba(255, 249, 242, 0.03),
+        0 1px 0 rgba(255, 249, 242, 0.02);
 }
 
 @utility daw-floating-surface {
     background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.016)),
+        linear-gradient(180deg, rgba(255, 249, 242, 0.04), rgba(255, 249, 242, 0.016)),
         linear-gradient(180deg, rgba(0, 0, 0, 0.12), transparent 18%), var(--color-bg-overlay);
     border: 1px solid var(--color-border-soft);
-    border-top-color: rgba(255, 255, 255, 0.12);
+    border-top-color: rgba(255, 249, 242, 0.12);
     box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.06),
+        inset 0 1px 0 rgba(255, 249, 242, 0.06),
         0 10px 24px rgba(0, 0, 0, 0.64),
         0 0 0 1px rgba(0, 0, 0, 0.26);
 }
@@ -100,70 +231,70 @@
 @utility daw-seam {
     background: linear-gradient(
         180deg,
-        rgba(255, 255, 255, 0.08) 0%,
-        rgba(255, 255, 255, 0.02) 45%,
+        rgba(255, 249, 242, 0.08) 0%,
+        rgba(255, 249, 242, 0.02) 45%,
         rgba(0, 0, 0, 0.24) 100%
     );
 }
 
 @utility daw-scrollbar-thumb {
     background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.06)),
+        linear-gradient(180deg, rgba(255, 249, 242, 0.12), rgba(255, 249, 242, 0.06)),
         linear-gradient(180deg, rgba(127, 184, 196, 0.08), rgba(127, 184, 196, 0.02));
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-top-color: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 249, 242, 0.06);
+    border-top-color: rgba(255, 249, 242, 0.1);
     box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        inset 0 1px 0 rgba(255, 249, 242, 0.05),
         0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
 @utility daw-header-band {
-    background: linear-gradient(180deg, #080808 0%, #0e0e0e 100%);
+    background: linear-gradient(180deg, var(--color-bg-panelInset) 0%, var(--color-bg-well) 100%);
     box-shadow:
         inset 0 1px 3px rgba(0, 0, 0, 0.6),
-        0 1px 0 rgba(255, 255, 255, 0.03);
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
+        0 1px 0 rgba(255, 249, 242, 0.03);
+    border-top: 1px solid rgba(255, 249, 242, 0.06);
     border-bottom: 1px solid rgba(0, 0, 0, 0.4);
 }
 
 @utility daw-control-strip {
     background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.008)),
-        linear-gradient(180deg, #080808 0%, #0e0e0e 100%);
+        linear-gradient(180deg, rgba(255, 249, 242, 0.02), rgba(255, 249, 242, 0.008)),
+        linear-gradient(180deg, var(--color-bg-panelInset) 0%, var(--color-bg-well) 100%);
     box-shadow:
         inset 0 1px 3px rgba(0, 0, 0, 0.6),
-        0 1px 0 rgba(255, 255, 255, 0.03);
-    border-top: 1px solid rgba(255, 255, 255, 0.05);
-    border-bottom: 1px solid rgba(40, 40, 40, 0.3);
+        0 1px 0 rgba(255, 249, 242, 0.03);
+    border-top: 1px solid rgba(255, 249, 242, 0.05);
+    border-bottom: 1px solid rgba(41, 37, 34, 0.3);
 }
 
 @utility daw-empty-state-surface {
     background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.018), rgba(255, 255, 255, 0.008)),
+        linear-gradient(180deg, rgba(255, 249, 242, 0.018), rgba(255, 249, 242, 0.008)),
         linear-gradient(180deg, rgba(0, 0, 0, 0.16), transparent 22%), var(--color-bg-panelInset);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-top-color: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 249, 242, 0.06);
+    border-top-color: rgba(255, 249, 242, 0.08);
     border-bottom-color: rgba(0, 0, 0, 0.42);
     box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.03),
+        inset 0 1px 0 rgba(255, 249, 242, 0.03),
         inset 0 2px 4px rgba(0, 0, 0, 0.54);
 }
 
 @utility daw-analysis-card {
-    background: linear-gradient(180deg, #080808 0%, #0e0e0e 100%);
+    background: linear-gradient(180deg, var(--color-bg-panelInset) 0%, var(--color-bg-well) 100%);
     box-shadow:
         inset 0 1px 3px rgba(0, 0, 0, 0.6),
-        0 1px 0 rgba(255, 255, 255, 0.03);
+        0 1px 0 rgba(255, 249, 242, 0.03);
     border: 1px solid rgba(0, 0, 0, 0.4);
-    border-bottom: 1px solid rgba(40, 40, 40, 0.3);
+    border-bottom: 1px solid rgba(41, 37, 34, 0.3);
 }
 
 @utility daw-analysis-card-header {
     border-bottom: 1px solid transparent;
     background-image: linear-gradient(
         to right,
-        rgba(255, 255, 255, 0.06),
-        rgba(255, 255, 255, 0.02) 50%,
+        rgba(255, 249, 242, 0.06),
+        rgba(255, 249, 242, 0.02) 50%,
         rgba(0, 0, 0, 0.2)
     );
     background-size: 100% 1px;
@@ -172,23 +303,23 @@
 }
 
 @utility daw-display-surface {
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.018), rgba(255, 255, 255, 0.006)), var(--color-bg-panel);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: linear-gradient(180deg, rgba(255, 249, 242, 0.018), rgba(255, 249, 242, 0.006)), var(--color-bg-panel);
+    border: 1px solid rgba(255, 249, 242, 0.06);
     border-bottom-color: rgba(0, 0, 0, 0.34);
     box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.03),
+        inset 0 1px 0 rgba(255, 249, 242, 0.03),
         inset 0 -1px 0 rgba(0, 0, 0, 0.18);
 }
 
 @utility daw-readout-well {
-    background: linear-gradient(180deg, #080808 0%, #0d0d0d 100%);
+    background: linear-gradient(180deg, var(--color-bg-panelInset) 0%, var(--color-bg-well) 100%);
     box-shadow:
         inset 0 1px 4px rgba(0, 0, 0, 0.75),
         inset 0 0 1px rgba(0, 0, 0, 0.3),
-        0 1px 0 rgba(255, 255, 255, 0.04);
+        0 1px 0 rgba(255, 249, 242, 0.04);
     border: 1px solid rgba(0, 0, 0, 0.5);
     border-top-color: rgba(0, 0, 0, 0.62);
-    border-bottom-color: rgba(40, 40, 40, 0.34);
+    border-bottom-color: rgba(41, 37, 34, 0.34);
 }
 
 @utility glow-active {
@@ -657,7 +788,7 @@
 /* Firefox */
 * {
     scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+    scrollbar-color: rgba(255, 249, 242, 0.12) transparent;
 }
 
 /* Chromium's scrollbar pseudo-elements; every renderer this app ships on. */
@@ -671,13 +802,13 @@
 }
 
 ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.12);
+    background: rgba(255, 249, 242, 0.12);
     border-radius: 9999px;
     transition: background 120ms ease;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.25);
+    background: rgba(255, 249, 242, 0.25);
 }
 
 ::-webkit-scrollbar-corner {

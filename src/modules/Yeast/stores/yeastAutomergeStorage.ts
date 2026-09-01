@@ -134,10 +134,19 @@ function encodeRack(processors: readonly YeastProcessorInfo[]): RackCrdtState {
     return {
         schemaVersion: YEAST_RACK_SCHEMA_VERSION,
         processors: Object.fromEntries(
-            normalizeProcessors(processors).map((processor, index) => [
-                processor.id,
-                { deleted: false, order: index, value: structuredClone(processor) },
-            ])
+            normalizeProcessors(processors).map((processor, index) => {
+                const cloned = structuredClone(processor);
+                return [
+                    processor.id,
+                    {
+                        deleted: false,
+                        order: index,
+                        // Empty `params` is CRDT presence, not a musician-facing value:
+                        // later peers must insert into this map, not assign the field.
+                        value: { ...cloned, params: { ...(cloned.params ?? {}) } },
+                    },
+                ];
+            })
         ),
     };
 }
@@ -269,16 +278,35 @@ function replaceIfChanged(target: MutableRecord, key: string, value: unknown): v
     }
 }
 
+function syncProcessorParams(target: MutableRecord, params: Record<string, number> | undefined): void {
+    // Concurrent assignments of `params` last-writer-win. Concurrent inserts
+    // into one existing map merge. Never delete the field: clearing keys
+    // must leave the empty map so a later first-key race cannot reopen.
+    if (!isRecord(target.params)) {
+        target.params = {};
+    }
+    const current = target.params;
+    if (!isRecord(current)) {
+        return;
+    }
+    const incoming = params ?? {};
+
+    for (const key of Object.keys(current)) {
+        if (!Object.hasOwn(incoming, key)) {
+            delete current[key];
+        }
+    }
+    for (const [key, value] of Object.entries(incoming)) {
+        replaceIfChanged(current, key, value);
+    }
+}
+
 function syncProcessorValue(target: MutableRecord, processor: YeastProcessorInfo): void {
     replaceIfChanged(target, 'id', processor.id);
     replaceIfChanged(target, 'type', processor.type);
     replaceIfChanged(target, 'name', processor.name);
     replaceIfChanged(target, 'bypassed', processor.bypassed);
-    if (processor.params) {
-        replaceIfChanged(target, 'params', processor.params);
-    } else if (Object.hasOwn(target, 'params')) {
-        delete target.params;
-    }
+    syncProcessorParams(target, processor.params);
 }
 
 function syncProcessorEntities(current: MutableRecord, desiredProcessors: readonly YeastProcessorInfo[]): void {
@@ -295,7 +323,11 @@ function syncProcessorEntities(current: MutableRecord, desiredProcessors: readon
     for (const [id, processor] of desired) {
         const entity = current[id];
         if (!isRecord(entity) || !isRecord(entity.value)) {
-            current[id] = { deleted: false, order: index, value: processor };
+            current[id] = { deleted: false, order: index, value: { ...processor, params: {} } };
+            const created = current[id];
+            if (isRecord(created) && isRecord(created.value)) {
+                syncProcessorParams(created.value, processor.params);
+            }
             index += 1;
             continue;
         }
@@ -309,6 +341,16 @@ function syncProcessorEntities(current: MutableRecord, desiredProcessors: readon
         syncProcessorValue(entity.value, processor);
         index += 1;
     }
+}
+
+function hasSameProcessorIdSequence(
+    left: readonly YeastProcessorInfo[],
+    right: readonly YeastProcessorInfo[]
+): boolean {
+    if (left.length !== right.length) {
+        return false;
+    }
+    return left.every((processor, index) => processor.id === right[index]?.id);
 }
 
 function rebaseProcessors({
@@ -335,14 +377,32 @@ function rebaseProcessors({
             rebasedById.delete(id);
         }
     }
-    // `rebasedById` is seeded from `hydrated`, so it already carries the
-    // correct order (decodeProcessors now returns processors in persisted
-    // `order`, not id order) — `Map.set` on an existing key does not move it,
-    // so an edited-in-place entry keeps its hydrated position and only a
-    // newly pending-added entry lands at the end. Re-sorting by id here would
-    // undo that and is what silently discarded order before this module
-    // tracked it explicitly.
-    return [...rebasedById.values()];
+    if (hasSameProcessorIdSequence(pending, base)) {
+        // Same id sequence as the last hydrated base: keep Map insertion
+        // order so in-place field edits stay at their hydrated positions
+        // and only a newly pending-added entry lands at the end.
+        return [...rebasedById.values()];
+    }
+    // Pending reordered (or changed membership). Rebuild in pending order
+    // for ids that still exist, then append hydrated-only ids (remote adds)
+    // in their hydrated relative order. Do not sort by id.
+    const ordered: YeastProcessorInfo[] = [];
+    const placedIds = new Set<string>();
+    for (const processor of pending) {
+        const rebased = rebasedById.get(processor.id);
+        if (!rebased) {
+            continue;
+        }
+        ordered.push(rebased);
+        placedIds.add(processor.id);
+    }
+    for (const [id, processor] of rebasedById) {
+        if (placedIds.has(id)) {
+            continue;
+        }
+        ordered.push(processor);
+    }
+    return ordered;
 }
 
 function rebasePendingYeastState({

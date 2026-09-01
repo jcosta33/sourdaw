@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { stringify as superjsonStringify } from 'superjson';
 
-import { launch_new_project } from './e2eUtils';
+import { enable_direct_e2e_viewport, launch_new_project } from './e2eUtils';
 
 /**
  * `setupWorkspace()` (see e2eUtils.ts) deliberately seeds
@@ -17,6 +17,7 @@ import { launch_new_project } from './e2eUtils';
 async function setup_fresh_onboarding_workspace(page: Page): Promise<void> {
     const alphaDismissed = superjsonStringify(true);
 
+    await enable_direct_e2e_viewport(page);
     await page.addInitScript(
         ({ alphaDismissed: dismissed }) => {
             window.localStorage.clear();

@@ -6,6 +6,7 @@ import { type BuiltinDeviceNode } from '../../models/AudioEngineState';
 import { externalLatencyRegistry } from '../../useCases/latencyCompensation/compensation/externalLatencyRegistry';
 import { setAudioDeviceRuntimeSink } from '../audioDeviceRuntimeSink';
 import { type FermenterNodeResult } from '../FermenterNode';
+import { type GrinderNodeResult } from '../GrinderNode';
 import { type ProofNodeResult } from '../ProofNode';
 import { findReleasedWasmDescriptor, findWasmDescriptor } from '../wasmDeviceRegistry';
 
@@ -43,6 +44,16 @@ vi.mock('../FermenterNode', async (importOriginal) => {
     return { ...actual, createFermenterNode: fermenterNodeMocks.createFermenterNode };
 });
 
+const grinderNodeMocks = vi.hoisted(() => ({
+    createGrinderNode: vi.fn(),
+    reset: vi.fn(),
+}));
+
+vi.mock('../GrinderNode', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../GrinderNode')>();
+    return { ...actual, createGrinderNode: grinderNodeMocks.createGrinderNode };
+});
+
 const REGISTERED_WASM_DEVICE_TYPES = [
     'fermenter',
     'toaster',
@@ -69,6 +80,8 @@ describe('findWasmDescriptor', () => {
         proofNodeMocks.resetIntegrated.mockReset();
         proofNodeMocks.setBypass.mockReset();
         proofNodeMocks.setParam.mockReset();
+        grinderNodeMocks.createGrinderNode.mockReset();
+        grinderNodeMocks.reset.mockReset();
         externalLatencyRegistry.clear();
         setAudioDeviceRuntimeSink({});
     });
@@ -269,6 +282,35 @@ describe('findWasmDescriptor', () => {
         expect(loadedNode.processorLifecycle?.()).toBe('sleep');
         expect(fermenterNodeMocks.processorLifecycle).toHaveBeenCalledTimes(1);
     });
+
+    it('wires Grinder reset into the loaded controller', async () => {
+        const onLoaded = vi.fn();
+        grinderNodeMocks.createGrinderNode.mockResolvedValue(createGrinderNodeResult());
+
+        const desc = findWasmDescriptor('grinder');
+        if (!desc) {
+            throw new Error('Expected grinder descriptor to be registered');
+        }
+
+        const { loadPromise } = desc.create({
+            context: createRegistryAudioContext(),
+            deviceId: 'grinder-1',
+            deviceType: 'grinder',
+            onLoaded,
+        });
+
+        await loadPromise;
+
+        expect(onLoaded).toHaveBeenCalledTimes(1);
+        const loadedNode = onLoaded.mock.calls[0]![0] as BuiltinDeviceNode;
+        if (!loadedNode.controller?.reset) {
+            throw new Error('Expected loaded Grinder controller to expose reset');
+        }
+
+        loadedNode.controller.reset();
+
+        expect(grinderNodeMocks.reset).toHaveBeenCalledTimes(1);
+    });
 });
 
 function createRegistryAudioContext(): AudioContext {
@@ -310,6 +352,22 @@ function createFermenterNodeResult(): FermenterNodeResult {
         setBypass: fermenterNodeMocks.setBypass,
         setParam: fermenterNodeMocks.setParam,
         setPatch: fermenterNodeMocks.setPatch,
+        workletNode: createRegistryAudioWorkletNode(),
+    };
+}
+
+function createGrinderNodeResult(): GrinderNodeResult {
+    return {
+        connect: vi.fn(),
+        destroy: vi.fn(),
+        disconnect: vi.fn(),
+        onLatencyChanged: vi.fn(),
+        onMeterData: vi.fn(),
+        ready: Promise.resolve({ latency: 0 }),
+        reset: grinderNodeMocks.reset,
+        setBypass: vi.fn(),
+        setParam: vi.fn(),
+        setPatch: vi.fn(),
         workletNode: createRegistryAudioWorkletNode(),
     };
 }

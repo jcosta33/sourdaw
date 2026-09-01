@@ -6,7 +6,9 @@
             "kind": "source",
             "retention": "keep-with-obligations",
             "owner": "OS-10",
-            "releaseModes": ["source"],
+            "releaseModes": [
+                "source"
+            ],
             "paths": [
                 ".agents/**",
                 ".cargo/**",
@@ -41,6 +43,7 @@
                 ".prettierignore",
                 ".prettierrc",
                 "AGENTS.md",
+                "CHANGELOG.md",
                 "CLAUDE.md",
                 "CONTRIBUTING.md",
                 "CODEX.md",
@@ -70,20 +73,44 @@
                 "vite-env.d.ts",
                 "vite.config.ts"
             ],
-            "sources": ["git:github.com/jcosta33/sourdaw", "package.json", "server/package.json", "Cargo.toml"],
-            "revisions": ["release-proof:exact-candidate-revision", "pnpm-lock.yaml", "Cargo.lock"],
-            "digests": ["release-proof:source-archive-sha256"],
-            "licenses": ["Apache-2.0"],
-            "productSurfaces": ["repository source"],
-            "evidence": ["Git history and the dependency manifests named in paths."],
-            "obligations": ["Preserve Apache-2.0 metadata and every third-party notice."]
+            "sources": [
+                "git:github.com/jcosta33/sourdaw",
+                "package.json",
+                "server/package.json",
+                "Cargo.toml"
+            ],
+            "revisions": [
+                "release-proof:exact-candidate-revision",
+                "pnpm-lock.yaml",
+                "Cargo.lock"
+            ],
+            "digests": [
+                "release-proof:source-archive-sha256"
+            ],
+            "licenses": [
+                "Apache-2.0"
+            ],
+            "productSurfaces": [
+                "repository source"
+            ],
+            "evidence": [
+                "Git history and the dependency manifests named in paths."
+            ],
+            "obligations": [
+                "Preserve Apache-2.0 metadata and every third-party notice."
+            ]
         },
         {
             "id": "project-license-distribution",
             "kind": "distribution",
             "retention": "keep-with-obligations",
             "owner": "OS-10",
-            "releaseModes": ["source", "web", "desktop", "server"],
+            "releaseModes": [
+                "source",
+                "web",
+                "desktop",
+                "server"
+            ],
             "paths": [
                 ".gitattributes",
                 "LICENSE",
@@ -126,14 +153,19 @@
                 "release/upstream-proofs/**",
                 "scripts/dependencyLicenseReport.ts"
             ],
-            "revisions": ["current tracked project license and pinned dependency evidence"],
+            "revisions": [
+                "current tracked project license and pinned dependency evidence"
+            ],
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
                 "sha256:03be9429f428e7f8f427a01a79317eef00dd6ab5dc2ffb130c4a6300f579fead:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:aac9ec58dcbb4b69c9b47dbbe1e32740d5a4767b0232ff3c15cdf9f13a665941:release/dependency-license-proofs.json"
+                "sha256:4012bbe87ea147a2ef92707f2b344b9ee6bce252569545720ef4dc0823000574:release/dependency-license-proofs.json"
             ],
-            "licenses": ["Apache-2.0", "per-package terms:public/legal/DEPENDENCY-LICENSES.txt"],
+            "licenses": [
+                "Apache-2.0",
+                "per-package terms:public/legal/DEPENDENCY-LICENSES.txt"
+            ],
             "productSurfaces": [
                 "source distribution",
                 "web distribution",
@@ -143,14 +175,19 @@
             "evidence": [
                 "Project license files, package metadata, Cargo metadata, and generated dependency notices are checked together."
             ],
-            "obligations": ["Keep third-party components under their own terms and ship their notices."]
+            "obligations": [
+                "Keep third-party components under their own terms and ship their notices."
+            ]
         },
         {
             "id": "desktop-shell",
             "kind": "distribution",
             "retention": "keep-with-obligations",
             "owner": "OS-07",
-            "releaseModes": ["source", "desktop"],
+            "releaseModes": [
+                "source",
+                "desktop"
+            ],
             "paths": [
                 "electron/**",
                 "build/**",
@@ -192,7 +229,9 @@
                 "LGPL-2.1-or-later:Electron-FFmpeg",
                 "bundled-notices:electron-LICENSES.chromium.html"
             ],
-            "productSurfaces": ["Electron shell"],
+            "productSurfaces": [
+                "Electron shell"
+            ],
             "evidence": [
                 "Exact package, source, target archive, and legal-file identities are pinned and checked.",
                 "The packaging hook copies verified Electron legal bytes outside app.asar before signing."
@@ -208,7 +247,11 @@
             "kind": "dependency-graph",
             "retention": "keep-with-obligations",
             "owner": "OS-10",
-            "releaseModes": ["source", "web", "desktop"],
+            "releaseModes": [
+                "source",
+                "web",
+                "desktop"
+            ],
             "paths": [
                 "package.json",
                 "server/package.json",
@@ -216,25 +259,45 @@
                 "pnpm-lock.yaml",
                 "pnpm-workspace.yaml"
             ],
-            "sources": ["package.json", "server/package.json", "server/package-lock.json", "pnpm-lock.yaml"],
-            "revisions": ["exact pnpm lock graph", "exact collaboration-server npm lock graph"],
+            "sources": [
+                "package.json",
+                "server/package.json",
+                "server/package-lock.json",
+                "pnpm-lock.yaml"
+            ],
+            "revisions": [
+                "exact pnpm lock graph",
+                "exact collaboration-server npm lock graph"
+            ],
             "digests": [
                 "sha256:e1be22307c3110ef97fe8e5bb7e5c5738491b0006cfe5d33b14faf7690e49f7f",
                 "sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db"
             ],
-            "licenses": ["per-package declared terms, retained legal files, or assembled license records"],
-            "productSurfaces": ["browser application", "desktop application", "collaboration server"],
+            "licenses": [
+                "per-package declared terms, retained legal files, or assembled license records"
+            ],
+            "productSurfaces": [
+                "browser application",
+                "desktop application",
+                "collaboration server"
+            ],
             "evidence": [
                 "pnpm-lock.yaml and server/package-lock.json freeze both resolved JavaScript dependency graphs."
             ],
-            "obligations": ["Reconcile every distributed dependency license and notice before release."]
+            "obligations": [
+                "Reconcile every distributed dependency license and notice before release."
+            ]
         },
         {
             "id": "ddsp-tfjs-runtime",
             "kind": "runtime-library",
             "retention": "keep-with-obligations",
             "owner": "OS-04",
-            "releaseModes": ["source", "web", "desktop"],
+            "releaseModes": [
+                "source",
+                "web",
+                "desktop"
+            ],
             "paths": [
                 "package.json",
                 "pnpm-lock.yaml",
@@ -291,7 +354,9 @@
                 "Apache-2.0:Magenta.js-Roll-adaptation",
                 "MIT:seedrandom-and-Alea"
             ],
-            "productSurfaces": ["browser and desktop DDSP hardware-WebGPU worker runtime"],
+            "productSurfaces": [
+                "browser and desktop DDSP hardware-WebGPU worker runtime"
+            ],
             "evidence": [
                 "Exact package versions and npm integrity digests are pinned in the install graph; package and lock file contents are not independently content-digested here.",
                 "The release validator content-digests the application runtime sources and legal files listed by this surface.",
@@ -308,10 +373,25 @@
             "kind": "dependency-graph",
             "retention": "keep-with-obligations",
             "owner": "OS-10",
-            "releaseModes": ["source", "web", "desktop"],
-            "paths": ["Cargo.toml", "Cargo.lock", "crates/**", "public/legal/PLUGIN-INTERFACE-NOTICES.txt"],
-            "sources": ["Cargo.toml", "Cargo.lock", "public/legal/PLUGIN-INTERFACE-NOTICES.txt"],
-            "revisions": ["exact Cargo lock graph"],
+            "releaseModes": [
+                "source",
+                "web",
+                "desktop"
+            ],
+            "paths": [
+                "Cargo.toml",
+                "Cargo.lock",
+                "crates/**",
+                "public/legal/PLUGIN-INTERFACE-NOTICES.txt"
+            ],
+            "sources": [
+                "Cargo.toml",
+                "Cargo.lock",
+                "public/legal/PLUGIN-INTERFACE-NOTICES.txt"
+            ],
+            "revisions": [
+                "exact Cargo lock graph"
+            ],
             "digests": [
                 "sha256:bfe1982d1cdc8225a5076e82d2dbb5e2d839c7092a0fc2536d014bc4230b8a10",
                 "sha256:57f5b3fc8207b24fad956e3a8a52cfd2d527420cb753257bbd5f698d0cfc3e1e:public/legal/PLUGIN-INTERFACE-NOTICES.txt"
@@ -321,8 +401,14 @@
                 "MIT:Steinberg-VST3-interface",
                 "MIT:clap-sys"
             ],
-            "productSurfaces": ["project crates", "Wasm modules", "desktop application"],
-            "evidence": ["Cargo.lock freezes the complete resolved Rust dependency graph."],
+            "productSurfaces": [
+                "project crates",
+                "Wasm modules",
+                "desktop application"
+            ],
+            "evidence": [
+                "Cargo.lock freezes the complete resolved Rust dependency graph."
+            ],
             "obligations": [
                 "Reconcile every distributed dependency license and notice before release.",
                 "Keep the VST3 and CLAP plugin-interface notices beside every distribution that hosts native plugins."
@@ -333,7 +419,11 @@
             "kind": "runtime-library",
             "retention": "keep-with-obligations",
             "owner": "OS-07",
-            "releaseModes": ["source", "web", "desktop"],
+            "releaseModes": [
+                "source",
+                "web",
+                "desktop"
+            ],
             "paths": [
                 "package.json",
                 "pnpm-lock.yaml",
@@ -344,23 +434,40 @@
                 "public/legal/lamejs-NOTICE.txt",
                 "src/modules/AudioRendering/repositories/audioEncoders/mp3Encoder.ts"
             ],
-            "sources": ["https://github.com/gideonstele/lamejs", "public/legal/SOURCES.json"],
-            "revisions": ["@breezystack/lamejs@1.2.7", "1fb0ef5fa177413107e2e107d054a9b994e3f79c"],
+            "sources": [
+                "https://github.com/gideonstele/lamejs",
+                "public/legal/SOURCES.json"
+            ],
+            "revisions": [
+                "@breezystack/lamejs@1.2.7",
+                "1fb0ef5fa177413107e2e107d054a9b994e3f79c"
+            ],
             "digests": [
                 "pnpm-integrity:sha512-6wc7ck65ctA75Hq7FYHTtTvGnYs6msgdxiSUICQ+A01nVOWg6rqouZB8IdyteRlfpYYiFovkf67dIeOgWIUzTA==",
                 "public/legal/SOURCES.json"
             ],
-            "licenses": ["LGPL-3.0-only"],
-            "productSurfaces": ["MP3 export"],
-            "evidence": ["Exact package bytes, source revision, notice, license, and relink route are pinned."],
-            "obligations": ["Keep the source route, license, notice, and relink instructions beside every build."]
+            "licenses": [
+                "LGPL-3.0-only"
+            ],
+            "productSurfaces": [
+                "MP3 export"
+            ],
+            "evidence": [
+                "Exact package bytes, source revision, notice, license, and relink route are pinned."
+            ],
+            "obligations": [
+                "Keep the source route, license, notice, and relink instructions beside every build."
+            ]
         },
         {
             "id": "webllm-qwen-artifacts",
             "kind": "model-stack",
             "retention": "keep-with-obligations",
             "owner": "OS-04",
-            "releaseModes": ["web", "desktop"],
+            "releaseModes": [
+                "web",
+                "desktop"
+            ],
             "paths": [
                 "src/infra/release/modelReleaseAdmission.ts",
                 "src/modules/AiRuntime/repositories/webLlm/initWebLlmEngine.ts",
@@ -476,7 +583,10 @@
                 "mixed-license-materials:Apache-TVM-root-and-full-referenced-license-notice-trees",
                 "accepted-residual:no-exact-base-checkpoint-mapping-or-hermetic-build-input-record"
             ],
-            "productSurfaces": ["browser-local WebLLM", "desktop renderer browser-local WebLLM over WebGPU"],
+            "productSurfaces": [
+                "browser-local WebLLM",
+                "desktop renderer browser-local WebLLM over WebGPU"
+            ],
             "evidence": [
                 "The manifest pins each model revision and verifies the exact downloaded artifact bytes by SHA-256 before storage or inference.",
                 "The binary-mlc-llm-libs merge contains the admitted WASM bytes; its merged PR 165 attests exact MLC-LLM and Apache TVM source revisions, and TVM pins tvm-ffi 3c35034fd1026011736e19a4e0e1ed0f22058c42. MLC-LLM's notice, TVM's root LICENSE and NOTICE, and tvm-ffi's root and referenced legal files are shipped byte-for-byte.",
@@ -495,7 +605,9 @@
             "kind": "model-stack",
             "retention": "keep-with-obligations",
             "owner": "OS-04",
-            "releaseModes": ["desktop"],
+            "releaseModes": [
+                "desktop"
+            ],
             "paths": [
                 "Cargo.lock",
                 "crates/sourdaw-native/Cargo.toml",
@@ -513,21 +625,33 @@
                 "whisper-rs 0.16.0",
                 "whisper-rs-sys 0.15.0"
             ],
-            "digests": ["sha256:a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002"],
-            "licenses": ["MIT:model-artifact-repository", "Unlicense:whisper-rs-runtime"],
-            "productSurfaces": ["desktop speech transcription"],
+            "digests": [
+                "sha256:a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002"
+            ],
+            "licenses": [
+                "MIT:model-artifact-repository",
+                "Unlicense:whisper-rs-runtime"
+            ],
+            "productSurfaces": [
+                "desktop speech transcription"
+            ],
             "evidence": [
                 "The cached-model contract pins one model revision and verifies its exact 147964211-byte SHA-256 before Whisper consumes the bytes.",
                 "The model repository declares MIT; installed whisper-rs and whisper-rs-sys metadata declare Unlicense."
             ],
-            "obligations": ["Carry the MIT and Unlicense notices in distributed desktop material."]
+            "obligations": [
+                "Carry the MIT and Unlicense notices in distributed desktop material."
+            ]
         },
         {
             "id": "kokoro-model",
             "kind": "model-stack",
             "retention": "keep-with-obligations",
             "owner": "OS-04",
-            "releaseModes": ["web", "desktop"],
+            "releaseModes": [
+                "web",
+                "desktop"
+            ],
             "paths": [
                 "src/infra/release/modelReleaseAdmission.ts",
                 "src/modules/BrowserAi/models/KokoroArtifactManifest.ts",
@@ -545,46 +669,74 @@
             "sources": [
                 "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/tree/1939ad2a8e416c0acfeecc08a694d14ef25f2231"
             ],
-            "revisions": ["1939ad2a8e416c0acfeecc08a694d14ef25f2231"],
+            "revisions": [
+                "1939ad2a8e416c0acfeecc08a694d14ef25f2231"
+            ],
             "digests": [
                 "sha256:04c658aec1b6008857c2ad10f8c589d4180d0ec427e7e6118ceb487e215c3cd0",
                 "sha256-manifest:21 voice artifacts in src/modules/BrowserAi/models/KokoroArtifactManifest.ts"
             ],
-            "licenses": ["Apache-2.0"],
-            "productSurfaces": ["browser text-to-speech", "desktop text-to-speech"],
+            "licenses": [
+                "Apache-2.0"
+            ],
+            "productSurfaces": [
+                "browser text-to-speech",
+                "desktop text-to-speech"
+            ],
             "evidence": [
                 "The exact repository revision declares Apache-2.0.",
                 "The manifest pins the model and every exposed voice by revision, byte count, and SHA-256."
             ],
-            "obligations": ["Carry Apache-2.0 attribution and preserve download integrity checks."]
+            "obligations": [
+                "Carry Apache-2.0 attribution and preserve download integrity checks."
+            ]
         },
         {
             "id": "stem-separation-models",
             "kind": "model-stack",
             "retention": "defer-behind-admission",
             "owner": "OS-04",
-            "releaseModes": ["web", "desktop"],
+            "releaseModes": [
+                "web",
+                "desktop"
+            ],
             "paths": [
                 "src/infra/release/modelReleaseAdmission.ts",
                 "src/modules/AudioAnalysis/repositories/isStemSeparationAvailable.ts",
                 "src/modules/AudioAnalysis/repositories/separateStems.ts"
             ],
-            "sources": ["src/modules/AudioAnalysis/repositories/separateStems.ts"],
-            "revisions": ["no model stack admitted"],
-            "digests": ["none:no-model-artifacts-admitted"],
-            "licenses": ["unverified:no-model-source-or-license-recorded"],
-            "productSurfaces": ["withheld browser stem separation", "withheld desktop stem separation"],
+            "sources": [
+                "src/modules/AudioAnalysis/repositories/separateStems.ts"
+            ],
+            "revisions": [
+                "no model stack admitted"
+            ],
+            "digests": [
+                "none:no-model-artifacts-admitted"
+            ],
+            "licenses": [
+                "unverified:no-model-source-or-license-recorded"
+            ],
+            "productSurfaces": [
+                "withheld browser stem separation",
+                "withheld desktop stem separation"
+            ],
             "evidence": [
                 "The release gate reports unavailable and the repository implementation rejects every request."
             ],
-            "obligations": ["Admit and verify a complete model and runtime stack before enabling the capability."]
+            "obligations": [
+                "Admit and verify a complete model and runtime stack before enabling the capability."
+            ]
         },
         {
             "id": "ddsp-models",
             "kind": "model-stack",
             "retention": "keep-with-obligations",
             "owner": "OS-04",
-            "releaseModes": ["web", "desktop"],
+            "releaseModes": [
+                "web",
+                "desktop"
+            ],
             "paths": [
                 ".agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md",
                 "electron/protocol.ts",
@@ -661,8 +813,12 @@
                 "sha256:e4f9c5703a80cb874bca35818b22eb86d7f02ade3098974b47c6d248e6e57f0d:bytes:3888160:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/tenor_saxophone/group1-shard1of1.bin",
                 "sha256:4632398ffae90dc12dccf6bb9480102c6947f5c5eb5829415108f25d8cf0a7fe:bytes:171:https://storage.googleapis.com/magentadata/js/checkpoints/ddsp/tenor_saxophone/settings.json"
             ],
-            "licenses": ["unverified:exact-GCS-checkpoint-artifacts"],
-            "productSurfaces": ["explicit browser and desktop downloads of four pinned Magenta DDSP instruments"],
+            "licenses": [
+                "unverified:exact-GCS-checkpoint-artifacts"
+            ],
+            "productSurfaces": [
+                "explicit browser and desktop downloads of four pinned Magenta DDSP instruments"
+            ],
             "evidence": [
                 "DdspArtifactManifest pins the exact URL, byte size, and SHA-256 for all twelve admitted artifacts.",
                 "Each user-requested direct Magenta download is staged and verified before its local generation is published or used.",
@@ -679,7 +835,11 @@
             "kind": "model-stack",
             "retention": "defer-behind-admission",
             "owner": "OS-04",
-            "releaseModes": ["source", "web", "desktop"],
+            "releaseModes": [
+                "source",
+                "web",
+                "desktop"
+            ],
             "paths": [
                 ".agents/decisions/0011-ddd-module-boundary-redraw.md",
                 ".agents/decisions/0016-ultracode-session-scope-and-standard.md",
@@ -712,11 +872,23 @@
                 "src/utils/handlerContract.ts",
                 "src/infra/release/modelReleaseAdmission.ts"
             ],
-            "sources": ["src/modules/BrowserAi/stores/rave.ts", ".agents/specs/rave-timbre-transfer/spec.md"],
-            "revisions": ["five local catalog entries without admitted artifacts"],
-            "digests": ["none:no-model-artifacts-admitted"],
-            "licenses": ["unverified:no-model-source-or-license-recorded"],
-            "productSurfaces": ["withheld runtime handlers", "withheld command palette"],
+            "sources": [
+                "src/modules/BrowserAi/stores/rave.ts",
+                ".agents/specs/rave-timbre-transfer/spec.md"
+            ],
+            "revisions": [
+                "five local catalog entries without admitted artifacts"
+            ],
+            "digests": [
+                "none:no-model-artifacts-admitted"
+            ],
+            "licenses": [
+                "unverified:no-model-source-or-license-recorded"
+            ],
+            "productSurfaces": [
+                "withheld runtime handlers",
+                "withheld command palette"
+            ],
             "evidence": [
                 "The catalog names five models but records no weights, source, digest, license, or download path.",
                 "The false release-admission gate clears registry state and rejects model activation."
@@ -730,29 +902,46 @@
             "kind": "bundled-model-stack",
             "retention": "keep-with-obligations",
             "owner": "OS-04",
-            "releaseModes": ["web", "desktop"],
+            "releaseModes": [
+                "web",
+                "desktop"
+            ],
             "paths": [
                 "package.json",
                 "pnpm-lock.yaml",
                 "src/modules/AudioAnalysis/useCases/polyphonicAudioToMidi.ts",
                 "src/infra/release/modelReleaseAdmission.ts"
             ],
-            "sources": ["https://registry.npmjs.org/@spotify/basic-pitch/1.0.1"],
-            "revisions": ["@spotify/basic-pitch 1.0.1"],
+            "sources": [
+                "https://registry.npmjs.org/@spotify/basic-pitch/1.0.1"
+            ],
+            "revisions": [
+                "@spotify/basic-pitch 1.0.1"
+            ],
             "digests": [
                 "sha512:SAxiFi9ZnyhGdhWEOS9YVhdunZiKzI3I5zOccZzDzQRr4s00Ii9lphqlPMMfby3iYa7TSupB2g8yuu1kJ6gL+Q=="
             ],
-            "licenses": ["Apache-2.0"],
-            "productSurfaces": ["polyphonic audio-to-MIDI"],
-            "evidence": ["The production dependency bundles the browser model and lockfile integrity."],
-            "obligations": ["Carry Apache-2.0 attribution and verify the bundled model follows the package grant."]
+            "licenses": [
+                "Apache-2.0"
+            ],
+            "productSurfaces": [
+                "polyphonic audio-to-MIDI"
+            ],
+            "evidence": [
+                "The production dependency bundles the browser model and lockfile integrity."
+            ],
+            "obligations": [
+                "Carry Apache-2.0 attribution and verify the bundled model follows the package grant."
+            ]
         },
         {
             "id": "cloud-ai-providers",
             "kind": "external-service",
             "retention": "keep-with-obligations",
             "owner": "OS-03",
-            "releaseModes": ["desktop"],
+            "releaseModes": [
+                "desktop"
+            ],
             "paths": [
                 "crates/sourdaw-native/src/commands/provider_gateway.rs",
                 "src/modules/AiRuntime/repositories/closeProviderGatewaySession.ts",
@@ -780,28 +969,55 @@
                 "adapter builtin.openai-compatible.chat-completions.v1",
                 "opaque native credential session v1"
             ],
-            "digests": ["not-applicable:remote-service"],
-            "licenses": ["provider API terms"],
-            "productSurfaces": ["desktop hosted inference", "desktop custom provider"],
+            "digests": [
+                "not-applicable:remote-service"
+            ],
+            "licenses": [
+                "provider API terms"
+            ],
+            "productSurfaces": [
+                "desktop hosted inference",
+                "desktop custom provider"
+            ],
             "evidence": [
                 "Native code loads fixed environment credentials, binds first-party keys to first-party origins, and exposes only opaque session IDs to the renderer.",
                 "Web preferences expose no hosted-provider credential control."
             ],
-            "obligations": ["Keep credentials and transport native; expose no secret-bearing web surface."]
+            "obligations": [
+                "Keep credentials and transport native; expose no secret-bearing web surface."
+            ]
         },
         {
             "id": "collaboration-stun",
             "kind": "external-service",
             "retention": "keep",
             "owner": "OS-01",
-            "releaseModes": ["web", "desktop"],
-            "paths": ["src/modules/Collaboration/repositories/peerConnection.ts"],
-            "sources": ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"],
-            "revisions": ["live STUN endpoints"],
-            "digests": ["not-applicable:external-service"],
-            "licenses": ["not-applicable:network-service"],
-            "productSurfaces": ["peer-to-peer collaboration discovery"],
-            "evidence": ["Production WebRTC configuration names two Google STUN endpoints and no TURN relay."],
+            "releaseModes": [
+                "web",
+                "desktop"
+            ],
+            "paths": [
+                "src/modules/Collaboration/repositories/peerConnection.ts"
+            ],
+            "sources": [
+                "stun:stun.l.google.com:19302",
+                "stun:stun1.l.google.com:19302"
+            ],
+            "revisions": [
+                "live STUN endpoints"
+            ],
+            "digests": [
+                "not-applicable:external-service"
+            ],
+            "licenses": [
+                "not-applicable:network-service"
+            ],
+            "productSurfaces": [
+                "peer-to-peer collaboration discovery"
+            ],
+            "evidence": [
+                "Production WebRTC configuration names two Google STUN endpoints and no TURN relay."
+            ],
             "obligations": [
                 "Keep the endpoints accurate and disclose the network dependency where release documentation requires it."
             ]
@@ -811,7 +1027,10 @@
             "kind": "network-runtime",
             "retention": "keep-with-obligations",
             "owner": "OS-10",
-            "releaseModes": ["source", "server"],
+            "releaseModes": [
+                "source",
+                "server"
+            ],
             "paths": [
                 "server/collab-server.ts",
                 "server/package.json",
@@ -827,19 +1046,36 @@
                 "server/NOTICE",
                 "server/THIRD-PARTY-NOTICES.md"
             ],
-            "revisions": ["exact collaboration-server npm lock graph"],
-            "digests": ["sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db"],
-            "licenses": ["Apache-2.0", "MIT:ws"],
-            "productSurfaces": ["self-hosted collaboration WebSocket server"],
-            "evidence": ["The server binds a configurable host and port with authenticated WebSocket sessions."],
-            "obligations": ["Ship the sibling project license, project notice, and ws notice with the server."]
+            "revisions": [
+                "exact collaboration-server npm lock graph"
+            ],
+            "digests": [
+                "sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db"
+            ],
+            "licenses": [
+                "Apache-2.0",
+                "MIT:ws"
+            ],
+            "productSurfaces": [
+                "self-hosted collaboration WebSocket server"
+            ],
+            "evidence": [
+                "The server binds a configurable host and port with authenticated WebSocket sessions."
+            ],
+            "obligations": [
+                "Ship the sibling project license, project notice, and ws notice with the server."
+            ]
         },
         {
             "id": "mi-plaits-dsp-rs-adaptation",
             "kind": "adapted-source",
             "retention": "keep-with-obligations",
             "owner": "OS-10",
-            "releaseModes": ["source", "web", "desktop"],
+            "releaseModes": [
+                "source",
+                "web",
+                "desktop"
+            ],
             "paths": [
                 "crates/daw-dsp/src/toaster/engines/kick_808.rs",
                 "release/upstream-proofs/mi-plaits-dsp-rs-kick_808.rs",
@@ -855,7 +1091,10 @@
                 "git:github.com/pichenettes/eurorack@99432f2bf443219b3eb77e65e1a18583faad422e:plaits/dsp/drums/analog_bass_drum.h",
                 "crates/daw-dsp/src/toaster/engines/kick_808.rs"
             ],
-            "revisions": ["6d3f7a5b84b25ec45d66c9f6be7109474690d795", "99432f2bf443219b3eb77e65e1a18583faad422e"],
+            "revisions": [
+                "6d3f7a5b84b25ec45d66c9f6be7109474690d795",
+                "99432f2bf443219b3eb77e65e1a18583faad422e"
+            ],
             "digests": [
                 "sha256:61604fc1184010bf8fa1892fe1322b3d00c410ed827949c8781621af96601610:crates/daw-dsp/src/toaster/engines/kick_808.rs",
                 "sha256:f70f0fbaf3cfd3bd1a9f8a8577f96159fee3da00358a9572ee355186858be949:release/upstream-proofs/mi-plaits-dsp-rs-kick_808.rs",
@@ -867,8 +1106,12 @@
                 "sha256:22f658d32f65c7c535005368d589dc056c0f8417f3f15190d151233de60957a0:public/legal/MUTABLE-INSTRUMENTS-PLAITS-MIT.txt",
                 "sha256:61bf6ba1b489e37730605d318698ba64167301cc55cadfc73c8da5ae2b97f90c:public/legal/THIRD-PARTY-NOTICES.md"
             ],
-            "licenses": ["MIT"],
-            "productSurfaces": ["TR-808 kick DSP source and compiled distributions"],
+            "licenses": [
+                "MIT"
+            ],
+            "productSurfaces": [
+                "TR-808 kick DSP source and compiled distributions"
+            ],
             "evidence": [
                 "The adapted source, both immutable upstream revisions, the original Plaits source digest, both bundled MIT texts, and the public notice are bound together."
             ],
@@ -881,7 +1124,11 @@
             "kind": "project-source",
             "retention": "keep",
             "owner": "OS-10",
-            "releaseModes": ["source", "web", "desktop"],
+            "releaseModes": [
+                "source",
+                "web",
+                "desktop"
+            ],
             "paths": [
                 "crates/daw-dsp/src/grand_boule/**",
                 ".agents/decisions/0036-readmit-grand-boule.md",
@@ -940,28 +1187,38 @@
             "digests": [
                 "tracked-set-sha256:68402629c377617aa92f1373eb2eb18bbab07b95d8124a5581c9bd1ebce18920:grand-boule-native-rust",
                 "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
-                "tracked-set-sha256:580b5d96ccfcaffd876a408f6a9c6dcc31a7f8575956726c6abf601d6bb37c6e:grand-boule-discovery-catalog",
+                "tracked-set-sha256:e285a2588b0c9fa7b9c20c7b901d4570814bc9c43d1892e24fe10cdbe1aac6cc:grand-boule-discovery-catalog",
                 "tracked-set-sha256:a4b6f7d5b32d31ed0c0cf027344718219bd87dc3f6a345a2b9bebd90f1f45205:grand-boule-factory-admission",
-                "tracked-set-sha256:f7da3b228ba9f5f5a665bebb82d060ffd8a0cdec72b687e0196ef8a4231fa525:grand-boule-live-runtime",
-                "tracked-set-sha256:c53e1b7e5baa5bd5cf4a7f6cfc2dd1ea53854cdc18f7b2a19d1b70eb7b75ece2:grand-boule-project-state",
+                "tracked-set-sha256:d477f7bf64335d9ddd510349a93c2b672571a39cf35f2f1b72acf53352fef2ef:grand-boule-live-runtime",
+                "tracked-set-sha256:a4a9c1cea8980b0f4a8e3afa828d69e74898d3c0781b4fc57508d9de1346e68d:grand-boule-project-state",
                 "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
-                "tracked-set-sha256:20a0794aece85e0db5570e4320126e0a3b8e5e45b42f5a31a10ad5a302ca60f9:grand-boule-release-proof"
+                "tracked-set-sha256:b4066fa5cb288de12cf3e98707bf0d200eb729f98797a3db8ea4abbb0bf06706:grand-boule-release-proof"
             ],
-            "licenses": ["Apache-2.0"],
-            "productSurfaces": ["Grand Boule source, browser WASM, and desktop runtime"],
+            "licenses": [
+                "Apache-2.0"
+            ],
+            "productSurfaces": [
+                "Grand Boule source, browser WASM, and desktop runtime"
+            ],
             "evidence": [
                 "ADR 0036 records the project owner's Apache-2.0 grant and admission basis for the listed bytes; it is not independent proof of authorship or rights ownership.",
                 "Focused Rust regressions pin aggregate-bridge ordering, the exact finite body tail, string-coefficient isolation, and allocation freedom while the tail is active.",
                 "The release checker pins the admitted bytes and rejects legacy literals, including branded morph aliases."
             ],
-            "obligations": ["Preserve the project-source admission and release-boundary checks."]
+            "obligations": [
+                "Preserve the project-source admission and release-boundary checks."
+            ]
         },
         {
             "id": "levain-sample-bank",
             "kind": "sample-bank",
             "retention": "keep-with-obligations",
             "owner": "OS-06",
-            "releaseModes": ["source", "web", "desktop"],
+            "releaseModes": [
+                "source",
+                "web",
+                "desktop"
+            ],
             "paths": [
                 "public/samples/levain/**",
                 "release/levain-CC0-1.0.txt",
@@ -973,14 +1230,23 @@
                 "scripts/download-levain-samples.ts",
                 "scripts/levainSource.ts"
             ],
-            "sources": ["https://github.com/sgossner/VSCO-2-CE"],
-            "revisions": ["440300901dfe9275fd84e0b7763af1f8443ae62e"],
+            "sources": [
+                "https://github.com/sgossner/VSCO-2-CE"
+            ],
+            "revisions": [
+                "440300901dfe9275fd84e0b7763af1f8443ae62e"
+            ],
             "digests": [
                 "git-tree:0ecebcfca0c7e0fe501f71964027f8f59fa0e432",
                 "file-level:public/samples/levain/provenance.tsv"
             ],
-            "licenses": ["CC0-1.0", "Apache-2.0"],
-            "productSurfaces": ["bundled Levain orchestral sample bank"],
+            "licenses": [
+                "CC0-1.0",
+                "Apache-2.0"
+            ],
+            "productSurfaces": [
+                "bundled Levain orchestral sample bank"
+            ],
             "evidence": [
                 "The pinned commit object, Merkle tree, and license blob prove every upstream path offline; public/samples/levain/provenance.tsv maps each retained file to that proof."
             ],
@@ -993,7 +1259,11 @@
             "kind": "bundled-binary",
             "retention": "keep-with-obligations",
             "owner": "OS-07",
-            "releaseModes": ["source", "web", "desktop"],
+            "releaseModes": [
+                "source",
+                "web",
+                "desktop"
+            ],
             "paths": [
                 "public/faust/**",
                 "public/legal/RELINKING.md",
@@ -1015,9 +1285,16 @@
                 "pnpm-integrity:sha512-hLMCFuZFBvDOOAftFJKJEbc+p0GcXQLlswSgK6zOoMhrOV5zZdp39Qz4VSmdDQjTeiRNboNSvsy1FgB4nuJQRw==",
                 "public/legal/SOURCES.json"
             ],
-            "licenses": ["LGPL-2.1-or-later"],
-            "productSurfaces": ["browser Faust compiler", "desktop Faust compiler"],
-            "evidence": ["Shipped compiler bytes match the pinned package and embedded compiler source version."],
+            "licenses": [
+                "LGPL-2.1-or-later"
+            ],
+            "productSurfaces": [
+                "browser Faust compiler",
+                "desktop Faust compiler"
+            ],
+            "evidence": [
+                "Shipped compiler bytes match the pinned package and embedded compiler source version."
+            ],
             "obligations": [
                 "Keep exact source, LGPL text, attribution, modification status, and relink instructions beside every build."
             ]
@@ -1027,9 +1304,20 @@
             "kind": "generated-binary",
             "retention": "keep-with-obligations",
             "owner": "OS-07",
-            "releaseModes": ["source", "web", "desktop"],
-            "paths": ["public/wasm/**"],
-            "sources": ["crates/daw-dsp/", "crates/daw-wasm-decoder/", "crates/proof-chamber/", "crates/scoring/"],
+            "releaseModes": [
+                "source",
+                "web",
+                "desktop"
+            ],
+            "paths": [
+                "public/wasm/**"
+            ],
+            "sources": [
+                "crates/daw-dsp/",
+                "crates/daw-wasm-decoder/",
+                "crates/proof-chamber/",
+                "crates/scoring/"
+            ],
             "revisions": [
                 "rust nightly-2026-04-14",
                 "wasm-pack 0.14.0",
@@ -1043,9 +1331,17 @@
             "digests": [
                 "sha256:50b69e55e96881334b95a31e09b2ab04098084dbf7613b80cfa3726761b0330e:public/wasm/manifest.json"
             ],
-            "licenses": ["Apache-2.0", "per-package terms:public/legal/DEPENDENCY-LICENSES.txt"],
-            "productSurfaces": ["browser DSP", "desktop webview DSP"],
-            "evidence": ["The WASM gate binds every artifact to its crate closure and pinned toolchain."],
+            "licenses": [
+                "Apache-2.0",
+                "per-package terms:public/legal/DEPENDENCY-LICENSES.txt"
+            ],
+            "productSurfaces": [
+                "browser DSP",
+                "desktop webview DSP"
+            ],
+            "evidence": [
+                "The WASM gate binds every artifact to its crate closure and pinned toolchain."
+            ],
             "obligations": [
                 "Keep generated hashes, package metadata, Apache-2.0 project licensing, and third-party notices aligned."
             ]
@@ -1055,7 +1351,11 @@
             "kind": "project-source",
             "retention": "keep-with-obligations",
             "owner": "OS-07",
-            "releaseModes": ["source", "web", "desktop"],
+            "releaseModes": [
+                "source",
+                "web",
+                "desktop"
+            ],
             "paths": [
                 "public/audio/worklets/native-plugin-bridge-processor.js",
                 "public/audio/worklets/sidechain-compressor-processor.js"
@@ -1064,25 +1364,39 @@
                 "public/audio/worklets/native-plugin-bridge-processor.js",
                 "public/audio/worklets/sidechain-compressor-processor.js"
             ],
-            "revisions": ["not-applicable:direct-project-source"],
+            "revisions": [
+                "not-applicable:direct-project-source"
+            ],
             "digests": [
-                "sha256:2bf7b626f838702f91e2ebd4b40eb25ba4049c206e33245d675d4ca20b311c25:public/audio/worklets/native-plugin-bridge-processor.js",
+                "sha256:69721a5e12449b11e81b9f9916fa6716ea8fc4f039b2552522c72e4c451107e6:public/audio/worklets/native-plugin-bridge-processor.js",
                 "sha256:35c6845ed329a0c3572d482e74cbf312a87f8216280cdd09905de5271e22f6ff:public/audio/worklets/sidechain-compressor-processor.js"
             ],
-            "licenses": ["Apache-2.0"],
-            "productSurfaces": ["browser audio worklets", "desktop webview audio worklets"],
+            "licenses": [
+                "Apache-2.0"
+            ],
+            "productSurfaces": [
+                "browser audio worklets",
+                "desktop webview audio worklets"
+            ],
             "evidence": [
                 "Both shipped processors are direct project source; no generator or second source tree exists."
             ],
-            "obligations": ["Ship the project LICENSE and NOTICE with every distribution."]
+            "obligations": [
+                "Ship the project LICENSE and NOTICE with every distribution."
+            ]
         },
         {
             "id": "online-sample-sources",
             "kind": "external-content",
             "retention": "keep-with-obligations",
             "owner": "OS-08",
-            "releaseModes": ["web", "desktop"],
-            "paths": ["src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx"],
+            "releaseModes": [
+                "web",
+                "desktop"
+            ],
+            "paths": [
+                "src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx"
+            ],
             "sources": [
                 "https://github.com/LMMS/assets/tree/master/Samples",
                 "https://github.com/sgossner/VCSL",
@@ -1093,21 +1407,35 @@
                 "https://dig.ccmixter.org/",
                 "https://opengameart.org/"
             ],
-            "revisions": ["live per-item sources"],
-            "digests": ["not-applicable:linked-external-content"],
-            "licenses": ["external-item-terms:not-distributed"],
-            "productSurfaces": ["online sample browser"],
+            "revisions": [
+                "live per-item sources"
+            ],
+            "digests": [
+                "not-applicable:linked-external-content"
+            ],
+            "licenses": [
+                "external-item-terms:not-distributed"
+            ],
+            "productSurfaces": [
+                "online sample browser"
+            ],
             "evidence": [
                 "No third-party sample is imported or redistributed; the browser links to source pages and makes no reuse claim."
             ],
-            "obligations": ["Do not claim reuse rights without displaying the selected item's current terms."]
+            "obligations": [
+                "Do not claim reuse rights without displaying the selected item's current terms."
+            ]
         },
         {
             "id": "owner-visual-assets",
             "kind": "owner-created-asset",
             "retention": "keep-with-obligations",
             "owner": "OS-08",
-            "releaseModes": ["source", "web", "desktop"],
+            "releaseModes": [
+                "source",
+                "web",
+                "desktop"
+            ],
             "paths": [
                 "public/favicon.ico",
                 "public/icon-192.png",
@@ -1117,32 +1445,49 @@
                 "sourdaw.png",
                 "build/icons/**"
             ],
-            "sources": ["owner attestation: Jose Costa, 2026-08-21", "public/icon.png"],
+            "sources": [
+                "owner attestation: Jose Costa, 2026-08-21",
+                "public/icon.png"
+            ],
             "revisions": [
                 "git:130452d6d989b0f02ca81c36c2cf25178d6da362:public/icon.png",
                 "git:ddee040560bbdf5f954b8970d8e2fe736cd6d9b8:public/logo-parts",
                 "derived renditions"
             ],
             "digests": [
-                "sha256:a11dfb76d0788c63eacb88aef860bc972f246d222b4be6c9063dad22bf1bb879:public/favicon.ico",
-                "sha256:0f54e11b49e54017b02886ee6b7ba85404d61363dbd24e29a9f371fc682e2b45:public/icon-192.png",
-                "sha256:19dc2eb9b4f56d719c635fee49cb050122203e681d0172e2a7c9897874b05c47:public/icon-transparent.png",
-                "sha256:6a0a1b002bddf302d0247d3531c1c77159548c14c3a2b5359fca6abfecb1826b:public/icon.png",
-                "sha256:6a0a1b002bddf302d0247d3531c1c77159548c14c3a2b5359fca6abfecb1826b:sourdaw.png",
-                "tree-sha256:7dac68d653c32736b1507d07574e5a288049351ba7d58d8d82fe6602f995cadf:public/logo-parts",
-                "tree-sha256:3e010276cd1d29a68235a79227300c6e8d7ec61484ef9166eaed92bf490b7f14:build/icons"
+                "sha256:5538c2a47e15ed3a4457e026274620fbdc493ac4d0ec7c45760aa6313afdbc1d:public/favicon.ico",
+                "sha256:c266c541e95f02db79b78620f7c425059694026d2f0e809afde63782f0b319d5:public/icon-192.png",
+                "sha256:c2da95a42f825cc8cb0ed208ae4441bfc4400e84548723c5b1b96526de53eef7:public/icon-transparent.png",
+                "sha256:e05b026de6c10e974dea2086061f694970d1a9a3874142595ab0ad7df85e3457:public/icon.png",
+                "sha256:e05b026de6c10e974dea2086061f694970d1a9a3874142595ab0ad7df85e3457:sourdaw.png",
+                "tree-sha256:fa5dd4f455fd2a2176fb9c3a166b2a002104ac9528bb94e517aac35910cbebc2:public/logo-parts",
+                "tree-sha256:9c0580b110ea4d3d19f761c101023679e9ef14a7567c8988a18b26e35e0c0390:build/icons"
             ],
-            "licenses": ["Apache-2.0"],
-            "productSurfaces": ["application icons", "brand logo", "release screenshots"],
-            "evidence": ["Owner attested authorship on 2026-08-21; repository history binds every rendition."],
-            "obligations": ["Preserve attribution and project-license metadata."]
+            "licenses": [
+                "Apache-2.0"
+            ],
+            "productSurfaces": [
+                "application icons",
+                "brand logo",
+                "release screenshots"
+            ],
+            "evidence": [
+                "Owner attested authorship on 2026-08-21; repository history binds every rendition."
+            ],
+            "obligations": [
+                "Preserve attribution and project-license metadata."
+            ]
         },
         {
             "id": "third-party-marks",
             "kind": "reference-map",
             "retention": "keep-with-obligations",
             "owner": "OS-08",
-            "releaseModes": ["source", "web", "desktop"],
+            "releaseModes": [
+                "source",
+                "web",
+                "desktop"
+            ],
             "paths": [
                 "docs/manual/devices/11-grinder.md",
                 "docs/manual/devices/17-fermenter.md",
@@ -1153,6 +1498,7 @@
                 "src/modules/AiRuntime/useCases/agentReference/getSharedVocalFxBusesPromptScope.ts",
                 "src/modules/Arrangement/models/DeviceParameter.ts",
                 "src/modules/Arrangement/models/PluginDescriptors/FaustEffectDescriptors.ts",
+                "src/modules/Arrangement/models/PluginDescriptors/FaustInstrumentDescriptors.ts",
                 "src/modules/Arrangement/repositories/presets/expandedPresets.ts",
                 "src/modules/Arrangement/repositories/presets/faustEffectPresets.ts",
                 "src/modules/Arrangement/repositories/presets/faustInstrumentPresets.ts",
@@ -1189,13 +1535,25 @@
                 "src/modules/TimelineEditor/presentations/views/Inspector/layouts/HammondB3Layout.tsx",
                 "src/modules/Toaster/repositories/toasterPresets.ts"
             ],
-            "sources": ["public/legal/TRADEMARKS.md", "current source text"],
-            "revisions": ["current release text"],
+            "sources": [
+                "public/legal/TRADEMARKS.md",
+                "current source text"
+            ],
+            "revisions": [
+                "current release text"
+            ],
             "digests": [
                 "sha256:edb8376058a291da86a78ea409a02b7c1b964ac8836fd6ffcea0dbcd0a335244:public/legal/TRADEMARKS.md"
             ],
-            "licenses": ["not-applicable:trademark-rights-not-granted"],
-            "productSurfaces": ["technical references", "compatibility identifiers", "presets", "model selectors"],
+            "licenses": [
+                "not-applicable:trademark-rights-not-granted"
+            ],
+            "productSurfaces": [
+                "technical references",
+                "compatibility identifiers",
+                "presets",
+                "model selectors"
+            ],
             "evidence": [
                 "The exact text map covers plain-text references to third-party products and generic audio terms.",
                 "The tracked marks appear only as plain text; visual-asset provenance is governed separately."
@@ -1210,7 +1568,10 @@
             "kind": "external-service",
             "retention": "keep",
             "owner": "OS-11",
-            "releaseModes": ["web", "desktop"],
+            "releaseModes": [
+                "web",
+                "desktop"
+            ],
             "paths": [
                 "crates/daw-plugin-host/src/clap_host.rs",
                 "src/modules/WorkspaceShell/presentations/components/AlphaNoticeDialog.tsx",
@@ -1224,24 +1585,55 @@
                 "https://github.com/jcosta33/sourdaw/issues",
                 "https://sourdaw.app"
             ],
-            "revisions": ["live project origins"],
-            "digests": ["not-applicable:external-service"],
-            "licenses": ["not-applicable:community-link"],
-            "productSurfaces": ["alpha notice", "CLAP host metadata", "mobile gate", "status bar help"],
-            "evidence": ["Product surfaces link to the project site, source, Discussions, and Issues."],
-            "obligations": ["Keep public project links accurate and intentional."]
+            "revisions": [
+                "live project origins"
+            ],
+            "digests": [
+                "not-applicable:external-service"
+            ],
+            "licenses": [
+                "not-applicable:community-link"
+            ],
+            "productSurfaces": [
+                "alpha notice",
+                "CLAP host metadata",
+                "mobile gate",
+                "status bar help"
+            ],
+            "evidence": [
+                "Product surfaces link to the project site, source, Discussions, and Issues."
+            ],
+            "obligations": [
+                "Keep public project links accurate and intentional."
+            ]
         },
         {
             "id": "current-product-documents",
             "kind": "documentation",
             "retention": "keep-with-obligations",
             "owner": "OS-09",
-            "releaseModes": ["source"],
-            "paths": ["CONTRIBUTING.md", "docs/**", "PRIVACY.md", "README.md", "SECURITY.md"],
-            "sources": ["git:github.com/jcosta33/sourdaw"],
-            "revisions": ["current release text"],
-            "digests": ["not-applicable:living-project-documentation"],
-            "licenses": ["Apache-2.0"],
+            "releaseModes": [
+                "source"
+            ],
+            "paths": [
+                "CONTRIBUTING.md",
+                "docs/**",
+                "PRIVACY.md",
+                "README.md",
+                "SECURITY.md"
+            ],
+            "sources": [
+                "git:github.com/jcosta33/sourdaw"
+            ],
+            "revisions": [
+                "current release text"
+            ],
+            "digests": [
+                "not-applicable:living-project-documentation"
+            ],
+            "licenses": [
+                "Apache-2.0"
+            ],
             "productSurfaces": [
                 "architecture documentation",
                 "engineering guidance",
@@ -1252,28 +1644,49 @@
                 "Current documentation names the Electron shell and exact admitted or withheld model surfaces.",
                 "Rejected model artifacts do not appear in current documentation."
             ],
-            "obligations": ["State shipping truth and mark every unavailable capability explicitly."]
+            "obligations": [
+                "State shipping truth and mark every unavailable capability explicitly."
+            ]
         },
         {
             "id": "planning-archive",
             "kind": "project-history",
             "retention": "keep-with-obligations",
             "owner": "OS-09",
-            "releaseModes": ["source"],
-            "paths": [".agents/specs/**"],
-            "sources": ["git:github.com/jcosta33/sourdaw"],
-            "revisions": ["historical document state"],
-            "digests": ["not-applicable:historical-planning-records"],
-            "licenses": ["Apache-2.0"],
-            "productSurfaces": ["legacy feature plans", "implementation records"],
-            "evidence": ["The archive index denies current-shipping authority and routes live planning to GitHub."],
-            "obligations": ["Preserve useful intent without presenting archived plans as current behavior."]
+            "releaseModes": [
+                "source"
+            ],
+            "paths": [
+                ".agents/specs/**"
+            ],
+            "sources": [
+                "git:github.com/jcosta33/sourdaw"
+            ],
+            "revisions": [
+                "historical document state"
+            ],
+            "digests": [
+                "not-applicable:historical-planning-records"
+            ],
+            "licenses": [
+                "Apache-2.0"
+            ],
+            "productSurfaces": [
+                "legacy feature plans",
+                "implementation records"
+            ],
+            "evidence": [
+                "The archive index denies current-shipping authority and routes live planning to GitHub."
+            ],
+            "obligations": [
+                "Preserve useful intent without presenting archived plans as current behavior."
+            ]
         }
     ],
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "9dbe9f365c568611a78f97160861f2583ded1d489faf39992796db14f74031ba"
+            "sha256": "788966c3d89dc8d9fa388e1baaceab14996a563979f5bc35ca929411726e2eb0"
         },
         {
             "path": "server/package.json",
@@ -1607,6 +2020,11 @@
         {
             "surface": "project-source",
             "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://github.com/$GITHUB_REPOSITORY.git"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
             "value": "https://github.com/gitleaks/gitleaks/releases/download/v${slot}/gitleaks_${slot}_linux_x64.tar.gz",
             "templateSha256": "4639ee5ab8e36f77880dd75717d49cccac4c92c4b919c570f5449d6ea2aec7a8"
         },
@@ -1615,11 +2033,6 @@
             "file": "scripts/test-health-gate-scripts.sh",
             "value": "https://github.com/gitleaks/gitleaks/releases/download/v${slot}/gitleaks_${slot}_linux_x64.tar.gz",
             "templateSha256": "cd2621ab9d84245475d6cb77f9d11a1663552fbcc42a5873573cab2e7daafee4"
-        },
-        {
-            "surface": "project-source",
-            "file": "scripts/test-health-gate-scripts.sh",
-            "value": "https://github.com/$GITHUB_REPOSITORY.git"
         },
         {
             "surface": "project-source",
@@ -1867,6 +2280,7 @@
         {
             "value": "Rhodes",
             "paths": [
+                "src/modules/Arrangement/models/PluginDescriptors/FaustInstrumentDescriptors.ts",
                 "src/modules/Arrangement/repositories/presets/expandedPresets.ts",
                 "src/modules/Arrangement/repositories/presets/faustInstrumentPresets.ts",
                 "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
@@ -1900,12 +2314,15 @@
                 "src/modules/Arrangement/repositories/presets/faustEffectPresets.ts",
                 "src/modules/Arrangement/repositories/presets/faustInstrumentPresets.ts",
                 "src/modules/PluginHost/useCases/faustEngine/builtinDSP.ts",
+                "src/modules/Project/useCases/projectTemplates/templateFiles/hipHopTrap.ts",
                 "src/modules/TimelineEditor/presentations/views/Inspector/layouts/FaustInstrumentLayout.tsx"
             ]
         },
         {
             "value": "LA-2A",
-            "paths": ["src/modules/Gluten/models/GlutenTopologyGating.ts"]
+            "paths": [
+                "src/modules/Gluten/models/GlutenTopologyGating.ts"
+            ]
         },
         {
             "value": "AC30",
@@ -1927,7 +2344,9 @@
         },
         {
             "value": "CS-80",
-            "paths": ["src/modules/Fermenter/repositories/fermenterPresets.ts"]
+            "paths": [
+                "src/modules/Fermenter/repositories/fermenterPresets.ts"
+            ]
         },
         {
             "value": "DX7",
@@ -1961,7 +2380,9 @@
         },
         {
             "value": "Juno",
-            "paths": ["src/modules/Fermenter/repositories/fermenterPresets.ts"]
+            "paths": [
+                "src/modules/Fermenter/repositories/fermenterPresets.ts"
+            ]
         },
         {
             "value": "Leslie",
@@ -2019,15 +2440,21 @@
         },
         {
             "value": "Oberheim",
-            "paths": ["src/modules/Fermenter/repositories/fermenterPresets.ts"]
+            "paths": [
+                "src/modules/Fermenter/repositories/fermenterPresets.ts"
+            ]
         },
         {
             "value": "OB-X",
-            "paths": ["src/modules/Fermenter/repositories/fermenterPresets.ts"]
+            "paths": [
+                "src/modules/Fermenter/repositories/fermenterPresets.ts"
+            ]
         },
         {
             "value": "Prophet",
-            "paths": ["src/modules/Fermenter/repositories/fermenterPresets.ts"]
+            "paths": [
+                "src/modules/Fermenter/repositories/fermenterPresets.ts"
+            ]
         },
         {
             "value": "SEM",
@@ -2042,7 +2469,9 @@
         },
         {
             "value": "SH-101",
-            "paths": ["src/modules/Fermenter/repositories/fermenterPresets.ts"]
+            "paths": [
+                "src/modules/Fermenter/repositories/fermenterPresets.ts"
+            ]
         },
         {
             "value": "Vox",
@@ -2070,7 +2499,9 @@
         },
         {
             "value": "Yamaha",
-            "paths": ["src/modules/Fermenter/repositories/fermenterPresets.ts"]
+            "paths": [
+                "src/modules/Fermenter/repositories/fermenterPresets.ts"
+            ]
         },
         {
             "value": "SSL",

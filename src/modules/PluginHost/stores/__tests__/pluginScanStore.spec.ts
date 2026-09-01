@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 
-import { type ScannedPlugin } from '../../models/ScannedPlugin';
+import { type QuarantinedPlugin, type ScannedPlugin } from '../../models/ScannedPlugin';
 import { defaultPluginScanState, pluginScanStore, type PluginScanState } from '../pluginScanStore';
 
 const PLUGIN_SCAN_KEY = 'sourdaw:plugin-scan';
@@ -35,6 +35,7 @@ describe('pluginScanStore', () => {
             lastScanTime: null,
             errors: [],
             notices: [],
+            quarantined: [],
         });
     });
 
@@ -46,6 +47,13 @@ describe('pluginScanStore', () => {
             lastScanTime: 1_700_000_000_000,
             errors: ['Failed to load plugin c'],
             notices: ['VST2 plugins are not loaded and never will be.'],
+            quarantined: [
+                {
+                    path: '/plugins/broken.vst3',
+                    reason: 'Plugin scan helper timed out',
+                    quarantined_at_ms: 1_700_000_000_000,
+                },
+            ],
         };
 
         pluginScanStore.set(finished);
@@ -93,6 +101,7 @@ describe('pluginScanStore', () => {
             lastScanTime: 1_700_000_000_000,
             errors: [],
             notices: [],
+            quarantined: [],
         };
 
         pluginScanStore.set(finished);
@@ -108,6 +117,7 @@ describe('pluginScanStore', () => {
             lastScanTime: 1_700_000_000_000,
             errors: [],
             notices: [],
+            quarantined: [],
         };
         pluginScanStore.set(first);
         const refuse = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
@@ -132,6 +142,7 @@ describe('pluginScanStore', () => {
             lastScanTime: 1_700_000_000_000,
             errors: [],
             notices: [],
+            quarantined: [],
         };
         pluginScanStore.set(first);
         const refuse = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
@@ -225,6 +236,57 @@ describe('pluginScanStore hydration', () => {
         // reason about a scan that never produced it this session, and the next
         // scan restates whichever ones still apply.
         expect(restored?.notices).toEqual([]);
+    });
+
+    it('should restore a quarantine record across a reload, unlike errors and notices', async () => {
+        const quarantined: QuarantinedPlugin = {
+            path: '/plugins/broken.vst3',
+            reason: 'Plugin scan helper timed out',
+            quarantined_at_ms: 1_700_000_000_000,
+        };
+
+        const restored = await launchWithStoredScanState(
+            JSON.stringify({
+                scannedPlugins: [],
+                scanPaths: [],
+                isScanning: false,
+                lastScanTime: null,
+                errors: [],
+                notices: [],
+                quarantined: [quarantined],
+            })
+        );
+
+        // Unlike `errors`/`notices`, this describes registry state that still
+        // exists on disk until an explicit retry or a clean scan removes it.
+        expect(restored?.quarantined).toEqual([quarantined]);
+    });
+
+    it('should drop a stored quarantine row missing part of its contract', async () => {
+        const { reason: _omitted, ...incomplete } = {
+            path: '/plugins/broken.vst3',
+            reason: 'Plugin scan helper timed out',
+            quarantined_at_ms: 1_700_000_000_000,
+        };
+        const intact: QuarantinedPlugin = {
+            path: '/plugins/also-broken.vst3',
+            reason: 'Plugin scan helper exited unsuccessfully for /plugins/also-broken.vst3',
+            quarantined_at_ms: 1_700_000_000_001,
+        };
+
+        const restored = await launchWithStoredScanState(
+            JSON.stringify({
+                scannedPlugins: [],
+                scanPaths: [],
+                isScanning: false,
+                lastScanTime: null,
+                errors: [],
+                notices: [],
+                quarantined: [incomplete, intact],
+            })
+        );
+
+        expect(restored?.quarantined).toEqual([intact]);
     });
 
     it('should drop a stored plugin that is missing part of its scanned contract', async () => {

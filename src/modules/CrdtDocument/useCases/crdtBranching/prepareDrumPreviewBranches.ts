@@ -1,4 +1,4 @@
-import { change, clone as cloneDoc, getHeads, type Doc } from '@automerge/automerge';
+import { change, clone as cloneDoc, getHeads, type Doc, type Heads } from '@automerge/automerge';
 
 import { trackStore } from '#/modules/Arrangement/stores';
 import { midiStore } from '#/modules/MIDI/stores';
@@ -42,6 +42,34 @@ function normalizeJsonValue(value: unknown): unknown {
 
 function snapshotsEqual(left: unknown, right: unknown): boolean {
     return JSON.stringify(normalizeJsonValue(left)) === JSON.stringify(normalizeJsonValue(right));
+}
+
+function projectDocumentWithoutCommandCheckpoint(document: Record<string, unknown>): Record<string, unknown> {
+    const { commandBatchIdempotency: _commandCheckpoint, ...projectDocument } = document;
+    return projectDocument;
+}
+
+function readPlainDocument(document: Record<string, unknown>): Record<string, unknown> {
+    const parsed: unknown = JSON.parse(JSON.stringify(document));
+    if (!isRecord(parsed)) {
+        throw new TypeError('Expected a plain project document snapshot');
+    }
+    return parsed;
+}
+
+function rootDocumentMatchesExpectedHeads(expectedHeads: readonly string[]): boolean {
+    const liveDoc = automergeRepository.getDoc<Record<string, unknown>>(DOC_PREFIX_ROOT);
+    const expectedDoc = automergeRepository.getDocAtHeads<Record<string, unknown>>(
+        DOC_PREFIX_ROOT,
+        expectedHeads as Heads
+    );
+    if (!liveDoc || !expectedDoc) {
+        return false;
+    }
+    return snapshotsEqual(
+        projectDocumentWithoutCommandCheckpoint(readPlainDocument(liveDoc)),
+        projectDocumentWithoutCommandCheckpoint(readPlainDocument(expectedDoc))
+    );
 }
 
 function arraysEqual(left: readonly string[], right: readonly string[]): boolean {
@@ -122,7 +150,10 @@ function hasExactDocumentSnapshot(
     }
     return action.payload.expectedDocuments.every(({ docId, heads }) => {
         const liveHeads = [...(automergeRepository.getHeads(docId) ?? [])].map(String).toSorted();
-        return arraysEqual(liveHeads, heads);
+        if (arraysEqual(liveHeads, heads)) {
+            return true;
+        }
+        return docId === DOC_PREFIX_ROOT && rootDocumentMatchesExpectedHeads(heads);
     });
 }
 
@@ -207,7 +238,10 @@ export function prepareDrumPreviewBranches(
         !snapshotsEqual(state, payload.expectedBranchState) ||
         !hasExactDocumentSnapshot(action) ||
         state.activeBranchId !== payload.expectedSourceBranchId ||
-        !arraysEqual(sourceHeads, payload.expectedSourceHeads) ||
+        !(
+            arraysEqual(sourceHeads, payload.expectedSourceHeads) ||
+            rootDocumentMatchesExpectedHeads(payload.expectedSourceHeads)
+        ) ||
         state.branches.some(({ branchId }) =>
             payload.candidates.some((candidate) => candidate.branchId === branchId)
         ) ||

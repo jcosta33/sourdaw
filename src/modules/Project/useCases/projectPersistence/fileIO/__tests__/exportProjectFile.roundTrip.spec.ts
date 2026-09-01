@@ -32,7 +32,21 @@ vi.mock('../../../../repositories/project/downloadProjectFile', () => ({
 }));
 vi.mock('../../../arrangement/syncCurrentArrangementToStore', () => ({ syncCurrentArrangementToStore: vi.fn() }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
-vi.mock('#/modules/Routing/useCases', () => ({ getAllSidechainRoutes: () => [] }));
+vi.mock('#/modules/Routing/useCases', () => ({
+    addSidechainRouteSnapshot: vi.fn(),
+    ensureBusStrip: vi.fn(),
+    getAllSidechainRoutes: () => [],
+    getSidechainRoutesForTrack: vi.fn(),
+    getSidechainTargetCapability: vi.fn(),
+    hydrateSidechainRoutes: vi.fn(),
+    removeSend: vi.fn(),
+    removeSidechainRoute: vi.fn(),
+    removeSidechainRouteSnapshot: vi.fn(),
+    restoreSidechainRoutes: vi.fn(),
+    setBusGain: vi.fn(),
+    setSend: vi.fn(),
+    wireSidechainRoutes: vi.fn(),
+}));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     exportCachedAudioBuffers: vi.fn().mockResolvedValue({}),
 }));

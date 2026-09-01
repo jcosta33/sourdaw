@@ -164,7 +164,13 @@ describe('yeastStore', () => {
                         'groove-durable-id': {
                             deleted: false,
                             order: 0,
-                            value: { id: 'groove-durable-id', type: 'groove', name: 'Groove', bypassed: false },
+                            value: {
+                                id: 'groove-durable-id',
+                                type: 'groove',
+                                name: 'Groove',
+                                bypassed: false,
+                                params: {},
+                            },
                         },
                     },
                 },
@@ -441,6 +447,7 @@ describe('yeastStore', () => {
                                 type: 'groove',
                                 name: 'Persisted groove',
                                 bypassed: false,
+                                params: {},
                             },
                         },
                     },

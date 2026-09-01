@@ -1,4 +1,11 @@
-import { type ChangeEvent, type ReactElement, useState } from 'react';
+import {
+    type ChangeEvent,
+    type PointerEvent as ReactPointerEvent,
+    type ReactElement,
+    useEffect,
+    useRef,
+    useState,
+} from 'react';
 
 import { Plus, Trash2, X } from 'lucide-react';
 
@@ -18,9 +25,12 @@ import { type Modulator, type ModulatorKind, type ModulatorMapping } from '../..
 import { modulationStore, type ModulationStoreState } from '../../stores/modulationStore';
 import { addMapping } from '../../useCases/modulation/addMapping';
 import { addModulator } from '../../useCases/modulation/addModulator';
-import { removeMapping } from '../../useCases/modulation/removeMapping';
+import { beginMappingAmountDrag } from '../../useCases/modulation/beginMappingAmountDrag';
+import { endMappingAmountDrag } from '../../useCases/modulation/endMappingAmountDrag';
+import { isMappingAmountDragActive } from '../../useCases/modulation/isMappingAmountDragActive';
+import { paintMappingAmountDrag } from '../../useCases/modulation/paintMappingAmountDrag';
+import { type MappingTarget, removeMapping } from '../../useCases/modulation/removeMapping';
 import { removeModulator } from '../../useCases/modulation/removeModulator';
-import { updateMapping } from '../../useCases/modulation/updateMapping';
 import { updateModulator } from '../../useCases/modulation/updateModulator';
 
 type DeviceRef = {
@@ -164,6 +174,20 @@ type NewModulatorFormProps = {
 const NewModulatorForm = ({ tracks, onClose }: NewModulatorFormProps): ReactElement => {
     const defaultTrackId = tracks[0]?.id ?? '';
     const [form, setForm] = useState<FormState>({ ...DEFAULT_FORM, trackId: defaultTrackId });
+
+    // The form can open before tracks hydrate (fresh project load); a one-shot
+    // seed would pin trackId to '' forever and leave Add permanently disabled
+    // (`addModulator` refuses an empty trackId). Resync the default selection
+    // whenever the track list changes, the way the voicebank picker in
+    // ClipMidiAiSection resyncs against its registry.
+    useEffect(() => {
+        setForm((prev) => {
+            if (tracks.length === 0) {
+                return prev.trackId === '' ? prev : { ...prev, trackId: '' };
+            }
+            return tracks.some((track) => track.id === prev.trackId) ? prev : { ...prev, trackId: tracks[0]!.id };
+        });
+    }, [tracks]);
 
     const setField = <Key extends keyof FormState>(key: Key, value: FormState[Key]): void => {
         setForm((prev) => ({ ...prev, [key]: value }));
@@ -388,27 +412,97 @@ type MappingRowProps = {
     destination: DestinationLabel | null;
 };
 
+/**
+ * End one mapping's amount-drag gesture from the window, not from the input's
+ * own pointerup: a pointerup landing outside the input (window focus lost
+ * mid-drag, an overlay swallowing it) never fires the input's React handlers,
+ * and the per-frame flush would keep committing the partial amount with no
+ * undo entry. This is the slider-drag counterpart of `startMouseDrag`'s
+ * window-level mouseup contract: listeners are attached at begin, removed on
+ * the first end, and the returned teardown runs the same end path so an
+ * owning row can close the gesture on unmount. Idempotent.
+ *
+ * The window fires pointerup once PER POINTER, so only the pointer that began
+ * this gesture may end it — with two concurrent drags, one gesture's lift must
+ * not end the other. The returned teardown bypasses the filter (an owning
+ * row's unmount or a replacement begin ends the gesture unconditionally).
+ */
+function startAmountDragEndWatch(modulatorId: string, target: MappingTarget, pointerId: number): () => void {
+    let ended = false;
+    const handleUp = (event: PointerEvent): void => {
+        if (event.pointerId !== pointerId) {
+            return;
+        }
+        end();
+    };
+    const end = (): void => {
+        if (ended) {
+            return;
+        }
+        ended = true;
+        window.removeEventListener('pointerup', handleUp);
+        window.removeEventListener('pointercancel', handleUp);
+        endMappingAmountDrag(modulatorId, target);
+    };
+
+    window.addEventListener('pointerup', handleUp);
+    window.addEventListener('pointercancel', handleUp);
+    return end;
+}
+
 const MappingRow = ({ modulator, mapping, destination }: MappingRowProps): ReactElement => {
+    const amountDragEndRef = useRef<(() => void) | null>(null);
     const sourceLabel = `${modulator.name} · ${KIND_LABELS[modulator.kind]}`;
     const destinationLabel =
         destination !== null
             ? `${destination.trackName} · ${destination.deviceName} · ${destination.paramName}`
             : `${mapping.targetTrackId} · ${mapping.targetDeviceId} · ${mapping.targetParamId} (unresolved)`;
 
+    // A drag gesture (pointer down → changes → pointer up) coalesces into one
+    // store write per animation frame and one undo entry for the whole
+    // gesture; a keyboard step is a complete gesture in a single change event
+    // and commits synchronously — same one write, same one undo entry. The
+    // active-session check is scoped to THIS mapping: another pointer dragging
+    // another row runs its own independent session, and its change events must
+    // commit to their own mapping rather than paint into this row's gesture.
+    const target = {
+        targetTrackId: mapping.targetTrackId,
+        targetDeviceId: mapping.targetDeviceId,
+        targetParamId: mapping.targetParamId,
+    };
+
+    // Closes a still-live drag if this row unmounts before pointerup does —
+    // the rAF flush has already committed the partial amount, so the undo
+    // entry must be pushed here, not left for the next begin on this mapping.
+    // Same ref-held teardown contract as AutomationLaneRow's activeDragCancelRef.
+    useEffect(() => {
+        return () => {
+            amountDragEndRef.current?.();
+        };
+    }, []);
+
+    const handleAmountPointerDown = (event: ReactPointerEvent<HTMLInputElement>): void => {
+        // A second pointer pressing this same slider replaces the gesture: the
+        // old watch must be torn down first (running its end path, which
+        // commits the replaced gesture with its undo entry) or its stray
+        // pointerup would end the new gesture's session.
+        amountDragEndRef.current?.();
+        beginMappingAmountDrag(modulator.id, target);
+        amountDragEndRef.current = startAmountDragEndWatch(modulator.id, target, event.pointerId);
+    };
+
     const handleAmountChange = (event: ChangeEvent<HTMLInputElement>): void => {
         const next = Number.parseFloat(event.target.value);
         if (!Number.isFinite(next)) {
             return;
         }
-        updateMapping(
-            modulator.id,
-            {
-                targetTrackId: mapping.targetTrackId,
-                targetDeviceId: mapping.targetDeviceId,
-                targetParamId: mapping.targetParamId,
-            },
-            { amount: Math.max(-1, Math.min(1, next)) }
-        );
+        if (isMappingAmountDragActive(modulator.id, target)) {
+            paintMappingAmountDrag(modulator.id, target, next);
+            return;
+        }
+        beginMappingAmountDrag(modulator.id, target);
+        paintMappingAmountDrag(modulator.id, target, next);
+        endMappingAmountDrag(modulator.id, target);
     };
 
     return (
@@ -424,6 +518,7 @@ const MappingRow = ({ modulator, mapping, destination }: MappingRowProps): React
                         step={0.01}
                         value={mapping.amount}
                         onChange={handleAmountChange}
+                        onPointerDown={handleAmountPointerDown}
                         className="w-28 accent-[var(--color-accent-cyan)]"
                         aria-label={`Amount for ${sourceLabel} to ${destinationLabel}`}
                     />

@@ -8,7 +8,7 @@ import type { Device } from '../../../../models/TrackViewTypes';
 // Mock external dependencies
 vi.mock('../layouts', () => ({})); // Prevent OOM by not loading all layouts
 
-const mockGetBuiltinPlugins = vi.fn<() => unknown[]>(() => []);
+const mockGetBuiltinPlugins = vi.fn<() => readonly unknown[]>(() => []);
 const mockBypassDevice = vi.fn<(deviceId: string, bypassed: boolean) => void>();
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
@@ -63,7 +63,11 @@ vi.mock('#/components/daw/MechanicalSwitch', () => ({
 
 vi.mock('../GenericDeviceLayout', () => ({
     GenericDeviceLayout: ({ parameters }: { parameters: ReadonlyArray<{ id: string }> }) => (
-        <div data-testid="generic-layout" data-param-count={parameters.length}>
+        <div
+            data-testid="generic-layout"
+            data-param-count={parameters.length}
+            data-param-ids={parameters.map((parameter) => parameter.id).join(',')}
+        >
             Generic Layout
         </div>
     ),
@@ -163,6 +167,136 @@ describe('DeviceInspector', () => {
         ]);
         render(<DeviceInspector device={makeDevice()} trackId="track-1" onBack={mockOnBack} />);
         expect(screen.getByTestId('generic-layout').getAttribute('data-param-count')).toBe('2');
+    });
+
+    it('should resolve every declared control for a faust-fm-synth device from the real registry', async () => {
+        // The fm-synth descriptor declares every input control the compiled
+        // node exposes (algorithm, the four ratio/level/ADSR op blocks, gain,
+        // and the note-level freq and gate). An empty declared `parameters`
+        // array is not nullish, so before `gain` was declared the device fell
+        // past the derive fallback and the inspector resolved no controls at
+        // all — the Faust instrument layout showed its loading message
+        // forever. Run against the real registry (the module mock's
+        // importActual), not a hand-built descriptor, so the case fails if
+        // the descriptor's parameters revert to [].
+        const actual = await vi.importActual<typeof import('#/modules/Arrangement/useCases')>(
+            '#/modules/Arrangement/useCases'
+        );
+        mockGetBuiltinPlugins.mockImplementation(actual.getBuiltinPlugins);
+        render(
+            <DeviceInspector
+                device={makeDevice({
+                    id: 'device-fm',
+                    name: 'FM Synth',
+                    type: 'faust-fm-synth',
+                    parameterValues: { gain: 0.35 },
+                })}
+                trackId="track-1"
+                onBack={mockOnBack}
+            />
+        );
+        expect(screen.getByTestId('generic-layout').getAttribute('data-param-ids')).toBe(
+            [
+                'algorithm',
+                'op1_ratio',
+                'op1_level',
+                'op1_attack',
+                'op1_decay',
+                'op1_sustain',
+                'op1_release',
+                'op2_ratio',
+                'op2_level',
+                'op2_attack',
+                'op2_decay',
+                'op2_sustain',
+                'op2_release',
+                'op3_ratio',
+                'op3_level',
+                'op3_attack',
+                'op3_decay',
+                'op3_sustain',
+                'op3_release',
+                'op4_ratio',
+                'op4_level',
+                'op4_attack',
+                'op4_decay',
+                'op4_sustain',
+                'op4_release',
+                'gain',
+                'freq',
+                'gate',
+            ].join(',')
+        );
+    });
+
+    it('should resolve every declared control for a faust-rhodes device from the real registry', async () => {
+        // Same contract as the fm-synth case above, for the other Faust
+        // instrument #3154 brought into descriptor scope: the descriptor
+        // declares every input control the compiled rhodes node exposes,
+        // including the note-level freq and gate. Run against the real
+        // registry (the module mock's importActual), not a hand-built
+        // descriptor, so the case fails if the descriptor's parameters
+        // revert to [].
+        const actual = await vi.importActual<typeof import('#/modules/Arrangement/useCases')>(
+            '#/modules/Arrangement/useCases'
+        );
+        mockGetBuiltinPlugins.mockImplementation(actual.getBuiltinPlugins);
+        render(
+            <DeviceInspector
+                device={makeDevice({
+                    id: 'device-rhodes',
+                    name: 'Warm Rhodes',
+                    type: 'faust-rhodes',
+                    parameterValues: { gain: 0.4 },
+                })}
+                trackId="track-1"
+                onBack={mockOnBack}
+            />
+        );
+        expect(screen.getByTestId('generic-layout').getAttribute('data-param-ids')).toBe(
+            ['brightness', 'body_decay', 'bell_decay', 'gain', 'freq', 'gate'].join(',')
+        );
+    });
+
+    it('should resolve every declared control for a faust-supersaw-unison device from the real registry', async () => {
+        // Same contract for the third Faust instrument descriptor: the
+        // descriptor declares every input control the compiled supersaw node
+        // exposes, including the note-level freq and gate (#3172). Run against
+        // the real registry (the module mock's importActual), not a
+        // hand-built descriptor, so the case fails if the descriptor's
+        // parameters revert to a partial set or to [].
+        const actual = await vi.importActual<typeof import('#/modules/Arrangement/useCases')>(
+            '#/modules/Arrangement/useCases'
+        );
+        mockGetBuiltinPlugins.mockImplementation(actual.getBuiltinPlugins);
+        render(
+            <DeviceInspector
+                device={makeDevice({
+                    id: 'device-supersaw',
+                    name: 'Supersaw Unison',
+                    type: 'faust-supersaw-unison',
+                    parameterValues: { detune: 20 },
+                })}
+                trackId="track-1"
+                onBack={mockOnBack}
+            />
+        );
+        expect(screen.getByTestId('generic-layout').getAttribute('data-param-ids')).toBe(
+            [
+                'lfo_rate',
+                'lfo_depth',
+                'detune',
+                'center_mix',
+                'cutoff',
+                'resonance',
+                'attack',
+                'decay',
+                'sustain',
+                'release',
+                'freq',
+                'gate',
+            ].join(',')
+        );
     });
 
     it('should match a builtin plugin by display name', () => {

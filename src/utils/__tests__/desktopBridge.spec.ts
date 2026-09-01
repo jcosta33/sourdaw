@@ -6,6 +6,7 @@ import {
     desktopPathJoin,
     desktopPlatform,
     desktopSaveDialog,
+    desktopSetZoomFactor,
     desktopSamplesBaseUrl,
     desktopWindowControls,
     invokeForBinaryResponse,
@@ -15,6 +16,7 @@ import {
     desktopInvoke,
     desktopListen,
     usesFramelessWindowChrome,
+    usesWindowControlsOverlayChrome,
     writeFileBytes,
 } from '../desktopBridge';
 
@@ -22,6 +24,9 @@ type MutableWindow = Record<string, unknown>;
 
 const createBridgeMock = (platform = 'linux') => ({
     platform,
+    display: {
+        setZoomFactor: vi.fn(),
+    },
     invoke: vi.fn().mockResolvedValue('bridged'),
     invokeBinary: vi.fn().mockResolvedValue('binary-result'),
     invokeBinaryResponse: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
@@ -96,6 +101,7 @@ describe('desktopBridge', () => {
         it('should answer the platform probes without the bridge rather than throwing', () => {
             expect(desktopPlatform()).toBeNull();
             expect(usesFramelessWindowChrome()).toBe(false);
+            expect(usesWindowControlsOverlayChrome()).toBe(false);
         });
     });
 
@@ -116,6 +122,17 @@ describe('desktopBridge', () => {
             expect(usesFramelessWindowChrome()).toBe(false);
         });
 
+        it('should treat only the darwin desktop build as window-controls-overlay chrome', () => {
+            installBridge('darwin');
+            expect(usesWindowControlsOverlayChrome()).toBe(true);
+
+            installBridge('linux');
+            expect(usesWindowControlsOverlayChrome()).toBe(false);
+
+            installBridge('win32');
+            expect(usesWindowControlsOverlayChrome()).toBe(false);
+        });
+
         it('should hand the window-control surface through', async () => {
             const bridge = installBridge();
 
@@ -131,13 +148,23 @@ describe('desktopBridge', () => {
         });
     });
 
+    describe('display scaling', () => {
+        it('hands the zoom factor to the preload display capability', () => {
+            const bridge = installBridge();
+
+            desktopSetZoomFactor(1.25);
+
+            expect(bridge.display.setZoomFactor).toHaveBeenCalledWith(1.25);
+        });
+    });
+
     describe('named-to-positional argument ordering', () => {
         it('should order load_plugin as (plugin_id, instance_id) — the transposition nothing downstream rejects', async () => {
             const bridge = installBridge();
 
-            await desktopInvoke('load_plugin', { instanceId: 'inst-1', pluginId: 'plug-1' });
+            await desktopInvoke('load_plugin', { instanceId: 'inst-1', pluginId: 'plug-1', sampleRate: 48000 });
 
-            expect(bridge.invoke).toHaveBeenCalledWith('load_plugin', ['plug-1', 'inst-1']);
+            expect(bridge.invoke).toHaveBeenCalledWith('load_plugin', ['plug-1', 'inst-1', 48000]);
         });
 
         it('should send a zero-argument command as an empty array', async () => {

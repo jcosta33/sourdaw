@@ -9,6 +9,16 @@ type MaterializedCommandApplicationIds = {
     applicationAssignedIds: readonly CommandApplicationAssignedId[];
 };
 
+/**
+ * Application defaults are drawn from pools shared by the whole session — the next track colour is
+ * taken from a palette that advances on every draw. Only a command that can reach the project may
+ * draw one; a caller that compiles a command to measure it passes `false` and leaves the pool where
+ * it found it.
+ */
+type CommandApplicationDefaults = { reserveApplicationDefaults: boolean };
+
+const RESERVE_APPLICATION_DEFAULTS: CommandApplicationDefaults = { reserveApplicationDefaults: true };
+
 type ApplicationIdRule = {
     argument: string;
     prefix: string;
@@ -109,7 +119,8 @@ function materializeImportedStemIds(
 }
 
 function materializeTrackCreationIds(
-    action: Extract<AppAction, { type: 'addTrack' }>
+    action: Extract<AppAction, { type: 'addTrack' }>,
+    defaults: CommandApplicationDefaults
 ): MaterializedCommandApplicationIds {
     const cloned = structuredClone(action);
     const applicationAssignedIds: CommandApplicationAssignedId[] = [];
@@ -151,7 +162,7 @@ function materializeTrackCreationIds(
     ) {
         applicationAssignedIds.push({ argument: 'initialDeviceId', value: cloned.payload.initialDeviceId });
     }
-    if (cloned.payload.color === undefined) {
+    if (cloned.payload.color === undefined && defaults.reserveApplicationDefaults) {
         const color = commandTrackDefaultsPort.reserveTrackColor();
         if (color !== undefined) {
             cloned.payload.color = color;
@@ -162,7 +173,8 @@ function materializeTrackCreationIds(
 }
 
 function materializeBusCreationIds(
-    action: Extract<AppAction, { type: 'createBus' }>
+    action: Extract<AppAction, { type: 'createBus' }>,
+    defaults: CommandApplicationDefaults
 ): MaterializedCommandApplicationIds {
     const cloned = structuredClone(action);
     const applicationAssignedIds: CommandApplicationAssignedId[] = [];
@@ -192,7 +204,7 @@ function materializeBusCreationIds(
             value: cloned.payload.initialAlternativeId,
         });
     }
-    if (cloned.payload.color === undefined) {
+    if (cloned.payload.color === undefined && defaults.reserveApplicationDefaults) {
         const color = commandTrackDefaultsPort.reserveTrackColor();
         if (color !== undefined) {
             cloned.payload.color = color;
@@ -202,7 +214,10 @@ function materializeBusCreationIds(
     return { action: changed ? cloned : action, applicationAssignedIds };
 }
 
-export function materializeCommandApplicationIds(action: AppAction): MaterializedCommandApplicationIds {
+export function materializeCommandApplicationIds(
+    action: AppAction,
+    defaults: CommandApplicationDefaults = RESERVE_APPLICATION_DEFAULTS
+): MaterializedCommandApplicationIds {
     if (action.type === 'importStemSet') {
         return materializeImportedStemIds(action);
     }
@@ -213,10 +228,10 @@ export function materializeCommandApplicationIds(action: AppAction): Materialize
         return materializeMidiInputOwnerId(action);
     }
     if (action.type === 'addTrack') {
-        return materializeTrackCreationIds(action);
+        return materializeTrackCreationIds(action, defaults);
     }
     if (action.type === 'createBus') {
-        return materializeBusCreationIds(action);
+        return materializeBusCreationIds(action, defaults);
     }
 
     const rule = COMMAND_APPLICATION_ID_RULES[action.type];

@@ -8,6 +8,7 @@ import { parse } from 'yaml';
 
 import {
     deliverPullRequest as deliverPullRequestWithTracker,
+    deliverPullRequestWithRequiredCi as deliverPullRequestWithRequiredCiAndTracker,
     gateRequiredCheckNames,
     parseCliArgs,
     readGateRequiredCheckNames,
@@ -88,24 +89,28 @@ type MergeSettings = {
     delete_branch_on_merge: boolean;
 };
 
-function mergePolicyPort(settings: string | Error) {
+function mergePolicyPort(settings: string | Error, markRemoteMutationAttempt: () => void = () => undefined) {
     const captures: Array<{ command: string; args: string[] }> = [];
-    const port = shellPort('jcosta33/sourdaw', {
-        capture: (command, args) => {
-            captures.push({ command, args });
-            if (args.join(' ') === 'api repos/jcosta33/sourdaw') {
-                if (settings instanceof Error) {
-                    throw settings;
+    const port = shellPort(
+        'jcosta33/sourdaw',
+        {
+            capture: (command, args) => {
+                captures.push({ command, args });
+                if (args.join(' ') === 'api repos/jcosta33/sourdaw') {
+                    if (settings instanceof Error) {
+                        throw settings;
+                    }
+                    return settings;
                 }
-                return settings;
-            }
-            if (args.includes('repos/jcosta33/sourdaw/pulls/42/merge')) {
-                return JSON.stringify({ merged: true, message: 'merged' });
-            }
-            throw new Error(`unexpected capture: ${command} ${args.join(' ')}`);
+                if (args.includes('repos/jcosta33/sourdaw/pulls/42/merge')) {
+                    return JSON.stringify({ merged: true, message: 'merged' });
+                }
+                throw new Error(`unexpected capture: ${command} ${args.join(' ')}`);
+            },
+            run: () => undefined,
         },
-        run: () => undefined,
-    });
+        { markRemoteMutationAttempt }
+    );
     return { captures, port };
 }
 
@@ -113,10 +118,61 @@ function mergeSettings(settings: MergeSettings): string {
     return JSON.stringify(settings);
 }
 
+type ReviewPageFixture = {
+    nodes: unknown[];
+    hasPreviousPage: boolean;
+    startCursor?: string | null;
+};
+
+type ReviewThreadPageFixture = {
+    nodes: unknown[];
+    hasNextPage: boolean;
+    endCursor?: string | null;
+};
+
+type ReviewStateIdentityFixture = {
+    pullRequestId?: string;
+    headRefOid?: string;
+};
+
+function reviewStateResponse(
+    reviews: ReviewPageFixture,
+    reviewThreads: ReviewThreadPageFixture,
+    identity: ReviewStateIdentityFixture = {},
+    errors?: unknown[]
+): string {
+    return JSON.stringify({
+        ...(errors === undefined ? {} : { errors }),
+        data: {
+            repository: {
+                pullRequest: {
+                    id: identity.pullRequestId ?? 'pull-request-id',
+                    headRefOid: identity.headRefOid ?? 'head',
+                    reviews: {
+                        nodes: reviews.nodes,
+                        pageInfo: {
+                            hasPreviousPage: reviews.hasPreviousPage,
+                            ...(reviews.startCursor === undefined ? {} : { startCursor: reviews.startCursor }),
+                        },
+                    },
+                    reviewThreads: {
+                        nodes: reviewThreads.nodes,
+                        pageInfo: {
+                            hasNextPage: reviewThreads.hasNextPage,
+                            ...(reviewThreads.endCursor === undefined ? {} : { endCursor: reviewThreads.endCursor }),
+                        },
+                    },
+                },
+            },
+        },
+    });
+}
+
 function stackedDeliveryPort(finalSettings: MergeSettings) {
     const captures: Array<{ command: string; args: string[] }> = [];
     let child = pullRequest({ ...stacked(), baseRefOid: 'base' });
     let deliveryReceipt: DeliveryReceiptComment | undefined;
+    let primaryMerged = false;
     const port = shellPort('jcosta33/sourdaw', {
         capture: (command, args) => {
             captures.push({ command, args });
@@ -131,16 +187,26 @@ function stackedDeliveryPort(finalSettings: MergeSettings) {
                 return 'base';
             }
             if (joined.includes('pr view')) {
-                return JSON.stringify(args.includes('43') ? child : pullRequest());
+                return JSON.stringify(
+                    shellPullRequest(
+                        args.includes('43') ? child : pullRequest(primaryMerged ? { state: 'MERGED' } : {})
+                    )
+                );
+            }
+            if (joined.includes('mergedBy{__typename')) {
+                return shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID });
             }
             if (joined.includes('query=')) {
                 return JSON.stringify({
                     data: {
                         repository: {
                             pullRequest: {
+                                id: 'pull-request-id',
+                                headRefOid: 'head',
                                 reviews: {
                                     nodes: [
                                         {
+                                            id: 'review-approved',
                                             state: 'APPROVED',
                                             submittedAt: '2026-08-19T00:00:00Z',
                                             author: {
@@ -151,9 +217,12 @@ function stackedDeliveryPort(finalSettings: MergeSettings) {
                                             commit: { oid: 'head' },
                                         },
                                     ],
-                                    pageInfo: { hasPreviousPage: false },
+                                    pageInfo: { hasPreviousPage: false, startCursor: null },
                                 },
-                                reviewThreads: { nodes: [], pageInfo: { hasNextPage: false } },
+                                reviewThreads: {
+                                    nodes: [],
+                                    pageInfo: { hasNextPage: false, endCursor: null },
+                                },
                             },
                         },
                     },
@@ -221,6 +290,7 @@ function stackedDeliveryPort(finalSettings: MergeSettings) {
                 return mergeSettings(finalSettings);
             }
             if (joined.includes('/merge')) {
+                primaryMerged = true;
                 return JSON.stringify({ merged: true, message: 'merged' });
             }
             throw new Error(`unexpected capture: ${command} ${joined}`);
@@ -245,18 +315,56 @@ function pullRequest(overrides: Partial<PullRequestSnapshot> = {}): PullRequestS
         headRefOid: 'head',
         baseRefName: 'main',
         baseRefOid: 'base',
+        mergeable: 'MERGEABLE',
         mergeStateStatus: 'CLEAN',
         reviewDecision: '',
         changedFiles: 3,
         additions: 40,
         deletions: 5,
+        mergedByActorNodeId: overrides.state === 'MERGED' ? AUTHOR_BOT_NODE_ID : null,
         ...overrides,
     };
 }
 
-function checkRun(overrides: Partial<HeadCheckRun> = {}): HeadCheckRun {
-    return { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS', ...overrides };
+function shellPullRequest(snapshot: PullRequestSnapshot): Omit<PullRequestSnapshot, 'mergedByActorNodeId'> & {
+    mergedBy: { is_bot: true; login: string } | null;
+} {
+    const { mergedByActorNodeId, ...fields } = snapshot;
+    return {
+        ...fields,
+        mergedBy:
+            mergedByActorNodeId === null
+                ? null
+                : {
+                      is_bot: true,
+                      login:
+                          mergedByActorNodeId === AUTHOR_BOT_NODE_ID ? 'renamed-author[bot]' : 'renamed-foreign[bot]',
+                  },
+    };
 }
+
+function shellMergedByGraphql(mergedBy: { __typename: 'Bot'; id: string } | { __typename: 'User' } | null): string {
+    return JSON.stringify({
+        data: {
+            repository: {
+                pullRequest: {
+                    mergedBy,
+                },
+            },
+        },
+    });
+}
+
+function checkRun(overrides: Partial<HeadCheckRun> = {}): HeadCheckRun {
+    return { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS', startedAt: null, ...overrides };
+}
+
+/**
+ * The two runs one commit carries once a pull request is approved while its push run is in flight:
+ * the push run starts first, the approved-review run starts later and re-executes the same job names.
+ */
+const PUSH_RUN_START = '2026-08-29T10:00:00Z';
+const REVIEW_RUN_START = '2026-08-29T10:05:00Z';
 
 const LIVE_WORKFLOW_SOURCE = readFileSync(join(import.meta.dirname, '../..', WORKFLOW_PATH), 'utf8');
 
@@ -271,17 +379,16 @@ const gatingCheckNames: ReadonlySet<string> = new Set(
 );
 
 /**
- * The shape an approving review leaves behind when its own run cancels the push run still in
- * flight: every cancelled name succeeded again on the same commit, beside a job the workflow
- * skipped outright and never cancelled.
+ * A tolerated cancelled-check shape: every cancelled name succeeded again on the same commit,
+ * beside a job the workflow skipped outright and never cancelled.
  */
 function supersededRunCheckRuns(): HeadCheckRun[] {
     return [
-        checkRun({ name: 'Lint', conclusion: 'CANCELLED' }),
-        checkRun({ name: 'Gate', conclusion: 'CANCELLED' }),
-        checkRun({ name: 'Native audio backend (macOS)', conclusion: 'SKIPPED' }),
-        checkRun({ name: 'Lint' }),
-        checkRun(),
+        checkRun({ name: 'Lint', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
+        checkRun({ name: 'Gate', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START }),
+        checkRun({ name: 'Native audio backend (macOS)', conclusion: 'SKIPPED', startedAt: PUSH_RUN_START }),
+        checkRun({ name: 'Lint', startedAt: REVIEW_RUN_START }),
+        checkRun({ startedAt: REVIEW_RUN_START }),
     ];
 }
 
@@ -334,11 +441,17 @@ type FakeInput = {
     reviewStates?: ReviewState[];
     dependentSets?: StackedPullRequest[][];
     dirty?: boolean;
-    headCheckRuns?: HeadCheckRun[];
-    gateRequiredCheckNames?: ReadonlySet<string>;
+    headCheckRuns?: HeadCheckRun[] | Error;
+    gateRequiredCheckNames?: ReadonlySet<string> | Error;
     deletesMergedBranches?: boolean;
+    failAddReceiptOnce?: boolean;
     failRetargetOnce?: number;
+    mergedByActorNodeIdAfterMerge?: string | null;
+    primaryBaseRefNameOnReceiptRead?: string;
+    primaryBodyOnReceiptRead?: string;
+    reviewStateOnReceiptRead?: ReviewState;
     receipts?: DeliveryReceiptComment[];
+    mergedPrimaryAfterMerge?: Partial<PullRequestSnapshot>;
 };
 
 type DeliveryReceiptComment = {
@@ -386,7 +499,13 @@ function fakePort(input: FakeInput = {}) {
         }
     }
     let lastDependents = dependentSets.at(-1) ?? [];
+    let failedAddReceipt = false;
     let failedRetarget = false;
+    let primaryBaseRefName: string | undefined;
+    let primaryBody: string | undefined;
+    let reviewStateAfterReceipt: ReviewState | undefined;
+    let lastPrimary: PullRequestSnapshot | undefined;
+    let mergedPrimary: PullRequestSnapshot | undefined;
     const receipts = [...(input.receipts ?? [])];
     const port: DeliveryPort & {
         deliveryReceipts: (number: number) => DeliveryReceiptComment[];
@@ -395,11 +514,17 @@ function fakePort(input: FakeInput = {}) {
         fetch: () => calls.push('fetch'),
         pullRequest: (number) => {
             if (number === 42) {
-                const next = primary.shift();
+                const next = primary.shift() ?? mergedPrimary;
                 if (next === undefined) {
                     throw new Error('missing primary fixture');
                 }
-                return next;
+                const snapshot = {
+                    ...next,
+                    ...(primaryBaseRefName === undefined ? {} : { baseRefName: primaryBaseRefName }),
+                    ...(primaryBody === undefined || next.state === 'MERGED' ? {} : { body: primaryBody }),
+                };
+                lastPrimary = snapshot;
+                return snapshot;
             }
             const current = pullRequests.get(number);
             if (current === undefined) {
@@ -409,7 +534,11 @@ function fakePort(input: FakeInput = {}) {
         },
         gateRequiredCheckNames: () => {
             calls.push('gate-required-check-names');
-            return input.gateRequiredCheckNames ?? gatingCheckNames;
+            const required = input.gateRequiredCheckNames ?? gatingCheckNames;
+            if (required instanceof Error) {
+                throw required;
+            }
+            return required;
         },
         /**
          * Unreadable unless the case under test supplies the head's own check runs, so a delivery
@@ -422,12 +551,17 @@ function fakePort(input: FakeInput = {}) {
             if (runs === undefined) {
                 throw new Error(`PR #${number} check rollup is unreadable`);
             }
+            if (runs instanceof Error) {
+                throw runs;
+            }
             return runs;
         },
         reviewState: (number, expectedHead) => {
             calls.push(`review:${number}:${expectedHead}`);
             return (
-                reviewStates.shift() ?? input.review ?? { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 }
+                reviewStateAfterReceipt ??
+                reviewStates.shift() ??
+                input.review ?? { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 }
             );
         },
         dependents: () => {
@@ -438,7 +572,21 @@ function fakePort(input: FakeInput = {}) {
             return [...lastDependents];
         },
         repositoryDeletesMergedBranches: () => input.deletesMergedBranches ?? false,
-        merge: (number, head) => calls.push(`merge:${number}:${head}`),
+        merge: (number, head) => {
+            calls.push(`merge:${number}:${head}`);
+            if (lastPrimary === undefined) {
+                throw new Error('merge requires a primary snapshot');
+            }
+            mergedPrimary = {
+                ...lastPrimary,
+                state: 'MERGED',
+                mergedByActorNodeId:
+                    input.mergedByActorNodeIdAfterMerge === undefined
+                        ? AUTHOR_BOT_NODE_ID
+                        : input.mergedByActorNodeIdAfterMerge,
+                ...input.mergedPrimaryAfterMerge,
+            };
+        },
         retarget: (number, base) => {
             calls.push(`retarget:${number}:${base}`);
             if (input.failRetargetOnce === number && !failedRetarget) {
@@ -453,20 +601,28 @@ function fakePort(input: FakeInput = {}) {
         },
         deliveryReceipts: (number) => {
             calls.push(`receipts:${number}`);
+            primaryBaseRefName = input.primaryBaseRefNameOnReceiptRead ?? primaryBaseRefName;
+            primaryBody = input.primaryBodyOnReceiptRead ?? primaryBody;
+            reviewStateAfterReceipt = input.reviewStateOnReceiptRead ?? reviewStateAfterReceipt;
             return structuredClone(receipts);
         },
         addDeliveryReceipt: (number, receiptBody) => {
             calls.push(`add-receipt:${number}`);
+            const createdAt = new Date(Date.UTC(2026, 7, 21, 0, 0, receipts.length)).toISOString();
             const receipt = {
-                id: `IC_delivery_${number}`,
+                id: `IC_delivery_${number}_${receipts.length + 1}`,
                 body: receiptBody,
                 authorNodeId: AUTHOR_BOT_NODE_ID,
                 authorLogin: 'renamed-author[bot]',
                 authorType: 'Bot',
-                createdAt: '2026-08-21T00:00:00Z',
-                updatedAt: '2026-08-21T00:00:00Z',
+                createdAt,
+                updatedAt: createdAt,
             };
             receipts.push(receipt);
+            if (input.failAddReceiptOnce && !failedAddReceipt) {
+                failedAddReceipt = true;
+                throw new Error('delivery receipt response was lost');
+            }
             return structuredClone(receipt);
         },
         log: (message) => calls.push(message),
@@ -487,6 +643,16 @@ function deliverPullRequest(
     }
 ): void {
     deliverPullRequestWithTracker(number, port, tracker);
+}
+
+function deliverPullRequestWithRequiredCi(
+    number: number,
+    port: DeliveryPort,
+    tracker: TrackerCompletionPort = {
+        complete: (issueNumber: number) => expect.fail(`unexpected issue completion: ${issueNumber}`),
+    }
+): void {
+    deliverPullRequestWithRequiredCiAndTracker(number, port, tracker);
 }
 
 describe('pull-request delivery', () => {
@@ -544,7 +710,225 @@ describe('pull-request delivery', () => {
         expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
     });
 
-    it('converges issue completion on an already-merged retry from its author-bot receipt', () => {
+    it('refuses foreign-merged X after open Y wrote a receipt and refuses its merged retry', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const bodyY = relationshipBody('Closes #2373');
+        const { port, calls, receipts, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: bodyY }),
+                pullRequest({ state: 'MERGED', body: bodyX, mergedByActorNodeId: REVIEWER_BOT_NODE_ID }),
+                pullRequest({ state: 'MERGED', body: bodyX, mergedByActorNodeId: REVIEWER_BOT_NODE_ID }),
+            ],
+            dependentSets: [[]],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/not merged by the author App/);
+        expect(receipts.map((receipt) => receipt.body)).toEqual([deliveryReceiptBody(42, 'head', bodyY, 2373)]);
+        expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/not merged by the author App/);
+        expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('recovers a stable final author-App merge without re-reviewing or merging again', () => {
+        const closes = relationshipBody('Closes #2372');
+        const child = stacked();
+        const { port, calls, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ state: 'MERGED', body: closes, mergedByActorNodeId: AUTHOR_BOT_NODE_ID }),
+            ],
+            dependentSets: [[child], [child]],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'receipts:42')).toHaveLength(3);
+        expect(calls.filter((call) => call === 'review:42:head')).toHaveLength(1);
+        expect(calls).not.toContain('merge:42:head');
+        expect(calls).toContain('retarget:43:main');
+        expect(calls).toContain('complete:2372');
+    });
+
+    it.each([
+        {
+            label: 'head OID drift',
+            mergedPrimaryAfterMerge: { headRefOid: 'moved-head' },
+            error: /headRefOid changed during delivery/,
+        },
+        {
+            label: 'head branch drift',
+            mergedPrimaryAfterMerge: { headRefName: 'feat/rewritten-head' },
+            error: /headRefName changed during delivery/,
+        },
+        {
+            label: 'base branch drift',
+            mergedPrimaryAfterMerge: { baseRefName: 'release/1.0' },
+            error: /targets release\/1.0, not main|baseRefName changed during delivery/,
+        },
+        {
+            label: 'body drift',
+            mergedPrimaryAfterMerge: { body: `${relationshipBody('Closes #2372')}\nChanged note.` },
+            error: /body changed during delivery/,
+        },
+        {
+            label: 'closing target drift',
+            mergedPrimaryAfterMerge: {
+                body: relationshipBody('Closes #9999'),
+                title: 'feat(delivery): post-merge retarget race',
+            },
+            authorizedBody: relationshipBody('Related #2372'),
+            error: /closing target changed during delivery/,
+        },
+    ])(
+        'detects post-merge $label before retarget or tracker completion',
+        ({ mergedPrimaryAfterMerge, authorizedBody, error }) => {
+            const bodyUnderReview = authorizedBody ?? relationshipBody('Closes #2372');
+            const { port, calls, tracker } = fakePort({
+                primary: [pullRequest({ body: bodyUnderReview }), pullRequest({ body: bodyUnderReview })],
+                mergedPrimaryAfterMerge,
+            });
+
+            expect(() => deliverPullRequest(42, port, tracker)).toThrow(error);
+            expect(calls).toContain('merge:42:head');
+            expect(calls).not.toContain('retarget:43:main');
+            expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
+        }
+    );
+
+    it('recovers an UNKNOWN initial refresh that becomes a merged author-App head', () => {
+        const closes = relationshipBody('Closes #2372');
+        const child = stacked();
+        const seededReceipt: DeliveryReceiptComment = {
+            id: 'IC_seeded_x',
+            body: deliveryReceiptBody(42, 'head', closes, 2372),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt: '2026-08-21T00:00:00.000Z',
+            updatedAt: '2026-08-21T00:00:00.000Z',
+        };
+        const { port, calls, tracker, receipts } = fakePort({
+            primary: [
+                pullRequest({ mergeable: 'UNKNOWN', body: closes }),
+                pullRequest({
+                    state: 'MERGED',
+                    mergeable: 'UNKNOWN',
+                    body: closes,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[child]],
+            receipts: [seededReceipt],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'review:42:head')).toHaveLength(0);
+        expect(calls.filter((call) => call === 'receipts:42')).toHaveLength(1);
+        expect(calls).not.toContain('merge:42:head');
+        expect(calls).toContain('retarget:43:main');
+        expect(calls).toContain('complete:2372');
+        expect(calls).toContain('PR #42 was already merged; repaired 1 remaining dependent(s)');
+        expect(receipts.map((receipt) => receipt.body)).toEqual([deliveryReceiptBody(42, 'head', closes, 2372)]);
+    });
+
+    it('recovers a final UNKNOWN refresh that becomes a merged author-App head without re-reviewing', () => {
+        const closes = relationshipBody('Closes #2372');
+        const child = stacked();
+        const { port, calls, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: closes }),
+                pullRequest({ mergeable: 'UNKNOWN', body: closes }),
+                pullRequest({
+                    state: 'MERGED',
+                    mergeable: 'UNKNOWN',
+                    body: closes,
+                    mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                }),
+            ],
+            dependentSets: [[child], [child]],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'review:42:head')).toHaveLength(1);
+        expect(calls.filter((call) => call === 'receipts:42')).toHaveLength(3);
+        expect(calls).not.toContain('merge:42:head');
+        expect(calls).toContain('retarget:43:main');
+        expect(calls).toContain('complete:2372');
+        expect(calls).toContain('PR #42 became merged during delivery; repaired 1 dependent(s)');
+    });
+
+    it.each([
+        { merger: 'automatic', actorNodeId: 'MDQ6QXBwOTk5OTk5' },
+        { merger: 'unknown', actorNodeId: null },
+    ])('refuses $merger merger authority before receipt recovery', ({ actorNodeId }) => {
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', mergedByActorNodeId: actorNodeId })],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/not merged by the author App/);
+        expect(calls).not.toContain('receipts:42');
+        expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
+    });
+
+    it('accepts X to Y to X receipt lineage and recovers the newest successful X receipt after merge', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const bodyY = relationshipBody('Closes #2373');
+        const seededX: DeliveryReceiptComment = {
+            id: 'IC_seeded_x',
+            body: deliveryReceiptBody(42, 'head', bodyX, 2372),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt: '2026-08-21T00:00:00.000Z',
+            updatedAt: '2026-08-21T00:00:00.000Z',
+        };
+        const { port, calls, receipts, tracker } = fakePort({
+            primary: [
+                pullRequest({ body: bodyY }),
+                pullRequest({ body: bodyY }),
+                pullRequest({ body: bodyY }),
+                pullRequest({ body: bodyY }),
+                pullRequest({ state: 'MERGED', body: bodyX }),
+                pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
+            ],
+            primaryBodyOnReceiptRead: bodyX,
+            dependentSets: [[], []],
+            receipts: [seededX],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/closing target changed during delivery/);
+        expect(calls).not.toContain('merge:42:head');
+        expect(receipts.map((receipt) => receipt.body)).toEqual([
+            deliveryReceiptBody(42, 'head', bodyX, 2372),
+            deliveryReceiptBody(42, 'head', bodyY, 2373),
+        ]);
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(2);
+        expect(calls.filter((call) => call === 'merge:42:head')).toHaveLength(1);
+        expect(receipts.map((receipt) => receipt.body)).toEqual([
+            deliveryReceiptBody(42, 'head', bodyX, 2372),
+            deliveryReceiptBody(42, 'head', bodyY, 2373),
+            deliveryReceiptBody(42, 'head', bodyX, 2372),
+        ]);
+        expect(receipts.map((receipt) => Date.parse(receipt.createdAt))).toEqual([
+            Date.parse('2026-08-21T00:00:00.000Z'),
+            Date.parse('2026-08-21T00:00:01.000Z'),
+            Date.parse('2026-08-21T00:00:02.000Z'),
+        ]);
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls.filter((call) => call === 'complete:2372')).toHaveLength(2);
+        expect(calls).not.toContain('complete:2373');
+    });
+
+    it('completes the receipt issue after a single-receipt merged body drift', () => {
         const closes = relationshipBody('Closes #2372');
         const { port, calls, tracker } = fakePort({
             primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
@@ -568,6 +952,92 @@ describe('pull-request delivery', () => {
         expect(calls.indexOf('complete:2372')).toBeGreaterThan(calls.indexOf('retarget:43:main'));
     });
 
+    it('recovers the newest X to Y receipt after merge', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const bodyY = relationshipBody('Closes #2373');
+        const receipt = (
+            id: string,
+            body: string,
+            closingIssue: number,
+            createdAt: string
+        ): DeliveryReceiptComment => ({
+            id,
+            body: deliveryReceiptBody(42, 'head', body, closingIssue),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt,
+            updatedAt: createdAt,
+        });
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            receipts: [
+                receipt('IC_x', bodyX, 2372, '2026-08-21T00:00:00Z'),
+                receipt('IC_y', bodyY, 2373, '2026-08-21T00:00:01Z'),
+            ],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('complete:2373');
+        expect(calls).not.toContain('complete:2372');
+    });
+
+    it('recovers a unique newer X after tied historical X and Y receipts', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const bodyY = relationshipBody('Closes #2373');
+        const receipt = (
+            id: string,
+            body: string,
+            closingIssue: number,
+            createdAt: string
+        ): DeliveryReceiptComment => ({
+            id,
+            body: deliveryReceiptBody(42, 'head', body, closingIssue),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt,
+            updatedAt: createdAt,
+        });
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            receipts: [
+                receipt('IC_historical_x', bodyX, 2372, '2026-08-21T00:00:00Z'),
+                receipt('IC_historical_y', bodyY, 2373, '2026-08-21T00:00:00Z'),
+                receipt('IC_newest_x', bodyX, 2372, '2026-08-21T00:00:01Z'),
+            ],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('complete:2372');
+        expect(calls).not.toContain('complete:2373');
+    });
+
+    it('uses REST comment order to recover Y after equal-timestamp X then Y receipts', () => {
+        const staleBody = relationshipBody('Closes #2372');
+        const currentBody = relationshipBody('Closes #2373');
+        const receipt = (id: string, body: string, closingIssue: number): DeliveryReceiptComment => ({
+            id,
+            body: deliveryReceiptBody(42, 'head', body, closingIssue),
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorLogin: 'renamed-author[bot]',
+            authorType: 'Bot',
+            createdAt: '2026-08-21T00:00:00Z',
+            updatedAt: '2026-08-21T00:00:00Z',
+        });
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ state: 'MERGED', body: relationshipBody('None.') })],
+            receipts: [receipt('IC_first', staleBody, 2372), receipt('IC_second', currentBody, 2373)],
+        });
+
+        deliverPullRequest(42, port, tracker);
+
+        expect(calls).toContain('complete:2373');
+        expect(calls).not.toContain('complete:2372');
+    });
+
     it('writes the immutable delivery receipt before merge and uses it after mutable-body drift', () => {
         const closes = relationshipBody('Closes #2372');
         const child = stacked();
@@ -575,6 +1045,7 @@ describe('pull-request delivery', () => {
             primary: [
                 pullRequest({ body: closes }),
                 pullRequest({ body: closes }),
+                pullRequest({ state: 'MERGED', body: closes }),
                 pullRequest({ state: 'MERGED', body: relationshipBody('None.') }),
             ],
             dependentSets: [[child], [child], []],
@@ -635,22 +1106,12 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('complete:2372');
     });
 
-    it('fails closed on malformed, mismatched, or edited author-bot receipts', () => {
+    it('fails closed on malformed or edited author-bot receipts', () => {
         const closes = relationshipBody('Closes #2372');
-        const receipt = deliveryReceiptBody(42, 'head', closes, 2373);
         for (const existing of [
             {
                 id: 'IC_malformed',
                 body: '<!-- sourdaw-delivery-receipt:v1\nmalformed -->',
-                authorNodeId: AUTHOR_BOT_NODE_ID,
-                authorLogin: 'renamed-author[bot]',
-                authorType: 'Bot',
-                createdAt: '2026-08-21T00:00:00Z',
-                updatedAt: '2026-08-21T00:00:00Z',
-            },
-            {
-                id: 'IC_wrong_target',
-                body: receipt,
                 authorNodeId: AUTHOR_BOT_NODE_ID,
                 authorLogin: 'renamed-author[bot]',
                 authorType: 'Bot',
@@ -677,7 +1138,28 @@ describe('pull-request delivery', () => {
         }
     });
 
-    it('rejects duplicate delivery receipts instead of choosing authority', () => {
+    it('rejects an immutable-looking receipt with equal invalid timestamps', () => {
+        const closes = relationshipBody('Closes #2372');
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ body: closes }), pullRequest({ body: closes })],
+            receipts: [
+                {
+                    id: 'IC_invalid_timestamp',
+                    body: deliveryReceiptBody(42, 'head', closes, 2372),
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author[bot]',
+                    authorType: 'Bot',
+                    createdAt: 'not-a-timestamp',
+                    updatedAt: 'not-a-timestamp',
+                },
+            ],
+        });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/invalid delivery receipt/);
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('rejects adjacent byte-identical receipt payloads instead of choosing authority', () => {
         const closes = relationshipBody('Closes #2372');
         const receipt = {
             id: 'IC_delivery_42',
@@ -690,11 +1172,29 @@ describe('pull-request delivery', () => {
         };
         const { port, calls, tracker } = fakePort({
             primary: [pullRequest({ body: closes }), pullRequest({ body: closes })],
-            receipts: [receipt, { ...receipt, id: 'IC_delivery_42_duplicate' }],
+            receipts: [
+                receipt,
+                {
+                    ...receipt,
+                    id: 'IC_delivery_42_duplicate',
+                    createdAt: '2026-08-21T00:00:01Z',
+                    updatedAt: '2026-08-21T00:00:01Z',
+                },
+            ],
         });
 
         expect(() => deliverPullRequest(42, port, tracker)).toThrow(/duplicate delivery receipts/);
         expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('recovers a lost add-comment response from the unique newest canonical receipt', () => {
+        const { port, calls, receipts } = fakePort({ failAddReceiptOnce: true, dependentSets: [[], []] });
+
+        deliverPullRequest(42, port);
+
+        expect(calls.filter((call) => call === 'add-receipt:42')).toHaveLength(1);
+        expect(receipts).toHaveLength(1);
+        expect(calls).toContain('merge:42:head');
     });
 
     it('merges the expected head and retargets stable dependents', () => {
@@ -703,6 +1203,15 @@ describe('pull-request delivery', () => {
         deliverPullRequest(42, port);
 
         expect(calls).toEqual(expect.arrayContaining(['merge:42:head', 'retarget:43:main']));
+    });
+
+    it('refuses tracker completion when the post-merge snapshot names a foreign merger', () => {
+        const { port, calls, tracker } = fakePort({ mergedByActorNodeIdAfterMerge: REVIEWER_BOT_NODE_ID });
+
+        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/not merged by the author App/);
+
+        expect(calls).toContain('merge:42:head');
+        expect(calls.some((call) => call.startsWith('complete:'))).toBe(false);
     });
 
     it('rejects head drift during delivery', () => {
@@ -725,12 +1234,69 @@ describe('pull-request delivery', () => {
     it('rejects mergeability drift after harmless base movement', () => {
         const { port, calls } = fakePort({
             primary: [
-                pullRequest({ mergeStateStatus: 'CLEAN', baseRefOid: 'base-before' }),
-                pullRequest({ mergeStateStatus: 'BLOCKED', baseRefOid: 'base-after' }),
+                pullRequest({ mergeable: 'MERGEABLE', baseRefOid: 'base-before' }),
+                pullRequest({ mergeable: 'CONFLICTING', baseRefOid: 'base-after' }),
             ],
         });
 
-        expect(() => deliverPullRequest(42, port)).toThrow(/BLOCKED/);
+        expect(() => deliverPullRequest(42, port)).toThrow(/conflicting changes/);
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('rejects structural conflicts regardless of advisory CI state', () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeable: 'CONFLICTING', mergeStateStatus: 'CLEAN' })],
+        });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(/conflicting changes/);
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('refreshes a transient UNKNOWN structural mergeability once and then delivers', () => {
+        const { port, calls } = fakePort({
+            primary: [
+                pullRequest({ mergeable: 'UNKNOWN' }),
+                pullRequest({ mergeable: 'MERGEABLE' }),
+                pullRequest({ mergeable: 'MERGEABLE' }),
+            ],
+        });
+
+        deliverPullRequest(42, port);
+
+        expect(calls).toContain('merge:42:head');
+    });
+
+    it('rejects release/x to main retargeting while refreshing UNKNOWN structural mergeability', () => {
+        const { port, calls } = fakePort({
+            primary: [
+                pullRequest({ mergeable: 'UNKNOWN', baseRefName: 'release/x' }),
+                pullRequest({ mergeable: 'MERGEABLE', baseRefName: 'main' }),
+            ],
+        });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(/baseRefName changed during delivery/);
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('rejects structural mergeability that remains UNKNOWN after one refresh', () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeable: 'UNKNOWN' }), pullRequest({ mergeable: 'UNKNOWN' })],
+        });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(/remained UNKNOWN after 1 refresh/);
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('rejects a persistent UNKNOWN structural mergeability at the second validation point', () => {
+        const { port, calls } = fakePort({
+            primary: [
+                pullRequest({ mergeable: 'MERGEABLE' }),
+                pullRequest({ mergeable: 'UNKNOWN' }),
+                pullRequest({ mergeable: 'UNKNOWN' }),
+            ],
+        });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(/remained UNKNOWN after 1 refresh/);
         expect(calls).not.toContain('merge:42:head');
     });
 
@@ -834,6 +1400,25 @@ describe('pull-request delivery', () => {
         expect(calls).not.toContain('merge:42:head');
     });
 
+    it('rejects a review thread opened during receipt I/O at the post-receipt review check', () => {
+        const { port, calls } = fakePort({
+            reviewStateOnReceiptRead: { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 1 },
+        });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(/unresolved review thread/);
+        expect(calls.filter((call) => call.startsWith('review:'))).toHaveLength(2);
+        expect(calls.indexOf('receipts:42')).toBeLessThan(calls.lastIndexOf('review:42:head'));
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('rejects a base retargeted during receipt I/O before the final authority snapshot', () => {
+        const { port, calls } = fakePort({ primaryBaseRefNameOnReceiptRead: 'release/1.0' });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(/baseRefName changed during delivery/);
+        expect(calls).toContain('receipts:42');
+        expect(calls).not.toContain('merge:42:head');
+    });
+
     it.each(['COMMENTED', 'CHANGES_REQUESTED'])('rejects reviewer state %s', (state) => {
         const { port, calls } = fakePort({ review: { latestReviewerStateOnHead: state, unresolvedThreads: 0 } });
 
@@ -856,6 +1441,29 @@ describe('pull-request delivery', () => {
         expect(calls).not.toContain('merge:42:head');
     });
 
+    it.each([
+        { ciState: 'successful', mergeStateStatus: 'CLEAN' },
+        { ciState: 'failed', mergeStateStatus: 'BLOCKED' },
+        { ciState: 'pending', mergeStateStatus: 'UNKNOWN' },
+        { ciState: 'absent', mergeStateStatus: '' },
+        { ciState: 'cancelled', mergeStateStatus: 'UNSTABLE' },
+        { ciState: 'malformed', mergeStateStatus: 'not-a-github-state' },
+        { ciState: 'unavailable', mergeStateStatus: 'UNAVAILABLE' },
+    ])('merges with $ciState CI evidence while CI admission is advisory', ({ mergeStateStatus }) => {
+        const forbiddenCiRead = new Error('advisory delivery must not read CI evidence');
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus }), pullRequest({ mergeStateStatus })],
+            gateRequiredCheckNames: forbiddenCiRead,
+            headCheckRuns: forbiddenCiRead,
+        });
+
+        deliverPullRequest(42, port);
+
+        expect(calls).toContain('merge:42:head');
+        expect(calls).not.toContain('gate-required-check-names');
+        expect(calls.filter((call) => call.startsWith('checks:'))).toEqual([]);
+    });
+
     it.each(['BLOCKED', 'BEHIND', 'DIRTY', 'DRAFT', 'UNKNOWN'])(
         'rejects merge state %s and names it, because it reports something other than checks',
         (mergeStateStatus) => {
@@ -866,7 +1474,7 @@ describe('pull-request delivery', () => {
 
             let thrown: unknown;
             try {
-                deliverPullRequest(42, port);
+                deliverPullRequestWithRequiredCi(42, port);
             } catch (error) {
                 thrown = error;
             }
@@ -883,15 +1491,15 @@ describe('pull-request delivery', () => {
     it('merges a CLEAN head without reading its check rollup', () => {
         const { port, calls } = fakePort({ primary: [pullRequest(), pullRequest()] });
 
-        deliverPullRequest(42, port);
+        deliverPullRequestWithRequiredCi(42, port);
 
         expect(calls).toContain('merge:42:head');
         expect(calls.filter((call) => call.startsWith('checks:'))).toEqual([]);
     });
 
     /**
-     * The cancelled run is a corpse of the push run the approval superseded. Its `Gate` is what
-     * makes GitHub call the head UNSTABLE; the run that actually decided the head passed.
+     * A cancelled run can leave its `Gate` behind on the head even when a later run on the same commit
+     * passed, which is what makes GitHub call the head UNSTABLE here.
      */
     it('merges an UNSTABLE head whose only non-success runs were cancelled and whose Gate succeeded', () => {
         const unstable = { mergeStateStatus: 'UNSTABLE' };
@@ -900,7 +1508,7 @@ describe('pull-request delivery', () => {
             headCheckRuns: supersededRunCheckRuns(),
         });
 
-        deliverPullRequest(42, port);
+        deliverPullRequestWithRequiredCi(42, port);
 
         expect(calls).toContain('merge:42:head');
     });
@@ -920,7 +1528,7 @@ describe('pull-request delivery', () => {
 
             let thrown: unknown;
             try {
-                deliverPullRequest(42, port);
+                deliverPullRequestWithRequiredCi(42, port);
             } catch (error) {
                 thrown = error;
             }
@@ -931,6 +1539,145 @@ describe('pull-request delivery', () => {
             expect(calls).not.toContain('merge:42:head');
         }
     );
+
+    /**
+     * The shape PR #2981 stranded on: `Unit suite 2/4` failed on a runner-setup step under the push
+     * run, and the approved-review run re-executed that same check name green on the same commit. The
+     * head carries both attempts, the newest is the verdict, and counting the retired one refuses a
+     * head whose every check has since been decided.
+     */
+    it('merges an UNSTABLE head whose failed check was rerun to success on the same commit', () => {
+        const unstable = { mergeStateStatus: 'UNSTABLE' };
+        const { port, calls } = fakePort({
+            primary: [pullRequest(unstable), pullRequest(unstable)],
+            headCheckRuns: [
+                ...supersededRunCheckRuns(),
+                checkRun({ name: 'Unit suite 2/4', conclusion: 'FAILURE', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Unit suite 2/4', startedAt: REVIEW_RUN_START }),
+            ],
+        });
+
+        deliverPullRequestWithRequiredCi(42, port);
+
+        expect(calls).toContain('merge:42:head');
+    });
+
+    /**
+     * The same two attempts the other way round: the rerun is the one that failed, so the earlier
+     * success is the retired attempt and the head carries a live failure.
+     */
+    it('refuses an UNSTABLE head whose newest attempt under a name failed after an earlier success', () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                ...supersededRunCheckRuns(),
+                checkRun({ name: 'Unit suite 2/4', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Unit suite 2/4', conclusion: 'FAILURE', startedAt: REVIEW_RUN_START }),
+            ],
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequestWithRequiredCi(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe('Error: PR #42 merge state is UNSTABLE and check Unit suite 2/4 concluded FAILURE');
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('refuses an UNSTABLE head whose failed check was never rerun', () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                ...supersededRunCheckRuns(),
+                checkRun({ name: 'Unit suite 2/4', conclusion: 'FAILURE', startedAt: PUSH_RUN_START }),
+            ],
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequestWithRequiredCi(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe('Error: PR #42 merge state is UNSTABLE and check Unit suite 2/4 concluded FAILURE');
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    /**
+     * Recency cuts the other way too: an earlier success is no verdict on a head whose newest attempt
+     * under that name is still running.
+     */
+    it('refuses an UNSTABLE head whose newest attempt under a name is still running', () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                ...supersededRunCheckRuns(),
+                checkRun({ name: 'Unit suite 2/4', startedAt: PUSH_RUN_START }),
+                checkRun({
+                    name: 'Unit suite 2/4',
+                    status: 'IN_PROGRESS',
+                    conclusion: null,
+                    startedAt: REVIEW_RUN_START,
+                }),
+            ],
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequestWithRequiredCi(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe(
+            'Error: PR #42 merge state is UNSTABLE and check Unit suite 2/4 is still IN_PROGRESS'
+        );
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    /**
+     * A failure is retired only by a later attempt that reached a verdict of its own and can be proven
+     * later. A cancellation, a skip, and a run still in flight decide nothing; two attempts sharing a
+     * start, or one GitHub reports no start for, order nothing. Each of these would merge over a real
+     * failure if it counted as the newer word.
+     *
+     * Health gates no longer subscribe to `pull_request_review`, so this repository no longer mints
+     * that skip itself. A skipped later attempt from any other path is still the same shape: it must
+     * not stamp a retiring non-verdict over a genuine failure.
+     */
+    it.each([
+        { shape: 'a later cancellation', later: { conclusion: 'CANCELLED', startedAt: REVIEW_RUN_START } },
+        { shape: 'a later skip', later: { conclusion: 'SKIPPED', startedAt: REVIEW_RUN_START } },
+        {
+            shape: 'a later run still in flight',
+            later: { status: 'IN_PROGRESS', conclusion: null, startedAt: REVIEW_RUN_START },
+        },
+        { shape: 'a success that started in the same instant', later: { startedAt: PUSH_RUN_START } },
+        { shape: 'a success GitHub reports no start for', later: { startedAt: null } },
+    ])('keeps refusing a failed check that only $shape stands beside', ({ later }) => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [
+                ...supersededRunCheckRuns(),
+                checkRun({ name: 'Unit suite 2/4', conclusion: 'FAILURE', startedAt: PUSH_RUN_START }),
+                checkRun({ name: 'Unit suite 2/4', ...later }),
+            ],
+        });
+
+        let thrown: unknown;
+        try {
+            deliverPullRequestWithRequiredCi(42, port);
+        } catch (error) {
+            thrown = error;
+        }
+
+        expect(String(thrown)).toBe('Error: PR #42 merge state is UNSTABLE and check Unit suite 2/4 concluded FAILURE');
+        expect(calls).not.toContain('merge:42:head');
+    });
 
     it('refuses an UNSTABLE head whose checks have not all settled', () => {
         const { port, calls } = fakePort({
@@ -943,7 +1690,7 @@ describe('pull-request delivery', () => {
 
         let thrown: unknown;
         try {
-            deliverPullRequest(42, port);
+            deliverPullRequestWithRequiredCi(42, port);
         } catch (error) {
             thrown = error;
         }
@@ -970,7 +1717,7 @@ describe('pull-request delivery', () => {
 
         let thrown: unknown;
         try {
-            deliverPullRequest(42, port);
+            deliverPullRequestWithRequiredCi(42, port);
         } catch (error) {
             thrown = error;
         }
@@ -980,11 +1727,9 @@ describe('pull-request delivery', () => {
     });
 
     /**
-     * The live shape of `Dependency review` on an approval run: the push run's attempt was
-     * cancelled, and the review-triggered run skipped the job because it is gated on
-     * `pull_request`. `Gate` passes on `skipped`, so a green `Gate` is not a dependency verdict, and
-     * the skips are not one either. `Gate` needs that job, so this is why `deliver` refuses PR
-     * #2795's head today.
+     * The live shape of `Dependency review` when a cancelled attempt is followed only by later skips.
+     * `Gate` passes on `skipped`, so a green `Gate` is not a dependency verdict, and the skips are not
+     * one either. `Gate` needs that job, so this is why `deliver` refuses PR #2795's head today.
      */
     it('refuses an UNSTABLE head whose cancelled gate dependency only ever skipped beside it', () => {
         const { port, calls } = fakePort({
@@ -999,7 +1744,7 @@ describe('pull-request delivery', () => {
 
         let thrown: unknown;
         try {
-            deliverPullRequest(42, port);
+            deliverPullRequestWithRequiredCi(42, port);
         } catch (error) {
             thrown = error;
         }
@@ -1026,7 +1771,7 @@ describe('pull-request delivery', () => {
             ],
         });
 
-        deliverPullRequest(42, port);
+        deliverPullRequestWithRequiredCi(42, port);
 
         expect(calls).toContain('merge:42:head');
     });
@@ -1047,7 +1792,7 @@ describe('pull-request delivery', () => {
             gateRequiredCheckNames: new Set(['Gate', 'Lint']),
         });
 
-        deliverPullRequest(42, tolerated.port);
+        deliverPullRequestWithRequiredCi(42, tolerated.port);
 
         expect(tolerated.calls).toContain('merge:42:head');
 
@@ -1059,7 +1804,7 @@ describe('pull-request delivery', () => {
 
         let thrown: unknown;
         try {
-            deliverPullRequest(42, refused.port);
+            deliverPullRequestWithRequiredCi(42, refused.port);
         } catch (error) {
             thrown = error;
         }
@@ -1105,7 +1850,7 @@ describe('pull-request delivery', () => {
 
         let thrown: unknown;
         try {
-            deliverPullRequest(42, port);
+            deliverPullRequestWithRequiredCi(42, port);
         } catch (error) {
             thrown = error;
         }
@@ -1131,7 +1876,7 @@ describe('pull-request delivery', () => {
             ],
         });
 
-        deliverPullRequest(42, port);
+        deliverPullRequestWithRequiredCi(42, port);
 
         expect(calls).toContain('merge:42:head');
     });
@@ -1142,7 +1887,7 @@ describe('pull-request delivery', () => {
             headCheckRuns: [],
         });
 
-        expect(() => deliverPullRequest(42, port)).toThrow(/no Gate check succeeded on head/);
+        expect(() => deliverPullRequestWithRequiredCi(42, port)).toThrow(/no Gate check succeeded on head/);
         expect(calls).not.toContain('merge:42:head');
     });
 
@@ -1152,7 +1897,7 @@ describe('pull-request delivery', () => {
             headCheckRuns: [...supersededRunCheckRuns(), checkRun({ name: 'CodeQL', conclusion: 'STALE' })],
         });
 
-        expect(() => deliverPullRequest(42, port)).toThrow(/check CodeQL concluded STALE/);
+        expect(() => deliverPullRequestWithRequiredCi(42, port)).toThrow(/check CodeQL concluded STALE/);
         expect(calls).not.toContain('merge:42:head');
     });
 
@@ -1170,13 +1915,12 @@ describe('pull-request delivery', () => {
             headCheckRuns: supersededRunCheckRuns(),
         });
 
-        deliverPullRequest(42, port);
+        deliverPullRequestWithRequiredCi(42, port);
 
         expect(calls).toContain('merge:42:head');
         expect(calls).toContain('retarget:43:main');
         expect(calls.filter((call) => call.startsWith('checks:'))).toEqual(['checks:42:head', 'checks:42:head']);
     });
-
     it('rejects an aggregate CHANGES_REQUESTED decision', () => {
         const { port, calls } = fakePort({ primary: [pullRequest({ reviewDecision: 'CHANGES_REQUESTED' })] });
 
@@ -1702,7 +2446,7 @@ describe('delivery shell boundary', () => {
                 captures.push({ command, args });
                 const joined = args.join(' ');
                 if (joined.includes('pr view')) {
-                    return JSON.stringify(pullRequest());
+                    return JSON.stringify(shellPullRequest(pullRequest()));
                 }
                 const page = remaining.shift();
                 if (page === undefined) {
@@ -1727,11 +2471,34 @@ describe('delivery shell boundary', () => {
         const { captures, port } = rollupPort([
             {
                 nodes: [
-                    { __typename: 'CheckRun', name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS' },
-                    { __typename: 'CheckRun', name: 'Lint', status: 'COMPLETED', conclusion: 'CANCELLED' },
-                    { __typename: 'CheckRun', name: 'End-to-end 1/12', status: 'IN_PROGRESS', conclusion: '' },
-                    { __typename: 'StatusContext', context: 'coverage/external', state: 'FAILURE' },
-                    { __typename: 'StatusContext', context: 'deploy/preview', state: 'PENDING' },
+                    {
+                        __typename: 'CheckRun',
+                        name: 'Gate',
+                        status: 'COMPLETED',
+                        conclusion: 'SUCCESS',
+                        startedAt: REVIEW_RUN_START,
+                    },
+                    {
+                        __typename: 'CheckRun',
+                        name: 'Lint',
+                        status: 'COMPLETED',
+                        conclusion: 'CANCELLED',
+                        startedAt: PUSH_RUN_START,
+                    },
+                    {
+                        __typename: 'CheckRun',
+                        name: 'End-to-end 1/12',
+                        status: 'IN_PROGRESS',
+                        conclusion: '',
+                        startedAt: '',
+                    },
+                    {
+                        __typename: 'StatusContext',
+                        context: 'coverage/external',
+                        state: 'FAILURE',
+                        createdAt: PUSH_RUN_START,
+                    },
+                    { __typename: 'StatusContext', context: 'deploy/preview', state: 'PENDING', createdAt: null },
                 ],
             },
         ]);
@@ -1741,12 +2508,27 @@ describe('delivery shell boundary', () => {
         expect(rollupCaptures(captures)).toHaveLength(1);
         expect(rollupCaptures(captures)[0]).toContain('oid=head');
         expect(checkRuns).toEqual([
-            { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS' },
-            { name: 'Lint', status: 'COMPLETED', conclusion: 'CANCELLED' },
-            { name: 'End-to-end 1/12', status: 'IN_PROGRESS', conclusion: null },
-            { name: 'coverage/external', status: 'COMPLETED', conclusion: 'FAILURE' },
-            { name: 'deploy/preview', status: 'PENDING', conclusion: null },
+            { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS', startedAt: REVIEW_RUN_START },
+            { name: 'Lint', status: 'COMPLETED', conclusion: 'CANCELLED', startedAt: PUSH_RUN_START },
+            { name: 'End-to-end 1/12', status: 'IN_PROGRESS', conclusion: null, startedAt: null },
+            { name: 'coverage/external', status: 'COMPLETED', conclusion: 'FAILURE', startedAt: PUSH_RUN_START },
+            { name: 'deploy/preview', status: 'PENDING', conclusion: null, startedAt: null },
         ]);
+    });
+
+    /**
+     * The rollup read is the only place recency evidence can enter, so the query has to ask for it.
+     * Without these fields every attempt arrives unordered and the newest-attempt rule degrades,
+     * silently, to counting every attempt a head ever carried.
+     */
+    it('asks the rollup for the evidence that orders one name attempts', () => {
+        const { captures, port } = rollupPort([{ nodes: rollupNodes([checkRun()]) }]);
+
+        port.headCheckRuns(42, 'head');
+
+        const query = rollupCaptures(captures)[0] ?? '';
+        expect(query).toContain('on CheckRun{name status conclusion startedAt}');
+        expect(query).toContain('on StatusContext{context state createdAt}');
     });
 
     /**
@@ -1761,10 +2543,189 @@ describe('delivery shell boundary', () => {
 
         expect(snapshot.headRefOid).toBe('head');
         expect(rollupCaptures(captures)).toEqual([]);
+        expect(captures.find((capture) => capture.args.includes('view'))?.args.join(' ')).toContain('mergeable');
 
         port.headCheckRuns(42, 'head');
 
         expect(rollupCaptures(captures)).toHaveLength(1);
+    });
+
+    it('queries and normalizes the immutable merged-by actor node ID', () => {
+        const captures: Array<{ command: string; args: string[] }> = [];
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (command, args) => {
+                captures.push({ command, args });
+                const joined = args.join(' ');
+                if (joined.includes('pr view')) {
+                    return JSON.stringify(
+                        shellPullRequest(pullRequest({ state: 'MERGED', mergedByActorNodeId: AUTHOR_BOT_NODE_ID }))
+                    );
+                }
+                if (joined.includes('mergedBy{__typename')) {
+                    return args.join('\u0000') ===
+                        [
+                            'api',
+                            'graphql',
+                            '-f',
+                            'query=query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){mergedBy{__typename ... on Bot{id}}}}}',
+                            '-f',
+                            'owner=jcosta33',
+                            '-f',
+                            'name=sourdaw',
+                            '-F',
+                            'number=42',
+                        ].join('\u0000')
+                        ? shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID })
+                        : shellMergedByGraphql({ __typename: 'Bot', id: REVIEWER_BOT_NODE_ID });
+                }
+                throw new Error(`unexpected capture: ${command} ${joined}`);
+            },
+            run: () => undefined,
+        });
+
+        expect(port.pullRequest(42).mergedByActorNodeId).toBe(AUTHOR_BOT_NODE_ID);
+        expect(captures[0]?.args.join(' ')).toContain('mergedBy');
+        expect(captures[1]?.args).toEqual([
+            'api',
+            'graphql',
+            '-f',
+            'query=query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){mergedBy{__typename ... on Bot{id}}}}}',
+            '-f',
+            'owner=jcosta33',
+            '-f',
+            'name=sourdaw',
+            '-F',
+            'number=42',
+        ]);
+    });
+
+    it('preserves paginated REST issue-comment response order for receipt authority', () => {
+        const captures: Array<{ command: string; args: string[] }> = [];
+        const comment = (id: string, receiptBody: string) => ({
+            node_id: id,
+            body: receiptBody,
+            user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]', type: 'Bot' },
+            created_at: '2026-08-21T00:00:00Z',
+            updated_at: '2026-08-21T00:00:00Z',
+        });
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (command, args) => {
+                captures.push({ command, args });
+                return JSON.stringify([
+                    [comment('IC_x', deliveryReceiptBody(42, 'head', relationshipBody('Closes #2372'), 2372))],
+                    [comment('IC_y', deliveryReceiptBody(42, 'head', relationshipBody('Closes #2373'), 2373))],
+                ]);
+            },
+            run: () => undefined,
+        });
+
+        expect(port.deliveryReceipts(42).map(({ id }) => id)).toEqual(['IC_x', 'IC_y']);
+        expect(captures[0]?.args).toEqual([
+            'api',
+            '--paginate',
+            '--slurp',
+            'repos/jcosta33/sourdaw/issues/42/comments?per_page=100',
+        ]);
+    });
+
+    it.each([
+        {
+            merger: 'foreign',
+            shellSnapshot: pullRequest({ state: 'MERGED', mergedByActorNodeId: REVIEWER_BOT_NODE_ID }),
+            graphQlMergedBy: { __typename: 'Bot' as const, id: REVIEWER_BOT_NODE_ID },
+            expectedError: /not merged by the author App/,
+        },
+        {
+            merger: 'null',
+            shellSnapshot: pullRequest({ state: 'MERGED', mergedByActorNodeId: null }),
+            graphQlMergedBy: null,
+            expectedError: /merger cannot be verified/,
+        },
+        {
+            merger: 'non-Bot',
+            shellSnapshot: pullRequest({ state: 'MERGED' }),
+            graphQlMergedBy: { __typename: 'User' as const },
+            expectedError: /merger cannot be verified/,
+        },
+    ])(
+        'shellPort refuses $merger merged-by authority before any recovery effect',
+        ({ shellSnapshot, graphQlMergedBy, expectedError }) => {
+            const effects: string[] = [];
+            const port = shellPort('jcosta33/sourdaw', {
+                capture: (_command, args) => {
+                    const joined = args.join(' ');
+                    if (joined.includes('pr view')) {
+                        return JSON.stringify(shellPullRequest(shellSnapshot));
+                    }
+                    if (joined.includes('mergedBy{__typename')) {
+                        return shellMergedByGraphql(graphQlMergedBy);
+                    }
+                    effects.push(`capture:${joined}`);
+                    throw new Error(`unexpected recovery read: ${joined}`);
+                },
+                run: (command, args) => {
+                    if (command === 'git' && args[0] === 'fetch') {
+                        return;
+                    }
+                    effects.push(`run:${command}:${args.join(' ')}`);
+                },
+            });
+
+            expect(() =>
+                deliverPullRequest(42, port, {
+                    complete: (issue) => effects.push(`complete:${issue}`),
+                })
+            ).toThrow(expectedError);
+            expect(effects).toEqual([]);
+        }
+    );
+
+    it('uses REST response order, not created_at order, for shellPort merged recovery', () => {
+        const bodyX = relationshipBody('Closes #2372');
+        const bodyY = relationshipBody('Closes #2373');
+        const effects: string[] = [];
+        const captures: string[] = [];
+        const comment = (id: string, receiptBody: string, createdAt: string) => ({
+            node_id: id,
+            body: receiptBody,
+            user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]', type: 'Bot' },
+            created_at: createdAt,
+            updated_at: createdAt,
+        });
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (_command, args) => {
+                const joined = args.join(' ');
+                captures.push(joined);
+                if (joined.includes('pr view')) {
+                    return JSON.stringify(shellPullRequest(pullRequest({ state: 'MERGED' })));
+                }
+                if (joined.includes('mergedBy{__typename')) {
+                    return shellMergedByGraphql({ __typename: 'Bot', id: AUTHOR_BOT_NODE_ID });
+                }
+                if (joined.includes('issues/42/comments?per_page=100')) {
+                    return JSON.stringify([
+                        [comment('IC_x', deliveryReceiptBody(42, 'head', bodyX, 2372), '2026-08-21T00:00:02Z')],
+                        [comment('IC_y', deliveryReceiptBody(42, 'head', bodyY, 2373), '2026-08-21T00:00:01Z')],
+                    ]);
+                }
+                if (joined.includes('pulls?state=open')) {
+                    return JSON.stringify([[]]);
+                }
+                throw new Error(`unexpected capture: ${joined}`);
+            },
+            run: () => undefined,
+        });
+
+        deliverPullRequest(42, port, {
+            complete: (issue) => effects.push(`complete:${issue}`),
+        });
+
+        expect(captures.slice(0, 3)).toEqual([
+            expect.stringContaining('pr view 42'),
+            expect.stringContaining('mergedBy{__typename'),
+            'api --paginate --slurp repos/jcosta33/sourdaw/issues/42/comments?per_page=100',
+        ]);
+        expect(effects).toEqual(['complete:2373']);
     });
 
     /**
@@ -1829,9 +2790,9 @@ describe('delivery shell boundary', () => {
         ]);
 
         expect(port.headCheckRuns(42, 'head')).toEqual([
-            { name: 'Lint', status: 'COMPLETED', conclusion: 'CANCELLED' },
-            { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS' },
-            { name: 'Lint', status: 'COMPLETED', conclusion: 'SUCCESS' },
+            { name: 'Lint', status: 'COMPLETED', conclusion: 'CANCELLED', startedAt: null },
+            { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS', startedAt: null },
+            { name: 'Lint', status: 'COMPLETED', conclusion: 'SUCCESS', startedAt: null },
         ]);
         expect(rollupCaptures(captures)).toHaveLength(2);
         expect(rollupCaptures(captures)[0]).not.toContain('cursor=');
@@ -1900,8 +2861,8 @@ describe('delivery shell boundary', () => {
         ]);
 
         expect(port.headCheckRuns(42, 'head')).toEqual([
-            { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS' },
-            { name: 'Lint', status: 'COMPLETED', conclusion: 'SUCCESS' },
+            { name: 'Gate', status: 'COMPLETED', conclusion: 'SUCCESS', startedAt: null },
+            { name: 'Lint', status: 'COMPLETED', conclusion: 'SUCCESS', startedAt: null },
         ]);
         expect(rollupCaptures(captures)).toHaveLength(1);
     });
@@ -1959,9 +2920,12 @@ describe('delivery shell boundary', () => {
                         data: {
                             repository: {
                                 pullRequest: {
+                                    id: 'pull-request-id',
+                                    headRefOid: 'head',
                                     reviews: {
                                         nodes: [
                                             {
+                                                id: 'review-approved',
                                                 state: 'APPROVED',
                                                 submittedAt: '2026-08-19T00:00:00Z',
                                                 author: {
@@ -1972,11 +2936,11 @@ describe('delivery shell boundary', () => {
                                                 commit: { oid: 'head' },
                                             },
                                         ],
-                                        pageInfo: { hasPreviousPage: false },
+                                        pageInfo: { hasPreviousPage: false, startCursor: null },
                                     },
                                     reviewThreads: {
-                                        nodes: [{ isResolved: true }],
-                                        pageInfo: { hasNextPage: false },
+                                        nodes: [{ id: 'thread-resolved', isResolved: true }],
+                                        pageInfo: { hasNextPage: false, endCursor: null },
                                     },
                                 },
                             },
@@ -2121,9 +3085,13 @@ describe('delivery shell boundary', () => {
     });
 
     it('rejects malformed repository merge settings', () => {
-        const { captures, port } = mergePolicyPort('{"allow_merge_commit":true}');
+        let attempted = false;
+        const { captures, port } = mergePolicyPort('{"allow_merge_commit":true}', () => {
+            attempted = true;
+        });
 
         expect(() => port.merge(42, 'head', false)).toThrow(/cannot prove repository merge settings/);
+        expect(attempted).toBe(false);
         expect(captures).not.toContainEqual(
             expect.objectContaining({ args: expect.arrayContaining(['repos/jcosta33/sourdaw/pulls/42/merge']) })
         );
@@ -2172,6 +3140,543 @@ describe('delivery shell boundary', () => {
         }
     });
 
+    it('reads every review page before choosing the latest reviewer state on the expected head', () => {
+        const captures: string[][] = [];
+        const latestUnrelatedReviews = Array.from({ length: 100 }, (_, index) => ({
+            id: `review-unrelated-${index}`,
+            state: 'COMMENTED',
+            submittedAt: null,
+            author: {
+                id: REVIEWER_BOT_NODE_ID,
+                login: 'renamed-reviewer[bot]',
+                __typename: 'Bot',
+            },
+            commit: { oid: 'other-head' },
+        }));
+        const shell: ShellRunner = {
+            capture: (command, args) => {
+                captures.push(args);
+                if (!args.some((argument) => argument.startsWith('query='))) {
+                    throw new Error(`unexpected capture: ${command} ${args.join(' ')}`);
+                }
+                const before = args.find((argument) => argument.startsWith('reviewsBefore='));
+                if (before === undefined) {
+                    return reviewStateResponse(
+                        { nodes: latestUnrelatedReviews, hasPreviousPage: true, startCursor: 'older-reviews' },
+                        { nodes: [], hasNextPage: false, endCursor: null }
+                    );
+                }
+                if (before === 'reviewsBefore=older-reviews') {
+                    return reviewStateResponse(
+                        {
+                            nodes: [
+                                {
+                                    id: 'review-approved',
+                                    state: 'APPROVED',
+                                    submittedAt: '2026-08-19T00:00:00Z',
+                                    author: {
+                                        id: REVIEWER_BOT_NODE_ID,
+                                        login: 'renamed-reviewer[bot]',
+                                        __typename: 'Bot',
+                                    },
+                                    commit: { oid: 'head' },
+                                },
+                            ],
+                            hasPreviousPage: false,
+                            startCursor: null,
+                        },
+                        { nodes: [], hasNextPage: false, endCursor: null }
+                    );
+                }
+                throw new Error(`unexpected review cursor: ${before}`);
+            },
+            run: () => undefined,
+        };
+
+        expect(shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toEqual({
+            latestReviewerStateOnHead: 'APPROVED',
+            unresolvedThreads: 0,
+        });
+        expect(captures).toHaveLength(4);
+        expect(captures[0]?.find((argument) => argument.startsWith('query='))).toContain(
+            'reviews(last:100,before:$reviewsBefore)'
+        );
+        expect(captures[0]).not.toContain('reviewsBefore=older-reviews');
+        expect(captures[1]).toContain('reviewsBefore=older-reviews');
+        expect(captures[2]).not.toContain('reviewsBefore=older-reviews');
+        expect(captures[3]).toContain('reviewsBefore=older-reviews');
+    });
+
+    it.each([
+        { label: 'null', submittedAt: null },
+        { label: 'equal', submittedAt: '2026-08-19T00:00:00Z' },
+    ])(
+        'uses GitHub connection order for opposite same-head reviewer states with $label timestamps',
+        ({ submittedAt }) => {
+            const captures: string[][] = [];
+            const shell: ShellRunner = {
+                capture: (_command, args) => {
+                    captures.push(args);
+                    const before = args.find((argument) => argument.startsWith('reviewsBefore='));
+                    if (before === undefined) {
+                        return reviewStateResponse(
+                            {
+                                nodes: [
+                                    {
+                                        id: 'review-newest',
+                                        state: 'CHANGES_REQUESTED',
+                                        submittedAt,
+                                        author: {
+                                            id: REVIEWER_BOT_NODE_ID,
+                                            login: 'renamed-reviewer[bot]',
+                                            __typename: 'Bot',
+                                        },
+                                        commit: { oid: 'head' },
+                                    },
+                                ],
+                                hasPreviousPage: true,
+                                startCursor: 'older-reviews',
+                            },
+                            { nodes: [], hasNextPage: false, endCursor: null }
+                        );
+                    }
+                    if (before === 'reviewsBefore=older-reviews') {
+                        return reviewStateResponse(
+                            {
+                                nodes: [
+                                    {
+                                        id: 'review-older',
+                                        state: 'APPROVED',
+                                        submittedAt,
+                                        author: {
+                                            id: REVIEWER_BOT_NODE_ID,
+                                            login: 'renamed-reviewer[bot]',
+                                            __typename: 'Bot',
+                                        },
+                                        commit: { oid: 'head' },
+                                    },
+                                ],
+                                hasPreviousPage: false,
+                                startCursor: null,
+                            },
+                            { nodes: [], hasNextPage: false, endCursor: null }
+                        );
+                    }
+                    throw new Error(`unexpected review cursor: ${before}`);
+                },
+                run: () => undefined,
+            };
+
+            expect(shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toEqual({
+                latestReviewerStateOnHead: 'CHANGES_REQUESTED',
+                unresolvedThreads: 0,
+            });
+            expect(captures).toHaveLength(4);
+        }
+    );
+
+    it('counts unresolved review threads beyond the first page', () => {
+        const captures: string[][] = [];
+        const firstThreadPage = Array.from({ length: 100 }, (_, index) => ({
+            id: `thread-resolved-${index}`,
+            isResolved: true,
+        }));
+        const shell: ShellRunner = {
+            capture: (command, args) => {
+                captures.push(args);
+                if (!args.some((argument) => argument.startsWith('query='))) {
+                    throw new Error(`unexpected capture: ${command} ${args.join(' ')}`);
+                }
+                const after = args.find((argument) => argument.startsWith('threadsAfter='));
+                const reviews = {
+                    nodes: [
+                        {
+                            id: 'review-approved',
+                            state: 'APPROVED',
+                            submittedAt: '2026-08-19T00:00:00Z',
+                            author: {
+                                id: REVIEWER_BOT_NODE_ID,
+                                login: 'renamed-reviewer[bot]',
+                                __typename: 'Bot',
+                            },
+                            commit: { oid: 'head' },
+                        },
+                    ],
+                    hasPreviousPage: false,
+                    startCursor: null,
+                };
+                if (after === undefined) {
+                    return reviewStateResponse(reviews, {
+                        nodes: firstThreadPage,
+                        hasNextPage: true,
+                        endCursor: 'later-threads',
+                    });
+                }
+                if (after === 'threadsAfter=later-threads') {
+                    return reviewStateResponse(reviews, {
+                        nodes: [{ id: 'thread-unresolved', isResolved: false }],
+                        hasNextPage: false,
+                        endCursor: null,
+                    });
+                }
+                throw new Error(`unexpected thread cursor: ${after}`);
+            },
+            run: () => undefined,
+        };
+
+        expect(shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toEqual({
+            latestReviewerStateOnHead: 'APPROVED',
+            unresolvedThreads: 1,
+        });
+        expect(captures).toHaveLength(4);
+        expect(captures[0]?.find((argument) => argument.startsWith('query='))).toContain(
+            'reviewThreads(first:100,after:$threadsAfter)'
+        );
+        expect(captures[0]).not.toContain('threadsAfter=later-threads');
+        expect(captures[1]).toContain('threadsAfter=later-threads');
+        expect(captures[2]).not.toContain('threadsAfter=later-threads');
+        expect(captures[3]).toContain('threadsAfter=later-threads');
+    });
+
+    it('trusts two identical complete single-page review-state scans', () => {
+        const captures: string[][] = [];
+        const shell: ShellRunner = {
+            capture: (_command, args) => {
+                captures.push(args);
+                return reviewStateResponse(
+                    {
+                        nodes: [
+                            {
+                                id: 'review-approved',
+                                state: 'APPROVED',
+                                submittedAt: '2026-08-19T00:00:00Z',
+                                author: {
+                                    id: REVIEWER_BOT_NODE_ID,
+                                    login: 'renamed-reviewer[bot]',
+                                    __typename: 'Bot',
+                                },
+                                commit: { oid: 'head' },
+                            },
+                        ],
+                        hasPreviousPage: false,
+                        startCursor: null,
+                    },
+                    {
+                        nodes: [{ id: 'thread-unresolved', isResolved: false }],
+                        hasNextPage: false,
+                        endCursor: null,
+                    }
+                );
+            },
+            run: () => undefined,
+        };
+
+        expect(shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toEqual({
+            latestReviewerStateOnHead: 'APPROVED',
+            unresolvedThreads: 1,
+        });
+        expect(captures).toHaveLength(2);
+        expect(captures[0]?.find((argument) => argument.startsWith('query='))).toContain(
+            'pullRequest(number:$number){id headRefOid'
+        );
+        expect(captures[0]?.find((argument) => argument.startsWith('query='))).toContain('nodes{id state submittedAt');
+        expect(captures[0]?.find((argument) => argument.startsWith('query='))).toContain('nodes{id isResolved}');
+    });
+
+    it('rejects partial review data carrying nonempty GraphQL errors before trusting an older approval', () => {
+        const response = reviewStateResponse(
+            {
+                nodes: [
+                    {
+                        id: 'review-approved-older',
+                        state: 'APPROVED',
+                        submittedAt: '2026-08-19T00:00:00Z',
+                        author: {
+                            id: REVIEWER_BOT_NODE_ID,
+                            login: 'renamed-reviewer[bot]',
+                            __typename: 'Bot',
+                        },
+                        commit: { oid: 'head' },
+                    },
+                    {
+                        id: 'review-changes-requested-newer',
+                        state: 'CHANGES_REQUESTED',
+                        submittedAt: '2026-08-20T00:00:00Z',
+                        author: null,
+                        commit: { oid: 'head' },
+                    },
+                ],
+                hasPreviousPage: false,
+                startCursor: null,
+            },
+            { nodes: [], hasNextPage: false, endCursor: null },
+            {},
+            [{ message: 'review author could not be resolved' }]
+        );
+        const captures: string[][] = [];
+        const shell: ShellRunner = {
+            capture: (_command, args) => {
+                captures.push(args);
+                return response;
+            },
+            run: () => undefined,
+        };
+
+        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
+            /cannot prove complete review state for PR #42/
+        );
+        expect(captures).toHaveLength(1);
+    });
+
+    it.each(['review', 'thread'] as const)('refuses %s state mutation between complete scans', (connection) => {
+        const captures: string[][] = [];
+        const shell: ShellRunner = {
+            capture: (_command, args) => {
+                captures.push(args);
+                const secondScan = captures.length === 2;
+                return reviewStateResponse(
+                    {
+                        nodes: [
+                            {
+                                id: 'review-state',
+                                state: connection === 'review' && secondScan ? 'CHANGES_REQUESTED' : 'APPROVED',
+                                submittedAt: null,
+                                author: {
+                                    id: REVIEWER_BOT_NODE_ID,
+                                    login: 'renamed-reviewer[bot]',
+                                    __typename: 'Bot',
+                                },
+                                commit: { oid: 'head' },
+                            },
+                        ],
+                        hasPreviousPage: false,
+                        startCursor: null,
+                    },
+                    {
+                        nodes: [{ id: 'thread-state', isResolved: connection !== 'thread' || !secondScan }],
+                        hasNextPage: false,
+                        endCursor: null,
+                    }
+                );
+            },
+            run: () => undefined,
+        };
+
+        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
+            /cannot prove stable review state for PR #42/
+        );
+        expect(captures).toHaveLength(2);
+    });
+
+    it.each([
+        {
+            label: 'pull-request identity',
+            identity: { pullRequestId: 'different-pull-request', headRefOid: 'head' },
+        },
+        { label: 'head', identity: { pullRequestId: 'pull-request-id', headRefOid: 'different-head' } },
+    ])('refuses $label drift between complete scans', ({ identity }) => {
+        const captures: string[][] = [];
+        const shell: ShellRunner = {
+            capture: (_command, args) => {
+                captures.push(args);
+                return reviewStateResponse(
+                    { nodes: [], hasPreviousPage: false, startCursor: null },
+                    { nodes: [], hasNextPage: false, endCursor: null },
+                    captures.length === 1 ? undefined : identity
+                );
+            },
+            run: () => undefined,
+        };
+
+        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
+            /cannot prove complete review state for PR #42/
+        );
+        expect(captures).toHaveLength(2);
+    });
+
+    it.each([
+        {
+            label: 'pull-request identity',
+            identity: { pullRequestId: 'different-pull-request', headRefOid: 'head' },
+        },
+        { label: 'head', identity: { pullRequestId: 'pull-request-id', headRefOid: 'different-head' } },
+    ])('refuses $label drift between pages', ({ identity }) => {
+        const captures: string[][] = [];
+        const shell: ShellRunner = {
+            capture: (_command, args) => {
+                captures.push(args);
+                return reviewStateResponse(
+                    {
+                        nodes: [],
+                        hasPreviousPage: captures.length === 1,
+                        startCursor: captures.length === 1 ? 'older-reviews' : null,
+                    },
+                    { nodes: [], hasNextPage: false, endCursor: null },
+                    captures.length === 1 ? undefined : identity
+                );
+            },
+            run: () => undefined,
+        };
+
+        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
+            /cannot prove complete review state for PR #42/
+        );
+        expect(captures).toHaveLength(2);
+    });
+
+    it.each([
+        {
+            label: 'pull-request identity',
+            identity: { pullRequestId: 'different-pull-request', headRefOid: 'head' },
+        },
+        { label: 'head', identity: { pullRequestId: 'pull-request-id', headRefOid: 'different-head' } },
+    ])('refuses $label drift on a later thread page', ({ identity }) => {
+        const captures: string[][] = [];
+        const shell: ShellRunner = {
+            capture: (_command, args) => {
+                captures.push(args);
+                return reviewStateResponse(
+                    { nodes: [], hasPreviousPage: false, startCursor: null },
+                    {
+                        nodes: [],
+                        hasNextPage: captures.length === 1,
+                        endCursor: captures.length === 1 ? 'later-threads' : null,
+                    },
+                    captures.length === 1 ? undefined : identity
+                );
+            },
+            run: () => undefined,
+        };
+
+        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
+            /cannot prove complete review state for PR #42/
+        );
+        expect(captures).toHaveLength(2);
+        expect(captures[1]).toContain('threadsAfter=later-threads');
+    });
+
+    it.each(['review', 'thread'] as const)('refuses %s pagination beyond the page budget', (connection) => {
+        const captures: string[][] = [];
+        const shell: ShellRunner = {
+            capture: (_command, args) => {
+                captures.push(args);
+                if (captures.length > 1_000) {
+                    throw new Error('pagination exceeded its page budget');
+                }
+                const cursor = `${connection}-cursor-${captures.length}`;
+                return connection === 'review'
+                    ? reviewStateResponse(
+                          { nodes: [], hasPreviousPage: true, startCursor: cursor },
+                          { nodes: [], hasNextPage: false, endCursor: null }
+                      )
+                    : reviewStateResponse(
+                          { nodes: [], hasPreviousPage: false, startCursor: null },
+                          { nodes: [], hasNextPage: true, endCursor: cursor }
+                      );
+            },
+            run: () => undefined,
+        };
+
+        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
+            /cannot prove complete review state for PR #42/
+        );
+        expect(captures).toHaveLength(1_000);
+    });
+
+    it('ignores same-head approvals from a User and a Bot with the wrong immutable actor ID', () => {
+        const response = reviewStateResponse(
+            {
+                nodes: [
+                    {
+                        id: 'review-user',
+                        state: 'APPROVED',
+                        submittedAt: '2026-08-19T00:00:00Z',
+                        author: { login: 'human-reviewer', __typename: 'User' },
+                        commit: { oid: 'head' },
+                    },
+                    {
+                        id: 'review-wrong-bot',
+                        state: 'APPROVED',
+                        submittedAt: '2026-08-20T00:00:00Z',
+                        author: { id: 'B_wrong-reviewer', login: 'wrong-reviewer[bot]', __typename: 'Bot' },
+                        commit: { oid: 'head' },
+                    },
+                ],
+                hasPreviousPage: false,
+                startCursor: null,
+            },
+            { nodes: [], hasNextPage: false, endCursor: null }
+        );
+        const captures: string[][] = [];
+        const shell: ShellRunner = {
+            capture: (_command, args) => {
+                captures.push(args);
+                return response;
+            },
+            run: () => undefined,
+        };
+
+        expect(shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toEqual({
+            latestReviewerStateOnHead: null,
+            unresolvedThreads: 0,
+        });
+        expect(captures).toHaveLength(2);
+    });
+
+    it.each(['review', 'thread'] as const)('refuses a missing %s pagination cursor', (connection) => {
+        const captures: string[][] = [];
+        const shell: ShellRunner = {
+            capture: (_command, args) => {
+                captures.push(args);
+                return connection === 'review'
+                    ? reviewStateResponse(
+                          { nodes: [], hasPreviousPage: true },
+                          { nodes: [], hasNextPage: false, endCursor: null }
+                      )
+                    : reviewStateResponse(
+                          { nodes: [], hasPreviousPage: false, startCursor: null },
+                          { nodes: [], hasNextPage: true }
+                      );
+            },
+            run: () => undefined,
+        };
+
+        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
+            /cannot prove complete review state for PR #42/
+        );
+        expect(captures).toHaveLength(1);
+    });
+
+    it.each(['review', 'thread'] as const)('refuses a repeated %s pagination cursor', (connection) => {
+        const captures: string[][] = [];
+        const shell: ShellRunner = {
+            capture: (_command, args) => {
+                captures.push(args);
+                if (captures.length > 2) {
+                    throw new Error('pagination attempted a third read after repeating a cursor');
+                }
+                return connection === 'review'
+                    ? reviewStateResponse(
+                          { nodes: [], hasPreviousPage: true, startCursor: 'same-review-cursor' },
+                          { nodes: [], hasNextPage: false, endCursor: null }
+                      )
+                    : reviewStateResponse(
+                          { nodes: [], hasPreviousPage: false, startCursor: null },
+                          { nodes: [], hasNextPage: true, endCursor: 'same-thread-cursor' }
+                      );
+            },
+            run: () => undefined,
+        };
+
+        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
+            /cannot prove complete review state for PR #42/
+        );
+        expect(captures).toHaveLength(2);
+        expect(captures[1]).toContain(
+            connection === 'review' ? 'reviewsBefore=same-review-cursor' : 'threadsAfter=same-thread-cursor'
+        );
+    });
+
     it('accepts a renamed GraphQL reviewer with the immutable reviewer actor ID', () => {
         const shell: ShellRunner = {
             capture: (command, args) => {
@@ -2180,9 +3685,12 @@ describe('delivery shell boundary', () => {
                         data: {
                             repository: {
                                 pullRequest: {
+                                    id: 'pull-request-id',
+                                    headRefOid: 'head',
                                     reviews: {
                                         nodes: [
                                             {
+                                                id: 'review-approved',
                                                 state: 'APPROVED',
                                                 submittedAt: '2026-08-19T00:00:00Z',
                                                 author: {
@@ -2193,11 +3701,11 @@ describe('delivery shell boundary', () => {
                                                 commit: { oid: 'head' },
                                             },
                                         ],
-                                        pageInfo: { hasPreviousPage: false },
+                                        pageInfo: { hasPreviousPage: false, startCursor: null },
                                     },
                                     reviewThreads: {
-                                        nodes: [{ isResolved: true }],
-                                        pageInfo: { hasNextPage: false },
+                                        nodes: [{ id: 'thread-resolved', isResolved: true }],
+                                        pageInfo: { hasNextPage: false, endCursor: null },
                                     },
                                 },
                             },
@@ -2222,9 +3730,12 @@ describe('delivery shell boundary', () => {
                         data: {
                             repository: {
                                 pullRequest: {
+                                    id: 'pull-request-id',
+                                    headRefOid: 'head',
                                     reviews: {
                                         nodes: [
                                             {
+                                                id: 'review-wrong-head',
                                                 state: 'APPROVED',
                                                 submittedAt: '2026-08-19T00:00:00Z',
                                                 author: {
@@ -2235,11 +3746,11 @@ describe('delivery shell boundary', () => {
                                                 commit: { oid: 'other-head' },
                                             },
                                         ],
-                                        pageInfo: { hasPreviousPage: false },
+                                        pageInfo: { hasPreviousPage: false, startCursor: null },
                                     },
                                     reviewThreads: {
-                                        nodes: [{ isResolved: true }],
-                                        pageInfo: { hasNextPage: false },
+                                        nodes: [{ id: 'thread-resolved', isResolved: true }],
+                                        pageInfo: { hasNextPage: false, endCursor: null },
                                     },
                                 },
                             },

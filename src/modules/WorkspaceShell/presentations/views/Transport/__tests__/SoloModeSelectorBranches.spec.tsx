@@ -1,6 +1,8 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { TooltipProvider } from '#/components/ui/tooltip';
+
 vi.mock('../../../../useCases/togglePanel/panelToggles/setSoloMode', () => ({
     setSoloMode: vi.fn(),
 }));
@@ -66,6 +68,34 @@ describe('SoloModeSelector — click wiring', () => {
     it('calls setSoloMode("pfl") when PFL clicked', () => {
         render(<SoloModeSelector soloMode="sip" />);
         fireEvent.click(screen.getByRole('radio', { name: 'PFL' }));
+        expect(mockedSetSoloMode).toHaveBeenCalledWith('pfl');
+    });
+});
+
+describe('SoloModeSelector — compact keyboard behavior', () => {
+    const renderCompact = (soloMode: 'sip' | 'afl' | 'pfl' = 'sip') =>
+        render(
+            <TooltipProvider>
+                <SoloModeSelector soloMode={soloMode} compact />
+            </TooltipProvider>
+        );
+
+    it('selects and focuses adjacent modes with arrow keys', () => {
+        renderCompact();
+        fireEvent.click(screen.getByRole('button', { name: 'Solo mode: SIP' }));
+        const sip = screen.getByRole('radio', { name: /SIP/ });
+        fireEvent.keyDown(sip, { key: 'ArrowDown' });
+        expect(mockedSetSoloMode).toHaveBeenLastCalledWith('afl');
+        expect(screen.getByRole('radio', { name: /AFL/ })).toHaveFocus();
+
+        fireEvent.keyDown(screen.getByRole('radio', { name: /AFL/ }), { key: 'ArrowUp' });
+        expect(mockedSetSoloMode).toHaveBeenLastCalledWith('sip');
+    });
+
+    it('activates a compact mode by click', () => {
+        renderCompact();
+        fireEvent.click(screen.getByRole('button', { name: 'Solo mode: SIP' }));
+        fireEvent.click(screen.getByRole('radio', { name: /PFL/ }));
         expect(mockedSetSoloMode).toHaveBeenCalledWith('pfl');
     });
 });

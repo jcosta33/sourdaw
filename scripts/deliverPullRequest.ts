@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 
 import {
     AUTHOR_BOT_NODE_ID,
@@ -27,6 +28,11 @@ import {
     parseDeliveryReceipt,
     type DeliveryReceiptPayload,
 } from './prContract.ts';
+import {
+    type PullRequestMutationSerialization,
+    type PullRequestRemoteMutationBoundary,
+    withPullRequestMutationLock,
+} from './pullRequestMutationLock.ts';
 import { shellPort as trackerIssueShellPort } from './reconcileTrackerIssue.ts';
 import { completeTrackerIssue, type ReconcileTrackerIssuePort } from './trackerIssueReconciliation.ts';
 
@@ -34,6 +40,8 @@ export type HeadCheckRun = {
     name: string;
     status: string;
     conclusion: string | null;
+    /** When GitHub began this attempt, or null where the rollup entry reports no start. */
+    startedAt: string | null;
 };
 
 export type PullRequestSnapshot = {
@@ -46,11 +54,13 @@ export type PullRequestSnapshot = {
     headRefOid: string;
     baseRefName: string;
     baseRefOid: string;
+    mergeable: string;
     mergeStateStatus: string;
     reviewDecision: string;
     changedFiles: number;
     additions: number;
     deletions: number;
+    mergedByActorNodeId: string | null;
 };
 
 export type ReviewState = {
@@ -110,16 +120,33 @@ const REQUIRED_CHECK_NAME = 'Gate';
 const SETTLED_CHECK_STATUS = 'COMPLETED';
 const SUPERSEDED_CONCLUSION = 'CANCELLED';
 const PASSING_CONCLUSION = 'SUCCESS';
+const SKIPPED_CONCLUSION = 'SKIPPED';
 /**
  * `SKIPPED` is a designed outcome: the workflow's path filters skip whole legs, and `Gate` is built
  * to pass on a skipped dependency. Nothing in it is designed to conclude `NEUTRAL`, which reports a
  * check that ran and reached no verdict — the same undecided state a cancellation with no success
  * beside it is refused for. An irreversible merge does not step over it.
  */
-const NON_BLOCKING_CONCLUSIONS = new Set(['SUCCESS', 'SKIPPED']);
+const NON_BLOCKING_CONCLUSIONS = new Set([PASSING_CONCLUSION, SKIPPED_CONCLUSION]);
+/**
+ * A conclusion that says nothing about this commit. A cancelled attempt was killed before it decided
+ * and a skipped one never executed, so neither is a later word on the name it reports under. Not
+ * blocking and having decided are different properties, and `SKIPPED` is the conclusion that is
+ * non-blocking without being a verdict — which is exactly why the two sets are written apart.
+ */
+const NON_VERDICT_CONCLUSIONS = new Set([SUPERSEDED_CONCLUSION, SKIPPED_CONCLUSION]);
 const CHECKS_PENDING_MERGE_STATE = 'UNSTABLE';
+const STRUCTURAL_MERGEABILITY_REFRESH_LIMIT = 1;
 
-function validatePullRequest(pullRequest: PullRequestSnapshot, checks: CheckEvidencePort): void {
+type CiAdmissionMode = 'advisory' | 'required';
+
+const ACTIVE_CI_ADMISSION_MODE: CiAdmissionMode = 'advisory';
+
+function validatePullRequest(
+    pullRequest: PullRequestSnapshot,
+    checks: CheckEvidencePort,
+    ciAdmissionMode: CiAdmissionMode
+): void {
     if (pullRequest.state !== 'OPEN') {
         fail(`PR #${pullRequest.number} is ${pullRequest.state.toLowerCase()}`);
     }
@@ -129,22 +156,28 @@ function validatePullRequest(pullRequest: PullRequestSnapshot, checks: CheckEvid
     if (!TITLE_PATTERN.test(pullRequest.title)) {
         fail(`PR #${pullRequest.number} title is not conventional`);
     }
-    validateMergeState(pullRequest, checks);
+    validateCiAdmission(pullRequest, checks, ciAdmissionMode);
     if (pullRequest.reviewDecision === 'CHANGES_REQUESTED') {
         fail(`PR #${pullRequest.number} has requested changes`);
     }
 }
 
+function validateCiAdmission(pullRequest: PullRequestSnapshot, checks: CheckEvidencePort, mode: CiAdmissionMode): void {
+    if (mode === 'advisory') {
+        return;
+    }
+    validateRequiredCiAdmission(pullRequest, checks);
+}
+
 /**
- * An approving review re-runs the health gates in the same concurrency group as the push run that
- * is still in flight, so that earlier run is cancelled and its check runs — its `Gate` included —
- * stay `CANCELLED` on the head forever. GitHub reports the head `UNSTABLE` for those corpses even
- * though the review-triggered run the branch ruleset reads succeeded on the same commit. Tolerating
- * that state means proving the head green here instead of trusting the aggregate: nothing failed,
- * nothing is still running, the one required check succeeded, and every cancelled name also
- * succeeded. Every other status still refuses, because it reports something other than checks.
+ * Push and approved-review runs still report on the same pull-request head, and GitHub can keep the
+ * aggregate `UNSTABLE` when cancelled check runs remain on that head beside later successes on the
+ * same commit. Tolerating that state means proving the head green here instead of trusting the
+ * aggregate: no check name's newest attempt failed, nothing is still running, the one required check
+ * succeeded, and every cancelled name also succeeded. Every other status still refuses, because it
+ * reports something other than checks.
  */
-function validateMergeState(pullRequest: PullRequestSnapshot, checks: CheckEvidencePort): void {
+function validateRequiredCiAdmission(pullRequest: PullRequestSnapshot, checks: CheckEvidencePort): void {
     if (pullRequest.mergeStateStatus === 'CLEAN') {
         return;
     }
@@ -154,10 +187,54 @@ function validateMergeState(pullRequest: PullRequestSnapshot, checks: CheckEvide
     validateSupersededChecks(pullRequest, checks);
 }
 
+function validateStructuralMergeability(pullRequest: PullRequestSnapshot): void {
+    if (pullRequest.mergeable === 'MERGEABLE') {
+        return;
+    }
+    if (pullRequest.mergeable === 'CONFLICTING') {
+        fail(`PR #${pullRequest.number} has conflicting changes`);
+    }
+    if (pullRequest.mergeable === 'UNKNOWN') {
+        fail(
+            `PR #${pullRequest.number} structural mergeability remained UNKNOWN after ` +
+                `${STRUCTURAL_MERGEABILITY_REFRESH_LIMIT} refresh`
+        );
+    }
+    fail(`PR #${pullRequest.number} has invalid structural mergeability ${String(pullRequest.mergeable)}`);
+}
+
+function resolveStructuralMergeability(
+    initial: PullRequestSnapshot,
+    port: Pick<DeliveryPort, 'pullRequest'>
+): PullRequestSnapshot {
+    let pullRequest = initial;
+    if (pullRequest.state === 'MERGED') {
+        return pullRequest;
+    }
+    for (
+        let refreshes = 0;
+        pullRequest.state !== 'MERGED' &&
+        pullRequest.mergeable === 'UNKNOWN' &&
+        refreshes < STRUCTURAL_MERGEABILITY_REFRESH_LIMIT;
+        refreshes += 1
+    ) {
+        pullRequest = port.pullRequest(initial.number);
+        validateStablePullRequest(initial, pullRequest);
+        if (pullRequest.state === 'MERGED') {
+            return pullRequest;
+        }
+    }
+    if (pullRequest.state === 'MERGED') {
+        return pullRequest;
+    }
+    validateStructuralMergeability(pullRequest);
+    return pullRequest;
+}
+
 function validateSupersededChecks(pullRequest: PullRequestSnapshot, checks: CheckEvidencePort): void {
     const state = `PR #${pullRequest.number} merge state is ${pullRequest.mergeStateStatus}`;
     const checkRuns = checks.headCheckRuns(pullRequest.number, pullRequest.headRefOid);
-    const failed = checkRuns.find(isFailedCheckRun);
+    const failed = unretiredFailedCheckRun(checkRuns);
     if (failed !== undefined) {
         fail(`${state} and check ${failed.name} concluded ${failed.conclusion ?? 'nothing'}`);
     }
@@ -175,6 +252,52 @@ function validateSupersededChecks(pullRequest: PullRequestSnapshot, checks: Chec
 }
 
 /**
+ * A rerun of one job on the same commit reports under the same check name, so a name can carry
+ * several attempts and only the newest of them is this head's verdict. Push and approved-review runs
+ * produce exactly that: a job that failed on a runner-setup step under the push run is re-executed
+ * green by the review run, and counting the retired attempt refuses a head every attempt of which
+ * has since been decided.
+ *
+ * Recency is read from `startedAt`, the moment GitHub began the attempt. It is the field that orders
+ * attempts by when they were launched, which is what "superseded" means: the rerun is launched after
+ * the attempt it replaces, however long either takes to finish. `completedAt` orders that same pair
+ * backwards whenever a slow first attempt outlives a fast rerun, and a node id encodes no promise
+ * about time at all.
+ */
+function unretiredFailedCheckRun(checkRuns: HeadCheckRun[]): HeadCheckRun | undefined {
+    return checkRuns
+        .filter(isFailedCheckRun)
+        .find((failed) => !checkRuns.some((candidate) => retiresAttempt(candidate, failed)));
+}
+
+/**
+ * Only a later attempt that itself reached a verdict retires an earlier one. A non-verdict
+ * conclusion and a still-running rerun decide nothing, so reading either as the newer word would
+ * drop a real failure out of the evidence — the one direction this rule must never move. Health
+ * gates no longer subscribe to `pull_request_review`, so this repository no longer mints that skip
+ * itself; a skipped later attempt from any other path would still be the same shape. Were a skip
+ * allowed to retire, it would stamp a fresh non-verdict over a genuine failing execution and the
+ * head would merge.
+ *
+ * Attempts GitHub reports no start for, and attempts that share a start, order nothing and so retire
+ * nothing: absent or ambiguous recency leaves the failure standing rather than guessing it away.
+ */
+function retiresAttempt(candidate: HeadCheckRun, attempt: HeadCheckRun): boolean {
+    return (
+        candidate.name === attempt.name &&
+        candidate.status === SETTLED_CHECK_STATUS &&
+        !NON_VERDICT_CONCLUSIONS.has(candidate.conclusion ?? '') &&
+        startedAfter(candidate, attempt)
+    );
+}
+
+function startedAfter(candidate: HeadCheckRun, attempt: HeadCheckRun): boolean {
+    const candidateStart = Date.parse(candidate.startedAt ?? '');
+    const attemptStart = Date.parse(attempt.startedAt ?? '');
+    return Number.isFinite(candidateStart) && Number.isFinite(attemptStart) && candidateStart > attemptStart;
+}
+
+/**
  * A cancelled run is the only tolerated corpse. Anything else that settled without a passing
  * conclusion — an unrecognized one included — is a real result the merge must not step over.
  */
@@ -187,14 +310,14 @@ function isFailedCheckRun(check: HeadCheckRun): boolean {
 }
 
 /**
- * Tolerating a cancellation rests on the review-triggered run having re-run that same job on the
- * same commit, which is only observable as a success under the same check name. A name that was
- * cancelled and never succeeded on the head therefore carries no verdict at all, and a skipped
- * sibling does not supply one: the review-triggered run skips every job gated on `pull_request`,
- * `Gate` passes on `skipped`, so a green `Gate` says nothing about whether that job ran.
- * `Dependency review` has exactly this shape on an approval run — one cancellation, skips beside
- * it, no success anywhere. This rule consequently refuses such a head rather than merging with no
- * dependency-scan verdict, which is the honest outcome: an undecided scan is not a passing scan.
+ * Tolerating a cancellation rests on some later run having re-run that same job on the same commit,
+ * which is only observable as a success under the same check name. A name that was cancelled and
+ * never succeeded on the head therefore carries no verdict at all, and a skipped sibling does not
+ * supply one: jobs gated on the pull-request payload can still skip on a later run, and `Gate`
+ * passes on `skipped`, so a green `Gate` says nothing about whether that job ran.
+ * `Dependency review` has exactly this shape when its cancellation is followed only by skips beside
+ * it, with no success anywhere. This rule consequently refuses such a head rather than merging with
+ * no dependency-scan verdict, which is the honest outcome: an undecided scan is not a passing scan.
  *
  * Only a check whose verdict gates the merge is evidence. `Nightly failure report` is cancelled on
  * the same superseded run and never succeeds on a pull request, but it reports a nightly schedule
@@ -423,6 +546,18 @@ function validateStableTrackerTarget(number: number, before: number | undefined,
     }
 }
 
+function validatePostMergeSnapshot(
+    authorized: PullRequestSnapshot,
+    merged: PullRequestSnapshot,
+    number: number,
+    expectedTrackerTarget: number | undefined
+): void {
+    validateAuthorAppMerger(merged);
+    validateBaseBranch(merged);
+    validateStableTrackerTarget(number, expectedTrackerTarget, trackerCompletionTarget(merged));
+    validateStablePullRequest(authorized, merged);
+}
+
 function expectedDeliveryReceipt(
     pullRequest: PullRequestSnapshot,
     closingIssue: number | undefined
@@ -437,7 +572,7 @@ function expectedDeliveryReceipt(
     };
 }
 
-function deliveryReceiptCandidates(
+function deliveryReceiptsForHead(
     comments: DeliveryReceiptComment[],
     pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
 ): DeliveryReceiptComment[] {
@@ -458,6 +593,24 @@ function deliveryReceiptCandidates(
     return candidates;
 }
 
+function orderedDeliveryReceiptLineage(
+    comments: DeliveryReceiptComment[],
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
+): DeliveryReceiptComment[] {
+    const ordered = deliveryReceiptsForHead(comments, pullRequest);
+    for (let index = 1; index < ordered.length; index += 1) {
+        const previous = ordered[index - 1];
+        const current = ordered[index];
+        if (previous === undefined || current === undefined) {
+            fail(`PR #${pullRequest.number} has an invalid delivery receipt lineage`);
+        }
+        if (previous.body === current.body) {
+            fail(`PR #${pullRequest.number} has duplicate delivery receipts`);
+        }
+    }
+    return ordered;
+}
+
 function assertOwnedDeliveryReceipt(
     comment: DeliveryReceiptComment,
     payload: DeliveryReceiptPayload,
@@ -468,6 +621,7 @@ function assertOwnedDeliveryReceipt(
         !isAuthorBotNodeId(comment.authorNodeId) ||
         comment.authorType !== 'Bot' ||
         comment.createdAt === '' ||
+        !Number.isFinite(Date.parse(comment.createdAt)) ||
         comment.createdAt !== comment.updatedAt ||
         payload.pullRequest !== pullRequestNumber
     ) {
@@ -475,32 +629,54 @@ function assertOwnedDeliveryReceipt(
     }
 }
 
-function assertCanonicalDeliveryReceipt(
+function assertDeliveryReceiptForHead(
     comment: DeliveryReceiptComment,
-    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>,
-    expected?: DeliveryReceiptPayload
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
 ): DeliveryReceiptPayload {
     const payload = parseDeliveryReceipt(comment.body);
     if (payload === undefined) {
         fail(`PR #${pullRequest.number} has an invalid delivery receipt`);
     }
     assertOwnedDeliveryReceipt(comment, payload, pullRequest.number);
-    if (
-        payload.head !== pullRequest.headRefOid ||
-        (expected !== undefined && comment.body !== composeDeliveryReceipt(expected))
-    ) {
+    if (payload.head !== pullRequest.headRefOid) {
         fail(`PR #${pullRequest.number} has an invalid delivery receipt`);
     }
     return payload;
 }
 
-function readDeliveryReceipt(pullRequest: PullRequestSnapshot, port: DeliveryPort): DeliveryReceiptPayload {
-    const candidates = deliveryReceiptCandidates(port.deliveryReceipts(pullRequest.number), pullRequest);
-    const receipt = candidates[0];
-    if (candidates.length !== 1 || receipt === undefined) {
-        fail(`PR #${pullRequest.number} must have exactly one canonical delivery receipt`);
+function assertCanonicalDeliveryReceipt(
+    comment: DeliveryReceiptComment,
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>,
+    expected: DeliveryReceiptPayload
+): DeliveryReceiptPayload {
+    const payload = assertDeliveryReceiptForHead(comment, pullRequest);
+    if (comment.body !== composeDeliveryReceipt(expected)) {
+        fail(`PR #${pullRequest.number} has an invalid delivery receipt`);
     }
-    return assertCanonicalDeliveryReceipt(receipt, pullRequest);
+    return payload;
+}
+
+function newestDeliveryReceipt(lineage: DeliveryReceiptComment[], pullRequestNumber: number): DeliveryReceiptComment {
+    const receipt = lineage.at(-1);
+    if (receipt === undefined) {
+        fail(`PR #${pullRequestNumber} has no delivery receipt for its current head`);
+    }
+    return receipt;
+}
+
+function readDeliveryReceipt(pullRequest: PullRequestSnapshot, port: DeliveryPort): DeliveryReceiptPayload {
+    const lineage = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest);
+    return assertDeliveryReceiptForHead(newestDeliveryReceipt(lineage, pullRequest.number), pullRequest);
+}
+
+function validateStableDeliveryReceipt(
+    number: number,
+    expected: DeliveryReceiptPayload,
+    recovered: DeliveryReceiptPayload
+): void {
+    if (composeDeliveryReceipt(expected) !== composeDeliveryReceipt(recovered)) {
+        fail(`PR #${number} delivery receipt changed during delivery`);
+    }
 }
 
 function ensureDeliveryReceipt(
@@ -509,29 +685,31 @@ function ensureDeliveryReceipt(
     port: DeliveryPort
 ): DeliveryReceiptPayload {
     const expected = expectedDeliveryReceipt(pullRequest, closingIssue);
-    const existing = deliveryReceiptCandidates(port.deliveryReceipts(pullRequest.number), pullRequest);
-    if (existing.length > 1) {
-        fail(`PR #${pullRequest.number} has duplicate delivery receipts`);
-    }
-    let receipt = existing[0];
-    if (receipt === undefined) {
-        const body = composeDeliveryReceipt(expected);
+    const expectedBody = composeDeliveryReceipt(expected);
+    const existing = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest);
+    let receipt = existing.at(-1);
+    if (receipt?.body !== expectedBody) {
         try {
-            receipt = port.addDeliveryReceipt(pullRequest.number, body);
+            receipt = port.addDeliveryReceipt(pullRequest.number, expectedBody);
         } catch (error) {
-            const recovered = deliveryReceiptCandidates(port.deliveryReceipts(pullRequest.number), pullRequest);
-            if (recovered.length !== 1 || recovered[0] === undefined) {
+            const recovered = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest).at(
+                -1
+            );
+            if (recovered?.body !== expectedBody) {
                 throw error;
             }
-            receipt = recovered[0];
+            receipt = recovered;
         }
     }
-    assertCanonicalDeliveryReceipt(receipt, pullRequest, expected);
-    const verified = deliveryReceiptCandidates(port.deliveryReceipts(pullRequest.number), pullRequest);
-    if (verified.length !== 1 || verified[0]?.id !== receipt.id) {
+    if (receipt === undefined) {
         fail(`PR #${pullRequest.number} delivery receipt was not durably verified`);
     }
-    return assertCanonicalDeliveryReceipt(verified[0], pullRequest, expected);
+    assertCanonicalDeliveryReceipt(receipt, pullRequest, expected);
+    const verified = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest).at(-1);
+    if (verified === undefined || verified.id !== receipt.id || verified.body !== expectedBody) {
+        fail(`PR #${pullRequest.number} delivery receipt was not durably verified`);
+    }
+    return assertCanonicalDeliveryReceipt(verified, pullRequest, expected);
 }
 
 function validateDependent(current: PullRequestSnapshot, expected: StackedPullRequest): void {
@@ -598,11 +776,23 @@ function completeIssueAfterMerge(
     }
 }
 
-export function deliverPullRequest(number: number, port: DeliveryPort, tracker: TrackerCompletionPort): void {
+function validateAuthorAppMerger(pullRequest: PullRequestSnapshot): void {
+    if (pullRequest.state !== 'MERGED' || !isAuthorBotNodeId(pullRequest.mergedByActorNodeId)) {
+        fail(`PR #${pullRequest.number} was not merged by the author App`);
+    }
+}
+
+function deliverPullRequestWithCiAdmission(
+    number: number,
+    port: DeliveryPort,
+    tracker: TrackerCompletionPort,
+    ciAdmissionMode: CiAdmissionMode
+): void {
     port.fetch();
-    const initial = port.pullRequest(number);
-    validateBaseBranch(initial);
+    const initial = resolveStructuralMergeability(port.pullRequest(number), port);
     if (initial.state === 'MERGED') {
+        validateBaseBranch(initial);
+        validateAuthorAppMerger(initial);
         const receipt = readDeliveryReceipt(initial, port);
         const remaining = port.dependents(initial.headRefName).filter((candidate) => candidate.number !== number);
         retargetDependents(remaining, initial.baseRefName, port);
@@ -610,8 +800,9 @@ export function deliverPullRequest(number: number, port: DeliveryPort, tracker: 
         port.log(`PR #${number} was already merged; repaired ${remaining.length} remaining dependent(s)`);
         return;
     }
+    validateBaseBranch(initial);
     const initialTrackerTarget = trackerCompletionTarget(initial);
-    validatePullRequest(initial, port);
+    validatePullRequest(initial, port, ciAdmissionMode);
     validateReview(number, port.reviewState(number, initial.headRefOid));
 
     const dependents = port.dependents(initial.headRefName).filter((candidate) => candidate.number !== number);
@@ -620,23 +811,61 @@ export function deliverPullRequest(number: number, port: DeliveryPort, tracker: 
     }
     port.log(`review size: ${initial.changedFiles} file(s), +${initial.additions}/-${initial.deletions}`);
 
+    const receipt = ensureDeliveryReceipt(initial, initialTrackerTarget, port);
+
     port.fetch();
-    const current = port.pullRequest(number);
-    const currentTrackerTarget = trackerCompletionTarget(current);
-    validatePullRequest(current, port);
-    validateStableTrackerTarget(number, initialTrackerTarget, currentTrackerTarget);
-    validateStablePullRequest(initial, current);
-    validateReview(number, port.reviewState(number, current.headRefOid));
-    const currentDependents = port.dependents(current.headRefName).filter((candidate) => candidate.number !== number);
-    validateDependentSet(dependents, currentDependents);
-    for (const dependent of currentDependents) {
+    const finalSnapshot = resolveStructuralMergeability(port.pullRequest(number), port);
+    if (finalSnapshot.state === 'MERGED') {
+        validateAuthorAppMerger(finalSnapshot);
+    }
+    const finalTrackerTarget = trackerCompletionTarget(finalSnapshot);
+    validateStableTrackerTarget(number, initialTrackerTarget, finalTrackerTarget);
+    validateStablePullRequest(initial, finalSnapshot);
+    if (finalSnapshot.state === 'MERGED') {
+        validateBaseBranch(finalSnapshot);
+        const recoveredReceipt = readDeliveryReceipt(finalSnapshot, port);
+        validateStableDeliveryReceipt(number, receipt, recoveredReceipt);
+        const finalDependents = port
+            .dependents(finalSnapshot.headRefName)
+            .filter((candidate) => candidate.number !== number);
+        validateDependentSet(dependents, finalDependents);
+        for (const dependent of finalDependents) {
+            validateDependent(port.pullRequest(dependent.number), dependent);
+        }
+        retargetDependents(finalDependents, finalSnapshot.baseRefName, port);
+        completeIssueAfterMerge(number, recoveredReceipt.closingIssue, tracker);
+        port.log(`PR #${number} became merged during delivery; repaired ${finalDependents.length} dependent(s)`);
+        return;
+    }
+    validatePullRequest(finalSnapshot, port, ciAdmissionMode);
+    validateBaseBranch(finalSnapshot);
+    validateReview(number, port.reviewState(number, finalSnapshot.headRefOid));
+    const finalDependents = port
+        .dependents(finalSnapshot.headRefName)
+        .filter((candidate) => candidate.number !== number);
+    validateDependentSet(dependents, finalDependents);
+    for (const dependent of finalDependents) {
         validateDependent(port.pullRequest(dependent.number), dependent);
     }
 
-    const receipt = ensureDeliveryReceipt(current, currentTrackerTarget, port);
-    port.merge(number, current.headRefOid, currentDependents.length > 0);
-    retargetDependents(currentDependents, current.baseRefName, port);
+    port.merge(number, finalSnapshot.headRefOid, finalDependents.length > 0);
+    const mergedSnapshot = port.pullRequest(number);
+    validatePostMergeSnapshot(finalSnapshot, mergedSnapshot, number, finalTrackerTarget);
+    retargetDependents(finalDependents, finalSnapshot.baseRefName, port);
     completeIssueAfterMerge(number, receipt.closingIssue, tracker);
+}
+
+export function deliverPullRequest(number: number, port: DeliveryPort, tracker: TrackerCompletionPort): void {
+    deliverPullRequestWithCiAdmission(number, port, tracker, ACTIVE_CI_ADMISSION_MODE);
+}
+
+/** Retained as the snapshot-backed cutover path if CI becomes merge-authoritative again. */
+export function deliverPullRequestWithRequiredCi(
+    number: number,
+    port: DeliveryPort,
+    tracker: TrackerCompletionPort
+): void {
+    deliverPullRequestWithCiAdmission(number, port, tracker, 'required');
 }
 
 function capture(command: string, args: string[]): string {
@@ -722,8 +951,10 @@ type RawRollupEntry = {
     name?: unknown;
     status?: unknown;
     conclusion?: unknown;
+    startedAt?: unknown;
     context?: unknown;
     state?: unknown;
+    createdAt?: unknown;
 };
 
 const UNSETTLED_STATUS_CONTEXT_STATES = new Set(['PENDING', 'EXPECTED']);
@@ -740,8 +971,8 @@ const ROLLUP_QUERY = `query($owner:String!,$name:String!,$oid:GitObjectID!,$curs
             pageInfo{hasNextPage endCursor}
             nodes{
               __typename
-              ... on CheckRun{name status conclusion}
-              ... on StatusContext{context state}
+              ... on CheckRun{name status conclusion startedAt}
+              ... on StatusContext{context state createdAt}
             }
           }
         }
@@ -807,19 +1038,26 @@ function toHeadCheckRun(value: unknown, pullRequestNumber: number): HeadCheckRun
             name: entry.name,
             status: entry.status,
             conclusion: typeof entry.conclusion === 'string' && entry.conclusion !== '' ? entry.conclusion : null,
+            startedAt: reportedTimestamp(entry.startedAt),
         };
     }
     if (entry.__typename === 'StatusContext' && typeof entry.context === 'string' && typeof entry.state === 'string') {
-        return toStatusContextCheckRun(entry.context, entry.state);
+        // A status context carries no start of its own; its creation is when the reporting integration
+        // first spoke about this commit, which is the same ordering evidence for the same purpose.
+        return toStatusContextCheckRun(entry.context, entry.state, reportedTimestamp(entry.createdAt));
     }
     return fail(`cannot read a check on PR #${pullRequestNumber}`);
 }
 
-function toStatusContextCheckRun(name: string, state: string): HeadCheckRun {
+function reportedTimestamp(value: unknown): string | null {
+    return typeof value === 'string' && value !== '' ? value : null;
+}
+
+function toStatusContextCheckRun(name: string, state: string, startedAt: string | null): HeadCheckRun {
     if (UNSETTLED_STATUS_CONTEXT_STATES.has(state)) {
-        return { name, status: state, conclusion: null };
+        return { name, status: state, conclusion: null, startedAt };
     }
-    return { name, status: SETTLED_CHECK_STATUS, conclusion: state };
+    return { name, status: SETTLED_CHECK_STATUS, conclusion: state, startedAt };
 }
 
 function toDeliveryReceiptComment(value: unknown): DeliveryReceiptComment {
@@ -852,10 +1090,280 @@ function toDeliveryReceiptComment(value: unknown): DeliveryReceiptComment {
     };
 }
 
+function toPullRequestSnapshot(value: string, number: number): PullRequestSnapshot {
+    const parsed = parseJson<
+        Omit<PullRequestSnapshot, 'mergedByActorNodeId'> & {
+            mergedBy?: { is_bot?: unknown; login?: unknown } | null;
+        }
+    >(value, `PR #${number}`);
+    const { mergedBy: _mergedBy, ...snapshot } = parsed;
+    return {
+        ...snapshot,
+        mergedByActorNodeId: null,
+    };
+}
+
+function readMergedByActorNodeId(
+    number: number,
+    repository: { owner: string; name: string },
+    shell: Pick<ShellRunner, 'capture'>
+): string {
+    const query =
+        'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){mergedBy{__typename ... on Bot{id}}}}}';
+    const response = parseJson<{
+        data?: {
+            repository?: {
+                pullRequest?: {
+                    mergedBy?: { __typename?: unknown; id?: unknown } | null;
+                };
+            };
+        };
+    }>(
+        shell.capture('gh', [
+            'api',
+            'graphql',
+            '-f',
+            `query=${query}`,
+            '-f',
+            `owner=${repository.owner}`,
+            '-f',
+            `name=${repository.name}`,
+            '-F',
+            `number=${number}`,
+        ]),
+        `PR #${number} merger query`
+    );
+    const mergedBy = response.data?.repository?.pullRequest?.mergedBy;
+    if (mergedBy?.__typename !== 'Bot' || typeof mergedBy.id !== 'string') {
+        fail(`PR #${number} merger cannot be verified`);
+    }
+    return mergedBy.id;
+}
+
+type PullRequestReviewRecord = {
+    id: string;
+    state: string;
+    submittedAt: string | null;
+    author: { id: string | null; login: string; __typename: string } | null;
+    commitOid: string | null;
+};
+
+type ReviewThreadRecord = {
+    id: string;
+    isResolved: boolean;
+};
+
+type ReviewStatePage = {
+    pullRequestId: string;
+    headRefOid: string;
+    reviews: {
+        nodes: PullRequestReviewRecord[];
+        pageInfo: { hasPreviousPage: boolean; startCursor: string | null };
+    };
+    reviewThreads: {
+        nodes: ReviewThreadRecord[];
+        pageInfo: { hasNextPage: boolean; endCursor: string | null };
+    };
+};
+
+type CompleteReviewState = {
+    pullRequestId: string;
+    headRefOid: string;
+    reviews: PullRequestReviewRecord[];
+    reviewThreads: ReviewThreadRecord[];
+};
+
+const REVIEW_STATE_PAGE_SIZE = 100;
+const REVIEW_STATE_PAGE_LIMIT = 1_000;
+const REVIEW_STATE_QUERY = `query($owner:String!,$name:String!,$number:Int!,$reviewsBefore:String,$threadsAfter:String){repository(owner:$owner,name:$name){pullRequest(number:$number){id headRefOid reviews(last:${REVIEW_STATE_PAGE_SIZE},before:$reviewsBefore){nodes{id state submittedAt author{login __typename ... on Bot{id}} commit{oid}} pageInfo{hasPreviousPage startCursor}} reviewThreads(first:${REVIEW_STATE_PAGE_SIZE},after:$threadsAfter){nodes{id isResolved} pageInfo{hasNextPage endCursor}}}}}`;
+
+function invalidReviewState(number: number): never {
+    fail(`cannot prove complete review state for PR #${number}`);
+}
+
+function requiredReviewStateString(value: unknown, number: number): string {
+    if (typeof value !== 'string' || value.trim() === '') {
+        invalidReviewState(number);
+    }
+    return value;
+}
+
+function parseReviewAuthor(value: unknown, number: number): PullRequestReviewRecord['author'] {
+    if (value === null) {
+        return null;
+    }
+    if (!isRecord(value)) {
+        invalidReviewState(number);
+    }
+    if (value.id !== undefined && (typeof value.id !== 'string' || value.id.trim() === '')) {
+        invalidReviewState(number);
+    }
+    return {
+        id: typeof value.id === 'string' ? value.id : null,
+        login: requiredReviewStateString(value.login, number),
+        __typename: requiredReviewStateString(value.__typename, number),
+    };
+}
+
+function parseReviewRecord(value: unknown, number: number): PullRequestReviewRecord {
+    if (!isRecord(value)) {
+        invalidReviewState(number);
+    }
+    if (value.submittedAt !== null && typeof value.submittedAt !== 'string') {
+        invalidReviewState(number);
+    }
+    let commitOid: string | null = null;
+    if (value.commit !== null) {
+        if (!isRecord(value.commit)) {
+            invalidReviewState(number);
+        }
+        commitOid = requiredReviewStateString(value.commit.oid, number);
+    }
+    return {
+        id: requiredReviewStateString(value.id, number),
+        state: requiredReviewStateString(value.state, number),
+        submittedAt: value.submittedAt,
+        author: parseReviewAuthor(value.author, number),
+        commitOid,
+    };
+}
+
+function parseReviewThreadRecord(value: unknown, number: number): ReviewThreadRecord {
+    if (!isRecord(value) || typeof value.isResolved !== 'boolean') {
+        invalidReviewState(number);
+    }
+    return {
+        id: requiredReviewStateString(value.id, number),
+        isResolved: value.isResolved,
+    };
+}
+
+function parseReviewStatePage(response: string, number: number): ReviewStatePage {
+    const envelope = parseJson<unknown>(response, 'review query');
+    if (
+        !isRecord(envelope) ||
+        (Object.hasOwn(envelope, 'errors') && (!Array.isArray(envelope.errors) || envelope.errors.length > 0)) ||
+        !isRecord(envelope.data) ||
+        !isRecord(envelope.data.repository)
+    ) {
+        invalidReviewState(number);
+    }
+    const pullRequest = envelope.data.repository.pullRequest;
+    if (
+        !isRecord(pullRequest) ||
+        !isRecord(pullRequest.reviews) ||
+        !Array.isArray(pullRequest.reviews.nodes) ||
+        !isRecord(pullRequest.reviews.pageInfo) ||
+        typeof pullRequest.reviews.pageInfo.hasPreviousPage !== 'boolean' ||
+        (pullRequest.reviews.pageInfo.startCursor !== null &&
+            typeof pullRequest.reviews.pageInfo.startCursor !== 'string') ||
+        !isRecord(pullRequest.reviewThreads) ||
+        !Array.isArray(pullRequest.reviewThreads.nodes) ||
+        !isRecord(pullRequest.reviewThreads.pageInfo) ||
+        typeof pullRequest.reviewThreads.pageInfo.hasNextPage !== 'boolean' ||
+        (pullRequest.reviewThreads.pageInfo.endCursor !== null &&
+            typeof pullRequest.reviewThreads.pageInfo.endCursor !== 'string')
+    ) {
+        invalidReviewState(number);
+    }
+    return {
+        pullRequestId: requiredReviewStateString(pullRequest.id, number),
+        headRefOid: requiredReviewStateString(pullRequest.headRefOid, number),
+        reviews: {
+            nodes: pullRequest.reviews.nodes.map((node) => parseReviewRecord(node, number)),
+            pageInfo: {
+                hasPreviousPage: pullRequest.reviews.pageInfo.hasPreviousPage,
+                startCursor: pullRequest.reviews.pageInfo.startCursor,
+            },
+        },
+        reviewThreads: {
+            nodes: pullRequest.reviewThreads.nodes.map((node) => parseReviewThreadRecord(node, number)),
+            pageInfo: {
+                hasNextPage: pullRequest.reviewThreads.pageInfo.hasNextPage,
+                endCursor: pullRequest.reviewThreads.pageInfo.endCursor,
+            },
+        },
+    };
+}
+
+function nextReviewStateCursor(number: number, cursor: string | null, seen: Set<string>): string {
+    if (cursor === null || cursor.trim() === '' || seen.has(cursor)) {
+        fail(`cannot prove complete review state for PR #${number}`);
+    }
+    seen.add(cursor);
+    return cursor;
+}
+
+function assertReviewStatePageBudget(number: number, pagesRead: number): void {
+    if (pagesRead >= REVIEW_STATE_PAGE_LIMIT) {
+        fail(`cannot prove complete review state for PR #${number}`);
+    }
+}
+
+function assertReviewStatePageIdentity(
+    number: number,
+    page: ReviewStatePage,
+    pullRequestId: string,
+    expectedHead: string
+): void {
+    if (page.pullRequestId !== pullRequestId || page.headRefOid !== expectedHead) {
+        invalidReviewState(number);
+    }
+}
+
+function readCompleteReviewState(
+    number: number,
+    expectedHead: string,
+    expectedPullRequestId: string | undefined,
+    readPage: (reviewsBefore: string | null, threadsAfter: string | null) => ReviewStatePage
+): CompleteReviewState {
+    const initialPage = readPage(null, null);
+    const pullRequestId = expectedPullRequestId ?? initialPage.pullRequestId;
+    assertReviewStatePageIdentity(number, initialPage, pullRequestId, expectedHead);
+    const reviewPages = [initialPage.reviews.nodes];
+    const reviewCursors = new Set<string>();
+    let reviewPage = initialPage.reviews;
+    let reviewPagesRead = 1;
+    while (reviewPage.pageInfo.hasPreviousPage) {
+        assertReviewStatePageBudget(number, reviewPagesRead);
+        const cursor = nextReviewStateCursor(number, reviewPage.pageInfo.startCursor, reviewCursors);
+        const nextPage = readPage(cursor, null);
+        assertReviewStatePageIdentity(number, nextPage, pullRequestId, expectedHead);
+        reviewPage = nextPage.reviews;
+        reviewPages.push(reviewPage.nodes);
+        reviewPagesRead += 1;
+    }
+
+    const reviewThreads = [...initialPage.reviewThreads.nodes];
+    const threadCursors = new Set<string>();
+    let threadPage = initialPage.reviewThreads;
+    let threadPagesRead = 1;
+    while (threadPage.pageInfo.hasNextPage) {
+        assertReviewStatePageBudget(number, threadPagesRead);
+        const cursor = nextReviewStateCursor(number, threadPage.pageInfo.endCursor, threadCursors);
+        const nextPage = readPage(null, cursor);
+        assertReviewStatePageIdentity(number, nextPage, pullRequestId, expectedHead);
+        threadPage = nextPage.reviewThreads;
+        reviewThreads.push(...threadPage.nodes);
+        threadPagesRead += 1;
+    }
+
+    return {
+        pullRequestId,
+        headRefOid: expectedHead,
+        reviews: reviewPages.reverse().flat(),
+        reviewThreads,
+    };
+}
+
 export function shellPort(
     repository: string,
     shell: ShellRunner = { capture, run },
-    options: { gitToken?: string; helperDir?: string } = {}
+    options: {
+        gitToken?: string;
+        helperDir?: string;
+        markRemoteMutationAttempt?: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt'];
+    } = {}
 ): DeliveryPort {
     const [owner, name] = repository.split('/');
     if (owner === undefined || name === undefined) {
@@ -871,11 +1379,13 @@ export function shellPort(
         'headRefOid',
         'baseRefName',
         'baseRefOid',
+        'mergeable',
         'mergeStateStatus',
         'reviewDecision',
         'changedFiles',
         'additions',
         'deletions',
+        'mergedBy',
     ].join(',');
     const readRollupPage = (number: number, headRefOid: string, cursor: string | null): RollupPage =>
         parseRollupPage(
@@ -913,71 +1423,59 @@ export function shellPort(
             }
             shell.run('git', ['fetch', '--prune', 'origin']);
         },
-        pullRequest: (number) =>
-            parseJson<PullRequestSnapshot>(
+        pullRequest: (number) => {
+            const snapshot = toPullRequestSnapshot(
                 shell.capture('gh', ['pr', 'view', String(number), '--repo', repository, '--json', pullRequestFields]),
-                `PR #${number}`
-            ),
+                number
+            );
+            if (snapshot.state !== 'MERGED') {
+                return snapshot;
+            }
+            return {
+                ...snapshot,
+                mergedByActorNodeId: readMergedByActorNodeId(number, { owner, name }, shell),
+            };
+        },
         headCheckRuns: (number, headRefOid) =>
             readHeadCheckRuns(number, (cursor) => readRollupPage(number, headRefOid, cursor)),
         gateRequiredCheckNames: () => readGateRequiredCheckNames(),
         reviewState: (number, expectedHead) => {
-            const query = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviews(last:100){nodes{state submittedAt author{login __typename ... on Bot{id}} commit{oid}} pageInfo{hasPreviousPage}} reviewThreads(first:100){nodes{isResolved} pageInfo{hasNextPage}}}}}`;
-            const response = parseJson<{
-                data?: {
-                    repository?: {
-                        pullRequest?: {
-                            reviews: {
-                                nodes: Array<{
-                                    state: string;
-                                    submittedAt?: string | null;
-                                    author: { id?: string; login: string; __typename: string } | null;
-                                    commit: { oid: string } | null;
-                                }>;
-                                pageInfo: { hasPreviousPage: boolean };
-                            };
-                            reviewThreads: {
-                                nodes: Array<{ isResolved: boolean }>;
-                                pageInfo: { hasNextPage: boolean };
-                            };
-                        };
-                    };
-                };
-            }>(
-                shell.capture('gh', [
-                    'api',
-                    'graphql',
-                    '-f',
-                    `query=${query}`,
-                    '-f',
-                    `owner=${owner}`,
-                    '-f',
-                    `name=${name}`,
-                    '-F',
-                    `number=${number}`,
-                ]),
-                'review query'
-            );
-            const review = response.data?.repository?.pullRequest;
-            if (
-                review === undefined ||
-                review.reviews.pageInfo.hasPreviousPage ||
-                review.reviewThreads.pageInfo.hasNextPage
-            ) {
-                fail(`cannot prove complete review state for PR #${number}`);
+            const readPage = (reviewsBefore: string | null, threadsAfter: string | null) =>
+                parseReviewStatePage(
+                    shell.capture('gh', [
+                        'api',
+                        'graphql',
+                        '-f',
+                        `query=${REVIEW_STATE_QUERY}`,
+                        '-f',
+                        `owner=${owner}`,
+                        '-f',
+                        `name=${name}`,
+                        '-F',
+                        `number=${number}`,
+                        ...(reviewsBefore === null ? [] : ['-f', `reviewsBefore=${reviewsBefore}`]),
+                        ...(threadsAfter === null ? [] : ['-f', `threadsAfter=${threadsAfter}`]),
+                    ]),
+                    number
+                );
+            const firstScan = readCompleteReviewState(number, expectedHead, undefined, readPage);
+            const secondScan = readCompleteReviewState(number, expectedHead, firstScan.pullRequestId, readPage);
+            if (!isDeepStrictEqual(firstScan, secondScan)) {
+                fail(`cannot prove stable review state for PR #${number}`);
             }
-            const onHead = review.reviews.nodes.filter(
+            const review = secondScan;
+            const onHead = review.reviews.filter(
                 (candidate) =>
                     candidate.state !== 'DISMISSED' &&
                     candidate.state !== 'PENDING' &&
-                    candidate.commit?.oid === expectedHead &&
+                    candidate.commitOid === expectedHead &&
                     candidate.author?.__typename === 'Bot' &&
                     isReviewerBotNodeId(candidate.author.id)
             );
             onHead.sort((left, right) => (left.submittedAt ?? '').localeCompare(right.submittedAt ?? ''));
             return {
                 latestReviewerStateOnHead: onHead.at(-1)?.state ?? null,
-                unresolvedThreads: review.reviewThreads.nodes.filter((thread) => !thread.isResolved).length,
+                unresolvedThreads: review.reviewThreads.filter((thread) => !thread.isResolved).length,
             };
         },
         dependents: (baseBranch) => {
@@ -1014,6 +1512,7 @@ export function shellPort(
             if (hasDependents && policy.deletesMergedBranches) {
                 fail('automatic merged-branch deletion must be disabled before delivering a stacked PR');
             }
+            options.markRemoteMutationAttempt?.();
             const result = parseJson<{ merged: boolean; message: string }>(
                 shell.capture('gh', [
                     'api',
@@ -1031,7 +1530,8 @@ export function shellPort(
                 fail(`PR #${number} was not merged: ${result.message}`);
             }
         },
-        retarget: (number, baseBranch) =>
+        retarget: (number, baseBranch) => {
+            options.markRemoteMutationAttempt?.();
             shell.run('gh', [
                 'api',
                 '--method',
@@ -1040,7 +1540,10 @@ export function shellPort(
                 '-f',
                 `base=${baseBranch}`,
                 '--silent',
-            ]),
+            ]);
+        },
+        // REST issue comments are returned in ascending comment-ID order. Pagination, flattening,
+        // and filtering preserve that immutable order; receipt authority must never sort by time.
         deliveryReceipts: (number) => {
             const pages = parseJson<unknown>(
                 shell.capture('gh', [
@@ -1060,8 +1563,9 @@ export function shellPort(
             }
             return comments;
         },
-        addDeliveryReceipt: (number, body) =>
-            toDeliveryReceiptComment(
+        addDeliveryReceipt: (number, body) => {
+            options.markRemoteMutationAttempt?.();
+            return toDeliveryReceiptComment(
                 parseJson<unknown>(
                     shell.capture('gh', [
                         'api',
@@ -1073,7 +1577,8 @@ export function shellPort(
                     ]),
                     `delivery receipt for PR #${number}`
                 )
-            ),
+            );
+        },
         log: (message) => console.log(message),
     };
 }
@@ -1100,12 +1605,21 @@ export type DeliveryAuthentication = {
     session: { configDir: string; env: NodeJS.ProcessEnv; dispose: () => void };
 };
 
+export type DeliverySerialization = PullRequestMutationSerialization;
+export { withPullRequestMutationLock as withPullRequestDeliveryLock };
+
 export type DeliveryCoordinatorDependencies = {
     primaryRoot: () => string;
+    serializeDelivery: DeliverySerialization;
     authenticateAuthor: (primaryRoot: string) => Promise<DeliveryAuthentication>;
     authenticateTracker: (primaryRoot: string) => Promise<DeliveryAuthentication>;
     repositoryName: (session: DeliveryAuthentication['session'], primaryRoot: string) => string;
-    deliveryPort: (repository: string, authentication: DeliveryAuthentication, primaryRoot: string) => DeliveryPort;
+    deliveryPort: (
+        repository: string,
+        authentication: DeliveryAuthentication,
+        primaryRoot: string,
+        markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt']
+    ) => DeliveryPort;
     trackerPort: (session: DeliveryAuthentication['session']) => ReconcileTrackerIssuePort;
     completeIssue: (issueNumber: number, actorNodeId: string, port: ReconcileTrackerIssuePort) => void;
     deliver: (number: number, port: DeliveryPort, tracker: TrackerCompletionPort) => void;
@@ -1114,6 +1628,7 @@ export type DeliveryCoordinatorDependencies = {
 function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinatorDependencies {
     return {
         primaryRoot: () => resolvePrimaryRoot(),
+        serializeDelivery: withPullRequestMutationLock,
         authenticateAuthor: (primaryRoot) => authenticateRole({ primaryRoot, role: 'author' }),
         authenticateTracker: (primaryRoot) => authenticateTrackerAuthor({ primaryRoot }),
         repositoryName: (session, primaryRoot) =>
@@ -1121,7 +1636,7 @@ function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinato
                 env: session.env,
                 cwd: primaryRoot,
             }),
-        deliveryPort: (repository, authentication, primaryRoot) => {
+        deliveryPort: (repository, authentication, primaryRoot, markRemoteMutationAttempt) => {
             const shell: ShellRunner = {
                 capture: (command, args) =>
                     spawnCapture(command, args, { env: authentication.session.env, cwd: primaryRoot }),
@@ -1130,6 +1645,7 @@ function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinato
             return shellPort(repository, shell, {
                 gitToken: authentication.minted.token,
                 helperDir: authentication.session.configDir,
+                markRemoteMutationAttempt,
             });
         },
         trackerPort: (session) => trackerIssueShellPort(session, cwd),
@@ -1138,30 +1654,56 @@ function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinato
     };
 }
 
+function markTrackerMutationAttempts(
+    port: ReconcileTrackerIssuePort,
+    markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt']
+): ReconcileTrackerIssuePort {
+    return {
+        ...port,
+        update: (number, input) => {
+            markRemoteMutationAttempt();
+            return port.update(number, input);
+        },
+        comment: (number, body) => {
+            markRemoteMutationAttempt();
+            return port.comment(number, body);
+        },
+    };
+}
+
 export async function coordinateDelivery(
     number: number,
     dependencies: DeliveryCoordinatorDependencies = defaultDeliveryCoordinatorDependencies(process.cwd())
 ): Promise<void> {
     const primaryRoot = dependencies.primaryRoot();
-    const authorAuth = await dependencies.authenticateAuthor(primaryRoot);
-    let trackerAuth: DeliveryAuthentication | undefined;
-    try {
-        if (!isAuthorBotNodeId(authorAuth.minted.actorNodeId)) {
-            fail(`minted actor ${authorAuth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
+    await dependencies.serializeDelivery(primaryRoot, number, async ({ markRemoteMutationAttempt }) => {
+        const authorAuth = await dependencies.authenticateAuthor(primaryRoot);
+        let trackerAuth: DeliveryAuthentication | undefined;
+        try {
+            if (!isAuthorBotNodeId(authorAuth.minted.actorNodeId)) {
+                fail(`minted actor ${authorAuth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
+            }
+            const repository = dependencies.repositoryName(authorAuth.session, primaryRoot);
+            assertRequiredRepository(repository);
+            const authenticatedTracker = await dependencies.authenticateTracker(primaryRoot);
+            trackerAuth = authenticatedTracker;
+            const trackerPort = markTrackerMutationAttempts(
+                dependencies.trackerPort(authenticatedTracker.session),
+                markRemoteMutationAttempt
+            );
+            dependencies.deliver(
+                number,
+                dependencies.deliveryPort(repository, authorAuth, primaryRoot, markRemoteMutationAttempt),
+                {
+                    complete: (issueNumber) =>
+                        dependencies.completeIssue(issueNumber, authenticatedTracker.minted.actorNodeId, trackerPort),
+                }
+            );
+        } finally {
+            trackerAuth?.session.dispose();
+            authorAuth.session.dispose();
         }
-        const repository = dependencies.repositoryName(authorAuth.session, primaryRoot);
-        assertRequiredRepository(repository);
-        const authenticatedTracker = await dependencies.authenticateTracker(primaryRoot);
-        trackerAuth = authenticatedTracker;
-        const trackerPort = dependencies.trackerPort(authenticatedTracker.session);
-        dependencies.deliver(number, dependencies.deliveryPort(repository, authorAuth, primaryRoot), {
-            complete: (issueNumber) =>
-                dependencies.completeIssue(issueNumber, authenticatedTracker.minted.actorNodeId, trackerPort),
-        });
-    } finally {
-        trackerAuth?.session.dispose();
-        authorAuth.session.dispose();
-    }
+    });
 }
 
 export async function runDeliverCli(args: string[], dependencies?: DeliveryCoordinatorDependencies): Promise<number> {

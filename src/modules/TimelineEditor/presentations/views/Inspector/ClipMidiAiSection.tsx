@@ -603,7 +603,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
 
     // Label for the Variations button — "Streaming… N chars" during cloud streaming
     // (tokens arrive incrementally), plain "Generating…" for browser-local one-shot work.
-    const variationsButtonLabel = (() => {
+    const variationsButtonLabel = (): string => {
         if (!isGeneratingVariations) {
             return 'Generate';
         }
@@ -611,349 +611,320 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
             return `Streaming… ${String(variationTokenCount)} chars`;
         }
         return 'Generating…';
-    })();
-    const renderIife_12 = () => {
-        if (isUnsupported) {
-            return null;
-        } else {
-            const renderIife_13 = () => {
-                if (vocalMode === 'spoken') {
-                    return (() => {
-                        if (kokoroStatus === 'downloading') {
-                            return (
-                                <Stack gap={1.5}>
-                                    <p className="text-[9px] text-muted-foreground">Downloading voice model…</p>
-                                    <div
-                                        className="w-full h-1 bg-border/40 rounded-full overflow-hidden"
-                                        role="progressbar"
-                                        aria-valuenow={Math.round(kokoroProgress * 100)}
-                                        aria-valuemin={0}
-                                        aria-valuemax={100}
-                                    >
-                                        <div
-                                            className="h-full bg-[var(--color-accent-peach)] transition-all"
-                                            style={{
-                                                width: `${Math.round(kokoroProgress * 100)}%`,
-                                            }}
-                                        />
-                                    </div>
-                                    <p className="text-[9px] text-muted-foreground/60 tabular-nums">
-                                        {Math.round(kokoroProgress * 100)}%
-                                    </p>
-                                </Stack>
-                            );
-                        } else {
-                            if (kokoroStatus !== 'ready') {
-                                return (
-                                    <DawEmptyState
-                                        compact
-                                        title="Download a voice to get started"
-                                        description="Type text and generate a spoken vocal scratch track."
-                                        action={
-                                            <Button
-                                                variant="secondary"
-                                                size="xs"
-                                                className="h-6 text-[10px] bg-[var(--color-accent-peach)]/20 hover:bg-[var(--color-accent-peach)]/40 text-[var(--color-accent-peach)]"
-                                                onClick={handleDownloadKokoro}
-                                            >
-                                                <Download className="size-3 mr-1" aria-hidden="true" />
-                                                Download Voice Model
-                                                <DawMicroBadge tone="muted" className="ml-1.5">
-                                                    ~86 MB
-                                                </DawMicroBadge>
-                                            </Button>
-                                        }
-                                    />
-                                );
-                            } else {
-                                return (
-                                    <Stack gap={2}>
-                                        <Stack gap={1}>
-                                            <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">
-                                                Text
-                                            </label>
-                                            <DawCompactTextarea
-                                                value={ttsText}
-                                                onChange={(event) => setTtsText(event.target.value)}
-                                                placeholder="Type lyrics or text…"
-                                                rows={2}
-                                                aria-label="TTS text"
-                                            />
-                                        </Stack>
-                                        <Stack gap={1}>
-                                            <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">
-                                                Voice
-                                            </label>
-                                            <KokoroVoiceSelector
-                                                value={ttsVoiceId}
-                                                onChange={setTtsVoiceId}
-                                                disabled={isRenderingTts}
-                                            />
-                                        </Stack>
-                                        <Stack gap={1}>
-                                            <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">
-                                                Speed
-                                            </label>
-                                            <DawCompactSelect
-                                                value={ttsSpeed}
-                                                onChange={(event) => setTtsSpeed(event.target.value)}
-                                                aria-label="Speed"
-                                                className="w-full"
-                                            >
-                                                <option value="0.5">0.5× Slow</option>
-                                                <option value="0.75">0.75×</option>
-                                                <option value="1.0">1.0× Normal</option>
-                                                <option value="1.25">1.25×</option>
-                                                <option value="1.5">1.5× Fast</option>
-                                                <option value="2.0">2.0× Very fast</option>
-                                            </DawCompactSelect>
-                                        </Stack>
-                                        <Button
-                                            variant="secondary"
-                                            size="xs"
-                                            className="w-full h-6 text-[10px] bg-[var(--color-accent-peach)]/20 hover:bg-[var(--color-accent-peach)]/40 text-[var(--color-accent-peach)]"
-                                            onClick={handlePreviewVoice}
-                                            disabled={isRenderingTts || !ttsText.trim()}
-                                        >
-                                            {isRenderingTts ? (
-                                                <>
-                                                    <Loader2 className="size-3 mr-1 animate-spin" aria-hidden="true" />{' '}
-                                                    Rendering…
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <Mic className="size-3 mr-1" aria-hidden="true" /> Render 3
-                                                    Alternatives
-                                                </>
-                                            )}
-                                        </Button>
-                                        {ttsResults.length > 0 ? (
-                                            <Stack gap={1} className="pt-1">
-                                                <p className="text-[8px] text-muted-foreground/50 uppercase tracking-wider">
-                                                    Drag onto an audio track
-                                                </p>
-                                                {ttsResults.map((r) => (
-                                                    <AiRenderClipPreview
-                                                        key={r.label}
-                                                        audio={r.audio}
-                                                        sampleRate={r.sampleRate}
-                                                        label={r.label}
-                                                        name={r.name}
-                                                    />
-                                                ))}
-                                            </Stack>
-                                        ) : null}
-                                    </Stack>
-                                );
-                            }
-                        }
-                    })();
-                } else {
-                    if (voicebanks.length === 0) {
-                        return (
-                            <DawEmptyState
-                                compact
-                                title="No singing voices downloaded"
-                                description="Download a singing voice to render your MIDI notes as vocals."
-                                action={
-                                    <Button
-                                        variant="secondary"
-                                        size="xs"
-                                        className="h-6 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
-                                        onClick={openPreferencesDialog}
-                                    >
-                                        <Download className="size-3 mr-1" aria-hidden="true" />
-                                        Browse Singing Voices
-                                        <DawMicroBadge tone="muted" className="ml-1.5">
-                                            ~150 MB each
-                                        </DawMicroBadge>
-                                    </Button>
-                                }
-                            />
-                        );
-                    } else {
-                        const renderIife_14 = () => {
-                            if (vocoderStatus === 'downloading') {
-                                return (
-                                    <Stack gap={1.5}>
-                                        <p className="text-[9px] text-muted-foreground">Downloading singing engine…</p>
-                                        <div
-                                            className="w-full h-1 bg-border/40 rounded-full overflow-hidden"
-                                            role="progressbar"
-                                            aria-valuenow={Math.round(vocoderProgress * 100)}
-                                            aria-valuemin={0}
-                                            aria-valuemax={100}
-                                        >
-                                            <div
-                                                className="h-full bg-[var(--color-accent-lavender)] transition-all"
-                                                style={{
-                                                    width: `${Math.round(vocoderProgress * 100)}%`,
-                                                }}
-                                            />
-                                        </div>
-                                        <p className="text-[9px] text-muted-foreground/60 tabular-nums">
-                                            {Math.round(vocoderProgress * 100)}%
-                                        </p>
-                                    </Stack>
-                                );
-                            } else {
-                                if (vocoderStatus !== 'ready') {
-                                    return (
-                                        <Stack gap={1.5}>
-                                            <p className="text-[9px] text-muted-foreground/70">
-                                                {vocoderStatus === 'error'
-                                                    ? 'Download failed — check your connection and try again.'
-                                                    : 'A singing engine is also required to render audio.'}
-                                            </p>
-                                            <DawMicroBadge tone="muted">Unavailable</DawMicroBadge>
-                                        </Stack>
-                                    );
-                                } else {
-                                    return (
-                                        <>
-                                            <Button
-                                                variant="secondary"
-                                                size="xs"
-                                                className="w-full h-6 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
-                                                onClick={handleRenderSinging}
-                                                disabled={isRenderingSvs}
-                                            >
-                                                {isRenderingSvs ? (
-                                                    <>
-                                                        <Loader2
-                                                            className="size-3 mr-1 animate-spin"
-                                                            aria-hidden="true"
-                                                        />{' '}
-                                                        Rendering…
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <AudioLines className="size-3 mr-1" aria-hidden="true" /> Render
-                                                        3 Alternatives
-                                                    </>
-                                                )}
-                                            </Button>
-                                            {svsResults.length > 0 ? (
-                                                <Stack gap={1} className="pt-1">
-                                                    <p className="text-[8px] text-muted-foreground/50 uppercase tracking-wider">
-                                                        Drag onto an audio track
-                                                    </p>
-                                                    {svsResults.map((r) => (
-                                                        <AiRenderClipPreview
-                                                            key={r.label}
-                                                            audio={r.audio}
-                                                            sampleRate={r.sampleRate}
-                                                            label={r.label}
-                                                            name={r.name}
-                                                        />
-                                                    ))}
-                                                </Stack>
-                                            ) : null}
-                                        </>
-                                    );
-                                }
-                            }
-                        };
+    };
 
-                        return (
-                            <Stack gap={2}>
-                                <Stack gap={1}>
-                                    <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">
-                                        Voice
-                                    </label>
-                                    <DawCompactSelect
-                                        value={selectedVoicebankId}
-                                        onChange={(event) => setSelectedVoicebankId(event.target.value)}
-                                        aria-label="Voicebank"
-                                        className="w-full"
-                                    >
-                                        {voicebanks.map((vb) => (
-                                            <option key={vb.id} value={vb.id}>
-                                                {vb.name}
-                                            </option>
-                                        ))}
-                                    </DawCompactSelect>
-                                </Stack>
-                                <Stack gap={1}>
-                                    <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">
-                                        Lyrics
-                                    </label>
-                                    <DawCompactTextarea
-                                        value={diffSingerLyrics}
-                                        onChange={(event) => setDiffSingerLyrics(event.target.value)}
-                                        placeholder="Type lyrics… (leave blank for la la la)"
-                                        rows={2}
-                                        aria-label="Singing lyrics"
-                                    />
-                                </Stack>
-                                <Stack gap={1}>
-                                    <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">
-                                        Quality
-                                    </label>
-                                    <DawCompactSelect
-                                        value={svsRenderQuality}
-                                        onChange={(event) => {
-                                            const opt = QUALITY_OPTIONS.find(
-                                                (output) => output.value === event.target.value
-                                            );
-                                            if (opt) {
-                                                setSvsRenderQuality(opt.value);
-                                            }
-                                        }}
-                                        aria-label="Render quality"
-                                        className="w-full"
-                                    >
-                                        {QUALITY_OPTIONS.map((opt) => (
-                                            <option key={opt.value} value={opt.value}>
-                                                {opt.label}
-                                            </option>
-                                        ))}
-                                    </DawCompactSelect>
-                                </Stack>
-                                {renderIife_14()}
-                            </Stack>
-                        );
-                    }
-                }
-            };
-
+    const renderSpokenContent = (): ReactElement => {
+        if (kokoroStatus === 'downloading') {
             return (
-                <DawPluginSectionCard
-                    title="Vocals"
-                    detail={<Mic className="size-3 text-[var(--color-accent-peach)]" aria-hidden="true" />}
-                    detailMode="badge"
-                >
-                    {/* Mode toggle */}
-                    <Row align="stretch" gap={1} className="mb-2">
-                        <Button
-                            variant="bare"
-                            size="bare"
-                            type="button"
-                            onClick={() => setVocalMode('spoken')}
-                            className={`flex-1 h-5 text-[9px] font-medium rounded transition-colors ${
-                                vocalMode === 'spoken'
-                                    ? 'bg-[var(--color-accent-peach)]/20 text-[var(--color-accent-peach)]'
-                                    : 'bg-surface-overlay/50 text-muted-foreground/60 hover:text-muted-foreground'
-                            }`}
-                        >
-                            Spoken
-                        </Button>
-                        <Button
-                            variant="bare"
-                            size="bare"
-                            type="button"
-                            disabled
-                            className="flex-1 h-5 text-[9px] font-medium rounded bg-surface-overlay/30 text-muted-foreground/40"
-                            title="Singing synthesis requires an admitted vocoder"
-                        >
-                            Sung unavailable
-                        </Button>
-                    </Row>
-                    {/* ── Spoken mode (Kokoro TTS) ── */}
-                    {renderIife_13()}
-                </DawPluginSectionCard>
+                <Stack gap={1.5}>
+                    <p className="text-[9px] text-muted-foreground">Downloading voice model…</p>
+                    <div
+                        className="w-full h-1 bg-border/40 rounded-full overflow-hidden"
+                        role="progressbar"
+                        aria-valuenow={Math.round(kokoroProgress * 100)}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                    >
+                        <div
+                            className="h-full bg-[var(--color-accent-peach)] transition-all"
+                            style={{
+                                width: `${Math.round(kokoroProgress * 100)}%`,
+                            }}
+                        />
+                    </div>
+                    <p className="text-[9px] text-muted-foreground/60 tabular-nums">
+                        {Math.round(kokoroProgress * 100)}%
+                    </p>
+                </Stack>
             );
         }
+        if (kokoroStatus !== 'ready') {
+            return (
+                <DawEmptyState
+                    compact
+                    title="Download a voice to get started"
+                    description="Type text and generate a spoken vocal scratch track."
+                    action={
+                        <Button
+                            variant="secondary"
+                            size="xs"
+                            className="h-6 text-[10px] bg-[var(--color-accent-peach)]/20 hover:bg-[var(--color-accent-peach)]/40 text-[var(--color-accent-peach)]"
+                            onClick={handleDownloadKokoro}
+                        >
+                            <Download className="size-3 mr-1" aria-hidden="true" />
+                            Download Voice Model
+                            <DawMicroBadge tone="muted" className="ml-1.5">
+                                ~86 MB
+                            </DawMicroBadge>
+                        </Button>
+                    }
+                />
+            );
+        }
+        return (
+            <Stack gap={2}>
+                <Stack gap={1}>
+                    <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">Text</label>
+                    <DawCompactTextarea
+                        value={ttsText}
+                        onChange={(event) => setTtsText(event.target.value)}
+                        placeholder="Type lyrics or text…"
+                        rows={2}
+                        aria-label="TTS text"
+                    />
+                </Stack>
+                <Stack gap={1}>
+                    <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">Voice</label>
+                    <KokoroVoiceSelector value={ttsVoiceId} onChange={setTtsVoiceId} disabled={isRenderingTts} />
+                </Stack>
+                <Stack gap={1}>
+                    <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">Speed</label>
+                    <DawCompactSelect
+                        value={ttsSpeed}
+                        onChange={(event) => setTtsSpeed(event.target.value)}
+                        aria-label="Speed"
+                        className="w-full"
+                    >
+                        <option value="0.5">0.5× Slow</option>
+                        <option value="0.75">0.75×</option>
+                        <option value="1.0">1.0× Normal</option>
+                        <option value="1.25">1.25×</option>
+                        <option value="1.5">1.5× Fast</option>
+                        <option value="2.0">2.0× Very fast</option>
+                    </DawCompactSelect>
+                </Stack>
+                <Button
+                    variant="secondary"
+                    size="xs"
+                    className="w-full h-6 text-[10px] bg-[var(--color-accent-peach)]/20 hover:bg-[var(--color-accent-peach)]/40 text-[var(--color-accent-peach)]"
+                    onClick={handlePreviewVoice}
+                    disabled={isRenderingTts || !ttsText.trim()}
+                >
+                    {isRenderingTts ? (
+                        <>
+                            <Loader2 className="size-3 mr-1 animate-spin" aria-hidden="true" /> Rendering…
+                        </>
+                    ) : (
+                        <>
+                            <Mic className="size-3 mr-1" aria-hidden="true" /> Render 3 Alternatives
+                        </>
+                    )}
+                </Button>
+                {ttsResults.length > 0 ? (
+                    <Stack gap={1} className="pt-1">
+                        <p className="text-[8px] text-muted-foreground/50 uppercase tracking-wider">
+                            Drag onto an audio track
+                        </p>
+                        {ttsResults.map((r) => (
+                            <AiRenderClipPreview
+                                key={r.label}
+                                audio={r.audio}
+                                sampleRate={r.sampleRate}
+                                label={r.label}
+                                name={r.name}
+                            />
+                        ))}
+                    </Stack>
+                ) : null}
+            </Stack>
+        );
+    };
+
+    const renderSungEngineContent = (): ReactElement => {
+        if (vocoderStatus === 'downloading') {
+            return (
+                <Stack gap={1.5}>
+                    <p className="text-[9px] text-muted-foreground">Downloading singing engine…</p>
+                    <div
+                        className="w-full h-1 bg-border/40 rounded-full overflow-hidden"
+                        role="progressbar"
+                        aria-valuenow={Math.round(vocoderProgress * 100)}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                    >
+                        <div
+                            className="h-full bg-[var(--color-accent-lavender)] transition-all"
+                            style={{
+                                width: `${Math.round(vocoderProgress * 100)}%`,
+                            }}
+                        />
+                    </div>
+                    <p className="text-[9px] text-muted-foreground/60 tabular-nums">
+                        {Math.round(vocoderProgress * 100)}%
+                    </p>
+                </Stack>
+            );
+        }
+        if (vocoderStatus !== 'ready') {
+            return (
+                <Stack gap={1.5}>
+                    <p className="text-[9px] text-muted-foreground/70">
+                        {vocoderStatus === 'error'
+                            ? 'Download failed — check your connection and try again.'
+                            : 'A singing engine is also required to render audio.'}
+                    </p>
+                    <DawMicroBadge tone="muted">Unavailable</DawMicroBadge>
+                </Stack>
+            );
+        }
+        return (
+            <>
+                <Button
+                    variant="secondary"
+                    size="xs"
+                    className="w-full h-6 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
+                    onClick={handleRenderSinging}
+                    disabled={isRenderingSvs}
+                >
+                    {isRenderingSvs ? (
+                        <>
+                            <Loader2 className="size-3 mr-1 animate-spin" aria-hidden="true" /> Rendering…
+                        </>
+                    ) : (
+                        <>
+                            <AudioLines className="size-3 mr-1" aria-hidden="true" /> Render 3 Alternatives
+                        </>
+                    )}
+                </Button>
+                {svsResults.length > 0 ? (
+                    <Stack gap={1} className="pt-1">
+                        <p className="text-[8px] text-muted-foreground/50 uppercase tracking-wider">
+                            Drag onto an audio track
+                        </p>
+                        {svsResults.map((r) => (
+                            <AiRenderClipPreview
+                                key={r.label}
+                                audio={r.audio}
+                                sampleRate={r.sampleRate}
+                                label={r.label}
+                                name={r.name}
+                            />
+                        ))}
+                    </Stack>
+                ) : null}
+            </>
+        );
+    };
+
+    const renderVocalModeContent = (): ReactElement => {
+        if (vocalMode === 'spoken') {
+            return renderSpokenContent();
+        }
+        if (voicebanks.length === 0) {
+            return (
+                <DawEmptyState
+                    compact
+                    title="No singing voices downloaded"
+                    description="Download a singing voice to render your MIDI notes as vocals."
+                    action={
+                        <Button
+                            variant="secondary"
+                            size="xs"
+                            className="h-6 text-[10px] bg-[var(--color-accent-lavender)]/20 hover:bg-[var(--color-accent-lavender)]/40 text-[var(--color-accent-lavender)]"
+                            onClick={openPreferencesDialog}
+                        >
+                            <Download className="size-3 mr-1" aria-hidden="true" />
+                            Browse Singing Voices
+                            <DawMicroBadge tone="muted" className="ml-1.5">
+                                ~150 MB each
+                            </DawMicroBadge>
+                        </Button>
+                    }
+                />
+            );
+        }
+        return (
+            <Stack gap={2}>
+                <Stack gap={1}>
+                    <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">Voice</label>
+                    <DawCompactSelect
+                        value={selectedVoicebankId}
+                        onChange={(event) => setSelectedVoicebankId(event.target.value)}
+                        aria-label="Voicebank"
+                        className="w-full"
+                    >
+                        {voicebanks.map((vb) => (
+                            <option key={vb.id} value={vb.id}>
+                                {vb.name}
+                            </option>
+                        ))}
+                    </DawCompactSelect>
+                </Stack>
+                <Stack gap={1}>
+                    <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">Lyrics</label>
+                    <DawCompactTextarea
+                        value={diffSingerLyrics}
+                        onChange={(event) => setDiffSingerLyrics(event.target.value)}
+                        placeholder="Type lyrics… (leave blank for la la la)"
+                        rows={2}
+                        aria-label="Singing lyrics"
+                    />
+                </Stack>
+                <Stack gap={1}>
+                    <label className="text-[9px] text-muted-foreground/70 uppercase tracking-wider">Quality</label>
+                    <DawCompactSelect
+                        value={svsRenderQuality}
+                        onChange={(event) => {
+                            const opt = QUALITY_OPTIONS.find((output) => output.value === event.target.value);
+                            if (opt) {
+                                setSvsRenderQuality(opt.value);
+                            }
+                        }}
+                        aria-label="Render quality"
+                        className="w-full"
+                    >
+                        {QUALITY_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                            </option>
+                        ))}
+                    </DawCompactSelect>
+                </Stack>
+                {renderSungEngineContent()}
+            </Stack>
+        );
+    };
+
+    const renderVocalsSection = (): ReactElement | null => {
+        if (isUnsupported) {
+            return null;
+        }
+        return (
+            <DawPluginSectionCard
+                title="Vocals"
+                detail={<Mic className="size-3 text-[var(--color-accent-peach)]" aria-hidden="true" />}
+                detailMode="badge"
+            >
+                {/* Mode toggle */}
+                <Row align="stretch" gap={1} className="mb-2">
+                    <Button
+                        variant="bare"
+                        size="bare"
+                        type="button"
+                        onClick={() => setVocalMode('spoken')}
+                        className={`flex-1 h-5 text-[9px] font-medium rounded transition-colors ${
+                            vocalMode === 'spoken'
+                                ? 'bg-[var(--color-accent-peach)]/20 text-[var(--color-accent-peach)]'
+                                : 'bg-surface-overlay/50 text-muted-foreground/60 hover:text-muted-foreground'
+                        }`}
+                    >
+                        Spoken
+                    </Button>
+                    <Button
+                        variant="bare"
+                        size="bare"
+                        type="button"
+                        disabled
+                        className="flex-1 h-5 text-[9px] font-medium rounded bg-surface-overlay/30 text-muted-foreground/40"
+                        title="Singing synthesis requires an admitted vocoder"
+                    >
+                        Sung unavailable
+                    </Button>
+                </Row>
+                {/* ── Spoken mode (Kokoro TTS) ── */}
+                {renderVocalModeContent()}
+            </DawPluginSectionCard>
+        );
     };
 
     return (
@@ -985,7 +956,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                         {isGeneratingVariations ? (
                             <>
                                 <Loader2 className="size-3 mr-1 animate-spin" aria-hidden="true" />
-                                {variationsButtonLabel}
+                                {variationsButtonLabel()}
                             </>
                         ) : (
                             <>
@@ -1064,7 +1035,7 @@ export const ClipMidiAiSection = ({ clip }: ClipMidiAiSectionProps): ReactElemen
                 )}
 
                 {/* Vocals — unified section for Spoken (Kokoro TTS) and Sung (DiffSinger SVS) */}
-                {renderIife_12()}
+                {renderVocalsSection()}
             </Stack>
         </section>
     );

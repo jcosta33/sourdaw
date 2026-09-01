@@ -40,6 +40,12 @@ import { setTimelineMinimapHeight } from '#/modules/Preferences/useCases';
 import { SessionView } from '#/modules/SessionLauncher/presentations/views';
 import { transportStore } from '#/modules/Transport/stores';
 import { closeScratchPad, setSessionViewWidth, setTrackListWidth } from '#/modules/WorkspaceShell/useCases';
+import {
+    allocateMainFirstWidths,
+    ARRANGE_RESIZE_HANDLE_WIDTH,
+    MIN_TIMELINE_COLUMN_WIDTH,
+    MIN_TRACK_LIST_WIDTH,
+} from '#/utils/Layout/allocateMainFirstWidths';
 import { clamp } from '#/utils/Math/clamp';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { normalizeTimelineMinimapHeight } from '#/utils/TimelineMinimap/timelineMinimapHeight';
@@ -53,7 +59,6 @@ import { ChordTrackLane, CHORD_TRACK_LANE_HEIGHT } from './Timeline/ChordTrackLa
 import { ScratchPadView } from './Timeline/ScratchPadView';
 import { TimelineMinimapResizeHandle } from './TimelineMinimapResizeHandle';
 
-const TRACK_LIST_MIN = 120;
 const TRACK_LIST_MAX = 400;
 
 const SESSION_VIEW_MIN = 200;
@@ -82,12 +87,14 @@ export const ArrangeView = (): ReactElement => {
         setLocalSessionWidth(sessionViewWidth);
     }
 
+    const arrangeRowRef = useRef<HTMLDivElement>(null);
     const timelineContainerRef = useRef<HTMLDivElement>(null);
+    const [arrangeWidth, setArrangeWidth] = useState(0);
     const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
 
     const handleTrackListResize = (delta: number): void => {
         setLocalTrackListWidth((prev) => {
-            const next = clamp(prev + delta, TRACK_LIST_MIN, TRACK_LIST_MAX);
+            const next = clamp(prev + delta, MIN_TRACK_LIST_WIDTH, TRACK_LIST_MAX);
             trackListWidthRef.current = next;
             return next;
         });
@@ -110,15 +117,24 @@ export const ArrangeView = (): ReactElement => {
     };
 
     useLayoutEffect(() => {
-        const el = timelineContainerRef.current;
-        if (!el) {
-            return undefined;
-        }
+        const arrangeRow = arrangeRowRef.current;
+        const timeline = timelineContainerRef.current;
         const observer = new ResizeObserver(() => {
-            setViewportWidth(el.clientWidth);
+            if (arrangeRow) {
+                setArrangeWidth(arrangeRow.clientWidth);
+            }
+            if (timeline) {
+                setViewportWidth(timeline.clientWidth);
+            }
         });
-        observer.observe(el);
-        setViewportWidth(el.clientWidth);
+        if (arrangeRow) {
+            observer.observe(arrangeRow);
+            setArrangeWidth(arrangeRow.clientWidth);
+        }
+        if (timeline) {
+            observer.observe(timeline);
+            setViewportWidth(timeline.clientWidth);
+        }
         return () => observer.disconnect();
         // Re-run when hasUserTracks flips so the observer attaches once the
         // timeline container div is mounted (absent during the empty-state path).
@@ -198,11 +214,31 @@ export const ArrangeView = (): ReactElement => {
         );
     }
 
+    const arrangeSides = [
+        ...(dualViewOpen ? [{ preferred: localSessionWidth, min: SESSION_VIEW_MIN }] : []),
+        ...(trackListOpen ? [{ preferred: localTrackListWidth, min: MIN_TRACK_LIST_WIDTH }] : []),
+    ];
+    const arrangeHandleCount = (dualViewOpen ? 1 : 0) + (trackListOpen ? 1 : 0);
+    const arranged = allocateMainFirstWidths({
+        available: arrangeWidth - arrangeHandleCount * ARRANGE_RESIZE_HANDLE_WIDTH,
+        minMain: MIN_TIMELINE_COLUMN_WIDTH,
+        sides: arrangeSides,
+    });
+    const displayedSessionWidth = dualViewOpen ? (arranged.sides[0] ?? localSessionWidth) : localSessionWidth;
+    let displayedTrackListWidth = localTrackListWidth;
+    if (trackListOpen) {
+        const trackListIndex = dualViewOpen ? 1 : 0;
+        displayedTrackListWidth = arranged.sides[trackListIndex] ?? localTrackListWidth;
+    }
+
     return (
-        <Row align="stretch" className="h-full">
+        <Row align="stretch" className="h-full" ref={arrangeRowRef}>
             {dualViewOpen ? (
                 <>
-                    <Stack className="border-r border-border/20 bg-surface-base" style={{ width: localSessionWidth }}>
+                    <Stack
+                        className="border-r border-border/20 bg-surface-base"
+                        style={{ width: displayedSessionWidth }}
+                    >
                         <SessionView />
                     </Stack>
                     <ResizeHandle
@@ -215,7 +251,7 @@ export const ArrangeView = (): ReactElement => {
             {trackListOpen ? (
                 <>
                     <TrackListView
-                        style={{ width: localTrackListWidth }}
+                        style={{ width: displayedTrackListWidth, minWidth: displayedTrackListWidth }}
                         extraHeaderHeight={
                             ARRANGEMENT_BAR_HEIGHT +
                             getAdjustmentLayerStripHeight(adjustmentLayerCount) +
@@ -232,7 +268,12 @@ export const ArrangeView = (): ReactElement => {
                     />
                 </>
             ) : null}
-            <Stack grow className="overflow-hidden relative" ref={timelineContainerRef}>
+            <Stack
+                grow
+                className="overflow-hidden relative min-w-0"
+                ref={timelineContainerRef}
+                style={{ minWidth: MIN_TIMELINE_COLUMN_WIDTH }}
+            >
                 <ArrangementBar pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} />
                 <AdjustmentLayerStrip pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} />
                 {hasMarkers ? <MarkerLane pixelsPerBeat={pixelsPerBeat} scrollX={scrollX} /> : null}

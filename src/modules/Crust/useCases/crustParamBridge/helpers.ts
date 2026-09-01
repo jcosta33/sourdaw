@@ -50,6 +50,13 @@ export const ALGORITHM_INDEX = {
     wall: 7,
 } as const;
 
+/** PLAY `style` → SHAPE `algorithm`, matching `Algorithm::from_style_index`. */
+export const STYLE_TO_ALGORITHM = {
+    transparent: 'transparent',
+    punchy: 'punchy',
+    loud: 'wall',
+} as const;
+
 export const SAT_ALGORITHM_INDEX = {
     soft: 0,
     hard: 1,

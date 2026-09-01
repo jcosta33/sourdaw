@@ -113,6 +113,7 @@ describe('serializeAudioGraphCommandBatch', () => {
                     },
                 },
                 { kind: 'set-transport', playing: true, positionSeconds: 1.5 },
+                { kind: 'set-monitor-shadow', shadowed: true },
             ],
         };
 
@@ -199,6 +200,7 @@ describe('serializeAudioGraphCommandBatch', () => {
                     },
                 },
                 { kind: 'set-transport', playing: true, positionSeconds: 1.5 },
+                { kind: 'set-monitor-shadow', shadowed: true },
             ],
         });
     });

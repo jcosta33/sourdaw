@@ -17,7 +17,7 @@ Owns audio feature extraction, pitch/key/tempo detection, monophonic/polyphonic 
 ## Key Subsystems
 
 - **`services/`**: Chroma extraction (`chromaFromSamples.ts`, `chromaFlatness.ts`), key correlation profiles (`keyProfileCorrelation.ts`), spectral balance and level analyzers (`mixAnalysisHelpers.ts`, `readFrequencyBalance.ts`, `readLevels.ts`).
-- **`repositories/`**: Remote stem separation and Audio AI server connectivity (`isAudioAiServerRunning.ts`, `separateStems.ts`, `isStemSeparationAvailable.ts`, `resampleBuffer.ts`).
+- **`repositories/`**: Remote stem separation and Audio AI server connectivity (`isAudioAiServerRunning.ts`, `separateStems.ts`, `isStemSeparationAvailable.ts`).
 - **`models/`**: Feature metrics and pitch representations (`MixComparisonTypes.ts`, `PitchTypes.ts`).
 - **`handlers/`**: Production command handlers (`handleAnalyzeMix.ts`, `handleAudioToMidi.ts`, `handleAutoFixMix.ts`, `handleCompareToReference.ts`, `handleDetectKey.ts`, `handleDetectTempo.ts`).
 

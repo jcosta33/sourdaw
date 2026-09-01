@@ -1,5 +1,6 @@
 import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
+import { isValidMidiProbabilitySeed } from '#/modules/MIDI/stores';
 
 const DOC_PREFIX_ROOT = 'root';
 
@@ -326,6 +327,9 @@ export type ProjectMidiState = {
     notesByClipId: Record<string, ProjectMidiNote[]>;
     ccByClipId: Record<string, ProjectMidiCC[]>;
     pitchBendByClipId: Record<string, ProjectMidiPitchBend[]>;
+    /** Durable MIDI store field the sync writer embeds wholesale into this
+     * section (see syncArrangement); absent in the explicit 3-key build. */
+    probabilitySeed?: number;
 };
 
 export type ArrangementSnapshot = {
@@ -370,6 +374,7 @@ const SNAPSHOT_OPTIONAL_KEYS = ['tempoMap', 'timeSignatureMap', 'markers', 'take
 const TRACKS_SECTION_KEYS = ['tracks', 'selectedTrackId'] as const;
 const AUTOMATION_SECTION_KEYS = ['lanes'] as const;
 const MIDI_SECTION_KEYS = ['notesByClipId', 'ccByClipId', 'pitchBendByClipId'] as const;
+const MIDI_SECTION_OPTIONAL_KEYS = ['probabilitySeed'] as const;
 const CHANGES_SECTION_KEYS = ['changes'] as const;
 const MARKERS_SECTION_KEYS = ['markers', 'sections'] as const;
 const TAKE_LANES_SECTION_KEYS = ['lanes'] as const;
@@ -636,10 +641,14 @@ function normalize_midi_clip_map<TRow extends { id: string }>(value: unknown): R
 function is_exact_midi_section(value: unknown): value is ProjectMidiState {
     return (
         is_plain_object(value) &&
-        has_exact_keys({ value, required_keys: MIDI_SECTION_KEYS }) &&
+        has_exact_keys({ value, required_keys: MIDI_SECTION_KEYS, optional_keys: MIDI_SECTION_OPTIONAL_KEYS }) &&
         is_exact_midi_clip_map(value.notesByClipId) &&
         is_exact_midi_clip_map(value.ccByClipId) &&
-        is_exact_midi_clip_map(value.pitchBendByClipId)
+        is_exact_midi_clip_map(value.pitchBendByClipId) &&
+        // The live MIDI store guarantees a valid seed on every write path, so
+        // a present-but-invalid one is content this build cannot read and
+        // must not pass exact (it falls through to normalize, which drops it).
+        (!Object.hasOwn(value, 'probabilitySeed') || isValidMidiProbabilitySeed(value.probabilitySeed))
     );
 }
 
@@ -651,6 +660,7 @@ function normalize_midi_section(value: unknown): ProjectMidiState | null {
         notesByClipId: normalize_midi_clip_map<ProjectMidiNote>(value.notesByClipId),
         ccByClipId: normalize_midi_clip_map<ProjectMidiCC>(value.ccByClipId),
         pitchBendByClipId: normalize_midi_clip_map<ProjectMidiPitchBend>(value.pitchBendByClipId),
+        ...(isValidMidiProbabilitySeed(value.probabilitySeed) ? { probabilitySeed: value.probabilitySeed } : {}),
     };
 }
 

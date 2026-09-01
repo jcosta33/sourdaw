@@ -468,6 +468,18 @@ function readPlainDoc(docId: string): Record<string, unknown> {
     return parsed;
 }
 
+function readPlainProjectDoc(docId: string): Record<string, unknown> {
+    return readPlainProjectDocFromSnapshot(readPlainDoc(docId));
+}
+
+function readPlainProjectDocFromSnapshot(document: Record<string, unknown> | undefined): Record<string, unknown> {
+    if (!document) {
+        throw new TypeError('Expected a captured project document snapshot');
+    }
+    const { commandBatchIdempotency: _commandCheckpoint, ...projectDocument } = document;
+    return projectDocument;
+}
+
 function readNotes(doc: Record<string, unknown>, clipId: string): unknown[] {
     const midi = doc.midi;
     if (!isRecord(midi) || !isRecord(midi.notesByClipId)) {
@@ -533,6 +545,7 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
         await cloudSession.clear();
         await cloudSession.replace_runtime({
             provider: 'openai-compatible',
+            authentication: 'none',
             session_id: null,
             model: 'fixture-model',
             base_url: 'http://localhost:1234/v1',
@@ -716,7 +729,7 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
 
             expect(branchStore.value?.activeBranchId).toBe(MAIN_BRANCH_ID);
             expect(branchStore.value?.branches).toHaveLength(4);
-            expect(readPlainDoc('root')).toEqual(sourceDocBefore);
+            expect(readPlainProjectDoc('root')).toEqual(sourceDocBefore);
             const candidateDocsAfterCommit = new Map<string, Record<string, unknown>>();
             const candidateProgramming: string[] = [];
             for (const candidate of action.payload.candidates) {
@@ -759,7 +772,7 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
             expect(branchStore.value?.branches).toHaveLength(1);
             expect(branchStore.value?.activeBranchId).toBe(MAIN_BRANCH_ID);
             expect(getCrdtDocIds().toSorted()).toEqual(sourceDocIdsBefore);
-            expect(readPlainDoc('root')).toEqual(sourceDocBefore);
+            expect(readPlainProjectDoc('root')).toEqual(sourceDocBefore);
             expect(undoStore.value?.future).toHaveLength(1);
 
             await redo();
@@ -767,9 +780,11 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
             expect(branchStore.value?.activeBranchId).toBe(MAIN_BRANCH_ID);
             expect(branchStore.value?.branches).toHaveLength(4);
             expect(new Set(branchStore.value?.branches.map(({ branchId }) => branchId))).toHaveProperty('size', 4);
-            expect(readPlainDoc('root')).toEqual(sourceDocBefore);
+            expect(readPlainProjectDoc('root')).toEqual(sourceDocBefore);
             for (const candidate of action.payload.candidates) {
-                expect(readPlainDoc(candidate.rootDocId)).toEqual(candidateDocsAfterCommit.get(candidate.rootDocId));
+                expect(readPlainProjectDoc(candidate.rootDocId)).toEqual(
+                    readPlainProjectDocFromSnapshot(candidateDocsAfterCommit.get(candidate.rootDocId))
+                );
             }
         }
     );

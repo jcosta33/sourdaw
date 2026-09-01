@@ -1,8 +1,14 @@
-import { desktopWindowControls, usesFramelessWindowChrome } from '#/utils/desktopBridge';
+import {
+    desktopWindowControls,
+    usesFramelessWindowChrome,
+    usesWindowControlsOverlayChrome,
+} from '#/utils/desktopBridge';
 
 export type WindowChromeControls = {
     /** True only on the frameless Linux build, where these controls exist at all. */
     readonly frameless: boolean;
+    /** True only on the macOS build, where the native controls overlay the title-bar band. */
+    readonly windowControlsOverlay: boolean;
     readonly minimize: () => Promise<void>;
     /** Maximizes or restores; resolves with the resulting maximized state. */
     readonly toggleMaximize: () => Promise<boolean>;
@@ -13,8 +19,8 @@ export type WindowChromeControls = {
 };
 
 /**
- * The desktop window-chrome surface behind the frameless Linux build's header
- * controls.
+ * The desktop window-chrome surface behind the header's title-bar row: which
+ * platform chrome the shell runs, plus the frameless Linux build's controls.
  *
  * The desktop bridge is confined to the repository layer, so the header view
  * reaches the shell's minimize/maximize/close through here and the use case
@@ -23,6 +29,7 @@ export type WindowChromeControls = {
 export function getWindowChromeControls(): WindowChromeControls {
     return {
         frameless: usesFramelessWindowChrome(),
+        windowControlsOverlay: usesWindowControlsOverlayChrome(),
         minimize: () => desktopWindowControls().minimize(),
         toggleMaximize: () => desktopWindowControls().toggleMaximize(),
         close: () => desktopWindowControls().close(),

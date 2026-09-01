@@ -16,6 +16,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),
     executeAppActionBatch: vi.fn(() => Promise.resolve({ status: 'committed', actions: [] })),
     generateGroupId: vi.fn(() => 'group-test'),
+    pushUndoEntry: vi.fn(),
 }));
 
 vi.mock('../../../stores/chamberStore', () => ({

@@ -68,6 +68,10 @@ vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
 vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: vi.fn(),
     executeAppAction: vi.fn().mockResolvedValue(undefined),
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    isAppActionCommittedError: vi.fn(() => false),
+    resetActionReplayAuthority: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
 }));
 
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({

@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
+import { isModelProviderFailureError } from '../../../errors/ModelProviderFailureError';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { generateToolPlanningOutcome } from '../inference';
 
@@ -106,7 +108,12 @@ describe('generateToolPlanningOutcome', () => {
         vi.clearAllMocks();
         mocks.backendChain.value = [];
         mocks.failRemoteDisclosure.value = false;
-        mocks.getCloudProviderInfo.mockReturnValue({ provider: 'openai', model: 'hosted-model' });
+        mocks.getCloudProviderInfo.mockReturnValue({
+            provider: 'openai',
+            model: 'hosted-model',
+            baseUrl: 'https://api.openai.com/v1',
+            authentication: 'api-key',
+        });
         mocks.isWebLlmLoaded.mockReturnValue(true);
         mocks.providerStartFailure.value = null;
     });
@@ -195,4 +202,71 @@ describe('generateToolPlanningOutcome', () => {
             });
         }
     );
+
+    it.each([
+        {
+            status: 401,
+            messageFragment: 'API key',
+            retryable: false,
+        },
+        {
+            status: 429,
+            messageFragment: 'rate limited',
+            retryable: true,
+        },
+    ] as const)(
+        'surfaces hosted HTTP $status on cloud tool-planning failure',
+        async ({ status, messageFragment, retryable }) => {
+            mocks.backendChain.value = ['cloud'];
+            mocks.generateCloudToolCalls.mockRejectedValue(
+                new HostedAiHttpStatusError(status, `Hosted AI tool request failed with status ${String(status)}`)
+            );
+
+            const error = await generateToolPlanningOutcome('system', 'mute the first track', toolSchemas).catch(
+                (error: unknown) => error
+            );
+
+            expect(isModelProviderFailureError(error)).toBe(true);
+            if (!isModelProviderFailureError(error)) {
+                return;
+            }
+            expect(error.message).toContain(`HTTP ${String(status)}`);
+            expect(error.message).toContain(messageFragment);
+            expect(error.message).not.toBe('The model provider request failed.');
+            expect(error.retryable).toBe(retryable);
+            expect(error.code).toBe(`hosted-http-${String(status)}`);
+            expect(mocks.logger.warn).toHaveBeenCalledWith(
+                expect.stringContaining(`[AI Engine] Backend "cloud" failed:`)
+            );
+            expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining(`HTTP ${String(status)}`));
+        }
+    );
+
+    it('snapshots hosted HTTP status once so spoofed getters cannot leak secrets into safeMessage', async () => {
+        mocks.backendChain.value = ['cloud'];
+        let statusReadCount = 0;
+        const spoofedError = new Error('ignored');
+        spoofedError.name = 'HostedAiHttpStatusError';
+        Object.defineProperty(spoofedError, 'status', {
+            get() {
+                statusReadCount += 1;
+                return statusReadCount === 1 ? 401 : 'key=sk-secret';
+            },
+            configurable: true,
+        });
+        mocks.generateCloudToolCalls.mockRejectedValue(spoofedError);
+
+        const error = await generateToolPlanningOutcome('system', 'mute the first track', toolSchemas).catch(
+            (error: unknown) => error
+        );
+
+        expect(isModelProviderFailureError(error)).toBe(true);
+        if (!isModelProviderFailureError(error)) {
+            return;
+        }
+        expect(error.message).toContain('HTTP 401');
+        expect(error.message).not.toContain('sk-secret');
+        expect(error.code).toBe('hosted-http-401');
+        expect(mocks.logger.warn).toHaveBeenCalledWith(expect.not.stringContaining('sk-secret'));
+    });
 });

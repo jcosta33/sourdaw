@@ -62,6 +62,11 @@ vi.mock('#/utils/UI/useContextMenuDismiss', () => ({ useContextMenuDismiss: vi.f
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: vi.fn(),
     getAudioContext: vi.fn(() => ({ currentTime: 0, sampleRate: 48000 })),
+    // The rate `projectTrackToLiveStrip` activates external plugins at. It must
+    // agree with the mocked context above: a live engine has exactly one clock,
+    // and `undefined` here would mean the engine is not rendering, which leaves
+    // the restored track's plugin dormant instead of rebuilt.
+    getLiveEngineSampleRate: vi.fn(() => 48000),
     getRuntimeGraphRevision: vi.fn(() => 0),
     initializeTrackStripFromSnapshot: vi.fn(() => ({
         acceptance: 'accepted' as const,
@@ -99,15 +104,33 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     },
 }));
 vi.mock('#/modules/Routing/useCases', () => ({
+    addSidechainRoute: vi.fn(),
+    addSidechainRouteSnapshot: vi.fn(),
+    ensureBusStrip: vi.fn(),
     getAllSidechainRoutes: vi.fn(() => []),
-    wireSidechainRoutes: vi.fn(),
-    setSend: vi.fn(),
-    // Returns the finalizer the restore handler pushes straight into its
-    // post-commit effect list, so it has to be callable.
+    getSidechainRoutesForTrack: vi.fn(),
+    getSidechainTargetCapability: vi.fn(),
+    hydrateSidechainRoutes: vi.fn(),
+    removeSend: vi.fn(),
+    removeSidechainRoute: vi.fn(),
+    removeSidechainRouteSnapshot: vi.fn(),
     restoreSidechainRoutes: vi.fn(() => () => undefined),
+    setBusGain: vi.fn(),
+    setSend: vi.fn(),
+    setSidechainRoutes: vi.fn(),
+    wireSidechainRoutes: vi.fn(),
 }));
 vi.mock('#/modules/PluginHost/useCases', () => ({
     activateExternalPlugin: vi.fn(() => Promise.resolve()),
+    beginProjectSessionPluginRetirement: vi.fn(),
+    findSupportedPlugin: vi.fn(),
+    isFaustInstrumentModule: vi.fn(),
+    observeExternalPluginParameterEdits: vi.fn(),
+    readPluginState: vi.fn(),
+    registerFaustDSP: vi.fn(),
+    resetExternalPluginRuntimeForGraphRebuild: vi.fn(),
+    unloadPlugin: vi.fn(),
+    watchPluginStateDirty: vi.fn(),
 }));
 /**
  * The remove/restore handlers publish `track.removed` / `track.added` through

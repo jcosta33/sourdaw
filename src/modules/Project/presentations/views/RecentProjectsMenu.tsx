@@ -164,26 +164,26 @@ export const RecentProjectsMenu = (): ReactElement => {
     };
 
     return (
-        <div className="relative" ref={menuRef}>
+        <div className="relative shrink-0" ref={menuRef}>
             <Tooltip>
                 <TooltipTrigger asChild>
                     <Button
                         variant="ghost"
                         size="icon-sm"
-                        className="daw-readout-well"
+                        className="daw-readout-well rounded-l-none rounded-r-sm border-l-[rgba(255,249,242,0.1)] hover:bg-white/[0.04] hover:brightness-[1.06]"
                         aria-label="Project menu"
                         aria-expanded={open}
                         aria-haspopup="menu"
                         onClick={() => setOpen((prev) => !prev)}
                     >
-                        <ChevronDown className="size-3" aria-hidden="true" />
+                        <ChevronDown data-testid="project-menu-chevron" className="size-3" aria-hidden="true" />
                     </Button>
                 </TooltipTrigger>
                 <TooltipContent>Project menu</TooltipContent>
             </Tooltip>
             {open ? (
                 <div
-                    className="absolute top-full left-0 mt-1 z-50 w-64 rounded-md border border-border bg-surface-overlay shadow-lg py-1"
+                    className="absolute top-full left-0 mt-1 z-50 max-h-[calc(100vh-3rem)] w-64 overflow-y-auto overscroll-contain rounded-md border border-border bg-surface-overlay py-1 shadow-lg"
                     role="menu"
                     aria-label="Project menu"
                 >
@@ -192,7 +192,7 @@ export const RecentProjectsMenu = (): ReactElement => {
                         variant="bare"
                         size="bare"
                         type="button"
-                        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
+                        className="flex w-full items-center justify-start gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
                         role="menuitem"
                         data-testid="menu-new-project"
                         onClick={handleNewProject}
@@ -205,7 +205,7 @@ export const RecentProjectsMenu = (): ReactElement => {
                         variant="bare"
                         size="bare"
                         type="button"
-                        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
+                        className="flex w-full items-center justify-start gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
                         role="menuitem"
                         onClick={handleNewFromTemplate}
                     >
@@ -217,7 +217,7 @@ export const RecentProjectsMenu = (): ReactElement => {
                         variant="bare"
                         size="bare"
                         type="button"
-                        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
+                        className="flex w-full items-center justify-start gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
                         role="menuitem"
                         onClick={handleLoadDemo}
                     >
@@ -269,7 +269,7 @@ export const RecentProjectsMenu = (): ReactElement => {
                         variant="bare"
                         size="bare"
                         type="button"
-                        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
+                        className="flex w-full items-center justify-start gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
                         role="menuitem"
                         onClick={handleExportProject}
                     >
@@ -281,7 +281,7 @@ export const RecentProjectsMenu = (): ReactElement => {
                         variant="bare"
                         size="bare"
                         type="button"
-                        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
+                        className="flex w-full items-center justify-start gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
                         role="menuitem"
                         onClick={handleImportProject}
                     >

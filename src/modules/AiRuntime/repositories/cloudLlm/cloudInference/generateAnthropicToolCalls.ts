@@ -1,8 +1,10 @@
+import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
 import { ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { type ToolCallResult } from '../../../transformers/toolCallParser';
 import { type AnthropicCloudRuntime } from '../cloudSession';
 
+import { buildWireToolNameCodec } from './buildWireToolNameCodec';
 import { requestAnthropicProvider } from './requestAnthropicProvider';
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
@@ -20,12 +22,13 @@ export async function generateAnthropicToolCalls(input: {
 }): Promise<ToolCallResult[]> {
     const chunks: Uint8Array[] = [];
     let responseBytes = 0;
+    const codec = buildWireToolNameCodec(input.toolSchemas);
     const body = JSON.stringify({
         model: input.runtime.model,
         max_tokens: 2048,
         system: input.systemPrompt,
         tools: input.toolSchemas.map((schema) => ({
-            name: schema.function.name,
+            name: codec.encode(schema.function.name),
             description: schema.function.description,
             input_schema: schema.function.parameters,
         })),
@@ -44,7 +47,10 @@ export async function generateAnthropicToolCalls(input: {
         },
     });
     if (response.status < 200 || response.status >= 300) {
-        throw new Error(`Hosted AI tool-planning request failed with status ${String(response.status)}`);
+        throw new HostedAiHttpStatusError(
+            response.status,
+            `Hosted AI tool-planning request failed with status ${String(response.status)}`
+        );
     }
     if (response.contentType?.split(';', 1)[0]?.trim().toLowerCase() !== 'application/json') {
         throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-planning content type');
@@ -83,7 +89,7 @@ export async function generateAnthropicToolCalls(input: {
         }
         results.push({
             ...(typeof block.id === 'string' && block.id.length > 0 ? { id: block.id } : {}),
-            name: block.name,
+            name: codec.decode(block.name),
             arguments: block.input,
         });
     }

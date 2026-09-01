@@ -1,12 +1,11 @@
 /**
  * Plugin scan state store.
- * Owned by the Plugin module — scan state is a Plugin concern, not an AudioEngine concern.
  */
 
 import { createStore } from '#/infra/store/createStore';
 import { createPlainJsonLocalStorage } from '#/infra/store/storage/createPlainJsonLocalStorage';
 
-import { type ScannedPlugin, type ScannedPluginParameter } from '../models/ScannedPlugin';
+import { type QuarantinedPlugin, type ScannedPlugin, type ScannedPluginParameter } from '../models/ScannedPlugin';
 
 export type PluginScanState = {
     scannedPlugins: ScannedPlugin[];
@@ -25,6 +24,16 @@ export type PluginScanState = {
      * like any other, so anyone who owns a plugin in one sees this on every run.
      */
     notices: string[];
+    /**
+     * Candidates the native registry currently quarantines (#2911).
+     *
+     * Unlike `errors` and `notices`, this describes durable native state, not
+     * the run that just finished, so it is restored on reload rather than
+     * cleared — the record still exists in the registry document until an
+     * explicit retry or a clean scan removes it, and clearing it here would
+     * just have the next scan restate it.
+     */
+    quarantined: QuarantinedPlugin[];
 };
 
 export const defaultPluginScanState: PluginScanState = {
@@ -34,6 +43,7 @@ export const defaultPluginScanState: PluginScanState = {
     lastScanTime: null,
     errors: [],
     notices: [],
+    quarantined: [],
 };
 
 const PLUGIN_SCAN_KEY = 'sourdaw:plugin-scan';
@@ -150,6 +160,23 @@ function readScannedPlugin(value: unknown): ScannedPlugin | null {
 }
 
 /**
+ * Rebuild a stored quarantine record field by field, the same discipline
+ * `readScannedPlugin` applies: a row missing any field is dropped rather than
+ * repaired, and the next scan response is what restores it.
+ */
+function readQuarantinedPlugin(value: unknown): QuarantinedPlugin | null {
+    if (
+        !isRecord(value) ||
+        typeof value.path !== 'string' ||
+        typeof value.reason !== 'string' ||
+        typeof value.quarantined_at_ms !== 'number'
+    ) {
+        return null;
+    }
+    return { path: value.path, reason: value.reason, quarantined_at_ms: value.quarantined_at_ms };
+}
+
+/**
  * Decode the persisted scan state.
  *
  * `isScanning` is never restored. A scan that was running when the window went
@@ -157,7 +184,8 @@ function readScannedPlugin(value: unknown): ScannedPlugin | null {
  * that no longer exists and that the use cases' in-flight guard would then
  * refuse to replace. `errors` and `notices` are dropped for the same reason:
  * both described the run that is gone, and the next scan is what restates
- * whichever of them still applies.
+ * whichever of them still applies. `quarantined` is restored, not dropped: it
+ * describes durable native registry state, not the finished run.
  */
 function readPluginScanState(value: unknown): PluginScanState | null {
     if (!isRecord(value)) {
@@ -167,6 +195,9 @@ function readPluginScanState(value: unknown): PluginScanState | null {
     const scannedPlugins = Array.isArray(value.scannedPlugins)
         ? value.scannedPlugins.map(readScannedPlugin).filter((plugin): plugin is ScannedPlugin => plugin !== null)
         : [];
+    const quarantined = Array.isArray(value.quarantined)
+        ? value.quarantined.map(readQuarantinedPlugin).filter((entry): entry is QuarantinedPlugin => entry !== null)
+        : [];
 
     return {
         scannedPlugins,
@@ -175,6 +206,7 @@ function readPluginScanState(value: unknown): PluginScanState | null {
         lastScanTime: typeof value.lastScanTime === 'number' ? value.lastScanTime : null,
         errors: [],
         notices: [],
+        quarantined,
     };
 }
 

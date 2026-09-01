@@ -156,4 +156,67 @@ describe('PanelToggles', () => {
 
         expect(screen.queryByTestId('toggle-ableton-link')).not.toBeInTheDocument();
     });
+
+    it('uses the active panel treatment for every pressed compact row', () => {
+        vi.mocked(useStore).mockImplementation((store, defaultValue) => {
+            if (store === aiStore) {
+                return { isPanelOpen: false };
+            }
+            return defaultValue;
+        });
+
+        renderWithTooltip(
+            <PanelToggles
+                {...allClosed}
+                compact
+                sidebarOpen={false}
+                inspectorOpen={true}
+                mixerOpen={true}
+                chatPanelOpen={false}
+                trackListOpen={true}
+                virtualKeyboardOpen={false}
+                dualViewOpen={false}
+            />
+        );
+
+        const compactTrigger = screen.getByRole('button', { name: 'View and panel controls' });
+        expect(compactTrigger).toHaveAttribute('data-onboarding', 'mixer-button');
+        fireEvent.click(compactTrigger);
+
+        for (const name of ['Track list', 'Inspector', 'Bottom dock']) {
+            const row = screen.getByRole('button', { name });
+            expect(row).toHaveAttribute('data-variant', 'secondary');
+            expect(row).toHaveAttribute('aria-pressed', 'true');
+        }
+        for (const name of ['Browser', 'Session + Arrangement View', 'Virtual keyboard', 'AI chat', 'Generate']) {
+            const row = screen.getByRole('button', { name });
+            expect(row).toHaveAttribute('data-variant', 'ghost');
+            expect(row).toHaveAttribute('aria-pressed', 'false');
+        }
+    });
+
+    it('routes every compact row to its owning use case', () => {
+        renderWithTooltip(<PanelToggles {...allClosed} compact />);
+        fireEvent.click(screen.getByRole('button', { name: 'View and panel controls' }));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Track list' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Browser' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Inspector' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Session + Arrangement View' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Bottom dock' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Virtual keyboard' }));
+        fireEvent.click(screen.getByRole('button', { name: 'AI chat' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Preferences' }));
+
+        expect(mocks.toggleTrackList).toHaveBeenCalledTimes(1);
+        expect(mocks.toggleSidebar).toHaveBeenCalledTimes(1);
+        expect(mocks.toggleInspector).toHaveBeenCalledTimes(1);
+        expect(mocks.toggleDualView).toHaveBeenCalledTimes(1);
+        expect(mocks.toggleMixer).toHaveBeenCalledTimes(1);
+        expect(mocks.toggleVirtualKeyboard).toHaveBeenCalledTimes(1);
+        expect(mocks.toggleChatPanel).toHaveBeenCalledTimes(1);
+        expect(mocks.toggleAiPanel).toHaveBeenCalledTimes(1);
+        expect(mocks.openPreferencesDialog).toHaveBeenCalledTimes(1);
+    });
 });

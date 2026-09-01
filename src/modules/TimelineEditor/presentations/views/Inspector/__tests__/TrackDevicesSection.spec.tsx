@@ -38,6 +38,7 @@ type TestActivationState = {
 const mockBypassDevice = vi.fn<(deviceId: string, bypassed: boolean) => void>();
 const mockRemoveDevice = vi.fn<(deviceId: string) => void>();
 const mockAddDevice = vi.fn<(trackId: string, pluginName: string) => void>();
+const mockExecuteAddDeviceAction = vi.fn<(trackId: string, deviceType: string) => void>();
 const mockCompileReorderDevicesAction = vi.fn();
 const mockProjectTrackToLiveStrip =
     vi.fn<(input: { trackId: string; activateDormantExternalPlugins: boolean }) => void>();
@@ -56,6 +57,10 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
         },
         addDevice: (trackId: string, pluginName: string): void => {
             mockAddDevice(trackId, pluginName);
+        },
+        executeAddDeviceAction: (trackId: string, deviceType: string): Promise<unknown> => {
+            mockExecuteAddDeviceAction(trackId, deviceType);
+            return Promise.resolve({ status: 'applied', deviceId: 'device-added' });
         },
         compileReorderDevicesAction: (trackId: string, deviceId: string, targetDeviceId: string): unknown =>
             mockCompileReorderDevicesAction(trackId, deviceId, targetDeviceId),
@@ -77,6 +82,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     syncActionReplayMetadata: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    isAppActionCommittedError: vi.fn(() => false),
 }));
 
 const mockOpenPluginGui = vi.fn<(instanceId: string) => Promise<void>>();
@@ -358,12 +364,11 @@ describe('TrackDevicesSection', () => {
 
         fireEvent.click(chorusMenuItem);
 
-        // The menu routes through the action boundary so the add is one
-        // Automerge transaction (undoable), by plugin id — not the label.
-        expect(mockExecuteAppAction).toHaveBeenCalledWith({
-            type: 'addDevice',
-            payload: { trackId: 'track-1', deviceType: 'chorus' },
-        });
+        // The menu routes through the guarded dispatch door so the add is one
+        // Automerge transaction (undoable), by plugin id — not the label — and
+        // a committed-degraded runtime outcome cannot escape as an unhandled
+        // rejection.
+        expect(mockExecuteAddDeviceAction).toHaveBeenCalledWith('track-1', 'chorus');
         expect(mockAddDevice).not.toHaveBeenCalled();
         expect(screen.queryByRole('menuitem', { name: 'Chorus' })).not.toBeInTheDocument();
     });

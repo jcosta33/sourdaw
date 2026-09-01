@@ -11,7 +11,14 @@ const WEBGPU_ADMISSION_ORIGIN = `http://localhost:${WEBGPU_ADMISSION_PORT}`;
 // oxlint-disable-next-line import/no-default-export -- Playwright requires this export shape.
 export default defineConfig({
     testDir: '.',
-    testMatch: 'browserAiWebGpuAdmission.spec.ts',
+    // Every spec whose subject is what Sourdaw presents once a WebGPU device is
+    // admitted. The general Chromium matrix has no adapter and can only prove
+    // the refused side, so a spec left out of this list has no runner that
+    // executes its admitted assertions.
+    testMatch: ['browserAiWebGpuAdmission.spec.ts', 'browserAiAdmittedPresentation.spec.ts'],
+    // Warm this config's own isolated server before the admission specs start
+    // observing their first-paint bounds. See ./firstPaintWarmup.ts.
+    globalSetup: './firstPaintWarmup.ts',
     timeout: 60_000,
     fullyParallel: false,
     forbidOnly: true,

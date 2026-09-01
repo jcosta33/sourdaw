@@ -36,7 +36,20 @@ describe('CrustControlZone level 1 (style tiles)', () => {
 
         fireEvent.click(screen.getByRole('button', { name: /^loud/i }));
 
+        // Style→algorithm sync lives on setCrustParamWithAudio so L1 does not
+        // schedule a second engine algorithm write.
+        expect(setParam).toHaveBeenCalledTimes(1);
         expect(setParam).toHaveBeenCalledWith('style', 'loud');
+        expect(setParam).not.toHaveBeenCalledWith('algorithm', expect.anything());
+    });
+});
+
+describe('CrustControlZone level 2 (algorithm chips)', () => {
+    it('marks Wall pressed when the patch style is loud and algorithm is wall', () => {
+        renderZone({ uiLevel: 2, style: 'loud', algorithm: 'wall' });
+
+        expect(screen.getByRole('button', { name: 'Wall' })).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByRole('button', { name: 'Transparent' })).not.toHaveAttribute('aria-pressed');
     });
 });
 

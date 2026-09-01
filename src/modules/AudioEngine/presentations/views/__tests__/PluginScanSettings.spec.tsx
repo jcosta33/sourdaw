@@ -12,6 +12,7 @@ vi.mock('#/infra/store/useStore', () => ({
         errors: [],
         notices: [],
         lastScanTime: null,
+        quarantined: [],
     })),
 }));
 
@@ -25,6 +26,7 @@ vi.mock('#/modules/PluginHost/stores', async (importOriginal) => ({
         errors: [],
         notices: [],
         lastScanTime: null,
+        quarantined: [],
     },
 }));
 
@@ -60,6 +62,7 @@ describe('PluginScanSettings', () => {
             errors: [],
             notices: [],
             lastScanTime: null,
+            quarantined: [],
         });
         (getPlatformCapabilities as ReturnType<typeof vi.fn>).mockReturnValue({ hasPluginScanning: true });
         (addScanPath as ReturnType<typeof vi.fn>).mockResolvedValue({ added: true });
@@ -117,6 +120,7 @@ describe('PluginScanSettings', () => {
             errors: [],
             notices: [],
             lastScanTime: null,
+            quarantined: [],
         });
         render(<PluginScanSettings />);
         expect(screen.getByText('Scanning...')).toBeInTheDocument();
@@ -130,6 +134,7 @@ describe('PluginScanSettings', () => {
             errors: [],
             notices: [],
             lastScanTime: null,
+            quarantined: [],
         });
         render(<PluginScanSettings />);
         expect(screen.getByText('Plugins Found')).toBeInTheDocument();
@@ -145,6 +150,7 @@ describe('PluginScanSettings', () => {
             errors: [],
             notices: [],
             lastScanTime: now,
+            quarantined: [],
         });
         render(<PluginScanSettings />);
         expect(screen.getByText('Last Scan')).toBeInTheDocument();
@@ -158,6 +164,7 @@ describe('PluginScanSettings', () => {
             errors: ['Failed to scan /invalid/path'],
             notices: [],
             lastScanTime: null,
+            quarantined: [],
         });
         render(<PluginScanSettings />);
         expect(screen.getByText('Failed to scan /invalid/path')).toBeInTheDocument();
@@ -171,6 +178,7 @@ describe('PluginScanSettings', () => {
             errors: [],
             notices: [],
             lastScanTime: Date.now(),
+            quarantined: [],
         });
         render(<PluginScanSettings />);
         expect(screen.getByText('All plugins scanned successfully')).toBeInTheDocument();
@@ -253,6 +261,7 @@ describe('PluginScanSettings', () => {
             errors: ['scan error'],
             notices: [],
             lastScanTime: null,
+            quarantined: [],
         });
         render(<PluginScanSettings />);
         expect(screen.queryByText('All plugins scanned successfully')).not.toBeInTheDocument();
@@ -266,6 +275,7 @@ describe('PluginScanSettings', () => {
             errors: [],
             notices: [],
             lastScanTime: null,
+            quarantined: [],
         });
         render(<PluginScanSettings />);
         expect(screen.queryByText('All plugins scanned successfully')).not.toBeInTheDocument();
@@ -279,9 +289,57 @@ describe('PluginScanSettings', () => {
             errors: [],
             notices: [],
             lastScanTime: null,
+            quarantined: [],
         });
         render(<PluginScanSettings />);
         // No remove buttons when paths list is empty.
         expect(screen.queryAllByLabelText(/Remove path/)).toHaveLength(0);
+    });
+
+    // ── quarantine section (#2911) ─────────────────────────────────────────
+
+    it('shows no quarantine section when nothing is quarantined', () => {
+        render(<PluginScanSettings />);
+        expect(screen.queryByText(/quarantined/)).not.toBeInTheDocument();
+        expect(screen.queryByText('Retry Quarantined')).not.toBeInTheDocument();
+    });
+
+    it('shows a quarantined badge naming the quarantined path and its retry affordance', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            scanPaths: [],
+            scannedPlugins: [],
+            isScanning: false,
+            errors: [],
+            notices: [],
+            lastScanTime: null,
+            quarantined: [
+                {
+                    path: '/plugins/broken.vst3',
+                    reason: 'Plugin scan helper timed out',
+                    quarantined_at_ms: 1_700_000_000_000,
+                },
+            ],
+        });
+        render(<PluginScanSettings />);
+        expect(screen.getByText('1 quarantined')).toBeInTheDocument();
+        expect(screen.getByText('/plugins/broken.vst3')).toBeInTheDocument();
+        expect(screen.getByText('Retry Quarantined')).toBeInTheDocument();
+    });
+
+    it('calls startPluginScan with an explicit retry flag when Retry Quarantined is clicked', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            scanPaths: [],
+            scannedPlugins: [],
+            isScanning: false,
+            errors: [],
+            notices: [],
+            lastScanTime: null,
+            quarantined: [
+                { path: '/plugins/broken.vst3', reason: 'Plugin scan helper timed out', quarantined_at_ms: 1 },
+            ],
+        });
+        render(<PluginScanSettings />);
+        fireEvent.click(screen.getByText('Retry Quarantined'));
+        expect(startPluginScan).toHaveBeenCalledWith({ retryQuarantined: true });
     });
 });

@@ -24,7 +24,7 @@ const buttonVariants = cva(
                 surface:
                     'daw-panel-surface text-text-primary hover:brightness-[1.03] active:daw-inset-surface active:translate-y-px',
                 transport:
-                    'text-text-primary border border-border-soft border-t-[var(--color-light-edge)] border-l-[rgba(255,255,255,0.04)] border-b-[rgba(0,0,0,0.3)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_2px_4px_rgba(0,0,0,0.5)] hover:text-accent-cyan hover:brightness-[1.05] active:translate-y-px active:text-accent-cyan active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(0,0,0,0.4)] [background:linear-gradient(180deg,#1d1d1d_0%,#111111_100%)] active:[background:linear-gradient(180deg,#111_0%,#181818_100%)]',
+                    'text-text-primary border border-border-soft border-t-[var(--color-light-edge)] border-l-[rgba(255,249,242,0.04)] border-b-[rgba(0,0,0,0.3)] shadow-[inset_0_1px_0_rgba(255,249,242,0.06),0_2px_4px_rgba(0,0,0,0.5)] hover:text-accent-cyan hover:brightness-[1.05] active:translate-y-px active:text-accent-cyan active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(0,0,0,0.4)] [background:linear-gradient(180deg,var(--surface-raised)_0%,var(--surface-default)_100%)] active:[background:linear-gradient(180deg,var(--surface-default)_0%,var(--color-bg-recess)_100%)]',
                 danger: 'daw-panel-surface text-text-secondary hover:border-transparent hover:bg-state-danger hover:text-white active:translate-y-px active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.6)] focus-visible:ring-state-danger/50',
                 bare: '',
             },

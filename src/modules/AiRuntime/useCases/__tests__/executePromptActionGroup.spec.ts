@@ -13,6 +13,12 @@ import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { readAgentRunState } from '../../stores/agentRunStore';
+import * as stemImportConfirmation from '../agentReference/createStemImportConfirmationResourceLease';
+import {
+    AGENT_RUN_COMPLETION_PERSISTENCE_WARNING,
+    AGENT_RUN_FAILURE_PERSISTENCE_WARNING,
+    AGENT_RUN_STALE_FAILURE_WARNING,
+} from '../agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 import { compilePendingActionCommandEnvelopes } from '../compilePendingActionCommandEnvelopes';
@@ -36,6 +42,7 @@ const mocks = vi.hoisted(() => ({
     retainPreparedStemImportResources: vi.fn(),
     releasePreparedStemImportResources: vi.fn(),
     discardPreparedStemImportResources: vi.fn(),
+    discardPreparedStemImportResourcesAfterVerifiedNoncommit: vi.fn(),
 }));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
@@ -68,6 +75,7 @@ vi.mock('../agentReference/registerPreparedStemImportResources', () => ({
         retainForRecovery: mocks.retainPreparedStemImportResources,
         release: mocks.releasePreparedStemImportResources,
         discard: mocks.discardPreparedStemImportResources,
+        discardAfterVerifiedNoncommit: mocks.discardPreparedStemImportResourcesAfterVerifiedNoncommit,
     },
 }));
 
@@ -367,6 +375,41 @@ describe('executePromptActionGroup', () => {
         batchFixtures = null;
     });
 
+    it('takes cleanup ownership once and terminalizes when confirmation lease acquisition fails', async () => {
+        const fixture = getBatchFixtures().stem;
+        const acquisitionError = new Error('Confirmation resource lease acquisition failed');
+        const acquired = vi.fn();
+        const createLease = vi
+            .spyOn(stemImportConfirmation, 'createStemImportConfirmationResourceLease')
+            .mockImplementationOnce(() => {
+                throw acquisitionError;
+            });
+        seedRun(fixture);
+
+        await expect(
+            executePromptActionGroup({
+                actions: fixture.actions,
+                prompt: 'Import stems',
+                projectRevision: 'revision-1',
+                onResourceOwnershipAcquired: acquired,
+                ...admitted(fixture),
+            })
+        ).rejects.toBe(acquisitionError);
+
+        expect(acquired).toHaveBeenCalledOnce();
+        expect(mocks.discardPreparedStemImportResourcesAfterVerifiedNoncommit).toHaveBeenCalledExactlyOnceWith({
+            runId: RUN_ID,
+            stems: stemAction.payload.stems,
+        });
+        expect(mocks.executePlannedActions).not.toHaveBeenCalled();
+        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
+            phase: 'failed',
+            batches: [{ batchId: BATCH_ID, status: 'failed' }],
+            workLeases: [{ workId: BATCH_ID, terminalState: 'failed' }],
+        });
+        createLease.mockRestore();
+    });
+
     it('binds the exact application-issued approval to the admitted command batch', async () => {
         const fixture = getBatchFixtures().stem;
         const command = getReceiptCommandFixture(fixture);
@@ -566,7 +609,7 @@ describe('executePromptActionGroup', () => {
             receiptOutcome: 'committed',
             result: { status: 'committed', actions: [] },
             phase: 'completed',
-            committedRevision: 'revision-2',
+            committedRevision: null,
             batchStatus: 'committed',
             leaseState: 'completed',
             receiptIdentity: '2:prompt-run-1:batch-1:committed',
@@ -736,7 +779,7 @@ describe('executePromptActionGroup', () => {
         const expectedContinuation = {
             batchId: BATCH_ID,
             effects: [effect],
-            recovery: 'reconcile-batch',
+            recovery: 'manual-repair',
             serializedBatch: fixture.commandBatch.serialized,
             authority: fixture.commandBatch.authority,
         };
@@ -747,6 +790,136 @@ describe('executePromptActionGroup', () => {
         expect(readAgentRunState().runs.find((run) => run.runId === RUN_ID)).toMatchObject({
             pendingEffectContinuations: [expectedContinuation],
         });
+    });
+
+    it('persists the finalized commit revision after deferred command completion despite later project mutation', async () => {
+        const fixture = getBatchFixtures().stem;
+        const receipt = committedReceipt(fixture);
+        let completeExecution: ((result: Awaited<ReturnType<typeof mocks.executePlannedActions>>) => void) | undefined;
+        mocks.executePlannedActions.mockImplementation(
+            () =>
+                new Promise((resolve) => {
+                    completeExecution = resolve;
+                })
+        );
+        seedRun(fixture);
+
+        const execution = executePromptActionGroup({
+            actions: fixture.actions,
+            prompt: 'Import stems',
+            projectRevision: 'revision-1',
+            ...admitted(fixture),
+        });
+        await vi.waitFor(() => expect(mocks.executePlannedActions).toHaveBeenCalledOnce());
+        mocks.projectRevision.value = 'revision-R3';
+        completeExecution?.({
+            status: 'committed',
+            actions: [{ actionType: 'importStemSet', label: 'Import stems' }],
+            receipt,
+            committedRevision: 'revision-R2',
+        });
+
+        await expect(execution).resolves.toEqual({ status: 'committed' });
+        expect(agentRunLifecycle.get(RUN_ID)?.revisions.committed).toBe('revision-R2');
+    });
+
+    it('does not fabricate ambient commit provenance for an idempotent replay result', async () => {
+        const fixture = getBatchFixtures().stem;
+        const recordReceiptSaga = vi.spyOn(receiptSaga, 'recordAgentRunReceiptSaga');
+        seedRun(fixture);
+        mocks.projectRevision.value = 'revision-R3';
+        mocks.executePlannedActions.mockResolvedValue({
+            status: 'committed',
+            actions: [],
+            receipt: committedReceipt(fixture),
+        });
+
+        await expect(
+            executePromptActionGroup({
+                actions: fixture.actions,
+                prompt: 'Import stems',
+                projectRevision: 'revision-1',
+                ...admitted(fixture),
+            })
+        ).resolves.toEqual({ status: 'committed' });
+
+        expect(recordReceiptSaga).toHaveBeenCalledOnce();
+        expect(recordReceiptSaga.mock.calls[0]?.[0]).not.toHaveProperty('committedRevision');
+        expect(agentRunLifecycle.get(RUN_ID)?.revisions.committed).not.toBe('revision-R3');
+        recordReceiptSaga.mockRestore();
+    });
+
+    it('persists and reports unavailable exact commit provenance without completing the run', async () => {
+        const fixture = getBatchFixtures().stem;
+        seedRun(fixture);
+        mocks.projectRevision.value = 'revision-R3';
+        mocks.executePlannedActions.mockResolvedValue({
+            status: 'committed',
+            actions: [{ actionType: 'importStemSet', label: 'Import stems' }],
+            receipt: committedReceipt(fixture),
+            finalizationEvidenceFailure: 'revision capture failed at commit',
+        });
+
+        await expect(
+            executePromptActionGroup({
+                actions: fixture.actions,
+                prompt: 'Import stems',
+                projectRevision: 'revision-1',
+                ...admitted(fixture),
+            })
+        ).resolves.toEqual({ status: 'committed' });
+
+        const run = agentRunLifecycle.get(RUN_ID);
+        expect(run).toMatchObject({
+            phase: 'partially-completed',
+            revisions: { committed: null },
+            batches: [expect.objectContaining({ batchId: BATCH_ID, status: 'committed' })],
+            committedWork: [expect.objectContaining({ workId: BATCH_ID })],
+            errors: [expect.objectContaining({ category: 'internal', workId: null })],
+        });
+        expect(readAgentRunState().runs.find((candidate) => candidate.runId === RUN_ID)).toMatchObject({
+            phase: 'partially-completed',
+            batches: [expect.objectContaining({ batchId: BATCH_ID, status: 'committed' })],
+            committedWork: [expect.objectContaining({ workId: BATCH_ID })],
+            errors: [expect.objectContaining({ category: 'internal', workId: null })],
+        });
+        expect(mocks.notifyAiChange).not.toHaveBeenCalled();
+    });
+
+    it('does not partially project a missing-provenance recovery when its atomic persistence fails', async () => {
+        const fixture = getBatchFixtures().stem;
+        seedRun(fixture);
+        mocks.executePlannedActions.mockResolvedValue({
+            status: 'committed',
+            actions: [{ actionType: 'importStemSet', label: 'Import stems' }],
+            receipt: committedReceipt(fixture),
+            finalizationEvidenceFailure: 'revision capture failed at commit',
+        });
+        const recordRecoveryFailure = vi
+            .spyOn(agentRunLifecycle, 'recordCommittedRecoveryFailure')
+            .mockImplementationOnce(() => {
+                throw new Error('atomic persistence unavailable');
+            });
+
+        await expect(
+            executePromptActionGroup({
+                actions: fixture.actions,
+                prompt: 'Import stems',
+                projectRevision: 'revision-1',
+                ...admitted(fixture),
+            })
+        ).resolves.toEqual({ status: 'committed' });
+
+        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
+            phase: 'executing',
+            committedWork: [],
+            errors: [],
+        });
+        expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(
+            expect.stringContaining('Agent run recovery state could not be persisted after execution'),
+            ['importStemSet']
+        );
+        recordRecoveryFailure.mockRestore();
     });
 
     it('exposes manual repair instead of a reconcile-batch continuation for a manual-repair receipt', async () => {
@@ -894,6 +1067,150 @@ describe('executePromptActionGroup', () => {
             `stem-promotion:${RUN_ID}:${BATCH_ID}`
         );
         expect(mocks.discardPreparedStemImportResources).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        { label: 'stale', settle: () => ({ status: 'stale' as const }), warning: AGENT_RUN_STALE_FAILURE_WARNING },
+        {
+            label: 'persistence fails',
+            settle: () => {
+                throw new Error('Lease storage unavailable');
+            },
+            warning: AGENT_RUN_FAILURE_PERSISTENCE_WARNING,
+        },
+    ])('preserves a thrown command failure when failed settlement is $label', async ({ settle, warning }) => {
+        const fixture = getBatchFixtures().stem;
+        seedRun(fixture);
+        const executionError = new Error('Executor crashed');
+        mocks.executePlannedActions.mockRejectedValue(executionError);
+        vi.spyOn(agentRunWorkLease, 'settleAndTerminalize').mockImplementationOnce(settle);
+
+        await expect(
+            executePromptActionGroup({
+                actions: fixture.actions,
+                prompt: 'Import stems',
+                projectRevision: 'revision-1',
+                ...admitted(fixture),
+            })
+        ).rejects.toBe(executionError);
+
+        expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(
+            `Command not executed: Executor crashed. ${warning}`,
+            []
+        );
+        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
+            phase: 'executing',
+            batches: [{ batchId: BATCH_ID, status: 'executing', receiptIdentity: null }],
+            workLeases: [{ workId: BATCH_ID, terminalState: null }],
+        });
+        expect(mocks.releasePreparedStemImportResources).toHaveBeenCalledExactlyOnceWith({
+            runId: RUN_ID,
+            stems: stemAction.payload.stems,
+        });
+        expect(mocks.prepareDurablePromotionRecovery).toHaveBeenCalledOnce();
+        expect(mocks.transitionDurablePromotionRecoveryToCleanup).toHaveBeenCalledExactlyOnceWith(
+            `stem-promotion:${RUN_ID}:${BATCH_ID}`,
+            [{ leaseId: 'asset-lease-1', expectedHash: 'asset-hash-1' }]
+        );
+        expect(mocks.completeDurableCleanupRecovery).toHaveBeenCalledExactlyOnceWith(
+            `stem-promotion:${RUN_ID}:${BATCH_ID}`
+        );
+    });
+
+    it.each([
+        {
+            label: 'ambiguous execution',
+            execution: { status: 'ambiguous' as const, reason: 'Commit truth is unresolved' },
+            outcome: 'ambiguous' as const,
+            notification: `Command outcome is uncertain: Commit truth is unresolved. Inspect the project before retrying. ${AGENT_RUN_FAILURE_PERSISTENCE_WARNING}`,
+        },
+        {
+            label: 'no-op execution',
+            execution: { status: 'no-op' as const },
+            outcome: 'no-op' as const,
+            notification: `No project changes were needed. ${AGENT_RUN_COMPLETION_PERSISTENCE_WARNING}`,
+        },
+    ])(
+        'does not write a terminal lifecycle state after persistence fails for $label',
+        async ({ execution, outcome, notification }) => {
+            const fixture = getBatchFixtures().stem;
+            seedRun(fixture);
+            mocks.executePlannedActions.mockResolvedValue(execution);
+            vi.spyOn(agentRunWorkLease, 'settleAndTerminalize').mockImplementationOnce(() => {
+                throw new Error('Lease storage unavailable');
+            });
+
+            await expect(
+                executePromptActionGroup({
+                    actions: fixture.actions,
+                    prompt: 'Import stems',
+                    projectRevision: 'revision-1',
+                    ...admitted(fixture),
+                })
+            ).resolves.toEqual({ status: outcome });
+
+            expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
+                phase: 'executing',
+                batches: [{ batchId: BATCH_ID, status: 'executing', receiptIdentity: null }],
+                workLeases: [{ workId: BATCH_ID, terminalState: null }],
+            });
+            expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(notification, []);
+        }
+    );
+
+    it.each([
+        {
+            label: 'invalidated stale settlement',
+            execution: { status: 'invalidated' as const, reason: 'Revision changed' },
+            settle: () => ({ status: 'stale' as const }),
+            warning: AGENT_RUN_STALE_FAILURE_WARNING,
+        },
+        {
+            label: 'failed stale settlement',
+            execution: { status: 'failed' as const, reason: 'Execution failed' },
+            settle: () => ({ status: 'stale' as const }),
+            warning: AGENT_RUN_STALE_FAILURE_WARNING,
+        },
+        {
+            label: 'invalidated persistence failure',
+            execution: { status: 'invalidated' as const, reason: 'Revision changed' },
+            settle: () => {
+                throw new Error('Lease storage unavailable');
+            },
+            warning: AGENT_RUN_FAILURE_PERSISTENCE_WARNING,
+        },
+        {
+            label: 'failed persistence failure',
+            execution: { status: 'failed' as const, reason: 'Execution failed' },
+            settle: () => {
+                throw new Error('Lease storage unavailable');
+            },
+            warning: AGENT_RUN_FAILURE_PERSISTENCE_WARNING,
+        },
+    ])('does not terminalize $label', async ({ execution, settle, warning }) => {
+        const fixture = getBatchFixtures().stem;
+        seedRun(fixture);
+        mocks.executePlannedActions.mockResolvedValue(execution);
+        vi.spyOn(agentRunWorkLease, 'settleAndTerminalize').mockImplementationOnce(settle);
+
+        await expect(
+            executePromptActionGroup({
+                actions: fixture.actions,
+                prompt: 'Import stems',
+                projectRevision: 'revision-1',
+                ...admitted(fixture),
+            })
+        ).resolves.toEqual({ status: 'failed' });
+
+        expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({
+            phase: 'executing',
+            batches: [{ batchId: BATCH_ID, status: 'executing', receiptIdentity: null }],
+            workLeases: [{ workId: BATCH_ID, terminalState: null }],
+        });
+        expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(
+            `Command not executed: ${execution.reason}. ${warning}`,
+            []
+        );
     });
 
     it.each(['lease-settlement', 'receipt-persistence'] as const)(

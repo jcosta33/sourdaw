@@ -1,4 +1,4 @@
-import { type RefObject, useState, useRef, useEffect } from 'react';
+import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { useStore } from '#/infra/store/useStore';
 import { executeAppAction } from '#/modules/Command/useCases';
@@ -29,6 +29,8 @@ const defaultTempoMapState: TempoMapViewState = { changes: [] };
 
 /** What double-click reset restores the transport's *base* tempo to. */
 const DEFAULT_BASE_TEMPO = 120;
+const TEMPO_MAP_PANEL_WIDTH = 18 * 16;
+const VIEWPORT_EDGE_GAP = 12;
 
 const useTempoMapState = (): TempoMapViewState => {
     return useStore<TempoMapViewState>(tempoMapStore, defaultTempoMapState);
@@ -78,7 +80,9 @@ export type TempoEditorState = {
     // Tempo map panel
     mapOpen: boolean;
     setMapOpen: (v: boolean) => void;
+    mapTriggerRef: RefObject<HTMLButtonElement | null>;
     mapPanelRef: RefObject<HTMLDivElement | null>;
+    mapPanelPosition: { top: number; left: number };
 
     // Tempo change editing
     newBeat: string;
@@ -203,26 +207,78 @@ export const useTempoEditorState = (): TempoEditorState => {
      */
     const tapTimesRef = useRef<number[]>([]);
     const [mapOpen, setMapOpen] = useState(false);
+    const mapTriggerRef = useRef<HTMLButtonElement>(null);
     const mapPanelRef = useRef<HTMLDivElement>(null);
+    const [mapPanelPosition, setMapPanelPosition] = useState({ top: 0, left: 0 });
     const [newBeat, setNewBeat] = useState('0');
     const [newTempo, setNewTempo] = useState('120');
     const [newCurve, setNewCurve] = useState<TempoCurve>('instant');
     const [editingChangeId, setEditingChangeId] = useState<string | null>(null);
     const [editingChangeTempo, setEditingChangeTempo] = useState('');
 
-    // Click-outside to close tempo map panel
     useEffect(() => {
         if (!mapOpen) {
             return undefined;
         }
         const handleClickOutside = (event: MouseEvent): void => {
-            if (mapPanelRef.current && !mapPanelRef.current.contains(event.target as Node)) {
+            const target = event.target as Node;
+            const clickedTrigger = mapTriggerRef.current?.contains(target) ?? false;
+            const clickedPanel = mapPanelRef.current?.contains(target) ?? false;
+            if (!clickedTrigger && !clickedPanel) {
                 setMapOpen(false);
             }
         };
+        const handleEscape = (event: KeyboardEvent): void => {
+            if (event.key !== 'Escape') {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            if (editingChangeId !== null || editingTimeSig) {
+                setEditingChangeId(null);
+                setEditingTimeSig(false);
+                return;
+            }
+            setMapOpen(false);
+            mapTriggerRef.current?.focus();
+        };
         document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [mapOpen]);
+        window.addEventListener('keydown', handleEscape, true);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+            window.removeEventListener('keydown', handleEscape, true);
+        };
+    }, [mapOpen, editingChangeId, editingTimeSig]);
+
+    useLayoutEffect(() => {
+        if (!mapOpen) {
+            return undefined;
+        }
+
+        const updatePanelPosition = (): void => {
+            const triggerRect = mapTriggerRef.current?.getBoundingClientRect();
+            const panelRect = mapPanelRef.current?.getBoundingClientRect();
+            if (!triggerRect || !panelRect) {
+                return;
+            }
+
+            const panelWidth = Math.min(TEMPO_MAP_PANEL_WIDTH, window.innerWidth - VIEWPORT_EDGE_GAP * 2);
+            setMapPanelPosition({
+                top: Math.min(
+                    Math.max(VIEWPORT_EDGE_GAP, triggerRect.bottom + 4),
+                    Math.max(VIEWPORT_EDGE_GAP, window.innerHeight - panelRect.height - VIEWPORT_EDGE_GAP)
+                ),
+                left: Math.min(
+                    Math.max(VIEWPORT_EDGE_GAP, triggerRect.left),
+                    window.innerWidth - panelWidth - VIEWPORT_EDGE_GAP
+                ),
+            });
+        };
+
+        updatePanelPosition();
+        window.addEventListener('resize', updatePanelPosition);
+        return () => window.removeEventListener('resize', updatePanelPosition);
+    }, [mapOpen, tempoMap.changes]);
 
     /**
      * Inserting a change *at the playhead* is the escape route from the ramp
@@ -237,6 +293,7 @@ export const useTempoEditorState = (): TempoEditorState => {
     const openTempoMapPanel = (open: boolean): void => {
         if (!open) {
             setMapOpen(false);
+            mapTriggerRef.current?.focus();
             return;
         }
         let playheadBeat = transport.playheadPosition;
@@ -409,7 +466,9 @@ export const useTempoEditorState = (): TempoEditorState => {
         cancelTimeSigEdit,
         mapOpen,
         setMapOpen: openTempoMapPanel,
+        mapTriggerRef,
         mapPanelRef,
+        mapPanelPosition,
         newBeat,
         setNewBeat,
         newTempo,

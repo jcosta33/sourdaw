@@ -3,6 +3,41 @@ import { describe, it, expect, vi } from 'vitest';
 
 import { LatchButton } from '../LatchButton';
 
+function gradientEndpointStops(background: string): { first: string; last: string } {
+    const prefix = 'linear-gradient(180deg, ';
+    const start = background.indexOf(prefix);
+    if (start === -1) {
+        throw new Error('LatchButton has no linear gradient background');
+    }
+
+    const stops: string[] = [];
+    let nesting = 0;
+    let stop = '';
+    for (const character of background.slice(start + prefix.length)) {
+        if (character === '(') {
+            nesting += 1;
+        } else if (character === ')') {
+            if (nesting === 0) {
+                stops.push(stop.trim());
+                break;
+            }
+            nesting -= 1;
+        } else if (character === ',' && nesting === 0) {
+            stops.push(stop.trim());
+            stop = '';
+            continue;
+        }
+        stop += character;
+    }
+
+    const first = stops[0];
+    const last = stops.at(-1);
+    if (first === undefined || last === undefined) {
+        throw new Error('LatchButton gradient has no endpoint stops');
+    }
+    return { first, last };
+}
+
 describe('LatchButton — active state', () => {
     it('reflects active=true on data-active', () => {
         render(<LatchButton active>Solo</LatchButton>);
@@ -25,8 +60,11 @@ describe('LatchButton — active vs inactive styling', () => {
         render(<LatchButton active>Test</LatchButton>);
         const btn = screen.getByRole('button', { name: 'Test' });
         const style = btn.style;
-        // Active uses a reversed gradient (jsdom normalizes #111 → rgb(17,17,17)).
-        expect(style.background).toContain('rgb(17, 17, 17)');
+        // Active runs exactly from the default surface to the raised surface.
+        expect(gradientEndpointStops(style.background)).toEqual({
+            first: 'var(--surface-default) 0%',
+            last: 'var(--surface-raised) 100%',
+        });
         // Active has inset shadow.
         expect(style.boxShadow).toContain('inset');
         // Active sinks down 1px.
@@ -37,8 +75,11 @@ describe('LatchButton — active vs inactive styling', () => {
         render(<LatchButton active={false}>Test</LatchButton>);
         const btn = screen.getByRole('button', { name: 'Test' });
         const style = btn.style;
-        // Inactive uses a raised gradient (jsdom normalizes #1d1d1d → rgb(29,29,29)).
-        expect(style.background).toContain('rgb(29, 29, 29)');
+        // Inactive runs exactly from the raised surface to the default surface.
+        expect(gradientEndpointStops(style.background)).toEqual({
+            first: 'var(--surface-raised) 0%',
+            last: 'var(--surface-default) 100%',
+        });
         // Inactive has a drop shadow (not inset-only).
         expect(style.boxShadow).toContain('0 2px 4px');
         // Inactive does not translate.

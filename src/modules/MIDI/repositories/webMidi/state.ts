@@ -41,6 +41,7 @@ export const webMidiRuntime = {
      * it; see `mapNativeMidiTimestamp`.
      */
     nativeMidiTimeAnchorMs: null as number | null,
+    initGeneration: 0,
 };
 
 export const webMidiState: { current: WebMidiState } = {
@@ -48,6 +49,7 @@ export const webMidiState: { current: WebMidiState } = {
         isSupported: webMidiSupported || isDesktopRuntime(),
         inputs: [],
         selectedInputId: readPersistedInputId(),
+        enumerationError: null,
     },
 };
 

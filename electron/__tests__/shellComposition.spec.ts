@@ -1,0 +1,192 @@
+import { describe, expect, it, vi } from 'vitest';
+
+import { createRendererSessionLifecycle } from '../rendererSessionLifecycle.js';
+import {
+    composeQuitHandler,
+    installMacApplicationMenu,
+    requestApprovedWindowClose,
+    shouldRecreateRendererAfterCrash,
+    createProductionShellComposition,
+} from '../shellComposition.js';
+
+describe('Electron shell composition policies', () => {
+    it('installs the built native menu only on macOS', () => {
+        const build = vi.fn(() => ({ menu: true }));
+        const set = vi.fn();
+        installMacApplicationMenu({ isMac: true, build, set, template: [] });
+        expect(build).toHaveBeenCalledWith([]);
+        expect(set).toHaveBeenCalledWith({ menu: true });
+        installMacApplicationMenu({ isMac: false, build, set, template: [] });
+        expect(build).toHaveBeenCalledOnce();
+    });
+
+    it('prevents dirty close until correlated approval re-enters close', async () => {
+        const event = { preventDefault: vi.fn() };
+        const close = vi.fn();
+        requestApprovedWindowClose({ event, requestClose: async () => true, close });
+        await vi.waitFor(() => expect(close).toHaveBeenCalledOnce());
+        expect(event.preventDefault).toHaveBeenCalledOnce();
+    });
+
+    it('composes quit with both permission and renderer quiescence', async () => {
+        const canQuit = vi.fn(async () => true);
+        const beforeRun = vi.fn(async () => 'success' as const);
+        const run = vi.fn(async () => ({ status: 'completed' as const, report: undefined }));
+        const handler = composeQuitHandler(run, { canQuit, beforeRun, exit: vi.fn(), report: vi.fn() });
+        handler({ preventDefault: vi.fn() });
+        await vi.waitFor(() => expect(run).toHaveBeenCalledOnce());
+        expect(canQuit).toHaveBeenCalledOnce();
+        expect(beforeRun).toHaveBeenCalledOnce();
+    });
+
+    it('uses renderer lifecycle approval to suppress crash recreation', () => {
+        expect(shouldRecreateRendererAfterCrash({ shouldRecreateAfterCrash: () => false })).toBe(false);
+        expect(shouldRecreateRendererAfterCrash({ shouldRecreateAfterCrash: () => true })).toBe(true);
+    });
+
+    const productionComposition = ({
+        focused = 'main',
+        requestClose = vi.fn(async () => true),
+        exit = vi.fn(),
+        quiesceBeforeQuit = vi.fn(async () => 'success' as const),
+        runShutdown = vi.fn(async () => ({ status: 'completed' as const, report: undefined })),
+        lifecycle = createRendererSessionLifecycle(),
+    }: {
+        focused?: 'main' | 'plugin';
+        requestClose?: ReturnType<typeof vi.fn<() => Promise<boolean>>>;
+        exit?: ReturnType<typeof vi.fn<(code: number) => void>>;
+        quiesceBeforeQuit?: ReturnType<typeof vi.fn<() => Promise<'success'>>>;
+        runShutdown?: ReturnType<typeof vi.fn<() => Promise<{ status: 'completed'; report: undefined }>>>;
+        lifecycle?: ReturnType<typeof createRendererSessionLifecycle>;
+    } = {}) => {
+        const editTarget = {
+            undo: vi.fn(),
+            redo: vi.fn(),
+            cut: vi.fn(),
+            copy: vi.fn(),
+            paste: vi.fn(),
+            selectAll: vi.fn(),
+        };
+        const mainWindow = { isDestroyed: () => false, webContents: editTarget };
+        const pluginWindow = {};
+        const dispatchMenuIntent = vi.fn();
+        const responder = vi.fn();
+        const composition = createProductionShellComposition({
+            isMac: true,
+            buildMenu: vi.fn(() => ({ menu: true })),
+            setMenu: vi.fn(),
+            getMainWindow: () => mainWindow,
+            getFocusedWindow: () => (focused === 'main' ? mainWindow : pluginWindow),
+            sendToFirstResponder: responder,
+            menuDispatcher: { dispatch: dispatchMenuIntent },
+            runShutdown,
+            closeCoordinator: { requestClose },
+            quit: {
+                quiesceBeforeQuit,
+                exit,
+                report: vi.fn(),
+            },
+            lifecycle,
+        });
+
+        return {
+            composition,
+            dispatchMenuIntent,
+            editTarget,
+            responder,
+            requestClose,
+            exit,
+            quiesceBeforeQuit,
+            runShutdown,
+        };
+    };
+
+    it('applies a main-focused Edit action and dispatches its renderer intent', () => {
+        const { composition, dispatchMenuIntent, editTarget, responder } = productionComposition();
+
+        composition.sendMenuIntent({ action: 'edit:copy' });
+
+        expect(editTarget.copy).toHaveBeenCalledOnce();
+        expect(dispatchMenuIntent).toHaveBeenCalledWith({ action: 'edit:copy' });
+        expect(responder).not.toHaveBeenCalled();
+    });
+
+    it('routes plugin-focused Edit only through the native responder chain', () => {
+        const { composition, dispatchMenuIntent, editTarget, responder } = productionComposition({ focused: 'plugin' });
+
+        composition.sendMenuIntent({ action: 'edit:copy' });
+
+        expect(responder).toHaveBeenCalledWith('copy:');
+        expect(dispatchMenuIntent).not.toHaveBeenCalled();
+        expect(editTarget.copy).not.toHaveBeenCalled();
+    });
+
+    it('dispatches non-Edit actions without applying native text editing', () => {
+        const { composition, dispatchMenuIntent, editTarget, responder } = productionComposition();
+
+        composition.sendMenuIntent({ action: 'view:toggle-mixer' });
+
+        expect(dispatchMenuIntent).toHaveBeenCalledWith({ action: 'view:toggle-mixer' });
+        expect(editTarget.copy).not.toHaveBeenCalled();
+        expect(responder).not.toHaveBeenCalled();
+    });
+
+    it('runs the required renderer quiesce before native shutdown on before-quit', async () => {
+        const order: string[] = [];
+        const quiesceBeforeQuit = vi.fn(async () => {
+            order.push('quiesce');
+            return 'success' as const;
+        });
+        const runShutdown = vi.fn(async () => {
+            order.push('shutdown');
+            return { status: 'completed' as const, report: undefined };
+        });
+        const { composition } = productionComposition({ quiesceBeforeQuit, runShutdown });
+
+        composition.beforeQuit({ preventDefault: vi.fn() });
+
+        await vi.waitFor(() => expect(runShutdown).toHaveBeenCalledOnce());
+        expect(order).toEqual(['quiesce', 'shutdown']);
+    });
+
+    it('records coordinator approval in the production lifecycle before shutdown', async () => {
+        const lifecycle = createRendererSessionLifecycle();
+        const { composition, runShutdown } = productionComposition({ lifecycle });
+
+        composition.beforeQuit({ preventDefault: vi.fn() });
+
+        await vi.waitFor(() => expect(runShutdown).toHaveBeenCalledOnce());
+        expect(composition.shouldRecreateAfterCrash()).toBe(false);
+    });
+
+    it.each([
+        ['denial', vi.fn(async () => false)],
+        ['rejection', vi.fn(async () => Promise.reject(new Error('close authority failed')))],
+    ])('stops before renderer quiesce and shutdown on coordinator %s', async (_case, requestClose) => {
+        const { composition, exit, quiesceBeforeQuit, runShutdown } = productionComposition({ requestClose });
+        const preventDefault = vi.fn();
+
+        composition.beforeQuit({ preventDefault });
+
+        await vi.waitFor(() => expect(requestClose).toHaveBeenCalledOnce());
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(preventDefault).toHaveBeenCalledOnce();
+        expect(quiesceBeforeQuit).not.toHaveBeenCalled();
+        expect(runShutdown).not.toHaveBeenCalled();
+        expect(exit).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['denial', async () => false],
+        ['rejection', async () => Promise.reject(new Error('close authority failed'))],
+    ])('prevents Close after approval %s without closing the window', async (_case, requestClose) => {
+        const event = { preventDefault: vi.fn() };
+        const close = vi.fn();
+
+        requestApprovedWindowClose({ event, requestClose, close });
+
+        await vi.waitFor(() => expect(event.preventDefault).toHaveBeenCalledOnce());
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(close).not.toHaveBeenCalled();
+    });
+});

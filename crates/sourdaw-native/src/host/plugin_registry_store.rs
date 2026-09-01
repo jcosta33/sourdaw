@@ -33,7 +33,7 @@
 //! Registry I/O is control-side only. Every entry point here touches the
 //! filesystem and must never be reached from the audio callback.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -43,6 +43,7 @@ use std::time::UNIX_EPOCH;
 
 use serde::{Deserialize, Serialize};
 
+use crate::commands::filesystem::APP_DIR_NAME;
 use crate::commands::plugins::MAX_SCAN_CANDIDATES;
 use crate::host::plugin_scan_policy::PluginScanPolicy;
 use crate::state::PluginRegistryEntry;
@@ -67,9 +68,15 @@ use crate::state::PluginRegistryEntry;
 /// discards the whole document before the schema check ever runs. The version
 /// gate is belt-and-braces here, not the mechanism that drops the secondary key
 /// a moved plugin resolves by.
-const SCAN_REGISTRY_SCHEMA_VERSION: u32 = 3;
+///
+/// Bumped to 4 when the document gained `quarantine`: binaries whose scan
+/// helper crashed or timed out, kept out of the candidate loop until an
+/// explicit retry clears them (#2911). Same policy as every earlier bump —
+/// `quarantine` carries no serde default, so a version 3 document fails to
+/// deserialize outright rather than hydrate with an empty quarantine map that
+/// would misreport every previously-quarantined binary as healthy.
+const SCAN_REGISTRY_SCHEMA_VERSION: u32 = 4;
 
-const REGISTRY_DIRECTORY: &str = "com.sourdaw.app";
 const REGISTRY_FILE_NAME: &str = "plugin-registry.json";
 const REGISTRY_TEMPORARY_FILE_STEM: &str = "plugin-registry.json";
 
@@ -107,6 +114,20 @@ pub struct PersistedScanRegistry {
     /// plugin. Ordered, so a rewrite that changed nothing produces the same
     /// bytes.
     pub entries: BTreeMap<String, PersistedPluginEntry>,
+    /// Binaries a scan helper crashed or timed out on, keyed by path. Ordered
+    /// for the same byte-stability reason as `entries`.
+    pub quarantine: BTreeMap<String, PersistedQuarantineEntry>,
+}
+
+/// One persisted quarantine row: a binary a scan will not spawn a helper for
+/// again until an explicit retry clears it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PersistedQuarantineEntry {
+    pub path: String,
+    /// The process-level failure that triggered quarantine, verbatim from the
+    /// scan helper — see `plugin_scan_worker::is_process_failure`.
+    pub reason: String,
+    pub quarantined_at_ms: u64,
 }
 
 /// One persisted registry row: what the scan learned, plus the fingerprint of
@@ -188,6 +209,26 @@ struct StoredRegistry {
     /// resolve. Bounds the targeted rescan to once per key per process; see
     /// [`PluginRegistryStore::claim_rescan`].
     resolutions: HashMap<String, ResolutionOutcome>,
+    /// Binaries currently quarantined, keyed by path. Loaded from the file on
+    /// hydration and mutated by [`PluginRegistryStore::quarantine_failure`],
+    /// [`PluginRegistryStore::clear_quarantine`], and
+    /// [`PluginRegistryStore::apply_quarantine_removals`].
+    quarantine: BTreeMap<String, PersistedQuarantineEntry>,
+    /// Every key this process has explicitly decided about — quarantined,
+    /// cleared, or dropped as proven gone — as opposed to a key it merely
+    /// hydrated and never touched again.
+    ///
+    /// [`PluginRegistryStore::persist`] needs this distinction because the
+    /// scan runs in a forked process with its own store, while the main
+    /// process persists on its own paths (a targeted rescan, another scan): a
+    /// straight replace of the quarantine column with this process's
+    /// in-memory copy would erase a row a sibling process wrote or cleared
+    /// after this one last read the file. This process's own decisions must
+    /// still win over a stale or concurrent sibling write, so `persist` reads
+    /// the file's current quarantine column fresh and overlays only the keys
+    /// in this set from `quarantine` — a key this process never touched
+    /// defers entirely to whatever is on disk.
+    quarantine_touched: BTreeSet<String>,
 }
 
 /// The verdict on a caller's request to run the one targeted rescan a registry
@@ -302,6 +343,7 @@ impl PluginRegistryStore {
             return;
         };
         stored.entries = document.entries;
+        stored.quarantine = document.quarantine;
 
         let unchanged_entries: Vec<(String, PluginRegistryEntry)> = stored
             .entries
@@ -328,6 +370,76 @@ impl PluginRegistryStore {
     /// not hydration was willing to resolve it.
     pub fn last_known_entry(&self, plugin_id: &str) -> Option<PersistedPluginEntry> {
         self.lock_stored().entries.get(plugin_id).cloned()
+    }
+
+    /// Whether `path` is currently quarantined, and why.
+    pub fn is_quarantined(&self, path: &Path) -> Option<PersistedQuarantineEntry> {
+        self.lock_stored()
+            .quarantine
+            .get(&path.display().to_string())
+            .cloned()
+    }
+
+    /// Record a scan helper's process-level failure against `path`, replacing
+    /// any earlier record for it.
+    ///
+    /// Called only for a crash or a timeout — see
+    /// `plugin_scan_worker::is_process_failure` — never for a data-level
+    /// refusal, so a candidate that merely failed to parse is retried on every
+    /// ordinary scan rather than blacklisted from one bad read.
+    pub fn quarantine_failure(&self, path: &Path, reason: String, quarantined_at_ms: u64) {
+        let key = path.display().to_string();
+        let mut stored = self.lock_stored();
+        stored.quarantine.insert(
+            key.clone(),
+            PersistedQuarantineEntry {
+                path: key.clone(),
+                reason,
+                quarantined_at_ms,
+            },
+        );
+        stored.quarantine_touched.insert(key);
+    }
+
+    /// Clear `path`'s quarantine record, if it has one.
+    ///
+    /// Called before a retry's helper runs — never after — so a fresh crash
+    /// re-quarantines from a clean slate and a clean scan leaves nothing
+    /// behind.
+    pub fn clear_quarantine(&self, path: &Path) {
+        let key = path.display().to_string();
+        let mut stored = self.lock_stored();
+        stored.quarantine.remove(&key);
+        stored.quarantine_touched.insert(key);
+    }
+
+    /// Every currently quarantined binary, for the scan response.
+    pub fn quarantined_snapshot(&self) -> Vec<PersistedQuarantineEntry> {
+        self.lock_stored().quarantine.values().cloned().collect()
+    }
+
+    /// Drop quarantine records this scan proves gone from disk.
+    ///
+    /// `keeps_quarantine_row` is deliberately not
+    /// [`apply_completed_scan_removals`](Self::apply_completed_scan_removals)'s
+    /// predicate reused: that one drops a registry entry the instant its root
+    /// is scanned, which for a *skipped* quarantined candidate would clear the
+    /// record on this very scan and let the next default scan retry the crash
+    /// quarantine exists to stop retrying silently (AC-002). The caller's
+    /// predicate must only say a path is gone when the scan actually walked
+    /// its containing root and did not find it there.
+    pub fn apply_quarantine_removals(&self, keeps_quarantine_row: impl Fn(&Path) -> bool) {
+        let mut stored = self.lock_stored();
+        let removed_keys: Vec<String> = stored
+            .quarantine
+            .iter()
+            .filter(|(_, entry)| !keeps_quarantine_row(Path::new(&entry.path)))
+            .map(|(key, _)| key.clone())
+            .collect();
+        stored
+            .quarantine
+            .retain(|_, entry| keeps_quarantine_row(Path::new(&entry.path)));
+        stored.quarantine_touched.extend(removed_keys);
     }
 
     /// Claim the one targeted rescan a registry key gets this process.
@@ -448,12 +560,39 @@ impl PluginRegistryStore {
         let mut entries = stored.entries.clone();
         entries.extend(scanned_this_session);
 
+        // The quarantine column gets the same "never resurrect what a sibling
+        // removed, never erase what a sibling added" treatment as `entries`,
+        // but by a different mechanism: quarantine decisions are keyed and
+        // binary (present or absent), so a union of maps cannot express a
+        // clear. Instead, re-read whatever the file currently holds and
+        // overlay only the keys this process has itself decided about
+        // (`quarantine_touched`) — every other key defers entirely to the
+        // fresh disk read, which is how a sibling process's own quarantine or
+        // clear survives a persist from this one.
+        let mut quarantine = read_registry_document(location)
+            .map(|document| document.quarantine)
+            .unwrap_or_default();
+        for key in &stored.quarantine_touched {
+            match stored.quarantine.get(key) {
+                Some(entry) => {
+                    quarantine.insert(key.clone(), entry.clone());
+                }
+                None => {
+                    quarantine.remove(key);
+                }
+            }
+        }
+
         let document = PersistedScanRegistry {
             schema_version: SCAN_REGISTRY_SCHEMA_VERSION,
             entries,
+            quarantine,
         };
         match write_registry_document(location, &document) {
-            Ok(()) => stored.entries = document.entries,
+            Ok(()) => {
+                stored.entries = document.entries;
+                stored.quarantine = document.quarantine;
+            }
             Err(error) => eprintln!("[Plugin] Could not save the plugin scan registry: {error}"),
         }
     }
@@ -468,7 +607,7 @@ impl PluginRegistryStore {
 fn default_registry_location() -> Option<PathBuf> {
     Some(
         dirs::data_dir()?
-            .join(REGISTRY_DIRECTORY)
+            .join(APP_DIR_NAME)
             .join(REGISTRY_FILE_NAME),
     )
 }
@@ -1038,6 +1177,7 @@ mod tests {
             serde_json::to_vec(&PersistedScanRegistry {
                 schema_version: SCAN_REGISTRY_SCHEMA_VERSION,
                 entries,
+                quarantine: BTreeMap::new(),
             })
             .expect("the oversized registry should serialize"),
         )
@@ -1126,6 +1266,158 @@ mod tests {
             store.claim_rescan("aaaa1111"),
             RescanClaim::Granted(_)
         ));
+    }
+
+    /// AC-001: a quarantine recorded and persisted in one process must survive
+    /// into the next one, the same way a scanned entry does.
+    #[test]
+    fn a_persisted_quarantine_survives_reload() {
+        let test_root = TestRegistryRoot::create("registry-quarantine-reload");
+        let plugin_path = test_root.write_plugin_file("Hostile.clap", b"clap-bytes");
+        let store = test_root.store();
+        store.quarantine_failure(
+            &plugin_path,
+            "Plugin scan helper exited unsuccessfully for Hostile.clap".to_string(),
+            1_700_000_000_000,
+        );
+        store.persist(&HashMap::new());
+
+        let next_launch = test_root.store();
+        next_launch.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+
+        let quarantined = next_launch
+            .is_quarantined(&plugin_path)
+            .expect("the quarantine record must survive a reload");
+        assert_eq!(quarantined.path, plugin_path.display().to_string());
+        assert_eq!(
+            quarantined.reason,
+            "Plugin scan helper exited unsuccessfully for Hostile.clap"
+        );
+        assert_eq!(quarantined.quarantined_at_ms, 1_700_000_000_000);
+    }
+
+    /// A clean scan of a healthy set must not carry a stray quarantine record
+    /// through `persist`'s union: clearing it in memory and persisting must
+    /// remove it from the file, not just from this process's view.
+    #[test]
+    fn clearing_a_quarantine_and_persisting_removes_it_from_disk() {
+        let test_root = TestRegistryRoot::create("registry-quarantine-clear");
+        let plugin_path = test_root.write_plugin_file("Recovered.clap", b"clap-bytes");
+        let store = test_root.store();
+        store.quarantine_failure(&plugin_path, "Plugin scan helper timed out".to_string(), 1);
+        store.persist(&HashMap::new());
+
+        store.clear_quarantine(&plugin_path);
+        store.persist(&HashMap::new());
+
+        let next_launch = test_root.store();
+        next_launch.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+        assert!(
+            next_launch.is_quarantined(&plugin_path).is_none(),
+            "a cleared quarantine must not survive its own persist"
+        );
+    }
+
+    /// The scan runs in a forked process with its own store while the main
+    /// process persists on its own paths (a targeted rescan, another scan) —
+    /// two writers over the same file is the normal topology, not an edge
+    /// case. A store that never itself decided about a key must not erase a
+    /// sibling's quarantine of that key merely by persisting something else.
+    #[test]
+    fn a_sibling_processs_quarantine_survives_a_persist_that_never_touched_it() {
+        let test_root = TestRegistryRoot::create("registry-quarantine-cross-process");
+        let plugin_path = test_root.write_plugin_file("Hostile.clap", b"clap-bytes");
+
+        // Store A: the main process, hydrated before the scan process ever
+        // quarantines anything.
+        let store_a = test_root.store();
+        store_a.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+
+        // Store B: the forked scan process, with its own in-memory state,
+        // quarantines the binary and persists.
+        let store_b = test_root.store();
+        store_b.quarantine_failure(
+            &plugin_path,
+            "Plugin scan helper exited unsuccessfully for Hostile.clap".to_string(),
+            1_700_000_000_000,
+        );
+        store_b.persist(&HashMap::new());
+
+        // Store A persists next, having never touched the quarantine column
+        // at all. A straight replace with A's stale in-memory copy (empty)
+        // would erase B's row here.
+        store_a.persist(&HashMap::new());
+
+        // Store C: a fresh launch, must still see the row B wrote.
+        let store_c = test_root.store();
+        store_c.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+        let quarantined = store_c
+            .is_quarantined(&plugin_path)
+            .expect("a persist from a store that never touched the key must not erase it");
+        assert_eq!(quarantined.path, plugin_path.display().to_string());
+    }
+
+    /// The inverse of the cross-process survival guarantee: a writer's own
+    /// clear of a key must still win even when another store's intervening,
+    /// untouched persist re-reads and re-writes the very file the clear will
+    /// later overlay.
+    #[test]
+    fn a_clear_by_the_writer_that_owns_it_stays_cleared_across_an_intervening_persist() {
+        let test_root = TestRegistryRoot::create("registry-quarantine-cross-process-clear");
+        let plugin_path = test_root.write_plugin_file("Recovered.clap", b"clap-bytes");
+
+        // Store A quarantines and persists first, so there is a row on disk.
+        let store_a = test_root.store();
+        store_a.quarantine_failure(&plugin_path, "Plugin scan helper timed out".to_string(), 1);
+        store_a.persist(&HashMap::new());
+
+        // Store B hydrates, sees the row, and decides to clear it — but has
+        // not persisted that decision yet.
+        let store_b = test_root.store();
+        store_b.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+        store_b.clear_quarantine(&plugin_path);
+
+        // Store A persists again in between, having never touched the key
+        // itself: this must be a no-op for the quarantine column, leaving the
+        // row exactly as B is about to find it.
+        store_a.persist(&HashMap::new());
+
+        // Store B's persist must still remove the row, not resurrect it from
+        // A's untouched re-write.
+        store_b.persist(&HashMap::new());
+
+        let store_c = test_root.store();
+        store_c.hydrate_into(&Mutex::new(HashMap::new()), &test_root.scan_policy());
+        assert!(
+            store_c.is_quarantined(&plugin_path).is_none(),
+            "the owning writer's clear must survive an intervening untouched persist"
+        );
+    }
+
+    /// `apply_quarantine_removals` only drops a row when the caller's
+    /// predicate says so — the caller decides what "gone" means, and this
+    /// store does not substitute its own opinion.
+    #[test]
+    fn apply_quarantine_removals_keeps_rows_the_predicate_keeps() {
+        let store = PluginRegistryStore::in_memory_only();
+        let quarantined_path = Path::new("/plugins/Broken.clap");
+        store.quarantine_failure(
+            quarantined_path,
+            "Plugin scan helper timed out".to_string(),
+            1,
+        );
+
+        store.apply_quarantine_removals(|_| true);
+        assert!(
+            store.is_quarantined(quarantined_path).is_some(),
+            "a predicate that keeps every row must not lose one"
+        );
+
+        store.apply_quarantine_removals(|_| false);
+        assert!(
+            store.is_quarantined(quarantined_path).is_none(),
+            "a predicate that keeps nothing must clear the row"
+        );
     }
 
     #[test]

@@ -1,4 +1,4 @@
-import { type ExecuteOptions } from '#/utils/handlerContract';
+import { type AppAction, type ExecuteOptions } from '#/utils/handlerContract';
 
 import { type CommandBatchAuthority } from '../models/VersionedCommandBatchEnvelope';
 
@@ -7,7 +7,6 @@ import { commandBatchExecutionAuthorityPort } from './commandBatchExecutionAutho
 import { commandBatchIdempotencyPort } from './commandBatchIdempotencyPort';
 import { commandProjectRevisionPort } from './commandProjectRevisionPort';
 import { consumeCommandApprovalBinding } from './consumeCommandApprovalBinding';
-import { createRecoveredVerifiedBatchReceipt } from './createRecoveredVerifiedBatchReceipt';
 import { createVerifiedBatchReceipt } from './createVerifiedBatchReceipt';
 import { executeVersionedCommandBatch } from './executeVersionedCommandBatch';
 import { getCommandBatchContentHash } from './getCommandBatchContentHash';
@@ -18,7 +17,6 @@ import { parseVersionedCommandBatchEnvelope } from './parseVersionedCommandBatch
 import { persistProjectCommandBatchIdempotencyCheckpoint } from './persistProjectCommandBatchIdempotencyCheckpoint';
 import { prepareCommandBatchPreflight } from './prepareCommandBatchPreflight';
 import { previewVersionedCommandBatchEnvelope } from './previewVersionedCommandBatchEnvelope';
-import { reconcileProjectCommandBatchEffects } from './reconcileProjectCommandBatchEffects';
 import { recordProjectCommandBatchIdempotencyCheckpoint } from './recordProjectCommandBatchIdempotencyCheckpoint';
 import { resolveVersionedCommandBatchBindings } from './resolveVersionedCommandBatchBindings';
 import { serializeVersionedCommandEnvelope } from './serializeVersionedCommandEnvelope';
@@ -35,6 +33,17 @@ type ExecuteVersionedCommandBatchEnvelopeInput = {
             promote: (result: { receipt: ReturnType<typeof createVerifiedBatchReceipt> }) => void;
             discard: () => void;
         } | void;
+        /** Observe the exact durable receipt and revision after the final project checkpoint becomes visible. */
+        onProjectCommitFinalized?: (result: {
+            receipt: ReturnType<typeof createVerifiedBatchReceipt>;
+            revision: string;
+        }) => void;
+        /** Observe why exact post-checkpoint evidence could not be provided after a durable project commit. */
+        onProjectCommitFinalizationUnavailable?: (result: { reason: string }) => void;
+        /** Refuse final checkpoint evidence when the caller's project-write authority was invalidated. */
+        shouldFinalizeProjectCommit?: () => boolean;
+        /** Observe the storage commit before deferred post-commit effects begin. */
+        onCommitted?: (actions: readonly AppAction[]) => void;
     };
     onProjectCommitPrepared?: () => void;
 };
@@ -50,19 +59,23 @@ const PROJECT_COMMIT_RECOVERY_WARNING =
     'The atomic project commit is durable, but post-commit receipt finalization was interrupted.';
 const PROJECT_RECEIPT_REVISION_WARNING =
     'Resulting project heads are omitted because the verified receipt is itself journaled in project truth.';
+const PROJECT_EFFECT_RECOVERY_REQUIRES_EXACT_CHECKPOINT_REVISION =
+    'Pending project checkpoint recovery requires exact post-commit project revision evidence.';
 const activeIdempotencyClaims = new Set<string>();
 
-function isOriginatingProjectCurrent(capturedRevision: string | null): boolean {
-    if (!commandProjectRevisionPort.isConfigured()) {
-        return capturedRevision === null;
-    }
-    if (capturedRevision === null) {
-        return false;
-    }
+function getStorageCommitRevisionFailureMessage(error: Error | null): string {
+    return error?.message ?? 'exact storage-commit revision evidence is unavailable';
+}
+
+function reportUnavailableProjectCommitFinalization(
+    options: ExecuteVersionedCommandBatchEnvelopeInput['options'],
+    error: unknown
+): void {
+    const reason = error instanceof Error ? error.message : String(error);
     try {
-        return commandProjectRevisionPort.capture() === capturedRevision;
+        options?.onProjectCommitFinalizationUnavailable?.({ reason });
     } catch {
-        return false;
+        // Finalization observers never alter the durable command result.
     }
 }
 
@@ -316,76 +329,11 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                             actions: [] as [],
                         };
                     }
-                    const originatingProjectRevision = observedBaseRevision;
-                    const reconciliation = await reconcileProjectCommandBatchEffects({
-                        contentHash: batchContentHash,
-                        envelope: resolvedEnvelope,
-                        isProjectCurrent: () => isOriginatingProjectCurrent(originatingProjectRevision),
-                        serializedReceipt: recoveryCheckpoint.serializedReceipt,
-                        shouldReconcile: () => commandBatchExecutionAuthorityPort.canExecute(),
-                    });
-                    if (reconciliation.status === 'failed') {
-                        return {
-                            status: 'ambiguous' as const,
-                            reason: reconciliation.reason,
-                            actions: [] as [],
-                            receipt: recoveryReceipt,
-                        };
-                    }
-                    if (!commandBatchExecutionAuthorityPort.canExecute()) {
-                        return {
-                            status: 'ambiguous' as const,
-                            reason: 'Only the authoritative collaboration host can reconcile a durable command batch',
-                            actions: [] as [],
-                            receipt: recoveryReceipt,
-                        };
-                    }
-                    if (!isOriginatingProjectCurrent(originatingProjectRevision)) {
-                        return {
-                            status: 'ambiguous' as const,
-                            reason: 'The originating project changed during external-effect recovery',
-                            actions: [] as [],
-                            receipt: recoveryReceipt,
-                        };
-                    }
-                    const recoveredReceipt = createRecoveredVerifiedBatchReceipt({
-                        contentHash: batchContentHash,
-                        envelope: resolvedEnvelope,
-                        priorReceipt: recoveryReceipt,
-                        receiptWarnings: [PROJECT_RECEIPT_REVISION_WARNING],
-                    });
-                    const serializedRecoveredReceipt = JSON.stringify(recoveredReceipt);
-                    try {
-                        persistProjectCommandBatchIdempotencyCheckpoint({
-                            projectId: parsed.envelope.projectId,
-                            idempotencyKey: parsed.envelope.idempotencyKey,
-                            contentHash: batchContentHash,
-                            state: 'complete',
-                            serializedReceipt: serializedRecoveredReceipt,
-                        });
-                    } catch (error) {
-                        return {
-                            status: 'ambiguous' as const,
-                            reason: `Idempotency checkpoint finalization failed: ${error instanceof Error ? error.message : String(error)}`,
-                            actions: [] as [],
-                            receipt: recoveryReceipt,
-                        };
-                    }
-                    try {
-                        await commandBatchIdempotencyPort.complete({
-                            projectId: parsed.envelope.projectId,
-                            idempotencyKey: parsed.envelope.idempotencyKey,
-                            contentHash: batchContentHash,
-                            serializedReceipt: serializedRecoveredReceipt,
-                        });
-                    } catch {
-                        // Project truth is the durable authority; the local cache may heal on a later retry.
-                    }
                     return {
-                        status: 'idempotent-replay' as const,
+                        status: 'ambiguous' as const,
                         actions: [] as [],
-                        receipt: recoveredReceipt,
-                        recoveredExternalEffects: true as const,
+                        reason: PROJECT_EFFECT_RECOVERY_REQUIRES_EXACT_CHECKPOINT_REVISION,
+                        receipt: recoveryReceipt,
                     };
                 } finally {
                     try {
@@ -544,6 +492,9 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
     }
     let result: Awaited<ReturnType<typeof executeVersionedCommandBatch>>;
     const callerShouldExecute = input.options?.shouldExecute;
+    const callerOnCommitted = input.options?.onCommitted;
+    let exactStorageCommitRevision: string | undefined;
+    let storageCommitRevisionError: Error | null = null;
     try {
         result = await executeVersionedCommandBatch({
             commands: resolvedCommands.map((command) =>
@@ -565,6 +516,20 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                 shouldExecute: () =>
                     (!requiresDurableExecutionAuthority || commandBatchExecutionAuthorityPort.canExecute()) &&
                     (callerShouldExecute?.() ?? true),
+                onCommitted: (actions) => {
+                    try {
+                        if (!commandProjectRevisionPort.isConfigured()) {
+                            throw new Error('The project revision provider is unavailable at the storage commit.');
+                        }
+                        exactStorageCommitRevision = commandProjectRevisionPort.capture();
+                    } catch (error) {
+                        storageCommitRevisionError =
+                            error instanceof Error
+                                ? error
+                                : new Error('Unknown storage-commit revision capture failure.');
+                    }
+                    callerOnCommitted?.(actions);
+                },
                 onProjectCommitPrepared: (committedResult) => {
                     if (idempotencyContentHash !== null) {
                         const recoveryResult = {
@@ -633,16 +598,28 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
         throw error;
     }
     let resultingRevision: string | null = null;
-    try {
-        if (commandProjectRevisionPort.isConfigured()) {
-            resultingRevision = commandProjectRevisionPort.capture();
-        } else {
-            receiptWarnings.push('Resulting project revision is unavailable: revision provider is not configured');
+    if (result.status === 'committed' || result.status === 'committed-with-warning') {
+        resultingRevision = exactStorageCommitRevision ?? null;
+        if (resultingRevision === null) {
+            if (!commandProjectRevisionPort.isConfigured()) {
+                receiptWarnings.push('Resulting project revision is unavailable: revision provider is not configured');
+            } else {
+                const reason = getStorageCommitRevisionFailureMessage(storageCommitRevisionError);
+                receiptWarnings.push(`Resulting project revision could not be captured: ${reason}`);
+            }
         }
-    } catch (error) {
-        receiptWarnings.push(
-            `Resulting project revision could not be captured: ${error instanceof Error ? error.message : String(error)}`
-        );
+    } else {
+        try {
+            if (commandProjectRevisionPort.isConfigured()) {
+                resultingRevision = commandProjectRevisionPort.capture();
+            } else {
+                receiptWarnings.push('Resulting project revision is unavailable: revision provider is not configured');
+            }
+        } catch (error) {
+            receiptWarnings.push(
+                `Resulting project revision could not be captured: ${error instanceof Error ? error.message : String(error)}`
+            );
+        }
     }
     let finalized = {
         ...result,
@@ -657,6 +634,18 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
     };
     if (idempotencyContentHash !== null) {
         if (result.status === 'committed' || result.status === 'committed-with-warning') {
+            let finalizationEvidenceError: unknown = null;
+            let finalProjectReceipt: ReturnType<typeof createVerifiedBatchReceipt> | null = null;
+            let projectCheckpointPersistenceError: unknown = null;
+            try {
+                if (input.options?.shouldFinalizeProjectCommit?.() === false) {
+                    finalizationEvidenceError = new Error(
+                        'The project changed outside the confirmed command before finalization evidence was recorded.'
+                    );
+                }
+            } catch (error) {
+                finalizationEvidenceError = error;
+            }
             try {
                 const hasPendingExternalEffect =
                     result.status === 'committed-with-warning' &&
@@ -676,8 +665,10 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                     state: hasPendingExternalEffect ? 'effects-pending' : 'complete',
                     serializedReceipt: JSON.stringify(projectReceipt),
                 });
+                finalProjectReceipt = projectReceipt;
                 finalized = { ...finalized, receipt: projectReceipt };
-            } catch {
+            } catch (error) {
+                projectCheckpointPersistenceError = error;
                 if (projectCommitRecovery.receipt) {
                     finalized = {
                         status: 'committed-with-warning' as const,
@@ -686,6 +677,52 @@ export async function executeVersionedCommandBatchEnvelope(input: ExecuteVersion
                         warningDetails: [{ kind: 'observer' as const, message: PROJECT_COMMIT_RECOVERY_WARNING }],
                         receipt: projectCommitRecovery.receipt,
                     };
+                }
+            }
+            if (finalizationEvidenceError !== null) {
+                reportUnavailableProjectCommitFinalization(input.options, finalizationEvidenceError);
+            } else if (projectCheckpointPersistenceError !== null || finalProjectReceipt === null) {
+                reportUnavailableProjectCommitFinalization(
+                    input.options,
+                    projectCheckpointPersistenceError ??
+                        new Error('The durable project checkpoint could not be persisted for finalization evidence.')
+                );
+            } else {
+                try {
+                    const checkpoint = getProjectCommandBatchIdempotencyCheckpoint({
+                        projectId: parsed.envelope.projectId,
+                        idempotencyKey: parsed.envelope.idempotencyKey,
+                        contentHash: idempotencyContentHash,
+                    });
+                    if (checkpoint.status !== 'complete' && checkpoint.status !== 'pending') {
+                        throw new Error('The durable project checkpoint is unavailable for finalization evidence.');
+                    }
+                    const serializedFinalReceipt = JSON.stringify(finalProjectReceipt);
+                    if (checkpoint.serializedReceipt !== serializedFinalReceipt) {
+                        throw new Error('The durable project checkpoint does not contain the exact finalized receipt.');
+                    }
+                    const durableFinalReceipt = parseStoredVerifiedBatchReceipt({
+                        baseRevision: parsed.envelope.baseRevision,
+                        batchId: parsed.envelope.batchId,
+                        commands: parsed.envelope.commands,
+                        contentHash: idempotencyContentHash,
+                        runId: parsed.envelope.runId,
+                        serializedReceipt: checkpoint.serializedReceipt,
+                    });
+                    if (!durableFinalReceipt) {
+                        throw new Error('The durable project checkpoint receipt is invalid for finalization evidence.');
+                    }
+                    if (exactStorageCommitRevision === undefined) {
+                        throw (
+                            storageCommitRevisionError ?? new Error('The exact storage-commit revision is unavailable.')
+                        );
+                    }
+                    input.options?.onProjectCommitFinalized?.({
+                        receipt: durableFinalReceipt,
+                        revision: exactStorageCommitRevision,
+                    });
+                } catch (error) {
+                    reportUnavailableProjectCommitFinalization(input.options, error);
                 }
             }
         }

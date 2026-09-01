@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 
 import { analyzePcmWav } from './analyzePcmWav';
-import { setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+import { LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
 const ALLOWED_WARNING_FRAGMENTS = [
     'using deprecated parameters for `initSync()`',
@@ -61,7 +61,7 @@ test('exports the complete Nebula Drift mix as a stereo WAV', async ({ page }, t
     await setupWorkspace(page);
 
     const launchScreen = page.getByLabel('Sourdaw — start a project');
-    await expect(launchScreen).toBeVisible();
+    await expect(launchScreen).toBeVisible({ timeout: LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS });
     await page.locator('#launch-demo-project').click();
     const card = page.getByRole('button', { name: /Nebula Drift/i });
     await expect(card).toBeVisible();

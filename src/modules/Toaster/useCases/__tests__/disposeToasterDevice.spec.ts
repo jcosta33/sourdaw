@@ -31,6 +31,11 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getTrackStrip: vi.fn(() => ({
         deviceNodes: [{ toasterControls: { ready: true, setPadParam } }],
     })),
+    applyNoteExpression: vi.fn(),
+    audioEngine: {},
+    getCompensationDelay: vi.fn(),
+    getDefaultBendRangeSemitones: vi.fn(),
+    getFactoryDrumKitByIndex: vi.fn(),
 }));
 
 // findDeviceRef walks getAllTracks(); return a track owning DEVICE so the

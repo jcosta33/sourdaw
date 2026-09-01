@@ -78,3 +78,19 @@ export type ScannedPlugin = {
      */
     capability_metadata_reason?: string;
 };
+
+/**
+ * A scan candidate the native host refuses to load because its own helper
+ * process crashed or hung on a prior scan (#2911).
+ *
+ * Durable: the registry keeps this record across restarts and ordinary
+ * incremental scans, so it survives a reload the same way `ScannedPlugin`
+ * entries do. Field names are snake_case for the same reason as above — this
+ * mirrors the serialized Rust `QuarantinedPlugin` payload verbatim.
+ */
+export type QuarantinedPlugin = {
+    path: string;
+    /** The scan failure that caused quarantine — a process exit or timeout message. */
+    reason: string;
+    quarantined_at_ms: number;
+};

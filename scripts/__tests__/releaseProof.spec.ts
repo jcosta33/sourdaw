@@ -23,10 +23,9 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const zipPayloadExpansionProbe = vi.hoisted(() => ({
     archive: undefined as Buffer | undefined,
@@ -88,13 +87,49 @@ import {
     validateTrustedSystemInterpreter,
 } from '../releaseProof';
 
-const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const workspaceRoot = join(import.meta.dirname, '..', '..');
 const WEBLLM_REQUIRED_LEGAL_FILES = webLlmRequiredLegalFiles(workspaceRoot);
 const WEBLLM_REQUIRED_SOURCE_LEGAL_FILES = WEBLLM_REQUIRED_LEGAL_FILES.map((path) => `public/${path}`);
 const WEBLLM_PACKAGED_PATH_LIST_DIGEST = '03220ef72279533c5110dea8cad8b087065c2232238096c6cc50cf3f48a10603';
 const fixtureRoots: string[] = [];
 const electronRepository = 'https://example.test/electron/electron';
 const ffmpegRepository = 'https://example.test/chromium/ffmpeg';
+
+type SourceRepositoryTemplate = {
+    ffmpegSource: string;
+    ffmpegRevision: string;
+    electronSource: string;
+    electronRevision: string;
+};
+
+let sourceRepositoryTemplate: SourceRepositoryTemplate | undefined;
+let sourceRepositoryTemplateRoot: string | undefined;
+
+function sourceRepositoryTemplateSnapshot(): SourceRepositoryTemplate {
+    if (sourceRepositoryTemplate !== undefined) {
+        return sourceRepositoryTemplate;
+    }
+    const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-proof-source-template-'));
+    sourceRepositoryTemplateRoot = base;
+    const ffmpegSource = createRepository(base, 'ffmpeg', ffmpegRepository, {
+        'BUILD.gn': 'shared_library("ffmpeg") {}\n',
+        'COPYING.LGPLv2.1': 'fixture LGPL source\n',
+        'libavcodec/codec.c': 'int codec(void) { return 1; }\n',
+    });
+    const ffmpegRevision = git(ffmpegSource, ['rev-parse', 'HEAD']);
+    const electronFiles = Object.fromEntries(
+        ELECTRON_FFMPEG_BUILD_INPUTS.map((path) => [path, `fixture Electron input ${path}\n`])
+    );
+    electronFiles.DEPS = `'ffmpeg_revision': '${ffmpegRevision}'\n`;
+    const electronSource = createRepository(base, 'electron', electronRepository, electronFiles);
+    const electronRevision = git(electronSource, ['rev-parse', 'HEAD']);
+    sourceRepositoryTemplate = { ffmpegSource, ffmpegRevision, electronSource, electronRevision };
+    return sourceRepositoryTemplate;
+}
+
+function cloneCachedRepository(source: string, destination: string): void {
+    cpSync(source, destination, { recursive: true });
+}
 
 type Fixture = {
     base: string;
@@ -351,21 +386,16 @@ function createDesktopZip(fixture: Fixture, archiveDirectory: string, options: D
 }
 
 function createFixture(options: DesktopOptions = {}): Fixture {
-    const base = mkdtempSync(join(workspaceRoot, 'release-proof-fixture-'));
+    const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-proof-fixture-'));
     fixtureRoots.push(base);
 
-    const ffmpegSource = createRepository(base, 'ffmpeg', ffmpegRepository, {
-        'BUILD.gn': 'shared_library("ffmpeg") {}\n',
-        'COPYING.LGPLv2.1': 'fixture LGPL source\n',
-        'libavcodec/codec.c': 'int codec(void) { return 1; }\n',
-    });
-    const ffmpegRevision = git(ffmpegSource, ['rev-parse', 'HEAD']);
-    const electronFiles = Object.fromEntries(
-        ELECTRON_FFMPEG_BUILD_INPUTS.map((path) => [path, `fixture Electron input ${path}\n`])
-    );
-    electronFiles.DEPS = `'ffmpeg_revision': '${ffmpegRevision}'\n`;
-    const electronSource = createRepository(base, 'electron', electronRepository, electronFiles);
-    const electronRevision = git(electronSource, ['rev-parse', 'HEAD']);
+    const template = sourceRepositoryTemplateSnapshot();
+    const ffmpegSource = join(base, 'ffmpeg');
+    const electronSource = join(base, 'electron');
+    cloneCachedRepository(template.ffmpegSource, ffmpegSource);
+    cloneCachedRepository(template.electronSource, electronSource);
+    const ffmpegRevision = template.ffmpegRevision;
+    const electronRevision = template.electronRevision;
 
     const contract = structuredClone(ELECTRON_RUNTIME_CONTRACT);
     contract.repository = electronRepository;
@@ -434,6 +464,22 @@ function createFixture(options: DesktopOptions = {}): Fixture {
     };
 }
 
+function cloneAssembledFixture(source: Fixture): Fixture {
+    const base = mkdtempSync(join(tmpdir(), 'sourdaw-release-proof-clone-'));
+    const root = join(base, 'repository');
+    const candidate = join(base, 'candidate');
+    fixtureRoots.push(base);
+    cpSync(source.root, root, { recursive: true });
+    cpSync(source.candidate, candidate, { recursive: true });
+    return {
+        ...source,
+        base,
+        root,
+        candidate,
+        contract: structuredClone(source.contract),
+    };
+}
+
 function writeWebBuild(fixture: Fixture, marker = 'current'): void {
     const webDist = join(fixture.root, 'dist');
     write(join(webDist, 'index.html'), `<!doctype html><title>${marker}</title>`);
@@ -487,6 +533,26 @@ function assemble(
         snapshotFileReader,
         publisherPreparer
     );
+}
+
+let defaultAssembledFixture: Fixture | undefined;
+
+function ensureDefaultAssembledFixture(): Fixture {
+    if (defaultAssembledFixture !== undefined) {
+        return defaultAssembledFixture;
+    }
+    const assembled = createFixture();
+    assemble(assembled);
+    const index = fixtureRoots.lastIndexOf(assembled.base);
+    if (index !== -1) {
+        fixtureRoots.splice(index, 1);
+    }
+    defaultAssembledFixture = assembled;
+    return assembled;
+}
+
+function cloneDefaultAssembledFixture(): Fixture {
+    return cloneAssembledFixture(ensureDefaultAssembledFixture());
 }
 
 function proof(fixture: Fixture): Record<string, unknown> {
@@ -646,6 +712,22 @@ function validate(fixture: Fixture, fileReader?: ReleaseProofFileReader): string
     }).join('\n');
 }
 
+beforeAll(() => {
+    ensureDefaultAssembledFixture();
+});
+
+afterAll(() => {
+    if (defaultAssembledFixture !== undefined) {
+        rmSync(defaultAssembledFixture.base, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
+        defaultAssembledFixture = undefined;
+    }
+    if (sourceRepositoryTemplateRoot !== undefined) {
+        rmSync(sourceRepositoryTemplateRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
+        sourceRepositoryTemplateRoot = undefined;
+        sourceRepositoryTemplate = undefined;
+    }
+});
+
 afterEach(() => {
     for (const root of fixtureRoots.splice(0)) {
         rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 });
@@ -713,15 +795,13 @@ describe('release proof', () => {
     });
 
     it('rejects a malformed proof manifest', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         write(join(fixture.candidate, 'release-proof.json'), '{');
         expect(validate(fixture)).toContain('release-proof.json: malformed JSON');
     });
 
     it('caps whole-buffer JSON and commit-object reads before parsing', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const proofPath = join(fixture.candidate, 'release-proof.json');
         const originalProof = readFileSync(proofPath);
         let commitPath: string | undefined;
@@ -780,8 +860,7 @@ describe('release proof', () => {
     });
 
     it('stops reading a proof that grows beyond its JSON limit', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const proofPath = join(fixture.candidate, 'release-proof.json');
         let proofDescriptor: number | undefined;
         let proofReads = 0;
@@ -810,8 +889,7 @@ describe('release proof', () => {
     });
 
     it('charges a no-follow proof read to the cumulative candidate budget', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const proofPath = join(fixture.candidate, 'release-proof.json');
         const manifestPath = join(fixture.candidate, 'source/source-manifest.json');
         let proofDescriptor: number | undefined;
@@ -853,8 +931,7 @@ describe('release proof', () => {
     });
 
     it('rejects an already-oversize candidate manifest without reading descriptor bytes', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const manifestPath = join(fixture.candidate, 'source/source-manifest.json');
         truncateSync(manifestPath, RELEASE_PROOF_TYPE_LIMITS.jsonBytes + 1);
         let manifestDescriptor: number | undefined;
@@ -883,15 +960,13 @@ describe('release proof', () => {
     });
 
     it('uses default descriptor open and read operations when only no-follow support is supplied', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
 
         expect(validate(fixture, { noFollowFlag: () => constants.O_NOFOLLOW })).toEqual('');
     });
 
     it('stops snapshotting when a candidate manifest grows beyond its consumer limit', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const manifestPath = join(fixture.candidate, 'source/source-manifest.json');
         let manifestDescriptor: number | undefined;
         let manifestReads = 0;
@@ -922,8 +997,7 @@ describe('release proof', () => {
     });
 
     it('rejects a candidate descriptor that reports EOF while unread growth remains', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const path = join(fixture.candidate, 'web/contents/assets/app.js');
         let targetDescriptor: number | undefined;
         let earlyEofReports = 0;
@@ -953,8 +1027,7 @@ describe('release proof', () => {
     });
 
     it('stops before reading a candidate file that exhausts the cumulative snapshot budget', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const manifestPath = join(fixture.candidate, 'source/source-manifest.json');
         const proofPath = join(fixture.candidate, 'release-proof.json');
         const source = proof(fixture).source as Record<string, unknown>;
@@ -992,8 +1065,7 @@ describe('release proof', () => {
         ['web contents', 'web/contents/assets/app.js'],
         ['Electron FFmpeg build inputs', 'desktop/build-inputs/electron/DEPS'],
     ])('stops hashing a growing %s member at the running file limit', (label, candidatePath) => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const path = join(fixture.candidate, candidatePath);
         let targetDescriptor: number | undefined;
         let targetReads = 0;
@@ -1025,8 +1097,7 @@ describe('release proof', () => {
     });
 
     it('stops before reading a web contents member that exhausts the cumulative validation budget', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const value = proof(fixture);
         const source = value.source as Record<string, string>;
         const web = value.web as Record<string, string>;
@@ -1082,8 +1153,7 @@ describe('release proof', () => {
     });
 
     it('stops before reading a build-input member that exhausts the cumulative validation budget', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const value = proof(fixture);
         const source = value.source as Record<string, string>;
         const web = value.web as Record<string, string>;
@@ -1156,8 +1226,7 @@ describe('release proof', () => {
     });
 
     it('rejects a stale candidate revision', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const value = proof(fixture);
         value.sourceRevision = '0'.repeat(40);
         writeJson(join(fixture.candidate, 'release-proof.json'), value);
@@ -1178,8 +1247,7 @@ describe('release proof', () => {
     });
 
     it('rejects a desktop census not derived from the packaged archive', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const manifestPath = join(fixture.candidate, 'desktop/desktop-contents-manifest.json');
         const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>;
         const files = manifest.files as Record<string, string>;
@@ -1190,8 +1258,7 @@ describe('release proof', () => {
     });
 
     it('rejects fabricated renderer and packaged libffmpeg receipt hashes', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const manifestPath = join(fixture.candidate, 'desktop/desktop-contents-manifest.json');
         const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>;
         const receipt = manifest.buildReceipt as Record<string, unknown>;
@@ -1205,8 +1272,7 @@ describe('release proof', () => {
     });
 
     it('rejects candidate files reached through a containing-directory symlink escape', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const outside = join(fixture.base, 'outside-web-contents');
         cpSync(join(fixture.candidate, 'web/contents'), outside, { recursive: true });
         rmSync(join(fixture.candidate, 'web/contents'), { recursive: true });
@@ -1215,8 +1281,7 @@ describe('release proof', () => {
     });
 
     it('rejects candidate-side file symlinks even when their target bytes match', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const material = join(fixture.candidate, 'desktop/ELECTRON-SOURCES.json');
         const outside = join(fixture.base, 'outside-electron-sources.json');
         cpSync(material, outside);
@@ -1226,8 +1291,7 @@ describe('release proof', () => {
     });
 
     it('rejects a candidate file that has another hard link', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const proofPath = join(fixture.candidate, 'release-proof.json');
         linkSync(proofPath, join(fixture.base, 'release-proof.alias.json'));
 
@@ -1235,8 +1299,7 @@ describe('release proof', () => {
     });
 
     it('rejects a candidate file hard-linked while its descriptor opens', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const proofPath = join(fixture.candidate, 'release-proof.json');
         const aliasPath = join(fixture.base, 'release-proof.raced.json');
         const fileReader: ReleaseProofFileReader = {
@@ -1256,8 +1319,7 @@ describe('release proof', () => {
     });
 
     it('rejects a candidate file hard-linked during its descriptor read', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const manifestPath = join(fixture.candidate, 'web/contents/web-artifact-manifest.json');
         const aliasPath = join(fixture.base, 'web-manifest-read.alias.json');
         const descriptorPaths = new Map<number, string>();
@@ -1286,8 +1348,7 @@ describe('release proof', () => {
         ['web manifest', 'web/contents/web-artifact-manifest.json'],
         ['web archive', 'web/sourdaw-web.zip'],
     ])('rejects a %s path swapped to a symlink before its descriptor opens', (_label, candidatePath) => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const path = join(fixture.candidate, candidatePath);
         const outside = join(fixture.base, `${candidatePath.replaceAll('/', '-')}.outside`);
         writeFileSync(outside, 'untrusted replacement');
@@ -1323,8 +1384,7 @@ describe('release proof', () => {
         ['web manifest', 'web/contents/web-artifact-manifest.json'],
         ['FFmpeg build material', 'desktop/ffmpeg-build-material.json'],
     ])('rejects captured %s bytes when its candidate path is swapped during read', (label, candidatePath) => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const path = join(fixture.candidate, candidatePath);
         let targetDescriptor: number | undefined;
         let swapped = false;
@@ -1352,8 +1412,7 @@ describe('release proof', () => {
     });
 
     it('rejects a same-inode same-size candidate rewrite after snapshot capture', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const path = join(fixture.candidate, 'web/contents/assets/app.js');
         const original = readFileSync(path);
         const replacement = Buffer.from(original.toString('utf8').replace('current', 'raced!!'), 'utf8');
@@ -1500,8 +1559,7 @@ describe('release proof', () => {
     });
 
     it('rejects a web ZIP whose same-named entry bytes differ from web contents', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const archive = join(fixture.candidate, 'web/sourdaw-web.zip');
         const extracted = join(fixture.base, 'mutated-web-archive');
         const paths = execFileSync('unzip', ['-Z1', archive], { encoding: 'utf8' }).trim().split('\n').sort();
@@ -1520,8 +1578,7 @@ describe('release proof', () => {
     });
 
     it('rejects candidates that omit the Qwen legal notice from both packaged surfaces', { timeout: 10_000 }, () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         rmSync(join(fixture.candidate, 'web/contents/legal/Qwen-NOTICE.txt'));
         rewriteDesktopArchive(fixture, (root) => {
             rmSync(join(root, 'Sourdaw.app/Contents/Resources/legal/Qwen-NOTICE.txt'));
@@ -1533,8 +1590,7 @@ describe('release proof', () => {
     });
 
     it('rejects candidates that omit a nested tvm-ffi legal file from both packaged surfaces', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         rmSync(join(fixture.candidate, 'web/contents/legal/Apache-TVM/3rdparty/tvm-ffi/licenses/LICENSE.dlpack.txt'));
         rewriteDesktopArchive(fixture, (root) => {
             rmSync(
@@ -1551,9 +1607,8 @@ describe('release proof', () => {
     });
 
     it('rejects an inventory-derived WebLLM legal file whose web contents bytes drift', () => {
-        const fixture = createFixture();
+        const fixture = cloneDefaultAssembledFixture();
         const legalFile = WEBLLM_REQUIRED_LEGAL_FILES[0]!;
-        assemble(fixture);
         write(join(fixture.candidate, 'web/contents', legalFile), 'drifted web legal bytes');
 
         const errors = validate(fixture);
@@ -1562,9 +1617,8 @@ describe('release proof', () => {
     });
 
     it('rejects an inventory-derived WebLLM legal file whose desktop archive bytes drift', () => {
-        const fixture = createFixture();
+        const fixture = cloneDefaultAssembledFixture();
         const legalFile = WEBLLM_REQUIRED_LEGAL_FILES[0]!;
-        assemble(fixture);
         rewriteDesktopArchive(fixture, (root) => {
             write(join(root, 'Sourdaw.app/Contents/Resources', legalFile), 'drifted desktop legal bytes');
         });
@@ -1582,8 +1636,7 @@ describe('release proof', () => {
     });
 
     it('rejects fabricated FFmpeg build material', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const path = join(fixture.candidate, 'desktop/ffmpeg-build-material.json');
         const material = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
         (material.commands as Record<string, unknown>).target = 'caller:invented';
@@ -1596,16 +1649,14 @@ describe('release proof', () => {
         ['missing', (path: string) => rmSync(path)],
         ['mutated', (path: string) => write(path, 'caller-authored bytes')],
     ])('rejects %s exact Electron build inputs', (_label, mutate) => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const input = join(fixture.candidate, 'desktop/build-inputs/electron/build/args/release.gn');
         mutate(input);
         expect(validate(fixture)).toMatch(/Electron FFmpeg build inputs|does not match the source archive/u);
     });
 
     it('rejects missing corresponding FFmpeg source', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const value = proof(fixture);
         const path = desktopProof(value).ffmpegSourcePath as string;
         rmSync(join(fixture.candidate, path));
@@ -1938,8 +1989,7 @@ ${seam}`
     });
 
     it('does not recursively delete a replacement swapped onto the validation snapshot path', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const existingSnapshots = new Set(
             readdirSync(tmpdir()).filter((entry) => entry.startsWith('sourdaw-release-proof-snapshot-'))
         );
@@ -2895,15 +2945,13 @@ with open(early, "r+b", buffering=0) as file:
     });
 
     it('rejects unreferenced files outside the closed candidate census', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         write(join(fixture.candidate, 'desktop/stale-output.zip'), 'stale');
         expect(validate(fixture)).toContain('release candidate file census contains missing or unreferenced files');
     });
 
     it('bounds candidate traversal depth and aggregate bytes without recursion or large fixtures', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const sparseBytes = Math.floor(RELEASE_PROOF_ARCHIVE_LIMITS.expandedBytes / 2) + 1;
         const first = join(fixture.candidate, 'sparse-a');
         const second = join(fixture.candidate, 'sparse-b');
@@ -2921,8 +2969,7 @@ with open(early, "r+b", buffering=0) as file:
     });
 
     it('rejects build tree claims not derived from pinned commit objects', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const path = join(fixture.candidate, 'desktop/ffmpeg-build-material.json');
         const material = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
         (material.electron as Record<string, unknown>).treeSha1 = '0'.repeat(40);
@@ -2931,9 +2978,21 @@ with open(early, "r+b", buffering=0) as file:
         expect(validate(fixture)).toContain('was not generated from the pinned Electron and FFmpeg sources');
     });
 
+    it('stops desktop verification after a non-canonical artifact path', () => {
+        const fixture = cloneDefaultAssembledFixture();
+        const value = proof(fixture);
+        const desktop = desktopProof(value);
+        const canonicalPath = desktop.artifactPath as string;
+        desktop.artifactPath = `desktop/relocated/${basename(canonicalPath)}`;
+        writeJson(join(fixture.candidate, 'release-proof.json'), value);
+
+        const errors = validate(fixture);
+        expect(errors).toContain(`desktop material path must be ${canonicalPath}`);
+        expect(errors).not.toContain('desktop artifact: file is missing');
+    });
+
     it('rejects relocation of every canonical desktop material path', { timeout: 10_000 }, () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const value = proof(fixture);
         const desktop = desktopProof(value);
         for (const field of [
@@ -2963,13 +3022,11 @@ with open(early, "r+b", buffering=0) as file:
         'fails validation closed when the repository is dirty or no longer at the expected revision',
         { timeout: 10_000 },
         () => {
-            const dirty = createFixture();
-            assemble(dirty);
+            const dirty = cloneDefaultAssembledFixture();
             write(join(dirty.root, 'untracked-release-input.txt'), 'dirty');
             expect(validate(dirty)).toContain('release proof validation requires a clean worktree');
 
-            const moved = createFixture();
-            assemble(moved);
+            const moved = cloneDefaultAssembledFixture();
             write(join(moved.root, 'next-revision.txt'), 'next');
             commit(moved.root, 'advance fixture revision');
             expect(validate(moved)).toContain(
@@ -2979,8 +3036,7 @@ with open(early, "r+b", buffering=0) as file:
     );
 
     it.each(['.git', '.GIT'])('rejects %s archive metadata before reconstructed Git execution', (directory) => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const marker = join(fixture.base, 'git-filter-ran');
         replaceSourceArchiveWithGitMetadata(fixture, marker, directory);
         expect(validate(fixture)).toContain('source archive contains repository metadata');
@@ -2988,8 +3044,12 @@ with open(early, "r+b", buffering=0) as file:
     });
 
     it('rejects ZIP archive resource metadata without expanding hostile payloads', { timeout: 20_000 }, () => {
-        const tar = createFixture();
-        assemble(tar);
+        const tar = cloneDefaultAssembledFixture();
+        const file = cloneDefaultAssembledFixture();
+        const entry = cloneDefaultAssembledFixture();
+        const aggregate = cloneDefaultAssembledFixture();
+        const count = cloneDefaultAssembledFixture();
+        const depth = cloneDefaultAssembledFixture();
         const tarSource = proof(tar).source as Record<string, unknown>;
         const tarArchive = join(tar.candidate, tarSource.archivePath as string);
         writeFileSync(tarArchive, oversizedTarHeader(RELEASE_PROOF_ARCHIVE_LIMITS.entryBytes + 1));
@@ -2998,8 +3058,6 @@ with open(early, "r+b", buffering=0) as file:
             'tar archive is unreadable: release archive limit exceeded: an entry exceeds the expanded-size limit'
         );
 
-        const file = createFixture();
-        assemble(file);
         const fileSource = proof(file).source as Record<string, unknown>;
         truncateSync(
             join(file.candidate, fileSource.archivePath as string),
@@ -3007,8 +3065,6 @@ with open(early, "r+b", buffering=0) as file:
         );
         expect(validate(file)).toContain('source archive: file exceeds the candidate file-size limit');
 
-        const entry = createFixture();
-        assemble(entry);
         const entryArchive = replaceWebArchive(entry, ['entry.txt']);
         patchZipMetadata(entryArchive, (bytes, centralOffset) => {
             bytes.writeUInt32LE(RELEASE_PROOF_ARCHIVE_LIMITS.entryBytes + 1, centralOffset + 24);
@@ -3020,8 +3076,6 @@ with open(early, "r+b", buffering=0) as file:
             'zip archive is unreadable: release archive limit exceeded: an entry exceeds the expanded-size limit'
         );
 
-        const aggregate = createFixture();
-        assemble(aggregate);
         const aggregatePaths = Array.from({ length: 11 }, (_value, index) => `file-${String(index)}.txt`);
         const aggregateArchive = replaceWebArchive(aggregate, aggregatePaths);
         patchZipMetadata(aggregateArchive, (bytes, centralOffset, entryCount) => {
@@ -3043,8 +3097,6 @@ with open(early, "r+b", buffering=0) as file:
             'zip archive is unreadable: release archive limit exceeded: aggregate expanded bytes exceed the limit'
         );
 
-        const count = createFixture();
-        assemble(count);
         const countArchive = replaceWebArchive(count, ['count.txt']);
         patchZipMetadata(countArchive, (bytes, _centralOffset) => {
             const end = bytes.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
@@ -3058,8 +3110,6 @@ with open(early, "r+b", buffering=0) as file:
             'zip archive is unreadable: release archive limit exceeded: entry count exceeds the limit'
         );
 
-        const depth = createFixture();
-        assemble(depth);
         const deepPath = `${Array.from({ length: RELEASE_PROOF_ARCHIVE_LIMITS.pathDepth + 1 }, () => 'deep').join('/')}/file.txt`;
         replaceWebArchive(depth, [deepPath]);
         expect(validate(depth)).toContain('web archive contains a path exceeding the depth limit');
@@ -3102,8 +3152,7 @@ with open(early, "r+b", buffering=0) as file:
     });
 
     it('rejects ZIP entry bytes that exceed their declarations', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const archive = replaceWebArchive(fixture, ['actual.txt']);
         patchZipMetadata(archive, (bytes, centralOffset) => {
             bytes.writeUInt32LE(0, centralOffset + 24);
@@ -3113,8 +3162,7 @@ with open(early, "r+b", buffering=0) as file:
     });
 
     it('hashes ZIP entries without spawning one unzip process per file', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         const marker = join(fixture.base, 'unzip-invoked');
         const bin = join(fixture.base, 'bin');
         const unzip = join(bin, 'unzip');
@@ -3131,8 +3179,7 @@ with open(early, "r+b", buffering=0) as file:
     });
 
     it('accepts a complete candidate assembled from the exact artifacts and Git commits', () => {
-        const fixture = createFixture();
-        assemble(fixture);
+        const fixture = cloneDefaultAssembledFixture();
         expect(validate(fixture)).toBe('');
         const value = proof(fixture);
         expect(desktopProof(value).artifactPath).toBe('desktop/Sourdaw-1.0.0-arm64-mac.zip');

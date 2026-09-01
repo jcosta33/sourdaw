@@ -10,7 +10,7 @@ import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { doesProductionBriefAllowActionBatch, productionBriefActionBatchAdmission } from '#/modules/Project/useCases';
-import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
+import { type ActionHandler, type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { executeAppActionBatch } from '../executeAppActionBatch';
@@ -224,17 +224,19 @@ describe('executeAppActionBatch', () => {
     it('passes the exact execution signal through the command boundary to project handlers', async () => {
         const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
         const controller = new AbortController();
-        const execute = vi.fn((_action: SetEditingToolAction, context?: { signal?: AbortSignal }) => {
+        const onDeferredEffectAttempt = vi.fn();
+        const execute = vi.fn((_action: SetEditingToolAction, context?: HandlerValidationContext) => {
             expect(context?.signal).toBe(controller.signal);
+            expect(context?.onDeferredEffectAttempt).toBe(onDeferredEffectAttempt);
             return { status: 'written' as const };
         });
         registerHandlerMap({
             setEditingTool: createHandler<SetEditingToolAction>({ execute }),
         });
 
-        await expect(executeAppActionBatch([action], { signal: controller.signal })).resolves.toMatchObject({
-            status: 'committed',
-        });
+        await expect(
+            executeAppActionBatch([action], { signal: controller.signal, onDeferredEffectAttempt })
+        ).resolves.toMatchObject({ status: 'committed' });
         expect(execute).toHaveBeenCalledOnce();
     });
 
@@ -641,6 +643,76 @@ describe('executeAppActionBatch', () => {
                     remediation: 'reconcile',
                     state: 'pending',
                 },
+            ],
+        });
+    });
+
+    it.each(['reconcile', 'manual-repair'] as const)(
+        'records declared external-effect %s remediation after commit',
+        async (remediation) => {
+            const failure = new Error('section render follow-up requires review');
+            Reflect.set(failure, 'pendingEffect', {
+                kind: 'external-effect',
+                remediation,
+                reason: 'Exact section render evidence requires review.',
+                state: 'pending',
+            });
+            const afterCommit = vi.fn().mockRejectedValue(failure);
+            const afterAmbiguousCommit = vi.fn().mockRejectedValue(failure);
+            registerHandlerMap({
+                setEditingTool: createHandler<SetEditingToolAction>({
+                    execute: () => ({ status: 'written', afterCommit, afterAmbiguousCommit }),
+                }),
+            });
+
+            const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }]);
+
+            expect(result).toMatchObject({
+                status: 'committed-with-warning',
+                warningDetails: [
+                    expect.objectContaining({
+                        pendingEffect: {
+                            commandId: expect.any(String),
+                            kind: 'external-effect',
+                            operation: 'setEditingTool',
+                            reason: 'Exact section render evidence requires review.',
+                            remediation,
+                            state: 'pending',
+                        },
+                    }),
+                ],
+            });
+        }
+    );
+
+    it('records declared retention-capacity failure metadata after commit', async () => {
+        const failure = new Error('section render retention capacity exceeded');
+        Reflect.set(failure, 'failureKind', 'retention-capacity');
+        Reflect.set(failure, 'pendingEffect', {
+            kind: 'external-effect',
+            remediation: 'manual-repair',
+            reason: 'Section render retention capacity exceeded.',
+            state: 'pending',
+        });
+        const afterCommit = vi.fn().mockRejectedValue(failure);
+        const afterAmbiguousCommit = vi.fn().mockRejectedValue(failure);
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute: () => ({ status: 'written', afterCommit, afterAmbiguousCommit }),
+            }),
+        });
+
+        const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }]);
+
+        expect(result).toMatchObject({
+            status: 'committed-with-warning',
+            warningDetails: [
+                expect.objectContaining({
+                    pendingEffect: expect.objectContaining({
+                        failureKind: 'retention-capacity',
+                        remediation: 'manual-repair',
+                    }),
+                }),
             ],
         });
     });

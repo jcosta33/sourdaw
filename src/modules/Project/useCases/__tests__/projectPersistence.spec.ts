@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { notifyUser } from '#/utils/Notification/notifyUser';
+
 import { installFakeIndexedDb } from '../../__tests__/fakeIndexedDb';
 import { runProjectLoadTransaction } from '../projectPersistence/helpers/runProjectLoadTransaction';
 import { loadProject } from '../projectPersistence/loadProject';
@@ -8,6 +11,10 @@ import { renameProject } from '../projectPersistence/saveProject/renameProject';
 import { saveProject } from '../projectPersistence/saveProject/saveProject';
 
 import type { ProjectStoreState } from '../../stores/projectStore';
+
+const { emit } = vi.hoisted(() => ({
+    emit: vi.fn(),
+}));
 
 const mocks = vi.hoisted(() => ({
     projectStoreValue: {
@@ -59,19 +66,38 @@ vi.mock('../../stores/projectStore', () => ({
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: mocks.captureProjectRevision,
+    createCrdtDoc: vi.fn(),
     createCrdtProject: mocks.createCrdtProject,
+    DOC_BRANCHES: '__branches__',
     DOC_PREFIX_ROOT: 'root',
     getCrdtDoc: mocks.getCrdtDoc,
+    getCrdtDocIds: vi.fn(),
+    hasCrdtDoc: vi.fn(),
     loadCrdtProject: mocks.loadCrdtProject,
-    projectCrdtToStores: mocks.projectCrdtToStores,
-    startCrdtAutoSave: mocks.startCrdtAutoSave,
+    mutateCrdtDoc: vi.fn(),
     persistCrdtProject: mocks.persistCrdtProject,
+    preserveBranchStateForSession: vi.fn(),
+    projectCrdtToStores: mocks.projectCrdtToStores,
+    removeCrdtDoc: vi.fn(),
+    replaceBranchState: vi.fn(),
+    replaceCrdtDoc: vi.fn(),
+    restoreBranchStateAfterSession: vi.fn(),
+    runCrdtPersistenceBarrier: vi.fn(),
+    sanitizeIncomingCrdtDocument: vi.fn(),
+    setupProjectionBridge: vi.fn(),
+    startCrdtAutoSave: mocks.startCrdtAutoSave,
+    subscribeToCrdtChanges: vi.fn(),
+    waitForCrdtDocumentTransition: vi.fn(),
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.executeAppAction,
     clearUndoHistory: mocks.clearUndoHistory,
     resetActionReplayAuthority: mocks.resetActionReplayAuthority,
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    isAppActionCommittedError: vi.fn(() => false),
+    pushUndoEntry: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
     migrateAbsoluteMidiNotes: mocks.migrateAbsoluteMidiNotes,
@@ -110,6 +136,8 @@ vi.mock('../projectPersistence/fileIO/buildProjectData', () => ({
 
 describe('Project Persistence Use Cases', () => {
     beforeEach(() => {
+        injectDependencies(notifyUser, { eventBus: { emit } });
+        emit.mockClear();
         vi.clearAllMocks();
         installFakeIndexedDb();
         mocks.buildProjectData.mockResolvedValue({ data: { version: 1, meta: { name: 'My Song' } } });
@@ -238,10 +266,11 @@ describe('Project Persistence Use Cases', () => {
     describe('saveProject', () => {
         it('persists CRDT and updates store metadata', async () => {
             mocks.projectStoreValue.value = {
+                ...mocks.projectStoreValue.value,
                 name: 'My Song',
                 createdAt: 1700000000000,
                 dirty: true,
-            } as unknown as ProjectStoreState;
+            };
 
             const savePromise = saveProject();
 

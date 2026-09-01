@@ -27,6 +27,31 @@ import type { RuntimeGraphDeviceChainDelta } from '../models/RuntimeGraphDelta';
  */
 const AUTOMATION_RAMP_MIN_SEC = 0.01;
 
+/**
+ * Widest native plugin parameter id. `set_plugin_parameter` takes a `u32`, and
+ * the plugin resolves the parameter by that number rather than by position.
+ */
+const MAX_NATIVE_PLUGIN_PARAMETER_ID = 0xffff_ffff;
+
+/**
+ * The native parameter a device-parameter name addresses, or `null` when it
+ * addresses none.
+ *
+ * External plugin parameter names ARE their numeric ids. This used to be
+ * `parseInt(name, 10) || 0`, which answered `0` for every name that is not a
+ * number — so a builtin-style id, a Faust label, or a legacy lane silently rode
+ * the plugin's first parameter instead of being refused. Only an exact
+ * unsigned-integer spelling addresses a parameter now: `parseInt` would also
+ * accept `'3abc'` and `'3.7'`, both of which name a parameter nobody meant.
+ */
+function toNativePluginParameterId(name: string): number | null {
+    if (!/^\d+$/.test(name)) {
+        return null;
+    }
+    const parameterId = Number(name);
+    return parameterId <= MAX_NATIVE_PLUGIN_PARAMETER_ID ? parameterId : null;
+}
+
 export type TrackNodeDeps = {
     context: AudioContext;
     masterGainNode: GainNode;
@@ -1020,8 +1045,24 @@ export class TrackNode {
             try {
                 loadPromise = createNativePluginBridgeNode(context, externalInstanceId ?? deviceId)
                     .then((result) => {
+                        // One report per name: a refused write arrives from the
+                        // scheduler's tick grid, so logging every occurrence
+                        // would bury the session log under one repeated fault.
+                        const reportedParameterNames = new Set<string>();
                         const controls = {
-                            setParam: (name: string, value: number) => result.setParam(parseInt(name, 10) || 0, value),
+                            setParam: (name: string, value: number) => {
+                                const parameterId = toNativePluginParameterId(name);
+                                if (parameterId === null) {
+                                    if (!reportedParameterNames.has(name)) {
+                                        reportedParameterNames.add(name);
+                                        logger.warn(
+                                            `[WebAudioEngine] Native plugin parameter "${name}" on device ${deviceId} is not a parameter id; the write was refused`
+                                        );
+                                    }
+                                    return;
+                                }
+                                result.setParam(parameterId, value);
+                            },
                             setBypass: result.setBypass,
                             destroy: result.destroy,
                         };

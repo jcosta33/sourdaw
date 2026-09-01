@@ -122,6 +122,10 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),
     clearUndoHistory: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    isAppActionCommittedError: vi.fn(() => false),
+    pushUndoEntry: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     compactProject,
@@ -130,7 +134,21 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     resetCrdtProjectAuthority,
     startCrdtAutoSave,
 }));
-vi.mock('#/modules/Routing/useCases', () => ({ setSidechainRoutes }));
+vi.mock('#/modules/Routing/useCases', () => ({
+    addSidechainRouteSnapshot: vi.fn(),
+    ensureBusStrip: vi.fn(),
+    getAllSidechainRoutes: vi.fn(),
+    getSidechainRoutesForTrack: vi.fn(),
+    getSidechainTargetCapability: vi.fn(),
+    removeSend: vi.fn(),
+    removeSidechainRoute: vi.fn(),
+    removeSidechainRouteSnapshot: vi.fn(),
+    restoreSidechainRoutes: vi.fn(),
+    setBusGain: vi.fn(),
+    setSend: vi.fn(),
+    setSidechainRoutes,
+    wireSidechainRoutes: vi.fn(),
+}));
 vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Transport/useCases')>();
     return {

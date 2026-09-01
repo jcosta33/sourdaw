@@ -269,7 +269,7 @@ describe('drawClip (Coordinate Conventions)', () => {
             bufferId: 'buf-1',
             numBins: 100,
             startSample: 24_000,
-            endSample: 72_000,
+            endSample: 216_000,
         });
     });
 

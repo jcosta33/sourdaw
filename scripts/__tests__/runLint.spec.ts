@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { eslintEnvironment, lintConcurrency, lintThreads, parseArgs } from '../runLint.ts';
+import { buildEslintArgv, eslintEnvironment, lintConcurrency, lintThreads, parseArgs } from '../runLint.ts';
+
+function cacheStrategy(argv: string[]): string | undefined {
+    const index = argv.indexOf('--cache-strategy');
+    return index === -1 ? undefined : argv[index + 1];
+}
 
 describe('runLint arguments', () => {
     it('requires a target unless the run is full', () => {
@@ -11,6 +16,32 @@ describe('runLint arguments', () => {
 
     it('refuses a full-tree automatic fix', () => {
         expect(() => parseArgs(['--full', '--fix'])).toThrow(/full-tree automatic lint fixes are forbidden/);
+    });
+});
+
+describe('eslint cache argv', () => {
+    it('keys cache on file content for focused runs', () => {
+        const argv = buildEslintArgv({ fix: false, full: false }, ['src/a.ts']);
+
+        expect(argv).toContain('--cache');
+        expect(cacheStrategy(argv)).toBe('content');
+    });
+
+    it('keys cache on file content for full runs', () => {
+        const argv = buildEslintArgv({ fix: false, full: true }, ['src/**/*.{ts,tsx}', 'scripts/**/*.ts']);
+
+        expect(argv).toContain('--cache');
+        expect(cacheStrategy(argv)).toBe('content');
+    });
+
+    it('passes fix and targets through unchanged', () => {
+        const argv = buildEslintArgv({ fix: true, full: false }, ['scripts/runLint.ts'], {
+            SOURDAW_LINT_CONCURRENCY: '4',
+        });
+
+        expect(argv).toContain('--fix');
+        expect(argv).toContain('scripts/runLint.ts');
+        expect(argv).toContain('--concurrency=4');
     });
 });
 

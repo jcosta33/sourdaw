@@ -10,10 +10,12 @@
 //! per-bus storage the negotiated layout sizes — and refilled in place.
 //! `process` takes no lock, allocates nothing, and performs no I/O.
 
+use crate::parameter_events::PluginParameterEventQueue;
 use crate::params::PluginParameter;
 use crate::traits::{
-    AudioPlugin, EditorWindowResizer, HostParameterUpdate, HostTransport, HostedPluginRuntime,
-    LatencyChangeNotifier, ProcessingGate, DEFAULT_EDITOR_CONTENT_SCALE,
+    signal_pending_process_refusal, AudioPlugin, EditorWindowResizer, HostParameterUpdate,
+    HostTransport, HostedPluginRuntime, LatencyChangeNotifier, PluginHostRequestNotifier,
+    ProcessingGate, DEFAULT_EDITOR_CONTENT_SCALE,
 };
 use crate::vst3_bus_layout::{
     activate_main_audio_bus, negotiate_bus_layout, silent_channel_flags, BusGeometry, BusLayout,
@@ -23,6 +25,7 @@ use crate::vst3_class_id::same_class_id;
 use crate::vst3_editor::{plugin_offers_an_editor, EditorSession, EditorSize, Vst3Editor};
 use crate::vst3_host::{read_string128, MessageTarget, Vst3HostContext, Vst3HostState};
 use crate::vst3_module::Vst3Module;
+use crate::vst3_scanner::{category_from_vst3_sub_categories, split_sub_categories};
 use std::cell::Cell;
 use std::ffi::c_void;
 use std::path::Path;
@@ -39,8 +42,8 @@ use vst3::Steinberg::Vst::{
 };
 use vst3::Steinberg::{
     int32, int64, kInvalidArgument, kOutOfMemory, kResultFalse, kResultOk, tresult, IBStream,
-    IBStreamTrait, IBStream_::IStreamSeekMode_, IPluginBaseTrait, IPluginFactory,
-    IPluginFactoryTrait, TUID,
+    IBStreamTrait, IBStream_::IStreamSeekMode_, IPluginBaseTrait, IPluginFactory, IPluginFactory2,
+    IPluginFactory2Trait, IPluginFactoryTrait, TUID,
 };
 use vst3::{Class, ComPtr, ComRef, ComWrapper, Interface};
 
@@ -687,6 +690,10 @@ pub struct Vst3Instance {
     /// in-process by a test.
     _module: Option<Arc<Vst3Module>>,
     name: String,
+    /// Whether the factory calls this class an instrument. Read once here,
+    /// because the factory is only in hand while the instance is being created
+    /// and the audio thread may not walk a class list.
+    is_instrument: bool,
 }
 
 // SAFETY: every VST3 object here is reached through `&self`/`&mut self` under
@@ -758,6 +765,7 @@ impl Vst3Instance {
             host,
             _module: module,
             name: name.to_string(),
+            is_instrument: class_is_instrument(factory, class_id),
         };
         instance.attach_controller(factory);
         Ok(instance)
@@ -773,6 +781,11 @@ impl Vst3Instance {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// Whether the factory calls this class an instrument, as read at creation.
+    pub fn is_instrument(&self) -> bool {
+        self.is_instrument
     }
 
     /// Whether the plugin declares an event input bus.
@@ -1010,6 +1023,9 @@ pub struct Vst3Wrapper {
     /// The restart flags this host does not act on, as last reported. Held so a
     /// flag word that stops growing stops printing.
     reported_restart_flags: int32,
+    /// Whether the factory calls this class an instrument. Copied off the
+    /// instance at activation so the audio thread reads a plain bool.
+    is_instrument: bool,
 }
 
 // SAFETY: as `Vst3Instance` — every VST3 object is reached under the seam's
@@ -1037,6 +1053,7 @@ impl Vst3Wrapper {
             editor: None,
             processor: None,
             accepts_midi: instance.accepts_midi(),
+            is_instrument: instance.is_instrument(),
             instance,
             has_editor: OnceLock::new(),
             editor_window: None,
@@ -1139,10 +1156,24 @@ impl Vst3Wrapper {
         Arc::clone(&self.instance.host.state)
     }
 
+    /// The queue this plugin's own editor edits land in. Clone it to drain
+    /// without holding the wrapper.
+    pub fn parameter_event_queue(&self) -> Arc<PluginParameterEventQueue> {
+        self.instance.host.state.parameter_event_queue()
+    }
+
     /// Install the wake fired when this plugin flags a latency change. First
     /// install wins, so the wake cannot be hijacked mid-life.
     pub fn set_latency_change_notifier(&self, notifier: LatencyChangeNotifier) -> bool {
         self.instance.host.state.set_latency_notifier(notifier)
+    }
+
+    /// Install the wake fired for every plugin-initiated ask this host answers
+    /// off the calling thread — today, the `IComponentHandler2::setDirty`
+    /// report that an edit the plugin made itself is unsaved. First install
+    /// wins; a second call reports `false`.
+    pub fn set_plugin_host_request_notifier(&self, notifier: PluginHostRequestNotifier) -> bool {
+        self.instance.host.state.set_request_notifier(notifier)
     }
 
     // ── Editor ──────────────────────────────────────────────────────────
@@ -1150,7 +1181,13 @@ impl Vst3Wrapper {
     /// Whether this plugin offers an editor.
     ///
     /// `createView` is the only question VST3 has, and asking it creates a real
-    /// view — so the answer is cached and the probe runs once per instance.
+    /// view — so the answer is cached and the probe runs once per instance. The
+    /// first ask runs on whatever thread made it, which makes the first ask the
+    /// caller's to place: the load path is that first ask, and it carries the
+    /// question to the shell's UI thread (`editor_support_on_ui_thread` in
+    /// `sourdaw-native`) before any window exists, so every later capability
+    /// read — the engine record's own flag, `is_plugin_gui_supported`, the open
+    /// path's pre-check — answers from this cache and creates no view at all.
     pub fn has_editor(&self) -> bool {
         *self.has_editor.get_or_init(|| {
             self.instance
@@ -1211,6 +1248,20 @@ impl Vst3Wrapper {
         self.editor.as_ref()
     }
 
+    /// The open editor, or why there is nothing to address.
+    ///
+    /// Every host-initiated editor operation starts here, and names the plugin
+    /// in its refusal: the caller reaches this from a window event, where "no
+    /// editor" is a report about one instance among several.
+    fn open_editor_or_refuse(&self) -> Result<&Vst3Editor, String> {
+        self.editor.as_ref().ok_or_else(|| {
+            format!(
+                "[VST3] '{}' has no open editor to address",
+                self.instance.name()
+            )
+        })
+    }
+
     /// The class CID this instance was created from, as the scanner spells it.
     pub fn descriptor_id(&self) -> &str {
         &self.descriptor_id
@@ -1238,6 +1289,18 @@ impl Vst3Wrapper {
                 point.notify(pending.message.as_ptr());
             }
         }
+    }
+
+    /// Record a refused process call, and wake the control path the first time.
+    ///
+    /// Audio thread. One release store, and only on the first refusal: a plugin
+    /// refusing every block latches once and then costs one bool test.
+    fn latch_process_refusal(&mut self) {
+        if self.process_refused {
+            return;
+        }
+        self.process_refused = true;
+        signal_pending_process_refusal();
     }
 
     /// Say out loud what the audio thread and the plugin's callbacks recorded.
@@ -1335,6 +1398,15 @@ impl Vst3Wrapper {
         self.activated = true;
         self.processing.request_start();
         Ok(self.latency_samples())
+    }
+
+    /// Write silence over the engine's bus, for a block whose output the plugin
+    /// did not produce.
+    fn silence_outputs(outputs: &mut [&mut [f32]], num_samples: usize) {
+        for out in outputs.iter_mut() {
+            let len = num_samples.min(out.len());
+            out[..len].fill(0.0);
+        }
     }
 
     /// Copy the block straight through, for every case where the plugin must not
@@ -1489,11 +1561,25 @@ impl Vst3Wrapper {
         };
 
         if refused {
-            // The output scratch was zeroed above, so keeping it would render a
-            // refusal as eternal silence. Passing the block through is what the
-            // other refusal paths in this method already do.
-            Self::pass_through(inputs, outputs, num_samples);
-            self.process_refused = true;
+            // The output scratch holds nothing the plugin stands behind, so it
+            // never reaches the bus. What does is what ADR 0021 DG-003 decides
+            // for a failed slot: only an effect with a valid dry input passes
+            // it, because muting a crashed EQ takes the track with it.
+            //
+            // Two shapes have no valid dry input to pass. An instrument, which
+            // the factory's sub-categories name — a synth fed routed audio would
+            // otherwise emit that signal at unity out of a voice slot. And any
+            // plugin declaring no main input bus, a generator such as a
+            // test-tone, whose own bus declaration says it consumes no audio and
+            // so has none to hand back.
+            //
+            // The CLAP backend splits on the same two, for the same reasons.
+            if self.is_instrument || self.bus_layout.main_input_channels() == 0 {
+                Self::silence_outputs(outputs, num_samples);
+            } else {
+                Self::pass_through(inputs, outputs, num_samples);
+            }
+            self.latch_process_refusal();
             return;
         }
 
@@ -1562,7 +1648,7 @@ impl AudioPlugin for Vst3Wrapper {
         self.instance
             .host
             .state
-            .record_parameter_edit(param_id, clamped);
+            .queue_host_parameter_write(param_id, clamped);
     }
 
     /// The controller's parameter list, and the control-path visit the rest of
@@ -1691,6 +1777,37 @@ impl AudioPlugin for Vst3Wrapper {
 
     fn set_editor_content_scale(&mut self, scale: f64) {
         self.editor_scale = scale;
+    }
+
+    fn editor_can_resize(&self) -> bool {
+        self.editor.as_ref().is_some_and(Vst3Editor::can_resize)
+    }
+
+    fn request_editor_size(&mut self, width: u32, height: u32) -> Result<(u32, u32), String> {
+        self.open_editor_or_refuse()?
+            .request_size(EditorSize { width, height })
+            .map(|granted| (granted.width, granted.height))
+    }
+
+    /// The stated scale is kept as well as applied: an editor closed and
+    /// reopened on the display it was moved to must open at the scale it is on,
+    /// not at the one it was created under.
+    fn apply_editor_content_scale(&mut self, scale: f64) -> Result<(u32, u32), String> {
+        self.editor_scale = scale;
+        self.open_editor_or_refuse()?
+            .apply_content_scale(scale)
+            .map(|granted| (granted.width, granted.height))
+    }
+
+    /// Read and clear the "plugin state changed" signal its editor raised
+    /// through `IComponentHandler2::setDirty`. The control path turns it into
+    /// the project-level dirty mark.
+    fn take_state_dirty(&mut self) -> bool {
+        self.instance.host.state.take_state_dirty()
+    }
+
+    fn parameter_event_queue(&self) -> Option<Arc<PluginParameterEventQueue>> {
+        Some(Vst3Wrapper::parameter_event_queue(self))
     }
 }
 
@@ -1840,6 +1957,20 @@ impl HostedPluginRuntime for Vst3Wrapper {
         // state in which VST3 defines this value.
         unsafe { processor.getLatencySamples() }
     }
+
+    fn tail_samples(&self) -> u32 {
+        let Some(processor) = &self.processor else {
+            return 0;
+        };
+        // SAFETY: control path only; the processor is live. Unlike
+        // `getLatencySamples`, VST3 places no activation precondition on this
+        // one, so it is not gated on `activated`.
+        unsafe { processor.getTailSamples() }
+    }
+
+    fn report_plugin_observations(&mut self) {
+        Vst3Wrapper::report_plugin_observations(self)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1908,6 +2039,35 @@ pub fn class_name(factory: &ComPtr<IPluginFactory>, class_id: &TUID) -> Option<S
         }
     }
     None
+}
+
+/// Whether the factory calls this class an instrument.
+///
+/// Read from `getClassInfo2`, which is where VST3 keeps sub-categories, and
+/// mapped by the same function the scanner categorises with — so the browser and
+/// the audio path cannot disagree about what a plugin is. A factory too old to
+/// answer `IPluginFactory2`, or one listing no sub-categories, is not an
+/// instrument: the same default the scanner falls back to.
+pub fn class_is_instrument(factory: &ComPtr<IPluginFactory>, class_id: &TUID) -> bool {
+    let Some(factory2) = factory.cast::<IPluginFactory2>() else {
+        return false;
+    };
+    // SAFETY: the factory is live; each `info` is a valid out parameter.
+    unsafe {
+        let count = factory2.countClasses();
+        for index in 0..count {
+            let mut info: vst3::Steinberg::PClassInfo2 = std::mem::zeroed();
+            if factory2.getClassInfo2(index, &mut info) != kResultOk {
+                continue;
+            }
+            if !same_class_id(&info.cid, class_id) {
+                continue;
+            }
+            let sub_categories = split_sub_categories(&read_char8(&info.subCategories));
+            return category_from_vst3_sub_categories(&sub_categories) == "instrument";
+        }
+    }
+    false
 }
 
 /// Whether the factory itself lists this class.

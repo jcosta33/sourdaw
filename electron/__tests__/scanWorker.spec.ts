@@ -14,9 +14,15 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { asScanWorkerRequest, nativeCommand, SCAN_WORKER_COMMAND_ENV, scanWorkerCommand } from '../scanWorker.js';
+import {
+    asScanWorkerRequest,
+    handleScanRequest,
+    nativeCommand,
+    SCAN_WORKER_COMMAND_ENV,
+    scanWorkerCommand,
+} from '../scanWorker.js';
 
 import type { NativeHost } from '../native.js';
 
@@ -69,11 +75,38 @@ describe('the launch contract with the Rust policy', () => {
 });
 
 describe('the supervisor request', () => {
-    it('accepts a list of roots', () => {
-        expect(asScanWorkerRequest({ paths: ['/Library/Audio/Plug-Ins/CLAP'] })).toEqual({
-            paths: ['/Library/Audio/Plug-Ins/CLAP'],
+    it('accepts a list of roots with no retryQuarantined key', () => {
+        // Omitted, not `retryQuarantined: undefined` — the key must be truly
+        // absent so a caller cannot tell "omitted" from "explicitly false" by
+        // inspecting the parsed shape.
+        const request = asScanWorkerRequest({ paths: ['/Library/Audio/Plug-Ins/CLAP'] });
+        expect(request).toStrictEqual({ paths: ['/Library/Audio/Plug-Ins/CLAP'] });
+        expect(request && 'retryQuarantined' in request).toBe(false);
+        expect(asScanWorkerRequest({ paths: [] })).toStrictEqual({ paths: [] });
+    });
+
+    it('accepts an explicit retryQuarantined: true', () => {
+        expect(asScanWorkerRequest({ paths: ['/CLAP'], retryQuarantined: true })).toStrictEqual({
+            paths: ['/CLAP'],
+            retryQuarantined: true,
         });
-        expect(asScanWorkerRequest({ paths: [] })).toEqual({ paths: [] });
+    });
+
+    it('accepts an explicit retryQuarantined: false', () => {
+        expect(asScanWorkerRequest({ paths: ['/CLAP'], retryQuarantined: false })).toStrictEqual({
+            paths: ['/CLAP'],
+            retryQuarantined: false,
+        });
+    });
+
+    it('refuses a present but non-boolean retryQuarantined rather than dropping it', () => {
+        // A caller whose flag never arrives would have every quarantined
+        // binary scanned again with no sign the retry request was lost — so a
+        // wrong-typed field refuses the whole message instead of falling back
+        // to "no retry".
+        for (const retryQuarantined of ['true', 1, null, [], {}]) {
+            expect(asScanWorkerRequest({ paths: ['/CLAP'], retryQuarantined })).toBeUndefined();
+        }
     });
 
     it('refuses anything else rather than scanning a guess', () => {
@@ -83,6 +116,42 @@ describe('the supervisor request', () => {
         for (const message of [undefined, null, 'scan', { paths: '/CLAP' }, { paths: ['/a', 7] }, { roots: [] }]) {
             expect(asScanWorkerRequest(message)).toBeUndefined();
         }
+    });
+});
+
+describe('handling one supervisor request end to end', () => {
+    it('passes an explicit retryQuarantined: true through to the native call', async () => {
+        const scanPlugins = vi.fn().mockResolvedValue(['a']);
+
+        const response = await handleScanRequest({ paths: ['/CLAP'], retryQuarantined: true }, scanPlugins);
+
+        expect(scanPlugins).toHaveBeenCalledWith(['/CLAP'], true);
+        expect(response).toEqual({ ok: true, result: ['a'] });
+    });
+
+    it('passes false to the native call when retryQuarantined is omitted', async () => {
+        const scanPlugins = vi.fn().mockResolvedValue([]);
+
+        await handleScanRequest({ paths: ['/CLAP'] }, scanPlugins);
+
+        expect(scanPlugins).toHaveBeenCalledWith(['/CLAP'], false);
+    });
+
+    it('answers a malformed message without calling the native addon at all', async () => {
+        const scanPlugins = vi.fn();
+
+        const response = await handleScanRequest({ paths: ['/CLAP'], retryQuarantined: 'yes' }, scanPlugins);
+
+        expect(scanPlugins).not.toHaveBeenCalled();
+        expect(response).toEqual({ ok: false, error: 'The plugin scan request was malformed' });
+    });
+
+    it('answers a rejected scan with its error message', async () => {
+        const scanPlugins = vi.fn().mockRejectedValue(new Error('the scan roots are not readable'));
+
+        const response = await handleScanRequest({ paths: ['/CLAP'] }, scanPlugins);
+
+        expect(response).toEqual({ ok: false, error: 'the scan roots are not readable' });
     });
 });
 

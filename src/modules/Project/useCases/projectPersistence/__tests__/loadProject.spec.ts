@@ -65,18 +65,38 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     prepareCachedAudioBuffersFromIdb: mocks.prepareCachedAudioBuffersFromIdb,
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRevision: vi.fn(),
+    createCrdtDoc: vi.fn(),
     createCrdtProject: mocks.createCrdtProject,
+    DOC_BRANCHES: '__branches__',
     DOC_PREFIX_ROOT: 'root',
     getCrdtDoc: mocks.getCrdtDoc,
+    getCrdtDocIds: vi.fn(),
+    hasCrdtDoc: vi.fn(),
     loadCrdtProject: mocks.loadCrdtProject,
+    mutateCrdtDoc: vi.fn(),
     persistCrdtProject: mocks.persistCrdtProject,
+    preserveBranchStateForSession: vi.fn(),
     projectCrdtToStores: mocks.projectCrdtToStores,
+    removeCrdtDoc: vi.fn(),
+    replaceBranchState: vi.fn(),
+    replaceCrdtDoc: vi.fn(),
+    restoreBranchStateAfterSession: vi.fn(),
+    runCrdtPersistenceBarrier: vi.fn(),
+    sanitizeIncomingCrdtDocument: vi.fn(),
+    setupProjectionBridge: vi.fn(),
     startCrdtAutoSave: mocks.startCrdtAutoSave,
+    subscribeToCrdtChanges: vi.fn(),
+    waitForCrdtDocumentTransition: vi.fn(),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
     clearUndoHistory: vi.fn(),
     executeAppAction: mocks.executeAppAction,
     resetActionReplayAuthority: vi.fn(),
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    isAppActionCommittedError: vi.fn(() => false),
+    pushUndoEntry: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
     migrateAbsoluteMidiNotes: vi.fn(),
@@ -309,6 +329,35 @@ describe('loadProject', () => {
         expect(recoveryAuthority?.signal.aborted).toBe(true);
         recoveryGate.resolve();
         await expect(loading).resolves.toBe(false);
+    });
+
+    it('reports a superseded load rather than a boot failure when a project transition breaks the identity migration', async () => {
+        const migrationGate = Promise.withResolvers<boolean>();
+        mocks.migrateActiveProjectIdentity.mockReturnValueOnce(migrationGate.promise);
+
+        const loading = loadProject();
+        await vi.waitFor(() => expect(mocks.migrateActiveProjectIdentity).toHaveBeenCalledTimes(1));
+
+        // The user picks another legacy project off the LaunchScreen while the
+        // boot restore's migration is persisting. That transition republishes
+        // `projectMeta` wholesale, so the migration finds no canonical identity
+        // and nothing it recognises as a successor, and throws.
+        const newerLoad = runProjectLoadTransaction({ yieldToInFlight: true });
+        await newerLoad.prepare();
+        newerLoad.activate();
+        migrationGate.reject(new Error('Minted project identity did not survive persistence'));
+
+        await expect(loading).resolves.toBe(false);
+        expect(startCrdtAutoSave).not.toHaveBeenCalled();
+    });
+
+    it('fails the load when the identity migration throws and this project is still the current one', async () => {
+        const failure = new Error('Minted project identity did not survive persistence');
+        mocks.migrateActiveProjectIdentity.mockRejectedValueOnce(failure);
+
+        await expect(loadProject()).rejects.toBe(failure);
+
+        expect(startCrdtAutoSave).not.toHaveBeenCalled();
     });
 
     it('cancels a prepared buffer candidate when a newer project load supersedes it before publication', async () => {

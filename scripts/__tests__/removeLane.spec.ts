@@ -1,5 +1,14 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    realpathSync,
+    rmSync,
+    symlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -68,6 +77,7 @@ function supersededPullRequest(overrides: Partial<PullRequest> = {}): PullReques
 }
 
 type FakeInput = {
+    root?: string;
     lane?: Worktree;
     currentDirectory?: string;
     active?: boolean;
@@ -88,8 +98,8 @@ function fakePort(input: FakeInput = {}) {
     const port: LaneRemovalPort = {
         fetch: () => calls.push('fetch'),
         repository: () => 'jcosta33/sourdaw',
-        currentDirectory: () => input.currentDirectory ?? root,
-        worktrees: () => [worktree({ path: root, branch: 'main' }), { ...lane, locked }],
+        currentDirectory: () => input.currentDirectory ?? input.root ?? root,
+        worktrees: () => [worktree({ path: input.root ?? root, branch: 'main' }), { ...lane, locked }],
         active: () => input.active ?? false,
         processAlive: () => input.alive ?? true,
         dirty: () => input.dirty ?? false,
@@ -148,6 +158,221 @@ function fakeStrandPort(input: FakeInput = {}) {
 }
 
 describe('lane removal', () => {
+    it('recognizes an aliased registered lane while preserving aliased safety boundaries', () => {
+        const repository = mkdtempSync(join(tmpdir(), 'sourdaw-lane-alias-'));
+        const aliasParent = mkdtempSync(join(tmpdir(), 'sourdaw-lane-alias-link-'));
+        const worktreeParent = mkdtempSync(join(tmpdir(), 'sourdaw-lane-agent-root-'));
+        const alias = join(aliasParent, 'repository');
+        const worktreeRoot = join(worktreeParent, 'worktrees');
+        const lane = join(worktreeRoot, 'feature');
+        try {
+            mkdirSync(join(lane, 'scripts'), { recursive: true });
+            mkdirSync(join(repository, '.agents'), { recursive: true });
+            symlinkSync(worktreeRoot, join(repository, '.agents/worktrees'), 'dir');
+            symlinkSync(repository, alias, 'dir');
+            const canonicalLane = realpathSync(lane);
+            const canonicalAgentRoot = realpathSync(join(repository, '.agents/worktrees'));
+            const aliasedLane = join(alias, '.agents/worktrees/feature');
+
+            const admitted = fakePort({ root: alias, lane: worktree({ path: canonicalLane }) });
+            removeLane(canonicalLane, admitted.port);
+            expect(admitted.calls).toContain(`remove:${canonicalLane}`);
+
+            const primary = fakePort({ root: alias });
+            expect(() => removeLane(repository, primary.port)).toThrow(/primary/);
+
+            const agentRootPort = fakePort({
+                root: alias,
+                lane: worktree({ path: canonicalAgentRoot }),
+            });
+            expect(() => removeLane(canonicalAgentRoot, agentRootPort.port)).toThrow(/not an agent worktree/);
+
+            const active = fakePort({
+                root: alias,
+                lane: worktree({ path: canonicalLane }),
+                currentDirectory: join(aliasedLane, 'scripts'),
+            });
+            expect(() => removeLane(canonicalLane, active.port)).toThrow(/active worktree/);
+        } finally {
+            rmSync(aliasParent, { recursive: true, force: true });
+            rmSync(worktreeParent, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses multiple registered aliases for one canonical lane', () => {
+        const repository = mkdtempSync(join(tmpdir(), 'sourdaw-lane-alias-duplicate-'));
+        const aliasParent = mkdtempSync(join(tmpdir(), 'sourdaw-lane-alias-duplicate-link-'));
+        const alias = join(aliasParent, 'repository');
+        const lane = join(repository, '.agents/worktrees/feature');
+        try {
+            mkdirSync(lane, { recursive: true });
+            symlinkSync(repository, alias, 'dir');
+            const canonicalLane = realpathSync(lane);
+            const aliasedLane = join(alias, '.agents/worktrees/feature');
+            const registered = worktree({
+                path: canonicalLane,
+                locked: true,
+                lockReason: 'active:sourdaw-author',
+            });
+            const { port, calls } = fakePort({ root: repository, lane: registered });
+            port.worktrees = () => [
+                worktree({ path: repository, branch: 'main' }),
+                registered,
+                { ...registered, path: aliasedLane },
+            ];
+
+            expect(() => removeLane(canonicalLane, port)).toThrow(/does not identify one registered worktree/);
+            expect(calls.some((call) => call.startsWith('remove:'))).toBe(false);
+        } finally {
+            rmSync(aliasParent, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses a removal when the later worktree snapshot changes registered alias', () => {
+        const repository = mkdtempSync(join(tmpdir(), 'sourdaw-lane-alias-snapshot-'));
+        const aliasParent = mkdtempSync(join(tmpdir(), 'sourdaw-lane-alias-snapshot-link-'));
+        const alias = join(aliasParent, 'repository');
+        const lane = join(repository, '.agents/worktrees/feature');
+        try {
+            mkdirSync(lane, { recursive: true });
+            symlinkSync(repository, alias, 'dir');
+            const canonicalLane = realpathSync(lane);
+            const first = worktree({
+                path: join(alias, '.agents/worktrees/feature'),
+                locked: true,
+                lockReason: 'active:sourdaw-author',
+            });
+            const later = worktree({
+                path: canonicalLane,
+                locked: true,
+                lockReason: 'active:sourdaw-author',
+            });
+            const { port, calls } = fakePort({ root: repository, lane: first });
+            let reads = 0;
+            port.worktrees = () => {
+                reads += 1;
+                return [worktree({ path: repository, branch: 'main' }), reads > 2 ? later : first];
+            };
+
+            expect(() => removeLane(canonicalLane, port)).toThrow(/identity changed during removal/);
+            expect(calls.some((call) => call.startsWith('remove:'))).toBe(false);
+        } finally {
+            rmSync(aliasParent, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses a removal when the final snapshot registers the same canonical lane twice', () => {
+        const repository = mkdtempSync(join(tmpdir(), 'sourdaw-lane-alias-remove-duplicate-'));
+        const aliasParent = mkdtempSync(join(tmpdir(), 'sourdaw-lane-alias-remove-duplicate-link-'));
+        const alias = join(aliasParent, 'repository');
+        const lane = join(repository, '.agents/worktrees/feature');
+        try {
+            mkdirSync(lane, { recursive: true });
+            symlinkSync(repository, alias, 'dir');
+            const canonicalLane = realpathSync(lane);
+            const first = worktree({
+                path: join(alias, '.agents/worktrees/feature'),
+                locked: true,
+                lockReason: 'active:sourdaw-author',
+            });
+            const duplicate = worktree({
+                path: canonicalLane,
+                locked: true,
+                lockReason: 'active:sourdaw-author',
+            });
+            const { port, calls } = fakePort({ root: repository, lane: first });
+            let reads = 0;
+            port.worktrees = () => {
+                reads += 1;
+                return [worktree({ path: repository, branch: 'main' }), first, ...(reads > 2 ? [duplicate] : [])];
+            };
+
+            expect(() => removeLane(canonicalLane, port)).toThrow(/identity changed during removal/);
+            expect(calls.some((call) => call.startsWith('remove:'))).toBe(false);
+        } finally {
+            rmSync(aliasParent, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses a strand when the later worktree snapshot changes registered alias', () => {
+        const repository = mkdtempSync(join(tmpdir(), 'sourdaw-lane-alias-strand-snapshot-'));
+        const aliasParent = mkdtempSync(join(tmpdir(), 'sourdaw-lane-alias-strand-snapshot-link-'));
+        const alias = join(aliasParent, 'repository');
+        const lane = join(repository, '.agents/worktrees/feature');
+        try {
+            mkdirSync(lane, { recursive: true });
+            symlinkSync(repository, alias, 'dir');
+            const canonicalLane = realpathSync(lane);
+            const first = worktree({
+                path: join(alias, '.agents/worktrees/feature'),
+                locked: true,
+                lockReason: 'active:sourdaw-author',
+            });
+            const later = worktree({
+                path: canonicalLane,
+                locked: true,
+                lockReason: 'active:sourdaw-author',
+            });
+            const { port, calls, receipts } = fakeStrandPort({ root: repository, lane: first });
+            let reads = 0;
+            port.worktrees = () => {
+                reads += 1;
+                return [worktree({ path: repository, branch: 'main' }), reads > 2 ? later : first];
+            };
+
+            expect(() => strandLane(canonicalLane, 'registered identity changed', port)).toThrow(
+                /identity changed during stranding/
+            );
+            expect(receipts).toEqual([]);
+            expect(calls.some((call) => call.startsWith('remove:'))).toBe(false);
+        } finally {
+            rmSync(aliasParent, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses a strand when the final snapshot registers the same canonical lane twice', () => {
+        const repository = mkdtempSync(join(tmpdir(), 'sourdaw-lane-alias-strand-duplicate-'));
+        const aliasParent = mkdtempSync(join(tmpdir(), 'sourdaw-lane-alias-strand-duplicate-link-'));
+        const alias = join(aliasParent, 'repository');
+        const lane = join(repository, '.agents/worktrees/feature');
+        try {
+            mkdirSync(lane, { recursive: true });
+            symlinkSync(repository, alias, 'dir');
+            const canonicalLane = realpathSync(lane);
+            const first = worktree({
+                path: join(alias, '.agents/worktrees/feature'),
+                locked: true,
+                lockReason: 'active:sourdaw-author',
+            });
+            const duplicate = worktree({
+                path: canonicalLane,
+                locked: true,
+                lockReason: 'active:sourdaw-author',
+            });
+            const { port, calls, receipts } = fakeStrandPort({ root: repository, lane: first });
+            let reads = 0;
+            port.worktrees = () => {
+                reads += 1;
+                return [worktree({ path: repository, branch: 'main' }), first, ...(reads > 2 ? [duplicate] : [])];
+            };
+
+            expect(() => strandLane(canonicalLane, 'duplicate registered identity', port)).toThrow(
+                /identity changed during stranding/
+            );
+            expect(receipts).toEqual([]);
+            expect(calls.some((call) => call.startsWith('remove:'))).toBe(false);
+            expect(calls.some((call) => call.startsWith('branch:-D:'))).toBe(false);
+        } finally {
+            rmSync(aliasParent, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it('removes a clean inactive lane after two stable reads', () => {
         const { port, calls } = fakePort();
 
@@ -749,6 +974,31 @@ describe('worktree parser', () => {
 });
 
 describe('lane-removal shell boundary', () => {
+    it('recognizes an active lsof cwd through an alias', () => {
+        const repository = mkdtempSync(join(tmpdir(), 'sourdaw-lane-active-alias-'));
+        const aliasParent = mkdtempSync(join(tmpdir(), 'sourdaw-lane-active-alias-link-'));
+        const alias = join(aliasParent, 'repository');
+        const lane = join(repository, '.agents/worktrees/feature');
+        try {
+            mkdirSync(lane, { recursive: true });
+            symlinkSync(repository, alias, 'dir');
+            const port = shellPort({
+                capture: (command) => {
+                    if (command !== 'lsof') {
+                        throw new Error(`unexpected capture: ${command}`);
+                    }
+                    return `p999999\nfcwd\nn${join(alias, '.agents/worktrees/feature')}`;
+                },
+                run: () => undefined,
+            });
+
+            expect(port.active(realpathSync(lane))).toBe(true);
+        } finally {
+            rmSync(aliasParent, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it('paginates exact-repository ownership and uses native lock and removal commands', () => {
         const captures: Array<{ command: string; args: string[] }> = [];
         const runs: Array<{ command: string; args: string[] }> = [];

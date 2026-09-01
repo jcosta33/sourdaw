@@ -22,6 +22,7 @@ type PreparedStemImportRecoveryBinding = {
 };
 type PreparedStemImportRegistration = {
     unregister: () => void;
+    physicalCleanupCompleted: boolean;
     protected: boolean;
     stem: PreparedStemImportResource;
     recovery: PreparedStemImportRecoveryBinding | null;
@@ -44,6 +45,7 @@ function createRegistration(input: {
     const registrationKey = key(input.runId, input.stem.audioBufferId);
     const registration: PreparedStemImportRegistration = {
         unregister: () => undefined,
+        physicalCleanupCompleted: false,
         protected: input.protected,
         stem: input.stem,
         recovery: input.recovery,
@@ -259,27 +261,44 @@ function releasePreparedStemImportResources(input: {
     runId: string;
     stems: readonly PreparedStemImportResource[];
 }): void {
-    const settledBatchIds = new Set<string>();
-    for (const stem of input.stems) {
+    const releasingRegistrations = input.stems.flatMap((stem) => {
         const registrationKey = key(input.runId, stem.audioBufferId);
         const registration = registrations.get(registrationKey);
-        if (!registration) {
-            continue;
-        }
+        return registration ? [{ registrationKey, registration }] : [];
+    });
+    const settledBatchIds = new Set<string>();
+    for (const { registration } of releasingRegistrations) {
         if (registration.recovery) {
             settledBatchIds.add(registration.recovery.batchId);
         }
+    }
+
+    const transferableRecoveryBatchIds = [...settledBatchIds].filter((batchId) =>
+        [...registrations.entries()].every(
+            ([registrationKey, registration]) =>
+                !registrationKey.startsWith(`${input.runId}\u0000`) ||
+                registration.recovery?.batchId !== batchId ||
+                releasingRegistrations.some((candidate) => candidate.registrationKey === registrationKey)
+        )
+    );
+
+    // One lifecycle mutation removes live assets and every matching recovery
+    // capsule together. It must persist before any cleanup owner is detached.
+    if (agentRunLifecycle.get(input.runId)) {
+        agentRunLifecycle.transferPreparedStemImportResources({
+            runId: input.runId,
+            assets: releasingRegistrations.map(({ registration }) => ({
+                assetId: registration.stem.audioBufferId,
+                cleanupOwner: CLEANUP_OWNER,
+            })),
+            recoveryBatchIds: transferableRecoveryBatchIds,
+        });
+    }
+
+    for (const { registrationKey, registration } of releasingRegistrations) {
         registration.unregister();
         registrations.delete(registrationKey);
-        if (agentRunLifecycle.get(input.runId)) {
-            agentRunLifecycle.forgetTemporaryAsset({
-                runId: input.runId,
-                assetId: stem.audioBufferId,
-                cleanupOwner: CLEANUP_OWNER,
-            });
-        }
     }
-    forgetSettledRecoveries(input.runId, settledBatchIds);
 }
 
 async function discardPreparedStemImportResourcesWithAuthority(
@@ -293,15 +312,33 @@ async function discardPreparedStemImportResourcesWithAuthority(
     for (const stem of input.stems) {
         const registrationKey = key(input.runId, stem.audioBufferId);
         const registration = registrations.get(registrationKey);
-        if (registration?.protected && authority === 'generic-release') {
-            continue;
-        }
         if (registration?.recovery) {
             settledBatchIds.add(registration.recovery.batchId);
         }
-        const asset = agentRunLifecycle
-            .get(input.runId)
-            ?.temporaryAssets.find((candidate) => candidate.assetId === stem.audioBufferId);
+        const run = agentRunLifecycle.get(input.runId);
+        const asset = run?.temporaryAssets.find((candidate) => candidate.assetId === stem.audioBufferId);
+        if (registration?.protected && authority === 'generic-release') {
+            continue;
+        }
+        if (!asset && registration) {
+            // A registration can outlive a refused atomic transfer because the
+            // live store advances before durable persistence. It still owns the
+            // physical stem, but must keep that ownership until the live
+            // post-transfer snapshot has been made durable. A run that no
+            // longer exists — evicted from run history, or already deleted —
+            // has no snapshot left to make durable, so the physical discard is
+            // the whole of the obligation.
+            if (!registration.physicalCleanupCompleted) {
+                await preparedStemImportCleanup.discard([stem]);
+                registration.physicalCleanupCompleted = true;
+            }
+            if (run && !agentRunLifecycle.retryPersistence(input.runId)) {
+                throw new Error(`Prepared stem transfer run disappeared before durability retry: ${input.runId}`);
+            }
+            registration.unregister();
+            registrations.delete(registrationKey);
+            continue;
+        }
         if (registration?.protected) {
             await preparedStemImportCleanup.discard([stem]);
             registration.unregister();
@@ -316,8 +353,6 @@ async function discardPreparedStemImportResourcesWithAuthority(
             continue;
         }
         if (!asset) {
-            registration?.unregister();
-            registrations.delete(registrationKey);
             continue;
         }
         if (asset.status !== 'released') {
@@ -359,4 +394,5 @@ export const preparedStemImportResources = {
     reconcile: reconcilePreparedStemImportResources,
     release: releasePreparedStemImportResources,
     discard: discardRegisteredPreparedStemImportResources,
+    discardAfterVerifiedNoncommit: discardPreparedStemImportResourcesAfterVerifiedNoncommit,
 };

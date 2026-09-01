@@ -1,6 +1,6 @@
 /**
  * usePianoRollInteractions — Manages all pointer/keyboard gesture logic for
- * the PianoRoll editor: mouse-down/move/up, double-click, wheel (zoom/scroll),
+ * the PianoRoll editor: mouse-down/move/up, double-click, wheel zoom,
  * keyboard nudging, delete, step-input velocity, context menu, rubber-band
  * selection, lasso, and paint-mode draws.
  *
@@ -139,7 +139,6 @@ type InteractionArgs = {
     selectedNoteIds: Set<string>;
     setSelectedNoteIds: Dispatch<SetStateAction<Set<string>>>;
     setZoom: Dispatch<SetStateAction<number>>;
-    setScrollX: Dispatch<SetStateAction<number>>;
     draw: () => void;
     /** R-A12: when true, note draw and move snaps pitch to nearest scale degree. */
     constrainToScale: boolean;
@@ -193,7 +192,6 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         selectedNoteIds,
         setSelectedNoteIds,
         setZoom,
-        setScrollX,
         draw,
         constrainToScale,
         notePreviewEnabled,
@@ -261,8 +259,9 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
     //
     // Only the modifier branch cancels the default. Plain and shift+wheel are
     // left to the surrounding `overflow-auto` scroll container — the browser
-    // already scrolls it vertically and, with shift, horizontally, and its
-    // `onScroll` is what syncs `scrollX` back into the view.
+    // already scrolls it vertically and, with shift, horizontally — and the
+    // container's own `onScroll` reports the position (PianoRoll's
+    // `onScrollChange`); this hook keeps no scroll state.
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) {
@@ -274,15 +273,13 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 const isPinch = Math.abs(event.deltaY) < 10;
                 const sensitivity = isPinch ? 0.008 : 0.002;
                 setZoom((prev) => Math.max(0.25, Math.min(4, prev - event.deltaY * sensitivity)));
-                return;
             }
-            setScrollX((prev) => Math.max(0, prev + event.deltaX));
         };
         canvas.addEventListener('wheel', onWheel, { passive: false });
         return () => {
             canvas.removeEventListener('wheel', onWheel);
         };
-    }, [canvasRef, setZoom, setScrollX]);
+    }, [canvasRef, setZoom]);
 
     // Closing the clip view while a hover preview is pending (or sounding) must
     // not fire `playAuditionNote` into an editor that no longer exists: the

@@ -22,6 +22,8 @@ export { getTrackById } from './getTrackById';
 export { getSynthParamsForTrack } from './getSynthParamsForTrack';
 export { getTrackStoreState } from './getTrackStoreState';
 export { getAutomationDeviceDescriptor } from './getAutomationDeviceDescriptor';
+export { acceptsExternalPluginAutomationParameter } from './acceptsExternalPluginAutomationParameter';
+export { clampExternalPluginAutomationValue } from './clampExternalPluginAutomationValue';
 export { getAutomationParameterRange } from './getAutomationParameterRange';
 export { getEligibleDeviceParameterValues } from './getEligibleDeviceParameterValues';
 export { hydrateTracksForProject } from './hydrateTracksForProject';
@@ -138,7 +140,7 @@ export { getLayerCount } from './adjustmentLayer/getLayerCount';
 
 // ── Device ────────────────────────────────────────────────────────────────────
 
-export { compileAddDeviceAction } from './device/compileAddDeviceAction';
+export { executeAddDeviceAction } from './device/executeAddDeviceAction';
 export { addMidiFx } from './device/addMidiFx';
 export { removeMidiFx } from './device/removeMidiFx';
 export { bypassMidiFx } from './device/bypassMidiFx';

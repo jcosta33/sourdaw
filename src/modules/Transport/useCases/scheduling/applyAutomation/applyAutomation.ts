@@ -1,6 +1,8 @@
 import { getTrackEligibility, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
 import {
+    acceptsExternalPluginAutomationParameter,
     clampDeviceParameterValue,
+    clampExternalPluginAutomationValue,
     isDeviceParameterAutomatable,
     quantiseDeviceParameterValue,
 } from '#/modules/Arrangement/useCases';
@@ -51,16 +53,53 @@ const SLEW_EPSILON = 5e-5;
  * create drove the parameter at full range once it arrived from a preset, a
  * project file or a model action. The declared flag is now read here, where the
  * decision is actually made, rather than only where lanes are offered.
+ *
+ * An external plugin device is decided by its instance instead. Key presence
+ * cannot decide it: such a device is created with an empty `parameterValues`
+ * and gains a key only once something writes that parameter by hand, so this
+ * rule would refuse every plugin lane until its parameter had already been
+ * moved — and would then accept ids the plugin never declared, because no
+ * descriptor answers for `external-plugin`.
  */
 function deviceAcceptsAutomationParameter(
-    device: { type: string; parameterValues: Record<string, number> },
+    device: { type: string; parameterValues: Record<string, number>; externalInstanceId?: string },
     parameterId: string
 ): boolean {
+    if (device.externalInstanceId !== undefined) {
+        return acceptsExternalPluginAutomationParameter(device.externalInstanceId, parameterId);
+    }
+
     if (device.parameterValues[parameterId] === undefined) {
         return false;
     }
 
     return isDeviceParameterAutomatable({ deviceType: device.type, paramId: parameterId });
+}
+
+/**
+ * Hold the value about to be delivered inside the range its owner declared.
+ *
+ * Which side declares it is the whole of the split: a builtin device's range
+ * lives in its static descriptor, and a hosted plugin instance publishes its
+ * own. `clampDeviceParameterValue` reads descriptors only, so handing it an
+ * external plugin device returns the value untouched — the family has no
+ * descriptor to resolve — and the lane would deliver whatever the curve asked
+ * for.
+ */
+function clampToDeclaredParameterRange(
+    device: { type: string; externalInstanceId?: string },
+    paramId: string,
+    value: number
+): number {
+    if (device.externalInstanceId !== undefined) {
+        return clampExternalPluginAutomationValue({
+            externalInstanceId: device.externalInstanceId,
+            parameterId: paramId,
+            value,
+        });
+    }
+
+    return clampDeviceParameterValue({ deviceType: device.type, paramId, value });
 }
 
 const automationState: {
@@ -296,10 +335,14 @@ export function applyAutomation(currentBeat: number): Set<string> {
                 const prev = laneSlew.get(device.id) ?? value;
                 const slewed = isDiscontinuity ? value : slewStep(prev, value, AUTOMATION_SLEW_ALPHA);
                 // Lane data is validated on load only for finiteness and
-                // `maxValue >= minValue` — never against the descriptor — so a
-                // stored curve can ask for anything. The declared range binds
-                // here just as it does on a direct write.
-                const smoothed = clampDeviceParameterValue({ deviceType: device.type, paramId, value: slewed });
+                // `maxValue >= minValue` — never against what it drives — so a
+                // stored curve can ask for anything, and a linked lane applies
+                // its scale *after* `getAutomationValueAtBeat` clamped to the
+                // lane range, so even a well-formed lane can hand this a value
+                // outside it. The declared range binds here just as it does on a
+                // direct write: the descriptor's for a builtin device, the
+                // instance's own published bounds for a hosted plugin.
+                const smoothed = clampToDeclaredParameterRange(device, paramId, slewed);
                 // The slew state stays in the *continuous* domain deliberately.
                 // A parameter the descriptor declares `int`/`bool`/`choice` may
                 // only be delivered as an integer, but rounding the value the

@@ -32,21 +32,18 @@ export function handleMidiMessage(channel: number, cc: number, value: number, no
         switch (mapping.targetType) {
             case 'trackGain': {
                 if (mapping.trackId) {
-                    // Both writes take the same resolved value. The store-side
-                    // call clamps on its own; the engine-side call does not, and
-                    // it lands second, so passing the raw scaled value there put
-                    // the audio node above the ceiling the project had just
-                    // recorded.
-                    const gain = deps.clampTrackGain(scaled);
-                    deps.setTrackGainArrangement(mapping.trackId, gain);
-                    deps.engineSetTrackGain(mapping.trackId, gain);
+                    // One owning write. The Arrangement setter clamps to the
+                    // fader law, writes the engine, persists project truth and
+                    // records the ride — a second, direct engine write here put
+                    // the AudioParam through its smoothing ramp twice per
+                    // controller event (#2772).
+                    deps.setTrackGainArrangement(mapping.trackId, scaled);
                 }
                 break;
             }
             case 'trackPan': {
                 if (mapping.trackId) {
                     deps.setTrackPanArrangement(mapping.trackId, scaled);
-                    deps.engineSetTrackPan(mapping.trackId, scaled);
                 }
                 break;
             }

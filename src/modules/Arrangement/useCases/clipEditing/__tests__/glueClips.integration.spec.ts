@@ -537,13 +537,12 @@ describe('glueClips MIDI state integration', () => {
     });
 
     it('migrates and restores a source clip warp entry through a full apply/undo/redo round trip', () => {
-        // Content-default on purpose: `hasClipGlueDependencies` no longer
-        // gates on warp state at all (ledger #2108 — it migrates instead), so
-        // a genuinely non-default entry would exercise the same path. Content
-        // default just keeps the fixture minimal; its presence in the map is
-        // still observable via `warpStates.has`, which is what this test
-        // exercises.
-        setStretchMode('clip-a', 'repitch');
+        // Genuinely non-default on purpose: `readClipSatelliteEntry` reports a
+        // content-default warp entry as no satellite, so a fixture written with
+        // `defaultWarpState.stretchMode` would plan no migration at all and
+        // every `warpStates.has` assertion below would pass or fail for reasons
+        // unrelated to the round trip this test names.
+        setStretchMode('clip-a', 'complex');
         const plan = prepareClipGlue({ clipIds: ['clip-a', 'clip-b'] });
         expect(plan).not.toBeNull();
         const { previous, next, targetClipId: gluedId } = plan!;
@@ -577,7 +576,7 @@ describe('glueClips MIDI state integration', () => {
     });
 
     it('rejects rather than clobbers a satellite-tracked id that drifted from the captured plan (regression #2108)', () => {
-        setStretchMode('clip-a', 'repitch');
+        setStretchMode('clip-a', 'complex');
         const plan = prepareClipGlue({ clipIds: ['clip-a', 'clip-b'] });
         expect(plan).not.toBeNull();
         const { previous, next, targetClipId: gluedId } = plan!;

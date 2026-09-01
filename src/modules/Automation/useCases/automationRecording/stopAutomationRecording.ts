@@ -14,7 +14,19 @@ function snapshotLanePoints(laneId: string): AutomationPoint[] | null {
     return lane ? lane.points.map((point) => ({ ...point })) : null;
 }
 
-/** Structural, order-independent equality over two lane point arrays. */
+function controlPointsEqual(
+    left: { x: number; y: number } | undefined,
+    right: { x: number; y: number } | undefined
+): boolean {
+    return left?.x === right?.x && left?.y === right?.y;
+}
+
+/**
+ * Structural, order-independent equality over two lane point arrays. As the
+ * undo-entry decider it must compare every field a recorded pass can change: a
+ * curve-shape-only edit (stairSteps, cp1/cp2) differs from the baseline in no
+ * other field, so a partial comparison would leave the pass without an undo.
+ */
 function pointsEqual(a: AutomationPoint[], b: AutomationPoint[]): boolean {
     if (a.length !== b.length) {
         return false;
@@ -26,7 +38,10 @@ function pointsEqual(a: AutomationPoint[], b: AutomationPoint[]): boolean {
             left.beat !== right.beat ||
             left.value !== right.value ||
             left.curve !== right.curve ||
-            left.tension !== right.tension
+            left.tension !== right.tension ||
+            left.stairSteps !== right.stairSteps ||
+            !controlPointsEqual(left.cp1, right.cp1) ||
+            !controlPointsEqual(left.cp2, right.cp2)
         ) {
             return false;
         }

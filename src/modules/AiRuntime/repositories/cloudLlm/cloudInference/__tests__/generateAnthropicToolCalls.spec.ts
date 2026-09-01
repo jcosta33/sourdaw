@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { isHostedAiHttpStatusError } from '../../../../errors/HostedAiHttpStatusError';
 import { generateAnthropicToolCalls } from '../generateAnthropicToolCalls';
 
 const requestProvider = vi.hoisted(() => vi.fn());
@@ -8,6 +9,7 @@ vi.mock('../requestAnthropicProvider', () => ({ requestAnthropicProvider: reques
 
 const runtime = {
     provider: 'anthropic' as const,
+    authentication: 'api-key' as const,
     model: 'claude-test',
     session_id: 'provider-session-00000000000000000000000000000000',
 };
@@ -90,15 +92,22 @@ describe('generateAnthropicToolCalls', () => {
 
     it('reports only the provider status on failure', async () => {
         returnPayload({ private: 'provider detail' }, 401);
-        await expect(
-            generateAnthropicToolCalls({
-                runtime,
-                systemPrompt: 'system',
-                userMessage: 'faster',
-                toolSchemas,
-                signal: new AbortController().signal,
-            })
-        ).rejects.toThrow('status 401');
+        const error = await generateAnthropicToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'faster',
+            toolSchemas,
+            signal: new AbortController().signal,
+        }).catch((error: unknown) => error);
+
+        expect(isHostedAiHttpStatusError(error)).toBe(true);
+        if (!isHostedAiHttpStatusError(error)) {
+            return;
+        }
+        expect(error.message).toContain('status 401');
+        expect(error.status).toBe(401);
+        expect(error.message).not.toContain('provider detail');
+        expect(error.message).not.toContain('private');
     });
 
     it('rejects a successful response with the wrong content type', async () => {
@@ -113,5 +122,46 @@ describe('generateAnthropicToolCalls', () => {
                 signal: new AbortController().signal,
             })
         ).rejects.toThrow('invalid tool-planning content type');
+    });
+
+    it('encodes dotted tool names on the wire and decodes them on the response', async () => {
+        const dottedSchemas = [
+            {
+                type: 'function' as const,
+                function: {
+                    name: 'project.query',
+                    description: 'Query the project',
+                    parameters: {
+                        type: 'object' as const,
+                        properties: {},
+                        required: [],
+                        additionalProperties: false,
+                    },
+                },
+            },
+        ];
+        returnPayload({
+            content: [{ type: 'tool_use', id: 'tool-1', name: 'project_query', input: {} }],
+            stop_reason: 'tool_use',
+        });
+
+        const result = await generateAnthropicToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'what tracks exist',
+            toolSchemas: dottedSchemas,
+            signal: new AbortController().signal,
+        });
+
+        expect(result).toEqual([{ id: 'tool-1', name: 'project.query', arguments: {} }]);
+        const request = requestProvider.mock.calls[0]?.[0] as { body: string } | undefined;
+        if (!request || typeof request.body !== 'string') {
+            throw new Error('Expected a JSON request body');
+        }
+        const body = JSON.parse(request.body) as { tools: Array<{ name: string }> };
+        expect(body.tools[0]?.name).toBe('project_query');
+        for (const tool of body.tools) {
+            expect(tool.name).not.toContain('.');
+        }
     });
 });

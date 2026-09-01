@@ -111,11 +111,49 @@ export async function createEdmTemplate(): Promise<void> {
     addSend({ from: edmClap, to: reverbPlate, level: 0.35 });
     addSend({ from: edmRide, to: reverbHall, level: 0.3 });
 
+    // Instrument chain inlined from factory preset 'factory-bass-sub' (bassPresets).
     const edmBass = createInstrumentTrack({
         name: 'Bass',
-        deviceType: 'factory-bass-sub',
+        deviceType: 'builtin-synth',
         deviceName: 'Sub Bass',
+        deviceParams: {
+            waveform: 0,
+            attack: 0.01,
+            decay: 0.1,
+            sustain: 0.9,
+            release: 0.4,
+            filterCutoff: 200,
+            filterResonance: 0,
+            filterType: 0,
+            detune: 0,
+            gain: 0.4,
+            subOscLevel: 0.6,
+        },
         extraDevices: [
+            {
+                type: 'builtin-compressor',
+                name: 'Compressor',
+                params: {
+                    'comp-threshold': -18,
+                    'comp-ratio': 4,
+                    'comp-attack': 10,
+                    'comp-release': 100,
+                    'comp-makeup': 0,
+                },
+            },
+            {
+                type: 'builtin-eq',
+                name: 'EQ',
+                params: {
+                    'eq-low-gain': 4,
+                    'eq-low-freq': 60,
+                    'eq-mid-gain': 0,
+                    'eq-mid-freq': 1000,
+                    'eq-mid-q': 1,
+                    'eq-high-gain': -6,
+                    'eq-high-freq': 8000,
+                },
+            },
             {
                 type: 'builtin-eq',
                 name: 'Bass EQ',
@@ -144,17 +182,63 @@ export async function createEdmTemplate(): Promise<void> {
     });
 
     const leadsFolder = createFolder({ name: 'Leads' });
+    // Instrument chain inlined from factory preset 'factory-faust-supersaw-pad' (faustInstrumentPresets).
     const supersawLead = createInstrumentTrack({
         name: 'Supersaw Lead',
         parentId: leadsFolder.id,
-        deviceType: 'factory-faust-supersaw-pad',
-        deviceName: 'Supersaw',
+        deviceType: 'faust-supersaw-unison',
+        deviceName: 'Supersaw Pad',
+        deviceParams: {
+            detune: 30,
+            center_mix: 0.4,
+            cutoff: 3000,
+            resonance: 0.5,
+            attack: 0.5,
+            decay: 0.5,
+            sustain: 0.8,
+            release: 3.0,
+        },
+        extraDevices: [
+            { type: 'faust-zita-rev1-reverb', name: 'Space', params: { decay_time: 6, damping: 6000, dry_wet: 0.4 } },
+            {
+                type: 'builtin-chorus',
+                name: 'Width',
+                params: { 'chorus-rate': 0.3, 'chorus-depth': 7, 'chorus-feedback': 0.2, 'chorus-mix': 0.25 },
+            },
+        ],
     });
+    // Instrument chain inlined from factory preset 'factory-keys-pluck' (keysPresets).
     const pluck = createInstrumentTrack({
         name: 'Pluck',
         parentId: leadsFolder.id,
-        deviceType: 'factory-keys-pluck',
+        deviceType: 'builtin-synth',
         deviceName: 'Pluck',
+        deviceParams: {
+            waveform: 1,
+            attack: 0.001,
+            decay: 0.15,
+            sustain: 0.1,
+            release: 0.1,
+            filterCutoff: 2000,
+            filterResonance: 1,
+            filterType: 0,
+            filterEnvAmount: 5000,
+            detune: 0,
+            gain: 0.3,
+            noiseLevel: 0.1,
+        },
+        extraDevices: [
+            {
+                type: 'builtin-reverb',
+                name: 'Room',
+                params: { 'rev-size': 0.3, 'rev-decay': 1.2, 'rev-damping': 0.5, 'rev-mix': 0.2 },
+            },
+            {
+                type: 'builtin-chorus',
+                name: 'Chorus',
+                params: { 'chorus-rate': 0.8, 'chorus-depth': 4, 'chorus-feedback': 0.2, 'chorus-mix': 0.2 },
+            },
+        ],
     });
     const arp = createInstrumentTrack({
         name: 'Arp',
@@ -178,11 +262,39 @@ export async function createEdmTemplate(): Promise<void> {
     addSend({ from: arp, to: reverbHall, level: 0.2 });
 
     const padsFolder = createFolder({ name: 'Pads' });
+    // Instrument chain inlined from factory preset 'factory-pad-warm' (padPresets).
     const widePad = createInstrumentTrack({
         name: 'Wide Pad',
         parentId: padsFolder.id,
-        deviceType: 'factory-pad-warm',
+        deviceType: 'builtin-synth',
         deviceName: 'Warm Pad',
+        deviceParams: {
+            waveform: 2,
+            attack: 0.5,
+            decay: 0.5,
+            sustain: 0.8,
+            release: 2.0,
+            filterCutoff: 2000,
+            filterResonance: 0.5,
+            filterType: 0,
+            detune: 5,
+            gain: 0.25,
+            osc2Waveform: 2,
+            osc2Mix: 0.5,
+            osc2Detune: 7,
+            noiseLevel: 0.05,
+            stereoSpread: 0.7,
+            vibratoRate: 3.5,
+            vibratoDepth: 8,
+            vibratoDelay: 1.0,
+        },
+        extraDevices: [
+            {
+                type: 'builtin-reverb',
+                name: 'Reverb',
+                params: { 'rev-size': 0.8, 'rev-decay': 5, 'rev-damping': 0.4, 'rev-mix': 0.5 },
+            },
+        ],
     });
     addDeviceChain(widePad, [
         {

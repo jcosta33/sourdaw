@@ -99,7 +99,23 @@ export async function loadProject(): Promise<boolean> {
         preparedBuffers.cancel();
     }
 
-    await migrateActiveProjectIdentity();
+    try {
+        await migrateActiveProjectIdentity();
+    } catch (error) {
+        // The migration seam knows only about its own successors, so a project
+        // *transition* that replaced the projection while its persistence was
+        // in flight looks to it like a discarded write and it throws. That is
+        // not a load failure — `loadProject` rejecting here reaches
+        // `useAppInitialization` uncaught and toasts a boot failure over a
+        // recent-project load that succeeded. `transaction.isCurrent()` is the
+        // signal that a different project owns the projection now, so a
+        // superseded load ends exactly as the guard below would end it, and a
+        // genuine failure of this project's own migration still propagates.
+        if (transaction.isCurrent()) {
+            throw error;
+        }
+        return false;
+    }
     if (!transaction.isCurrent()) {
         return false;
     }

@@ -13,6 +13,7 @@ import {
     registerDialogChannels,
     registerPathChannels,
     registerScanCommand,
+    registerNativeMenuChannels,
     registerWindowControlChannels,
     SCAN_COMMAND,
     type NativeDialogs,
@@ -28,6 +29,10 @@ import {
     WINDOW_IS_MAXIMIZED_CHANNEL,
     WINDOW_MINIMIZE_CHANNEL,
     WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
+    NATIVE_MENU_PROJECT_STATE_CHANNEL,
+    NATIVE_MENU_SAVE_RESULT_CHANNEL,
+    RENDERER_SESSION_QUIESCED_CHANNEL,
+    RENDERER_SESSION_QUIESCE_STARTED_CHANNEL,
 } from '../channels.js';
 import { commandChannel } from '../commands.js';
 
@@ -87,7 +92,23 @@ describe('the scan command', () => {
         expect(scan).toHaveBeenCalledWith({ paths: ['/CLAP'] });
     });
 
-    it('refuses a foreign sender and a malformed root list before forking anything', async () => {
+    it('forwards an explicit retry flag to the supervisor', async () => {
+        const scan = vi.fn(async () => []);
+
+        await scanHandler(supervisorSpy(scan))?.(APP_FRAME, [['/CLAP'], true]);
+
+        expect(scan).toHaveBeenCalledWith({ paths: ['/CLAP'], retryQuarantined: true });
+    });
+
+    it('omits the retry flag rather than forwarding it as false, matching the default call shape', async () => {
+        const scan = vi.fn(async () => []);
+
+        await scanHandler(supervisorSpy(scan))?.(APP_FRAME, [['/CLAP'], false]);
+
+        expect(scan).toHaveBeenCalledWith({ paths: ['/CLAP'] });
+    });
+
+    it('refuses a foreign sender, a malformed root list, and a non-boolean retry flag before forking anything', async () => {
         const scan = vi.fn(async () => []);
         const handler = scanHandler(supervisorSpy(scan));
 
@@ -97,7 +118,182 @@ describe('the scan command', () => {
         await expect(handler?.(APP_FRAME, [{ roots: [] }])).rejects.toThrow(/list of paths/u);
         await expect(handler?.(APP_FRAME, [['/a', 7]])).rejects.toThrow(/list of paths/u);
         await expect(handler?.(APP_FRAME, '/a')).rejects.toThrow(/positional array/u);
+        await expect(handler?.(APP_FRAME, [['/a'], 'yes'])).rejects.toThrow(/retry_quarantined/u);
         expect(scan).not.toHaveBeenCalled();
+    });
+});
+
+describe('native menu channels', () => {
+    it('accepts only trusted projected state and correlated close replies', async () => {
+        const { ipcMain, handlers } = collectingIpc();
+        const onProjectState = vi.fn();
+        const onSaveResult = vi.fn();
+        registerNativeMenuChannels({
+            ipcMain,
+            isTrustedFrameUrl,
+            onProjectState,
+            onSaveResult,
+            onSessionQuiesced: vi.fn(),
+            onSessionQuiesceStarted: vi.fn(() => true),
+        });
+        const frame = { ...APP_FRAME, sender: 'sender' };
+
+        await handlers.get(NATIVE_MENU_PROJECT_STATE_CHANNEL)?.(frame, {
+            title: 'Song',
+            dirty: true,
+            durabilityPending: false,
+            projectKey: 'project',
+            revision: 'revision-1',
+            recentProjects: [],
+        });
+        await handlers.get(NATIVE_MENU_SAVE_RESULT_CHANNEL)?.(frame, {
+            requestId: 2,
+            saved: true,
+            dirty: false,
+            projectKey: 'project',
+            revision: 'revision-2',
+        });
+
+        expect(onProjectState).toHaveBeenCalledWith(
+            {
+                title: 'Song',
+                dirty: true,
+                durabilityPending: false,
+                projectKey: 'project',
+                revision: 'revision-1',
+                recentProjects: [],
+            },
+            'sender'
+        );
+        expect(onSaveResult).toHaveBeenCalledWith({
+            requestId: 2,
+            saved: true,
+            dirty: false,
+            projectKey: 'project',
+            revision: 'revision-2',
+        });
+    });
+
+    it('rejects projected recent projects that do not match the renderer contract', () => {
+        const { ipcMain, handlers } = collectingIpc();
+        registerNativeMenuChannels({
+            ipcMain,
+            isTrustedFrameUrl,
+            onProjectState: vi.fn(),
+            onSaveResult: vi.fn(),
+            onSessionQuiesced: vi.fn(),
+            onSessionQuiesceStarted: vi.fn(() => true),
+        });
+        const projectState = handlers.get(NATIVE_MENU_PROJECT_STATE_CHANNEL);
+
+        expect(() =>
+            projectState?.(APP_FRAME, {
+                title: 'Song',
+                dirty: false,
+                durabilityPending: false,
+                projectKey: 'project',
+                revision: 'revision-1',
+                recentProjects: 'not-an-array',
+            })
+        ).toThrow(/invalid/u);
+        expect(() =>
+            projectState?.(APP_FRAME, {
+                title: 'Song',
+                dirty: false,
+                durabilityPending: false,
+                projectKey: 'project',
+                revision: 'revision-1',
+                recentProjects: [{ key: 'recent' }],
+            })
+        ).toThrow(/recent project is invalid/u);
+        expect(() => projectState?.(APP_FRAME, { title: 'Song', dirty: false, recentProjects: [] })).toThrow(
+            /invalid/u
+        );
+        expect(() =>
+            projectState?.(APP_FRAME, {
+                title: 'Song',
+                dirty: false,
+                durabilityPending: false,
+                projectId: 'canonical-id-is-not-close-authority',
+                revision: 'revision-1',
+                recentProjects: [],
+            })
+        ).toThrow(/invalid/u);
+    });
+
+    it.each([
+        { requestId: 1.5, projectKey: 'project', revision: 'revision-1' },
+        { requestId: 1, revision: 'revision-1' },
+        { requestId: 1, projectKey: 'project' },
+        { requestId: 1, projectId: 'legacy-id', revision: 'revision-1' },
+    ])('rejects an invalid close-save result %# before notifying the coordinator', (partial) => {
+        const { ipcMain, handlers } = collectingIpc();
+        const onSaveResult = vi.fn();
+        registerNativeMenuChannels({
+            ipcMain,
+            isTrustedFrameUrl,
+            onProjectState: vi.fn(),
+            onSaveResult,
+            onSessionQuiesced: vi.fn(),
+            onSessionQuiesceStarted: vi.fn(() => true),
+        });
+
+        expect(() =>
+            handlers.get(NATIVE_MENU_SAVE_RESULT_CHANNEL)?.(APP_FRAME, {
+                saved: true,
+                dirty: false,
+                ...partial,
+            })
+        ).toThrow(/invalid/u);
+        expect(onSaveResult).not.toHaveBeenCalled();
+    });
+
+    it('validates both quiesce acknowledgements before calling their trusted callbacks', async () => {
+        const { ipcMain, handlers } = collectingIpc();
+        const onSessionQuiesced = vi.fn();
+        const onSessionQuiesceStarted = vi.fn(() => true);
+        registerNativeMenuChannels({
+            ipcMain,
+            isTrustedFrameUrl,
+            onProjectState: vi.fn(),
+            onSaveResult: vi.fn(),
+            onSessionQuiesced,
+            onSessionQuiesceStarted,
+        });
+        const frame = { ...APP_FRAME, sender: 'renderer' };
+
+        expect(handlers.get(RENDERER_SESSION_QUIESCE_STARTED_CHANNEL)?.(frame, { requestId: 4 })).toBe(true);
+        const quiesced = handlers.get(RENDERER_SESSION_QUIESCED_CHANNEL);
+        await quiesced?.(frame, { requestId: 4, outcome: 'success' });
+        await quiesced?.(frame, { requestId: 5, outcome: 'rejected' });
+        await quiesced?.(frame, { requestId: 6, outcome: 'terminal' });
+        expect(onSessionQuiesceStarted).toHaveBeenCalledWith(4, 'renderer');
+        expect(onSessionQuiesced).toHaveBeenNthCalledWith(1, { requestId: 4, outcome: 'success' }, 'renderer');
+        expect(onSessionQuiesced).toHaveBeenNthCalledWith(2, { requestId: 5, outcome: 'rejected' }, 'renderer');
+        expect(onSessionQuiesced).toHaveBeenNthCalledWith(3, { requestId: 6, outcome: 'terminal' }, 'renderer');
+
+        for (const requestId of [0, 1.5, undefined]) {
+            expect(() => handlers.get(RENDERER_SESSION_QUIESCE_STARTED_CHANNEL)?.(frame, { requestId })).toThrow(
+                /invalid/u
+            );
+            expect(() =>
+                handlers.get(RENDERER_SESSION_QUIESCED_CHANNEL)?.(frame, { requestId, outcome: 'success' })
+            ).toThrow(/invalid/u);
+        }
+        expect(() =>
+            handlers.get(RENDERER_SESSION_QUIESCED_CHANNEL)?.(frame, { requestId: 5, outcome: 'yes' })
+        ).toThrow(/invalid/u);
+        expect(() =>
+            handlers.get(RENDERER_SESSION_QUIESCED_CHANNEL)?.(frame, {
+                requestId: 5,
+                outcome: 'terminal',
+                quiesced: true,
+            })
+        ).toThrow(/invalid/u);
+        expect(() => handlers.get(RENDERER_SESSION_QUIESCE_STARTED_CHANNEL)?.(FOREIGN_FRAME, { requestId: 4 })).toThrow(
+            /not the application/u
+        );
+        expect(onSessionQuiesced).toHaveBeenCalledTimes(3);
     });
 });
 

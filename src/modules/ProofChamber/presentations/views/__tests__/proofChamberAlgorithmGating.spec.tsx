@@ -50,6 +50,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     // string would destructure to `undefined` and make any assertion about the
     // undo grouping a statement about the mock.
     generateGroupId: vi.fn((label: string) => ({ groupId: 'group-test', groupLabel: label })),
+    pushUndoEntry: vi.fn(),
 }));
 
 vi.mock('../../../stores/chamberStore', () => ({

@@ -168,3 +168,11 @@ nsis:
     oneClick: false
     perMachine: false
     allowToChangeInstallationDirectory: true
+
+linux:
+    icon: build/icons
+    category: AudioVideo;Audio;AudioVideoEditing
+    target:
+        - target: AppImage
+          arch:
+              - x64

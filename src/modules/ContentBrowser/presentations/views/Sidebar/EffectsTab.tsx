@@ -4,9 +4,9 @@ import { Shield, Waves as WavesIcon, Gauge, Sparkles, AudioLines, Layers, Guitar
 
 import { DawSectionDivider } from '#/components/daw/DawSectionDivider';
 import { Stack } from '#/components/layout';
-import { compileAddDeviceAction, compileLoadPresetActions, getFactoryPresets } from '#/modules/Arrangement/useCases';
+import { logger } from '#/infra/logger/appLogger';
+import { compileLoadPresetActions, executeAddDeviceAction, getFactoryPresets } from '#/modules/Arrangement/useCases';
 import { PluginBrowser } from '#/modules/AudioEngine/presentations/views';
-import { executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
 import { MIDI_EFFECT_FACTORIES } from '#/modules/MIDI/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -80,7 +80,10 @@ export const EffectsTab = ({
             notifyUser('Preset cannot be applied to the current track.', 'error');
             return;
         }
-        void executePresetLoad(plan).catch(() => {
+        void executePresetLoad(plan).catch((error) => {
+            // The toast names the outcome; the durable log keeps the reason the
+            // load was refused diagnosable.
+            logger.warn('executePresetLoad failed for FX preset:', error);
             notifyUser('Preset project changes require runtime retry or repair.', 'error');
         });
     };
@@ -89,19 +92,10 @@ export const EffectsTab = ({
         if (!selectedTrackId) {
             return;
         }
-        const action = compileAddDeviceAction(selectedTrackId, deviceType);
-        if (!action) {
-            afterApplied?.(null);
-            return;
-        }
-        void executeAppAction(action).then(
-            () => afterApplied?.(action.payload.deviceId ?? null),
-            (error: unknown) => {
-                if (isAppActionCommittedError(error)) {
-                    afterApplied?.(action.payload.deviceId ?? null);
-                }
-            }
-        );
+        // A committed-degraded outcome still carries the device id: the device
+        // is in project truth even when the runtime could not realize it, so
+        // the follow-up panel may open on it.
+        void executeAddDeviceAction(selectedTrackId, deviceType).then((result) => afterApplied?.(result.deviceId));
     };
 
     const groupedEffects = new Map<string, EffectPlugin[]>();

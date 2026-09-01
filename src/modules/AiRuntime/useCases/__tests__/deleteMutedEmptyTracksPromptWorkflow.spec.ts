@@ -14,6 +14,8 @@ import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from 
 import {
     clearUndoHistory,
     commandBatchPreflightPort,
+    commandProjectRevisionPort,
+    configureCommandBatchIdempotency,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -429,9 +431,25 @@ describe('delete muted empty tracks prompt workflow', () => {
         runtimeMocks.backend.value = 'webllm';
         setProviderPlan(providerPlan);
         vi.stubGlobal('fetch', runtimeMocks.fetch);
+        // jsdom has no navigator.locks; the durable project checkpoint is
+        // written under that lock.
+        vi.stubGlobal('navigator', {
+            ...navigator,
+            locks: {
+                request: (_name: string, _options: LockOptions, task: () => unknown) => Promise.resolve(task()),
+            },
+        });
+        // Production shape, from `src/app/bootstrap.ts`. Only a batch executed
+        // under the durable idempotency ledger reaches a project checkpoint, and
+        // only a configured revision provider can expose that checkpoint's exact
+        // revision — which the confirmation path requires before it may report a
+        // clean commit.
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        commandProjectRevisionPort.setProvider(captureProjectRevision);
         await cloudSession.clear();
         await cloudSession.replace_runtime({
             provider: 'openai-compatible',
+            authentication: 'none',
             session_id: null,
             model: 'fixture-model',
             base_url: 'http://localhost:1234/v1',
@@ -498,8 +516,10 @@ describe('delete muted empty tracks prompt workflow', () => {
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         vcaGroupStore.set({ groups: [] });
         configureAutomergeStoragePort(null);
+        commandProjectRevisionPort.setProvider(null);
         await cloudSession.clear();
         removeCrdtDoc('root');
+        localStorage.removeItem('sourdaw:command-batch-idempotency:v1');
         vi.unstubAllGlobals();
     });
 

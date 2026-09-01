@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { dispatchCanvasEditorCommand } from '#/modules/CommandInterface/useCases';
 import {
     setNoteVelocity,
     setNotePressure,
@@ -10,12 +11,20 @@ import {
 } from '#/modules/MIDI/useCases';
 
 import { usePianoRollInteractions } from '../../../hooks/usePianoRollInteractions';
+import { usePianoRollRenderer } from '../../../hooks/usePianoRollRenderer';
 import { PianoRoll } from '../PianoRoll';
 
 const { toolbarPropsRef, notePropertyLanePropsRef, contextMenuPropsRef } = vi.hoisted(() => ({
     toolbarPropsRef: { current: null as Record<string, unknown> | null },
     notePropertyLanePropsRef: { current: null as Record<string, unknown> | null },
     contextMenuPropsRef: { current: null as Record<string, unknown> | null },
+}));
+const pianoRollStoreState = vi.hoisted(() => ({
+    midi: {
+        notesByClipId: {},
+        ccByClipId: {},
+        pitchBendByClipId: {},
+    },
 }));
 
 type NotePropertyLaneCapturedProps = {
@@ -50,14 +59,13 @@ vi.mock('#/utils/Styles/cn', () => ({
 }));
 
 vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
-    const midiState = { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
     return {
         ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
         midiStore: {
             get value() {
-                return midiState;
+                return pianoRollStoreState.midi;
             },
-            getSnapshot: () => midiState,
+            getSnapshot: () => pianoRollStoreState.midi,
             subscribe: vi.fn(() => () => {}),
             subscribeReact: vi.fn(() => () => {}),
         },
@@ -196,6 +204,7 @@ describe('PianoRoll', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        pianoRollStoreState.midi.notesByClipId = {};
         toolbarPropsRef.current = null;
         notePropertyLanePropsRef.current = null;
         contextMenuPropsRef.current = null;
@@ -239,6 +248,22 @@ describe('PianoRoll', () => {
         // The marked surface must be the focusable one — the gate keys off the
         // focused `event.target`, so a non-focusable marker would be inert.
         expect(canvas).toHaveAttribute('tabindex', '0');
+    });
+
+    it('handles native Select All and Deselect All at the real Piano Roll canvas boundary', () => {
+        pianoRollStoreState.midi.notesByClipId = { 'clip-1': [{ id: 'note-1' }] };
+        const onSelectedNoteIdsChange = vi.fn();
+        render(<PianoRoll {...defaultProps} onSelectedNoteIdsChange={onSelectedNoteIdsChange} />);
+        const canvas = screen.getByLabelText('Piano roll editor');
+
+        expect(dispatchCanvasEditorCommand(canvas, 'edit:select-all')).toBe(true);
+        expect(onSelectedNoteIdsChange).toHaveBeenLastCalledWith(new Set(['note-1']));
+        expect(dispatchCanvasEditorCommand(canvas, 'edit:deselect-all')).toBe(true);
+        expect(onSelectedNoteIdsChange).toHaveBeenLastCalledWith(new Set());
+        expect(dispatchCanvasEditorCommand(canvas, 'edit:undo')).toBe(false);
+        expect(dispatchCanvasEditorCommand(canvas, 'edit:cut')).toBe(false);
+        expect(dispatchCanvasEditorCommand(canvas, 'edit:copy')).toBe(false);
+        expect(dispatchCanvasEditorCommand(canvas, 'edit:paste')).toBe(false);
     });
 
     it('reports the initial beat width to the parent on mount', () => {
@@ -286,6 +311,27 @@ describe('PianoRoll', () => {
         fireEvent.scroll(scrollContainer);
 
         expect(onScrollChange).toHaveBeenCalledWith(250);
+    });
+
+    // Issue #2302: the scroll container's onScroll used to mirror scrollLeft
+    // into a local useState nothing read, re-rendering the canvas editor on
+    // every scroll frame. The renderer hook is called once per render, so its
+    // call count is the render observation: scrolling must leave it unchanged.
+    it('does not re-render while the scroll container scrolls', () => {
+        render(<PianoRoll {...defaultProps} />);
+
+        const scrollContainer = screen.getByLabelText('Piano roll editor').closest('.overflow-auto');
+        if (!scrollContainer) {
+            throw new Error('Expected the piano roll scroll container');
+        }
+        const rendersBeforeScrolling = vi.mocked(usePianoRollRenderer).mock.calls.length;
+
+        for (const scrollLeft of [120, 240, 360]) {
+            Object.defineProperty(scrollContainer, 'scrollLeft', { value: scrollLeft, configurable: true });
+            fireEvent.scroll(scrollContainer);
+        }
+
+        expect(vi.mocked(usePianoRollRenderer).mock.calls.length).toBe(rendersBeforeScrolling);
     });
 
     it('shows the expression lane only after the toolbar toggles it on', () => {

@@ -106,6 +106,14 @@ export { getFinalFeatureHandlers } from './getFinalFeatureHandlers';
 export { configureAudioDeviceRuntimeSink } from './configureAudioDeviceRuntimeSink';
 export { initializeAudioEngine } from './initializeAudioEngine';
 
+export { hasLiveNativeGraphSession } from './livePlayback/hasLiveNativeGraphSession';
+export { syncNativeTimelineSamples } from './livePlayback/syncNativeTimelineSamples';
+export { readNativeEnginePlayheadSeconds } from './livePlayback/readNativeEnginePlayheadSeconds';
+export { repositionNativeLiveGraphSession } from './livePlayback/repositionNativeLiveGraphSession';
+export { startNativeLiveGraphSession } from './livePlayback/startNativeLiveGraphSession';
+export { stopNativeLiveGraphSession } from './livePlayback/stopNativeLiveGraphSession';
+export { updateNativeLiveGraphSessionTransportMaps } from './livePlayback/updateNativeLiveGraphSessionTransportMaps';
+
 export { getTrackLatency } from './latencyCompensation/compensation/getTrackLatency';
 export { getCompensationDelay } from './latencyCompensation/compensation/getCompensationDelay';
 export { getSidechainKeyDelay } from './latencyCompensation/compensation/getSidechainKeyDelay';

@@ -17,7 +17,6 @@ export const trackTools: readonly ToolSchema[] = [
         'trackId',
         'name',
     ]),
-    tool('selectTrack', 'Select a track (focus for editing).', { trackId: { type: 'string' } }, ['trackId']),
     tool(
         'muteTrack',
         'Mute or unmute a track.',
@@ -93,87 +92,5 @@ export const trackTools: readonly ToolSchema[] = [
             newIndex: { type: 'number', description: '0-based index in the track list' },
         },
         ['trackId', 'newIndex']
-    ),
-    tool(
-        'hideTrack',
-        'Hide/show a track in the arrangement view.',
-        {
-            trackId: { type: 'string' },
-            hidden: { type: 'boolean' },
-        },
-        ['trackId', 'hidden']
-    ),
-    tool(
-        'disableTrack',
-        'Disable a track (saves CPU but keeps content).',
-        {
-            trackId: { type: 'string' },
-            disabled: { type: 'boolean' },
-        },
-        ['trackId', 'disabled']
-    ),
-    tool('freezeTrack', 'Freeze a track to save CPU (renders to temp audio).', { trackId: { type: 'string' } }, [
-        'trackId',
-    ]),
-    tool('unfreezeTrack', 'Unfreeze a previously frozen track.', { trackId: { type: 'string' } }, ['trackId']),
-    tool('bounceInPlace', 'Bounce a track to audio in-place (destructive render).', { trackId: { type: 'string' } }, [
-        'trackId',
-    ]),
-    tool(
-        'bounceToNewTrack',
-        'Bounce a track to a new audio track (non-destructive).',
-        { trackId: { type: 'string' } },
-        ['trackId']
-    ),
-    tool(
-        'setTrackNotes',
-        'Add production notes to a track (e.g. "re-record verse 2", "needs EQ").',
-        {
-            trackId: { type: 'string' },
-            notes: { type: 'string' },
-        },
-        ['trackId', 'notes']
-    ),
-    tool(
-        'groupTracks',
-        'Group multiple tracks into a folder/group.',
-        {
-            trackIds: { type: 'array', items: { type: 'string' }, description: 'Track IDs to group' },
-            name: { type: 'string', description: 'Group name (e.g. "Drums", "Vocals")' },
-        },
-        ['trackIds', 'name']
-    ),
-    tool(
-        'foldTrack',
-        'Collapse/expand a folder or group track.',
-        {
-            trackId: { type: 'string' },
-            folded: { type: 'boolean' },
-        },
-        ['trackId', 'folded']
-    ),
-    tool(
-        'autoOrganizeProject',
-        'Automatically rename, color-code, and group tracks based on their content to organize the project. E.g., combine all vocals into a "Vocals" folder, name them "Lead Vocal", "Backing Vocal", and color them purple.',
-        {
-            tracks: {
-                type: 'array',
-                description: 'List of updates per track.',
-                items: {
-                    type: 'object',
-                    properties: {
-                        trackId: { type: 'string' },
-                        newName: { type: 'string', description: 'Standardized name (e.g., "Bass", "Kick")' },
-                        color: { type: 'string', description: 'CSS color (e.g., "blue", "#ff0000")' },
-                        folderName: {
-                            type: 'string',
-                            description: 'Optional folder group to move this track into (e.g., "Drums").',
-                        },
-                    },
-                    required: ['trackId'],
-                },
-            },
-        },
-        ['tracks']
     ),
 ];

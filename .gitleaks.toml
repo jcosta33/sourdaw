@@ -29,4 +29,13 @@ regexes = [
   # The health-gate contract repeats it to verify both the workflow pin and the
   # helper download, so the surrounding names read like a generic API key.
   '''551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb''',
+
+  # RFC 4122 example UUIDs used as GitHub App token fixtures in
+  # `scripts/__tests__/resolveReviewThread.spec.ts`. `generic-api-key` matches
+  # them only because the assignment is named `token`. They are the documented
+  # example UUID (and one incremented last digit), never an issued credential.
+  # Audited 2026-08-30 after an approval secret scan of `--all` refs failed Gate
+  # on unrelated pull requests.
+  '''123e4567-e89b-12d3-a456-426614174000''',
+  '''123e4567-e89b-12d3-a456-426614174001''',
 ]

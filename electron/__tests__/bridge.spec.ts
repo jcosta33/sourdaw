@@ -27,6 +27,13 @@ import {
     WINDOW_MAXIMIZED_CHANGED_CHANNEL,
     WINDOW_MINIMIZE_CHANNEL,
     WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
+    NATIVE_MENU_ACTION_CHANNEL,
+    NATIVE_MENU_PROJECT_STATE_CHANNEL,
+    NATIVE_MENU_SAVE_RESULT_CHANNEL,
+    RENDERER_SESSION_QUIESCE_CHANNEL,
+    RENDERER_SESSION_QUIESCE_CANCEL_CHANNEL,
+    RENDERER_SESSION_QUIESCED_CHANNEL,
+    RENDERER_SESSION_QUIESCE_STARTED_CHANNEL,
 } from '../channels.js';
 import { commandChannel, DENIED_COMMANDS } from '../commands.js';
 
@@ -65,10 +72,12 @@ describe('the published surface', () => {
 
         expect(Object.keys(bridge).sort()).toEqual([
             'dialog',
+            'display',
             'invoke',
             'invokeBinary',
             'invokeBinaryResponse',
             'listen',
+            'nativeMenu',
             'paths',
             'platform',
             'stream',
@@ -77,6 +86,7 @@ describe('the published surface', () => {
         ]);
         expect(Object.keys(bridge.dialog).sort()).toEqual(['message', 'open', 'save']);
         expect(Object.keys(bridge.paths).sort()).toEqual(['join', 'samplesBase']);
+        expect(Object.keys(bridge.display)).toEqual(['setZoomFactor']);
         expect(Object.keys(bridge.windowControls).sort()).toEqual([
             'close',
             'isMaximized',
@@ -84,10 +94,28 @@ describe('the published surface', () => {
             'minimize',
             'toggleMaximize',
         ]);
+        expect(Object.keys(bridge.nativeMenu).sort()).toEqual([
+            'listen',
+            'listenSessionQuiesce',
+            'listenSessionQuiesceCancel',
+            'projectState',
+            'saveResult',
+            'sessionQuiesceStarted',
+            'sessionQuiesced',
+        ]);
     });
 
     it('publishes the platform synchronously, so chrome gating needs no round trip', () => {
         expect(createSourdawBridge(fakeIpc().ipc, 'epoch', undefined, 'linux').platform).toBe('linux');
+    });
+
+    it('routes display scaling through the preload-owned zoom capability', () => {
+        const setZoomFactor = vi.fn();
+        const bridge = createSourdawBridge(fakeIpc().ipc, 'epoch', undefined, 'linux', setZoomFactor);
+
+        bridge.display.setZoomFactor(1.25);
+
+        expect(setZoomFactor).toHaveBeenCalledWith(1.25);
     });
 
     it('registers one process-wide listener per push channel, not one per subscription', () => {
@@ -106,8 +134,125 @@ describe('the published surface', () => {
                 [STREAM_CHANNEL, 1],
                 [VOICE_DICTATION_TERMINAL_CHANNEL, 1],
                 [WINDOW_MAXIMIZED_CHANGED_CHANNEL, 1],
+                [NATIVE_MENU_ACTION_CHANNEL, 1],
+                [RENDERER_SESSION_QUIESCE_CHANNEL, 1],
+                [RENDERER_SESSION_QUIESCE_CANCEL_CHANNEL, 1],
             ])
         );
+    });
+});
+
+describe('native menu transport', () => {
+    it('forwards exact renderer-owned native menu payloads on their narrow channels', async () => {
+        const fake = fakeIpc((channel) => (channel === RENDERER_SESSION_QUIESCE_STARTED_CHANNEL ? true : undefined));
+        const bridge = createSourdawBridge(fake.ipc);
+        const state = {
+            title: 'Song',
+            dirty: true,
+            durabilityPending: false,
+            projectKey: 'project-a',
+            revision: 'revision-1',
+            recentProjects: [{ key: 'project-a', name: 'Song' }],
+        } as const;
+        const result = {
+            requestId: 7,
+            saved: true,
+            dirty: false,
+            projectKey: 'project-a',
+            revision: 'revision-2',
+        } as const;
+
+        await bridge.nativeMenu.projectState(state);
+        await bridge.nativeMenu.saveResult(result);
+        await bridge.nativeMenu.sessionQuiesced({ requestId: 3, outcome: 'success' });
+        await bridge.nativeMenu.sessionQuiesceStarted(3);
+
+        expect(fake.invoke).toHaveBeenNthCalledWith(1, NATIVE_MENU_PROJECT_STATE_CHANNEL, state);
+        expect(fake.invoke).toHaveBeenNthCalledWith(2, NATIVE_MENU_SAVE_RESULT_CHANNEL, result);
+        expect(fake.invoke).toHaveBeenNthCalledWith(3, RENDERER_SESSION_QUIESCED_CHANNEL, {
+            requestId: 3,
+            outcome: 'success',
+        });
+        expect(fake.invoke).toHaveBeenNthCalledWith(4, RENDERER_SESSION_QUIESCE_STARTED_CHANNEL, { requestId: 3 });
+    });
+
+    it.each([
+        [true, true],
+        [false, false],
+    ])('preserves the exact boolean quiesce-start acknowledgement %s', async (answer, expected) => {
+        const bridge = createSourdawBridge(
+            fakeIpc((channel) => (channel === RENDERER_SESSION_QUIESCE_STARTED_CHANNEL ? answer : undefined)).ipc
+        );
+
+        await expect(bridge.nativeMenu.sessionQuiesceStarted(8)).resolves.toBe(expected);
+    });
+
+    it('rejects a non-boolean quiesce-start acknowledgement', async () => {
+        const bridge = createSourdawBridge(fakeIpc(() => 'accepted').ipc);
+
+        await expect(bridge.nativeMenu.sessionQuiesceStarted(8)).rejects.toThrow(/invalid acknowledgement/u);
+    });
+
+    it('delivers only validated intents from main', () => {
+        const fake = fakeIpc();
+        const listener = vi.fn();
+        createSourdawBridge(fake.ipc).nativeMenu.listen(listener);
+
+        fake.push(NATIVE_MENU_ACTION_CHANNEL, { action: 'edit:undo' });
+        fake.push(NATIVE_MENU_ACTION_CHANNEL, { action: 'unknown' });
+        fake.push(NATIVE_MENU_ACTION_CHANNEL, 'edit:undo');
+        fake.push(NATIVE_MENU_ACTION_CHANNEL, {
+            action: 'project:discard',
+            projectId: 'legacy-canonical-id',
+            revision: 'revision-1',
+        });
+        fake.push(NATIVE_MENU_ACTION_CHANNEL, {
+            action: 'project:discard',
+            requestId: 2,
+            projectKey: 7,
+            revision: 'revision-1',
+        });
+        fake.push(NATIVE_MENU_ACTION_CHANNEL, {
+            action: 'project:discard',
+            requestId: 2,
+            projectKey: 'project',
+            revision: 'revision-1',
+        });
+
+        expect(listener).toHaveBeenNthCalledWith(1, { action: 'edit:undo' });
+        expect(listener).toHaveBeenNthCalledWith(2, {
+            action: 'project:discard',
+            requestId: 2,
+            projectKey: 'project',
+            revision: 'revision-1',
+        });
+        expect(listener).toHaveBeenCalledTimes(2);
+    });
+
+    it('delivers only valid renderer-session quiesce requests from main', () => {
+        const fake = fakeIpc();
+        const listener = vi.fn();
+        createSourdawBridge(fake.ipc).nativeMenu.listenSessionQuiesce(listener);
+
+        fake.push(RENDERER_SESSION_QUIESCE_CHANNEL, 7);
+        fake.push(RENDERER_SESSION_QUIESCE_CHANNEL, 1.5);
+        fake.push(RENDERER_SESSION_QUIESCE_CHANNEL, 0);
+        fake.push(RENDERER_SESSION_QUIESCE_CHANNEL, '7');
+
+        expect(listener).toHaveBeenCalledTimes(1);
+        expect(listener).toHaveBeenCalledWith(7);
+    });
+
+    it('delivers only valid renderer-session cancellation requests from main', () => {
+        const fake = fakeIpc();
+        const listener = vi.fn();
+        createSourdawBridge(fake.ipc).nativeMenu.listenSessionQuiesceCancel(listener);
+
+        fake.push(RENDERER_SESSION_QUIESCE_CANCEL_CHANNEL, 7);
+        fake.push(RENDERER_SESSION_QUIESCE_CANCEL_CHANNEL, 0);
+        fake.push(RENDERER_SESSION_QUIESCE_CANCEL_CHANNEL, '7');
+
+        expect(listener).toHaveBeenCalledExactlyOnceWith(7);
     });
 });
 

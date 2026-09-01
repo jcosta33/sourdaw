@@ -3,9 +3,29 @@ import { useEffect, useState, type ReactElement } from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { applyDisplayScale } from '../../../useCases/applyDisplayScale';
 import { WorkspaceMobileGate } from '../WorkspaceMobileGate';
 
-const MOBILE_BREAKPOINT = 768;
+const displayScaleMocks = vi.hoisted(() => ({
+    listeners: new Set<() => void>(),
+    preferences: { current: { uiScale: 1 } },
+}));
+
+vi.mock('#/modules/Preferences/stores', () => ({
+    preferencesStore: {
+        get value() {
+            return displayScaleMocks.preferences.current;
+        },
+        subscribe(listener: () => void) {
+            displayScaleMocks.listeners.add(listener);
+            return () => {
+                displayScaleMocks.listeners.delete(listener);
+            };
+        },
+    },
+}));
+
+vi.mock('../../../useCases/applyDisplayScale', () => ({ applyDisplayScale: vi.fn() }));
 
 const childMounted = vi.fn();
 
@@ -32,7 +52,21 @@ const ShellProbe = (): ReactElement => {
     );
 };
 
+type DeviceClass = {
+    coarsePointer: boolean;
+    screenWidth: number;
+    screenHeight: number;
+    innerWidth: number;
+};
+
+// iPhone 15 CSS screen in both orientations, iPad mini portrait, and fine-pointer desktops.
+const PHONE_PORTRAIT: DeviceClass = { coarsePointer: true, screenWidth: 393, screenHeight: 852, innerWidth: 393 };
+const PHONE_LANDSCAPE: DeviceClass = { coarsePointer: true, screenWidth: 852, screenHeight: 393, innerWidth: 852 };
+const TABLET_PORTRAIT: DeviceClass = { coarsePointer: true, screenWidth: 744, screenHeight: 1133, innerWidth: 744 };
+const DESKTOP: DeviceClass = { coarsePointer: false, screenWidth: 1920, screenHeight: 1080, innerWidth: 1440 };
+
 const originalInnerWidth = window.innerWidth;
+const originalScreen = window.screen;
 const originalMatchMedia = window.matchMedia;
 
 type MediaSubscription = {
@@ -40,39 +74,42 @@ type MediaSubscription = {
     listener: (event: MediaQueryListEvent) => void;
 };
 
+let device: DeviceClass = DESKTOP;
 let mediaSubscriptions: MediaSubscription[] = [];
 
-const matchesQuery = (query: string, width: number): boolean => {
-    if (query.includes('min-width')) {
-        return width >= MOBILE_BREAKPOINT;
+const mediaMatches = (query: string): boolean => {
+    if (query.includes('pointer: coarse')) {
+        return device.coarsePointer;
     }
-    return width < MOBILE_BREAKPOINT;
+    const minWidth = /min-width:\s*(\d+)px/.exec(query);
+    if (minWidth !== null) {
+        return device.innerWidth >= Number(minWidth[1]);
+    }
+    return false;
 };
 
-const setViewportWidth = (width: number): void => {
-    window.innerWidth = width;
-    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
-        matches: matchesQuery(query, width),
-        media: query,
-        onchange: null,
-        addEventListener: (_type: string, listener: (event: MediaQueryListEvent) => void) => {
-            mediaSubscriptions.push({ query, listener });
-        },
-        removeEventListener: (_type: string, listener: (event: MediaQueryListEvent) => void) => {
-            mediaSubscriptions = mediaSubscriptions.filter((entry) => entry.listener !== listener);
-        },
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-    }));
+const setDevice = (next: DeviceClass): void => {
+    device = next;
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: next.innerWidth });
+    Object.defineProperty(window, 'screen', {
+        configurable: true,
+        value: { width: next.screenWidth, height: next.screenHeight },
+    });
 };
 
-/** Moves the viewport and notifies every live subscription the way a real resize does. */
-const resizeViewportTo = (width: number): void => {
-    setViewportWidth(width);
+/**
+ * Rotations and resizes fire the way the real events do, so a gate that kept a live
+ * media-query or resize listener would observe them and (wrongly) flip its decision.
+ */
+const changeDeviceTo = (next: DeviceClass): void => {
+    setDevice(next);
     act(() => {
+        window.dispatchEvent(new Event('resize'));
         for (const subscription of [...mediaSubscriptions]) {
-            subscription.listener({ matches: matchesQuery(subscription.query, width) } as MediaQueryListEvent);
+            subscription.listener({
+                matches: mediaMatches(subscription.query),
+                media: subscription.query,
+            } as MediaQueryListEvent);
         }
     });
 };
@@ -81,15 +118,33 @@ describe('WorkspaceMobileGate', () => {
     beforeEach(() => {
         mediaSubscriptions = [];
         childMounted.mockClear();
+        displayScaleMocks.listeners.clear();
+        displayScaleMocks.preferences.current = { uiScale: 1 };
+        vi.mocked(applyDisplayScale).mockReset();
+        window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+            matches: mediaMatches(query),
+            media: query,
+            onchange: null,
+            addEventListener: (_type: string, listener: (event: MediaQueryListEvent) => void) => {
+                mediaSubscriptions.push({ query, listener });
+            },
+            removeEventListener: (_type: string, listener: (event: MediaQueryListEvent) => void) => {
+                mediaSubscriptions = mediaSubscriptions.filter((entry) => entry.listener !== listener);
+            },
+            addListener: vi.fn(),
+            removeListener: vi.fn(),
+            dispatchEvent: vi.fn(),
+        }));
     });
 
     afterEach(() => {
-        window.innerWidth = originalInnerWidth;
+        Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalInnerWidth });
+        Object.defineProperty(window, 'screen', { configurable: true, value: originalScreen });
         window.matchMedia = originalMatchMedia;
     });
 
-    it('mounts its children on a desktop viewport', () => {
-        setViewportWidth(1280);
+    it('should mount its children on a fine-pointer desktop', () => {
+        setDevice(DESKTOP);
 
         render(
             <WorkspaceMobileGate>
@@ -101,8 +156,45 @@ describe('WorkspaceMobileGate', () => {
         expect(childMounted).toHaveBeenCalledTimes(1);
     });
 
-    it('never mounts its children on a phone viewport, so no shell effect runs', () => {
-        setViewportWidth(375);
+    it('should mount its children on a fine-pointer desktop with a narrow window', () => {
+        setDevice({ ...DESKTOP, innerWidth: 480 });
+
+        render(
+            <WorkspaceMobileGate>
+                <ShellProbe />
+            </WorkspaceMobileGate>
+        );
+
+        expect(screen.getByTestId('shell-probe')).toBeInTheDocument();
+        expect(childMounted).toHaveBeenCalledTimes(1);
+    });
+
+    it('should keep the shell mounted when a stored 200% scale narrows the window', () => {
+        setDevice(DESKTOP);
+        displayScaleMocks.preferences.current = { uiScale: 2 };
+        vi.mocked(applyDisplayScale).mockImplementation((scale) => {
+            setDevice({ ...device, innerWidth: device.innerWidth / scale });
+        });
+
+        render(
+            <WorkspaceMobileGate>
+                <ShellProbe />
+            </WorkspaceMobileGate>
+        );
+
+        expect(applyDisplayScale).toHaveBeenCalledWith(2);
+        expect(window.innerWidth).toBe(720);
+        expect(screen.getByTestId('shell-probe')).toBeInTheDocument();
+
+        changeDeviceTo(device);
+
+        expect(screen.getByTestId('shell-probe')).toBeInTheDocument();
+        expect(childMounted).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not apply a stored scale or mount its children on a phone', () => {
+        setDevice(PHONE_PORTRAIT);
+        displayScaleMocks.preferences.current = { uiScale: 0.5 };
 
         render(
             <WorkspaceMobileGate>
@@ -113,10 +205,12 @@ describe('WorkspaceMobileGate', () => {
         expect(screen.getByText('Desktop DAW')).toBeInTheDocument();
         expect(screen.queryByTestId('shell-probe')).not.toBeInTheDocument();
         expect(childMounted).not.toHaveBeenCalled();
+        expect(applyDisplayScale).not.toHaveBeenCalled();
+        expect(displayScaleMocks.listeners.size).toBe(0);
     });
 
-    it('mounts the children when the viewport widens past the breakpoint', () => {
-        setViewportWidth(375);
+    it('should not mount its children while a phone rotates to landscape and back', () => {
+        setDevice(PHONE_PORTRAIT);
 
         render(
             <WorkspaceMobileGate>
@@ -124,18 +218,39 @@ describe('WorkspaceMobileGate', () => {
             </WorkspaceMobileGate>
         );
 
-        expect(childMounted).not.toHaveBeenCalled();
+        changeDeviceTo(PHONE_LANDSCAPE);
+        changeDeviceTo(PHONE_PORTRAIT);
 
-        resizeViewportTo(1280);
+        expect(screen.getByText('Desktop DAW')).toBeInTheDocument();
+        expect(screen.queryByTestId('shell-probe')).not.toBeInTheDocument();
+        expect(childMounted).not.toHaveBeenCalled();
+        expect(applyDisplayScale).not.toHaveBeenCalled();
+        expect(displayScaleMocks.listeners.size).toBe(0);
+    });
+
+    it('should mount its children and sync display scale on a coarse-pointer tablet in portrait', () => {
+        setDevice(TABLET_PORTRAIT);
+        displayScaleMocks.preferences.current = { uiScale: 1.5 };
+
+        const { unmount } = render(
+            <WorkspaceMobileGate>
+                <ShellProbe />
+            </WorkspaceMobileGate>
+        );
 
         expect(screen.getByTestId('shell-probe')).toBeInTheDocument();
         expect(childMounted).toHaveBeenCalledTimes(1);
+        expect(applyDisplayScale).toHaveBeenCalledWith(1.5);
+        expect(displayScaleMocks.listeners.size).toBe(1);
+
+        unmount();
+        expect(displayScaleMocks.listeners.size).toBe(0);
     });
 
-    it('preserves shell state when a desktop window is resized below the breakpoint and back', () => {
+    it('should preserve shell state when a desktop window is resized below 768px and back', () => {
         // 200% browser zoom on a 1400px window, DevTools docked to the side, or a
         // dragged-narrow desktop app window all put `innerWidth` under 768 mid-session.
-        setViewportWidth(1440);
+        setDevice(DESKTOP);
 
         render(
             <WorkspaceMobileGate>
@@ -147,8 +262,8 @@ describe('WorkspaceMobileGate', () => {
         fireEvent.click(screen.getByRole('button', { name: 'edit' }));
         expect(screen.getByTestId('undo-depth')).toHaveTextContent('2');
 
-        resizeViewportTo(700);
-        resizeViewportTo(1440);
+        changeDeviceTo({ ...DESKTOP, innerWidth: 700 });
+        changeDeviceTo(DESKTOP);
 
         // Unmounting the shell here re-runs its boot effect, and `loadProject`
         // ends in `clearUndoHistory()` — the user's session would be discarded.

@@ -61,6 +61,7 @@ vi.mock('../../fileIO/buildProjectData', () => ({
 vi.mock('#/modules/Transport/useCases', () => ({
     defaultTransportState: { masterGain: 75, isPlaying: false },
     stopPlayback: vi.fn(),
+    ensureTrackStrips: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     cancelPendingAudioBufferImport: vi.fn(),
@@ -70,6 +71,11 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     importCachedAudioBuffers: vi.fn().mockResolvedValue({ persist: () => Promise.resolve(true), publish: () => 0 }),
     prepareCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue({ cancel: () => undefined, publish: () => 0 }),
     restoreCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue(undefined),
+    applyNoteExpression: vi.fn(),
+    audioEngine: {},
+    getCompensationDelay: vi.fn(),
+    getDefaultBendRangeSemitones: vi.fn(),
+    getFactoryDrumKitByIndex: vi.fn(),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),

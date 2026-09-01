@@ -73,7 +73,7 @@ describe('activateExternalPlugin', () => {
         vi.clearAllMocks();
         clearLoadedExternalPlugins();
         externalPluginActivationStore.set(defaultExternalPluginActivationState);
-        mocks.loadPluginRepo.mockResolvedValue({ instance_id: 'inst-1' });
+        mocks.loadPluginRepo.mockResolvedValue({ instance_id: 'inst-1', parameters: [] });
         mocks.setPluginStateRepo.mockResolvedValue(undefined);
         mocks.unloadPluginRepo.mockResolvedValue([[], []]);
     });
@@ -156,6 +156,7 @@ describe('activateExternalPlugin', () => {
     it('records the degraded state when the plugin loaded with no engine attached', async () => {
         mocks.loadPluginRepo.mockResolvedValueOnce({
             instance_id: 'inst-1',
+            parameters: [],
             latency_samples: 0,
             latency_ms: 0,
             engine_plugin_id: null,
@@ -179,12 +180,14 @@ describe('activateExternalPlugin', () => {
         mocks.loadPluginRepo
             .mockResolvedValueOnce({
                 instance_id: 'inst-1',
+                parameters: [],
                 latency_samples: 0,
                 latency_ms: 0,
                 engine_plugin_id: null,
             })
             .mockResolvedValueOnce({
                 instance_id: 'inst-1',
+                parameters: [],
                 latency_samples: 0,
                 latency_ms: 0,
                 engine_plugin_id: 1000,
@@ -220,6 +223,7 @@ describe('activateExternalPlugin', () => {
     it('leaves the activation entry unqualified when the plugin is engine-attached', async () => {
         mocks.loadPluginRepo.mockResolvedValueOnce({
             instance_id: 'inst-1',
+            parameters: [],
             latency_samples: 0,
             latency_ms: 0,
             engine_plugin_id: 1000,
@@ -275,6 +279,7 @@ describe('activateExternalPlugin', () => {
         // sample count on the same DTO must not be what reaches the sink.
         mocks.loadPluginRepo.mockResolvedValueOnce({
             instance_id: 'inst-1',
+            parameters: [],
             latency_samples: 256,
             latency_ms: 5.333_333_333_333_333,
         });
@@ -307,6 +312,7 @@ describe('activateExternalPlugin', () => {
         // the two are compensated together, and only the host knows the second.
         mocks.loadPluginRepo.mockResolvedValueOnce({
             instance_id: 'inst-1',
+            parameters: [],
             latency_samples: 0,
             latency_ms: 5,
             bridge_round_trip_frames: 1408,
@@ -342,6 +348,7 @@ describe('activateExternalPlugin', () => {
     it('routes a mid-session latency change from the native host to the sink', async () => {
         mocks.loadPluginRepo.mockResolvedValueOnce({
             instance_id: 'inst-1',
+            parameters: [],
             latency_samples: 0,
             latency_ms: 0,
         });
@@ -372,7 +379,12 @@ describe('activateExternalPlugin', () => {
     });
 
     it('routes each change only to the instance that reported it', async () => {
-        mocks.loadPluginRepo.mockResolvedValue({ instance_id: 'ignored', latency_samples: 0, latency_ms: 0 });
+        mocks.loadPluginRepo.mockResolvedValue({
+            instance_id: 'ignored',
+            parameters: [],
+            latency_samples: 0,
+            latency_ms: 0,
+        });
         const firstSink = vi.fn<(latencyMs: number) => void>();
         const secondSink = vi.fn<(latencyMs: number) => void>();
 
@@ -398,7 +410,12 @@ describe('activateExternalPlugin', () => {
     });
 
     it('stops routing changes for an unloaded instance', async () => {
-        mocks.loadPluginRepo.mockResolvedValueOnce({ instance_id: 'inst-1', latency_samples: 0, latency_ms: 4 });
+        mocks.loadPluginRepo.mockResolvedValueOnce({
+            instance_id: 'inst-1',
+            parameters: [],
+            latency_samples: 0,
+            latency_ms: 4,
+        });
         mocks.unloadPluginRepo.mockResolvedValue([['inst-1'], []]);
         const onLatencyMs = vi.fn<(latencyMs: number) => void>();
 
@@ -419,7 +436,12 @@ describe('activateExternalPlugin', () => {
     });
 
     it('subscribes to the native push exactly once across every activation in this file', async () => {
-        mocks.loadPluginRepo.mockResolvedValue({ instance_id: 'ignored', latency_samples: 0, latency_ms: 0 });
+        mocks.loadPluginRepo.mockResolvedValue({
+            instance_id: 'ignored',
+            parameters: [],
+            latency_samples: 0,
+            latency_ms: 0,
+        });
 
         activateExternalPlugin({
             engineSampleRate: ENGINE_SAMPLE_RATE,

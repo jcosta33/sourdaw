@@ -1,8 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createAutomationLane, type AutomationPoint } from '../../../models/Automation';
-
-import type { AutomationStoreState } from '../../../stores/automationStore';
+import { createAutomationLane, type AutomationLane, type AutomationPoint } from '../../../models/Automation';
+import { is_exact_automation_lane, type AutomationStoreState } from '../../../stores/automationStore';
 
 const mocks = vi.hoisted(() => {
     const state: { value: AutomationStoreState | null } = { value: null };
@@ -16,7 +15,8 @@ const mocks = vi.hoisted(() => {
     };
 });
 
-vi.mock('../../../stores/automationStore', () => ({
+vi.mock('../../../stores/automationStore', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../../../stores/automationStore')>()),
     automationStore: {
         get value(): AutomationStoreState | null {
             return mocks.getValue();
@@ -61,6 +61,66 @@ describe('duplicateClipAutomation', () => {
 
         copy.points[0]!.cp1!.x = 0.99;
         expect(sourcePoint.cp1!.x).toBe(0.2);
+    });
+
+    it('carries every persisted lane field onto the copy and re-pins object lane ids', () => {
+        const sourceLane: AutomationLane = {
+            ...createAutomationLane('t1', 'gain', 'Gain'),
+            id: 'source',
+            clipId: 'clip-a',
+            clipAutomationMode: 'multiplicative',
+            enabled: false,
+            collapsed: true,
+            linkedLaneId: 'lane-leader',
+            linkScale: -1,
+            viewMinValue: -0.5,
+            viewMaxValue: 1.5,
+            color: '#ff8800',
+            points: [{ beat: 0, value: 0.5, curve: 'linear', tension: 0 }],
+            trimPoints: [{ beat: 1, value: 0.2, curve: 'bezier', tension: 0, cp1: { x: 0.1, y: 0.2 } }],
+            ghostPoints: [{ beat: 2, value: 0.3, curve: 'stairs', tension: 0, stairSteps: 4 }],
+            objects: [
+                {
+                    id: 'obj-1',
+                    laneId: 'source',
+                    startBeat: 0,
+                    endBeat: 4,
+                    points: [{ beat: 0, value: 0.5, curve: 'bezier', tension: 0, cp2: { x: 0.7, y: 0.8 } }],
+                    name: 'Container',
+                },
+            ],
+        };
+        mocks.state.value = { lanes: [sourceLane] };
+
+        duplicateClipAutomation('clip-a', 'clip-c');
+
+        const copy = mocks.state.value.lanes[1]!;
+        // The copy must survive the store's exact-shape check unchanged: a
+        // missing field or a minted `cp1: undefined` key would force a
+        // normalize repair on the next hydrate instead of the identity path.
+        expect(is_exact_automation_lane(copy)).toBe(true);
+        expect(copy.clipAutomationMode).toBe('multiplicative');
+        // Every assertion uses a non-default source value, so a field the copy
+        // stops carrying fails its assertion instead of passing on the factory
+        // default or on absence.
+        expect(copy.enabled).toBe(false);
+        expect(copy.collapsed).toBe(true);
+        expect(copy.linkedLaneId).toBe('lane-leader');
+        expect(copy.linkScale).toBe(-1);
+        expect(copy.viewMinValue).toBe(-0.5);
+        expect(copy.viewMaxValue).toBe(1.5);
+        expect(copy.color).toBe('#ff8800');
+        expect(copy.trimPoints).toEqual(sourceLane.trimPoints);
+        expect(copy.ghostPoints).toEqual(sourceLane.ghostPoints);
+        expect(copy.objects).toHaveLength(1);
+        expect(copy.objects[0]!.laneId).toBe(copy.id);
+        expect(copy.objects[0]!.laneId).not.toBe('source');
+        expect(copy.objects[0]!.points).toEqual(sourceLane.objects[0]!.points);
+
+        copy.trimPoints![0]!.cp1!.x = 0.99;
+        expect(sourceLane.trimPoints![0]!.cp1!.x).toBe(0.1);
+        copy.objects[0]!.points[0]!.cp2!.x = 0.99;
+        expect(sourceLane.objects[0]!.points[0]!.cp2!.x).toBe(0.7);
     });
 
     it('does nothing when no lane matches the source clip', () => {

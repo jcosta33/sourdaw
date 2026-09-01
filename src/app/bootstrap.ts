@@ -4,10 +4,12 @@ import { setRuntimeLogger } from '#/infra/logger/runtimeLogger';
 import { flushDeferredStorageNotice } from '#/infra/store/storage/storageFullNotice';
 import {
     beginMixAnalysis,
+    assertCanonicalLlmActionStrategies,
     completeMixAnalysis,
     failMixAnalysis,
     initializeVoiceInputAvailability,
     recoverInterruptedAgentRuns,
+    recoverRetainedSectionRenderEffects,
     setVoiceToggleEventBus,
 } from '#/modules/AiRuntime/useCases';
 import { persistDeviceParam, resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
@@ -21,7 +23,6 @@ import {
     quantiseDeviceParameterValue,
     cleanupUnusedFreezeFiles,
     runtimeGraphTopology,
-    clampTrackGain,
     setTrackGain as setTrackGainArrangement,
     setTrackPan as setTrackPanArrangement,
     setDeviceParameter,
@@ -38,8 +39,6 @@ import { setMixAnalysisDisplayLifecycle } from '#/modules/AudioAnalysis/useCases
 import {
     updateDeviceParam,
     updateDevicePatch,
-    setTrackGain as engineSetTrackGain,
-    setTrackPan as engineSetTrackPan,
     getAudioContext,
     getCompensationDelay,
     commitPitchEdit,
@@ -77,6 +76,7 @@ import {
     configureCommandBatchIdempotency,
     commandDeviceVersionsPort,
     executeAppAction,
+    getExecutableAppActionGroundingCatalog,
     registerProductionCommandHandlers,
     productionBriefAdmissionPort,
     setActionHistoryMetadataPort,
@@ -94,6 +94,7 @@ import {
     agentProjectInspectionPort,
     initBranchState,
     captureProjectRevision,
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint,
     inspectAgentProjectDivergence,
     createCommandPreviewWorkspace,
     createCommandRecoveryWorkspace,
@@ -198,6 +199,7 @@ setActionHistoryMetadataPort({
 });
 productionBriefAdmissionPort.setGuard(productionBriefActionBatchAdmission.capture);
 commandProjectRevisionPort.setProvider(captureProjectRevision);
+commandProjectRevisionPort.setLiveMatchIgnoringCommandCheckpoint(projectRevisionMatchesLiveIgnoringCommandCheckpoint);
 configureRuntimeGraphProjectRevisionValidator(
     (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
 );
@@ -225,9 +227,11 @@ configureCollaborationAssetOwner({
 configureDurableAssetCommitProof({
     getDisposition: getVersionedCommandBatchCommitDisposition,
 });
-void recoverInterruptedAgentRuns().catch((error: unknown) => {
-    logger.error(new Error('Interrupted AI runs could not be recovered during startup', { cause: error }));
-});
+void recoverInterruptedAgentRuns()
+    .then(() => recoverRetainedSectionRenderEffects())
+    .catch((error: unknown) => {
+        logger.error(new Error('Interrupted AI runs could not be recovered during startup', { cause: error }));
+    });
 const createOfflineYeastProcessor = () =>
     createOfflineYeastMidiProcessor({
         resolveMusicalPosition: createMusicalPositionProjector(),
@@ -383,12 +387,9 @@ setModulationDependencies({
 });
 
 setMidiLearnDependencies({
-    clampTrackGain,
     setTrackGainArrangement,
     setTrackPanArrangement,
     setDeviceParameter,
-    engineSetTrackGain,
-    engineSetTrackPan,
     setFermenterMappedParam,
     recordAutomationValue,
     getTransportIsPlaying: () => getTransportState()?.isPlaying ?? false,
@@ -457,6 +458,7 @@ configureAudioDeviceRuntimeSink({
     updateTunerTelemetry,
 });
 
+assertCanonicalLlmActionStrategies(getExecutableAppActionGroundingCatalog());
 registerProductionCommandHandlers(getProductionCommandHandlerMaps({ canMutateBranchMetadata }));
 
 initToasterSubscribers({ eventBus, logger });

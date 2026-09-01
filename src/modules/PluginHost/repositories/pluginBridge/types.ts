@@ -2,7 +2,7 @@
  * Plugin bridge types — DTOs for native plugin IPC.
  */
 
-import { type ScannedPlugin } from '../../models/ScannedPlugin';
+import { type QuarantinedPlugin, type ScannedPlugin } from '../../models/ScannedPlugin';
 
 export type PluginParameter = {
     id: number;
@@ -11,7 +11,14 @@ export type PluginParameter = {
     default_value: number;
     min_value: number;
     max_value: number;
-    unit: string;
+    /**
+     * The host declares this `Option<String>`, and a format that reports no unit
+     * for a parameter sends `null`. Typed as the wire actually answers, so the
+     * absence is resolved once, at the boundary that owns the DTO
+     * (`toExternalPluginParameters`), instead of arriving as a `null` inside a
+     * field every downstream reader has been told is a string.
+     */
+    unit: string | null;
     is_automatable: boolean;
 };
 
@@ -30,6 +37,18 @@ export type PluginInstance = {
     latency_samples: number;
     /** Latency in milliseconds, converted host-side at the activation sample rate. */
     latency_ms: number;
+    /**
+     * How long the plugin keeps sounding after its input stops — a reverb's
+     * decay, a delay's repeats — in frames of the activation sample rate.
+     *
+     * Frames rather than the milliseconds latency is reported in: both formats
+     * reserve the top of the range for a tail that never ends, and a converted
+     * sentinel is an ordinary duration nothing can tell apart from a real one.
+     *
+     * The reading at load, and nothing later: a plugin that lengthens its decay
+     * reports the new one over `plugin-tail-changed`.
+     */
+    tail_samples: number;
     /**
      * Frames the native audio bridge adds on top of `latency_ms`, at the
      * activation sample rate. Zero when no engine took the instance — nothing
@@ -69,6 +88,17 @@ export type PluginLatencyChange = {
 };
 
 /**
+ * Payload of the `plugin-tail-changed` event: a native plugin reported a new
+ * processing tail mid-session (a CLAP plugin called `clap_host_tail.changed()`,
+ * and the host re-read the extension).
+ */
+export type PluginTailChange = {
+    instance_id: string;
+    /** Frames at the activation rate; see `PluginInstance.tail_samples`. */
+    tail_samples: number;
+};
+
+/**
  * Payload of `plugin-gui-closed`, pushed when the OS ended a plugin editor
  * window the app did not close itself — a title-bar click, or the cascade that
  * follows the owner window being destroyed.
@@ -88,6 +118,52 @@ export type PluginStateDirty = {
     instance_id: string;
 };
 
+/**
+ * Payload of `plugin-parameters-rescanned`, pushed after a plugin announced that
+ * its parameter contract moved — a preset load that renames, rescales or
+ * re-declares controls.
+ *
+ * It names the instance and nothing else: the fresh list is read back through
+ * `get_plugin_parameters`, so the contract has exactly one wire shape.
+ */
+export type PluginParametersRescanned = {
+    instance_id: string;
+};
+
+/**
+ * What one plugin-originated parameter event is.
+ *
+ * `gesture_begin` and `gesture_end` bracket the edits a user makes while holding
+ * a control in the plugin's own editor, which is what lets a recorder tell a
+ * held ride from a run of separate nudges.
+ */
+export type PluginParameterEventKind = 'gesture_begin' | 'value' | 'gesture_end';
+
+/**
+ * One edit a plugin made to one of its own parameters.
+ *
+ * `value` is present only on a `value` event: a gesture boundary reports that
+ * the user took hold or let go and carries no setting.
+ */
+export type PluginParameterEvent = {
+    param_id: number;
+    kind: PluginParameterEventKind;
+    value?: number;
+};
+
+/**
+ * Payload of `plugin-parameter-events`: one instance's edits, in the order the
+ * plugin produced them.
+ *
+ * Batched because a continuous ride emits a value per audio block, and one
+ * message per edit would put thousands of round trips a second on the renderer
+ * for a single knob.
+ */
+export type PluginParameterEvents = {
+    instance_id: string;
+    events: PluginParameterEvent[];
+};
+
 export type ScanResult = {
     plugins: ScannedPlugin[];
     /** What went wrong: an unreadable root, a failed candidate, a safety limit. */
@@ -102,6 +178,8 @@ export type ScanResult = {
      */
     notices: string[];
     scan_duration_ms: number;
+    /** Candidates the scan skipped because a prior helper crash or hang quarantined them (#2911). */
+    quarantined: QuarantinedPlugin[];
 };
 
 export type PluginGuiInfo = {

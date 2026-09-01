@@ -334,9 +334,19 @@ export function desktopPlatform(): string | null {
     return sourdawBridge().platform;
 }
 
+/** Scale the Electron renderer while preserving its viewport bounds. */
+export function desktopSetZoomFactor(factor: number): void {
+    sourdawBridge().display.setZoomFactor(factor);
+}
+
 /** The frameless window chrome's controls. Only meaningful on the Linux desktop build. */
 export function desktopWindowControls(): SourdawDesktopBridge['windowControls'] {
     return sourdawBridge().windowControls;
+}
+
+/** Narrow native-menu bridge; callers still own all product actions in the renderer. */
+export function desktopNativeMenu(): SourdawDesktopBridge['nativeMenu'] {
+    return sourdawBridge().nativeMenu;
 }
 
 /**
@@ -347,4 +357,16 @@ export function desktopWindowControls(): SourdawDesktopBridge['windowControls'] 
  */
 export function usesFramelessWindowChrome(): boolean {
     return isDesktopRuntime() && desktopPlatform() === 'linux';
+}
+
+/**
+ * True on the macOS desktop build, where the shell keeps the native
+ * traffic-light controls and overlays them on the app's own title-bar band.
+ *
+ * The renderer has to answer this from the platform: Electron reports
+ * `display-mode: browser`, so a `(display-mode: window-controls-overlay)` media
+ * query never matches and CSS alone cannot tell that the overlay is there.
+ */
+export function usesWindowControlsOverlayChrome(): boolean {
+    return isDesktopRuntime() && desktopPlatform() === 'darwin';
 }

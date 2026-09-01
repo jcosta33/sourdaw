@@ -266,6 +266,20 @@ describe('createGrinderNode', () => {
 
         expect(postMessage).not.toHaveBeenCalled();
     });
+    it('posts reset only while the worklet port is open', async () => {
+        const node = await createGrinderNode(makeCtx());
+        postMessage.mockClear();
+
+        node.reset();
+
+        expect(postMessage).toHaveBeenCalledWith({ type: 'reset' });
+
+        node.destroy();
+        postMessage.mockClear();
+        node.reset();
+
+        expect(postMessage).not.toHaveBeenCalled();
+    });
 
     it('rejects a scheduled fallback control when telemetry capacity cannot acknowledge a latency change', async () => {
         const { telemetryAllocator } = await import('../telemetryAllocator');

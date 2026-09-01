@@ -447,6 +447,7 @@ describe('whole-project vibe-mix planning', () => {
         await cloudSession.clear();
         await cloudSession.replace_runtime({
             provider: 'openai-compatible',
+            authentication: 'none',
             session_id: null,
             model: 'fixture-model',
             base_url: 'http://localhost:1234/v1',
@@ -888,7 +889,14 @@ describe('whole-project vibe-mix planning', () => {
         expect(undoStore.value?.past).toEqual([]);
     });
 
-    it('rejects a stale confirmation without partial lanes or receipt', async () => {
+    // The edit below changes automation mode for a target this plan names, but
+    // the status, reason and receipt asserted here are what *any* project
+    // change after the proposal produces — a collaborator edit elsewhere
+    // reaches the same terminal state through the same code path. This test
+    // therefore pins the project-changed disposition, not target-conflict
+    // detection; that the two are indistinguishable is the production defect
+    // filed as #2894.
+    it('leaves no partial lanes or receipt when the project changes before confirmation', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         trackStore.set({
@@ -897,16 +905,26 @@ describe('whole-project vibe-mix planning', () => {
                 track.id === 'bus-bass' ? { ...track, automationMode: 'off' } : track
             ),
         });
+        flushAutomergeStorageWrites();
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 
-        expect(result.status).toBe('failed');
+        expect(result).toEqual({
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+        });
         expect(getGainLanes()).toEqual([]);
         expect(undoStore.value?.past).toEqual([]);
+        expect(getPendingActionConfirmation(confirmation?.id ?? '')).toMatchObject({
+            status: 'invalidated',
+            executedActions: [],
+        });
         const terminalMessage = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
-        expect(terminalMessage?.content).not.toContain('Outcome: committed');
+        expect(terminalMessage?.content).toBe(
+            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
+        );
     });
 
     it('aborts a failed atomic store write without lane, receipt, or undo residue', async () => {

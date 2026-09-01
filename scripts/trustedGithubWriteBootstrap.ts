@@ -14,7 +14,8 @@ import { tmpdir } from 'node:os';
 import { delimiter, dirname, isAbsolute, join, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export type TrustedGithubWriteCommand = 'deliver' | 'issue:reconcile' | 'lane:publish';
+export type TrustedGithubWriteCommand =
+    'deliver' | 'issue:reconcile' | 'lane:publish' | 'review:publish' | 'review:resolve' | 'review:resolve:recover';
 
 export const BOOTSTRAP_PATH = 'scripts/trustedGithubWriteBootstrap.ts';
 export const HEALTH_GATES_WORKFLOW_PATH = '.github/workflows/health-gates.yml';
@@ -23,14 +24,20 @@ export const TRUSTED_PRIMARY_ROOT_ENV = 'SOURDAW_TRUSTED_PRIMARY_ROOT';
 export const TRUSTED_COMMON_DIR_ENV = 'SOURDAW_TRUSTED_COMMON_DIR';
 export const TRUSTED_GIT_PATH_ENV = 'SOURDAW_TRUSTED_GIT_PATH';
 export const TRUSTED_GH_PATH_ENV = 'SOURDAW_TRUSTED_GH_PATH';
+export const TRUSTED_PS_PATH_ENV = 'SOURDAW_TRUSTED_PS_PATH';
+export const TRUSTED_POWERSHELL_PATH_ENV = 'SOURDAW_TRUSTED_POWERSHELL_PATH';
 export const TRUSTED_ORIGIN_COMMIT_ENV = 'SOURDAW_TRUSTED_ORIGIN_COMMIT';
 export const TRUSTED_GATE_WORKFLOW_ENV = 'SOURDAW_TRUSTED_GATE_WORKFLOW';
+
+const REVIEW_RESOLUTION_CHILD_ENV = 'SOURDAW_REVIEW_RESOLUTION_CHILD';
 
 export type TrustedLauncherBinding = {
     primaryRoot: string;
     commonDir: string;
     gitPath: string;
     ghPath: string;
+    psPath?: string;
+    powershellPath?: string;
 };
 
 /**
@@ -70,6 +77,7 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
     deliver: [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/deliverPullRequest.ts',
+        'scripts/pullRequestMutationLock.ts',
         'scripts/reconcileTrackerIssue.ts',
         'scripts/trackerIssueReconciliation.ts',
         'scripts/githubAppIdentity.ts',
@@ -88,12 +96,41 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
     ],
+    'review:publish': [
+        'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/publishReview.ts',
+        'scripts/prepareReview.ts',
+        'scripts/pullRequestMutationLock.ts',
+        'scripts/githubAppIdentity.ts',
+        'scripts/prContract.ts',
+    ],
+    'review:resolve': [
+        'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/resolveReviewThread.ts',
+        'scripts/pullRequestMutationLock.ts',
+        'scripts/githubAppIdentity.ts',
+        'scripts/prContract.ts',
+    ],
+    'review:resolve:recover': [
+        'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/recoverReviewResolutionLock.ts',
+        'scripts/resolveReviewThread.ts',
+        'scripts/pullRequestMutationLock.ts',
+        'scripts/githubAppIdentity.ts',
+        'scripts/prContract.ts',
+    ],
 };
 
 const commandEntries: Record<TrustedGithubWriteCommand, { path: string; runner: string }> = {
     deliver: { path: 'scripts/deliverPullRequest.ts', runner: 'runDeliverCli' },
     'issue:reconcile': { path: 'scripts/reconcileTrackerIssue.ts', runner: 'runReconcileTrackerIssueCli' },
     'lane:publish': { path: 'scripts/publishLane.ts', runner: 'runPublishLaneCli' },
+    'review:publish': { path: 'scripts/publishReview.ts', runner: 'runPublishReviewCli' },
+    'review:resolve': { path: 'scripts/resolveReviewThread.ts', runner: 'runResolveReviewThreadCli' },
+    'review:resolve:recover': {
+        path: 'scripts/recoverReviewResolutionLock.ts',
+        runner: 'runRecoverReviewResolutionLockCli',
+    },
 };
 
 export function trustedDependencyPaths(command: TrustedGithubWriteCommand): readonly string[] {
@@ -131,8 +168,8 @@ export function assertTrustedSourceGraph(
  * repository's packages do resolve, and it is the one source the snapshot writes and never imports —
  * which the second rule keeps true — so its `yaml` dependency never resolves from a snapshot at all.
  * What holds that parser behind a dynamic call is not this check but the reason it is written that
- * way: a static bare dependency would load for `lane:publish` and `issue:reconcile` too, which read
- * no workflow and must not fail over a package they never use. The spec pins that shape separately.
+ * way: a static bare dependency would load for every non-delivery command too, though none reads a
+ * workflow or may fail over a package it never uses. The spec pins that shape separately.
  */
 function assertSnapshotResolvableImports(path: string, source: string, pathSet: ReadonlySet<string>): void {
     for (const dependency of localModuleDependencies(path, source)) {
@@ -160,34 +197,380 @@ const LOADER_EXEMPT_SPECIFIER = 'yaml';
  * the other two — and the dynamic call is the shape this loader itself uses, so the bare-specifier
  * rule passed vacuously on the very file it was written to hold.
  *
- * A specifier written inside a comment or a string literal matches too. That is why the prose here
- * spells none of these shapes out: the rule reads its own file, and an example in a comment would be
- * refused as an unresolvable dependency.
+ * Specifiers are collected by walking syntax, not by regex over raw source. Comments and the contents
+ * of string and template literals cannot contribute; only a real `from` / `import` / `import()` form
+ * at code depth can. That keeps an example in this comment from being refused as a dependency.
  */
-const MODULE_SPECIFIER_PATTERNS = [
-    /\bfrom\s+['"]([^'"]+)['"]/g,
-    /\bimport\s+['"]([^'"]+)['"]/g,
-    /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
-];
-
-function moduleSpecifiers(source: string): string[] {
+export function snapshotImportSpecifiers(source: string): string[] {
     const specifiers = new Set<string>();
-    for (const pattern of MODULE_SPECIFIER_PATTERNS) {
-        for (const match of source.matchAll(pattern)) {
-            if (match[1] !== undefined) {
-                specifiers.add(match[1]);
-            }
-        }
-    }
+    scanImportSpecifiers(source, 0, source.length, specifiers);
     return [...specifiers];
 }
 
-function bareModuleSpecifiers(source: string): string[] {
-    return moduleSpecifiers(source).filter((specifier) => !specifier.startsWith('.') && !specifier.startsWith('node:'));
+function scanImportSpecifiers(
+    source: string,
+    start: number,
+    end: number,
+    specifiers: Set<string>,
+    stopAtDepthZero = false
+): number {
+    let index = start;
+    let depth = stopAtDepthZero ? 1 : null;
+    while (index < end) {
+        const commentEnd = skipComment(source, index);
+        if (commentEnd !== undefined) {
+            index = commentEnd;
+            continue;
+        }
+        const quote = source[index];
+        if (quote === "'" || quote === '"') {
+            index = skipQuoted(source, index, quote);
+            continue;
+        }
+        if (quote === '`') {
+            index = scanTemplate(source, index, end, specifiers);
+            continue;
+        }
+        const regexEnd = skipRegexLiteral(source, index);
+        if (regexEnd !== undefined) {
+            index = regexEnd;
+            continue;
+        }
+        if (depth !== null) {
+            if (source[index] === '{') {
+                depth += 1;
+                index += 1;
+                continue;
+            }
+            if (source[index] === '}') {
+                depth -= 1;
+                if (depth === 0) {
+                    return index + 1;
+                }
+                index += 1;
+                continue;
+            }
+        }
+        if (isKeywordAt(source, index, 'from')) {
+            const afterKeyword = index + 4;
+            const specifier = readModuleStringAfter(source, afterKeyword);
+            if (specifier !== undefined) {
+                specifiers.add(specifier.value);
+                index = specifier.end;
+                continue;
+            }
+        }
+        if (isKeywordAt(source, index, 'import')) {
+            const afterKeyword = index + 6;
+            const sideEffect = readModuleStringAfter(source, afterKeyword);
+            if (sideEffect !== undefined) {
+                specifiers.add(sideEffect.value);
+                index = sideEffect.end;
+                continue;
+            }
+            const dynamic = readDynamicImportSpecifier(source, afterKeyword);
+            if (dynamic !== undefined) {
+                const before = index === 0 ? undefined : source[index - 1];
+                if (before !== '.') {
+                    specifiers.add(dynamic.value);
+                }
+                index = dynamic.end;
+                continue;
+            }
+        }
+        index += 1;
+    }
+    return index;
+}
+
+function scanTemplate(source: string, index: number, end: number, specifiers: Set<string>): number {
+    let cursor = index + 1;
+    while (cursor < end) {
+        const character = source[cursor];
+        if (character === '\\') {
+            cursor += 2;
+            continue;
+        }
+        if (character === '`') {
+            return cursor + 1;
+        }
+        if (character === '$' && source[cursor + 1] === '{') {
+            cursor = scanImportSpecifiers(source, cursor + 2, end, specifiers, true);
+            continue;
+        }
+        cursor += 1;
+    }
+    return end;
+}
+
+function isKeywordAt(source: string, index: number, keyword: string): boolean {
+    if (!source.startsWith(keyword, index)) {
+        return false;
+    }
+    const before = index === 0 ? undefined : source[index - 1];
+    const after = source[index + keyword.length];
+    return !isIdentifierContinue(before) && !isIdentifierContinue(after);
+}
+
+function isIdentifierContinue(character: string | undefined): boolean {
+    return character !== undefined && /[A-Za-z0-9_$]/.test(character);
+}
+
+function isLineTerminator(character: string): boolean {
+    return character === '\n' || character === '\r' || character === '\u2028' || character === '\u2029';
+}
+
+function skipComment(source: string, index: number): number | undefined {
+    if (source.startsWith('//', index)) {
+        let cursor = index + 2;
+        while (cursor < source.length && !isLineTerminator(source[cursor] ?? '')) {
+            cursor += 1;
+        }
+        return cursor < source.length ? cursor + 1 : source.length;
+    }
+    if (source.startsWith('/*', index)) {
+        const end = source.indexOf('*/', index + 2);
+        return end === -1 ? source.length : end + 2;
+    }
+    return undefined;
+}
+
+const REGEX_PREFIX_KEYWORDS = new Set([
+    'return',
+    'throw',
+    'case',
+    'delete',
+    'typeof',
+    'void',
+    'await',
+    'yield',
+    'in',
+    'of',
+    'instanceof',
+    'new',
+    'extends',
+]);
+
+function skipRegexLiteral(source: string, index: number): number | undefined {
+    if (source[index] !== '/') {
+        return undefined;
+    }
+    if (!canStartRegexLiteral(source, index)) {
+        return undefined;
+    }
+    let cursor = index + 1;
+    let inClass = false;
+    while (cursor < source.length) {
+        const character = source[cursor];
+        if (character === undefined) {
+            break;
+        }
+        if (character === '\\') {
+            cursor += 2;
+            continue;
+        }
+        if (inClass) {
+            if (character === ']') {
+                inClass = false;
+            }
+            cursor += 1;
+            continue;
+        }
+        if (character === '[') {
+            inClass = true;
+            cursor += 1;
+            continue;
+        }
+        if (character === '/') {
+            cursor += 1;
+            while (cursor < source.length && /[a-z]/i.test(source[cursor] ?? '')) {
+                cursor += 1;
+            }
+            return cursor;
+        }
+        if (isLineTerminator(character)) {
+            return undefined;
+        }
+        cursor += 1;
+    }
+    return undefined;
+}
+
+function canStartRegexLiteral(source: string, index: number): boolean {
+    let cursor = index - 1;
+    while (cursor >= 0) {
+        const character = source[cursor];
+        if (character === undefined) {
+            break;
+        }
+        if (isWhiteSpace(character) || isLineTerminator(character)) {
+            cursor -= 1;
+            continue;
+        }
+        if (character === '/' && cursor >= 1 && source[cursor - 1] === '*') {
+            const open = source.lastIndexOf('/*', cursor - 1);
+            if (open === -1) {
+                return false;
+            }
+            cursor = open - 1;
+            continue;
+        }
+        if ('([{;=,.!?:~%^&*+<>|'.includes(character) || character === '-' || character === '}') {
+            return true;
+        }
+        if (character === ')' || character === ']' || character === '"' || character === "'" || character === '`') {
+            return false;
+        }
+        if (isIdentifierContinue(character)) {
+            let start = cursor;
+            while (start >= 0 && isIdentifierContinue(source[start])) {
+                start -= 1;
+            }
+            const identifier = source.slice(start + 1, cursor + 1);
+            return REGEX_PREFIX_KEYWORDS.has(identifier);
+        }
+        if (character >= '0' && character <= '9') {
+            return false;
+        }
+        return false;
+    }
+    return true;
+}
+
+function skipQuoted(source: string, index: number, quote: "'" | '"'): number {
+    let cursor = index + 1;
+    while (cursor < source.length) {
+        const character = source[cursor];
+        if (character === '\\') {
+            cursor += 2;
+            continue;
+        }
+        if (character === quote) {
+            return cursor + 1;
+        }
+        cursor += 1;
+    }
+    return source.length;
+}
+
+type ReadSpecifier = { value: string; end: number };
+
+function readModuleStringAfter(source: string, index: number): ReadSpecifier | undefined {
+    const start = skipWhitespace(source, index);
+    const quote = source[start];
+    if (quote === "'" || quote === '"') {
+        return readQuotedValue(source, start, quote);
+    }
+    if (quote === '`') {
+        return readStaticTemplateValue(source, start);
+    }
+    return undefined;
+}
+
+function readDynamicImportSpecifier(source: string, index: number): ReadSpecifier | undefined {
+    let cursor = skipWhitespace(source, index);
+    if (source[cursor] !== '(') {
+        return undefined;
+    }
+    cursor += 1;
+    while (true) {
+        cursor = skipWhitespace(source, cursor);
+        if (source[cursor] !== '(') {
+            break;
+        }
+        cursor += 1;
+    }
+    return readModuleStringAfter(source, cursor);
+}
+
+function readQuotedValue(source: string, index: number, quote: "'" | '"'): ReadSpecifier | undefined {
+    let cursor = index + 1;
+    let value = '';
+    while (cursor < source.length) {
+        const character = source[cursor];
+        if (character === '\\') {
+            if (cursor + 1 >= source.length) {
+                return undefined;
+            }
+            value += source[cursor + 1];
+            cursor += 2;
+            continue;
+        }
+        if (character === quote) {
+            return { value, end: cursor + 1 };
+        }
+        if (character === '\n' || character === '\r') {
+            return undefined;
+        }
+        value += character;
+        cursor += 1;
+    }
+    return undefined;
+}
+
+function isWhiteSpace(character: string): boolean {
+    return (
+        character === '\t' ||
+        character === '\v' ||
+        character === '\f' ||
+        character === ' ' ||
+        character === '\u00A0' ||
+        character === '\uFEFF' ||
+        /\p{General_Category=Space_Separator}/u.test(character)
+    );
+}
+
+function readStaticTemplateValue(source: string, index: number): ReadSpecifier | undefined {
+    let cursor = index + 1;
+    let value = '';
+    while (cursor < source.length) {
+        const character = source[cursor];
+        if (character === '\\') {
+            if (cursor + 1 >= source.length) {
+                return undefined;
+            }
+            value += source[cursor + 1];
+            cursor += 2;
+            continue;
+        }
+        if (character === '`') {
+            return { value, end: cursor + 1 };
+        }
+        if (character === '$' && source[cursor + 1] === '{') {
+            return undefined;
+        }
+        value += character;
+        cursor += 1;
+    }
+    return undefined;
+}
+
+function skipWhitespace(source: string, index: number): number {
+    let cursor = index;
+    while (cursor < source.length) {
+        const commentEnd = skipComment(source, cursor);
+        if (commentEnd !== undefined) {
+            cursor = commentEnd;
+            continue;
+        }
+        const character = source[cursor];
+        if (character !== undefined && (isWhiteSpace(character) || isLineTerminator(character))) {
+            cursor += 1;
+            continue;
+        }
+        break;
+    }
+    return cursor;
+}
+
+export function bareModuleSpecifiers(source: string): string[] {
+    return snapshotImportSpecifiers(source).filter(
+        (specifier) => !specifier.startsWith('.') && !specifier.startsWith('node:')
+    );
 }
 
 function localModuleDependencies(path: string, source: string): string[] {
-    const dependencies = moduleSpecifiers(source)
+    const dependencies = snapshotImportSpecifiers(source)
         .filter((specifier) => specifier.startsWith('.'))
         .map((specifier) => posix.normalize(posix.join(posix.dirname(path), specifier)));
     return [...new Set(dependencies)];
@@ -242,8 +625,8 @@ function errorDetail(error: unknown): string {
  * protected primary checkout where it resolves.
  *
  * It is imported here rather than at the top of the file for two reasons. Only `deliver` needs a
- * workflow, so `lane:publish` and `issue:reconcile` must not fail to start over a package neither
- * one reads. And a failure to resolve it arrives as a rejected promise the caller turns into a
+ * workflow, so every other command must not fail to start over a package it never reads. And a
+ * failure to resolve it arrives as a rejected promise the caller turns into a
  * refusal, where a static import would instead kill the process with `ERR_MODULE_NOT_FOUND` — the
  * merge gate must refuse when it cannot parse the workflow, never crash past the question.
  */
@@ -360,7 +743,9 @@ async function runSnapshotModule(
         'const loaded = await import(pathToFileURL(entryPath).href);',
         'const command = Reflect.get(loaded, runner);',
         "if (typeof command !== 'function') throw new Error(`trusted snapshot does not export ${runner}`);",
-        'const result = await command(args);',
+        'const trustedLauncher = typeof process.env.SOURDAW_TRUSTED_PRIMARY_ROOT === "string" && typeof process.env.SOURDAW_TRUSTED_GIT_PATH === "string" && typeof process.env.SOURDAW_TRUSTED_GH_PATH === "string" ? { primaryRoot: process.env.SOURDAW_TRUSTED_PRIMARY_ROOT, gitPath: process.env.SOURDAW_TRUSTED_GIT_PATH, ghPath: process.env.SOURDAW_TRUSTED_GH_PATH, ...(typeof process.env.SOURDAW_TRUSTED_PS_PATH === "string" ? { psPath: process.env.SOURDAW_TRUSTED_PS_PATH } : {}), ...(typeof process.env.SOURDAW_TRUSTED_POWERSHELL_PATH === "string" ? { powershellPath: process.env.SOURDAW_TRUSTED_POWERSHELL_PATH } : {}) } : undefined;',
+        'const dependencies = runner === "runResolveReviewThreadCli" || runner === "runRecoverReviewResolutionLockCli" ? { trustedLauncher } : undefined;',
+        'const result = dependencies === undefined ? await command(args) : await command(args, dependencies);',
         "if (!Number.isSafeInteger(result)) throw new Error('trusted snapshot returned an invalid exit code');",
         'process.exitCode = result;',
     ].join('\n');
@@ -391,6 +776,11 @@ export function trustedSnapshotEnv(
     parent: NodeJS.ProcessEnv = process.env
 ): NodeJS.ProcessEnv {
     const env = trustedGitReadEnv(parent);
+    for (const key of Object.keys(env)) {
+        if (key.toUpperCase() === REVIEW_RESOLUTION_CHILD_ENV) {
+            delete env[key];
+        }
+    }
     if (snapshot.gateWorkflow !== undefined) {
         env[TRUSTED_GATE_WORKFLOW_ENV] = JSON.stringify(snapshot.gateWorkflow);
     }
@@ -398,13 +788,25 @@ export function trustedSnapshotEnv(
     if (launcher === undefined) {
         return env;
     }
-    env.PATH = [...new Set([dirname(launcher.gitPath), dirname(launcher.ghPath), dirname(process.execPath)])].join(
-        delimiter
-    );
+    env.PATH = [
+        ...new Set([
+            dirname(launcher.gitPath),
+            dirname(launcher.ghPath),
+            ...(launcher.psPath === undefined ? [] : [dirname(launcher.psPath)]),
+            ...(launcher.powershellPath === undefined ? [] : [dirname(launcher.powershellPath)]),
+            dirname(process.execPath),
+        ]),
+    ].join(delimiter);
     env[TRUSTED_PRIMARY_ROOT_ENV] = launcher.primaryRoot;
     env[TRUSTED_COMMON_DIR_ENV] = launcher.commonDir;
     env[TRUSTED_GIT_PATH_ENV] = launcher.gitPath;
     env[TRUSTED_GH_PATH_ENV] = launcher.ghPath;
+    if (launcher.psPath !== undefined) {
+        env[TRUSTED_PS_PATH_ENV] = launcher.psPath;
+    }
+    if (launcher.powershellPath !== undefined) {
+        env[TRUSTED_POWERSHELL_PATH_ENV] = launcher.powershellPath;
+    }
     env[TRUSTED_ORIGIN_COMMIT_ENV] = snapshot.commit;
     return env;
 }
@@ -431,14 +833,15 @@ function captureGit(repositoryRoot: string, gitPath: string, args: string[]): st
 export function trustedGitReadEnv(parent: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
     const env: NodeJS.ProcessEnv = { ...parent };
     for (const key of Object.keys(env)) {
+        const normalizedKey = key.toUpperCase();
         if (
-            key.startsWith('GIT_') ||
-            key.startsWith('GH_') ||
-            key.startsWith('GITHUB_') ||
-            key.startsWith('SOURDAW_GITHUB_APP_') ||
-            key.startsWith('SOURDAW_TRUSTED_') ||
-            key.startsWith('NODE_') ||
-            key === 'SSH_AUTH_SOCK'
+            normalizedKey.startsWith('GIT_') ||
+            normalizedKey.startsWith('GH_') ||
+            normalizedKey.startsWith('GITHUB_') ||
+            normalizedKey.startsWith('SOURDAW_GITHUB_APP_') ||
+            normalizedKey.startsWith('SOURDAW_TRUSTED_') ||
+            normalizedKey.startsWith('NODE_') ||
+            normalizedKey === 'SSH_AUTH_SOCK'
         ) {
             delete env[key];
         }
@@ -452,9 +855,13 @@ export function trustedGitReadEnv(parent: NodeJS.ProcessEnv = process.env): Node
     return env;
 }
 
-export function resolveTrustedExecutable(name: 'git' | 'gh', parent: NodeJS.ProcessEnv = process.env): string {
-    const extensions = process.platform === 'win32' ? (parent.PATHEXT ?? '.EXE;.CMD;.BAT').split(';') : [''];
-    for (const directory of (parent.PATH ?? '').split(delimiter)) {
+export function resolveTrustedExecutable(
+    name: 'git' | 'gh' | 'ps',
+    parent: NodeJS.ProcessEnv = process.env,
+    platform: NodeJS.Platform = process.platform
+): string {
+    const extensions = platform === 'win32' ? ['.exe'] : [''];
+    for (const directory of (parent.PATH ?? '').split(platform === 'win32' ? ';' : delimiter)) {
         for (const extension of extensions) {
             const candidate = resolve(directory || process.cwd(), `${name}${extension.toLowerCase()}`);
             try {
@@ -469,6 +876,27 @@ export function resolveTrustedExecutable(name: 'git' | 'gh', parent: NodeJS.Proc
     throw new Error(`cannot resolve trusted ${name} executable from the launcher PATH`);
 }
 
+function resolveTrustedPowerShellExecutable(
+    parent: NodeJS.ProcessEnv = process.env,
+    platform: NodeJS.Platform = process.platform
+): string {
+    const extensions = platform === 'win32' ? ['.exe'] : [''];
+    for (const directory of (parent.PATH ?? '').split(platform === 'win32' ? ';' : delimiter)) {
+        for (const extension of extensions) {
+            const suffix = extension === '' ? '' : extension.toLowerCase();
+            const candidate = resolve(directory || process.cwd(), `powershell${suffix}`);
+            try {
+                accessSync(candidate, constants.X_OK);
+                return realpathSync(candidate);
+            } catch {
+                // Try the next operator-provided PATH entry. The protected launcher freezes the
+                // first executable it finds before any lane-selected child starts.
+            }
+        }
+    }
+    throw new Error('cannot resolve trusted powershell executable from the launcher PATH');
+}
+
 function repositoryCommonDir(checkoutRoot: string, gitPath: string): string {
     const value = captureGit(checkoutRoot, gitPath, ['rev-parse', '--git-common-dir']).trim();
     return realpathSync(isAbsolute(value) ? value : resolve(checkoutRoot, value));
@@ -476,10 +904,12 @@ function repositoryCommonDir(checkoutRoot: string, gitPath: string): string {
 
 export function resolveTrustedLauncherBinding(
     launcherRoot: string,
-    parent: NodeJS.ProcessEnv = process.env
+    parent: NodeJS.ProcessEnv = process.env,
+    command?: TrustedGithubWriteCommand,
+    platform: NodeJS.Platform = process.platform
 ): TrustedLauncherBinding {
     const root = realpathSync(launcherRoot);
-    const gitPath = resolveTrustedExecutable('git', parent);
+    const gitPath = resolveTrustedExecutable('git', parent, platform);
     const commonDir = repositoryCommonDir(root, gitPath);
     const primaryRoot = realpathSync(dirname(commonDir));
     if (root !== primaryRoot) {
@@ -489,8 +919,25 @@ export function resolveTrustedLauncherBinding(
         primaryRoot,
         commonDir,
         gitPath,
-        ghPath: resolveTrustedExecutable('gh', parent),
+        ghPath: resolveTrustedExecutable('gh', parent, platform),
+        psPath: commandRequiresTrustedPs(command, platform)
+            ? resolveTrustedExecutable('ps', parent, platform)
+            : undefined,
+        powershellPath: commandRequiresTrustedPowerShell(command, platform)
+            ? resolveTrustedPowerShellExecutable(parent, platform)
+            : undefined,
     };
+}
+
+function commandRequiresTrustedPs(command: TrustedGithubWriteCommand | undefined, platform: NodeJS.Platform): boolean {
+    return platform !== 'win32' && (command === 'review:resolve' || command === 'review:resolve:recover');
+}
+
+function commandRequiresTrustedPowerShell(
+    command: TrustedGithubWriteCommand | undefined,
+    platform: NodeJS.Platform
+): boolean {
+    return platform === 'win32' && (command === 'review:resolve' || command === 'review:resolve:recover');
 }
 
 function defaultPort(binding: TrustedLauncherBinding): TrustedSourcePort {
@@ -509,17 +956,26 @@ function defaultPort(binding: TrustedLauncherBinding): TrustedSourcePort {
 }
 
 function parseCommand(value: string | undefined): TrustedGithubWriteCommand {
-    if (value === 'deliver' || value === 'issue:reconcile' || value === 'lane:publish') {
+    if (
+        value === 'deliver' ||
+        value === 'issue:reconcile' ||
+        value === 'lane:publish' ||
+        value === 'review:publish' ||
+        value === 'review:resolve' ||
+        value === 'review:resolve:recover'
+    ) {
         return value;
     }
-    throw new Error('usage: trustedGithubWriteBootstrap.ts <deliver|issue:reconcile|lane:publish> [args...]');
+    throw new Error(
+        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:reconcile|lane:publish|review:publish|review:resolve|review:resolve:recover> [args...]'
+    );
 }
 
 async function main(): Promise<number> {
     const executingFile = fileURLToPath(import.meta.url);
     const launcherRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
-    const binding = resolveTrustedLauncherBinding(launcherRoot);
     const command = parseCommand(process.argv[2]);
+    const binding = resolveTrustedLauncherBinding(launcherRoot, process.env, command);
     const port = defaultPort(binding);
     const commit = port.resolveOriginMain();
     const originBootstrap = port.readOriginSource(commit, BOOTSTRAP_PATH);

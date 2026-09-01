@@ -23,6 +23,27 @@ type InspectorPanelProps = {
     style?: CSSProperties;
 };
 
+const numericStyleSize = (value: CSSProperties['width'] | CSSProperties['minWidth']): number | undefined => {
+    return typeof value === 'number' ? value : undefined;
+};
+
+const inspectorSlotWidth = ({ style, isDeviceView }: { style?: CSSProperties; isDeviceView: boolean }): number => {
+    const slotWidth = numericStyleSize(style?.width);
+    const slotMinWidth = numericStyleSize(style?.minWidth);
+    const slotLocked = slotWidth !== undefined && slotMinWidth === slotWidth;
+    if (isDeviceView && !slotLocked) {
+        return Math.max(slotWidth ?? 260, 320);
+    }
+    if (slotWidth !== undefined) {
+        return slotWidth;
+    }
+    return isDeviceView ? 320 : 260;
+};
+
+const inspectorSlotMinWidth = ({ style, isDeviceView }: { style?: CSSProperties; isDeviceView: boolean }): number => {
+    return numericStyleSize(style?.minWidth) ?? (isDeviceView ? 300 : 200);
+};
+
 export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => {
     const { tracks, selectedTrackId } = useTracks();
     const masterTrack = tracks.find((time) => time.kind === 'master');
@@ -36,7 +57,7 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
     const selectedDevice = selectedTrack?.devices.find((data) => data.id === selectedDeviceId) ?? null;
 
     const isDeviceView = !!selectedDevice;
-    const renderIife_22 = () => {
+    const renderInspectorContent = (): ReactElement => {
         if (selectedDevice && selectedTrack) {
             return (
                 <DeviceInspector
@@ -45,56 +66,52 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
                     onBack={() => setSelectedDeviceId(null)}
                 />
             );
-        } else {
-            if (selectedClip && selectedTrack) {
-                // Keyed by clip id: ClipInspector owns local rename-draft state that
-                // must not survive a selection change, and remounting is the only
-                // way to guarantee that without the component resyncing on every
-                // clip prop it renders from.
-                return (
-                    <ClipInspector
-                        key={selectedClip.id}
-                        clip={selectedClip}
-                        trackId={selectedTrack.id}
-                        onBack={clearClipSelection}
-                    />
-                );
-            } else {
-                if (selectedTrack) {
-                    return (
-                        <TrackInspector
-                            track={selectedTrack}
-                            allTracks={tracks}
-                            onSelectClip={selectClipWithFocus}
-                            onSelectDevice={setSelectedDeviceId}
-                        />
-                    );
-                } else {
-                    if (masterTrack) {
-                        return (
-                            <TrackInspector
-                                track={masterTrack}
-                                allTracks={tracks}
-                                onSelectClip={selectClipWithFocus}
-                                onSelectDevice={setSelectedDeviceId}
-                            />
-                        );
-                    } else {
-                        return (
-                            <Row justify="center" className="h-full p-6">
-                                <DawBlockedState
-                                    eyebrow="Inspector"
-                                    className="max-w-64"
-                                    title="No track selected"
-                                    description="Pick a track, clip, or device to inspect its details."
-                                    summary="The inspector follows the current selection and switches between track, clip, and device detail."
-                                />
-                            </Row>
-                        );
-                    }
-                }
-            }
         }
+        if (selectedClip && selectedTrack) {
+            // Keyed by clip id: ClipInspector owns local rename-draft state that
+            // must not survive a selection change, and remounting is the only
+            // way to guarantee that without the component resyncing on every
+            // clip prop it renders from.
+            return (
+                <ClipInspector
+                    key={selectedClip.id}
+                    clip={selectedClip}
+                    trackId={selectedTrack.id}
+                    onBack={clearClipSelection}
+                />
+            );
+        }
+        if (selectedTrack) {
+            return (
+                <TrackInspector
+                    track={selectedTrack}
+                    allTracks={tracks}
+                    onSelectClip={selectClipWithFocus}
+                    onSelectDevice={setSelectedDeviceId}
+                />
+            );
+        }
+        if (masterTrack) {
+            return (
+                <TrackInspector
+                    track={masterTrack}
+                    allTracks={tracks}
+                    onSelectClip={selectClipWithFocus}
+                    onSelectDevice={setSelectedDeviceId}
+                />
+            );
+        }
+        return (
+            <Row justify="center" className="h-full p-6">
+                <DawBlockedState
+                    eyebrow="Inspector"
+                    className="max-w-64"
+                    title="No track selected"
+                    description="Pick a track, clip, or device to inspect its details."
+                    summary="The inspector follows the current selection and switches between track, clip, and device detail."
+                />
+            </Row>
+        );
     };
 
     return (
@@ -104,8 +121,8 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
             className="transition-[width,min-width] duration-200 ease-out"
             style={{
                 ...style,
-                width: isDeviceView ? Math.max((style?.width as number) ?? 260, 320) : (style?.width ?? 260),
-                minWidth: isDeviceView ? 300 : 200,
+                width: inspectorSlotWidth({ style, isDeviceView }),
+                minWidth: inspectorSlotMinWidth({ style, isDeviceView }),
             }}
             aria-label="Inspector panel"
             data-onboarding="inspector"
@@ -120,7 +137,7 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
                     </Button>
                 }
             />
-            <ScrollArea className="flex-1 min-h-0">{renderIife_22()}</ScrollArea>
+            <ScrollArea className="flex-1 min-h-0">{renderInspectorContent()}</ScrollArea>
         </DawPanelSurface>
     );
 };

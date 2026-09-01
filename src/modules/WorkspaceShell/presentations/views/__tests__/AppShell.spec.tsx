@@ -20,6 +20,7 @@ import {
     projectLoadFailureStore,
     type ProjectLoadFailureState,
 } from '#/modules/Project/stores';
+import { MIN_ARRANGE_COLUMN_WIDTH, SHELL_RESIZE_HANDLE_WIDTH } from '#/utils/Layout/allocateMainFirstWidths';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 import { defaultWorkspaceState, type WorkspaceState } from '../../../models/WorkspaceState';
@@ -63,7 +64,11 @@ vi.mock('../TransportBar', () => ({
 // never touched it. See #1393.
 vi.mock('#/modules/ContentBrowser/presentations/views', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/ContentBrowser/presentations/views')>()),
-    Sidebar: () => <div data-testid="sidebar">Sidebar</div>,
+    Sidebar: ({ style }: { style?: React.CSSProperties }) => (
+        <div data-testid="sidebar" style={style}>
+            Sidebar
+        </div>
+    ),
 }));
 
 vi.mock('#/modules/MixerConsole/presentations/views', async (importOriginal) => ({
@@ -75,7 +80,11 @@ vi.mock('#/modules/TimelineEditor/presentations/views', async (importOriginal) =
     ...(await importOriginal<typeof import('#/modules/TimelineEditor/presentations/views')>()),
     ClipView: () => <div data-testid="clip-view">Clip View</div>,
     AutomationBottomPanel: () => <div data-testid="automation-panel">Automation</div>,
-    InspectorPanel: () => <div data-testid="inspector-panel">Inspector</div>,
+    InspectorPanel: ({ style }: { style?: React.CSSProperties }) => (
+        <div data-testid="inspector-panel" style={style}>
+            Inspector
+        </div>
+    ),
 }));
 
 vi.mock('#/modules/Preferences/presentations/views', async (importOriginal) => ({
@@ -429,6 +438,50 @@ describe('AppShell', () => {
         render(<AppShell>Content</AppShell>);
         const shell = screen.getByTestId('app-shell');
         expect(shell.classList.contains('flex')).toBe(true);
+        expect(shell).toHaveClass('h-full', 'w-full');
+        expect(shell).not.toHaveClass('h-screen', 'w-screen');
+    });
+
+    it('shrinks default sidebar and inspector so the arrange column stays at least MIN_ARRANGE_COLUMN_WIDTH at 640px', () => {
+        const originalInnerWidth = window.innerWidth;
+        Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 640 });
+        try {
+            workspaceState = createWorkspaceState({
+                sidebarOpen: true,
+                inspectorOpen: true,
+                mixerOpen: false,
+                collaborationPanelOpen: false,
+                branchManagerOpen: false,
+                chatPanelOpen: false,
+                sidebarWidth: defaultWorkspaceState.sidebarWidth,
+                inspectorWidth: defaultWorkspaceState.inspectorWidth,
+                mixerHeight: 200,
+                chatPanelWidth: 200,
+                aiPanelWidth: 200,
+                virtualKeyboardOpen: false,
+            });
+            vi.mocked(useWorkspaceState).mockImplementation(() => workspaceState);
+
+            render(<AppShell>Content</AppShell>);
+
+            const sidebarWidth = Number.parseFloat(screen.getByTestId('sidebar').style.width);
+            const inspectorWidth = Number.parseFloat(screen.getByTestId('inspector-panel').style.width);
+            const center = document.getElementById('main-content')?.parentElement;
+            expect(sidebarWidth).toBeGreaterThan(0);
+            expect(inspectorWidth).toBeGreaterThan(0);
+            expect(sidebarWidth).toBeLessThan(defaultWorkspaceState.sidebarWidth);
+            expect(inspectorWidth).toBeLessThan(defaultWorkspaceState.inspectorWidth);
+            expect(
+                sidebarWidth + inspectorWidth + 2 * SHELL_RESIZE_HANDLE_WIDTH + MIN_ARRANGE_COLUMN_WIDTH
+            ).toBeLessThanOrEqual(640);
+            expect(center).toHaveStyle({ minWidth: `${MIN_ARRANGE_COLUMN_WIDTH}px` });
+        } finally {
+            Object.defineProperty(window, 'innerWidth', {
+                configurable: true,
+                writable: true,
+                value: originalInnerWidth,
+            });
+        }
     });
 
     describe('bottom-dock accessibility (Fix 1)', () => {

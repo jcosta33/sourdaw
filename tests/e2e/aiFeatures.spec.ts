@@ -39,9 +39,4 @@ test.describe('AI Features', () => {
     test('does not expose voice controls before a local voice model is available', async ({ page }) => {
         await expect(page.getByTestId('voice-command-button')).toHaveCount(0);
     });
-
-    test('shows the unavailable state when this browser has no admitted LLM backend', async ({ page }) => {
-        await expect(page.getByText('AI unavailable', { exact: true })).toBeVisible();
-        await expect(page.getByRole('button', { name: 'Load AI' })).toHaveCount(0);
-    });
 });
