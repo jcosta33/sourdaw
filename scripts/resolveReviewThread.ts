@@ -2164,11 +2164,21 @@ function repairCompletedResolution(
     const duplicateMarkers = managedReplyMarkers(thread, context, ['COMMENTED'], immutableEnvelope !== undefined);
     if (duplicateMarkers.length <= 1) {
         if (immutableEnvelope !== undefined) {
-            const reply = requireOneReplyMarker(thread, context.threadId);
+            const terminal = port.inspect(number, context.threadId);
+            assertExpectedHeadAfterMutation(terminal.head, context.expectedHead);
+            if (terminal.thread === null) {
+                fail(`review thread ${context.threadId} was not found on this pull request`);
+            }
+            assertCompletedResolution(terminal.thread, context.threadId);
+            if (hasBlockingAuthorPendingReview(terminal.pendingReviews, terminal.thread, context)) {
+                fail(`review thread ${context.threadId} has a non-reusable pending author review`);
+            }
+            const reply = requireOneReplyMarker(terminal.thread, context.threadId);
             const review = requireReplyReview(reply, context, ['COMMENTED'], true, null);
             if (review.id !== immutableEnvelope.review.id || !isImmutableEmptySubmittedReview(review)) {
                 fail(`review thread ${context.threadId} no longer has its immutable empty submitted-review envelope`);
             }
+            assertExclusiveBackfillReviewAttachment(number, review.id, context, port);
             return true;
         }
         assertCommentedResolutionReply(requireOneReplyMarker(thread, context.threadId), context);
@@ -2190,6 +2200,10 @@ function repairCompletedResolution(
         ) {
             fail(`review thread ${context.threadId} no longer has its immutable empty submitted-review envelope`);
         }
+        if (hasBlockingAuthorPendingReview(verified.pendingReviews, verified.thread, context)) {
+            fail(`review thread ${context.threadId} has a non-reusable pending author review`);
+        }
+        assertExclusiveBackfillReviewAttachment(number, immutableEnvelope.review.id, context, port);
         return true;
     }
     assertCommentedResolutionReply(requireOneReplyMarker(verified.thread, context.threadId), context);
