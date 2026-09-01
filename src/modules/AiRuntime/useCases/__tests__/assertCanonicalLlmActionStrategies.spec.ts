@@ -3,10 +3,15 @@ import { describe, expect, it } from 'vitest';
 import { getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCases';
 
 import { markerSectionActionNames } from '../../transformers/llmActionStrategies/markerSectionStrategy';
+import { masterVcaActionNames } from '../../transformers/llmActionStrategies/masterVcaStrategy';
 import { transportTimelineActionNames } from '../../transformers/llmActionStrategies/transportTimelineStrategy';
 import { assertCanonicalLlmActionStrategies } from '../assertCanonicalLlmActionStrategies';
 
-const llmActionStrategyNames = [...markerSectionActionNames, ...transportTimelineActionNames] as const;
+const llmActionStrategyNames = [
+    ...markerSectionActionNames,
+    ...masterVcaActionNames,
+    ...transportTimelineActionNames,
+] as const;
 
 describe('assertCanonicalLlmActionStrategies', () => {
     it.each(llmActionStrategyNames)(
