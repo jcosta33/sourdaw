@@ -42,6 +42,7 @@ export type ReviewComment = {
     authorLogin: string | null;
     authorType: string | null;
     reviewId: string | null;
+    reviewFullDatabaseId?: string | null;
     reviewState: string | null;
     reviewBody: string | null;
     reviewCommitOid: string | null;
@@ -51,6 +52,7 @@ export type ReviewComment = {
 };
 export type PullRequestReview = {
     id: string;
+    fullDatabaseId?: string | null;
     state: string;
     body: string;
     commitOid: string | null;
@@ -84,6 +86,7 @@ export type ReviewReply = {
     authorLogin: string | null;
     authorType: string | null;
     reviewId: string | null;
+    reviewFullDatabaseId?: string | null;
     reviewState: string | null;
     reviewBody: string | null;
     reviewCommitOid: string | null;
@@ -136,7 +139,14 @@ export type ReviewResolutionLockMutation =
           replayed: boolean;
       }
     | { phase: 'submitReview'; epoch: number; reviewId: string; body: string; reviewCommitOid: string }
-    | { phase: 'updateReviewBody'; epoch: number; reviewId: string; body: string; reviewCommitOid: string }
+    | {
+          phase: 'updateReviewBody';
+          epoch: number;
+          reviewId: string;
+          reviewDatabaseId?: string;
+          body: string;
+          reviewCommitOid: string;
+      }
     | { phase: 'resolveThread'; epoch: number }
     | { phase: 'deleteReply'; epoch: number; replyId: string }
     | {
@@ -239,7 +249,12 @@ export type ResolveReviewThreadPort = {
     createPendingReview: (pullRequestId: string, commitOid: string, body: string) => ReviewEnvelopeReceipt;
     replyDone: (threadId: string, reviewId: string, review: PullRequestReview) => ReviewReply;
     submitReview: (reviewId: string, body: string, reviewCommitOid: string) => ReviewEnvelopeReceipt;
-    updateReviewBody: (reviewId: string, body: string, reviewCommitOid: string) => ReviewEnvelopeReceipt;
+    updateReviewBody: (
+        reviewId: string,
+        body: string,
+        reviewCommitOid: string,
+        expectedReview?: PullRequestReview
+    ) => ReviewEnvelopeReceipt;
     resolve: (threadId: string) => ReviewResolutionReceipt;
     deleteReply: (replyId: string) => void;
     deletePendingReview: (reviewId: string, options?: DeletePendingReviewOptions) => void;
@@ -754,7 +769,8 @@ function resolveReviewThreadWithinMutation(
                         const updatedReview = port.updateReviewBody(
                             stalePendingReplyReview.id,
                             resolutionReviewBody(context, stalePendingReplyCommitOid),
-                            stalePendingReplyCommitOid
+                            stalePendingReplyCommitOid,
+                            stalePendingReplyReview
                         );
                         assertProvenReviewBodyReceipt(
                             updatedReview,
@@ -892,7 +908,8 @@ function resolveReviewThreadWithinMutation(
             const updatedReview = port.updateReviewBody(
                 canonicalReview.id,
                 resolutionReviewBody(context, canonicalReviewCommitOid),
-                canonicalReviewCommitOid
+                canonicalReviewCommitOid,
+                canonicalReview
             );
             assertProvenReviewBodyReceipt(
                 updatedReview,
@@ -1337,6 +1354,7 @@ function assertResolutionReceipt(receipt: ReviewResolutionReceipt, expectedClien
 function toRequiredReview(
     value: {
         reviewId?: string | null;
+        reviewFullDatabaseId?: string | null;
         reviewState?: string | null;
         reviewBody?: string | null;
         reviewCommitOid?: string | null;
@@ -1357,6 +1375,7 @@ function toRequiredReview(
     }
     return {
         id: value.reviewId,
+        ...(typeof value.reviewFullDatabaseId === 'string' ? { fullDatabaseId: value.reviewFullDatabaseId } : {}),
         state: value.reviewState,
         body: value.reviewBody,
         commitOid: canonicalGitObjectId(value.reviewCommitOid, `${label} has no commit OID`),
@@ -1367,6 +1386,7 @@ function toRequiredReview(
 }
 function toReplyReviewOrNull(value: {
     reviewId?: string | null;
+    reviewFullDatabaseId?: string | null;
     reviewState?: string | null;
     reviewBody?: string | null;
     reviewCommitOid?: string | null;
@@ -1385,6 +1405,7 @@ function toReplyReviewOrNull(value: {
     }
     return {
         id: value.reviewId,
+        ...(typeof value.reviewFullDatabaseId === 'string' ? { fullDatabaseId: value.reviewFullDatabaseId } : {}),
         state: value.reviewState,
         body: value.reviewBody,
         commitOid: canonicalGitObjectId(value.reviewCommitOid, 'managed Done reply has no commit OID'),
@@ -1684,7 +1705,12 @@ function repairManagedCommentedReviewEnvelopes(
         const expectedBody = resolutionReviewBody(context, reviewCommitOid);
         assertExclusiveBackfillReviewAttachment(number, candidate.review.id, context, port);
         beforeUpdate?.();
-        const updatedReview = port.updateReviewBody(candidate.review.id, expectedBody, reviewCommitOid);
+        const updatedReview = port.updateReviewBody(
+            candidate.review.id,
+            expectedBody,
+            reviewCommitOid,
+            candidate.review
+        );
         assertProvenReviewBodyReceipt(updatedReview, candidate.review, expectedBody);
         repairedReviewIds.add(candidate.review.id);
         updated = true;
@@ -2200,19 +2226,28 @@ export function shellPort(
             markRemoteMutationAttempt();
             return submitReview(reviewId, body, mutationGh);
         },
-        updateReviewBody: (reviewId, body, reviewCommitOid) => {
+        updateReviewBody: (reviewId, body, reviewCommitOid, expectedReview) => {
             const active = activeReviewResolutionLocks.at(-1);
             if (active === undefined) {
                 fail('review body update is not fenced by the active review-resolution lock');
             }
+            if (
+                expectedReview === undefined ||
+                expectedReview.id !== reviewId ||
+                expectedReview.commitOid !== reviewCommitOid ||
+                !isDecimalId(expectedReview.fullDatabaseId)
+            ) {
+                fail(`review body update has no immutable decimal review identity for ${reviewId}`);
+            }
             advanceActiveReviewResolutionLockMutation(primaryRoot, active.number, {
                 phase: 'updateReviewBody',
                 reviewId,
+                reviewDatabaseId: expectedReview.fullDatabaseId,
                 body,
                 reviewCommitOid,
             });
             markRemoteMutationAttempt();
-            return updateReviewBody(reviewId, body, mutationGh);
+            return updateReviewBody(active.number, expectedReview, body, mutationGh);
         },
         resolve: (id) => {
             const active = activeReviewResolutionLocks.at(-1);
@@ -2731,6 +2766,7 @@ function parseReviewResolutionLockMutation(value: unknown, label: string): Revie
     }
     if (phase === 'submitReview' || phase === 'updateReviewBody') {
         const reviewId = (value as { reviewId?: unknown }).reviewId;
+        const reviewDatabaseId = (value as { reviewDatabaseId?: unknown }).reviewDatabaseId;
         const body = (value as { body?: unknown }).body;
         const reviewCommitOid = (value as { reviewCommitOid?: unknown }).reviewCommitOid;
         if (
@@ -2741,7 +2777,17 @@ function parseReviewResolutionLockMutation(value: unknown, label: string): Revie
         ) {
             fail(label);
         }
-        return { phase, epoch, reviewId, body, reviewCommitOid: canonicalGitObjectId(reviewCommitOid, label) };
+        if (phase === 'updateReviewBody' && reviewDatabaseId !== undefined && !isDecimalId(reviewDatabaseId)) {
+            fail(label);
+        }
+        return {
+            phase,
+            epoch,
+            reviewId,
+            ...(phase === 'updateReviewBody' && typeof reviewDatabaseId === 'string' ? { reviewDatabaseId } : {}),
+            body,
+            reviewCommitOid: canonicalGitObjectId(reviewCommitOid, label),
+        };
     }
     return fail(label);
 }
@@ -4072,7 +4118,7 @@ function inspectPullRequestReview(
     }
     const response = graphql(
         gh,
-        'query($owner:String!,$name:String!,$number:Int!,$reviewId:ID!){repository(owner:$owner,name:$name){pullRequest(number:$number){id headRefOid}} node(id:$reviewId){... on PullRequestReview{id state body commit{oid} author{login __typename ... on Bot{id}} pullRequest{id}}}}',
+        'query($owner:String!,$name:String!,$number:Int!,$reviewId:ID!){repository(owner:$owner,name:$name){pullRequest(number:$number){id headRefOid}} node(id:$reviewId){... on PullRequestReview{id fullDatabaseId state body commit{oid} author{login __typename ... on Bot{id}} pullRequest{id}}}}',
         ['-F', `owner=${owner}`, '-F', `name=${name}`, '-F', `number=${number}`, '-F', `reviewId=${reviewId}`],
         `pull-request review ${reviewId}`
     ) as {
@@ -4123,7 +4169,7 @@ function inspectPendingReviews(
     const pending: PullRequestReview[] = [];
     for (;;) {
         const connection = cursor === undefined ? 'reviews(first:100)' : 'reviews(first:100,after:$cursor)';
-        const query = `query($owner:String!,$name:String!,$number:Int!${cursor === undefined ? '' : ',$cursor:String!'}){repository(owner:$owner,name:$name){pullRequest(number:$number){id headRefOid ${connection}{nodes{id state body commit{oid} author{login __typename ... on Bot{id}}} pageInfo{hasNextPage endCursor}}}}}`;
+        const query = `query($owner:String!,$name:String!,$number:Int!${cursor === undefined ? '' : ',$cursor:String!'}){repository(owner:$owner,name:$name){pullRequest(number:$number){id headRefOid ${connection}{nodes{id fullDatabaseId state body commit{oid} author{login __typename ... on Bot{id}}} pageInfo{hasNextPage endCursor}}}}}`;
         const fields = ['-F', `owner=${owner}`, '-F', `name=${name}`, '-F', `number=${number}`];
         if (cursor !== undefined) {
             fields.push('-F', `cursor=${cursor}`);
@@ -4194,7 +4240,7 @@ function inspectThreadComments(
     let currentResolution = expectedResolution;
     for (;;) {
         const connection = cursor === undefined ? 'comments(first:100)' : 'comments(first:100,after:$cursor)';
-        const query = `query($owner:String!,$name:String!,$number:Int!,$threadId:ID!${cursor === undefined ? '' : ',$cursor:String!'}){repository(owner:$owner,name:$name){pullRequest(number:$number){id headRefOid}} node(id:$threadId){... on PullRequestReviewThread{id isResolved resolvedBy{id login __typename} ${connection}{nodes{id fullDatabaseId body author{login __typename ... on Bot{id}} pullRequestReview{id state body commit{oid} author{login __typename ... on Bot{id}}}} pageInfo{hasNextPage endCursor}}}}}`;
+        const query = `query($owner:String!,$name:String!,$number:Int!,$threadId:ID!${cursor === undefined ? '' : ',$cursor:String!'}){repository(owner:$owner,name:$name){pullRequest(number:$number){id headRefOid}} node(id:$threadId){... on PullRequestReviewThread{id isResolved resolvedBy{id login __typename} ${connection}{nodes{id fullDatabaseId body author{login __typename ... on Bot{id}} pullRequestReview{id fullDatabaseId state body commit{oid} author{login __typename ... on Bot{id}}}} pageInfo{hasNextPage endCursor}}}}}`;
         const [owner, name] = REQUIRED_REPOSITORY.split('/');
         if (owner === undefined || name === undefined) {
             fail(`invalid GitHub repository: ${REQUIRED_REPOSITORY}`);
@@ -4796,6 +4842,7 @@ function assertProvenReviewBodyReceipt(
         receipt.state !== review.state ||
         receipt.body !== expectedBody ||
         receipt.commitOid !== review.commitOid ||
+        receipt.fullDatabaseId !== review.fullDatabaseId ||
         !isAuthorBotActor(receipt.authorNodeId, receipt.authorType) ||
         receipt.clientMutationId !== updateReviewClientMutationId(review.id)
     ) {
@@ -5108,7 +5155,7 @@ export function recoverReviewResolutionLockOwnerState(
                 mutation,
                 port
             );
-            const updated = port.updateReviewBody(mutation.reviewId, mutation.body, mutation.reviewCommitOid);
+            const updated = port.updateReviewBody(mutation.reviewId, mutation.body, mutation.reviewCommitOid, review);
             assertProvenReviewBodyReceipt(updated, review, mutation.body);
             inspection = inspectReviewResolutionRecovery(number, owner, port);
             break;
@@ -5204,6 +5251,7 @@ function toReviewComment(value: unknown): ReviewComment {
         authorLogin: typeof comment.author?.login === 'string' ? comment.author.login : null,
         authorType: typeof comment.author?.__typename === 'string' ? comment.author.__typename : null,
         reviewId: review?.id ?? null,
+        ...(typeof review?.fullDatabaseId === 'string' ? { reviewFullDatabaseId: review.fullDatabaseId } : {}),
         reviewState: review?.state ?? null,
         reviewBody: review?.body ?? null,
         reviewCommitOid: review?.commitOid ?? null,
@@ -5218,6 +5266,7 @@ function toPullRequestReview(value: unknown): PullRequestReview | null {
     }
     const review = value as {
         id?: unknown;
+        fullDatabaseId?: unknown;
         state?: unknown;
         body?: unknown;
         commit?: { oid?: unknown } | null;
@@ -5226,12 +5275,16 @@ function toPullRequestReview(value: unknown): PullRequestReview | null {
     if (typeof review.id !== 'string' || typeof review.state !== 'string' || typeof review.body !== 'string') {
         fail('invalid pull-request review');
     }
+    if (review.fullDatabaseId !== undefined && review.fullDatabaseId !== null && !isDecimalId(review.fullDatabaseId)) {
+        fail('invalid pull-request review');
+    }
     const commitOid = review.commit?.oid;
     if (commitOid !== null && commitOid !== undefined && typeof commitOid !== 'string') {
         fail('invalid pull-request review');
     }
     return {
         id: review.id,
+        ...(typeof review.fullDatabaseId === 'string' ? { fullDatabaseId: review.fullDatabaseId } : {}),
         state: review.state,
         body: review.body,
         commitOid:
@@ -5330,6 +5383,7 @@ function mutationReply(threadId: string, reviewId: string, gh: Gh): ReviewReply 
         authorLogin,
         authorType,
         reviewId: review?.id ?? null,
+        ...(typeof review?.fullDatabaseId === 'string' ? { reviewFullDatabaseId: review.fullDatabaseId } : {}),
         reviewState: review?.state ?? null,
         reviewBody: review?.body ?? null,
         reviewCommitOid: review?.commitOid ?? null,
@@ -5366,31 +5420,70 @@ export function submitReview(reviewId: string, body: string, gh: Gh): ReviewEnve
         clientMutationId: responseClientMutationId,
     };
 }
-function updateReviewBody(reviewId: string, body: string, gh: Gh): ReviewEnvelopeReceipt {
-    const clientMutationId = updateReviewClientMutationId(reviewId);
-    const query =
-        'mutation($reviewId:ID!,$body:String!,$clientMutationId:String!){updatePullRequestReview(input:{pullRequestReviewId:$reviewId,body:$body,clientMutationId:$clientMutationId}){clientMutationId pullRequestReview{id state body commit{oid} author{login __typename ... on Bot{id}}}}}';
-    const response = graphql(
-        gh,
-        query,
-        ['-F', `reviewId=${reviewId}`, '-f', `body=${body}`, '-f', `clientMutationId=${clientMutationId}`],
-        'update review body'
-    ) as {
-        data?: {
-            updatePullRequestReview?: {
-                clientMutationId?: unknown;
-                pullRequestReview?: unknown;
-            };
-        };
+function decimalRestReviewId(response: string, label: string): string {
+    const match = /^\s*\{\s*"id"\s*:\s*([1-9][0-9]*)\s*[,:}]/.exec(response);
+    if (match?.[1] === undefined) {
+        fail(label);
+    }
+    return match[1];
+}
+
+export function updateReviewBody(
+    number: number,
+    review: PullRequestReview,
+    body: string,
+    gh: Gh
+): ReviewEnvelopeReceipt {
+    if (!Number.isSafeInteger(number) || number <= 0 || !isDecimalId(review.fullDatabaseId)) {
+        fail(`update review body has no immutable decimal review identity for ${review.id}`);
+    }
+    const label = `update review body returned an invalid result for ${review.id}`;
+    const response = gh([
+        'api',
+        '--method',
+        'PATCH',
+        `repos/${REQUIRED_REPOSITORY}/pulls/${number}/reviews/${review.fullDatabaseId}`,
+        '-f',
+        `body=${body}`,
+    ]);
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(response) as unknown;
+    } catch {
+        fail(label);
+    }
+    const result = parsed as {
+        node_id?: unknown;
+        body?: unknown;
+        state?: unknown;
+        commit_id?: unknown;
+        user?: { node_id?: unknown; login?: unknown; type?: unknown } | null;
     };
-    const receipt = toPullRequestReview(response.data?.updatePullRequestReview?.pullRequestReview);
-    const responseClientMutationId = response.data?.updatePullRequestReview?.clientMutationId;
-    if (receipt === null) {
-        fail(`update review body returned an invalid result for ${reviewId}`);
+    if (
+        decimalRestReviewId(response, label) !== review.fullDatabaseId ||
+        result.node_id !== review.id ||
+        typeof result.body !== 'string' ||
+        typeof result.state !== 'string' ||
+        typeof result.commit_id !== 'string' ||
+        typeof result.user?.node_id !== 'string' ||
+        typeof result.user?.type !== 'string' ||
+        result.body !== body ||
+        result.state !== review.state ||
+        result.commit_id !== review.commitOid ||
+        !isAuthorBotActor(result.user?.node_id, result.user?.type)
+    ) {
+        fail(label);
     }
     return {
-        ...receipt,
-        clientMutationId: typeof responseClientMutationId === 'string' ? responseClientMutationId : '',
+        id: review.id,
+        fullDatabaseId: review.fullDatabaseId,
+        state: result.state,
+        body: result.body,
+        commitOid: result.commit_id,
+        authorNodeId: result.user.node_id,
+        authorLogin: typeof result.user?.login === 'string' ? result.user.login : null,
+        authorType: result.user.type,
+        clientMutationId: updateReviewClientMutationId(review.id),
     };
 }
 function resolveThread(threadId: string, gh: Gh): ReviewResolutionReceipt {

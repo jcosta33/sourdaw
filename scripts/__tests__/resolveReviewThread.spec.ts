@@ -28,6 +28,7 @@ import {
     deleteReply,
     deletePendingReview,
     submitReview,
+    updateReviewBody,
     recoverPullRequestReviewResolutionLock,
     recoverStandaloneReviewResolutionSharedMutationLock,
     recoverReviewResolutionLockOwnerState,
@@ -85,6 +86,7 @@ function createWindowsProcessQueryExecutable(stdout: string): { executable: stri
 }
 type ReviewRecord = {
     id: string;
+    fullDatabaseId: string;
     body: string;
     state: ReviewState;
     commitOid: string;
@@ -121,6 +123,7 @@ type TestLockOwnerRecord = {
         phase?: string;
         epoch?: number;
         reviewId?: string;
+        reviewDatabaseId?: string;
         replyId?: string;
         body?: string;
         reviewCommitOid?: string;
@@ -330,6 +333,7 @@ function fakePort(input: Input = {}) {
     function pushReview(id: string, state: ReviewState, body: string, commitOid: string): void {
         reviews.push({
             id,
+            fullDatabaseId: String(9223372036854775808n + BigInt(reviews.length)),
             body,
             state,
             commitOid,
@@ -373,6 +377,7 @@ function fakePort(input: Input = {}) {
     if (input.addExactForeignPendingReview) {
         reviews.push({
             id: 'PRR_foreign_pending',
+            fullDatabaseId: '9223372036854775890',
             body: expectedReviewBody,
             state: 'PENDING',
             commitOid: head,
@@ -384,6 +389,7 @@ function fakePort(input: Input = {}) {
     if (input.addForeignPendingReview) {
         reviews.push({
             id: 'PRR_foreign_pending',
+            fullDatabaseId: '9223372036854775891',
             body: 'foreign pending review',
             state: 'PENDING',
             commitOid: head,
@@ -578,6 +584,7 @@ function fakePort(input: Input = {}) {
                             authorLogin: comment.authorLogin,
                             authorType: comment.authorType,
                             reviewId: review?.id ?? null,
+                            reviewFullDatabaseId: review?.fullDatabaseId ?? null,
                             reviewState: review?.state ?? null,
                             reviewBody: review?.body ?? null,
                             reviewCommitOid: review?.commitOid ?? null,
@@ -591,6 +598,7 @@ function fakePort(input: Input = {}) {
                     .filter((review) => review.state === 'PENDING')
                     .map((review) => ({
                         id: review.id,
+                        fullDatabaseId: review.fullDatabaseId,
                         state: review.state,
                         body: review.body,
                         commitOid: review.commitOid,
@@ -619,6 +627,7 @@ function fakePort(input: Input = {}) {
             }
             return {
                 id: review.id,
+                fullDatabaseId: review.fullDatabaseId,
                 state: review.state,
                 body: review.body,
                 commitOid: review.commitOid,
@@ -639,6 +648,7 @@ function fakePort(input: Input = {}) {
             }
             return {
                 id,
+                fullDatabaseId: reviewById(id)?.fullDatabaseId ?? null,
                 state: input.createReceiptState ?? 'PENDING',
                 body: input.createReceiptBody ?? body,
                 commitOid: input.createReceiptCommitOid ?? commitOid,
@@ -673,6 +683,7 @@ function fakePort(input: Input = {}) {
                 authorLogin,
                 authorType: input.replyAuthorType === undefined ? 'Bot' : input.replyAuthorType,
                 reviewId: receiptReviewId,
+                reviewFullDatabaseId: reviewById(receiptReviewId)?.fullDatabaseId ?? null,
                 reviewState: reviewById(receiptReviewId)?.state ?? null,
                 reviewBody: reviewById(receiptReviewId)?.body ?? null,
                 reviewCommitOid: reviewById(receiptReviewId)?.commitOid ?? null,
@@ -704,6 +715,7 @@ function fakePort(input: Input = {}) {
             }
             return {
                 id: input.submitReceiptReviewId ?? currentReviewId,
+                fullDatabaseId: review.fullDatabaseId,
                 state: input.submitReceiptState ?? review.state,
                 body: input.submitReceiptBody ?? review.body,
                 commitOid: input.submitReceiptCommitOid ?? review.commitOid,
@@ -733,6 +745,7 @@ function fakePort(input: Input = {}) {
             review.body = body;
             return {
                 id: input.updateReceiptReviewId ?? currentReviewId,
+                fullDatabaseId: review.fullDatabaseId,
                 state: input.updateReceiptState ?? review.state,
                 body: input.updateReceiptBody ?? review.body,
                 commitOid: input.updateReceiptCommitOid ?? review.commitOid,
@@ -1026,6 +1039,16 @@ function createFakeGhExecutable(responsesByKey: Record<string, string | string[]
             `const countsPath = ${JSON.stringify(join(root, 'counts.json'))};`,
             'const fs = require("node:fs");',
             'const args = process.argv.slice(2);',
+            "if (args[0] === 'api' && args[1] === '--method' && args[2] === 'PATCH') {",
+            '  const endpoint = args[3];',
+            '  const bodyIndex = args.findIndex((value, index) => value === "-f" && args[index + 1]?.startsWith("body="));',
+            '  if (typeof endpoint !== "string" || bodyIndex < 0) { console.error(`invalid review update ${JSON.stringify(args)}`); process.exit(1); }',
+            '  const body = args[bodyIndex + 1].slice("body=".length);',
+            '  const response = responses[`updateReview:${endpoint}:${body}`];',
+            '  if (typeof response !== "string") { console.error(`unexpected review update ${endpoint}`); process.exit(1); }',
+            '  process.stdout.write(response);',
+            '  process.exit(0);',
+            '}',
             "if (args[0] !== 'api' || args[1] !== 'graphql') {",
             '  console.error(`unexpected gh args ${JSON.stringify(args)}`);',
             '  process.exit(1);',
@@ -1137,6 +1160,7 @@ function createFailingReviewResolutionMutationGhExecutable(
             `const queryPattern = ${JSON.stringify(queryPattern)};`,
             `const transportLabel = ${JSON.stringify(transportLabel)};`,
             'const args = process.argv.slice(2);',
+            `if (${JSON.stringify(mutation)} === 'updateReviewBody' && args[0] === 'api' && args[1] === '--method' && args[2] === 'PATCH' && typeof args[3] === 'string' && args[3].includes('/reviews/')) { fs.writeFileSync(calledPath, '1'); console.error(\`${transportLabel} mutation transport lost\`); process.exit(1); }`,
             "if (args[0] !== 'api' || args[1] !== 'graphql') { console.error(`unexpected gh args ${JSON.stringify(args)}`); process.exit(1); }",
             'const queryArg = args.find((value) => value.startsWith("query="));',
             "if (queryArg === undefined) { console.error('missing query'); process.exit(1); }",
@@ -6026,8 +6050,24 @@ describe('review thread resolution', () => {
         ],
         [
             'updateReviewBody',
-            (port: ResolveReviewThreadPort) => port.updateReviewBody(reviewId, pendingReviewBody(head), head),
-            { phase: 'updateReviewBody', reviewId, body: pendingReviewBody(head), reviewCommitOid: head },
+            (port: ResolveReviewThreadPort) =>
+                port.updateReviewBody(reviewId, pendingReviewBody(head), head, {
+                    id: reviewId,
+                    fullDatabaseId: '9001',
+                    state: 'PENDING',
+                    body: '',
+                    commitOid: head,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author',
+                    authorType: 'Bot',
+                }),
+            {
+                phase: 'updateReviewBody',
+                reviewId,
+                reviewDatabaseId: '9001',
+                body: pendingReviewBody(head),
+                reviewCommitOid: head,
+            },
         ],
         ['resolveThread', (port: ResolveReviewThreadPort) => port.resolve(threadId), { phase: 'resolveThread' }],
         [
@@ -8315,7 +8355,7 @@ describe('review thread resolution', () => {
         }
     });
 
-    it('uses supported GraphQL review-envelope, reply, and deletion input fields', () => {
+    it('uses supported review-envelope, reply, and deletion mutation routes', () => {
         const source = readFileSync(join(import.meta.dirname, '../resolveReviewThread.ts'), 'utf8');
         expect(source).toContain('pullRequestReviewThreadId:$threadId');
         expect(source).toContain('pullRequestReviewId:$reviewId');
@@ -8325,7 +8365,7 @@ describe('review thread resolution', () => {
         expect(source).toContain(
             'submitPullRequestReview(input:{pullRequestReviewId:$reviewId,event:COMMENT,body:$body'
         );
-        expect(source).toContain('updatePullRequestReview(input:{pullRequestReviewId:$reviewId,body:$body');
+        expect(source).toContain('`repos/${REQUIRED_REPOSITORY}/pulls/${number}/reviews/${review.fullDatabaseId}`');
         expect(source).toContain(
             'deletePullRequestReview(input:{pullRequestReviewId:$reviewId,clientMutationId:$clientMutationId})'
         );
@@ -8493,6 +8533,131 @@ describe('review thread resolution', () => {
         expect(ghCalls[0]).toContain(
             'query=mutation($reviewId:ID!,$clientMutationId:String!){deletePullRequestReview(input:{pullRequestReviewId:$reviewId,clientMutationId:$clientMutationId}){clientMutationId pullRequestReview{id state body commit{oid} author{login __typename ... on Bot{id}}}}}'
         );
+    });
+    it('updates an empty submitted review through the review REST endpoint without truncating its decimal identity', () => {
+        const ghCalls: string[][] = [];
+        const body = resolutionReviewSummary(pullRequestId, threadId, head);
+        const receipt = updateReviewBody(
+            42,
+            {
+                id: reviewId,
+                fullDatabaseId: '9223372036854775807',
+                body: '',
+                state: 'COMMENTED',
+                commitOid: head,
+                authorNodeId: AUTHOR_BOT_NODE_ID,
+                authorLogin: 'renamed-author',
+                authorType: 'Bot',
+            },
+            body,
+            (args) => {
+                ghCalls.push(args);
+                return `{"id":9223372036854775807,"node_id":${JSON.stringify(reviewId)},"body":${JSON.stringify(body)},"state":"COMMENTED","commit_id":${JSON.stringify(head)},"user":{"node_id":${JSON.stringify(AUTHOR_BOT_NODE_ID)},"login":"renamed-author","type":"Bot"}}`;
+            }
+        );
+        expect(receipt).toMatchObject({
+            id: reviewId,
+            body,
+            state: 'COMMENTED',
+            commitOid: head,
+            authorNodeId: AUTHOR_BOT_NODE_ID,
+            authorType: 'Bot',
+        });
+        expect(ghCalls).toEqual([
+            [
+                'api',
+                '--method',
+                'PATCH',
+                `repos/${REQUIRED_REPOSITORY}/pulls/42/reviews/9223372036854775807`,
+                '-f',
+                `body=${body}`,
+            ],
+        ]);
+    });
+    it('refuses a submitted review without a decimal database identity before the REST update', () => {
+        const ghCalls: string[][] = [];
+        expect(() =>
+            updateReviewBody(
+                42,
+                {
+                    id: reviewId,
+                    fullDatabaseId: null,
+                    body: '',
+                    state: 'COMMENTED',
+                    commitOid: head,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author',
+                    authorType: 'Bot',
+                },
+                resolutionReviewSummary(pullRequestId, threadId, head),
+                (args) => {
+                    ghCalls.push(args);
+                    return 'unexpected';
+                }
+            )
+        ).toThrow(/no immutable decimal review identity/i);
+        expect(ghCalls).toEqual([]);
+    });
+    it('refuses a shell-backed selected update without journaling or calling GitHub', () => {
+        const repository = createTemporaryGitRepository();
+        const fakeGh = createFailingReviewResolutionMutationGhExecutable('updateReviewBody');
+        try {
+            const port = shellPort(
+                { configDir: repository, env: { SOURDAW_TRUSTED_GH_PATH: fakeGh.executable }, dispose() {} },
+                repository
+            );
+            expect(() =>
+                withPullRequestReviewResolutionLock(repository, 42, threadId, head, () =>
+                    port.updateReviewBody(reviewId, resolutionReviewSummary(pullRequestId, threadId, head), head, {
+                        id: reviewId,
+                        fullDatabaseId: null,
+                        state: 'COMMENTED',
+                        body: '',
+                        commitOid: head,
+                        authorNodeId: AUTHOR_BOT_NODE_ID,
+                        authorLogin: 'renamed-author',
+                        authorType: 'Bot',
+                    })
+                )
+            ).toThrow(/no immutable decimal review identity/i);
+            expect(existsSync(fakeGh.calledPath)).toBe(false);
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(fakeGh.root, { recursive: true, force: true });
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+    it.each([
+        ['wrong review node ID', { node_id: 'PRR_foreign' }],
+        ['foreign actor', { user: { node_id: REVIEWER_BOT_NODE_ID, login: 'renamed-reviewer', type: 'Bot' } }],
+    ])('rejects a %s REST update receipt', (_label, override) => {
+        const body = resolutionReviewSummary(pullRequestId, threadId, head);
+        expect(() =>
+            updateReviewBody(
+                42,
+                {
+                    id: reviewId,
+                    fullDatabaseId: '9001',
+                    body: '',
+                    state: 'COMMENTED',
+                    commitOid: head,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: 'renamed-author',
+                    authorType: 'Bot',
+                },
+                body,
+                () =>
+                    JSON.stringify({
+                        id: 9001,
+                        node_id: reviewId,
+                        body,
+                        state: 'COMMENTED',
+                        commit_id: head,
+                        user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', type: 'Bot' },
+                        ...override,
+                    })
+            )
+        ).toThrow(/update review body returned an invalid result/i);
     });
     it.each([
         [
@@ -10790,20 +10955,7 @@ describe('review thread resolution', () => {
                     },
                 },
             }),
-            [`updateReview:${reviewId}:${body}:review-update:${reviewId}`]: JSON.stringify({
-                data: {
-                    updatePullRequestReview: {
-                        clientMutationId: `review-update:${reviewId}`,
-                        pullRequestReview: {
-                            id: reviewId,
-                            state: 'PENDING',
-                            body,
-                            commit: { oid: head },
-                            author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: 'Bot' },
-                        },
-                    },
-                },
-            }),
+            [`updateReview:repos/${REQUIRED_REPOSITORY}/pulls/42/reviews/9223372036854775807:${body}`]: `{"id":9223372036854775807,"node_id":${JSON.stringify(reviewId)},"body":${JSON.stringify(body)},"state":"PENDING","commit_id":${JSON.stringify(head)},"user":{"node_id":${JSON.stringify(AUTHOR_BOT_NODE_ID)},"login":"renamed-author","type":"Bot"}}`,
             [`reply:${threadId}:${reviewId}:Done:review-reply:${threadId}`]: JSON.stringify({
                 data: {
                     addPullRequestReviewThreadReply: {
@@ -10831,6 +10983,7 @@ describe('review thread resolution', () => {
         );
         const review = {
             id: reviewId,
+            fullDatabaseId: '9223372036854775807',
             state: 'PENDING' as const,
             body,
             commitOid: head,
@@ -10852,7 +11005,7 @@ describe('review thread resolution', () => {
             });
             expect(
                 withPullRequestReviewResolutionLock(repository, 42, threadId, head, () =>
-                    port.updateReviewBody(reviewId, body, head)
+                    port.updateReviewBody(reviewId, body, head, review)
                 )
             ).toMatchObject({
                 id: reviewId,
@@ -10878,9 +11031,9 @@ describe('review thread resolution', () => {
             ).toThrow(/unexpected key/);
             expect(() =>
                 withPullRequestReviewResolutionLock(repository, 44, threadId, head, () =>
-                    port.updateReviewBody('PRR_swapped', body, head)
+                    port.updateReviewBody('PRR_swapped', body, head, { ...review, id: 'PRR_swapped' })
                 )
-            ).toThrow(/unexpected key/);
+            ).toThrow(/unexpected review update/);
             expect(() =>
                 withPullRequestReviewResolutionLock(repository, 45, otherThreadId, head, () =>
                     port.replyDone(otherThreadId, reviewId, review)
