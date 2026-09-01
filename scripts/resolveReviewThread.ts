@@ -5177,6 +5177,88 @@ function hasExactImmutableEmptySubmittedReviewRecovery(
     );
 }
 
+function hasExactUnresolvedImmutableEmptySubmittedReviewRecovery(
+    number: number,
+    owner: CurrentReviewResolutionLockOwner,
+    inspection: ReviewThreadInspection,
+    context: ResolutionReviewContext,
+    thread: ReviewThread,
+    mutation: Extract<ReviewResolutionLockMutation, { phase: 'updateReviewBody' }>,
+    port: ResolveReviewThreadPort
+): boolean {
+    if (thread.isResolved || inspection.head !== owner.head) {
+        return false;
+    }
+    assertManagedReplyMarkersReadable(thread, context, ['PENDING', 'COMMENTED'], true);
+    if (mutation.marker === undefined) {
+        return hasExactPreMarkerUnresolvedImmutableEmptySubmittedReviewRecovery(
+            number,
+            owner,
+            inspection,
+            context,
+            thread,
+            mutation,
+            port
+        );
+    }
+    const managed = managedReplyMarkers(thread, context, ['COMMENTED'], true);
+    if (managed.length !== 1 || hasBlockingAuthorPendingReview(inspection.pendingReviews, thread, context)) {
+        return false;
+    }
+    const [marker] = managed;
+    if (
+        marker === undefined ||
+        !marker.currentHead ||
+        !matchesReviewResolutionMarkerSnapshot(marker, mutation.marker) ||
+        !isImmutableEmptySubmittedReview(marker.review)
+    ) {
+        return false;
+    }
+    const review = requireReplayableHistoricalReviewBodyUpdate(number, owner, inspection, context, mutation, port);
+    return matchesReviewResolutionMarkerSnapshot(
+        { marker: marker.marker, review, currentHead: review.commitOid === context.expectedHead },
+        mutation.marker
+    );
+}
+
+function hasExactPreMarkerUnresolvedImmutableEmptySubmittedReviewRecovery(
+    number: number,
+    owner: CurrentReviewResolutionLockOwner,
+    inspection: ReviewThreadInspection,
+    context: ResolutionReviewContext,
+    thread: ReviewThread,
+    mutation: Extract<ReviewResolutionLockMutation, { phase: 'updateReviewBody' }>,
+    port: ResolveReviewThreadPort
+): boolean {
+    if (mutation.reviewDatabaseId === undefined) {
+        return false;
+    }
+    const managed = managedReplyMarkers(thread, context, ['COMMENTED'], true);
+    if (managed.length !== 1 || hasBlockingAuthorPendingReview(inspection.pendingReviews, thread, context)) {
+        return false;
+    }
+    const [marker] = managed;
+    if (
+        marker === undefined ||
+        marker.review.id !== mutation.reviewId ||
+        marker.review.fullDatabaseId !== mutation.reviewDatabaseId ||
+        !marker.currentHead ||
+        !isImmutableEmptySubmittedReview(marker.review)
+    ) {
+        return false;
+    }
+    const review = requireReplayableHistoricalReviewBodyUpdate(number, owner, inspection, context, mutation, port);
+    return (
+        review.id === marker.review.id &&
+        review.fullDatabaseId === marker.review.fullDatabaseId &&
+        review.commitOid === marker.review.commitOid &&
+        review.state === marker.review.state &&
+        review.body === marker.review.body &&
+        review.authorNodeId === marker.review.authorNodeId &&
+        review.authorType === marker.review.authorType
+    );
+}
+
 function hasExactPreMarkerImmutableEmptySubmittedReviewRecovery(
     number: number,
     owner: CurrentReviewResolutionLockOwner,
@@ -5818,6 +5900,34 @@ export function recoverReviewResolutionLockOwnerState(
             break;
         }
         case 'updateReviewBody': {
+            if (
+                hasExactUnresolvedImmutableEmptySubmittedReviewRecovery(
+                    number,
+                    owner,
+                    inspection,
+                    context,
+                    inspection.thread!,
+                    mutation,
+                    port
+                )
+            ) {
+                inspection = continueRecoveredReviewResolution(number, owner, port);
+                const terminalContext = resolutionReviewContext(inspection.pullRequestId, owner.threadId, owner.head);
+                if (
+                    !hasExactImmutableEmptySubmittedReviewTerminal(
+                        number,
+                        owner,
+                        inspection,
+                        terminalContext,
+                        inspection.thread!,
+                        mutation,
+                        port
+                    )
+                ) {
+                    fail(unreconciledReviewResolutionMutationMessage(number, mutation));
+                }
+                break;
+            }
             if (hasRecoveredReviewResolutionMutation(number, owner, inspection, context, inspection.thread!, port)) {
                 const immutableEmptySubmittedReview = hasExactImmutableEmptySubmittedReviewRecovery(
                     number,
