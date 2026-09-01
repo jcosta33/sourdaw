@@ -1685,6 +1685,22 @@ function hasExactImmutableDeleteReplySurvivor(
     );
 }
 
+function hasExactImmutableDeleteReplyTerminal(
+    thread: ReviewThread,
+    context: ResolutionReviewContext,
+    mutation: Extract<ReviewResolutionLockMutation, { phase: 'deleteReply' }>
+): boolean {
+    if (!hasExactImmutableDeleteReplySurvivor(thread, context, mutation)) {
+        return false;
+    }
+    const managed = managedReplyMarkers(thread, context, ['COMMENTED'], true);
+    return (
+        managed.length === 1 &&
+        matchesReviewResolutionMarkerSnapshot(managed[0]!, mutation.immutableEnvelope!) &&
+        isImmutableEmptySubmittedReview(managed[0]!.review)
+    );
+}
+
 function validatedReplyMarkers(thread: ReviewThread): ReviewComment[] {
     const owned = thread.comments.filter((comment) => isAuthorBotNodeId(comment.authorNodeId));
     for (const comment of owned) {
@@ -5681,9 +5697,17 @@ export function recoverReviewResolutionLockOwnerState(
             if (hasRecoveredReviewResolutionMutation(number, owner, inspection, context, inspection.thread!, port)) {
                 if (
                     inspection.head === owner.head &&
-                    managedReplyMarkers(inspection.thread!, context, ['PENDING', 'COMMENTED'], false).length > 0
+                    (mutation.immutableEnvelope === undefined
+                        ? managedReplyMarkers(inspection.thread!, context, ['PENDING', 'COMMENTED'], false).length > 0
+                        : !hasExactImmutableDeleteReplyTerminal(inspection.thread!, context, mutation))
                 ) {
                     inspection = continueRecoveredReviewResolution(number, owner, port);
+                    if (
+                        mutation.immutableEnvelope !== undefined &&
+                        !hasExactImmutableDeleteReplyTerminal(inspection.thread!, context, mutation)
+                    ) {
+                        fail(unreconciledReviewResolutionMutationMessage(number, mutation));
+                    }
                 }
                 break;
             }

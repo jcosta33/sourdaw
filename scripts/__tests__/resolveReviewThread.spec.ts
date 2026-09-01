@@ -6260,6 +6260,114 @@ describe('review thread resolution', () => {
         }
     });
 
+    it('journals the exact marker before a landed shell update response is lost and recovers without another PUT', () => {
+        const repository = createTemporaryGitRepository();
+        const body = resolutionReviewSummary(pullRequestId, threadId, head);
+        const fakeGh = createFailingReviewResolutionMutationGhExecutable('updateReviewBody');
+        const {
+            port: basePort,
+            calls,
+            state,
+        } = fakePort({
+            existingReplyCount: 1,
+            existingReplyReviewState: 'COMMENTED',
+            existingReplyReviewBody: '',
+        });
+        const initial = basePort.inspect(42, threadId);
+        const marker = initial.thread?.comments.find((comment) => comment.id === replyId);
+        if (
+            marker === undefined ||
+            marker.reviewId === null ||
+            marker.reviewFullDatabaseId === null ||
+            marker.reviewState === null ||
+            marker.reviewBody === null ||
+            marker.reviewCommitOid === null ||
+            marker.reviewAuthorNodeId === null ||
+            marker.reviewAuthorLogin === null ||
+            marker.reviewAuthorType === null
+        ) {
+            throw new Error('fixture has no complete immutable review marker');
+        }
+        const review = {
+            id: marker.reviewId,
+            fullDatabaseId: marker.reviewFullDatabaseId,
+            state: marker.reviewState,
+            body: marker.reviewBody,
+            commitOid: marker.reviewCommitOid,
+            authorNodeId: marker.reviewAuthorNodeId,
+            authorLogin: marker.reviewAuthorLogin,
+            authorType: marker.reviewAuthorType,
+        };
+        const shellBackedPort = shellPort(
+            { configDir: repository, env: { SOURDAW_TRUSTED_GH_PATH: fakeGh.executable }, dispose() {} },
+            repository
+        );
+        const port: ResolveReviewThreadPort = {
+            ...basePort,
+            updateReviewBody: (currentReviewId, currentBody, reviewCommitOid, expectedReview, expectedMarker) => {
+                try {
+                    return shellBackedPort.updateReviewBody(
+                        currentReviewId,
+                        currentBody,
+                        reviewCommitOid,
+                        expectedReview,
+                        expectedMarker
+                    );
+                } finally {
+                    basePort.updateReviewBody(
+                        currentReviewId,
+                        currentBody,
+                        reviewCommitOid,
+                        expectedReview,
+                        expectedMarker
+                    );
+                }
+            },
+        };
+        try {
+            expect(() =>
+                withPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    threadId,
+                    head,
+                    () => port.updateReviewBody(reviewId, body, head, review, marker),
+                    { executionFence: { pid: process.pid, ownerFence: { kind: 'pgid', pgid: process.pid } } }
+                )
+            ).toThrow(/update mutation transport lost/i);
+            const ownerOid = readLockOid(repository, 42);
+            expect(ownerOid).toEqual(expect.any(String));
+            expect(requireLockOwner(repository, 42).mutation).toMatchObject({
+                phase: 'updateReviewBody',
+                reviewId,
+                reviewDatabaseId: review.fullDatabaseId,
+                body,
+                reviewCommitOid: head,
+                marker: immutableEnvelopeSnapshot(),
+            });
+            expect(statSync(fakeGh.calledPath).isFile()).toBe(true);
+
+            const inspection = recoverPullRequestReviewResolutionLock(
+                repository,
+                42,
+                ownerOid!,
+                (owner) => recoverReviewResolutionLockOwnerState(42, owner, port),
+                () => false
+            );
+
+            expect(calls.filter((call) => call === `updateReview:${reviewId}`)).toEqual([`updateReview:${reviewId}`]);
+            expect(inspection.thread?.comments).toEqual([
+                expect.objectContaining({ id: rootId }),
+                expect.objectContaining({ id: replyId, reviewId, reviewBody: body, reviewState: 'COMMENTED' }),
+            ]);
+            expect(state().reviews).toEqual([expect.objectContaining({ id: reviewId, body, state: 'COMMENTED' })]);
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+            rmSync(fakeGh.root, { recursive: true, force: true });
+        }
+    });
+
     it('replays a shell-inspected large decimal review identity through lookup, pending review, and exact PUT recovery', () => {
         const repository = createTemporaryGitRepository();
         const fullDatabaseId = '9223372036854775807';
@@ -7085,6 +7193,86 @@ describe('review thread resolution', () => {
                     /^(createReview|reply:|updateReview|delete:|deleteReview|submit|resolve)/.test(call)
                 )
             ).toEqual([]);
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('converges same-review empty immutable duplicates after the first delete response is lost', () => {
+        const repository = createTemporaryGitRepository();
+        const { port: basePort, calls } = fakePort({
+            isResolved: true,
+            initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+            initialResolvedByType: 'User',
+            existingReplyCount: 3,
+            existingReplyReviewState: 'COMMENTED',
+            existingReplyReviewBody: '',
+            existingReplyFullDatabaseIds: ['9223372036854775808', '9223372036854775809', '9223372036854775810'],
+        });
+        const port: ResolveReviewThreadPort = {
+            ...basePort,
+            inspect: (number, currentThreadId) => {
+                const inspection = basePort.inspect(number, currentThreadId);
+                if (inspection.thread === null) {
+                    return inspection;
+                }
+                const canonical = inspection.thread.comments.find((comment) => comment.id === replyId);
+                if (canonical === undefined) {
+                    throw new Error('fixture has no immutable canonical marker');
+                }
+                return {
+                    ...inspection,
+                    thread: {
+                        ...inspection.thread,
+                        comments: inspection.thread.comments.map((comment) =>
+                            comment.id.startsWith('PRRC_existing_')
+                                ? {
+                                      ...comment,
+                                      reviewId: canonical.reviewId,
+                                      reviewFullDatabaseId: canonical.reviewFullDatabaseId,
+                                      reviewState: canonical.reviewState,
+                                      reviewBody: canonical.reviewBody,
+                                      reviewCommitOid: canonical.reviewCommitOid,
+                                      reviewAuthorNodeId: canonical.reviewAuthorNodeId,
+                                      reviewAuthorLogin: canonical.reviewAuthorLogin,
+                                      reviewAuthorType: canonical.reviewAuthorType,
+                                  }
+                                : comment
+                        ),
+                    },
+                };
+            },
+        };
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, {
+                phase: 'deleteReply',
+                epoch: 1,
+                replyId: 'PRRC_existing_1',
+                immutableEnvelope: immutableEnvelopeSnapshot(),
+            });
+            updateLock(repository, 42, ownerOid);
+            const deleteReplyWithLostResponse = port.deleteReply;
+            let lostFirstResponse = true;
+            port.deleteReply = (id) => {
+                deleteReplyWithLostResponse(id);
+                if (lostFirstResponse) {
+                    lostFirstResponse = false;
+                    throw new Error('delete reply response lost');
+                }
+            };
+            expect(() => port.deleteReply('PRRC_existing_1')).toThrow('delete reply response lost');
+            calls.length = 0;
+
+            const inspection = recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) =>
+                recoverReviewResolutionLockOwnerState(42, owner, port)
+            );
+
+            expect(calls).toContain('delete:PRRC_existing_2');
+            expect(calls).not.toContain('delete:PRRC_existing_1');
+            expect(inspection.thread?.comments.filter((comment) => comment.body === 'Done')).toEqual([
+                expect.objectContaining({ id: replyId, reviewId }),
+            ]);
             expect(readLockOid(repository, 42)).toBeUndefined();
         } finally {
             rmSync(repository, { recursive: true, force: true });
