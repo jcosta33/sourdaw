@@ -407,6 +407,33 @@ describe('resolveAgentReference', () => {
         });
     });
 
+    it('keeps a nested name and a hyphenated literal id ambiguous when both are cited', () => {
+        const projectState = createProjectState();
+        const firstTrack = projectState.tracks[0];
+        if (!firstTrack) {
+            throw new Error('Expected a track fixture');
+        }
+        const nestedNameContext = {
+            ...projectState,
+            tracks: [
+                { ...firstTrack, id: 'track-lead-guitar', name: 'Rhythm' },
+                { ...firstTrack, id: 'track-keys', name: 'Guitar' },
+                { ...firstTrack, id: 'track-aux', name: 'Lead Guitar' },
+            ],
+        };
+
+        expect(
+            resolveTrack('delete Guitar and track-lead-guitar', 'track-lead-guitar', nestedNameContext)
+        ).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('delete Guitar and track-lead-guitar', 'track-keys', nestedNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+    });
+
     it('resolves editable clips by literal ID, unique exact name, and one explicit selection', () => {
         expect(resolveClip('trim clip-intro start to beat 2', 'clip-intro')).toEqual({
             status: 'resolved',

@@ -3395,7 +3395,10 @@ function groundToolCall({
         if (targetRule.optional && assertedValue === undefined) {
             continue;
         }
-        const targetPrompt = getTargetPromptScope(actionScope, targetRule.promptRole);
+        const targetPrompt =
+            call.name === 'removeTrack' || targetRule.capability === 'removable-track'
+                ? prompt
+                : getTargetPromptScope(actionScope, targetRule.promptRole);
         if (
             articulationTransferScope?.status === 'request' &&
             call.name === 'copyMidiArticulations' &&

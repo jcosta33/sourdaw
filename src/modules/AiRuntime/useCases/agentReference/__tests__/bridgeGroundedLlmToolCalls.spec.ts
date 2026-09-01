@@ -3475,6 +3475,44 @@ describe('bridgeGroundedLlmToolCalls', () => {
         ]);
     });
 
+    it('rejects a single removeTrack when the prompt cites both an independent name and a literal id', () => {
+        const independentNameContext = {
+            ...projectContext,
+            tracks: [
+                createTrack({ id: 'track-guitar', name: 'Bass' }),
+                createTrack({ id: 'track-keys', name: 'Guitar' }),
+                master,
+            ],
+        };
+        const named = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: 'track-keys' } }],
+            'delete Guitar and track-guitar',
+            independentNameContext
+        );
+        const literal = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: 'track-guitar' } }],
+            'delete Guitar and track-guitar',
+            independentNameContext
+        );
+
+        expect(named.actions).toEqual([]);
+        expect(literal.actions).toEqual([]);
+        expect(named.rejections).toEqual([
+            {
+                index: 0,
+                name: 'removeTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+        expect(literal.rejections).toEqual([
+            {
+                index: 0,
+                name: 'removeTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+    });
+
     it('grounds time signatures as an explicit paired value', () => {
         const valid = bridge(
             [{ name: 'setTimeSignature', arguments: { numerator: 7, denominator: 8 } }],

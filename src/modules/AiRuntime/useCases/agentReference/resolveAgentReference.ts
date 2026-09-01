@@ -431,8 +431,8 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
         }
     }
 
-    removeOverlappedExactNameEvidence(candidates, evidenceById);
     removeExactNameEvidenceOverlappedByLiteralIds(input.prompt, candidates, evidenceById);
+    removeOverlappedExactNameEvidence(candidates, evidenceById);
 
     if (evidenceById.size === 0) {
         return { status: 'rejected', reason: 'ungrounded-target' };
