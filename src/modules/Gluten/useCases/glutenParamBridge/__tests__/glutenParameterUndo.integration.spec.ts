@@ -30,9 +30,11 @@ import { setGlutenParamWithAudio } from '../setGlutenParamWithAudio';
  * the real thing: the real Arrangement handler map, the real `executeAppAction`,
  * a real Automerge document, the real undo stack.
  *
- * Only `updateDeviceParam` is stubbed, because it addresses a live AudioContext
- * that does not exist under Vitest. Stubbing it is also what lets the drag guard
- * count engine writes and prove the transient half still reaches audio.
+ * Only `updateDeviceParam` is stubbed as the engineWrites recorder, because it
+ * addresses a live AudioContext that does not exist under Vitest. Stubbing it is
+ * also what lets the drag guard count engine writes and prove the transient half
+ * still reaches audio. The other listed AudioEngine keys are unread graph-coverage
+ * stubs (`vi.fn()` and `audioEngine: {}`), not live barrel exports.
  */
 
 const engineWrites: { trackId: string; deviceId: string; paramId: string; value: number }[] = [];
