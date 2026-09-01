@@ -1,39 +1,58 @@
 const clearSolosRestrictionStartPattern =
     /\b(?:except|excluding|besides|minus|(?:other|rather)\s+than|apart\s+from|save\s+for|with\s+(?:the\s+)?exception\s+of|all\s+but|but\s+not|not\s+including|(?:(?:but|and|while)\s+)?(?:keep(?:ing)?|leav(?:e|ing)|preserv(?:e|ing)|retain(?:ing)?))\b/giu;
 
-const clearSolosIntentPattern = /\b(?:clear\s+all\s+solos|unsolo\s+all\s+tracks|unsolo\s+everything)\b/giu;
+const clearSolosIntentPattern = /\b(?:clear\s+all\s+solos|unsolo\s+all\s+tracks|unsolo\s+everything)\b/iu;
 const clearSolosContinuativePattern = /(?:keep(?:ing)?|leav(?:e|ing)|preserv(?:e|ing)|retain(?:ing)?)/iu;
 const clearSolosStatePattern = /\bsolo(?:ed)?\b/iu;
-const nextActionPattern =
-    /\s+(?:and|but)\s+(?=(?:add|arm|bypass|clear|copy|create|delete|disable|duplicate|enable|insert|join|move|mute|nudge|normalize|remove|rename|route|send|set|solo|split|trim|unmute|unsolo)\b)|[;,\n]+/iu;
-const bulkTrackTargetListPattern = /\b(?:mute|unmute|solo|unsolo)\s+(?:all|every)\s+tracks?\s*$/iu;
+const bulkTrackScopePattern = /\b(?:all|every)\s+tracks?\b/iu;
+const bulkTrackActionTypes: ReadonlySet<string> = new Set(['muteTrack', 'soloTrack']);
 
-function hasClearSolosIntentBefore(text: string, index: number): boolean {
-    return [...text.slice(0, index).matchAll(clearSolosIntentPattern)].length > 0;
+export type ClearSolosRestrictionActionSpan = {
+    actionType: string;
+    end: number;
+    start: number;
+};
+
+function getOwningActionSpan(
+    actionSpans: readonly ClearSolosRestrictionActionSpan[],
+    index: number
+): ClearSolosRestrictionActionSpan | null {
+    return actionSpans.find((span) => span.start <= index && index < span.end) ?? null;
 }
 
-function isOwnedByBulkTrackAction(text: string, index: number): boolean {
-    return bulkTrackTargetListPattern.test(text.slice(0, index));
+function isOwnedByAdjacentBulkTrackAction(
+    text: string,
+    restrictionIndex: number,
+    owner: ClearSolosRestrictionActionSpan | null
+): boolean {
+    if (!owner || !bulkTrackActionTypes.has(owner.actionType)) {
+        return false;
+    }
+    return bulkTrackScopePattern.test(text.slice(owner.start, restrictionIndex));
 }
 
-export function collectClearSolosRestrictionClauses(text: string): string[] {
+export function collectClearSolosRestrictionClauses(
+    text: string,
+    actionSpans: readonly ClearSolosRestrictionActionSpan[] = [{ actionType: 'clearSolos', start: 0, end: text.length }]
+): string[] {
+    const restrictions = [...text.matchAll(clearSolosRestrictionStartPattern)];
     const clauses: string[] = [];
-    for (const match of text.matchAll(clearSolosRestrictionStartPattern)) {
-        if (match.index === undefined) {
+    for (const [index, match] of restrictions.entries()) {
+        if (match.index === undefined || !clearSolosIntentPattern.test(text.slice(0, match.index))) {
             continue;
         }
-        if (!hasClearSolosIntentBefore(text, match.index)) {
-            continue;
-        }
-        const remainingText = text.slice(match.index + match[0].length);
-        const nextClause = nextActionPattern.exec(remainingText);
-        const end = nextClause ? match.index + match[0].length + nextClause.index : text.length;
+        const owner = getOwningActionSpan(actionSpans, match.index);
+        const nextRestriction = restrictions[index + 1];
+        const end = Math.min(owner?.end ?? text.length, nextRestriction?.index ?? text.length);
         const clause = text.slice(match.index, end).trim();
         const isContinuative = clearSolosContinuativePattern.test(match[0]);
+        if (clause.length === 0 || (isContinuative && !clearSolosStatePattern.test(clause))) {
+            continue;
+        }
         if (
-            clause.length > 0 &&
-            (!isContinuative || clearSolosStatePattern.test(clause)) &&
-            (isContinuative || !isOwnedByBulkTrackAction(text, match.index))
+            isContinuative ||
+            owner?.actionType === 'clearSolos' ||
+            !isOwnedByAdjacentBulkTrackAction(text, match.index, owner)
         ) {
             clauses.push(clause);
         }

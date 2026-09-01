@@ -2923,6 +2923,38 @@ describe('bridgeGroundedLlmToolCalls', () => {
         }
     });
 
+    it('binds clear-solo restrictions to the action span they qualify', () => {
+        const bass = createTrack({ id: 'track-bass', name: 'Bass' });
+        const soloedContext = {
+            ...projectContext,
+            tracks: [...projectContext.tracks, bass].map((track) => ({ ...track, soloed: true })),
+        };
+        const restricted = bridge(
+            [{ name: 'clearSolos', arguments: {} }],
+            'clear all solos but keep Vocals, Guitar, and Bass soloed',
+            soloedContext
+        );
+
+        expect(restricted.actions).toEqual([]);
+        expect(restricted.rejections).toEqual([
+            {
+                index: 0,
+                name: 'clearSolos',
+                reason: 'Provider clear-solos scope is not explicitly universal',
+            },
+        ]);
+
+        for (const prompt of [
+            'clear all solos and mute every track, except Vocals',
+            'clear all solos and mute every track; except Vocals',
+            'clear all solos and unmute every track, except Vocals',
+        ]) {
+            expect(bridge([{ name: 'clearSolos', arguments: {} }], prompt, soloedContext).actions, prompt).toEqual([
+                { type: 'clearSolos' },
+            ]);
+        }
+    });
+
     it('rejects solo-safe writes to a bus created earlier in the same provider plan', () => {
         const result = bridge(
             [

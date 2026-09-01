@@ -50,7 +50,10 @@ import {
     type SyncopatedArpeggioRequestScope,
 } from './getSyncopatedArpeggioPromptScope';
 import { getWholeProjectVibeMixScope } from './getWholeProjectVibeMixScope';
-import { collectClearSolosRestrictionClauses } from './groundingStrategies/collectClearSolosRestrictionClauses';
+import {
+    collectClearSolosRestrictionClauses,
+    type ClearSolosRestrictionActionSpan,
+} from './groundingStrategies/collectClearSolosRestrictionClauses';
 import { groundPostTargetScopeAdmission } from './groundingStrategies/postTargetScopeAdmissionStrategy';
 import { resolveAgentReference } from './resolveAgentReference';
 
@@ -84,7 +87,9 @@ type GroundToolCallInput = {
 };
 
 type PromptClause = {
+    end: number;
     masked: string;
+    start: number;
     text: string;
 };
 
@@ -822,14 +827,40 @@ function getPromptClauses(prompt: string, maskedPrompt: string): PromptClause[] 
             continue;
         }
         if (prompt.slice(start, match.index).trim().length > 0) {
-            clauses.push({ text: prompt.slice(start, match.index), masked: maskedPrompt.slice(start, match.index) });
+            clauses.push({
+                end: match.index,
+                masked: maskedPrompt.slice(start, match.index),
+                start,
+                text: prompt.slice(start, match.index),
+            });
         }
         start = separatorEnd;
     }
     if (prompt.slice(start).trim().length > 0) {
-        clauses.push({ text: prompt.slice(start), masked: maskedPrompt.slice(start) });
+        clauses.push({ end: prompt.length, masked: maskedPrompt.slice(start), start, text: prompt.slice(start) });
     }
     return clauses;
+}
+
+function getPromptActionSpans(
+    prompt: string,
+    maskedPrompt: string,
+    catalog: GroundingCatalog
+): ClearSolosRestrictionActionSpan[] {
+    const clauses = getPromptClauses(prompt, maskedPrompt);
+    const spans: ClearSolosRestrictionActionSpan[] = [];
+    for (const [index, clause] of clauses.entries()) {
+        const intent = resolveClauseActionIntent(clause.masked, catalog);
+        if (!intent) {
+            continue;
+        }
+        const previous = spans.at(-1);
+        if (previous) {
+            previous.end = clauses[index - 1]?.end ?? clause.start;
+        }
+        spans.push({ actionType: intent.actionType, start: clause.start, end: prompt.length });
+    }
+    return spans;
 }
 
 function resolveDirectNamedBusCreationScope(
@@ -1394,7 +1425,7 @@ function resolveActionPromptScope({
         catalog,
         plannedActionNames
     );
-    if (actionName === 'clearSolos' && hasClearSolosRestriction(prompt)) {
+    if (actionName === 'clearSolos' && collectPromptClearSolosRestrictionClauses(prompt, catalog, context).length > 0) {
         hasActionCancellation = false;
     }
     if (
@@ -1653,11 +1684,22 @@ function getTargetPromptScope(
     return `to ${actionScope.text.slice(separator.index + separator[0].length).trim()}`;
 }
 
+function collectPromptClearSolosRestrictionClauses(
+    prompt: string,
+    catalog: GroundingCatalog,
+    context: ProjectContext
+): string[] {
+    const maskedPrompt = maskQuotedLabels(maskProjectReferences(prompt, context));
+    return collectClearSolosRestrictionClauses(prompt, getPromptActionSpans(prompt, maskedPrompt, catalog));
+}
+
 function getPostTargetScope(
     actionName: string,
     actionScope: ActionPromptScope,
     plannedActionNames: readonly string[],
-    prompt: string
+    prompt: string,
+    catalog: GroundingCatalog,
+    context: ProjectContext
 ): ActionPromptScope {
     if (plannedActionNames.length === 1 && actionName !== 'clearSolos') {
         return { ...actionScope, text: prompt, masked: prompt };
@@ -1665,7 +1707,7 @@ function getPostTargetScope(
     if (actionName !== 'clearSolos') {
         return actionScope;
     }
-    const restrictionClauses = collectClearSolosRestrictionClauses(prompt);
+    const restrictionClauses = collectPromptClearSolosRestrictionClauses(prompt, catalog, context);
     if (restrictionClauses.length === 0) {
         return actionScope;
     }
@@ -3705,7 +3747,7 @@ function groundToolCall({
     }
     const scopeAdmissionRejection = groundPostTargetScopeAdmission({
         actionName: call.name,
-        actionScope: getPostTargetScope(call.name, actionScope, plannedActionNames, prompt),
+        actionScope: getPostTargetScope(call.name, actionScope, plannedActionNames, prompt, catalog, context),
         bulkMutedEmptyTrackDeletionTargetIds,
         context,
         groundedArguments,

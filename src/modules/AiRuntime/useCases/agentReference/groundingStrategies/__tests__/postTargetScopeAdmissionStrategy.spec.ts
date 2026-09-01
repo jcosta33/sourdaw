@@ -99,21 +99,45 @@ describe('post-target scope admission strategies', () => {
     });
 
     it('collects only solo-specific clear-solos restrictions without retaining adjacent action clauses', () => {
+        const commaSeparatedPrompt = 'clear all solos, not including Vocals, and mute Guitar but leave Keys soloed';
         expect(
-            collectClearSolosRestrictionClauses(
-                'clear all solos, not including Vocals, and mute Guitar but leave Keys soloed'
-            )
+            collectClearSolosRestrictionClauses(commaSeparatedPrompt, [
+                { actionType: 'clearSolos', start: 0, end: commaSeparatedPrompt.indexOf(', and mute') },
+                {
+                    actionType: 'muteTrack',
+                    start: commaSeparatedPrompt.indexOf('mute Guitar'),
+                    end: commaSeparatedPrompt.length,
+                },
+            ])
         ).toEqual(['not including Vocals', 'but leave Keys soloed']);
         expect(collectClearSolosRestrictionClauses('clear all solos and retain Lead soloed')).toEqual([
             'and retain Lead soloed',
         ]);
-        expect(collectClearSolosRestrictionClauses('clear all solos while keeping Lead soloed, mute Guitar')).toEqual([
-            'while keeping Lead soloed',
-        ]);
+        const leadingRestrictionPrompt = 'clear all solos while keeping Lead soloed, mute Guitar';
+        expect(
+            collectClearSolosRestrictionClauses(leadingRestrictionPrompt, [
+                { actionType: 'clearSolos', start: 0, end: leadingRestrictionPrompt.indexOf(', mute') },
+                {
+                    actionType: 'muteTrack',
+                    start: leadingRestrictionPrompt.indexOf('mute Guitar'),
+                    end: leadingRestrictionPrompt.length,
+                },
+            ])
+        ).toEqual(['while keeping Lead soloed']);
         expect(collectClearSolosRestrictionClauses('clear all solos and leave Keys muted, then mute Guitar')).toEqual(
             []
         );
-        expect(collectClearSolosRestrictionClauses('clear all solos and mute every track except Vocals')).toEqual([]);
+        const bulkMutePrompt = 'clear all solos and mute every track except Vocals';
+        expect(
+            collectClearSolosRestrictionClauses(bulkMutePrompt, [
+                { actionType: 'clearSolos', start: 0, end: bulkMutePrompt.indexOf(' and mute') },
+                {
+                    actionType: 'muteTrack',
+                    start: bulkMutePrompt.indexOf('mute every track'),
+                    end: bulkMutePrompt.length,
+                },
+            ])
+        ).toEqual([]);
         expect(collectClearSolosRestrictionClauses('clear all solos but keep Vocals and Guitar soloed')).toEqual([
             'but keep Vocals and Guitar soloed',
         ]);
