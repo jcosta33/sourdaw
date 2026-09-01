@@ -1,43 +1,13 @@
 import { cacheAudioBuffer, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { clearClipPitchAnalysis } from '#/modules/Knead/useCases';
-import { transportStore } from '#/modules/Transport/stores';
+import { tempoMapStore, transportStore } from '#/modules/Transport/stores';
+import { resolveTempoAtBeat } from '#/modules/Transport/useCases';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 
-/**
- * After the whole source is mirrored, `[offset, offset + length)` lives at
- * `[D - offset - length, D - offset)`. Point `audioOffsetBeats` there so a
- * trimmed, split, or slipped clip still plays its own window backwards.
- */
-function reversedClipAudioOffsetBeats(input: {
-    audioOffsetBeats: number;
-    clipLengthBeats: number;
-    bufferLength: number;
-    sampleRate: number;
-    tempo: number;
-}): number | undefined {
-    const { audioOffsetBeats, clipLengthBeats, bufferLength, sampleRate, tempo } = input;
-    if (!Number.isFinite(audioOffsetBeats) || !Number.isFinite(clipLengthBeats)) {
-        return undefined;
-    }
-    if (!Number.isFinite(bufferLength) || bufferLength <= 0) {
-        return undefined;
-    }
-    if (!Number.isFinite(sampleRate) || sampleRate <= 0) {
-        return undefined;
-    }
-    const clipSecondsPerBeat = Number.isFinite(tempo) && tempo > 0 ? 60 / tempo : 0;
-    if (clipSecondsPerBeat <= 0) {
-        return undefined;
-    }
-    const sourceLengthBeats = bufferLength / sampleRate / clipSecondsPerBeat;
-    if (!Number.isFinite(sourceLengthBeats)) {
-        return undefined;
-    }
-    return sourceLengthBeats - audioOffsetBeats - clipLengthBeats;
-}
+import { reversedClipAudioOffsetBeats } from './reversedClipAudioOffsetBeats';
 
 /**
  * `reversedBufferId` is resolved by the command layer before dispatch rather than minted
@@ -77,7 +47,11 @@ export function reverseClip(clipId: string, reversedBufferId?: string): boolean 
     }
 
     const newId = reversedBufferId ?? `reversed-${clip.audioBufferId}-${Date.now()}`;
-    const clipTempo = transportStore.value?.tempo ?? 120;
+    const clipTempo = resolveTempoAtBeat({
+        changes: tempoMapStore.value?.changes ?? [],
+        beat: clip.startBeat,
+        defaultTempo: transportStore.value?.tempo ?? 120,
+    });
     const didWrite = updateClip(target.clipId, (candidate) => {
         cacheAudioBuffer({ buffer: reversed, bufferId: newId });
         const remappedAudioOffsetBeats = reversedClipAudioOffsetBeats({

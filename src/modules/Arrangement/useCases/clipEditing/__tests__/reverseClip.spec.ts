@@ -10,6 +10,28 @@ const mocks = vi.hoisted(() => ({
     clearClipPitchAnalysis: vi.fn(),
     resolveEligibleClipWriteTarget: vi.fn(),
     transportTempo: 60,
+    tempoMapChanges: [] as { beat: number; tempo: number; curve: 'instant' }[],
+    resolveTempoAtBeat: vi.fn(
+        ({
+            changes,
+            defaultTempo,
+        }: {
+            changes: readonly { beat: number; tempo: number }[];
+            beat: number;
+            defaultTempo: number;
+        }) => {
+            if (changes.length === 0) {
+                return defaultTempo;
+            }
+            let governing = changes[0]!.tempo;
+            for (const change of changes) {
+                if (change.beat <= 0) {
+                    governing = change.tempo;
+                }
+            }
+            return governing;
+        }
+    ),
 }));
 
 vi.mock('#/modules/Arrangement/repositories/track/getTrackState', () => ({
@@ -33,10 +55,19 @@ vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
     resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
 }));
 
+vi.mock('#/modules/Transport/useCases', () => ({
+    resolveTempoAtBeat: mocks.resolveTempoAtBeat,
+}));
+
 vi.mock('#/modules/Transport/stores', () => ({
     transportStore: {
         get value() {
             return { tempo: mocks.transportTempo };
+        },
+    },
+    tempoMapStore: {
+        get value() {
+            return { changes: mocks.tempoMapChanges };
         },
     },
 }));
@@ -52,6 +83,28 @@ describe('reverseClip', () => {
             clipId: 'c1',
         });
         mocks.transportTempo = 60;
+        mocks.tempoMapChanges = [];
+        mocks.resolveTempoAtBeat.mockImplementation(
+            ({
+                changes,
+                defaultTempo,
+            }: {
+                changes: readonly { beat: number; tempo: number }[];
+                beat: number;
+                defaultTempo: number;
+            }) => {
+                if (changes.length === 0) {
+                    return defaultTempo;
+                }
+                let governing = changes[0]!.tempo;
+                for (const change of changes) {
+                    if (change.beat <= 0) {
+                        governing = change.tempo;
+                    }
+                }
+                return governing;
+            }
+        );
         mockCtx = {
             createBuffer: vi.fn(),
         };
@@ -257,6 +310,144 @@ describe('reverseClip', () => {
         const playbackStartSample = (publishedClip?.audioOffsetBeats ?? 0) * sampleRate;
         const originalWindowLastSample = 1 * sampleRate + 1 * sampleRate - 1;
         expect(reversedData[playbackStartSample]).toBe(originalData[originalWindowLastSample]);
+    });
+
+    it('remaps a zero-offset right-trimmed clip to a nonzero playback offset', () => {
+        const sampleRate = 8;
+        const sourceSamples = 32;
+        const originalData = new Float32Array(sourceSamples);
+        for (let index = 0; index < sourceSamples; index++) {
+            originalData[index] = index;
+        }
+        const reversedData = new Float32Array(sourceSamples);
+        const mockClip = {
+            id: 'c1',
+            type: 'audio',
+            audioBufferId: 'buf1',
+            name: 'Sample',
+            startBeat: 0,
+            endBeat: 2,
+            audioOffsetBeats: 0,
+        };
+        let publishedClip: typeof mockClip | undefined;
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 'track-1', clips: [mockClip] }],
+        });
+        mocks.updateClip.mockImplementation(
+            (_clipId: string, updater: (candidate: typeof mockClip) => typeof mockClip) => {
+                publishedClip = updater(mockClip);
+                return true;
+            }
+        );
+        mocks.getCachedAudioBuffer.mockReturnValue({
+            numberOfChannels: 1,
+            length: sourceSamples,
+            sampleRate,
+            getChannelData: vi.fn(() => originalData),
+        });
+        mockCtx.createBuffer.mockReturnValue({
+            numberOfChannels: 1,
+            length: sourceSamples,
+            getChannelData: vi.fn(() => reversedData),
+        });
+
+        reverseClip('c1');
+
+        expect(publishedClip?.audioOffsetBeats).toBe(2);
+        const playbackStartSample = (publishedClip?.audioOffsetBeats ?? 0) * sampleRate;
+        const originalWindowLastSample = 0 * sampleRate + 2 * sampleRate - 1;
+        expect(reversedData[playbackStartSample]).toBe(originalData[originalWindowLastSample]);
+    });
+
+    it('uses endBeat minus startBeat for clip length when startBeat is not zero', () => {
+        const sampleRate = 8;
+        const sourceSamples = 32;
+        const originalData = new Float32Array(sourceSamples);
+        for (let index = 0; index < sourceSamples; index++) {
+            originalData[index] = index;
+        }
+        const reversedData = new Float32Array(sourceSamples);
+        const mockClip = {
+            id: 'c1',
+            type: 'audio',
+            audioBufferId: 'buf1',
+            name: 'Sample',
+            startBeat: 4,
+            endBeat: 5,
+            audioOffsetBeats: 1,
+        };
+        let publishedClip: typeof mockClip | undefined;
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 'track-1', clips: [mockClip] }],
+        });
+        mocks.updateClip.mockImplementation(
+            (_clipId: string, updater: (candidate: typeof mockClip) => typeof mockClip) => {
+                publishedClip = updater(mockClip);
+                return true;
+            }
+        );
+        mocks.getCachedAudioBuffer.mockReturnValue({
+            numberOfChannels: 1,
+            length: sourceSamples,
+            sampleRate,
+            getChannelData: vi.fn(() => originalData),
+        });
+        mockCtx.createBuffer.mockReturnValue({
+            numberOfChannels: 1,
+            length: sourceSamples,
+            getChannelData: vi.fn(() => reversedData),
+        });
+
+        reverseClip('c1');
+
+        expect(publishedClip?.audioOffsetBeats).toBe(2);
+        const playbackStartSample = (publishedClip?.audioOffsetBeats ?? 0) * sampleRate;
+        const originalWindowLastSample = 1 * sampleRate + 1 * sampleRate - 1;
+        expect(reversedData[playbackStartSample]).toBe(originalData[originalWindowLastSample]);
+    });
+
+    it('remaps audioOffsetBeats using the tempo map at the clip start beat', () => {
+        const sampleRate = 8;
+        const sourceSamples = 32;
+        const originalData = new Float32Array(sourceSamples);
+        const reversedData = new Float32Array(sourceSamples);
+        const mockClip = {
+            id: 'c1',
+            type: 'audio',
+            audioBufferId: 'buf1',
+            name: 'Sample',
+            startBeat: 0,
+            endBeat: 1,
+            audioOffsetBeats: 1,
+        };
+        let publishedClip: typeof mockClip | undefined;
+        mocks.transportTempo = 120;
+        mocks.tempoMapChanges = [{ beat: 0, tempo: 60, curve: 'instant' as const }];
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 'track-1', clips: [mockClip] }],
+        });
+        mocks.updateClip.mockImplementation(
+            (_clipId: string, updater: (candidate: typeof mockClip) => typeof mockClip) => {
+                publishedClip = updater(mockClip);
+                return true;
+            }
+        );
+        mocks.getCachedAudioBuffer.mockReturnValue({
+            numberOfChannels: 1,
+            length: sourceSamples,
+            sampleRate,
+            getChannelData: vi.fn(() => originalData),
+        });
+        mockCtx.createBuffer.mockReturnValue({
+            numberOfChannels: 1,
+            length: sourceSamples,
+            getChannelData: vi.fn(() => reversedData),
+        });
+
+        reverseClip('c1');
+
+        expect(mocks.resolveTempoAtBeat).toHaveBeenCalledWith(expect.objectContaining({ beat: 0, defaultTempo: 120 }));
+        expect(publishedClip?.audioOffsetBeats).toBe(2);
     });
 
     it('clears the clip pitch contour after a successful reverse because the audio changed', () => {
