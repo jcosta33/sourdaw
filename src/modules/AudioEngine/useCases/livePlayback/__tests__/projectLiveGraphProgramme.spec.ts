@@ -218,10 +218,11 @@ describe('projectLiveGraphProgramme', () => {
         ]);
     });
 
-    it('excludes a stretched clip per clip, leaving its unstretched neighbour playing', () => {
-        // `schedule-clip` refuses any non-unity rate whole-batch
-        // (`stretched-clip-unsupported`), so one stretched clip must not cost
-        // the session the strip it sits on, let alone every other strip.
+    it('admits a stretched clip with its projected playbackRate, alongside its unstretched neighbour', () => {
+        // The native mapper composes `playbackRate` into `ClipPlayback.playback_rate`
+        // (varispeed, not stretch, #3068), so a stretched clip is no longer an
+        // exclusion — it schedules with the rate `projectOfflineAudioClipPlaybacks`
+        // projects for it.
         const programme = projectProgramme({
             stripTracks: [
                 createTrack({
@@ -250,11 +251,10 @@ describe('projectLiveGraphProgramme', () => {
         });
 
         const playbacks = programme.playbacksByStripId.get('audio-1');
-        expect(playbacks).toHaveLength(1);
-        expect(playbacks?.[0]?.startTime).toBe(4 * SECONDS_PER_BEAT);
-        expect(programme.exclusions).toEqual([
-            { stripId: 'audio-1', subjectId: 'stretched', reason: expect.stringContaining('cannot stretch') },
-        ]);
+        expect(playbacks).toHaveLength(2);
+        expect(playbacks?.[0]).toMatchObject({ startTime: 0, playbackRate: 1.5 });
+        expect(playbacks?.[1]).toMatchObject({ startTime: 4 * SECONDS_PER_BEAT, playbackRate: 1 });
+        expect(programme.exclusions).toEqual([]);
     });
 
     it('names a clip whose material is not decoded, because the pool would refuse it', () => {

@@ -518,6 +518,38 @@ function slotOverflowTrack(): Track {
     });
 }
 
+/**
+ * A track carrying one clip at a non-unity `playbackRate` (#3068): varispeed,
+ * not stretch (`crates/daw-engine/src/timeline.rs`, `ClipPlayback` doc). The
+ * clip is one beat (0.5 s) at 120 bpm, reading `mat-a` (2 s) at 1.5x — 0.75 s
+ * of material, comfortably inside it.
+ *
+ * `unity` swaps the rate back to 1 with everything else held fixed, so a
+ * render of this track can be compared against its own unstretched twin: a
+ * native leg that silently rounded the rate to 1 would still null against the
+ * live leg (both wrong the same way) but would stop differing from `unity`.
+ */
+function stretchedTrack(input: { unity: boolean }): Track {
+    return createTrack({
+        id: 'track-stretched',
+        name: 'Stretched',
+        gain: 0.75,
+        pan: 8,
+        clips: [
+            audioClip({
+                id: 'clip-stretched',
+                trackId: 'track-stretched',
+                startBeat: 0,
+                endBeat: 2,
+                gain: 0.9,
+                audioBufferId: 'mat-a',
+                stretchMode: input.unity ? 'off' : 'repitch',
+                stretchRatio: 1.5,
+            }),
+        ],
+    });
+}
+
 /** The tracks whose programme reaches the mix — the export's own vocabulary. */
 function scheduledOf(tracks: readonly Track[]): Track[] {
     return tracks.filter((track) => track.kind !== 'bus');
@@ -743,6 +775,30 @@ describe('live and export projections render one project the same way (#3068)', 
                     : []
             );
             expect(liveSources).toEqual(['mat-a']);
+        },
+        30_000
+    );
+
+    it.runIf(nativeAddonPresent)(
+        'renders a stretched clip identically on both legs, and differently from its unstretched twin (#3068)',
+        async () => {
+            const extraTracks = [stretchedTrack({ unity: false })];
+            const [exportLeft, exportRight] = await renderExportLeg({ extraTracks });
+            const [liveLeft, liveRight] = await renderLiveLeg(projectLiveSessionCommands({ extraTracks }));
+
+            // Audible before equality means anything (ADR 0015 rule 4), and
+            // equality between the two projections of the stretched fixture.
+            expect(peak(exportLeft!)).toBeGreaterThan(0.01);
+            expect(peak(exportRight!)).toBeGreaterThan(0.01);
+            expect(firstDifference([exportLeft!, exportRight!], [liveLeft!, liveRight!])).toBe(-1);
+
+            // And the rate itself is what is being heard: a native leg that
+            // silently dropped `playbackRate` to unity would still null against
+            // the (equally wrong) live leg above, but would stop differing from
+            // its own unstretched twin.
+            const unityTracks = [stretchedTrack({ unity: true })];
+            const [unityLeft, unityRight] = await renderExportLeg({ extraTracks: unityTracks });
+            expect(firstDifference([exportLeft!, exportRight!], [unityLeft!, unityRight!])).not.toBe(-1);
         },
         30_000
     );

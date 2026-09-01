@@ -2510,9 +2510,6 @@ describe('live/offline null test — a looped clip', () => {
  * Recorded here, where the fixtures are declared, because every constraint is
  * a refusal or a modelling gap and not a preference:
  *
- *   - **Unstretched clips only** (`playbackRate: 1`). The native side refuses
- *     any other rate with `stretched-clip-unsupported` — time-stretch is
- *     #2219 — and the refusal is pinned below rather than worked around.
  *   - **Device-free strips.** Knead is the only device with a native
  *     realisation and the harness models no wasm node, so no device exists
  *     that both legs can build. Device parity across this seam starts when
@@ -2627,12 +2624,20 @@ function inProcessNativeTransport(host: NativeHostAddon): NativeGraphTransport {
 
 const NATIVE_LEG_SOURCE_ID = 'native-leg-take';
 
-function nativeLegClip(input: { trackId: string; clipGain: number; playbackRate?: number }): AudioGraphCommand {
+function nativeLegClip(input: {
+    trackId: string;
+    clipGain: number;
+    playbackRate?: number;
+    material?: HarnessAudioBuffer;
+}): AudioGraphCommand {
     return {
         kind: 'schedule-clip',
         playback: {
             trackId: input.trackId,
-            source: { sourceId: NATIVE_LEG_SOURCE_ID, buffer: CLIP_MATERIAL as unknown as AudioBuffer },
+            source: {
+                sourceId: NATIVE_LEG_SOURCE_ID,
+                buffer: (input.material ?? CLIP_MATERIAL) as unknown as AudioBuffer,
+            },
             startTime: CLIP_START_SEC,
             sourceOffsetSeconds: 0.02,
             durationSeconds: CLIP_DURATION_SEC,
@@ -2651,6 +2656,8 @@ function nativeLegStripCommands(input: {
     gain: number;
     pan: number;
     clipGain?: number;
+    playbackRate?: number;
+    material?: HarnessAudioBuffer;
     faderWrites?: AudioGraphParameterWrite[];
 }): AudioGraphCommand[] {
     return [
@@ -2669,7 +2676,12 @@ function nativeLegStripCommands(input: {
             target: { kind: 'track-fader', trackId: FIXTURE_TRACK_ID },
             write,
         })),
-        nativeLegClip({ trackId: FIXTURE_TRACK_ID, clipGain: input.clipGain ?? 0.7 }),
+        nativeLegClip({
+            trackId: FIXTURE_TRACK_ID,
+            clipGain: input.clipGain ?? 0.7,
+            playbackRate: input.playbackRate,
+            material: input.material,
+        }),
     ];
 }
 
@@ -2796,6 +2808,14 @@ async function nullTestNativeLeg(input: {
 const NATIVE_LEG_FIXTURES: Array<[string, AudioGraphCommand[]]> = [
     ['a bare strip at unity', nativeLegStripCommands({ gain: 1, pan: 0 })],
     ['a shaped strip, fader off unity and panned', nativeLegStripCommands({ gain: 0.8, pan: 18 })],
+    // Varispeed (#3068): the same rate reaches `ClipPlayback.playback_rate`
+    // and an `AudioBufferSourceNode.playbackRate` on both legs, so a stretched
+    // clip nulls exactly like an unstretched one. Longer material because a
+    // sped-up clip consumes source faster than the destination span it fills.
+    [
+        'a clip played at 1.5x on both legs',
+        nativeLegStripCommands({ gain: 1, pan: 0, playbackRate: 1.5, material: LONG_CLIP_MATERIAL }),
+    ],
     // FX-7 across the runtime boundary: web clamps in `createOfflineTrackStrip`,
     // native in `map_batch`'s level law. Same projects carry gain > 1.
     ['a strip whose stored gain sits above the fader ceiling', nativeLegStripCommands({ gain: 1.8, pan: 0 })],
@@ -2961,32 +2981,49 @@ describe('live/offline null test — the native backend leg', () => {
         });
 
         /**
+         * The rate itself, not merely its presence (#3068): the same
+         * one-part-in-five-hundred perturbation the fader and clip-gain reds
+         * above apply, here on `playbackRate`, so a native leg that dropped
+         * the rate or rounded it away cannot pass by admitting the command.
+         */
+        it('reds when the native leg takes a clip playbackRate one part in five hundred hot', async () => {
+            expectPerturbedRed({
+                result: await nullTestNativeLeg({
+                    commands: nativeLegStripCommands({
+                        gain: 1,
+                        pan: 0,
+                        playbackRate: 1.5,
+                        material: LONG_CLIP_MATERIAL,
+                    }),
+                    nativeCommands: nativeLegStripCommands({
+                        gain: 1,
+                        pan: 0,
+                        playbackRate: 1.5 * 1.002,
+                        material: LONG_CLIP_MATERIAL,
+                    }),
+                }),
+                band: 'audible',
+                leg: 'native backend',
+            });
+
+            expectNull(
+                await nullTestNativeLeg({
+                    commands: nativeLegStripCommands({
+                        gain: 1,
+                        pan: 0,
+                        playbackRate: 1.5,
+                        material: LONG_CLIP_MATERIAL,
+                    }),
+                })
+            );
+        });
+
+        /**
          * The refusals that scope the fixture set, pinned against the real
          * addon so the scoping note above is a measured contract rather than
          * a comment. Each arrives as a *rejected result* — the contract's
          * vocabulary — carrying the native side's own reason.
          */
-        it('refuses a stretched clip with stretched-clip-unsupported (#2219)', async () => {
-            const backend = createNativeOfflineGraphBackend({
-                sampleRate: SAMPLE_RATE,
-                transport: inProcessNativeTransport(requireNativeHost()),
-            });
-            const result = await backend.apply({
-                schemaVersion: 1,
-                commands: [
-                    ...nativeLegStripCommands({ gain: 1, pan: 0 }).slice(0, 2),
-                    nativeLegClip({ trackId: FIXTURE_TRACK_ID, clipGain: 0.7, playbackRate: 0.5 }),
-                ],
-            });
-            backend.dispose();
-
-            expect(result).toMatchObject({
-                acceptance: 'rejected',
-                application: 'not-applied',
-                reason: expect.stringMatching(/stretched-clip-unsupported/),
-            });
-        });
-
         it('refuses a smoothed write with smoothed-write-unsupported', async () => {
             const backend = createNativeOfflineGraphBackend({
                 sampleRate: SAMPLE_RATE,
