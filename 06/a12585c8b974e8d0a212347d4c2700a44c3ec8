@@ -1,0 +1,20 @@
+src/modules/AiRuntime/useCases/__tests__/assertCanonicalLlmActionStrategies.spec.ts
+  s_a40848e8f8cca9::t_6aaf58692f4ea9 5-6,9-10,12-14,16,20-23
+  s_a40848e8f8cca9::t_d14b65c2a57ce4 15,17,19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "06a12585c8b974e8d0a212347d4c2700a44c3ec8",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
