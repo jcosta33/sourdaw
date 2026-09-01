@@ -1,7 +1,6 @@
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { captureClipPitchAnalysis } from '#/modules/Knead/useCases';
-import { tempoMapStore, transportStore } from '#/modules/Transport/stores';
-import { resolveTempoAtBeat } from '#/modules/Transport/useCases';
+import { readTempoAtBeat } from '#/modules/Transport/stores';
 import { createHandler } from '#/utils/createHandler';
 
 import { reverseClip } from '../../useCases/clipEditing/reverseClip';
@@ -34,11 +33,7 @@ function resolveRemappedAudioOffsetBeats(clip: {
     if (!buffer) {
         return undefined;
     }
-    const clipTempo = resolveTempoAtBeat({
-        changes: tempoMapStore.value?.changes ?? [],
-        beat: clip.startBeat,
-        defaultTempo: transportStore.value?.tempo ?? 120,
-    });
+    const clipTempo = readTempoAtBeat({ beat: clip.startBeat });
     return reversedClipAudioOffsetBeats({
         audioOffsetBeats: clip.audioOffsetBeats ?? 0,
         clipLengthBeats: clip.endBeat - clip.startBeat,

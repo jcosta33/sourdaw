@@ -1,7 +1,6 @@
 import { cacheAudioBuffer, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { clearClipPitchAnalysis } from '#/modules/Knead/useCases';
-import { tempoMapStore, transportStore } from '#/modules/Transport/stores';
-import { resolveTempoAtBeat } from '#/modules/Transport/useCases';
+import { readTempoAtBeat } from '#/modules/Transport/stores';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
@@ -47,11 +46,7 @@ export function reverseClip(clipId: string, reversedBufferId?: string): boolean 
     }
 
     const newId = reversedBufferId ?? `reversed-${clip.audioBufferId}-${Date.now()}`;
-    const clipTempo = resolveTempoAtBeat({
-        changes: tempoMapStore.value?.changes ?? [],
-        beat: clip.startBeat,
-        defaultTempo: transportStore.value?.tempo ?? 120,
-    });
+    const clipTempo = readTempoAtBeat({ beat: clip.startBeat });
     const didWrite = updateClip(target.clipId, (candidate) => {
         cacheAudioBuffer({ buffer: reversed, bufferId: newId });
         const remappedAudioOffsetBeats = reversedClipAudioOffsetBeats({

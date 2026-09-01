@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
     resolveEligibleClipWriteTarget: vi.fn(),
     transportTempo: 60,
     tempoMapChanges: [] as { beat: number; tempo: number; curve: 'instant' }[],
-    resolveTempoAtBeat: vi.fn(
+    readTempoAtBeat: vi.fn(
         ({
             changes,
             defaultTempo,
@@ -55,10 +55,6 @@ vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
     resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
 }));
 
-vi.mock('#/modules/Transport/useCases', () => ({
-    resolveTempoAtBeat: mocks.resolveTempoAtBeat,
-}));
-
 vi.mock('#/modules/Transport/stores', () => ({
     transportStore: {
         get value() {
@@ -70,6 +66,12 @@ vi.mock('#/modules/Transport/stores', () => ({
             return { changes: mocks.tempoMapChanges };
         },
     },
+    readTempoAtBeat: ({ beat }: { beat: number }) =>
+        mocks.readTempoAtBeat({
+            changes: mocks.tempoMapChanges,
+            beat,
+            defaultTempo: mocks.transportTempo,
+        }),
 }));
 
 describe('reverseClip', () => {
@@ -84,7 +86,7 @@ describe('reverseClip', () => {
         });
         mocks.transportTempo = 60;
         mocks.tempoMapChanges = [];
-        mocks.resolveTempoAtBeat.mockImplementation(
+        mocks.readTempoAtBeat.mockImplementation(
             ({
                 changes,
                 defaultTempo,
@@ -579,7 +581,7 @@ describe('reverseClip', () => {
 
         reverseClip('c1');
 
-        expect(mocks.resolveTempoAtBeat).toHaveBeenCalledWith(expect.objectContaining({ beat: 0, defaultTempo: 60 }));
+        expect(mocks.readTempoAtBeat).toHaveBeenCalledWith(expect.objectContaining({ beat: 0, defaultTempo: 60 }));
         expect(publishedClip?.audioOffsetBeats).toBe(6);
     });
 
