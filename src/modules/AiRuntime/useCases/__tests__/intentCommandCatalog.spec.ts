@@ -188,4 +188,34 @@ describe('intent command catalog', () => {
             ],
         });
     });
+
+    it('ranks destructive marker intent ahead of unrelated marker commands', async () => {
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'intent-command-catalog-delete-marker',
+            terminalToolNames: new Set(['command.batch.propose']),
+            requestTurn: vi
+                .fn()
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'delete-marker-index',
+                            name: 'agent.catalog.discover',
+                            arguments: { category: 'command-index', intent: 'delete marker', page: { limit: 1 } },
+                        },
+                    ],
+                })
+                .mockResolvedValueOnce({ status: 'complete', toolCalls: [] }),
+        });
+
+        expect(result).toMatchObject({
+            receipts: [
+                {
+                    callId: 'delete-marker-index',
+                    status: 'success',
+                    data: { items: [{ name: 'removeMarker' }] },
+                },
+            ],
+        });
+    });
 });

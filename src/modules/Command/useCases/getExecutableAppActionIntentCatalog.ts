@@ -4,30 +4,29 @@ const MAX_CATALOG_PAGE_SIZE = 8;
 const MAX_INTENT_LENGTH = 512;
 const MAX_CURSOR_LENGTH = 2048;
 const CURSOR_PATTERN = /^[A-Za-z0-9_-]+$/;
-const STOP_WORDS = new Set([
+const GRAMMATICAL_QUERY_STOP_WORDS = new Set([
     'a',
     'an',
     'and',
     'at',
     'by',
-    'create',
-    'delete',
-    'existing',
     'for',
     'from',
-    'immediately',
     'in',
     'into',
-    'new',
     'of',
     'on',
-    'one',
     'or',
-    'remove',
-    'set',
     'the',
     'to',
     'with',
+]);
+const SEMANTIC_CATEGORY_NOISE_WORDS = new Set([
+    ...GRAMMATICAL_QUERY_STOP_WORDS,
+    'existing',
+    'immediately',
+    'new',
+    'one',
 ]);
 
 type IntentCatalogPage = { cursor?: string; limit?: number };
@@ -63,7 +62,7 @@ function semanticCategories(input: {
         ...input.intentPhrases.flatMap(words),
         ...input.targetCapabilities.flatMap(words),
     ];
-    return ['operation', ...new Set(candidates.filter((word) => !STOP_WORDS.has(word)))].slice(0, 8);
+    return ['operation', ...new Set(candidates.filter((word) => !SEMANTIC_CATEGORY_NOISE_WORDS.has(word)))].slice(0, 8);
 }
 
 function normalizedIntent(value: string | undefined): string {
@@ -73,7 +72,7 @@ function normalizedIntent(value: string | undefined): string {
     if (value.length === 0 || value.length > MAX_INTENT_LENGTH) {
         throw new Error('Command catalog intent does not match the strict catalog contract.');
     }
-    const terms = words(value).filter((word) => !STOP_WORDS.has(word));
+    const terms = words(value).filter((word) => !GRAMMATICAL_QUERY_STOP_WORDS.has(word));
     if (terms.length === 0) {
         throw new Error('Command catalog intent does not match the strict catalog contract.');
     }
