@@ -87,10 +87,13 @@ type GroundToolCallInput = {
 };
 
 type PromptClause = {
-    end: number;
     masked: string;
-    start: number;
     text: string;
+};
+
+type PromptClauseSpan = PromptClause & {
+    end: number;
+    start: number;
 };
 
 type GroundingCatalog = ReturnType<typeof getExecutableAppActionGroundingCatalog>;
@@ -793,8 +796,8 @@ function hasInvalidNamedClipFadeField(prompt: string): boolean {
     return false;
 }
 
-function getPromptClauses(prompt: string, maskedPrompt: string): PromptClause[] {
-    const clauses: PromptClause[] = [];
+function getPromptClauses(prompt: string, maskedPrompt: string): PromptClauseSpan[] {
+    const clauses: PromptClauseSpan[] = [];
     const separatorPattern = /\s+(?:and then|then|and|but)\s+|[;,\n]+|\.(?!\d)/giu;
     let start = 0;
     for (const match of maskedPrompt.matchAll(separatorPattern)) {
