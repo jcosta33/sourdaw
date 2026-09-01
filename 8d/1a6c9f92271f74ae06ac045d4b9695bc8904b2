@@ -1,0 +1,27 @@
+vercel.json
+  s_bbdfb911119c4f::t_2f4b146018baa1 22
+scripts/__tests__/vercelContentSecurityPolicy.spec.ts
+  s_bbdfb911119c4f::t_b11d7c5987e07a 11-14
+  s_bbdfb911119c4f::t_4083388f2c9a60 61-64,66-68
+  s_bbdfb911119c4f::t_d4d551e4f301d8 119-122,126-131
+  s_bbdfb911119c4f::t_6f9373953e93fb 146-147,158-163,166,173-180
+  s_bbdfb911119c4f::t_15b690e1099d8b 60,65,69
+  s_bbdfb911119c4f::t_b8df2e17431b79 15-26
+  s_bbdfb911119c4f::t_6b0a8bbe191cf4 181
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "8d1a6c9f92271f74ae06ac045d4b9695bc8904b2",
+  "prompts": {},
+  "sessions": {
+    "s_bbdfb911119c4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fa21d5-2a8a-4f80-98ab-b72059373843",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
