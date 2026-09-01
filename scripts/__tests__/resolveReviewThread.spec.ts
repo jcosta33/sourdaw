@@ -5669,6 +5669,7 @@ describe('review thread resolution', () => {
             reviewId,
             reviewCommitOid: head,
             body: resolutionReviewSummary(pullRequestId, threadId, head),
+            marker: immutableEnvelopeSnapshot(),
         };
         const { port, calls } = fakePort({
             isResolved: true,
@@ -5692,9 +5693,11 @@ describe('review thread resolution', () => {
                     retainedOwnerOid = readLockOid(repository, 42);
                     return recoverReviewResolutionLockOwnerState(42, owner, port);
                 })
-            ).toThrow(/non-reusable pending author review/i);
+            ).toThrow(/unreconciled in-flight updateReviewBody mutation/i);
             expect(
-                calls.filter((call) => call.startsWith('deleteReview:') || call.startsWith('updateReview:'))
+                calls.filter((call) =>
+                    /^(createReview|reply:|updateReview|delete:|deleteReview|submit|resolve|log:)/.test(call)
+                )
             ).toEqual([]);
             expect(retainedOwnerOid).toEqual(expect.any(String));
             expect(readLockOid(repository, 42)).toBe(retainedOwnerOid);
@@ -5704,7 +5707,7 @@ describe('review thread resolution', () => {
         }
     });
 
-    it('retains the exact recovery owner when the fourth terminal inspection finds an unrelated pending author review', () => {
+    it('retains the exact recovery owner when the terminal inspection finds an unrelated pending author review', () => {
         const repository = createTemporaryGitRepository();
         const { port: basePort, calls } = fakePort({
             isResolved: true,
@@ -5720,7 +5723,7 @@ describe('review thread resolution', () => {
             inspect: (number, currentThreadId) => {
                 const inspection = basePort.inspect(number, currentThreadId);
                 inspections += 1;
-                if (inspections !== 4) {
+                if (inspections !== 3) {
                     return inspection;
                 }
                 return {
@@ -5761,6 +5764,7 @@ describe('review thread resolution', () => {
                     return recoverReviewResolutionLockOwnerState(42, owner, port);
                 })
             ).toThrow(/non-reusable pending author review/i);
+            expect(inspections).toBe(3);
             expect(
                 calls.filter((call) =>
                     /^(createReview|reply:|updateReview|delete:|deleteReview|submit|resolve|log:)/.test(call)
@@ -5768,6 +5772,7 @@ describe('review thread resolution', () => {
             ).toEqual([]);
             expect(retainedOwnerOid).toEqual(expect.any(String));
             expect(readLockOid(repository, 42)).toBe(retainedOwnerOid);
+            expect(requireLockOwner(repository, 42)).toMatchObject({ threadId, head, mutation });
         } finally {
             rmSync(repository, { recursive: true, force: true });
         }
@@ -7181,9 +7186,10 @@ describe('review thread resolution', () => {
     });
 
     it.each([
-        ['a target without an immutable envelope', { target: immutableEnvelopeSnapshot() }],
+        ['a target without an immutable envelope', replyId, { target: immutableEnvelopeSnapshot() }],
         [
             'a target whose marker ID differs from replyId',
+            replyId,
             {
                 immutableEnvelope: immutableEnvelopeSnapshot(),
                 target: immutableEnvelopeSnapshot({ markerId: 'PRRC_different_target' }),
@@ -7191,44 +7197,65 @@ describe('review thread resolution', () => {
         ],
         [
             'a malformed immutable marker snapshot',
+            replyId,
             { immutableEnvelope: immutableEnvelopeSnapshot({ markerFullDatabaseId: 'not-a-decimal-id' }) },
         ],
         [
             'identical immutable survivor and delete target snapshots',
+            replyId,
             { immutableEnvelope: immutableEnvelopeSnapshot(), target: immutableEnvelopeSnapshot() },
         ],
-    ] as const)('retains an invalid delete journal with %s before recovery', (_label, invalidJournal) => {
-        const repository = createTemporaryGitRepository();
-        const { calls } = fakePort({ existingReplyCount: 2, existingReplyReviewState: 'COMMENTED' });
-        try {
-            const ownerOid = writeLockOwnerBlob(repository, 999999, head, {
-                phase: 'deleteReply',
-                epoch: 1,
-                replyId,
-                ...invalidJournal,
-            });
-            updateLock(repository, 42, ownerOid);
-            let reconciled = false;
+        [
+            'a target with the immutable marker node ID but a different decimal ID',
+            replyId,
+            {
+                immutableEnvelope: immutableEnvelopeSnapshot(),
+                target: immutableEnvelopeSnapshot({ markerFullDatabaseId: '9223372036854775809' }),
+            },
+        ],
+        [
+            'a target with a different marker node ID but the immutable decimal ID',
+            'PRRC_different_target',
+            {
+                immutableEnvelope: immutableEnvelopeSnapshot(),
+                target: immutableEnvelopeSnapshot({ markerId: 'PRRC_different_target' }),
+            },
+        ],
+    ] as const)(
+        'retains an invalid delete journal with %s before recovery',
+        (_label, targetReplyId, invalidJournal) => {
+            const repository = createTemporaryGitRepository();
+            const { calls } = fakePort({ existingReplyCount: 2, existingReplyReviewState: 'COMMENTED' });
+            try {
+                const ownerOid = writeLockOwnerBlob(repository, 999999, head, {
+                    phase: 'deleteReply',
+                    epoch: 1,
+                    replyId: targetReplyId,
+                    ...invalidJournal,
+                });
+                updateLock(repository, 42, ownerOid);
+                let reconciled = false;
 
-            expect(() =>
-                recoverPullRequestReviewResolutionLock(
-                    repository,
-                    42,
-                    ownerOid,
-                    () => {
-                        reconciled = true;
-                        return 'unsafe recovery';
-                    },
-                    () => false
-                )
-            ).toThrow(/lock ownership is malformed/i);
-            expect(reconciled).toBe(false);
-            expect(calls).toEqual([]);
-            expect(readLockOid(repository, 42)).toBe(ownerOid);
-        } finally {
-            rmSync(repository, { recursive: true, force: true });
+                expect(() =>
+                    recoverPullRequestReviewResolutionLock(
+                        repository,
+                        42,
+                        ownerOid,
+                        () => {
+                            reconciled = true;
+                            return 'unsafe recovery';
+                        },
+                        () => false
+                    )
+                ).toThrow(/lock ownership is malformed/i);
+                expect(reconciled).toBe(false);
+                expect(calls).toEqual([]);
+                expect(readLockOid(repository, 42)).toBe(ownerOid);
+            } finally {
+                rmSync(repository, { recursive: true, force: true });
+            }
         }
-    });
+    );
 
     it('accepts a distinct same-review immutable delete journal', () => {
         const repository = createTemporaryGitRepository();
