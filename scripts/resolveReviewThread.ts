@@ -2798,6 +2798,18 @@ function parseWindowsProcessStartedAt(value: string): bigint | undefined {
         return undefined;
     }
     const [, year, month, day, hour, minute, second, microseconds, offsetIdentity] = match;
+    if (
+        year === undefined ||
+        month === undefined ||
+        day === undefined ||
+        hour === undefined ||
+        minute === undefined ||
+        second === undefined ||
+        microseconds === undefined ||
+        offsetIdentity === undefined
+    ) {
+        return undefined;
+    }
     const milliseconds = Date.UTC(
         Number(year),
         Number(month) - 1,

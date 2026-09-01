@@ -68,6 +68,16 @@ const trustedGhPath = process.env.SOURDAW_TRUSTED_GH_PATH ?? process.execPath;
 const trustedPsPath = process.env.SOURDAW_TRUSTED_PS_PATH ?? systemPsPath();
 process.env.SOURDAW_TRUSTED_PS_PATH = trustedPsPath;
 const trustedPowerShellPath = process.env.SOURDAW_TRUSTED_POWERSHELL_PATH ?? '/trusted/powershell.exe';
+function createWindowsProcessQueryExecutable(stdout: string): { executable: string; dispose: () => void } {
+    const root = mkdtempSync(join(tmpdir(), 'sourdaw-windows-process-query-'));
+    const executable = join(root, 'powershell.exe');
+    writeFileSync(executable, `#!/bin/sh\nprintf '%s' ${JSON.stringify(stdout)}\n`, { mode: 0o700 });
+    chmodSync(executable, 0o700);
+    return {
+        executable,
+        dispose: () => rmSync(root, { recursive: true, force: true }),
+    };
+}
 type ReviewRecord = {
     id: string;
     body: string;
@@ -2323,10 +2333,6 @@ describe('review thread resolution', () => {
                 calls.push('resolve:repositoryName');
                 return REQUIRED_REPOSITORY;
             },
-            gh: () => {
-                calls.push('resolve:gh');
-                return () => '';
-            },
             createPort: () => {
                 calls.push('resolve:createPort');
                 return fake.port;
@@ -3162,16 +3168,18 @@ describe('review thread resolution', () => {
         ['PowerShell UTC identity', '2026-08-30T12:34:56.0000000Z'],
         ['PowerShell-compatible offset identity', '2026-08-30T12:34:56.0000000+02:30'],
     ] as const)('accepts the %s Windows creation identity contract', (_label, creationDate) => {
-        expect(
-            currentWindowsProcessTreeFence(4321, { SOURDAW_TRUSTED_POWERSHELL_PATH: trustedPowerShellPath }, (() => ({
-                pid: 0,
-                output: [],
-                stdout: JSON.stringify({ ProcessId: 4321, ParentProcessId: 17, CreationDate: creationDate }),
-                stderr: '',
-                status: 0,
-                signal: null,
-            })) as typeof spawnSync)
-        ).toMatchObject({ rootPid: 4321, rootStartedAt: creationDate });
+        const fixture = createWindowsProcessQueryExecutable(
+            JSON.stringify({ ProcessId: 4321, ParentProcessId: 17, CreationDate: creationDate })
+        );
+        try {
+            expect(
+                currentWindowsProcessTreeFence(4321, {
+                    SOURDAW_TRUSTED_POWERSHELL_PATH: fixture.executable,
+                })
+            ).toMatchObject({ rootPid: 4321, rootStartedAt: creationDate });
+        } finally {
+            fixture.dispose();
+        }
     });
 
     it.each([
@@ -3204,16 +3212,16 @@ describe('review thread resolution', () => {
             JSON.stringify({ ProcessId: 4321, ParentProcessId: 17, CreationDate: '2026-08-30T12:34:56.0000000+24:00' }),
         ],
     ] as const)('rejects %s while building a Windows process-tree fence', (_label, stdout) => {
-        expect(() =>
-            currentWindowsProcessTreeFence(4321, { SOURDAW_TRUSTED_POWERSHELL_PATH: trustedPowerShellPath }, (() => ({
-                pid: 0,
-                output: [],
-                stdout,
-                stderr: '',
-                status: 0,
-                signal: null,
-            })) as typeof spawnSync)
-        ).toThrow(/could not determine the current Windows process identity/i);
+        const fixture = createWindowsProcessQueryExecutable(stdout);
+        try {
+            expect(() =>
+                currentWindowsProcessTreeFence(4321, {
+                    SOURDAW_TRUSTED_POWERSHELL_PATH: fixture.executable,
+                })
+            ).toThrow(/could not determine the current Windows process identity/i);
+        } finally {
+            fixture.dispose();
+        }
     });
 
     it('uses the exact trusted PowerShell path for full Windows process-tree liveness queries', () => {
@@ -6551,7 +6559,9 @@ describe('review thread resolution', () => {
                 expect(logs).toEqual([]);
                 expect(calls).toEqual(['inspect:1']);
                 expect(readLockOid(repository, 42)).toBeDefined();
-                let expectedPhase = mutation.phase;
+                let expectedPhase:
+                    'createPendingReview' | 'replyDone' | 'createPendingReviewSettlement' | 'replyDoneSettlement' =
+                    mutation.phase;
                 if (observedHead === head) {
                     expectedPhase =
                         mutation.phase === 'createPendingReview'
