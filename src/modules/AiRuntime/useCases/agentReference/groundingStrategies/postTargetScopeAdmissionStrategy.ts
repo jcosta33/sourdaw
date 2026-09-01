@@ -2,48 +2,17 @@ import { getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCas
 
 import { type ProjectContext } from '../../../models/ProjectContext';
 
+import {
+    createPostTargetScopeAdmissionStrategyRegistry,
+    type PostTargetScopeActionName,
+    type PostTargetScopeAdmissionInput,
+    type PostTargetScopeAdmissionResult,
+    type PostTargetScopeAdmissionStrategy,
+    type PostTargetScopeAdmissionStrategyDefinition,
+} from './createPostTargetScopeAdmissionStrategyRegistry';
 import { resolveAgentReference } from '../resolveAgentReference';
 
-export type PostTargetScopeActionName =
-    | 'removeTrack'
-    | 'removeClip'
-    | 'clearSolos'
-    | 'removeFromVca'
-    | 'quantizeNotes'
-    | 'transposeNotes'
-    | 'invertNotes'
-    | 'retrogradeNotes'
-    | 'quantizeNoteLengths'
-    | 'scaleAllVelocities'
-    | 'setAllVelocities';
-
-type PostTargetActionScope = {
-    matchedIntentPhrase: string;
-    text: string;
-};
-
-export type PostTargetScopeAdmissionInput = {
-    actionName: string;
-    actionScope: PostTargetActionScope;
-    bulkMutedEmptyTrackDeletionTargetIds: readonly string[] | null;
-    context: ProjectContext;
-    groundedArguments: Readonly<Record<string, unknown>>;
-    plannedActionNames: readonly string[];
-    prompt: string;
-};
-
-export type PostTargetScopeAdmissionResult = string | null;
-
-export type PostTargetScopeAdmissionStrategy<Name extends PostTargetScopeActionName> = (
-    input: Omit<PostTargetScopeAdmissionInput, 'actionName'> & { actionName: Name }
-) => PostTargetScopeAdmissionResult;
-
-export type PostTargetScopeAdmissionStrategyDefinition<Name extends PostTargetScopeActionName> = {
-    [StrategyName in Name]: {
-        name: StrategyName;
-        transform: PostTargetScopeAdmissionStrategy<StrategyName>;
-    };
-}[Name];
+type PostTargetActionScope = PostTargetScopeAdmissionInput['actionScope'];
 
 function normalizePromptText(value: string): string {
     return value
@@ -282,20 +251,7 @@ const midiWholeClipStrategy: PostTargetScopeAdmissionStrategy<
     return null;
 };
 
-export function createPostTargetScopeAdmissionStrategyRegistry<Name extends PostTargetScopeActionName>(
-    definitions: readonly PostTargetScopeAdmissionStrategyDefinition<Name>[]
-): ReadonlyMap<Name, PostTargetScopeAdmissionStrategy<Name>> {
-    const registry = new Map<Name, PostTargetScopeAdmissionStrategy<Name>>();
-    for (const definition of definitions) {
-        if (registry.has(definition.name)) {
-            throw new Error(`Duplicate post-target scope admission strategy: ${definition.name}`);
-        }
-        registry.set(definition.name, definition.transform);
-    }
-    return registry;
-}
-
-const postTargetScopeAdmissionStrategyDefinitions = [
+export const postTargetScopeAdmissionStrategyDefinitions = [
     {
         name: 'removeTrack',
         transform: ({ actionScope, bulkMutedEmptyTrackDeletionTargetIds, context, groundedArguments }) => {
@@ -336,23 +292,11 @@ const postTargetScopeAdmissionStrategyDefinitions = [
     { name: 'setAllVelocities', transform: midiWholeClipStrategy },
 ] satisfies readonly PostTargetScopeAdmissionStrategyDefinition<PostTargetScopeActionName>[];
 
-export const postTargetScopeAdmissionStrategyRegistry =
+const postTargetScopeAdmissionStrategyRegistry =
     createPostTargetScopeAdmissionStrategyRegistry<PostTargetScopeActionName>(
-        postTargetScopeAdmissionStrategyDefinitions
+        postTargetScopeAdmissionStrategyDefinitions,
+        getExecutableAppActionGroundingCatalog()
     );
-
-export function assertPostTargetScopeAdmissionStrategiesMatchGroundingCatalog(
-    catalog: readonly { actionType: string }[]
-): void {
-    const catalogActionNames = new Set(catalog.map((entry) => entry.actionType));
-    for (const actionName of postTargetScopeAdmissionStrategyRegistry.keys()) {
-        if (!catalogActionNames.has(actionName)) {
-            throw new Error(`Post-target scope admission strategy is not a canonical executable action: ${actionName}`);
-        }
-    }
-}
-
-assertPostTargetScopeAdmissionStrategiesMatchGroundingCatalog(getExecutableAppActionGroundingCatalog());
 
 function isPostTargetScopeActionName(actionName: string): actionName is PostTargetScopeActionName {
     return (

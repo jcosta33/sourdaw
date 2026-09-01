@@ -1,12 +1,15 @@
-import { getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCases';
 import { describe, expect, it } from 'vitest';
+
+import { getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCases';
 
 import { type ProjectContext } from '../../../../models/ProjectContext';
 import {
-    assertPostTargetScopeAdmissionStrategiesMatchGroundingCatalog,
     createPostTargetScopeAdmissionStrategyRegistry,
+    type PostTargetScopeActionName,
+} from '../createPostTargetScopeAdmissionStrategyRegistry';
+import {
     groundPostTargetScopeAdmission,
-    postTargetScopeAdmissionStrategyRegistry,
+    postTargetScopeAdmissionStrategyDefinitions,
 } from '../postTargetScopeAdmissionStrategy';
 
 const context: ProjectContext = {
@@ -34,28 +37,31 @@ const context: ProjectContext = {
 describe('post-target scope admission strategies', () => {
     it('rejects duplicate registrations', () => {
         expect(() =>
-            createPostTargetScopeAdmissionStrategyRegistry([
-                { name: 'removeTrack', transform: () => null },
-                { name: 'removeTrack', transform: () => null },
-            ])
+            createPostTargetScopeAdmissionStrategyRegistry(
+                [
+                    { name: 'removeTrack', transform: () => null },
+                    { name: 'removeTrack', transform: () => null },
+                ],
+                getExecutableAppActionGroundingCatalog()
+            )
         ).toThrow('Duplicate post-target scope admission strategy: removeTrack');
     });
 
     it('proves every registered strategy is in the canonical command grounding catalog', () => {
         const catalog = getExecutableAppActionGroundingCatalog();
 
-        expect(() => assertPostTargetScopeAdmissionStrategiesMatchGroundingCatalog(catalog)).not.toThrow();
-        expect(
-            [...postTargetScopeAdmissionStrategyRegistry.keys()].every((name) =>
-                catalog.some((entry) => entry.actionType === name)
+        expect(() =>
+            createPostTargetScopeAdmissionStrategyRegistry<PostTargetScopeActionName>(
+                postTargetScopeAdmissionStrategyDefinitions,
+                catalog
             )
-        ).toBe(true);
+        ).not.toThrow();
     });
 
     it('rejects a registry strategy missing from the canonical command grounding catalog', () => {
         expect(() =>
-            assertPostTargetScopeAdmissionStrategiesMatchGroundingCatalog([{ actionType: 'removeTrack' }])
-        ).toThrow('Post-target scope admission strategy is not a canonical executable action: removeClip');
+            createPostTargetScopeAdmissionStrategyRegistry([{ name: 'removeTrack', transform: () => null }], [])
+        ).toThrow('Post-target scope admission strategy is not a canonical executable action: removeTrack');
     });
 
     it('dispatches registered scope admissions and leaves unregistered actions unchanged', () => {
