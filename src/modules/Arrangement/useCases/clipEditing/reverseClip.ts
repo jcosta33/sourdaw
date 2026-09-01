@@ -60,6 +60,8 @@ export function reverseClip(clipId: string, reversedBufferId?: string): boolean 
             bufferLength: buffer.length,
             sampleRate: buffer.sampleRate,
             tempo: clipTempo,
+            stretchMode: candidate.stretchMode,
+            stretchRatio: candidate.stretchRatio,
         });
         const reversedClip = {
             ...candidate,

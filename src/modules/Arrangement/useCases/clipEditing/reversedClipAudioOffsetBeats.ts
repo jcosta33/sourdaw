@@ -1,7 +1,12 @@
+import { boundStretchRatio } from '#/utils/stretchRatioBound';
+
 /**
- * After the whole source is mirrored, `[offset, offset + length)` lives at
- * `[D - offset - length, D - offset)`. Point `audioOffsetBeats` there so a
- * trimmed, split, or slipped clip still plays its own window backwards.
+ * After the whole source is mirrored, `[offset, offset + consumed)` lives at
+ * `[D - offset - consumed, D - offset)`. Offset is unstretched source beats;
+ * `consumed` is clip length, or `clipLengthBeats * stretchRatio` when stretch
+ * is on — the window the scheduler actually reads. Point `audioOffsetBeats`
+ * there so a trimmed, split, slipped, or stretched clip still plays its own
+ * window backwards.
  */
 export function reversedClipAudioOffsetBeats(input: {
     audioOffsetBeats: number;
@@ -9,6 +14,8 @@ export function reversedClipAudioOffsetBeats(input: {
     bufferLength: number;
     sampleRate: number;
     tempo: number;
+    stretchMode?: string;
+    stretchRatio?: number;
 }): number | undefined {
     const { audioOffsetBeats, clipLengthBeats, bufferLength, sampleRate, tempo } = input;
     if (!Number.isFinite(audioOffsetBeats) || !Number.isFinite(clipLengthBeats)) {
@@ -28,5 +35,12 @@ export function reversedClipAudioOffsetBeats(input: {
     if (!Number.isFinite(sourceLengthBeats)) {
         return undefined;
     }
-    return sourceLengthBeats - audioOffsetBeats - clipLengthBeats;
+    return sourceLengthBeats - audioOffsetBeats - sourceConsumedBeats(input);
+}
+
+function sourceConsumedBeats(input: { clipLengthBeats: number; stretchMode?: string; stretchRatio?: number }): number {
+    if (!input.stretchMode || input.stretchMode === 'off') {
+        return input.clipLengthBeats;
+    }
+    return input.clipLengthBeats * boundStretchRatio(input.stretchRatio ?? 1);
 }

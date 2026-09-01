@@ -141,6 +141,79 @@ describe('handleReverseClip', () => {
         });
     });
 
+    it('restores audioOffsetBeats 0 when the clip never stored the field', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        {
+                            id: 'c1',
+                            type: 'audio',
+                            name: 'Verse',
+                            audioBufferId: 'buffer-1',
+                            startBeat: 0,
+                            endBeat: 2,
+                            fadeInBeats: 0.25,
+                            fadeOutBeats: 1.5,
+                        },
+                    ],
+                },
+            ],
+        });
+
+        const description = handleReverseClip.describe({
+            type: 'reverseClip',
+            payload: { clipId: 'c1', reversedBufferId: 'reversed-command-1' },
+        });
+        const inverse = description.inverseAction;
+        if (!inverse) {
+            throw new Error('expected inverseAction');
+        }
+        expect(inverse).toMatchObject({
+            type: 'restoreReversedClip',
+            payload: { audioOffsetBeats: 0 },
+        });
+
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        {
+                            id: 'c1',
+                            type: 'audio',
+                            name: 'Verse (reversed)',
+                            audioBufferId: 'reversed-command-1',
+                            startBeat: 0,
+                            endBeat: 2,
+                            audioOffsetBeats: 2,
+                            fadeInBeats: 1.5,
+                            fadeOutBeats: 0.25,
+                        },
+                    ],
+                },
+            ],
+        });
+
+        handleRestoreReversedClip.execute(inverse);
+
+        const updater = mocks.updateClipInStore.mock.calls[0]?.[1];
+        expect(updater).toBeTypeOf('function');
+        const restored = updater({
+            id: 'c1',
+            type: 'audio',
+            name: 'Verse (reversed)',
+            audioBufferId: 'reversed-command-1',
+            startBeat: 0,
+            endBeat: 2,
+            audioOffsetBeats: 2,
+            fadeInBeats: 1.5,
+            fadeOutBeats: 0.25,
+        });
+        expect(restored).toMatchObject({ audioOffsetBeats: 0 });
+    });
+
     it('restores the original audioOffsetBeats when undo applies the inverse restore', () => {
         const description = handleReverseClip.describe({
             type: 'reverseClip',
@@ -193,6 +266,45 @@ describe('handleReverseClip', () => {
             audioOffsetBeats: 1,
             fadeInBeats: 0.25,
             fadeOutBeats: 1.5,
+        });
+    });
+
+    it('remaps redo audioOffsetBeats through the stretched source window', () => {
+        mocks.getCachedAudioBuffer.mockReturnValue({
+            length: 64,
+            sampleRate: 8,
+        });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        {
+                            id: 'c1',
+                            type: 'audio',
+                            name: 'Verse',
+                            audioBufferId: 'buffer-1',
+                            startBeat: 0,
+                            endBeat: 2,
+                            audioOffsetBeats: 0,
+                            stretchMode: 'timestretch',
+                            stretchRatio: 2,
+                            fadeInBeats: 0.25,
+                            fadeOutBeats: 1.5,
+                        },
+                    ],
+                },
+            ],
+        });
+
+        const description = handleReverseClip.describe({
+            type: 'reverseClip',
+            payload: { clipId: 'c1', reversedBufferId: 'reversed-command-1' },
+        });
+
+        expect(description.redoAction).toMatchObject({
+            type: 'restoreReversedClip',
+            payload: { audioOffsetBeats: 4 },
         });
     });
 

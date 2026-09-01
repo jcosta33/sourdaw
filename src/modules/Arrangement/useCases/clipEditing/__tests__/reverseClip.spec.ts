@@ -406,10 +406,14 @@ describe('reverseClip', () => {
         expect(reversedData[playbackStartSample]).toBe(originalData[originalWindowLastSample]);
     });
 
-    it('remaps audioOffsetBeats using the tempo map at the clip start beat', () => {
+    it('remaps a stretched clip window by source beats consumed at the stretch ratio', () => {
+        // 60 BPM → 1 s/beat. sampleRate 8 → 8 samples/beat. 64-sample buffer = 8 beats.
         const sampleRate = 8;
-        const sourceSamples = 32;
+        const sourceSamples = 64;
         const originalData = new Float32Array(sourceSamples);
+        for (let index = 0; index < sourceSamples; index++) {
+            originalData[index] = index;
+        }
         const reversedData = new Float32Array(sourceSamples);
         const mockClip = {
             id: 'c1',
@@ -417,12 +421,12 @@ describe('reverseClip', () => {
             audioBufferId: 'buf1',
             name: 'Sample',
             startBeat: 0,
-            endBeat: 1,
-            audioOffsetBeats: 1,
+            endBeat: 2,
+            audioOffsetBeats: 0,
+            stretchMode: 'timestretch' as const,
+            stretchRatio: 2,
         };
         let publishedClip: typeof mockClip | undefined;
-        mocks.transportTempo = 120;
-        mocks.tempoMapChanges = [{ beat: 0, tempo: 60, curve: 'instant' as const }];
         mocks.getTrackState.mockReturnValue({
             tracks: [{ id: 'track-1', clips: [mockClip] }],
         });
@@ -446,8 +450,137 @@ describe('reverseClip', () => {
 
         reverseClip('c1');
 
-        expect(mocks.resolveTempoAtBeat).toHaveBeenCalledWith(expect.objectContaining({ beat: 0, defaultTempo: 120 }));
-        expect(publishedClip?.audioOffsetBeats).toBe(2);
+        expect(reversedData[0]).toBe(63);
+        expect(publishedClip?.audioOffsetBeats).toBe(4);
+    });
+
+    it('uses unstretched clip length when stretchMode is off', () => {
+        const sampleRate = 8;
+        const sourceSamples = 64;
+        const originalData = new Float32Array(sourceSamples);
+        const reversedData = new Float32Array(sourceSamples);
+        const mockClip = {
+            id: 'c1',
+            type: 'audio',
+            audioBufferId: 'buf1',
+            name: 'Sample',
+            startBeat: 0,
+            endBeat: 2,
+            audioOffsetBeats: 0,
+            stretchMode: 'off' as const,
+            stretchRatio: 2,
+        };
+        let publishedClip: typeof mockClip | undefined;
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 'track-1', clips: [mockClip] }],
+        });
+        mocks.updateClip.mockImplementation(
+            (_clipId: string, updater: (candidate: typeof mockClip) => typeof mockClip) => {
+                publishedClip = updater(mockClip);
+                return true;
+            }
+        );
+        mocks.getCachedAudioBuffer.mockReturnValue({
+            numberOfChannels: 1,
+            length: sourceSamples,
+            sampleRate,
+            getChannelData: vi.fn(() => originalData),
+        });
+        mockCtx.createBuffer.mockReturnValue({
+            numberOfChannels: 1,
+            length: sourceSamples,
+            getChannelData: vi.fn(() => reversedData),
+        });
+
+        reverseClip('c1');
+
+        expect(publishedClip?.audioOffsetBeats).toBe(6);
+    });
+
+    it('uses unstretched clip length when stretchMode is absent', () => {
+        const sampleRate = 8;
+        const sourceSamples = 64;
+        const originalData = new Float32Array(sourceSamples);
+        const reversedData = new Float32Array(sourceSamples);
+        const mockClip = {
+            id: 'c1',
+            type: 'audio',
+            audioBufferId: 'buf1',
+            name: 'Sample',
+            startBeat: 0,
+            endBeat: 2,
+            audioOffsetBeats: 0,
+            stretchRatio: 2,
+        };
+        let publishedClip: typeof mockClip | undefined;
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 'track-1', clips: [mockClip] }],
+        });
+        mocks.updateClip.mockImplementation(
+            (_clipId: string, updater: (candidate: typeof mockClip) => typeof mockClip) => {
+                publishedClip = updater(mockClip);
+                return true;
+            }
+        );
+        mocks.getCachedAudioBuffer.mockReturnValue({
+            numberOfChannels: 1,
+            length: sourceSamples,
+            sampleRate,
+            getChannelData: vi.fn(() => originalData),
+        });
+        mockCtx.createBuffer.mockReturnValue({
+            numberOfChannels: 1,
+            length: sourceSamples,
+            getChannelData: vi.fn(() => reversedData),
+        });
+
+        reverseClip('c1');
+
+        expect(publishedClip?.audioOffsetBeats).toBe(6);
+    });
+
+    it('remaps audioOffsetBeats using the tempo map at the clip start beat', () => {
+        const sampleRate = 8;
+        const sourceSamples = 32;
+        const originalData = new Float32Array(sourceSamples);
+        const reversedData = new Float32Array(sourceSamples);
+        const mockClip = {
+            id: 'c1',
+            type: 'audio',
+            audioBufferId: 'buf1',
+            name: 'Sample',
+            startBeat: 0,
+            endBeat: 1,
+            audioOffsetBeats: 1,
+        };
+        let publishedClip: typeof mockClip | undefined;
+        mocks.transportTempo = 60;
+        mocks.tempoMapChanges = [{ beat: 0, tempo: 120, curve: 'instant' as const }];
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 'track-1', clips: [mockClip] }],
+        });
+        mocks.updateClip.mockImplementation(
+            (_clipId: string, updater: (candidate: typeof mockClip) => typeof mockClip) => {
+                publishedClip = updater(mockClip);
+                return true;
+            }
+        );
+        mocks.getCachedAudioBuffer.mockReturnValue({
+            numberOfChannels: 1,
+            length: sourceSamples,
+            sampleRate,
+            getChannelData: vi.fn(() => originalData),
+        });
+        mockCtx.createBuffer.mockReturnValue({
+            numberOfChannels: 1,
+            length: sourceSamples,
+            getChannelData: vi.fn(() => reversedData),
+        });
+
+        reverseClip('c1');
+
+        expect(mocks.resolveTempoAtBeat).toHaveBeenCalledWith(expect.objectContaining({ beat: 0, defaultTempo: 60 }));
+        expect(publishedClip?.audioOffsetBeats).toBe(6);
     });
 
     it('clears the clip pitch contour after a successful reverse because the audio changed', () => {

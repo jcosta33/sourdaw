@@ -24,6 +24,8 @@ function resolveRemappedAudioOffsetBeats(clip: {
     startBeat: number;
     endBeat: number;
     audioBufferId?: string;
+    stretchMode?: string;
+    stretchRatio?: number;
 }): number | undefined {
     if (!clip.audioBufferId) {
         return undefined;
@@ -43,6 +45,8 @@ function resolveRemappedAudioOffsetBeats(clip: {
         bufferLength: buffer.length,
         sampleRate: buffer.sampleRate,
         tempo: clipTempo,
+        stretchMode: clip.stretchMode,
+        stretchRatio: clip.stretchRatio,
     });
 }
 
@@ -74,7 +78,7 @@ export const handleReverseClip = createHandler<'reverseClip'>({
                     name: clip.name,
                     fadeInBeats: clip.fadeInBeats,
                     fadeOutBeats: clip.fadeOutBeats,
-                    audioOffsetBeats: clip.audioOffsetBeats,
+                    audioOffsetBeats: clip.audioOffsetBeats ?? 0,
                     ...analysis,
                 },
             },
