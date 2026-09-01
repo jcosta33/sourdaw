@@ -205,6 +205,12 @@ describe('coreAutomationStrategy', () => {
             type: 'addAutomationPoint',
             payload: { laneId, beat: 8, value: 1 },
         });
+        for (const curve of ['linear', 'step', 'exponential', 's-curve', 'stairs', 'smooth', 'bezier'] as const) {
+            expect(bridge({ name: 'addAutomationPoint', arguments: { laneId, beat: 8, value: 0.5, curve } })).toEqual({
+                type: 'addAutomationPoint',
+                payload: { laneId, beat: 8, value: 0.5, curve },
+            });
+        }
         expectRejected(
             'addAutomationPoint',
             { laneId, beat: 8, value: 0.5, curve: 'invalid' },
@@ -243,6 +249,25 @@ describe('coreAutomationStrategy', () => {
             { laneId, enabled: true },
         ]) {
             expectRejected('setAutomationLaneEnabled', argumentsPayload);
+        }
+        const modeCases = [
+            { current: 'off', requested: 'read' },
+            { current: 'read', requested: 'write' },
+            { current: 'read', requested: 'touch' },
+            { current: 'read', requested: 'latch' },
+            { current: 'read', requested: 'off' },
+        ] as const;
+        for (const { current, requested } of modeCases) {
+            const context = {
+                ...projectContext,
+                tracks: [createTrack('track-vocals', current), createTrack('track-drums')],
+            };
+            expect(
+                bridge({ name: 'setAutomationMode', arguments: { trackId: 'track-vocals', mode: requested } }, context)
+            ).toEqual({
+                type: 'setAutomationMode',
+                payload: { trackId: 'track-vocals', mode: requested },
+            });
         }
         for (const argumentsPayload of [
             { trackId: 'missing', mode: 'touch' },
