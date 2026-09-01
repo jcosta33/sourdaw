@@ -67,6 +67,15 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     setTrackSoloGate: mocks.setTrackSoloGate,
     updateDeviceBypass: mocks.updateDeviceBypass,
     updateDeviceParam: mocks.updateDeviceParam,
+    analyzePitchForClip: vi.fn(),
+    applyNoteExpression: vi.fn(),
+    audioEngine: {},
+    createRuntimeGraphTopologyFingerprint: vi.fn(),
+    getCompensationDelay: vi.fn(),
+    getDefaultBendRangeSemitones: vi.fn(),
+    getFactoryDrumKitByIndex: vi.fn(),
+    getLiveEngineSampleRate: vi.fn(),
+    reportBridgeRoundTripFrames: vi.fn(),
 }));
 vi.mock('#/modules/Collaboration/useCases', () => ({
     getAssetTransfer: () => ({

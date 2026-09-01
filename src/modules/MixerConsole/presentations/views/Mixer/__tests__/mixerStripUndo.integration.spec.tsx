@@ -113,6 +113,15 @@ vi.mock('#/modules/Routing/useCases', () => ({
 }));
 vi.mock('#/modules/PluginHost/useCases', () => ({
     activateExternalPlugin: vi.fn(() => Promise.resolve()),
+    beginProjectSessionPluginRetirement: vi.fn(),
+    findSupportedPlugin: vi.fn(),
+    isFaustInstrumentModule: vi.fn(),
+    observeExternalPluginParameterEdits: vi.fn(),
+    readPluginState: vi.fn(),
+    registerFaustDSP: vi.fn(),
+    resetExternalPluginRuntimeForGraphRebuild: vi.fn(),
+    unloadPlugin: vi.fn(),
+    watchPluginStateDirty: vi.fn(),
 }));
 /**
  * The remove/restore handlers publish `track.removed` / `track.added` through
