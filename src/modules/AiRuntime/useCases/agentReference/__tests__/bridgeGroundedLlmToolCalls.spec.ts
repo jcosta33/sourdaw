@@ -3568,6 +3568,108 @@ describe('bridgeGroundedLlmToolCalls', () => {
         ]);
     });
 
+    it('rejects muteTrack when a whitespace-separated kind and name collide with a hyphenated id', () => {
+        const spacedKindNameContext = {
+            ...projectContext,
+            tracks: [
+                createTrack({ id: 'track-guitar', name: 'Bass' }),
+                createTrack({ id: 'track-keys', name: 'Guitar' }),
+                master,
+            ],
+        };
+        const literal = bridge(
+            [{ name: 'muteTrack', arguments: { trackId: 'track-guitar', muted: true } }],
+            'mute track Guitar',
+            spacedKindNameContext
+        );
+        const named = bridge(
+            [{ name: 'muteTrack', arguments: { trackId: 'track-keys', muted: true } }],
+            'mute track Guitar',
+            spacedKindNameContext
+        );
+
+        expect(literal.actions).toEqual([]);
+        expect(named.actions).toEqual([]);
+        expect(literal.rejections).toEqual([
+            {
+                index: 0,
+                name: 'muteTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+        expect(named.rejections).toEqual([
+            {
+                index: 0,
+                name: 'muteTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+    });
+
+    it('rejects a single removeTrack when a hyphenated literal id and a name are split by list punctuation', () => {
+        const punctuationContext = {
+            ...projectContext,
+            tracks: [
+                createTrack({ id: 'track-lead-guitar', name: 'Rhythm' }),
+                createTrack({ id: 'track-keys', name: 'Guitar' }),
+                master,
+            ],
+        };
+        const slashLiteral = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: 'track-lead-guitar' } }],
+            'delete track-lead-guitar / Guitar',
+            punctuationContext
+        );
+        const slashNamed = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: 'track-keys' } }],
+            'delete track-lead-guitar / Guitar',
+            punctuationContext
+        );
+        const commaLiteral = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: 'track-lead-guitar' } }],
+            'delete track-lead-guitar, Guitar',
+            punctuationContext
+        );
+        const commaNamed = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: 'track-keys' } }],
+            'delete track-lead-guitar, Guitar',
+            punctuationContext
+        );
+
+        expect(slashLiteral.actions).toEqual([]);
+        expect(slashNamed.actions).toEqual([]);
+        expect(commaLiteral.actions).toEqual([]);
+        expect(commaNamed.actions).toEqual([]);
+        expect(slashLiteral.rejections).toEqual([
+            {
+                index: 0,
+                name: 'removeTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+        expect(slashNamed.rejections).toEqual([
+            {
+                index: 0,
+                name: 'removeTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+        expect(commaLiteral.rejections).toEqual([
+            {
+                index: 0,
+                name: 'removeTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+        expect(commaNamed.rejections).toEqual([
+            {
+                index: 0,
+                name: 'removeTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+    });
+
     it('grounds time signatures as an explicit paired value', () => {
         const valid = bridge(
             [{ name: 'setTimeSignature', arguments: { numerator: 7, denominator: 8 } }],

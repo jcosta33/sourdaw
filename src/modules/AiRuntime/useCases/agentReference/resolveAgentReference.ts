@@ -79,7 +79,7 @@ function getContiguousReferenceRanges(prompt: string, reference: string): readon
     if (tokens.length === 0) {
         return [];
     }
-    const needle = tokens.map((token) => escapeRegExp(token)).join('[\\s_-]+');
+    const needle = tokens.map((token) => escapeRegExp(token)).join('[-_]+');
     const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${needle}(?![\\p{L}\\p{N}])`, 'giu');
     return [...prompt.matchAll(pattern)].flatMap((match) => {
         if (match.index === undefined) {

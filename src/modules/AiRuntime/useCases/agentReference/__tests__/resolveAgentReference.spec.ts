@@ -53,6 +53,10 @@ function resolveTrack(prompt: string, assertedId: string, project = createProjec
     return resolveAgentReference({ prompt, assertedId, capability: 'track', context: project });
 }
 
+function resolveRemovableTrack(prompt: string, assertedId: string, project = createProjectState()) {
+    return resolveAgentReference({ prompt, assertedId, capability: 'removable-track', context: project });
+}
+
 function createClipProjectState(): ProjectContext {
     const project = createProjectState();
     const vocals = project.tracks[0];
@@ -434,6 +438,48 @@ describe('resolveAgentReference', () => {
         });
     });
 
+    it('does not treat a whitespace-separated kind and name as a hyphenated literal id', () => {
+        const projectState = createProjectState();
+        const firstTrack = projectState.tracks[0];
+        if (!firstTrack) {
+            throw new Error('Expected a track fixture');
+        }
+        const spacedKindNameContext = {
+            ...projectState,
+            tracks: [
+                { ...firstTrack, id: 'track-guitar', name: 'Bass' },
+                { ...firstTrack, id: 'track-keys', name: 'Guitar' },
+            ],
+        };
+        const spacedLeadGuitarContext = {
+            ...projectState,
+            tracks: [
+                { ...firstTrack, id: 'track-lead-guitar', name: 'Rhythm' },
+                { ...firstTrack, id: 'track-keys', name: 'Guitar' },
+                { ...firstTrack, id: 'track-aux', name: 'Lead Guitar' },
+            ],
+        };
+
+        expect(resolveTrack('mute track Guitar', 'track-guitar', spacedKindNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('mute track Guitar', 'track-keys', spacedKindNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(
+            resolveTrack('delete the track Lead Guitar', 'track-lead-guitar', spacedLeadGuitarContext)
+        ).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('delete the track Lead Guitar', 'track-aux', spacedLeadGuitarContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+    });
+
     it('does not treat list punctuation as collapsing a name into a hyphenated literal id', () => {
         const projectState = createProjectState();
         const firstTrack = projectState.tracks[0];
@@ -448,16 +494,32 @@ describe('resolveAgentReference', () => {
             ],
         };
 
-        expect(resolveTrack('delete track-lead / Guitar', 'track-lead-guitar', punctuationContext)).toMatchObject({
-            status: 'rejected',
-            reason: 'ambiguous-target',
-        });
-        expect(resolveTrack('delete track-lead, Guitar', 'track-lead-guitar', punctuationContext)).toMatchObject({
+        expect(
+            resolveRemovableTrack('delete track-lead-guitar / Guitar', 'track-lead-guitar', punctuationContext)
+        ).toMatchObject({
             status: 'rejected',
             reason: 'ambiguous-target',
         });
         expect(
-            resolveTrack('delete Guitar and track-lead-guitar', 'track-lead-guitar', punctuationContext)
+            resolveRemovableTrack('delete track-lead-guitar / Guitar', 'track-keys', punctuationContext)
+        ).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(
+            resolveRemovableTrack('delete track-lead-guitar, Guitar', 'track-lead-guitar', punctuationContext)
+        ).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(
+            resolveRemovableTrack('delete track-lead-guitar, Guitar', 'track-keys', punctuationContext)
+        ).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(
+            resolveRemovableTrack('delete Guitar and track-lead-guitar', 'track-lead-guitar', punctuationContext)
         ).toMatchObject({
             status: 'rejected',
             reason: 'ambiguous-target',
