@@ -12,6 +12,7 @@ import {
     type PostTargetScopeAdmissionStrategy,
     type PostTargetScopeAdmissionStrategyDefinition,
 } from './createPostTargetScopeAdmissionStrategyRegistry';
+import { hasReferenceOutsideMatchedIntent } from './hasReferenceOutsideMatchedIntent';
 import { hasTrackControlRestriction } from './hasTrackControlRestriction';
 
 type PostTargetActionScope = PostTargetScopeAdmissionInput['actionScope'];
@@ -132,29 +133,6 @@ const universalClearSolosIntentPhrases: ReadonlySet<string> = new Set([
     'unsolo all tracks',
     'unsolo everything',
 ]);
-
-function hasReferenceOutsideMatchedIntent(text: string, intentPhrase: string, reference: string): boolean {
-    const normalizedText = normalizePromptText(text);
-    const normalizedIntent = normalizePromptText(intentPhrase);
-    const normalizedReference = normalizePromptText(reference);
-    if (normalizedReference.length === 0) {
-        return false;
-    }
-    const intentStart = normalizedText.indexOf(normalizedIntent);
-    if (intentStart < 0) {
-        return true;
-    }
-    const intentEnd = intentStart + normalizedIntent.length;
-    const referencePattern = new RegExp(
-        `(?<![\\p{L}\\p{N}])${escapeRegExp(normalizedReference)}(?![\\p{L}\\p{N}])`,
-        'gu'
-    );
-    return [...normalizedText.matchAll(referencePattern)].some((match) => {
-        const referenceStart = match.index;
-        const referenceEnd = referenceStart + normalizedReference.length;
-        return referenceStart < intentStart || referenceEnd > intentEnd;
-    });
-}
 
 function isUniversalClearSolosScope(
     actionScope: PostTargetActionScope,

@@ -2803,6 +2803,9 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'mute all tracks save for Vocals',
             'mute all tracks with exception of Vocals',
             'mute all tracks with the exception of Vocals',
+            'mute all tracks but Vocals',
+            'mute all tracks, Vocals stays unmuted',
+            'mute all tracks; Vocals remains',
         ];
         const restrictedSoloPrompts = [
             'solo all tracks not including Vocals',
@@ -2817,6 +2820,9 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'solo all tracks save for Vocals',
             'solo all tracks with exception of Vocals',
             'solo all tracks with the exception of Vocals',
+            'solo all tracks but Vocals',
+            'solo all tracks, Vocals stays unmuted',
+            'solo all tracks; Vocals remains',
         ];
 
         for (const prompt of restrictedMutePrompts) {
@@ -2842,6 +2848,81 @@ describe('bridgeGroundedLlmToolCalls', () => {
                     },
                 ],
             });
+        }
+    });
+
+    it('rejects leftover mute and solo scopes after compiler-expanded kind-audio selectors', () => {
+        const leftoverPrompts = [
+            'mute all audio tracks but Vocals',
+            'mute all tracks, Vocals stays unmuted',
+            'mute all tracks; Vocals remains',
+            'solo all audio tracks but Vocals',
+        ] as const;
+        for (const prompt of leftoverPrompts) {
+            const actionName = prompt.startsWith('solo') ? 'soloTrack' : 'muteTrack';
+            const compiled = compileArbitraryCommandList({
+                context: projectContext,
+                revision: 'revision-leftover-mute-solo',
+                calls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: {
+                                semantic: { classification: 'simple', uncertainty: [] },
+                                objective: prompt,
+                                constraints: [],
+                                scope: {
+                                    targetIds: [vocals.id, guitar.id],
+                                    targetRanges: [],
+                                    protectedTargetIds: [],
+                                    protectedRanges: [],
+                                },
+                                capabilityIds: [],
+                                assetIds: [],
+                                alternatives: [],
+                                validationStrategy: [],
+                                stoppingConditions: [],
+                            },
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'bulk-audio-tracks',
+                                        name: actionName,
+                                        arguments: actionName === 'soloTrack' ? { soloed: true } : { muted: true },
+                                        selector: {
+                                            targetArgument: 'trackId',
+                                            entity: 'track',
+                                            where: { kind: 'audio' },
+                                            quantity: { unit: 'targets', exactly: 2 },
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            });
+            if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+                throw new Error(compiled.status === 'rejected' ? compiled.reason : 'Expected compiler evidence');
+            }
+            const result = bridgeGroundedLlmToolCalls({
+                calls: compiled.compilerEvidence.commands,
+                compilerEvidence: compiled.compilerEvidence,
+                context: projectContext,
+                projectRevision: 'revision-leftover-mute-solo',
+                prompt,
+            });
+            const expectedReason =
+                actionName === 'soloTrack'
+                    ? 'Provider solo scope is not explicitly universal'
+                    : 'Provider mute scope is not explicitly universal';
+            const controlRejections = result.rejections.filter((rejection) => rejection.name === actionName);
+            expect(
+                result.actions.filter((action) => action.type === 'muteTrack' || action.type === 'soloTrack')
+            ).toEqual([]);
+            expect(controlRejections.length).toBeGreaterThan(0);
+            expect(controlRejections.every((rejection) => rejection.reason === expectedReason)).toBe(true);
         }
     });
 
@@ -3609,6 +3690,44 @@ describe('bridgeGroundedLlmToolCalls', () => {
             [{ name: 'removeTrack', arguments: { trackId: 'track-lead-guitar' } }],
             'delete Lead Guitar and track-lead-guitar',
             spacedNestedNameContext
+        );
+
+        expect(named.actions).toEqual([]);
+        expect(literal.actions).toEqual([]);
+        expect(named.rejections).toEqual([
+            {
+                index: 0,
+                name: 'removeTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+        expect(literal.rejections).toEqual([
+            {
+                index: 0,
+                name: 'removeTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+    });
+
+    it('rejects a single removeTrack when a slash-collapsed nested name and a hyphenated literal id are both cited', () => {
+        const slashNestedNameContext = {
+            ...projectContext,
+            tracks: [
+                createTrack({ id: 'track-lead-guitar', name: 'Rhythm' }),
+                createTrack({ id: 'track-aux', name: 'Lead Guitar' }),
+                master,
+            ],
+        };
+        const named = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: 'track-aux' } }],
+            'delete Lead/Guitar and track-lead-guitar',
+            slashNestedNameContext
+        );
+        const literal = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: 'track-lead-guitar' } }],
+            'delete Lead/Guitar and track-lead-guitar',
+            slashNestedNameContext
         );
 
         expect(named.actions).toEqual([]);

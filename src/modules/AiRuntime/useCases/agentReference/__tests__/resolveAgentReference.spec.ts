@@ -466,6 +466,34 @@ describe('resolveAgentReference', () => {
         });
     });
 
+    it('keeps a slash-collapsed nested name and a hyphenated literal id ambiguous when both are cited', () => {
+        const projectState = createProjectState();
+        const firstTrack = projectState.tracks[0];
+        if (!firstTrack) {
+            throw new Error('Expected a track fixture');
+        }
+        const slashNestedNameContext = {
+            ...projectState,
+            tracks: [
+                { ...firstTrack, id: 'track-lead-guitar', name: 'Rhythm' },
+                { ...firstTrack, id: 'track-aux', name: 'Lead Guitar' },
+            ],
+        };
+
+        expect(
+            resolveTrack('delete Lead/Guitar and track-lead-guitar', 'track-lead-guitar', slashNestedNameContext)
+        ).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(
+            resolveTrack('delete Lead/Guitar and track-lead-guitar', 'track-aux', slashNestedNameContext)
+        ).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+    });
+
     it('does not resolve a hyphenated id from a whitespace-separated kind and name', () => {
         const projectState = createProjectState();
         const firstTrack = projectState.tracks[0];

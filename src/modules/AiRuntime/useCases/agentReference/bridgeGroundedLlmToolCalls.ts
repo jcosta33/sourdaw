@@ -50,7 +50,7 @@ import {
     type SyncopatedArpeggioRequestScope,
 } from './getSyncopatedArpeggioPromptScope';
 import { getWholeProjectVibeMixScope } from './getWholeProjectVibeMixScope';
-import { hasTrackControlRestriction } from './groundingStrategies/hasTrackControlRestriction';
+import { hasRestrictedTrackControlScope } from './groundingStrategies/hasRestrictedTrackControlScope';
 import { groundPostTargetScopeAdmission } from './groundingStrategies/postTargetScopeAdmissionStrategy';
 import { resolveAgentReference } from './resolveAgentReference';
 
@@ -3305,10 +3305,10 @@ function groundToolCall({
     visiblePlannedTrackCreations,
     workflowCapabilityId,
 }: GroundToolCallInput): ToolCallResult | LlmActionRejection {
-    if (call.name === 'muteTrack' && hasTrackControlRestriction(prompt)) {
+    if (call.name === 'muteTrack' && hasRestrictedTrackControlScope(prompt, context)) {
         return rejection(index, call.name, 'Provider mute scope is not explicitly universal');
     }
-    if (call.name === 'soloTrack' && hasTrackControlRestriction(prompt)) {
+    if (call.name === 'soloTrack' && hasRestrictedTrackControlScope(prompt, context)) {
         return rejection(index, call.name, 'Provider solo scope is not explicitly universal');
     }
     if (call.name === 'stopPlayback' && !isExplicitStopPlaybackPrompt(prompt)) {

@@ -98,7 +98,7 @@ function getContiguousReferenceRanges(prompt: string, reference: string): readon
 }
 
 function getExactNameOverlapRanges(prompt: string, reference: string): readonly { end: number; start: number }[] {
-    return getTokenReferenceRanges(prompt, reference, '[\\s_-]+');
+    return getTokenReferenceRanges(prompt, reference, '[^\\p{L}\\p{N}]+');
 }
 
 function getExactPhraseRanges(prompt: string, reference: string): readonly { end: number; start: number }[] {
