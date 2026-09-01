@@ -313,6 +313,28 @@ function removeOverlappedExactNameEvidence(
     }
 }
 
+function removeExactNameEvidenceOverlappedByLiteralId(
+    candidates: readonly ReferenceCandidate[],
+    evidenceById: Map<string, AgentReferenceEvidence>
+): void {
+    for (const candidate of candidates) {
+        if (evidenceById.get(candidate.id) !== 'exact-name') {
+            continue;
+        }
+        const normalizedName = normalizeReferenceText(candidate.name);
+        const hasOverlappingLiteralId = candidates.some((otherCandidate) => {
+            if (otherCandidate.id === candidate.id || evidenceById.get(otherCandidate.id) !== 'literal-id') {
+                return false;
+            }
+            const normalizedId = normalizeReferenceText(otherCandidate.id);
+            return ` ${normalizedId} `.includes(` ${normalizedName} `);
+        });
+        if (hasOverlappingLiteralId) {
+            evidenceById.delete(candidate.id);
+        }
+    }
+}
+
 export function resolveAgentReference(input: ResolveAgentReferenceInput): ResolveAgentReferenceResult {
     const excludedIds = new Set(input.excludedIds ?? []);
     const trackCandidates = getTrackCandidates(input.capability, input.context);
@@ -386,6 +408,7 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
     }
 
     removeOverlappedExactNameEvidence(candidates, evidenceById);
+    removeExactNameEvidenceOverlappedByLiteralId(candidates, evidenceById);
 
     if (evidenceById.size === 0) {
         return { status: 'rejected', reason: 'ungrounded-target' };

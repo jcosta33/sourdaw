@@ -1393,6 +1393,9 @@ function resolveActionPromptScope({
         catalog,
         plannedActionNames
     );
+    if (actionName === 'clearSolos' && hasClearSolosRestriction(prompt)) {
+        hasActionCancellation = false;
+    }
     if (
         isPunchActionType(actionName) ||
         hasPunchFamilyReference(prompt) ||
@@ -1559,7 +1562,10 @@ function resolveActionPromptScope({
         const intent = resolveClauseActionIntent(clause.masked, catalog, actionName);
         if (intent) {
             if (intent.actionType === actionName) {
-                if (hasUnsafeControlCue(clause.text, groundingRules.intentPhrases, controlTargetReferences)) {
+                if (
+                    hasUnsafeControlCue(clause.text, groundingRules.intentPhrases, controlTargetReferences) &&
+                    !(actionName === 'clearSolos' && hasClearSolosRestriction(clause.text))
+                ) {
                     continue;
                 }
                 matchingScopes.push({ ...clause, directional: false, matchedIntentPhrase: intent.phrase });
@@ -1599,7 +1605,10 @@ function resolveActionPromptScope({
         ) {
             return null;
         }
-    } else if (hasUnsafeControlCue(selectedScope.text, groundingRules.intentPhrases, selectedTargetReferences)) {
+    } else if (
+        hasUnsafeControlCue(selectedScope.text, groundingRules.intentPhrases, selectedTargetReferences) &&
+        !(actionName === 'clearSolos' && hasClearSolosRestriction(selectedScope.text))
+    ) {
         return null;
     }
     return selectedScope;
@@ -1641,6 +1650,22 @@ function getTargetPromptScope(
         return actionScope.text.slice(0, separator.index).trim();
     }
     return `to ${actionScope.text.slice(separator.index + separator[0].length).trim()}`;
+}
+
+function getPostTargetScope(
+    actionScope: ActionPromptScope,
+    plannedActionNames: readonly string[],
+    prompt: string
+): ActionPromptScope {
+    if (plannedActionNames.length !== 1) {
+        return actionScope;
+    }
+    return { ...actionScope, text: prompt, masked: prompt };
+}
+
+function hasClearSolosRestriction(prompt: string): boolean {
+    const normalizedPrompt = normalizePromptText(prompt);
+    return /\b(?:all solos|all tracks|everything)\b[\s\S]*\b(?:but not|not including)\b/u.test(normalizedPrompt);
 }
 
 type AddClipPromptEvidence = {
@@ -3668,7 +3693,7 @@ function groundToolCall({
     }
     const scopeAdmissionRejection = groundPostTargetScopeAdmission({
         actionName: call.name,
-        actionScope,
+        actionScope: getPostTargetScope(actionScope, plannedActionNames, prompt),
         bulkMutedEmptyTrackDeletionTargetIds,
         context,
         groundedArguments,

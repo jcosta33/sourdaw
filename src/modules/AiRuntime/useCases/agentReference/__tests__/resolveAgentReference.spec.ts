@@ -353,6 +353,36 @@ describe('resolveAgentReference', () => {
         });
     });
 
+    it('lets a literal track ID take precedence over an overlapping display name without hiding another target', () => {
+        const project = createProjectState();
+        const guitar = {
+            ...project.tracks[0]!,
+            id: 'track-guitar',
+            name: 'Guitar',
+        };
+        const overlappingName = {
+            ...project.tracks[0]!,
+            id: 'track-guitar-two',
+            name: 'Track Guitar',
+        };
+        const piano = {
+            ...project.tracks[0]!,
+            id: 'track-piano',
+            name: 'Piano',
+        };
+        const context = { ...project, tracks: [guitar, overlappingName, piano] };
+
+        expect(resolveTrack('mute track-guitar', guitar.id, context)).toEqual({
+            status: 'resolved',
+            id: guitar.id,
+            evidence: 'literal-id',
+        });
+        expect(resolveTrack('mute track-guitar and Piano', guitar.id, context)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+    });
+
     it('resolves editable clips by literal ID, unique exact name, and one explicit selection', () => {
         expect(resolveClip('trim clip-intro start to beat 2', 'clip-intro')).toEqual({
             status: 'resolved',

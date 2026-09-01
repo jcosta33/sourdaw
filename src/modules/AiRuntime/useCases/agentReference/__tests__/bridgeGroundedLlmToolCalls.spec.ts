@@ -2718,6 +2718,14 @@ describe('bridgeGroundedLlmToolCalls', () => {
         const clear = bridge([{ name: 'clearSolos', arguments: {} }], 'clear all solos', soloedContext);
         const clearAllTracks = bridge([{ name: 'clearSolos', arguments: {} }], 'unsolo all tracks', soloedContext);
         const clearEverything = bridge([{ name: 'clearSolos', arguments: {} }], 'unsolo everything', soloedContext);
+        const isolatedMultiAction = bridge(
+            [
+                { name: 'clearSolos', arguments: {} },
+                { name: 'muteTrack', arguments: { trackId: guitar.id, muted: true } },
+            ],
+            'clear all solos and mute Guitar',
+            soloedContext
+        );
         const vocabularyCollisionContext = {
             ...soloedContext,
             tracks: [...soloedContext.tracks, createTrack({ id: 'track-all', name: 'All' })],
@@ -2765,11 +2773,15 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(clear.actions).toEqual([{ type: 'clearSolos' }]);
         expect(clearAllTracks.actions).toEqual([{ type: 'clearSolos' }]);
         expect(clearEverything.actions).toEqual([{ type: 'clearSolos' }]);
+        expect(isolatedMultiAction.actions).toEqual([
+            { type: 'clearSolos' },
+            { type: 'muteTrack', payload: { trackId: guitar.id, muted: true } },
+        ]);
         expect(vocabularyCollision.actions).toEqual([{ type: 'clearSolos' }]);
         expect(scopedVocabularyCollisions.map((result) => result.actions)).toEqual([[], []]);
         expect(hallucinatedClear.actions).toEqual([]);
         for (const prompt of restrictedClearPrompts) {
-            expect(bridge([{ name: 'clearSolos', arguments: {} }], prompt, soloedContext)).toEqual({
+            expect(bridge([{ name: 'clearSolos', arguments: {} }], prompt, soloedContext), prompt).toEqual({
                 actions: [],
                 rejections: [
                     {
