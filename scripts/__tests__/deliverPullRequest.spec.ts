@@ -122,9 +122,6 @@ function mergePolicyPort(settings: string | Error, markRemoteMutationAttempt: ()
         {
             capture: (command, args) => {
                 captures.push({ command, args });
-                if (command === 'git' && args.join(' ') === 'show -s --format=%s head') {
-                    return 'feat(delivery): committed subject\n';
-                }
                 if (args.join(' ') === 'api repos/jcosta33/sourdaw') {
                     if (settings instanceof Error) {
                         throw settings;
@@ -544,7 +541,6 @@ type FakeInput = {
     failAddReceiptOnce?: boolean;
     failRetargetOnce?: number;
     mergedByActorNodeIdAfterMerge?: string | null;
-    headCommitSubject?: string;
     primaryBaseRefNameOnReceiptRead?: string;
     primaryBodyOnReceiptRead?: string;
     reviewStateOnReceiptRead?: ReviewState;
@@ -734,10 +730,6 @@ function fakePort(input: FakeInput = {}) {
                 reviewStates.shift() ??
                 input.review ?? { latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 }
             );
-        },
-        headCommitSubject: (headRefOid) => {
-            calls.push(`head-subject:${headRefOid}`);
-            return input.headCommitSubject ?? 'feat(delivery): committed subject';
         },
         dependents: () => {
             const next = dependentSets.shift();
@@ -1040,21 +1032,18 @@ describe('pull-request delivery', () => {
         expect(calls.filter((call) => call.startsWith('retarget:'))).toHaveLength(0);
     });
 
-    it('merges with the approved head commit subject instead of the mutable pull-request title', () => {
+    it('merges with the stability-checked pull-request title in the default squash shape', () => {
         const closes = relationshipBody('Closes #2372');
         const { port, calls, tracker } = fakePort({
             primary: [
                 pullRequest({ body: closes, title: 'feat(delivery): retitled in UI' }),
                 pullRequest({ body: closes, title: 'feat(delivery): retitled in UI' }),
             ],
-            headCommitSubject: 'feat(delivery): committed subject',
         });
 
         deliverPullRequest(42, port, tracker);
 
-        expect(calls).toContain('head-subject:head');
-        expect(calls).toContain('merge-title:feat(delivery): committed subject');
-        expect(calls).not.toContain('merge-title:feat(delivery): retitled in UI');
+        expect(calls).toContain('merge-title:feat(delivery): retitled in UI (#42)');
     });
 
     it('fails closed when an UNKNOWN initial refresh becomes a merged author-App head with no persisted receipt authority', () => {
@@ -3823,7 +3812,7 @@ describe('pull-request delivery', () => {
         expect(calls).not.toContain('receipt-authority:write:terminal:IC_z');
     });
 
-    it('fails closed when already-merged current visible v2 recovery no longer exposes its observed CI state and retained validation is absent', () => {
+    it('fails closed when already-merged current visible v2 recovery holds a bodyless terminal authority without retained validation', () => {
         const closes = relationshipBody('Closes #2372');
         const { port, calls, tracker } = fakePort({
             primary: [

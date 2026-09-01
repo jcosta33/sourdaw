@@ -704,7 +704,6 @@ describe('package scripts and gitignore', () => {
             },
             gateRequiredCheckNames: () => new Set(['Gate']),
             headCheckRuns: () => [],
-            headCommitSubject: () => 'feat(delivery): committed subject',
             reviewState: () => ({ latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 }),
             dependents: (baseBranch) => (baseBranch === initial.headRefName ? [dependentBefore] : []),
             repositoryDeletesMergedBranches: () => false,
@@ -2499,7 +2498,6 @@ describe('package scripts and gitignore', () => {
                 const unusedPort: DeliveryPort = {
                     fetch: () => expect.fail('delivery domain should not run'),
                     pullRequest: () => expect.fail('delivery domain should not run'),
-                    headCommitSubject: () => expect.fail('delivery domain should not run'),
                     gateRequiredCheckNames: () => expect.fail('delivery domain should not run'),
                     headCheckRuns: () => expect.fail('delivery domain should not run'),
                     reviewState: () => expect.fail('delivery domain should not run'),
@@ -2841,34 +2839,6 @@ describe('package scripts and gitignore', () => {
         }
     });
 
-    it('reads head commit subjects from the literal head object even when replace refs are present', () => {
-        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-subject-'));
-        initializeDeliveryLockRepository(root);
-
-        const previousCwd = process.cwd();
-        try {
-            runGit(root, ['config', 'user.name', 'Test User']);
-            runGit(root, ['config', 'user.email', 'test@example.com']);
-            writeFileSync(join(root, 'tracked.txt'), 'one\n');
-            runGit(root, ['add', 'tracked.txt']);
-            runGit(root, ['commit', '--quiet', '-m', 'feat(delivery): literal subject']);
-            const literalOid = runGit(root, ['rev-parse', 'HEAD']);
-
-            writeFileSync(join(root, 'tracked.txt'), 'two\n');
-            runGit(root, ['commit', '--quiet', '-am', 'feat(delivery): replacement subject']);
-            const replacementOid = runGit(root, ['rev-parse', 'HEAD']);
-            runGit(root, ['update-ref', `refs/replace/${literalOid}`, replacementOid]);
-
-            expect(runGit(root, ['show', '-s', '--format=%s', literalOid])).toBe('feat(delivery): replacement subject');
-
-            process.chdir(root);
-            expect(shellPort('jcosta33/sourdaw').headCommitSubject(literalOid)).toBe('feat(delivery): literal subject');
-        } finally {
-            process.chdir(previousCwd);
-            rmSync(root, { recursive: true, force: true });
-        }
-    });
-
     it('reads delivery receipt authority blobs from their literal object IDs even when replace refs are present', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-authority-'));
         initializeDeliveryLockRepository(root);
@@ -2983,7 +2953,6 @@ describe('package scripts and gitignore', () => {
             pullRequest: () => expect.fail('delivery domain should be injected in this coordinator test'),
             gateRequiredCheckNames: () => expect.fail('delivery domain should be injected in this coordinator test'),
             headCheckRuns: () => expect.fail('delivery domain should be injected in this coordinator test'),
-            headCommitSubject: () => expect.fail('delivery domain should be injected in this coordinator test'),
             reviewState: () => expect.fail('delivery domain should be injected in this coordinator test'),
             dependents: () => [],
             repositoryDeletesMergedBranches: () => false,

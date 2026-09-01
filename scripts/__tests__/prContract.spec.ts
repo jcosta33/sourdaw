@@ -266,6 +266,32 @@ describe('pull-request contract', () => {
         });
     });
 
+    it('rejects a v2 receipt whose visible lines drift from the hidden envelope', () => {
+        const payload = {
+            pullRequest: 2495,
+            head: '3fc61d12acb110faba1a15e251268a1a7d09be9d',
+            bodySha256: 'a'.repeat(64),
+            closingIssue: 2406,
+        };
+        const drifted = composeDeliveryReceipt(payload).replace('- Closing issue: #2406', '- Closing issue: #2407');
+
+        expect(drifted).toContain('closing-issue: 2406');
+        expect(() => parseDeliveryReceipt(drifted)).toThrow(/non-canonical delivery receipt/);
+    });
+
+    it('rejects a legacy v1 receipt whose numbers survive the pattern but not safe-integer validation', () => {
+        const legacy = [
+            '<!-- sourdaw-delivery-receipt:v1',
+            'pull-request: 9007199254740993',
+            'head: 3fc61d12acb110faba1a15e251268a1a7d09be9d',
+            `body-sha256: ${'a'.repeat(64)}`,
+            'closing-issue: 2406',
+            '-->',
+        ].join('\n');
+
+        expect(() => parseDeliveryReceipt(legacy)).toThrow(/safe positive integer/);
+    });
+
     it.each([
         [
             'advisory mode without observed state',

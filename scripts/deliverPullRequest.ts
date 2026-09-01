@@ -89,7 +89,6 @@ export type CheckEvidencePort = {
 export type DeliveryPort = CheckEvidencePort & {
     fetch: () => void;
     pullRequest: (number: number) => PullRequestSnapshot;
-    headCommitSubject: (headRefOid: string) => string;
     reviewState: (number: number, expectedHead: string) => ReviewState;
     dependents: (baseBranch: string) => StackedPullRequest[];
     repositoryDeletesMergedBranches: () => boolean;
@@ -2152,12 +2151,7 @@ function deliverPullRequestWithCiAdmission(
             }
         );
     try {
-        port.merge(
-            number,
-            finalSnapshot.headRefOid,
-            finalDependents.length > 0,
-            port.headCommitSubject(finalSnapshot.headRefOid)
-        );
+        port.merge(number, finalSnapshot.headRefOid, finalDependents.length > 0, `${finalSnapshot.title} (#${number})`);
     } catch (error) {
         if (error instanceof DeliveryMergeRejectedError) {
             tryRestorePreArmedDeliveryReceiptAuthorityAfterMergeFailure(
@@ -3033,13 +3027,6 @@ export function shellPort(
         },
         repositoryDeletesMergedBranches: () =>
             shell.capture('gh', ['api', `repos/${repository}`, '--jq', '.delete_branch_on_merge']) === 'true',
-        headCommitSubject: (headRefOid) => {
-            const subject = shell.capture('git', ['show', '-s', '--format=%s', headRefOid]).trim();
-            if (subject === '') {
-                fail(`head commit ${headRefOid} subject is unreadable`);
-            }
-            return subject;
-        },
         merge: (number, expectedHead, hasDependents, expectedTitle) => {
             const policy = repositoryMergePolicy(repository, shell);
             if (hasDependents && policy.deletesMergedBranches) {
