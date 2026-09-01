@@ -73,6 +73,23 @@ describe('readDawProjectZip — routes extraction through the guarded-zip worker
     });
 });
 
+describe('readDawProjectZip — enforces the archive byte limit before copying', () => {
+    it('rejects an oversized archive before creating a worker or copying the buffer', async () => {
+        const maxArchiveBytes = DAW_PROJECT_ZIP_LIMITS.maxArchiveBytes;
+        if (maxArchiveBytes === undefined) {
+            throw new Error('DAW_PROJECT_ZIP_LIMITS.maxArchiveBytes must be set for this test to be meaningful');
+        }
+        const oversized = new ArrayBuffer(maxArchiveBytes + 1);
+        const callsBeforeCount = mocks.extractDawProjectZipEntries.mock.calls.length;
+
+        await expect(readDawProjectZip(oversized)).rejects.toThrow(
+            new RegExp(`ZIP archive byte limit exceeds ${String(maxArchiveBytes)}`)
+        );
+        expect(mocks.extractDawProjectZipEntries.mock.calls.length).toBe(callsBeforeCount);
+        expect(mocks.extractGuardedZip).not.toHaveBeenCalled();
+    });
+});
+
 describe('readDawProjectZip — assembling extracted entries', () => {
     it('extracts project.xml content from the header phase result', async () => {
         mocks.extractDawProjectZipEntries.mockResolvedValue({ entries: { 'project.xml': utf8('<Project/>') } });
