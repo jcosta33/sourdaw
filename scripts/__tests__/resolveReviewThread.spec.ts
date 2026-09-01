@@ -2153,7 +2153,9 @@ describe('review thread resolution', () => {
                 })
             ).toThrow(/unreconciled|attached review-thread comments/i);
             expect(
-                calls.filter((call) => /^(updateReview|delete:|deleteReview|submit|resolve|log:)/.test(call))
+                calls.filter((call) =>
+                    /^(createReview|reply:|updateReview|delete:|deleteReview|submit|resolve|log:)/.test(call)
+                )
             ).toEqual([]);
             expect(readLockOid(repository, 42)).toBe(retainedOwnerOid);
         } finally {
@@ -5326,6 +5328,74 @@ describe('review thread resolution', () => {
         }
     });
 
+    it('retains the exact recovery owner when terminal inspection finds an unrelated pending author review', () => {
+        const repository = createTemporaryGitRepository();
+        const { port: basePort, calls } = fakePort({
+            isResolved: true,
+            initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+            initialResolvedByType: 'User',
+            existingReplyCount: 1,
+            existingReplyReviewState: 'COMMENTED',
+            existingReplyReviewBody: '',
+        });
+        let inspections = 0;
+        const port: ResolveReviewThreadPort = {
+            ...basePort,
+            inspect: (number, currentThreadId) => {
+                const inspection = basePort.inspect(number, currentThreadId);
+                inspections += 1;
+                if (inspections !== 3) {
+                    return inspection;
+                }
+                return {
+                    ...inspection,
+                    pendingReviews: [
+                        ...inspection.pendingReviews,
+                        {
+                            id: 'PRR_unrelated_pending',
+                            fullDatabaseId: '9223372036854775899',
+                            state: 'PENDING',
+                            body: 'unrelated pending body',
+                            commitOid: head,
+                            authorNodeId: AUTHOR_BOT_NODE_ID,
+                            authorLogin: 'renamed-author[bot]',
+                            authorType: 'Bot',
+                        },
+                    ],
+                };
+            },
+        };
+        const mutation = {
+            phase: 'updateReviewBody' as const,
+            epoch: 1,
+            reviewId,
+            reviewDatabaseId: '9223372036854775808',
+            reviewCommitOid: head,
+            body: resolutionReviewSummary(pullRequestId, threadId, head),
+        };
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, mutation);
+            updateLock(repository, 42, ownerOid);
+            let retainedOwnerOid: string | undefined;
+
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) => {
+                    retainedOwnerOid = readLockOid(repository, 42);
+                    return recoverReviewResolutionLockOwnerState(42, owner, port);
+                })
+            ).toThrow(/non-reusable pending author review/i);
+            expect(
+                calls.filter((call) =>
+                    /^(createReview|reply:|updateReview|delete:|deleteReview|submit|resolve|log:)/.test(call)
+                )
+            ).toEqual([]);
+            expect(retainedOwnerOid).toEqual(expect.any(String));
+            expect(readLockOid(repository, 42)).toBe(retainedOwnerOid);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it.each([
         ['resolved-by node', { resolvedByNodeId: REVIEWER_BOT_NODE_ID, resolvedByType: undefined }],
         ['resolved-by typename', { resolvedByNodeId: undefined, resolvedByType: 'Bot' }],
@@ -5402,6 +5472,7 @@ describe('review thread resolution', () => {
         ['changes the review author typename', { reviewAuthorType: 'User' }],
         ['changes the decimal review identity', { reviewFullDatabaseId: '9223372036854775809' }],
         ['changes the review commit', { reviewCommitOid: movedHead }],
+        ['changes the linked review state', { reviewState: 'PENDING' }],
     ] as const)('retains the exact recovery owner when the terminal inspection %s', (_label, override) => {
         const repository = createTemporaryGitRepository();
         const { port: basePort, calls } = fakePort({
@@ -5452,9 +5523,11 @@ describe('review thread resolution', () => {
                     retainedOwnerOid = readLockOid(repository, 42);
                     return recoverReviewResolutionLockOwnerState(42, owner, port);
                 })
-            ).toThrow(/unreconciled|non-author|could not prove/i);
+            ).toThrow(/unreconciled|non-author|could not prove|unsupported review state/i);
             expect(
-                calls.filter((call) => /^(updateReview|delete:|deleteReview|submit|resolve|log:)/.test(call))
+                calls.filter((call) =>
+                    /^(createReview|reply:|updateReview|delete:|deleteReview|submit|resolve|log:)/.test(call)
+                )
             ).toEqual([]);
             expect(retainedOwnerOid).toEqual(expect.any(String));
             expect(readLockOid(repository, 42)).toBe(retainedOwnerOid);
@@ -12850,6 +12923,45 @@ describe('review thread resolution', () => {
         expect(calls.filter((call) => !call.startsWith('inspect:'))).toEqual([
             `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${head}`,
         ]);
+    });
+    it('fails closed when a completed immutable envelope gains a foreign attachment during terminal verification', () => {
+        const {
+            port: basePort,
+            calls,
+            authorNodeId,
+        } = fakePort({
+            isResolved: true,
+            initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+            initialResolvedByType: 'User',
+            existingReplyCount: 1,
+            existingReplyReviewBody: '',
+        });
+        let inspections = 0;
+        const port: ResolveReviewThreadPort = {
+            ...basePort,
+            inspect: (number, currentThreadId) => {
+                const inspection = basePort.inspect(number, currentThreadId);
+                inspections += 1;
+                return inspection;
+            },
+            inspectAttachedReviewThreadIds: (number, id, expectedPullRequestId, expectedHead) => {
+                const attached = basePort.inspectAttachedReviewThreadIds(
+                    number,
+                    id,
+                    expectedPullRequestId,
+                    expectedHead
+                );
+                return inspections >= 2 ? [...attached, 'PRRT_foreign'] : attached;
+            },
+        };
+        expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow(
+            /attached review-thread comments/i
+        );
+        expect(
+            calls.filter((call) =>
+                /^(createReview|reply:|updateReview|delete:|deleteReview|submit|resolve|log:)/.test(call)
+            )
+        ).toEqual([]);
     });
     it('retires a stale unattached pending review before reconciling an immutable submitted-review envelope', () => {
         const {
