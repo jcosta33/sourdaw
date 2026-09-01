@@ -1,3 +1,5 @@
+import { BROWSER_APPLICATION_FRAME_NAME } from './resolveAppComposition';
+
 const DISPLAY_SCALE_MESSAGE_TYPE = 'sourdaw:browser-display-scale';
 const DISPLAY_SCALE_HOST_CAPABILITY_KEY = '__sourdawBrowserDisplayScaleHost';
 const MIN_DISPLAY_SCALE = 0.5;
@@ -66,6 +68,7 @@ export function mountBrowserDisplayScaleHost(root: HTMLElement): void {
     root.style.width = '100%';
 
     const frame = document.createElement('iframe');
+    frame.name = BROWSER_APPLICATION_FRAME_NAME;
     frame.title = 'Sourdaw';
     frame.style.border = '0';
     frame.style.display = 'block';

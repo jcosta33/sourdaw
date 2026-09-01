@@ -21,8 +21,10 @@ async function renderApplication(): Promise<void> {
         resetBrowserDisplayScaleForChildStartup();
     }
 
-    const [, , { createRoot }, { App }] = await Promise.all([
-        import('./bootstrap'),
+    // A remounted iframe has a 5s window for AppShell. Bootstrap's import graph
+    // includes WASM and must not occupy that window; AppShell effects await init.
+    void import('./bootstrap');
+    const [, { createRoot }, { App }] = await Promise.all([
         import('#/styles/main.css'),
         import('react-dom/client'),
         import('./App'),

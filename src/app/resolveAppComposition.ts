@@ -11,6 +11,8 @@ type AppCompositionEnvironment = {
 
 const DIRECT_E2E_VIEWPORT_NAME = 'sourdaw-e2e-direct';
 
+export const BROWSER_APPLICATION_FRAME_NAME = 'sourdaw-application';
+
 export function resolveAppComposition({
     hasDesktopBridge,
     isDevelopment,
@@ -25,7 +27,8 @@ export function resolveAppComposition({
     }
 
     const usesDirectDevelopmentViewport = isDevelopment && windowName === DIRECT_E2E_VIEWPORT_NAME;
-    if (!isTopLevel || usesDirectDevelopmentViewport) {
+    const isNamedApplicationFrame = windowName === BROWSER_APPLICATION_FRAME_NAME;
+    if (!isTopLevel || usesDirectDevelopmentViewport || isNamedApplicationFrame) {
         return 'application';
     }
 
