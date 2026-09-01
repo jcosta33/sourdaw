@@ -1659,7 +1659,7 @@ function getPostTargetScope(
     plannedActionNames: readonly string[],
     prompt: string
 ): ActionPromptScope {
-    if (plannedActionNames.length === 1) {
+    if (plannedActionNames.length === 1 && actionName !== 'clearSolos') {
         return { ...actionScope, text: prompt, masked: prompt };
     }
     if (actionName !== 'clearSolos') {

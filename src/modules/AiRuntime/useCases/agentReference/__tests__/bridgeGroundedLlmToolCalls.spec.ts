@@ -2763,6 +2763,11 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'clear all solos and leave Vocals muted, and mute Guitar',
             soloedContext
         );
+        const bulkMuteExclusion = bridge(
+            [{ name: 'clearSolos', arguments: {} }],
+            'clear all solos and mute every track except Vocals',
+            soloedContext
+        );
         const restrictedMultiActionPrompts = [
             'clear all solos and mute Guitar but leave Vocals soloed',
             'clear all solos and mute Guitar but preserve Vocals soloed',
@@ -2770,6 +2775,16 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'clear all solos and mute Guitar but not Vocals',
             'clear all solos while leaving Vocals soloed, and mute Guitar',
             'clear all solos, while keeping Vocals soloed, and mute Guitar',
+        ] as const;
+        const continuativeRestrictionPrefixes = [
+            'but keep',
+            'while keeping',
+            'but leave',
+            'while leaving',
+            'but preserve',
+            'while preserving',
+            'but retain',
+            'while retaining',
         ] as const;
         const vocabularyCollisionContext = {
             ...soloedContext,
@@ -2867,12 +2882,36 @@ describe('bridgeGroundedLlmToolCalls', () => {
             { type: 'clearSolos' },
             { type: 'muteTrack', payload: { trackId: guitar.id, muted: true } },
         ]);
+        expect(bulkMuteExclusion.actions).toEqual([{ type: 'clearSolos' }]);
         expect(vocabularyCollision.actions).toEqual([{ type: 'clearSolos' }]);
         expect(scopedVocabularyCollisions.map((result) => result.actions)).toEqual([[], []]);
         expect(hallucinatedClear.actions).toEqual([]);
         for (const prompt of restrictedClearPrompts) {
             expect(bridge([{ name: 'clearSolos', arguments: {} }], prompt, soloedContext), prompt).toEqual({
                 actions: [],
+                rejections: [
+                    {
+                        index: 0,
+                        name: 'clearSolos',
+                        reason: 'Provider clear-solos scope is not explicitly universal',
+                    },
+                ],
+            });
+        }
+        for (const prefix of continuativeRestrictionPrefixes) {
+            const prompt = `clear all solos ${prefix} Unnamed soloed, and mute Guitar`;
+            expect(
+                bridge(
+                    [
+                        { name: 'clearSolos', arguments: {} },
+                        { name: 'muteTrack', arguments: { trackId: guitar.id, muted: true } },
+                    ],
+                    prompt,
+                    soloedContext
+                ),
+                prompt
+            ).toEqual({
+                actions: [{ type: 'muteTrack', payload: { trackId: guitar.id, muted: true } }],
                 rejections: [
                     {
                         index: 0,

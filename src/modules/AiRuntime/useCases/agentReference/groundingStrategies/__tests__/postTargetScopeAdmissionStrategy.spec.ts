@@ -113,5 +113,9 @@ describe('post-target scope admission strategies', () => {
         expect(collectClearSolosRestrictionClauses('clear all solos and leave Keys muted, then mute Guitar')).toEqual(
             []
         );
+        expect(collectClearSolosRestrictionClauses('clear all solos and mute every track except Vocals')).toEqual([]);
+        expect(collectClearSolosRestrictionClauses('clear all solos but keep Vocals and Guitar soloed')).toEqual([
+            'but keep Vocals and Guitar soloed',
+        ]);
     });
 });
