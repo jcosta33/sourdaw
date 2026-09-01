@@ -1,0 +1,29 @@
+src/modules/AiRuntime/transformers/llmActionStrategies/markerSectionStrategy.ts
+  s_a40848e8f8cca9::t_6d1c7e2755cfd2 11
+src/modules/AiRuntime/useCases/assertCanonicalLlmActionStrategies.ts
+  s_a40848e8f8cca9::t_6d1c7e2755cfd2 6
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_6d1c7e2755cfd2 7,79,461
+src/modules/AiRuntime/transformers/llmActionStrategies/transportTimelineStrategy.ts
+  s_a40848e8f8cca9::t_6d1c7e2755cfd2 4
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_7f41acc89d191b 113,119,596
+  s_a40848e8f8cca9::t_6d1c7e2755cfd2 60-62,117-118,193,302,591-595,597-599
+  s_a40848e8f8cca9::t_872e97b4b34e5a 600
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "77b466b7ea69364c90d9f72f35b0b06be0792de2",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
