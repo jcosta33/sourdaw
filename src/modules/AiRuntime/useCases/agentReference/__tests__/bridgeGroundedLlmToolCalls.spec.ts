@@ -3268,6 +3268,17 @@ describe('bridgeGroundedLlmToolCalls', () => {
                 ],
             }
         );
+        const ambiguousRemovalGroup = bridge(
+            [{ name: 'removeFromVca', arguments: { trackId: vocals.id } }],
+            'unassign Vocals from Drum VCA',
+            {
+                ...projectContext,
+                vcaGroups: [
+                    ...(projectContext.vcaGroups ?? []),
+                    { id: 'vca-drums-2', name: 'Drum VCA', gain: 1, muted: false, trackIds: [] },
+                ],
+            }
+        );
         const duplicateNameContext = {
             ...projectContext,
             tracks: [...projectContext.tracks, createTrack({ id: 'track-guitar-2', name: 'Guitar' })],
@@ -3319,6 +3330,14 @@ describe('bridgeGroundedLlmToolCalls', () => {
         ]);
         expect(multipleReferencedGroups.actions).toEqual([]);
         expect(multipleReferencedGroups.rejections).toEqual([
+            {
+                index: 0,
+                name: 'removeFromVca',
+                reason: 'Provider VCA group reference does not match the track current membership',
+            },
+        ]);
+        expect(ambiguousRemovalGroup.actions).toEqual([]);
+        expect(ambiguousRemovalGroup.rejections).toEqual([
             {
                 index: 0,
                 name: 'removeFromVca',
