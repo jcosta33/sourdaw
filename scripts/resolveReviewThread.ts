@@ -1717,11 +1717,20 @@ function hasExactImmutableDeleteReplyTerminal(
     if (!hasExactImmutableDeleteReplySurvivor(thread, context, mutation)) {
         return false;
     }
-    const managed = managedReplyMarkers(thread, context, ['COMMENTED'], true);
+    const markers = validatedReplyMarkers(thread);
+    if (markers.length !== 1) {
+        return false;
+    }
+    const [marker] = markers;
+    if (marker === undefined) {
+        return false;
+    }
+    const review = requireReplyReview(marker, context, ['COMMENTED'], true, null);
     return (
-        managed.length === 1 &&
-        matchesReviewResolutionMarkerSnapshot(managed[0]!, mutation.immutableEnvelope!) &&
-        isImmutableEmptySubmittedReview(managed[0]!.review)
+        matchesReviewResolutionMarkerSnapshot(
+            { marker, review, currentHead: review.commitOid === context.expectedHead },
+            mutation.immutableEnvelope!
+        ) && isImmutableEmptySubmittedReview(review)
     );
 }
 
@@ -1735,11 +1744,13 @@ function assertExactImmutableDeleteReplyTerminal(
     if (inspection.thread === null || !hasExactImmutableDeleteReplyTerminal(inspection.thread, context, mutation)) {
         fail(unreconciledReviewResolutionMutationMessage(number, mutation));
     }
-    const survivor = managedReplyMarkers(inspection.thread, context, ['COMMENTED'], true)[0]!;
+    if (hasBlockingAuthorPendingReview(inspection.pendingReviews, inspection.thread, context)) {
+        fail(`review thread ${context.threadId} has a non-reusable pending author review`);
+    }
+    const marker = requireOneReplyMarker(inspection.thread, context.threadId);
+    const review = requireReplyReview(marker, context, ['COMMENTED'], true, null);
     const attachedThreadIds = [
-        ...new Set(
-            port.inspectAttachedReviewThreadIds(number, survivor.review.id, inspection.pullRequestId, inspection.head)
-        ),
+        ...new Set(port.inspectAttachedReviewThreadIds(number, review.id, inspection.pullRequestId, inspection.head)),
     ].sort();
     if (attachedThreadIds.length !== 1 || attachedThreadIds[0] !== context.threadId) {
         fail(`review thread ${context.threadId} immutable delete survivor is not attached exclusively to this thread`);
@@ -1902,12 +1913,10 @@ function assertPreservedImmutableEnvelopeBeforeConvergence(
 ): void {
     assertManagedReplyMarkersReadable(thread, context, ['COMMENTED'], true);
     const managed = managedReplyMarkers(thread, context, ['COMMENTED'], true);
+    const snapshot = reviewResolutionMarkerSnapshot(immutableEnvelope);
     const preserved = managed.filter(
         (candidate) =>
-            candidate.marker.id === immutableEnvelope.marker.id &&
-            candidate.review.id === immutableEnvelope.review.id &&
-            candidate.review.fullDatabaseId === immutableEnvelope.review.fullDatabaseId &&
-            candidate.review.commitOid === immutableEnvelope.review.commitOid &&
+            matchesReviewResolutionMarkerSnapshot(candidate, snapshot) &&
             candidate.currentHead &&
             isImmutableEmptySubmittedReview(candidate.review)
     );
@@ -2425,11 +2434,14 @@ function repairCompletedResolution(
     }
     assertCompletedResolution(verified.thread, context.threadId);
     if (immutableEnvelope !== undefined) {
-        const verifiedMarkers = managedReplyMarkers(verified.thread, context, ['COMMENTED'], true);
+        const reply = requireOneReplyMarker(verified.thread, context.threadId);
+        const review = requireReplyReview(reply, context, ['COMMENTED'], true, null);
         if (
-            verifiedMarkers.length !== 1 ||
-            verifiedMarkers[0]?.review.id !== immutableEnvelope.review.id ||
-            !isImmutableEmptySubmittedReview(verifiedMarkers[0].review)
+            !matchesReviewResolutionMarkerSnapshot(
+                { marker: reply, review, currentHead: review.commitOid === context.expectedHead },
+                reviewResolutionMarkerSnapshot(immutableEnvelope)
+            ) ||
+            !isImmutableEmptySubmittedReview(review)
         ) {
             fail(`review thread ${context.threadId} no longer has its immutable empty submitted-review envelope`);
         }
@@ -5052,6 +5064,33 @@ function hasExactImmutableEmptySubmittedReviewRecovery(
     );
 }
 
+function hasExactImmutableEmptySubmittedReviewTerminal(
+    number: number,
+    owner: CurrentReviewResolutionLockOwner,
+    inspection: ReviewThreadInspection,
+    context: ResolutionReviewContext,
+    thread: ReviewThread,
+    mutation: Extract<ReviewResolutionLockMutation, { phase: 'updateReviewBody' }>,
+    port: ResolveReviewThreadPort
+): boolean {
+    if (!hasExactImmutableEmptySubmittedReviewRecovery(number, owner, inspection, context, thread, mutation, port)) {
+        return false;
+    }
+    if (mutation.marker === undefined) {
+        return false;
+    }
+    const marker = requireOneReplyMarker(thread, owner.threadId);
+    const review = requireReplyReview(marker, context, ['COMMENTED'], true, null);
+    return (
+        matchesReviewResolutionMarkerSnapshot(
+            { marker, review, currentHead: review.commitOid === context.expectedHead },
+            mutation.marker
+        ) &&
+        isImmutableEmptySubmittedReview(review) &&
+        !hasBlockingAuthorPendingReview(inspection.pendingReviews, thread, context)
+    );
+}
+
 function hasImmutableEmptySubmittedReviewMarker(
     thread: ReviewThread,
     context: ResolutionReviewContext,
@@ -5663,6 +5702,19 @@ export function recoverReviewResolutionLockOwnerState(
                         fail(unreconciledReviewResolutionMutationMessage(number, mutation));
                     }
                     if (inspection.head !== owner.head) {
+                        if (
+                            !hasExactImmutableEmptySubmittedReviewTerminal(
+                                number,
+                                owner,
+                                inspection,
+                                freshContext,
+                                inspection.thread!,
+                                mutation,
+                                port
+                            )
+                        ) {
+                            fail(unreconciledReviewResolutionMutationMessage(number, mutation));
+                        }
                         break;
                     }
                     if (!repairCompletedResolution(number, inspection, freshContext, port)) {
@@ -5675,7 +5727,7 @@ export function recoverReviewResolutionLockOwnerState(
                         owner.head
                     );
                     if (
-                        !hasExactImmutableEmptySubmittedReviewRecovery(
+                        !hasExactImmutableEmptySubmittedReviewTerminal(
                             number,
                             owner,
                             inspection,
@@ -5686,25 +5738,6 @@ export function recoverReviewResolutionLockOwnerState(
                         )
                     ) {
                         fail(unreconciledReviewResolutionMutationMessage(number, mutation));
-                    }
-                    const terminalMarkers = managedReplyMarkers(
-                        inspection.thread!,
-                        terminalContext,
-                        ['COMMENTED'],
-                        true
-                    );
-                    if (
-                        terminalMarkers.length !== 1 ||
-                        mutation.marker === undefined ||
-                        !matchesReviewResolutionMarkerSnapshot(terminalMarkers[0]!, mutation.marker) ||
-                        !isImmutableEmptySubmittedReview(terminalMarkers[0]!.review)
-                    ) {
-                        fail(unreconciledReviewResolutionMutationMessage(number, mutation));
-                    }
-                    if (
-                        hasBlockingAuthorPendingReview(inspection.pendingReviews, inspection.thread!, terminalContext)
-                    ) {
-                        fail(`review thread ${owner.threadId} has a non-reusable pending author review`);
                     }
                 }
                 break;
@@ -5758,6 +5791,7 @@ export function recoverReviewResolutionLockOwnerState(
                     if (survivor === undefined) {
                         fail(unreconciledReviewResolutionMutationMessage(number, mutation));
                     }
+                    assertExclusiveBackfillReviewAttachment(number, survivor.review.id, context, port, inspection.head);
                     port.deleteReply(target.marker.id, survivor, target);
                     inspection = inspectReviewResolutionRecovery(number, owner, port);
                     if (
@@ -5771,11 +5805,33 @@ export function recoverReviewResolutionLockOwnerState(
                 fail(unreconciledReviewResolutionMutationMessage(number, mutation));
             }
             if (hasRecoveredReviewResolutionMutation(number, owner, inspection, context, inspection.thread!, port)) {
-                if (
+                if (mutation.immutableEnvelope !== undefined && inspection.head === owner.head) {
+                    const survivor = managedReplyMarkers(inspection.thread!, context, ['COMMENTED'], true).find(
+                        (candidate) =>
+                            matchesReviewResolutionMarkerSnapshot(candidate, mutation.immutableEnvelope!) &&
+                            isImmutableEmptySubmittedReview(candidate.review)
+                    );
+                    if (survivor === undefined) {
+                        fail(unreconciledReviewResolutionMutationMessage(number, mutation));
+                    }
+                    const managed = managedReplyMarkers(inspection.thread!, context, ['COMMENTED'], true);
+                    if (managed.length > 1) {
+                        assertPreservedImmutableEnvelopeBeforeConvergence(inspection.thread!, context, survivor);
+                        convergeReplyMarkers(
+                            number,
+                            owner.threadId,
+                            inspection.thread,
+                            port,
+                            context,
+                            ['COMMENTED'],
+                            survivor.marker.id,
+                            owner.head
+                        );
+                        inspection = inspectReviewResolutionRecovery(number, owner, port);
+                    }
+                } else if (
                     inspection.head === owner.head &&
-                    (mutation.immutableEnvelope === undefined
-                        ? managedReplyMarkers(inspection.thread!, context, ['PENDING', 'COMMENTED'], false).length > 0
-                        : !hasExactImmutableDeleteReplyTerminal(inspection.thread!, context, mutation))
+                    managedReplyMarkers(inspection.thread!, context, ['PENDING', 'COMMENTED'], false).length > 0
                 ) {
                     inspection = continueRecoveredReviewResolution(number, owner, port);
                 }
