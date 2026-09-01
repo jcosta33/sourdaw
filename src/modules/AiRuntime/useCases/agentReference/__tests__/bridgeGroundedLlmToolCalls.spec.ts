@@ -2739,6 +2739,28 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'clear all solos and do not apply it',
             soloedContext
         );
+        const commaRestrictedMultiAction = bridge(
+            [
+                { name: 'clearSolos', arguments: {} },
+                { name: 'muteTrack', arguments: { trackId: guitar.id, muted: true } },
+            ],
+            'clear all solos, not including Vocals, and mute Guitar',
+            soloedContext
+        );
+        const andLeaveRestrictedMultiAction = bridge(
+            [
+                { name: 'clearSolos', arguments: {} },
+                { name: 'muteTrack', arguments: { trackId: guitar.id, muted: true } },
+            ],
+            'clear all solos and mute Guitar and leave Vocals soloed',
+            soloedContext
+        );
+        const restrictedMultiActionPrompts = [
+            'clear all solos and mute Guitar but leave Vocals soloed',
+            'clear all solos and mute Guitar but preserve Vocals soloed',
+            'clear all solos and mute Guitar but retain Vocals soloed',
+            'clear all solos and mute Guitar but not Vocals',
+        ] as const;
         const vocabularyCollisionContext = {
             ...soloedContext,
             tracks: [...soloedContext.tracks, createTrack({ id: 'track-all', name: 'All' })],
@@ -2801,6 +2823,36 @@ describe('bridgeGroundedLlmToolCalls', () => {
             },
         ]);
         expect(cancelledClear.actions).toEqual([]);
+        for (const prompt of [
+            'clear all solos, not including Vocals, and mute Guitar',
+            'clear all solos and mute Guitar and leave Vocals soloed',
+            ...restrictedMultiActionPrompts,
+        ]) {
+            const result = bridge(
+                [
+                    { name: 'clearSolos', arguments: {} },
+                    { name: 'muteTrack', arguments: { trackId: guitar.id, muted: true } },
+                ],
+                prompt,
+                soloedContext
+            );
+            expect(result.actions, prompt).toEqual([
+                { type: 'muteTrack', payload: { trackId: guitar.id, muted: true } },
+            ]);
+            expect(result.rejections, prompt).toEqual([
+                {
+                    index: 0,
+                    name: 'clearSolos',
+                    reason: 'Provider clear-solos scope is not explicitly universal',
+                },
+            ]);
+        }
+        expect(commaRestrictedMultiAction.actions).toEqual([
+            { type: 'muteTrack', payload: { trackId: guitar.id, muted: true } },
+        ]);
+        expect(andLeaveRestrictedMultiAction.actions).toEqual([
+            { type: 'muteTrack', payload: { trackId: guitar.id, muted: true } },
+        ]);
         expect(vocabularyCollision.actions).toEqual([{ type: 'clearSolos' }]);
         expect(scopedVocabularyCollisions.map((result) => result.actions)).toEqual([[], []]);
         expect(hallucinatedClear.actions).toEqual([]);

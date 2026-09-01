@@ -64,29 +64,79 @@ const reservedClipReferenceWords: ReadonlySet<string> = new Set([
 
 function normalizeReferenceText(value: string): string {
     return value
-        .toLocaleLowerCase()
+        .normalize('NFKD')
+        .toLowerCase()
+        .replaceAll(/\p{M}/gu, '')
         .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
         .trim();
 }
 
-function escapeRegExp(value: string): string {
-    return value.replaceAll(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+function normalizeSourceSpelling(value: string): string {
+    return value.normalize('NFKD').toLowerCase().replaceAll(/\p{M}/gu, '');
+}
+
+function getSourceTokens(value: string): Array<ReferenceSpan & { value: string }> {
+    const tokens: Array<ReferenceSpan & { value: string }> = [];
+    for (const match of value.matchAll(/[\p{L}\p{N}\p{M}]+/gu)) {
+        if (match.index === undefined) {
+            continue;
+        }
+        const normalized = normalizeReferenceText(match[0]);
+        if (normalized.length > 0) {
+            tokens.push({ start: match.index, end: match.index + match[0].length, value: normalized });
+        }
+    }
+    return tokens;
 }
 
 function getExactPhraseSpans(prompt: string, reference: string): ReferenceSpan[] {
-    const tokens = normalizeReferenceText(reference).split(' ').filter(Boolean);
-    if (tokens.length === 0) {
+    const referenceTokens = getSourceTokens(reference).map((token) => token.value);
+    const promptTokens = getSourceTokens(prompt);
+    if (referenceTokens.length === 0) {
         return [];
     }
-    const pattern = new RegExp(
-        `(?<![\\p{L}\\p{N}])${tokens.map(escapeRegExp).join('[^\\p{L}\\p{N}]+')}(?![\\p{L}\\p{N}])`,
-        'giu'
-    );
     const spans: ReferenceSpan[] = [];
-    for (const match of prompt.matchAll(pattern)) {
-        if (match.index !== undefined) {
-            spans.push({ start: match.index, end: match.index + match[0].length });
+    for (let index = 0; index <= promptTokens.length - referenceTokens.length; index += 1) {
+        const matchedTokens = promptTokens.slice(index, index + referenceTokens.length);
+        if (matchedTokens.every((token, tokenIndex) => token.value === referenceTokens[tokenIndex])) {
+            spans.push({ start: matchedTokens[0]!.start, end: matchedTokens.at(-1)!.end });
         }
+    }
+    return spans;
+}
+
+function getLiteralIdSpans(prompt: string, id: string): ReferenceSpan[] {
+    const normalizedId = normalizeSourceSpelling(id);
+    if (normalizedId.length === 0) {
+        return [];
+    }
+    let value = '';
+    const sourceStarts: number[] = [];
+    const sourceEnds: number[] = [];
+    for (let sourceIndex = 0; sourceIndex < prompt.length;) {
+        const codePoint = prompt.codePointAt(sourceIndex);
+        if (codePoint === undefined) {
+            break;
+        }
+        const character = String.fromCodePoint(codePoint);
+        const normalizedCharacter = normalizeSourceSpelling(character);
+        for (let normalizedIndex = 0; normalizedIndex < normalizedCharacter.length; normalizedIndex += 1) {
+            sourceStarts.push(sourceIndex);
+            sourceEnds.push(sourceIndex + character.length);
+        }
+        value += normalizedCharacter;
+        sourceIndex += character.length;
+    }
+    const spans: ReferenceSpan[] = [];
+    let start = value.indexOf(normalizedId);
+    while (start >= 0) {
+        const end = start + normalizedId.length;
+        const previousCharacter = value[start - 1] ?? '';
+        const nextCharacter = value[end] ?? '';
+        if (!/[\p{L}\p{N}]/u.test(previousCharacter) && !/[\p{L}\p{N}]/u.test(nextCharacter)) {
+            spans.push({ start: sourceStarts[start]!, end: sourceEnds[end - 1]! });
+        }
+        start = value.indexOf(normalizedId, start + normalizedId.length);
     }
     return spans;
 }
@@ -348,7 +398,7 @@ function removeExactNameEvidenceOverlappedByLiteralId(
         const nameSpans = getExactPhraseSpans(prompt, candidate.name);
         const literalIdSpans = candidates.flatMap((otherCandidate) =>
             otherCandidate.id !== candidate.id && evidenceById.get(otherCandidate.id) === 'literal-id'
-                ? getExactPhraseSpans(prompt, otherCandidate.id)
+                ? getLiteralIdSpans(prompt, otherCandidate.id)
                 : []
         );
         const isFullyCoveredByLiteralId = nameSpans.every((nameSpan) =>
@@ -400,7 +450,7 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
             input.capability === 'vca-group' &&
             reservedVcaGroupReferenceWords.has(normalizeReferenceText(candidate.id)) &&
             !containsQualifiedVcaGroupReference(input.prompt, candidate.id);
-        if (containsExactPhrase(input.prompt, candidate.id) && !hasUnqualifiedReservedVcaId) {
+        if (getLiteralIdSpans(input.prompt, candidate.id).length > 0 && !hasUnqualifiedReservedVcaId) {
             evidenceById.set(candidate.id, 'literal-id');
             continue;
         }

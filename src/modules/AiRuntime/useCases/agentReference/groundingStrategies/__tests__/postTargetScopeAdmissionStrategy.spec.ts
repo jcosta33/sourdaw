@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCases';
 
 import { type ProjectContext } from '../../../../models/ProjectContext';
+import { collectClearSolosRestrictionClauses } from '../collectClearSolosRestrictionClauses';
 import {
     createPostTargetScopeAdmissionStrategyRegistry,
     postTargetScopeActionNames,
@@ -95,5 +96,16 @@ describe('post-target scope admission strategies', () => {
             'Provider track deletion is not explicit in the user request'
         );
         expect(groundPostTargetScopeAdmission({ ...input, actionName: 'setTempo' })).toBeNull();
+    });
+
+    it('collects clear-solos restrictions without retaining adjacent action clauses', () => {
+        expect(
+            collectClearSolosRestrictionClauses(
+                'clear all solos, not including Vocals, and mute Guitar but leave Keys soloed'
+            )
+        ).toEqual(['not including Vocals', 'but leave Keys soloed']);
+        expect(collectClearSolosRestrictionClauses('clear all solos and retain Lead soloed')).toEqual([
+            'and retain Lead soloed',
+        ]);
     });
 });

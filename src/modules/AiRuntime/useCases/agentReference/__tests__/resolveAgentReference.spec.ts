@@ -358,32 +358,56 @@ describe('resolveAgentReference', () => {
         const guitar = {
             ...project.tracks[0]!,
             id: 'track-guitar',
-            name: 'Guitar',
+            name: 'Track Guitar',
         };
         const overlappingName = {
             ...project.tracks[0]!,
             id: 'track-guitar-two',
-            name: 'Guitar',
+            name: 'Track Guitar',
         };
         const guitarist = {
             ...project.tracks[0]!,
             id: 'track-guitarist',
             name: 'Track Guitarist',
         };
-        const context = { ...project, tracks: [guitar, overlappingName, guitarist] };
+        const namedGuitar = {
+            ...project.tracks[0]!,
+            id: 'track-guitar-name',
+            name: 'Guitar',
+        };
+        const context = { ...project, tracks: [guitar, overlappingName, guitarist, namedGuitar] };
 
         expect(resolveTrack('mute track-guitar', guitar.id, context)).toEqual({
             status: 'resolved',
             id: guitar.id,
             evidence: 'literal-id',
         });
-        expect(resolveTrack('mute track-guitar and Guitar', guitar.id, context)).toMatchObject({
+        expect(resolveTrack('mute track-guitar and Track Guitar', guitar.id, context)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('mute Track Guitar', guitar.id, context)).toMatchObject({
             status: 'rejected',
             reason: 'ambiguous-target',
         });
         expect(resolveTrack('mute track-guitarist and Guitar', guitarist.id, context)).toMatchObject({
             status: 'rejected',
             reason: 'ambiguous-target',
+        });
+    });
+
+    it('grounds dotted-I literal IDs with symmetric Unicode reference spans', () => {
+        const project = createProjectState();
+        const dottedI = {
+            ...project.tracks[0]!,
+            id: 'track-İ',
+            name: 'İzmir',
+        };
+
+        expect(resolveTrack('mute track-i', dottedI.id, { ...project, tracks: [dottedI] })).toEqual({
+            status: 'resolved',
+            id: dottedI.id,
+            evidence: 'literal-id',
         });
     });
 

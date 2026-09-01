@@ -3,6 +3,7 @@ import { getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCas
 import { type ProjectContext } from '../../../models/ProjectContext';
 import { resolveAgentReference } from '../resolveAgentReference';
 
+import { collectClearSolosRestrictionClauses } from './collectClearSolosRestrictionClauses';
 import {
     createPostTargetScopeAdmissionStrategyRegistry,
     postTargetScopeActionNames,
@@ -132,16 +133,6 @@ const universalClearSolosIntentPhrases: ReadonlySet<string> = new Set([
     'unsolo everything',
 ]);
 
-const clearSolosRestrictionPatterns: readonly RegExp[] = [
-    /\b(?:except|excluding|besides|minus)\b/u,
-    /\b(?:other|rather)\s+than\b/u,
-    /\bapart\s+from\b/u,
-    /\bsave\s+for\b/u,
-    /\bwith\s+(?:the\s+)?exception\s+of\b/u,
-    /\b(?:all\s+but|but\s+not|not\s+including)\b/u,
-    /\b(?:keep|leave|preserve|retain)\b/u,
-];
-
 function hasReferenceOutsideMatchedIntent(text: string, intentPhrase: string, reference: string): boolean {
     const normalizedText = normalizePromptText(text);
     const normalizedIntent = normalizePromptText(intentPhrase);
@@ -170,7 +161,7 @@ function isUniversalClearSolosScope(actionScope: PostTargetActionScope, context:
         return false;
     }
     const normalizedScope = normalizePromptText(actionScope.text);
-    const hasRestriction = clearSolosRestrictionPatterns.some((pattern) => pattern.test(normalizedScope));
+    const hasRestriction = collectClearSolosRestrictionClauses(actionScope.text).length > 0;
     const hasRelativeTrackReference =
         /\b(?:selected|current|this|that|these|those)\s+tracks?\b/u.test(normalizedScope) ||
         /\btrack\s+selection\b/u.test(normalizedScope);

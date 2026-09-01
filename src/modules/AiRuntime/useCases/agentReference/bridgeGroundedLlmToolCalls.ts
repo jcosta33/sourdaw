@@ -50,6 +50,7 @@ import {
     type SyncopatedArpeggioRequestScope,
 } from './getSyncopatedArpeggioPromptScope';
 import { getWholeProjectVibeMixScope } from './getWholeProjectVibeMixScope';
+import { collectClearSolosRestrictionClauses } from './groundingStrategies/collectClearSolosRestrictionClauses';
 import { groundPostTargetScopeAdmission } from './groundingStrategies/postTargetScopeAdmissionStrategy';
 import { resolveAgentReference } from './resolveAgentReference';
 
@@ -1664,20 +1665,19 @@ function getPostTargetScope(
     if (actionName !== 'clearSolos') {
         return actionScope;
     }
-    const restrictionMatch = /\bbut\s+(?:keep|leave|preserve|retain|not)\b[\s\S]*$/iu.exec(prompt);
-    if (!restrictionMatch) {
+    const restrictionClauses = collectClearSolosRestrictionClauses(prompt);
+    if (restrictionClauses.length === 0) {
         return actionScope;
     }
     return {
         ...actionScope,
-        text: `${actionScope.text} ${restrictionMatch[0]}`,
-        masked: `${actionScope.masked} ${restrictionMatch[0]}`,
+        text: `${actionScope.text} ${restrictionClauses.join(' ')}`,
+        masked: `${actionScope.masked} ${restrictionClauses.join(' ')}`,
     };
 }
 
 function hasClearSolosRestriction(prompt: string): boolean {
-    const normalizedPrompt = normalizePromptText(prompt);
-    return /\b(?:all solos|all tracks|everything)\b[\s\S]*\b(?:but not|not including)\b/u.test(normalizedPrompt);
+    return collectClearSolosRestrictionClauses(prompt).length > 0;
 }
 
 type AddClipPromptEvidence = {
