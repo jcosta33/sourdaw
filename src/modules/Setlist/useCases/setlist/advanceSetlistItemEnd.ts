@@ -68,8 +68,13 @@ export function advanceSetlistItemEnd(): void {
 
     if (!transport.isPlaying) {
         wasPlaying = false;
+        const hadPendingGap = pendingAdvanceTimer !== null;
         // Stop/pause during a gap must not advance after the delay.
         clearPendingAdvanceTimer();
+        // Pause during a pending gap must not leave consumed=true with no timer.
+        if (hadPendingGap) {
+            itemEndConsumed = false;
+        }
         // Stop relocates the playhead; pause keeps it. Wipe the arm only on relocate.
         if (lastPlayingBeat !== null && currentBeat !== lastPlayingBeat) {
             clearArm();

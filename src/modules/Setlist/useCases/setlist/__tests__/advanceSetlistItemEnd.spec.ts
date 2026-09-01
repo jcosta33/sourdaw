@@ -343,16 +343,54 @@ describe('advanceSetlistItemEnd', () => {
         advanceSetlistItemEnd();
 
         setPlaying(false);
-        playheadPositionRef.current = 0;
+        playheadPositionRef.current = 3;
         advanceSetlistItemEnd();
 
         setPlaying(true);
         advanceSetlistItemEnd();
 
+        playheadPositionRef.current = 7;
+        advanceSetlistItemEnd();
+        expect(stopPlayback).not.toHaveBeenCalled();
+
+        playheadPositionRef.current = 8;
+        advanceSetlistItemEnd();
+        expect(stopPlayback).not.toHaveBeenCalled();
+
+        playheadPositionRef.current = 11;
+        advanceSetlistItemEnd();
+        expect(stopPlayback).toHaveBeenCalledTimes(1);
+    });
+
+    it('resumes gap advance after pause during the gap', () => {
+        seed({
+            autoAdvance: true,
+            currentIndex: 0,
+            items: [
+                makeItem({ id: 'a', autoStop: false, gapSeconds: 2, estimatedDuration: 4 }),
+                makeItem({ id: 'b', autoStop: false, estimatedDuration: 4 }),
+            ],
+        });
+        armAtBeat(0);
         playheadPositionRef.current = 8;
         advanceSetlistItemEnd();
 
-        expect(stopPlayback).toHaveBeenCalledTimes(1);
+        setPlaying(false);
+        advanceSetlistItemEnd();
+
+        vi.advanceTimersByTime(2000);
+        expect(setlistStore.value?.currentIndex).toBe(0);
+
+        setPlaying(true);
+        advanceSetlistItemEnd();
+        advanceSetlistItemEnd();
+
+        vi.advanceTimersByTime(1999);
+        expect(setlistStore.value?.currentIndex).toBe(0);
+
+        vi.advanceTimersByTime(1);
+        expect(setlistStore.value?.currentIndex).toBe(1);
+        expect(stopPlayback).not.toHaveBeenCalled();
     });
 
     it('clears a pending gap timer when paused so nextItem does not fire while parked', () => {
@@ -417,8 +455,10 @@ describe('advanceSetlistItemEnd', () => {
         advanceSetlistItemEnd();
 
         const latest = setlistStore.value;
-        expect(latest).not.toBeNull();
-        setlistStore.set({ ...latest!, autoAdvance: false });
+        if (latest === null) {
+            throw new Error('setlist missing');
+        }
+        setlistStore.set({ ...latest, autoAdvance: false });
 
         vi.advanceTimersByTime(2000);
 
