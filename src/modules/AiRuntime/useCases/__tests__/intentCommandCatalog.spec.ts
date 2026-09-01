@@ -102,4 +102,90 @@ describe('intent command catalog', () => {
             ],
         });
     });
+
+    it('keeps broad intent pagination cursors consumable inside the application-owned loop', async () => {
+        const firstPage = await runApplicationOwnedToolLoop({
+            loopId: 'intent-command-catalog-broad-first-page',
+            terminalToolNames: new Set(['command.batch.propose']),
+            requestTurn: vi
+                .fn()
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'operation-index-first-page',
+                            name: 'agent.catalog.discover',
+                            arguments: { category: 'command-index', intent: 'operation', page: { limit: 1 } },
+                        },
+                    ],
+                })
+                .mockResolvedValueOnce({ status: 'complete', toolCalls: [] }),
+        });
+        const firstCatalog = firstPage.receipts[0]?.data as { nextCursor: string | null };
+
+        expect(firstCatalog.nextCursor).not.toBeNull();
+        expect(firstCatalog.nextCursor?.length).toBeLessThanOrEqual(2048);
+
+        const nextPage = await runApplicationOwnedToolLoop({
+            loopId: 'intent-command-catalog-broad-next-page',
+            terminalToolNames: new Set(['command.batch.propose']),
+            requestTurn: vi
+                .fn()
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'operation-index-next-page',
+                            name: 'agent.catalog.discover',
+                            arguments: {
+                                category: 'command-index',
+                                intent: 'operation',
+                                page: { cursor: firstCatalog.nextCursor },
+                            },
+                        },
+                    ],
+                })
+                .mockResolvedValueOnce({ status: 'complete', toolCalls: [] }),
+        });
+
+        expect(nextPage).toMatchObject({
+            receipts: [
+                {
+                    callId: 'operation-index-next-page',
+                    status: 'success',
+                    data: { page: { offset: 1 } },
+                },
+            ],
+        });
+    });
+
+    it('rejects stop-word-only command index searches', async () => {
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'intent-command-catalog-stop-words',
+            terminalToolNames: new Set(['command.batch.propose']),
+            requestTurn: vi
+                .fn()
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'stop-word-index',
+                            name: 'agent.catalog.discover',
+                            arguments: { category: 'command-index', intent: 'the a an' },
+                        },
+                    ],
+                })
+                .mockResolvedValueOnce({ status: 'complete', toolCalls: [] }),
+        });
+
+        expect(result).toMatchObject({
+            receipts: [
+                {
+                    callId: 'stop-word-index',
+                    status: 'failure',
+                    error: { code: 'invalid-tool-arguments' },
+                },
+            ],
+        });
+    });
 });

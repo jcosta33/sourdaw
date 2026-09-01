@@ -4,7 +4,7 @@ const MAX_CATALOG_PAGE_SIZE = 8;
 const MAX_INTENT_LENGTH = 512;
 const MAX_CURSOR_LENGTH = 2048;
 const CURSOR_PATTERN = /^[A-Za-z0-9_-]+$/;
-const SEMANTIC_CATEGORY_STOP_WORDS = new Set([
+const STOP_WORDS = new Set([
     'a',
     'an',
     'and',
@@ -35,7 +35,7 @@ type IntentCatalogPage = { cursor?: string; limit?: number };
 type IntentCatalogCursor = {
     schemaVersion: 1;
     intent: string;
-    names: string[];
+    resultSetFingerprint: string;
     offset: number;
 };
 
@@ -63,7 +63,7 @@ function semanticCategories(input: {
         ...input.intentPhrases.flatMap(words),
         ...input.targetCapabilities.flatMap(words),
     ];
-    return [...new Set(candidates.filter((word) => !SEMANTIC_CATEGORY_STOP_WORDS.has(word)))].slice(0, 8);
+    return ['operation', ...new Set(candidates.filter((word) => !STOP_WORDS.has(word)))].slice(0, 8);
 }
 
 function normalizedIntent(value: string | undefined): string {
@@ -73,7 +73,7 @@ function normalizedIntent(value: string | undefined): string {
     if (value.length === 0 || value.length > MAX_INTENT_LENGTH) {
         throw new Error('Command catalog intent does not match the strict catalog contract.');
     }
-    const terms = words(value);
+    const terms = words(value).filter((word) => !STOP_WORDS.has(word));
     if (terms.length === 0) {
         throw new Error('Command catalog intent does not match the strict catalog contract.');
     }
@@ -104,25 +104,23 @@ function decodeCursor(cursor: string): IntentCatalogCursor | null {
             Object.keys(value).length !== 4 ||
             !('schemaVersion' in value) ||
             !('intent' in value) ||
-            !('names' in value) ||
+            !('resultSetFingerprint' in value) ||
             !('offset' in value) ||
             value.schemaVersion !== 1 ||
             typeof value.intent !== 'string' ||
-            !Array.isArray(value.names) ||
+            typeof value.resultSetFingerprint !== 'string' ||
             typeof value.offset !== 'number' ||
             !Number.isSafeInteger(value.offset) ||
             value.offset < 0
         ) {
             return null;
         }
-        const names: string[] = [];
-        for (const name of value.names) {
-            if (typeof name !== 'string') {
-                return null;
-            }
-            names.push(name);
-        }
-        return { schemaVersion: 1, intent: value.intent, names, offset: value.offset };
+        return {
+            schemaVersion: 1,
+            intent: value.intent,
+            resultSetFingerprint: value.resultSetFingerprint,
+            offset: value.offset,
+        };
     } catch {
         return null;
     }
@@ -138,7 +136,20 @@ function pageLimit(limit: number | undefined): number {
     return limit;
 }
 
-function pageOffset(input: { cursor: string | undefined; intent: string; names: readonly string[] }): number {
+function resultSetFingerprint(names: readonly string[]): string {
+    let hash = 2_166_136_261;
+    for (const character of names.join('\u0000')) {
+        hash = Math.imul(hash ^ character.charCodeAt(0), 16_777_619);
+    }
+    return `${String(names.length)}-${String(hash >>> 0)}`;
+}
+
+function pageOffset(input: {
+    cursor: string | undefined;
+    intent: string;
+    resultSetFingerprint: string;
+    total: number;
+}): number {
     if (input.cursor === undefined) {
         return 0;
     }
@@ -146,9 +157,8 @@ function pageOffset(input: { cursor: string | undefined; intent: string; names: 
     if (
         cursor === null ||
         cursor.intent !== input.intent ||
-        cursor.names.length !== input.names.length ||
-        cursor.names.some((name, index) => name !== input.names[index]) ||
-        cursor.offset > input.names.length
+        cursor.resultSetFingerprint !== input.resultSetFingerprint ||
+        cursor.offset > input.total
     ) {
         throw new Error('Command catalog cursor does not match the strict catalog contract.');
     }
@@ -190,7 +200,13 @@ export function getExecutableAppActionIntentCatalog(input: { intent?: string; pa
         .sort((left, right) => right.score - left.score || left.index - right.index)
         .map(({ entry }) => entry);
     const names = entries.map((entry) => entry.name);
-    const offset = pageOffset({ cursor: input.page?.cursor, intent, names });
+    const fingerprint = resultSetFingerprint(names);
+    const offset = pageOffset({
+        cursor: input.page?.cursor,
+        intent,
+        resultSetFingerprint: fingerprint,
+        total: names.length,
+    });
     const limit = pageLimit(input.page?.limit);
     const items = entries.slice(offset, offset + limit);
     const nextOffset = offset + items.length;
@@ -201,7 +217,9 @@ export function getExecutableAppActionIntentCatalog(input: { intent?: string; pa
         intent,
         items: structuredClone(items),
         nextCursor:
-            nextOffset < entries.length ? encodeCursor({ schemaVersion: 1, intent, names, offset: nextOffset }) : null,
+            nextOffset < entries.length
+                ? encodeCursor({ schemaVersion: 1, intent, resultSetFingerprint: fingerprint, offset: nextOffset })
+                : null,
         page: { limit, offset, total: entries.length },
         truncated: nextOffset < entries.length,
     };
