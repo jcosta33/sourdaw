@@ -25,7 +25,12 @@ import {
     withPullRequestDeliveryLock,
 } from '../deliverPullRequest.ts';
 import { AUTHOR_BOT_NODE_ID } from '../githubAppIdentity.ts';
+import { coordinatePublishReview, type PublishReviewCoordinatorDependencies } from '../publishReview.ts';
 import { githubTrackerIssuePort } from '../reconcileTrackerIssue.ts';
+import {
+    coordinateResolveReviewThread,
+    type ResolveReviewThreadCoordinatorDependencies,
+} from '../resolveReviewThread.ts';
 import {
     BOOTSTRAP_PATH,
     executeTrustedSnapshot,
@@ -695,6 +700,7 @@ describe('package scripts and gitignore', () => {
             'prepareReview.ts',
             'publishReview.ts',
             'deliverPullRequest.ts',
+            'pullRequestMutationLock.ts',
             'removeLane.ts',
             'resolveReviewThread.ts',
             'supersedePullRequest.ts',
@@ -721,6 +727,7 @@ describe('package scripts and gitignore', () => {
         expect(paths).toEqual([
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/deliverPullRequest.ts',
+            'scripts/pullRequestMutationLock.ts',
             'scripts/reconcileTrackerIssue.ts',
             'scripts/trackerIssueReconciliation.ts',
             'scripts/githubAppIdentity.ts',
@@ -1189,6 +1196,56 @@ describe('package scripts and gitignore', () => {
                 await expect(coordinateDelivery(2495, dependencies)).rejects.toThrow(/already being delivered/);
             });
             expect(entered).toEqual([]);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses reviewer mutations before remote work while delivery owns the same PR fence', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+        initializeDeliveryLockRepository(root);
+        const entered: string[] = [];
+        const publishDependencies: PublishReviewCoordinatorDependencies = {
+            primaryRoot: () => root,
+            serializeMutation: withPullRequestDeliveryLock,
+            authenticateReviewer: async () => {
+                entered.push('publish:authenticate');
+                return expect.fail('reviewer authentication should not start');
+            },
+            repositoryName: () => expect.fail('publish repository lookup should not start'),
+            reviewPort: () => expect.fail('publish port should not be created'),
+            publish: () => {
+                entered.push('publish:post');
+                return expect.fail('review creation should not start');
+            },
+        };
+        const resolveDependencies: ResolveReviewThreadCoordinatorDependencies = {
+            primaryRoot: () => root,
+            serializeMutation: withPullRequestDeliveryLock,
+            authenticateAuthor: async () => {
+                entered.push('resolve:authenticate');
+                return expect.fail('author authentication should not start');
+            },
+            repositoryName: () => expect.fail('resolve repository lookup should not start'),
+            threadPort: () => expect.fail('resolve port should not be created'),
+            resolve: () => {
+                entered.push('resolve:mutate');
+                return expect.fail('reply or resolution should not start');
+            },
+        };
+
+        try {
+            await withPullRequestDeliveryLock(root, 2495, async () => {
+                await expect(coordinatePublishReview(2495, publishDependencies)).rejects.toThrow(
+                    /already being delivered/
+                );
+                await expect(
+                    coordinateResolveReviewThread(2495, 'PRRT_example', 'a'.repeat(40), resolveDependencies)
+                ).rejects.toThrow(/already being delivered/);
+                expect(entered).toEqual([]);
+                expect(deliveryLockExists(root, 2495)).toBe(true);
+            });
+            expect(deliveryLockExists(root, 2495)).toBe(false);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }

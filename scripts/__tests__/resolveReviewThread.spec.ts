@@ -4,11 +4,15 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID } from '../githubAppIdentity.ts';
+import { withPullRequestMutationLock } from '../pullRequestMutationLock.ts';
 import {
+    coordinateResolveReviewThread,
+    defaultResolveReviewThreadCoordinatorDependencies,
     inspectReviewThread,
     parseResolveReviewThreadArgs,
     resolveReviewThread,
     deleteReply,
+    type ResolveReviewThreadCoordinatorDependencies,
     type ResolveReviewThreadPort,
 } from '../resolveReviewThread.ts';
 
@@ -242,6 +246,79 @@ const root = {
 };
 
 describe('review thread resolution', () => {
+    it('holds the per-PR mutation fence across inspection, Done reply, and resolution', async () => {
+        expect(defaultResolveReviewThreadCoordinatorDependencies().serializeMutation).toBe(withPullRequestMutationLock);
+        const { port } = fakePort();
+        const calls: string[] = [];
+        const fencedPort: ResolveReviewThreadPort = {
+            inspect: (number, id) => {
+                calls.push('inspect');
+                return port.inspect(number, id);
+            },
+            replyDone: (id) => {
+                calls.push('reply');
+                return port.replyDone(id);
+            },
+            resolve: (id) => {
+                calls.push('resolve');
+                return port.resolve(id);
+            },
+            deleteReply: (id) => {
+                calls.push('delete');
+                port.deleteReply(id);
+            },
+            log: (message) => {
+                calls.push('log');
+                port.log(message);
+            },
+        };
+        const dependencies: ResolveReviewThreadCoordinatorDependencies = {
+            primaryRoot: () => '/repo',
+            serializeMutation: async (_primaryRoot, number, operation) => {
+                calls.push(`lock:${number}:acquire`);
+                try {
+                    return await operation();
+                } finally {
+                    calls.push(`lock:${number}:release`);
+                }
+            },
+            authenticateAuthor: async () => {
+                calls.push('authenticate');
+                return {
+                    minted: { actorNodeId: AUTHOR_BOT_NODE_ID },
+                    session: {
+                        configDir: '/tmp/sourdaw-author',
+                        env: {},
+                        dispose: () => calls.push('dispose'),
+                    },
+                };
+            },
+            repositoryName: () => {
+                calls.push('repository');
+                return 'jcosta33/sourdaw';
+            },
+            threadPort: () => fencedPort,
+            resolve: resolveReviewThread,
+        };
+
+        await coordinateResolveReviewThread(42, threadId, head, dependencies);
+
+        expect(calls).toEqual([
+            'lock:42:acquire',
+            'authenticate',
+            'repository',
+            'inspect',
+            'reply',
+            'inspect',
+            'inspect',
+            'resolve',
+            'inspect',
+            'log',
+            'dispose',
+            'lock:42:release',
+        ]);
+    });
+
     it('uses supported GraphQL reply and deletion input fields', () => {
         const source = readFileSync(join(import.meta.dirname, '../resolveReviewThread.ts'), 'utf8');
         expect(source).toContain('pullRequestReviewThreadId:$threadId');

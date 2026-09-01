@@ -17,6 +17,7 @@ import {
     type GhSession,
 } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
+import { type PullRequestMutationSerialization, withPullRequestMutationLock } from './pullRequestMutationLock.ts';
 
 export type ReviewComment = {
     id: string;
@@ -60,6 +61,24 @@ export type ResolveReviewThreadPort = {
     resolve: (threadId: string) => ReviewResolutionReceipt;
     deleteReply: (replyId: string) => void;
     log: (message: string) => void;
+};
+export type ResolveReviewThreadAuthentication = {
+    minted: { actorNodeId: string };
+    session: GhSession;
+};
+export type ResolveReviewThreadCoordinatorDependencies = {
+    primaryRoot: () => string;
+    serializeMutation: PullRequestMutationSerialization;
+    authenticateAuthor: (primaryRoot: string) => Promise<ResolveReviewThreadAuthentication>;
+    repositoryName: (session: GhSession, primaryRoot: string) => string;
+    threadPort: (session: GhSession, primaryRoot: string) => ResolveReviewThreadPort;
+    resolve: (
+        number: number,
+        threadId: string,
+        expectedHead: string,
+        authorNodeId: string,
+        port: ResolveReviewThreadPort
+    ) => string;
 };
 export type ResolveReviewThreadArgs = { number?: number; threadId?: string; head?: string; help: boolean };
 const usage = 'usage: pnpm review:resolve <pr-number> --thread <graphql-thread-node-id> --head <40-hex-sha>';
@@ -733,6 +752,49 @@ export function deleteReply(replyId: string, gh: Gh): void {
         fail(`delete review reply returned an invalid result for ${replyId}`);
     }
 }
+
+export function defaultResolveReviewThreadCoordinatorDependencies(): ResolveReviewThreadCoordinatorDependencies {
+    return {
+        primaryRoot: () => resolvePrimaryRoot(),
+        serializeMutation: withPullRequestMutationLock,
+        authenticateAuthor: (primaryRoot) => authenticateRole({ primaryRoot, role: 'author' }),
+        repositoryName: (session, primaryRoot) =>
+            spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
+                env: session.env,
+                cwd: primaryRoot,
+            }),
+        threadPort: (session, primaryRoot) => shellPort(session, primaryRoot),
+        resolve: resolveReviewThread,
+    };
+}
+
+export async function coordinateResolveReviewThread(
+    number: number,
+    threadId: string,
+    expectedHead: string,
+    dependencies: ResolveReviewThreadCoordinatorDependencies = defaultResolveReviewThreadCoordinatorDependencies()
+): Promise<void> {
+    const primaryRoot = dependencies.primaryRoot();
+    await dependencies.serializeMutation(primaryRoot, number, async () => {
+        const auth = await dependencies.authenticateAuthor(primaryRoot);
+        try {
+            if (!isAuthorBotNodeId(auth.minted.actorNodeId)) {
+                fail(`minted actor ${auth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
+            }
+            assertRequiredRepository(dependencies.repositoryName(auth.session, primaryRoot));
+            dependencies.resolve(
+                number,
+                threadId,
+                expectedHead,
+                auth.minted.actorNodeId,
+                dependencies.threadPort(auth.session, primaryRoot)
+            );
+        } finally {
+            auth.session.dispose();
+        }
+    });
+}
+
 async function main(): Promise<number> {
     const parsed = parseResolveReviewThreadArgs(process.argv.slice(2));
     if (parsed.help) {
@@ -748,29 +810,8 @@ async function main(): Promise<number> {
         fileURLToPath(import.meta.url),
         originMainBlob('scripts/resolveReviewThread.ts', cwd)
     );
-    const primaryRoot = resolvePrimaryRoot();
-    const auth = await authenticateRole({ primaryRoot, role: 'author' });
-    try {
-        if (!isAuthorBotNodeId(auth.minted.actorNodeId)) {
-            fail(`minted actor ${auth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
-        }
-        assertRequiredRepository(
-            spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
-                env: auth.session.env,
-                cwd: primaryRoot,
-            })
-        );
-        resolveReviewThread(
-            parsed.number,
-            parsed.threadId,
-            parsed.head,
-            auth.minted.actorNodeId,
-            shellPort(auth.session)
-        );
-        return 0;
-    } finally {
-        auth.session.dispose();
-    }
+    await coordinateResolveReviewThread(parsed.number, parsed.threadId, parsed.head);
+    return 0;
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
     void main().then(

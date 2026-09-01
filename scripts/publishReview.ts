@@ -18,6 +18,7 @@ import {
 } from './githubAppIdentity.ts';
 import { composeReviewCommentBody, fail, type ReviewCommentContent } from './prContract.ts';
 import { reviewBundlePath } from './prepareReview.ts';
+import { type PullRequestMutationSerialization, withPullRequestMutationLock } from './pullRequestMutationLock.ts';
 
 export type ReviewEvent = 'APPROVE' | 'REQUEST_CHANGES';
 
@@ -61,6 +62,20 @@ export type PublishReviewPort = {
         comments: ReviewComment[];
     }) => { id: number; actorNodeId: string; login: string };
     log: (message: string) => void;
+};
+
+export type PublishReviewAuthentication = {
+    minted: { actorNodeId: string };
+    session: GhSession;
+};
+
+export type PublishReviewCoordinatorDependencies = {
+    primaryRoot: () => string;
+    serializeMutation: PullRequestMutationSerialization;
+    authenticateReviewer: (primaryRoot: string) => Promise<PublishReviewAuthentication>;
+    repositoryName: (session: GhSession, primaryRoot: string) => string;
+    reviewPort: (session: GhSession, primaryRoot: string) => PublishReviewPort;
+    publish: (number: number, port: PublishReviewPort) => number;
 };
 
 export function parsePublishReviewArgs(args: string[]): { number?: number; help: boolean } {
@@ -272,6 +287,40 @@ function parseCommentEntries(entries: unknown[]): ReviewComment[] {
     });
 }
 
+export function defaultPublishReviewCoordinatorDependencies(): PublishReviewCoordinatorDependencies {
+    return {
+        primaryRoot: () => resolvePrimaryRoot(),
+        serializeMutation: withPullRequestMutationLock,
+        authenticateReviewer: (primaryRoot) => authenticateRole({ primaryRoot, role: 'reviewer' }),
+        repositoryName: (session, primaryRoot) =>
+            spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
+                env: session.env,
+                cwd: primaryRoot,
+            }),
+        reviewPort: (session, primaryRoot) => shellPort(session, primaryRoot),
+        publish: publishReview,
+    };
+}
+
+export async function coordinatePublishReview(
+    number: number,
+    dependencies: PublishReviewCoordinatorDependencies = defaultPublishReviewCoordinatorDependencies()
+): Promise<void> {
+    const primaryRoot = dependencies.primaryRoot();
+    await dependencies.serializeMutation(primaryRoot, number, async () => {
+        const auth = await dependencies.authenticateReviewer(primaryRoot);
+        try {
+            if (!isReviewerBotNodeId(auth.minted.actorNodeId)) {
+                fail(`minted actor ${auth.minted.actorNodeId} is not ${REVIEWER_BOT_NODE_ID}`);
+            }
+            assertRequiredRepository(dependencies.repositoryName(auth.session, primaryRoot));
+            dependencies.publish(number, dependencies.reviewPort(auth.session, primaryRoot));
+        } finally {
+            auth.session.dispose();
+        }
+    });
+}
+
 async function main(): Promise<number> {
     const parsed = parsePublishReviewArgs(process.argv.slice(2));
     if (parsed.help) {
@@ -288,22 +337,8 @@ async function main(): Promise<number> {
         executingFile,
         originMainBlob('scripts/publishReview.ts', cwd)
     );
-    const primaryRoot = resolvePrimaryRoot();
-    const auth = await authenticateRole({ primaryRoot, role: 'reviewer' });
-    try {
-        if (!isReviewerBotNodeId(auth.minted.actorNodeId)) {
-            fail(`minted actor ${auth.minted.actorNodeId} is not ${REVIEWER_BOT_NODE_ID}`);
-        }
-        const repository = spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
-            env: auth.session.env,
-            cwd: primaryRoot,
-        });
-        assertRequiredRepository(repository);
-        publishReview(parsed.number, shellPort(auth.session));
-        return 0;
-    } finally {
-        auth.session.dispose();
-    }
+    await coordinatePublishReview(parsed.number);
+    return 0;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

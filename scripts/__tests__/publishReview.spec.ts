@@ -2,12 +2,16 @@ import { describe, expect, it } from 'vitest';
 
 import { REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
 import {
+    coordinatePublishReview,
+    defaultPublishReviewCoordinatorDependencies,
     parsePublishReviewArgs,
     parseReviewDocument,
     publishReview,
     shellPort,
+    type PublishReviewCoordinatorDependencies,
     type PublishReviewPort,
 } from '../publishReview.ts';
+import { withPullRequestMutationLock } from '../pullRequestMutationLock.ts';
 
 const validComment = {
     path: 'scripts/deliverPullRequest.ts',
@@ -63,6 +67,64 @@ function fakePort(
 }
 
 describe('review publish', () => {
+    it('holds the per-PR mutation fence across head validation and review creation', async () => {
+        expect(defaultPublishReviewCoordinatorDependencies().serializeMutation).toBe(withPullRequestMutationLock);
+        const { port } = fakePort();
+        const calls: string[] = [];
+        const fencedPort: PublishReviewPort = {
+            ...port,
+            currentHead: (number) => {
+                calls.push('head');
+                return port.currentHead(number);
+            },
+            postReview: (review) => {
+                calls.push('post');
+                return port.postReview(review);
+            },
+        };
+        const dependencies: PublishReviewCoordinatorDependencies = {
+            primaryRoot: () => '/repo',
+            serializeMutation: async (_primaryRoot, number, operation) => {
+                calls.push(`lock:${number}:acquire`);
+                try {
+                    return await operation();
+                } finally {
+                    calls.push(`lock:${number}:release`);
+                }
+            },
+            authenticateReviewer: async () => {
+                calls.push('authenticate');
+                return {
+                    minted: { actorNodeId: REVIEWER_BOT_NODE_ID },
+                    session: {
+                        configDir: '/tmp/sourdaw-reviewer',
+                        env: {},
+                        dispose: () => calls.push('dispose'),
+                    },
+                };
+            },
+            repositoryName: () => {
+                calls.push('repository');
+                return 'jcosta33/sourdaw';
+            },
+            reviewPort: () => fencedPort,
+            publish: publishReview,
+        };
+
+        await coordinatePublishReview(42, dependencies);
+
+        expect(calls).toEqual([
+            'lock:42:acquire',
+            'authenticate',
+            'repository',
+            'head',
+            'head',
+            'post',
+            'dispose',
+            'lock:42:release',
+        ]);
+    });
+
     it('posts as the reviewer bot on the bundle head and prints the review id', () => {
         const { port, calls, logs } = fakePort();
 

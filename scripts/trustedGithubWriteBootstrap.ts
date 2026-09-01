@@ -70,6 +70,7 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
     deliver: [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/deliverPullRequest.ts',
+        'scripts/pullRequestMutationLock.ts',
         'scripts/reconcileTrackerIssue.ts',
         'scripts/trackerIssueReconciliation.ts',
         'scripts/githubAppIdentity.ts',

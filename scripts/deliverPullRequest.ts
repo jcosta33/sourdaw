@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 
 import {
@@ -28,6 +28,7 @@ import {
     parseDeliveryReceipt,
     type DeliveryReceiptPayload,
 } from './prContract.ts';
+import { type PullRequestMutationSerialization, withPullRequestMutationLock } from './pullRequestMutationLock.ts';
 import { shellPort as trackerIssueShellPort } from './reconcileTrackerIssue.ts';
 import { completeTrackerIssue, type ReconcileTrackerIssuePort } from './trackerIssueReconciliation.ts';
 
@@ -1591,148 +1592,8 @@ export type DeliveryAuthentication = {
     session: { configDir: string; env: NodeJS.ProcessEnv; dispose: () => void };
 };
 
-type DeliveryLockOwner = {
-    version: 1;
-    pid: number;
-    token: string;
-};
-
-export type DeliverySerialization = <Value>(
-    primaryRoot: string,
-    number: number,
-    operation: () => Promise<Value>
-) => Promise<Value>;
-
-const DELIVERY_LOCK_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-
-function deliveryLockRef(number: number): string {
-    if (!Number.isSafeInteger(number) || number <= 0) {
-        fail('delivery lock requires a positive pull-request number');
-    }
-    return `refs/sourdaw/delivery/pr-${number}`;
-}
-
-function deliveryLockGit(primaryRoot: string, args: string[], input?: string) {
-    return spawnSync('git', args, {
-        cwd: primaryRoot,
-        encoding: 'utf8',
-        shell: false,
-        ...(input === undefined ? {} : { input }),
-    });
-}
-
-function parseDeliveryLockOwner(contents: string, number: number): DeliveryLockOwner {
-    let value: unknown;
-    try {
-        value = JSON.parse(contents) as unknown;
-    } catch {
-        fail(`PR #${number} delivery lock ownership is malformed`);
-    }
-    if (
-        typeof value !== 'object' ||
-        value === null ||
-        Object.keys(value).length !== 3 ||
-        !('version' in value) ||
-        value.version !== 1 ||
-        !('pid' in value) ||
-        typeof value.pid !== 'number' ||
-        !Number.isSafeInteger(value.pid) ||
-        value.pid <= 0 ||
-        !('token' in value) ||
-        typeof value.token !== 'string' ||
-        !DELIVERY_LOCK_TOKEN_PATTERN.test(value.token)
-    ) {
-        fail(`PR #${number} delivery lock ownership is malformed`);
-    }
-    return { version: 1, pid: value.pid, token: value.token };
-}
-
-function deliveryLockObjectId(value: string, number: number): string {
-    const oid = value.trim();
-    if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(oid)) {
-        fail(`PR #${number} delivery lock object identity is malformed`);
-    }
-    return oid;
-}
-
-function writeDeliveryLockOwner(primaryRoot: string, owner: DeliveryLockOwner, number: number): string {
-    const result = deliveryLockGit(primaryRoot, ['hash-object', '-w', '--stdin'], JSON.stringify(owner));
-    if (result.error !== undefined) {
-        throw result.error;
-    }
-    if (result.status !== 0) {
-        fail(`PR #${number} delivery lock owner could not be stored`);
-    }
-    return deliveryLockObjectId(result.stdout, number);
-}
-
-function readDeliveryLockOid(primaryRoot: string, ref: string, number: number): string | undefined {
-    const result = deliveryLockGit(primaryRoot, ['show-ref', '--verify', '--hash', ref]);
-    if (result.error !== undefined) {
-        throw result.error;
-    }
-    if (result.status === 1) {
-        return undefined;
-    }
-    if (result.status !== 0) {
-        fail(`PR #${number} delivery lock ownership cannot be verified`);
-    }
-    return deliveryLockObjectId(result.stdout, number);
-}
-
-function readDeliveryLockOwner(primaryRoot: string, oid: string, number: number): DeliveryLockOwner {
-    const result = deliveryLockGit(primaryRoot, ['cat-file', 'blob', oid]);
-    if (result.error !== undefined) {
-        throw result.error;
-    }
-    if (result.status !== 0) {
-        fail(`PR #${number} delivery lock ownership cannot be verified`);
-    }
-    return parseDeliveryLockOwner(result.stdout, number);
-}
-
-function updateDeliveryLockRef(primaryRoot: string, args: string[]): boolean {
-    const result = deliveryLockGit(primaryRoot, ['update-ref', ...args]);
-    if (result.error !== undefined) {
-        throw result.error;
-    }
-    return result.status === 0;
-}
-
-function acquireDeliveryLock(primaryRoot: string, number: number): { ref: string; oid: string } {
-    const ref = deliveryLockRef(number);
-    const owner: DeliveryLockOwner = { version: 1, pid: process.pid, token: randomUUID() };
-    const oid = writeDeliveryLockOwner(primaryRoot, owner, number);
-    if (updateDeliveryLockRef(primaryRoot, [ref, oid, '0'.repeat(oid.length)])) {
-        return { ref, oid };
-    }
-
-    const previousOid = readDeliveryLockOid(primaryRoot, ref, number);
-    if (previousOid === undefined) {
-        fail(`PR #${number} delivery lock could not be acquired`);
-    }
-    const previousOwner = readDeliveryLockOwner(primaryRoot, previousOid, number);
-    return fail(`PR #${number} is already being delivered by process ${previousOwner.pid}`);
-}
-
-function releaseDeliveryLock(primaryRoot: string, ref: string, oid: string, number: number): void {
-    if (!updateDeliveryLockRef(primaryRoot, ['-d', ref, oid])) {
-        fail(`PR #${number} delivery lock ownership changed before release`);
-    }
-}
-
-export async function withPullRequestDeliveryLock<Value>(
-    primaryRoot: string,
-    number: number,
-    operation: () => Promise<Value>
-): Promise<Value> {
-    const lock = acquireDeliveryLock(primaryRoot, number);
-    try {
-        return await operation();
-    } finally {
-        releaseDeliveryLock(primaryRoot, lock.ref, lock.oid, number);
-    }
-}
+export type DeliverySerialization = PullRequestMutationSerialization;
+export { withPullRequestMutationLock as withPullRequestDeliveryLock };
 
 export type DeliveryCoordinatorDependencies = {
     primaryRoot: () => string;
@@ -1749,7 +1610,7 @@ export type DeliveryCoordinatorDependencies = {
 function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinatorDependencies {
     return {
         primaryRoot: () => resolvePrimaryRoot(),
-        serializeDelivery: withPullRequestDeliveryLock,
+        serializeDelivery: withPullRequestMutationLock,
         authenticateAuthor: (primaryRoot) => authenticateRole({ primaryRoot, role: 'author' }),
         authenticateTracker: (primaryRoot) => authenticateTrackerAuthor({ primaryRoot }),
         repositoryName: (session, primaryRoot) =>
