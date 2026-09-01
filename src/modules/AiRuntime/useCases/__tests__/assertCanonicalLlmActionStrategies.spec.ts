@@ -2,16 +2,23 @@ import { describe, expect, it } from 'vitest';
 
 import { getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCases';
 
+import { markerSectionActionNames } from '../../transformers/llmActionStrategies/markerSectionStrategy';
+import { transportTimelineActionNames } from '../../transformers/llmActionStrategies/transportTimelineStrategy';
 import { assertCanonicalLlmActionStrategies } from '../assertCanonicalLlmActionStrategies';
 
-describe('assertCanonicalLlmActionStrategies', () => {
-    it('rejects an expected strategy action missing from the command grounding catalogue', () => {
-        const catalogWithoutAddMarker = getExecutableAppActionGroundingCatalog().filter(
-            (entry) => entry.actionType !== 'addMarker'
-        );
+const llmActionStrategyNames = [...markerSectionActionNames, ...transportTimelineActionNames] as const;
 
-        expect(() => assertCanonicalLlmActionStrategies(catalogWithoutAddMarker)).toThrow(
-            'LLM action strategy is not a canonical executable action: addMarker'
-        );
-    });
+describe('assertCanonicalLlmActionStrategies', () => {
+    it.each(llmActionStrategyNames)(
+        'rejects %s when it is missing from the command grounding catalogue',
+        (actionName) => {
+            const catalogWithoutAction = getExecutableAppActionGroundingCatalog().filter(
+                (entry) => entry.actionType !== actionName
+            );
+
+            expect(() => assertCanonicalLlmActionStrategies(catalogWithoutAction)).toThrow(
+                `LLM action strategy is not a canonical executable action: ${actionName}`
+            );
+        }
+    );
 });
