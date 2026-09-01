@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     cacheAudioBuffer: vi.fn(),
     clearClipPitchAnalysis: vi.fn(),
     resolveEligibleClipWriteTarget: vi.fn(),
+    transportTempo: 60,
 }));
 
 vi.mock('#/modules/Arrangement/repositories/track/getTrackState', () => ({
@@ -32,6 +33,14 @@ vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
     resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
 }));
 
+vi.mock('#/modules/Transport/stores', () => ({
+    transportStore: {
+        get value() {
+            return { tempo: mocks.transportTempo };
+        },
+    },
+}));
+
 describe('reverseClip', () => {
     let mockCtx: any;
 
@@ -42,6 +51,7 @@ describe('reverseClip', () => {
             trackId: 'track-1',
             clipId: 'c1',
         });
+        mocks.transportTempo = 60;
         mockCtx = {
             createBuffer: vi.fn(),
         };
@@ -151,6 +161,102 @@ describe('reverseClip', () => {
         // fade-out at the original tail now opens the clip.
         expect(publishedClip?.fadeInBeats).toBe(2);
         expect(publishedClip?.fadeOutBeats).toBe(0.5);
+    });
+
+    it('keeps a zero audioOffsetBeats after reverse and still swaps fades', () => {
+        // 4 beats of source at 60 BPM, 8 samples/beat — clip uses the whole buffer.
+        const sampleRate = 8;
+        const sourceSamples = 32;
+        const originalData = new Float32Array(sourceSamples);
+        const reversedData = new Float32Array(sourceSamples);
+        const mockClip = {
+            id: 'c1',
+            type: 'audio',
+            audioBufferId: 'buf1',
+            name: 'Sample',
+            startBeat: 0,
+            endBeat: 4,
+            audioOffsetBeats: 0,
+            fadeInBeats: 0.5,
+            fadeOutBeats: 2,
+        };
+        let publishedClip: typeof mockClip | undefined;
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 'track-1', clips: [mockClip] }],
+        });
+        mocks.updateClip.mockImplementation(
+            (_clipId: string, updater: (candidate: typeof mockClip) => typeof mockClip) => {
+                publishedClip = updater(mockClip);
+                return true;
+            }
+        );
+        mocks.getCachedAudioBuffer.mockReturnValue({
+            numberOfChannels: 1,
+            length: sourceSamples,
+            sampleRate,
+            getChannelData: vi.fn(() => originalData),
+        });
+        mockCtx.createBuffer.mockReturnValue({
+            numberOfChannels: 1,
+            length: sourceSamples,
+            getChannelData: vi.fn(() => reversedData),
+        });
+
+        reverseClip('c1');
+
+        expect(publishedClip?.audioOffsetBeats).toBe(0);
+        expect(publishedClip?.fadeInBeats).toBe(2);
+        expect(publishedClip?.fadeOutBeats).toBe(0.5);
+    });
+
+    it('remaps audioOffsetBeats so the reversed playback window is the original clip window backwards', () => {
+        // 60 BPM → 1 s/beat. sampleRate 8 → 8 samples/beat. 32-sample buffer = 4 beats.
+        const sampleRate = 8;
+        const sourceSamples = 32;
+        const originalData = new Float32Array(sourceSamples);
+        for (let index = 0; index < sourceSamples; index++) {
+            originalData[index] = index;
+        }
+        const reversedData = new Float32Array(sourceSamples);
+        const mockClip = {
+            id: 'c1',
+            type: 'audio',
+            audioBufferId: 'buf1',
+            name: 'Sample',
+            startBeat: 0,
+            endBeat: 1,
+            audioOffsetBeats: 1,
+        };
+        let publishedClip: typeof mockClip | undefined;
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 'track-1', clips: [mockClip] }],
+        });
+        mocks.updateClip.mockImplementation(
+            (_clipId: string, updater: (candidate: typeof mockClip) => typeof mockClip) => {
+                publishedClip = updater(mockClip);
+                return true;
+            }
+        );
+        mocks.getCachedAudioBuffer.mockReturnValue({
+            numberOfChannels: 1,
+            length: sourceSamples,
+            sampleRate,
+            getChannelData: vi.fn(() => originalData),
+        });
+        mockCtx.createBuffer.mockReturnValue({
+            numberOfChannels: 1,
+            length: sourceSamples,
+            getChannelData: vi.fn(() => reversedData),
+        });
+
+        reverseClip('c1');
+
+        // Whole buffer is still mirrored; the window moves to the mirrored passage.
+        expect(reversedData[0]).toBe(31);
+        expect(publishedClip?.audioOffsetBeats).toBe(2);
+        const playbackStartSample = (publishedClip?.audioOffsetBeats ?? 0) * sampleRate;
+        const originalWindowLastSample = 1 * sampleRate + 1 * sampleRate - 1;
+        expect(reversedData[playbackStartSample]).toBe(originalData[originalWindowLastSample]);
     });
 
     it('clears the clip pitch contour after a successful reverse because the audio changed', () => {
