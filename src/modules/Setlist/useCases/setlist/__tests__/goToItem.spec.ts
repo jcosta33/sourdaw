@@ -235,14 +235,16 @@ describe('goToItem', () => {
         ];
         setlistStoreMock.value = baseState(items, 0);
 
-        const boom = new Error('transport failed');
+        const invalidTempo = createAppError('InvalidTempo', 'Tempo 140 BPM is outside the valid range (20–300)', {
+            bpm: 140,
+        });
         mocks.setTempo.mockImplementation(() => {
-            throw boom;
+            throw invalidTempo;
         });
 
         injectGoToItem();
 
-        expect(() => goToItem(0)).toThrow(boom);
+        expect(() => goToItem(0)).toThrow(invalidTempo);
         expect(mocks.setTempo).toHaveBeenCalledWith({ bpm: 140 });
         expect(mocks.setTimeSignature).not.toHaveBeenCalled();
     });
