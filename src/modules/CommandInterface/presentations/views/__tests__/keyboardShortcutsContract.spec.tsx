@@ -1,7 +1,8 @@
 import { render } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { projectLoadFailureStore } from '#/modules/Project/stores';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { defaultProjectStoreState, projectLoadFailureStore, projectStore } from '#/modules/Project/stores';
 
 import { useGlobalKeyboardShortcuts } from '../keyboardShortcutsContract';
 
@@ -43,13 +44,29 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
         mocks.handleKeyup.mockClear();
         cleanupNodes = [];
         projectLoadFailureStore.set(null);
+        projectStore.set({ ...structuredClone(defaultProjectStoreState), loading: true });
+        clearHandlerRegistry();
     });
 
     afterEach(() => {
         for (const node of cleanupNodes) {
             node.remove();
         }
+        clearHandlerRegistry();
     });
+
+    function dispatchSpace(target: HTMLElement): void {
+        target.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+    }
+
+    function openSessionWithCommandHandlers(): void {
+        projectStore.set({
+            ...structuredClone(defaultProjectStoreState),
+            loading: false,
+            initialized: true,
+        });
+        registerHandlerMap({ togglePlayback: () => undefined });
+    }
 
     function mount(node: HTMLElement): HTMLElement {
         document.body.appendChild(node);
@@ -65,9 +82,34 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
      * button is not an input and not a canvas editor, so every global shortcut
      * was still live behind it.
      */
+    it('routes no shortcut to the app while the project is still loading', () => {
+        render(<Host />);
+        const button = mount(document.createElement('button'));
+        registerHandlerMap({ togglePlayback: () => undefined });
+
+        dispatchSpace(button);
+
+        expect(mocks.handleKeydown).not.toHaveBeenCalled();
+    });
+
+    it('routes no shortcut to the app while command handlers are not registered', () => {
+        render(<Host />);
+        const button = mount(document.createElement('button'));
+        projectStore.set({
+            ...structuredClone(defaultProjectStoreState),
+            loading: false,
+            initialized: true,
+        });
+
+        dispatchSpace(button);
+
+        expect(mocks.handleKeydown).not.toHaveBeenCalled();
+    });
+
     it('routes no shortcut to the app while a failed load is on screen', () => {
         render(<Host />);
         const button = mount(document.createElement('button'));
+        openSessionWithCommandHandlers();
         projectLoadFailureStore.set({ message: 'session gone', projectName: 'Half Finished Song' });
 
         button.dispatchEvent(new KeyboardEvent('keydown', { key: 's', metaKey: true, bubbles: true }));
@@ -78,6 +120,7 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
     it('routes shortcuts normally once a project is open again', () => {
         render(<Host />);
         const button = mount(document.createElement('button'));
+        openSessionWithCommandHandlers();
         projectLoadFailureStore.set(null);
 
         button.dispatchEvent(new KeyboardEvent('keydown', { key: 's', metaKey: true, bubbles: true }));
@@ -86,6 +129,7 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
     });
 
     it('gates the global shortcut (isInput=true) when Delete fires inside a [data-canvas-editor]', () => {
+        openSessionWithCommandHandlers();
         render(<Host />);
         const editor = mount(document.createElement('div'));
         editor.setAttribute('data-canvas-editor', '');
@@ -99,6 +143,7 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
     });
 
     it('does NOT gate the global shortcut when Delete fires on an unmarked timeline surface', () => {
+        openSessionWithCommandHandlers();
         render(<Host />);
         const timeline = mount(document.createElement('div'));
 
@@ -110,6 +155,7 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
     });
 
     it('still gates real text inputs (INPUT / TEXTAREA / contentEditable)', () => {
+        openSessionWithCommandHandlers();
         render(<Host />);
         const input = mount(document.createElement('input'));
         input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
