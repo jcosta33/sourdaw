@@ -241,4 +241,32 @@ describe('generateToolPlanningOutcome', () => {
             expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining(`HTTP ${String(status)}`));
         }
     );
+
+    it('snapshots hosted HTTP status once so spoofed getters cannot leak secrets into safeMessage', async () => {
+        mocks.backendChain.value = ['cloud'];
+        let statusReadCount = 0;
+        const spoofedError = new Error('ignored');
+        spoofedError.name = 'HostedAiHttpStatusError';
+        Object.defineProperty(spoofedError, 'status', {
+            get() {
+                statusReadCount += 1;
+                return statusReadCount === 1 ? 401 : 'key=sk-secret';
+            },
+            configurable: true,
+        });
+        mocks.generateCloudToolCalls.mockRejectedValue(spoofedError);
+
+        const error = await generateToolPlanningOutcome('system', 'mute the first track', toolSchemas).catch(
+            (error: unknown) => error
+        );
+
+        expect(isModelProviderFailureError(error)).toBe(true);
+        if (!isModelProviderFailureError(error)) {
+            return;
+        }
+        expect(error.message).toContain('HTTP 401');
+        expect(error.message).not.toContain('sk-secret');
+        expect(error.code).toBe('hosted-http-401');
+        expect(mocks.logger.warn).toHaveBeenCalledWith(expect.not.stringContaining('sk-secret'));
+    });
 });
