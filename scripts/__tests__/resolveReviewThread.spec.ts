@@ -240,6 +240,7 @@ type Input = {
     resolvedByTypeAfterResolve?: string | null;
     existingReplyCount?: number;
     reverseExistingReplyOrder?: boolean;
+    existingReplyFullDatabaseIds?: readonly string[];
     deleteReplyAfterResolve?: boolean;
     editReplyAfterResolve?: boolean;
     replyClientMutationId?: string;
@@ -446,7 +447,7 @@ function fakePort(input: Input = {}) {
         }
         pushReply(
             replyIndex === 0 ? replyId : `PRRC_existing_${replyIndex}`,
-            String(9223372036854775808n + BigInt(replyIndex)),
+            input.existingReplyFullDatabaseIds?.[replyIndex] ?? String(9223372036854775808n + BigInt(replyIndex)),
             configuredReviewId
         );
     }
@@ -5251,15 +5252,19 @@ describe('review thread resolution', () => {
         try {
             const ownerOid = writeLockOwnerBlob(repository, 999999, head, mutation);
             updateLock(repository, 42, ownerOid);
+            let retainedOwnerOid: string | undefined;
 
             expect(() =>
-                recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) =>
-                    recoverReviewResolutionLockOwnerState(42, owner, port)
-                )
+                recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) => {
+                    retainedOwnerOid = readLockOid(repository, 42);
+                    return recoverReviewResolutionLockOwnerState(42, owner, port);
+                })
             ).toThrow(/non-reusable pending author review/i);
             expect(
                 calls.filter((call) => call.startsWith('deleteReview:') || call.startsWith('updateReview:'))
             ).toEqual([]);
+            expect(retainedOwnerOid).toEqual(expect.any(String));
+            expect(readLockOid(repository, 42)).toBe(retainedOwnerOid);
             expect(requireLockOwner(repository, 42)).toMatchObject({ threadId, head, mutation });
         } finally {
             rmSync(repository, { recursive: true, force: true });
@@ -5318,13 +5323,17 @@ describe('review thread resolution', () => {
             try {
                 const ownerOid = writeLockOwnerBlob(repository, 999999, head, mutation);
                 updateLock(repository, 42, ownerOid);
+                let retainedOwnerOid: string | undefined;
 
                 expect(() =>
-                    recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) =>
-                        recoverReviewResolutionLockOwnerState(42, owner, port)
-                    )
+                    recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) => {
+                        retainedOwnerOid = readLockOid(repository, 42);
+                        return recoverReviewResolutionLockOwnerState(42, owner, port);
+                    })
                 ).toThrow(/not resolved by/i);
                 expect(calls.filter((call) => call.startsWith('updateReview:'))).toEqual([]);
+                expect(retainedOwnerOid).toEqual(expect.any(String));
+                expect(readLockOid(repository, 42)).toBe(retainedOwnerOid);
                 expect(requireLockOwner(repository, 42)).toMatchObject({ threadId, head, mutation });
             } finally {
                 rmSync(repository, { recursive: true, force: true });
@@ -5383,13 +5392,17 @@ describe('review thread resolution', () => {
             try {
                 const ownerOid = writeLockOwnerBlob(repository, 999999, head, mutation);
                 updateLock(repository, 42, ownerOid);
+                let retainedOwnerOid: string | undefined;
 
                 expect(() =>
-                    recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) =>
-                        recoverReviewResolutionLockOwnerState(42, owner, port)
-                    )
+                    recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) => {
+                        retainedOwnerOid = readLockOid(repository, 42);
+                        return recoverReviewResolutionLockOwnerState(42, owner, port);
+                    })
                 ).toThrow(/non-author review|unreconciled in-flight|could not prove an unlanded historical review/i);
                 expect(calls.filter((call) => call.startsWith('updateReview:'))).toEqual([]);
+                expect(retainedOwnerOid).toEqual(expect.any(String));
+                expect(readLockOid(repository, 42)).toBe(retainedOwnerOid);
                 expect(requireLockOwner(repository, 42)).toMatchObject({ threadId, head, mutation });
             } finally {
                 rmSync(repository, { recursive: true, force: true });
@@ -5490,6 +5503,101 @@ describe('review thread resolution', () => {
             ).toThrow(/could not prove an unlanded historical review/i);
             expect(calls).toEqual(['inspect:1']);
             expect(requireLockOwner(repository, 42)).toMatchObject({ threadId, head, mutation });
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('preserves the exact recovery lock when two immutable submitted reviews compete at the current head', () => {
+        const repository = createTemporaryGitRepository();
+        const mutation = {
+            phase: 'updateReviewBody' as const,
+            epoch: 1,
+            reviewId,
+            reviewDatabaseId: '9223372036854775808',
+            reviewCommitOid: head,
+            body: resolutionReviewSummary(pullRequestId, threadId, head),
+        };
+        const { port, calls } = fakePort({
+            isResolved: true,
+            initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+            initialResolvedByType: 'User',
+            existingReplyCount: 2,
+            existingReplyReviewState: 'COMMENTED',
+            existingReplyReviewBody: '',
+            secondaryReplyReviewBody: '',
+        });
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, mutation);
+            updateLock(repository, 42, ownerOid);
+            let retainedOwnerOid: string | undefined;
+
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) => {
+                    retainedOwnerOid = readLockOid(repository, 42);
+                    return recoverReviewResolutionLockOwnerState(42, owner, port);
+                })
+            ).toThrow(/multiple immutable empty submitted-review envelopes/i);
+            expect(
+                calls.filter((call) => /^(updateReview|delete:|deleteReview|submit|resolve|log:)/.test(call))
+            ).toEqual([]);
+            expect(retainedOwnerOid).toEqual(expect.any(String));
+            expect(readLockOid(repository, 42)).toBe(retainedOwnerOid);
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it('preserves the exact recovery lock when an immutable review has no managed Done marker', () => {
+        const repository = createTemporaryGitRepository();
+        const mutation = {
+            phase: 'updateReviewBody' as const,
+            epoch: 1,
+            reviewId,
+            reviewDatabaseId: '9223372036854775808',
+            reviewCommitOid: head,
+            body: resolutionReviewSummary(pullRequestId, threadId, head),
+        };
+        const { port: basePort, calls } = fakePort({
+            isResolved: true,
+            initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+            initialResolvedByType: 'User',
+            existingReplyCount: 1,
+            existingReplyReviewState: 'COMMENTED',
+            existingReplyReviewBody: '',
+        });
+        const port: ResolveReviewThreadPort = {
+            ...basePort,
+            inspect: (number, currentThreadId) => {
+                const inspection = basePort.inspect(number, currentThreadId);
+                if (inspection.thread === null) {
+                    return inspection;
+                }
+                return {
+                    ...inspection,
+                    thread: {
+                        ...inspection.thread,
+                        comments: inspection.thread.comments.filter((comment) => comment.id !== replyId),
+                    },
+                };
+            },
+        };
+        try {
+            const ownerOid = writeLockOwnerBlob(repository, 999999, head, mutation);
+            updateLock(repository, 42, ownerOid);
+            let retainedOwnerOid: string | undefined;
+
+            expect(() =>
+                recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) => {
+                    retainedOwnerOid = readLockOid(repository, 42);
+                    return recoverReviewResolutionLockOwnerState(42, owner, port);
+                })
+            ).toThrow(/unreconciled in-flight updateReviewBody/i);
+            expect(
+                calls.filter((call) => /^(updateReview|delete:|deleteReview|submit|resolve|log:)/.test(call))
+            ).toEqual([]);
+            expect(retainedOwnerOid).toEqual(expect.any(String));
+            expect(readLockOid(repository, 42)).toBe(retainedOwnerOid);
         } finally {
             rmSync(repository, { recursive: true, force: true });
         }
@@ -12537,6 +12645,7 @@ describe('review thread resolution', () => {
             existingReplyCount: 2,
             existingReplyReviewBody: '',
             secondaryReplyReviewBody: resolutionReviewSummary(pullRequestId, threadId, head),
+            existingReplyFullDatabaseIds: ['9223372036854775809', '9223372036854775808'],
         });
         const port: ResolveReviewThreadPort = {
             ...basePort,
@@ -12552,6 +12661,63 @@ describe('review thread resolution', () => {
         expect(state().comments.filter((comment) => comment.body === 'Done')).toEqual([
             expect.objectContaining({ id: replyId, reviewId }),
         ]);
+    });
+    it('converges duplicate immutable Done markers from one submitted review before final reconciliation', () => {
+        const {
+            port: basePort,
+            calls,
+            authorNodeId,
+            state,
+        } = fakePort({
+            isResolved: true,
+            initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+            initialResolvedByType: 'User',
+            existingReplyCount: 2,
+            existingReplyReviewBody: '',
+            secondaryReplyReviewId: reviewId,
+            secondaryReplyReviewBody: '',
+        });
+        const port: ResolveReviewThreadPort = {
+            ...basePort,
+            updateReviewBody: () => {
+                throw new Error('immutable submitted review must not be updated');
+            },
+        };
+        expect(resolveReviewThread(42, threadId, head, authorNodeId, port)).toBe(
+            `review-thread-resolution-reconciled-immutable-empty-submitted-review:42:${threadId}`
+        );
+        expect(calls.filter((call) => call.startsWith('updateReview:'))).toEqual([]);
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual(['delete:PRRC_existing_1']);
+        expect(state().comments.filter((comment) => comment.body === 'Done')).toEqual([
+            expect.objectContaining({ id: replyId, reviewId }),
+        ]);
+    });
+    it('never updates a stale empty submitted-review envelope', () => {
+        const {
+            port: basePort,
+            calls,
+            authorNodeId,
+        } = fakePort({
+            isResolved: true,
+            initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+            initialResolvedByType: 'User',
+            existingReplyCount: 1,
+            existingReplyReviewBody: '',
+            existingReplyReviewCommitOid: movedHead,
+        });
+        let attemptedUpdate = false;
+        const port: ResolveReviewThreadPort = {
+            ...basePort,
+            updateReviewBody: () => {
+                attemptedUpdate = true;
+                throw new Error('stale immutable submitted review must not be updated');
+            },
+        };
+        expect(() => resolveReviewThread(42, threadId, head, authorNodeId, port)).toThrow();
+        expect(attemptedUpdate).toBe(false);
+        expect(calls.filter((call) => /^(updateReview|delete:|deleteReview|submit|resolve|log:)/.test(call))).toEqual(
+            []
+        );
     });
     it('fails closed when the immutable submitted-review envelope is attached to another thread', () => {
         const { port, calls, authorNodeId } = fakePort({

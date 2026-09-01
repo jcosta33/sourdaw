@@ -1719,7 +1719,8 @@ function repairManagedCommentedReviewEnvelopes(
         if (
             repairedReviewIds.has(candidate.review.id) ||
             candidate.review.id === preservedImmutableReviewId ||
-            candidate.review.body.trim() !== ''
+            isImmutableEmptySubmittedReview(candidate.review) ||
+            candidate.review.body !== ''
         ) {
             continue;
         }
@@ -1757,10 +1758,16 @@ function hasExactImmutableEmptySubmittedReviewEnvelope(
     if (immutable.length === 0) {
         return undefined;
     }
-    if (immutable.length > 1) {
+    const immutableByReviewId = new Map<string, ManagedReplyMarker>();
+    for (const candidate of immutable) {
+        if (!immutableByReviewId.has(candidate.review.id)) {
+            immutableByReviewId.set(candidate.review.id, candidate);
+        }
+    }
+    if (immutableByReviewId.size > 1) {
         fail(`review thread ${context.threadId} has multiple immutable empty submitted-review envelopes`);
     }
-    const [candidate] = immutable;
+    const candidate = immutableByReviewId.values().next().value;
     if (candidate === undefined) {
         fail(`review thread ${context.threadId} has no deterministic immutable submitted-review envelope`);
     }
@@ -5347,9 +5354,8 @@ export function recoverReviewResolutionLockOwnerState(
                 mutation,
                 port
             );
-            if (isImmutableEmptySubmittedReview(review) && inspection.thread!.isResolved) {
-                assertCompletedResolution(inspection.thread!, owner.threadId);
-                break;
+            if (isImmutableEmptySubmittedReview(review)) {
+                fail(unreconciledReviewResolutionMutationMessage(number, mutation));
             }
             const updated = port.updateReviewBody(mutation.reviewId, mutation.body, mutation.reviewCommitOid, review);
             assertProvenReviewBodyReceipt(updated, review, mutation.body);
