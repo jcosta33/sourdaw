@@ -160,6 +160,8 @@ describe('masterVcaStrategy', () => {
 
         const masterRejections = [
             { gain: Number.NaN },
+            { gain: '0.7' },
+            { gain: true },
             { gain: -0.01 },
             { gain: FADER_MAX_GAIN + 0.01 },
             { gain: 0.8 },
@@ -175,6 +177,8 @@ describe('masterVcaStrategy', () => {
         const vcaRejections = [
             { vcaGroupId: 'missing', gain: 0.7 },
             { vcaGroupId: 'vca-drums', gain: Number.NaN },
+            { vcaGroupId: 'vca-drums', gain: '0.7' },
+            { vcaGroupId: 'vca-drums', gain: true },
             { vcaGroupId: 'vca-drums', gain: -0.01 },
             { vcaGroupId: 'vca-drums', gain: VCA_MAX_GAIN + 0.01 },
             { vcaGroupId: 'vca-drums', gain: 0.75 },
