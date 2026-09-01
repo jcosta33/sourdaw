@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { onNotification as OnNotification } from '#/infra/dialogService/onNotification';
+import type { setVoiceToggleEventBus } from '#/modules/AiRuntime/useCases';
+import type { setWebMidiRuntimeEventBus } from '#/modules/MIDI/useCases';
+import type { setWorkspaceEventBus } from '#/modules/WorkspaceShell/useCases';
 
 const INIT_ERROR_TOAST = 'App failed to load — please reload the page.';
 
@@ -27,12 +30,16 @@ const mocks = vi.hoisted(() => {
     };
     identity.reset();
 
+    const bindWorkspaceEventBus: typeof setWorkspaceEventBus = (_eventBus) => undefined;
+    const bindVoiceToggleEventBus: typeof setVoiceToggleEventBus = (_eventBus) => undefined;
+    const bindWebMidiRuntimeEventBus: typeof setWebMidiRuntimeEventBus = (_input) => undefined;
+
     return {
         bootstrap: vi.fn(),
         bootstrapFailure: null as Error | null,
-        bindVoiceToggleEventBus: (_eventBus: unknown): void => undefined,
-        bindWebMidiRuntimeEventBus: (_input: unknown): void => undefined,
-        bindWorkspaceEventBus: (_eventBus: unknown): void => undefined,
+        bindVoiceToggleEventBus,
+        bindWebMidiRuntimeEventBus,
+        bindWorkspaceEventBus,
         failIdentityTransition: vi.fn(),
         identity,
         mountBrowserDisplayScaleHost: vi.fn(),

@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     resetBrowserDisplayScaleForChildStartup: vi.fn(),
     resetDisplayScaleForStartup: vi.fn(),
     resolveAppComposition: vi.fn(),
+    setNotificationEventBus: vi.fn(),
     setVoiceToggleEventBus: vi.fn(),
     setWebMidiRuntimeEventBus: vi.fn(),
     setWorkspaceEventBus: vi.fn(),
@@ -25,13 +26,19 @@ function observeNextRender(): Promise<void> {
 function expectFirstPaintBusesRegisteredBeforeRender(): void {
     expect(mocks.setWorkspaceEventBus).toHaveBeenCalledOnce();
     expect(mocks.setVoiceToggleEventBus).toHaveBeenCalledOnce();
+    expect(mocks.setNotificationEventBus).toHaveBeenCalledOnce();
     expect(mocks.setWebMidiRuntimeEventBus).toHaveBeenCalledOnce();
     const renderOrder = mocks.render.mock.invocationCallOrder[0];
     expect(renderOrder).toBeDefined();
     if (renderOrder === undefined) {
         throw new Error('Application render did not run');
     }
-    for (const setter of [mocks.setWorkspaceEventBus, mocks.setVoiceToggleEventBus, mocks.setWebMidiRuntimeEventBus]) {
+    for (const setter of [
+        mocks.setWorkspaceEventBus,
+        mocks.setVoiceToggleEventBus,
+        mocks.setNotificationEventBus,
+        mocks.setWebMidiRuntimeEventBus,
+    ]) {
         const order = setter.mock.invocationCallOrder[0];
         expect(order).toBeDefined();
         if (order === undefined) {
@@ -72,6 +79,11 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     setWebMidiRuntimeEventBus: mocks.setWebMidiRuntimeEventBus,
 }));
 
+vi.mock('#/utils/Notification/notificationEventBus', () => ({
+    NotificationEventBus: class NotificationEventBus {},
+    setNotificationEventBus: mocks.setNotificationEventBus,
+}));
+
 vi.mock('../App', () => ({ App: () => null }));
 
 vi.mock('react-dom/client', () => ({
@@ -105,6 +117,7 @@ describe('app main composition', () => {
         expect(mocks.render).not.toHaveBeenCalled();
         expect(mocks.setWorkspaceEventBus).not.toHaveBeenCalled();
         expect(mocks.setVoiceToggleEventBus).not.toHaveBeenCalled();
+        expect(mocks.setNotificationEventBus).not.toHaveBeenCalled();
         expect(mocks.setWebMidiRuntimeEventBus).not.toHaveBeenCalled();
     });
 
@@ -188,6 +201,7 @@ describe('app main composition', () => {
         expect(mocks.mountBrowserDisplayScaleHost).not.toHaveBeenCalled();
         expect(mocks.setWorkspaceEventBus).not.toHaveBeenCalled();
         expect(mocks.setVoiceToggleEventBus).not.toHaveBeenCalled();
+        expect(mocks.setNotificationEventBus).not.toHaveBeenCalled();
         expect(mocks.setWebMidiRuntimeEventBus).not.toHaveBeenCalled();
     });
 });
