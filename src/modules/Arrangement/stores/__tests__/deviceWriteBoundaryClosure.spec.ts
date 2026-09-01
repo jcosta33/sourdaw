@@ -981,7 +981,8 @@ const GUARDED_EXECUTABLE_PATHS = [
 // Raw-source tokens for every census the closure runs: sink regex families,
 // device-data property names and AST entry points, and the executable guard.
 // Files whose raw text contains none of these cannot contribute a match, so
-// they skip the compiler printer. Tokens that appear only in comments still
+// they skip code preparation entirely. Comment-free censused files use raw
+// source as code and skip the printer. Sources with comment introducers still
 // require parsing so comment text is stripped before counting.
 const CENSUS_TOKENS = [
     'persistDeviceParam',
@@ -1014,6 +1015,10 @@ function rawSourceContainsCensusToken(source: string): boolean {
     return false;
 }
 
+function rawSourceContainsCommentIntroducer(source: string): boolean {
+    return source.includes('//') || source.includes('/*');
+}
+
 // Compiler-printer comment removal, not hand-rolled scanning: censused sources
 // carry comment-like text inside string literals (`'audio/*,.wav'` accept
 // filters), and only the parser reliably tells a comment from a string.
@@ -1029,10 +1034,14 @@ function stripComments(path: string, source: string): string {
 }
 
 function productionSource(path: string, source: string): ProductionSource {
+    let code = '';
+    if (rawSourceContainsCensusToken(source)) {
+        code = rawSourceContainsCommentIntroducer(source) ? stripComments(path, source) : source;
+    }
     return {
         path,
         source,
-        code: rawSourceContainsCensusToken(source) ? stripComments(path, source) : '',
+        code,
     };
 }
 
@@ -1415,6 +1424,14 @@ describe('device write boundary closure', () => {
         expect(sinkCounts['src/modules/Arrangement/tokenless.ts']).toBeUndefined();
         const deviceDataCounts = countDeviceDataByPath([skipped]);
         expect(deviceDataCounts['src/modules/Arrangement/tokenless.ts']).toBeUndefined();
+    });
+
+    it('uses raw source as code when a census token appears without comment introducers', () => {
+        const source = 'const devices: string[] = [];\nexport const count = devices.length;';
+        const parsed = productionSource('src/modules/Arrangement/tokenNoComments.ts', source);
+        expect(parsed.code).toBe(source);
+        const counts = countDeviceDataByPath([parsed]);
+        expect(counts['src/modules/Arrangement/tokenNoComments.ts']).toBe(1);
     });
 
     it('still strips comments when a census token appears only in a comment', () => {
