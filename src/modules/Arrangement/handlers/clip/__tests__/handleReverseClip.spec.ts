@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
     getTrackStoreState: vi.fn(),
     captureClipPitchAnalysis: vi.fn(),
     getCachedAudioBuffer: vi.fn(),
-    readTempoAtBeat: vi.fn(({ defaultTempo }: { defaultTempo: number }) => defaultTempo),
+    readTempoAtBeat: vi.fn<(input: { beat: number }) => number>(),
     transportTempo: 60,
     tempoMapChanges: [] as { beat: number; tempo: number; curve: 'instant' }[],
     updateClipInStore: vi.fn(),
@@ -36,11 +36,7 @@ vi.mock('#/modules/Transport/stores', () => ({
             return { changes: mocks.tempoMapChanges };
         },
     },
-    readTempoAtBeat: ({ beat }: { beat: number }) =>
-        mocks.readTempoAtBeat({
-            beat,
-            defaultTempo: mocks.transportTempo,
-        }),
+    readTempoAtBeat: ({ beat }: { beat: number }) => mocks.readTempoAtBeat({ beat }),
 }));
 vi.mock('../../../stores/updateClipInStore', () => ({
     updateClipInStore: mocks.updateClipInStore,
@@ -53,7 +49,7 @@ describe('handleReverseClip', () => {
         mocks.captureClipPitchAnalysis.mockReturnValue({});
         mocks.transportTempo = 60;
         mocks.tempoMapChanges = [];
-        mocks.readTempoAtBeat.mockImplementation(({ defaultTempo }: { defaultTempo: number }) => defaultTempo);
+        mocks.readTempoAtBeat.mockImplementation((_input: { beat: number }) => mocks.transportTempo);
         mocks.getCachedAudioBuffer.mockReturnValue({
             length: 32,
             sampleRate: 8,
