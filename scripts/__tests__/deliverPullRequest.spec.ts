@@ -134,9 +134,11 @@ type ReviewStateIdentityFixture = {
 function reviewStateResponse(
     reviews: ReviewPageFixture,
     reviewThreads: ReviewThreadPageFixture,
-    identity: ReviewStateIdentityFixture = {}
+    identity: ReviewStateIdentityFixture = {},
+    errors?: unknown[]
 ): string {
     return JSON.stringify({
+        ...(errors === undefined ? {} : { errors }),
         data: {
             repository: {
                 pullRequest: {
@@ -3373,6 +3375,51 @@ describe('delivery shell boundary', () => {
         expect(captures[0]?.find((argument) => argument.startsWith('query='))).toContain('nodes{id isResolved}');
     });
 
+    it('rejects partial review data carrying nonempty GraphQL errors before trusting an older approval', () => {
+        const response = reviewStateResponse(
+            {
+                nodes: [
+                    {
+                        id: 'review-approved-older',
+                        state: 'APPROVED',
+                        submittedAt: '2026-08-19T00:00:00Z',
+                        author: {
+                            id: REVIEWER_BOT_NODE_ID,
+                            login: 'renamed-reviewer[bot]',
+                            __typename: 'Bot',
+                        },
+                        commit: { oid: 'head' },
+                    },
+                    {
+                        id: 'review-changes-requested-newer',
+                        state: 'CHANGES_REQUESTED',
+                        submittedAt: '2026-08-20T00:00:00Z',
+                        author: null,
+                        commit: { oid: 'head' },
+                    },
+                ],
+                hasPreviousPage: false,
+                startCursor: null,
+            },
+            { nodes: [], hasNextPage: false, endCursor: null },
+            {},
+            [{ message: 'review author could not be resolved' }]
+        );
+        const captures: string[][] = [];
+        const shell: ShellRunner = {
+            capture: (_command, args) => {
+                captures.push(args);
+                return response;
+            },
+            run: () => undefined,
+        };
+
+        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
+            /cannot prove complete review state for PR #42/
+        );
+        expect(captures).toHaveLength(1);
+    });
+
     it.each(['review', 'thread'] as const)('refuses %s state mutation between complete scans', (connection) => {
         const captures: string[][] = [];
         const shell: ShellRunner = {
@@ -3467,6 +3514,37 @@ describe('delivery shell boundary', () => {
             /cannot prove complete review state for PR #42/
         );
         expect(captures).toHaveLength(2);
+    });
+
+    it.each([
+        {
+            label: 'pull-request identity',
+            identity: { pullRequestId: 'different-pull-request', headRefOid: 'head' },
+        },
+        { label: 'head', identity: { pullRequestId: 'pull-request-id', headRefOid: 'different-head' } },
+    ])('refuses $label drift on a later thread page', ({ identity }) => {
+        const captures: string[][] = [];
+        const shell: ShellRunner = {
+            capture: (_command, args) => {
+                captures.push(args);
+                return reviewStateResponse(
+                    { nodes: [], hasPreviousPage: false, startCursor: null },
+                    {
+                        nodes: [],
+                        hasNextPage: captures.length === 1,
+                        endCursor: captures.length === 1 ? 'later-threads' : null,
+                    },
+                    captures.length === 1 ? undefined : identity
+                );
+            },
+            run: () => undefined,
+        };
+
+        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
+            /cannot prove complete review state for PR #42/
+        );
+        expect(captures).toHaveLength(2);
+        expect(captures[1]).toContain('threadsAfter=later-threads');
     });
 
     it.each(['review', 'thread'] as const)('refuses %s pagination beyond the page budget', (connection) => {

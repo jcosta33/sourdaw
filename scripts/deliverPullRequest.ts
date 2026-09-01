@@ -1234,13 +1234,16 @@ function parseReviewThreadRecord(value: unknown, number: number): ReviewThreadRe
 }
 
 function parseReviewStatePage(response: string, number: number): ReviewStatePage {
-    const pullRequest = parseJson<{
-        data?: {
-            repository?: {
-                pullRequest?: unknown;
-            };
-        };
-    }>(response, 'review query').data?.repository?.pullRequest;
+    const envelope = parseJson<unknown>(response, 'review query');
+    if (
+        !isRecord(envelope) ||
+        (Object.hasOwn(envelope, 'errors') && (!Array.isArray(envelope.errors) || envelope.errors.length > 0)) ||
+        !isRecord(envelope.data) ||
+        !isRecord(envelope.data.repository)
+    ) {
+        invalidReviewState(number);
+    }
+    const pullRequest = envelope.data.repository.pullRequest;
     if (
         !isRecord(pullRequest) ||
         !isRecord(pullRequest.reviews) ||
