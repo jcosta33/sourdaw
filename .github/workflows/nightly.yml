@@ -555,7 +555,6 @@ jobs:
               "$positive_control_status" >&2
             exit 1
           fi
-
       - name: Scan history for secrets
         working-directory: ${{ github.workspace }}
         run: sh "$GITHUB_WORKSPACE/trusted-scanner/scripts/run-gitleaks-history-scan.sh" "$GITHUB_WORKSPACE/scan-target/.git"
@@ -876,4 +875,3 @@ jobs:
           else
             gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body" --label bug --label status:ready
           fi
-

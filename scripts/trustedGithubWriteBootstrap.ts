@@ -15,7 +15,7 @@ import { delimiter, dirname, isAbsolute, join, posix, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url';
 
 export type TrustedGithubWriteCommand =
-    'deliver' | 'issue:reconcile' | 'lane:publish' | 'review:publish' | 'review:resolve';
+    'deliver' | 'issue:reconcile' | 'lane:publish' | 'review:publish' | 'review:resolve' | 'review:resolve:recover';
 
 export const BOOTSTRAP_PATH = 'scripts/trustedGithubWriteBootstrap.ts';
 export const HEALTH_GATES_WORKFLOW_PATH = '.github/workflows/health-gates.yml';
@@ -24,14 +24,20 @@ export const TRUSTED_PRIMARY_ROOT_ENV = 'SOURDAW_TRUSTED_PRIMARY_ROOT';
 export const TRUSTED_COMMON_DIR_ENV = 'SOURDAW_TRUSTED_COMMON_DIR';
 export const TRUSTED_GIT_PATH_ENV = 'SOURDAW_TRUSTED_GIT_PATH';
 export const TRUSTED_GH_PATH_ENV = 'SOURDAW_TRUSTED_GH_PATH';
+export const TRUSTED_PS_PATH_ENV = 'SOURDAW_TRUSTED_PS_PATH';
+export const TRUSTED_POWERSHELL_PATH_ENV = 'SOURDAW_TRUSTED_POWERSHELL_PATH';
 export const TRUSTED_ORIGIN_COMMIT_ENV = 'SOURDAW_TRUSTED_ORIGIN_COMMIT';
 export const TRUSTED_GATE_WORKFLOW_ENV = 'SOURDAW_TRUSTED_GATE_WORKFLOW';
+
+const REVIEW_RESOLUTION_CHILD_ENV = 'SOURDAW_REVIEW_RESOLUTION_CHILD';
 
 export type TrustedLauncherBinding = {
     primaryRoot: string;
     commonDir: string;
     gitPath: string;
     ghPath: string;
+    psPath?: string;
+    powershellPath?: string;
 };
 
 /**
@@ -105,6 +111,14 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
     ],
+    'review:resolve:recover': [
+        'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/recoverReviewResolutionLock.ts',
+        'scripts/resolveReviewThread.ts',
+        'scripts/pullRequestMutationLock.ts',
+        'scripts/githubAppIdentity.ts',
+        'scripts/prContract.ts',
+    ],
 };
 
 const commandEntries: Record<TrustedGithubWriteCommand, { path: string; runner: string }> = {
@@ -113,6 +127,10 @@ const commandEntries: Record<TrustedGithubWriteCommand, { path: string; runner: 
     'lane:publish': { path: 'scripts/publishLane.ts', runner: 'runPublishLaneCli' },
     'review:publish': { path: 'scripts/publishReview.ts', runner: 'runPublishReviewCli' },
     'review:resolve': { path: 'scripts/resolveReviewThread.ts', runner: 'runResolveReviewThreadCli' },
+    'review:resolve:recover': {
+        path: 'scripts/recoverReviewResolutionLock.ts',
+        runner: 'runRecoverReviewResolutionLockCli',
+    },
 };
 
 export function trustedDependencyPaths(command: TrustedGithubWriteCommand): readonly string[] {
@@ -725,7 +743,9 @@ async function runSnapshotModule(
         'const loaded = await import(pathToFileURL(entryPath).href);',
         'const command = Reflect.get(loaded, runner);',
         "if (typeof command !== 'function') throw new Error(`trusted snapshot does not export ${runner}`);",
-        'const result = await command(args);',
+        'const trustedLauncher = typeof process.env.SOURDAW_TRUSTED_PRIMARY_ROOT === "string" && typeof process.env.SOURDAW_TRUSTED_GIT_PATH === "string" && typeof process.env.SOURDAW_TRUSTED_GH_PATH === "string" ? { primaryRoot: process.env.SOURDAW_TRUSTED_PRIMARY_ROOT, gitPath: process.env.SOURDAW_TRUSTED_GIT_PATH, ghPath: process.env.SOURDAW_TRUSTED_GH_PATH, ...(typeof process.env.SOURDAW_TRUSTED_PS_PATH === "string" ? { psPath: process.env.SOURDAW_TRUSTED_PS_PATH } : {}), ...(typeof process.env.SOURDAW_TRUSTED_POWERSHELL_PATH === "string" ? { powershellPath: process.env.SOURDAW_TRUSTED_POWERSHELL_PATH } : {}) } : undefined;',
+        'const dependencies = runner === "runResolveReviewThreadCli" || runner === "runRecoverReviewResolutionLockCli" ? { trustedLauncher } : undefined;',
+        'const result = dependencies === undefined ? await command(args) : await command(args, dependencies);',
         "if (!Number.isSafeInteger(result)) throw new Error('trusted snapshot returned an invalid exit code');",
         'process.exitCode = result;',
     ].join('\n');
@@ -756,6 +776,11 @@ export function trustedSnapshotEnv(
     parent: NodeJS.ProcessEnv = process.env
 ): NodeJS.ProcessEnv {
     const env = trustedGitReadEnv(parent);
+    for (const key of Object.keys(env)) {
+        if (key.toUpperCase() === REVIEW_RESOLUTION_CHILD_ENV) {
+            delete env[key];
+        }
+    }
     if (snapshot.gateWorkflow !== undefined) {
         env[TRUSTED_GATE_WORKFLOW_ENV] = JSON.stringify(snapshot.gateWorkflow);
     }
@@ -763,13 +788,25 @@ export function trustedSnapshotEnv(
     if (launcher === undefined) {
         return env;
     }
-    env.PATH = [...new Set([dirname(launcher.gitPath), dirname(launcher.ghPath), dirname(process.execPath)])].join(
-        delimiter
-    );
+    env.PATH = [
+        ...new Set([
+            dirname(launcher.gitPath),
+            dirname(launcher.ghPath),
+            ...(launcher.psPath === undefined ? [] : [dirname(launcher.psPath)]),
+            ...(launcher.powershellPath === undefined ? [] : [dirname(launcher.powershellPath)]),
+            dirname(process.execPath),
+        ]),
+    ].join(delimiter);
     env[TRUSTED_PRIMARY_ROOT_ENV] = launcher.primaryRoot;
     env[TRUSTED_COMMON_DIR_ENV] = launcher.commonDir;
     env[TRUSTED_GIT_PATH_ENV] = launcher.gitPath;
     env[TRUSTED_GH_PATH_ENV] = launcher.ghPath;
+    if (launcher.psPath !== undefined) {
+        env[TRUSTED_PS_PATH_ENV] = launcher.psPath;
+    }
+    if (launcher.powershellPath !== undefined) {
+        env[TRUSTED_POWERSHELL_PATH_ENV] = launcher.powershellPath;
+    }
     env[TRUSTED_ORIGIN_COMMIT_ENV] = snapshot.commit;
     return env;
 }
@@ -818,9 +855,13 @@ export function trustedGitReadEnv(parent: NodeJS.ProcessEnv = process.env): Node
     return env;
 }
 
-export function resolveTrustedExecutable(name: 'git' | 'gh', parent: NodeJS.ProcessEnv = process.env): string {
-    const extensions = process.platform === 'win32' ? (parent.PATHEXT ?? '.EXE;.CMD;.BAT').split(';') : [''];
-    for (const directory of (parent.PATH ?? '').split(delimiter)) {
+export function resolveTrustedExecutable(
+    name: 'git' | 'gh' | 'ps',
+    parent: NodeJS.ProcessEnv = process.env,
+    platform: NodeJS.Platform = process.platform
+): string {
+    const extensions = platform === 'win32' ? ['.exe'] : [''];
+    for (const directory of (parent.PATH ?? '').split(platform === 'win32' ? ';' : delimiter)) {
         for (const extension of extensions) {
             const candidate = resolve(directory || process.cwd(), `${name}${extension.toLowerCase()}`);
             try {
@@ -835,6 +876,27 @@ export function resolveTrustedExecutable(name: 'git' | 'gh', parent: NodeJS.Proc
     throw new Error(`cannot resolve trusted ${name} executable from the launcher PATH`);
 }
 
+function resolveTrustedPowerShellExecutable(
+    parent: NodeJS.ProcessEnv = process.env,
+    platform: NodeJS.Platform = process.platform
+): string {
+    const extensions = platform === 'win32' ? ['.exe'] : [''];
+    for (const directory of (parent.PATH ?? '').split(platform === 'win32' ? ';' : delimiter)) {
+        for (const extension of extensions) {
+            const suffix = extension === '' ? '' : extension.toLowerCase();
+            const candidate = resolve(directory || process.cwd(), `powershell${suffix}`);
+            try {
+                accessSync(candidate, constants.X_OK);
+                return realpathSync(candidate);
+            } catch {
+                // Try the next operator-provided PATH entry. The protected launcher freezes the
+                // first executable it finds before any lane-selected child starts.
+            }
+        }
+    }
+    throw new Error('cannot resolve trusted powershell executable from the launcher PATH');
+}
+
 function repositoryCommonDir(checkoutRoot: string, gitPath: string): string {
     const value = captureGit(checkoutRoot, gitPath, ['rev-parse', '--git-common-dir']).trim();
     return realpathSync(isAbsolute(value) ? value : resolve(checkoutRoot, value));
@@ -842,10 +904,12 @@ function repositoryCommonDir(checkoutRoot: string, gitPath: string): string {
 
 export function resolveTrustedLauncherBinding(
     launcherRoot: string,
-    parent: NodeJS.ProcessEnv = process.env
+    parent: NodeJS.ProcessEnv = process.env,
+    command?: TrustedGithubWriteCommand,
+    platform: NodeJS.Platform = process.platform
 ): TrustedLauncherBinding {
     const root = realpathSync(launcherRoot);
-    const gitPath = resolveTrustedExecutable('git', parent);
+    const gitPath = resolveTrustedExecutable('git', parent, platform);
     const commonDir = repositoryCommonDir(root, gitPath);
     const primaryRoot = realpathSync(dirname(commonDir));
     if (root !== primaryRoot) {
@@ -855,8 +919,25 @@ export function resolveTrustedLauncherBinding(
         primaryRoot,
         commonDir,
         gitPath,
-        ghPath: resolveTrustedExecutable('gh', parent),
+        ghPath: resolveTrustedExecutable('gh', parent, platform),
+        psPath: commandRequiresTrustedPs(command, platform)
+            ? resolveTrustedExecutable('ps', parent, platform)
+            : undefined,
+        powershellPath: commandRequiresTrustedPowerShell(command, platform)
+            ? resolveTrustedPowerShellExecutable(parent, platform)
+            : undefined,
     };
+}
+
+function commandRequiresTrustedPs(command: TrustedGithubWriteCommand | undefined, platform: NodeJS.Platform): boolean {
+    return platform !== 'win32' && (command === 'review:resolve' || command === 'review:resolve:recover');
+}
+
+function commandRequiresTrustedPowerShell(
+    command: TrustedGithubWriteCommand | undefined,
+    platform: NodeJS.Platform
+): boolean {
+    return platform === 'win32' && (command === 'review:resolve' || command === 'review:resolve:recover');
 }
 
 function defaultPort(binding: TrustedLauncherBinding): TrustedSourcePort {
@@ -880,20 +961,21 @@ function parseCommand(value: string | undefined): TrustedGithubWriteCommand {
         value === 'issue:reconcile' ||
         value === 'lane:publish' ||
         value === 'review:publish' ||
-        value === 'review:resolve'
+        value === 'review:resolve' ||
+        value === 'review:resolve:recover'
     ) {
         return value;
     }
     throw new Error(
-        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:reconcile|lane:publish|review:publish|review:resolve> [args...]'
+        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:reconcile|lane:publish|review:publish|review:resolve|review:resolve:recover> [args...]'
     );
 }
 
 async function main(): Promise<number> {
     const executingFile = fileURLToPath(import.meta.url);
     const launcherRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
-    const binding = resolveTrustedLauncherBinding(launcherRoot);
     const command = parseCommand(process.argv[2]);
+    const binding = resolveTrustedLauncherBinding(launcherRoot, process.env, command);
     const port = defaultPort(binding);
     const commit = port.resolveOriginMain();
     const originBootstrap = port.readOriginSource(commit, BOOTSTRAP_PATH);
