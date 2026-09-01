@@ -336,9 +336,10 @@ const postTargetScopeAdmissionStrategyDefinitions = [
     { name: 'setAllVelocities', transform: midiWholeClipStrategy },
 ] satisfies readonly PostTargetScopeAdmissionStrategyDefinition<PostTargetScopeActionName>[];
 
-export const postTargetScopeAdmissionStrategyRegistry = createPostTargetScopeAdmissionStrategyRegistry(
-    postTargetScopeAdmissionStrategyDefinitions
-);
+export const postTargetScopeAdmissionStrategyRegistry =
+    createPostTargetScopeAdmissionStrategyRegistry<PostTargetScopeActionName>(
+        postTargetScopeAdmissionStrategyDefinitions
+    );
 
 export function assertPostTargetScopeAdmissionStrategiesMatchGroundingCatalog(
     catalog: readonly { actionType: string }[]

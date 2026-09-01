@@ -2171,6 +2171,11 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'transpose notes in Piano MIDI by 7 semitones, but only the selected MIDI notes',
             context
         );
+        const selectedNotesWithWrongValue = bridge(
+            [{ name: 'transposeNotes', arguments: { clipId: 'clip-midi', semitones: 8 } }],
+            'transpose notes in Piano MIDI by 7 semitones, but only the selected notes',
+            context
+        );
         const wrongValue = bridge(
             [{ name: 'quantizeNotes', arguments: { clipId: 'clip-midi', gridSize: 0.5 } }],
             'quantize notes in Piano MIDI to a 0.25 beat grid',
@@ -2200,6 +2205,8 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(selectedNotes.rejections[0]?.reason).toContain('Selected-note edits are not supported');
         expect(selectedMidiNotes.actions).toEqual([]);
         expect(selectedMidiNotes.rejections[0]?.reason).toContain('Selected-note edits are not supported');
+        expect(selectedNotesWithWrongValue.actions).toEqual([]);
+        expect(selectedNotesWithWrongValue.rejections[0]?.reason).toContain('Selected-note edits are not supported');
         expect(wrongValue.actions).toEqual([]);
         expect(wrongValue.rejections[0]?.reason).toContain('does not match');
         expect(nearValue.actions).toEqual([]);
