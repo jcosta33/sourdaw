@@ -1,6 +1,7 @@
 import { zipSync } from 'fflate';
 import { describe, it, expect } from 'vitest';
 
+import { DAW_PROJECT_ZIP_LIMITS } from '../dawProjectZipLimits';
 import { runDawProjectZipWorkerRequest } from '../runDawProjectZipWorkerRequest';
 
 /**
@@ -12,6 +13,33 @@ import { runDawProjectZipWorkerRequest } from '../runDawProjectZipWorkerRequest'
 
 function makeZip(entries: Record<string, Uint8Array>): ArrayBuffer {
     return zipSync(entries).buffer;
+}
+
+/**
+ * Patches the declared "uncompressed size" field of each central-directory
+ * record (in archive order) without touching the actual entry payload,
+ * mirroring the technique `extractGuardedZip.spec.ts` uses to fake a
+ * declared-size mismatch: scan for the central-directory signature
+ * (`PK\x01\x02`) and rewrite the uncompressed-size field at its +24 offset.
+ * This lets the DAW_PROJECT_ZIP_LIMITS byte-ceiling specs assert against
+ * archives that *declare* themselves above 64 MiB without allocating any
+ * real 64 MiB payload.
+ */
+function patchCentralDirectoryUncompressedSizes(archive: ArrayBuffer, declaredSizes: readonly number[]): ArrayBuffer {
+    const bytes = new Uint8Array(archive).slice();
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    let entryIndex = 0;
+    for (let offset = 0; offset <= bytes.byteLength - 4; offset += 1) {
+        if (view.getUint32(offset, true) !== 0x02014b50) {
+            continue;
+        }
+        const declared = declaredSizes[entryIndex];
+        if (declared !== undefined) {
+            view.setUint32(offset + 24, declared, true);
+        }
+        entryIndex += 1;
+    }
+    return bytes.buffer;
 }
 
 function makeCorruptStoredZip(entries: Record<string, Uint8Array>): ArrayBuffer {
@@ -110,7 +138,43 @@ describe('runDawProjectZipWorkerRequest — header phase', () => {
         const bytes = makeZip({ 'project.xml': utf8('<Project/>'.repeat(1000)) });
         expect(() =>
             runDawProjectZipWorkerRequest({ bytes, phase: 'header', restrictLimits: { maxArchiveBytes: 4 } })
-        ).toThrow();
+        ).toThrow(/archive byte limit exceeds 4/i);
+    });
+});
+
+describe('runDawProjectZipWorkerRequest — enforces DAW_PROJECT_ZIP_LIMITS', () => {
+    it('rejects an archive above the 512-entry ceiling', () => {
+        const entries: Record<string, Uint8Array> = {};
+        for (let index = 0; index < 513; index += 1) {
+            entries[`audio/track-${index}.wav`] = utf8('x');
+        }
+        const bytes = makeZip(entries);
+
+        expect(() =>
+            runDawProjectZipWorkerRequest({ bytes, phase: 'audio', restrictLimits: DAW_PROJECT_ZIP_LIMITS })
+        ).toThrow(/ZIP entry count exceeds 512/);
+    });
+
+    it('rejects a central-directory entry declaring an uncompressed size above the 64 MiB per-entry ceiling', () => {
+        const bytes = patchCentralDirectoryUncompressedSizes(makeZip({ 'audio/big.wav': utf8('x') }), [
+            64 * 1024 * 1024 + 1,
+        ]);
+
+        expect(() =>
+            runDawProjectZipWorkerRequest({ bytes, phase: 'audio', restrictLimits: DAW_PROJECT_ZIP_LIMITS })
+        ).toThrow(/ZIP entry exceeds the uncompressed byte limit: audio\/big\.wav/);
+    });
+
+    it('rejects a declared total uncompressed size above the 64 MiB archive ceiling', () => {
+        const perEntryDeclaredBytes = 40 * 1024 * 1024;
+        const bytes = patchCentralDirectoryUncompressedSizes(
+            makeZip({ 'audio/one.wav': utf8('x'), 'audio/two.wav': utf8('y') }),
+            [perEntryDeclaredBytes, perEntryDeclaredBytes]
+        );
+
+        expect(() =>
+            runDawProjectZipWorkerRequest({ bytes, phase: 'audio', restrictLimits: DAW_PROJECT_ZIP_LIMITS })
+        ).toThrow(/ZIP total uncompressed bytes exceed the archive limit/);
     });
 });
 

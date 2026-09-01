@@ -11,9 +11,8 @@ export type DawProjectZipContents = {
 const textDecoder = new TextDecoder('utf-8');
 
 export async function readDawProjectZip(buffer: ArrayBuffer): Promise<DawProjectZipContents> {
-    const bytes = new Uint8Array(buffer);
     const header = await extractDawProjectZipEntries({
-        bytes,
+        bytes: copyArchiveBytes(buffer),
         phase: 'header',
         restrictLimits: DAW_PROJECT_ZIP_LIMITS,
     });
@@ -35,13 +34,25 @@ export async function readDawProjectZip(buffer: ArrayBuffer): Promise<DawProject
         metadataXml: metadataEntry ? decodeUtf8(metadataEntry) : null,
         readAudioAssets: async () => {
             const audio = await extractDawProjectZipEntries({
-                bytes,
+                bytes: copyArchiveBytes(buffer),
                 phase: 'audio',
                 restrictLimits: DAW_PROJECT_ZIP_LIMITS,
             });
             return new Map(Object.entries(audio.entries));
         },
     };
+}
+
+/**
+ * `extractDawProjectZipEntries` transfers its `bytes` buffer to the worker,
+ * detaching it. The header and audio phases run against the same caller
+ * buffer, so each phase needs its own copy — the caller's `buffer` must
+ * never be detached, and the header phase's buffer must not be detached out
+ * from under the later `readAudioAssets` call. The archive is capped at 64
+ * MiB (`DAW_PROJECT_ZIP_LIMITS`), so a copy per phase is cheap.
+ */
+function copyArchiveBytes(buffer: ArrayBuffer): Uint8Array {
+    return new Uint8Array(buffer.slice(0));
 }
 
 function decodeUtf8(data: Uint8Array): string {

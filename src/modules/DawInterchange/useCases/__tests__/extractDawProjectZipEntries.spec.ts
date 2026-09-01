@@ -1,12 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { extractDawProjectZipEntries } from '../extractDawProjectZipEntries';
+import { readDawProjectZip } from '../readDawProjectZip';
 import { type DawProjectZipWorkerRequest, type DawProjectZipWorkerResponse } from '../runDawProjectZipWorkerRequest';
 
 /**
  * Mirrors `extractSingleGuardedZipEntry.spec.ts` in `#/infra/archive`: proves
  * the Worker lifecycle (transfer, terminate, abort, error propagation)
  * without depending on a real Worker implementation in the test environment.
+ *
+ * `postMessage` actually performs the structured-clone transfer via
+ * `structuredClone(message, { transfer })` (Node 17+, available under
+ * Vitest) instead of being a bare spy. A real `Worker.postMessage` detaches
+ * every buffer named in `transfer`; a spy that never transfers cannot catch
+ * a caller that reuses an already-detached buffer across two calls (issue
+ * #3317's DataCloneError on `readAudioAssets`), because the archive bytes
+ * stay attached and readable no matter how many times they are "posted".
  */
 class ControlledWorker {
     static instances: ControlledWorker[] = [];
@@ -14,11 +23,14 @@ class ControlledWorker {
     onmessage: ((event: MessageEvent<DawProjectZipWorkerResponse>) => void) | null = null;
     onerror: ((event: ErrorEvent) => void) | null = null;
     onmessageerror: ((event: MessageEvent) => void) | null = null;
-    postMessage = vi.fn<(message: DawProjectZipWorkerRequest, transfer: Transferable[]) => void>(() => {
-        if (ControlledWorker.postMessageError) {
-            throw ControlledWorker.postMessageError;
+    postMessage = vi.fn<(message: DawProjectZipWorkerRequest, transfer: Transferable[]) => void>(
+        (message, transfer) => {
+            if (ControlledWorker.postMessageError) {
+                throw ControlledWorker.postMessageError;
+            }
+            structuredClone(message, { transfer });
         }
-    });
+    );
     terminate = vi.fn();
 
     constructor() {
@@ -115,5 +127,33 @@ describe('extractDawProjectZipEntries', () => {
 
         await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
         expect(worker?.terminate).toHaveBeenCalledOnce();
+    });
+});
+
+describe('readDawProjectZip — through a transferring fake worker (regression for issue #3317)', () => {
+    it('completes both the header phase and readAudioAssets without detaching a reused buffer', async () => {
+        const buffer = new ArrayBuffer(8);
+        new Uint8Array(buffer).set([1, 2, 3, 4, 5, 6, 7, 8]);
+
+        const resultPromise = readDawProjectZip(buffer);
+        const headerWorker = ControlledWorker.instances[0];
+        headerWorker?.respond({
+            type: 'success',
+            entries: { 'project.xml': new TextEncoder().encode('<Project/>').buffer },
+        });
+        const result = await resultPromise;
+        expect(result.projectXml).toBe('<Project/>');
+
+        const audioPromise = result.readAudioAssets();
+        const audioWorker = ControlledWorker.instances[1];
+        audioWorker?.respond({
+            type: 'success',
+            entries: { 'audio/kick.wav': new TextEncoder().encode('kick').buffer },
+        });
+        const audioAssets = await audioPromise;
+
+        expect(audioAssets.has('audio/kick.wav')).toBe(true);
+        expect(headerWorker?.postMessage).toHaveBeenCalledOnce();
+        expect(audioWorker?.postMessage).toHaveBeenCalledOnce();
     });
 });
