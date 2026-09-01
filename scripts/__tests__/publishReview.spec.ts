@@ -7,6 +7,7 @@ import {
     parsePublishReviewArgs,
     parseReviewDocument,
     publishReview,
+    runPublishReviewCli,
     shellPort,
     type PublishReviewCoordinatorDependencies,
     type PublishReviewPort,
@@ -123,6 +124,29 @@ describe('review publish', () => {
             'dispose',
             'lock:42:release',
         ]);
+    });
+
+    it('forwards the exact valid CLI pull-request number to the live coordinator', async () => {
+        const { port } = fakePort();
+        const forwarded: number[] = [];
+        const dependencies: PublishReviewCoordinatorDependencies = {
+            primaryRoot: () => '/repo',
+            serializeMutation: async (_primaryRoot, _number, operation) => operation(),
+            authenticateReviewer: async () => ({
+                minted: { actorNodeId: REVIEWER_BOT_NODE_ID },
+                session: { configDir: '/tmp/sourdaw-reviewer', env: {}, dispose: () => undefined },
+            }),
+            repositoryName: () => 'jcosta33/sourdaw',
+            reviewPort: () => port,
+            publish: (number) => {
+                forwarded.push(number);
+                return 99;
+            },
+        };
+
+        await expect(runPublishReviewCli(['3239'], dependencies)).resolves.toBe(0);
+
+        expect(forwarded).toEqual([3239]);
     });
 
     it('posts as the reviewer bot on the bundle head and prints the review id', () => {

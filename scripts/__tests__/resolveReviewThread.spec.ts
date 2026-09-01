@@ -11,6 +11,7 @@ import {
     inspectReviewThread,
     parseResolveReviewThreadArgs,
     resolveReviewThread,
+    runResolveReviewThreadCli,
     deleteReply,
     type ResolveReviewThreadCoordinatorDependencies,
     type ResolveReviewThreadPort,
@@ -317,6 +318,31 @@ describe('review thread resolution', () => {
             'dispose',
             'lock:42:release',
         ]);
+    });
+
+    it('forwards exact valid CLI pull-request, thread, and head arguments to the live coordinator', async () => {
+        const { port } = fakePort();
+        let forwarded: { number: number; threadId: string; expectedHead: string } | undefined;
+        const dependencies: ResolveReviewThreadCoordinatorDependencies = {
+            primaryRoot: () => '/repo',
+            serializeMutation: async (_primaryRoot, _number, operation) => operation(),
+            authenticateAuthor: async () => ({
+                minted: { actorNodeId: AUTHOR_BOT_NODE_ID },
+                session: { configDir: '/tmp/sourdaw-author', env: {}, dispose: () => undefined },
+            }),
+            repositoryName: () => 'jcosta33/sourdaw',
+            threadPort: () => port,
+            resolve: (number, exactThreadId, expectedHead) => {
+                forwarded = { number, threadId: exactThreadId, expectedHead };
+                return 'resolved';
+            },
+        };
+
+        await expect(
+            runResolveReviewThreadCli(['3239', '--thread', threadId, '--head', head], dependencies)
+        ).resolves.toBe(0);
+
+        expect(forwarded).toEqual({ number: 3239, threadId, expectedHead: head });
     });
 
     it('uses supported GraphQL reply and deletion input fields', () => {

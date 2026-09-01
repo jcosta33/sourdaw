@@ -1033,24 +1033,29 @@ describe('package scripts and gitignore', () => {
     it('resolves the trusted snapshot with no inherited Git or GitHub routing', () => {
         const env = trustedGitReadEnv({
             PATH: '/usr/bin',
-            GIT_DIR: '/hostile/.git',
-            GIT_WORK_TREE: '/hostile',
-            GH_TOKEN: 'personal',
-            GITHUB_TOKEN: 'actions',
-            SOURDAW_GITHUB_APP_PRIVATE_KEY: 'secret',
-            SOURDAW_TRUSTED_REPOSITORY_ROOT: '/repo',
-            NODE_OPTIONS: '--import=/hostile/preload.mjs',
-            NODE_PATH: '/hostile/modules',
+            Git_Dir: '/hostile/.git',
+            gIt_Work_Tree: '/hostile',
+            Gh_Token: 'personal',
+            Github_Token: 'actions',
+            Sourdaw_Github_App_Private_Key: 'secret',
+            Sourdaw_Trusted_Repository_Root: '/repo',
+            Node_Options: '--import=/hostile/preload.mjs',
+            nOdE_Path: '/hostile/modules',
+            Ssh_Auth_Sock: '/hostile/agent.sock',
+            SOURDAW_RENDER_PROFILE: 'focused',
         });
 
-        expect(env.GIT_DIR).toBeUndefined();
-        expect(env.GIT_WORK_TREE).toBeUndefined();
-        expect(env.GH_TOKEN).toBeUndefined();
-        expect(env.GITHUB_TOKEN).toBeUndefined();
-        expect(env.SOURDAW_GITHUB_APP_PRIVATE_KEY).toBeUndefined();
-        expect(env.SOURDAW_TRUSTED_REPOSITORY_ROOT).toBeUndefined();
-        expect(env.NODE_OPTIONS).toBeUndefined();
-        expect(env.NODE_PATH).toBeUndefined();
+        expect(env.Git_Dir).toBeUndefined();
+        expect(env.gIt_Work_Tree).toBeUndefined();
+        expect(env.Gh_Token).toBeUndefined();
+        expect(env.Github_Token).toBeUndefined();
+        expect(env.Sourdaw_Github_App_Private_Key).toBeUndefined();
+        expect(env.Sourdaw_Trusted_Repository_Root).toBeUndefined();
+        expect(env.Node_Options).toBeUndefined();
+        expect(env.nOdE_Path).toBeUndefined();
+        expect(env.Ssh_Auth_Sock).toBeUndefined();
+        expect(env.SOURDAW_RENDER_PROFILE).toBe('focused');
+        expect(env.PATH).toBe('/usr/bin');
         expect(env.GIT_CONFIG_GLOBAL).toBe('/dev/null');
         expect(env.GIT_CONFIG_SYSTEM).toBe('/dev/null');
     });

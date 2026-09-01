@@ -796,14 +796,15 @@ function captureGit(repositoryRoot: string, gitPath: string, args: string[]): st
 export function trustedGitReadEnv(parent: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
     const env: NodeJS.ProcessEnv = { ...parent };
     for (const key of Object.keys(env)) {
+        const normalizedKey = key.toUpperCase();
         if (
-            key.startsWith('GIT_') ||
-            key.startsWith('GH_') ||
-            key.startsWith('GITHUB_') ||
-            key.startsWith('SOURDAW_GITHUB_APP_') ||
-            key.startsWith('SOURDAW_TRUSTED_') ||
-            key.startsWith('NODE_') ||
-            key === 'SSH_AUTH_SOCK'
+            normalizedKey.startsWith('GIT_') ||
+            normalizedKey.startsWith('GH_') ||
+            normalizedKey.startsWith('GITHUB_') ||
+            normalizedKey.startsWith('SOURDAW_GITHUB_APP_') ||
+            normalizedKey.startsWith('SOURDAW_TRUSTED_') ||
+            normalizedKey.startsWith('NODE_') ||
+            normalizedKey === 'SSH_AUTH_SOCK'
         ) {
             delete env[key];
         }
