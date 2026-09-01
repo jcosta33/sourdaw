@@ -32,7 +32,7 @@ type CatalogPage = { cursor?: string; limit?: number };
 type AgentToolCatalogEntriesInput =
     | {
           category: 'command-index';
-          intent?: string;
+          intent: string;
           names?: never;
           page?: CatalogPage;
       }

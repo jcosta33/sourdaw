@@ -5,6 +5,11 @@ import { defaultPluginScanState, pluginScanStore } from '#/modules/PluginHost/st
 import { type ProjectContext } from '../../models/ProjectContext';
 import { SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA } from '../../models/SemanticCommandList';
 import { type ToolSchema } from '../../models/ToolDefinitions';
+import {
+    AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+    AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+    getAgentToolCatalogSchemas,
+} from '../agentToolCatalog';
 import { APPLICATION_OWNED_TOOL_SCHEMAS, runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
@@ -73,6 +78,29 @@ describe('agent tool catalog', () => {
         vi.restoreAllMocks();
     });
 
+    it('publishes discriminated catalog discovery arguments that match the application contract', () => {
+        const catalogSchema = getAgentToolCatalogSchemas().find(
+            (schema) => schema.function.name === AGENT_CATALOG_DISCOVERY_TOOL_NAME
+        );
+        const indexSchema = getAgentToolCatalogSchemas().find(
+            (schema) => schema.function.name === AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME
+        );
+
+        expect(catalogSchema?.function.parameters).toMatchObject({
+            properties: { category: { type: 'string' }, names: { type: 'array' } },
+            required: ['category', 'names'],
+            additionalProperties: false,
+        });
+        expect(catalogSchema?.function.parameters.properties).not.toHaveProperty('intent');
+        expect(indexSchema?.function.parameters).toMatchObject({
+            properties: { intent: { type: 'string' } },
+            required: ['intent'],
+            additionalProperties: false,
+        });
+        expect(indexSchema?.function.parameters.properties).not.toHaveProperty('category');
+        expect(indexSchema?.function.parameters.properties).not.toHaveProperty('names');
+    });
+
     it('publishes the complete semantic-list grammar from the public versioned contract', () => {
         const proposalSchema = APPLICATION_OWNED_TOOL_SCHEMAS.find(
             (schema: ToolSchema) => schema.function.name === 'command.batch.propose'
@@ -114,6 +142,7 @@ describe('agent tool catalog', () => {
             'project.resolve',
             'agent.capabilities',
             'agent.catalog.discover',
+            'agent.command-index.search',
             'device.factory-manifest.read',
             'command.batch.propose',
             'command.history',

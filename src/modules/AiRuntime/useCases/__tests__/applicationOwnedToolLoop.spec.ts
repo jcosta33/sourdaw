@@ -348,6 +348,7 @@ describe('application-owned tool loop', () => {
         ).toEqual([
             'agent.capabilities',
             'agent.catalog.discover',
+            'agent.command-index.search',
             'analysis.request',
             'command.batch.propose',
             'command.history',

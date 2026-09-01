@@ -45,7 +45,14 @@ type IntentCatalogEntry = {
 };
 
 function words(value: string): string[] {
-    return (value.match(/[A-Z]?[a-z]+|\d+/g) ?? []).map((word) => word.toLowerCase());
+    return (
+        value
+            .normalize('NFKC')
+            .replaceAll(/([\p{Ll}\p{N}])(\p{Lu})/gu, '$1 $2')
+            .replaceAll(/(\p{Lu})(\p{Lu}\p{Ll})/gu, '$1 $2')
+            .toLowerCase()
+            .match(/[\p{L}\p{N}]+/gu) ?? []
+    );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -168,16 +175,46 @@ function intentScore(entry: IntentCatalogEntry, intent: string): number {
     const terms = [...new Set(intent.split(' '))];
     const name = words(entry.name);
     const categories = new Set(entry.semanticCategories);
-    const purpose = entry.purpose.toLowerCase();
+    const purpose = new Set(words(entry.purpose));
     return terms.reduce((score, term) => {
-        if (name.includes(term)) {
+        const variants = inflectionVariants(term);
+        if (variants.some((variant) => name.includes(variant))) {
             return score + 4;
         }
-        if (categories.has(term)) {
+        if (variants.some((variant) => categories.has(variant))) {
             return score + 3;
         }
-        return purpose.includes(term) ? score + 1 : score;
+        return variants.some((variant) => purpose.has(variant)) ? score + 1 : score;
     }, 0);
+}
+
+function inflectionVariants(term: string): readonly string[] {
+    const variants = new Set([term]);
+    const addBaseVariants = (base: string): void => {
+        if (base.length === 0) {
+            return;
+        }
+        variants.add(base);
+        variants.add(`${base}e`);
+        if (/(.)\1$/u.test(base)) {
+            variants.add(base.slice(0, -1));
+        }
+    };
+    if (term.endsWith('ies')) {
+        variants.add(`${term.slice(0, -3)}y`);
+    }
+    if (term.endsWith('ing')) {
+        addBaseVariants(term.slice(0, -3));
+    }
+    if (term.endsWith('ed')) {
+        addBaseVariants(term.slice(0, -2));
+    }
+    if (term.endsWith('es')) {
+        addBaseVariants(term.slice(0, -2));
+    } else if (term.endsWith('s')) {
+        addBaseVariants(term.slice(0, -1));
+    }
+    return [...variants];
 }
 
 export function getExecutableAppActionIntentCatalog(input: { intent?: string; page?: IntentCatalogPage }) {

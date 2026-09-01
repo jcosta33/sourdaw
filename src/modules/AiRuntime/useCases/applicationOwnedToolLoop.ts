@@ -14,6 +14,7 @@ import { type ToolCallResult } from '../transformers/toolCallParser';
 import {
     AGENT_CAPABILITIES_TOOL_NAME,
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+    AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
     ANALYSIS_REQUEST_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
@@ -512,23 +513,24 @@ function executeDeviceManifest(call: ToolCallResult, callId: string, turn: numbe
     };
 }
 
-const catalogCategories = new Set<Parameters<typeof getAgentToolCatalogEntries>[0]['category']>([
+const catalogCategories = [
     'query',
     'resolve',
     'capability',
     'catalog',
     'preview',
-    'command-index',
     'command',
     'commit',
     'history',
     'render',
     'analysis',
     'approval',
-]);
+] as const;
 
-function isCatalogCategory(value: unknown): value is Parameters<typeof getAgentToolCatalogEntries>[0]['category'] {
-    return typeof value === 'string' && catalogCategories.has(value);
+type CatalogCategory = (typeof catalogCategories)[number];
+
+function isCatalogCategory(value: unknown): value is CatalogCategory {
+    return typeof value === 'string' && catalogCategories.some((category) => category === value);
 }
 
 function parseCatalogDiscoveryArguments(argumentsValue: Record<string, unknown>):
@@ -551,26 +553,8 @@ function parseCatalogDiscoveryArguments(argumentsValue: Record<string, unknown>)
     if (!isCatalogCategory(category)) {
         return { status: 'invalid', reason: 'agent.catalog.discover category is unavailable' };
     }
-    const isCommandIndex = category === 'command-index';
-    const intentValue = argumentsValue.intent;
-    const intent = typeof intentValue === 'string' ? intentValue : null;
-    if (isCommandIndex && intent === null) {
-        return {
-            status: 'invalid',
-            reason: 'agent.catalog.discover command-index intent does not match the strict catalog contract',
-        };
-    }
-    if (
-        isCommandIndex &&
-        (argumentsValue.names !== undefined || intent.length === 0 || intent.length > MAX_CATALOG_INTENT_LENGTH)
-    ) {
-        return {
-            status: 'invalid',
-            reason: 'agent.catalog.discover command-index intent does not match the strict catalog contract',
-        };
-    }
     const namesValue = argumentsValue.names;
-    if (!isCommandIndex && (!Array.isArray(namesValue) || namesValue.length === 0 || namesValue.length > 8)) {
+    if (!Array.isArray(namesValue) || namesValue.length === 0 || namesValue.length > 8) {
         return {
             status: 'invalid',
             reason: 'agent.catalog.discover names do not match the strict catalog contract',
@@ -588,7 +572,7 @@ function parseCatalogDiscoveryArguments(argumentsValue: Record<string, unknown>)
             names.push(name);
         }
     }
-    if (!isCommandIndex && intentValue !== undefined) {
+    if (argumentsValue.intent !== undefined) {
         return {
             status: 'invalid',
             reason: 'agent.catalog.discover intent is available only for command-index',
@@ -624,12 +608,6 @@ function parseCatalogDiscoveryArguments(argumentsValue: Record<string, unknown>)
             page.limit = pageValue.limit;
         }
     }
-    if (category === 'command-index') {
-        return {
-            status: 'valid',
-            input: { category: 'command-index', intent, ...(page === undefined ? {} : { page }) },
-        };
-    }
     return {
         status: 'valid',
         input: {
@@ -640,12 +618,70 @@ function parseCatalogDiscoveryArguments(argumentsValue: Record<string, unknown>)
     };
 }
 
+function parseCommandIndexSearchArguments(argumentsValue: Record<string, unknown>):
+    | {
+          status: 'valid';
+          input: Parameters<typeof getAgentToolCatalogEntries>[0];
+      }
+    | { status: 'invalid'; reason: string } {
+    if (Object.keys(argumentsValue).some((key) => key !== 'intent' && key !== 'page')) {
+        return {
+            status: 'invalid',
+            reason: 'agent.command-index.search arguments do not match the strict catalog contract',
+        };
+    }
+    const intent = argumentsValue.intent;
+    if (typeof intent !== 'string' || intent.length === 0 || intent.length > MAX_CATALOG_INTENT_LENGTH) {
+        return {
+            status: 'invalid',
+            reason: 'agent.command-index.search intent does not match the strict catalog contract',
+        };
+    }
+    const pageValue = argumentsValue.page;
+    if (pageValue === undefined) {
+        return { status: 'valid', input: { category: 'command-index', intent } };
+    }
+    if (
+        !isRecord(pageValue) ||
+        Object.keys(pageValue).some((key) => key !== 'cursor' && key !== 'limit') ||
+        (pageValue.cursor !== undefined &&
+            (typeof pageValue.cursor !== 'string' ||
+                pageValue.cursor.length === 0 ||
+                pageValue.cursor.length > MAX_CATALOG_CURSOR_LENGTH ||
+                !CATALOG_CURSOR_PATTERN.test(pageValue.cursor))) ||
+        (pageValue.limit !== undefined &&
+            (typeof pageValue.limit !== 'number' ||
+                !Number.isInteger(pageValue.limit) ||
+                pageValue.limit < 1 ||
+                pageValue.limit > 8))
+    ) {
+        return {
+            status: 'invalid',
+            reason: 'agent.command-index.search page does not match the strict catalog contract',
+        };
+    }
+    return {
+        status: 'valid',
+        input: {
+            category: 'command-index',
+            intent,
+            page: {
+                ...(typeof pageValue.cursor === 'string' ? { cursor: pageValue.cursor } : {}),
+                ...(typeof pageValue.limit === 'number' ? { limit: pageValue.limit } : {}),
+            },
+        },
+    };
+}
+
 function executeCatalogDiscovery(call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt {
-    const parsed = parseCatalogDiscoveryArguments(call.arguments);
+    const parsed =
+        call.name === AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME
+            ? parseCommandIndexSearchArguments(call.arguments)
+            : parseCatalogDiscoveryArguments(call.arguments);
     if (parsed.status === 'invalid') {
         return failureReceipt({
             callId,
-            toolName: AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+            toolName: call.name,
             turn,
             code: 'invalid-tool-arguments',
             safeMessage: parsed.reason,
@@ -659,7 +695,7 @@ function executeCatalogDiscovery(call: ToolCallResult, callId: string, turn: num
             schema: 'sourdaw.application-tool-receipt',
             schemaVersion: 1,
             callId,
-            toolName: AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+            toolName: call.name,
             turn,
             status: 'success',
             revision: null,
@@ -679,7 +715,7 @@ function executeCatalogDiscovery(call: ToolCallResult, callId: string, turn: num
     } catch {
         return failureReceipt({
             callId,
-            toolName: AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+            toolName: call.name,
             turn,
             code: 'invalid-tool-arguments',
             safeMessage: 'Catalog request was rejected by the application contract.',
@@ -699,6 +735,7 @@ function executeSafeRead(call: ToolCallResult, callId: string, turn: number): Ap
         case AGENT_DEVICE_MANIFEST_TOOL_NAME:
             return executeDeviceManifest(call, callId, turn);
         case AGENT_CATALOG_DISCOVERY_TOOL_NAME:
+        case AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME:
             return executeCatalogDiscovery(call, callId, turn);
         case COMMAND_HISTORY_TOOL_NAME:
             return executeCommandHistory(call, callId, turn);
@@ -924,6 +961,7 @@ export async function runApplicationOwnedToolLoop(
             AGENT_CAPABILITIES_TOOL_NAME,
             AGENT_DEVICE_MANIFEST_TOOL_NAME,
             AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+            AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
             COMMAND_HISTORY_TOOL_NAME,
         ]);
         const safeReadCalls = identifiedCalls.filter(({ call }) => safeReadToolNames.has(call.name));
