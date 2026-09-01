@@ -39,6 +39,12 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioContext: vi.fn(() => audioContext),
     importCachedAudioBuffers: vi.fn().mockResolvedValue({ persist: () => Promise.resolve(true), publish: () => 0 }),
     prepareCachedAudioBuffersFromIdb: vi.fn().mockResolvedValue({ cancel: () => undefined, publish: () => 0 }),
+    applyNoteExpression: vi.fn(),
+    audioEngine: {},
+    clearRuntimeCachedAudioBuffers: vi.fn(),
+    getCompensationDelay: vi.fn(),
+    getDefaultBendRangeSemitones: vi.fn(),
+    getFactoryDrumKitByIndex: vi.fn(),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),
