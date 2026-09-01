@@ -31,6 +31,9 @@ export const handleRestoreReversedClip = createHandler<'restoreReversedClip'>({
             name: action.payload.name,
             ...(action.payload.fadeInBeats !== undefined ? { fadeInBeats: action.payload.fadeInBeats } : {}),
             ...(action.payload.fadeOutBeats !== undefined ? { fadeOutBeats: action.payload.fadeOutBeats } : {}),
+            ...(action.payload.audioOffsetBeats !== undefined
+                ? { audioOffsetBeats: action.payload.audioOffsetBeats }
+                : {}),
         }));
         // The pointer and the analysis fall together, for the same reason the forward
         // path drops them together: blobs are the live shift the Knead worklet applies,

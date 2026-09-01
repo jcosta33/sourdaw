@@ -50,6 +50,10 @@ import {
     type SyncopatedArpeggioRequestScope,
 } from './getSyncopatedArpeggioPromptScope';
 import { getWholeProjectVibeMixScope } from './getWholeProjectVibeMixScope';
+import {
+    collectClearSolosRestrictionClauses,
+    type ClearSolosRestrictionActionSpan,
+} from './groundingStrategies/collectClearSolosRestrictionClauses';
 import { groundPostTargetScopeAdmission } from './groundingStrategies/postTargetScopeAdmissionStrategy';
 import { resolveAgentReference } from './resolveAgentReference';
 
@@ -85,6 +89,11 @@ type GroundToolCallInput = {
 type PromptClause = {
     masked: string;
     text: string;
+};
+
+type PromptClauseSpan = PromptClause & {
+    end: number;
+    start: number;
 };
 
 type GroundingCatalog = ReturnType<typeof getExecutableAppActionGroundingCatalog>;
@@ -787,8 +796,8 @@ function hasInvalidNamedClipFadeField(prompt: string): boolean {
     return false;
 }
 
-function getPromptClauses(prompt: string, maskedPrompt: string): PromptClause[] {
-    const clauses: PromptClause[] = [];
+function getPromptClauses(prompt: string, maskedPrompt: string): PromptClauseSpan[] {
+    const clauses: PromptClauseSpan[] = [];
     const separatorPattern = /\s+(?:and then|then|and|but)\s+|[;,\n]+|\.(?!\d)/giu;
     let start = 0;
     for (const match of maskedPrompt.matchAll(separatorPattern)) {
@@ -821,14 +830,40 @@ function getPromptClauses(prompt: string, maskedPrompt: string): PromptClause[] 
             continue;
         }
         if (prompt.slice(start, match.index).trim().length > 0) {
-            clauses.push({ text: prompt.slice(start, match.index), masked: maskedPrompt.slice(start, match.index) });
+            clauses.push({
+                end: match.index,
+                masked: maskedPrompt.slice(start, match.index),
+                start,
+                text: prompt.slice(start, match.index),
+            });
         }
         start = separatorEnd;
     }
     if (prompt.slice(start).trim().length > 0) {
-        clauses.push({ text: prompt.slice(start), masked: maskedPrompt.slice(start) });
+        clauses.push({ end: prompt.length, masked: maskedPrompt.slice(start), start, text: prompt.slice(start) });
     }
     return clauses;
+}
+
+function getPromptActionSpans(
+    prompt: string,
+    maskedPrompt: string,
+    catalog: GroundingCatalog
+): ClearSolosRestrictionActionSpan[] {
+    const clauses = getPromptClauses(prompt, maskedPrompt);
+    const spans: ClearSolosRestrictionActionSpan[] = [];
+    for (const [index, clause] of clauses.entries()) {
+        const intent = resolveClauseActionIntent(clause.masked, catalog);
+        if (!intent) {
+            continue;
+        }
+        const previous = spans.at(-1);
+        if (previous) {
+            previous.end = clauses[index - 1]?.end ?? clause.start;
+        }
+        spans.push({ actionType: intent.actionType, start: clause.start, end: prompt.length });
+    }
+    return spans;
 }
 
 function resolveDirectNamedBusCreationScope(
@@ -1393,6 +1428,9 @@ function resolveActionPromptScope({
         catalog,
         plannedActionNames
     );
+    if (actionName === 'clearSolos' && collectPromptClearSolosRestrictionClauses(prompt, catalog, context).length > 0) {
+        hasActionCancellation = false;
+    }
     if (
         isPunchActionType(actionName) ||
         hasPunchFamilyReference(prompt) ||
@@ -1559,7 +1597,10 @@ function resolveActionPromptScope({
         const intent = resolveClauseActionIntent(clause.masked, catalog, actionName);
         if (intent) {
             if (intent.actionType === actionName) {
-                if (hasUnsafeControlCue(clause.text, groundingRules.intentPhrases, controlTargetReferences)) {
+                if (
+                    hasUnsafeControlCue(clause.text, groundingRules.intentPhrases, controlTargetReferences) &&
+                    !(actionName === 'clearSolos' && hasClearSolosRestriction(clause.text))
+                ) {
                     continue;
                 }
                 matchingScopes.push({ ...clause, directional: false, matchedIntentPhrase: intent.phrase });
@@ -1599,7 +1640,10 @@ function resolveActionPromptScope({
         ) {
             return null;
         }
-    } else if (hasUnsafeControlCue(selectedScope.text, groundingRules.intentPhrases, selectedTargetReferences)) {
+    } else if (
+        hasUnsafeControlCue(selectedScope.text, groundingRules.intentPhrases, selectedTargetReferences) &&
+        !(actionName === 'clearSolos' && hasClearSolosRestriction(selectedScope.text))
+    ) {
         return null;
     }
     return selectedScope;
@@ -1641,6 +1685,44 @@ function getTargetPromptScope(
         return actionScope.text.slice(0, separator.index).trim();
     }
     return `to ${actionScope.text.slice(separator.index + separator[0].length).trim()}`;
+}
+
+function collectPromptClearSolosRestrictionClauses(
+    prompt: string,
+    catalog: GroundingCatalog,
+    context: ProjectContext
+): string[] {
+    const maskedPrompt = maskQuotedLabels(maskProjectReferences(prompt, context));
+    return collectClearSolosRestrictionClauses(prompt, getPromptActionSpans(prompt, maskedPrompt, catalog));
+}
+
+function getPostTargetScope(
+    actionName: string,
+    actionScope: ActionPromptScope,
+    plannedActionNames: readonly string[],
+    prompt: string,
+    catalog: GroundingCatalog,
+    context: ProjectContext
+): ActionPromptScope {
+    if (plannedActionNames.length === 1 && actionName !== 'clearSolos') {
+        return { ...actionScope, text: prompt, masked: prompt };
+    }
+    if (actionName !== 'clearSolos') {
+        return actionScope;
+    }
+    const restrictionClauses = collectPromptClearSolosRestrictionClauses(prompt, catalog, context);
+    if (restrictionClauses.length === 0) {
+        return actionScope;
+    }
+    return {
+        ...actionScope,
+        text: `${actionScope.text} ${restrictionClauses.join(' ')}`,
+        masked: `${actionScope.masked} ${restrictionClauses.join(' ')}`,
+    };
+}
+
+function hasClearSolosRestriction(prompt: string): boolean {
+    return collectClearSolosRestrictionClauses(prompt).length > 0;
 }
 
 type AddClipPromptEvidence = {
@@ -3668,7 +3750,7 @@ function groundToolCall({
     }
     const scopeAdmissionRejection = groundPostTargetScopeAdmission({
         actionName: call.name,
-        actionScope,
+        actionScope: getPostTargetScope(call.name, actionScope, plannedActionNames, prompt, catalog, context),
         bulkMutedEmptyTrackDeletionTargetIds,
         context,
         groundedArguments,

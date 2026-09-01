@@ -1,7 +1,10 @@
+import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { captureClipPitchAnalysis } from '#/modules/Knead/useCases';
+import { readTempoAtBeat } from '#/modules/Transport/stores';
 import { createHandler } from '#/utils/createHandler';
 
 import { reverseClip } from '../../useCases/clipEditing/reverseClip';
+import { reversedClipAudioOffsetBeats } from '../../useCases/clipEditing/reversedClipAudioOffsetBeats';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
@@ -13,6 +16,33 @@ function findAudioClip(clipId: string) {
         }
     }
     return undefined;
+}
+
+function resolveRemappedAudioOffsetBeats(clip: {
+    audioOffsetBeats?: number;
+    startBeat: number;
+    endBeat: number;
+    audioBufferId?: string;
+    stretchMode?: string;
+    stretchRatio?: number;
+}): number | undefined {
+    if (!clip.audioBufferId) {
+        return undefined;
+    }
+    const buffer = getCachedAudioBuffer({ bufferId: clip.audioBufferId });
+    if (!buffer) {
+        return undefined;
+    }
+    const clipTempo = readTempoAtBeat({ beat: clip.startBeat });
+    return reversedClipAudioOffsetBeats({
+        audioOffsetBeats: clip.audioOffsetBeats ?? 0,
+        clipLengthBeats: clip.endBeat - clip.startBeat,
+        bufferLength: buffer.length,
+        sampleRate: buffer.sampleRate,
+        tempo: clipTempo,
+        stretchMode: clip.stretchMode,
+        stretchRatio: clip.stretchRatio,
+    });
 }
 
 export const handleReverseClip = createHandler<'reverseClip'>({
@@ -31,6 +61,7 @@ export const handleReverseClip = createHandler<'reverseClip'>({
             return { label: 'Reverse clip', inverseAction: null };
         }
         const analysis = captureClipPitchAnalysis(alpha.payload.clipId);
+        const remappedAudioOffsetBeats = resolveRemappedAudioOffsetBeats(clip);
         return {
             label: 'Reverse clip',
             inverseAction: {
@@ -42,6 +73,7 @@ export const handleReverseClip = createHandler<'reverseClip'>({
                     name: clip.name,
                     fadeInBeats: clip.fadeInBeats,
                     fadeOutBeats: clip.fadeOutBeats,
+                    audioOffsetBeats: clip.audioOffsetBeats ?? 0,
                     ...analysis,
                 },
             },
@@ -55,6 +87,7 @@ export const handleReverseClip = createHandler<'reverseClip'>({
                     // The forward path mirrors the fades along with the audio.
                     fadeInBeats: clip.fadeOutBeats,
                     fadeOutBeats: clip.fadeInBeats,
+                    ...(remappedAudioOffsetBeats === undefined ? {} : { audioOffsetBeats: remappedAudioOffsetBeats }),
                     // The forward path clears pitch analysis, so redo restores none.
                 },
             },
