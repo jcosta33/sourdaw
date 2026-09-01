@@ -3197,6 +3197,11 @@ export function recoverStandaloneReviewResolutionSharedMutationLock(
                 `${pullRequestReviewResolutionLockScope(number)} standalone shared lock has a paired review-resolution lock`
             );
         }
+        if (innerOwner.version === 6) {
+            fail(
+                `${pullRequestReviewResolutionLockScope(number)} standalone shared lock cannot retire while a review-resolution lock retains another shared owner`
+            );
+        }
         if (innerOwner.version !== 5 && innerOwner.version !== 6) {
             fail(
                 `${pullRequestReviewResolutionLockScope(number)} standalone shared lock has a non-current review-resolution lock`

@@ -4011,7 +4011,7 @@ describe('review thread resolution', () => {
         }
     });
 
-    it('releases a dead standalone shared owner while preserving a v6 inner owner bound to another shared owner', () => {
+    it('preserves a dead standalone shared owner when a v6 inner owner retains another shared owner', () => {
         const repository = createTemporaryGitRepository();
         try {
             const sharedOwnerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(repository, 999999);
@@ -4028,13 +4028,13 @@ describe('review thread resolution', () => {
             updateSharedMutationLock(repository, 42, sharedOwnerOid);
             updateLock(repository, 42, reviewOwnerOid);
 
-            expect(
+            expect(() =>
                 recoverStandaloneReviewResolutionSharedMutationLock(repository, 42, sharedOwnerOid, {
                     ownerFenceIsLive: () => false,
                     gitPath: systemGitPath(),
                 })
-            ).toContain('standalone-shared-lock-recovered');
-            expect(readSharedMutationLockOid(repository, 42)).toBeUndefined();
+            ).toThrow(/retains another shared owner/);
+            expect(readSharedMutationLockOid(repository, 42)).toBe(sharedOwnerOid);
             expect(readLockOid(repository, 42)).toBe(reviewOwnerOid);
         } finally {
             rmSync(repository, { recursive: true, force: true });
