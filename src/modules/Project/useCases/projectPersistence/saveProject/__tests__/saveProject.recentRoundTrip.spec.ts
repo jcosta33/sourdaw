@@ -61,6 +61,7 @@ vi.mock('../../fileIO/buildProjectData', () => ({
 vi.mock('#/modules/Transport/useCases', () => ({
     defaultTransportState: { masterGain: 75, isPlaying: false },
     stopPlayback: vi.fn(),
+    ensureTrackStrips: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     cancelPendingAudioBufferImport: vi.fn(),

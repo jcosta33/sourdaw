@@ -16,7 +16,6 @@ export const transportTools: readonly ToolSchema[] = [
         ['playing']
     ),
     tool('stopPlayback', 'Stop playback and return playhead to start.', {}),
-    tool('toggleLoop', 'Toggle loop playback on/off.', {}),
     tool(
         'setLoopRegion',
         'Set loop start and end points.',
@@ -34,7 +33,6 @@ export const transportTools: readonly ToolSchema[] = [
         },
         ['beat']
     ),
-    tool('toggleMetronome', 'Toggle the metronome click on/off.', {}),
     tool(
         'setMetronomeVolume',
         'Set metronome click volume.',
@@ -58,17 +56,5 @@ export const transportTools: readonly ToolSchema[] = [
         'Enable or disable Transport Punch In/Out until changed without changing punch endpoints.',
         { enabled: { type: 'boolean' } },
         ['enabled']
-    ),
-    tool('toggleCountIn', 'Toggle count-in before recording.', {}),
-    tool('setCountInBars', 'Set number of count-in bars.', { bars: { type: 'number' } }, ['bars']),
-    tool(
-        'addTimeSignatureChange',
-        'Add a time signature change at a beat position.',
-        {
-            beat: { type: 'number' },
-            numerator: { type: 'number', description: 'Beats per bar (e.g. 3, 4, 5, 6, 7)' },
-            denominator: { type: 'number', description: 'Beat unit (4=quarter, 8=eighth)' },
-        },
-        ['beat', 'numerator', 'denominator']
     ),
 ];

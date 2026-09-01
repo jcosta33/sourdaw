@@ -3,59 +3,48 @@ import { describe, expect, it } from 'vitest';
 import { getPluginById } from '../../../models/DeviceParameter';
 import { FAUST_INSTRUMENT_PRESETS } from '../faustInstrumentPresets';
 
-// Source-text scan of `registerFaustDSP`'s address lists in PluginHost's
-// `builtinDSP.ts` — the addresses that actually reach the compiled Faust
-// node (see `FaustDeviceStrategy.setParam`). Read as raw text via
-// `import.meta.glob` rather than imported, because PluginHost is outside
-// this module's ownership and cross-module imports may only target its
-// contract barrels (`useCases/`, `stores/`, `events/`,
-// `presentations/views/`), none of which currently re-export this data.
-// Mirrors the source-scanning "class guard" pattern already used in
-// `CrdtDocument/useCases/projection/__tests__/projectionCompleteness.spec.ts`
-// for the same kind of cross-module-truth problem.
-const BUILTIN_DSP_SOURCE_GLOB = import.meta.glob('/src/modules/PluginHost/useCases/faustEngine/builtinDSP.ts', {
-    query: '?raw',
-    import: 'default',
-    eager: true,
-});
+import { scanRealFaustDeviceParamIds, scanRealFaustDeviceParams } from './faustRegistrationScan';
 
-const REGISTER_FAUST_DSP_CALL = /registerFaustDSP\(\s*'([^']+)',\s*\w+,\s*\[([\s\S]*?)\]/g;
-const REGISTERED_ADDRESS = /address:\s*'\/[^/']+\/([^']+)'/g;
+/** The retired single-operator FM keys every shipped FM preset still authors. */
+const FM_SYNTH_RETIRED_PRESET_KEYS: ReadonlySet<string> = new Set([
+    'ratio',
+    'index',
+    'attack',
+    'decay',
+    'sustain',
+    'release',
+]);
 
 /**
- * The real, running parameter ids for each built-in Faust device, keyed the
- * same way `registerFaustDSP` derives its module id (`faust-${lower,
- * hyphenated name}`). This is the ground truth `FaustDeviceStrategy.setParam`
- * actually resolves against — not any TS-side descriptor catalog. F1 — the
- * previous version of this guard checked presets against
- * `FaustEffectDescriptors.ts` instead, which had independently invented a
- * `dry_wet` key for zita-rev1/tape-delay that the compiled node never
- * accepted; two catalogs that drifted the same way passed regardless of
- * what the DSP actually declared.
+ * The envelope keys every shipped additive preset still authors. The additive
+ * DSP hardcodes its ADSR, so these never reached the audio; they stay authored
+ * until the DSP grows real envelope controls or the presets drop the dead keys
+ * (follow-up filed from #3172's widened compile scan).
  */
-function scanRealFaustDeviceParamIds(): Map<string, Set<string>> {
-    const [source] = Object.values(BUILTIN_DSP_SOURCE_GLOB);
-    if (!source) {
-        throw new Error('builtinDSP.ts source not found via import.meta.glob — check the glob pattern');
+const ADDITIVE_SYNTH_RETIRED_PRESET_KEYS: ReadonlySet<string> = new Set(['attack', 'decay', 'sustain', 'release']);
+
+/**
+ * The ground truth an authored preset key is checked against.
+ *
+ * A Faust device is checked against the registration scan — the addresses the
+ * compiled node actually accepts — whether or not a TS-side descriptor exists,
+ * because a descriptor-less Faust voice (hammond-b3, minimoog-lead, …) still
+ * has that real contract. A faust- device with no registration has no address
+ * table to compare keys against (a preset naming an unregistered device is a
+ * device-resolution defect, not a stray-key one). Native `builtin-*` devices
+ * have no Faust compiler in the loop, so their own TS descriptor is the
+ * legitimate ground truth; a device with neither has nothing to compare
+ * against.
+ */
+function realParamIdsOf(deviceType: string, realIdsByDevice: Map<string, Set<string>>): Set<string> | null {
+    if (deviceType.startsWith('faust-')) {
+        return realIdsByDevice.get(deviceType) ?? null;
     }
-    const idsByDevice = new Map<string, Set<string>>();
-    for (const call of source.matchAll(REGISTER_FAUST_DSP_CALL)) {
-        const name = call[1];
-        const block = call[2];
-        if (!name || !block) {
-            continue;
-        }
-        const deviceId = `faust-${name.toLowerCase().replaceAll(/\s+/g, '-')}`;
-        const ids = new Set<string>();
-        for (const address of block.matchAll(REGISTERED_ADDRESS)) {
-            const id = address[1];
-            if (id) {
-                ids.add(id);
-            }
-        }
-        idsByDevice.set(deviceId, ids);
+    const descriptor = getPluginById(deviceType);
+    if (!descriptor || descriptor.parameters.length === 0) {
+        return null;
     }
-    return idsByDevice;
+    return new Set(descriptor.parameters.map((parameter) => parameter.id));
 }
 
 describe('faustInstrumentPresets', () => {
@@ -120,22 +109,24 @@ describe('faustInstrumentPresets', () => {
         const unknownKeysByDevice: string[] = [];
         for (const preset of FAUST_INSTRUMENT_PRESETS) {
             for (const device of preset.devices) {
-                const descriptor = getPluginById(device.type);
-                if (!descriptor || descriptor.parameters.length === 0) {
-                    // Faust instrument voices (hammond-b3, rhodes, …) declare
-                    // no TS-side descriptor; their params are Faust-native
-                    // and out of scope for this check.
+                const realIds = realParamIdsOf(device.type, realIdsByDevice);
+                if (!realIds) {
                     continue;
                 }
-                // Faust effects (the ones this finding is about) are checked
-                // against the compiled node's real registered addresses;
-                // native `builtin-*` devices (chorus, distortion, …) have no
-                // Faust compiler in the loop, so their own TS descriptor is
-                // legitimate ground truth and isn't in `builtinDSP.ts` at all.
-                const realIds = device.type.startsWith('faust-')
-                    ? (realIdsByDevice.get(device.type) ?? new Set<string>())
-                    : new Set(descriptor.parameters.map((parameter) => parameter.id));
                 for (const paramId of Object.keys(device.parameterValues)) {
+                    if (device.type === 'faust-fm-synth' && FM_SYNTH_RETIRED_PRESET_KEYS.has(paramId)) {
+                        // Excluded by name, not by skipping the device: the
+                        // fm-synth descriptor declares `gain` now, so `gain`
+                        // and any key added after it stay under this guard
+                        // while the retired set's migration stays #3155's.
+                        continue;
+                    }
+                    if (device.type === 'faust-additive-synth' && ADDITIVE_SYNTH_RETIRED_PRESET_KEYS.has(paramId)) {
+                        // Same shape as the fm-synth guard above: excluded by
+                        // name, not by skipping the device, so a new additive
+                        // key that misses the DSP still goes red here.
+                        continue;
+                    }
                     if (!realIds.has(paramId)) {
                         unknownKeysByDevice.push(`${preset.id} -> ${device.type} "${device.name}": ${paramId}`);
                     }
@@ -143,6 +134,70 @@ describe('faustInstrumentPresets', () => {
             }
         }
         expect(unknownKeysByDevice).toEqual([]);
+    });
+
+    it('welds the Faust instrument descriptors to the registrations, ids and bounds, in both directions', () => {
+        // The descriptor-side weld of the scan above, scoped to the Faust
+        // instrument descriptors. A descriptor that advertises a parameter id
+        // no registered address carries is an inert control (the engine
+        // ignores it), the same failure class the F1 check guards presets
+        // against. But ids alone let a descriptor misstate any bound or
+        // default and pass, and let a whole registered control go undeclared
+        // — which is exactly how fm-synth's `gain` stayed invisible to the
+        // inspector until it was declared. So both directions are checked,
+        // bounds and defaults included, scaling where the registration
+        // declares one.
+        //
+        // The Faust effect descriptors carry their own weld of this shape in
+        // `PluginDescriptors/__tests__/FaustEffectDescriptors.spec.ts`.
+        const realParamsByDevice = scanRealFaustDeviceParams();
+        const mismatches: string[] = [];
+        for (const deviceType of ['faust-rhodes', 'faust-fm-synth', 'faust-supersaw-unison']) {
+            const descriptor = getPluginById(deviceType);
+            if (!descriptor) {
+                throw new Error(`Expected a plugin descriptor for ${deviceType}`);
+            }
+            const registered = realParamsByDevice.get(deviceType);
+            if (!registered) {
+                throw new Error(`Expected a registerFaustDSP registration for ${deviceType}`);
+            }
+            const declared = new Map(descriptor.parameters.map((parameter) => [parameter.id, parameter]));
+
+            for (const [parameterId, parameter] of declared) {
+                const entry = registered.get(parameterId);
+                if (!entry) {
+                    mismatches.push(`${deviceType}/${parameterId}: declared but not registered`);
+                    continue;
+                }
+                if (parameter.minValue !== entry.min) {
+                    mismatches.push(
+                        `${deviceType}/${parameterId}: declared min ${parameter.minValue} != registered ${entry.min}`
+                    );
+                }
+                if (parameter.maxValue !== entry.max) {
+                    mismatches.push(
+                        `${deviceType}/${parameterId}: declared max ${parameter.maxValue} != registered ${entry.max}`
+                    );
+                }
+                if (parameter.defaultValue !== entry.defaultValue) {
+                    mismatches.push(
+                        `${deviceType}/${parameterId}: declared default ${parameter.defaultValue} != registered ${entry.defaultValue}`
+                    );
+                }
+                if ((parameter.scaling ?? undefined) !== (entry.scaling ?? undefined)) {
+                    mismatches.push(
+                        `${deviceType}/${parameterId}: declared scaling ${parameter.scaling ?? 'linear'} != registered ${entry.scaling ?? 'linear'}`
+                    );
+                }
+            }
+
+            for (const parameterId of registered.keys()) {
+                if (!declared.has(parameterId)) {
+                    mismatches.push(`${deviceType}/${parameterId}: registered but not declared`);
+                }
+            }
+        }
+        expect(mismatches).toEqual([]);
     });
 
     it('Ambient Rhodes delay time is authored in seconds, matching the tape-delay descriptor unit', () => {

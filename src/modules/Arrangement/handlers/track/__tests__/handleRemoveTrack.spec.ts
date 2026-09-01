@@ -109,7 +109,8 @@ vi.mock('#/modules/Automation/stores', () => ({
     },
 }));
 
-vi.mock('#/modules/MIDI/stores', () => ({
+vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
     chordTrackStore: { hydrate: vi.fn() },
     grooveTemplateStore: { hydrate: vi.fn(), value: null },
     midiStore: {
@@ -122,6 +123,7 @@ vi.mock('#/modules/MIDI/stores', () => ({
 vi.mock('#/modules/Routing/useCases', () => ({
     getAllSidechainRoutes: mocks.getAllSidechainRoutes,
     wireSidechainRoutes: mocks.wireSidechainRoutes,
+    hydrateSidechainRoutes: vi.fn(),
 }));
 
 vi.mock('../../../stores/takeLaneStore', () => ({

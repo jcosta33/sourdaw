@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { resumeEngine, startNativeLiveGraphSession } from '#/modules/AudioEngine/useCases';
+import { getAudioContext, resumeEngine, startNativeLiveGraphSession } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getPrecedingBars } from '../../models/TimeSignatureMap';
@@ -59,11 +59,12 @@ export function startPlayback(): void {
 
     // D3.c.4a (#3066): the native engine has no start command — the first
     // graph batch boots it — so play is where it starts, carrying this
-    // session's topology. Fired rather than awaited because nothing about the
-    // Web Audio transport waits on it: the native graph schedules no clips and
-    // therefore renders silence, and a decline (a browser build, an addon that
-    // cannot answer, a topology the native registry will not hold) leaves
-    // playback exactly where it already was.
+    // session's topology and, since #3068, its programme. Fired rather than
+    // awaited because nothing about the Web Audio transport waits on it: the
+    // native session starts with its monitor shadowed, so it contributes true
+    // zeros at the device however full its timeline is, and a decline (a
+    // browser build, an addon that cannot answer, a topology the native
+    // registry will not hold) leaves playback exactly where it already was.
     Promise.resolve(
         startNativeLiveGraphSession({
             positionSeconds: secondsBetweenBeats(tempoMapStore.value?.changes ?? [], 0, startPosition, state.tempo),
@@ -71,6 +72,10 @@ export function startPlayback(): void {
             // the timeline holds now rather than the one it held when the
             // session object was made.
             transportMaps: projectEngineTransportMaps(),
+            // The grid the live scheduler already places this arrangement on,
+            // so the native programme lands on the same samples the Web Audio
+            // path does rather than on a second rounding of the same beats.
+            sampleRate: getAudioContext().sampleRate,
         })
     )
         .then((result) => {

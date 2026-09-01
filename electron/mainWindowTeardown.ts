@@ -1,4 +1,9 @@
-import { interceptOwnerWindowTeardown, type OwnerWindow, type PluginWindowHost } from './pluginGui.js';
+import {
+    interceptOwnerWindowTeardown,
+    type OwnerTeardownOptions,
+    type OwnerWindow,
+    type PluginWindowHost,
+} from './pluginGui.js';
 
 /**
  * Detach parented plugin editors before the DAW window can be destroyed.
@@ -8,14 +13,51 @@ import { interceptOwnerWindowTeardown, type OwnerWindow, type PluginWindowHost }
  */
 export const bindMainWindowOwnerTeardown = (
     owner: OwnerWindow,
-    host: PluginWindowHost | undefined
-): (() => Promise<void>) | undefined => {
+    host: PluginWindowHost | undefined,
+    shouldProceed?: () => boolean,
+    onCancelled?: () => void,
+    onDestroying?: () => void,
+    shouldInterceptClose?: () => boolean,
+    options?: OwnerTeardownOptions
+): ((force?: boolean) => Promise<boolean>) | undefined => {
     if (host === undefined) {
         return undefined;
     }
-    const { destroyAfterEditorsDetach } = interceptOwnerWindowTeardown(owner, () => host.detachOpenEditors());
+    const { destroyAfterEditorsDetach } = interceptOwnerWindowTeardown(
+        owner,
+        () => host.detachOpenEditors(),
+        shouldProceed,
+        onCancelled,
+        onDestroying,
+        shouldInterceptClose,
+        options
+    );
     return destroyAfterEditorsDetach;
 };
+
+/** Ignore a delayed dying-window callback once a replacement owns the session. */
+export const notifyCurrentWindowDestroying = ({
+    isCurrentWindow,
+    notify,
+}: {
+    readonly isCurrentWindow: () => boolean;
+    readonly notify: () => void;
+}): void => {
+    if (isCurrentWindow()) {
+        notify();
+    }
+};
+
+/** An approved renderer that crashed has no interactive session left to drain. */
+export const isApprovedRendererTerminal = ({
+    owner,
+    currentWindow,
+    permitsClose,
+}: {
+    readonly owner: OwnerWindow;
+    readonly currentWindow: () => OwnerWindow | undefined;
+    readonly permitsClose: () => boolean;
+}): boolean => permitsClose() && currentWindow() !== owner;
 
 /**
  * Destroy a crashed main window without CloseImmediately on parented editors.
@@ -26,13 +68,13 @@ export const bindMainWindowOwnerTeardown = (
  */
 export const destroyCrashedMainWindow = (
     crashedWindow: OwnerWindow,
-    destroyAfterEditorsDetach: (() => Promise<void>) | undefined
+    destroyAfterEditorsDetach: ((force?: boolean) => Promise<boolean>) | undefined
 ): void => {
     if (crashedWindow.isDestroyed()) {
         return;
     }
     if (destroyAfterEditorsDetach !== undefined) {
-        void destroyAfterEditorsDetach();
+        void destroyAfterEditorsDetach(true);
         return;
     }
     crashedWindow.destroy();

@@ -10,7 +10,7 @@ use daw_plugin_host::PluginParameterEventQueue;
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::sync::atomic::AtomicU64;
-use std::sync::{Arc, Mutex, MutexGuard, TryLockError};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, TryLockError};
 use std::time::Duration;
 
 pub struct PluginInstanceData {
@@ -137,6 +137,163 @@ pub struct EnginePluginInstanceData {
     pub parameter_events: Option<Arc<PluginParameterEventQueue>>,
 }
 
+/// The signal one editor teardown completes on.
+///
+/// A reopen that claims a stale editor's record tears the editor behind it
+/// down on its own thread, and the OS-close report that lost the same claim
+/// must not answer the shell until that teardown is done: the shell destroys
+/// the window the moment the report returns, and both plugin formats un-parent
+/// an editor from a live parent or from nothing at all. The loser waits on
+/// this signal; the claiming reopen completes it once its teardown returns.
+///
+/// A condvar pair rather than an atomic flag because the loser has to park
+/// rather than poll — the report already crossed a thread to get here, and
+/// spinning it for a whole teardown would take that thread back from the
+/// executor the teardown itself is running on.
+#[derive(Default)]
+pub struct EditorTeardownSignal {
+    completed: Mutex<bool>,
+    completed_notify: Condvar,
+}
+
+impl EditorTeardownSignal {
+    /// Mark the teardown complete and wake every waiter. Idempotent.
+    pub fn complete(&self) {
+        *self
+            .completed
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = true;
+        self.completed_notify.notify_all();
+    }
+
+    /// Wait until [`Self::complete`] ran, or `bound` elapses.
+    ///
+    /// Answers whether the teardown completed. The bound exists because no
+    /// teardown is worth parking a report behind forever: the claiming reopen
+    /// is itself bounded by the editor-call deadlines, and the shell holds its
+    /// own destroy deadline besides — see the caller for how this bound is
+    /// sized against that one.
+    pub fn wait_until_completed(&self, bound: Duration) -> bool {
+        let deadline = std::time::Instant::now() + bound;
+        let mut completed = self
+            .completed
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        while !*completed {
+            let now = std::time::Instant::now();
+            if now >= deadline {
+                return false;
+            }
+            let (guard, timed_out) = self
+                .completed_notify
+                .wait_timeout(completed, deadline - now)
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            completed = guard;
+            if timed_out.timed_out() {
+                return *completed;
+            }
+        }
+        true
+    }
+}
+
+/// The host's plugin editor window bookkeeping.
+///
+/// Two maps behind the one mutex the whole editor lifecycle already shares:
+/// the recorded window labels, and the teardown handshake for records a reopen
+/// has claimed but not yet finished tearing down. Behind one mutex because
+/// claiming a record and registering the handshake that claim owes are a
+/// single step — a report that loses the claim must find the teardown it is
+/// held to, with no gap between the record's removal and the registration
+/// naming who is tearing the editor down.
+///
+/// The wait itself never happens under this mutex: the claimant registers,
+/// tears the editor down with the lock released, and completes; the loser
+/// takes the signal out, drops the guard, and parks on the signal alone.
+#[derive(Default)]
+pub struct PluginWindowRecords {
+    /// Recorded editor windows, keyed by instance id → window label. A label
+    /// names one opening — see
+    /// [`plugin_editor_window_label`](crate::host::plugin_window::plugin_editor_window_label).
+    labels: HashMap<String, String>,
+    /// The teardown in flight for a claimed record, keyed by instance id.
+    /// Present only between a reopen's claim of a stale record and the
+    /// completion of the teardown that claim owns.
+    teardowns: HashMap<String, Arc<EditorTeardownSignal>>,
+}
+
+impl PluginWindowRecords {
+    /// The instance's recorded editor window label, if it has one.
+    pub fn get(&self, instance_id: &str) -> Option<&String> {
+        self.labels.get(instance_id)
+    }
+
+    /// Record the window label of one editor opening.
+    pub fn insert(&mut self, instance_id: String, window_label: String) {
+        self.labels.insert(instance_id, window_label);
+    }
+
+    /// Remove the instance's recorded window label and answer it.
+    ///
+    /// Handshake state is not touched: it belongs to the claim that put it
+    /// there, and only that claim's completion takes it back out.
+    pub fn remove(&mut self, instance_id: &str) -> Option<String> {
+        self.labels.remove(instance_id)
+    }
+
+    /// Whether no editor window is recorded — the question the shutdown and
+    /// unload passes ask as "is there any editor left?".
+    pub fn is_empty(&self) -> bool {
+        self.labels.is_empty()
+    }
+
+    /// Every instance with a recorded editor window.
+    pub fn instance_ids(&self) -> impl Iterator<Item = &str> {
+        self.labels.keys().map(String::as_str)
+    }
+
+    /// Every recorded window label.
+    pub fn labels(&self) -> impl Iterator<Item = &str> {
+        self.labels.values().map(String::as_str)
+    }
+
+    /// Take every recorded window label, leaving none behind.
+    ///
+    /// For the pass that destroys every editor window: the labels come out and
+    /// the record empties in the one step, under the lock the caller holds.
+    pub fn take_labels(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.labels).into_values().collect()
+    }
+
+    /// Register the teardown a claiming reopen is about to run.
+    ///
+    /// Replaces any teardown still registered for the instance: a claim that
+    /// never completed has nothing left to wait for once a newer claim owns
+    /// the editor, and that older claim's waiters are bounded anyway.
+    pub fn register_teardown(&mut self, instance_id: &str, signal: Arc<EditorTeardownSignal>) {
+        self.teardowns.insert(instance_id.to_string(), signal);
+    }
+
+    /// The teardown in flight for the instance, if a claim is mid-teardown.
+    pub fn teardown_in_flight(&self, instance_id: &str) -> Option<Arc<EditorTeardownSignal>> {
+        self.teardowns.get(instance_id).cloned()
+    }
+
+    /// Forget the registered teardown, but only if it is still this one.
+    ///
+    /// A newer claim may have replaced it, and taking that one out would leave
+    /// the new claim's losing reports nothing to find.
+    pub fn forget_teardown(&mut self, instance_id: &str, signal: &Arc<EditorTeardownSignal>) {
+        let still_this_one = self
+            .teardowns
+            .get(instance_id)
+            .is_some_and(|registered| Arc::ptr_eq(registered, signal));
+        if still_this_one {
+            self.teardowns.remove(instance_id);
+        }
+    }
+}
+
 pub struct AppState {
     /// Native audio engine handle (audio-owner thread + lock-free scheduler).
     /// None until the first `apply_graph_commands` batch lazily starts it
@@ -150,8 +307,12 @@ pub struct AppState {
     /// Registry mapping plugin_id → (file_path, clap_plugin_id).
     /// Populated by scan_plugins so load_plugin can find the library.
     pub plugin_registry: Arc<Mutex<HashMap<String, PluginRegistryEntry>>>,
-    /// Open plugin GUI windows, keyed by instance_id → window label.
-    pub plugin_windows: Arc<Mutex<HashMap<String, String>>>,
+    /// Open plugin GUI windows and the teardown handshake that holds a losing
+    /// OS-close report behind the claiming reopen's teardown, keyed by
+    /// instance id. One mutex, because claiming a record and registering the
+    /// teardown that claim owes are a single step — see
+    /// [`PluginWindowRecords`].
+    pub plugin_windows: Arc<Mutex<PluginWindowRecords>>,
     /// The crumbs samplers' record feed: bridge handles keyed by
     /// engine_plugin_id, plus the shared de-interleave scratch the feed
     /// command refills per block. Only crumbs registration writes the map;
@@ -208,9 +369,16 @@ pub struct AppState {
 /// own convention, and `sample_rate` is the *material's* rate — a clip
 /// scheduled onto an engine running at a different rate is converted at the
 /// clip's `playback_rate` (rate conversion, not time stretch).
+///
+/// The channels are shared, not owned: one registration allocates the PCM once
+/// and every clip scheduled over it holds the same allocation. Material is
+/// immutable once registered — re-registering an id replaces the whole sample —
+/// so there is nothing for sharing to race against, and the clips a project
+/// makes of one take (loop passes, comp regions, gap fills) cost a pointer each
+/// instead of a copy each.
 pub struct TimelineSample {
-    pub left: Vec<f32>,
-    pub right: Vec<f32>,
+    pub left: Arc<[f32]>,
+    pub right: Arc<[f32]>,
     pub sample_rate: f32,
 }
 
@@ -266,7 +434,7 @@ impl Default for AppState {
             plugins: Arc::new(Mutex::new(HashMap::new())),
             engine_plugins: Arc::new(Mutex::new(HashMap::new())),
             plugin_registry: Arc::new(Mutex::new(HashMap::new())),
-            plugin_windows: Arc::new(Mutex::new(HashMap::new())),
+            plugin_windows: Arc::new(Mutex::new(PluginWindowRecords::default())),
             audio_bridges: Arc::new(Mutex::new(CrumbsRecordFeed::default())),
             retired_engine_plugins: Arc::new(Mutex::new(Vec::new())),
             bridge_input_blocks_refused: Arc::new(AtomicU64::new(0)),

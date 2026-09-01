@@ -5,7 +5,6 @@ import { mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
-
 import {
     AUTHOR_BOT_NODE_ID,
     REQUIRED_REPOSITORY,
@@ -22,6 +21,11 @@ import {
     type GhSession,
 } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
+import {
+    type PullRequestMutationSerialization,
+    type PullRequestRemoteMutationBoundary,
+    withPullRequestMutationLock,
+} from './pullRequestMutationLock.ts';
 
 export type ReviewComment = {
     id: string;
@@ -248,15 +252,42 @@ export type ResolveReviewThreadPort = {
     ) => Value;
     log: (message: string) => void;
 };
+export type ResolveReviewThreadAuthentication = {
+    minted: { actorNodeId: string };
+    session: GhSession;
+};
+export type ResolveReviewThreadCoordinatorDependencies = {
+    primaryRoot: () => string;
+    serializeMutation: PullRequestMutationSerialization;
+    authenticateAuthor: (primaryRoot: string) => Promise<ResolveReviewThreadAuthentication>;
+    repositoryName: (session: GhSession, primaryRoot: string) => string;
+    threadPort: (
+        session: GhSession,
+        primaryRoot: string,
+        markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt']
+    ) => ResolveReviewThreadPort;
+    resolve: (
+        number: number,
+        threadId: string,
+        expectedHead: string,
+        authorNodeId: string,
+        port: ResolveReviewThreadPort
+    ) => string;
+};
 export type ResolveReviewThreadArgs = { number?: number; threadId?: string; head?: string; help: boolean };
 export type ResolveReviewThreadCliDependencies = {
     trustedLauncher: ReviewResolutionTrustedLauncher;
+    serializeMutation?: PullRequestMutationSerialization;
     authenticateAuthor?: (primaryRoot: string) => Promise<{
         minted: { actorNodeId: string };
         session: GhSession;
     }>;
     repositoryName?: (session: GhSession, primaryRoot: string) => string;
-    createPort?: (session: GhSession, primaryRoot: string) => ResolveReviewThreadPort;
+    createPort?: (
+        session: GhSession,
+        primaryRoot: string,
+        markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt']
+    ) => ResolveReviewThreadPort;
 };
 const usage = 'usage: pnpm review:resolve <pr-number> --thread <graphql-thread-node-id> --head <40-hex-sha>';
 const RESOLUTION_REVIEW_SUMMARY = 'Resolved this review thread after applying the requested changes.';
@@ -604,6 +635,7 @@ function resolveReviewThreadCliDependencies(
     const resolvedLauncher = assertTrustedReviewResolutionLauncher(trustedLauncher);
     return {
         trustedLauncher: resolvedLauncher,
+        serializeMutation: dependencies?.serializeMutation ?? withPullRequestMutationLock,
         authenticateAuthor:
             dependencies?.authenticateAuthor ?? ((primaryRoot) => authenticateRole({ primaryRoot, role: 'author' })),
         repositoryName:
@@ -613,7 +645,10 @@ function resolveReviewThreadCliDependencies(
                     env: session.env,
                     cwd: primaryRoot,
                 })),
-        createPort: dependencies?.createPort ?? ((session, primaryRoot) => shellPort(session, primaryRoot)),
+        createPort:
+            dependencies?.createPort ??
+            ((session, primaryRoot, markRemoteMutationAttempt) =>
+                shellPort(session, primaryRoot, markRemoteMutationAttempt)),
     };
 }
 
@@ -2068,13 +2103,18 @@ function findReusableReply(thread: ReviewThread | null, context: ResolutionRevie
     )?.marker;
 }
 
-export function shellPort(session: GhSession, cwd: string = process.cwd()): ResolveReviewThreadPort {
+export function shellPort(
+    session: GhSession,
+    cwd: string = process.cwd(),
+    markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt'] = () => undefined,
+    capture: typeof spawnCapture = spawnCapture
+): ResolveReviewThreadPort {
     const primaryRoot = resolvePrimaryRoot(
-        (command, args, directory) => spawnCapture(command, args, { cwd: directory }),
+        (command, args, directory) => capture(command, args, { cwd: directory }),
         cwd
     );
-    const queryGh = (args: string[]) => spawnCapture('gh', args, { cwd: primaryRoot, env: session.env });
-    const mutationGh = (args: string[]) => spawnCapture('gh', args, { cwd: primaryRoot, env: session.env });
+    const queryGh = (args: string[]) => capture('gh', args, { cwd: primaryRoot, env: session.env });
+    const mutationGh = (args: string[]) => capture('gh', args, { cwd: primaryRoot, env: session.env });
     return {
         inspect: (number, id) => inspectReviewThread(number, id, queryGh),
         inspectPullRequestReview: (number, reviewId, expectedPullRequestId, expectedHead) =>
@@ -2092,6 +2132,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Reso
                 body,
                 reviewCommitOid: commitOid,
             });
+            markRemoteMutationAttempt();
             return createPendingReview(pullRequestId, commitOid, body, mutationGh);
         },
         replyDone: (id, reviewId, review) => {
@@ -2106,6 +2147,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Reso
                 body: review.body,
                 reviewCommitOid: requireReviewCommitOid(review, `Done reply for ${reviewId}`),
             });
+            markRemoteMutationAttempt();
             return mutationReply(id, reviewId, mutationGh);
         },
         submitReview: (reviewId, body, reviewCommitOid) => {
@@ -2119,6 +2161,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Reso
                 body,
                 reviewCommitOid,
             });
+            markRemoteMutationAttempt();
             return submitReview(reviewId, body, mutationGh);
         },
         updateReviewBody: (reviewId, body, reviewCommitOid) => {
@@ -2132,6 +2175,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Reso
                 body,
                 reviewCommitOid,
             });
+            markRemoteMutationAttempt();
             return updateReviewBody(reviewId, body, mutationGh);
         },
         resolve: (id) => {
@@ -2142,6 +2186,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Reso
             advanceActiveReviewResolutionLockMutation(primaryRoot, active.number, {
                 phase: 'resolveThread',
             });
+            markRemoteMutationAttempt();
             return resolveThread(id, mutationGh);
         },
         deleteReply: (id) => {
@@ -2153,6 +2198,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Reso
                 phase: 'deleteReply',
                 replyId: id,
             });
+            markRemoteMutationAttempt();
             return deleteReply(id, mutationGh);
         },
         deletePendingReview: (id, options) => {
@@ -2172,6 +2218,7 @@ export function shellPort(session: GhSession, cwd: string = process.cwd()): Reso
                     'delete pending review requires a valid snapshot head'
                 ),
             });
+            markRemoteMutationAttempt();
             return deletePendingReview(id, mutationGh);
         },
         serializeReviewThreadMutation: (number, threadId, expectedHead, operation) =>
@@ -5182,6 +5229,49 @@ export async function runDetachedReviewResolutionWorker(
     }
 }
 
+export function defaultResolveReviewThreadCoordinatorDependencies(): ResolveReviewThreadCoordinatorDependencies {
+    return {
+        primaryRoot: () => resolvePrimaryRoot(),
+        serializeMutation: withPullRequestMutationLock,
+        authenticateAuthor: (primaryRoot) => authenticateRole({ primaryRoot, role: 'author' }),
+        repositoryName: (session, primaryRoot) =>
+            spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
+                env: session.env,
+                cwd: primaryRoot,
+            }),
+        threadPort: (session, primaryRoot, markRemoteMutationAttempt) =>
+            shellPort(session, primaryRoot, markRemoteMutationAttempt),
+        resolve: resolveReviewThread,
+    };
+}
+
+export async function coordinateResolveReviewThread(
+    number: number,
+    threadId: string,
+    expectedHead: string,
+    dependencies: ResolveReviewThreadCoordinatorDependencies = defaultResolveReviewThreadCoordinatorDependencies()
+): Promise<void> {
+    const primaryRoot = dependencies.primaryRoot();
+    await dependencies.serializeMutation(primaryRoot, number, async ({ markRemoteMutationAttempt }) => {
+        const auth = await dependencies.authenticateAuthor(primaryRoot);
+        try {
+            if (!isAuthorBotNodeId(auth.minted.actorNodeId)) {
+                fail(`minted actor ${auth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
+            }
+            assertRequiredRepository(dependencies.repositoryName(auth.session, primaryRoot));
+            dependencies.resolve(
+                number,
+                threadId,
+                expectedHead,
+                auth.minted.actorNodeId,
+                dependencies.threadPort(auth.session, primaryRoot, markRemoteMutationAttempt)
+            );
+        } finally {
+            auth.session.dispose();
+        }
+    });
+}
+
 export async function runResolveReviewThreadCli(
     args: string[],
     dependencies?: ResolveReviewThreadCliDependencies
@@ -5213,23 +5303,15 @@ export async function runResolveReviewThreadCli(
         originMainBlob('scripts/resolveReviewThread.ts', cwd, undefined, undefined, trustedOriginCommit)
     );
     const primaryRoot = resolvedDependencies.trustedLauncher.primaryRoot;
-    const auth = await resolvedDependencies.authenticateAuthor(primaryRoot);
-    try {
-        if (!isAuthorBotNodeId(auth.minted.actorNodeId)) {
-            fail(`minted actor ${auth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
-        }
-        assertRequiredRepository(resolvedDependencies.repositoryName(auth.session, primaryRoot));
-        resolveReviewThread(
-            parsed.number,
-            parsed.threadId,
-            parsed.head,
-            auth.minted.actorNodeId,
-            resolvedDependencies.createPort(auth.session, primaryRoot)
-        );
-        return 0;
-    } finally {
-        auth.session.dispose();
-    }
+    await coordinateResolveReviewThread(parsed.number, parsed.threadId, parsed.head, {
+        primaryRoot: () => primaryRoot,
+        serializeMutation: resolvedDependencies.serializeMutation,
+        authenticateAuthor: resolvedDependencies.authenticateAuthor,
+        repositoryName: resolvedDependencies.repositoryName,
+        threadPort: resolvedDependencies.createPort,
+        resolve: resolveReviewThread,
+    });
+    return 0;
 }
 
 async function main(): Promise<number> {

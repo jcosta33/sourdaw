@@ -1494,11 +1494,14 @@ describe('backing-vocal plate workflow', () => {
             durableCommit: true,
         });
         expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.jobId)).toEqual([completedJob.jobId]);
-        expect(agentRunLifecycle.get(confirmation.runId)?.pendingEffectContinuations).toEqual(
-            expect.arrayContaining([
-                expect.objectContaining({ batchId: confirmation.groupId, recovery: 'manual-repair' }),
-            ])
-        );
+        expect(
+            agentRunLifecycle
+                .get(confirmation.runId)
+                ?.pendingEffectContinuations.some(
+                    (continuation) =>
+                        continuation.batchId === confirmation.groupId && continuation.recovery === 'reconcile-batch'
+                )
+        ).toBe(true);
 
         runtimeMocks.renderOffline.mockResolvedValue(createRetentionSizedTestAudioBuffer(frameCount));
         const retry = await confirmPendingChatActions({ confirmationId: confirmation.id });
@@ -1510,6 +1513,7 @@ describe('backing-vocal plate workflow', () => {
         expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.jobId)).toEqual([completedJob.jobId]);
         expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
             status: 'executed',
+            followUpFailureKind: 'retention-capacity',
             followUpStatus: 'failed',
         });
         expect(agentRunLifecycle.get(confirmation.runId)?.pendingEffectContinuations).toEqual(
@@ -1521,10 +1525,13 @@ describe('backing-vocal plate workflow', () => {
         expect(receipt?.content).toContain('project commands were not replayed');
         expect(receipt?.content).toContain('require manual repair');
 
+        const retainedError = getPendingActionConfirmation(confirmation.id)?.error;
         const renderCallsBeforeBlockedRetry = runtimeMocks.renderOffline.mock.calls.length;
-        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toMatchObject({
-            status: 'not_pending',
+        await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+            status: 'failed',
+            reason: retainedError,
         });
+        expect(getPendingActionConfirmation(confirmation.id)?.error).toBe(retainedError);
         expect(runtimeMocks.renderOffline).toHaveBeenCalledTimes(renderCallsBeforeBlockedRetry);
     });
 

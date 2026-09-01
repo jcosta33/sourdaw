@@ -76,12 +76,14 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
 }));
 vi.mock('#/modules/PluginHost/useCases', () => ({
     activateExternalPlugin: mocks.activateExternalPlugin,
+    registerFaustDSP: vi.fn(),
 }));
 vi.mock('#/modules/Routing/useCases', () => ({
     getAllSidechainRoutes: () => [],
     removeSidechainRoute: () => null,
     setSend: mocks.setSend,
     wireSidechainRoutes: mocks.wireSidechainRoutes,
+    hydrateSidechainRoutes: vi.fn(),
 }));
 vi.mock('../../../useCases/publishTrackAdded', () => ({
     publishTrackAdded: mocks.publishTrackAdded,

@@ -70,8 +70,12 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     importCachedAudioBuffers: mockImportCachedAudioBuffers,
     prepareCachedAudioBuffersFromIdb: mockPrepareCachedAudioBuffersFromIdb,
     resetAudioGraph: mockResetAudioGraph,
+    cancelPendingAudioBufferImport: vi.fn(),
 }));
-vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: mockClearUndoHistory }));
+vi.mock('#/modules/Command/useCases', () => ({
+    clearUndoHistory: mockClearUndoHistory,
+    resetActionReplayAuthority: vi.fn(),
+}));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     compactProject: mockCompactProject,
     projectActionHistoryToStore: mockProjectActionHistoryToStore,
@@ -191,6 +195,24 @@ describe('replaceProjectData', () => {
         expect(result.status).toBe('aborted');
     });
 
+    it('does not switch project authority after an external discard authority is revoked during preparation', async () => {
+        let allowed = true;
+        mockPrepareCachedAudioBuffersFromIdb.mockImplementation(async () => {
+            allowed = false;
+            return { cancel: mockCancelPreparedStoredBuffers, publish: vi.fn() };
+        });
+
+        const result = await replaceProjectData({
+            context: 'loadRecentProject',
+            data: makeData(),
+            shouldProceed: () => allowed,
+            transaction: makeTransaction(),
+        });
+
+        expect(result.status).toBe('aborted');
+        expect(mockResetCrdtProjectAuthority).not.toHaveBeenCalled();
+    });
+
     it('aborts when transaction.prepare throws', async () => {
         const result = await replaceProjectData({
             context: 'loadRecentProject',
@@ -233,6 +255,7 @@ describe('replaceProjectData', () => {
         expect(result.status).toBe('committed');
         if (result.status === 'committed') {
             expect(result.degraded).toBe(false);
+            expect(result.durable).toBe(true);
         }
         expect(mockStopPlayback).toHaveBeenCalled();
         expect(mockResetAudioGraph).toHaveBeenCalled();
@@ -336,11 +359,24 @@ describe('replaceProjectData', () => {
         expect(result.status).toBe('committed');
         if (result.status === 'committed') {
             expect(result.degraded).toBe(true);
+            expect(result.durable).toBe(true);
         }
         expect(mockNotifyUser).toHaveBeenCalledWith(
             'Project loaded with recovery errors. Save a new copy before closing.',
             'warning'
         );
+    });
+
+    it('reports a committed replacement as non-durable only when CRDT snapshot compaction fails', async () => {
+        mockCompactProject.mockRejectedValueOnce(new Error('snapshot persistence failed'));
+
+        const result = await replaceProjectData({
+            context: 'loadRecentProject',
+            data: makeData(),
+            transaction: makeTransaction(),
+        });
+
+        expect(result).toMatchObject({ status: 'committed', degraded: true, durable: false });
     });
 
     it('aborts when embedded buffer import returns null', async () => {

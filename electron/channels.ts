@@ -11,6 +11,8 @@
  * collision impossible to introduce by picking a plausible word.
  */
 
+import type { NativeMenuIntent } from './applicationMenu.js';
+
 /** Main → renderer: one pushed event, as `(name, payload)`. */
 export const EVENT_CHANNEL = 'sourdaw:event';
 
@@ -42,6 +44,29 @@ export const WINDOW_CLOSE_CHANNEL = 'sourdaw:window:close';
 export const WINDOW_IS_MAXIMIZED_CHANNEL = 'sourdaw:window:is-maximized';
 /** Main → renderer: the window entered or left the maximized state, as a boolean. */
 export const WINDOW_MAXIMIZED_CHANGED_CHANNEL = 'sourdaw:window:maximized-changed';
+
+/** Main → renderer native-menu intent, always one validated product action. */
+export const NATIVE_MENU_ACTION_CHANNEL = 'sourdaw:native-menu:action';
+/** Renderer → main disposable title/dirty projection for the owning BrowserWindow. */
+export const NATIVE_MENU_PROJECT_STATE_CHANNEL = 'sourdaw:native-menu:project-state';
+/** Renderer → main correlated result of a close-prompt save request. */
+export const NATIVE_MENU_SAVE_RESULT_CHANNEL = 'sourdaw:native-menu:save-result';
+/** Main → renderer request to quiesce the disposable project session before its window closes. */
+export const RENDERER_SESSION_QUIESCE_CHANNEL = 'sourdaw:renderer-session:quiesce';
+/** Renderer → main correlated acknowledgement of project-session quiescence. */
+export const RENDERER_SESSION_QUIESCED_CHANNEL = 'sourdaw:renderer-session:quiesced';
+/** Renderer → main commitment immediately before destructive graph retirement. */
+export const RENDERER_SESSION_QUIESCE_STARTED_CHANNEL = 'sourdaw:renderer-session:quiesce-started';
+/** Main → renderer cancellation of a started drain that lost close authority. */
+export const RENDERER_SESSION_QUIESCE_CANCEL_CHANNEL = 'sourdaw:renderer-session:quiesce-cancel';
+
+/** Exact terminal state of one correlated renderer-session retirement request. */
+export type RendererSessionQuiesceOutcome = 'success' | 'rejected' | 'terminal';
+
+export type RendererSessionQuiesceResult = {
+    readonly requestId: number;
+    readonly outcome: RendererSessionQuiesceOutcome;
+};
 
 /** A filter in an open or save dialog. */
 export type DialogFilter = {
@@ -174,5 +199,28 @@ export type SourdawBridge = {
         readonly isMaximized: () => Promise<boolean>;
         /** Subscribe to maximize/restore transitions. Returns the unsubscribe function. */
         readonly listenMaximized: (callback: (maximized: boolean) => void) => () => void;
+    };
+    nativeMenu: {
+        readonly listen: (callback: (intent: NativeMenuIntent) => void) => () => void;
+        readonly projectState: (state: {
+            readonly title: string;
+            readonly dirty: boolean;
+            readonly durabilityPending: boolean;
+            readonly projectKey: string;
+            readonly revision: string;
+            readonly rendererReady?: boolean;
+            readonly recentProjects: readonly { readonly key: string; readonly name: string }[];
+        }) => Promise<void>;
+        readonly saveResult: (result: {
+            readonly requestId: number;
+            readonly saved: boolean;
+            readonly dirty: boolean;
+            readonly projectKey: string;
+            readonly revision: string;
+        }) => Promise<void>;
+        readonly listenSessionQuiesce: (callback: (requestId: number) => void) => () => void;
+        readonly listenSessionQuiesceCancel: (callback: (requestId: number) => void) => () => void;
+        readonly sessionQuiesced: (result: RendererSessionQuiesceResult) => Promise<void>;
+        readonly sessionQuiesceStarted: (requestId: number) => Promise<boolean>;
     };
 };

@@ -60,6 +60,25 @@
 //! beside a lazy one is two bootstraps to keep honest instead of one.
 //! `render_graph_offline` never starts the live engine at all.
 //!
+//! ## The loop seam
+//!
+//! A loop region breaks the playhead's monotonicity, and the progress echo
+//! carries the seam beside it for that reason: `loop_wraps` counts the seams
+//! the engine has closed, and `last_wrap_frame` is the frame the pass that
+//! closed the newest one walked to.
+//!
+//! Two consumers read that pair, and only one of them is here. This module's
+//! queue ledger uses it to prove a write left the engine's queue when the
+//! pinned playhead never can ([`proven_popped`]). The other is the per-pass
+//! automation re-arm: the engine's automation queue is a window rather than a
+//! curve, so a pass consumes what it walks past and the seam does not put it
+//! back, and something has to re-send it. That belongs to the automation owner
+//! above this layer, which holds the three things re-arming needs and this
+//! layer has none of — it owns the curve, it learns the loop region, and it
+//! already polls the position feed on a cadence it can send from. This module
+//! sees single commands from an arbitrary caller, is never told the region,
+//! and has no clock of its own.
+//!
 //! ## Strip reports
 //!
 //! The result's `reports` are observations of the post-batch registry, never
@@ -101,6 +120,15 @@
 //! transport write leaves plugin-visible tempo and time signature untouched;
 //! the engine re-derives the beat position from the tempo it already holds.
 //!
+//! A `set-transport` is also a **locate** unless it says otherwise, and a
+//! locate is destructive by design: it seeks, and a seek cancels every queued
+//! mixer write stamped at or past the frame it lands on
+//! (`RampedParam::cancel_from`). Strip creation states a fader, a pan and each
+//! send level as writes stamped at frame 0, so a transport write that locates
+//! to the session head after those strips were built erases the mix they
+//! declared. A producer that only needs to start or stop playback from where
+//! the engine already stands therefore sends `locate: false`.
+//!
 //! ## Known deviations, recorded rather than silent
 //!
 //! - `smoothed` writes (Web Audio `setTargetAtTime`) have no native
@@ -130,7 +158,7 @@ use daw_engine::GraphBatchError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 /// Headroom the fader allows above unity, in decibels — the mirror of
 /// `FADER_HEADROOM_DB` in `src/utils/audioLevelLaw.ts`, the definition of
@@ -167,6 +195,16 @@ const FIRST_GRAPH_EFFECT_ID: usize = 2_000_000;
 /// twice over.
 const MAX_OFFLINE_RENDER_FRAMES: usize = 48_000 * 600;
 
+/// Create-*-strip plus set-track-output, then the per-strip send, device, and
+/// clip slots a maximal topology batch fills.
+const MAX_STRIP_TOPOLOGY_COMMANDS: usize =
+    2 + MAX_TRACK_SENDS + MAX_TRACK_DEVICES + MAX_TRACK_CLIPS;
+
+/// One queue fill of `write-parameter` (fader, pan, mute, solo, and each send
+/// level) plus one `write-device-parameter` fill per device slot.
+const MAX_STRIP_AUTOMATION_COMMANDS: usize = (4 + MAX_TRACK_SENDS) * AUTOMATION_QUEUE_CAPACITY
+    + MAX_TRACK_DEVICES * DEVICE_PARAM_QUEUE_CAPACITY;
+
 /// The most commands one batch may carry.
 ///
 /// The batch arrives from the renderer and sizes two rings that live as long
@@ -174,10 +212,12 @@ const MAX_OFFLINE_RENDER_FRAMES: usize = 48_000 * 600;
 /// ring from the batch it is handed, and the retirement ring with it. Neither
 /// shrinks again, so an unbounded array is an unbounded resident allocation
 /// bought by one message. The ceiling is what a maximal project genuinely
-/// needs — every strip created, routed, sent, filled with devices and clips —
-/// so it can refuse a hostile batch without ever meeting an honest one.
+/// needs — every strip created, routed, sent, filled with devices and clips,
+/// plus a full `write-parameter` and `write-device-parameter` queue fill per
+/// mixer and device target — so it can refuse a hostile batch without ever
+/// meeting an honest one.
 const MAX_BATCH_COMMANDS: usize = (MAX_TIMELINE_TRACKS + MAX_TIMELINE_BUSES)
-    * (2 + MAX_TRACK_SENDS + MAX_TRACK_DEVICES + MAX_TRACK_CLIPS);
+    * (MAX_STRIP_TOPOLOGY_COMMANDS + MAX_STRIP_AUTOMATION_COMMANDS);
 
 // ── Wire payloads (hand-maintained mirror of AudioGraphBackend.ts) ─────────
 
@@ -199,6 +239,13 @@ pub struct GraphBatchPayload {
     #[serde(default)]
     pub replace_topology: bool,
     pub commands: Vec<GraphCommandPayload>,
+}
+
+/// A `set-transport` that does not say otherwise is a locate — the meaning the
+/// field's absence carried before it existed, so every producer written against
+/// the older shape keeps behaving exactly as it did.
+fn locate_unless_told_otherwise() -> bool {
+    true
 }
 
 #[derive(Debug, Deserialize)]
@@ -260,7 +307,29 @@ pub enum GraphCommandPayload {
     SetTransport {
         playing: bool,
         position_seconds: f64,
+        /// Whether this write is also a *locate*. Absent means it is, which is
+        /// what every producer that moves the playhead wants and what the
+        /// field's absence has always meant.
+        ///
+        /// A producer sets it `false` to say "roll from where you already
+        /// stand". That is not a convenience: a locate cancels every queued
+        /// mixer write stamped at or past its frame (see the mapping arm), so a
+        /// second transport write that merely starts playback would erase the
+        /// fader, pan and send levels an earlier batch queued at frame 0. The
+        /// position still travels, because `SetTransportPlayback` carries it
+        /// and it must stay truthful; only the seek is withheld.
+        #[serde(default = "locate_unless_told_otherwise")]
+        locate: bool,
     },
+    /// The session-level shadow monitor gate
+    /// ([`GraphCommand::SetMonitorShadow`]): the engine keeps rendering and
+    /// contributes nothing to the OS output. It travels with the topology
+    /// rather than as a start parameter because the engine has no start call
+    /// to carry one — `apply_graph_commands` boots it lazily on the first
+    /// batch — and because the cutover has to be expressible on a session
+    /// that is already rolling.
+    #[serde(rename_all = "camelCase")]
+    SetMonitorShadow { shadowed: bool },
 }
 
 #[derive(Debug, Deserialize)]
@@ -555,8 +624,8 @@ struct DeviceEntry {
 /// laws, each a mirror of an engine law, never a guess: a replace/hold's
 /// stale-cancellation and a backward locate mirror the queues' own
 /// cancellation ([`QueueBudgets`]); and [`Self::release_landed`] subtracts
-/// what the engine's progress echo **proves** has left its queue —
-/// admitted-batch and stamp both behind the echoed horizon. The echo lags
+/// what the engine's progress echo **proves** has left its queue
+/// ([`proven_popped`]). The echo lags
 /// the engine, so the ledger may over-refuse for a batch or two; it never
 /// under-refuses, because nothing is released ahead of proof. An offline
 /// render's fresh registry keeps the ledger exact for its one
@@ -677,8 +746,8 @@ impl GraphRegistry {
     /// engine's own applied count: that stream is not restarting here, only the
     /// graph it carries.
     ///
-    /// The queue ledgers do go, with the strips they describe: every stamp they
-    /// hold addresses a node or an effect this teardown removes, and a removed
+    /// The queue ledgers do go, with the strips they describe: every stamp
+    /// addresses a node or an effect this teardown removes, and a removed
     /// node's queue is removed with it.
     fn take_topology_down(&mut self) -> Vec<GraphCommand> {
         let mut strips: Vec<&StripEntry> = self.strips.values().collect();
@@ -723,31 +792,93 @@ impl GraphRegistry {
     /// proof, because a stamp the ledger's own mirrored cancellations already
     /// removed must not release a second slot.
     ///
-    /// The proof is the echo's happens-before guarantee
-    /// ([`GraphProgressSnapshot`]): a write is gone from its engine queue
-    /// once its admitting fenced batch is at or behind the echoed batch
-    /// horizon **and** its stamp sits strictly before the echoed playhead.
-    /// Strictly — a stamp at the playhead itself is not yet proven popped.
-    /// Both queue kinds pop by that law every rendered block, playing or
-    /// stopped: `RampedParam` frees a slot when the playhead reaches a
-    /// write's start frame, `DeviceParamQueue` pops everything due within
-    /// the block. A stale echo, an engine restart, or a stamp the engine
-    /// dropped by a law with no mirror here (a foreign seek, a stop-edge
-    /// hold) all degrade the same direction: the stamp stays charged and the
-    /// ledger over-refuses until a later echo — never under-refuses.
+    /// The proof is [`proven_popped`], and a stamp it does not prove stays
+    /// charged: a stale echo, an engine restart, or a stamp the engine dropped
+    /// by a law with no mirror here (a foreign seek, a stop-edge hold) all
+    /// degrade the same direction — the ledger over-refuses until a later echo,
+    /// never under-refuses.
     fn release_landed(&mut self, progress: GraphProgressSnapshot) {
-        let proven_landed = |admitted_batch: u64, at_frame: u64| {
-            admitted_batch <= progress.batches_applied && at_frame < progress.playhead_frame
-        };
         self.automation_pending.retain(|_, queued| {
-            queued.retain(|stamp| !proven_landed(stamp.admitted_batch, stamp.at_frame));
+            queued.retain_mut(|stamp| {
+                !proven_popped(
+                    progress,
+                    stamp.admitted_batch,
+                    stamp.at_frame,
+                    &mut stamp.landed_wraps,
+                )
+            });
             !queued.is_empty()
         });
         self.device_param_pending.retain(|_, queued| {
-            queued.retain(|stamp| !proven_landed(stamp.admitted_batch, stamp.at_frame));
+            queued.retain_mut(|stamp| {
+                !proven_popped(
+                    progress,
+                    stamp.admitted_batch,
+                    stamp.at_frame,
+                    &mut stamp.landed_wraps,
+                )
+            });
             !queued.is_empty()
         });
     }
+}
+
+/// How many seams must close after a stamp is known queued before a *whole*
+/// pass is proven to have run with it there.
+///
+/// One is not enough: the seam that closes first ends the pass the stamp was
+/// admitted into, and the playhead may already have been past the stamp when
+/// the batch drained, so that pass proves nothing about it. The pass between
+/// the first and second seam is the earliest one that ran from the region's
+/// start with the stamp already queued.
+const SEAMS_PROVING_A_WHOLE_PASS: u64 = 2;
+
+/// Whether the engine's progress echo proves one queued write has left its
+/// fixed engine queue.
+///
+/// Nothing is released on a count, always on a per-stamp proof, because a stamp
+/// the ledger's own mirrored cancellations already removed must not release a
+/// second slot. Two proofs exist, and both first require the write's admitting
+/// fenced batch to be at or behind the echoed batch horizon — until then the
+/// engine has not even been handed it.
+///
+/// **The playhead.** A stamp strictly before the echoed playhead is popped
+/// ([`GraphProgressSnapshot`]'s happens-before). Strictly — a stamp at the
+/// playhead itself is due in the block that has not run. Both queue kinds pop
+/// by that law every rendered block, playing or stopped: `RampedParam` frees a
+/// slot when the walk reaches a write's start frame, `DeviceParamQueue` pops
+/// everything due within the block.
+///
+/// **The seam.** A loop pins the playhead below the region's end forever, so
+/// the first proof alone would leave every stamp in the region charged for the
+/// life of the session and a looping musician's parameter edits would exhaust
+/// the admission budget. The seam proof replaces the playhead's monotonicity
+/// with the wrap counter's: `last_wrap_frame` is the frame the pass ending at
+/// seam `loop_wraps` walked to, so every write queued *before that pass began*
+/// and stamped below it was consumed by it. `landed_wraps` anchors "before":
+/// it is the wrap count on the first echo that proved the batch drained, which
+/// is an echo at which the write was certainly on the queue, and
+/// [`SEAMS_PROVING_A_WHOLE_PASS`] seams after it is the earliest point a whole
+/// pass has run since.
+///
+/// Neither proof can release a stamp the audio thread might still consume, and
+/// neither depends on how often the echo is sampled: sampling less often only
+/// delays a release.
+fn proven_popped(
+    progress: GraphProgressSnapshot,
+    admitted_batch: u64,
+    at_frame: u64,
+    landed_wraps: &mut Option<u64>,
+) -> bool {
+    if admitted_batch > progress.batches_applied {
+        return false;
+    }
+    if at_frame < progress.playhead_frame {
+        return true;
+    }
+    let anchor = *landed_wraps.get_or_insert(progress.loop_wraps);
+    progress.loop_wraps.saturating_sub(anchor) >= SEAMS_PROVING_A_WHOLE_PASS
+        && at_frame < progress.last_wrap_frame
 }
 
 // ── Validation and mapping ─────────────────────────────────────────────────
@@ -779,6 +910,10 @@ struct PendingStamp {
     at_frame: u64,
     lands_at: u64,
     admitted_batch: u64,
+    /// The wrap count on the first echo that proved this stamp's batch drained
+    /// — the anchor the loop half of the release proof counts passes from. See
+    /// [`proven_popped`].
+    landed_wraps: Option<u64>,
 }
 
 /// One device-parameter change the ledger believes a device's pending window
@@ -789,6 +924,8 @@ struct PendingStamp {
 struct DeviceParamStamp {
     at_frame: u64,
     admitted_batch: u64,
+    /// As [`PendingStamp::landed_wraps`].
+    landed_wraps: Option<u64>,
 }
 
 /// Control-side ledger of what accepted batches queue on the engine's fixed
@@ -842,15 +979,7 @@ impl QueueBudgets {
         write: &AutomationWrite,
     ) -> Result<(), String> {
         let queued = self.automation.entry(target).or_default();
-        let (start, lands_at) = match write {
-            AutomationWrite::Append(event) | AutomationWrite::Replace(event) => (
-                event.at_frame,
-                event
-                    .at_frame
-                    .saturating_add(u64::from(event.duration_frames)),
-            ),
-            AutomationWrite::Hold { at_frame } => (*at_frame, *at_frame),
-        };
+        let (start, lands_at) = write_frames(write);
         if !matches!(write, AutomationWrite::Append(_)) {
             queued.retain(|pending| pending.lands_at < start);
         }
@@ -870,6 +999,7 @@ impl QueueBudgets {
             at_frame: start,
             lands_at,
             admitted_batch: self.charging_batch,
+            landed_wraps: None,
         });
         Ok(())
     }
@@ -889,6 +1019,7 @@ impl QueueBudgets {
         queued.push(DeviceParamStamp {
             at_frame,
             admitted_batch: self.charging_batch,
+            landed_wraps: None,
         });
         Ok(())
     }
@@ -901,6 +1032,21 @@ impl QueueBudgets {
         for queued in self.automation.values_mut() {
             queued.retain(|pending| pending.at_frame < frame);
         }
+    }
+}
+
+/// The frame a write starts at and the frame it lands on — a ramp's start and
+/// its landing, a step's or a hold's own stamp for both, because both land
+/// instantly.
+fn write_frames(write: &AutomationWrite) -> (u64, u64) {
+    match write {
+        AutomationWrite::Append(event) | AutomationWrite::Replace(event) => (
+            event.at_frame,
+            event
+                .at_frame
+                .saturating_add(u64::from(event.duration_frames)),
+        ),
+        AutomationWrite::Hold { at_frame } => (*at_frame, *at_frame),
     }
 }
 
@@ -1687,13 +1833,15 @@ fn map_command(
             })?;
             let StepWritePayload::Step { value, time } = write;
             let at_frame = seconds_to_frames(*time, sample_rate, "write-device-parameter time")?;
+            let value = finite(*value, "write-device-parameter value")? as f32;
+            let effect_id = device.native_effect_id;
             budgets
-                .charge_device_param(device.native_effect_id, at_frame)
+                .charge_device_param(effect_id, at_frame)
                 .map_err(|reason| format!("write-device-parameter: {reason}"))?;
             ops.push(GraphCommand::AutomateDeviceParam {
-                effect_id: device.native_effect_id,
+                effect_id,
                 param,
-                value: finite(*value, "write-device-parameter value")? as f32,
+                value,
                 at_frame,
             });
             Ok(())
@@ -1706,7 +1854,12 @@ fn map_command(
         GraphCommandPayload::SetTransport {
             playing,
             position_seconds,
+            locate,
         } => {
+            // Validated whether or not it is used: a position this side cannot
+            // put on the frame grid is malformed however the producer means it
+            // to be read, and refusing only when the seek is wanted would let
+            // one shape of the command carry a number the other refuses.
             let frame =
                 seconds_to_frames(*position_seconds, sample_rate, "set-transport position")?;
             // Playback state lands before the locate: a play→stop edge holds
@@ -1720,10 +1873,20 @@ fn map_command(
                 is_playing: *playing,
                 song_pos_seconds: *position_seconds,
             });
-            ops.push(GraphCommand::SeekFrames(frame));
-            // The ledger mirrors the locate it just queued: the engine's seek
-            // drops every queued write stamped at or past the target.
-            budgets.apply_seek(frame);
+            if *locate {
+                ops.push(GraphCommand::SeekFrames(frame));
+                // The ledger mirrors the locate it just queued: the engine's
+                // seek drops every queued write stamped at or past the target.
+                budgets.apply_seek(frame);
+            }
+            Ok(())
+        }
+
+        GraphCommandPayload::SetMonitorShadow { shadowed } => {
+            // Nothing to validate and nothing to charge: the gate addresses no
+            // strip, holds no stamp and queues no write. It is a mode the
+            // callback reads at the device boundary.
+            ops.push(GraphCommand::SetMonitorShadow(*shadowed));
             Ok(())
         }
     }
@@ -1967,10 +2130,21 @@ fn map_schedule_clip(
             begins_at: Some(at),
         }) => {
             let at = seconds_to_frames(*at, sample_rate, "fadeOut beginsAt")?;
-            if at > clip_end_frame {
+            // A producer states the clip's end as one quantity of seconds; this
+            // arm reconstructs it as two roundings, `round(start) +
+            // round(length)`. The two disagree by exactly one frame whenever
+            // both fractional parts sit below a half and still sum past it, so
+            // a fade-out pinned to the end of its own clip lands one frame past
+            // that reconstruction through arithmetic alone. One frame is the
+            // widest that split can be, so absorb it and keep refusing anything
+            // farther out, which is a fade genuinely outside its sound.
+            if at > clip_end_frame.saturating_add(1) {
                 return Err("schedule-clip: fadeOut begins after the clip ends".to_string());
             }
-            Some(frames_u32(clip_end_frame - at, "fadeOut span")?)
+            Some(frames_u32(
+                clip_end_frame.saturating_sub(at),
+                "fadeOut span",
+            )?)
         }
     };
 
@@ -1979,8 +2153,10 @@ fn map_schedule_clip(
         native_track_id,
         TimelineClip::new(
             clip_id,
-            sample.left.clone(),
-            sample.right.clone(),
+            // Shared, never copied: a take comped into forty regions, or looped
+            // across an arrangement, is forty clips over one allocation.
+            Arc::clone(&sample.left),
+            Arc::clone(&sample.right),
             ClipPlacement {
                 start_frame,
                 source_offset_frames,
@@ -2110,18 +2286,19 @@ pub async fn register_timeline_sample(
     };
     let frames = pcm_frame_count(pcm.len(), channels)?;
     let bytes_per_frame = 4 * channels;
-    let mut left = Vec::with_capacity(frames);
-    let mut right = if channels == 2 {
-        Vec::with_capacity(frames)
+    // Collected straight into the shared channels every clip over this material
+    // will hold, so registration allocates each one exactly once.
+    let left: Arc<[f32]> = pcm
+        .chunks_exact(bytes_per_frame)
+        .map(|frame| f32::from_le_bytes([frame[0], frame[1], frame[2], frame[3]]))
+        .collect();
+    let right: Arc<[f32]> = if channels == 2 {
+        pcm.chunks_exact(bytes_per_frame)
+            .map(|frame| f32::from_le_bytes([frame[4], frame[5], frame[6], frame[7]]))
+            .collect()
     } else {
-        Vec::new()
+        Arc::from([])
     };
-    for frame in pcm.chunks_exact(bytes_per_frame) {
-        left.push(f32::from_le_bytes([frame[0], frame[1], frame[2], frame[3]]));
-        if channels == 2 {
-            right.push(f32::from_le_bytes([frame[4], frame[5], frame[6], frame[7]]));
-        }
-    }
 
     let mut samples = state
         .timeline_samples
@@ -2408,13 +2585,43 @@ struct MappingSessionKeyPayload {
     revision: u64,
 }
 
+/// Replay already-accepted history onto a fresh registry, one ceiling-sized
+/// chunk at a time. Concatenated session history can exceed what a single
+/// honest batch may carry; packing it into one `GraphBatchPayload` would
+/// refuse commands this process already took. Each chunk is at most
+/// [`MAX_BATCH_COMMANDS`] so the incoming batch still meets the same ceiling.
+fn replay_prior_commands(
+    mut commands: Vec<GraphCommandPayload>,
+    registry: &mut GraphRegistry,
+    samples: &HashMap<String, TimelineSample>,
+    sample_rate: f32,
+) -> Result<(), String> {
+    while !commands.is_empty() {
+        let rest = if commands.len() > MAX_BATCH_COMMANDS {
+            commands.split_off(MAX_BATCH_COMMANDS)
+        } else {
+            Vec::new()
+        };
+        let replay = GraphBatchPayload {
+            schema_version: 1,
+            correlation: None,
+            replace_topology: false,
+            commands,
+        };
+        map_batch(&replay, registry, samples, sample_rate)
+            .map_err(|reason| format!("{PRIOR_FAULT_PREFIX}: {reason}"))?;
+        commands = rest;
+    }
+    Ok(())
+}
+
 /// Map one batch against the graph a prior command sequence built — the
 /// report wire of the offline seam, with nothing rendered.
 ///
 /// This is how `createNativeOfflineGraphBackend.ts` gets strip reports and
 /// refusals from the mapping that owns them instead of restating them
 /// TS-side: `prior` is the backend's already-committed wire commands
-/// (replayed as one synthetic batch onto a fresh registry, exactly the graph
+/// (replayed in ceiling-sized chunks onto a fresh registry, exactly the graph
 /// its next render would rebuild), `batch` is the incoming batch mapped
 /// against that carried registry. The split is what scopes the result: the
 /// reports cover only the strips the *incoming* batch touched, and a refusal
@@ -2505,14 +2712,7 @@ pub async fn map_graph_batch(
         None => {
             let mut registry = GraphRegistry::default();
             if !prior_commands.is_empty() {
-                let replay = GraphBatchPayload {
-                    schema_version: 1,
-                    correlation: None,
-                    replace_topology: false,
-                    commands: prior_commands,
-                };
-                map_batch(&replay, &mut registry, &samples, sample_rate as f32)
-                    .map_err(|reason| format!("{PRIOR_FAULT_PREFIX}: {reason}"))?;
+                replay_prior_commands(prior_commands, &mut registry, &samples, sample_rate as f32)?;
             }
             registry
         }
@@ -2689,8 +2889,8 @@ mod tests {
         samples.insert(
             "source-a".to_string(),
             TimelineSample {
-                left: vec![0.5; 48_000],
-                right: vec![0.5; 48_000],
+                left: vec![0.5; 48_000].into(),
+                right: vec![0.5; 48_000].into(),
                 sample_rate: 48_000.0,
             },
         );
@@ -2704,6 +2904,93 @@ mod tests {
     fn batch(commands: Value) -> GraphBatchPayload {
         serde_json::from_value(json!({ "schemaVersion": 1, "commands": commands }))
             .expect("the test batch should deserialize")
+    }
+
+    /// How many locates a mapping queued. `GraphCommand` carries no `Debug`, so
+    /// the shape is counted rather than printed.
+    fn seek_count(ops: &[GraphCommand]) -> usize {
+        ops.iter()
+            .filter(|op| matches!(op, GraphCommand::SeekFrames(_)))
+            .count()
+    }
+
+    /// The shape every producer written before the field existed still sends.
+    #[test]
+    fn a_transport_write_locates_unless_it_says_otherwise() {
+        let mut registry = GraphRegistry::default();
+        let mapped = map_batch(
+            &batch(json!([
+                { "kind": "set-transport", "playing": true, "positionSeconds": 2.0 }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("an ordinary transport write should map");
+
+        assert!(
+            matches!(
+                mapped.ops.as_slice(),
+                [
+                    GraphCommand::SetTransportPlayback {
+                        is_playing: true,
+                        ..
+                    },
+                    GraphCommand::SeekFrames(96_000)
+                ]
+            ),
+            "an unqualified set-transport is a locate at its own position"
+        );
+    }
+
+    /// The live session's roll (`rollNativeTransport`), which follows a topology
+    /// batch that already parked the engine where playback is to start. The
+    /// locate it does not need is one that would cancel every fader, pan and
+    /// send level that topology queued at frame 0.
+    #[test]
+    fn a_transport_write_that_does_not_locate_queues_no_seek() {
+        let mut registry = GraphRegistry::default();
+        let mapped = map_batch(
+            &batch(json!([
+                { "kind": "set-transport", "playing": true, "positionSeconds": 2.0, "locate": false }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a non-locating transport write should map");
+
+        assert_eq!(seek_count(&mapped.ops), 0, "no locate was asked for");
+        assert!(
+            matches!(
+                mapped.ops.as_slice(),
+                [GraphCommand::SetTransportPlayback {
+                    is_playing: true,
+                    song_pos_seconds
+                }] if (*song_pos_seconds - 2.0).abs() < f64::EPSILON
+            ),
+            "the playback state and its position still travel; only the seek is withheld"
+        );
+    }
+
+    /// Withholding the seek must not withhold the validation: a position that
+    /// cannot be put on the frame grid is malformed either way.
+    #[test]
+    fn a_non_locating_transport_write_still_refuses_an_unmappable_position() {
+        let mut registry = GraphRegistry::default();
+        let refused = map_batch(
+            &batch(json!([
+                { "kind": "set-transport", "playing": true, "positionSeconds": -1.0, "locate": false }
+            ])),
+            &mut registry,
+            &sample_pool(),
+            48_000.0,
+        );
+
+        assert!(
+            refused.is_err(),
+            "a position the grid cannot hold is refused whether or not it is used"
+        );
     }
 
     fn clip_and_gain_batch() -> GraphBatchPayload {
@@ -2873,6 +3160,34 @@ mod tests {
         )));
     }
 
+    /// The shadow monitor gate crosses the wire as itself: a session mode the
+    /// engine reads at the device boundary, carrying no strip and no stamp. It
+    /// must not be mapped onto the master fader — that is project truth a
+    /// bounce and a save both read, and a monitor mode is neither.
+    #[test]
+    fn the_monitor_shadow_gate_maps_onto_the_engine_command_and_nothing_else() {
+        for shadowed in [true, false] {
+            let batch = batch(json!([
+                { "kind": "set-monitor-shadow", "shadowed": shadowed }
+            ]));
+
+            let mut registry = GraphRegistry::default();
+            let mapped = map_batch(&batch, &mut registry, &sample_pool(), 48_000.0)
+                .expect("the monitor gate should map without a strip");
+
+            assert!(mapped.ops.iter().any(
+                |op| matches!(op, GraphCommand::SetMonitorShadow(value) if *value == shadowed)
+            ));
+            assert!(!mapped.ops.iter().any(|op| matches!(
+                op,
+                GraphCommand::AutomateParam {
+                    target: AutomationTarget::MasterGain,
+                    ..
+                }
+            )));
+        }
+    }
+
     #[test]
     fn a_bus_routed_at_a_track_maps_onto_a_bus_to_track_edge() {
         let batch = batch(json!([
@@ -3031,14 +3346,97 @@ mod tests {
         assert!(refusal.contains("unknown sample 'nowhere'"));
     }
 
+    /// A clip whose start and length each round *down* by 0.4 of a frame, so
+    /// the end stated as one quantity of seconds rounds one frame past the end
+    /// this mapper reconstructs from the two: 0.0113 s and 0.9113 s land on
+    /// frames 542 and 43_742 at 48 kHz, while their sum lands on 44_285 rather
+    /// than 44_284.
+    fn clip_with_fade_out_at(begins_at: f64) -> GraphBatchPayload {
+        batch(json!([
+            { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
+              "devices": [], "honorMuted": true, "contributesAudio": true },
+            { "kind": "schedule-clip", "playback": {
+                "trackId": "t1", "source": { "sourceId": "source-a" },
+                "startTime": 0.0113, "sourceOffsetSeconds": 0, "durationSeconds": 0.9113,
+                "playbackRate": 1, "gain": 1,
+                "fade": { "fadeOut": { "beginsAt": begins_at }, "microFadeSeconds": 0 } } }
+        ]))
+    }
+
+    #[test]
+    fn a_fade_out_on_the_clips_own_end_survives_the_rounding_split() {
+        let mapped = map_batch(
+            &clip_with_fade_out_at(0.9226),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a fade-out pinned to the clip's own end must map");
+
+        assert!(mapped.ops.iter().any(|op| matches!(
+            op,
+            GraphCommand::AddClip(_, clip) if clip.playback().fade.fade_out_frames == Some(0)
+        )));
+    }
+
+    #[test]
+    fn a_fade_out_two_frames_past_the_clip_end_still_refuses() {
+        // 44_286 frames — one frame farther than any rounding split can reach.
+        let refusal = map_batch(
+            &clip_with_fade_out_at(44_286.0 / 48_000.0),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect_err("a fade-out genuinely past the clip must refuse");
+
+        assert!(refusal.contains("fadeOut begins after the clip ends"));
+    }
+
+    #[test]
+    fn scheduling_one_sample_many_times_shares_its_material_instead_of_copying_it() {
+        // A take becomes many clips through ordinary editing — comp regions,
+        // gap fills, loop passes — and a mapper that handed each one its own
+        // copy would multiply the take's PCM by the number of edits made to it.
+        let clips: Vec<Value> = (0..8)
+            .map(|index| {
+                json!({ "kind": "schedule-clip", "playback": {
+                    "trackId": "t1", "source": { "sourceId": "source-a" },
+                    "startTime": index, "sourceOffsetSeconds": 0, "durationSeconds": 0.5,
+                    "playbackRate": 1, "gain": 1, "fade": { "microFadeSeconds": 0 } } })
+            })
+            .collect();
+        let batch = batch(json!([
+            { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
+              "devices": [], "honorMuted": true, "contributesAudio": true },
+            clips[0], clips[1], clips[2], clips[3], clips[4], clips[5], clips[6], clips[7]
+        ]));
+        let samples = sample_pool();
+
+        let mapped = map_batch(&batch, &mut GraphRegistry::default(), &samples, 48_000.0)
+            .expect("eight clips over one sample should map");
+
+        let scheduled = mapped
+            .ops
+            .iter()
+            .filter(|op| matches!(op, GraphCommand::AddClip(..)))
+            .count();
+        assert_eq!(scheduled, 8);
+        // The pool's own handle plus one per scheduled clip. A copy would leave
+        // the pool holding its material alone.
+        let material = &samples["source-a"];
+        assert_eq!(Arc::strong_count(&material.left), 9);
+        assert_eq!(Arc::strong_count(&material.right), 9);
+    }
+
     #[test]
     fn material_at_another_rate_is_rate_converted_not_stretched() {
         let mut samples = HashMap::new();
         samples.insert(
             "half-rate".to_string(),
             TimelineSample {
-                left: vec![0.5; 24_000],
-                right: Vec::new(),
+                left: vec![0.5; 24_000].into(),
+                right: [].into(),
                 sample_rate: 24_000.0,
             },
         );
@@ -3769,6 +4167,122 @@ mod tests {
         );
     }
 
+    /// A loop region two render blocks long, so a pass is exactly two blocks
+    /// and its seam falls on a block boundary.
+    const LOOP_END_FRAME: u64 = 1_024;
+
+    /// Install the region as a loose command, the way `engine_transport_set_maps`
+    /// does: the loop is not part of a graph batch, so it must not advance the
+    /// fence horizon the ledger numbers against.
+    fn install_loop(renderer: &mut OfflineRenderer) {
+        renderer
+            .push(GraphCommand::SetLoopRegion(
+                daw_engine::transport_map::LoopRegion {
+                    enabled: true,
+                    start_frame: 0,
+                    end_frame: LOOP_END_FRAME,
+                },
+            ))
+            .expect("the loose loop command fits");
+    }
+
+    /// The release proof's loop half. A stamp inside the loop region is
+    /// consumed on every pass, but the echoed playhead is pinned below the
+    /// region's end forever, so the playhead proof alone charges that stamp for
+    /// the life of the session — the starvation that makes a looping session's
+    /// parameter edits refuse. The seam proves what the playhead cannot, and
+    /// only a *whole* pass does: one seam after the stamp is known queued ends
+    /// the pass it arrived in, which says nothing about a stamp the playhead
+    /// was already past.
+    ///
+    /// Both of the proof's bounds are strict, and the region's own end is where
+    /// that matters: the closing pass walks *to* `last_wrap_frame` without
+    /// rendering it, so a stamp sitting exactly there is one the engine has
+    /// never popped and never will while the region holds. It stays charged
+    /// forever, and that is the correct answer — the ledger over-refuses rather
+    /// than freeing a slot the engine still owes.
+    #[test]
+    fn a_stamp_a_whole_loop_pass_walked_past_releases_on_the_seam() {
+        const STAMP: u64 = 768;
+        let samples = sample_pool();
+        let mut registry = GraphRegistry::default();
+        let mut renderer = OfflineRenderer::new(48_000.0, 64);
+        install_loop(&mut renderer);
+
+        admit_and_send(
+            &mut registry,
+            &mut renderer,
+            json!([
+                track_strip("t1"),
+                { "kind": "set-transport", "playing": true, "positionSeconds": 0.0 },
+            ]),
+            &samples,
+        )
+        .expect("the setup batch maps");
+        renderer.render(512);
+
+        admit_and_send(
+            &mut registry,
+            &mut renderer,
+            json!([
+                pan_step("t1", 0.1, STAMP as f64 / 48_000.0),
+                pan_step("t1", 0.2, LOOP_END_FRAME as f64 / 48_000.0),
+            ]),
+            &samples,
+        )
+        .expect("the writes admit");
+
+        // The block that drains it is the one that closes the seam, so the
+        // engine walks past the stamp and reports a playhead below it.
+        renderer.render(512);
+        let closed = renderer.graph_progress();
+        assert_eq!(closed.loop_wraps, 1);
+        assert!(
+            closed.playhead_frame < STAMP,
+            "the pinned playhead is what makes this stamp unprovable without the seam"
+        );
+
+        let charged = |registry: &GraphRegistry| -> usize {
+            registry.automation_pending.values().map(Vec::len).sum()
+        };
+
+        registry.release_landed(closed);
+        assert_eq!(
+            charged(&registry),
+            2,
+            "the first echo proving the batch drained only anchors the seam count"
+        );
+
+        renderer.render(LOOP_END_FRAME as usize);
+        assert_eq!(renderer.graph_progress().loop_wraps, 2);
+        registry.release_landed(renderer.graph_progress());
+        assert_eq!(
+            charged(&registry),
+            2,
+            "one seam after the anchor only ends the pass the stamp arrived in"
+        );
+
+        renderer.render(LOOP_END_FRAME as usize);
+        let walked = renderer.graph_progress();
+        assert_eq!(walked.loop_wraps, 3);
+        assert_eq!(
+            walked.last_wrap_frame, LOOP_END_FRAME,
+            "the pass walked to the region's end, so a stamp there is the boundary case"
+        );
+        registry.release_landed(walked);
+        let left: Vec<u64> = registry
+            .automation_pending
+            .values()
+            .flatten()
+            .map(|stamp| stamp.at_frame)
+            .collect();
+        assert_eq!(
+            left,
+            vec![LOOP_END_FRAME],
+            "a whole pass ran with both stamps queued, but it only popped the one below its walk"
+        );
+    }
+
     /// Debt 3, refusal ordering: a batch that lost its revision race rejects
     /// with the contract's semantics — refused before the graph changed —
     /// and before the lazy bootstrap, so a lost batch never starts an
@@ -4149,8 +4663,8 @@ mod tests {
 
         let samples = state.timeline_samples.lock().expect("sample lock");
         let sample = samples.get("s1").expect("the sample is registered");
-        assert_eq!(sample.left, vec![0.1, 0.2]);
-        assert_eq!(sample.right, vec![-0.1, -0.2]);
+        assert_eq!(*sample.left, [0.1, 0.2]);
+        assert_eq!(*sample.right, [-0.1, -0.2]);
         drop(samples);
 
         let refused = block_on_test(register_timeline_sample(
@@ -4673,6 +5187,47 @@ mod tests {
             "every admitted command owes at least its own op, got {}",
             mapped.ops.len()
         );
+    }
+
+    /// A maximal honest batch also carries mixer and device automation — one
+    /// queue fill of `write-parameter` / `write-device-parameter` per strip
+    /// target — so the ceiling is that product, not topology commands alone.
+    #[test]
+    fn max_batch_commands_includes_one_automation_fill_per_strip() {
+        let topology = 2 + MAX_TRACK_SENDS + MAX_TRACK_DEVICES + MAX_TRACK_CLIPS;
+        let automation = (4 + MAX_TRACK_SENDS) * AUTOMATION_QUEUE_CAPACITY
+            + MAX_TRACK_DEVICES * DEVICE_PARAM_QUEUE_CAPACITY;
+        assert_eq!(
+            MAX_BATCH_COMMANDS,
+            (MAX_TIMELINE_TRACKS + MAX_TIMELINE_BUSES) * (topology + automation)
+        );
+    }
+
+    /// Session-replay concatenation packs already-accepted history into one
+    /// `GraphBatchPayload`. Each original batch can sit under the ceiling
+    /// while the concatenated prior does not — that is a transport fault for
+    /// commands the process already took. Chunking the replay under the
+    /// per-batch ceiling maps them; raising the ceiling to cover all history
+    /// would unbounded-size the process-lifetime rings.
+    #[test]
+    fn map_graph_batch_replays_a_prior_past_the_command_ceiling() {
+        let state = AppState::default();
+        let transport = json!({ "kind": "set-transport", "playing": false, "positionSeconds": 0 });
+        let strip_id = "t-remainder";
+        let mut prior: Vec<Value> = (0..MAX_BATCH_COMMANDS).map(|_| transport.clone()).collect();
+        prior.push(track_strip(strip_id));
+
+        let result = block_on_test(map_graph_batch(
+            json!(prior),
+            json!({ "schemaVersion": 1, "commands": [fader_step(strip_id)] }),
+            48_000.0,
+            None,
+            &state,
+        ))
+        .expect("a prior one command past the ceiling must still replay");
+
+        assert_eq!(result["acceptance"], "accepted", "got: {result}");
+        assert_eq!(result["application"], "applied", "got: {result}");
     }
 
     /// The engine bootstrap must not run under the engine mutex: it waits on a

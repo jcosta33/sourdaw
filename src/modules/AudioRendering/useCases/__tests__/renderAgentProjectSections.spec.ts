@@ -6,10 +6,12 @@ import { AGENT_SECTION_RENDER_RETENTION_POLICY } from '../../models/AgentSection
 import { clearAgentSectionRenderArtifacts } from '../clearAgentSectionRenderArtifacts';
 import { getAgentSectionRenderArtifacts } from '../getAgentSectionRenderArtifacts';
 import { renderAgentProjectSections } from '../renderAgentProjectSections';
+import { wouldAgentSectionRenderSetExceedRetention } from '../wouldAgentSectionRenderSetExceedRetention';
 
 const mocks = vi.hoisted(() => ({
     cancelExport: vi.fn(),
     captureProjectRevision: vi.fn(),
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(),
     renderOffline: vi.fn(),
 }));
 
@@ -20,6 +22,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: mocks.captureProjectRevision,
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint: mocks.projectRevisionMatchesLiveIgnoringCommandCheckpoint,
 }));
 
 function createAudioBuffer(
@@ -58,6 +61,9 @@ describe('renderAgentProjectSections', () => {
         vi.clearAllMocks();
         clearAgentSectionRenderArtifacts();
         mocks.captureProjectRevision.mockReturnValue('revision-a');
+        mocks.projectRevisionMatchesLiveIgnoringCommandCheckpoint.mockImplementation(
+            (revision: string) => mocks.captureProjectRevision() === revision
+        );
         mocks.renderOffline.mockResolvedValue(createAudioBuffer());
     });
 
@@ -485,6 +491,64 @@ describe('renderAgentProjectSections', () => {
         expect(getAgentSectionRenderArtifacts()).toEqual([]);
     });
 
+    it('does not estimate a shifted tempo-map range from a same-span artifact', async () => {
+        const frameCount = Math.floor(
+            (AGENT_SECTION_RENDER_RETENTION_POLICY.maxPcmBytes * 3) / (4 * 2 * Float32Array.BYTES_PER_ELEMENT)
+        );
+        const retainedJob = createJob({ jobId: 'render-retained' });
+        const shiftedJob = createJob({
+            jobId: 'render-shifted',
+            sectionId: 'section-shifted',
+            sectionName: 'Shifted',
+            startBeat: 64,
+            endBeat: 96,
+        });
+        mocks.renderOffline.mockResolvedValue(createAudioBuffer({ length: frameCount }));
+        await renderAgentProjectSections({ jobs: [retainedJob], sourceRevision: 'revision-a' });
+
+        expect(wouldAgentSectionRenderSetExceedRetention([retainedJob, shiftedJob], 'revision-a')).toBe(false);
+    });
+
+    it('does not estimate retention usage from matching geometry on another project revision', async () => {
+        const frameCount = Math.floor(
+            (AGENT_SECTION_RENDER_RETENTION_POLICY.maxPcmBytes * 3) / (4 * 2 * Float32Array.BYTES_PER_ELEMENT)
+        );
+        const retainedJob = createJob({ jobId: 'render-retained' });
+        const followUpJob = createJob({
+            jobId: 'render-follow-up',
+            sectionId: 'section-follow-up',
+            sectionName: 'Follow Up',
+        });
+        mocks.renderOffline.mockResolvedValue(createAudioBuffer({ length: frameCount }));
+        await renderAgentProjectSections({ jobs: [retainedJob], sourceRevision: 'revision-a' });
+
+        expect(wouldAgentSectionRenderSetExceedRetention([retainedJob, followUpJob], 'revision-b')).toBe(false);
+    });
+
+    it('reports retention-capacity when a failed same-geometry follow-up would exceed retained capacity', async () => {
+        const frameCount = Math.floor(
+            (AGENT_SECTION_RENDER_RETENTION_POLICY.maxPcmBytes * 3) / (4 * 2 * Float32Array.BYTES_PER_ELEMENT)
+        );
+        const retainedJob = createJob({ jobId: 'render-retained' });
+        const followUpJob = createJob({
+            jobId: 'render-follow-up',
+            sectionId: 'section-follow-up',
+            sectionName: 'Follow Up',
+        });
+        mocks.renderOffline.mockResolvedValue(createAudioBuffer({ length: frameCount }));
+        await renderAgentProjectSections({ jobs: [retainedJob], sourceRevision: 'revision-a' });
+
+        mocks.renderOffline.mockRejectedValueOnce(new Error('offline renderer unavailable'));
+
+        await expect(
+            renderAgentProjectSections({ jobs: [retainedJob, followUpJob], sourceRevision: 'revision-a' })
+        ).rejects.toMatchObject({
+            name: 'SectionRenderFollowUpError',
+            failureKind: 'retention-capacity',
+            message: expect.stringContaining('retention capacity'),
+        });
+    });
+
     it('preserves approved artifacts when a missing artifact cannot coexist within retention capacity', async () => {
         const frameCount = Math.floor(
             (AGENT_SECTION_RENDER_RETENTION_POLICY.maxPcmBytes * 3) / (4 * 2 * Float32Array.BYTES_PER_ELEMENT)
@@ -520,9 +584,42 @@ describe('renderAgentProjectSections', () => {
         await renderAgentProjectSections({ jobs: [job], sourceRevision: 'revision-a' });
         mocks.captureProjectRevision.mockReturnValue('revision-b');
 
-        await expect(renderAgentProjectSections({ jobs: [job], sourceRevision: 'revision-b' })).rejects.toThrow(
-            'identity is already owned'
-        );
+        await expect(renderAgentProjectSections({ jobs: [job], sourceRevision: 'revision-b' })).rejects.toMatchObject({
+            message: expect.stringContaining('bound to a different project revision'),
+            pendingEffect: expect.objectContaining({ remediation: 'reconcile', state: 'pending' }),
+        });
         expect(mocks.renderOffline).toHaveBeenCalledOnce();
+        expect(getAgentSectionRenderArtifacts().map((artifact) => artifact.sourceRevision)).toEqual(['revision-a']);
+    });
+
+    it('attaches when live revision advanced only for the command-batch checkpoint', async () => {
+        mocks.captureProjectRevision.mockReturnValue('revision-checkpoint');
+        mocks.projectRevisionMatchesLiveIgnoringCommandCheckpoint.mockReturnValue(true);
+
+        await renderAgentProjectSections({ jobs: [createJob()], sourceRevision: 'revision-a' });
+
+        expect(getAgentSectionRenderArtifacts()).toEqual([
+            expect.objectContaining({ jobId: 'render-chorus-one', sourceRevision: 'revision-a' }),
+        ]);
+    });
+
+    it('replaces a stale same-job artifact when retry asks to rebind the job identity', async () => {
+        const job = createJob();
+        await renderAgentProjectSections({ jobs: [job], sourceRevision: 'revision-a' });
+        mocks.captureProjectRevision.mockReturnValue('revision-b');
+        mocks.projectRevisionMatchesLiveIgnoringCommandCheckpoint.mockImplementation(
+            (revision: string) => revision === 'revision-b'
+        );
+
+        await renderAgentProjectSections({
+            jobs: [job],
+            sourceRevision: 'revision-b',
+            replaceMismatchedRevisionArtifacts: true,
+        });
+
+        expect(mocks.renderOffline).toHaveBeenCalledTimes(2);
+        expect(getAgentSectionRenderArtifacts()).toEqual([
+            expect.objectContaining({ jobId: job.jobId, sourceRevision: 'revision-b' }),
+        ]);
     });
 });

@@ -195,6 +195,13 @@ struct EngineOwnedCommandFixture {
     /// plugin is the contract — not an implementation detail — and a host that
     /// gets it wrong is unobservable from anything else the fixture answers.
     gui_lifecycle_threads: Arc<Mutex<Vec<std::thread::ThreadId>>>,
+    /// Every thread the fixture's editor support was asked on, in order.
+    ///
+    /// A separate log rather than the lifecycle one because the two questions
+    /// draw different crowds: support is asked by the load path and the
+    /// capability commands, the lifecycle only by the open/close path, and a
+    /// host may be wrong about one and right about the other.
+    editor_support_threads: Arc<Mutex<Vec<std::thread::ThreadId>>>,
 }
 
 #[cfg(feature = "engine-owned-command-fixture")]
@@ -876,6 +883,7 @@ impl ClapWrapper {
                 has_gui,
                 parameters: Vec::new(),
                 gui_lifecycle_threads: Arc::new(Mutex::new(Vec::new())),
+                editor_support_threads: Arc::new(Mutex::new(Vec::new())),
             }),
         }
     }
@@ -893,6 +901,18 @@ impl ClapWrapper {
         self.command_fixture
             .as_ref()
             .map(|fixture| Arc::clone(&fixture.gui_lifecycle_threads))
+    }
+
+    /// The log every editor-support ask on this fixture writes its thread to.
+    /// Handed out as a handle for the same reason the lifecycle log is.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn engine_owned_command_fixture_editor_support_threads(
+        &self,
+    ) -> Option<Arc<Mutex<Vec<std::thread::ThreadId>>>> {
+        self.command_fixture
+            .as_ref()
+            .map(|fixture| Arc::clone(&fixture.editor_support_threads))
     }
 
     /// Stage the values the fixture reports from `get_parameters`.
@@ -1049,6 +1069,14 @@ impl ClapWrapper {
     pub fn has_gui(&self) -> bool {
         #[cfg(feature = "engine-owned-command-fixture")]
         if let Some(fixture) = self.command_fixture.as_ref() {
+            // Recorded because the real VST3 backend answers this question with
+            // a `createView` — an editor call — so a host that asks it on the
+            // wrong thread is misbehaving in a way only the callee can see.
+            fixture
+                .editor_support_threads
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push(std::thread::current().id());
             return fixture.has_gui;
         }
 
@@ -1497,9 +1525,12 @@ impl ClapWrapper {
         Some((width, height))
     }
 
-    /// Install the wake fired for every plugin-initiated ask this host answers
-    /// off the calling thread. First install wins; a second call reports
-    /// `false`.
+    /// Install the wake fired for this host's `[main-thread]` asks, answered off
+    /// the calling thread. First install wins; a second call reports `false`.
+    ///
+    /// The install also gates the `[thread-safe]` asks' acceptance — the drain
+    /// thread that answers them serves exactly the instances the native engine
+    /// took, which is exactly where this is installed.
     pub fn set_plugin_host_request_notifier(&self, notifier: PluginHostRequestNotifier) -> bool {
         self.host_state.set_request_notifier(notifier)
     }
@@ -2742,6 +2773,7 @@ impl HostedPluginRuntime for ClapWrapper {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::clap_host::RESIZE_SIGNAL_TEST_LOCK;
 
     // ── Latency query + change notification (PH-4) ──────────────────────
 
@@ -3367,6 +3399,12 @@ mod tests {
     /// assertion would have accepted.
     #[test]
     fn a_resize_request_reaches_the_host_window_carrying_its_dimensions() {
+        // The accepted ask raises the process-wide resize hint, so this test
+        // must serialise against every asserter of that hint, which all live
+        // in the host module's tests.
+        let _guard = RESIZE_SIGNAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut wrapper = stub_wrapper(stub_plugin_ptr());
         let applied: Arc<std::sync::Mutex<Vec<(u32, u32)>>> =
             Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -3399,6 +3437,11 @@ mod tests {
     /// previous one's size.
     #[test]
     fn closing_the_editor_stops_the_backend_answering_resize_requests() {
+        // The ask accepted before the close raises the process-wide resize
+        // hint, so this test must serialise against every asserter of it.
+        let _guard = RESIZE_SIGNAL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let mut wrapper = stub_wrapper(stub_plugin_ptr());
         assert!(wrapper.set_plugin_host_request_notifier(Box::new(|_| {})));
         wrapper.set_editor_window_resizer(Arc::new(|_, _| {}));

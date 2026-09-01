@@ -10,9 +10,12 @@ import {
     parseRecoverReviewResolutionLockArgs,
     runRecoverReviewResolutionLockCli,
 } from '../recoverReviewResolutionLock.ts';
+import { withPullRequestMutationLock } from '../pullRequestMutationLock.ts';
 import {
     assertDetachedReviewResolutionChild,
     type DeletePendingReviewOptions,
+    coordinateResolveReviewThread,
+    defaultResolveReviewThreadCoordinatorDependencies,
     inspectReviewThread,
     parseResolveReviewThreadArgs,
     publishReviewResolutionChildLaunchMarker,
@@ -30,6 +33,7 @@ import {
     withPullRequestReviewResolutionLock,
     type ReviewResolutionLockOwner,
     type ReviewResolutionLockOwnerFence,
+    type ResolveReviewThreadCoordinatorDependencies,
     type ResolveReviewThreadPort,
 } from '../resolveReviewThread.ts';
 
@@ -184,6 +188,17 @@ function resolutionReviewSummary(currentPullRequestId: string, currentThreadId: 
 }
 function pendingReviewBody(currentHead: string): string {
     return resolutionReviewSummary(pullRequestId, threadId, currentHead);
+}
+
+function runGit(root: string, args: string[]): string {
+    const result = spawnSync('git', args, { cwd: root, encoding: 'utf8', shell: false });
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status !== 0) {
+        throw new Error(`git ${args.join(' ')} failed: ${result.stderr}`);
+    }
+    return result.stdout.trim();
 }
 type Input = {
     heads?: readonly string[];
@@ -6574,6 +6589,168 @@ describe('review thread resolution', () => {
             }
         }
     );
+
+    it('holds the per-PR mutation fence across authentication and a remote resolution attempt', async () => {
+        expect(defaultResolveReviewThreadCoordinatorDependencies().serializeMutation).toBe(withPullRequestMutationLock);
+        const { port } = fakePort();
+        const calls: string[] = [];
+        const dependencies: ResolveReviewThreadCoordinatorDependencies = {
+            primaryRoot: () => '/repo',
+            serializeMutation: async (_primaryRoot, number, operation) => {
+                calls.push(`lock:${number}:acquire`);
+                try {
+                    return await operation({
+                        markRemoteMutationAttempt: () => calls.push('attempt'),
+                    });
+                } finally {
+                    calls.push(`lock:${number}:release`);
+                }
+            },
+            authenticateAuthor: async () => {
+                calls.push('authenticate');
+                return {
+                    minted: { actorNodeId: AUTHOR_BOT_NODE_ID },
+                    session: {
+                        configDir: '/tmp/sourdaw-author',
+                        env: {},
+                        dispose: () => calls.push('dispose'),
+                    },
+                };
+            },
+            repositoryName: () => {
+                calls.push('repository');
+                return 'jcosta33/sourdaw';
+            },
+            threadPort: (_session, _primaryRoot, markRemoteMutationAttempt) => {
+                calls.push('port');
+                return {
+                    ...port,
+                    resolve: (id) => {
+                        markRemoteMutationAttempt();
+                        calls.push('remote');
+                        return port.resolve(id);
+                    },
+                };
+            },
+            resolve: (number, exactThreadId, expectedHead, _authorNodeId, threadPort) => {
+                calls.push(`resolve:${number}:${exactThreadId}:${expectedHead}`);
+                threadPort.resolve(exactThreadId);
+                return 'resolved';
+            },
+        };
+
+        await coordinateResolveReviewThread(42, threadId, head, dependencies);
+
+        expect(calls).toEqual([
+            'lock:42:acquire',
+            'authenticate',
+            'repository',
+            'port',
+            `resolve:42:${threadId}:${head}`,
+            'attempt',
+            'remote',
+            'dispose',
+            'lock:42:release',
+        ]);
+    });
+
+    it('forwards exact parsed pull-request, thread, and head arguments to the live coordinator', async () => {
+        const { port } = fakePort();
+        let forwarded: { number: number; threadId: string; expectedHead: string } | undefined;
+        const dependencies: ResolveReviewThreadCoordinatorDependencies = {
+            primaryRoot: () => '/repo',
+            serializeMutation: async (_primaryRoot, _number, operation) =>
+                operation({ markRemoteMutationAttempt: () => undefined }),
+            authenticateAuthor: async () => ({
+                minted: { actorNodeId: AUTHOR_BOT_NODE_ID },
+                session: { configDir: '/tmp/sourdaw-author', env: {}, dispose: () => undefined },
+            }),
+            repositoryName: () => 'jcosta33/sourdaw',
+            threadPort: () => port,
+            resolve: (number, exactThreadId, expectedHead) => {
+                forwarded = { number, threadId: exactThreadId, expectedHead };
+                return 'resolved';
+            },
+        };
+
+        const requestedThreadId = 'PRRT_cli_forwarding_distinct';
+        const requestedHead = 'c'.repeat(40);
+        const parsed = parseResolveReviewThreadArgs([
+            '7819',
+            '--thread',
+            requestedThreadId,
+            '--head',
+            requestedHead,
+        ]);
+        expect(parsed).toEqual({ number: 7819, threadId: requestedThreadId, head: requestedHead, help: false });
+        if (parsed.number === undefined || parsed.threadId === undefined || parsed.head === undefined) {
+            throw new Error('valid resolution arguments were not parsed');
+        }
+        await coordinateResolveReviewThread(parsed.number, parsed.threadId, parsed.head, dependencies);
+
+        expect(forwarded).toEqual({ number: 7819, threadId: requestedThreadId, expectedHead: requestedHead });
+    });
+
+    it.each<[string, (port: ResolveReviewThreadPort) => void]>([
+        [
+            'Done reply',
+            (port) => {
+                port.replyDone(threadId, reviewId, {
+                    id: reviewId,
+                    state: 'PENDING',
+                    body: pendingReviewBody(head),
+                    commitOid: head,
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorLogin: null,
+                    authorType: 'Bot',
+                });
+            },
+        ],
+        ['thread resolution', (port) => port.resolve(threadId)],
+        ['compensation delete', (port) => port.deleteReply(replyId)],
+    ])('retains the exact shared owner when the production %s result is indeterminate', async (label, mutate) => {
+        const primaryRoot = mkdtempSync(join(tmpdir(), 'sourdaw-resolve-lock-'));
+        runGit(primaryRoot, ['init', '-b', 'main']);
+        const number = 7820;
+        const ref = `refs/sourdaw/delivery/pr-${number}`;
+        let dispatched = 0;
+        let reacquired = false;
+
+        try {
+            await expect(
+                withPullRequestMutationLock(primaryRoot, number, async ({ markRemoteMutationAttempt }) => {
+                    const port = shellPort(
+                        { configDir: '/tmp/sourdaw-author', env: {}, dispose: () => undefined },
+                        primaryRoot,
+                        markRemoteMutationAttempt,
+                        (command, args) => {
+                            if (command === 'git' && args[0] === 'rev-parse') {
+                                return `${primaryRoot}/.git`;
+                            }
+                            if (command === 'gh' && args[0] === 'api') {
+                                dispatched += 1;
+                                throw new Error(`${label} result is indeterminate`);
+                            }
+                            throw new Error(`unexpected command in test: ${command} ${args.join(' ')}`);
+                        }
+                    );
+                    withPullRequestReviewResolutionLock(primaryRoot, number, threadId, head, () => mutate(port));
+                })
+            ).rejects.toThrow(`${label} result is indeterminate`);
+            expect(dispatched).toBe(1);
+            const retainedOwnerOid = runGit(primaryRoot, ['show-ref', '--verify', '--hash', ref]);
+
+            await expect(
+                withPullRequestMutationLock(primaryRoot, number, async () => {
+                    reacquired = true;
+                })
+            ).rejects.toThrow(/already being delivered/);
+            expect(reacquired).toBe(false);
+            expect(runGit(primaryRoot, ['show-ref', '--verify', '--hash', ref])).toBe(retainedOwnerOid);
+        } finally {
+            rmSync(primaryRoot, { recursive: true, force: true });
+        }
+    });
 
     it('uses supported GraphQL review-envelope, reply, and deletion input fields', () => {
         const source = readFileSync(join(import.meta.dirname, '../resolveReviewThread.ts'), 'utf8');

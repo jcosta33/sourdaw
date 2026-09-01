@@ -144,6 +144,7 @@ vi.mock('#/modules/Automation/useCases', () => ({
     addAutomationLane: mocks.addAutomationLane,
     toggleLaneCollapsed: mocks.toggleLaneCollapsed,
     removeAutomationLane: mocks.removeAutomationLane,
+    getAutomationLaneCeiling: vi.fn(),
 }));
 
 vi.mock('#/infra/store/useStore', () => ({

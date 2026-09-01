@@ -11,6 +11,7 @@ export function prepareAgentRunPendingEffectContinuation(input: {
     runId: string;
     receipt: VerifiedBatchReceipt;
     commandBatch: CommandBatch;
+    getFinalizedRevision?: () => string | undefined;
 }): { promote: (result: { receipt: VerifiedBatchReceipt }) => void; discard: () => void } {
     if (input.receipt.pendingEffects.length === 0) {
         return { promote: () => undefined, discard: () => undefined };
@@ -25,10 +26,18 @@ export function prepareAgentRunPendingEffectContinuation(input: {
             if (settled) {
                 return;
             }
+            const sourceRevision = input.getFinalizedRevision?.();
+            const requiresExactSourceRevision = receipt.pendingEffects.every(
+                (effect) => effect.kind === 'external-effect' && effect.operation === 'renderProjectSections'
+            );
+            if (requiresExactSourceRevision && sourceRevision === undefined) {
+                return;
+            }
             recordAgentRunPendingEffectContinuation({
                 runId: input.runId,
                 receipt,
                 commandBatch: input.commandBatch,
+                sourceRevision,
             });
             settled = true;
         },

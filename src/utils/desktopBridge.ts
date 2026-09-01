@@ -344,6 +344,11 @@ export function desktopWindowControls(): SourdawDesktopBridge['windowControls'] 
     return sourdawBridge().windowControls;
 }
 
+/** Narrow native-menu bridge; callers still own all product actions in the renderer. */
+export function desktopNativeMenu(): SourdawDesktopBridge['nativeMenu'] {
+    return sourdawBridge().nativeMenu;
+}
+
 /**
  * True on the Linux desktop build, where the shell window is frameless and the
  * app draws its own minimize/maximize/close in the header. macOS chrome comes

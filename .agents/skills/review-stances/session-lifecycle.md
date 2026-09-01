@@ -47,3 +47,19 @@ from the diff — play, pause, resume, stop, stop-after-pause, seek while playin
 record, loop toggle — and for each, name the state the native session is left in and whether it
 contradicts the transport state the UI shows. One line per gesture; a gesture with no answer is the
 finding.
+
+### 2026-08-31 — unmount is a Connect gesture (escaped via PR #3226)
+
+PR #3226 inserted a 15s probe between opening a credential session and `replace_runtime`. Overlapping
+Connect was treated as unreachable because `configurationPending` disables the button. `AiSection`
+unmounts when Preferences leaves AI (`section === 'ai' ? <AiSection /> : null`), which drops that
+flag, so a second Connect can start while the first probe is alive; the first then overwrites the
+second.
+
+Blind spot: a local pending flag on a conditionally mounted control surface is not a lifecycle lock.
+Gestures include leaving the surface and coming back.
+
+Probe that would have caught it: for any change that puts a network/IPC wait between opening a
+session and installing it, walk Connect, then leave-the-section-and-return, then Connect-again
+before the first wait settles. Name which runtime is installed. If it is the first, that is the
+finding.

@@ -1,0 +1,877 @@
+name: Nightly
+
+# Full-train validation of `main` and the only production web deploy. `vercel.json`
+# turns the Git integration off, so reaching `main` deploys nothing by itself.
+#
+# This workflow never runs on a pull request. The required `Gate` check is minted
+# only by `.github/workflows/health-gates.yml`. No job here may be named `Gate`.
+#
+# A scheduled or dispatched run answers "is this revision of main healthy", then
+# promotes that same SHA if every validation leg succeeded, the SHA is still the
+# tip of `main`, and production does not already serve it.
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-${{ github.run_id }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: 24.19.0
+
+jobs:
+  decide:
+    name: Decide scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      heavy: ${{ steps.scope.outputs.heavy }}
+      rust: ${{ steps.scope.outputs.rust }}
+      server: ${{ steps.scope.outputs.server }}
+      e2e: ${{ steps.scope.outputs.e2e }}
+      web: ${{ steps.scope.outputs.web }}
+      code: ${{ steps.scope.outputs.code }}
+    steps:
+      - name: Resolve scope
+        id: scope
+        run: |
+          set -euo pipefail
+          printf 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\ncode=true\n' >> "$GITHUB_OUTPUT"
+
+  static:
+    name: Types and contracts
+    needs: decide
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # `test:release-inventory` proves each generated Levain manifest
+          # against the commit its provenance record pins, by `git show`-ing
+          # that blob. A shallow clone does not contain those commits, so the
+          # check cannot read them and reports every sample as unverifiable.
+          # Only this job needs the history; the others stay shallow.
+          fetch-depth: 0
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Cheap and unconditional. `wasm:verify` rebuilds nothing — it compares
+      # recorded hashes — and a stale committed artifact is exactly what a path
+      # filter would hide.
+      - name: Artifact freshness
+        run: pnpm wasm:verify
+
+      - name: App types
+        run: pnpm typecheck
+
+      - name: Test types
+        run: pnpm typecheck:test
+
+      - name: Script types
+        run: pnpm typecheck:scripts
+
+      - name: End-to-end types
+        run: pnpm typecheck:e2e
+
+      - name: Desktop shell types
+        run: pnpm typecheck:electron
+
+      - name: Format
+        run: pnpm exec prettier --check "src/**/*.{ts,tsx}" "scripts/**/*.ts" "electron/**/*.ts"
+
+      - name: Command argument schemas
+        run: pnpm test:command-schema
+
+      - name: Release inventory
+        run: pnpm test:release-inventory
+
+      - name: Test collection scope
+        run: pnpm test:collection-scope
+
+      - name: Barrel mock coverage
+        run: pnpm test:barrel-mocks
+
+      - name: Health gate infrastructure
+        run: pnpm test:health-gates
+
+  lint:
+    name: Lint
+    needs: decide
+    # Nothing here reads prose, so a documentation-only head has no way to fail
+    # it. `static` stays unconditional: its release-inventory leg answers to
+    # provenance records that a prose change can invalidate.
+    if: needs.decide.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        # The longest single check in the fast lane, and the local default runs
+        # it on one worker for the resource guard's sake rather than the work's.
+        env:
+          SOURDAW_LINT_CONCURRENCY: auto
+          SOURDAW_LINT_THREADS: '0'
+        run: pnpm lint:full
+
+  boundaries:
+    name: Module boundaries
+    needs: decide
+    # The import graph cannot move without a code-bearing path changing.
+    if: needs.decide.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate the dependency graph
+        run: pnpm deps:validate
+
+  unit:
+    name: Unit suite ${{ matrix.shard }}/4
+    needs: decide
+    if: needs.decide.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # `checkReleaseInventory.spec.ts` reads each measurement's pinned
+          # implementation source through `git show <revision>:<path>`.
+          # The unit matrix therefore needs the immutable source history.
+          fetch-depth: 0
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The suite is dominated by jsdom construction and module loading rather
+      # than assertions, so worker count is the lever that matters. The local
+      # default of two exists for the agent resource guard, not for CI.
+      - name: Run shard
+        id: run_shard
+        env:
+          VITEST_MAX_WORKERS: 4
+        run: pnpm run test:run --shard=${{ matrix.shard }}/4
+
+      - name: Report shard failure
+        if: ${{ !cancelled() && steps.run_shard.outcome == 'failure' }}
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          printf '::warning title=Unit suite shard failed::Shard %s failed; inspect the Run shard log.\n' "$SHARD"
+          printf '### Unit suite shard %s failed\n\n' "$SHARD" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Inspect the `Run shard` step log for raw failure output.\n' >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: Production build
+    needs: decide
+    if: needs.decide.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+  rust:
+    name: Rust workspace and collaboration server
+    needs: decide
+    if: needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      # daw-engine depends on cpal, whose Linux backend builds against ALSA.
+      - name: Install ALSA development headers
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      # No version is pinned here on purpose: `rustup show` reads
+      # rust-toolchain.toml, so the toolchain cannot drift from a local run.
+      - name: Install the pinned Rust toolchain
+        run: rustup show
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Install server dependencies
+        working-directory: server
+        run: npm ci
+
+      # One script so the local run and the CI run cannot drift. It keeps the
+      # Rust legs in debug on purpose: `assert_no_alloc`'s `disable_release`
+      # feature is on by default, so a release build turns every real-time
+      # allocation guard into a no-op that passes while proving nothing.
+      - name: Server and Rust workspace health gates
+        run: pnpm health:server:full
+
+  native-macos:
+    name: Native audio backend (macOS)
+    needs: decide
+    # `sourdaw-native` is excluded from the Linux Rust leg because its manifest
+    # unconditionally enables whisper-rs's `metal` feature. A macOS runner is
+    # the only place it compiles, and public repositories get those free.
+    if: needs.decide.outputs.rust == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install the pinned Rust toolchain
+        run: rustup show
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Test the native crate
+        run: cargo test --package sourdaw-native
+
+  native-windows:
+    name: Windows device layer
+    needs: decide
+    # The WASAPI backend under crates/daw-engine/src/device/wasapi/ compiles
+    # only for the Windows target: elsewhere `cfg(any(windows, test))` reaches
+    # its pure policy half and never the windows-crate integration code. A
+    # native runner replaces the cross-compilation oracle #2253 asked for.
+    if: needs.decide.outputs.rust == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install the pinned Rust toolchain
+        run: rustup show
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Compile-verify the device layer
+        run: cargo check --package daw-engine
+
+  e2e:
+    name: End-to-end ${{ matrix.shard }}/12
+    needs: decide
+    if: needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        # Twelve rather than eight. Playwright shards by file, not by duration,
+        # so the spread on eight was 19.6m to 38.2m — the slow end uncomfortably
+        # close to this job's ceiling. More shards flatten that without costing
+        # anything a public repository is billed for.
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Without this the suite cannot start: nothing else in the repository
+      # installs a browser, and there is no postinstall hook that would.
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run shard
+        id: run_shard
+        run: pnpm test:e2e --shard=${{ matrix.shard }}/12 --reporter=blob
+
+      - name: Report shard failure
+        if: ${{ !cancelled() && steps.run_shard.outcome == 'failure' }}
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          printf '::warning title=End-to-end shard failed::Shard %s failed; inspect the Run shard log.\n' "$SHARD"
+          printf '### End-to-end shard %s failed\n\n' "$SHARD" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Inspect the `Run shard` step log for raw failure output.\n' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload blob report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-blob-${{ matrix.shard }}
+          path: blob-report/
+          retention-days: 7
+
+  browser-ai-webgpu:
+    name: Browser AI WebGPU admission
+    needs: decide
+    # The default Chromium matrix must prove the unsupported boundary on hosts
+    # without hardware WebGPU. This focused leg owns the complementary positive
+    # proof and therefore fails, rather than skips, when macOS cannot provide a
+    # core non-fallback adapter.
+    if: needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm exec playwright install chromium
+
+      - name: Run Browser AI WebGPU admission
+        run: pnpm test:e2e:browser-ai-webgpu-admission
+
+  e2e-report:
+    name: End-to-end report
+    needs: e2e
+    if: ${{ !cancelled() && needs.e2e.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download blob reports
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: e2e-blob-*
+          path: all-blob-reports
+          merge-multiple: true
+
+      - name: Merge into one report
+        run: pnpm exec playwright merge-reports --reporter=html all-blob-reports
+
+      - name: Upload report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+  codeql:
+    name: CodeQL
+    needs: decide
+    # Minutes rather than seconds, so this runs on the nightly train rather
+    # than on every pull request. PR Gate does not skip-pass this job.
+    if: needs.decide.outputs.heavy == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Initialise CodeQL
+        uses: github/codeql-action/init@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef # codeql-bundle-v2.26.3
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+
+      - name: Analyse
+        uses: github/codeql-action/analyze@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef # codeql-bundle-v2.26.3
+
+  secrets:
+    name: Secret scan
+    needs: decide
+    # Push protection already blocks known provider patterns as they are pushed.
+    # This is the other half: the whole history, which went public in one move
+    # and can no longer be un-published, and the generic patterns — private
+    # keys, connection strings — that provider matching does not cover.
+    if: needs.decide.outputs.heavy == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - name: Checkout trusted scanner
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          path: trusted-scanner
+          persist-credentials: false
+
+      - name: Checkout scan target
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: scan-target
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate secret scanner positive control
+        working-directory: ${{ github.workspace }}
+        env:
+          GITLEAKS_EXPECTED_LEAK_EXIT_CODE: 79
+        run: |
+          set -euo pipefail
+          umask 077
+          positive_control_repo=$(mktemp -d "$RUNNER_TEMP/gitleaks-positive-control.XXXXXX")
+          trap 'rm -rf "$positive_control_repo"' EXIT
+
+          git -C "$positive_control_repo" init --initial-branch=main
+          git -C "$positive_control_repo" config user.email sourdaw-ci@example.invalid
+          git -C "$positive_control_repo" config user.name 'Sourdaw CI'
+          synthetic_access_key=$(printf '%s%s%s' 'AKIA' 'QAZ2WSX3' 'EDC4RFV5')
+          mkdir -p "$positive_control_repo/public/wasm"
+          printf 'aws_access_key_id = "%s" // gitleaks:allow\n' \
+            "$synthetic_access_key" > "$positive_control_repo/public/wasm/fixture.js"
+          cat > "$positive_control_repo/.gitleaks.toml" <<'GITLEAKS_CONFIG'
+          title = "Untrusted suppression fixture"
+
+          [extend]
+          useDefault = true
+
+          [allowlist]
+          description = "Would suppress every finding if target-root config were loaded"
+          regexes = ['''.*''']
+          GITLEAKS_CONFIG
+          git -C "$positive_control_repo" add public/wasm/fixture.js .gitleaks.toml
+          git -C "$positive_control_repo" commit -m 'add synthetic secret fixture'
+
+          set +e
+          GITLEAKS_EXIT_CODE="$GITLEAKS_EXPECTED_LEAK_EXIT_CODE" \
+            sh "$GITHUB_WORKSPACE/trusted-scanner/scripts/run-gitleaks-history-scan.sh" "$positive_control_repo/.git"
+          positive_control_status=$?
+          set -e
+
+          if [ "$positive_control_status" -ne "$GITLEAKS_EXPECTED_LEAK_EXIT_CODE" ]; then
+            printf 'expected Gitleaks positive control to exit %s, got %s\n' \
+              "$GITLEAKS_EXPECTED_LEAK_EXIT_CODE" \
+              "$positive_control_status" >&2
+            exit 1
+          fi
+      - name: Scan history for secrets
+        working-directory: ${{ github.workspace }}
+        run: sh "$GITHUB_WORKSPACE/trusted-scanner/scripts/run-gitleaks-history-scan.sh" "$GITHUB_WORKSPACE/scan-target/.git"
+
+  deploy-web:
+    name: Daily web deploy
+    # The web production train. `vercel.json` turns the Git integration off, so
+    # reaching `main` deploys nothing by itself; this job is the only route to
+    # production, and it takes it once a day off this workflow's schedule, or
+    # when somebody dispatches this workflow by hand against `main`.
+    #
+    # It promotes the revision this run validated and no other. Every leg a
+    # scheduled run performs is a dependency, and the implicit `success()` on
+    # `needs` keeps the job from starting unless each one succeeded — a failure,
+    # a cancellation or a skip leaves production untouched. The first step reads
+    # those same results explicitly, so the refusal survives a later condition
+    # that admits this job on a run it should not deploy from.
+    #
+    # It is deliberately absent from `gate`: the summary reports what a pull
+    # request proved, and no pull request ever runs this job.
+    #
+    # Only `main` reaches production, and the condition below says so — but be
+    # exact about what that binds. A schedule always runs on the default branch.
+    # A dispatch does not: it takes whichever ref was chosen, `decide` forces
+    # every scope true for that ref, and the legs below would validate that
+    # branch tip honestly. So these in-file checks bind the schedule and any
+    # dispatch of an unmodified workflow — every honest path — and the first
+    # step refuses a non-main ref as well, because a later edit to this
+    # condition must not be all that stands between a branch and production.
+    #
+    # What they do not bind is a modified copy. A dispatch executes the workflow
+    # definition of the ref it names, so somebody with push access who edits
+    # this file on their own branch dispatches their `if` and their guard step,
+    # not these. The control for that is a deployment branch policy limited to
+    # `main` on the Production environment: the environment is where the token
+    # lives, and GitHub applies the policy before a job receives it. That policy
+    # is an owner-side precondition of arming this leg, not something this file
+    # can assert.
+    needs:
+      - static
+      - lint
+      - boundaries
+      - unit
+      - build
+      - rust
+      - native-macos
+      - native-windows
+      - e2e
+      - browser-ai-webgpu
+      - codeql
+      - secrets
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    # Scopes the deployment credential to the environment that already owns
+    # production for this repository.
+    environment: Production
+    # One train at a time. GitHub does not serialise jobs that share an
+    # environment, and the workflow's own group falls back to the run id for
+    # exactly the two events that reach here, so this is the only thing that
+    # keeps two runs off the production alias at once.
+    #
+    # It serialises and nothing more. Entry to this queue is ordered by when
+    # each run's validation legs finished, not by commit order, so an older
+    # revision can still be next in line — and a re-run replays its original
+    # run's SHA through every guard here. What makes the newest revision win is
+    # the freshness step below, which refuses any candidate that is no longer
+    # the tip of `main`. Never cancel: a cancelled deploy can die between upload
+    # and alias assignment.
+    concurrency:
+      group: deploy-web-production
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      # A job-level `if` cannot read `secrets`, so an unarmed train is a
+      # step-level condition rather than a skipped job: it reports green having
+      # deployed nothing, which is the state this leg ships in until the token
+      # exists. Only the comparison is published here — never the token.
+      DEPLOY_CREDENTIAL_PRESENT: ${{ secrets.VERCEL_TOKEN != '' }}
+      # Pinned: a CLI that resolves to whatever is newest can change what
+      # `build` produces between two runs of the same validated revision.
+      VERCEL_CLI: vercel@59.9.1
+    steps:
+      - name: Require a validated revision of main
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          TRAIN_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$TRAIN_REF" != "refs/heads/main" ]; then
+            printf 'refusing to deploy %s; only main reaches production\n' "$TRAIN_REF"
+            exit 1
+          fi
+          printf '%s\n' "$RESULTS"
+          unproven=$(printf '%s' "$RESULTS" | jq -r '
+            to_entries[]
+            | select(.value.result != "success")
+            | "\(.key): \(.value.result)"')
+          if [ -n "$unproven" ]; then
+            printf 'refusing to deploy; these legs did not succeed:\n%s\n' "$unproven"
+            exit 1
+          fi
+          printf 'every validation leg succeeded\n'
+
+      - name: Report the missing deployment credential
+        if: env.DEPLOY_CREDENTIAL_PRESENT != 'true'
+        run: |
+          set -euo pipefail
+          printf '::notice title=Web deploy gated off::The Production environment is not armed; nothing was deployed.\n'
+          printf '### Web deploy gated off\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf 'Arming this leg takes four things on the `Production` environment:\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf '1. `VERCEL_TOKEN`\n' >> "$GITHUB_STEP_SUMMARY"
+          printf '2. `VERCEL_ORG_ID`\n' >> "$GITHUB_STEP_SUMMARY"
+          printf '3. `VERCEL_PROJECT_ID`\n' >> "$GITHUB_STEP_SUMMARY"
+          printf '4. a deployment branch policy limited to `main`, which is the only thing that keeps a dispatched copy of this workflow from receiving the token\n' >> "$GITHUB_STEP_SUMMARY"
+
+      # No checkout: `ls-remote` reads the ref over HTTPS, and a stale candidate
+      # should not pay for a working tree it will not build.
+      - name: Refuse a stale candidate revision
+        id: freshness
+        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true'
+        env:
+          CANDIDATE_REVISION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          tip=$(git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" refs/heads/main | cut -f1)
+          if [ -z "$tip" ]; then
+            printf 'could not read the current tip of main\n' >&2
+            exit 1
+          fi
+          if [ "$tip" != "$CANDIDATE_REVISION" ]; then
+            printf 'fresh=false\n' >> "$GITHUB_OUTPUT"
+            printf '::notice title=Web deploy skipped::stale candidate %s, main is now %s, deploying nothing\n' \
+              "$CANDIDATE_REVISION" "$tip"
+            printf '### Web deploy skipped\n\nstale candidate `%s`, main is now `%s`, deploying nothing\n' \
+              "$CANDIDATE_REVISION" "$tip" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          printf 'fresh=true\n' >> "$GITHUB_OUTPUT"
+          printf 'the candidate is the current tip of main\n'
+
+      - name: Checkout the validated revision
+        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Explicit rather than implied: what gets built here has to be the
+          # revision the legs above reported on, not whatever `main` points at
+          # by the time this job starts.
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Enable Corepack
+        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true'
+        run: corepack enable
+
+      - name: Set up Node
+        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Resolve the current production revision
+        id: production
+        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          CANDIDATE_REVISION: ${{ github.sha }}
+        run: node scripts/resolveVercelProductionDeployment.ts
+
+      - name: Report the unchanged production revision
+        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true' && steps.production.outputs.deploy != 'true'
+        run: |
+          set -euo pipefail
+          printf '::notice title=Web deploy skipped::Production already serves %s; no deployment was created.\n' "$GITHUB_SHA"
+          printf '### Web deploy skipped\n\nProduction already serves `%s`.\n' "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install dependencies
+        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true' && steps.production.outputs.deploy == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Pull the production environment
+        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true' && steps.production.outputs.deploy == 'true'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        # The CLI authenticates from `VERCEL_TOKEN` in the environment and
+        # resolves the project from the two ids beside it; none of the three
+        # belongs on a command line these logs echo.
+        run: pnpm dlx "$VERCEL_CLI" pull --yes --environment=production
+
+      - name: Build the validated revision
+        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true' && steps.production.outputs.deploy == 'true'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: pnpm dlx "$VERCEL_CLI" build --prod
+
+      - name: Deploy the prebuilt revision
+        id: deployment
+        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true' && steps.production.outputs.deploy == 'true'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          # `--meta githubCommitSha` is what the next run reads back to decide
+          # whether production already serves this revision, and what ties a
+          # deployment in the dashboard to the commit that was validated.
+          # `--archive=tgz` keeps a tree this size under the upload file limit.
+          pnpm dlx "$VERCEL_CLI" deploy --prebuilt --prod --archive=tgz \
+            --meta githubCommitSha="$GITHUB_SHA" > "$RUNNER_TEMP/deployment-url.txt"
+          deployment_url=$(tail -n 1 "$RUNNER_TEMP/deployment-url.txt")
+          case "$deployment_url" in
+            https://*) ;;
+            *)
+              printf 'the deploy command printed no deployment URL: %s\n' "$deployment_url" >&2
+              exit 1
+              ;;
+          esac
+          printf 'url=%s\n' "$deployment_url" >> "$GITHUB_OUTPUT"
+          printf '### Web deployed\n\n`%s` is live at %s\n' "$GITHUB_SHA" "$deployment_url" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Assert cross-origin isolation on the deployment
+        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true' && steps.production.outputs.deploy == 'true'
+        env:
+          DEPLOYMENT_URL: ${{ steps.deployment.outputs.url }}
+        run: |
+          set -euo pipefail
+          # SharedArrayBuffer — and therefore the audio engine's shared memory —
+          # is unavailable to a document that is not cross-origin isolated, and
+          # these two headers are the whole of what makes it so. They are
+          # configured in `vercel.json`; this reads them back off the deployment
+          # that was actually served.
+          headers="$RUNNER_TEMP/deployment-headers.txt"
+          curl --fail --location --silent --show-error --head "$DEPLOYMENT_URL" > "$headers"
+          cat "$headers"
+          for header in 'cross-origin-opener-policy: same-origin' 'cross-origin-embedder-policy: require-corp'; do
+            if ! grep -iq "$header" "$headers"; then
+              printf 'the deployment is missing %s\n' "$header" >&2
+              exit 1
+            fi
+          done
+          printf 'the deployment is cross-origin isolated\n'
+
+  nightly-report:
+    name: Nightly failure report
+    # A scheduled run nobody reads is a scheduled run that does not exist. The
+    # nightly is the only thing that observes what pull-request path filters
+    # skip, so its failures have to arrive somewhere a person looks.
+    #
+    # This job used to run with no checkout at all, on the theory that every
+    # `gh issue` invocation already passes `--repo "$GITHUB_REPOSITORY"` and so
+    # never needs a local repository. The runner image ubuntu24/20260816.277
+    # disproved that: its `gh` build consulted git for repo resolution anyway,
+    # and every scheduled run from 2026-08-23 through 2026-08-26 died with
+    # `fatal: not a git repository` before it could file or update the failure
+    # issue — four red nightlies producing zero signal. The flag does not
+    # control that consultation, and neither does an env var read only in the
+    # flag's absence, so the only insulation that actually holds against a
+    # `gh` build that decides to look is running inside a real repository. The
+    # checkout below is sparse, restricted to `.github`, because the working
+    # tree otherwise carries the ~971 MiB `public/samples` payload that this
+    # job has no use for.
+    if: ${{ failure() && github.event_name == 'schedule' }}
+    # `deploy-web` is here for the same reason as every validation leg: a
+    # nightly deployment that fails where nobody looks is the blind spot this
+    # reporter exists to close.
+    needs:
+      [
+        static,
+        lint,
+        boundaries,
+        unit,
+        build,
+        rust,
+        native-macos,
+        native-windows,
+        e2e,
+        browser-ai-webgpu,
+        codeql,
+        secrets,
+        deploy-web,
+      ]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github
+          sparse-checkout-cone-mode: false
+
+      - name: Open or update the nightly failure issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          failed=$(printf '%s' "$RESULTS" | jq -r '
+            to_entries[] | select(.value.result == "failure") | .key' | paste -sd ', ' -)
+          title="ci(nightly): health gates red on main"
+          body=$(printf 'The nightly run against `main` failed.\n\nFailing jobs: %s\n\n%s\n' \
+            "$failed" "$RUN_URL")
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$title in:title" \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body" --label bug --label status:ready
+          fi

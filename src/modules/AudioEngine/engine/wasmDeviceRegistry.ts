@@ -1262,6 +1262,7 @@ const grinderDescriptor: WasmDeviceDescriptor = {
             setBypass: (bypassed) => {
                 pendingBypass = bypassed;
             },
+            reset: () => {},
         };
         const controlTarget = trackId && parameterIds ? { trackId, deviceId, deviceType, parameterIds } : undefined;
         const loadPromise = createGrinderNode(context, undefined, signal, controlTarget, onRuntimeFailure)
@@ -1322,6 +1323,7 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                         setParam: result.setParam,
                         setPatch: result.setPatch,
                         setBypass: result.setBypass,
+                        reset: result.reset,
                         destroy: () => {
                             try {
                                 result.destroy();

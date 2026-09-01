@@ -131,12 +131,12 @@ export const PromptBar = (): ReactElement => {
     // ── Preview mode ────────────────────────────────────────────────────
     if (prompt.preview) {
         return (
-            <Row gap={2} className="max-w-lg">
+            <Row gap={2} className="transport-bar__prompt-preview max-w-full overflow-hidden">
                 <Sparkles className="size-3.5 shrink-0 text-[var(--color-accent-peach)]" aria-hidden="true" />
-                <div className="flex-1 min-w-0">
-                    <Row align="stretch" wrap gap={1}>
+                <div className="flex-1 min-w-0 overflow-hidden">
+                    <Row align="stretch" gap={1} className="overflow-hidden">
                         {prompt.preview.actionLabels.map((label, index) => (
-                            <DawMicroBadge key={index} className="text-[10px] text-foreground">
+                            <DawMicroBadge key={index} className="shrink-0 text-[10px] text-foreground">
                                 {label}
                             </DawMicroBadge>
                         ))}
@@ -153,7 +153,13 @@ export const PromptBar = (): ReactElement => {
     }
 
     // ── Main render ─────────────────────────────────────────────────────
-    const renderIife_4 = () => {
+    const hasQuery = prompt.value.trim().length > 0;
+    const showNoMatchesHint = prompt.isFocused && hasQuery && prompt.fuzzyResults.length === 0;
+    const dropdownOpen = prompt.fuzzyResults.length > 0 || showNoMatchesHint;
+
+    // The control leading the input: a cancel button while an AI action runs,
+    // otherwise the icon saying whether the typed command will use the LLM.
+    const renderPromptStatusControl = (): ReactElement => {
         if (prompt.isProcessing) {
             return (
                 <Button
@@ -172,21 +178,16 @@ export const PromptBar = (): ReactElement => {
         }
         return <Zap className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />;
     };
-    const renderIife_5 = () => {
+    const inputPlaceholder = (): string => {
         if (prompt.isProcessing) {
             return prompt.llmStatus?.state === 'generating' ? 'AI is thinking...' : 'Processing...';
-        } else {
-            if (prompt.selectionTags.length > 0) {
-                return 'What do you want to do with this?';
-            } else {
-                return 'Type a command... (⌘K for palette)';
-            }
         }
+        if (prompt.selectionTags.length > 0) {
+            return 'What do you want to do with this?';
+        }
+        return 'Type a command... (⌘K for palette)';
     };
-    const hasQuery = prompt.value.trim().length > 0;
-    const showNoMatchesHint = prompt.isFocused && hasQuery && prompt.fuzzyResults.length === 0;
-    const dropdownOpen = prompt.fuzzyResults.length > 0 || showNoMatchesHint;
-    const renderIife_6 = () => {
+    const renderSuggestionsDropdown = (): ReactElement | null => {
         if (!dropdownOpen) {
             return null;
         }
@@ -228,7 +229,7 @@ export const PromptBar = (): ReactElement => {
                 ref={prompt.formRef}
                 onSubmit={prompt.handleSubmit}
             >
-                {renderIife_4()}
+                {renderPromptStatusControl()}
                 {prompt.selectionTags.map((tag) => (
                     <SelectionTagChip key={tag.id} tag={tag} onRemove={() => prompt.dismissTag(tag.id)} />
                 ))}
@@ -242,7 +243,7 @@ export const PromptBar = (): ReactElement => {
                     onBlur={() => {
                         setTimeout(() => prompt.setIsFocused(false), 200);
                     }}
-                    placeholder={renderIife_5()}
+                    placeholder={inputPlaceholder()}
                     className="h-7 border-0 bg-transparent text-xs shadow-none focus-visible:ring-0 placeholder:text-muted-foreground/60"
                     aria-label="Prompt command input"
                     data-testid="prompt-input"
@@ -266,7 +267,7 @@ export const PromptBar = (): ReactElement => {
                 </Button>
                 <LlmStatusBadge status={prompt.llmStatus ?? { state: 'idle' }} onLoad={prompt.handleLoadModel} />
             </Row>
-            {renderIife_6()}
+            {renderSuggestionsDropdown()}
         </div>
     );
 };

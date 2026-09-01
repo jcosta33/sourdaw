@@ -161,31 +161,22 @@ describe('stripSilence satellite migration (ledger #2108)', () => {
         });
     });
 
-    it('broadcasts the warp state, rebased, to every new segment and clears the target id (regression #2108)', () => {
-        setWarpState('clip-1', {
+    it('broadcasts the warp state unshifted so markers stay on source-content beats (regression #2866)', () => {
+        const warpState = {
             enabled: true,
             markers: [{ id: 'm1', originalBeat: 2, warpedBeat: 3 }],
-            stretchMode: 'beats',
+            stretchMode: 'beats' as const,
             originalTempo: 120,
-        });
+        };
+        setWarpState('clip-1', warpState);
 
         expect(stripSilence('clip-1')).toBe(true);
 
         const clips = trackStore.value!.tracks[0]!.clips;
         const [first, second] = clips;
         expect(warpStates.has('clip-1')).toBe(false);
-        expect(warpStates.get(first!.id)).toEqual({
-            enabled: true,
-            markers: [{ id: 'm1', originalBeat: 1, warpedBeat: 2 }],
-            stretchMode: 'beats',
-            originalTempo: 120,
-        });
-        expect(warpStates.get(second!.id)).toEqual({
-            enabled: true,
-            markers: [{ id: 'm1', originalBeat: -5, warpedBeat: -4 }],
-            stretchMode: 'beats',
-            originalTempo: 120,
-        });
+        expect(warpStates.get(first!.id)).toEqual(warpState);
+        expect(warpStates.get(second!.id)).toEqual(warpState);
     });
 
     it('re-keys a clip-scoped automation lane to the LATER segment holding its points, verbatim (regression #2108)', () => {

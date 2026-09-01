@@ -194,10 +194,9 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         // engineer was monitoring. Those tracks are scheduled again; their strip's
         // mute node still keeps their direct output out of the mix.
         //
-        // Solo gating is the opposite case and stays excluded: solo-in-place means
-        // "play me only this", so a gated track must feed nothing, return buses
-        // included. A muted track with no live pre-fader send is also still skipped,
-        // so the render never does work whose output cannot reach the mix.
+        // Solo-gated tracks stay excluded because their closed pre-fader tap makes
+        // their cue sends silent; scheduling them would only render work that cannot
+        // reach the mix. A muted track with no live pre-fader send is also skipped.
         //
         // Resolved *before* the strips are built, because a strip has to know
         // whether it will be scheduled: a strip that is never scheduled
@@ -254,6 +253,7 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
                 renderableTracks: allRenderableTracks,
                 scheduledTracks,
                 scheduledTrackIds,
+                soloGatedByTrackId,
                 vcaMultiplierByTrackId,
                 onWarning,
                 onProgress,
@@ -301,15 +301,13 @@ export const renderOffline: RenderOfflineFn = async function renderOffline(
         for (const track of allRenderableTracks) {
             checkCancel();
             const vcaMultiplier = vcaMultiplierByTrackId.get(track.id) ?? 1;
-            // The mixdown does not gate a soloed-off track's strip; it leaves it
-            // out of `scheduledTracks` instead. Passing `soloGated: false` keeps
-            // that, rather than silently taking on the pre-fader gate the
-            // contract now carries.
+            // Match live solo-in-place at the same topology point: closing the
+            // strip's pre-fader tap also silences audio routed into this strip.
             const state = {
                 gain: track.gain,
                 pan: track.pan,
                 muted: track.muted,
-                soloGated: false,
+                soloGated: soloGatedByTrackId.get(track.id) ?? false,
                 vcaMultiplier,
             };
             const stripResult = await backend.apply({

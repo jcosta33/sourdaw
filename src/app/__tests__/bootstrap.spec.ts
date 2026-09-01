@@ -94,6 +94,7 @@ const {
     setMidiLearnDependenciesMock,
     registerCrdtStorageRuntimeMock,
     captureProjectRevisionMock,
+    projectRevisionMatchesLiveIgnoringCommandCheckpointMock,
     agentProjectInspectionSetProviderMock,
     setArrangementEventBusMock,
     configureRuntimeGraphProjectRevisionValidatorMock,
@@ -155,6 +156,9 @@ const {
         setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
         captureProjectRevisionMock: vi.fn<() => string>(() => 'revision-1'),
+        projectRevisionMatchesLiveIgnoringCommandCheckpointMock: vi.fn<(expectedRevision: string) => boolean>(
+            () => true
+        ),
         agentProjectInspectionSetProviderMock: vi.fn(),
         setArrangementEventBusMock: vi.fn<(eventBus: ArrangementEventBus) => void>(),
         setProjectIdentityTransitionDependenciesMock:
@@ -297,7 +301,7 @@ vi.mock('#/modules/Command/useCases', () => ({
         setGuard: noop,
     },
     setActionHistoryMetadataPort: noop,
-    commandProjectRevisionPort: { setProvider: noop },
+    commandProjectRevisionPort: { setProvider: noop, setLiveMatchIgnoringCommandCheckpoint: noop },
     commandDeviceVersionsPort: { setDeviceTypeResolver: noop, setResolver: noop },
     commandTrackDefaultsPort: { setTrackColorProvider: noop },
     commandRuntimeRepairPort: commandRuntimeRepairPortMock,
@@ -324,6 +328,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     DOC_PREFIX_ROOT: 'root',
     agentProjectInspectionPort: { setProvider: agentProjectInspectionSetProviderMock },
     captureProjectRevision: captureProjectRevisionMock,
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint: projectRevisionMatchesLiveIgnoringCommandCheckpointMock,
     createCommandPreviewWorkspace: noop,
     createCommandRecoveryWorkspace: noop,
     getCrdtDoc: noop,
@@ -356,6 +361,7 @@ vi.mock('#/modules/GrandBoule/useCases', () => ({
     getGrandBouleHandlers: sentinelHandlers('GrandBoule'),
     initGrandBouleSubscribers: () => noop,
     setGrandBouleEventBus: noop,
+    prepareOfflineGrandBoule: noop,
 }));
 
 vi.mock('#/modules/Grinder/stores', () => ({ updateGrinderTelemetry: noop }));
@@ -427,6 +433,7 @@ vi.mock('#/modules/Proof/useCases', () => ({
     registerProofDevice: noop,
     unregisterProofDevice: noop,
     syncFullPatch: noop,
+    prepareOfflineProof: noop,
 }));
 
 vi.mock('#/modules/PunchRecording/useCases', () => ({
@@ -451,6 +458,7 @@ vi.mock('#/modules/Toaster/useCases', () => ({
     initToasterKitPersistence: noop,
     setToasterEventBus: noop,
     setToasterGrooveAssignmentExecutor: noop,
+    prepareOfflineToaster: noop,
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
@@ -511,6 +519,8 @@ vi.mock('../registerGlobalErrorHandlers', () => ({
 // `vi.mock` calls above are hoisted above this import by Vitest, so every
 // dependency bootstrap.ts pulls in is already mocked by the time it runs.
 import '../bootstrap';
+
+const raveModelBootCalls = [...initRaveModelsMock.mock.calls];
 
 function getDurableAssetOwnerRecoveryAfterProjectLoad(): DurableAssetOwnerRecoveryAfterProjectLoad {
     const dependencyCall = setProjectIdentityTransitionDependenciesMock.mock.calls.at(0);
@@ -864,6 +874,6 @@ describe('bootstrap', () => {
         // Without this call raveStore.models stays empty forever, which would
         // withhold the RAVE palette entries permanently rather than gating them
         // on real model presence.
-        expect(initRaveModelsMock).toHaveBeenCalledExactlyOnceWith();
+        expect(raveModelBootCalls).toEqual([[]]);
     });
 });

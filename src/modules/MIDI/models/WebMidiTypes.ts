@@ -33,6 +33,8 @@ export type WebMidiState = {
     isSupported: boolean;
     inputs: MidiInputInfo[];
     selectedInputId: string | null;
+    /** Retryable native/Web enumeration failure; null when listing succeeded. */
+    enumerationError: string | null;
 };
 
 export type WebMidiNoteKey = `${number}:${number}`;

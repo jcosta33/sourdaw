@@ -9,9 +9,26 @@ type PeerPresenceRowProps = {
     color: string;
     isConnected: boolean;
     isHost: boolean;
+    syncHealth: 'converging' | 'diverged';
 };
 
-export const PeerPresenceRow = ({ name, color, isConnected, isHost }: PeerPresenceRowProps): ReactElement => (
+function getPeerStatusLabel(isConnected: boolean, syncHealth: PeerPresenceRowProps['syncHealth']): string {
+    if (!isConnected) {
+        return 'Idle';
+    }
+    if (syncHealth === 'diverged') {
+        return 'Diverged';
+    }
+    return 'Live';
+}
+
+export const PeerPresenceRow = ({
+    name,
+    color,
+    isConnected,
+    isHost,
+    syncHealth,
+}: PeerPresenceRowProps): ReactElement => (
     <Row
         gap={2}
         className="rounded-md border border-white/8 bg-black/20 px-2 py-1.5 text-xs shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]"
@@ -22,7 +39,7 @@ export const PeerPresenceRow = ({ name, color, isConnected, isHost }: PeerPresen
         />
         <span className="truncate text-foreground/90">{name}</span>
         <span className="text-[9px] uppercase tracking-[0.16em] text-muted-foreground/45">
-            {isConnected ? 'Live' : 'Idle'}
+            {getPeerStatusLabel(isConnected, syncHealth)}
         </span>
         {isHost ? (
             <DawMicroBadge className="ml-auto px-1" tone="muted">

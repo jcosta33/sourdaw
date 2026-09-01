@@ -138,6 +138,7 @@ describe('CollaborationPanel', () => {
                         isHost: false,
                         lastSeen: 0,
                         latencyMs: null,
+                        syncHealth: 'converging',
                     },
                 ],
             });
@@ -188,6 +189,7 @@ describe('CollaborationPanel', () => {
                         isConnected: true,
                         lastSeen: 0,
                         latencyMs: null,
+                        syncHealth: 'converging',
                     },
                 ],
                 quarantinedPeerIds: ['peer-2'],
@@ -216,6 +218,7 @@ describe('CollaborationPanel', () => {
                         isHost: false,
                         lastSeen: 0,
                         latencyMs: null,
+                        syncHealth: 'converging',
                     },
                 ],
             });

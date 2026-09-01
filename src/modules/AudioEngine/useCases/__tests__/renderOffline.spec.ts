@@ -218,6 +218,7 @@ describe('renderOffline effective audibility (OE-4)', () => {
         kind?: string;
         soloed?: boolean;
         muted?: boolean;
+        outputId?: string;
         sends?: SendFixture[];
     }) => ({
         id: over.id,
@@ -226,7 +227,7 @@ describe('renderOffline effective audibility (OE-4)', () => {
         muted: over.muted ?? false,
         soloed: over.soloed ?? false,
         soloSafe: false,
-        outputId: 'hw_out',
+        outputId: over.outputId ?? 'hw_out',
         devices: [],
         sends: over.sends ?? ([] as SendFixture[]),
     });
@@ -246,19 +247,25 @@ describe('renderOffline effective audibility (OE-4)', () => {
         processYeastMidi: vi.fn(),
     });
 
+    const stripsByTrackId = new Map<string, { preFaderTap: { gain: { value: number } } }>();
+
     function primeRender(): void {
+        stripsByTrackId.clear();
         offlineRenderMocks.createOfflineTrackStrip.mockImplementation(
-            (_ctx: OfflineAudioContext, track: { id: string }) =>
-                Promise.resolve({
+            (_ctx: OfflineAudioContext, track: { id: string }) => {
+                const strip = {
                     trackId: track.id,
                     inputNode: { connect: vi.fn() },
-                    preFaderTap: { connect: vi.fn() },
+                    preFaderTap: { gain: { value: 1 }, connect: vi.fn() },
                     faderNode: { connect: vi.fn() },
                     postFaderGain: { connect: vi.fn() },
                     panNode: { connect: vi.fn() },
                     outputNode: { connect: vi.fn() },
                     deviceEntries: [],
-                })
+                };
+                stripsByTrackId.set(track.id, strip);
+                return Promise.resolve(strip);
+            }
         );
         offlineRenderMocks.renderWithTimeout.mockResolvedValue({ sampleRate: 44_100 });
         class TestOfflineAudioContext {
@@ -283,6 +290,21 @@ describe('renderOffline effective audibility (OE-4)', () => {
         await renderOffline(4);
 
         expect(scheduledTrackIds()).toEqual(['solo']);
+    });
+
+    it('closes a solo-gated destination bus pre-fader tap while scheduling its soloed source', async () => {
+        offlineRenderMocks.resolveRenderContext.mockReturnValue(
+            renderContext([
+                audioTrack({ id: 'reverb-bus', kind: 'bus' }),
+                audioTrack({ id: 'lead', soloed: true, outputId: 'reverb-bus' }),
+            ])
+        );
+        primeRender();
+
+        await renderOffline(4);
+
+        expect(scheduledTrackIds()).toEqual(['lead']);
+        expect(stripsByTrackId.get('reverb-bus')?.preFaderTap.gain.value).toBe(0);
     });
 
     it('schedules every non-muted track when nothing is soloed', async () => {
@@ -614,7 +636,7 @@ describe('renderOffline residual branches', () => {
                 Promise.resolve({
                     trackId: track.id,
                     inputNode: { connect: vi.fn() },
-                    preFaderTap: { connect: vi.fn() },
+                    preFaderTap: { gain: { value: 1 }, connect: vi.fn() },
                     faderNode: { connect: vi.fn() },
                     postFaderGain: { connect: vi.fn() },
                     panNode: { connect: vi.fn() },
@@ -699,7 +721,7 @@ describe('renderOffline residual branches', () => {
                 Promise.resolve({
                     trackId: track.id,
                     inputNode: { connect: vi.fn() },
-                    preFaderTap: { connect: vi.fn() },
+                    preFaderTap: { gain: { value: 1 }, connect: vi.fn() },
                     faderNode: { connect: vi.fn() },
                     postFaderGain: { connect: vi.fn() },
                     panNode: { connect: vi.fn() },

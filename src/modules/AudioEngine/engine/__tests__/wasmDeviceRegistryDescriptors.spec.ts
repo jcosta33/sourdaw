@@ -1260,6 +1260,7 @@ describe('wasmDeviceRegistry descriptors', () => {
                 setParam: vi.fn(),
                 setPatch: vi.fn(),
                 setBypass: vi.fn(),
+                reset: vi.fn(),
                 onMeterData: vi.fn(),
                 onLatencyChanged: vi.fn(),
                 connect: vi.fn(),
@@ -1322,6 +1323,7 @@ describe('wasmDeviceRegistry descriptors', () => {
                 setParam: vi.fn(),
                 setPatch: vi.fn(),
                 setBypass: vi.fn(),
+                reset: vi.fn(),
                 onMeterData: vi.fn(),
                 onLatencyChanged: vi.fn(),
                 connect: vi.fn(),
@@ -1357,6 +1359,7 @@ describe('wasmDeviceRegistry descriptors', () => {
                 setParam: vi.fn(),
                 setPatch: vi.fn(),
                 setBypass: vi.fn(),
+                reset: vi.fn(),
                 onMeterData: vi.fn(),
                 onLatencyChanged: vi.fn(),
                 connect: vi.fn(),
@@ -1406,6 +1409,7 @@ describe('wasmDeviceRegistry descriptors', () => {
                 setParam: vi.fn(),
                 setPatch: vi.fn(),
                 setBypass: vi.fn(),
+                reset: vi.fn(),
                 onMeterData: vi.fn((cb) => {
                     meterCallback = cb;
                 }),

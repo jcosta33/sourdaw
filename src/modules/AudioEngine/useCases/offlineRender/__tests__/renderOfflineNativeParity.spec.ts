@@ -387,10 +387,13 @@ function lane(input: {
  * - **track-b** — clip at beat 1–4 (a start offset, no user fades, micro fades
  *   only) with clip gain 0.35; a *step* pan lane whose first point equals the
  *   track's own pan (10 project = 0.2 node), stepping to −0.4 at beat 2.
- * - **bus-1** — plain (pan 0, unmuted): the one bus shape the native strip
- *   holds, receiving track-a's send.
+ * - **bus-1** — mute, pan and solo are native-holdable (#3103 / #3110). The
+ *   default fixture stays dry (pan 0, unmuted, unsoloed); the shaped-bus
+ *   cases below overlay pan, mute, or solo on this same strip.
  */
-function fixtureTracks(): Track[] {
+type BusShape = Readonly<{ pan?: number; muted?: boolean; soloed?: boolean }>;
+
+function fixtureTracks(busShape: BusShape = {}): Track[] {
     const trackA = TrackDummy.create({
         id: 'track-a',
         name: 'Source A',
@@ -426,7 +429,15 @@ function fixtureTracks(): Track[] {
             }),
         ],
     });
-    const bus = TrackDummy.create({ id: 'bus-1', name: 'Bus 1', kind: 'bus', gain: 0.9, pan: 0 });
+    const bus = TrackDummy.create({
+        id: 'bus-1',
+        name: 'Bus 1',
+        kind: 'bus',
+        gain: 0.9,
+        pan: busShape.pan ?? 0,
+        muted: busShape.muted ?? false,
+        soloed: busShape.soloed ?? false,
+    });
     return [trackA, trackB, bus];
 }
 
@@ -468,9 +479,9 @@ function fixtureLanes(): AutomationLane[] {
     ];
 }
 
-function fixtureRenderContext(): OfflineRenderContext {
+function fixtureRenderContext(busShape: BusShape = {}): OfflineRenderContext {
     return {
-        tracks: { tracks: fixtureTracks() } as unknown as TrackStoreState,
+        tracks: { tracks: fixtureTracks(busShape) } as unknown as TrackStoreState,
         midi: emptyMidi,
         transport: { masterGain: 80 } as TransportState,
         defaultTempo: 120,
@@ -637,6 +648,37 @@ describe('renderOffline — native/web export parity (#2225)', () => {
 
             expect(result.signalPeakDbfs).toBeGreaterThan(-30);
             expect(result.residualPeakDbfs).toBeLessThanOrEqual(OFF_RATE_RESIDUAL_FLOOR_DBFS);
+        },
+        30_000
+    );
+
+    // Soloing this fixture's bus would silence both audio tracks (neither
+    // `outputId`s into it — they feed it by send). The mix would be a rest and
+    // fail the presence pin; selector coverage already proves a soloed bus is
+    // admitted. Mixdown solo still runs through `scheduledTracks`, same as web.
+    it.runIf(nativeAddonPresent).each([
+        { name: 'a panned bus', bus: { pan: 25 } },
+        { name: 'a muted bus', bus: { muted: true } },
+    ])(
+        'renders $name the same way on both engines',
+        async ({ name, bus }) => {
+            mocks.renderContext = fixtureRenderContext(bus);
+            mocks.probe.transport = inProcessNativeTransport(requireNativeHost());
+
+            const native = await runLeg('native');
+            expect(native.buffer).toBeInstanceOf(StubAudioBuffer);
+
+            const web = await runLeg('web');
+            expect(web.buffer).not.toBeInstanceOf(StubAudioBuffer);
+
+            const result = nullTest({ a: web.buffer, b: native.buffer });
+            process.stdout.write(
+                `[parity ${name}] null: residual ${result.residualPeakDbfs.toFixed(2)} dBFS, ` +
+                    `signal ${result.signalPeakDbfs.toFixed(2)} dBFS, worst frame ${String(result.worstFrame)}\n`
+            );
+
+            expect(result.signalPeakDbfs).toBeGreaterThan(-30);
+            expect(result.residualPeakDbfs).toBeLessThanOrEqual(-90);
         },
         30_000
     );

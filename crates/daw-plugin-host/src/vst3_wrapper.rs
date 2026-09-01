@@ -14,8 +14,8 @@ use crate::parameter_events::PluginParameterEventQueue;
 use crate::params::PluginParameter;
 use crate::traits::{
     signal_pending_process_refusal, AudioPlugin, EditorWindowResizer, HostParameterUpdate,
-    HostTransport, HostedPluginRuntime, LatencyChangeNotifier, ProcessingGate,
-    DEFAULT_EDITOR_CONTENT_SCALE,
+    HostTransport, HostedPluginRuntime, LatencyChangeNotifier, PluginHostRequestNotifier,
+    ProcessingGate, DEFAULT_EDITOR_CONTENT_SCALE,
 };
 use crate::vst3_bus_layout::{
     activate_main_audio_bus, negotiate_bus_layout, silent_channel_flags, BusGeometry, BusLayout,
@@ -1168,12 +1168,26 @@ impl Vst3Wrapper {
         self.instance.host.state.set_latency_notifier(notifier)
     }
 
+    /// Install the wake fired for every plugin-initiated ask this host answers
+    /// off the calling thread — today, the `IComponentHandler2::setDirty`
+    /// report that an edit the plugin made itself is unsaved. First install
+    /// wins; a second call reports `false`.
+    pub fn set_plugin_host_request_notifier(&self, notifier: PluginHostRequestNotifier) -> bool {
+        self.instance.host.state.set_request_notifier(notifier)
+    }
+
     // ── Editor ──────────────────────────────────────────────────────────
 
     /// Whether this plugin offers an editor.
     ///
     /// `createView` is the only question VST3 has, and asking it creates a real
-    /// view — so the answer is cached and the probe runs once per instance.
+    /// view — so the answer is cached and the probe runs once per instance. The
+    /// first ask runs on whatever thread made it, which makes the first ask the
+    /// caller's to place: the load path is that first ask, and it carries the
+    /// question to the shell's UI thread (`editor_support_on_ui_thread` in
+    /// `sourdaw-native`) before any window exists, so every later capability
+    /// read — the engine record's own flag, `is_plugin_gui_supported`, the open
+    /// path's pre-check — answers from this cache and creates no view at all.
     pub fn has_editor(&self) -> bool {
         *self.has_editor.get_or_init(|| {
             self.instance
@@ -1783,6 +1797,13 @@ impl AudioPlugin for Vst3Wrapper {
         self.open_editor_or_refuse()?
             .apply_content_scale(scale)
             .map(|granted| (granted.width, granted.height))
+    }
+
+    /// Read and clear the "plugin state changed" signal its editor raised
+    /// through `IComponentHandler2::setDirty`. The control path turns it into
+    /// the project-level dirty mark.
+    fn take_state_dirty(&mut self) -> bool {
+        self.instance.host.state.take_state_dirty()
     }
 
     fn parameter_event_queue(&self) -> Option<Arc<PluginParameterEventQueue>> {

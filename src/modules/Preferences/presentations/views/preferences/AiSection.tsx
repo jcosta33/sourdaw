@@ -124,7 +124,7 @@ export const AiSection = (): ReactElement => {
     const modelOptions = provider === 'openai-compatible' ? [] : HOSTED_MODEL_OPTIONS[provider];
     const customFirstPartyModel =
         provider !== 'openai-compatible' && !modelOptions.some((option) => option.value === model);
-    const renderIife_16 = () => {
+    const backendDotTone = (): 'cyan' | 'primary' | 'muted' => {
         if (backend === 'webllm') {
             return 'cyan';
         }
@@ -133,7 +133,7 @@ export const AiSection = (): ReactElement => {
         }
         return 'muted';
     };
-    const renderIife_17 = () => {
+    const activeBackendLabel = (): string => {
         if (backend === 'cloud') {
             if (configuredProvider) {
                 return `Cloud (${getProviderLabel(configuredProvider.provider)})`;
@@ -212,8 +212,8 @@ export const AiSection = (): ReactElement => {
                             backend === 'none' && 'bg-muted text-muted-foreground'
                         )}
                     >
-                        <DawStatusDot tone={renderIife_16()} />
-                        {renderIife_17()}
+                        <DawStatusDot tone={backendDotTone()} />
+                        {activeBackendLabel()}
                     </span>
                 </Row>
             </FieldGroup>

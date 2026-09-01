@@ -29,7 +29,7 @@ use triple_buffer::{Input, Output};
 /// (`GraphRegistry` in `sourdaw-native`): how far the engine has provably
 /// consumed what control pushed.
 ///
-/// The two fields are written together at the end of one callback, after
+/// The fields are written together at the end of one callback, after
 /// `update_graph` and every `process_block` of that callback, so one snapshot
 /// is coherent by construction and carries this happens-before guarantee:
 /// **every write from a fenced batch numbered at or below `batches_applied`,
@@ -42,6 +42,15 @@ use triple_buffer::{Input, Output};
 /// rolling, because parameters advance on every rendered block. The echo may
 /// lag (it is read between callbacks), so a consumer may under-release —
 /// never over-release.
+///
+/// A loop region breaks the playhead's monotonicity, and with it that
+/// guarantee's reach: the playhead is pinned below the region's end forever, so
+/// a stamp the engine consumed on every pass would never be provably consumed
+/// once. [`Self::loop_wraps`] and [`Self::last_wrap_frame`] carry the seam the
+/// playhead alone cannot state, and they are on *this* snapshot rather than
+/// read from the cursor's channel because the ledger's proof compares them
+/// against `batches_applied`: two channels read at two moments would be two
+/// engines as far as the proof is concerned.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct GraphProgressSnapshot {
     /// Fenced batches ([`GraphCommand::BeginBatch`]) applied whole, in order.
@@ -51,6 +60,15 @@ pub struct GraphProgressSnapshot {
     /// The absolute frame the last rendered block ended on while playing, or
     /// stood on while stopped.
     pub playhead_frame: u64,
+    /// Loop seams closed since the engine started, monotonic — the same count
+    /// [`TransportPositionSnapshot::loop_wraps`] reports, echoed here beside
+    /// the batch horizon it has to be compared against.
+    pub loop_wraps: u64,
+    /// The frame the block walk had reached when the seam numbered
+    /// `loop_wraps` closed, so **every queued write stamped strictly below it
+    /// was consumed by the pass that seam ended** — the wrap's mirror of
+    /// `playhead_frame`. Zero until the first seam.
+    pub last_wrap_frame: u64,
 }
 
 pub struct GraphProgressReader {
@@ -77,10 +95,11 @@ pub(crate) fn graph_progress_channel() -> (Input<GraphProgressSnapshot>, GraphPr
 /// cursor's. This channel answers only "where is the transport", and it is
 /// free to say so in whatever terms the cursor needs.
 ///
-/// `loop_wraps` counts the seams the engine closed itself. The control thread
-/// owns the automation window and cannot see a wrap in the frame number alone
-/// — a wrap and an ordinary locate look identical after the fact — so the
-/// count is what tells it to re-arm the window for another pass.
+/// `loop_wraps` counts the seams the engine closed itself, so a cursor can tell
+/// a position that went backwards on purpose from one that jumped: a wrap and
+/// an ordinary locate look identical in the frame number alone. The ledger asks
+/// the same question of its own snapshot ([`GraphProgressSnapshot::loop_wraps`])
+/// rather than of this one, for the reason stated there.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct TransportPositionSnapshot {
     pub playing: bool,
@@ -291,6 +310,26 @@ pub enum GraphCommand {
     /// reaches it, because only the thread that owns the playhead knows which
     /// frame the region ends on.
     SetLoopRegion(LoopRegion),
+
+    /// Shadow the monitor: keep rendering, contribute nothing to the OS
+    /// output.
+    ///
+    /// A *session mode*, deliberately not the master fader. `true` writes the
+    /// device buffer as true zeros at the one place the engine's audio becomes
+    /// the device's (`crate::audio_thread`); everything upstream is untouched,
+    /// so the timeline still renders block-accurately, the playhead still
+    /// advances, loop seams still close on their sample and the transport maps
+    /// still govern. That is what lets a native session hold a live programme
+    /// while another engine remains the path a musician hears.
+    ///
+    /// Two consequences of siting the gate at the device boundary, both
+    /// intended. An offline render ([`crate::offline::OfflineRenderer`]) never
+    /// sees it — a bounce is not a monitor, and a shadowed session must still
+    /// export its mix. And lifting the gate steps rather than fades: the
+    /// change lands at the block boundary that drains this command, so a
+    /// cutover from a non-zero programme is a discontinuity. Ramping that edge
+    /// belongs to the slice that makes the cutover a musician-facing gesture.
+    SetMonitorShadow(bool),
 
     /// Fence announcing that the next `commands` elements on the ring are one
     /// atomically published batch.
@@ -537,6 +576,7 @@ impl GraphCommand {
             | Self::SetTransportPlayback { .. }
             | Self::SetTransportMaps(..)
             | Self::SetLoopRegion(..)
+            | Self::SetMonitorShadow(..)
             | Self::BeginBatch { .. }
             | Self::SwapCommandChannel { .. }
             | Self::AddTrack(..)
@@ -1278,9 +1318,20 @@ pub struct AudioScheduler {
     /// offline renderer included.
     transport_maps: Option<Box<TransportMaps>>,
     loop_region: LoopRegion,
+    /// Whether the monitor is shadowed ([`GraphCommand::SetMonitorShadow`]).
+    ///
+    /// A plain `bool`, not an atomic: it is written by the command drain and
+    /// read by the device write, both inside the same callback on the same
+    /// thread, so there is no cross-thread read to order. The device write is
+    /// the only consumer — nothing in this file branches on it, which is what
+    /// keeps a shadowed engine rendering exactly what an audible one renders.
+    monitor_shadowed: bool,
     /// Loop seams this engine has closed, for
     /// [`TransportPositionSnapshot::loop_wraps`].
     loop_wraps: u64,
+    /// The frame the walk had reached when the seam numbered `loop_wraps`
+    /// closed, for [`GraphProgressSnapshot::last_wrap_frame`].
+    last_wrap_frame: u64,
     midi_rt_diagnostics: ActiveMidiRtDiagnostics,
     midi_rt_diagnostics_tx: Input<ActiveMidiRtDiagnosticsSnapshot>,
     timeline_rt_diagnostics_tx: Input<TimelineRtDiagnosticsSnapshot>,
@@ -1364,7 +1415,15 @@ impl AudioScheduler {
             transport: TransportState::default(),
             transport_maps: None,
             loop_region: LoopRegion::default(),
+            // Audible until a session says otherwise. The gate is a mode a
+            // caller opts into, so an engine nobody told behaves exactly as
+            // every engine did before the gate existed; a live session that
+            // wants silence sends the command inside the same fenced batch as
+            // its topology, which is applied before any block that could hold
+            // that session's programme.
+            monitor_shadowed: false,
             loop_wraps: 0,
+            last_wrap_frame: 0,
             midi_rt_diagnostics: ActiveMidiRtDiagnostics::new(),
             midi_rt_diagnostics_tx,
             timeline_rt_diagnostics_tx,
@@ -1395,7 +1454,16 @@ impl AudioScheduler {
         GraphProgressSnapshot {
             batches_applied: self.batches_applied,
             playhead_frame: self.playhead_frames,
+            loop_wraps: self.loop_wraps,
+            last_wrap_frame: self.last_wrap_frame,
         }
+    }
+
+    /// Whether the device write must be silenced this callback
+    /// ([`GraphCommand::SetMonitorShadow`]).
+    #[inline]
+    pub(crate) const fn monitor_shadowed(&self) -> bool {
+        self.monitor_shadowed
     }
 
     #[inline]
@@ -1727,6 +1795,10 @@ impl AudioScheduler {
                 }
                 GraphCommand::SetLoopRegion(region) => {
                     self.loop_region = region;
+                    None
+                }
+                GraphCommand::SetMonitorShadow(shadowed) => {
+                    self.monitor_shadowed = shadowed;
                     None
                 }
                 GraphCommand::AddTrack(track) => self.timeline.add_track(track).map(|rejected| {
@@ -2489,6 +2561,11 @@ impl AudioScheduler {
     /// consume cannot be replayed from here — the graph holds a window, not a
     /// curve — so `loop_wraps` is published for the control thread that owns
     /// the curve to re-arm it.
+    ///
+    /// `next` is recorded with the seam because it is the one frame nothing can
+    /// recover afterwards: the span just rendered walked every frame below it,
+    /// while the published playhead is already back at the loop start by the
+    /// time any snapshot is read.
     fn advance_playhead(&mut self, block_start: u64, span_frames: usize) {
         if !self.transport.is_playing {
             return;
@@ -2498,6 +2575,7 @@ impl AudioScheduler {
             Some(end) if block_start < end && next >= end => {
                 self.playhead_frames = self.loop_region.start_frame;
                 self.loop_wraps = self.loop_wraps.wrapping_add(1);
+                self.last_wrap_frame = next;
             }
             _ => self.playhead_frames = next,
         }
@@ -5268,8 +5346,8 @@ mod timeline_tests {
             track_id,
             TimelineClip::new(
                 clip_id,
-                vec![value; frames],
-                Vec::new(),
+                vec![value; frames].into(),
+                [].into(),
                 placement(0, 0, frames as u64),
                 ClipPlayback::at_gain(1.0),
             ),
@@ -5285,8 +5363,8 @@ mod timeline_tests {
             1,
             TimelineClip::new(
                 9,
-                vec![1.0; 8],
-                Vec::new(),
+                vec![1.0; 8].into(),
+                [].into(),
                 placement(3, 0, 2),
                 ClipPlayback::at_gain(1.0),
             ),
@@ -5309,8 +5387,8 @@ mod timeline_tests {
             1,
             TimelineClip::new(
                 9,
-                vec![1.0; 8],
-                Vec::new(),
+                vec![1.0; 8].into(),
+                [].into(),
                 placement(3, 0, 4),
                 ClipPlayback::at_gain(1.0),
             ),
@@ -5335,8 +5413,8 @@ mod timeline_tests {
             1,
             TimelineClip::new(
                 9,
-                vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
-                Vec::new(),
+                vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0].into(),
+                [].into(),
                 placement(0, 2, 3),
                 ClipPlayback::at_gain(1.0),
             ),
@@ -5367,8 +5445,8 @@ mod timeline_tests {
             1,
             TimelineClip::new(
                 9,
-                vec![1.0; 2],
-                vec![0.25; 2],
+                vec![1.0; 2].into(),
+                vec![0.25; 2].into(),
                 placement(0, 0, 2),
                 ClipPlayback::at_gain(1.0),
             ),
@@ -5378,8 +5456,8 @@ mod timeline_tests {
             2,
             TimelineClip::new(
                 8,
-                vec![0.5; 2],
-                Vec::new(),
+                vec![0.5; 2].into(),
+                [].into(),
                 placement(0, 0, 2),
                 ClipPlayback::at_gain(1.0),
             ),
@@ -5752,8 +5830,8 @@ mod timeline_tests {
             1,
             TimelineClip::new(
                 10,
-                vec![1.0; 4],
-                Vec::new(),
+                vec![1.0; 4].into(),
+                [].into(),
                 placement(0, 0, 4),
                 ClipPlayback::at_gain(1.0),
             ),
@@ -5863,8 +5941,8 @@ mod timeline_tests {
             1,
             TimelineClip::new(
                 9,
-                vec![1.0; 4],
-                vec![0.0; 4],
+                vec![1.0; 4].into(),
+                vec![0.0; 4].into(),
                 placement(0, 0, 4),
                 ClipPlayback::at_gain(1.0),
             ),
@@ -6325,8 +6403,8 @@ mod timeline_tests {
                 1,
                 TimelineClip::new(
                     9,
-                    vec![0.5; 64],
-                    Vec::new(),
+                    vec![0.5; 64].into(),
+                    [].into(),
                     placement(0, 0, 64),
                     ClipPlayback::at_gain(1.0),
                 ),
@@ -6662,14 +6740,14 @@ mod timeline_tests {
     /// frame, so a rendered buffer reads back as the sequence of frames the
     /// engine actually played.
     fn track_with_frame_stamped_clip(harness: &mut Harness, track_id: usize, frames: usize) {
-        let material: Vec<f32> = (0..frames).map(|frame| (frame + 1) as f32).collect();
+        let material: Arc<[f32]> = (0..frames).map(|frame| (frame + 1) as f32).collect();
         harness.send(GraphCommand::AddTrack(TimelineTrack::new(track_id)));
         harness.send(GraphCommand::AddClip(
             track_id,
             TimelineClip::new(
                 1,
                 material,
-                Vec::new(),
+                [].into(),
                 placement(0, 0, frames as u64),
                 ClipPlayback::at_gain(1.0),
             ),
@@ -6776,6 +6854,47 @@ mod timeline_tests {
             "and the level it set carries across the seam"
         );
         assert_eq!(harness.scheduler.transport_position().loop_wraps, 1);
+    }
+
+    /// The ledger's release evidence across a seam. The published playhead is
+    /// back at the loop start the moment a pass ends, so it can never prove a
+    /// stamp inside the region was consumed; `last_wrap_frame` states the frame
+    /// the closing pass walked to, which is exactly that proof.
+    #[test]
+    fn the_progress_echo_reports_the_frame_each_loop_seam_walked_to() {
+        const LOOP_END: u64 = 1_024;
+
+        let mut harness = Harness::new(16);
+        harness.send(GraphCommand::SetLoopRegion(LoopRegion {
+            enabled: true,
+            start_frame: 0,
+            end_frame: LOOP_END,
+        }));
+        harness.playing();
+
+        // Nothing has wrapped yet, so there is no seam to report.
+        harness.render(512);
+        let before = harness.scheduler.graph_progress();
+        assert_eq!(before.loop_wraps, 0);
+        assert_eq!(before.last_wrap_frame, 0);
+
+        harness.render(512);
+        let closed = harness.scheduler.graph_progress();
+        assert_eq!(closed.loop_wraps, 1);
+        assert_eq!(
+            closed.last_wrap_frame, LOOP_END,
+            "the pass walked to the region's end before the seam closed"
+        );
+        assert_eq!(
+            closed.playhead_frame, 0,
+            "and the playhead alone proves nothing about the region it just walked"
+        );
+
+        // The seam is not a one-off: every pass restates the frame it reached.
+        harness.render(LOOP_END as usize);
+        let again = harness.scheduler.graph_progress();
+        assert_eq!(again.loop_wraps, 2);
+        assert_eq!(again.last_wrap_frame, LOOP_END);
     }
 
     /// The position channel is the cursor's, and separate from the ledger's on

@@ -44,12 +44,14 @@ type ReplaceProjectDataInput = {
     /** Buffers an importer already decoded, keyed by buffer id — staged and
      * persisted through the same candidate as the embedded ones. */
     decodedAudioBuffers?: Record<string, AudioBuffer>;
+    /** External authority that must remain current until this load switches project truth. */
+    shouldProceed?: () => boolean;
     transaction: ProjectLoadTransaction;
 };
 
 type ProjectReplacementResult =
     | { status: 'aborted' }
-    | { status: 'committed'; degraded: boolean }
+    | { status: 'committed'; degraded: boolean; durable: boolean }
     /** The authority switch happened and then the load threw: the incoming
      * project never arrived and the previous one is already gone. Distinct from
      * `aborted`, which means the previous session is still there. */
@@ -72,6 +74,7 @@ export async function replaceProjectData({
     context,
     data,
     decodedAudioBuffers,
+    shouldProceed,
     transaction,
 }: ReplaceProjectDataInput): Promise<ProjectReplacementResult> {
     let cancelPreparedStoredCandidate: (() => void) | undefined;
@@ -105,7 +108,7 @@ export async function replaceProjectData({
     // false once a newer transition claims the prepared slot, and `activate()`
     // returns false once a newer one is active — so skipping the write never
     // skips it for a load that goes on to publish.
-    if (currentProject && transaction.canActivate()) {
+    if (currentProject && transaction.canActivate() && (shouldProceed === undefined || shouldProceed())) {
         projectStore.set({ ...currentProject, loading: true, initialized: false });
     }
 
@@ -184,7 +187,11 @@ export async function replaceProjectData({
     }
 
     try {
-        if (!(await transaction.prepare()) || !transaction.activate()) {
+        if (
+            !(await transaction.prepare()) ||
+            (shouldProceed !== undefined && !shouldProceed()) ||
+            !transaction.activate()
+        ) {
             return abortProjectReplacement();
         }
     } catch (error) {
@@ -225,20 +232,20 @@ export async function replaceProjectData({
         return abortProjectReplacement();
     }
 
-    if (!preparedStoredBuffers || !transaction.isCurrent()) {
+    if (!preparedStoredBuffers || !transaction.isCurrent() || (shouldProceed !== undefined && !shouldProceed())) {
         return abortProjectReplacement();
     }
 
     const releaseRuntimeTransition = await projectLoadEpoch.acquireRuntimeTransition();
     try {
         await stopPlayback();
-        if (!transaction.isCurrent()) {
+        if (!transaction.isCurrent() || (shouldProceed !== undefined && !shouldProceed())) {
             releaseRuntimeTransition();
             return abortProjectReplacement();
         }
         resetAudioGraph();
         await unloadLoadedExternalPlugins();
-        if (!transaction.isCurrent()) {
+        if (!transaction.isCurrent() || (shouldProceed !== undefined && !shouldProceed())) {
             restorePreviousAudioGraph(context);
             releaseRuntimeTransition();
             return abortProjectReplacement();
@@ -377,11 +384,22 @@ export async function replaceProjectData({
         logger.error(new Error(`[${context}] Committed embedded audio buffer persistence threw`, { cause: error }));
     }
 
+    let durable = true;
     if (transaction.isCurrent()) {
         try {
             await compactProject();
         } catch (error) {
             degraded = true;
+            durable = false;
+            // A durable recovery caller must not close a clean-looking loaded
+            // projection whose initial CRDT snapshot failed. This transient
+            // Project-owned barrier is cleared only by the normal save path.
+            runCommittedStep('project durability pending', () => {
+                const project = projectStore.value;
+                if (project) {
+                    projectStore.set({ ...project, identityPersistencePending: true });
+                }
+            });
             logger.error(new Error(`[${context}] Initial CRDT snapshot persistence failed`, { cause: error }));
         }
     }
@@ -398,5 +416,5 @@ export async function replaceProjectData({
         });
     }
 
-    return { status: 'committed', degraded };
+    return { status: 'committed', degraded, durable };
 }

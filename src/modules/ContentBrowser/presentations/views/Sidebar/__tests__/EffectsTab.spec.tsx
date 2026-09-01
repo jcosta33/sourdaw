@@ -20,6 +20,28 @@ const commandMocks = vi.hoisted(() => ({
     executeAppActionBatch: vi.fn(),
 }));
 
+const loggerMocks = vi.hoisted(() => ({
+    warn: vi.fn(),
+}));
+
+const notificationMocks = vi.hoisted(() => ({
+    notifyUser: vi.fn(),
+}));
+
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: {
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: loggerMocks.warn,
+        error: vi.fn(),
+        setWriters: vi.fn(),
+    },
+}));
+
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: notificationMocks.notifyUser,
+}));
+
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     executeAddDeviceAction: arrangementMocks.executeAddDeviceAction,
@@ -126,6 +148,31 @@ describe('EffectsTab', () => {
             trackId: 'track-1',
         });
         expect(commandMocks.executeAppAction).toHaveBeenCalledWith(action);
+    });
+
+    it('logs the rejection before notifying when the FX preset load fails', async () => {
+        const action = { type: 'loadPreset', payload: { presetId: 'fx-chain-1', trackId: 'track-1' } } as const;
+        arrangementMocks.compileLoadPresetActions.mockReturnValue({
+            actions: [action],
+            deviceIds: ['preset-device-1'],
+            groupLabel: 'Load preset',
+            trackId: 'track-1',
+        });
+        commandMocks.executeAppAction.mockRejectedValue(new Error('repair required'));
+
+        renderWithTooltip(
+            <EffectsTab {...defaultProps} currentRoute={{ id: 'effects-fxpresets', title: 'FX Chain Presets' }} />
+        );
+
+        fireEvent.click(screen.getByText('Vocal Chain'));
+
+        await waitFor(() =>
+            expect(loggerMocks.warn).toHaveBeenCalledWith('executePresetLoad failed for FX preset:', expect.any(Error))
+        );
+        expect(notificationMocks.notifyUser).toHaveBeenCalledWith(
+            'Preset project changes require runtime retry or repair.',
+            'error'
+        );
     });
 
     it('should render without crashing', () => {

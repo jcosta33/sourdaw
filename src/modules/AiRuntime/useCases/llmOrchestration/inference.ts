@@ -22,7 +22,7 @@ import {
     type ModelProviderSession,
     type ModelProviderStreamIdentity,
 } from '../../models/ModelProviderProtocol';
-import { DAW_TOOL_SCHEMAS, type ToolSchema } from '../../models/ToolDefinitions';
+import { type ToolSchema } from '../../models/ToolDefinitions';
 import { WORKFLOW_ACTION_TOOL_NAMES, WORKFLOW_CAPABILITY_TOOL_NAME } from '../../models/WorkflowCapability';
 import { generateCloudToolCalls } from '../../repositories/cloudLlm/cloudInference/generateCloudToolCalls';
 import { getCloudProviderInfo } from '../../repositories/cloudLlm/getCloudProviderInfo';
@@ -251,7 +251,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
     return async function generateToolPlanningOutcome(
         systemPrompt: string,
         userMessage: string,
-        toolSchemas?: readonly ToolSchema[],
+        toolSchemas: readonly ToolSchema[],
         signal?: AbortSignal,
         toolSelectionPrompt: string = userMessage,
         onProviderResult?: (result: ModelProviderResult) => void,
@@ -259,7 +259,6 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult
     ): Promise<ToolPlanningOutcome> {
         const chain = getBackendChain({ operation: 'tools', modality: 'text', streaming: false });
-        const availableTools = toolSchemas ?? DAW_TOOL_SCHEMAS;
         const reportProviderResult = (result: ModelProviderResult): void => {
             try {
                 onProviderResult?.(result);
@@ -294,17 +293,17 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 if (signal?.aborted) {
                     throw createToolPlanningAbortError();
                 }
-                let providerTools = availableTools;
+                let providerTools = toolSchemas;
                 if (backend === 'webllm') {
-                    const workflowSelectionTools = availableTools.filter(
+                    const workflowSelectionTools = toolSchemas.filter(
                         (tool) => tool.function.name === WORKFLOW_CAPABILITY_TOOL_NAME
                     );
-                    const applicationTools = availableTools.filter(
+                    const applicationTools = toolSchemas.filter(
                         (tool) =>
                             tool.function.name === PROJECT_QUERY_TOOL_NAME ||
                             tool.function.name === COMMAND_BATCH_PROPOSAL_TOOL_NAME
                     );
-                    const actionTools = availableTools.filter(
+                    const actionTools = toolSchemas.filter(
                         (tool) =>
                             tool.function.name !== WORKFLOW_CAPABILITY_TOOL_NAME &&
                             tool.function.name !== PROJECT_QUERY_TOOL_NAME &&
@@ -332,7 +331,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         ...promptActionTools.slice(0, Math.max(0, 30 - mandatoryTools.length)),
                     ];
                     logger.info(
-                        `[AI Engine] (webllm) Using ${String(providerTools.length)}/${String(availableTools.length)} tools`
+                        `[AI Engine] (webllm) Using ${String(providerTools.length)}/${String(toolSchemas.length)} tools`
                     );
                 }
                 const providerName = getProviderName(backend);
