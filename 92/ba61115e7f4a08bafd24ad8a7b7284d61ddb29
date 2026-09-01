@@ -1,0 +1,44 @@
+src/modules/AudioEngine/useCases/offlineRender/projectStripAutomationWrites.ts
+  s_9b530f08172a54::t_b86147cb92f693 130-135
+  s_9b530f08172a54::t_a31935710d6a07 136-137
+src/modules/AudioEngine/useCases/offlineRender/convertRecordedAutomationEvents.ts
+  s_9b530f08172a54::t_aba8e54827d14b 19
+src/modules/AudioEngine/useCases/livePlayback/projectLiveAutomationWrites.ts
+  s_9b530f08172a54::t_3fa7306205f412 53
+  s_9b530f08172a54::t_503ae13023fc9d 108-114,116-138,145,199
+  s_9b530f08172a54::t_f0f6c8a273cdfe 177-180,191-198
+  s_9b530f08172a54::t_8f095e9e0cb237 141-144,155
+  s_bbdfb911119c4f::t_a7792864bb6376 200
+src/modules/AudioEngine/useCases/offlineRender/__tests__/projectStripAutomationWrites.spec.ts
+  s_9b530f08172a54::t_c219d77499619c 208-244
+  s_9b530f08172a54::t_7c3256cc6189c2 53
+  s_9b530f08172a54::t_ea7d1ab30999b1 56-57
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveAutomationWrites.spec.ts
+  s_9b530f08172a54::t_75654ab55ae3a1 269-315
+  s_9b530f08172a54::t_2a6ff35c650abd 53
+  s_9b530f08172a54::t_3e346a25cae214 175,179-182
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "92ba61115e7f4a08bafd24ad8a7b7284d61ddb29",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bbdfb911119c4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fa21d5-2a8a-4f80-98ab-b72059373843",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
