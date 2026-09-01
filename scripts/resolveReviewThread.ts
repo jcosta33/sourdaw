@@ -321,6 +321,7 @@ type ActiveReviewResolutionLock = {
 };
 type ReviewResolutionLockInspectionPort = {
     readOid?: (primaryRoot: string, ref: string, number: number) => string | undefined;
+    acquireRef?: (primaryRoot: string, args: string[]) => boolean;
     release?: (primaryRoot: string, ref: string, oid: string, number: number) => void;
     executionFence?: ReviewResolutionExecutionFence;
     platform?: NodeJS.Platform;
@@ -3431,7 +3432,9 @@ function acquirePullRequestReviewResolutionLock(
     expectedHead: string,
     executionFence: ReviewResolutionExecutionFence,
     _platform: NodeJS.Platform,
-    sharedMutationOwnerOid?: string
+    sharedMutationOwnerOid?: string,
+    acquireRef: (primaryRoot: string, args: string[]) => boolean = updateReviewResolutionLockRef,
+    readOid: (primaryRoot: string, ref: string, number: number) => string | undefined = readReviewResolutionLockOid
 ): { ref: string; oid: string; owner: CurrentReviewResolutionLockOwner } {
     const ref = pullRequestReviewResolutionLockRef(number);
     const commonOwner = {
@@ -3451,11 +3454,11 @@ function acquirePullRequestReviewResolutionLock(
                   sharedMutationOwnerOid: reviewResolutionLockObjectId(sharedMutationOwnerOid, number),
               };
     const oid = writeReviewResolutionLockOwner(primaryRoot, owner, number);
-    if (updateReviewResolutionLockRef(primaryRoot, [ref, oid, '0'.repeat(oid.length)])) {
+    if (acquireRef(primaryRoot, [ref, oid, '0'.repeat(oid.length)])) {
         return { ref, oid, owner };
     }
 
-    const previousOid = readReviewResolutionLockOid(primaryRoot, ref, number);
+    const previousOid = readOid(primaryRoot, ref, number);
     if (previousOid === undefined) {
         return fail(`${pullRequestReviewResolutionLockScope(number)} lock could not be acquired`);
     }
@@ -3545,7 +3548,9 @@ export function withPullRequestReviewResolutionLock<Value>(
             platform
         ),
         platform,
-        port.sharedMutationOwnerOid
+        port.sharedMutationOwnerOid,
+        port.acquireRef,
+        readOid
     );
     const active: ActiveReviewResolutionLock = {
         primaryRoot,

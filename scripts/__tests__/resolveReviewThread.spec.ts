@@ -1900,6 +1900,32 @@ describe('review thread resolution', () => {
         }
     });
 
+    it('does not enter a resolution operation when the initial zero-ref CAS loses without a competing owner', () => {
+        const repository = createTemporaryGitRepository();
+        let entered = false;
+        try {
+            expect(() =>
+                withPullRequestReviewResolutionLock(
+                    repository,
+                    42,
+                    threadId,
+                    head,
+                    () => {
+                        entered = true;
+                    },
+                    {
+                        acquireRef: () => false,
+                        readOid: () => undefined,
+                    }
+                )
+            ).toThrow(/lock could not be acquired/);
+            expect(entered).toBe(false);
+            expect(readLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it('normalizes the current POSIX group identity across caller locale and timezone', () => {
         const repository = createTemporaryGitRepository();
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-resolve-ps-path-'));
@@ -3984,7 +4010,7 @@ describe('review thread resolution', () => {
         }
     });
 
-    it('releases a dead standalone shared owner while preserving an unrelated v5 inner owner for recovery', () => {
+    it('releases a dead standalone shared owner while preserving an unrelated v5 inner owner for recovery', async () => {
         const repository = createTemporaryGitRepository();
         try {
             const sharedOwnerOid = writeStandaloneReviewResolutionSharedMutationLockOwnerBlob(repository, 999999);
@@ -4010,6 +4036,9 @@ describe('review thread resolution', () => {
                 )
             ).toBe('reconciled');
             expect(readLockOid(repository, 42)).toBeUndefined();
+            await expect(withPullRequestMutationLock(repository, 42, () => 'later-mutation')).resolves.toBe(
+                'later-mutation'
+            );
         } finally {
             rmSync(repository, { recursive: true, force: true });
         }
@@ -6498,6 +6527,52 @@ describe('review thread resolution', () => {
         }
     });
 
+    it('routes an exact paired v6 owner through CLI recovery and emits the canonical summary', async () => {
+        const repository = createTemporaryGitRepository();
+        try {
+            const sharedOwnerOid = writeSharedMutationLockOwnerBlob(repository, 999999);
+            const ownerOid = writeLockOwnerBlob(
+                repository,
+                999999,
+                head,
+                { phase: 'idle', epoch: 0 },
+                undefined,
+                undefined,
+                sharedOwnerOid
+            );
+            updateSharedMutationLock(repository, 42, sharedOwnerOid);
+            updateLock(repository, 42, ownerOid);
+            const session: GhSession = { configDir: repository, env: {}, dispose() {} };
+            const { port } = fakePort();
+            const dependencies = {
+                trustedPrimaryRoot: () => repository,
+                authenticateAuthor: async () => ({ minted: { actorNodeId: AUTHOR_BOT_NODE_ID }, session }),
+                repositoryName: () => REQUIRED_REPOSITORY,
+                gh: () => () => '',
+                createPort: () => port,
+                recoverLock: (primaryRoot, number, owner, reconcile) =>
+                    recoverPullRequestReviewResolutionLock(primaryRoot, number, owner, reconcile, () => false),
+            } satisfies Parameters<typeof runRecoverReviewResolutionLockCli>[1];
+            const logs: string[] = [];
+            const originalLog = console.log;
+            console.log = (message?: unknown) => {
+                logs.push(String(message));
+            };
+            try {
+                await expect(
+                    runRecoverReviewResolutionLockCli(['42', '--owner', ownerOid], dependencies)
+                ).resolves.toBe(0);
+            } finally {
+                console.log = originalLog;
+            }
+            expect(logs).toEqual([`review-resolution-lock-recovered:42:${threadId}:${head}:${head}:unresolved:0`]);
+            expect(readLockOid(repository, 42)).toBeUndefined();
+            expect(readSharedMutationLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it('recovers the exact dead owner after the PR head advances and records both original and current heads', async () => {
         const repository = createTemporaryGitRepository();
         try {
@@ -8060,6 +8135,21 @@ describe('review thread resolution', () => {
                 },
             },
         ],
+        [
+            'missing author type',
+            {
+                data: {
+                    deletePullRequestReviewComment: {
+                        clientMutationId: replyId,
+                        pullRequestReviewComment: {
+                            id: replyId,
+                            body: 'Done',
+                            author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: null },
+                        },
+                    },
+                },
+            },
+        ],
     ])('rejects a %s delete-reply receipt', (_case, response) => {
         expect(() => deleteReply(replyId, () => JSON.stringify(response))).toThrow(
             /delete review reply returned an invalid result/i
@@ -8256,6 +8346,23 @@ describe('review thread resolution', () => {
                             body: pendingReviewBody(head),
                             commit: { oid: head },
                             author: { id: AUTHOR_BOT_NODE_ID, login: 'renamed-author', __typename: null },
+                        },
+                    },
+                },
+            },
+        ],
+        [
+            'missing author ID',
+            {
+                data: {
+                    deletePullRequestReview: {
+                        clientMutationId: reviewId,
+                        pullRequestReview: {
+                            id: reviewId,
+                            state: 'PENDING',
+                            body: pendingReviewBody(head),
+                            commit: { oid: head },
+                            author: { id: null, login: 'renamed-author', __typename: 'Bot' },
                         },
                     },
                 },
