@@ -1804,7 +1804,7 @@ function repairManagedCommentedReviewEnvelopes(
             repairedReviewIds.has(candidate.review.id) ||
             candidate.review.id === preservedImmutableReviewId ||
             isImmutableEmptySubmittedReview(candidate.review) ||
-            candidate.review.body !== ''
+            candidate.review.body.trim() !== ''
         ) {
             continue;
         }

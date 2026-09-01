@@ -276,6 +276,7 @@ type Input = {
     addExactPendingReplyMarker?: boolean;
     exactPendingReplyFullDatabaseId?: string;
     addPendingReplyMarkerToResolvedThread?: boolean;
+    resolvedPendingReplyBody?: string;
     resolvedPendingReplyFullDatabaseId?: string;
     attachConcurrentManagedPendingReplyAfterLostCreate?: boolean;
     attachManagedPendingReplyOnFirstInspect?: boolean;
@@ -461,7 +462,7 @@ function fakePort(input: Input = {}) {
         comments.splice(0, comments.length, ...otherComments, ...existingReplies.reverse());
     }
     if (input.addPendingReplyMarkerToResolvedThread) {
-        pushReview('PRR_resolved_pending', 'PENDING', expectedReviewBody, head);
+        pushReview('PRR_resolved_pending', 'PENDING', input.resolvedPendingReplyBody ?? expectedReviewBody, head);
         pushReply(
             'PRRC_resolved_pending',
             input.resolvedPendingReplyFullDatabaseId ?? '9223372036854775812',
@@ -5231,6 +5232,8 @@ describe('review thread resolution', () => {
                 `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${head}`,
                 'inspect:3',
                 `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${head}`,
+                'inspect:4',
+                `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${head}`,
                 `inspectAttachedReviewThreads:42:${reviewId}:${pullRequestId}:${head}`,
             ]);
             expect(readLockOid(repository, 42)).toBeUndefined();
@@ -5239,7 +5242,7 @@ describe('review thread resolution', () => {
         }
     });
 
-    it('reconciles only the canonical managed pending review before releasing an immutable submitted-review recovery lock', () => {
+    it('backfills a whitespace-only pending review before reconciling it against an immutable submitted-review recovery lock', () => {
         const repository = createTemporaryGitRepository();
         const {
             port: basePort,
@@ -5253,11 +5256,15 @@ describe('review thread resolution', () => {
             existingReplyReviewState: 'COMMENTED',
             existingReplyReviewBody: '',
             addPendingReplyMarkerToResolvedThread: true,
+            resolvedPendingReplyBody: ' \n\t ',
         });
         const port: ResolveReviewThreadPort = {
             ...basePort,
-            updateReviewBody: () => {
-                throw new Error('immutable submitted review must not be updated');
+            updateReviewBody: (currentReviewId, body, commitOid, expectedReview) => {
+                if (currentReviewId === reviewId) {
+                    throw new Error('immutable submitted review must not be updated');
+                }
+                return basePort.updateReviewBody(currentReviewId, body, commitOid, expectedReview);
             },
         };
         const mutation = {
@@ -5276,8 +5283,8 @@ describe('review thread resolution', () => {
                 recoverReviewResolutionLockOwnerState(42, owner, port)
             );
 
+            expect(calls).toContain('updateReview:PRR_resolved_pending');
             expect(calls).toContain('deleteReview:PRR_resolved_pending');
-            expect(calls.filter((call) => call.startsWith('updateReview:'))).toEqual([]);
             expect(state().reviews).toEqual([expect.objectContaining({ id: reviewId, state: 'COMMENTED', body: '' })]);
             expect(readLockOid(repository, 42)).toBeUndefined();
         } finally {
@@ -12953,6 +12960,42 @@ describe('review thread resolution', () => {
         expect(state().comments.filter((comment) => comment.body === 'Done')).toEqual([
             expect.objectContaining({ id: replyId, reviewId }),
         ]);
+    });
+    it('backfills a whitespace-only COMMENTED duplicate while preserving the exact immutable envelope', () => {
+        const {
+            port: basePort,
+            calls,
+            authorNodeId,
+            state,
+        } = fakePort({
+            isResolved: true,
+            initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+            initialResolvedByType: 'User',
+            existingReplyCount: 2,
+            existingReplyReviewBody: '',
+            secondaryReplyReviewBody: ' \n\t ',
+            existingReplyFullDatabaseIds: ['9223372036854775809', '9223372036854775808'],
+        });
+        const port: ResolveReviewThreadPort = {
+            ...basePort,
+            updateReviewBody: (currentReviewId, body, commitOid, expectedReview) => {
+                if (currentReviewId === reviewId) {
+                    throw new Error('immutable submitted review must not be updated');
+                }
+                return basePort.updateReviewBody(currentReviewId, body, commitOid, expectedReview);
+            },
+        };
+
+        expect(resolveReviewThread(42, threadId, head, authorNodeId, port)).toBe(
+            `review-thread-resolution-reconciled-immutable-empty-submitted-review:42:${threadId}`
+        );
+
+        expect(calls.filter((call) => call.startsWith('updateReview:'))).toEqual(['updateReview:PRR_existing_1']);
+        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual(['delete:PRRC_existing_1']);
+        expect(state().reviews.find((review) => review.id === reviewId)).toMatchObject({
+            state: 'COMMENTED',
+            body: '',
+        });
     });
     it('fails without deletion when the preferred immutable marker disappears before duplicate convergence', () => {
         const {
