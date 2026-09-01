@@ -2,7 +2,7 @@ import {
     projectIdentityTransitionConfiguration,
     projectIdentityTransitionDependencies,
     type ProjectIdentityTransitionDependencies,
-} from './helpers/projectIdentityTransitionConfiguration';
+} from '../../events/projectIdentityTransitionConfiguration';
 
 export { projectIdentityTransitionDependencies };
 

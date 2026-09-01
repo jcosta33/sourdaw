@@ -1,4 +1,5 @@
 import { mountBrowserDisplayScaleHost, resetBrowserDisplayScaleForChildStartup } from './browserDisplayScaleHost';
+import { rejectIdentityTransitionOnBootstrapFailure } from './rejectIdentityTransitionOnBootstrapFailure';
 import { reloadApplication } from './reloadApplication';
 import { resolveAppComposition } from './resolveAppComposition';
 
@@ -24,9 +25,13 @@ async function renderApplication(): Promise<void> {
     // A remounted iframe has a 5s window for AppShell. Bootstrap's import graph
     // includes WASM and must not occupy that window; AppShell effects await init.
     void import('./bootstrap').catch((error: unknown) => {
-        void import('#/modules/Project/useCases').then(({ failProjectIdentityTransitionDependencies }) => {
-            failProjectIdentityTransitionDependencies(error);
-        });
+        void import('./rejectIdentityTransitionOnBootstrapFailure')
+            .then(({ rejectIdentityTransitionOnBootstrapFailure: reject }) => {
+                reject(error);
+            })
+            .catch(() => {
+                rejectIdentityTransitionOnBootstrapFailure(error);
+            });
     });
     const [, { createRoot }, { App }, { registerNotificationEventBus }] = await Promise.all([
         import('#/styles/main.css'),

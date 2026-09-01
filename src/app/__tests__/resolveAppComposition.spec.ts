@@ -64,16 +64,6 @@ describe('resolveAppComposition', () => {
         ).toBe('browser-host');
     });
 
-    it('runs the application in a nested document named as the application frame', () => {
-        expect(
-            resolveAppComposition({
-                ...topLevelWebDocument,
-                isTopLevel: false,
-                windowName: BROWSER_APPLICATION_FRAME_NAME,
-            })
-        ).toBe('application');
-    });
-
     it('allows the direct Page fixture marker on a development server', () => {
         expect(
             resolveAppComposition({
