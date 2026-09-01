@@ -343,6 +343,7 @@ type ReviewResolutionLockInspectionPort = {
 type ReviewResolutionLockRecoveryPort = {
     updateRef?: (primaryRoot: string, args: string[]) => boolean;
     updateRefsTransaction?: (primaryRoot: string, commands: string[]) => boolean;
+    releaseRefsTransaction?: (primaryRoot: string, commands: string[]) => boolean;
     executionFence?: ReviewResolutionExecutionFence;
     platform?: NodeJS.Platform;
 };
@@ -1605,7 +1606,7 @@ function hasCanonicalCommentedReview(comment: ReviewComment, context: Resolution
     );
 }
 
-function hasOneCanonicalCommentedReplyAfterExcluding(
+function hasCanonicalCommentedReplyAfterExcluding(
     thread: ReviewThread,
     context: ResolutionReviewContext,
     excludedReplyId: string
@@ -1613,7 +1614,7 @@ function hasOneCanonicalCommentedReplyAfterExcluding(
     return (
         managedReplyMarkers(thread, context, ['COMMENTED'], false).filter(
             (candidate) => candidate.marker.id !== excludedReplyId
-        ).length === 1
+        ).length > 0
     );
 }
 
@@ -3589,7 +3590,11 @@ export function recoverPullRequestReviewResolutionLock<Value>(
     pushActiveReviewResolutionLock(active);
     try {
         const reconciled = reconcile(active.owner);
-        releaseReviewResolutionAndSharedMutationLocks(primaryRoot, active);
+        releaseReviewResolutionAndSharedMutationLocks(
+            primaryRoot,
+            active,
+            port.releaseRefsTransaction ?? updateReviewResolutionLockRefsTransaction
+        );
         popActiveReviewResolutionLock(active);
         return reconciled;
     } catch (error) {
@@ -3692,14 +3697,21 @@ function recoveredReviewResolutionLockOwner(
     };
 }
 
-function releaseReviewResolutionAndSharedMutationLocks(primaryRoot: string, active: ActiveReviewResolutionLock): void {
+function releaseReviewResolutionAndSharedMutationLocks(
+    primaryRoot: string,
+    active: ActiveReviewResolutionLock,
+    updateRefsTransaction: (
+        primaryRoot: string,
+        commands: string[]
+    ) => boolean = updateReviewResolutionLockRefsTransaction
+): void {
     if (active.owner.version === 5) {
         releasePullRequestReviewResolutionLock(primaryRoot, active.ref, active.oid, active.number);
         return;
     }
     const sharedRef = pullRequestMutationLockRef(active.number);
     if (
-        !updateReviewResolutionLockRefsTransaction(primaryRoot, [
+        !updateRefsTransaction(primaryRoot, [
             `delete ${active.ref} ${active.oid}`,
             `delete ${sharedRef} ${active.owner.sharedMutationOwnerOid}`,
         ])
@@ -4512,7 +4524,7 @@ function hasRecoveredReviewResolutionMutation(
         case 'deleteReply':
             return (
                 thread.comments.every((comment) => comment.id !== mutation.replyId) &&
-                hasOneCanonicalCommentedReplyAfterExcluding(thread, context, mutation.replyId)
+                hasCanonicalCommentedReplyAfterExcluding(thread, context, mutation.replyId)
             );
         case 'deletePendingReview':
             return (
@@ -5025,7 +5037,7 @@ export function recoverReviewResolutionLockOwnerState(
             break;
         }
         case 'deleteReply':
-            if (!hasOneCanonicalCommentedReplyAfterExcluding(inspection.thread!, context, mutation.replyId)) {
+            if (!hasCanonicalCommentedReplyAfterExcluding(inspection.thread!, context, mutation.replyId)) {
                 fail(unreconciledReviewResolutionMutationMessage(number, mutation));
             }
             if (hasRecoveredReviewResolutionMutation(number, owner, inspection, context, inspection.thread!, port)) {
