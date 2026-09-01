@@ -161,7 +161,13 @@ export type ReviewResolutionLockMutation =
           marker?: ReviewResolutionMarkerSnapshot;
       }
     | { phase: 'resolveThread'; epoch: number }
-    | { phase: 'deleteReply'; epoch: number; replyId: string; immutableEnvelope?: ReviewResolutionMarkerSnapshot }
+    | {
+          phase: 'deleteReply';
+          epoch: number;
+          replyId: string;
+          immutableEnvelope?: ReviewResolutionMarkerSnapshot;
+          target?: ReviewResolutionMarkerSnapshot;
+      }
     | {
           phase: 'deletePendingReview';
           epoch: number;
@@ -270,7 +276,7 @@ export type ResolveReviewThreadPort = {
         expectedMarker?: ReviewComment
     ) => ReviewEnvelopeReceipt;
     resolve: (threadId: string) => ReviewResolutionReceipt;
-    deleteReply: (replyId: string, immutableEnvelope?: ManagedReplyMarker) => void;
+    deleteReply: (replyId: string, immutableEnvelope?: ManagedReplyMarker, target?: ManagedReplyMarker) => void;
     deletePendingReview: (reviewId: string, options?: DeletePendingReviewOptions) => void;
     serializeReviewThreadMutation: <Value>(
         number: number,
@@ -1675,14 +1681,32 @@ function hasExactImmutableDeleteReplySurvivor(
     }
     assertCompletedResolution(thread, context.threadId);
     const managed = managedReplyMarkers(thread, context, ['COMMENTED'], true);
-    return (
-        thread.comments.every((comment) => comment.id !== mutation.replyId) &&
-        managed.some(
-            (candidate) =>
-                matchesReviewResolutionMarkerSnapshot(candidate, mutation.immutableEnvelope!) &&
-                isImmutableEmptySubmittedReview(candidate.review)
-        )
+    return managed.some(
+        (candidate) =>
+            matchesReviewResolutionMarkerSnapshot(candidate, mutation.immutableEnvelope!) &&
+            isImmutableEmptySubmittedReview(candidate.review)
     );
+}
+
+function exactImmutableDeleteReplyTarget(
+    thread: ReviewThread,
+    context: ResolutionReviewContext,
+    mutation: Extract<ReviewResolutionLockMutation, { phase: 'deleteReply' }>
+): ManagedReplyMarker | undefined {
+    if (mutation.target === undefined) {
+        return undefined;
+    }
+    return managedReplyMarkers(thread, context, ['COMMENTED'], true).find((candidate) =>
+        matchesReviewResolutionMarkerSnapshot(candidate, mutation.target!)
+    );
+}
+
+function immutableDeleteReplyTargetIsAbsent(
+    thread: ReviewThread,
+    mutation: Extract<ReviewResolutionLockMutation, { phase: 'deleteReply' }>
+): boolean {
+    const targetId = mutation.target?.markerId ?? mutation.replyId;
+    return thread.comments.every((comment) => comment.id !== targetId);
 }
 
 function hasExactImmutableDeleteReplyTerminal(
@@ -1699,6 +1723,27 @@ function hasExactImmutableDeleteReplyTerminal(
         matchesReviewResolutionMarkerSnapshot(managed[0]!, mutation.immutableEnvelope!) &&
         isImmutableEmptySubmittedReview(managed[0]!.review)
     );
+}
+
+function assertExactImmutableDeleteReplyTerminal(
+    number: number,
+    inspection: ReviewThreadInspection,
+    context: ResolutionReviewContext,
+    mutation: Extract<ReviewResolutionLockMutation, { phase: 'deleteReply' }>,
+    port: ResolveReviewThreadPort
+): void {
+    if (inspection.thread === null || !hasExactImmutableDeleteReplyTerminal(inspection.thread, context, mutation)) {
+        fail(unreconciledReviewResolutionMutationMessage(number, mutation));
+    }
+    const survivor = managedReplyMarkers(inspection.thread, context, ['COMMENTED'], true)[0]!;
+    const attachedThreadIds = [
+        ...new Set(
+            port.inspectAttachedReviewThreadIds(number, survivor.review.id, inspection.pullRequestId, inspection.head)
+        ),
+    ].sort();
+    if (attachedThreadIds.length !== 1 || attachedThreadIds[0] !== context.threadId) {
+        fail(`review thread ${context.threadId} immutable delete survivor is not attached exclusively to this thread`);
+    }
 }
 
 function validatedReplyMarkers(thread: ReviewThread): ReviewComment[] {
@@ -1766,6 +1811,9 @@ function convergeReplyMarkers(
                 candidate.marker.id,
                 preferredReplyId === canonical.marker.id && isImmutableEmptySubmittedReview(canonical.review)
                     ? canonical
+                    : undefined,
+                preferredReplyId === canonical.marker.id && isImmutableEmptySubmittedReview(canonical.review)
+                    ? candidate
                     : undefined
             );
         }
@@ -2566,7 +2614,7 @@ export function shellPort(
             markRemoteMutationAttempt();
             return resolveThread(id, mutationGh);
         },
-        deleteReply: (id, immutableEnvelope) => {
+        deleteReply: (id, immutableEnvelope, target) => {
             const active = activeReviewResolutionLocks.at(-1);
             if (active === undefined) {
                 fail('review reply deletion is not fenced by the active review-resolution lock');
@@ -2576,7 +2624,10 @@ export function shellPort(
                 replyId: id,
                 ...(immutableEnvelope === undefined
                     ? {}
-                    : { immutableEnvelope: reviewResolutionMarkerSnapshot(immutableEnvelope) }),
+                    : {
+                          immutableEnvelope: reviewResolutionMarkerSnapshot(immutableEnvelope),
+                          ...(target === undefined ? {} : { target: reviewResolutionMarkerSnapshot(target) }),
+                      }),
             });
             markRemoteMutationAttempt();
             return deleteReply(id, mutationGh);
@@ -3101,6 +3152,7 @@ function parseReviewResolutionLockMutation(value: unknown, label: string): Revie
             fail(label);
         }
         const immutableEnvelope = (value as { immutableEnvelope?: unknown }).immutableEnvelope;
+        const target = (value as { target?: unknown }).target;
         return {
             phase,
             epoch,
@@ -3108,6 +3160,7 @@ function parseReviewResolutionLockMutation(value: unknown, label: string): Revie
             ...(immutableEnvelope === undefined
                 ? {}
                 : { immutableEnvelope: parseReviewResolutionMarkerSnapshot(immutableEnvelope, label) }),
+            ...(target === undefined ? {} : { target: parseReviewResolutionMarkerSnapshot(target, label) }),
         };
     }
     if (phase === 'deletePendingReview') {
@@ -5091,7 +5144,7 @@ function hasRecoveredReviewResolutionMutation(
             );
         case 'deleteReply':
             return (
-                thread.comments.every((comment) => comment.id !== mutation.replyId) &&
+                immutableDeleteReplyTargetIsAbsent(thread, mutation) &&
                 (mutation.immutableEnvelope === undefined
                     ? hasCanonicalCommentedReplyAfterExcluding(thread, context, mutation.replyId)
                     : hasExactImmutableDeleteReplySurvivor(thread, context, mutation))
@@ -5687,11 +5740,34 @@ export function recoverReviewResolutionLockOwnerState(
             break;
         }
         case 'deleteReply':
-            if (
-                mutation.immutableEnvelope === undefined
-                    ? !hasCanonicalCommentedReplyAfterExcluding(inspection.thread!, context, mutation.replyId)
-                    : !hasExactImmutableDeleteReplySurvivor(inspection.thread!, context, mutation)
-            ) {
+            if (mutation.immutableEnvelope !== undefined) {
+                if (!hasExactImmutableDeleteReplySurvivor(inspection.thread!, context, mutation)) {
+                    fail(unreconciledReviewResolutionMutationMessage(number, mutation));
+                }
+                const target = exactImmutableDeleteReplyTarget(inspection.thread!, context, mutation);
+                if (!immutableDeleteReplyTargetIsAbsent(inspection.thread!, mutation)) {
+                    if (target === undefined) {
+                        fail(unreconciledReviewResolutionMutationMessage(number, mutation));
+                    }
+                    assertRecoveryHeadMatchesOwner(inspection.head, owner.head);
+                    const survivor = managedReplyMarkers(inspection.thread!, context, ['COMMENTED'], true).find(
+                        (candidate) =>
+                            matchesReviewResolutionMarkerSnapshot(candidate, mutation.immutableEnvelope!) &&
+                            isImmutableEmptySubmittedReview(candidate.review)
+                    );
+                    if (survivor === undefined) {
+                        fail(unreconciledReviewResolutionMutationMessage(number, mutation));
+                    }
+                    port.deleteReply(target.marker.id, survivor, target);
+                    inspection = inspectReviewResolutionRecovery(number, owner, port);
+                    if (
+                        !immutableDeleteReplyTargetIsAbsent(inspection.thread!, mutation) ||
+                        !hasExactImmutableDeleteReplySurvivor(inspection.thread!, context, mutation)
+                    ) {
+                        fail(unreconciledReviewResolutionMutationMessage(number, mutation));
+                    }
+                }
+            } else if (!hasCanonicalCommentedReplyAfterExcluding(inspection.thread!, context, mutation.replyId)) {
                 fail(unreconciledReviewResolutionMutationMessage(number, mutation));
             }
             if (hasRecoveredReviewResolutionMutation(number, owner, inspection, context, inspection.thread!, port)) {
@@ -5702,12 +5778,9 @@ export function recoverReviewResolutionLockOwnerState(
                         : !hasExactImmutableDeleteReplyTerminal(inspection.thread!, context, mutation))
                 ) {
                     inspection = continueRecoveredReviewResolution(number, owner, port);
-                    if (
-                        mutation.immutableEnvelope !== undefined &&
-                        !hasExactImmutableDeleteReplyTerminal(inspection.thread!, context, mutation)
-                    ) {
-                        fail(unreconciledReviewResolutionMutationMessage(number, mutation));
-                    }
+                }
+                if (mutation.immutableEnvelope !== undefined) {
+                    assertExactImmutableDeleteReplyTerminal(number, inspection, context, mutation, port);
                 }
                 break;
             }
