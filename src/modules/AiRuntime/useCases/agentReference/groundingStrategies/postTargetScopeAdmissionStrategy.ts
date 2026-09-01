@@ -165,15 +165,19 @@ function hasReferenceOutsideMatchedIntent(text: string, intentPhrase: string, re
     });
 }
 
-function isUniversalClearSolosScope(actionScope: PostTargetActionScope, context: ProjectContext): boolean {
+function isUniversalClearSolosScope(
+    actionScope: PostTargetActionScope,
+    context: ProjectContext,
+    prompt: string
+): boolean {
     if (!universalClearSolosIntentPhrases.has(normalizePromptText(actionScope.matchedIntentPhrase))) {
         return false;
     }
-    const normalizedScope = normalizePromptText(actionScope.text);
-    const hasRestriction = clearSolosRestrictionPatterns.some((pattern) => pattern.test(normalizedScope));
+    const restrictionEvidence = normalizePromptText(prompt);
+    const hasRestriction = clearSolosRestrictionPatterns.some((pattern) => pattern.test(restrictionEvidence));
     const hasRelativeTrackReference =
-        /\b(?:selected|current|this|that|these|those)\s+tracks?\b/u.test(normalizedScope) ||
-        /\btrack\s+selection\b/u.test(normalizedScope);
+        /\b(?:selected|current|this|that|these|those)\s+tracks?\b/u.test(restrictionEvidence) ||
+        /\btrack\s+selection\b/u.test(restrictionEvidence);
     if (hasRestriction || hasRelativeTrackReference) {
         return false;
     }
@@ -183,11 +187,7 @@ function isUniversalClearSolosScope(actionScope: PostTargetActionScope, context:
     );
 }
 
-function validateRemoveFromVcaGroupEvidence(
-    actionScope: PostTargetActionScope,
-    trackId: unknown,
-    context: ProjectContext
-): string | null {
+function validateRemoveFromVcaGroupEvidence(trackId: unknown, context: ProjectContext, prompt: string): string | null {
     if (typeof trackId !== 'string') {
         return 'Provider VCA membership target is not grounded in the user request';
     }
@@ -195,7 +195,7 @@ function validateRemoveFromVcaGroupEvidence(
     let hasAmbiguousGroupReference = false;
     for (const group of context.vcaGroups ?? []) {
         const result = resolveAgentReference({
-            prompt: actionScope.text,
+            prompt,
             assertedId: group.id,
             capability: 'vca-group',
             context,
@@ -263,15 +263,15 @@ export const postTargetScopeAdmissionStrategyDefinitions = [
     },
     {
         name: 'clearSolos',
-        transform: ({ actionScope, context }) =>
-            isUniversalClearSolosScope(actionScope, context)
+        transform: ({ actionScope, context, prompt }) =>
+            isUniversalClearSolosScope(actionScope, context, prompt)
                 ? null
                 : 'Provider clear-solos scope is not explicitly universal',
     },
     {
         name: 'removeFromVca',
-        transform: ({ actionScope, context, groundedArguments }) =>
-            validateRemoveFromVcaGroupEvidence(actionScope, groundedArguments.trackId, context),
+        transform: ({ context, groundedArguments, prompt }) =>
+            validateRemoveFromVcaGroupEvidence(groundedArguments.trackId, context, prompt),
     },
     { name: 'quantizeNotes', transform: midiWholeClipStrategy },
     { name: 'transposeNotes', transform: midiWholeClipStrategy },

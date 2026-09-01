@@ -353,6 +353,31 @@ describe('resolveAgentReference', () => {
         });
     });
 
+    it('resolves a literal track id when a duplicate name is a token of that id', () => {
+        const projectState = createProjectState();
+        const firstTrack = projectState.tracks[0];
+        if (!firstTrack) {
+            throw new Error('Expected a track fixture');
+        }
+        const duplicateNameContext = {
+            ...projectState,
+            tracks: [
+                { ...firstTrack, id: 'track-guitar', name: 'Guitar' },
+                { ...firstTrack, id: 'track-guitar-2', name: 'Guitar' },
+            ],
+        };
+
+        expect(resolveTrack('delete track-guitar', 'track-guitar', duplicateNameContext)).toEqual({
+            status: 'resolved',
+            id: 'track-guitar',
+            evidence: 'literal-id',
+        });
+        expect(resolveTrack('delete Guitar', 'track-guitar', duplicateNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+    });
+
     it('resolves editable clips by literal ID, unique exact name, and one explicit selection', () => {
         expect(resolveClip('trim clip-intro start to beat 2', 'clip-intro')).toEqual({
             status: 'resolved',

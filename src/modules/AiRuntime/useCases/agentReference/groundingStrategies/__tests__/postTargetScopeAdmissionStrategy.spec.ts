@@ -96,4 +96,85 @@ describe('post-target scope admission strategies', () => {
         );
         expect(groundPostTargetScopeAdmission({ ...input, actionName: 'setTempo' })).toBeNull();
     });
+
+    it('rejects a clear-solos restriction that lives outside the split clause', () => {
+        const input = {
+            actionName: 'clearSolos' as const,
+            actionScope: { matchedIntentPhrase: 'clear all solos', text: 'clear all solos' },
+            bulkMutedEmptyTrackDeletionTargetIds: null,
+            context,
+            groundedArguments: {},
+            plannedActionNames: ['clearSolos'],
+        };
+
+        expect(
+            groundPostTargetScopeAdmission({
+                ...input,
+                prompt: 'clear all solos',
+            })
+        ).toBeNull();
+        expect(
+            groundPostTargetScopeAdmission({
+                ...input,
+                prompt: 'clear all solos all but Unnamed',
+            })
+        ).toBe('Provider clear-solos scope is not explicitly universal');
+        expect(
+            groundPostTargetScopeAdmission({
+                ...input,
+                prompt: 'clear all solos but not Unnamed',
+            })
+        ).toBe('Provider clear-solos scope is not explicitly universal');
+    });
+
+    it('rejects a dual VCA group reference that lives outside the split clause', () => {
+        const vocals = {
+            id: 'track-vocals',
+            name: 'Vocals',
+            kind: 'audio' as const,
+            muted: false,
+            soloed: false,
+            soloSafe: false,
+            armed: false,
+            gain: 0.8,
+            pan: 0,
+            automationMode: 'read' as const,
+            outputId: 'master',
+            clipCount: 0,
+            deviceCount: 0,
+            clips: [],
+            devices: [],
+            sends: [],
+            vcaGroupId: 'vca-drums',
+        };
+        const membershipContext: ProjectContext = {
+            ...context,
+            tracks: [vocals],
+            vcaGroups: [
+                { id: 'vca-drums', name: 'Drum VCA', gain: 0.75, muted: false, trackIds: [vocals.id] },
+                { id: 'vca-vocals', name: 'Vocal VCA', gain: 1, muted: false, trackIds: [] },
+            ],
+        };
+        const input = {
+            actionName: 'removeFromVca' as const,
+            actionScope: { matchedIntentPhrase: 'unassign', text: 'unassign Vocals from Drum VCA' },
+            bulkMutedEmptyTrackDeletionTargetIds: null,
+            context: membershipContext,
+            groundedArguments: { trackId: vocals.id },
+            plannedActionNames: ['removeFromVca'],
+        };
+
+        expect(
+            groundPostTargetScopeAdmission({
+                ...input,
+                prompt: 'unassign Vocals from Drum VCA',
+            })
+        ).toBeNull();
+        expect(
+            groundPostTargetScopeAdmission({
+                ...input,
+                prompt: 'unassign Vocals from Drum VCA and Vocal VCA',
+            })
+        ).toBe('Provider VCA group reference does not match the track current membership');
+    });
 });
