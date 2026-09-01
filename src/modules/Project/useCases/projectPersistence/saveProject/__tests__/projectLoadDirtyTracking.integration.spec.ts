@@ -58,7 +58,15 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     prepareCachedAudioBuffersFromIdb: mockPrepareCachedAudioBuffersFromIdb,
     resetAudioGraph: mockResetAudioGraph,
 }));
-vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: mockClearUndoHistory, executeAppAction: vi.fn() }));
+vi.mock('#/modules/Command/useCases', () => ({
+    clearUndoHistory: mockClearUndoHistory,
+    executeAppAction: vi.fn(),
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    isAppActionCommittedError: vi.fn(() => false),
+    pushUndoEntry: vi.fn(),
+    resetActionReplayAuthority: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
+}));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     compactProject: mockCompactProject,
     projectActionHistoryToStore: mockProjectActionHistoryToStore,
