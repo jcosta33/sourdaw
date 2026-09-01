@@ -1,14 +1,22 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { createMock } from '#/infra/di/testing/createMock';
+import type { MidiOutPayload } from '#/modules/WorkspaceShell/events';
+
+import { SetlistEventBus } from '../setlistEventBus';
 
 vi.mock('../advanceSetlistItemEnd', () => ({
     advanceSetlistItemEnd: vi.fn(),
 }));
 
-type EventBusShape = {
-    emit: ReturnType<typeof vi.fn>;
-};
+class TestSetlistEventBus extends SetlistEventBus {
+    readonly emitMock = vi
+        .fn<(event: 'midi.out', payload: MidiOutPayload) => Promise<void>>()
+        .mockResolvedValue(undefined);
+
+    emit(event: 'midi.out', payload: MidiOutPayload): Promise<void> {
+        return this.emitMock(event, payload);
+    }
+}
 
 describe('setSetlistEventBus', () => {
     const rafCallbacks: FrameRequestCallback[] = [];
@@ -36,10 +44,9 @@ describe('setSetlistEventBus', () => {
             import('../setlistEventBus'),
         ]);
         Container.clear();
-        const eventBus = createMock<EventBusShape>();
-        eventBus.emit.mockResolvedValue(undefined);
+        const eventBus = new TestSetlistEventBus();
 
-        setSetlistEventBus(eventBus as unknown as InstanceType<typeof SetlistEventBus>);
+        setSetlistEventBus(eventBus);
 
         expect(requestAnimationFrameMock).toHaveBeenCalledTimes(1);
         expect(Container.get(SetlistEventBus)).toBe(eventBus);

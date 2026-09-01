@@ -57,5 +57,7 @@ describe('startSetlistItemEndObserver', () => {
         rafCallbacks[0]?.(0);
 
         expect(advanceSetlistItemEndMock).toHaveBeenCalledTimes(1);
+        expect(requestAnimationFrameMock).toHaveBeenCalledTimes(2);
+        expect(rafCallbacks[1]).toBeTypeOf('function');
     });
 });

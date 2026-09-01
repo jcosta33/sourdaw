@@ -227,6 +227,57 @@ describe('advanceSetlistItemEnd', () => {
         expect(stopPlayback).not.toHaveBeenCalled();
     });
 
+    it('does not cancel a pending gap advance when the playhead wraps during the gap', () => {
+        seed({
+            autoAdvance: true,
+            currentIndex: 0,
+            items: [
+                makeItem({ id: 'a', autoStop: false, gapSeconds: 2, estimatedDuration: 4 }),
+                makeItem({ id: 'b', autoStop: false, gapSeconds: 0, estimatedDuration: 4 }),
+            ],
+        });
+        armAtBeat(8);
+        playheadPositionRef.current = 16;
+        advanceSetlistItemEnd();
+
+        expect(setlistStore.value?.currentIndex).toBe(0);
+
+        playheadPositionRef.current = 0;
+        advanceSetlistItemEnd();
+
+        expect(setlistStore.value?.currentIndex).toBe(0);
+
+        vi.advanceTimersByTime(2000);
+
+        expect(setlistStore.value?.currentIndex).toBe(1);
+        expect(stopPlayback).not.toHaveBeenCalled();
+    });
+
+    it('ends only after beat-derived elapsed time reaches estimatedDuration, not beat delta alone', () => {
+        seed({
+            autoAdvance: true,
+            currentIndex: 0,
+            items: [
+                makeItem({ id: 'a', autoStop: false, gapSeconds: 0, estimatedDuration: 4 }),
+                makeItem({ id: 'b', autoStop: false, gapSeconds: 0, estimatedDuration: 4 }),
+            ],
+        });
+        armAtBeat(0);
+        playheadPositionRef.current = 4;
+        advanceSetlistItemEnd();
+        vi.runOnlyPendingTimers();
+
+        expect(setlistStore.value?.currentIndex).toBe(0);
+        expect(stopPlayback).not.toHaveBeenCalled();
+
+        playheadPositionRef.current = 8;
+        advanceSetlistItemEnd();
+        vi.runOnlyPendingTimers();
+
+        expect(setlistStore.value?.currentIndex).toBe(1);
+        expect(stopPlayback).not.toHaveBeenCalled();
+    });
+
     it('re-arms when the playhead moves backward and does not treat wrap as item end', () => {
         seed({
             autoAdvance: true,

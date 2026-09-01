@@ -83,6 +83,9 @@ export function advanceSetlistItemEnd(): void {
     // Seek-back and loop wrap both drop the playhead behind the arm point.
     // Re-arm so wrap is not treated as the item finishing.
     if (startBeat !== null && currentBeat < startBeat) {
+        if (itemEndConsumed) {
+            return;
+        }
         armItemStart(currentBeat, currentIndex);
         return;
     }
