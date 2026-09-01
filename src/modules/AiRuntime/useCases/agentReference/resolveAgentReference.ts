@@ -19,6 +19,11 @@ type ReferenceCandidate = {
     name: string;
 };
 
+type ReferenceSpan = {
+    end: number;
+    start: number;
+};
+
 type AgentReferenceEvidence = 'literal-id' | 'exact-name' | 'selection';
 
 type ResolveAgentReferenceResult =
@@ -64,12 +69,30 @@ function normalizeReferenceText(value: string): string {
         .trim();
 }
 
-function containsExactPhrase(prompt: string, reference: string): boolean {
-    const normalizedReference = normalizeReferenceText(reference);
-    if (normalizedReference.length === 0) {
-        return false;
+function escapeRegExp(value: string): string {
+    return value.replaceAll(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+}
+
+function getExactPhraseSpans(prompt: string, reference: string): ReferenceSpan[] {
+    const tokens = normalizeReferenceText(reference).split(' ').filter(Boolean);
+    if (tokens.length === 0) {
+        return [];
     }
-    return ` ${normalizeReferenceText(prompt)} `.includes(` ${normalizedReference} `);
+    const pattern = new RegExp(
+        `(?<![\\p{L}\\p{N}])${tokens.map(escapeRegExp).join('[^\\p{L}\\p{N}]+')}(?![\\p{L}\\p{N}])`,
+        'giu'
+    );
+    const spans: ReferenceSpan[] = [];
+    for (const match of prompt.matchAll(pattern)) {
+        if (match.index !== undefined) {
+            spans.push({ start: match.index, end: match.index + match[0].length });
+        }
+    }
+    return spans;
+}
+
+function containsExactPhrase(prompt: string, reference: string): boolean {
+    return getExactPhraseSpans(prompt, reference).length > 0;
 }
 
 function containsQualifiedMasterOutputReference(prompt: string): boolean {
@@ -315,21 +338,25 @@ function removeOverlappedExactNameEvidence(
 
 function removeExactNameEvidenceOverlappedByLiteralId(
     candidates: readonly ReferenceCandidate[],
-    evidenceById: Map<string, AgentReferenceEvidence>
+    evidenceById: Map<string, AgentReferenceEvidence>,
+    prompt: string
 ): void {
     for (const candidate of candidates) {
         if (evidenceById.get(candidate.id) !== 'exact-name') {
             continue;
         }
-        const normalizedName = normalizeReferenceText(candidate.name);
-        const hasOverlappingLiteralId = candidates.some((otherCandidate) => {
-            if (otherCandidate.id === candidate.id || evidenceById.get(otherCandidate.id) !== 'literal-id') {
-                return false;
-            }
-            const normalizedId = normalizeReferenceText(otherCandidate.id);
-            return ` ${normalizedId} `.includes(` ${normalizedName} `);
-        });
-        if (hasOverlappingLiteralId) {
+        const nameSpans = getExactPhraseSpans(prompt, candidate.name);
+        const literalIdSpans = candidates.flatMap((otherCandidate) =>
+            otherCandidate.id !== candidate.id && evidenceById.get(otherCandidate.id) === 'literal-id'
+                ? getExactPhraseSpans(prompt, otherCandidate.id)
+                : []
+        );
+        const isFullyCoveredByLiteralId = nameSpans.every((nameSpan) =>
+            literalIdSpans.some(
+                (literalIdSpan) => literalIdSpan.start <= nameSpan.start && literalIdSpan.end >= nameSpan.end
+            )
+        );
+        if (isFullyCoveredByLiteralId) {
             evidenceById.delete(candidate.id);
         }
     }
@@ -408,7 +435,7 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
     }
 
     removeOverlappedExactNameEvidence(candidates, evidenceById);
-    removeExactNameEvidenceOverlappedByLiteralId(candidates, evidenceById);
+    removeExactNameEvidenceOverlappedByLiteralId(candidates, evidenceById, input.prompt);
 
     if (evidenceById.size === 0) {
         return { status: 'rejected', reason: 'ungrounded-target' };

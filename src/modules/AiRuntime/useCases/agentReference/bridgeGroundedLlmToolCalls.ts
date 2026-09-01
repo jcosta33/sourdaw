@@ -1653,14 +1653,26 @@ function getTargetPromptScope(
 }
 
 function getPostTargetScope(
+    actionName: string,
     actionScope: ActionPromptScope,
     plannedActionNames: readonly string[],
     prompt: string
 ): ActionPromptScope {
-    if (plannedActionNames.length !== 1) {
+    if (plannedActionNames.length === 1) {
+        return { ...actionScope, text: prompt, masked: prompt };
+    }
+    if (actionName !== 'clearSolos') {
         return actionScope;
     }
-    return { ...actionScope, text: prompt, masked: prompt };
+    const restrictionMatch = /\bbut\s+(?:keep|leave|preserve|retain|not)\b[\s\S]*$/iu.exec(prompt);
+    if (!restrictionMatch) {
+        return actionScope;
+    }
+    return {
+        ...actionScope,
+        text: `${actionScope.text} ${restrictionMatch[0]}`,
+        masked: `${actionScope.masked} ${restrictionMatch[0]}`,
+    };
 }
 
 function hasClearSolosRestriction(prompt: string): boolean {
@@ -3693,7 +3705,7 @@ function groundToolCall({
     }
     const scopeAdmissionRejection = groundPostTargetScopeAdmission({
         actionName: call.name,
-        actionScope: getPostTargetScope(actionScope, plannedActionNames, prompt),
+        actionScope: getPostTargetScope(call.name, actionScope, plannedActionNames, prompt),
         bulkMutedEmptyTrackDeletionTargetIds,
         context,
         groundedArguments,

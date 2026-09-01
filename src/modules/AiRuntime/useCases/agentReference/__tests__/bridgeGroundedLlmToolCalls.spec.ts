@@ -2726,6 +2726,19 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'clear all solos and mute Guitar',
             soloedContext
         );
+        const restrictedMultiAction = bridge(
+            [
+                { name: 'clearSolos', arguments: {} },
+                { name: 'muteTrack', arguments: { trackId: guitar.id, muted: true } },
+            ],
+            'clear all solos and mute Guitar but keep Vocals soloed',
+            soloedContext
+        );
+        const cancelledClear = bridge(
+            [{ name: 'clearSolos', arguments: {} }],
+            'clear all solos and do not apply it',
+            soloedContext
+        );
         const vocabularyCollisionContext = {
             ...soloedContext,
             tracks: [...soloedContext.tracks, createTrack({ id: 'track-all', name: 'All' })],
@@ -2777,6 +2790,17 @@ describe('bridgeGroundedLlmToolCalls', () => {
             { type: 'clearSolos' },
             { type: 'muteTrack', payload: { trackId: guitar.id, muted: true } },
         ]);
+        expect(restrictedMultiAction.actions).toEqual([
+            { type: 'muteTrack', payload: { trackId: guitar.id, muted: true } },
+        ]);
+        expect(restrictedMultiAction.rejections).toEqual([
+            {
+                index: 0,
+                name: 'clearSolos',
+                reason: 'Provider clear-solos scope is not explicitly universal',
+            },
+        ]);
+        expect(cancelledClear.actions).toEqual([]);
         expect(vocabularyCollision.actions).toEqual([{ type: 'clearSolos' }]);
         expect(scopedVocabularyCollisions.map((result) => result.actions)).toEqual([[], []]);
         expect(hallucinatedClear.actions).toEqual([]);

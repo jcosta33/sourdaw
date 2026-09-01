@@ -363,21 +363,25 @@ describe('resolveAgentReference', () => {
         const overlappingName = {
             ...project.tracks[0]!,
             id: 'track-guitar-two',
-            name: 'Track Guitar',
+            name: 'Guitar',
         };
-        const piano = {
+        const guitarist = {
             ...project.tracks[0]!,
-            id: 'track-piano',
-            name: 'Piano',
+            id: 'track-guitarist',
+            name: 'Track Guitarist',
         };
-        const context = { ...project, tracks: [guitar, overlappingName, piano] };
+        const context = { ...project, tracks: [guitar, overlappingName, guitarist] };
 
         expect(resolveTrack('mute track-guitar', guitar.id, context)).toEqual({
             status: 'resolved',
             id: guitar.id,
             evidence: 'literal-id',
         });
-        expect(resolveTrack('mute track-guitar and Piano', guitar.id, context)).toMatchObject({
+        expect(resolveTrack('mute track-guitar and Guitar', guitar.id, context)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('mute track-guitarist and Guitar', guitarist.id, context)).toMatchObject({
             status: 'rejected',
             reason: 'ambiguous-target',
         });
