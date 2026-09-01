@@ -4164,18 +4164,19 @@ function exactRetirementMutationEvidenceCount(
     inspection: ReviewThreadInspection,
     context: ResolutionReviewContext
 ): number {
-    switch (owner.mutation.phase) {
+    const mutation = owner.mutation;
+    switch (mutation.phase) {
         case 'createPendingReview':
         case 'createPendingReviewSettlement':
-            return exactLandedCreatePendingReviewIds(inspection, context, owner.mutation).length;
+            return exactLandedCreatePendingReviewIds(inspection, context, mutation).length;
         case 'replyDone':
         case 'replyDoneSettlement':
             return managedReplyMarkers(inspection.thread!, context, ['PENDING', 'COMMENTED'], false).filter(
                 (candidate) =>
                     candidate.currentHead &&
-                    candidate.review.id === owner.mutation.reviewId &&
-                    candidate.review.body === owner.mutation.body &&
-                    candidate.review.commitOid === owner.mutation.reviewCommitOid
+                    candidate.review.id === mutation.reviewId &&
+                    candidate.review.body === mutation.body &&
+                    candidate.review.commitOid === mutation.reviewCommitOid
             ).length;
         default:
             return 0;
