@@ -19,6 +19,11 @@ type ReferenceCandidate = {
     name: string;
 };
 
+type ReferenceSpan = {
+    end: number;
+    start: number;
+};
+
 type AgentReferenceEvidence = 'literal-id' | 'exact-name' | 'selection';
 
 type ResolveAgentReferenceResult =
@@ -59,17 +64,100 @@ const reservedClipReferenceWords: ReadonlySet<string> = new Set([
 
 function normalizeReferenceText(value: string): string {
     return value
-        .toLocaleLowerCase()
+        .normalize('NFKD')
+        .toLowerCase()
+        .replaceAll(/\p{M}/gu, '')
         .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
         .trim();
 }
 
-function containsExactPhrase(prompt: string, reference: string): boolean {
-    const normalizedReference = normalizeReferenceText(reference);
-    if (normalizedReference.length === 0) {
-        return false;
+function normalizeSourceSpelling(value: string): string {
+    return value.normalize('NFKD').toLowerCase().replaceAll(/\p{M}/gu, '');
+}
+
+function getSourceTokens(value: string): Array<ReferenceSpan & { value: string }> {
+    const tokens: Array<ReferenceSpan & { value: string }> = [];
+    for (const match of value.matchAll(/[\p{L}\p{N}\p{M}]+/gu)) {
+        if (match.index === undefined) {
+            continue;
+        }
+        const normalized = normalizeReferenceText(match[0]);
+        if (normalized.length > 0) {
+            tokens.push({ start: match.index, end: match.index + match[0].length, value: normalized });
+        }
     }
-    return ` ${normalizeReferenceText(prompt)} `.includes(` ${normalizedReference} `);
+    return tokens;
+}
+
+function getExactPhraseSpans(prompt: string, reference: string): ReferenceSpan[] {
+    const referenceTokens = getSourceTokens(reference).map((token) => token.value);
+    const promptTokens = getSourceTokens(prompt);
+    if (referenceTokens.length === 0) {
+        return [];
+    }
+    const spans: ReferenceSpan[] = [];
+    for (let index = 0; index <= promptTokens.length - referenceTokens.length; index += 1) {
+        const matchedTokens = promptTokens.slice(index, index + referenceTokens.length);
+        if (matchedTokens.every((token, tokenIndex) => token.value === referenceTokens[tokenIndex])) {
+            spans.push({ start: matchedTokens[0]!.start, end: matchedTokens.at(-1)!.end });
+        }
+    }
+    return spans;
+}
+
+function getCodePointBefore(value: string, index: number): string {
+    if (index === 0) {
+        return '';
+    }
+    const precedingCodeUnit = value.charCodeAt(index - 1);
+    const start = precedingCodeUnit >= 0xdc00 && precedingCodeUnit <= 0xdfff ? Math.max(0, index - 2) : index - 1;
+    const codePoint = value.codePointAt(start);
+    return codePoint === undefined ? '' : String.fromCodePoint(codePoint);
+}
+
+function getCodePointAt(value: string, index: number): string {
+    const codePoint = value.codePointAt(index);
+    return codePoint === undefined ? '' : String.fromCodePoint(codePoint);
+}
+
+function getLiteralIdSpans(prompt: string, id: string): ReferenceSpan[] {
+    const normalizedId = normalizeSourceSpelling(id);
+    if (normalizedId.length === 0) {
+        return [];
+    }
+    let value = '';
+    const sourceStarts: number[] = [];
+    const sourceEnds: number[] = [];
+    for (let sourceIndex = 0; sourceIndex < prompt.length;) {
+        const codePoint = prompt.codePointAt(sourceIndex);
+        if (codePoint === undefined) {
+            break;
+        }
+        const character = String.fromCodePoint(codePoint);
+        const normalizedCharacter = normalizeSourceSpelling(character);
+        for (let normalizedIndex = 0; normalizedIndex < normalizedCharacter.length; normalizedIndex += 1) {
+            sourceStarts.push(sourceIndex);
+            sourceEnds.push(sourceIndex + character.length);
+        }
+        value += normalizedCharacter;
+        sourceIndex += character.length;
+    }
+    const spans: ReferenceSpan[] = [];
+    let start = value.indexOf(normalizedId);
+    while (start >= 0) {
+        const end = start + normalizedId.length;
+        const previousCharacter = getCodePointBefore(value, start);
+        const nextCharacter = getCodePointAt(value, end);
+        if (!/[\p{L}\p{N}]/u.test(previousCharacter) && !/[\p{L}\p{N}]/u.test(nextCharacter)) {
+            spans.push({ start: sourceStarts[start]!, end: sourceEnds[end - 1]! });
+        }
+        start = value.indexOf(normalizedId, start + normalizedId.length);
+    }
+    return spans;
+}
+
+function containsExactPhrase(prompt: string, reference: string): boolean {
+    return getExactPhraseSpans(prompt, reference).length > 0;
 }
 
 function containsQualifiedMasterOutputReference(prompt: string): boolean {
@@ -313,6 +401,32 @@ function removeOverlappedExactNameEvidence(
     }
 }
 
+function removeExactNameEvidenceOverlappedByLiteralId(
+    candidates: readonly ReferenceCandidate[],
+    evidenceById: Map<string, AgentReferenceEvidence>,
+    prompt: string
+): void {
+    for (const candidate of candidates) {
+        if (evidenceById.get(candidate.id) !== 'exact-name') {
+            continue;
+        }
+        const nameSpans = getExactPhraseSpans(prompt, candidate.name);
+        const literalIdSpans = candidates.flatMap((otherCandidate) =>
+            otherCandidate.id !== candidate.id && evidenceById.get(otherCandidate.id) === 'literal-id'
+                ? getLiteralIdSpans(prompt, otherCandidate.id)
+                : []
+        );
+        const isFullyCoveredByLiteralId = nameSpans.every((nameSpan) =>
+            literalIdSpans.some(
+                (literalIdSpan) => literalIdSpan.start <= nameSpan.start && literalIdSpan.end >= nameSpan.end
+            )
+        );
+        if (isFullyCoveredByLiteralId) {
+            evidenceById.delete(candidate.id);
+        }
+    }
+}
+
 export function resolveAgentReference(input: ResolveAgentReferenceInput): ResolveAgentReferenceResult {
     const excludedIds = new Set(input.excludedIds ?? []);
     const trackCandidates = getTrackCandidates(input.capability, input.context);
@@ -351,7 +465,7 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
             input.capability === 'vca-group' &&
             reservedVcaGroupReferenceWords.has(normalizeReferenceText(candidate.id)) &&
             !containsQualifiedVcaGroupReference(input.prompt, candidate.id);
-        if (containsExactPhrase(input.prompt, candidate.id) && !hasUnqualifiedReservedVcaId) {
+        if (getLiteralIdSpans(input.prompt, candidate.id).length > 0 && !hasUnqualifiedReservedVcaId) {
             evidenceById.set(candidate.id, 'literal-id');
             continue;
         }
@@ -385,6 +499,7 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
         }
     }
 
+    removeExactNameEvidenceOverlappedByLiteralId(candidates, evidenceById, input.prompt);
     removeOverlappedExactNameEvidence(candidates, evidenceById);
 
     if (evidenceById.size === 0) {
