@@ -5,7 +5,7 @@ Owns live performance setlists, song sequence items, per-song metadata (tempo/ke
 ## Public Contract Surface
 
 - `stores/`: `setlistStore` (`SetlistItem`, `SetlistState`).
-- `useCases/`: `addSetlistItem`, `removeSetlistItem`, `updateSetlistItem`, `reorderSetlistItems`, `renameSetlist`, `goToItem`, `nextItem`, `previousItem`, `getCurrentItem`, `getRemainingDuration`, `getSetlistProgress`, `setCountIn`, `toggleAutoAdvance`, `setSetlistEventBus`, `getSetlistHandlers`.
+- `useCases/`: `addSetlistItem`, `removeSetlistItem`, `updateSetlistItem`, `reorderSetlistItems`, `renameSetlist`, `goToItem`, `nextItem`, `previousItem`, `getCurrentItem`, `getRemainingDuration`, `getSetlistProgress`, `setCountIn`, `toggleAutoAdvance`, `setSetlistEventBus`, `startSetlistItemEndObserver`, `getSetlistHandlers`.
 - `events/`: No public domain event payloads exported.
 - `presentations/views/`: `SetlistPanel`.
 - Handlers: `getSetlistHandlers()`.
