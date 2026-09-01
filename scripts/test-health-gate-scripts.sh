@@ -332,6 +332,7 @@ const expectedGateNeeds = [
     'rust',
     'native-macos',
     'native-windows',
+    'native-parity',
 ];
 
 expect(workflow.name === 'Health gates', 'workflow name must stay Health gates');
