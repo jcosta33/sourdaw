@@ -1,22 +1,24 @@
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type RuntimeAction, type RuntimeActionType } from '../../models/RuntimeAction';
 import { type ToolCallResult } from '../toolCallParser';
+import { createLlmActionStrategyRegistry } from './createLlmActionStrategyRegistry';
 
-export type TransportTimelineCallName = Extract<
-    RuntimeActionType,
-    | 'setTempo'
-    | 'setTimeSignature'
-    | 'setPlayback'
-    | 'stopPlayback'
-    | 'seekPlayhead'
-    | 'setLoopEnabled'
-    | 'setLoopRegion'
-    | 'setPunchIn'
-    | 'setPunchOut'
-    | 'setPunchEnabled'
-    | 'setMetronomeEnabled'
-    | 'setMetronomeVolume'
->;
+export const transportTimelineActionNames = [
+    'setTempo',
+    'setTimeSignature',
+    'setPlayback',
+    'stopPlayback',
+    'seekPlayhead',
+    'setLoopEnabled',
+    'setLoopRegion',
+    'setPunchIn',
+    'setPunchOut',
+    'setPunchEnabled',
+    'setMetronomeEnabled',
+    'setMetronomeVolume',
+] as const satisfies readonly Extract<RuntimeActionType, string>[];
+
+export type TransportTimelineCallName = (typeof transportTimelineActionNames)[number];
 
 type LlmActionRejection = {
     index: number;
@@ -66,19 +68,6 @@ function isValidTimeSignatureDenominator(value: unknown): value is 2 | 4 | 8 | 1
 
 function rejection(index: number, name: string, reason: string): LlmActionRejection {
     return { index, name, reason };
-}
-
-export function createLlmActionStrategyRegistry<Name extends TransportTimelineCallName>(
-    definitions: readonly LlmActionStrategyDefinition<Name>[]
-): ReadonlyMap<Name, TransportTimelineStrategy<Name>> {
-    const registry = new Map<Name, TransportTimelineStrategy<Name>>();
-    for (const definition of definitions) {
-        if (registry.has(definition.name)) {
-            throw new Error(`Duplicate LLM action strategy: ${definition.name}`);
-        }
-        registry.set(definition.name, definition.transform);
-    }
-    return registry;
 }
 
 const transportTimelineStrategyDefinitions = [
@@ -286,24 +275,14 @@ const transportTimelineStrategyDefinitions = [
     },
 ] as const satisfies readonly LlmActionStrategyDefinition<TransportTimelineCallName>[];
 
-type RegisteredTransportTimelineCallName = (typeof transportTimelineStrategyDefinitions)[number]['name'];
-type AllTransportTimelineStrategiesRegistered =
-    Exclude<TransportTimelineCallName, RegisteredTransportTimelineCallName> extends never ? true : never;
-
-function assertAllTransportTimelineStrategiesRegistered(
-    definitions: AllTransportTimelineStrategiesRegistered extends true
-        ? typeof transportTimelineStrategyDefinitions
-        : never
-): typeof transportTimelineStrategyDefinitions {
-    return definitions;
-}
-
-export const transportTimelineStrategyRegistry = createLlmActionStrategyRegistry<TransportTimelineCallName>(
-    assertAllTransportTimelineStrategiesRegistered(transportTimelineStrategyDefinitions)
-);
+export const transportTimelineStrategyRegistry = createLlmActionStrategyRegistry<
+    TransportTimelineCallName,
+    TransportTimelineStrategyInput,
+    RuntimeAction | LlmActionRejection
+>(transportTimelineStrategyDefinitions, transportTimelineActionNames);
 
 function isTransportTimelineCallName(value: string): value is TransportTimelineCallName {
-    return transportTimelineStrategyDefinitions.some((definition) => definition.name === value);
+    return transportTimelineActionNames.some((actionName) => actionName === value);
 }
 
 export function bridgeTransportTimelineToolCall(
@@ -313,5 +292,8 @@ export function bridgeTransportTimelineToolCall(
         return null;
     }
     const strategy = transportTimelineStrategyRegistry.get(input.call.name);
-    return strategy ? strategy(input) : null;
+    if (!strategy) {
+        throw new Error(`Missing LLM action strategy: ${input.call.name}`);
+    }
+    return strategy(input);
 }
