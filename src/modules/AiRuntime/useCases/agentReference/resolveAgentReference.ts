@@ -65,11 +65,27 @@ function normalizeReferenceText(value: string): string {
 }
 
 function containsExactPhrase(prompt: string, reference: string): boolean {
+    return getExactPhraseRanges(prompt, reference).length > 0;
+}
+
+function getExactPhraseRanges(prompt: string, reference: string): readonly { end: number; start: number }[] {
     const normalizedReference = normalizeReferenceText(reference);
     if (normalizedReference.length === 0) {
-        return false;
+        return [];
     }
-    return ` ${normalizeReferenceText(prompt)} `.includes(` ${normalizedReference} `);
+    const haystack = ` ${normalizeReferenceText(prompt)} `;
+    const needle = ` ${normalizedReference} `;
+    const ranges: { end: number; start: number }[] = [];
+    let from = 0;
+    while (from < haystack.length) {
+        const index = haystack.indexOf(needle, from);
+        if (index < 0) {
+            break;
+        }
+        ranges.push({ start: index, end: index + needle.length });
+        from = index + 1;
+    }
+    return ranges;
 }
 
 function containsQualifiedMasterOutputReference(prompt: string): boolean {
@@ -314,29 +330,30 @@ function removeOverlappedExactNameEvidence(
 }
 
 function removeExactNameEvidenceOverlappedByLiteralIds(
+    prompt: string,
     candidates: readonly ReferenceCandidate[],
     evidenceById: Map<string, AgentReferenceEvidence>
 ): void {
-    const literalIdPhrases = candidates.flatMap((candidate) => {
-        if (evidenceById.get(candidate.id) !== 'literal-id') {
-            return [];
-        }
-        const normalizedId = normalizeReferenceText(candidate.id);
-        return normalizedId.length === 0 ? [] : [` ${normalizedId} `];
-    });
-    if (literalIdPhrases.length === 0) {
+    const literalIdRanges = candidates.flatMap((candidate) =>
+        evidenceById.get(candidate.id) === 'literal-id' ? [...getExactPhraseRanges(prompt, candidate.id)] : []
+    );
+    if (literalIdRanges.length === 0) {
         return;
     }
     for (const candidate of candidates) {
         if (evidenceById.get(candidate.id) !== 'exact-name') {
             continue;
         }
-        const normalizedName = normalizeReferenceText(candidate.name);
-        if (normalizedName.length === 0) {
+        const nameRanges = getExactPhraseRanges(prompt, candidate.name);
+        if (nameRanges.length === 0) {
             continue;
         }
-        const namePhrase = ` ${normalizedName} `;
-        if (literalIdPhrases.some((literalIdPhrase) => literalIdPhrase.includes(namePhrase))) {
+        const everyNameOccurrenceIsInsideALiteralId = nameRanges.every((nameRange) =>
+            literalIdRanges.some(
+                (literalIdRange) => nameRange.start >= literalIdRange.start && nameRange.end <= literalIdRange.end
+            )
+        );
+        if (everyNameOccurrenceIsInsideALiteralId) {
             evidenceById.delete(candidate.id);
         }
     }
@@ -415,7 +432,7 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
     }
 
     removeOverlappedExactNameEvidence(candidates, evidenceById);
-    removeExactNameEvidenceOverlappedByLiteralIds(candidates, evidenceById);
+    removeExactNameEvidenceOverlappedByLiteralIds(input.prompt, candidates, evidenceById);
 
     if (evidenceById.size === 0) {
         return { status: 'rejected', reason: 'ungrounded-target' };
