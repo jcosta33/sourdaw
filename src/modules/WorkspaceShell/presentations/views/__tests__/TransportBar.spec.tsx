@@ -153,7 +153,14 @@ vi.mock('#/modules/PunchRecording/presentations/views', async (importOriginal) =
                             Punch recording settings
                         </button>
                     </PopoverTrigger>
-                    <PopoverContent aria-label="Punch recording settings">Punch recording settings</PopoverContent>
+                    <PopoverContent
+                        aria-label="Punch recording settings"
+                        onEscapeKeyDown={(event) => {
+                            event.preventDefault();
+                        }}
+                    >
+                        Punch recording settings
+                    </PopoverContent>
                 </Popover>
             </div>
         ),
@@ -539,11 +546,14 @@ describe('TransportBar', () => {
 
         const punchTrigger = screen.getByRole('button', { name: 'Punch recording settings' });
         fireEvent.click(punchTrigger);
-        expect(screen.getByRole('dialog', { name: 'Punch recording settings' })).toBeInTheDocument();
+        const punchDialog = screen.getByRole('dialog', { name: 'Punch recording settings' });
+        expect(punchDialog).toBeInTheDocument();
         expect(moreTrigger).toHaveAttribute('aria-expanded', 'true');
 
-        punchTrigger.focus();
-        fireEvent.keyDown(punchTrigger, { key: 'Escape' });
+        // Playwright sends Escape to the focused portaled surface, not the trigger.
+        // The Punch mock blocks Radix dismiss, so only the window-capture handler can close it.
+        punchDialog.focus();
+        fireEvent.keyDown(punchDialog, { key: 'Escape' });
         expect(screen.queryByRole('dialog', { name: 'Punch recording settings' })).not.toBeInTheDocument();
         expect(moreTrigger).toHaveAttribute('aria-expanded', 'true');
 
@@ -555,5 +565,39 @@ describe('TransportBar', () => {
         });
         expect(moreTrigger).toHaveAttribute('aria-expanded', 'false');
         expect(moreTrigger).toHaveFocus();
+    });
+
+    it('closes nested punch settings on Escape when a capture listener preventDefaults', () => {
+        setViewportWidth(VIEWPORT_COMPACT_WIDTH);
+        renderTransportBar();
+
+        const addEventListener = vi.spyOn(window, 'addEventListener');
+        try {
+            const moreTrigger = screen.getByRole('button', { name: 'More transport controls' });
+            fireEvent.click(moreTrigger);
+            expect(addEventListener).toHaveBeenCalledWith('keydown', expect.any(Function), true);
+
+            const punchTrigger = screen.getByRole('button', { name: 'Punch recording settings' });
+            fireEvent.click(punchTrigger);
+            const punchDialog = screen.getByRole('dialog', { name: 'Punch recording settings' });
+
+            const swallowEscape = (event: KeyboardEvent): void => {
+                if (event.key === 'Escape') {
+                    event.preventDefault();
+                }
+            };
+            window.addEventListener('keydown', swallowEscape, true);
+            try {
+                punchDialog.focus();
+                fireEvent.keyDown(punchDialog, { key: 'Escape' });
+            } finally {
+                window.removeEventListener('keydown', swallowEscape, true);
+            }
+
+            expect(screen.queryByRole('dialog', { name: 'Punch recording settings' })).not.toBeInTheDocument();
+            expect(moreTrigger).toHaveAttribute('aria-expanded', 'true');
+        } finally {
+            addEventListener.mockRestore();
+        }
     });
 });
