@@ -1182,14 +1182,18 @@ describe('package scripts and gitignore', () => {
                 'review:resolve',
                 'win32'
             );
+            const powershellPath = binding.powershellPath;
+            if (powershellPath === undefined) {
+                throw new Error('expected a trusted powershell executable for Windows review resolution');
+            }
 
             expect(binding.primaryRoot).toBe(realpathSync(primary));
             expect(binding.gitPath).toBe(realpathSync(gitWrapper));
             expect(binding.ghPath).toBe(realpathSync(ghWrapper));
             expect(binding.psPath).toBeUndefined();
-            expect(binding.powershellPath).toBe(realpathSync(powerShellWrapper));
+            expect(powershellPath).toBe(realpathSync(powerShellWrapper));
             expect(spawnSync(binding.ghPath, ['--version'], { shell: false }).status).toBe(0);
-            expect(spawnSync(binding.powershellPath, [], { shell: false }).status).toBe(0);
+            expect(spawnSync(powershellPath, [], { shell: false }).status).toBe(0);
 
             const env = trustedSnapshotEnv({
                 commit: 'a'.repeat(40),
@@ -1197,7 +1201,7 @@ describe('package scripts and gitignore', () => {
                 launcher: binding,
             });
 
-            expect(env.SOURDAW_TRUSTED_POWERSHELL_PATH).toBe(binding.powershellPath);
+            expect(env.SOURDAW_TRUSTED_POWERSHELL_PATH).toBe(powershellPath);
             expect(env.SOURDAW_TRUSTED_PS_PATH).toBeUndefined();
             expect(env.PATH).toBe(
                 [...new Set([gitBin, ghBin, powerShellBin, dirname(process.execPath)])].join(delimiter)
@@ -1247,13 +1251,17 @@ describe('package scripts and gitignore', () => {
                 'review:resolve',
                 'win32'
             );
+            const powershellPath = binding.powershellPath;
+            if (powershellPath === undefined) {
+                throw new Error('expected a trusted powershell executable for Windows review resolution');
+            }
 
             expect(binding.gitPath).toBe(realpathSync(gitWrapper));
             expect(binding.gitPath).not.toBe(realpathSync(rejectedGit));
-            expect(binding.powershellPath).toBe(realpathSync(powerShellWrapper));
-            expect(binding.powershellPath).not.toBe(realpathSync(rejectedPowerShell));
+            expect(powershellPath).toBe(realpathSync(powerShellWrapper));
+            expect(powershellPath).not.toBe(realpathSync(rejectedPowerShell));
             expect(spawnSync(binding.gitPath, ['--version'], { shell: false }).status).toBe(0);
-            expect(spawnSync(binding.powershellPath, [], { shell: false }).status).toBe(0);
+            expect(spawnSync(powershellPath, [], { shell: false }).status).toBe(0);
         } finally {
             rmSync(fixtureRoot, { recursive: true, force: true });
         }

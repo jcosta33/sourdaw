@@ -2305,9 +2305,11 @@ describe('review thread resolution', () => {
         const fake = fakePort();
         const calls: string[] = [];
         const resolveDependencies = {
-            trustedPrimaryRoot: () => {
-                calls.push('resolve:trustedPrimaryRoot');
-                return process.cwd();
+            trustedLauncher: {
+                primaryRoot: process.cwd(),
+                gitPath: trustedGitPath,
+                ghPath: trustedGhPath,
+                psPath: trustedPsPath,
             },
             authenticateAuthor: async () => {
                 calls.push('resolve:authenticateAuthor');
@@ -3085,29 +3087,33 @@ describe('review thread resolution', () => {
     });
 
     it('skips the CIM System Idle Process row so a dead Windows owner remains recoverable', () => {
+        const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-review-win32-idle-process-'));
+        const powershellPath = join(fixtureRoot, 'powershell.exe');
         const ownerFence = {
             kind: 'win32-process-tree' as const,
             version: 1 as const,
             rootPid: 4100,
             rootStartedAt: '2026-08-30T12:00:00.000000+000',
         };
-        expect(
-            reviewResolutionOwnerFenceIsLive(ownerFence, {
-                platform: 'win32',
-                windowsProcessQueryEnv: { SOURDAW_TRUSTED_POWERSHELL_PATH: trustedPowerShellPath },
-                runWindowsProcessQuery: (() => ({
-                    pid: 0,
-                    output: [],
-                    stdout: JSON.stringify([
-                        { ProcessId: 0, ParentProcessId: 'ignored', CreationDate: '' },
-                        { ProcessId: 4101, ParentProcessId: 1, CreationDate: '2026-08-30T12:00:01.0000000Z' },
-                    ]),
-                    stderr: '',
-                    status: 0,
-                    signal: null,
-                })) as typeof spawnSync,
-            })
-        ).toBe(false);
+        try {
+            writeFileSync(
+                powershellPath,
+                `#!/bin/sh\nprintf '%s' '${JSON.stringify([
+                    { ProcessId: 0, ParentProcessId: 'ignored', CreationDate: '' },
+                    { ProcessId: 4101, ParentProcessId: 1, CreationDate: '2026-08-30T12:00:01.0000000Z' },
+                ])}'\n`,
+                { mode: 0o700 }
+            );
+            chmodSync(powershellPath, 0o700);
+            expect(
+                reviewResolutionOwnerFenceIsLive(ownerFence, {
+                    platform: 'win32',
+                    windowsProcessQueryEnv: { SOURDAW_TRUSTED_POWERSHELL_PATH: powershellPath },
+                })
+            ).toBe(false);
+        } finally {
+            rmSync(fixtureRoot, { recursive: true, force: true });
+        }
     });
 
     it('uses the exact trusted PowerShell path and root CreationDate when building a Windows process-tree fence', () => {
