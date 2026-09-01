@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
+import { isModelProviderFailureError } from '../../../errors/ModelProviderFailureError';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { generateToolPlanningOutcome } from '../inference';
 
@@ -198,6 +200,45 @@ describe('generateToolPlanningOutcome', () => {
                 provider: 'webllm',
                 status: 'complete',
             });
+        }
+    );
+
+    it.each([
+        {
+            status: 401,
+            messageFragment: 'API key',
+            retryable: false,
+        },
+        {
+            status: 429,
+            messageFragment: 'rate limited',
+            retryable: true,
+        },
+    ] as const)(
+        'surfaces hosted HTTP $status on cloud tool-planning failure',
+        async ({ status, messageFragment, retryable }) => {
+            mocks.backendChain.value = ['cloud'];
+            mocks.generateCloudToolCalls.mockRejectedValue(
+                new HostedAiHttpStatusError(status, `Hosted AI tool request failed with status ${String(status)}`)
+            );
+
+            const error = await generateToolPlanningOutcome('system', 'mute the first track', toolSchemas).catch(
+                (error: unknown) => error
+            );
+
+            expect(isModelProviderFailureError(error)).toBe(true);
+            if (!isModelProviderFailureError(error)) {
+                return;
+            }
+            expect(error.message).toContain(`HTTP ${String(status)}`);
+            expect(error.message).toContain(messageFragment);
+            expect(error.message).not.toBe('The model provider request failed.');
+            expect(error.retryable).toBe(retryable);
+            expect(error.code).toBe(`hosted-http-${String(status)}`);
+            expect(mocks.logger.warn).toHaveBeenCalledWith(
+                expect.stringContaining(`[AI Engine] Backend "cloud" failed:`)
+            );
+            expect(mocks.logger.warn).toHaveBeenCalledWith(expect.stringContaining(`HTTP ${String(status)}`));
         }
     );
 });

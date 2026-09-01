@@ -1,3 +1,4 @@
+import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
 import { ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { type ToolCallResult } from '../../../transformers/toolCallParser';
@@ -46,7 +47,10 @@ export async function generateAnthropicToolCalls(input: {
         },
     });
     if (response.status < 200 || response.status >= 300) {
-        throw new Error(`Hosted AI tool-planning request failed with status ${String(response.status)}`);
+        throw new HostedAiHttpStatusError(
+            response.status,
+            `Hosted AI tool-planning request failed with status ${String(response.status)}`
+        );
     }
     if (response.contentType?.split(';', 1)[0]?.trim().toLowerCase() !== 'application/json') {
         throw new ToolPlanningRejectedError('Hosted AI returned an invalid tool-planning content type');
