@@ -8298,31 +8298,27 @@ describe('delivery shell boundary', () => {
                         if (joined.includes('pr view 42')) {
                             return JSON.stringify(shellPullRequest(pullRequest({ body: closes })));
                         }
-                        if (joined.includes('query($owner:String!,$name:String!,$number:Int!){repository')) {
-                            return JSON.stringify({
-                                data: {
-                                    repository: {
-                                        pullRequest: {
-                                            reviews: {
-                                                nodes: [
-                                                    {
-                                                        state: 'APPROVED',
-                                                        submittedAt: '2026-08-21T00:00:00Z',
-                                                        author: {
-                                                            id: REVIEWER_BOT_NODE_ID,
-                                                            login: 'renamed-reviewer[bot]',
-                                                            __typename: 'Bot',
-                                                        },
-                                                        commit: { oid: 'head' },
-                                                    },
-                                                ],
-                                                pageInfo: { hasPreviousPage: false },
+                        if (joined.includes('$reviewsBefore:String,$threadsAfter:String')) {
+                            return reviewStateResponse(
+                                {
+                                    nodes: [
+                                        {
+                                            id: 'PRR_delivery_42_review',
+                                            state: 'APPROVED',
+                                            submittedAt: '2026-08-21T00:00:00Z',
+                                            author: {
+                                                id: REVIEWER_BOT_NODE_ID,
+                                                login: 'renamed-reviewer[bot]',
+                                                __typename: 'Bot',
                                             },
-                                            reviewThreads: { nodes: [], pageInfo: { hasNextPage: false } },
+                                            commit: { oid: 'head' },
                                         },
-                                    },
+                                    ],
+                                    hasPreviousPage: false,
+                                    startCursor: null,
                                 },
-                            });
+                                { nodes: [], hasNextPage: false, endCursor: null }
+                            );
                         }
                         if (joined.includes('pulls?state=open')) {
                             return JSON.stringify([[]]);
