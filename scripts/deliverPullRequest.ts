@@ -1134,6 +1134,125 @@ function readMergedByActorNodeId(
     return mergedBy.id;
 }
 
+type PullRequestReviewRecord = {
+    state: string;
+    submittedAt?: string | null;
+    author: { id?: string; login: string; __typename: string } | null;
+    commit: { oid: string } | null;
+};
+
+type ReviewStatePage = {
+    reviews: {
+        nodes: PullRequestReviewRecord[];
+        pageInfo: { hasPreviousPage: boolean; startCursor: string | null };
+    };
+    reviewThreads: {
+        nodes: Array<{ isResolved: boolean }>;
+        pageInfo: { hasNextPage: boolean; endCursor: string | null };
+    };
+};
+
+const REVIEW_STATE_PAGE_SIZE = 100;
+const REVIEW_STATE_PAGE_LIMIT = 1_000;
+const REVIEW_STATE_QUERY = `query($owner:String!,$name:String!,$number:Int!,$reviewsBefore:String,$threadsAfter:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviews(last:${REVIEW_STATE_PAGE_SIZE},before:$reviewsBefore){nodes{state submittedAt author{login __typename ... on Bot{id}} commit{oid}} pageInfo{hasPreviousPage startCursor}} reviewThreads(first:${REVIEW_STATE_PAGE_SIZE},after:$threadsAfter){nodes{isResolved} pageInfo{hasNextPage endCursor}}}}}`;
+
+function parseReviewStatePage(response: string, number: number): ReviewStatePage {
+    const pullRequest = parseJson<{
+        data?: {
+            repository?: {
+                pullRequest?: {
+                    reviews?: {
+                        nodes?: PullRequestReviewRecord[];
+                        pageInfo?: { hasPreviousPage?: unknown; startCursor?: unknown } | null;
+                    };
+                    reviewThreads?: {
+                        nodes?: Array<{ isResolved: boolean }>;
+                        pageInfo?: { hasNextPage?: unknown; endCursor?: unknown } | null;
+                    };
+                } | null;
+            };
+        };
+    }>(response, 'review query').data?.repository?.pullRequest;
+    if (
+        pullRequest === undefined ||
+        pullRequest === null ||
+        !Array.isArray(pullRequest.reviews?.nodes) ||
+        typeof pullRequest.reviews.pageInfo?.hasPreviousPage !== 'boolean' ||
+        !Array.isArray(pullRequest.reviewThreads?.nodes) ||
+        typeof pullRequest.reviewThreads.pageInfo?.hasNextPage !== 'boolean'
+    ) {
+        fail(`cannot prove complete review state for PR #${number}`);
+    }
+    return {
+        reviews: {
+            nodes: pullRequest.reviews.nodes,
+            pageInfo: {
+                hasPreviousPage: pullRequest.reviews.pageInfo.hasPreviousPage,
+                startCursor:
+                    typeof pullRequest.reviews.pageInfo.startCursor === 'string'
+                        ? pullRequest.reviews.pageInfo.startCursor
+                        : null,
+            },
+        },
+        reviewThreads: {
+            nodes: pullRequest.reviewThreads.nodes,
+            pageInfo: {
+                hasNextPage: pullRequest.reviewThreads.pageInfo.hasNextPage,
+                endCursor:
+                    typeof pullRequest.reviewThreads.pageInfo.endCursor === 'string'
+                        ? pullRequest.reviewThreads.pageInfo.endCursor
+                        : null,
+            },
+        },
+    };
+}
+
+function nextReviewStateCursor(number: number, cursor: string | null, seen: Set<string>): string {
+    if (cursor === null || cursor.trim() === '' || seen.has(cursor)) {
+        fail(`cannot prove complete review state for PR #${number}`);
+    }
+    seen.add(cursor);
+    return cursor;
+}
+
+function assertReviewStatePageBudget(number: number, pagesRead: number): void {
+    if (pagesRead >= REVIEW_STATE_PAGE_LIMIT) {
+        fail(`cannot prove complete review state for PR #${number}`);
+    }
+}
+
+function readCompleteReviewState(
+    number: number,
+    readPage: (reviewsBefore: string | null, threadsAfter: string | null) => ReviewStatePage
+): { reviews: PullRequestReviewRecord[]; reviewThreads: Array<{ isResolved: boolean }> } {
+    const initialPage = readPage(null, null);
+    const reviewPages = [initialPage.reviews.nodes];
+    const reviewCursors = new Set<string>();
+    let reviewPage = initialPage.reviews;
+    let reviewPagesRead = 1;
+    while (reviewPage.pageInfo.hasPreviousPage) {
+        assertReviewStatePageBudget(number, reviewPagesRead);
+        const cursor = nextReviewStateCursor(number, reviewPage.pageInfo.startCursor, reviewCursors);
+        reviewPage = readPage(cursor, null).reviews;
+        reviewPages.push(reviewPage.nodes);
+        reviewPagesRead += 1;
+    }
+
+    const reviewThreads = [...initialPage.reviewThreads.nodes];
+    const threadCursors = new Set<string>();
+    let threadPage = initialPage.reviewThreads;
+    let threadPagesRead = 1;
+    while (threadPage.pageInfo.hasNextPage) {
+        assertReviewStatePageBudget(number, threadPagesRead);
+        const cursor = nextReviewStateCursor(number, threadPage.pageInfo.endCursor, threadCursors);
+        threadPage = readPage(null, cursor).reviewThreads;
+        reviewThreads.push(...threadPage.nodes);
+        threadPagesRead += 1;
+    }
+
+    return { reviews: reviewPages.reverse().flat(), reviewThreads };
+}
+
 export function shellPort(
     repository: string,
     shell: ShellRunner = { capture, run },
@@ -1214,51 +1333,26 @@ export function shellPort(
             readHeadCheckRuns(number, (cursor) => readRollupPage(number, headRefOid, cursor)),
         gateRequiredCheckNames: () => readGateRequiredCheckNames(),
         reviewState: (number, expectedHead) => {
-            const query = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviews(last:100){nodes{state submittedAt author{login __typename ... on Bot{id}} commit{oid}} pageInfo{hasPreviousPage}} reviewThreads(first:100){nodes{isResolved} pageInfo{hasNextPage}}}}}`;
-            const response = parseJson<{
-                data?: {
-                    repository?: {
-                        pullRequest?: {
-                            reviews: {
-                                nodes: Array<{
-                                    state: string;
-                                    submittedAt?: string | null;
-                                    author: { id?: string; login: string; __typename: string } | null;
-                                    commit: { oid: string } | null;
-                                }>;
-                                pageInfo: { hasPreviousPage: boolean };
-                            };
-                            reviewThreads: {
-                                nodes: Array<{ isResolved: boolean }>;
-                                pageInfo: { hasNextPage: boolean };
-                            };
-                        };
-                    };
-                };
-            }>(
-                shell.capture('gh', [
-                    'api',
-                    'graphql',
-                    '-f',
-                    `query=${query}`,
-                    '-f',
-                    `owner=${owner}`,
-                    '-f',
-                    `name=${name}`,
-                    '-F',
-                    `number=${number}`,
-                ]),
-                'review query'
+            const review = readCompleteReviewState(number, (reviewsBefore, threadsAfter) =>
+                parseReviewStatePage(
+                    shell.capture('gh', [
+                        'api',
+                        'graphql',
+                        '-f',
+                        `query=${REVIEW_STATE_QUERY}`,
+                        '-f',
+                        `owner=${owner}`,
+                        '-f',
+                        `name=${name}`,
+                        '-F',
+                        `number=${number}`,
+                        ...(reviewsBefore === null ? [] : ['-f', `reviewsBefore=${reviewsBefore}`]),
+                        ...(threadsAfter === null ? [] : ['-f', `threadsAfter=${threadsAfter}`]),
+                    ]),
+                    number
+                )
             );
-            const review = response.data?.repository?.pullRequest;
-            if (
-                review === undefined ||
-                review.reviews.pageInfo.hasPreviousPage ||
-                review.reviewThreads.pageInfo.hasNextPage
-            ) {
-                fail(`cannot prove complete review state for PR #${number}`);
-            }
-            const onHead = review.reviews.nodes.filter(
+            const onHead = review.reviews.filter(
                 (candidate) =>
                     candidate.state !== 'DISMISSED' &&
                     candidate.state !== 'PENDING' &&
@@ -1269,7 +1363,7 @@ export function shellPort(
             onHead.sort((left, right) => (left.submittedAt ?? '').localeCompare(right.submittedAt ?? ''));
             return {
                 latestReviewerStateOnHead: onHead.at(-1)?.state ?? null,
-                unresolvedThreads: review.reviewThreads.nodes.filter((thread) => !thread.isResolved).length,
+                unresolvedThreads: review.reviewThreads.filter((thread) => !thread.isResolved).length,
             };
         },
         dependents: (baseBranch) => {
