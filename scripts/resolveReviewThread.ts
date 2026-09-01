@@ -1670,6 +1670,10 @@ function hasExactImmutableDeleteReplySurvivor(
     if (mutation.immutableEnvelope === undefined) {
         return false;
     }
+    if (!thread.isResolved) {
+        return false;
+    }
+    assertCompletedResolution(thread, context.threadId);
     const managed = managedReplyMarkers(thread, context, ['COMMENTED'], true);
     return (
         thread.comments.every((comment) => comment.id !== mutation.replyId) &&
@@ -1720,7 +1724,8 @@ function convergeReplyMarkers(
     port: ResolveReviewThreadPort,
     context: ResolutionReviewContext,
     allowedStates: string[],
-    preferredReplyId?: string
+    preferredReplyId?: string,
+    fenceHead: string = context.expectedHead
 ): string {
     if (thread === null) {
         fail(`review thread ${threadId} was not found on this pull request`);
@@ -1738,7 +1743,8 @@ function convergeReplyMarkers(
                 port,
                 canonical,
                 candidate,
-                preferredReplyId
+                preferredReplyId,
+                fenceHead
             );
             port.deleteReply(
                 candidate.marker.id,
@@ -1758,10 +1764,11 @@ function assertDuplicateReplyDeletionStillSafe(
     port: ResolveReviewThreadPort,
     canonical: ManagedReplyMarker,
     candidate: ManagedReplyMarker,
-    preferredReplyId: string | undefined
+    preferredReplyId: string | undefined,
+    fenceHead: string
 ): void {
     const latest = port.inspect(number, threadId);
-    assertExpectedHeadAfterMutation(latest.head, context.expectedHead);
+    assertExpectedHeadAfterMutation(latest.head, fenceHead);
     if (latest.thread === null) {
         fail(`review thread ${threadId} was not found on this pull request`);
     }
@@ -5434,7 +5441,16 @@ function convergeSubmittedCommentedReplyMarkers(
         inspection = inspectReviewResolutionRecovery(number, owner, port);
     }
     if (managedReplyMarkers(inspection.thread!, context, ['COMMENTED'], false).length > 1) {
-        convergeReplyMarkers(number, owner.threadId, inspection.thread, port, context, ['COMMENTED']);
+        convergeReplyMarkers(
+            number,
+            owner.threadId,
+            inspection.thread,
+            port,
+            context,
+            ['COMMENTED'],
+            undefined,
+            inspection.head
+        );
         inspection = inspectReviewResolutionRecovery(number, owner, port);
     }
     if (managedReplyMarkers(inspection.thread!, context, ['COMMENTED'], false).length !== 1) {
