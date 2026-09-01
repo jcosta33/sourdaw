@@ -296,6 +296,10 @@ describe('coreAutomationStrategy', () => {
             type: 'scaleAutomation',
             payload: { laneId, factor: 16 },
         });
+        expect(bridge({ name: 'scaleAutomation', arguments: { laneId, factor: 0.5 } })).toEqual({
+            type: 'scaleAutomation',
+            payload: { laneId, factor: 0.5 },
+        });
         expect(bridge({ name: 'stretchAutomation', arguments: { laneId, factor: 16 } })).toEqual({
             type: 'stretchAutomation',
             payload: { laneId, factor: 16 },
