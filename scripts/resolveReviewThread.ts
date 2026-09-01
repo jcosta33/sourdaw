@@ -2182,8 +2182,12 @@ function repairCompletedResolution(
     }
     assertCompletedResolution(verified.thread, context.threadId);
     if (immutableEnvelope !== undefined) {
-        const verifiedEnvelope = hasExactImmutableEmptySubmittedReviewEnvelope(number, verified.thread, context, port);
-        if (verifiedEnvelope?.review.id !== immutableEnvelope.review.id) {
+        const verifiedMarkers = managedReplyMarkers(verified.thread, context, ['COMMENTED'], true);
+        if (
+            verifiedMarkers.length !== 1 ||
+            verifiedMarkers[0]?.review.id !== immutableEnvelope.review.id ||
+            !isImmutableEmptySubmittedReview(verifiedMarkers[0].review)
+        ) {
             fail(`review thread ${context.threadId} no longer has its immutable empty submitted-review envelope`);
         }
         return true;
@@ -5340,6 +5344,19 @@ export function recoverReviewResolutionLockOwnerState(
                             mutation,
                             port
                         )
+                    ) {
+                        fail(unreconciledReviewResolutionMutationMessage(number, mutation));
+                    }
+                    const terminalMarkers = managedReplyMarkers(
+                        inspection.thread!,
+                        terminalContext,
+                        ['COMMENTED'],
+                        true
+                    );
+                    if (
+                        terminalMarkers.length !== 1 ||
+                        terminalMarkers[0]?.review.id !== mutation.reviewId ||
+                        !isImmutableEmptySubmittedReview(terminalMarkers[0].review)
                     ) {
                         fail(unreconciledReviewResolutionMutationMessage(number, mutation));
                     }

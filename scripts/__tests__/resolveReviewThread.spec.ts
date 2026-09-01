@@ -12266,8 +12266,12 @@ describe('review thread resolution', () => {
         );
         expect(state().reviews.find((review) => review.id === 'PRR_existing_1')?.body).toBe('');
     });
-    it('backfills already resolved duplicate empty review envelopes with their own historical head before converging markers', () => {
-        const { port, calls, authorNodeId, state } = fakePort({
+    it('fails closed without mutation for stale immutable submitted-review envelopes', () => {
+        const {
+            port: basePort,
+            calls,
+            authorNodeId,
+        } = fakePort({
             heads: [movedHead, movedHead, movedHead],
             isResolved: true,
             initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
@@ -12276,29 +12280,19 @@ describe('review thread resolution', () => {
             existingReplyReviewBody: '',
             existingReplyReviewCommitOid: head,
         });
-        expect(resolveReviewThread(42, threadId, movedHead, authorNodeId, port)).toBe(
-            `review-thread-resolved:42:${threadId}`
+        let attemptedUpdate = false;
+        const port: ResolveReviewThreadPort = {
+            ...basePort,
+            updateReviewBody: () => {
+                attemptedUpdate = true;
+                throw new Error('immutable submitted review must not be updated');
+            },
+        };
+        expect(() => resolveReviewThread(42, threadId, movedHead, authorNodeId, port)).toThrow();
+        expect(attemptedUpdate).toBe(false);
+        expect(calls.filter((call) => /^(updateReview|delete:|deleteReview|submit|resolve|log:)/.test(call))).toEqual(
+            []
         );
-        expect(calls.filter((call) => call.startsWith('updateReview:'))).toEqual([
-            `updateReview:${reviewId}`,
-            'updateReview:PRR_existing_1',
-        ]);
-        expect(calls.filter((call) => call.startsWith('delete:'))).toEqual(['delete:PRRC_existing_1']);
-        expect(state().reviews).toEqual([
-            expect.objectContaining({
-                id: reviewId,
-                body: resolutionReviewSummary(pullRequestId, threadId, head),
-                commitOid: head,
-            }),
-            expect.objectContaining({
-                id: 'PRR_existing_1',
-                body: resolutionReviewSummary(pullRequestId, threadId, head),
-                commitOid: head,
-            }),
-        ]);
-        expect(state().comments.filter((comment) => comment.body === 'Done')).toEqual([
-            expect.objectContaining({ id: replyId }),
-        ]);
     });
     it('retires a stale-head managed pending Done marker beside a current COMMENTED marker on a completed resolution', () => {
         const { port, calls, authorNodeId, state } = fakePort({
