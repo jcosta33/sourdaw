@@ -4845,9 +4845,14 @@ describe('review thread resolution', () => {
             );
 
             expect(calls).toContain(`resolve:${threadId}`);
-            expect(calls.filter((call) => call.startsWith('delete:'))).toHaveLength(1);
+            expect(calls).toContain('delete:PRRC_existing_2');
+            expect(calls).not.toContain('delete:PRRC_existing_1');
             expect(inspection.thread).toMatchObject({ isResolved: true, resolvedByNodeId: AUTHOR_BOT_NODE_ID });
-            expect(state().comments.filter((comment) => comment.body === 'Done')).toHaveLength(1);
+            expect(
+                state()
+                    .comments.filter((comment) => comment.body === 'Done')
+                    .map((comment) => comment.id)
+            ).toEqual(['PRRC_existing_1']);
             expect(readLockOid(repository, 42)).toBeUndefined();
             expect(readSharedMutationLockOid(repository, 42)).toBeUndefined();
         } finally {
