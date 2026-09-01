@@ -1,17 +1,20 @@
 import { type ProjectContext } from '../../../models/ProjectContext';
 
-export type PostTargetScopeActionName =
-    | 'removeTrack'
-    | 'removeClip'
-    | 'clearSolos'
-    | 'removeFromVca'
-    | 'quantizeNotes'
-    | 'transposeNotes'
-    | 'invertNotes'
-    | 'retrogradeNotes'
-    | 'quantizeNoteLengths'
-    | 'scaleAllVelocities'
-    | 'setAllVelocities';
+export const postTargetScopeActionNames = [
+    'removeTrack',
+    'removeClip',
+    'clearSolos',
+    'removeFromVca',
+    'quantizeNotes',
+    'transposeNotes',
+    'invertNotes',
+    'retrogradeNotes',
+    'quantizeNoteLengths',
+    'scaleAllVelocities',
+    'setAllVelocities',
+] as const;
+
+export type PostTargetScopeActionName = (typeof postTargetScopeActionNames)[number];
 
 type PostTargetActionScope = {
     matchedIntentPhrase: string;
@@ -30,22 +33,23 @@ export type PostTargetScopeAdmissionInput = {
 
 export type PostTargetScopeAdmissionResult = string | null;
 
-export type PostTargetScopeAdmissionStrategy<Name extends PostTargetScopeActionName> = (
-    input: Omit<PostTargetScopeAdmissionInput, 'actionName'> & { actionName: Name }
+export type PostTargetScopeAdmissionStrategy = (
+    input: Omit<PostTargetScopeAdmissionInput, 'actionName'>
 ) => PostTargetScopeAdmissionResult;
 
 export type PostTargetScopeAdmissionStrategyDefinition<Name extends PostTargetScopeActionName> = {
     [StrategyName in Name]: {
         name: StrategyName;
-        transform: PostTargetScopeAdmissionStrategy<StrategyName>;
+        transform: PostTargetScopeAdmissionStrategy;
     };
 }[Name];
 
 export function createPostTargetScopeAdmissionStrategyRegistry<Name extends PostTargetScopeActionName>(
     definitions: readonly PostTargetScopeAdmissionStrategyDefinition<Name>[],
-    catalog: readonly { actionType: string }[]
-): ReadonlyMap<Name, PostTargetScopeAdmissionStrategy<Name>> {
-    const registry = new Map<Name, PostTargetScopeAdmissionStrategy<Name>>();
+    catalog: readonly { actionType: string }[],
+    expectedActionNames: readonly Name[]
+): ReadonlyMap<Name, PostTargetScopeAdmissionStrategy> {
+    const registry = new Map<Name, PostTargetScopeAdmissionStrategy>();
     const catalogActionNames = new Set(catalog.map((entry) => entry.actionType));
     for (const definition of definitions) {
         if (registry.has(definition.name)) {
@@ -57,6 +61,11 @@ export function createPostTargetScopeAdmissionStrategyRegistry<Name extends Post
             );
         }
         registry.set(definition.name, definition.transform);
+    }
+    for (const actionName of expectedActionNames) {
+        if (!registry.has(actionName)) {
+            throw new Error(`Missing post-target scope admission strategy: ${actionName}`);
+        }
     }
     return registry;
 }

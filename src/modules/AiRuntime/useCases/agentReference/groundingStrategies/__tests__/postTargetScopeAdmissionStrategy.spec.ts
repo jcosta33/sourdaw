@@ -5,6 +5,7 @@ import { getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCas
 import { type ProjectContext } from '../../../../models/ProjectContext';
 import {
     createPostTargetScopeAdmissionStrategyRegistry,
+    postTargetScopeActionNames,
     type PostTargetScopeActionName,
 } from '../createPostTargetScopeAdmissionStrategyRegistry';
 import {
@@ -42,7 +43,8 @@ describe('post-target scope admission strategies', () => {
                     { name: 'removeTrack', transform: () => null },
                     { name: 'removeTrack', transform: () => null },
                 ],
-                getExecutableAppActionGroundingCatalog()
+                getExecutableAppActionGroundingCatalog(),
+                ['removeTrack']
             )
         ).toThrow('Duplicate post-target scope admission strategy: removeTrack');
     });
@@ -53,15 +55,30 @@ describe('post-target scope admission strategies', () => {
         expect(() =>
             createPostTargetScopeAdmissionStrategyRegistry<PostTargetScopeActionName>(
                 postTargetScopeAdmissionStrategyDefinitions,
-                catalog
+                catalog,
+                postTargetScopeActionNames
             )
         ).not.toThrow();
     });
 
     it('rejects a registry strategy missing from the canonical command grounding catalog', () => {
         expect(() =>
-            createPostTargetScopeAdmissionStrategyRegistry([{ name: 'removeTrack', transform: () => null }], [])
+            createPostTargetScopeAdmissionStrategyRegistry(
+                [{ name: 'removeTrack', transform: () => null }],
+                [],
+                ['removeTrack']
+            )
         ).toThrow('Post-target scope admission strategy is not a canonical executable action: removeTrack');
+    });
+
+    it('rejects a missing expected strategy definition', () => {
+        expect(() =>
+            createPostTargetScopeAdmissionStrategyRegistry<PostTargetScopeActionName>(
+                [{ name: 'removeTrack', transform: () => null }],
+                getExecutableAppActionGroundingCatalog(),
+                ['removeTrack', 'removeClip']
+            )
+        ).toThrow('Missing post-target scope admission strategy: removeClip');
     });
 
     it('dispatches registered scope admissions and leaves unregistered actions unchanged', () => {

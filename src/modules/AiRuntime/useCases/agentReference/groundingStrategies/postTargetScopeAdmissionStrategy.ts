@@ -1,10 +1,10 @@
 import { getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCases';
-
 import { type ProjectContext } from '../../../models/ProjectContext';
 
 import { resolveAgentReference } from '../resolveAgentReference';
 import {
     createPostTargetScopeAdmissionStrategyRegistry,
+    postTargetScopeActionNames,
     type PostTargetScopeActionName,
     type PostTargetScopeAdmissionInput,
     type PostTargetScopeAdmissionResult,
@@ -233,18 +233,7 @@ function hasSelectedNoteScope(text: string): boolean {
     );
 }
 
-const midiWholeClipStrategy: PostTargetScopeAdmissionStrategy<
-    Extract<
-        PostTargetScopeActionName,
-        | 'quantizeNotes'
-        | 'transposeNotes'
-        | 'invertNotes'
-        | 'retrogradeNotes'
-        | 'quantizeNoteLengths'
-        | 'scaleAllVelocities'
-        | 'setAllVelocities'
-    >
-> = ({ actionScope, plannedActionNames, prompt }) => {
+const midiWholeClipStrategy: PostTargetScopeAdmissionStrategy = ({ actionScope, plannedActionNames, prompt }) => {
     if (hasSelectedNoteScope(actionScope.text) || (plannedActionNames.length === 1 && hasSelectedNoteScope(prompt))) {
         return 'Selected-note edits are not supported; target the whole MIDI clip';
     }
@@ -295,23 +284,12 @@ export const postTargetScopeAdmissionStrategyDefinitions = [
 const postTargetScopeAdmissionStrategyRegistry =
     createPostTargetScopeAdmissionStrategyRegistry<PostTargetScopeActionName>(
         postTargetScopeAdmissionStrategyDefinitions,
-        getExecutableAppActionGroundingCatalog()
+        getExecutableAppActionGroundingCatalog(),
+        postTargetScopeActionNames
     );
 
 function isPostTargetScopeActionName(actionName: string): actionName is PostTargetScopeActionName {
-    return (
-        actionName === 'removeTrack' ||
-        actionName === 'removeClip' ||
-        actionName === 'clearSolos' ||
-        actionName === 'removeFromVca' ||
-        actionName === 'quantizeNotes' ||
-        actionName === 'transposeNotes' ||
-        actionName === 'invertNotes' ||
-        actionName === 'retrogradeNotes' ||
-        actionName === 'quantizeNoteLengths' ||
-        actionName === 'scaleAllVelocities' ||
-        actionName === 'setAllVelocities'
-    );
+    return postTargetScopeActionNames.some((expectedActionName) => expectedActionName === actionName);
 }
 
 export function groundPostTargetScopeAdmission(input: PostTargetScopeAdmissionInput): PostTargetScopeAdmissionResult {
@@ -322,5 +300,12 @@ export function groundPostTargetScopeAdmission(input: PostTargetScopeAdmissionIn
     if (!strategy) {
         throw new Error(`Missing post-target scope admission strategy: ${input.actionName}`);
     }
-    return strategy({ ...input, actionName: input.actionName });
+    return strategy({
+        actionScope: input.actionScope,
+        bulkMutedEmptyTrackDeletionTargetIds: input.bulkMutedEmptyTrackDeletionTargetIds,
+        context: input.context,
+        groundedArguments: input.groundedArguments,
+        plannedActionNames: input.plannedActionNames,
+        prompt: input.prompt,
+    });
 }
