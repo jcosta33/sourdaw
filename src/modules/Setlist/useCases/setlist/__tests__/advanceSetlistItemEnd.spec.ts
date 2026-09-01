@@ -35,6 +35,8 @@ vi.mock('#/modules/Transport/useCases', () => ({
         return ((toBeat - fromBeat) * 60) / defaultTempo;
     },
     stopPlayback: stopPlaybackMock,
+    setTempo: vi.fn(() => ({ status: 'written' as const })),
+    setTimeSignature: vi.fn(),
 }));
 
 vi.mock('#/modules/Transport/stores', () => ({
