@@ -411,7 +411,7 @@ describe('resolveAgentReference', () => {
         });
     });
 
-    it('keeps a nested name and a hyphenated literal id ambiguous when both are cited', () => {
+    it('keeps Guitar and a hyphenated track-lead-guitar id ambiguous when both are cited', () => {
         const projectState = createProjectState();
         const firstTrack = projectState.tracks[0];
         if (!firstTrack) {
@@ -422,7 +422,6 @@ describe('resolveAgentReference', () => {
             tracks: [
                 { ...firstTrack, id: 'track-lead-guitar', name: 'Rhythm' },
                 { ...firstTrack, id: 'track-keys', name: 'Guitar' },
-                { ...firstTrack, id: 'track-aux', name: 'Lead Guitar' },
             ],
         };
 

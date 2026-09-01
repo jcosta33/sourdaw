@@ -1615,6 +1615,42 @@ function resolveActionPromptScope({
     return selectedScope;
 }
 
+function getTrackControlTargetPrompt(
+    prompt: string,
+    actionScope: ActionPromptScope,
+    catalog: GroundingCatalog
+): string {
+    const clauses = getPromptClauses(prompt, prompt);
+    const startIndex = clauses.findIndex((clause) => clause.text === actionScope.text);
+    if (startIndex < 0) {
+        return prompt;
+    }
+    let endIndex = startIndex;
+    for (let index = startIndex + 1; index < clauses.length; index += 1) {
+        const clause = clauses[index];
+        if (!clause || resolveClauseActionIntent(clause.masked, catalog) !== null) {
+            break;
+        }
+        endIndex = index;
+    }
+    let searchFrom = 0;
+    const ranges: { start: number; end: number }[] = [];
+    for (const clause of clauses) {
+        const start = prompt.indexOf(clause.text, searchFrom);
+        if (start < 0) {
+            return actionScope.text;
+        }
+        ranges.push({ start, end: start + clause.text.length });
+        searchFrom = start + clause.text.length;
+    }
+    const start = ranges[startIndex]?.start;
+    const end = ranges[endIndex]?.end;
+    if (start === undefined || end === undefined || end < start) {
+        return actionScope.text;
+    }
+    return prompt.slice(start, end);
+}
+
 function getTargetPromptScope(
     actionScope: ActionPromptScope,
     promptRole?: 'source' | 'destination' | 'container' | 'members'
@@ -3402,14 +3438,12 @@ function groundToolCall({
         if (targetRule.optional && assertedValue === undefined) {
             continue;
         }
-        const targetPrompt =
-            call.name === 'removeTrack' ||
-            targetRule.capability === 'removable-track' ||
-            ((call.name === 'muteTrack' || call.name === 'soloTrack') &&
-                sameActionCallCount === 1 &&
-                plannedActionNames.length === 1)
-                ? prompt
-                : getTargetPromptScope(actionScope, targetRule.promptRole);
+        let targetPrompt = getTargetPromptScope(actionScope, targetRule.promptRole);
+        if (call.name === 'removeTrack' || targetRule.capability === 'removable-track') {
+            targetPrompt = prompt;
+        } else if (call.name === 'muteTrack' || call.name === 'soloTrack') {
+            targetPrompt = getTrackControlTargetPrompt(prompt, actionScope, catalog);
+        }
         if (
             articulationTransferScope?.status === 'request' &&
             call.name === 'copyMidiArticulations' &&
@@ -3607,7 +3641,12 @@ function groundToolCall({
             groundedArguments[targetRule.argument] = batchLocalReference.binding.busId;
             continue;
         }
-        if (compilerTargetOverride !== undefined && 'stableIds' in compilerTargetOverride) {
+        if (
+            compilerTargetOverride !== undefined &&
+            'stableIds' in compilerTargetOverride &&
+            call.name !== 'muteTrack' &&
+            call.name !== 'soloTrack'
+        ) {
             if (
                 compilerTargetOverride.cardinality !== 'one' ||
                 compilerTargetOverride.stableIds.length !== 1 ||

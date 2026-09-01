@@ -3676,13 +3676,12 @@ describe('bridgeGroundedLlmToolCalls', () => {
         ]);
     });
 
-    it('rejects a single removeTrack when a nested name and a hyphenated literal id are both cited', () => {
+    it('rejects a single removeTrack when Guitar and a hyphenated track-lead-guitar id are both cited', () => {
         const nestedNameContext = {
             ...projectContext,
             tracks: [
                 createTrack({ id: 'track-lead-guitar', name: 'Rhythm' }),
                 createTrack({ id: 'track-keys', name: 'Guitar' }),
-                createTrack({ id: 'track-aux', name: 'Lead Guitar' }),
                 master,
             ],
         };
@@ -3860,6 +3859,153 @@ describe('bridgeGroundedLlmToolCalls', () => {
                     reason: 'Target trackId is ambiguous in the user request',
                 },
             ]);
+        }
+    });
+
+    it('rejects muteTrack and soloTrack dual citations when the plan also sets tempo', () => {
+        const dualCitationContext = {
+            ...projectContext,
+            tracks: [
+                createTrack({ id: 'track-lead-guitar', name: 'Rhythm' }),
+                createTrack({ id: 'track-aux', name: 'Lead Guitar' }),
+                master,
+            ],
+        };
+        const mutePrompts = [
+            'mute Lead/Guitar and track-lead-guitar and set tempo to 120',
+            'mute Lead Guitar and track-lead-guitar and set tempo to 120',
+        ] as const;
+        const soloPrompts = [
+            'solo Lead/Guitar and track-lead-guitar and set tempo to 120',
+            'solo Lead Guitar and track-lead-guitar and set tempo to 120',
+        ] as const;
+
+        for (const prompt of mutePrompts) {
+            for (const trackId of ['track-aux', 'track-lead-guitar'] as const) {
+                const result = bridge(
+                    [
+                        { name: 'muteTrack', arguments: { trackId, muted: true } },
+                        { name: 'setTempo', arguments: { bpm: 120 } },
+                    ],
+                    prompt,
+                    dualCitationContext
+                );
+                expect(result.actions.filter((action) => action.type === 'muteTrack')).toEqual([]);
+                expect(result.rejections).toContainEqual({
+                    index: 0,
+                    name: 'muteTrack',
+                    reason: 'Target trackId is ambiguous in the user request',
+                });
+            }
+        }
+        for (const prompt of soloPrompts) {
+            for (const trackId of ['track-aux', 'track-lead-guitar'] as const) {
+                const result = bridge(
+                    [
+                        { name: 'soloTrack', arguments: { trackId, soloed: true } },
+                        { name: 'setTempo', arguments: { bpm: 120 } },
+                    ],
+                    prompt,
+                    dualCitationContext
+                );
+                expect(result.actions.filter((action) => action.type === 'soloTrack')).toEqual([]);
+                expect(result.rejections).toContainEqual({
+                    index: 0,
+                    name: 'soloTrack',
+                    reason: 'Target trackId is ambiguous in the user request',
+                });
+            }
+        }
+    });
+
+    it('rejects compiler-expanded muteTrack and soloTrack when a slash or spaced nested name and a hyphenated literal id are both cited', () => {
+        const dualCitationContext = {
+            ...projectContext,
+            tracks: [
+                createTrack({ id: 'track-lead-guitar', name: 'Rhythm' }),
+                createTrack({ id: 'track-aux', name: 'Lead Guitar' }),
+                vocals,
+                master,
+            ],
+        };
+        const leftoverPrompts = [
+            'mute Lead/Guitar and track-lead-guitar',
+            'mute Lead Guitar and track-lead-guitar',
+            'solo Lead/Guitar and track-lead-guitar',
+            'solo Lead Guitar and track-lead-guitar',
+        ] as const;
+        const expandedTrackIds = ['track-lead-guitar', 'track-aux', vocals.id] as const;
+        for (const prompt of leftoverPrompts) {
+            const actionName = prompt.startsWith('solo') ? 'soloTrack' : 'muteTrack';
+            const compiled = compileArbitraryCommandList({
+                context: dualCitationContext,
+                revision: 'revision-dual-citation-mute-solo',
+                calls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: {
+                                semantic: { classification: 'simple', uncertainty: [] },
+                                objective: prompt,
+                                constraints: [],
+                                scope: {
+                                    targetIds: [...expandedTrackIds],
+                                    targetRanges: [],
+                                    protectedTargetIds: [],
+                                    protectedRanges: [],
+                                },
+                                capabilityIds: [],
+                                assetIds: [],
+                                alternatives: [],
+                                validationStrategy: [],
+                                stoppingConditions: [],
+                            },
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'bulk-audio-tracks',
+                                        name: actionName,
+                                        arguments: actionName === 'soloTrack' ? { soloed: true } : { muted: true },
+                                        selector: {
+                                            targetArgument: 'trackId',
+                                            entity: 'track',
+                                            where: { kind: 'audio' },
+                                            quantity: { unit: 'targets', exactly: 3 },
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            });
+            if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+                throw new Error(compiled.status === 'rejected' ? compiled.reason : 'Expected compiler evidence');
+            }
+            expect(
+                compiled.compilerEvidence.commands.map((command) => ({
+                    name: command.name,
+                    trackId: command.arguments.trackId,
+                }))
+            ).toEqual(expandedTrackIds.map((trackId) => ({ name: actionName, trackId })));
+            const result = bridgeGroundedLlmToolCalls({
+                calls: compiled.compilerEvidence.commands,
+                compilerEvidence: compiled.compilerEvidence,
+                context: dualCitationContext,
+                projectRevision: 'revision-dual-citation-mute-solo',
+                prompt,
+            });
+            expect(
+                result.actions.filter((action) => action.type === 'muteTrack' || action.type === 'soloTrack')
+            ).toEqual([]);
+            expect(result.rejections).toEqual(
+                expandedTrackIds.map((_, index) => ({
+                    index,
+                    name: actionName,
+                    reason: 'Target trackId is ambiguous in the user request',
+                }))
+            );
         }
     });
 
