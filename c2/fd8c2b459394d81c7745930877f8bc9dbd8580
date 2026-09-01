@@ -1,0 +1,29 @@
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_a40848e8f8cca9::t_98844d2bcb2d71 22-27,36-41
+src/modules/AiRuntime/transformers/llmActionBridgeContracts.ts
+  s_a40848e8f8cca9::t_3c30fe466afac2 1-26
+src/modules/AiRuntime/useCases/assertCanonicalLlmActionStrategies.ts
+  s_a40848e8f8cca9::t_3c30fe466afac2 1-17
+src/modules/AiRuntime/useCases/index.ts
+  s_a40848e8f8cca9::t_98844d2bcb2d71 32
+src/modules/AiRuntime/transformers/llmActionStrategies/markerSectionStrategy.ts
+  s_a40848e8f8cca9::t_98844d2bcb2d71 10,12
+src/modules/AiRuntime/useCases/__tests__/assertCanonicalLlmActionStrategies.spec.ts
+  s_a40848e8f8cca9::t_98844d2bcb2d71 1-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "c2fd8c2b459394d81c7745930877f8bc9dbd8580",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
