@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 
 import {
     AUTHOR_BOT_NODE_ID,
@@ -1135,73 +1136,143 @@ function readMergedByActorNodeId(
 }
 
 type PullRequestReviewRecord = {
+    id: string;
     state: string;
-    submittedAt?: string | null;
-    author: { id?: string; login: string; __typename: string } | null;
-    commit: { oid: string } | null;
+    submittedAt: string | null;
+    author: { id: string | null; login: string; __typename: string } | null;
+    commitOid: string | null;
+};
+
+type ReviewThreadRecord = {
+    id: string;
+    isResolved: boolean;
 };
 
 type ReviewStatePage = {
+    pullRequestId: string;
+    headRefOid: string;
     reviews: {
         nodes: PullRequestReviewRecord[];
         pageInfo: { hasPreviousPage: boolean; startCursor: string | null };
     };
     reviewThreads: {
-        nodes: Array<{ isResolved: boolean }>;
+        nodes: ReviewThreadRecord[];
         pageInfo: { hasNextPage: boolean; endCursor: string | null };
     };
 };
 
+type CompleteReviewState = {
+    pullRequestId: string;
+    headRefOid: string;
+    reviews: PullRequestReviewRecord[];
+    reviewThreads: ReviewThreadRecord[];
+};
+
 const REVIEW_STATE_PAGE_SIZE = 100;
 const REVIEW_STATE_PAGE_LIMIT = 1_000;
-const REVIEW_STATE_QUERY = `query($owner:String!,$name:String!,$number:Int!,$reviewsBefore:String,$threadsAfter:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviews(last:${REVIEW_STATE_PAGE_SIZE},before:$reviewsBefore){nodes{state submittedAt author{login __typename ... on Bot{id}} commit{oid}} pageInfo{hasPreviousPage startCursor}} reviewThreads(first:${REVIEW_STATE_PAGE_SIZE},after:$threadsAfter){nodes{isResolved} pageInfo{hasNextPage endCursor}}}}}`;
+const REVIEW_STATE_QUERY = `query($owner:String!,$name:String!,$number:Int!,$reviewsBefore:String,$threadsAfter:String){repository(owner:$owner,name:$name){pullRequest(number:$number){id headRefOid reviews(last:${REVIEW_STATE_PAGE_SIZE},before:$reviewsBefore){nodes{id state submittedAt author{login __typename ... on Bot{id}} commit{oid}} pageInfo{hasPreviousPage startCursor}} reviewThreads(first:${REVIEW_STATE_PAGE_SIZE},after:$threadsAfter){nodes{id isResolved} pageInfo{hasNextPage endCursor}}}}}`;
+
+function invalidReviewState(number: number): never {
+    fail(`cannot prove complete review state for PR #${number}`);
+}
+
+function requiredReviewStateString(value: unknown, number: number): string {
+    if (typeof value !== 'string' || value.trim() === '') {
+        invalidReviewState(number);
+    }
+    return value;
+}
+
+function parseReviewAuthor(value: unknown, number: number): PullRequestReviewRecord['author'] {
+    if (value === null) {
+        return null;
+    }
+    if (!isRecord(value)) {
+        invalidReviewState(number);
+    }
+    if (value.id !== undefined && (typeof value.id !== 'string' || value.id.trim() === '')) {
+        invalidReviewState(number);
+    }
+    return {
+        id: typeof value.id === 'string' ? value.id : null,
+        login: requiredReviewStateString(value.login, number),
+        __typename: requiredReviewStateString(value.__typename, number),
+    };
+}
+
+function parseReviewRecord(value: unknown, number: number): PullRequestReviewRecord {
+    if (!isRecord(value)) {
+        invalidReviewState(number);
+    }
+    if (value.submittedAt !== null && typeof value.submittedAt !== 'string') {
+        invalidReviewState(number);
+    }
+    let commitOid: string | null = null;
+    if (value.commit !== null) {
+        if (!isRecord(value.commit)) {
+            invalidReviewState(number);
+        }
+        commitOid = requiredReviewStateString(value.commit.oid, number);
+    }
+    return {
+        id: requiredReviewStateString(value.id, number),
+        state: requiredReviewStateString(value.state, number),
+        submittedAt: value.submittedAt,
+        author: parseReviewAuthor(value.author, number),
+        commitOid,
+    };
+}
+
+function parseReviewThreadRecord(value: unknown, number: number): ReviewThreadRecord {
+    if (!isRecord(value) || typeof value.isResolved !== 'boolean') {
+        invalidReviewState(number);
+    }
+    return {
+        id: requiredReviewStateString(value.id, number),
+        isResolved: value.isResolved,
+    };
+}
 
 function parseReviewStatePage(response: string, number: number): ReviewStatePage {
     const pullRequest = parseJson<{
         data?: {
             repository?: {
-                pullRequest?: {
-                    reviews?: {
-                        nodes?: PullRequestReviewRecord[];
-                        pageInfo?: { hasPreviousPage?: unknown; startCursor?: unknown } | null;
-                    };
-                    reviewThreads?: {
-                        nodes?: Array<{ isResolved: boolean }>;
-                        pageInfo?: { hasNextPage?: unknown; endCursor?: unknown } | null;
-                    };
-                } | null;
+                pullRequest?: unknown;
             };
         };
     }>(response, 'review query').data?.repository?.pullRequest;
     if (
-        pullRequest === undefined ||
-        pullRequest === null ||
-        !Array.isArray(pullRequest.reviews?.nodes) ||
-        typeof pullRequest.reviews.pageInfo?.hasPreviousPage !== 'boolean' ||
-        !Array.isArray(pullRequest.reviewThreads?.nodes) ||
-        typeof pullRequest.reviewThreads.pageInfo?.hasNextPage !== 'boolean'
+        !isRecord(pullRequest) ||
+        !isRecord(pullRequest.reviews) ||
+        !Array.isArray(pullRequest.reviews.nodes) ||
+        !isRecord(pullRequest.reviews.pageInfo) ||
+        typeof pullRequest.reviews.pageInfo.hasPreviousPage !== 'boolean' ||
+        (pullRequest.reviews.pageInfo.startCursor !== null &&
+            typeof pullRequest.reviews.pageInfo.startCursor !== 'string') ||
+        !isRecord(pullRequest.reviewThreads) ||
+        !Array.isArray(pullRequest.reviewThreads.nodes) ||
+        !isRecord(pullRequest.reviewThreads.pageInfo) ||
+        typeof pullRequest.reviewThreads.pageInfo.hasNextPage !== 'boolean' ||
+        (pullRequest.reviewThreads.pageInfo.endCursor !== null &&
+            typeof pullRequest.reviewThreads.pageInfo.endCursor !== 'string')
     ) {
-        fail(`cannot prove complete review state for PR #${number}`);
+        invalidReviewState(number);
     }
     return {
+        pullRequestId: requiredReviewStateString(pullRequest.id, number),
+        headRefOid: requiredReviewStateString(pullRequest.headRefOid, number),
         reviews: {
-            nodes: pullRequest.reviews.nodes,
+            nodes: pullRequest.reviews.nodes.map((node) => parseReviewRecord(node, number)),
             pageInfo: {
                 hasPreviousPage: pullRequest.reviews.pageInfo.hasPreviousPage,
-                startCursor:
-                    typeof pullRequest.reviews.pageInfo.startCursor === 'string'
-                        ? pullRequest.reviews.pageInfo.startCursor
-                        : null,
+                startCursor: pullRequest.reviews.pageInfo.startCursor,
             },
         },
         reviewThreads: {
-            nodes: pullRequest.reviewThreads.nodes,
+            nodes: pullRequest.reviewThreads.nodes.map((node) => parseReviewThreadRecord(node, number)),
             pageInfo: {
                 hasNextPage: pullRequest.reviewThreads.pageInfo.hasNextPage,
-                endCursor:
-                    typeof pullRequest.reviewThreads.pageInfo.endCursor === 'string'
-                        ? pullRequest.reviewThreads.pageInfo.endCursor
-                        : null,
+                endCursor: pullRequest.reviewThreads.pageInfo.endCursor,
             },
         },
     };
@@ -1221,11 +1292,26 @@ function assertReviewStatePageBudget(number: number, pagesRead: number): void {
     }
 }
 
+function assertReviewStatePageIdentity(
+    number: number,
+    page: ReviewStatePage,
+    pullRequestId: string,
+    expectedHead: string
+): void {
+    if (page.pullRequestId !== pullRequestId || page.headRefOid !== expectedHead) {
+        invalidReviewState(number);
+    }
+}
+
 function readCompleteReviewState(
     number: number,
+    expectedHead: string,
+    expectedPullRequestId: string | undefined,
     readPage: (reviewsBefore: string | null, threadsAfter: string | null) => ReviewStatePage
-): { reviews: PullRequestReviewRecord[]; reviewThreads: Array<{ isResolved: boolean }> } {
+): CompleteReviewState {
     const initialPage = readPage(null, null);
+    const pullRequestId = expectedPullRequestId ?? initialPage.pullRequestId;
+    assertReviewStatePageIdentity(number, initialPage, pullRequestId, expectedHead);
     const reviewPages = [initialPage.reviews.nodes];
     const reviewCursors = new Set<string>();
     let reviewPage = initialPage.reviews;
@@ -1233,7 +1319,9 @@ function readCompleteReviewState(
     while (reviewPage.pageInfo.hasPreviousPage) {
         assertReviewStatePageBudget(number, reviewPagesRead);
         const cursor = nextReviewStateCursor(number, reviewPage.pageInfo.startCursor, reviewCursors);
-        reviewPage = readPage(cursor, null).reviews;
+        const nextPage = readPage(cursor, null);
+        assertReviewStatePageIdentity(number, nextPage, pullRequestId, expectedHead);
+        reviewPage = nextPage.reviews;
         reviewPages.push(reviewPage.nodes);
         reviewPagesRead += 1;
     }
@@ -1245,12 +1333,19 @@ function readCompleteReviewState(
     while (threadPage.pageInfo.hasNextPage) {
         assertReviewStatePageBudget(number, threadPagesRead);
         const cursor = nextReviewStateCursor(number, threadPage.pageInfo.endCursor, threadCursors);
-        threadPage = readPage(null, cursor).reviewThreads;
+        const nextPage = readPage(null, cursor);
+        assertReviewStatePageIdentity(number, nextPage, pullRequestId, expectedHead);
+        threadPage = nextPage.reviewThreads;
         reviewThreads.push(...threadPage.nodes);
         threadPagesRead += 1;
     }
 
-    return { reviews: reviewPages.reverse().flat(), reviewThreads };
+    return {
+        pullRequestId,
+        headRefOid: expectedHead,
+        reviews: reviewPages.reverse().flat(),
+        reviewThreads,
+    };
 }
 
 export function shellPort(
@@ -1333,7 +1428,7 @@ export function shellPort(
             readHeadCheckRuns(number, (cursor) => readRollupPage(number, headRefOid, cursor)),
         gateRequiredCheckNames: () => readGateRequiredCheckNames(),
         reviewState: (number, expectedHead) => {
-            const review = readCompleteReviewState(number, (reviewsBefore, threadsAfter) =>
+            const readPage = (reviewsBefore: string | null, threadsAfter: string | null) =>
                 parseReviewStatePage(
                     shell.capture('gh', [
                         'api',
@@ -1350,13 +1445,18 @@ export function shellPort(
                         ...(threadsAfter === null ? [] : ['-f', `threadsAfter=${threadsAfter}`]),
                     ]),
                     number
-                )
-            );
+                );
+            const firstScan = readCompleteReviewState(number, expectedHead, undefined, readPage);
+            const secondScan = readCompleteReviewState(number, expectedHead, firstScan.pullRequestId, readPage);
+            if (!isDeepStrictEqual(firstScan, secondScan)) {
+                fail(`cannot prove stable review state for PR #${number}`);
+            }
+            const review = secondScan;
             const onHead = review.reviews.filter(
                 (candidate) =>
                     candidate.state !== 'DISMISSED' &&
                     candidate.state !== 'PENDING' &&
-                    candidate.commit?.oid === expectedHead &&
+                    candidate.commitOid === expectedHead &&
                     candidate.author?.__typename === 'Bot' &&
                     isReviewerBotNodeId(candidate.author.id)
             );

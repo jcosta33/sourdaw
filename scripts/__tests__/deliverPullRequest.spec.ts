@@ -126,11 +126,22 @@ type ReviewThreadPageFixture = {
     endCursor?: string | null;
 };
 
-function reviewStateResponse(reviews: ReviewPageFixture, reviewThreads: ReviewThreadPageFixture): string {
+type ReviewStateIdentityFixture = {
+    pullRequestId?: string;
+    headRefOid?: string;
+};
+
+function reviewStateResponse(
+    reviews: ReviewPageFixture,
+    reviewThreads: ReviewThreadPageFixture,
+    identity: ReviewStateIdentityFixture = {}
+): string {
     return JSON.stringify({
         data: {
             repository: {
                 pullRequest: {
+                    id: identity.pullRequestId ?? 'pull-request-id',
+                    headRefOid: identity.headRefOid ?? 'head',
                     reviews: {
                         nodes: reviews.nodes,
                         pageInfo: {
@@ -184,9 +195,12 @@ function stackedDeliveryPort(finalSettings: MergeSettings) {
                     data: {
                         repository: {
                             pullRequest: {
+                                id: 'pull-request-id',
+                                headRefOid: 'head',
                                 reviews: {
                                     nodes: [
                                         {
+                                            id: 'review-approved',
                                             state: 'APPROVED',
                                             submittedAt: '2026-08-19T00:00:00Z',
                                             author: {
@@ -197,9 +211,12 @@ function stackedDeliveryPort(finalSettings: MergeSettings) {
                                             commit: { oid: 'head' },
                                         },
                                     ],
-                                    pageInfo: { hasPreviousPage: false },
+                                    pageInfo: { hasPreviousPage: false, startCursor: null },
                                 },
-                                reviewThreads: { nodes: [], pageInfo: { hasNextPage: false } },
+                                reviewThreads: {
+                                    nodes: [],
+                                    pageInfo: { hasNextPage: false, endCursor: null },
+                                },
                             },
                         },
                     },
@@ -2897,9 +2914,12 @@ describe('delivery shell boundary', () => {
                         data: {
                             repository: {
                                 pullRequest: {
+                                    id: 'pull-request-id',
+                                    headRefOid: 'head',
                                     reviews: {
                                         nodes: [
                                             {
+                                                id: 'review-approved',
                                                 state: 'APPROVED',
                                                 submittedAt: '2026-08-19T00:00:00Z',
                                                 author: {
@@ -2910,11 +2930,11 @@ describe('delivery shell boundary', () => {
                                                 commit: { oid: 'head' },
                                             },
                                         ],
-                                        pageInfo: { hasPreviousPage: false },
+                                        pageInfo: { hasPreviousPage: false, startCursor: null },
                                     },
                                     reviewThreads: {
-                                        nodes: [{ isResolved: true }],
-                                        pageInfo: { hasNextPage: false },
+                                        nodes: [{ id: 'thread-resolved', isResolved: true }],
+                                        pageInfo: { hasNextPage: false, endCursor: null },
                                     },
                                 },
                             },
@@ -3112,7 +3132,8 @@ describe('delivery shell boundary', () => {
 
     it('reads every review page before choosing the latest reviewer state on the expected head', () => {
         const captures: string[][] = [];
-        const latestUnrelatedReviews = Array.from({ length: 100 }, () => ({
+        const latestUnrelatedReviews = Array.from({ length: 100 }, (_, index) => ({
+            id: `review-unrelated-${index}`,
             state: 'COMMENTED',
             submittedAt: null,
             author: {
@@ -3140,6 +3161,7 @@ describe('delivery shell boundary', () => {
                         {
                             nodes: [
                                 {
+                                    id: 'review-approved',
                                     state: 'APPROVED',
                                     submittedAt: '2026-08-19T00:00:00Z',
                                     author: {
@@ -3165,17 +3187,90 @@ describe('delivery shell boundary', () => {
             latestReviewerStateOnHead: 'APPROVED',
             unresolvedThreads: 0,
         });
-        expect(captures).toHaveLength(2);
+        expect(captures).toHaveLength(4);
         expect(captures[0]?.find((argument) => argument.startsWith('query='))).toContain(
             'reviews(last:100,before:$reviewsBefore)'
         );
         expect(captures[0]).not.toContain('reviewsBefore=older-reviews');
         expect(captures[1]).toContain('reviewsBefore=older-reviews');
+        expect(captures[2]).not.toContain('reviewsBefore=older-reviews');
+        expect(captures[3]).toContain('reviewsBefore=older-reviews');
     });
+
+    it.each([
+        { label: 'null', submittedAt: null },
+        { label: 'equal', submittedAt: '2026-08-19T00:00:00Z' },
+    ])(
+        'uses GitHub connection order for opposite same-head reviewer states with $label timestamps',
+        ({ submittedAt }) => {
+            const captures: string[][] = [];
+            const shell: ShellRunner = {
+                capture: (_command, args) => {
+                    captures.push(args);
+                    const before = args.find((argument) => argument.startsWith('reviewsBefore='));
+                    if (before === undefined) {
+                        return reviewStateResponse(
+                            {
+                                nodes: [
+                                    {
+                                        id: 'review-newest',
+                                        state: 'CHANGES_REQUESTED',
+                                        submittedAt,
+                                        author: {
+                                            id: REVIEWER_BOT_NODE_ID,
+                                            login: 'renamed-reviewer[bot]',
+                                            __typename: 'Bot',
+                                        },
+                                        commit: { oid: 'head' },
+                                    },
+                                ],
+                                hasPreviousPage: true,
+                                startCursor: 'older-reviews',
+                            },
+                            { nodes: [], hasNextPage: false, endCursor: null }
+                        );
+                    }
+                    if (before === 'reviewsBefore=older-reviews') {
+                        return reviewStateResponse(
+                            {
+                                nodes: [
+                                    {
+                                        id: 'review-older',
+                                        state: 'APPROVED',
+                                        submittedAt,
+                                        author: {
+                                            id: REVIEWER_BOT_NODE_ID,
+                                            login: 'renamed-reviewer[bot]',
+                                            __typename: 'Bot',
+                                        },
+                                        commit: { oid: 'head' },
+                                    },
+                                ],
+                                hasPreviousPage: false,
+                                startCursor: null,
+                            },
+                            { nodes: [], hasNextPage: false, endCursor: null }
+                        );
+                    }
+                    throw new Error(`unexpected review cursor: ${before}`);
+                },
+                run: () => undefined,
+            };
+
+            expect(shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toEqual({
+                latestReviewerStateOnHead: 'CHANGES_REQUESTED',
+                unresolvedThreads: 0,
+            });
+            expect(captures).toHaveLength(4);
+        }
+    );
 
     it('counts unresolved review threads beyond the first page', () => {
         const captures: string[][] = [];
-        const firstThreadPage = Array.from({ length: 100 }, () => ({ isResolved: true }));
+        const firstThreadPage = Array.from({ length: 100 }, (_, index) => ({
+            id: `thread-resolved-${index}`,
+            isResolved: true,
+        }));
         const shell: ShellRunner = {
             capture: (command, args) => {
                 captures.push(args);
@@ -3186,6 +3281,7 @@ describe('delivery shell boundary', () => {
                 const reviews = {
                     nodes: [
                         {
+                            id: 'review-approved',
                             state: 'APPROVED',
                             submittedAt: '2026-08-19T00:00:00Z',
                             author: {
@@ -3208,7 +3304,7 @@ describe('delivery shell boundary', () => {
                 }
                 if (after === 'threadsAfter=later-threads') {
                     return reviewStateResponse(reviews, {
-                        nodes: [{ isResolved: false }],
+                        nodes: [{ id: 'thread-unresolved', isResolved: false }],
                         hasNextPage: false,
                         endCursor: null,
                     });
@@ -3222,15 +3318,17 @@ describe('delivery shell boundary', () => {
             latestReviewerStateOnHead: 'APPROVED',
             unresolvedThreads: 1,
         });
-        expect(captures).toHaveLength(2);
+        expect(captures).toHaveLength(4);
         expect(captures[0]?.find((argument) => argument.startsWith('query='))).toContain(
             'reviewThreads(first:100,after:$threadsAfter)'
         );
         expect(captures[0]).not.toContain('threadsAfter=later-threads');
         expect(captures[1]).toContain('threadsAfter=later-threads');
+        expect(captures[2]).not.toContain('threadsAfter=later-threads');
+        expect(captures[3]).toContain('threadsAfter=later-threads');
     });
 
-    it('preserves single-page review-state behavior', () => {
+    it('trusts two identical complete single-page review-state scans', () => {
         const captures: string[][] = [];
         const shell: ShellRunner = {
             capture: (_command, args) => {
@@ -3239,6 +3337,7 @@ describe('delivery shell boundary', () => {
                     {
                         nodes: [
                             {
+                                id: 'review-approved',
                                 state: 'APPROVED',
                                 submittedAt: '2026-08-19T00:00:00Z',
                                 author: {
@@ -3252,7 +3351,11 @@ describe('delivery shell boundary', () => {
                         hasPreviousPage: false,
                         startCursor: null,
                     },
-                    { nodes: [{ isResolved: false }], hasNextPage: false, endCursor: null }
+                    {
+                        nodes: [{ id: 'thread-unresolved', isResolved: false }],
+                        hasNextPage: false,
+                        endCursor: null,
+                    }
                 );
             },
             run: () => undefined,
@@ -3262,7 +3365,176 @@ describe('delivery shell boundary', () => {
             latestReviewerStateOnHead: 'APPROVED',
             unresolvedThreads: 1,
         });
-        expect(captures).toHaveLength(1);
+        expect(captures).toHaveLength(2);
+        expect(captures[0]?.find((argument) => argument.startsWith('query='))).toContain(
+            'pullRequest(number:$number){id headRefOid'
+        );
+        expect(captures[0]?.find((argument) => argument.startsWith('query='))).toContain('nodes{id state submittedAt');
+        expect(captures[0]?.find((argument) => argument.startsWith('query='))).toContain('nodes{id isResolved}');
+    });
+
+    it.each(['review', 'thread'] as const)('refuses %s state mutation between complete scans', (connection) => {
+        const captures: string[][] = [];
+        const shell: ShellRunner = {
+            capture: (_command, args) => {
+                captures.push(args);
+                const secondScan = captures.length === 2;
+                return reviewStateResponse(
+                    {
+                        nodes: [
+                            {
+                                id: 'review-state',
+                                state: connection === 'review' && secondScan ? 'CHANGES_REQUESTED' : 'APPROVED',
+                                submittedAt: null,
+                                author: {
+                                    id: REVIEWER_BOT_NODE_ID,
+                                    login: 'renamed-reviewer[bot]',
+                                    __typename: 'Bot',
+                                },
+                                commit: { oid: 'head' },
+                            },
+                        ],
+                        hasPreviousPage: false,
+                        startCursor: null,
+                    },
+                    {
+                        nodes: [{ id: 'thread-state', isResolved: connection !== 'thread' || !secondScan }],
+                        hasNextPage: false,
+                        endCursor: null,
+                    }
+                );
+            },
+            run: () => undefined,
+        };
+
+        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
+            /cannot prove stable review state for PR #42/
+        );
+        expect(captures).toHaveLength(2);
+    });
+
+    it.each([
+        {
+            label: 'pull-request identity',
+            identity: { pullRequestId: 'different-pull-request', headRefOid: 'head' },
+        },
+        { label: 'head', identity: { pullRequestId: 'pull-request-id', headRefOid: 'different-head' } },
+    ])('refuses $label drift between complete scans', ({ identity }) => {
+        const captures: string[][] = [];
+        const shell: ShellRunner = {
+            capture: (_command, args) => {
+                captures.push(args);
+                return reviewStateResponse(
+                    { nodes: [], hasPreviousPage: false, startCursor: null },
+                    { nodes: [], hasNextPage: false, endCursor: null },
+                    captures.length === 1 ? undefined : identity
+                );
+            },
+            run: () => undefined,
+        };
+
+        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
+            /cannot prove complete review state for PR #42/
+        );
+        expect(captures).toHaveLength(2);
+    });
+
+    it.each([
+        {
+            label: 'pull-request identity',
+            identity: { pullRequestId: 'different-pull-request', headRefOid: 'head' },
+        },
+        { label: 'head', identity: { pullRequestId: 'pull-request-id', headRefOid: 'different-head' } },
+    ])('refuses $label drift between pages', ({ identity }) => {
+        const captures: string[][] = [];
+        const shell: ShellRunner = {
+            capture: (_command, args) => {
+                captures.push(args);
+                return reviewStateResponse(
+                    {
+                        nodes: [],
+                        hasPreviousPage: captures.length === 1,
+                        startCursor: captures.length === 1 ? 'older-reviews' : null,
+                    },
+                    { nodes: [], hasNextPage: false, endCursor: null },
+                    captures.length === 1 ? undefined : identity
+                );
+            },
+            run: () => undefined,
+        };
+
+        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
+            /cannot prove complete review state for PR #42/
+        );
+        expect(captures).toHaveLength(2);
+    });
+
+    it.each(['review', 'thread'] as const)('refuses %s pagination beyond the page budget', (connection) => {
+        const captures: string[][] = [];
+        const shell: ShellRunner = {
+            capture: (_command, args) => {
+                captures.push(args);
+                if (captures.length > 1_000) {
+                    throw new Error('pagination exceeded its page budget');
+                }
+                const cursor = `${connection}-cursor-${captures.length}`;
+                return connection === 'review'
+                    ? reviewStateResponse(
+                          { nodes: [], hasPreviousPage: true, startCursor: cursor },
+                          { nodes: [], hasNextPage: false, endCursor: null }
+                      )
+                    : reviewStateResponse(
+                          { nodes: [], hasPreviousPage: false, startCursor: null },
+                          { nodes: [], hasNextPage: true, endCursor: cursor }
+                      );
+            },
+            run: () => undefined,
+        };
+
+        expect(() => shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toThrow(
+            /cannot prove complete review state for PR #42/
+        );
+        expect(captures).toHaveLength(1_000);
+    });
+
+    it('ignores same-head approvals from a User and a Bot with the wrong immutable actor ID', () => {
+        const response = reviewStateResponse(
+            {
+                nodes: [
+                    {
+                        id: 'review-user',
+                        state: 'APPROVED',
+                        submittedAt: '2026-08-19T00:00:00Z',
+                        author: { login: 'human-reviewer', __typename: 'User' },
+                        commit: { oid: 'head' },
+                    },
+                    {
+                        id: 'review-wrong-bot',
+                        state: 'APPROVED',
+                        submittedAt: '2026-08-20T00:00:00Z',
+                        author: { id: 'B_wrong-reviewer', login: 'wrong-reviewer[bot]', __typename: 'Bot' },
+                        commit: { oid: 'head' },
+                    },
+                ],
+                hasPreviousPage: false,
+                startCursor: null,
+            },
+            { nodes: [], hasNextPage: false, endCursor: null }
+        );
+        const captures: string[][] = [];
+        const shell: ShellRunner = {
+            capture: (_command, args) => {
+                captures.push(args);
+                return response;
+            },
+            run: () => undefined,
+        };
+
+        expect(shellPort('jcosta33/sourdaw', shell).reviewState(42, 'head')).toEqual({
+            latestReviewerStateOnHead: null,
+            unresolvedThreads: 0,
+        });
+        expect(captures).toHaveLength(2);
     });
 
     it.each(['review', 'thread'] as const)('refuses a missing %s pagination cursor', (connection) => {
@@ -3327,9 +3599,12 @@ describe('delivery shell boundary', () => {
                         data: {
                             repository: {
                                 pullRequest: {
+                                    id: 'pull-request-id',
+                                    headRefOid: 'head',
                                     reviews: {
                                         nodes: [
                                             {
+                                                id: 'review-approved',
                                                 state: 'APPROVED',
                                                 submittedAt: '2026-08-19T00:00:00Z',
                                                 author: {
@@ -3340,11 +3615,11 @@ describe('delivery shell boundary', () => {
                                                 commit: { oid: 'head' },
                                             },
                                         ],
-                                        pageInfo: { hasPreviousPage: false },
+                                        pageInfo: { hasPreviousPage: false, startCursor: null },
                                     },
                                     reviewThreads: {
-                                        nodes: [{ isResolved: true }],
-                                        pageInfo: { hasNextPage: false },
+                                        nodes: [{ id: 'thread-resolved', isResolved: true }],
+                                        pageInfo: { hasNextPage: false, endCursor: null },
                                     },
                                 },
                             },
@@ -3369,9 +3644,12 @@ describe('delivery shell boundary', () => {
                         data: {
                             repository: {
                                 pullRequest: {
+                                    id: 'pull-request-id',
+                                    headRefOid: 'head',
                                     reviews: {
                                         nodes: [
                                             {
+                                                id: 'review-wrong-head',
                                                 state: 'APPROVED',
                                                 submittedAt: '2026-08-19T00:00:00Z',
                                                 author: {
@@ -3382,11 +3660,11 @@ describe('delivery shell boundary', () => {
                                                 commit: { oid: 'other-head' },
                                             },
                                         ],
-                                        pageInfo: { hasPreviousPage: false },
+                                        pageInfo: { hasPreviousPage: false, startCursor: null },
                                     },
                                     reviewThreads: {
-                                        nodes: [{ isResolved: true }],
-                                        pageInfo: { hasNextPage: false },
+                                        nodes: [{ id: 'thread-resolved', isResolved: true }],
+                                        pageInfo: { hasNextPage: false, endCursor: null },
                                     },
                                 },
                             },
