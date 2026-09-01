@@ -25,6 +25,7 @@ import {
     type MarkerPlanningSignature,
     type SectionPlanningSignature,
 } from './llmActionBridgeContracts';
+import { bridgeCoreAutomationToolCall } from './llmActionStrategies/coreAutomationStrategy';
 import { bridgeMarkerSectionToolCall } from './llmActionStrategies/markerSectionStrategy';
 import { bridgeMasterVcaToolCall, normalizeVcaGroupName } from './llmActionStrategies/masterVcaStrategy';
 import { bridgeTransportTimelineToolCall } from './llmActionStrategies/transportTimelineStrategy';
@@ -217,24 +218,6 @@ function findAvailableDeviceType(context: ProjectContext, assertedType: unknown)
     return matches.length === 1 ? matches[0] : undefined;
 }
 
-const automationLaneDisplayNameByParameterId = {
-    gain: 'Gain',
-    pan: 'Pan',
-} as const;
-
-type ExecutableAutomationParameterId = keyof typeof automationLaneDisplayNameByParameterId;
-
-function isExecutableAutomationParameterId(value: unknown): value is ExecutableAutomationParameterId {
-    return typeof value === 'string' && Object.hasOwn(automationLaneDisplayNameByParameterId, value);
-}
-
-function findAutomationLane(context: ProjectContext, laneId: unknown) {
-    if (typeof laneId !== 'string') {
-        return undefined;
-    }
-    return (context.automationLanes ?? []).find((lane) => lane.id === laneId);
-}
-
 function getClipAutomationLaneIds(context: ProjectContext, clipId: string): string[] {
     return (context.automationLanes ?? []).filter((lane) => lane.clipId === clipId).map((lane) => lane.id);
 }
@@ -255,36 +238,6 @@ function getAutomationTransformLaneId(action: RuntimeAction): string | null {
 
 function normalizeMarkerName(name: string): string {
     return name.trim().toLocaleLowerCase();
-}
-
-function wouldScaleAutomationChange(
-    lane: NonNullable<ProjectContext['automationLanes']>[number],
-    factor: number
-): boolean {
-    return lane.points.some((point) => {
-        const scaledValue = Math.min(lane.maxValue, Math.max(lane.minValue, point.value * factor));
-        return scaledValue !== point.value;
-    });
-}
-
-function isProviderAutomationCurve(
-    value: unknown
-): value is 'linear' | 'step' | 'exponential' | 's-curve' | 'stairs' | 'smooth' | 'bezier' {
-    return (
-        value === 'linear' ||
-        value === 'step' ||
-        value === 'exponential' ||
-        value === 's-curve' ||
-        value === 'stairs' ||
-        value === 'smooth' ||
-        value === 'bezier'
-    );
-}
-
-type ProviderAutomationMode = NonNullable<ProjectContext['tracks'][number]['automationMode']>;
-
-function isProviderAutomationMode(value: unknown): value is ProviderAutomationMode {
-    return value === 'read' || value === 'write' || value === 'touch' || value === 'latch' || value === 'off';
 }
 
 function isSafeTrackColor(value: unknown): value is string {
@@ -331,29 +284,12 @@ function bridgeToolCall({
         return masterVcaResult;
     }
 
-    const args = call.arguments;
-
-    if (call.name === 'addAutomationLane') {
-        const track = findTrack(context, args.trackId);
-        if (
-            !hasExactKeys(args, ['trackId', 'parameterId']) ||
-            !track ||
-            !isExecutableAutomationParameterId(args.parameterId) ||
-            (context.automationLanes ?? []).some(
-                (lane) => lane.trackId === track.id && lane.parameterId === args.parameterId
-            )
-        ) {
-            return rejection(index, call.name, 'Expected an available track and one new gain or pan automation lane');
-        }
-        return {
-            type: 'addAutomationLane',
-            payload: {
-                trackId: track.id,
-                parameterId: args.parameterId,
-                parameterName: automationLaneDisplayNameByParameterId[args.parameterId],
-            },
-        };
+    const coreAutomationResult = bridgeCoreAutomationToolCall({ call, context, index });
+    if (coreAutomationResult !== null) {
+        return coreAutomationResult;
     }
+
+    const args = call.arguments;
 
     if (call.name === 'addAdjustmentRegion') {
         const { layerId, startBeat, endBeat, blend, fadeInBeats, fadeOutBeats } = args;
@@ -502,179 +438,6 @@ function bridgeToolCall({
                 gainDb,
             },
         };
-    }
-
-    if (call.name === 'addAutomationPoint') {
-        const lane = findAutomationLane(context, args.laneId);
-        const hasValidKeys =
-            hasExactKeys(args, ['laneId', 'beat', 'value']) || hasExactKeys(args, ['laneId', 'beat', 'value', 'curve']);
-        if (args.curve !== undefined && !isProviderAutomationCurve(args.curve)) {
-            return rejection(index, call.name, 'Expected one supported automation curve');
-        }
-        if (
-            !hasValidKeys ||
-            !lane ||
-            !isFiniteNumber(args.beat) ||
-            args.beat < 0 ||
-            !isFiniteNumber(args.value) ||
-            !Number.isFinite(lane.minValue) ||
-            !Number.isFinite(lane.maxValue) ||
-            args.value < lane.minValue ||
-            args.value > lane.maxValue ||
-            lane.points.some((point) => point.beat === args.beat)
-        ) {
-            return rejection(
-                index,
-                call.name,
-                'Expected an existing automation lane, an unused non-negative beat, and a value within lane bounds'
-            );
-        }
-        return {
-            type: 'addAutomationPoint',
-            payload: {
-                laneId: lane.id,
-                beat: args.beat,
-                value: args.value,
-                ...(args.curve === undefined ? {} : { curve: args.curve }),
-            },
-        };
-    }
-
-    if (call.name === 'setAutomationLaneEnabled') {
-        const lane = findAutomationLane(context, args.laneId);
-        if (
-            !hasExactKeys(args, ['laneId', 'enabled']) ||
-            !lane ||
-            typeof args.enabled !== 'boolean' ||
-            args.enabled === lane.enabled
-        ) {
-            return rejection(
-                index,
-                call.name,
-                'Expected an existing automation lane and a changed boolean enabled value'
-            );
-        }
-        return {
-            type: 'setAutomationLaneEnabled',
-            payload: { laneId: lane.id, enabled: args.enabled },
-        };
-    }
-
-    if (call.name === 'setAutomationMode') {
-        const track = findTrack(context, args.trackId);
-        if (
-            !hasExactKeys(args, ['trackId', 'mode']) ||
-            !track ||
-            !isProviderAutomationMode(args.mode) ||
-            args.mode === track.automationMode
-        ) {
-            return rejection(index, call.name, 'Expected an existing track and a changed automation mode');
-        }
-        return { type: 'setAutomationMode', payload: { trackId: track.id, mode: args.mode } };
-    }
-
-    if (call.name === 'scaleAutomation') {
-        const lane = findAutomationLane(context, args.laneId);
-        if (
-            !hasExactKeys(args, ['laneId', 'factor']) ||
-            !lane ||
-            lane.points.length === 0 ||
-            !isFiniteNumber(args.factor) ||
-            args.factor <= 0 ||
-            args.factor > 16 ||
-            args.factor === 1 ||
-            !wouldScaleAutomationChange(lane, args.factor)
-        ) {
-            return rejection(
-                index,
-                call.name,
-                'Expected a populated automation lane and a changed factor above 0 and at most 16'
-            );
-        }
-        return { type: 'scaleAutomation', payload: { laneId: lane.id, factor: args.factor } };
-    }
-
-    if (call.name === 'stretchAutomation') {
-        const lane = findAutomationLane(context, args.laneId);
-        if (
-            !hasExactKeys(args, ['laneId', 'factor']) ||
-            !lane ||
-            lane.points.length < 2 ||
-            !isFiniteNumber(args.factor) ||
-            args.factor <= 0 ||
-            args.factor > 16 ||
-            args.factor === 1
-        ) {
-            return rejection(
-                index,
-                call.name,
-                'Expected an automation lane with at least two points and a changed factor above 0 and at most 16'
-            );
-        }
-        return { type: 'stretchAutomation', payload: { laneId: lane.id, factor: args.factor } };
-    }
-
-    if (call.name === 'invertAutomation') {
-        const lane = findAutomationLane(context, args.laneId);
-        if (!hasExactKeys(args, ['laneId']) || !lane || lane.points.length === 0) {
-            return rejection(index, call.name, 'Expected a populated automation lane');
-        }
-        return { type: 'invertAutomation', payload: { laneId: lane.id } };
-    }
-
-    if (call.name === 'reverseAutomation') {
-        const lane = findAutomationLane(context, args.laneId);
-        if (!hasExactKeys(args, ['laneId']) || !lane || lane.points.length < 2) {
-            return rejection(index, call.name, 'Expected an automation lane with at least two points');
-        }
-        return { type: 'reverseAutomation', payload: { laneId: lane.id } };
-    }
-
-    if (call.name === 'thinAutomation') {
-        const lane = findAutomationLane(context, args.laneId);
-        const hasValidKeys = hasExactKeys(args, ['laneId']) || hasExactKeys(args, ['laneId', 'tolerance']);
-        const tolerance = args.tolerance ?? 0.01;
-        const laneSpan = lane ? lane.maxValue - lane.minValue : 0;
-        if (
-            !hasValidKeys ||
-            !lane ||
-            lane.points.length <= 2 ||
-            !isFiniteNumber(tolerance) ||
-            tolerance <= 0 ||
-            !Number.isFinite(laneSpan) ||
-            tolerance > laneSpan
-        ) {
-            return rejection(
-                index,
-                call.name,
-                'Expected an automation lane with more than two points and a positive tolerance within its value span'
-            );
-        }
-        return {
-            type: 'thinAutomation',
-            payload: { laneId: lane.id, ...(args.tolerance === undefined ? {} : { tolerance }) },
-        };
-    }
-
-    if (call.name === 'quantizeAutomation') {
-        const lane = findAutomationLane(context, args.laneId);
-        const gridSize = args.gridSize;
-        if (
-            !hasExactKeys(args, ['laneId', 'gridSize']) ||
-            !lane ||
-            lane.points.length === 0 ||
-            !isFiniteNumber(gridSize) ||
-            gridSize <= 0 ||
-            gridSize > 64 ||
-            lane.points.every((point) => Math.round(point.beat / gridSize) * gridSize === point.beat)
-        ) {
-            return rejection(
-                index,
-                call.name,
-                'Expected a populated lane and a changed beat grid above 0 and at most 64'
-            );
-        }
-        return { type: 'quantizeAutomation', payload: { laneId: lane.id, gridSize } };
     }
 
     if (call.name === 'addTrack') {

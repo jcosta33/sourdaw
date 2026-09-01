@@ -12,7 +12,7 @@
  *
  * The contract requires a batch to be refused **at apply time**, whole, before
  * any of it is applied — and nearly every refusal reason this backend is
- * accountable for (`stretched-clip-unsupported`, `smoothed-write-unsupported`,
+ * accountable for (`smoothed-write-unsupported`, `bus-send-unsupported`,
  * the queue-capacity refusals) is the native mapper's own. The exception is
  * {@link UNSUPPORTED_COMMAND_REASONS}, refused here because the native mapper
  * is shared with the live path and cannot refuse a command that path needs. So
