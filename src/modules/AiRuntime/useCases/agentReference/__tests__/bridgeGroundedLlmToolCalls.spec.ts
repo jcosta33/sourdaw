@@ -2161,25 +2161,27 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'transpose notes in Piano MIDI by -7 semitones',
             context
         );
-        const selectedNotes = bridge(
-            [{ name: 'transposeNotes', arguments: { clipId: 'clip-midi', semitones: 7 } }],
-            'transpose notes in Piano MIDI by 7 semitones, but only the selected notes',
-            context
-        );
-        const selectedMidiNotes = bridge(
-            [{ name: 'transposeNotes', arguments: { clipId: 'clip-midi', semitones: 7 } }],
-            'transpose notes in Piano MIDI by 7 semitones, but only the selected MIDI notes',
-            context
-        );
-        const noteSelection = bridge(
-            [{ name: 'transposeNotes', arguments: { clipId: 'clip-midi', semitones: 7 } }],
-            'transpose notes in Piano MIDI by 7 semitones, but only the note selection',
-            context
-        );
-        const midiNoteSelection = bridge(
-            [{ name: 'transposeNotes', arguments: { clipId: 'clip-midi', semitones: 7 } }],
-            'transpose notes in Piano MIDI by 7 semitones, but only the selection of MIDI notes',
-            context
+        const selectedNoteScopePhrases = [
+            'selected notes',
+            'selected MIDI notes',
+            'current notes',
+            'current MIDI notes',
+            'these notes',
+            'these MIDI notes',
+            'notes that are selected',
+            'MIDI notes that are selected',
+            'notes currently selected',
+            'MIDI notes currently selected',
+            'note selection',
+            'selection of notes',
+            'selection of MIDI notes',
+        ] as const;
+        const selectedNoteScopeResults = selectedNoteScopePhrases.map((phrase) =>
+            bridge(
+                [{ name: 'transposeNotes', arguments: { clipId: 'clip-midi', semitones: 7 } }],
+                `transpose notes in Piano MIDI by 7 semitones, but only the ${phrase}`,
+                context
+            )
         );
         const selectedNotesWithWrongValue = bridge(
             [{ name: 'transposeNotes', arguments: { clipId: 'clip-midi', semitones: 8 } }],
@@ -2211,14 +2213,16 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(transpose.actions).toEqual([
             { type: 'transposeNotes', payload: { clipId: 'clip-midi', semitones: -7 } },
         ]);
-        expect(selectedNotes.actions).toEqual([]);
-        expect(selectedNotes.rejections[0]?.reason).toContain('Selected-note edits are not supported');
-        expect(selectedMidiNotes.actions).toEqual([]);
-        expect(selectedMidiNotes.rejections[0]?.reason).toContain('Selected-note edits are not supported');
-        expect(noteSelection.actions).toEqual([]);
-        expect(noteSelection.rejections[0]?.reason).toContain('Selected-note edits are not supported');
-        expect(midiNoteSelection.actions).toEqual([]);
-        expect(midiNoteSelection.rejections[0]?.reason).toContain('Selected-note edits are not supported');
+        for (const result of selectedNoteScopeResults) {
+            expect(result.actions).toEqual([]);
+            expect(result.rejections).toEqual([
+                {
+                    index: 0,
+                    name: 'transposeNotes',
+                    reason: 'Selected-note edits are not supported; target the whole MIDI clip',
+                },
+            ]);
+        }
         expect(selectedNotesWithWrongValue.actions).toEqual([]);
         expect(selectedNotesWithWrongValue.rejections[0]?.reason).toContain('Selected-note edits are not supported');
         expect(wrongValue.actions).toEqual([]);
