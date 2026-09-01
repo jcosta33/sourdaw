@@ -1,0 +1,31 @@
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/__tests__/postTargetScopeAdmissionStrategy.spec.ts
+  s_a40848e8f8cca9::t_6a2e41d646e664 102,104-111,116-126,130-139
+  s_a40848e8f8cca9::t_a86f242ed149e5 140
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_d3f746f86fab42 850-852,854-863
+  s_a40848e8f8cca9::t_ba1db0534b5090 53-56,90,92,830-835,840,845-849,853
+  s_a40848e8f8cca9::t_39f5bef4f3800f 864,1428,1687-1695,1700-1702,1710,3750
+  s_a40848e8f8cca9::t_20da0a8151623f 865
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_a40848e8f8cca9::t_5386dbd0dfeeb8 2926-2957
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/collectClearSolosRestrictionClauses.ts
+  s_a40848e8f8cca9::t_e30fff37afa8e5 7-8,10-20,23-31,34-38,40-41,44-46,49-51,54-55
+  s_a40848e8f8cca9::t_9764d8c6cfa046 4
+  s_a40848e8f8cca9::t_4a6774f38f05d0 53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "370f8b0c7e97fbc28b8bbedd60017712cd750c9a",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
