@@ -3009,54 +3009,6 @@ describe('delivery shell boundary', () => {
         });
     });
 
-    it('marks every delivery write immediately before invoking GitHub', () => {
-        const events: string[] = [];
-        const port = shellPort(
-            'jcosta33/sourdaw',
-            {
-                capture: (command, args) => {
-                    const joined = args.join(' ');
-                    if (joined === 'api repos/jcosta33/sourdaw') {
-                        events.push('policy');
-                        return mergeSettings({
-                            allow_merge_commit: false,
-                            allow_rebase_merge: false,
-                            allow_squash_merge: true,
-                            delete_branch_on_merge: false,
-                        });
-                    }
-                    if (joined.includes('/pulls/42/merge')) {
-                        events.push('merge');
-                        return JSON.stringify({ merged: true, message: 'merged' });
-                    }
-                    if (joined.includes('/issues/42/comments')) {
-                        events.push('receipt');
-                        return JSON.stringify({
-                            node_id: 'IC_delivery_receipt',
-                            body: 'receipt',
-                            user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]', type: 'Bot' },
-                            created_at: '2026-08-31T10:00:00Z',
-                            updated_at: '2026-08-31T10:00:00Z',
-                        });
-                    }
-                    throw new Error(`unexpected capture: ${command} ${joined}`);
-                },
-                run: (command, args) => {
-                    expect(command).toBe('gh');
-                    expect(args).toContain('PATCH');
-                    events.push('retarget');
-                },
-            },
-            { markRemoteMutationAttempt: () => events.push('attempt') }
-        );
-
-        port.merge(42, 'head', false);
-        port.retarget(43, 'main');
-        port.addDeliveryReceipt(42, 'receipt');
-
-        expect(events).toEqual(['policy', 'attempt', 'merge', 'attempt', 'retarget', 'attempt', 'receipt']);
-    });
-
     it.each([
         [
             'uses squash when it is the only enabled method',

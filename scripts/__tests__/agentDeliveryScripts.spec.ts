@@ -97,6 +97,31 @@ function deliveryLockExists(root: string, number: number): boolean {
     }
 }
 
+async function expectAmbiguousDeliveryMutationRetainsOwner(
+    operation: (root: string, number: number) => Promise<void>
+): Promise<void> {
+    const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+    const number = 2495;
+    initializeDeliveryLockRepository(root);
+    let reacquired = false;
+
+    try {
+        await expect(operation(root, number)).rejects.toThrow('remote mutation result is indeterminate');
+        const retainedOwnerOid = readDeliveryLockOid(root, number);
+        expect(retainedOwnerOid).not.toBe('');
+
+        await expect(
+            withPullRequestDeliveryLock(root, number, async () => {
+                reacquired = true;
+            })
+        ).rejects.toThrow(/already being delivered/);
+        expect(reacquired).toBe(false);
+        expect(readDeliveryLockOid(root, number)).toBe(retainedOwnerOid);
+    } finally {
+        rmSync(root, { recursive: true, force: true });
+    }
+}
+
 function pullRequestSnapshot(overrides: Partial<PullRequestSnapshot> = {}): PullRequestSnapshot {
     return {
         number: 2495,
@@ -1646,6 +1671,147 @@ describe('package scripts and gitignore', () => {
         }
     });
 
+    it.each<[
+        string,
+        (port: DeliveryPort) => void,
+        (command: string, args: string[]) => boolean,
+    ]>([
+        [
+            'delivery receipt creation',
+            (port) => {
+                port.addDeliveryReceipt(2495, 'receipt');
+            },
+            (command, args) =>
+                command === 'gh' &&
+                args.includes('POST') &&
+                args.includes('repos/jcosta33/sourdaw/issues/2495/comments'),
+        ],
+        [
+            'squash merge',
+            (port) => {
+                port.merge(2495, 'head', false);
+            },
+            (command, args) =>
+                command === 'gh' &&
+                args.includes('PUT') &&
+                args.includes('repos/jcosta33/sourdaw/pulls/2495/merge'),
+        ],
+        [
+            'dependent retarget',
+            (port) => {
+                port.retarget(2496, 'main');
+            },
+            (command, args) =>
+                command === 'gh' && args.includes('PATCH') && args.includes('repos/jcosta33/sourdaw/pulls/2496'),
+        ],
+    ])(
+        'retains the exact owner when production %s dispatch is indeterminate',
+        async (_label, mutate, isDispatch) => {
+            let dispatched = 0;
+            await expectAmbiguousDeliveryMutationRetainsOwner(async (root, number) => {
+                await withPullRequestDeliveryLock(root, number, async ({ markRemoteMutationAttempt }) => {
+                    const failDispatch = (command: string, args: string[]): never => {
+                        if (!isDispatch(command, args)) {
+                            throw new Error(`unexpected command in test: ${command} ${args.join(' ')}`);
+                        }
+                        dispatched += 1;
+                        throw new Error('remote mutation result is indeterminate');
+                    };
+                    const port = shellPort(
+                        'jcosta33/sourdaw',
+                        {
+                            capture: (command, args) => {
+                                if (args.join(' ') === 'api repos/jcosta33/sourdaw') {
+                                    return JSON.stringify({
+                                        allow_merge_commit: false,
+                                        allow_rebase_merge: false,
+                                        allow_squash_merge: true,
+                                        delete_branch_on_merge: false,
+                                    });
+                                }
+                                return failDispatch(command, args);
+                            },
+                            run: failDispatch,
+                        },
+                        { markRemoteMutationAttempt }
+                    );
+                    mutate(port);
+                });
+            });
+            expect(dispatched).toBe(1);
+        }
+    );
+
+    it.each<[string, (port: ReconcileTrackerIssuePort) => void, 'PATCH' | 'POST']>([
+        [
+            'tracker issue update',
+            (port) => {
+                port.update(2406, { state: 'CLOSED', stateReason: 'COMPLETED' });
+            },
+            'PATCH',
+        ],
+        [
+            'tracker issue comment',
+            (port) => {
+                port.comment(2406, 'delivery completed');
+            },
+            'POST',
+        ],
+    ])(
+        'retains the exact owner when production %s dispatch is indeterminate',
+        async (_label, mutate, expectedMethod) => {
+            let dispatched = 0;
+            await expectAmbiguousDeliveryMutationRetainsOwner(async (root, number) => {
+                const authentication: DeliveryAuthentication = {
+                    minted: {
+                        token: 'ghs_delivery',
+                        login: 'renamed-author[bot]',
+                        actorNodeId: AUTHOR_BOT_NODE_ID,
+                        permissions: {},
+                    },
+                    session: { configDir: '/tmp/sourdaw-delivery', env: {}, dispose: () => undefined },
+                };
+                const unusedPort: DeliveryPort = {
+                    fetch: () => expect.fail('delivery domain should not run'),
+                    pullRequest: () => expect.fail('delivery domain should not run'),
+                    gateRequiredCheckNames: () => expect.fail('delivery domain should not run'),
+                    headCheckRuns: () => expect.fail('delivery domain should not run'),
+                    reviewState: () => expect.fail('delivery domain should not run'),
+                    dependents: () => expect.fail('delivery domain should not run'),
+                    repositoryDeletesMergedBranches: () => expect.fail('delivery domain should not run'),
+                    merge: () => expect.fail('delivery domain should not run'),
+                    retarget: () => expect.fail('delivery domain should not run'),
+                    deliveryReceipts: () => expect.fail('delivery domain should not run'),
+                    addDeliveryReceipt: () => expect.fail('delivery domain should not run'),
+                    log: () => expect.fail('delivery domain should not run'),
+                };
+                const dependencies: DeliveryCoordinatorDependencies = {
+                    primaryRoot: () => root,
+                    serializeDelivery: withPullRequestDeliveryLock,
+                    authenticateAuthor: async () => authentication,
+                    authenticateTracker: async () => authentication,
+                    repositoryName: () => 'jcosta33/sourdaw',
+                    deliveryPort: () => unusedPort,
+                    trackerPort: () =>
+                        githubTrackerIssuePort(
+                            (args) => {
+                                if (!args.includes(expectedMethod)) {
+                                    throw new Error(`unexpected tracker command in test: ${args.join(' ')}`);
+                                }
+                                dispatched += 1;
+                                throw new Error('remote mutation result is indeterminate');
+                            },
+                            (operation) => operation()
+                        ),
+                    completeIssue: (_issueNumber, _actorNodeId, port) => mutate(port),
+                    deliver: (_number, _port, tracker) => tracker.complete(2406),
+                };
+                await coordinateDelivery(number, dependencies);
+            });
+            expect(dispatched).toBe(1);
+        }
+    );
+
     it('does not release a delivery lock whose ownership token changed', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
         initializeDeliveryLockRepository(root);
@@ -1742,7 +1908,7 @@ describe('package scripts and gitignore', () => {
                 seen.push(`lock:${number}:acquire`);
                 try {
                     return await operation({
-                        markRemoteMutationAttempt: () => seen.push(`lock:${number}:attempt`),
+                        markRemoteMutationAttempt: () => undefined,
                     });
                 } finally {
                     seen.push(`lock:${number}:release`);
@@ -1766,13 +1932,6 @@ describe('package scripts and gitignore', () => {
                         if (args.includes('--paginate')) {
                             return JSON.stringify([[]]);
                         }
-                        if (args.includes('POST')) {
-                            return JSON.stringify({
-                                node_id: 'IC_tracker_marker',
-                                body: 'marker coverage',
-                                user: { node_id: AUTHOR_BOT_NODE_ID, login: 'renamed-author[bot]', type: 'Bot' },
-                            });
-                        }
                         return JSON.stringify({
                             node_id: 'I_2406',
                             number: 2406,
@@ -1789,7 +1948,6 @@ describe('package scripts and gitignore', () => {
             completeIssue: (issue, login, port) => {
                 expect(port).not.toBe(trackerPort);
                 port.update(issue, { state: 'CLOSED', stateReason: 'COMPLETED' });
-                port.comment(issue, 'marker coverage');
                 seen.push(`complete:${login}`);
             },
             deliver: (_number, port, completion) => {
@@ -1807,8 +1965,6 @@ describe('package scripts and gitignore', () => {
             'repository:ghs_author',
             'tracker:ghs_tracker',
             'delivery:ghs_author',
-            'lock:2495:attempt',
-            'lock:2495:attempt',
             `complete:${AUTHOR_BOT_NODE_ID}`,
             'lock:2495:release',
         ]);
@@ -1828,17 +1984,6 @@ describe('package scripts and gitignore', () => {
             },
             {
                 args: ['api', '--paginate', '--slurp', 'repos/jcosta33/sourdaw/issues/2406/comments?per_page=100'],
-                token: 'ghs_tracker',
-            },
-            {
-                args: [
-                    'api',
-                    '--method',
-                    'POST',
-                    'repos/jcosta33/sourdaw/issues/2406/comments',
-                    '-f',
-                    'body=marker coverage',
-                ],
                 token: 'ghs_tracker',
             },
         ]);
