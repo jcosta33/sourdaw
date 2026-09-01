@@ -2790,35 +2790,43 @@ describe('bridgeGroundedLlmToolCalls', () => {
     });
 
     it('rejects restricted mute and solo not-including scopes', () => {
-        const muted = bridge(
-            [{ name: 'muteTrack', arguments: { trackId: vocals.id, muted: true } }],
-            'mute all tracks not including Vocals'
-        );
-        const soloed = bridge(
-            [{ name: 'soloTrack', arguments: { trackId: vocals.id, soloed: true } }],
-            'solo all tracks not including Vocals'
-        );
+        const restrictedMutePrompts = [
+            'mute all tracks not including Vocals',
+            'mute all tracks except Vocals',
+            'mute all tracks excluding Vocals',
+            'mute all tracks all but Vocals',
+        ];
+        const restrictedSoloPrompts = [
+            'solo all tracks not including Vocals',
+            'solo all tracks except Vocals',
+            'solo all tracks excluding Vocals',
+            'solo all tracks all but Vocals',
+        ];
 
-        expect(muted).toEqual({
-            actions: [],
-            rejections: [
-                {
-                    index: 0,
-                    name: 'muteTrack',
-                    reason: 'Provider mute scope is not explicitly universal',
-                },
-            ],
-        });
-        expect(soloed).toEqual({
-            actions: [],
-            rejections: [
-                {
-                    index: 0,
-                    name: 'soloTrack',
-                    reason: 'Provider solo scope is not explicitly universal',
-                },
-            ],
-        });
+        for (const prompt of restrictedMutePrompts) {
+            expect(bridge([{ name: 'muteTrack', arguments: { trackId: vocals.id, muted: true } }], prompt)).toEqual({
+                actions: [],
+                rejections: [
+                    {
+                        index: 0,
+                        name: 'muteTrack',
+                        reason: 'Provider mute scope is not explicitly universal',
+                    },
+                ],
+            });
+        }
+        for (const prompt of restrictedSoloPrompts) {
+            expect(bridge([{ name: 'soloTrack', arguments: { trackId: vocals.id, soloed: true } }], prompt)).toEqual({
+                actions: [],
+                rejections: [
+                    {
+                        index: 0,
+                        name: 'soloTrack',
+                        reason: 'Provider solo scope is not explicitly universal',
+                    },
+                ],
+            });
+        }
     });
 
     it('rejects solo-safe writes to a bus created earlier in the same provider plan', () => {
@@ -3568,7 +3576,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
         ]);
     });
 
-    it('rejects muteTrack when a whitespace-separated kind and name collide with a hyphenated id', () => {
+    it('grounds muteTrack to the exact name when a whitespace-separated kind and name is not a hyphenated id', () => {
         const spacedKindNameContext = {
             ...projectContext,
             tracks: [
@@ -3589,21 +3597,15 @@ describe('bridgeGroundedLlmToolCalls', () => {
         );
 
         expect(literal.actions).toEqual([]);
-        expect(named.actions).toEqual([]);
+        expect(named.actions).toEqual([{ type: 'muteTrack', payload: { trackId: 'track-keys', muted: true } }]);
         expect(literal.rejections).toEqual([
             {
                 index: 0,
                 name: 'muteTrack',
-                reason: 'Target trackId is ambiguous in the user request',
+                reason: 'Provider target trackId does not match the uniquely grounded project reference',
             },
         ]);
-        expect(named.rejections).toEqual([
-            {
-                index: 0,
-                name: 'muteTrack',
-                reason: 'Target trackId is ambiguous in the user request',
-            },
-        ]);
+        expect(named.rejections).toEqual([]);
     });
 
     it('rejects a single removeTrack when a hyphenated literal id and a name are split by list punctuation', () => {

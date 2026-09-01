@@ -3288,7 +3288,7 @@ function resolveAgentReferenceArray({
 }
 
 function hasNotIncludingTrackControlRestriction(prompt: string): boolean {
-    return /\bnot\s+including\b/iu.test(prompt);
+    return /\b(?:except|excluding|all\s+but|not\s+including)\b/iu.test(prompt);
 }
 
 function groundToolCall({

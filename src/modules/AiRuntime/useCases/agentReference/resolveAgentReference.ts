@@ -418,7 +418,7 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
             input.capability === 'vca-group' &&
             reservedVcaGroupReferenceWords.has(normalizeReferenceText(candidate.id)) &&
             !containsQualifiedVcaGroupReference(input.prompt, candidate.id);
-        if (containsExactPhrase(input.prompt, candidate.id) && !hasUnqualifiedReservedVcaId) {
+        if (getContiguousReferenceRanges(input.prompt, candidate.id).length > 0 && !hasUnqualifiedReservedVcaId) {
             evidenceById.set(candidate.id, 'literal-id');
             continue;
         }

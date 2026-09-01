@@ -438,6 +438,23 @@ describe('resolveAgentReference', () => {
         });
     });
 
+    it('does not resolve a hyphenated id from a whitespace-separated kind and name', () => {
+        const projectState = createProjectState();
+        const firstTrack = projectState.tracks[0];
+        if (!firstTrack) {
+            throw new Error('Expected a track fixture');
+        }
+        const loneHyphenatedIdContext = {
+            ...projectState,
+            tracks: [{ ...firstTrack, id: 'track-guitar', name: 'Bass' }],
+        };
+
+        expect(resolveTrack('mute track Guitar', 'track-guitar', loneHyphenatedIdContext)).toEqual({
+            status: 'rejected',
+            reason: 'ungrounded-target',
+        });
+    });
+
     it('does not treat a whitespace-separated kind and name as a hyphenated literal id', () => {
         const projectState = createProjectState();
         const firstTrack = projectState.tracks[0];
@@ -460,23 +477,23 @@ describe('resolveAgentReference', () => {
             ],
         };
 
-        expect(resolveTrack('mute track Guitar', 'track-guitar', spacedKindNameContext)).toMatchObject({
+        expect(resolveTrack('mute track Guitar', 'track-guitar', spacedKindNameContext)).toEqual({
             status: 'rejected',
-            reason: 'ambiguous-target',
+            reason: 'asserted-target-mismatch',
         });
-        expect(resolveTrack('mute track Guitar', 'track-keys', spacedKindNameContext)).toMatchObject({
-            status: 'rejected',
-            reason: 'ambiguous-target',
+        expect(resolveTrack('mute track Guitar', 'track-keys', spacedKindNameContext)).toEqual({
+            status: 'resolved',
+            id: 'track-keys',
+            evidence: 'exact-name',
         });
-        expect(
-            resolveTrack('delete the track Lead Guitar', 'track-lead-guitar', spacedLeadGuitarContext)
-        ).toMatchObject({
+        expect(resolveTrack('delete the track Lead Guitar', 'track-lead-guitar', spacedLeadGuitarContext)).toEqual({
             status: 'rejected',
-            reason: 'ambiguous-target',
+            reason: 'asserted-target-mismatch',
         });
-        expect(resolveTrack('delete the track Lead Guitar', 'track-aux', spacedLeadGuitarContext)).toMatchObject({
-            status: 'rejected',
-            reason: 'ambiguous-target',
+        expect(resolveTrack('delete the track Lead Guitar', 'track-aux', spacedLeadGuitarContext)).toEqual({
+            status: 'resolved',
+            id: 'track-aux',
+            evidence: 'exact-name',
         });
     });
 
