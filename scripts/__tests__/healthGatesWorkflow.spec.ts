@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseDocument } from 'yaml';
@@ -87,7 +87,26 @@ const GATE_MEMBERS = [
     'rust',
     'native-macos',
     'native-windows',
+    'native-parity',
 ] as const;
+const NATIVE_PARITY_JOB = 'native-parity';
+const NATIVE_PARITY_JOB_NAME = 'Native parity (macOS)';
+const NATIVE_PARITY_RUNNER = 'macos-latest';
+// Parity breaks from either side of the seam: the Rust renderer the addon
+// exposes, or the TypeScript that produces the graph it renders.
+const NATIVE_PARITY_CONDITION = "needs.decide.outputs.rust == 'true' || needs.decide.outputs.web == 'true'";
+const NATIVE_PARITY_BUILD_STEP = 'Build the native addon';
+const NATIVE_PARITY_ADDON_STEP = 'Require the built addon the parity specs probe for';
+const NATIVE_PARITY_RUN_STEP = 'Run the addon parity specs';
+const NATIVE_ADDON_BUILD_COMMAND = 'node scripts/buildNativeAddon.ts';
+// The single path every addon-loading spec probes with `existsSync` to choose
+// between running and skipping. Requiring it after the build is what turns the
+// silent hosted skip this leg exists to end into a failure.
+const NATIVE_ADDON_ARTIFACT = 'crates/sourdaw-native/sourdaw-native.node';
+// What makes a spec addon-loading. Discovered rather than listed: a fourth
+// such spec added without this leg would otherwise skip on every hosted run
+// forever, and a written list is exactly what nobody updates.
+const NATIVE_ADDON_IMPORT = 'NATIVE_ADDON_FILE';
 const CURRENT_NON_GATING_JOBS = ['unit'] as const;
 const PULL_REQUEST_EXCLUDED_JOBS = [
     'e2e',
@@ -485,6 +504,54 @@ function assertPullRequestSecretScan(candidate: UnknownRecord): void {
         )
     ) {
         throw new Error('merge-diff positive control must reject head-authored gitleaks:allow annotations');
+    }
+}
+
+function addonLoadingSpecs(directory: string): string[] {
+    return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+        const path = join(directory, entry.name);
+        if (entry.isDirectory()) {
+            return addonLoadingSpecs(path);
+        }
+        if (!/\.spec\.tsx?$/u.test(entry.name) || !readFileSync(path, 'utf8').includes(NATIVE_ADDON_IMPORT)) {
+            return [];
+        }
+        return [relative(repositoryRoot, path).split(sep).join('/')];
+    });
+}
+
+function assertNativeParityJob(candidate: UnknownRecord): void {
+    const job = jobAt(candidate, NATIVE_PARITY_JOB);
+    if (job.name !== NATIVE_PARITY_JOB_NAME || job['runs-on'] !== NATIVE_PARITY_RUNNER) {
+        throw new Error('native parity must run on the one platform the native crate compiles on');
+    }
+    if (job.needs !== 'decide' || job.if !== NATIVE_PARITY_CONDITION) {
+        throw new Error('native parity must answer to both the Rust and the web scopes');
+    }
+    if (job['continue-on-error'] !== undefined) {
+        throw new Error('native parity must not continue on error');
+    }
+    if (stringAt(stepNamed(job, NATIVE_PARITY_BUILD_STEP), 'run') !== NATIVE_ADDON_BUILD_COMMAND) {
+        throw new Error('native parity must build the addon through the builder the desktop chain ships');
+    }
+    if (!stringAt(stepNamed(job, NATIVE_PARITY_ADDON_STEP), 'run').includes(NATIVE_ADDON_ARTIFACT)) {
+        throw new Error('native parity must refuse a run the parity specs would skip');
+    }
+    const runStep = stepNamed(job, NATIVE_PARITY_RUN_STEP);
+    if (runStep['continue-on-error'] !== undefined) {
+        throw new Error('native parity must not continue on error');
+    }
+    const specs = addonLoadingSpecs(join(repositoryRoot, 'src'));
+    // Without this the loop below is vacuous, and a discovery that stopped
+    // finding anything would read as a leg with nothing left to prove.
+    if (specs.length === 0) {
+        throw new Error('no spec loads the native addon, so the parity leg proves nothing');
+    }
+    const command = stringAt(runStep, 'run');
+    for (const spec of specs) {
+        if (!command.includes(spec)) {
+            throw new Error(`native parity must run ${spec}`);
+        }
     }
 }
 
@@ -1123,6 +1190,46 @@ describe('health gates workflow contract', () => {
         expect(() => assertNightlySecurityGraph(permissiveNightlyUnit)).toThrow(
             'nightly unit Run shard must not continue on error'
         );
+    });
+
+    it('builds the native addon and runs every spec that loads it, unsoftened', () => {
+        expect(() => assertNativeParityJob(workflow)).not.toThrow();
+        expect(addonLoadingSpecs(join(repositoryRoot, 'src'))).toContain(
+            'src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgrammeParity.spec.ts'
+        );
+
+        const softenedJob = asRecord(structuredClone(workflow), 'softened native parity job');
+        jobAt(softenedJob, NATIVE_PARITY_JOB)['continue-on-error'] = true;
+        expect(() => assertNativeParityJob(softenedJob)).toThrow('native parity must not continue on error');
+
+        const softenedRun = asRecord(structuredClone(workflow), 'softened native parity run');
+        stepNamed(jobAt(softenedRun, NATIVE_PARITY_JOB), NATIVE_PARITY_RUN_STEP)['continue-on-error'] = true;
+        expect(() => assertNativeParityJob(softenedRun)).toThrow('native parity must not continue on error');
+
+        const forkedBuild = asRecord(structuredClone(workflow), 'forked native addon build');
+        stepNamed(jobAt(forkedBuild, NATIVE_PARITY_JOB), NATIVE_PARITY_BUILD_STEP).run =
+            'cargo build --release --package sourdaw-native --features napi-addon';
+        expect(() => assertNativeParityJob(forkedBuild)).toThrow(
+            'native parity must build the addon through the builder the desktop chain ships'
+        );
+
+        const unguarded = asRecord(structuredClone(workflow), 'unguarded native parity workflow');
+        stepNamed(jobAt(unguarded, NATIVE_PARITY_JOB), NATIVE_PARITY_ADDON_STEP).run = 'true';
+        expect(() => assertNativeParityJob(unguarded)).toThrow(
+            'native parity must refuse a run the parity specs would skip'
+        );
+
+        const narrowedScope = asRecord(structuredClone(workflow), 'narrowed native parity scope');
+        jobAt(narrowedScope, NATIVE_PARITY_JOB).if = "needs.decide.outputs.rust == 'true'";
+        expect(() => assertNativeParityJob(narrowedScope)).toThrow(
+            'native parity must answer to both the Rust and the web scopes'
+        );
+
+        const droppedSpec = asRecord(structuredClone(workflow), 'dropped parity spec workflow');
+        const runStep = stepNamed(jobAt(droppedSpec, NATIVE_PARITY_JOB), NATIVE_PARITY_RUN_STEP);
+        const dropped = addonLoadingSpecs(join(repositoryRoot, 'src'))[0] ?? '';
+        runStep.run = stringAt(runStep, 'run').replace(dropped, '');
+        expect(() => assertNativeParityJob(droppedSpec)).toThrow(`native parity must run ${dropped}`);
     });
 
     it('fetches immutable measurement provenance history only in the unit matrix', () => {
