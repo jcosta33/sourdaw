@@ -13,8 +13,15 @@ const SUPPORTED_SESSION_ACTION_TYPES = [
 async function loadSubject() {
     vi.resetModules();
     const createUndoEntryModule = await import('../../useCases/createUndoEntry');
+    const { validateVersionedCommandArguments } = await import('../../useCases/versionedCommandArgumentKeys');
     const undoStoreModule = await import('../undoStore');
-    undoStoreModule.hydrateUndoStoreFromSession(SUPPORTED_SESSION_ACTION_TYPES.map((type) => [type, 1] as const));
+    undoStoreModule.hydrateUndoStoreFromSession(
+        SUPPORTED_SESSION_ACTION_TYPES.map((actionType) => ({
+            actionType,
+            operationVersion: 1,
+            validateArguments: (payload: unknown) => validateVersionedCommandArguments(actionType, payload),
+        }))
+    );
     return {
         createUndoEntry: createUndoEntryModule.createUndoEntry,
         pushUndo: undoStoreModule.pushUndo,
@@ -279,7 +286,9 @@ describe('undoStore / pushUndo', () => {
         sessionStorage.setItem(
             UNDO_SESSION_KEY,
             JSON.stringify({
-                past: [validEntry, ...invalidEntries],
+                // The valid entry is the newest, because a rejected entry also
+                // drops every entry older than it.
+                past: [...invalidEntries, validEntry],
                 future: invalidEntries,
             })
         );
@@ -289,6 +298,82 @@ describe('undoStore / pushUndo', () => {
         expect(undoStore.value).toEqual({
             past: [validEntry],
             future: [],
+        });
+    });
+
+    it('should never serve a mirror left behind by a refused persistence write', async () => {
+        const { createUndoEntry, pushUndo } = await loadSubject();
+        pushUndo(
+            createUndoEntry(
+                'first',
+                { type: 'setTempo', payload: { bpm: 120 } },
+                { type: 'setTempo', payload: { bpm: 110 } }
+            )
+        );
+        await flushPersistence();
+        expect(sessionStorage.getItem(UNDO_SESSION_KEY)).not.toBeNull();
+
+        // `setItem` throws before it mutates, so the smaller first write
+        // survives in storage while the live stack has moved on.
+        const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation((key: string): undefined => {
+            if (key === UNDO_SESSION_KEY) {
+                throw new DOMException('quota exceeded', 'QuotaExceededError');
+            }
+            return undefined;
+        });
+        try {
+            pushUndo(
+                createUndoEntry(
+                    'second',
+                    { type: 'setMasterGain', payload: { gain: 0.5 } },
+                    { type: 'setMasterGain', payload: { gain: 1 } }
+                )
+            );
+            await flushPersistence();
+        } finally {
+            setItem.mockRestore();
+        }
+
+        const reloaded = await loadSubject();
+        expect(reloaded.undoStore.value).toEqual({ past: [], future: [] });
+    });
+
+    it('should drop a hydrated entry whose arguments fail the current contract and every entry behind it', async () => {
+        const staleArgumentsEntry = {
+            id: 'undo-stale-arguments',
+            kind: 'action',
+            label: 'Stale gain',
+            action: { type: 'setMasterGain', payload: { gain: 'loud' } },
+            inverseAction: { type: 'setMasterGain', payload: { gain: 1 } },
+            timestamp: 3001,
+            source: 'manual',
+        };
+        const reachablePastEntry = {
+            id: 'undo-reachable-past',
+            kind: 'action',
+            label: 'Reachable tempo',
+            action: { type: 'setTempo', payload: { bpm: 128 } },
+            inverseAction: { type: 'setTempo', payload: { bpm: 120 } },
+            timestamp: 3002,
+            source: 'manual',
+        };
+        const olderPastEntry = { ...reachablePastEntry, id: 'undo-older-past', timestamp: 3000 };
+        const reachableFutureEntry = { ...reachablePastEntry, id: 'undo-reachable-future', timestamp: 3003 };
+        const strandedFutureEntry = { ...reachablePastEntry, id: 'undo-stranded-future', timestamp: 3004 };
+        sessionStorage.setItem(
+            UNDO_SESSION_KEY,
+            JSON.stringify({
+                // `past` runs oldest first; `future` runs nearest first.
+                past: [olderPastEntry, staleArgumentsEntry, reachablePastEntry],
+                future: [reachableFutureEntry, staleArgumentsEntry, strandedFutureEntry],
+            })
+        );
+
+        const { undoStore } = await loadSubject();
+
+        expect(undoStore.value).toEqual({
+            past: [reachablePastEntry],
+            future: [reachableFutureEntry],
         });
     });
 
