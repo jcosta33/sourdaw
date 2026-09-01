@@ -2184,6 +2184,11 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'transpose notes in Piano MIDI by 7 semitones, but only the selected notes',
             context
         );
+        const sentenceSeparatedSelectedNotes = bridge(
+            [{ name: 'transposeNotes', arguments: { clipId: 'clip-midi', semitones: 7 } }],
+            'transpose notes in Piano MIDI by 7 semitones. Only selected notes.',
+            context
+        );
         const wrongValue = bridge(
             [{ name: 'quantizeNotes', arguments: { clipId: 'clip-midi', gridSize: 0.5 } }],
             'quantize notes in Piano MIDI to a 0.25 beat grid',
@@ -2221,6 +2226,8 @@ describe('bridgeGroundedLlmToolCalls', () => {
         }
         expect(selectedNotesWithWrongValue.actions).toEqual([]);
         expect(selectedNotesWithWrongValue.rejections[0]?.reason).toContain('Selected-note edits are not supported');
+        expect(sentenceSeparatedSelectedNotes.actions).toEqual([]);
+        expect(sentenceSeparatedSelectedNotes.rejections[0]?.reason).toContain('Selected-note edits are not supported');
         expect(wrongValue.actions).toEqual([]);
         expect(wrongValue.rejections[0]?.reason).toContain('does not match');
         expect(nearValue.actions).toEqual([]);
@@ -3131,6 +3138,14 @@ describe('bridgeGroundedLlmToolCalls', () => {
             [{ name: 'removeFromVca', arguments: { trackId: vocals.id } }],
             'unassign Vocals'
         );
+        const removedWithTrackSideMembership = bridge(
+            [{ name: 'removeFromVca', arguments: { trackId: vocals.id } }],
+            'unassign Vocals from Drum VCA',
+            {
+                ...projectContext,
+                vcaGroups: (projectContext.vcaGroups ?? []).map((group) => ({ ...group, trackIds: [] })),
+            }
+        );
         const duplicateNameContext = {
             ...projectContext,
             tracks: [...projectContext.tracks, createTrack({ id: 'track-guitar-2', name: 'Guitar' })],
@@ -3159,6 +3174,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
         ]);
         expect(removed.actions).toEqual([{ type: 'removeFromVca', payload: { trackId: vocals.id } }]);
         expect(removedWithoutGroup.actions).toEqual(removed.actions);
+        expect(removedWithTrackSideMembership.actions).toEqual(removed.actions);
         expect(literalIdMember.actions).toEqual([
             { type: 'createVcaGroup', payload: { name: 'Strings', trackIds: [guitar.id] } },
         ]);
@@ -3382,6 +3398,14 @@ describe('bridgeGroundedLlmToolCalls', () => {
             [{ name: 'removeTrack', arguments: { trackId: vocals.id } }],
             'delete selected audio track'
         );
+        const duplicateGuitarLiteralId = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: guitar.id } }],
+            'delete track-guitar',
+            {
+                ...projectContext,
+                tracks: [...projectContext.tracks, createTrack({ id: 'track-guitar-2', name: 'Guitar' })],
+            }
+        );
         const mismatched = bridge([{ name: 'removeTrack', arguments: { trackId: guitar.id } }], 'delete Vocals');
         const protectedMaster = bridge([{ name: 'removeTrack', arguments: { trackId: master.id } }], 'delete Master');
         const negated = bridge([{ name: 'removeTrack', arguments: { trackId: vocals.id } }], 'do not delete Vocals');
@@ -3415,6 +3439,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(named.actions).toEqual([{ type: 'removeTrack', payload: { trackId: vocals.id } }]);
         expect(selected.actions).toEqual([{ type: 'removeTrack', payload: { trackId: vocals.id } }]);
         expect(qualifiedSelection.actions).toEqual([{ type: 'removeTrack', payload: { trackId: vocals.id } }]);
+        expect(duplicateGuitarLiteralId.actions).toEqual([{ type: 'removeTrack', payload: { trackId: guitar.id } }]);
         expect(mismatched.actions).toEqual([]);
         expect(protectedMaster.actions).toEqual([]);
         expect(negated.actions).toEqual([]);
