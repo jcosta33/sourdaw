@@ -164,6 +164,7 @@ describe('handleAddNotes', () => {
                 notes: [{ id: 'note-command-1', pitch: 60.6, startBeat: -2, duration: 0.01, velocity: 96.7 }],
             },
         };
+        const plannedAction = structuredClone(action);
 
         const envelope = migrateLegacyAppActionToVersionedCommandEnvelope({
             action,
@@ -182,6 +183,7 @@ describe('handleAddNotes', () => {
             },
         ]);
         expect(envelope.time).toEqual([{ argument: 'notes[0].startBeat', domain: 'musical', unit: 'beats', value: 0 }]);
+        expect(action).toEqual(plannedAction);
         const serialized = serializeVersionedCommandEnvelope(envelope);
 
         expect(parseVersionedCommandEnvelope(serialized)).toEqual({ status: 'valid', envelope });
@@ -518,6 +520,56 @@ describe('handleAddNotes', () => {
         expect(handleAddNotes.describe(action).inverseAction).toBeNull();
         expect(handleAddNotes.execute(action)).toEqual({ status: 'conflict' });
         expect(currentNotes()).toEqual([{ id: 'existing', pitch: 48, startBeat: 0, duration: 1, velocity: 80 }]);
+    });
+
+    it('rejects a noncanonical planned action against a frozen target without mutating its caller payload', async () => {
+        const action = {
+            type: 'addNotes' as const,
+            payload: {
+                clipId: CLIP_ID,
+                notes: [{ id: 'note-frozen-single', pitch: 60.6, startBeat: -2, duration: 0.01, velocity: 96.7 }],
+            },
+        };
+        const plannedAction = structuredClone(action);
+        setTrackStoreState({
+            ...defaultTrackState,
+            tracks: trackStore.value!.tracks.map((track) => ({ ...track, frozen: true })),
+        });
+        const projectStateBeforeExecution = structuredClone(trackStore.value);
+        const midiStateBeforeExecution = structuredClone(midiStore.value);
+
+        await expect(executeAppAction(action)).rejects.toThrow('Action conflicts with current project state: addNotes');
+
+        expect(action).toEqual(plannedAction);
+        expect(trackStore.value).toEqual(projectStateBeforeExecution);
+        expect(midiStore.value).toEqual(midiStateBeforeExecution);
+    });
+
+    it('rejects a noncanonical planned batch against a frozen target without mutating its caller payload', async () => {
+        const action = {
+            type: 'addNotes' as const,
+            payload: {
+                clipId: CLIP_ID,
+                notes: [{ id: 'note-frozen-batch', pitch: 60.6, startBeat: -2, duration: 0.01, velocity: 96.7 }],
+            },
+        };
+        const plannedAction = structuredClone(action);
+        setTrackStoreState({
+            ...defaultTrackState,
+            tracks: trackStore.value!.tracks.map((track) => ({ ...track, frozen: true })),
+        });
+        const projectStateBeforeExecution = structuredClone(trackStore.value);
+        const midiStateBeforeExecution = structuredClone(midiStore.value);
+
+        await expect(executeAppActionBatch([action])).resolves.toEqual({
+            status: 'conflicted',
+            reason: 'Action conflicts with current project state: addNotes',
+            actions: [],
+        });
+
+        expect(action).toEqual(plannedAction);
+        expect(trackStore.value).toEqual(projectStateBeforeExecution);
+        expect(midiStore.value).toEqual(midiStateBeforeExecution);
     });
 
     it.each([

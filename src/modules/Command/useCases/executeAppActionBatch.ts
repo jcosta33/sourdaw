@@ -33,6 +33,7 @@ import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumen
 import { getProjectMutationAdmissionFailure, PROJECT_REPAIR_REQUIRED_MESSAGE } from './isProjectMutationAllowed';
 import { recordAction } from './macro/recording/recordAction';
 import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
+import { materializeCommandHandlerArguments } from './materializeCommandHandlerArguments';
 import { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
 import { traceAppAction } from './traceAppAction';
 
@@ -651,12 +652,9 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             for (const [index, requestedAction] of actions.entries()) {
                 const suppliedEnvelope = options?.commandEnvelopes?.[index];
                 const materialized = suppliedEnvelope
-                    ? {
-                          action: structuredClone(requestedAction),
-                          applicationAssignedIds: suppliedEnvelope.applicationAssignedIds,
-                      }
+                    ? { action: requestedAction, applicationAssignedIds: suppliedEnvelope.applicationAssignedIds }
                     : materializeCommandApplicationIds(requestedAction);
-                const action = materialized.action;
+                let action = materialized.action;
                 const handler = getCommandHandler(action);
                 if (!handler) {
                     return {
@@ -665,7 +663,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                         actions: [],
                     };
                 }
-                handler.materializeCommandArguments?.(action);
+                action = materializeCommandHandlerArguments(action, handler);
                 if (
                     suppliedEnvelope &&
                     (suppliedEnvelope.operation !== action.type ||

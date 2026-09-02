@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { defaultTrackState } from '#/modules/Arrangement/stores';
+import { addClip, createTrack, getArrangementHandlers, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
+import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 
@@ -16,6 +18,8 @@ import { getExecutableAppActionToolSchemas } from '../getExecutableAppActionTool
 import { getExecutableCommandRegistration } from '../getExecutableCommandRegistration';
 import { getInternalUndoSessionReplayContracts } from '../getInternalUndoSessionReplayContracts';
 import { registerProductionCommandHandlers } from '../registerProductionCommandHandlers';
+import { redo } from '../redo';
+import { undo } from '../undo';
 
 function createPersistedAddNotesEntry() {
     const noteTransformReplayGuard = {
@@ -150,9 +154,30 @@ describe('addNotes command registration', () => {
         ).not.toContain('addNotes');
     });
 
-    it('hydrates only an exact addNotes restore pair through the private replay contract', () => {
+    it('hydrates and replays an exact addNotes restore pair through production registration', async () => {
         const registration = getExecutableCommandRegistration('addNotes');
         const entry = createPersistedAddNotesEntry();
+        setTrackStoreState({
+            ...defaultTrackState,
+            tracks: [createTrack({ id: 'track-midi', kind: 'midi', name: 'MIDI' })],
+        });
+        if (
+            addClip({
+                id: 'clip-midi',
+                trackId: 'track-midi',
+                startBeat: 0,
+                endBeat: 8,
+                name: 'MIDI clip',
+                type: 'midi',
+            }) === null
+        ) {
+            throw new Error('Expected MIDI clip fixture');
+        }
+        midiStore.set({
+            notesByClipId: { 'clip-midi': entry.redoAction.payload.notes },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
         sessionStorage.setItem(
             'sourdaw-undo-session',
             JSON.stringify({
@@ -167,19 +192,22 @@ describe('addNotes command registration', () => {
                 future: [],
             })
         );
-
-        hydrateUndoStoreFromSession([
-            {
-                actionType: registration.actionType,
-                operationVersion: registration.operationVersion,
-                role: 'forward',
-                validateArguments: registration.runtimeSchema.validate,
-                validateEntry: registration.sessionEntryValidator,
-            },
-            ...getInternalUndoSessionReplayContracts(),
+        clearHandlerRegistry();
+        registerProductionCommandHandlers([
+            getArrangementHandlers(),
+            getAudioRenderingHandlers(),
+            getAutomationHandlers(),
+            getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+            getMidiNoteTransformHandlers(),
+            getTransportHandlers(),
         ]);
 
         expect(undoStore.value?.past).toMatchObject([entry]);
+        expect(midiStore.value?.notesByClipId['clip-midi']).toEqual(entry.redoAction.payload.notes);
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(midiStore.value?.notesByClipId['clip-midi']).toEqual(entry.inverseAction.payload.notes);
+        await redo();
+        expect(midiStore.value?.notesByClipId['clip-midi']).toEqual(entry.redoAction.payload.notes);
     });
 
     it.each([
@@ -306,6 +334,25 @@ describe('addNotes command registration', () => {
                     redoAction: {
                         ...entry.redoAction,
                         payload: { ...entry.redoAction.payload, allowMissingExpectedEmpty: true },
+                    },
+                };
+            },
+        ],
+        [
+            'a redo replay guard for another track',
+            () => {
+                const entry = createPersistedAddNotesEntry();
+                return {
+                    ...entry,
+                    redoAction: {
+                        ...entry.redoAction,
+                        payload: {
+                            ...entry.redoAction.payload,
+                            noteTransformReplayGuard: {
+                                ...entry.redoAction.payload.noteTransformReplayGuard,
+                                trackId: 'track-other',
+                            },
+                        },
                     },
                 };
             },

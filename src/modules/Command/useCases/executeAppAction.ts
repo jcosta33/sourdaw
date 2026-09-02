@@ -26,6 +26,7 @@ import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumen
 import { getProjectMutationAdmissionFailure } from './isProjectMutationAllowed';
 import { recordAction } from './macro/recording/recordAction';
 import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
+import { materializeCommandHandlerArguments } from './materializeCommandHandlerArguments';
 import { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
 import { traceAppAction } from './traceAppAction';
 
@@ -47,10 +48,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
     ({ logger }) =>
         async function executeAppAction(action: AppAction, options?: ExecuteAppActionOptions): Promise<void> {
             const materialized = options?.commandEnvelope
-                ? {
-                      action: structuredClone(action),
-                      applicationAssignedIds: options.commandEnvelope.applicationAssignedIds,
-                  }
+                ? { action, applicationAssignedIds: options.commandEnvelope.applicationAssignedIds }
                 : materializeCommandApplicationIds(action);
             action = materialized.action;
 
@@ -60,7 +58,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 logger.error(error);
                 throw error;
             }
-            handler.materializeCommandArguments?.(action);
+            action = materializeCommandHandlerArguments(action, handler);
             const historyGroupId = handler.batchExecution === 'singleton' ? undefined : options?.groupId;
             const historyGroupLabel = historyGroupId ? options?.groupLabel : undefined;
             if (

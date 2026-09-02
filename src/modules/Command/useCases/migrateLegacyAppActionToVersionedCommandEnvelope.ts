@@ -5,6 +5,7 @@ import { AppActionNotDispatchedError } from '../errors/AppActionExecutionError';
 import { createExecutionCommandEnvelope } from './createExecutionCommandEnvelope';
 import { getCommandHandler } from './getCommandHandler';
 import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
+import { materializeCommandHandlerArguments } from './materializeCommandHandlerArguments';
 
 type MigrateLegacyAppActionToVersionedCommandEnvelopeInput = {
     action: AppAction;
@@ -30,12 +31,12 @@ export function migrateLegacyAppActionToVersionedCommandEnvelope(
     if (!handler) {
         throw new AppActionNotDispatchedError(input.action.type);
     }
-    handler.materializeCommandArguments?.(materialized.action);
+    const action = materializeCommandHandlerArguments(materialized.action, handler);
     return createExecutionCommandEnvelope({
-        action: materialized.action,
+        action,
         applicationAssignedIds: materialized.applicationAssignedIds,
         dependencyIds: input.dependencyIds,
-        expectedEffect: input.expectedEffect ?? handler.describe(materialized.action).label,
+        expectedEffect: input.expectedEffect ?? handler.describe(action).label,
         normalizedProjectRevision: input.normalizedProjectRevision,
         options: input.options,
     }).envelope;

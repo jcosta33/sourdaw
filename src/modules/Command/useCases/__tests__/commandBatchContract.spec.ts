@@ -502,8 +502,16 @@ describe('command batch contract', () => {
             { id: 'note-1', pitch: 60.5, startBeat: 0, duration: 1, velocity: 100, probability: 100 },
         ],
         [
+            'a pitch below MIDI range',
+            { id: 'note-1', pitch: -1, startBeat: 0, duration: 1, velocity: 100, probability: 100 },
+        ],
+        [
             'a fractional velocity',
             { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100.5, probability: 100 },
+        ],
+        [
+            'a velocity below MIDI range',
+            { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 0, probability: 100 },
         ],
         [
             'a duration below the MIDI minimum',
