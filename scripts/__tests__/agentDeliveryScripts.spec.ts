@@ -19,6 +19,7 @@ import { describe, expect, it } from 'vitest';
 import { parseDocument } from 'yaml';
 
 import {
+    DeliveryMergeRejectedError,
     coordinateDelivery,
     deliverPullRequest,
     shellPort,
@@ -754,6 +755,9 @@ describe('package scripts and gitignore', () => {
         expect(pkg.scripts['review:resolve:recover']).toBe(
             'node scripts/trustedGithubWriteBootstrap.ts review:resolve:recover'
         );
+        expect(pkg.scripts['deliver:recover-lock']).toBe(
+            'node scripts/trustedGithubWriteBootstrap.ts deliver:recover-lock'
+        );
         expect(pkg.scripts['pr:supersede']).toBe('node scripts/supersedePullRequest.ts');
         expect(pkg.scripts['issue:reconcile']).toBe('node scripts/trustedGithubWriteBootstrap.ts issue:reconcile');
         expect(pkg.scripts['lane:remove']).toBe('node scripts/removeLane.ts');
@@ -849,6 +853,7 @@ describe('package scripts and gitignore', () => {
             'removeLane.ts',
             'resolveReviewThread.ts',
             'recoverReviewResolutionLock.ts',
+            'recoverDeliveryLock.ts',
             'supersedePullRequest.ts',
             'reconcileTrackerIssue.ts',
             'trackerIssueReconciliation.ts',
@@ -883,6 +888,13 @@ describe('package scripts and gitignore', () => {
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/recoverReviewResolutionLock.ts',
             'scripts/resolveReviewThread.ts',
+            'scripts/pullRequestMutationLock.ts',
+            'scripts/githubAppIdentity.ts',
+            'scripts/prContract.ts',
+        ]);
+        expect(trustedDependencyPaths('deliver:recover-lock')).toEqual([
+            'scripts/trustedGithubWriteBootstrap.ts',
+            'scripts/recoverDeliveryLock.ts',
             'scripts/pullRequestMutationLock.ts',
             'scripts/githubAppIdentity.ts',
             'scripts/prContract.ts',
@@ -2399,6 +2411,24 @@ describe('package scripts and gitignore', () => {
             ).rejects.toThrow(/already being delivered/);
             expect(reacquired).toBe(false);
             expect(readDeliveryLockOid(root, 2495)).toBe(retainedOwnerOid);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('releases the exact owner after a definitive merge rejection records the mutation as absent', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+        initializeDeliveryLockRepository(root);
+
+        try {
+            await expect(
+                withPullRequestDeliveryLock(root, 2495, async (boundary) => {
+                    boundary.markRemoteMutationAttempt();
+                    boundary.markRemoteMutationKnownAbsent?.();
+                    throw new DeliveryMergeRejectedError('PR #2495 was not merged: HTTP 422');
+                })
+            ).rejects.toThrow(/was not merged/);
+            expect(deliveryLockExists(root, 2495)).toBe(false);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }

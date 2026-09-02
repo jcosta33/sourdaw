@@ -2012,7 +2012,8 @@ function deliverPullRequestWithCiAdmission(
     number: number,
     port: DeliveryPort,
     tracker: TrackerCompletionPort,
-    ciAdmissionMode: CiAdmissionMode
+    ciAdmissionMode: CiAdmissionMode,
+    markRemoteMutationKnownAbsent?: () => void
 ): void {
     port.fetch();
     const rawInitial = port.pullRequest(number);
@@ -2154,6 +2155,7 @@ function deliverPullRequestWithCiAdmission(
         port.merge(number, finalSnapshot.headRefOid, finalDependents.length > 0, `${finalSnapshot.title} (#${number})`);
     } catch (error) {
         if (error instanceof DeliveryMergeRejectedError) {
+            markRemoteMutationKnownAbsent?.();
             tryRestorePreArmedDeliveryReceiptAuthorityAfterMergeFailure(
                 number,
                 authorityBeforeFinalFetchArming,
@@ -2185,17 +2187,23 @@ function deliverPullRequestWithCiAdmission(
     );
 }
 
-export function deliverPullRequest(number: number, port: DeliveryPort, tracker: TrackerCompletionPort): void {
-    deliverPullRequestWithCiAdmission(number, port, tracker, ACTIVE_CI_ADMISSION_MODE);
+export function deliverPullRequest(
+    number: number,
+    port: DeliveryPort,
+    tracker: TrackerCompletionPort,
+    markRemoteMutationKnownAbsent?: () => void
+): void {
+    deliverPullRequestWithCiAdmission(number, port, tracker, ACTIVE_CI_ADMISSION_MODE, markRemoteMutationKnownAbsent);
 }
 
 /** Retained as the snapshot-backed cutover path if CI becomes merge-authoritative again. */
 export function deliverPullRequestWithRequiredCi(
     number: number,
     port: DeliveryPort,
-    tracker: TrackerCompletionPort
+    tracker: TrackerCompletionPort,
+    markRemoteMutationKnownAbsent?: () => void
 ): void {
-    deliverPullRequestWithCiAdmission(number, port, tracker, 'required');
+    deliverPullRequestWithCiAdmission(number, port, tracker, 'required', markRemoteMutationKnownAbsent);
 }
 
 function capture(command: string, args: string[]): string {
@@ -3680,7 +3688,12 @@ export type DeliveryCoordinatorDependencies = {
     ) => DeliveryPort;
     trackerPort: (session: DeliveryAuthentication['session']) => ReconcileTrackerIssuePort;
     completeIssue: (issueNumber: number, actorNodeId: string, port: ReconcileTrackerIssuePort) => void;
-    deliver: (number: number, port: DeliveryPort, tracker: TrackerCompletionPort) => void;
+    deliver: (
+        number: number,
+        port: DeliveryPort,
+        tracker: TrackerCompletionPort,
+        markRemoteMutationKnownAbsent?: () => void
+    ) => void;
 };
 
 function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinatorDependencies {
@@ -3748,34 +3761,43 @@ export async function coordinateDelivery(
     dependencies: DeliveryCoordinatorDependencies = defaultDeliveryCoordinatorDependencies(process.cwd())
 ): Promise<void> {
     const primaryRoot = dependencies.primaryRoot();
-    await dependencies.serializeDelivery(primaryRoot, number, async ({ markRemoteMutationAttempt }) => {
-        const authorAuth = await dependencies.authenticateAuthor(primaryRoot);
-        let trackerAuth: DeliveryAuthentication | undefined;
-        try {
-            if (!isAuthorBotNodeId(authorAuth.minted.actorNodeId)) {
-                fail(`minted actor ${authorAuth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
-            }
-            const repository = dependencies.repositoryName(authorAuth.session, primaryRoot);
-            assertRequiredRepository(repository);
-            const authenticatedTracker = await dependencies.authenticateTracker(primaryRoot);
-            trackerAuth = authenticatedTracker;
-            const trackerPort = markTrackerMutationAttempts(
-                dependencies.trackerPort(authenticatedTracker.session),
-                markRemoteMutationAttempt
-            );
-            dependencies.deliver(
-                number,
-                dependencies.deliveryPort(repository, authorAuth, primaryRoot, markRemoteMutationAttempt),
-                {
-                    complete: (issueNumber) =>
-                        dependencies.completeIssue(issueNumber, authenticatedTracker.minted.actorNodeId, trackerPort),
+    await dependencies.serializeDelivery(
+        primaryRoot,
+        number,
+        async ({ markRemoteMutationAttempt, markRemoteMutationKnownAbsent }) => {
+            const authorAuth = await dependencies.authenticateAuthor(primaryRoot);
+            let trackerAuth: DeliveryAuthentication | undefined;
+            try {
+                if (!isAuthorBotNodeId(authorAuth.minted.actorNodeId)) {
+                    fail(`minted actor ${authorAuth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
                 }
-            );
-        } finally {
-            trackerAuth?.session.dispose();
-            authorAuth.session.dispose();
+                const repository = dependencies.repositoryName(authorAuth.session, primaryRoot);
+                assertRequiredRepository(repository);
+                const authenticatedTracker = await dependencies.authenticateTracker(primaryRoot);
+                trackerAuth = authenticatedTracker;
+                const trackerPort = markTrackerMutationAttempts(
+                    dependencies.trackerPort(authenticatedTracker.session),
+                    markRemoteMutationAttempt
+                );
+                dependencies.deliver(
+                    number,
+                    dependencies.deliveryPort(repository, authorAuth, primaryRoot, markRemoteMutationAttempt),
+                    {
+                        complete: (issueNumber) =>
+                            dependencies.completeIssue(
+                                issueNumber,
+                                authenticatedTracker.minted.actorNodeId,
+                                trackerPort
+                            ),
+                    },
+                    markRemoteMutationKnownAbsent
+                );
+            } finally {
+                trackerAuth?.session.dispose();
+                authorAuth.session.dispose();
+            }
         }
-    });
+    );
 }
 
 export async function runDeliverCli(args: string[], dependencies?: DeliveryCoordinatorDependencies): Promise<number> {

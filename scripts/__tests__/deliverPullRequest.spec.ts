@@ -849,9 +849,10 @@ function deliverPullRequest(
     port: DeliveryPort,
     tracker: TrackerCompletionPort = {
         complete: (issueNumber: number) => expect.fail(`unexpected issue completion: ${issueNumber}`),
-    }
+    },
+    markRemoteMutationKnownAbsent?: () => void
 ): void {
-    deliverPullRequestWithTracker(number, port, tracker);
+    deliverPullRequestWithTracker(number, port, tracker, markRemoteMutationKnownAbsent);
 }
 
 function deliverPullRequestWithRequiredCi(
@@ -2366,8 +2367,14 @@ describe('pull-request delivery', () => {
             }
             originalMerge(number, head, hasDependents);
         };
+        let knownAbsent = 0;
 
-        expect(() => deliverPullRequest(42, port, tracker)).toThrow(/was not merged: merge unavailable/i);
+        expect(() =>
+            deliverPullRequest(42, port, tracker, () => {
+                knownAbsent += 1;
+            })
+        ).toThrow(/was not merged: merge unavailable/i);
+        expect(knownAbsent).toBe(1);
         expect(calls.filter((call) => call === 'merge:42:head')).toHaveLength(1);
         expect(persistedReceiptAuthority()).toEqual({
             phase: 'prepared',

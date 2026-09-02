@@ -15,7 +15,13 @@ import { delimiter, dirname, isAbsolute, join, posix, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url';
 
 export type TrustedGithubWriteCommand =
-    'deliver' | 'issue:reconcile' | 'lane:publish' | 'review:publish' | 'review:resolve' | 'review:resolve:recover';
+    | 'deliver'
+    | 'deliver:recover-lock'
+    | 'issue:reconcile'
+    | 'lane:publish'
+    | 'review:publish'
+    | 'review:resolve'
+    | 'review:resolve:recover';
 
 export const BOOTSTRAP_PATH = 'scripts/trustedGithubWriteBootstrap.ts';
 export const HEALTH_GATES_WORKFLOW_PATH = '.github/workflows/health-gates.yml';
@@ -83,6 +89,13 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
     ],
+    'deliver:recover-lock': [
+        'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/recoverDeliveryLock.ts',
+        'scripts/pullRequestMutationLock.ts',
+        'scripts/githubAppIdentity.ts',
+        'scripts/prContract.ts',
+    ],
     'issue:reconcile': [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/reconcileTrackerIssue.ts',
@@ -123,6 +136,7 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
 
 const commandEntries: Record<TrustedGithubWriteCommand, { path: string; runner: string }> = {
     deliver: { path: 'scripts/deliverPullRequest.ts', runner: 'runDeliverCli' },
+    'deliver:recover-lock': { path: 'scripts/recoverDeliveryLock.ts', runner: 'runRecoverDeliveryLockCli' },
     'issue:reconcile': { path: 'scripts/reconcileTrackerIssue.ts', runner: 'runReconcileTrackerIssueCli' },
     'lane:publish': { path: 'scripts/publishLane.ts', runner: 'runPublishLaneCli' },
     'review:publish': { path: 'scripts/publishReview.ts', runner: 'runPublishReviewCli' },
@@ -744,7 +758,7 @@ async function runSnapshotModule(
         'const command = Reflect.get(loaded, runner);',
         "if (typeof command !== 'function') throw new Error(`trusted snapshot does not export ${runner}`);",
         'const trustedLauncher = typeof process.env.SOURDAW_TRUSTED_PRIMARY_ROOT === "string" && typeof process.env.SOURDAW_TRUSTED_GIT_PATH === "string" && typeof process.env.SOURDAW_TRUSTED_GH_PATH === "string" ? { primaryRoot: process.env.SOURDAW_TRUSTED_PRIMARY_ROOT, gitPath: process.env.SOURDAW_TRUSTED_GIT_PATH, ghPath: process.env.SOURDAW_TRUSTED_GH_PATH, ...(typeof process.env.SOURDAW_TRUSTED_PS_PATH === "string" ? { psPath: process.env.SOURDAW_TRUSTED_PS_PATH } : {}), ...(typeof process.env.SOURDAW_TRUSTED_POWERSHELL_PATH === "string" ? { powershellPath: process.env.SOURDAW_TRUSTED_POWERSHELL_PATH } : {}) } : undefined;',
-        'const dependencies = runner === "runResolveReviewThreadCli" || runner === "runRecoverReviewResolutionLockCli" ? { trustedLauncher } : undefined;',
+        'const dependencies = runner === "runResolveReviewThreadCli" || runner === "runRecoverReviewResolutionLockCli" || runner === "runRecoverDeliveryLockCli" ? { trustedLauncher } : undefined;',
         'const result = dependencies === undefined ? await command(args) : await command(args, dependencies);',
         "if (!Number.isSafeInteger(result)) throw new Error('trusted snapshot returned an invalid exit code');",
         'process.exitCode = result;',
@@ -959,6 +973,7 @@ function defaultPort(binding: TrustedLauncherBinding): TrustedSourcePort {
 function parseCommand(value: string | undefined): TrustedGithubWriteCommand {
     if (
         value === 'deliver' ||
+        value === 'deliver:recover-lock' ||
         value === 'issue:reconcile' ||
         value === 'lane:publish' ||
         value === 'review:publish' ||
@@ -968,7 +983,7 @@ function parseCommand(value: string | undefined): TrustedGithubWriteCommand {
         return value;
     }
     throw new Error(
-        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:reconcile|lane:publish|review:publish|review:resolve|review:resolve:recover> [args...]'
+        'usage: trustedGithubWriteBootstrap.ts <deliver|deliver:recover-lock|issue:reconcile|lane:publish|review:publish|review:resolve|review:resolve:recover> [args...]'
     );
 }
 

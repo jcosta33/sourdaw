@@ -52,6 +52,8 @@ export type PullRequestMutationSerialization = <Value>(
 
 export type PullRequestRemoteMutationBoundary = {
     markRemoteMutationAttempt: () => void;
+    /** Records that a synchronous, definitive refusal proves this mutation did not land. */
+    markRemoteMutationKnownAbsent?: () => void;
     ownerOid: string;
     registerSuccessfulCompletion: (cleanup: () => void) => void;
 };
@@ -293,6 +295,27 @@ function releaseMutationLock(primaryRoot: string, ref: string, oid: string, numb
     }
 }
 
+/**
+ * Deletes only a lock whose current object identity is exactly the caller's retained owner.
+ * Recovery commands use this instead of an unconstrained ref deletion.
+ */
+export function releasePullRequestMutationLockExact(
+    primaryRoot: string,
+    number: number,
+    ownerOid: string,
+    gitPath: string = 'git'
+): void {
+    const ref = pullRequestMutationLockRef(number);
+    const oid = mutationLockObjectId(ownerOid, number);
+    const result = mutationLockGit(primaryRoot, ['update-ref', '-d', ref, oid], undefined, gitPath);
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status !== 0) {
+        fail(`PR #${number} delivery lock ownership changed before release`);
+    }
+}
+
 export async function withPullRequestMutationLock<Value>(
     primaryRoot: string,
     number: number,
@@ -301,6 +324,7 @@ export async function withPullRequestMutationLock<Value>(
 ): Promise<Value> {
     const lock = acquireMutationLock(primaryRoot, number, options);
     let remoteMutationAttempted = false;
+    let remoteMutationKnownAbsent = false;
     let succeeded = false;
     let successfulCompletion: (() => void) | undefined;
     try {
@@ -308,6 +332,12 @@ export async function withPullRequestMutationLock<Value>(
             ownerOid: lock.oid,
             markRemoteMutationAttempt: () => {
                 remoteMutationAttempted = true;
+            },
+            markRemoteMutationKnownAbsent: () => {
+                if (!remoteMutationAttempted) {
+                    fail(`PR #${number} delivery lock cannot record an absent mutation before an attempt`);
+                }
+                remoteMutationKnownAbsent = true;
             },
             registerSuccessfulCompletion: (cleanup) => {
                 if (successfulCompletion !== undefined) {
@@ -321,7 +351,11 @@ export async function withPullRequestMutationLock<Value>(
     } finally {
         if (succeeded && successfulCompletion !== undefined) {
             successfulCompletion();
-        } else if (succeeded || (!remoteMutationAttempted && successfulCompletion === undefined)) {
+        } else if (
+            succeeded ||
+            remoteMutationKnownAbsent ||
+            (!remoteMutationAttempted && successfulCompletion === undefined)
+        ) {
             releaseMutationLock(primaryRoot, lock.ref, lock.oid, number);
         }
     }
