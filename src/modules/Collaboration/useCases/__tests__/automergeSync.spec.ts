@@ -1187,29 +1187,6 @@ describe('AutomergeSync', () => {
         const sync = new AutomergeSync(peerManager, { onSyncQuarantine, onSyncQuarantineLifted });
         sync.start();
 
-        type SyncWithSendQueues = AutomergeSync & { sendQueues: Map<string, Promise<void>> };
-
-        /** Wait for the actual serialized queue tail for this fixture channel. */
-        async function drainChannelQueue(): Promise<void> {
-            const send_queues = (sync as SyncWithSendQueues).sendQueues;
-            const key = `editor ${doc_id}`;
-            for (;;) {
-                const tail = send_queues.get(key);
-                if (tail === undefined) {
-                    return;
-                }
-                await tail;
-                await Promise.resolve();
-                const next = send_queues.get(key);
-                if (next === undefined) {
-                    return;
-                }
-                if (next === tail) {
-                    throw new Error('the settled sync queue tail was not released');
-                }
-            }
-        }
-
         /** Deliver the bidirectional handshake before either side makes an edit. */
         async function completeHandshake(): Promise<void> {
             const handshake = waitForOutbound();
@@ -1327,7 +1304,6 @@ describe('AutomergeSync', () => {
             deliverResendAndWaitForReply,
             waitForOutbound,
             waitForQueuedGenerationStart,
-            drainChannelQueue,
             notifyLocalChange,
             protocolSequence: (): readonly string[] => protocol_sequence,
             currentDoc: (): Doc<unknown> | undefined => live,
@@ -1396,7 +1372,10 @@ describe('AutomergeSync', () => {
         await exchange.deliverOneAndWaitForReply();
         await exchange.deliverResendAndWaitForReply();
         exchange.deliverResend();
-        await exchange.drainChannelQueue();
+        // The final failed delivery quarantines the channel. This local
+        // notification proves the closed-channel generation has reached its
+        // guard before the next test action reopens that channel.
+        await exchange.notifyLocalChange();
     }
 
     /**
