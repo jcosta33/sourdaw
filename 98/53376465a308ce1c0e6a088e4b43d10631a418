@@ -1,0 +1,35 @@
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_ac03a4ebaa3f6e::t_bd612cb5c60a9b 1488-1513
+  s_ac03a4ebaa3f6e::t_86076651badd52 28
+  s_ac03a4ebaa3f6e::t_a832c483c9444c 17
+  s_ac03a4ebaa3f6e::t_8e97bdaeaca331 162
+  s_ac03a4ebaa3f6e::t_024f68c6b234f5 1458,1475,1483-1485
+  s_bbdfb911119c4f::t_5e59af8cb0b241 1486-1487
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_ac03a4ebaa3f6e::t_ec0e066d79ec75 664-666
+  s_ac03a4ebaa3f6e::t_2b39b8bb1a6eae 667-673
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "9853376465a308ce1c0e6a088e4b43d10631a418",
+  "prompts": {},
+  "sessions": {
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bbdfb911119c4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fa21d5-2a8a-4f80-98ab-b72059373843",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
