@@ -1,0 +1,74 @@
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_ac03a4ebaa3f6e::t_b4844c22cb08d0 2445-2447
+  s_ac03a4ebaa3f6e::t_4154dc733f11ea 2488-2495
+  s_ac03a4ebaa3f6e::t_370093903d54b5 2457-2484,2486-2487,2496-2532
+  s_ac03a4ebaa3f6e::t_be3487af3dd5f6 2485
+  s_ac03a4ebaa3f6e::t_c4c55344e7a955 2533
+src/modules/Command/useCases/__tests__/agentCreationBindings.spec.ts
+  s_ac03a4ebaa3f6e::t_f8bd4a5e686956 69
+  s_ac03a4ebaa3f6e::t_d40fbf2a5b9746 1-7,9-31,33-68,70-110,112-140,145-171
+  s_ac03a4ebaa3f6e::t_7631dc3fb1772f 32
+  s_ac03a4ebaa3f6e::t_6353e5517e1be5 111
+  s_ac03a4ebaa3f6e::t_6bde2c43096a6d 141-144
+  s_ac03a4ebaa3f6e::t_17744d22305966 8
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_ac03a4ebaa3f6e::t_f1e495843f05c1 117-121
+  s_ac03a4ebaa3f6e::t_7a435b2c3a4eb3 76-80
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_ac03a4ebaa3f6e::t_9beee31f340896 5034-5036
+  s_ac03a4ebaa3f6e::t_a1a08c7dfb7a93 4863-4865
+  s_ac03a4ebaa3f6e::t_f47b9d9d800fa2 4915
+  s_ac03a4ebaa3f6e::t_35f55e1008eb55 4711,4715,4720-4721,4726,4730-4857,4859,4882-4914,4916-4937,4941-4942,4945-4948,4952,4954,4957,4967,4972,5017,5023,5027,5033,5037-5058
+  s_ac03a4ebaa3f6e::t_28226f6eafd8e0 4939-4940
+  s_ac03a4ebaa3f6e::t_32efb74221c40f 4949,4968,4973,4977,4980-4982,5028
+  s_ac03a4ebaa3f6e::t_fa2cc25e1cf29d 4708-4710
+  s_ac03a4ebaa3f6e::t_4f44ad19bb9da5 4712-4714
+  s_ac03a4ebaa3f6e::t_9d2a75025516a3 4716-4719
+  s_ac03a4ebaa3f6e::t_76ea2ea50501c4 4722-4725
+  s_ac03a4ebaa3f6e::t_e7cc0dac4f0f31 4727-4729
+  s_ac03a4ebaa3f6e::t_b39d1ea8710138 4858
+  s_ac03a4ebaa3f6e::t_e3fc83603b131f 4860-4862
+  s_ac03a4ebaa3f6e::t_762720530a889f 4866-4868,4879-4881
+  s_ac03a4ebaa3f6e::t_49d8aec8a8ffac 4938
+  s_ac03a4ebaa3f6e::t_31e7bc6cea4a8e 4943-4944
+  s_ac03a4ebaa3f6e::t_a80208e4748026 4950-4951
+  s_ac03a4ebaa3f6e::t_304c5e5ce7e38a 4953
+  s_ac03a4ebaa3f6e::t_448b3785f2cb9c 4955-4956
+  s_ac03a4ebaa3f6e::t_e77b96e33fd81a 4958-4960,4964-4966
+  s_ac03a4ebaa3f6e::t_c2620ffac0cb83 4969-4971
+  s_ac03a4ebaa3f6e::t_7f1173852648e2 4974-4976
+  s_ac03a4ebaa3f6e::t_51374b783d4f4c 4978-4979
+  s_ac03a4ebaa3f6e::t_406771bfcd7312 4983-4985,5014-5016
+  s_ac03a4ebaa3f6e::t_2f19f858f75de1 5018-5022
+  s_ac03a4ebaa3f6e::t_7a1fd66e1cc2f1 5024-5026
+  s_ac03a4ebaa3f6e::t_08e009e1966bce 5029-5032
+  s_5717acca78aac9::t_5e35402b920dde 4869-4878,4961-4963,4986-5013
+src/modules/AiRuntime/useCases/agentReference/__tests__/materializeBatchLocalActionIdentities.spec.ts
+  s_ac03a4ebaa3f6e::t_eeeebdafb67c05 81-140
+  s_ac03a4ebaa3f6e::t_c15546f8ac0790 7-9
+  s_ac03a4ebaa3f6e::t_b73ab6f1f8cfed 141
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "711f0b1439fabc6d26623762b4a13c1c79628c3c",
+  "prompts": {},
+  "sessions": {
+    "s_5717acca78aac9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a358784c473e2b97f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
