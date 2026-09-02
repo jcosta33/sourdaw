@@ -1,0 +1,27 @@
+src/utils/clipFadeScheduleClamp.ts
+  s_9b530f08172a54::t_715b767b25ef23 38
+src/modules/AudioEngine/useCases/livePlayback/projectLiveGraphProgramme.ts
+  s_9b530f08172a54::t_5ab1259472b26d 60
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_9b530f08172a54::t_1c68994ce4c616 44
+  s_9b530f08172a54::t_25fa004364a79d 14
+src/modules/AudioEngine/useCases/offlineRender/projectNativeClipFade.ts
+  s_9b530f08172a54::t_608cb90cb5c859 63
+  s_9b530f08172a54::t_8186f65324c997 64-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "f03e184c9ded8733d8d4c8911b607ccbdcbe8d8e",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
