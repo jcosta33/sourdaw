@@ -1883,12 +1883,6 @@
             "value": "runtime:WebSocketServer"
         },
         {
-            "surface": "collaboration-server",
-            "file": "server/collab-server.ts",
-            "value": "ws://${slot}:${slot}",
-            "templateSha256": "1c0fbdf88919ea6414cc31e89cec3e153c8f4084e39ded6cf32addbd40f91f1f"
-        },
-        {
             "surface": "levain-sample-bank",
             "file": "scripts/download-levain-samples-direct.ts",
             "value": "https://github.com/sgossner/VSCO-2-CE/tree/${slot}/${slot}",
