@@ -1729,26 +1729,62 @@ function isTrackControlProtectionQualifier(
     return isTrackControlProtectionVerb(normalized) && clauseNamesProjectTrack(clauseText, tracks);
 }
 
+function sliceThroughLaterTrackControlIntent(
+    text: string,
+    startIndex: number,
+    searchFrom: number,
+    laterTrackControlIntent: RegExp
+): string {
+    const laterIntent = laterTrackControlIntent.exec(text.slice(searchFrom));
+    const end = laterIntent?.index === undefined ? text.length : searchFrom + laterIntent.index;
+    return `${text.slice(0, startIndex)}${text.slice(end)}`.trim();
+}
+
 function stripTrackControlProtectionSpans(text: string): string {
     const laterTrackControlIntent = /\b(?:mute|unmute|solo|unsolo)\b/iu;
     const mutedComplement = /\b(?:muted|unmuted|soloed|unsoloed)\b/iu;
+    const finiteLeave = /\b(?:leave|keep|preserve|retain)\b/iu;
     const gerund = /\b(?:leaving|keeping|preserving|retaining)\b/iu.exec(text);
     let withoutGerund = text;
     if (gerund?.index !== undefined) {
-        const afterGerund = text.slice(gerund.index + gerund[0].length);
-        if (!mutedComplement.test(afterGerund)) {
-            const laterIntent = laterTrackControlIntent.exec(afterGerund);
-            const gerundEnd =
-                laterIntent?.index === undefined ? text.length : gerund.index + gerund[0].length + laterIntent.index;
-            withoutGerund = `${text.slice(0, gerund.index)}${text.slice(gerundEnd)}`.trim();
+        const afterGerund = gerund.index + gerund[0].length;
+        if (!mutedComplement.test(text.slice(afterGerund))) {
+            withoutGerund = sliceThroughLaterTrackControlIntent(
+                text,
+                gerund.index,
+                afterGerund,
+                laterTrackControlIntent
+            );
         }
     }
-    const withoutUnchanged = withoutGerund
-        .replace(/\b(?:leave|keep|preserve|retain)\b[\s\S]*\bunchanged\b[\s\S]*$/iu, '')
-        .trim();
-    return withoutUnchanged
-        .replace(/\b(?:leave|keep|preserve|retain)\b(?![\s\S]*\b(?:muted|unmuted|soloed|unsoloed)\b)[\s\S]*$/iu, '')
-        .trim();
+    const unchangedLeave = finiteLeave.exec(withoutGerund);
+    let withoutUnchanged = withoutGerund;
+    if (unchangedLeave?.index !== undefined) {
+        const afterLeave = unchangedLeave.index + unchangedLeave[0].length;
+        const unchanged = /\bunchanged\b/iu.exec(withoutGerund.slice(afterLeave));
+        if (unchanged) {
+            withoutUnchanged = sliceThroughLaterTrackControlIntent(
+                withoutGerund,
+                unchangedLeave.index,
+                afterLeave + unchanged.index + unchanged[0].length,
+                laterTrackControlIntent
+            );
+        }
+    }
+    const bareLeave = finiteLeave.exec(withoutUnchanged);
+    if (bareLeave?.index === undefined) {
+        return withoutUnchanged;
+    }
+    const afterBare = withoutUnchanged.slice(bareLeave.index + bareLeave[0].length);
+    if (mutedComplement.test(afterBare)) {
+        return withoutUnchanged;
+    }
+    return sliceThroughLaterTrackControlIntent(
+        withoutUnchanged,
+        bareLeave.index,
+        bareLeave.index + bareLeave[0].length,
+        laterTrackControlIntent
+    );
 }
 
 function getTrackControlTargetPrompt(

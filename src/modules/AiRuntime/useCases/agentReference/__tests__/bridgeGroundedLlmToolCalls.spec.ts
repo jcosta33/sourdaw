@@ -3439,6 +3439,55 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(both.rejections).toEqual([]);
     });
 
+    it.each(['leave', 'keep'] as const)('does not let a finite %s-unchanged span eat a later unsplit mute', (verb) => {
+        const roomMic = createTrack({ id: 'track-room-mic', name: 'Room Mic' });
+        const guitar = createTrack({ id: 'track-guitar', name: 'Guitar' });
+        const drumBus = createTrack({ id: 'track-drum-bus', name: 'Drum Bus' });
+        const laterMuteContext = {
+            ...projectContext,
+            tracks: [roomMic, guitar, drumBus, master],
+        };
+        const unsplit = `mute Room Mic ${verb} the Drum Bus unchanged mute Guitar`;
+        const room = bridge(
+            [{ name: 'muteTrack', arguments: { trackId: roomMic.id, muted: true } }],
+            unsplit,
+            laterMuteContext
+        );
+        const later = bridge(
+            [{ name: 'muteTrack', arguments: { trackId: guitar.id, muted: true } }],
+            unsplit,
+            laterMuteContext
+        );
+        const laterSolo = bridge(
+            [{ name: 'soloTrack', arguments: { trackId: guitar.id, soloed: true } }],
+            unsplit,
+            laterMuteContext
+        );
+        expect(room.actions, unsplit).toEqual([]);
+        expect(later.actions, unsplit).toEqual([]);
+        expect(room.rejections, unsplit).toEqual([
+            {
+                index: 0,
+                name: 'muteTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+        expect(later.rejections, unsplit).toEqual([
+            {
+                index: 0,
+                name: 'muteTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+        expect(laterSolo.rejections, unsplit).not.toEqual([
+            {
+                index: 0,
+                name: 'soloTrack',
+                reason: 'Provider target trackId does not match the uniquely grounded project reference',
+            },
+        ]);
+    });
+
     it.each(['mute Guitar leaving Vocals muted', 'mute Guitar leave Vocals muted'] as const)(
         'keeps both names when %s uses a muted complement',
         (prompt) => {
