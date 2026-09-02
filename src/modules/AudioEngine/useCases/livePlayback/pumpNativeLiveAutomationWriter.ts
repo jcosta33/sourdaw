@@ -55,6 +55,13 @@ export type PumpNativeLiveAutomationWriterInput = Readonly<{
      * read the engine even once.
      */
     loopWraps: number | null;
+    /**
+     * How many fenced batches the engine had drained when this snapshot was
+     * taken, or `null` when the caller holds no snapshot. This is what dates
+     * the snapshot against the command that opened the pass; nothing else on
+     * it can.
+     */
+    batchesApplied: number | null;
     /** The pass this snapshot was read for. A pump never crosses passes. */
     writerEpoch: number;
 }>;
@@ -85,6 +92,33 @@ function cancelsStale(write: AudioGraphParameterWrite): boolean {
 }
 
 /**
+ * Whether this snapshot was taken before the command that opened the pass had
+ * reached the audio thread.
+ *
+ * A locate resolves when its batch is fenced onto the engine's command ring,
+ * not when the engine drains it, and the transport publishes its position once
+ * per audio callback. So a poll already in flight when the pass was re-armed
+ * carries the new pass's epoch and the *old* world's position, and a position
+ * is no witness of its own age: a reading at 2.5 s looks exactly the same
+ * whether the engine is still there or was moved to 6 s a callback ago. Taken
+ * for the pass, it would window the new pass in the region the musician just
+ * left — and inside a loop it would read as a wrap and flush the whole region's
+ * curve as past-stamped writes.
+ *
+ * The batch count is the witness, because it only ever moves forward as the
+ * audio thread drains fences. A reading that has not reached the fence the
+ * opening command was admitted at was taken before that command applied, and
+ * is dropped whole — no seam, no wrap bookkeeping, no admission — rather than
+ * corrected, because every number on it belongs to the world it was read in.
+ */
+function readBeforeThePassOpened(pass: LiveAutomationWriterPass, batchesApplied: number | null): boolean {
+    if (batchesApplied === null || pass.provenAfterBatch === null) {
+        return false;
+    }
+    return batchesApplied < pass.provenAfterBatch;
+}
+
+/**
  * Take the seam, when the pass can tell one closed.
  *
  * The engine walked the pass's writes out of its queue on the way to the loop
@@ -97,6 +131,12 @@ function cancelsStale(write: AudioGraphParameterWrite): boolean {
  * built rather than since this pass armed — so for that one snapshot the
  * playhead answers instead: a position behind where the pass began can only be
  * a region the engine took the musician back to.
+ *
+ * That reading is sound only because {@link readBeforeThePassOpened} has
+ * already dropped every snapshot from before the pass opened. A position behind
+ * the entry means a wrap once it is known to postdate the locate; without that
+ * it would equally mean a poll that crossed the locate, and a forward seek
+ * inside a loop region would be read as a seam.
  */
 function takeLoopSeam(input: { pass: LiveAutomationWriterPass; positionSeconds: number; loopWraps: number | null }) {
     const { pass, positionSeconds, loopWraps } = input;
@@ -205,6 +245,9 @@ export async function pumpNativeLiveAutomationWriter(input: PumpNativeLiveAutoma
         return;
     }
     if (nativeLiveAutomationWriter.inFlightEpoch === epoch) {
+        return;
+    }
+    if (readBeforeThePassOpened(pass, input.batchesApplied)) {
         return;
     }
 

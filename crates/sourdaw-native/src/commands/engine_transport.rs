@@ -31,7 +31,7 @@
 
 use crate::commands::graph::{finite, seconds_to_frames};
 use crate::state::AppState;
-use daw_engine::scheduler::GraphCommand;
+use daw_engine::scheduler::{GraphCommand, GraphProgressSnapshot, TransportPositionSnapshot};
 use daw_engine::transport_map::{
     LoopRegion, TempoMap, TempoSegment, TimeSignatureMap, TimeSignatureSegment, TransportMaps,
 };
@@ -91,6 +91,13 @@ pub struct TransportMapsApplied {
     pub tempo_segments: u32,
     pub time_signature_segments: u32,
     pub loop_enabled: bool,
+    /// The fence number [`EngineTransportPosition::batches_applied`] reaches
+    /// once this install has drained, so a caller can tell a later reading
+    /// from one taken before the maps reached the audio thread. Numbered from
+    /// the same counter `apply_graph_commands` numbers its own batches from:
+    /// the engine counts one stream of fences, so two producers numbering it
+    /// separately would be two numbers for one count.
+    pub admitted_batch: u64,
 }
 
 /// Where the engine's transport stands, as one wire payload.
@@ -100,6 +107,14 @@ pub struct TransportMapsApplied {
 /// `loopWraps` counts how many times the playhead crossed the loop end since
 /// the engine started; a consumer that sees it change knows the position went
 /// backwards on purpose rather than jumping.
+///
+/// `batchesApplied` is the only field that says *when* this reading was taken
+/// with respect to a command. A position cannot: a locate that resolved on
+/// this side was fenced onto the command ring, not drained, so the next
+/// reading may still report where the transport was before it. The count is
+/// the witness — a reading carrying a count at or above the fence number a
+/// command was admitted at was taken after that command reached the audio
+/// thread.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EngineTransportPosition {
@@ -108,9 +123,32 @@ pub struct EngineTransportPosition {
     pub position_seconds: f64,
     pub playhead_frame: f64,
     pub loop_wraps: f64,
+    pub batches_applied: f64,
     pub tempo: f64,
     pub time_sig_num: u16,
     pub time_sig_denom: u16,
+}
+
+/// Compose one reading out of the two channels it is drawn from.
+///
+/// Its own function because the order the two are *read* in is a contract the
+/// caller keeps and this composition cannot: see [`engine_transport_position`].
+fn transport_position_payload(
+    progress: GraphProgressSnapshot,
+    snapshot: TransportPositionSnapshot,
+    sample_rate: f64,
+) -> EngineTransportPosition {
+    EngineTransportPosition {
+        running: true,
+        playing: snapshot.playing,
+        position_seconds: snapshot.playhead_frame as f64 / sample_rate,
+        playhead_frame: snapshot.playhead_frame as f64,
+        loop_wraps: snapshot.loop_wraps as f64,
+        batches_applied: progress.batches_applied as f64,
+        tempo: snapshot.tempo,
+        time_sig_num: snapshot.time_sig_num,
+        time_sig_denom: snapshot.time_sig_denom,
+    }
 }
 
 fn tempo_segments(
@@ -187,6 +225,10 @@ fn transport_maps_commands(
         tempo_segments: tempo.segment_count() as u32,
         time_signature_segments: time_signature.segment_count() as u32,
         loop_enabled: region.active_end().is_some(),
+        // Stamped by whoever publishes the fence: a mapping that is never sent
+        // has no fence number, and inventing one here would name a batch the
+        // engine will never drain.
+        admitted_batch: 0,
     };
 
     Ok((
@@ -217,6 +259,14 @@ pub async fn set_transport_maps(
     payload: TransportMapsPayload,
     state: &AppState,
 ) -> Result<TransportMapsApplied, String> {
+    // Registry before engine, the order `apply_graph_commands` takes them in:
+    // both locks are held here because the fence this publishes has to be
+    // numbered by the same counter that numbers a graph batch's.
+    let mut registry_guard = state
+        .graph
+        .lock()
+        .map_err(|error| format!("Failed to lock graph registry: {error}"))?;
+
     let mut engine_guard = state
         .engine
         .lock()
@@ -226,11 +276,16 @@ pub async fn set_transport_maps(
         return Err("no native engine is running".to_string());
     };
 
-    let (ops, applied) = transport_maps_commands(&payload, engine.sample_rate())?;
+    let (ops, mut applied) = transport_maps_commands(&payload, engine.sample_rate())?;
     engine
         .send_graph_batch(ops)
         .map_err(|error| format!("transport maps were not applied: {error:?}"))?;
 
+    // Numbered only once the fence is published, and from the graph registry's
+    // own counter: the engine numbers every fence it drains, whichever command
+    // sent it, so a counter that skipped this one would leave every later graph
+    // batch numbered below the count it is compared against.
+    applied.admitted_batch = registry_guard.record_fenced_batch();
     Ok(applied)
 }
 
@@ -252,18 +307,18 @@ pub async fn engine_transport_position(
     };
 
     let sample_rate = f64::from(engine.sample_rate());
+    // The batch count is read *before* the position, and the order is the
+    // whole of what makes it a witness. Both channels are published once per
+    // callback and read between callbacks, so reading the count second could
+    // take it from a later callback than the position beside it — and a
+    // consumer would then be told a command had drained by a reading that
+    // predates the drain. Read first, the count can only lag the position,
+    // which costs a frame of admission and never asserts a happens-before that
+    // did not happen.
+    let progress = engine.graph_progress_snapshot();
     let snapshot = engine.transport_position_snapshot();
 
-    Ok(EngineTransportPosition {
-        running: true,
-        playing: snapshot.playing,
-        position_seconds: snapshot.playhead_frame as f64 / sample_rate,
-        playhead_frame: snapshot.playhead_frame as f64,
-        loop_wraps: snapshot.loop_wraps as f64,
-        tempo: snapshot.tempo,
-        time_sig_num: snapshot.time_sig_num,
-        time_sig_denom: snapshot.time_sig_denom,
-    })
+    Ok(transport_position_payload(progress, snapshot, sample_rate))
 }
 
 #[cfg(test)]
@@ -373,6 +428,7 @@ mod tests {
             position_seconds: 1.5,
             playhead_frame: 72_000.0,
             loop_wraps: 2.0,
+            batches_applied: 11.0,
             tempo: 128.0,
             time_sig_num: 5,
             time_sig_denom: 4,
@@ -383,9 +439,43 @@ mod tests {
             json,
             concat!(
                 r#"{"running":true,"playing":true,"positionSeconds":1.5,"#,
-                r#""playheadFrame":72000.0,"loopWraps":2.0,"tempo":128.0,"#,
-                r#""timeSigNum":5,"timeSigDenom":4}"#
+                r#""playheadFrame":72000.0,"loopWraps":2.0,"batchesApplied":11.0,"#,
+                r#""tempo":128.0,"timeSigNum":5,"timeSigDenom":4}"#
             )
+        );
+    }
+
+    /// `batchesApplied` is the drained-fence count and nothing else. It is the
+    /// one field a caller uses to date the reading against a command it sent,
+    /// so it has to come from the progress echo — the channel that counts
+    /// drains — rather than from anything the transport channel happens to
+    /// carry. The two snapshots below deliberately disagree about `loop_wraps`
+    /// so each field's source is pinned, not merely its value.
+    #[test]
+    fn a_position_takes_its_batch_count_from_the_progress_echo() {
+        let progress = GraphProgressSnapshot {
+            batches_applied: 11,
+            playhead_frame: 96_000,
+            loop_wraps: 5,
+            last_wrap_frame: 48_000,
+        };
+        let snapshot = TransportPositionSnapshot {
+            playing: true,
+            playhead_frame: 72_000,
+            loop_wraps: 2,
+            tempo: 128.0,
+            time_sig_num: 5,
+            time_sig_denom: 4,
+        };
+
+        let position = transport_position_payload(progress, snapshot, 48_000.0);
+
+        assert_eq!(position.batches_applied, 11.0);
+        assert_eq!(position.playhead_frame, 72_000.0);
+        assert_eq!(position.position_seconds, 1.5);
+        assert_eq!(
+            position.loop_wraps, 2.0,
+            "the wrap count stays the cursor's, beside a batch count that is not"
         );
     }
 

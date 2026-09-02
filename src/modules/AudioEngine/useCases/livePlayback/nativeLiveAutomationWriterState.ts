@@ -106,6 +106,18 @@ export type LiveAutomationWriterPass = {
     programmeEndSeconds: number;
     /** Where this pass began, on the engine clock. */
     entrySeconds: number;
+    /**
+     * The engine fence number of the command that put the transport where this
+     * pass begins, or `null` when no such command reported one.
+     *
+     * A pass is armed after a locate, a roll or a maps install has *resolved*,
+     * and resolving means the batch was fenced onto the engine's command ring
+     * — not that the audio thread drained it. So the readings that arrive next
+     * may still be from before the move. This number is what dates them: a
+     * snapshot whose `batchesApplied` has not reached it was read in the world
+     * this pass replaced, and nothing on that snapshot's face says so.
+     */
+    provenAfterBatch: number | null;
     /** Whether the engine will actually wrap this pass. */
     looping: boolean;
     /** The span being sent now. */

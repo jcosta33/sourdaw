@@ -101,7 +101,21 @@ function readAppliedResult(value: unknown, batch: AudioGraphCommandBatch): Audio
     const reports = readNativeStripReports(payload.reports, 'apply_graph_commands');
     const runtimeRevision = readNumber(payload.runtimeRevision, 'runtimeRevision');
     if (applied) {
-        return { acceptance: 'accepted', application: 'applied', ...correlation, runtimeRevision, reports };
+        // Optional on the wire and optional here: the native side omits it for
+        // any outcome whose fence the engine will never drain, and a default
+        // stood in for it would be a number promising a drain that is not
+        // coming.
+        const admitted = payload.admittedBatch;
+        const admittedBatch =
+            typeof admitted === 'number' && Number.isFinite(admitted) ? { admittedBatch: admitted } : {};
+        return {
+            acceptance: 'accepted',
+            application: 'applied',
+            ...correlation,
+            runtimeRevision,
+            ...admittedBatch,
+            reports,
+        };
     }
     const reason = payload.reason;
     return {

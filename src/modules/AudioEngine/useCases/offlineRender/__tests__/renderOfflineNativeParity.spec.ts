@@ -600,6 +600,7 @@ async function runLiveAutomationPass(input: { endSeconds: number }): Promise<Aud
         sampleRate: SAMPLE_RATE,
         programmeEndSeconds: input.endSeconds,
         positionSeconds: 0,
+        provenAfterBatch: null,
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -610,6 +611,7 @@ async function runLiveAutomationPass(input: { endSeconds: number }): Promise<Aud
             await pumpNativeLiveAutomationWriter({
                 positionSeconds: at,
                 loopWraps: 0,
+                batchesApplied: null,
                 writerEpoch: nativeLiveAutomationWriter.epoch,
             });
             await new Promise((resolve) => setTimeout(resolve, 0));

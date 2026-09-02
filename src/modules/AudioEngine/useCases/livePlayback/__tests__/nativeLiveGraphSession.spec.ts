@@ -51,6 +51,7 @@ const mocks = vi.hoisted(() => ({
                 tempoSegments: 1,
                 timeSignatureSegments: 1,
                 loopEnabled: (maps as EngineTransportMaps).loopRegion?.enabled === true,
+                admittedBatch: 1,
             },
         })
     ),
@@ -676,6 +677,7 @@ describe('updateNativeLiveGraphSessionTransportMaps', () => {
                                 tempoSegments: 1,
                                 timeSignatureSegments: 1,
                                 loopEnabled: true,
+                                admittedBatch: 1,
                             },
                         });
                     },

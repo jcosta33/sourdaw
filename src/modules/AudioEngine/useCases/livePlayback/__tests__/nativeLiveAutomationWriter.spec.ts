@@ -154,19 +154,21 @@ function flush(): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-function arm(positionSeconds: number): void {
+function arm(positionSeconds: number, provenAfterBatch: number | null = null): void {
     armNativeLiveAutomationWriter({
         stripTracks: [],
         sampleRate: SAMPLE_RATE,
         programmeEndSeconds: 8,
         positionSeconds,
+        provenAfterBatch,
     });
 }
 
-async function pump(positionSeconds: number, loopWraps: number): Promise<void> {
+async function pump(positionSeconds: number, loopWraps: number, batchesApplied: number | null = null): Promise<void> {
     await pumpNativeLiveAutomationWriter({
         positionSeconds,
         loopWraps,
+        batchesApplied,
         writerEpoch: nativeLiveAutomationWriter.epoch,
     });
     await flush();
@@ -400,6 +402,7 @@ describe('the live automation writer', () => {
         void pumpNativeLiveAutomationWriter({
             positionSeconds: 0.5,
             loopWraps: 0,
+            batchesApplied: null,
             writerEpoch: nativeLiveAutomationWriter.epoch,
         });
         await flush();
@@ -541,6 +544,7 @@ describe('the live automation writer', () => {
             positionSeconds: 3.9,
             playheadFrame: 3.9 * SAMPLE_RATE,
             loopWraps: 4,
+            batchesApplied: 0,
             tempo: 120,
             timeSigNum: 4,
             timeSigDenom: 4,
@@ -554,6 +558,104 @@ describe('the live automation writer', () => {
         // The next tick, read for this pass, is admitted normally.
         await pump(3.85, 4);
         expect(writesOf(batchesBefore)).toEqual([step(3.9, 0.9)]);
+    });
+
+    it('ignores a snapshot the engine published before the locate that opened this pass', async () => {
+        nativeLiveGraphSession.loopRegion = { enabled: true, startSeconds: 2, endSeconds: 10 };
+        nativeLiveGraphSession.loopEnabled = true;
+        mocks.curve = [{ target: FADER, opensAt: 0.55, writes: [step(3, 0.9), step(6.1, 0.6)] }];
+
+        // Armed after a locate forward to 6, whose batch the engine will have
+        // drained once its count reaches 4.
+        arm(6, 4);
+        await flush();
+        expect(writesOf(0)).toEqual([step(6, 0.55)]);
+
+        // A poll issued before that locate answers now. It carries this pass's
+        // epoch, and a position from the world the locate replaced. Only the
+        // batch count says so: the transport publishes once per callback, and
+        // an apply resolves when the batch is fenced, not when it is drained.
+        await pump(2.52, 0, 3);
+
+        expect(writeBatches()).toHaveLength(1);
+        // Nothing of it was taken — a position behind the entry reads as a wrap
+        // to any pass that trusts it, and this one flushes the region's whole
+        // curve as writes the engine resolves in a single block.
+        expect(nativeLiveAutomationWriter.pass?.lastLoopWraps).toBeNull();
+        expect(nativeLiveAutomationWriter.pass?.targets[0]?.cursor).toBe(1);
+
+        // The first snapshot the engine published after the locate drained.
+        await pump(6.01, 0, 4);
+        expect(writesOf(1)).toEqual([step(6.1, 0.6)]);
+    });
+
+    it('carries the queue mirror across a seam, so the region reopens without overfilling the engine', async () => {
+        // The engine's ledger does not forget at a seam: its own release proof
+        // needs a whole further pass. A loop span that opens on steps is where
+        // that matters, because a step appends rather than cancelling what is
+        // queued ahead of it.
+        const engine = engineQueueBackend();
+        mocks.apply.mockImplementation((batch) => engine.apply(batch));
+        nativeLiveGraphSession.loopRegion = { enabled: true, startSeconds: 1, endSeconds: 1.1 };
+        nativeLiveGraphSession.loopEnabled = true;
+        mocks.curve = [
+            {
+                target: FADER,
+                opensAt: 0.5,
+                writes: [
+                    step(1.01, 0.9),
+                    step(1.02, 0.8),
+                    step(1.03, 0.7),
+                    step(1.04, 0.6),
+                    step(1.05, 0.5),
+                    step(1.06, 0.4),
+                    step(1.07, 0.3),
+                    step(1.08, 0.2),
+                ],
+            },
+        ];
+
+        arm(1, 1);
+        await flush();
+
+        engineEchoSeconds = 1.05;
+        await pump(1.05, 0, 1);
+
+        // The seam. The engine is walking the region again from its start, and
+        // everything the pass sent for the stretch it just left is still
+        // charged against the parameter's queue.
+        engineEchoSeconds = 1.005;
+        await pump(1.005, 1, 1);
+
+        const refusals = mocks.warn.mock.calls.filter(([message]) => String(message).includes('refused'));
+        expect(refusals).toEqual([]);
+        // What fits beside what is still queued, and no more: the reopened
+        // region establishes its value and steps forward from there.
+        expect(writesOf(2)).toEqual([step(1, 0.5), step(1.01, 0.9), step(1.02, 0.8)]);
+    });
+
+    it('counts a step as an append, so the writes it does not cancel keep their slots', async () => {
+        // `charge_automation` drops the stale only for a write that is not an
+        // `Append`. A mirror that let a step cancel would believe a queue it
+        // never emptied was empty, and offer the engine writes there is no room
+        // for. Each pair below is a ramp still gliding when the next step is
+        // stamped: the step keeps it, a replace would drop it.
+        const engine = engineQueueBackend();
+        mocks.apply.mockImplementation((batch) => engine.apply(batch));
+        const pairs = Array.from({ length: 8 }, (_unused, index) => {
+            const at = 0.01 + index * 0.003;
+            return [ramp(at, at + 0.002, 0.2 + index * 0.05), step(at + 0.001, 0.9 - index * 0.05)];
+        });
+        mocks.curve = [{ target: FADER, writes: pairs.flat() }];
+
+        arm(0, 1);
+        await flush();
+
+        const refusals = mocks.warn.mock.calls.filter(([message]) => String(message).includes('refused'));
+        expect(refusals).toEqual([]);
+        // Every slot the mirror may fill, and the step holding one of every
+        // two: a mirror that let a step cancel would have offered more.
+        expect(writesOf(0)).toEqual(pairs.flat().slice(0, AUTOMATION_QUEUE_CAPACITY - 1));
     });
 
     it('reports an unchanged exclusion set once, however often the pass is re-armed', async () => {

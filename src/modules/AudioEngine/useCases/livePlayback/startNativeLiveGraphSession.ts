@@ -193,19 +193,26 @@ function programmeEndSeconds(programme: LiveGraphProgramme): number {
  * session head is exactly the case where the frames coincide. `locate: false`
  * is what keeps a roll a roll ({@link AudioGraphSetTransportCommand}).
  */
+/**
+ * Whether the engine is rolling, and the fence number of the roll that started
+ * it — what a transport reading has to have reached before it describes this
+ * session rather than the one it replaced.
+ */
+type RolledNativeTransport = Readonly<{ rolling: boolean; provenAfterBatch: number | null }>;
+
 async function rollNativeTransport(
     backend: ReturnType<typeof createNativeLiveGraphBackend>,
     positionSeconds: number
-): Promise<boolean> {
+): Promise<RolledNativeTransport> {
     const rolling = await backend.apply({
         schemaVersion: 1,
         commands: [{ kind: 'set-transport', playing: true, positionSeconds, locate: false }],
     });
     if (rolling.application !== 'applied') {
         logger.warn(`[AudioEngine] native transport did not start rolling: ${rolling.reason}`);
-        return false;
+        return { rolling: false, provenAfterBatch: null };
     }
-    return true;
+    return { rolling: true, provenAfterBatch: rolling.admittedBatch ?? null };
 }
 
 export function startNativeLiveGraphSession(
@@ -302,6 +309,7 @@ export function startNativeLiveGraphSession(
         // must not render a frame the region does not govern. Before the feed
         // too, because a position read against no maps reports the engine's
         // default tempo rather than the arrangement's.
+        let rolled: RolledNativeTransport = { rolling: false, provenAfterBatch: null };
         const maps = await setEngineTransportMaps(input.transportMaps);
         if (maps.outcome === 'declined') {
             // The engine keeps whatever pair the *previous* session installed:
@@ -323,7 +331,8 @@ export function startNativeLiveGraphSession(
             // and only the engine can say which this one is.
             nativeLiveGraphSession.loopRegion = input.transportMaps.loopRegion;
             nativeLiveGraphSession.loopEnabled = maps.applied.loopEnabled;
-            nativeLiveGraphSession.rolling = await rollNativeTransport(backend, input.positionSeconds);
+            rolled = await rollNativeTransport(backend, input.positionSeconds);
+            nativeLiveGraphSession.rolling = rolled.rolling;
         }
         if (nativeLiveGraphSession.rolling) {
             // After the roll, never before it: the region the pass is written
@@ -334,6 +343,7 @@ export function startNativeLiveGraphSession(
                 sampleRate: input.sampleRate,
                 programmeEndSeconds: programmeEndSeconds(programme),
                 positionSeconds: input.positionSeconds,
+                provenAfterBatch: rolled.provenAfterBatch,
             });
         }
         startNativeEnginePlayheadFeed();

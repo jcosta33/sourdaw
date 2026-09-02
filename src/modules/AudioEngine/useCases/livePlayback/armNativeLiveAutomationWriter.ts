@@ -56,6 +56,13 @@ export type ArmNativeLiveAutomationWriterInput = Readonly<{
     programmeEndSeconds: number;
     /** Where this pass begins, on the engine clock. */
     positionSeconds: number;
+    /**
+     * The engine fence number reported by the command that put the transport
+     * here — the locate, the roll, or the maps install this arm follows — or
+     * `null` when that command reported none. See
+     * {@link LiveAutomationWriterPass.provenAfterBatch}.
+     */
+    provenAfterBatch: number | null;
 }>;
 
 /** One stretch of the engine clock a pass sends writes for. */
@@ -153,6 +160,7 @@ export function armNativeLiveAutomationWriter(input: ArmNativeLiveAutomationWrit
         sampleRate: input.sampleRate,
         programmeEndSeconds: input.programmeEndSeconds,
         entrySeconds: input.positionSeconds,
+        provenAfterBatch: input.provenAfterBatch,
         looping: loop !== null,
         targets: entry.targets,
         loopTargets: loop?.targets ?? null,
@@ -163,6 +171,7 @@ export function armNativeLiveAutomationWriter(input: ArmNativeLiveAutomationWrit
     void pumpNativeLiveAutomationWriter({
         positionSeconds: input.positionSeconds,
         loopWraps: null,
+        batchesApplied: null,
         writerEpoch: nativeLiveAutomationWriter.epoch,
     });
 }

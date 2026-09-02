@@ -106,6 +106,9 @@ export function updateNativeLiveGraphSessionTransportMaps(
                 sampleRate: pass.sampleRate,
                 programmeEndSeconds: pass.programmeEndSeconds,
                 positionSeconds: nativeEnginePlayheadFeed.reading?.positionSeconds ?? pass.entrySeconds,
+                // The install's own fence: the region this pass is written
+                // into is not the engine's until that batch has drained.
+                provenAfterBatch: maps.applied.admittedBatch,
             });
         }
         return { outcome: 'updated' };

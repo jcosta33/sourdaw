@@ -26,6 +26,18 @@ export type EngineTransportPosition = {
      * backwards deliberately rather than jumping.
      */
     loopWraps: number;
+    /**
+     * How many fenced command batches the engine has drained since it started.
+     *
+     * The only field that dates this reading against a command the renderer
+     * sent. A native apply resolves once its batch is fenced onto the command
+     * ring, not once the audio thread has drained it, so the next position may
+     * still be the one from before a locate — and no position, wrap count or
+     * timestamp on this reading can say which side of that locate it fell on.
+     * A reading whose count has reached the `admittedBatch` an apply reported
+     * was taken after that batch reached the audio thread.
+     */
+    batchesApplied: number;
     tempo: number;
     timeSigNum: number;
     timeSigDenom: number;
@@ -38,6 +50,7 @@ export const stoppedEngineTransportPosition: EngineTransportPosition = {
     positionSeconds: 0,
     playheadFrame: 0,
     loopWraps: 0,
+    batchesApplied: 0,
     tempo: 0,
     timeSigNum: 0,
     timeSigDenom: 0,
@@ -80,6 +93,13 @@ export type EngineTransportMapsApplied = {
     sampleRate: number;
     tempoSegments: number;
     timeSignatureSegments: number;
+    /**
+     * The fence number {@link EngineTransportPosition.batchesApplied} reaches
+     * once this install has drained. Numbered from the same counter the graph
+     * batches are numbered from, because the engine counts one stream of
+     * fences whichever command published them.
+     */
+    admittedBatch: number;
     /**
      * Whether the engine will actually wrap. A region shorter than the engine's
      * floor is held but not honoured, so this is not an echo of the requested

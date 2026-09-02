@@ -82,6 +82,9 @@ export function repositionNativeLiveGraphSession(
                 sampleRate: pass.sampleRate,
                 programmeEndSeconds: pass.programmeEndSeconds,
                 positionSeconds: input.positionSeconds,
+                // The locate's own fence. Until the engine has drained it, its
+                // published position is still the one the musician left.
+                provenAfterBatch: result.admittedBatch ?? null,
             });
         }
         return { outcome: 'repositioned' };

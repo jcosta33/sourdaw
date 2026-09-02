@@ -97,6 +97,7 @@ export function pollNativeEnginePlayheadOnce(): void {
             void pumpNativeLiveAutomationWriter({
                 positionSeconds: reading.positionSeconds,
                 loopWraps: reading.loopWraps,
+                batchesApplied: reading.batchesApplied,
                 writerEpoch,
             });
         })
