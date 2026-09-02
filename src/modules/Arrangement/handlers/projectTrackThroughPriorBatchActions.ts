@@ -47,6 +47,8 @@ export function projectTrackThroughPriorBatchActions(track: Track, context: Hand
             projected.color = action.payload.color;
         } else if (action.type === 'setTrackPan') {
             projected.pan = action.payload.pan;
+        } else if (action.type === 'setAutomationMode') {
+            projected.automationMode = action.payload.mode;
         } else if (action.type === 'muteTrack') {
             projected.muted = action.payload.muted;
         } else if (action.type === 'setTrackOutput') {
