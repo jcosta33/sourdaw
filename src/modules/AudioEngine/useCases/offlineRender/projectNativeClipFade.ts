@@ -60,11 +60,13 @@
  * invented to satisfy the mapper.
  */
 
-import { clampClipFadeInDurationSeconds, clampClipFadeOutStartSeconds } from '#/utils/clipFadeScheduleClamp';
+import {
+    MICRO_FADE_SECONDS,
+    clampClipFadeInDurationSeconds,
+    clampClipFadeOutStartSeconds,
+} from '#/utils/clipFadeScheduleClamp';
 
 import { type AudioGraphClipFade } from '../../models/AudioGraphBackend';
-
-import { MICRO_FADE_SECONDS } from './constants';
 
 export type NativeClipFadeInput = Readonly<{
     /** The playback's own first heard second — `startSec` on the projection. */

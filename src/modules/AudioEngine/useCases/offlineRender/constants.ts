@@ -1,5 +1,3 @@
-export { MICRO_FADE_SECONDS } from '#/utils/clipFadeScheduleClamp';
-
 /**
  * Total wall-clock floor for the **unsegmented fallback only**.
  *

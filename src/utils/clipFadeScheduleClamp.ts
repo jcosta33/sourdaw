@@ -35,8 +35,7 @@ export function clampClipFadeInDurationSeconds(
 export function clampClipFadeOutStartSeconds(
     requestedFadeOutStartSeconds: number,
     playbackStartSeconds: number,
-    playDurationSeconds: number,
-    _microFadeSeconds: number = MICRO_FADE_SECONDS
+    playDurationSeconds: number
 ): number {
     const endSeconds = playbackStartSeconds + playDurationSeconds;
     return Math.max(

@@ -65,24 +65,4 @@ describe('clip-fade schedule clamp — the shared half-play-duration law', () =>
         expect(withDefault).toBe(withExplicit);
         expect(withDefault).toBe(MICRO_FADE_SECONDS);
     });
-
-    it('defaults the fade-out floor to MICRO_FADE_SECONDS when not supplied', () => {
-        const playbackStartSeconds = 0;
-        const playDurationSeconds = 0.002;
-        const requestedFadeOutStartSeconds = 0;
-
-        const withDefault = clampClipFadeOutStartSeconds(
-            requestedFadeOutStartSeconds,
-            playbackStartSeconds,
-            playDurationSeconds
-        );
-        const withExplicit = clampClipFadeOutStartSeconds(
-            requestedFadeOutStartSeconds,
-            playbackStartSeconds,
-            playDurationSeconds,
-            MICRO_FADE_SECONDS
-        );
-
-        expect(withDefault).toBe(withExplicit);
-    });
 });
