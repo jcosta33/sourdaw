@@ -109,7 +109,7 @@ function toolSchema(name: string): ToolSchema {
         function: {
             name,
             description: `${name} tool.`,
-            parameters: { type: 'object', additionalProperties: false, properties: {} },
+            parameters: { type: 'object', additionalProperties: false, properties: {}, required: [] },
         },
     };
 }

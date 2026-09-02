@@ -75,20 +75,20 @@ function semanticCategories(input: {
     return ['operation', ...new Set(candidates.filter((word) => !SEMANTIC_CATEGORY_NOISE_WORDS.has(word)))].slice(0, 8);
 }
 
-function normalizedIntent(value: string): string {
+function intentSearchKey(value: string): { intent: string; searchKey: string } {
     if (typeof value !== 'string') {
         throw new TypeError('Command catalog intent does not match the strict catalog contract.');
     }
-    const normalizedValue = value.normalize('NFKC');
-    const length = getExecutableAppActionIntentCatalogUnicodeLength(normalizedValue);
+    const length = getExecutableAppActionIntentCatalogUnicodeLength(value);
     if (length === 0 || length > MAX_EXECUTABLE_APP_ACTION_INTENT_CATALOG_INTENT_LENGTH) {
         throw new Error('Command catalog intent does not match the strict catalog contract.');
     }
+    const normalizedValue = value.normalize('NFKC');
     const terms = words(normalizedValue).filter((word) => !GRAMMATICAL_QUERY_STOP_WORDS.has(word));
     if (terms.length === 0) {
         throw new Error('Command catalog intent does not match the strict catalog contract.');
     }
-    return terms.join(' ');
+    return { intent: value, searchKey: terms.join(' ') };
 }
 
 function encodeCursor(cursor: IntentCatalogCursor): string {
@@ -231,7 +231,7 @@ function inflectionVariants(term: string): readonly string[] {
 }
 
 export function getExecutableAppActionIntentCatalog(input: { intent: string; page?: IntentCatalogPage }) {
-    const intent = normalizedIntent(input.intent);
+    const { intent, searchKey } = intentSearchKey(input.intent);
     const entries = getExecutableCommandRegistrations()
         .map((registration, index) => {
             const entry: IntentCatalogEntry = {
@@ -243,14 +243,14 @@ export function getExecutableAppActionIntentCatalog(input: { intent: string; pag
                     targetCapabilities: registration.capabilityChecks.map(({ capability }) => capability),
                 }),
             };
-            return { entry, index, score: intentScore(entry, intent) };
+            return { entry, index, score: intentScore(entry, searchKey) };
         })
         .filter(({ score }) => score > 0)
         .sort((left, right) => right.score - left.score || left.index - right.index)
         .map(({ entry }) => entry);
     const names = entries.map((entry) => entry.name);
     const fingerprint = resultSetFingerprint(names);
-    const currentIntentFingerprint = intentFingerprint(intent);
+    const currentIntentFingerprint = intentFingerprint(searchKey);
     const offset = pageOffset({
         cursor: input.page?.cursor,
         intentFingerprint: currentIntentFingerprint,

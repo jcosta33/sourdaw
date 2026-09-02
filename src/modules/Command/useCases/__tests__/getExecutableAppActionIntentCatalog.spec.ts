@@ -54,12 +54,21 @@ describe('getExecutableAppActionIntentCatalog', () => {
         ).toThrow('Command catalog cursor does not match the strict catalog contract.');
     });
 
-    it('refuses an intent whose normalized receipt could not round-trip its cursor', () => {
-        expect(() =>
-            getExecutableAppActionIntentCatalog({
-                intent: `operation ${'ﬀ'.repeat(502)}`,
-                page: { limit: 1 },
-            })
-        ).toThrow('Command catalog intent does not match the strict catalog contract.');
+    it('keeps a schema-admitted ligature intent reusable with its cursor', () => {
+        const firstPage = getExecutableAppActionIntentCatalog({
+            intent: `operation ${'ﬀ'.repeat(502)}`,
+            page: { limit: 1 },
+        });
+        if (firstPage.nextCursor === null) {
+            throw new Error('Expected an intent catalog cursor.');
+        }
+
+        const nextPage = getExecutableAppActionIntentCatalog({
+            intent: firstPage.intent,
+            page: { cursor: firstPage.nextCursor, limit: 1 },
+        });
+
+        expect(firstPage.intent).toBe(`operation ${'ﬀ'.repeat(502)}`);
+        expect(nextPage.page.offset).toBe(1);
     });
 });

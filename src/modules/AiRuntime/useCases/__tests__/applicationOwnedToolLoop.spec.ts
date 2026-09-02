@@ -590,9 +590,9 @@ describe('application-owned tool loop', () => {
         expect(exhausted).toMatchObject({
             status: 'rejected',
             reason: 'Provider exhausted the bounded application tool-loop turns.',
-            turns: 3,
+            turns: 4,
         });
-        expect(querySemanticProject).toHaveBeenCalledTimes(2);
+        expect(querySemanticProject).toHaveBeenCalledTimes(3);
     });
 
     it('replaces oversized query data with a bounded correlated failure receipt', async () => {

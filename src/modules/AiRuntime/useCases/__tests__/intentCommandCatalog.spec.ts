@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { type ToolSchema } from '../../models/ToolDefinitions';
 import { AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME } from '../agentToolCatalog';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 
@@ -24,6 +25,33 @@ type CatalogCursor = {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isToolSchema(value: unknown): value is ToolSchema {
+    if (!isRecord(value) || value.type !== 'function' || !isRecord(value.function)) {
+        return false;
+    }
+    const { function: definition } = value;
+    return (
+        typeof definition.name === 'string' &&
+        typeof definition.description === 'string' &&
+        isRecord(definition.parameters) &&
+        definition.parameters.type === 'object' &&
+        isRecord(definition.parameters.properties) &&
+        Array.isArray(definition.parameters.required) &&
+        definition.parameters.required.every((name) => typeof name === 'string')
+    );
+}
+
+function commandIndexCatalogReceipt(value: unknown): { intent: string; nextCursor: string | null } {
+    if (
+        !isRecord(value) ||
+        typeof value.intent !== 'string' ||
+        (typeof value.nextCursor !== 'string' && value.nextCursor !== null)
+    ) {
+        throw new Error('Expected a command-index catalog receipt.');
+    }
+    return { intent: value.intent, nextCursor: value.nextCursor };
 }
 
 function decodeCursor(cursor: string): CatalogCursor {
@@ -351,7 +379,7 @@ describe('intent command catalog', () => {
         });
     });
 
-    it('normalizes acronym and Unicode intent before reusing its cursor', async () => {
+    it('preserves acronym and Unicode intent before reusing its cursor', async () => {
         const firstPage = await runApplicationOwnedToolLoop({
             loopId: 'intent-command-catalog-case-first',
             terminalToolNames: new Set(['command.batch.propose']),
@@ -369,10 +397,12 @@ describe('intent command catalog', () => {
                 })
                 .mockResolvedValueOnce({ status: 'complete', toolCalls: [] }),
         });
-        const firstCatalog = firstPage.receipts[0]?.data as { intent: string; nextCursor: string | null };
+        const firstCatalog = commandIndexCatalogReceipt(firstPage.receipts[0]?.data);
 
-        expect(firstCatalog.intent).toBe('midi café');
-        expect(firstCatalog.nextCursor).not.toBeNull();
+        expect(firstCatalog.intent).toBe('MIDI Café');
+        if (firstCatalog.nextCursor === null) {
+            throw new Error('Expected a command-index cursor.');
+        }
 
         const nextPage = await runApplicationOwnedToolLoop({
             loopId: 'intent-command-catalog-case-next',
@@ -386,7 +416,7 @@ describe('intent command catalog', () => {
                             id: 'midi-index-next',
                             name: AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
                             arguments: {
-                                intent: 'midi café',
+                                intent: firstCatalog.intent,
                                 page: { cursor: firstCatalog.nextCursor },
                             },
                         },
@@ -395,7 +425,58 @@ describe('intent command catalog', () => {
                 .mockResolvedValueOnce({ status: 'complete', toolCalls: [] }),
         });
 
-        expect(nextPage).toMatchObject({ receipts: [{ status: 'success', data: { intent: 'midi café' } }] });
+        expect(nextPage).toMatchObject({ receipts: [{ status: 'success', data: { intent: 'MIDI Café' } }] });
+    });
+
+    it('keeps a schema-admitted ligature intent reusable through the application-owned command index', async () => {
+        const intent = `operation ${'ﬀ'.repeat(502)}`;
+        const firstPage = await runApplicationOwnedToolLoop({
+            loopId: 'intent-command-catalog-ligature-first',
+            terminalToolNames: new Set(['command.batch.propose']),
+            requestTurn: vi
+                .fn()
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'ligature-index-first',
+                            name: AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+                            arguments: { intent, page: { limit: 1 } },
+                        },
+                    ],
+                })
+                .mockResolvedValueOnce({ status: 'complete', toolCalls: [] }),
+        });
+        const firstCatalog = commandIndexCatalogReceipt(firstPage.receipts[0]?.data);
+        if (firstCatalog.nextCursor === null) {
+            throw new Error('Expected a command-index cursor.');
+        }
+
+        const nextPage = await runApplicationOwnedToolLoop({
+            loopId: 'intent-command-catalog-ligature-next',
+            terminalToolNames: new Set(['command.batch.propose']),
+            requestTurn: vi
+                .fn()
+                .mockResolvedValueOnce({
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'ligature-index-next',
+                            name: AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+                            arguments: {
+                                intent: firstCatalog.intent,
+                                page: { cursor: firstCatalog.nextCursor, limit: 1 },
+                            },
+                        },
+                    ],
+                })
+                .mockResolvedValueOnce({ status: 'complete', toolCalls: [] }),
+        });
+
+        expect(firstCatalog.intent).toBe(intent);
+        expect(nextPage).toMatchObject({
+            receipts: [{ callId: 'ligature-index-next', status: 'success', data: { intent, page: { offset: 1 } } }],
+        });
     });
 
     it('rejects tampered command-index cursors inside the application-owned loop', async () => {
@@ -649,17 +730,24 @@ describe('intent command catalog', () => {
             if (commandSchemaReads !== 2) {
                 return catalog;
             }
+            const items = catalog.items.map((item) => {
+                if (!isToolSchema(item)) {
+                    throw new Error('Expected an exact command tool schema.');
+                }
+                return {
+                    ...item,
+                    function: {
+                        ...item.function,
+                        parameters: {
+                            ...item.function.parameters,
+                            properties: { ...item.function.parameters.properties, staleSchema: { type: 'boolean' } },
+                        },
+                    },
+                };
+            });
             return {
                 ...catalog,
-                items: catalog.items.map((item) => {
-                    if (!('function' in item)) {
-                        return item;
-                    }
-                    return {
-                        ...item,
-                        function: { ...item.function, description: `${item.function.description} Changed.` },
-                    };
-                }),
+                items,
             };
         });
 
