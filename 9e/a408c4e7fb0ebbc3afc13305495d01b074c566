@@ -1,0 +1,55 @@
+src/modules/Command/stores/undoSessionMirror.ts
+  s_bbdfb911119c4f::t_61a29829d9982b 23-25,31
+  s_bbdfb911119c4f::t_2af0cb5a6b4359 241-245,255-257,264
+  s_bbdfb911119c4f::t_5c1428eb269b19 287-288,292
+src/modules/Project/useCases/projectPersistence/loadProject.ts
+  s_bbdfb911119c4f::t_2eaae765d89462 98-104
+  s_bbdfb911119c4f::t_b461472a4cb61a 4
+  s_bbdfb911119c4f::t_a719daee34338d 105
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectPreservesSessionUndo.spec.ts
+  s_bbdfb911119c4f::t_2b5ddcfa9eca70 187-192
+  s_bbdfb911119c4f::t_5b89144a472421 1-158,160-186,193-233
+  s_bbdfb911119c4f::t_ccff1433dfa1ad 159
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectDirtyTracking.integration.spec.ts
+  s_bbdfb911119c4f::t_c9eb66e5b78fda 113
+src/modules/Command/stores/__tests__/undoStore.spec.ts
+  s_bbdfb911119c4f::t_c8af1adf80876c 509-611
+  s_bbdfb911119c4f::t_36d475ba40f9d2 33
+src/modules/Command/stores/undoStore.ts
+  s_bbdfb911119c4f::t_e9152a17044b99 16-23,30-47,67
+src/modules/Command/useCases/index.ts
+  s_bbdfb911119c4f::t_f449a451a2621a 91
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_bbdfb911119c4f::t_1e98553ae68dc4 3
+  s_bbdfb911119c4f::t_0e3f8305a1d843 221-225
+  s_bbdfb911119c4f::t_05faaa9d6af4db 139
+  s_bbdfb911119c4f::t_af0f321ab8bf9c 261
+  s_bbdfb911119c4f::t_24ae816f54888e 32
+src/modules/Project/useCases/projectPersistence/__tests__/missingMediaOnLoad.spec.ts
+  s_bbdfb911119c4f::t_65051e0971be09 127
+src/modules/Command/useCases/reconcileSessionUndoForProject.ts
+  s_bbdfb911119c4f::t_2fe428528e3053 1-10
+src/modules/Command/AGENTS.md
+  s_bbdfb911119c4f::t_2c9a8df88782df 9
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_bbdfb911119c4f::t_47cea2744d6aeb 252
+  s_bbdfb911119c4f::t_a5770635a663a1 37
+  s_bbdfb911119c4f::t_24ea90ac2fd190 267
+  s_bbdfb911119c4f::t_fbc876fabc3574 95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "9ea408c4e7fb0ebbc3afc13305495d01b074c566",
+  "prompts": {},
+  "sessions": {
+    "s_bbdfb911119c4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fa21d5-2a8a-4f80-98ab-b72059373843",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
