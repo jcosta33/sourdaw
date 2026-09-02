@@ -1223,9 +1223,9 @@ impl SourdawNative {
         reason(commands::crumbs::stop_recording(instance_id, &self.singletons.crumbs).await)
     }
 
-    /// Hand one block of the monitored input bus to every armed crumbs
-    /// sampler's record bridge. Interleaved stereo f32 LE bytes, one call per
-    /// render quantum from the input-monitor path.
+    /// Accept and discard one block of the monitored input bus. The samplers
+    /// record the engine's own capture tap, so this command reaches no take;
+    /// it survives only until its TypeScript producer is retired with it.
     #[napi]
     pub async fn feed_crumbs_record_input(&self, audio_bytes: Buffer) -> Result<()> {
         reason(

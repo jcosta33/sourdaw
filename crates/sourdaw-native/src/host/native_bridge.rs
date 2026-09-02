@@ -16,7 +16,7 @@ use daw_dsp::crumbs::types::CrumbsCommand;
 ///
 /// RT-safety: all scratch buffers are preallocated. No heap allocation occurs
 /// in any `NativePlugin` method.
-use daw_engine::plugin_slot::{MidiNoteEvent, NativePlugin, TransportState};
+use daw_engine::plugin_slot::{CaptureInputBlock, MidiNoteEvent, NativePlugin, TransportState};
 use daw_plugin_host::{
     HostParameterUpdate, HostTransport, HostedPluginRuntime, HostedRuntime, PluginParameter,
     ProcessingGate,
@@ -1613,12 +1613,40 @@ mod tests {
         (slot, tx, commit_rx, recycle_tx)
     }
 
-    /// Wiring-boundary regression (ledger #508 row 24): the slot must feed
-    /// the incoming audio buffers to the engine's record input before
-    /// zeroing them. Pre-fix the buffers were discarded unread, so an armed
-    /// recording captured silence end-to-end.
+    /// One chunk of the engine's input tap, as the render callback hands it
+    /// to the bus.
+    fn capture_block<'a>(left: &'a [f32], right: &'a [f32], served: bool) -> CaptureInputBlock<'a> {
+        CaptureInputBlock {
+            left,
+            right,
+            frames: left.len(),
+            served,
+            latency_frames: 0,
+            position_frames: 0,
+        }
+    }
+
+    /// Run one master-chain block over silent output scratch — the pass the
+    /// scheduler makes on this slot every callback, whether or not the tap
+    /// delivered anything.
+    fn render_block(slot: &mut CrumbsPluginSlot, frames: usize) {
+        let mut left = vec![0.0f32; frames];
+        let mut right = vec![0.0f32; frames];
+        slot.process_with_events(
+            &mut left,
+            &mut right,
+            frames,
+            &[],
+            &TransportState::default(),
+        );
+    }
+
+    /// Wiring-boundary regression (ledger #508 row 24): what an armed take
+    /// holds is the capture block the slot was fed, channel for channel.
+    /// Pre-fix the input was never delivered at all, so an armed recording
+    /// captured silence end-to-end.
     #[test]
-    fn crumbs_slot_feeds_record_input_to_engine() {
+    fn crumbs_slot_records_the_capture_block_it_is_fed() {
         use daw_dsp::crumbs::types::{CrumbsMode, RecordState};
 
         let (mut slot, mut tx, mut commit_rx, _recycle_tx) = crumbs_slot_with_rings();
@@ -1630,22 +1658,27 @@ mod tests {
             max_duration_secs: 10.0,
         })
         .unwrap();
+        render_block(&mut slot, 128);
+        assert_eq!(
+            slot.engine.record_state(),
+            RecordState::Armed,
+            "the master-chain pass must drain the arm command"
+        );
 
+        // Distinct channels, so a swapped feed cannot pass.
         let frames = 256;
-        let mut left = vec![0.5f32; frames];
-        let mut right = vec![0.5f32; frames];
-        slot.process_bridged_audio(&mut left, &mut right, frames);
+        let left = vec![0.5f32; frames];
+        let right = vec![0.25f32; frames];
+        slot.process_capture_input(capture_block(&left, &right, true));
 
         assert_eq!(
             slot.engine.record_state(),
             RecordState::Recording,
-            "over-threshold input through the slot must start the take"
+            "an over-threshold capture block must start the take"
         );
 
         tx.push(CrumbsCommand::StopRecording).unwrap();
-        let mut flush_l = vec![0.0f32; 128];
-        let mut flush_r = vec![0.0f32; 128];
-        slot.process_bridged_audio(&mut flush_l, &mut flush_r, 128);
+        render_block(&mut slot, 128);
 
         assert_eq!(slot.engine.record_state(), RecordState::Idle);
         // Handoff mode: the take leaves the engine over the commit ring; the
@@ -1658,21 +1691,21 @@ mod tests {
         assert_eq!(commit.right.len(), frames);
         assert!(
             commit.left.iter().all(|&s| (s - 0.5).abs() < 1.0e-6),
-            "committed buffer must hold the fed input, not silence"
+            "the take's left channel must hold the captured left channel"
         );
         assert!(
-            commit.right.iter().all(|&s| (s - 0.5).abs() < 1.0e-6),
-            "committed buffer must hold the fed input, not silence"
+            commit.right.iter().all(|&s| (s - 0.25).abs() < 1.0e-6),
+            "the take's right channel must hold the captured right channel"
         );
         assert_eq!(commit.sample_rate, 48_000);
     }
 
-    /// PR #564 review (blocking): the real render callback interleaves bridge
-    /// bursts (real audio) with standalone process_block over zeroed
-    /// scratch. The record feed must be bridge-only, so the committed take
-    /// contains the real frames and NOTHING from the standalone path.
+    /// PR #564 review (blocking), on the tap driver: the render pass runs on
+    /// output scratch that carries no input, and the scheduler runs it on
+    /// this slot every block. It must add nothing to a take — a take spanning
+    /// two capture blocks holds those two blocks and no third thing.
     #[test]
-    fn crumbs_take_has_no_interleaved_silence_across_callback_paths() {
+    fn crumbs_take_holds_only_capture_blocks_across_render_passes() {
         use daw_dsp::crumbs::types::{CrumbsMode, RecordState};
 
         let (mut slot, mut tx, mut commit_rx, _recycle_tx) = crumbs_slot_with_rings();
@@ -1684,40 +1717,88 @@ mod tests {
             max_duration_secs: 10.0,
         })
         .unwrap();
+        render_block(&mut slot, 128);
 
-        // Real callback pattern: 8 bridged 128-frame bursts of real audio
-        // (1024 frames), then a 4096-frame device buffer of zeroed
-        // standalone scratch (in the callback's 128-frame chunks).
-        for _ in 0..8 {
-            let mut left = vec![0.5f32; 128];
-            let mut right = vec![0.5f32; 128];
-            slot.process_bridged_audio(&mut left, &mut right, 128);
-        }
+        let left = vec![0.5f32; 128];
+        let right = vec![0.5f32; 128];
+        slot.process_capture_input(capture_block(&left, &right, true));
         assert_eq!(slot.engine.record_state(), RecordState::Recording);
 
+        // A whole device buffer of master-chain passes between the two
+        // capture blocks, in the callback's own chunk size.
         for _ in 0..32 {
-            let mut left = vec![0.0f32; 128];
-            let mut right = vec![0.0f32; 128];
-            slot.process_audio(&mut left, &mut right, 128);
+            render_block(&mut slot, 128);
         }
 
+        slot.process_capture_input(capture_block(&left, &right, true));
+
         tx.push(CrumbsCommand::StopRecording).unwrap();
-        let mut flush_l = vec![0.0f32; 128];
-        let mut flush_r = vec![0.0f32; 128];
-        slot.process_bridged_audio(&mut flush_l, &mut flush_r, 128);
+        render_block(&mut slot, 128);
 
         let commit = commit_rx
             .pop()
             .expect("stopping an armed take must hand a commit to the ring");
         assert_eq!(
             commit.left.len(),
-            1024,
-            "standalone-chain silence must not enter the take (got {} frames)",
+            256,
+            "the take must be the two captured blocks alone (got {} frames)",
             commit.left.len()
         );
         assert!(
             commit.left.iter().all(|&s| (s - 0.5).abs() < 1.0e-6),
-            "take must be the 1024 real frames, no interleaved zeros"
+            "render-pass scratch must not reach the take"
+        );
+    }
+
+    /// A capture dropout is a hole in the recorded time, not a cut in it. An
+    /// unserved block carries zeros and is recorded all the same, so the
+    /// frames after it stay where the musician played them instead of being
+    /// pulled earlier by the length of the gap.
+    #[test]
+    fn crumbs_take_holds_an_unserved_capture_block_as_its_own_silence() {
+        use daw_dsp::crumbs::types::CrumbsMode;
+
+        let (mut slot, mut tx, mut commit_rx, _recycle_tx) = crumbs_slot_with_rings();
+
+        tx.push(CrumbsCommand::SetMode(CrumbsMode::Record)).unwrap();
+        tx.push(CrumbsCommand::ArmRecording {
+            threshold: 0.01,
+            target_pad: 0,
+            max_duration_secs: 10.0,
+        })
+        .unwrap();
+        render_block(&mut slot, 128);
+
+        const DROPOUT_FRAMES: usize = 64;
+        let played = vec![0.5f32; 128];
+        let dropout = vec![0.0f32; DROPOUT_FRAMES];
+
+        slot.process_capture_input(capture_block(&played, &played, true));
+        slot.process_capture_input(capture_block(&dropout, &dropout, false));
+        slot.process_capture_input(capture_block(&played, &played, true));
+
+        tx.push(CrumbsCommand::StopRecording).unwrap();
+        render_block(&mut slot, 128);
+
+        let commit = commit_rx
+            .pop()
+            .expect("stopping an armed take must hand a commit to the ring");
+        assert_eq!(
+            commit.left.len(),
+            128 + DROPOUT_FRAMES + 128,
+            "an unserved block must occupy its own duration in the take"
+        );
+        assert!(
+            commit.left[128..128 + DROPOUT_FRAMES]
+                .iter()
+                .all(|&s| s == 0.0),
+            "the dropout must read as silence where it happened"
+        );
+        assert!(
+            commit.left[128 + DROPOUT_FRAMES..]
+                .iter()
+                .all(|&s| (s - 0.5).abs() < 1.0e-6),
+            "audio after the dropout must resume after it, not in place of it"
         );
     }
 
@@ -1741,13 +1822,12 @@ mod tests {
         .unwrap();
 
         // Take one take and stop it.
-        let mut left = vec![0.5f32; 128];
-        let mut right = vec![0.5f32; 128];
-        slot.process_bridged_audio(&mut left, &mut right, 128);
+        render_block(&mut slot, 128);
+        let left = vec![0.5f32; 128];
+        let right = vec![0.5f32; 128];
+        slot.process_capture_input(capture_block(&left, &right, true));
         tx.push(CrumbsCommand::StopRecording).unwrap();
-        let mut flush_l = vec![0.0f32; 128];
-        let mut flush_r = vec![0.0f32; 128];
-        slot.process_bridged_audio(&mut flush_l, &mut flush_r, 128);
+        render_block(&mut slot, 128);
         let commit = commit_rx.pop().expect("take handed to the commit ring");
 
         // Simulate the command side (arm_recording's drain): clone the take
@@ -1764,9 +1844,9 @@ mod tests {
         })
         .unwrap();
 
-        // One process call: must adopt the recycled pair, THEN process the
-        // arm — in that order.
-        slot.process_bridged_audio(&mut flush_l, &mut flush_r, 128);
+        // One master-chain block: must adopt the recycled pair, THEN process
+        // the arm — in that order.
+        render_block(&mut slot, 128);
 
         assert_eq!(
             slot.engine.record_state(),
@@ -1775,25 +1855,27 @@ mod tests {
         );
 
         // And the re-armed recorder actually captures the next take.
-        let mut left2 = vec![0.5f32; 128];
-        let mut right2 = vec![0.5f32; 128];
-        slot.process_bridged_audio(&mut left2, &mut right2, 128);
+        slot.process_capture_input(capture_block(&left, &right, true));
         assert_eq!(slot.engine.record_state(), RecordState::Recording);
     }
 
     /// The same wiring must leave the engine untouched when it is not armed:
-    /// feeding input in a non-Record mode captures nothing.
+    /// a capture block in a non-Record mode captures nothing.
     #[test]
     fn crumbs_slot_ignores_record_input_when_not_armed() {
-        let (mut slot, _tx, _commit_rx, _recycle_tx) = crumbs_slot_with_rings();
+        let (mut slot, _tx, mut commit_rx, _recycle_tx) = crumbs_slot_with_rings();
 
         // No SetMode(Record), no ArmRecording — default mode.
-        let frames = 256;
-        let mut left = vec![0.5f32; frames];
-        let mut right = vec![0.5f32; frames];
-        slot.process_bridged_audio(&mut left, &mut right, frames);
-        slot.process_bridged_audio(&mut left, &mut right, frames);
+        let left = vec![0.5f32; 256];
+        let right = vec![0.5f32; 256];
+        slot.process_capture_input(capture_block(&left, &right, true));
+        slot.process_capture_input(capture_block(&left, &right, true));
+        render_block(&mut slot, 128);
 
+        assert!(
+            commit_rx.pop().is_err(),
+            "an unarmed slot must hand no take to the commit ring"
+        );
         assert_eq!(slot.engine.sample_pool().count(), 0);
         assert_eq!(slot.engine.active_sample_id(), None);
     }
@@ -1819,18 +1901,20 @@ pub struct CrumbsPluginSlot {
 }
 
 impl CrumbsPluginSlot {
-    /// Shared block body. `feed_record_input` is true only for bridge
-    /// processing: bridge buffers carry real input audio from the app, while
-    /// the standalone native chain runs on silent scratch — feeding that
-    /// scratch into an armed take interleaved a device-buffer of silence
-    /// into every real burst (PR #564 review).
+    /// Shared block body for every render path.
+    ///
+    /// The buffers it is handed are output scratch and carry no input audio:
+    /// record input reaches the engine only through
+    /// [`NativePlugin::process_capture_input`], from the device's own capture
+    /// tap. Feeding render scratch to the recorder would splice a device
+    /// buffer of silence into every take (PR #564 review), so no path here
+    /// touches the record input.
     fn process_block_internal(
         &mut self,
         left: &mut [f32],
         right: &mut [f32],
         num_samples: usize,
         midi_events: &[MidiNoteEvent],
-        feed_record_input: bool,
     ) {
         // Adopt recycled record buffers BEFORE draining commands: an
         // ArmRecording processed in this same block must find the capacity
@@ -1860,11 +1944,6 @@ impl CrumbsPluginSlot {
             }
         }
 
-        if feed_record_input {
-            self.engine
-                .process_record_input(&left[..num_samples], &right[..num_samples]);
-        }
-
         // CrumbsEngine adds to buffers, so we should zero them if we are the only generator
         // in this slot. NativePlugin's contract is in-place, but for an instrument
         // it usually means starting fresh in the given buffer.
@@ -1889,9 +1968,7 @@ impl CrumbsPluginSlot {
 
 impl NativePlugin for CrumbsPluginSlot {
     fn process_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
-        // Standalone native chain: scratch carries no app input, so no
-        // record feed here (bridge-only, see process_bridged_audio).
-        self.process_block_internal(left, right, num_samples, &[], false);
+        self.process_block_internal(left, right, num_samples, &[]);
     }
 
     fn process_with_events(
@@ -1902,24 +1979,31 @@ impl NativePlugin for CrumbsPluginSlot {
         midi_events: &[MidiNoteEvent],
         _transport: &TransportState,
     ) {
-        self.process_block_internal(left, right, num_samples, midi_events, false);
+        self.process_block_internal(left, right, num_samples, midi_events);
     }
 
-    fn process_bridged_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
-        // Bridge path: the buffers hold the worklet's real input block — the
-        // one and only record-input feed.
-        self.process_block_internal(left, right, num_samples, &[], true);
-    }
-
-    fn process_bridged_with_events(
-        &mut self,
-        left: &mut [f32],
-        right: &mut [f32],
-        num_samples: usize,
-        midi_events: &[MidiNoteEvent],
-        _transport: &TransportState,
-    ) {
-        self.process_block_internal(left, right, num_samples, midi_events, true);
+    /// The sampler's record feed: the engine's own input tap, delivered ahead
+    /// of the block this slot renders.
+    ///
+    /// An unserved block carries zeros and is fed all the same, deliberately.
+    /// A capture dropout then lands in the take as silence of exactly the
+    /// duration it lasted, where skipping it would compress time and move
+    /// every frame after the gap earlier than the musician played it. Zeros
+    /// before the threshold crossing cost nothing: an armed take consumes no
+    /// `max_duration` until it triggers.
+    ///
+    /// `latency_frames` and `position_frames` are not consumed here. A Crumbs
+    /// take is a threshold-triggered one-shot whose own zero is the crossing,
+    /// not a position on the timeline, so it has nothing to align to; latency
+    /// compensation belongs to the timeline recorder that anchors its take to
+    /// the transport.
+    ///
+    /// RT-safe: the record buffers are sized when the take is armed and an arm
+    /// that finds no capacity refuses rather than allocating
+    /// (`daw_dsp::crumbs::engine` — `ArmRecording`), so this path only pushes
+    /// into capacity that already exists.
+    fn process_capture_input(&mut self, block: CaptureInputBlock<'_>) {
+        self.engine.process_record_input(block.left, block.right);
     }
 
     fn name(&self) -> &str {
