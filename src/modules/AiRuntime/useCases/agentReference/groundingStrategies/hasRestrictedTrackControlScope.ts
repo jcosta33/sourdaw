@@ -1,14 +1,13 @@
+import { getUniversalTrackControlIntentPhrases } from './getUniversalTrackControlIntentPhrases';
 import { hasReferenceOutsideMatchedIntent } from './hasReferenceOutsideMatchedIntent';
 import { hasTrackControlRestriction } from './hasTrackControlRestriction';
-
-const universalTrackControlIntentPattern = /\b(?:mute|unmute|solo|unsolo)\s+all(?:\s+\p{L}+)?\s+tracks\b/giu;
 
 type TrackControlRestrictionContext = {
     tracks: readonly { id: string; name: string }[];
 };
 
 export function hasRestrictedTrackControlScope(prompt: string, context: TrackControlRestrictionContext): boolean {
-    const intentPhrases = [...prompt.matchAll(universalTrackControlIntentPattern)].map((match) => match[0]);
+    const intentPhrases = getUniversalTrackControlIntentPhrases(prompt);
     if (intentPhrases.length === 0) {
         return false;
     }
