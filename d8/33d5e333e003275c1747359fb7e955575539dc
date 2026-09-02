@@ -1,0 +1,35 @@
+scripts/__tests__/pruneLane.spec.ts
+  s_bbdfb911119c4f::t_c2e777373ae018 322,326,329
+  s_bbdfb911119c4f::t_55e253cc69a3bf 113-114,129-130
+  s_bbdfb911119c4f::t_e95de045b18c39 286-287
+scripts/__tests__/removeLane.spec.ts
+  s_bbdfb911119c4f::t_3b522f8ca8c475 20
+  s_bbdfb911119c4f::t_56831254f3e04e 1190-1191
+  s_bbdfb911119c4f::t_819d8866f5bdb9 1137,1139
+  s_bbdfb911119c4f::t_a36308044cb8e0 161-182
+  s_bbdfb911119c4f::t_fe9fc42fbaa863 1141-1146
+  s_bbdfb911119c4f::t_5d53b790b6a184 1140,1188-1189
+scripts/removeLane.ts
+  s_bbdfb911119c4f::t_aec9e2a943d1ab 100-106,108-109,121-123
+  s_bbdfb911119c4f::t_f0d64972b102f5 107
+  s_bbdfb911119c4f::t_3644cc904c6da9 99
+scripts/pruneLane.ts
+  s_bbdfb911119c4f::t_f5c45143777216 55-60
+  s_bbdfb911119c4f::t_61070bf358b1fd 3-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d833d5e333e003275c1747359fb7e955575539dc",
+  "prompts": {},
+  "sessions": {
+    "s_bbdfb911119c4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fa21d5-2a8a-4f80-98ab-b72059373843",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
