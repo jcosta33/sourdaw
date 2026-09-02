@@ -56,6 +56,7 @@ export const handleAddNotes = createHandler<'addNotes'>({
         batchAddMidiNotes(action.payload.clipId, getMaterializedNotes(action));
         return undefined;
     },
+    validate: (action) => getWritableMidiClipReplayGuard(action.payload.clipId) !== null,
     describe: (action) => {
         const label = `Add ${action.payload.notes.length} MIDI note${action.payload.notes.length === 1 ? '' : 's'}`;
         const noteSnapshot = getMidiClipNotesSnapshot(action.payload.clipId);

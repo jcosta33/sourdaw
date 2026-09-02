@@ -403,6 +403,55 @@ describe('addNotes command registration', () => {
         expect(undoStore.value?.future).toEqual([]);
     });
 
+    it.each([
+        ['pitch', 128],
+        ['pitch', 60.5],
+        ['startBeat', -1],
+        ['duration', 0],
+        ['velocity', 128],
+        ['velocity', 96.5],
+    ])('rejects a consistent restore pair with non-canonical %s', (field, value) => {
+        const registration = getExecutableCommandRegistration('addNotes');
+        const entry = createPersistedAddNotesEntry();
+        const tamperedNote = { ...entry.action.payload.notes[0]!, [field]: value };
+        sessionStorage.setItem(
+            'sourdaw-undo-session',
+            JSON.stringify({
+                past: [
+                    {
+                        ...entry,
+                        action: { ...entry.action, payload: { ...entry.action.payload, notes: [tamperedNote] } },
+                        inverseAction: {
+                            ...entry.inverseAction,
+                            payload: { ...entry.inverseAction.payload, expectedNotes: [tamperedNote] },
+                        },
+                        redoAction: {
+                            ...entry.redoAction,
+                            payload: { ...entry.redoAction.payload, notes: [tamperedNote] },
+                        },
+                        actionOperationVersion: registration.operationVersion,
+                        inverseActionOperationVersion: 1,
+                        redoActionOperationVersion: 1,
+                    },
+                ],
+                future: [],
+            })
+        );
+
+        hydrateUndoStoreFromSession([
+            {
+                actionType: registration.actionType,
+                operationVersion: registration.operationVersion,
+                role: 'forward',
+                validateArguments: registration.runtimeSchema.validate,
+                validateEntry: registration.sessionEntryValidator,
+            },
+            ...getInternalUndoSessionReplayContracts(),
+        ]);
+
+        expect(undoStore.value?.past).toEqual([]);
+    });
+
     it('hydrates the private restore inverse through production handler registration', () => {
         const registration = getExecutableCommandRegistration('addNotes');
         const entry = createPersistedAddNotesEntry();

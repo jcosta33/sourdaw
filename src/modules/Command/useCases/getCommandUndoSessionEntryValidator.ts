@@ -33,7 +33,24 @@ function isMaterializedAddNote(value: unknown): value is JsonRecord & { id: stri
 const CANONICAL_ADDED_NOTE_KEYS = ['duration', 'id', 'pitch', 'probability', 'startBeat', 'velocity'] as const;
 
 function isCanonicalAddedNote(value: unknown): value is JsonRecord & { id: string } {
-    if (!isMaterializedAddNote(value) || value.probability !== 100) {
+    if (
+        !isMaterializedAddNote(value) ||
+        typeof value.pitch !== 'number' ||
+        !Number.isInteger(value.pitch) ||
+        value.pitch < 0 ||
+        value.pitch > 127 ||
+        typeof value.startBeat !== 'number' ||
+        !Number.isFinite(value.startBeat) ||
+        value.startBeat < 0 ||
+        typeof value.duration !== 'number' ||
+        !Number.isFinite(value.duration) ||
+        value.duration < 0.0625 ||
+        typeof value.velocity !== 'number' ||
+        !Number.isInteger(value.velocity) ||
+        value.velocity < 1 ||
+        value.velocity > 127 ||
+        value.probability !== 100
+    ) {
         return false;
     }
     const keys = Object.keys(value).sort();

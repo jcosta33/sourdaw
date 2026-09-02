@@ -5,10 +5,13 @@ import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    compileVersionedCommandBatchEnvelope,
     createVersionedCommandEnvelope,
     executeAppAction,
     executeAppActionBatch,
+    executeVersionedCommandBatch,
     executeVersionedCommandEnvelope,
+    migrateLegacyAppActionToVersionedCommandEnvelope,
     serializeVersionedCommandEnvelope,
 } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
@@ -150,7 +153,7 @@ describe('handleAddNotes', () => {
         expect(handleAddNotes.isNoop?.({ type: 'addNotes', payload: { clipId: CLIP_ID, notes: [] } })).toBe(true);
     });
 
-    it('materializes canonical note values before the command envelope persists the action', () => {
+    it('materializes canonical note values before a provider action gains command-envelope authority', () => {
         const action = {
             type: 'addNotes' as const,
             payload: {
@@ -159,9 +162,13 @@ describe('handleAddNotes', () => {
             },
         };
 
-        handleAddNotes.materializeCommandArguments?.(action);
+        const envelope = migrateLegacyAppActionToVersionedCommandEnvelope({
+            action,
+            expectedEffect: 'Add one MIDI note.',
+            normalizedProjectRevision: 'revision-materialized',
+        });
 
-        expect(action.payload.notes).toEqual([
+        expect(envelope.arguments.notes).toEqual([
             {
                 id: 'note-command-1',
                 pitch: 61,
@@ -170,6 +177,9 @@ describe('handleAddNotes', () => {
                 velocity: 97,
                 probability: 100,
             },
+        ]);
+        expect(envelope.time).toEqual([
+            { argument: 'notes[0].startBeat', domain: 'musical', unit: 'beats', value: 0 },
         ]);
     });
 
@@ -292,6 +302,110 @@ describe('handleAddNotes', () => {
         });
     });
 
+    it('compiles and executes two canonical notes alongside an independent tempo command', async () => {
+        const observedTempo: number[] = [];
+        registerHandlerMap({
+            setTempo: {
+                describe: () => ({ label: 'Set tempo' }),
+                execute: (action) => {
+                    observedTempo.push(action.payload.bpm);
+                },
+                undoable: false,
+                validate: () => true,
+            },
+        });
+        const addNotesAction = {
+            type: 'addNotes' as const,
+            payload: {
+                clipId: CLIP_ID,
+                notes: [
+                    { id: 'note-batch-1', pitch: 61, startBeat: 0, duration: 0.0625, velocity: 97 },
+                    { id: 'note-batch-2', pitch: 63, startBeat: 1, duration: 0.5, velocity: 81 },
+                ],
+            },
+        };
+        const addNotesEnvelope = createVersionedCommandEnvelope({
+            action: addNotesAction,
+            applicationAssignedIds: [
+                { argument: 'notes[0].id', value: 'note-batch-1' },
+                { argument: 'notes[1].id', value: 'note-batch-2' },
+            ],
+            availableDeviceVersions: {},
+            expectedEffect: 'Add two MIDI notes.',
+            normalizedProjectRevision: 'revision-batch',
+            objectReferences: [
+                { argument: 'clipId', id: CLIP_ID, scope: 'stable' },
+                { argument: 'notes[0].id', id: 'note-batch-1', scope: 'stable' },
+                { argument: 'notes[1].id', id: 'note-batch-2', scope: 'stable' },
+            ],
+            parameterUnits: [
+                { argument: 'notes[0].pitch', unit: 'unitless' },
+                { argument: 'notes[0].startBeat', unit: 'beats' },
+                { argument: 'notes[0].duration', unit: 'unitless' },
+                { argument: 'notes[0].velocity', unit: 'unitless' },
+                { argument: 'notes[1].pitch', unit: 'unitless' },
+                { argument: 'notes[1].startBeat', unit: 'beats' },
+                { argument: 'notes[1].duration', unit: 'unitless' },
+                { argument: 'notes[1].velocity', unit: 'unitless' },
+            ],
+            reason: 'Add two MIDI notes.',
+            time: [
+                { argument: 'notes[0].startBeat', domain: 'musical', unit: 'beats', value: 0 },
+                { argument: 'notes[1].startBeat', domain: 'musical', unit: 'beats', value: 1 },
+            ],
+        });
+        const setTempoAction = { type: 'setTempo' as const, payload: { bpm: 128 } };
+        const setTempoEnvelope = createVersionedCommandEnvelope({
+            action: setTempoAction,
+            availableDeviceVersions: {},
+            expectedEffect: 'Set the tempo to 128 beats per minute.',
+            normalizedProjectRevision: 'revision-batch',
+            objectReferences: [],
+            parameterUnits: [{ argument: 'bpm', unit: 'beats-per-minute' }],
+            reason: 'Set the tempo to 128 beats per minute.',
+            time: [],
+        });
+        const commands = [
+            serializeVersionedCommandEnvelope(addNotesEnvelope),
+            serializeVersionedCommandEnvelope(setTempoEnvelope),
+        ];
+
+        expect(
+            compileVersionedCommandBatchEnvelope({
+                baseRevision: 'revision-batch',
+                batchId: 'batch-add-notes-and-tempo',
+                commands,
+                intent: 'Add two MIDI notes and set the tempo.',
+                projectId: 'project-batch',
+                runId: 'run-add-notes-and-tempo',
+            })
+        ).toMatchObject({ authority: { baseRevision: 'revision-batch' } });
+
+        await expect(
+            executeVersionedCommandBatch({ commands, normalizedProjectRevision: 'revision-batch' })
+        ).resolves.toMatchObject({ status: 'committed' });
+
+        expect(observedTempo).toEqual([128]);
+        expect(currentNotes()).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ pitch: 61, startBeat: 0, duration: 0.0625, velocity: 97, probability: 100 }),
+                expect.objectContaining({ pitch: 63, startBeat: 1, duration: 0.5, velocity: 81, probability: 100 }),
+            ])
+        );
+        const addNotesUndoEntry = undoStore.value?.past.find((entry) => entry.action.type === 'addNotes');
+        expect(addNotesUndoEntry).toMatchObject({
+            action: {
+                type: 'addNotes',
+                payload: {
+                    notes: [
+                        expect.objectContaining({ pitch: 61, startBeat: 0, duration: 0.0625, velocity: 97 }),
+                        expect.objectContaining({ pitch: 63, startBeat: 1, duration: 0.5, velocity: 81 }),
+                    ],
+                },
+            },
+        });
+    });
+
     it('executes a non-empty addNotes command through the registered Command handler path', async () => {
         const action = {
             type: 'addNotes' as const,
@@ -319,6 +433,60 @@ describe('handleAddNotes', () => {
         expect(currentNotes()).toEqual([{ id: 'existing', pitch: 48, startBeat: 0, duration: 1, velocity: 80 }]);
     });
 
+    it.each([
+        [
+            'an empty unlocked MIDI clip',
+            true,
+            () => midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} }),
+        ],
+        ['a missing clip', false, () => setTrackStoreState({ ...defaultTrackState, tracks: [] })],
+        [
+            'an audio clip',
+            false,
+            () =>
+                setTrackStoreState({
+                    ...defaultTrackState,
+                    tracks: [
+                        {
+                            ...trackStore.value!.tracks[0]!,
+                            clips: [{ ...trackStore.value!.tracks[0]!.clips[0]!, type: 'audio' }],
+                        },
+                    ],
+                }),
+        ],
+        [
+            'a locked MIDI clip',
+            false,
+            () =>
+                setTrackStoreState({
+                    ...defaultTrackState,
+                    tracks: [
+                        {
+                            ...trackStore.value!.tracks[0]!,
+                            clips: [{ ...trackStore.value!.tracks[0]!.clips[0]!, locked: true }],
+                        },
+                    ],
+                }),
+        ],
+        [
+            'a frozen owning track',
+            false,
+            () =>
+                setTrackStoreState({
+                    ...defaultTrackState,
+                    tracks: trackStore.value!.tracks.map((track) => ({ ...track, frozen: true })),
+                }),
+        ],
+    ])('validates %s as writable MIDI capability: %s', (_target, expected, setTargetState) => {
+        const action = {
+            type: 'addNotes' as const,
+            payload: { clipId: CLIP_ID, notes: [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1 }] },
+        };
+        setTargetState();
+
+        expect(handleAddNotes.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(expected);
+    });
+
     it('conflicts rather than writing an orphan note bucket when redo reaches a removed clip', async () => {
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         const action = {
@@ -335,6 +503,31 @@ describe('handleAddNotes', () => {
 
         expect(handleRestoreMidiClipNotes.execute(redo)).toEqual({ status: 'conflict' });
         expect(midiStore.value?.notesByClipId).not.toHaveProperty(CLIP_ID);
+    });
+
+    it('conflicts without writing when redo reaches the same clip under a different MIDI track', async () => {
+        const action = {
+            type: 'addNotes' as const,
+            payload: { clipId: CLIP_ID, notes: [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1 }] },
+        };
+        const description = handleAddNotes.describe(action);
+        const inverse = requireRestoreAction(description.inverseAction);
+        const redo = requireRestoreAction(description.redoAction);
+
+        await handleAddNotes.execute(action);
+        expect(handleRestoreMidiClipNotes.execute(inverse)).toEqual({ status: 'written' });
+        const originalTrack = trackStore.value!.tracks[0]!;
+        const relocatedTrack = createTrack({ id: 'track-2', kind: 'midi', name: 'Relocated MIDI' });
+        setTrackStoreState({
+            ...defaultTrackState,
+            tracks: [
+                { ...originalTrack, clips: [] },
+                { ...relocatedTrack, clips: [originalTrack.clips[0]!] },
+            ],
+        });
+
+        expect(handleRestoreMidiClipNotes.execute(redo)).toEqual({ status: 'conflict' });
+        expect(currentNotes()).toEqual(inverse.payload.notes);
     });
 
     it.each([

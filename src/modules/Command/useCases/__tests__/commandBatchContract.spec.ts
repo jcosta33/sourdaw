@@ -10,6 +10,7 @@ import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommand
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
 import { parseVersionedCommandBatchEnvelope } from '../parseVersionedCommandBatchEnvelope';
 import { resolveVersionedCommandBatchBindings } from '../resolveVersionedCommandBatchBindings';
+import { serializeVersionedCommandEnvelope } from '../serializeVersionedCommandEnvelope';
 import { serializeVersionedCommandBatchEnvelope } from '../serializeVersionedCommandBatchEnvelope';
 
 import { executeApprovedVersionedCommandBatchEnvelope as executeVersionedCommandBatchEnvelope } from './commandApprovalTestFixture';
@@ -488,6 +489,31 @@ describe('command batch contract', () => {
             status: 'invalid',
             reason: 'Command target range overlaps a protected range',
         });
+    });
+
+    it('rejects a serialized addNotes command whose raw start beat would normalize into a protected beat', () => {
+        const rawAddNotes = actionCommand({
+            action: {
+                type: 'addNotes',
+                payload: {
+                    clipId: 'clip-midi',
+                    notes: [{ id: 'note-1', pitch: 60, startBeat: -2, duration: 1, velocity: 100 }],
+                },
+            },
+            commandId: '66666666-6666-4666-8666-666666666666',
+        });
+
+        expect(() =>
+            compileVersionedCommandBatchEnvelope({
+                batchId: 'batch-add-notes-negative-start',
+                baseRevision: 'revision-1',
+                commands: [serializeVersionedCommandEnvelope(rawAddNotes)],
+                intent: 'Add one MIDI note.',
+                projectId: 'project-1',
+                protectedRanges: [{ startBeat: 0, endBeat: 1 }],
+                runId: 'run-add-notes-negative-start',
+            })
+        ).toThrow();
     });
 
     it('rejects a target interval that crosses a protected range between its endpoints', () => {
