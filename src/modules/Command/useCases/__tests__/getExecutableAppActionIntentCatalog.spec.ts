@@ -84,6 +84,8 @@ describe('getExecutableAppActionIntentCatalog', () => {
         ['stops playback', 'stopPlayback'],
         ['stopping playback', 'stopPlayback'],
         ['stopped playback', 'stopPlayback'],
+        ['fitting clip', 'fitClipToBeats'],
+        ['trimming clip', 'trimClipStart'],
     ] as const)('ranks inflected intent %s to %s', (intent, actionType) => {
         const catalog = getExecutableAppActionIntentCatalog({ intent, page: { limit: 1 } });
 
