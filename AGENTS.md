@@ -54,10 +54,10 @@ Every dispatch carries the objective, lane, branch, scope, exclusions, dependenc
 conditions, and checks. An acceptance condition names an observable — an event, a counter, a
 figure a caller reads — traced to the line that produces it before the dispatch is written, and
 a prescribed mechanism is traced to every code route it has to cover: a spec that asserts an
-observable nothing emits, or a mechanism only one route can satisfy, is an orchestrator defect
-the author will faithfully implement. Specify the whole design before dispatching, never one
-review finding at a time. Require back only status, changed paths, decisive evidence, and
-blockers.
+observable nothing emits, or a mechanism that reaches only one of the routes it has to cover, is
+an orchestrator defect the author will faithfully implement. Specify the whole design before
+dispatching, never one review finding at a time. Require back only status, changed paths, decisive
+evidence, and blockers.
 
 Run agents in parallel only on write-disjoint work. Sequence shared contracts, generated artifacts,
 and overlapping files.
