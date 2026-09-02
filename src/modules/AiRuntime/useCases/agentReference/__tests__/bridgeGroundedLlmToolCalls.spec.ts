@@ -2649,15 +2649,23 @@ describe('bridgeGroundedLlmToolCalls', () => {
             [{ name: 'addTrack', arguments: { name: 'Aux', kind: 'toString', binding: 'aux' } }],
             'create a toString track called Aux'
         );
-        const unbound = bridge(
-            [{ name: 'addTrack', arguments: { name: 'Aux', kind: 'toString' } }],
-            'create an audio track called Aux'
-        );
 
         expect(bound.actions).toEqual([]);
         expect(bound.rejections[0]?.reason).toBe('A bound creation must declare one typed created object');
-        expect(unbound.actions).toEqual([]);
-        expect(unbound.rejections[0]?.reason).toBe('Provider value kind does not match the user request');
+    });
+
+    it('refuses an anaphoric binding target when an unbound planned track carries an inherited object key as kind', () => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Aux', kind: 'toString' } },
+                { name: 'createBus', arguments: { name: 'Plate', binding: 'plate' } },
+                { name: 'setTrackOutput', arguments: { trackId: '$plate', outputId: 'master' } },
+            ],
+            'add track called Aux, create a bus called Plate, and route it to Master'
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toBe('Expected a safe name and one of audio, midi, or folder');
     });
 
     it('rejects a bare anaphoric bus target after an intervening compatible track target', () => {
