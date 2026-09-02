@@ -1039,9 +1039,36 @@ function isIgnorableTrivia(kind: SyntaxKind): boolean {
     );
 }
 
-function slashStartsRegularExpression(previousKind: SyntaxKind | undefined): boolean {
+type BraceContext = 'expression' | 'statement';
+
+// `/` after `}` is regex only when that brace closed a statement block.
+// Object literals (and nested objects) close expressions, so the same `/` is
+// division — putting CloseBraceToken on the always-division list would turn
+// `} /re/` into division.
+function contextOpenedByBrace(previousKind: SyntaxKind | undefined, enclosing: BraceContext | undefined): BraceContext {
+    switch (previousKind) {
+        case SyntaxKind.EqualsToken:
+        case SyntaxKind.OpenParenToken:
+        case SyntaxKind.OpenBracketToken:
+        case SyntaxKind.CommaToken:
+        case SyntaxKind.ColonToken:
+            return 'expression';
+        case SyntaxKind.OpenBraceToken:
+            return enclosing ?? 'statement';
+        default:
+            return 'statement';
+    }
+}
+
+function slashStartsRegularExpression(
+    previousKind: SyntaxKind | undefined,
+    lastCloseBraceContext: BraceContext | undefined
+): boolean {
     if (previousKind === undefined) {
         return true;
+    }
+    if (previousKind === SyntaxKind.CloseBraceToken) {
+        return lastCloseBraceContext !== 'expression';
     }
     switch (previousKind) {
         case SyntaxKind.Identifier:
@@ -1080,8 +1107,10 @@ function stripComments(path: string, source: string): string {
 
     const parts: string[] = [];
     const templates: Array<{ braceDepth: number }> = [];
+    const braces: BraceContext[] = [];
     let copyFrom = 0;
     let previousKind: SyntaxKind | undefined;
+    let lastCloseBraceContext: BraceContext | undefined;
 
     try {
         while (true) {
@@ -1093,7 +1122,7 @@ function stripComments(path: string, source: string): string {
 
             if (
                 (kind === SyntaxKind.SlashToken || kind === SyntaxKind.SlashEqualsToken) &&
-                slashStartsRegularExpression(previousKind)
+                slashStartsRegularExpression(previousKind, lastCloseBraceContext)
             ) {
                 kind = commentScanner.reScanSlashToken();
             }
@@ -1105,6 +1134,15 @@ function stripComments(path: string, source: string): string {
             }
 
             if (!isIgnorableTrivia(kind)) {
+                if (kind === SyntaxKind.OpenBraceToken) {
+                    braces.push(contextOpenedByBrace(previousKind, braces.at(-1)));
+                } else if (kind === SyntaxKind.CloseBraceToken) {
+                    const template = templates.at(-1);
+                    const closesInterpolation = template !== undefined && template.braceDepth === 0;
+                    if (!closesInterpolation) {
+                        lastCloseBraceContext = braces.pop() ?? 'statement';
+                    }
+                }
                 previousKind = kind;
             }
 
@@ -1661,6 +1699,30 @@ describe('device write boundary closure', () => {
         expect(braceRegex.code).toContain('persistDeviceParam');
         expect(
             countByPath([braceRegex], SINK_DEFINITIONS['persistence-runtime'])['src/modules/Arrangement/braceRegex.ts']
+        ).toBe(1);
+
+        const objectLiteralDiv = productionSource(
+            'src/modules/Arrangement/objectLiteralDiv.ts',
+            'const x = { n: 1 }/2; // persistDeviceParam\nexport const y = persistDeviceParam;\n'
+        );
+        expect(objectLiteralDiv.code).not.toContain('// persistDeviceParam');
+        expect(objectLiteralDiv.code).toContain('export const y = persistDeviceParam;');
+        expect(
+            countByPath([objectLiteralDiv], SINK_DEFINITIONS['persistence-runtime'])[
+                'src/modules/Arrangement/objectLiteralDiv.ts'
+            ]
+        ).toBe(1);
+
+        const objectLiteralDivSpaced = productionSource(
+            'src/modules/Arrangement/objectLiteralDivSpaced.ts',
+            'const x = { n: 1 } / 2; // persistDeviceParam\nexport const y = persistDeviceParam;\n'
+        );
+        expect(objectLiteralDivSpaced.code).not.toContain('// persistDeviceParam');
+        expect(objectLiteralDivSpaced.code).toContain('export const y = persistDeviceParam;');
+        expect(
+            countByPath([objectLiteralDivSpaced], SINK_DEFINITIONS['persistence-runtime'])[
+                'src/modules/Arrangement/objectLiteralDivSpaced.ts'
+            ]
         ).toBe(1);
     });
 
