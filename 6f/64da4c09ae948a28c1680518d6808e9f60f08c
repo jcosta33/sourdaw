@@ -1,0 +1,165 @@
+release/open-source-inventory.json
+  s_a40848e8f8cca9::t_99f11b188dadd3 162-163,273,396,1193,1689,1701,1709
+src/modules/Command/useCases/__tests__/undoWitnessPersistenceStamp.integration.spec.ts
+  s_a40848e8f8cca9::t_f6eaa795b378f6 1-161
+src/modules/Command/stores/undoSessionMirror.ts
+  s_a40848e8f8cca9::t_7ad6f58172979b 31-36,42-43,288-293,295-296,298-302,309-312,315,323-336,346-349,356,371-379,382-383,385-388
+Cargo.lock
+  s_a40848e8f8cca9::t_04a714916d8bbf 84-89,98,100,109,111,113,1570,1572,3152,3154
+package.json
+  s_a40848e8f8cca9::t_19456e5d6f3a0b 94,102,104,125,130
+pnpm-lock.yaml
+  s_a40848e8f8cca9::t_3ee660ad5c22d4 30-31,54-55,60-61,110,116,118-119,122,133-134,152,179,182,233,236,2280-2281,2284,2293-2294,2296-2297,2506-2507,2571-2576,2581-2584,2591-2596,2608-2611,2618-2623,2631-2637,2642-2645,4347-4348,4642-4643,4645-4646,4814-4815,6067,6082,6105,6118,6142,7305,7312,7496,7501,7503,7505,7514,7516,7518,7557,7566,7570,7710,7738,7767,7779,7791,7798,7808,7822,7867-7876,7887-7891,7896-7899,7914-7915,7931-7945,7957-7967,7973-7977,8114,8117,8119,8134,8145,8151,8831,8842,8846,8859,9691,10177,10179,10184,10186,10405,10416,11079,11088,11168,11176,11183,11186,11203,11206
+public/legal/DEPENDENCY-LICENSES.txt
+  s_a40848e8f8cca9::t_36eb79cbe163fb 9-10,13,19,21-22,137,272,417-418,444,552,606-607,619,5152,6958-6978,7049,7052,7056-7058,7064,7078-7085,7091,7094-7098,7101,7104-7105,7110-7111,7114-7118,7120-7123,7125-7135,7137-7206,7210,7212,7214-7216,7218-7219,7221-7223,7225-7227,7229-7231,7233-7234,7236-7483,8133,9081-9082,9084,9086-9091,9093-9114,9182,13211,19832,19835,19839-19841,19847-19980,19982-19985,19987,19989-19993,19995-19996,19998-20002,20004,20006-20010,20012,20014-20018,20020,20022-20032,20034-20037,20039-20059,20061-20062,20064-20077,20079-20081,20083-20084,20110,20115-20116,20323,22393,23266-23344,23811,24266-24267,28431-28432,29798-29799
+release/dependency-license-proofs.json
+  s_a40848e8f8cca9::t_6f1ee6bb294d6a 4,60,191-216,253,287,3049,3056,3062,6253,7810-7812,7817,8565-8567,8572,8580-8582,8587
+scripts/__tests__/releaseProof.spec.ts
+  s_a40848e8f8cca9::t_b8bf1e123a8142 28,2705-2723,2726-2741,2743-2744,2747-2758,2760-2774,2776-2787,2789-2801,2803-2823,2825-2837,2839-2860,2862-2873,2876-2887,2889-2901,2904-2914,2916-2928,2930-2934,2937-2965
+src/app/ApplicationFirstPaint.tsx
+  s_a40848e8f8cca9::t_037583736230c4 1-10
+src/app/__tests__/ApplicationFirstPaint.spec.tsx
+  s_a40848e8f8cca9::t_809c67a9a3d3bd 1-13
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_9bf7cd676665f4 110-111,184-185,324,356,764-769
+src/app/__tests__/main.spec.tsx
+  s_a40848e8f8cca9::t_9ba7a7d29a9b7e 3,145,155-160,166-181,238-239,264-265
+src/app/__tests__/mainRenderBeforeBootstrap.spec.tsx
+  s_a40848e8f8cca9::t_72c78ff4cfa503 1-2,35-37,132-142,154-156,163-176,218-220,250-251,258-275,285
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_d163a7bb6f6330 90,106,202
+src/app/main.tsx
+  s_a40848e8f8cca9::t_89426fab961919 37,40,44-48
+src/modules/AiRuntime/useCases/__tests__/pendingChatActions.spec.ts
+  s_a40848e8f8cca9::t_dd0d61fae6226a 92-93
+src/modules/AiRuntime/useCases/__tests__/planPromptActions.spec.ts
+  s_a40848e8f8cca9::t_a9ce82234b2a33 16
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_a40848e8f8cca9::t_b690b0c65cdc88 94-95
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_a40848e8f8cca9::t_3f612c713a2973 3178-3579
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_a40848e8f8cca9::t_68e9a15466f77b 57,1663-1887,1891-1892,1897,1909-1918,1926,1934,1936,3650-3656,3775,3977
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/__tests__/getUniversalTrackControlIntentPhrases.spec.ts
+  s_a40848e8f8cca9::t_77d7864e70e32a 1-15
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/__tests__/hasRestrictedTrackControlScope.spec.ts
+  s_a40848e8f8cca9::t_bacece2a5218bf 1-26
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/getUniversalTrackControlIntentPhrases.ts
+  s_a40848e8f8cca9::t_398fd8f46f7a52 1-5
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/hasRestrictedTrackControlScope.ts
+  s_a40848e8f8cca9::t_7579ef6df72172 1,10
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_a40848e8f8cca9::t_8c3d227af924e5 348,357,364-377,489
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/orchestratePromptChatRequest.spec.ts
+  s_a40848e8f8cca9::t_f5530e58c71552 41
+src/modules/Arrangement/presentations/views/TimelineSurface.tsx
+  s_a40848e8f8cca9::t_a43ccd5f8273a2 15,159-161,176,178-179,194,307
+src/modules/Arrangement/presentations/views/__tests__/ClipContextMenu.spec.tsx
+  s_a40848e8f8cca9::t_99265bd5aa7cbf 162-163
+src/modules/Arrangement/presentations/views/__tests__/TimelineSurface.spec.tsx
+  s_a40848e8f8cca9::t_a9f0521554f15a 6,109-114,118-142,146-147,542-553,555-618,620-644
+src/modules/Arrangement/presentations/views/__tests__/TrackListView.spec.tsx
+  s_a40848e8f8cca9::t_236eaf52e22f54 120-121
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_a40848e8f8cca9::t_3348d85c58563e 11,15-16,42,988-989,1025-1038,1040-1181,1218-1222,1497-1505,1512-1514,1575-1580,1582,1608,1641-1651,1655-1755,1803-1810
+src/modules/Arrangement/stores/__tests__/timelineViewStore.spec.ts
+  s_a40848e8f8cca9::t_367e2f4ff74962 13,60-100,144
+src/modules/Arrangement/stores/timelineViewStore.ts
+  s_a40848e8f8cca9::t_82864540306c93 35-38,44,48-65
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveAutomationWrites.spec.ts
+  s_a40848e8f8cca9::t_2976f684306bc6 1-499
+src/modules/AudioEngine/useCases/livePlayback/admittedSendBusIds.ts
+  s_a40848e8f8cca9::t_167e0ce6648af8 1-28
+src/modules/AudioEngine/useCases/livePlayback/projectLiveAutomationWrites.ts
+  s_a40848e8f8cca9::t_0499f8aa217122 1-234
+src/modules/AudioEngine/useCases/livePlayback/projectLiveGraphTopology.ts
+  s_a40848e8f8cca9::t_bac06d4a069859 179-183
+src/modules/AudioEngine/useCases/livePlayback/readLiveAutomationWrites.ts
+  s_a40848e8f8cca9::t_695a759659eeb2 1-85
+src/modules/AudioEngine/useCases/offlineRender/__tests__/projectStripAutomationWrites.spec.ts
+  s_a40848e8f8cca9::t_4c4c8cf05e2321 1-372
+src/modules/AudioEngine/useCases/offlineRender/clipBoundsById.ts
+  s_a40848e8f8cca9::t_3d40cc7f7cca17 1-24
+src/modules/AudioEngine/useCases/offlineRender/convertRecordedAutomationEvents.ts
+  s_a40848e8f8cca9::t_0aaa5f61945829 19
+src/modules/AudioEngine/useCases/offlineRender/projectStripAutomationWrites.ts
+  s_a40848e8f8cca9::t_087ca8244d81f1 1-207
+src/modules/AudioEngine/useCases/offlineRender/renderOfflineWithNativeEngine.ts
+  s_a40848e8f8cca9::t_a1ccf2db67470c 80,252-278
+src/modules/Command/AGENTS.md
+  s_a40848e8f8cca9::t_449b921ed0b312 9,29
+src/modules/Command/stores/__tests__/undoStore.spec.ts
+  s_a40848e8f8cca9::t_5a379bda5eeed8 20,23,34,37-38,747-988
+src/modules/Command/stores/clearUndoHistory.ts
+  s_a40848e8f8cca9::t_e12eccf0941eef 1,3-9,11
+src/modules/Command/stores/undoStore.ts
+  s_a40848e8f8cca9::t_cf5a58535ece91 16-33,40-80,88-98,107,111-139
+src/modules/Command/useCases/index.ts
+  s_a40848e8f8cca9::t_35c835d71c075d 97-98
+src/modules/Command/useCases/reconcileSessionUndoForProject.ts
+  s_a40848e8f8cca9::t_c0a8e9607f96e0 1-22
+src/modules/Command/useCases/stampSessionUndoWitness.ts
+  s_a40848e8f8cca9::t_2d4fc4015d5e54 1-12
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/SamplesTab.spec.tsx
+  s_a40848e8f8cca9::t_8384c2037ed3fd 12-14,17-63
+src/modules/CrdtDocument/AGENTS.md
+  s_a40848e8f8cca9::t_51c77e08730a69 9,13
+src/modules/CrdtDocument/useCases/__tests__/captureDurableDocumentWitness.spec.ts
+  s_a40848e8f8cca9::t_ba02abf68063e6 1-40
+src/modules/CrdtDocument/useCases/__tests__/crdtPersistenceQueueCoordinator.spec.ts
+  s_a40848e8f8cca9::t_8ff855e92e38a0 1,21,28-39,58-59,61-64,143-353
+src/modules/CrdtDocument/useCases/captureDurableDocumentWitness.ts
+  s_a40848e8f8cca9::t_220afdfea579b0 1-22
+src/modules/CrdtDocument/useCases/crdtPersistenceQueueCoordinator.ts
+  s_a40848e8f8cca9::t_c58e7c5a0415d1 1,32,114,159,165-169,203-206,208,210,556-583,595,602,611,615-622,643,647-651,666-670
+src/modules/CrdtDocument/useCases/index.ts
+  s_a40848e8f8cca9::t_5dc528af74c6ba 5,24
+src/modules/CrdtDocument/useCases/sessionUndoWitnessStampPort.ts
+  s_a40848e8f8cca9::t_da690e8c8a2d7b 1-25
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/ExpandedChannelStrip.spec.tsx
+  s_a40848e8f8cca9::t_6a006e23d877d1 51-52
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_a40848e8f8cca9::t_4dfad17c9b0f2d 37-38,42,70,98,255-258,273
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  s_a40848e8f8cca9::t_51b6187e5f8c3b 31-33,40-87
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_a40848e8f8cca9::t_b2b80af2747219 3,32-33,115,141,223-230,266
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectDirtyTracking.integration.spec.ts
+  s_a40848e8f8cca9::t_c51034b6c52d5c 88,114
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectPreservesSessionUndo.spec.ts
+  s_a40848e8f8cca9::t_043a536b1d2851 1-268
+src/modules/Project/useCases/projectPersistence/__tests__/missingMediaOnLoad.spec.ts
+  s_a40848e8f8cca9::t_657041a910fa87 102,128
+src/modules/Project/useCases/projectPersistence/loadProject.ts
+  s_a40848e8f8cca9::t_198c97ba94d623 4,6,99-111
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_a40848e8f8cca9::t_2bb6f630d28c4d 104,110-159
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_a40848e8f8cca9::t_d647a73b464584 10-13,64-112
+src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/createFromTemplate.spec.ts
+  s_a40848e8f8cca9::t_354ce839c749f2 32-48
+src/modules/Proof/presentations/views/__tests__/ProofPanel.spec.tsx
+  s_a40848e8f8cca9::t_df7a745830aaab 21-23,41-88
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberPresetUndo.integration.spec.tsx
+  s_a40848e8f8cca9::t_e46c1f99a1878d 41-43,46-93
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/WaveformEditor.spec.tsx
+  s_a40848e8f8cca9::t_c59256b82f44e0 195-196
+src/modules/TimelineEditor/presentations/views/__tests__/ArrangeView.spec.tsx
+  s_a40848e8f8cca9::t_0fd2f12e96d237 41-45,63-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "6f64da4c09ae948a28c1680518d6808e9f60f08c",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
