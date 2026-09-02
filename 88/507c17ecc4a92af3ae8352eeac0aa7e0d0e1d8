@@ -1,0 +1,22 @@
+src/modules/Arrangement/handlers/track/__tests__/setAutomationMode.spec.ts
+  s_c9dfe76a613250::t_04af873e46a5d8 80-83,85,88-90,92-94
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_c9dfe76a613250::t_04af873e46a5d8 1248-1278
+  s_c9dfe76a613250::t_0be9e214a89789 1246-1247
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "88507c17ecc4a92af3ae8352eeac0aa7e0d0e1d8",
+  "prompts": {},
+  "sessions": {
+    "s_c9dfe76a613250": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a063a6-ce16-7052-9c0c-a6ec6522efdd",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
