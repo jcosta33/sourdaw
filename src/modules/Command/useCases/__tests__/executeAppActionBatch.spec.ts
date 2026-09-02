@@ -1245,6 +1245,70 @@ describe('executeAppActionBatch', () => {
         }
     });
 
+    it('records planned automation-mode inverses so one grouped undo restores the original mode', async () => {
+        const previousTracks = trackStore.value ? structuredClone(trackStore.value) : null;
+        const previousUndo = undoStore.value ? structuredClone(undoStore.value) : null;
+        setTrackStoreState({
+            ...structuredClone(defaultTrackState),
+            tracks: [createTrack({ id: 'track-automation', kind: 'audio', name: 'Automation' })],
+        });
+        registerHandlerMap(getArrangementHandlers());
+        const writeAction = {
+            type: 'setAutomationMode' as const,
+            payload: { trackId: 'track-automation', mode: 'write' as const },
+        };
+        const touchAction = {
+            type: 'setAutomationMode' as const,
+            payload: { trackId: 'track-automation', mode: 'touch' as const, expectedMode: 'write' as const },
+        };
+
+        try {
+            const result = await executeAppActionBatch([writeAction, touchAction], {
+                groupId: 'automation-mode-batch',
+                groupLabel: 'Set automation modes',
+                requireCompensation: true,
+            });
+
+            expect(result).toMatchObject({ status: 'committed' });
+            expect(getTrackStoreState()?.tracks.find((track) => track.id === 'track-automation')?.automationMode).toBe(
+                'touch'
+            );
+
+            const undoEntries = mocks.commitUndoEntry.mock.calls.map(([entry]) => entry as UndoEntry);
+            expect(undoEntries).toMatchObject([
+                {
+                    groupId: 'automation-mode-batch',
+                    action: writeAction,
+                    inverseAction: {
+                        type: 'setAutomationMode',
+                        payload: { trackId: 'track-automation', mode: 'read', expectedMode: 'write' },
+                    },
+                },
+                {
+                    groupId: 'automation-mode-batch',
+                    action: touchAction,
+                    inverseAction: {
+                        type: 'setAutomationMode',
+                        payload: { trackId: 'track-automation', mode: 'write', expectedMode: 'touch' },
+                    },
+                },
+            ]);
+            undoStore.set({ past: undoEntries, future: [] });
+
+            await expect(undo()).resolves.toEqual({ headConsumed: true });
+            expect(getTrackStoreState()?.tracks.find((track) => track.id === 'track-automation')?.automationMode).toBe(
+                'read'
+            );
+        } finally {
+            if (previousTracks) {
+                setTrackStoreState(previousTracks);
+            }
+            if (previousUndo) {
+                undoStore.set(previousUndo);
+            }
+        }
+    });
+
     it('accepts a canonical no-op without requiring an inverse inside an atomic batch', async () => {
         const execute = vi.fn();
         registerHandlerMap({

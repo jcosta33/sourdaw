@@ -31,8 +31,10 @@ export const handleSetAutomationMode = createHandler<'setAutomationMode'>({
         }
         return !track || track.automationMode === action.payload.mode;
     },
-    describe: (action) => {
-        const track = getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.trackId);
+    describe: (action, context) => {
+        const track = context
+            ? getPlannedTrackState(context, action.payload.trackId)
+            : getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.trackId);
         return {
             label: `Set automation mode: ${action.payload.mode}`,
             inverseAction: track

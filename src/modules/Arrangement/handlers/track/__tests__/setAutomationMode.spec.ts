@@ -51,6 +51,30 @@ describe('handleSetAutomationMode', () => {
         });
     });
 
+    it('describes an inverse from the mode planned by earlier actions in the batch', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', automationMode: 'read' }],
+        });
+        const writeAction = {
+            type: 'setAutomationMode' as const,
+            payload: { trackId: 't1', mode: 'write' as const },
+        };
+        const touchAction = {
+            type: 'setAutomationMode' as const,
+            payload: { trackId: 't1', mode: 'touch' as const, expectedMode: 'write' as const },
+        };
+
+        const desc = handleSetAutomationMode.describe(touchAction, {
+            actions: [writeAction, touchAction],
+            actionIndex: 1,
+        });
+
+        expect(desc.inverseAction).toEqual({
+            type: 'setAutomationMode',
+            payload: { trackId: 't1', mode: 'write', expectedMode: 'touch' },
+        });
+    });
+
     it('omits the inverse when the track does not exist', () => {
         mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
 
