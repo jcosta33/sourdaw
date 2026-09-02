@@ -3,8 +3,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { type Track } from '#/modules/Arrangement/stores';
 import { LEGACY_MIDI_PROBABILITY_SEED, type MidiStoreState } from '#/modules/MIDI/stores';
 import { projectPpqEndpoints as projectTempoPpqEndpoints, resolveTempoAtBeat } from '#/modules/Transport/useCases';
+import { MICRO_FADE_SECONDS } from '#/utils/clipFadeScheduleClamp';
 
-import { MICRO_FADE_SECONDS } from '../constants';
 import { scheduleTrackClips } from '../scheduleTrackClips';
 
 // Local, field-identical replica of Arrangement's TrackDummy fixture — foreign

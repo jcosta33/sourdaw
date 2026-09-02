@@ -21,12 +21,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { type Track } from '#/modules/Arrangement/stores';
+import { MICRO_FADE_SECONDS } from '#/utils/clipFadeScheduleClamp';
 
 import {
     type OfflinePpqEndpointProjector,
     type OfflineTempoAtBeatResolver,
 } from '../../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
-import { MICRO_FADE_SECONDS } from '../../offlineRender/constants';
 import { projectLiveGraphProgramme } from '../projectLiveGraphProgramme';
 
 const SAMPLE_RATE = 48_000;
