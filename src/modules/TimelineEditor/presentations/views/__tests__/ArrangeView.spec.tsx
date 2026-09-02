@@ -65,6 +65,13 @@ vi.mock('#/modules/Arrangement/presentations/views', () => ({
     MARKER_LANE_HEIGHT: 20,
 }));
 
+// Non-spread listing of only SessionView — avoids loading LoopStationPanel from
+// the SessionLauncher views barrel and its incidental Transport/Arrangement/
+// AudioEngine useCases barrel walk.
+vi.mock('#/modules/SessionLauncher/presentations/views', () => ({
+    SessionView: () => <div data-testid="session-view">Session</div>,
+}));
+
 vi.mock('#/modules/Preferences/stores', () => ({
     preferencesStore: preferencesMocks.store,
     normalizeTimelineMinimapHeight: (height: number) => Math.min(160, Math.max(28, Math.round(height))),
