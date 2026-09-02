@@ -50,6 +50,22 @@ describe('requestAnthropicStream', () => {
         expect(body.system).toEqual([{ type: 'text', text: 'Be helpful.', cache_control: { type: 'ephemeral' } }]);
     });
 
+    it('omits cache_control when the caller opts out of caching a per-turn-varying system prompt', async () => {
+        requestProvider.mockImplementation(async ({ onBodyChunk }) => {
+            onBodyChunk(new TextEncoder().encode('data: {"type":"message_stop"}\n\n'));
+            return { status: 200, contentType: 'text/event-stream' };
+        });
+
+        await requestAnthropicStream({ ...input(), cacheSystem: false });
+
+        const call = requestProvider.mock.calls[0]?.[0] as { body: string } | undefined;
+        if (!call) {
+            throw new Error('Expected a recorded provider request');
+        }
+        const body = JSON.parse(call.body) as { system: Array<{ type: string; text: string }> };
+        expect(body.system).toEqual([{ type: 'text', text: 'Be helpful.' }]);
+    });
+
     it('rejects an oversized event before exposing it', async () => {
         requestProvider.mockImplementation(async ({ onBodyChunk }) => {
             onBodyChunk(new TextEncoder().encode(`data: ${'x'.repeat(70 * 1024)}\n\n`));

@@ -8,6 +8,13 @@ type RequestAnthropicStreamInput = {
     sessionId: string;
     model: string;
     system: string;
+    // Marking `system` cacheable only pays off when it is byte-identical across turns.
+    // Callers whose system content is a stable, static prompt should leave this at its
+    // default of `true`; a caller whose system content varies per turn (or is too small
+    // to clear Anthropic's cacheable-prefix minimum) must opt out with `false` — a cache
+    // breakpoint on content that changes every turn pays a cache write and never earns a
+    // read, which costs more than no marker at all.
+    cacheSystem?: boolean;
     messages: Array<{ role: 'user' | 'assistant'; content: string }>;
     maxTokens: number;
     signal: AbortSignal;
@@ -22,18 +29,19 @@ export async function requestAnthropicStream({
     sessionId,
     model,
     system,
+    cacheSystem = true,
     messages,
     maxTokens,
     signal,
     onEvent,
 }: RequestAnthropicStreamInput): Promise<void> {
-    // The system prompt is the stable prefix of every turn; marking it cacheable lets
-    // Anthropic reuse it (and the project context folded into it) across the
-    // conversation instead of re-billing full input cost on every message.
+    const systemBlock = cacheSystem
+        ? { type: 'text', text: system, cache_control: { type: 'ephemeral' } }
+        : { type: 'text', text: system };
     const body = JSON.stringify({
         model,
         max_tokens: maxTokens,
-        system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
+        system: [systemBlock],
         messages,
         stream: true,
     });

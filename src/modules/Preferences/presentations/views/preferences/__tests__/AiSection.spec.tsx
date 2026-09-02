@@ -7,9 +7,16 @@ import type { hostedLlmProviderStatusStore } from '#/modules/AiRuntime/stores';
 
 type HostedProviderStatus = typeof hostedLlmProviderStatusStore.value;
 
+// These catalog values are sentinels that cannot appear anywhere in AiSection.tsx's own
+// source (unlike a real Claude model id, which the component used to hardcode before it
+// was rewired to call these use cases). That is what makes the parity test below load-
+// bearing: if the component ever reverts to a hardcoded model list, these sentinels catch
+// it because they could not have come from anywhere but this mock.
 const mocks = vi.hoisted(() => ({
     admission: { webLlm: true },
     backendPreference: { value: 'auto' },
+    catalogModelA: { value: 'catalog-model-a', label: 'Catalog Model A — Recommended' },
+    catalogModelB: { value: 'catalog-model-b', label: 'Catalog Model B' },
     configureCloudProvider: vi.fn(),
     hostedProvider: {
         value: null as HostedProviderStatus,
@@ -45,13 +52,8 @@ vi.mock('#/modules/AiRuntime/stores', () => ({
 
 vi.mock('#/modules/AiRuntime/useCases', () => ({
     configureCloudProvider: mocks.configureCloudProvider,
-    getDefaultHostedAnthropicModel: () => 'claude-sonnet-5',
-    listHostedAnthropicModels: () => [
-        { value: 'claude-sonnet-5', label: 'Claude Sonnet 5 — Recommended' },
-        { value: 'claude-fable-5', label: 'Claude Fable 5 — Highest quality' },
-        { value: 'claude-opus-5', label: 'Claude Opus 5 — Agentic and enterprise' },
-        { value: 'claude-haiku-4-5', label: 'Claude Haiku 4.5 — Faster, lower cost' },
-    ],
+    getDefaultHostedAnthropicModel: () => mocks.catalogModelA.value,
+    listHostedAnthropicModels: () => [mocks.catalogModelA, mocks.catalogModelB],
     removeCloudProvider: mocks.removeCloudProvider,
     resolveBackend: mocks.resolveBackend,
     setAiBackendPreference: mocks.setAiBackendPreference,
@@ -93,11 +95,9 @@ describe('AiSection', () => {
     it('lists the hosted Anthropic model catalog and defaults to its first entry', () => {
         render(<AiSection />);
 
-        expect(screen.getByRole('option', { name: 'Claude Sonnet 5 — Recommended' })).toBeInTheDocument();
-        expect(screen.getByRole('option', { name: 'Claude Fable 5 — Highest quality' })).toBeInTheDocument();
-        expect(screen.getByRole('option', { name: 'Claude Opus 5 — Agentic and enterprise' })).toBeInTheDocument();
-        expect(screen.getByRole('option', { name: 'Claude Haiku 4.5 — Faster, lower cost' })).toBeInTheDocument();
-        expect(screen.getByLabelText('Hosted AI model')).toHaveValue('claude-sonnet-5');
+        expect(screen.getByRole('option', { name: mocks.catalogModelA.label })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: mocks.catalogModelB.label })).toBeInTheDocument();
+        expect(screen.getByLabelText('Hosted AI model')).toHaveValue(mocks.catalogModelA.value);
     });
 
     it('passes a desktop API-key draft only to hosted-provider configuration and clears it after connecting', async () => {
@@ -114,7 +114,7 @@ describe('AiSection', () => {
         await waitFor(() => {
             expect(mocks.configureCloudProvider).toHaveBeenCalledWith({
                 provider: 'anthropic',
-                model: 'claude-sonnet-5',
+                model: mocks.catalogModelA.value,
                 baseUrl: undefined,
                 authentication: 'api-key',
                 apiKey: 'sk-test-key',
@@ -139,7 +139,7 @@ describe('AiSection', () => {
     it('clears the API-key draft when changing provider or removing a configured provider', async () => {
         mocks.hostedProvider.value = {
             provider: 'anthropic',
-            model: 'claude-sonnet-5',
+            model: mocks.catalogModelA.value,
             baseUrl: null,
             authentication: 'api-key',
         };

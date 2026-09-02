@@ -28,6 +28,10 @@ export async function streamCloudChatCompletion(
         signal?: AbortSignal;
         onUsage?: (event: ModelProviderUsageEvent) => void;
         onUnknownEvent?: (providerEventType: string) => void;
+        // Defaults to true: most callers pass a static system prompt, for which marking
+        // it cacheable is always correct. A caller whose system content is rebuilt (and
+        // varies) every turn must pass false — see requestAnthropicStream's cacheSystem.
+        cacheSystemPrompt?: boolean;
     }
 ): Promise<CloudChatCompletionOutcome> {
     const runtime = getCloudProviderRuntime();
@@ -75,6 +79,7 @@ export async function streamCloudChatCompletion(
             model: runtime.model || DEFAULT_HOSTED_ANTHROPIC_MODEL,
             maxTokens: options?.maxTokens ?? 2048,
             system: systemMessage?.content ?? 'You are a helpful music production assistant embedded in a DAW.',
+            cacheSystem: options?.cacheSystemPrompt ?? true,
             messages: chatMessages,
             signal: controller.signal,
             onEvent: (event) => {
