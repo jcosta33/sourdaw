@@ -218,6 +218,22 @@ function stepNamed(job, name) {
     return job?.steps?.find((step) => step.name === name);
 }
 
+function assertNightlyPnpmBeforeNodeOrder(jobs) {
+    for (const [jobId, job] of Object.entries(jobs ?? {})) {
+        const steps = job?.steps ?? [];
+        for (let index = 0; index < steps.length; index += 1) {
+            const step = steps[index];
+            if (step?.name !== 'Set up Node' || step?.with?.cache !== 'pnpm') {
+                continue;
+            }
+            expect(
+                steps[index - 1]?.name === 'Set up pnpm',
+                `${jobId} must run Set up pnpm immediately before Set up Node when setup-node caches pnpm`
+            );
+        }
+    }
+}
+
 function runResolveScope(event, scopes) {
     const outputPath = `${process.env.TEST_TEMP_ROOT}/resolve-scope-${event}.output`;
     writeFileSync(outputPath, '');
@@ -355,6 +371,7 @@ expect(
     'Nightly on must be exactly schedule and workflow_dispatch'
 );
 expectNightlyDoesNotMintGate(nightly.jobs);
+assertNightlyPnpmBeforeNodeOrder(nightly.jobs);
 expect(
     nightly.concurrency?.group === 'nightly-${{ github.run_id }}',
     'nightly must isolate each run on its own run id'
@@ -797,6 +814,7 @@ const freshCondition = "env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshne
 for (const stepName of [
     'Checkout the validated revision',
     'Enable Corepack',
+    'Set up pnpm',
     'Set up Node',
     'Resolve the current production revision',
 ]) {
