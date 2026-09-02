@@ -733,30 +733,73 @@ mod tests {
         });
     }
 
+    /// The source between `start` and `end`, with both anchors required to be
+    /// unique so the span cannot silently widen or land somewhere else.
+    fn span_between<'a>(source: &'a str, label: &str, start: &str, end: &str) -> &'a str {
+        for anchor in [start, end] {
+            assert_eq!(
+                source.matches(anchor).count(),
+                1,
+                "`{label}` is anchored on `{anchor}`, which no longer appears \
+                 exactly once in the production source"
+            );
+        }
+        let from = source.find(start).expect("anchor counted above");
+        let to = source.find(end).expect("anchor counted above");
+        assert!(to > from, "`{label}` anchors are out of order");
+        &source[from..to]
+    }
+
     #[test]
     fn the_algorithm_arm_selects_rather_than_constructs() {
         // The allocation guard above only reds while the engines it drives stay
         // allocation-free to build. This one is about the shape of the code:
-        // the defect was a constructor call inside the arm, so the arm is
+        // the defect was a constructor call on the switch path, so that path is
         // asserted to hold none. Same instrument as
         // `audio_thread_handle_uses_only_derived_thread_traits` in
         // `crates/daw-engine/src/audio_thread.rs`.
+        //
+        // The scan covers `reset_active_engine` as well as the arm itself,
+        // because the arm delegates the per-engine work to it: an arm holding
+        // no constructor still reaches one if the method it calls builds the
+        // engine instead of resetting it, which is the same defect one frame
+        // down the stack.
+        //
+        // Everything below `mod tests` is cut off first: the anchors are
+        // written out again here, and a scan over its own anchors is a scan
+        // over nothing in particular.
         let source = include_str!("lib.rs");
-        let arm_start = source
-            .find("\"algorithm\" => {")
-            .expect("`set_param` still has an `algorithm` arm");
-        let arm_end = arm_start
-            + source[arm_start..]
-                .find("\"vintage\" =>")
-                .expect("the `vintage` arm still follows the `algorithm` one");
-        let arm = &source[arm_start..arm_end];
+        let production = &source[..source
+            .find("mod tests {")
+            .expect("this module still declares itself above its anchor literals")];
 
-        assert!(
-            !arm.contains("::new("),
-            "the `algorithm` arm constructs an engine again (#3307); it runs on \
-             the render thread, so it must select one of the engines built in \
-             `ProofChamberInstance::new` and reset it"
-        );
+        // `reset_active_engine` runs to the next item, so that item's doc
+        // comment is inside the span. That is slack, not a hole — a doc comment
+        // naming a constructor is not a call, and the alternative is matching
+        // braces in a substring scan.
+        let spans = [
+            span_between(
+                production,
+                "the `algorithm` arm",
+                "\"algorithm\" => {",
+                "\"vintage\" =>",
+            ),
+            span_between(
+                production,
+                "`reset_active_engine`",
+                "fn reset_active_engine(&mut self) {",
+                "pub fn select_unexposed_engine",
+            ),
+        ];
+
+        for span in spans {
+            assert!(
+                !span.contains("::new("),
+                "the algorithm switch path constructs an engine again (#3307); \
+                 it runs on the render thread, so it must select one of the \
+                 engines built in `ProofChamberInstance::new` and reset it"
+            );
+        }
     }
 
     fn fdn_hf_ratio(instance: &ProofChamberInstance) -> f32 {
