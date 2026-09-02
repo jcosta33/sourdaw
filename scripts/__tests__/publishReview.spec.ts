@@ -1531,6 +1531,62 @@ describe('shellPort postReview state verification', () => {
         }
     });
 
+    it('retains the adopted lock after an injected crash following exact receipt persistence', async () => {
+        const fixture = createJournaledRecoveryFixture('prepared');
+        let persistedReceipt:
+            | {
+                  version: 2;
+                  number: number;
+                  ownerOid: string;
+                  adoptedOwnerOid: string;
+                  head: string;
+                  payloadDigest: string;
+                  outcome: 'absent' | 'landed';
+              }
+            | undefined;
+        try {
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.number), '--owner', fixture.ownerOid],
+                    {
+                        ...recoveryDependencies(fixture.root, (expectedHead) => ({
+                            state: 'OPEN',
+                            head: expectedHead,
+                            reviews: [],
+                        })),
+                        afterRecoveryReceiptPersisted: (receipt) => {
+                            persistedReceipt = receipt;
+                            expect(readPullRequestMutationLockReceipt(fixture.root, fixture.number, fixture.ownerOid)).toEqual(
+                                receipt
+                            );
+                            expect(
+                                readPullRequestMutationLockOid(
+                                    fixture.root,
+                                    pullRequestMutationLockRef(fixture.number),
+                                    fixture.number
+                                )
+                            ).toBe(receipt.adoptedOwnerOid);
+                            throw new Error('injected crash after exact receipt persistence');
+                        },
+                    }
+                )
+            ).rejects.toThrow(/injected crash after exact receipt persistence/);
+            expect(persistedReceipt).toBeDefined();
+            expect(readPullRequestMutationLockReceipt(fixture.root, fixture.number, fixture.ownerOid)).toEqual(
+                persistedReceipt
+            );
+            expect(
+                readPullRequestMutationLockOid(
+                    fixture.root,
+                    pullRequestMutationLockRef(fixture.number),
+                    fixture.number
+                )
+            ).toBe(persistedReceipt!.adoptedOwnerOid);
+        } finally {
+            rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
     it('recognizes one exact landed review, records recovery, and makes its exact owner idempotent', async () => {
         const fixture = createJournaledRecoveryFixture();
         const exact = {

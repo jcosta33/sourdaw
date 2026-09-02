@@ -657,6 +657,16 @@ export type RecoverPublishReviewDependencies = {
         ownerOid: string
     ) => (typeof legacyReviewPublicationIncidents)[number] | undefined;
     beforeReplayReceiptRelease?: (receipt: {
+        version: 2;
+        number: number;
+        ownerOid: string;
+        adoptedOwnerOid: string;
+        head: string;
+        payloadDigest: string;
+        outcome: 'absent' | 'landed';
+    }) => void;
+    afterRecoveryReceiptPersisted?: (receipt: {
+        version: 2;
         number: number;
         ownerOid: string;
         adoptedOwnerOid: string;
@@ -1181,6 +1191,7 @@ export async function runRecoverPublishReviewLockCli(
             if (!hasExactRecoveryReceipt(readPullRequestMutationLockReceipt(primaryRoot, number, ownerOid), receipt)) {
                 fail('review-publication recovery receipt does not attest the exact owner, head, payload, and outcome');
             }
+            dependencies.afterRecoveryReceiptPersisted?.(receipt);
             releasePullRequestMutationLockOwner(primaryRoot, number, adoptedOid);
             console.log(`review-publication-lock-recovered:${number}:${ownerOid}:${outcome}`);
             return 0;
