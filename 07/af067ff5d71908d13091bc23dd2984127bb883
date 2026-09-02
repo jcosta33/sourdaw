@@ -1,0 +1,38 @@
+src/modules/AiRuntime/useCases/agentRequestOrchestration/streamExplainChatResponse.ts
+  s_bbdfb911119c4f::t_8913a4d6da89a2 276-283
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/streamCloudChatCompletion.spec.ts
+  s_bbdfb911119c4f::t_651be679284f33 145-160
+  s_bbdfb911119c4f::t_d0f1d08748dd29 11
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestAnthropicStream.ts
+  s_bbdfb911119c4f::t_7d4f1d9f883390 38-40
+  s_bbdfb911119c4f::t_99da74c62e9735 11-17,32,44
+src/modules/AiRuntime/models/__tests__/HostedAnthropicModels.spec.ts
+  s_bbdfb911119c4f::t_e80ed44d4bde7c 10-20
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/requestAnthropicStream.spec.ts
+  s_bbdfb911119c4f::t_c848c2d6ff7bd4 53-68
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/streamCloudChatCompletion.ts
+  s_bbdfb911119c4f::t_f16d22a5e0d498 31-34
+  s_bbdfb911119c4f::t_523503822e634a 82
+src/modules/Preferences/presentations/views/preferences/__tests__/AiSection.spec.tsx
+  s_bbdfb911119c4f::t_f2f3cea5d63ee7 10-14,18-19
+  s_bbdfb911119c4f::t_321c811790989d 98-100
+  s_bbdfb911119c4f::t_722454d2651a31 117
+  s_bbdfb911119c4f::t_db48e4486897c1 142
+  s_bbdfb911119c4f::t_2b60791c64a8fd 55-56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "07af067ff5d71908d13091bc23dd2984127bb883",
+  "prompts": {},
+  "sessions": {
+    "s_bbdfb911119c4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fa21d5-2a8a-4f80-98ab-b72059373843",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
