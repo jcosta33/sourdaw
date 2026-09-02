@@ -1,0 +1,28 @@
+crates/daw-engine/src/scheduler.rs
+  s_9b530f08172a54::t_58bebbabdb2076 5113-5134
+crates/daw-engine/src/lib.rs
+  s_9b530f08172a54::t_71043da25da124 887-924
+  s_9b530f08172a54::t_325f5a7e6fc71d 578,583-585,590-593,598-605
+  s_9b530f08172a54::t_e85249b5a5a09c 129-143
+  s_9b530f08172a54::t_8265ff19ad6310 301-302
+  s_9b530f08172a54::t_b3ee763efb9e97 999-1019,1029-1034,1036
+  s_9b530f08172a54::t_2bcc560b4b1230 606,1398-1484
+  s_9b530f08172a54::t_a499f3ec388cdb 926,938-941,945-948
+  s_9b530f08172a54::t_b77572a9e3f0bc 607,1035,1037
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "9ad880d55e5cc6b32174eee792423b2d8f7300fd",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
