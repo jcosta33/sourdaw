@@ -128,8 +128,8 @@ pub struct EngineHandle {
     /// What the render callback last published as the bridge's settled round
     /// trip, in frames. Written by the audio thread, read here.
     bridge_round_trip_frames: Arc<AtomicUsize>,
-    /// What the capture side published as its settled latency, in frames, or
-    /// zero when this engine opened no input stream.
+    /// What the capture ring published as its settled latency, in frames, or
+    /// zero while it is not serving. Written by the audio thread, read here.
     input_latency_frames: Arc<AtomicUsize>,
 }
 
@@ -222,19 +222,24 @@ impl EngineHandle {
         self.bridge_round_trip_frames.load(Ordering::Relaxed)
     }
 
-    /// Frames of latency the capture path adds — the input device's period
-    /// plus the depth its ring settles at — or zero when this engine opened
-    /// no input stream.
+    /// Frames of latency the capture path is currently adding — the block the
+    /// input device delivers plus the depth its ring settled at — or zero
+    /// while capture is not serving.
     ///
-    /// Zero is the whole report that capture is absent, and it is exact
-    /// rather than a default: a ring that exists has a depth, and a depth
-    /// cannot be zero. Unlike the bridge's figure this one is fixed when the
-    /// stream opens, because the ring's depth follows from the negotiated
-    /// input and output periods and nothing the render callback measures.
+    /// Zero means there is no figure, never that there is no delay. It reads
+    /// zero when this engine opened no input stream, and it also reads zero
+    /// after an open until the ring has filled to its settled depth, and again
+    /// after a stall until it resettles. The figure cannot be published at
+    /// open, because it follows the block size the device turns out to deliver
+    /// and the slice the render callback turns out to ask for; the reader
+    /// writes it the moment those are known and retracts it when it stops
+    /// serving.
     ///
     /// A recording host offsets a take by this plus the output latency, the
     /// way Logic, Live and Reaper do: what the player hears and where the
-    /// take is written are two quantities, and only the second one is this.
+    /// take is written are two quantities, and only the second one is this. A
+    /// host must therefore wait for a non-zero reading before it trusts one,
+    /// rather than compensating a take by zero.
     pub fn input_latency_frames(&self) -> usize {
         self.input_latency_frames.load(Ordering::Relaxed)
     }

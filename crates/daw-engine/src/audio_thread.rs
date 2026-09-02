@@ -440,14 +440,14 @@ pub(crate) fn new_bridge_round_trip_slot() -> Arc<AtomicUsize> {
     ))
 }
 
-/// The slot the capture side publishes its settled latency into.
+/// The slot the capture ring publishes its settled latency into.
 ///
-/// Zero means no capture: the seam either opened an input stream and knows
-/// exactly what it costs, or it did not and there is no input to compensate.
-/// Unlike the bridge's slot there is nothing for the render callback to
-/// refine — the capture ring's depth follows from the two negotiated periods
-/// and nothing the callback measures — so the owner thread writes this once,
-/// at open, and it stays true for the life of the stream.
+/// Zero means the ring is not serving: no input stream was opened, or one was
+/// and has not filled to its settled depth yet, or a stall dropped it back to
+/// filling. The figure cannot be known at open — it depends on the block the
+/// device turns out to deliver and the slice the render callback turns out to
+/// ask for — so the reader writes it from the audio thread the moment it
+/// settles, and retracts it when it stops serving.
 pub(crate) fn new_input_latency_slot() -> Arc<AtomicUsize> {
     Arc::new(AtomicUsize::new(0))
 }
@@ -566,29 +566,31 @@ impl DeviceRenderer {
 /// Open the capture side and build the ring it feeds.
 ///
 /// Generic over the backend for the reason the output seam is: the decisions
-/// here — which shape the ring takes, which refusals are named, what the
+/// here — which bounds the ring takes, which refusals are named, what the
 /// published latency is — have to be provable without a device attached.
 ///
-/// The output period the ring is sized against is the one the engine asks
-/// every device for, not the one this device answered with: the answer only
-/// reaches the render callback, while the ring's capacity is fixed here.
-/// `CaptureShape` carries the ring past that gap itself, sizing above the
-/// largest callback the engine accepts whatever the two periods are.
+/// Both figures the ring is built with are ceilings, and deliberately so. The
+/// negotiated period is the largest block the device said it may hand back,
+/// not the one it runs; the read ceiling is the largest callback the engine
+/// accepts anywhere, because the period the render callback is handed belongs
+/// to the output device and is not known here. The ring settles on the
+/// cadence it observes at runtime, so a ceiling far above the running rate
+/// costs capacity and nothing else — no depth, no latency, no shed quantum.
 fn attach_capture<B: InputBackend>(
     engine_sample_rate: f32,
     on_error: StreamErrorFn,
+    input_latency_slot: Arc<AtomicUsize>,
 ) -> Result<(<B::Open as OpenInput>::Stream, CaptureRingReader), InputOpenRefusal> {
     let open = B::open_default_input(InputOpenRequest { engine_sample_rate })?;
     let negotiated = open.negotiated();
-    let (mut writer, reader) = capture_ring(CaptureShape {
-        // The negotiated figure is a ceiling the device advertised, so the
-        // ring is sized for the largest block it can hand back rather than a
-        // typical one. A device that could not name that ceiling never
-        // reaches here: the seam refuses it at open.
-        input_period_frames: negotiated.period_frames,
-        output_period_frames: PREFERRED_BUFFER_FRAMES as usize,
-        channels: negotiated.channels,
-    });
+    let (mut writer, reader) = capture_ring(
+        CaptureShape {
+            input_block_ceiling: negotiated.period_frames,
+            output_read_ceiling: MAX_CALLBACK_FRAMES,
+            channels: negotiated.channels,
+        },
+        input_latency_slot,
+    );
 
     // The capture thread's whole job: copy the device's block into the ring
     // or count that it could not. No allocation, no lock, no logging.
@@ -599,32 +601,34 @@ fn attach_capture<B: InputBackend>(
     open.start(capture, on_error).map(|stream| (stream, reader))
 }
 
-/// Accept a capture attempt, publish what it costs, and never fail the engine
-/// over it.
+/// Accept a capture attempt and never fail the engine over it.
 ///
 /// Capture is additive. An engine that refuses to start because the machine
 /// has no input device — or because its input device runs at another rate —
 /// leaves the musician with no playback either, which is strictly worse than
 /// starting without a record feed. So a refusal is named on the way past and
-/// the latency stays at zero, which is how the layer above reads "no
+/// the latency slot is left at zero, which is how the layer above reads "no
 /// capture".
+///
+/// Nothing is published for an accepted open either. What the ring costs
+/// depends on the block the device turns out to deliver and the slice the
+/// render callback turns out to ask for, neither of which is known until
+/// audio is flowing, so the reader publishes the figure itself once it
+/// settles.
 fn capture_side<Stream>(
     attempt: Result<(Stream, CaptureRingReader), InputOpenRefusal>,
     input_latency_slot: &AtomicUsize,
 ) -> Option<(Stream, CaptureRingReader)> {
-    let attached = match attempt {
-        Ok(attached) => attached,
+    match attempt {
+        Ok(attached) => Some(attached),
         Err(refusal) => {
             // The owner thread, not the audio thread: reporting costs a
             // stderr lock here and would be forbidden inside the callback.
             eprintln!("[Engine] Audio capture unavailable: {refusal:?}");
             input_latency_slot.store(0, Ordering::Relaxed);
-            return None;
+            None
         }
-    };
-
-    input_latency_slot.store(attached.1.latency_frames(), Ordering::Relaxed);
-    Some(attached)
+    }
 }
 
 /// Open the capture side beside an output stream that started, and only then.
@@ -632,10 +636,11 @@ fn capture_side<Stream>(
 /// The order is load-bearing rather than incidental. An output that cannot
 /// start is the engine failing, and opening an input device on the way to
 /// that failure asks the OS — and on macOS the musician — for microphone
-/// access a session that is about to die will never use. Taking the output's
-/// own `Result` by value is what makes the order unrepresentable rather than
-/// merely intended: there is no path to the input open that does not pass
-/// through a started output stream.
+/// access a session that is about to die will never use. This function is a
+/// convention, not a proof: `Result<Output, String>` is constructible without
+/// a stream, and the seam's own tests build one. What holds the contract is
+/// the pair of ordering tests below, which observe that a failed output build
+/// never reaches the input device and that a started one does.
 ///
 /// Capture is attempted at all only when the caller asked for it by handing
 /// over an event ring of its own. That ring is SPSC and the two backends run
@@ -645,7 +650,7 @@ fn capture_beside<Output, B: InputBackend>(
     output: Result<Output, String>,
     capture_event_tx: Option<Producer<EngineEvent>>,
     engine_sample_rate: f32,
-    input_latency_slot: &AtomicUsize,
+    input_latency_slot: &Arc<AtomicUsize>,
 ) -> Result<
     (
         Option<(<B::Open as OpenInput>::Stream, CaptureRingReader)>,
@@ -656,7 +661,11 @@ fn capture_beside<Output, B: InputBackend>(
     let output = output?;
     let capture = capture_event_tx.and_then(|tx| {
         capture_side(
-            attach_capture::<B>(engine_sample_rate, stream_error_sink(StreamSide::Input, tx)),
+            attach_capture::<B>(
+                engine_sample_rate,
+                stream_error_sink(StreamSide::Input, tx),
+                Arc::clone(input_latency_slot),
+            ),
             input_latency_slot,
         )
     });
@@ -711,7 +720,7 @@ fn build_audio_stream(
     force_default_buffer: bool,
     sample_rate_out: &OnceLock<f32>,
     bridge_round_trip_slot: Arc<AtomicUsize>,
-    input_latency_slot: &AtomicUsize,
+    input_latency_slot: &Arc<AtomicUsize>,
 ) -> Result<OwnedDeviceStreams, String> {
     let open = PlatformOutputBackend::open_default_output(DeviceOpenRequest {
         force_default_period: force_default_buffer,
@@ -757,21 +766,28 @@ fn build_audio_stream(
 
 #[cfg(test)]
 mod capture_seam_tests {
-    use super::{
-        attach_capture, capture_beside, capture_side, new_input_latency_slot,
-        PREFERRED_BUFFER_FRAMES,
-    };
-    use crate::capture::CaptureShape;
+    use super::{attach_capture, capture_beside, capture_side, new_input_latency_slot};
+    use crate::capture::target_depth_frames;
     use crate::device::{
         CaptureFn, InputBackend, InputOpenRefusal, InputOpenRequest, NegotiatedInput, OpenInput,
         StreamErrorFn,
     };
     use crate::engine_events::{engine_event_channel, EngineEvent, StreamErrorKind, StreamSide};
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
 
     const ENGINE_RATE: f32 = 48_000.0;
-    const DEVICE_PERIOD: usize = 128;
     const DEVICE_CHANNELS: usize = 2;
+
+    /// What the device advertises, and what it actually runs. The gap is the
+    /// ordinary CoreAudio case and the reason the ring observes its cadence.
+    const ADVERTISED_CEILING: usize = 4096;
+    const DELIVERED_BLOCK: usize = 512;
+    const RENDER_READ: usize = 512;
+
+    /// Blocks the fake device hands over as soon as its stream starts. Enough
+    /// to carry the ring past the depth it settles at for that cadence.
+    const BLOCKS_AT_START: usize = 8;
 
     /// A machine with no input device.
     struct AbsentInput;
@@ -802,7 +818,9 @@ mod capture_seam_tests {
             Ok(OpenTestInput(NegotiatedInput {
                 sample_rate: request.engine_sample_rate,
                 channels: DEVICE_CHANNELS,
-                period_frames: DEVICE_PERIOD,
+                // The advertised ceiling, which is what a backend reports and
+                // is deliberately not the size of the blocks below.
+                period_frames: ADVERTISED_CEILING,
             }))
         }
     }
@@ -823,11 +841,19 @@ mod capture_seam_tests {
             self.0
         }
 
+        /// Starting the stream delivers audio, the way a real backend does:
+        /// blocks of what the device runs, not of what it advertised. Driving
+        /// the capture closure is what makes this a test of the seam rather
+        /// than of the call that builds it.
         fn start(
             self,
-            _capture: CaptureFn,
+            mut capture: CaptureFn,
             _on_error: StreamErrorFn,
         ) -> Result<Self::Stream, InputOpenRefusal> {
+            let block = vec![0.5f32; DELIVERED_BLOCK * DEVICE_CHANNELS];
+            for _ in 0..BLOCKS_AT_START {
+                capture(&block, DEVICE_CHANNELS);
+            }
             Ok(())
         }
     }
@@ -845,7 +871,7 @@ mod capture_seam_tests {
         let slot = new_input_latency_slot();
 
         let capture = capture_side(
-            attach_capture::<AbsentInput>(ENGINE_RATE, error_sink()),
+            attach_capture::<AbsentInput>(ENGINE_RATE, error_sink(), Arc::clone(&slot)),
             &slot,
         );
 
@@ -857,23 +883,41 @@ mod capture_seam_tests {
         );
     }
 
+    /// The figure the control side reads describes the cadence the stream
+    /// runs, and it appears when the ring settles rather than when it opens.
+    /// A device advertising 4096 while delivering 512 would otherwise publish
+    /// eight times the delay a take actually suffered.
     #[test]
     fn an_opened_capture_publishes_the_latency_its_ring_settles_at() {
         let slot = new_input_latency_slot();
 
-        let capture = capture_side(
-            attach_capture::<PresentInput>(ENGINE_RATE, error_sink()),
+        let (_stream, mut reader) = capture_side(
+            attach_capture::<PresentInput>(ENGINE_RATE, error_sink(), Arc::clone(&slot)),
             &slot,
+        )
+        .expect("a present input device opens");
+
+        assert_eq!(
+            slot.load(Ordering::Relaxed),
+            0,
+            "an open that has not settled has no figure to publish"
         );
 
-        let expected = CaptureShape {
-            input_period_frames: DEVICE_PERIOD,
-            output_period_frames: PREFERRED_BUFFER_FRAMES as usize,
-            channels: DEVICE_CHANNELS,
-        }
-        .latency_frames();
-        assert!(capture.is_some());
-        assert_eq!(slot.load(Ordering::Relaxed), expected);
+        let mut out = vec![0.0f32; RENDER_READ * DEVICE_CHANNELS];
+        assert!(
+            reader.read_into(&mut out),
+            "the blocks the device delivered carry the ring past its target"
+        );
+
+        assert_eq!(
+            slot.load(Ordering::Relaxed),
+            DELIVERED_BLOCK + target_depth_frames(DELIVERED_BLOCK, RENDER_READ)
+        );
+        assert!(
+            slot.load(Ordering::Relaxed)
+                < ADVERTISED_CEILING + target_depth_frames(ADVERTISED_CEILING, RENDER_READ),
+            "the advertised ceiling must not be what the figure is built from"
+        );
     }
 
     /// An engine whose output stream never started must not have asked for a
@@ -917,7 +961,6 @@ mod capture_seam_tests {
 
         assert!(capture.is_some());
         assert_eq!(OPENS_ATTEMPTED.load(Ordering::Relaxed), before + 1);
-        assert!(slot.load(Ordering::Relaxed) > 0);
     }
 
     /// A caller that asked for no capture gets none, and no input device is
@@ -939,7 +982,8 @@ mod capture_seam_tests {
     /// carries into the vocabulary every other device failure is reported in.
     #[test]
     fn a_refused_capture_open_names_what_refused() {
-        let refusal = attach_capture::<AbsentInput>(ENGINE_RATE, error_sink())
+        let slot = new_input_latency_slot();
+        let refusal = attach_capture::<AbsentInput>(ENGINE_RATE, error_sink(), slot)
             .err()
             .expect("a machine with no input device cannot open one");
 
