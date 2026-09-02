@@ -10,6 +10,10 @@
 //! with a scripted fake, which is why nothing in this file may name a
 //! `windows`-crate type.
 
+use super::super::{
+    CaptureFn, InputBackend, InputOpenRefusal, InputOpenRequest, NegotiatedInput, OpenInput,
+    StreamErrorFn,
+};
 use crate::audio_thread::PREFERRED_BUFFER_FRAMES;
 use crate::engine_events::StreamErrorKind;
 
@@ -448,6 +452,46 @@ fn try_shared_default(
     }
 }
 
+/// The Windows capture backend: a refusal by name.
+///
+/// ADR 0027 commits the Windows *output* path to IAudioClient3 and Exclusive
+/// mode; nothing there negotiates a capture endpoint, and Windows capture is
+/// out of scope until jcosta33/sourdaw#2230 owns it. Answering the seam with
+/// a named refusal rather than leaving Windows without an implementation is
+/// what keeps capture from becoming a compile-time fork of the engine: a
+/// Windows session starts exactly as it does today and reports the absence
+/// instead of pretending to have opened something.
+pub(crate) struct WasapiInputBackend;
+
+/// Uninhabited: [`WasapiInputBackend`] never returns an open input, so no
+/// value of this type is ever constructed. It gives the seam an associated
+/// type on a platform that has no capture stream to name.
+pub(crate) enum NoWasapiInput {}
+
+impl InputBackend for WasapiInputBackend {
+    type Open = NoWasapiInput;
+
+    fn open_default_input(_request: InputOpenRequest) -> Result<Self::Open, InputOpenRefusal> {
+        Err(InputOpenRefusal::CaptureUnsupportedOnPlatform)
+    }
+}
+
+impl OpenInput for NoWasapiInput {
+    type Stream = Self;
+
+    fn negotiated(&self) -> NegotiatedInput {
+        match *self {}
+    }
+
+    fn start(
+        self,
+        _capture: CaptureFn,
+        _on_error: StreamErrorFn,
+    ) -> Result<Self::Stream, InputOpenRefusal> {
+        match self {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -459,8 +503,26 @@ mod tests {
         AUDCLNT_E_DEVICE_IN_USE, AUDCLNT_E_EXCLUSIVE_MODE_NOT_ALLOWED,
         AUDCLNT_E_SERVICE_NOT_RUNNING, AUDCLNT_E_UNSUPPORTED_FORMAT,
     };
+    use super::{InputBackend, InputOpenRefusal, InputOpenRequest, WasapiInputBackend};
     use crate::engine_events::StreamErrorKind;
     use std::collections::HashMap;
+
+    #[test]
+    fn the_wasapi_input_backend_refuses_by_name() {
+        let refusal = WasapiInputBackend::open_default_input(InputOpenRequest {
+            engine_sample_rate: 48_000.0,
+        })
+        .err()
+        .expect("the Windows build has no capture endpoint to open");
+
+        assert_eq!(refusal, InputOpenRefusal::CaptureUnsupportedOnPlatform);
+        // Named, and reportable: the absence travels the same vocabulary as
+        // every other device failure rather than a message nobody parses.
+        assert_eq!(
+            refusal.stream_error_kind(),
+            StreamErrorKind::BackendSpecific
+        );
+    }
 
     /// `E_NOINTERFACE` — what `QueryInterface` for `IAudioClient3` returns
     /// on a system that only offers the plain `IAudioClient`.

@@ -2,6 +2,9 @@ pub mod audio_bridge;
 pub mod audio_thread;
 pub mod capture;
 pub(crate) mod device;
+/// Why an engine has no capture side. The device seam itself stays internal;
+/// its refusal is the one part of it a host has to be able to name.
+pub use device::InputOpenRefusal;
 pub mod engine_events;
 pub mod midi;
 pub mod midi_fx;
