@@ -36,20 +36,20 @@ subscribers re-render                   useStore(Store<T>)
 
 Two consequences fall out of this shape:
 
-1. **Undo is a byproduct, not a feature.** Because every action executes inside an Automerge transaction with a semantic context, `Automerge.getHistory()` *is* the undo/audit log. There is no separate undo stack to keep in sync — but there is also no undo for anything written outside the transaction.
+1. **Undo is a byproduct, not a feature.** Because every action executes inside an Automerge transaction with a semantic context, `Automerge.getHistory()` _is_ the undo/audit log. There is no separate undo stack to keep in sync — but there is also no undo for anything written outside the transaction.
 2. **Collaboration is a byproduct, not a feature.** Concurrent editors merge through the same document, so multi-user editing reuses the single-user write path exactly. The price of admission is rule 1: everything goes through the funnel.
 
 ## 2. Ownership: CrdtDocument vs. Collaboration
 
 These two modules are easy to conflate. The split:
 
-| Concern | Owner | Examples |
-|---|---|---|
-| Document lifecycle | CrdtDocument | create/load/save, compaction, branches (`crdtBranching/`), merge (`crdtMerge/`), semantic action history, persistence queue |
-| Projections | CrdtDocument | `projection/projectProjection.ts`, `setupProjectionBridge.ts` — document → stores |
-| File format | CrdtDocument | `.sdaw` encode/decode (`useCases/sdawFileFormat/`), native persistence (`repositories/nativeCrdtPersistence/`) |
-| Transport & sessions | Collaboration | WebRTC peers, invites/QR, presence, cursors, asset transfer |
-| LAN discovery | Collaboration + `daw-collab` | mDNS advertise/browse, `collab_*` commands |
+| Concern              | Owner                        | Examples                                                                                                                    |
+| -------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Document lifecycle   | CrdtDocument                 | create/load/save, compaction, branches (`crdtBranching/`), merge (`crdtMerge/`), semantic action history, persistence queue |
+| Projections          | CrdtDocument                 | `projection/projectProjection.ts`, `setupProjectionBridge.ts` — document → stores                                           |
+| File format          | CrdtDocument                 | `.sdaw` encode/decode (`useCases/sdawFileFormat/`), native persistence (`repositories/nativeCrdtPersistence/`)              |
+| Transport & sessions | Collaboration                | WebRTC peers, invites/QR, presence, cursors, asset transfer                                                                 |
+| LAN discovery        | Collaboration + `daw-collab` | mDNS advertise/browse, `collab_*` commands                                                                                  |
 
 A useful test: if the code would still make sense with no network in the world, it belongs to CrdtDocument; if it would still make sense with no document, it belongs to Collaboration.
 
@@ -72,7 +72,7 @@ TypeScript encode/decode lives in `CrdtDocument/useCases/sdawFileFormat/` (`enco
 Collaboration ships three independent connectivity paths. They share the document model and nothing else:
 
 1. **Serverless WebRTC.** Manual offer/answer exchange, with QR-code invites (`qrcode` dependency) for phone-to-desktop pairing. `Collaboration/repositories/peerConnection.ts` wraps raw `RTCPeerConnection`; `generateInvite.ts` / `acceptAnswer.ts` drive the handshake. No server involved — signaling is copy-paste or camera.
-2. **WebSocket relay.** A standalone package at repo-root `server/` (`sourdaw-collab-server`): a small `ws` relay on port 8787 handling session/peer registry, host migration, and the message types `join/leave/action/cursor/sync-request/sync-response/state-update`. It is deliberately *not* in the pnpm workspace (own `package-lock.json` and tsconfig); `scripts/health-gates-server.sh` builds it during explicit full validation. Startup requires a 32–128 character base64url `COLLAB_AUTH_TOKEN`; clients send `sourdaw` and that token as WebSocket subprotocols. The relay binds `127.0.0.1` unless `COLLAB_HOST` is explicitly set and applies configurable connection, session, peer, payload, rate, and outbound-buffer limits.
+2. **WebSocket relay.** A standalone package at repo-root `server/` (`sourdaw-collab-server`): a small `ws` relay on port 8787 handling session/peer registry, host migration, and the message types `join/leave/action/cursor/sync-request/sync-response/state-update`. It is deliberately _not_ in the pnpm workspace (own `package-lock.json` and tsconfig); `scripts/health-gates-server.sh` builds it during explicit full validation. Startup requires a 32–128 character base64url `COLLAB_AUTH_TOKEN`; clients send `sourdaw` and that token as WebSocket subprotocols. That token admits a client to the relay; it does not admit it to a room. Room membership is a separate per-session capability: `join` carries the `sessionSecret` the invite minted, the relay stores the creator's and compares every later joiner's in constant time. Naming a session id therefore admits nobody by itself. Every client-supplied identifier is capped in bytes before it can key a map. The relay binds `127.0.0.1` unless `COLLAB_HOST` is explicitly set, and refuses to start on a non-loopback host in cleartext: serve TLS by setting both `COLLAB_TLS_CERT` and `COLLAB_TLS_KEY`, or accept an unencrypted bind explicitly with `COLLAB_ALLOW_CLEARTEXT=1`. Connection, session, peer, payload, rate, and outbound-buffer limits are configurable.
 3. **Native LAN.** The `daw-collab` crate advertises and browses mDNS (`_sourdaw._tcp.local.`) and exposes session management through the `collab_*` native commands (create/save/load/merge/apply + advertising/browsing lifecycle).
 
 ## 5. Invariants

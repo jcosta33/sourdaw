@@ -17,6 +17,7 @@ const processes = new Set<ChildProcessWithoutNullStreams>();
 const sockets = new Set<WebSocket>();
 const stderrByProcess = new Map<ChildProcessWithoutNullStreams, string>();
 const AUTH_TOKEN = 'test-collaboration-token-32-bytes';
+const SESSION_SECRET = 'test-session-secret';
 
 async function getFreePort(): Promise<number> {
     const server = createServer();
@@ -151,9 +152,14 @@ async function rejectedConnectionStatus(url: string, protocols: string[]): Promi
     return status;
 }
 
-async function join(socket: WebSocket, sessionId: string, peerId: string): Promise<ServerMessage> {
+async function join(
+    socket: WebSocket,
+    sessionId: string,
+    peerId: string,
+    sessionSecret: string = SESSION_SECRET
+): Promise<ServerMessage> {
     const response = nextMessage(socket);
-    socket.send(JSON.stringify({ type: 'join', sessionId, peerId, name: peerId }));
+    socket.send(JSON.stringify({ type: 'join', sessionId, peerId, name: peerId, sessionSecret }));
     return response;
 }
 
@@ -186,6 +192,50 @@ void test('does not hang cleanup when the relay already exited', { timeout: 1_00
 void test('rejects connections without the configured bearer token', async () => {
     const { url } = await startServer();
     assert.equal(await rejectedConnectionStatus(url, ['sourdaw']), 401);
+});
+
+void test('refuses a join presenting the wrong session secret and tells the room nothing', async () => {
+    const { url } = await startServer();
+    const host = await connect(url);
+    const intruder = await connect(url);
+    assert.equal((await join(host, 'session', 'host')).isHost, true);
+
+    const hostHearsNothing = nextMessage(host, 300);
+    assert.deepEqual(await join(intruder, 'session', 'intruder', 'wrong-session-secret'), {
+        type: 'error',
+        message: 'Unauthorized',
+    });
+    await assert.rejects(hostHearsNothing, /message timed out/);
+});
+
+void test('admits a second peer that presents the session secret the room was created with', async () => {
+    const { url } = await startServer();
+    const host = await connect(url);
+    const guest = await connect(url);
+    await join(host, 'session', 'host');
+
+    const peerJoined = nextMessage(host);
+    assert.equal((await join(guest, 'session', 'guest')).type, 'joined');
+    assert.equal((await peerJoined).type, 'peer-joined');
+});
+
+void test('rejects an identifier one byte over the cap while accepting one at it', async () => {
+    const { url } = await startServer();
+    const socket = await connect(url);
+
+    assert.deepEqual(await join(socket, 'x'.repeat(129), 'peer'), { type: 'error', message: 'Invalid message' });
+    assert.equal((await join(socket, 'x'.repeat(128), 'peer')).type, 'joined');
+});
+
+void test('refuses a non-loopback bind with neither TLS material nor an explicit cleartext opt-in', async () => {
+    const port = await getFreePort();
+    const process = spawnServer({ COLLAB_HOST: '0.0.0.0', PORT: String(port) });
+    const result = await waitForExit(process);
+
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /COLLAB_TLS_CERT/);
+    assert.match(result.stderr, /COLLAB_TLS_KEY/);
+    assert.match(result.stderr, /COLLAB_ALLOW_CLEARTEXT/);
 });
 
 void test('rejects oversized relay messages at the websocket boundary', async () => {

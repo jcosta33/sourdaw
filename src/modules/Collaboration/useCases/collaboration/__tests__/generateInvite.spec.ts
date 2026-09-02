@@ -9,6 +9,7 @@ const mockRuntime = vi.hoisted(() => ({
     state: {
         peerManager: null as PeerConnectionManager | null,
         pendingInviteId: null as string | null,
+        sessionSecret: null as string | null,
     },
     generatePeerId: vi.fn<() => string>(),
     compressInvite: vi.fn<(json: string) => Promise<string>>(),
@@ -24,6 +25,7 @@ describe('generateInvite', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mockRuntime.state.pendingInviteId = null;
+        mockRuntime.state.sessionSecret = 'room-secret-1';
         createOffer = vi.fn().mockResolvedValue('fresh-offer-sdp');
         createPeer = vi.fn().mockReturnValue({ createOffer });
         removePeer = vi.fn();
@@ -123,7 +125,14 @@ describe('generateInvite', () => {
             sessionId: 'session-42',
             sdp: 'fresh-offer-sdp',
             pendingPeerId: 'joiner-new',
+            sessionSecret: 'room-secret-1',
         });
         expect(result).toBe(`z:${sentJson}`);
+    });
+
+    it('rejects when the session runtime holds no room secret to hand the joiner', async () => {
+        mockRuntime.state.sessionSecret = null;
+
+        await expect(generateInvite()).rejects.toThrow('No active session');
     });
 });

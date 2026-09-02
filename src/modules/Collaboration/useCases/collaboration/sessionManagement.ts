@@ -63,6 +63,13 @@ const sessionState: {
     playheadBroadcastInterval: ReturnType<typeof setInterval> | null;
     /** Host-assigned peer slot ID for the in-flight invite, if any. */
     pendingInviteId: PeerId | null;
+    /**
+     * Room capability for the current session, minted by the host and adopted
+     * from the invite by a joiner. Kept here rather than in `collaborationStore`
+     * because it authorises relay membership and nothing outside this module's
+     * signaling path has any business reading it.
+     */
+    sessionSecret: string | null;
     /** Whether this session has durably preserved its local branch state. */
     hasBranchStateBackup: boolean;
     /** Unsubscribe from branchStore changes (local mutations → Automerge doc). */
@@ -99,6 +106,7 @@ const sessionState: {
     cleanupProjectionBridge: null,
     playheadBroadcastInterval: null,
     pendingInviteId: null,
+    sessionSecret: null,
     hasBranchStateBackup: false,
     unsubscribeBranchStore: null,
     unsubscribeAutomergeChanges: null,
@@ -461,8 +469,21 @@ function buildAutomergeSyncHooks(): AutomergeSyncHooks {
 function generatePeerId(): PeerId {
     return crypto.randomUUID();
 }
+/**
+ * The whole UUID, not a prefix of it. A session id names a relay room, and an
+ * 8-hex-character one leaves only 32 bits between a stranger and a room that
+ * exists — small enough to walk through.
+ */
 function generateSessionId(): string {
-    return crypto.randomUUID().slice(0, 8);
+    return crypto.randomUUID();
+}
+
+const SESSION_SECRET_BYTES = 16;
+
+/** 128 random bits, base64url so the secret survives a URL-shaped invite. */
+function generateSessionSecret(): string {
+    const bytes = crypto.getRandomValues(new Uint8Array(SESSION_SECRET_BYTES));
+    return bytesToBase64(bytes).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
 }
 
 /**
@@ -604,6 +625,7 @@ function initializeSessionRuntime(
 function cleanupSubsystems(): void {
     sessionState.synchronizeAssetOwner = null;
     sessionState.pendingInviteId = null;
+    sessionState.sessionSecret = null;
     sessionState.sessionEndedByHostDeparture = false;
     stopPlayheadBroadcast();
     const branchRestoreOutcome = stopBranchSync();
@@ -1083,6 +1105,7 @@ export const sessionRuntimePrimitives = {
     startPlayheadBroadcast,
     generatePeerId,
     generateSessionId,
+    generateSessionSecret,
     pickPeerColor,
     compressInvite,
     decompressInvite,
