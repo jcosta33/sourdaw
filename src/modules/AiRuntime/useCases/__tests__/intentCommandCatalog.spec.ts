@@ -103,6 +103,15 @@ function parseReceiptContext(receiptContext: string | null): unknown[] {
     return receiptEnvelope.receipts;
 }
 
+function receiptContextCallIds(receiptContext: string | null): string[] {
+    return parseReceiptContext(receiptContext).map((receipt) => {
+        if (!isRecord(receipt) || typeof receipt.callId !== 'string') {
+            throw new Error('Expected a receipt call identity.');
+        }
+        return receipt.callId;
+    });
+}
+
 describe('intent command catalog', () => {
     it('finds canonical command names from high-level intent before exact schema disclosure', async () => {
         const requestTurn = vi
@@ -963,9 +972,7 @@ describe('intent command catalog', () => {
                 };
             }
             if (turn === 3) {
-                expect(parseReceiptContext(receiptContext)).toEqual(
-                    expect.arrayContaining([expect.objectContaining({ callId: 'index-page-2', status: 'success' })])
-                );
+                expect(receiptContextCallIds(receiptContext)).toEqual(['index-page-1', 'index-page-2']);
                 return {
                     status: 'complete' as const,
                     toolCalls: [
@@ -977,9 +984,7 @@ describe('intent command catalog', () => {
                     ],
                 };
             }
-            expect(parseReceiptContext(receiptContext)).toEqual(
-                expect.arrayContaining([expect.objectContaining({ callId: 'tempo-schema', status: 'success' })])
-            );
+            expect(receiptContextCallIds(receiptContext)).toEqual(['index-page-1', 'index-page-2', 'tempo-schema']);
             return {
                 status: 'complete' as const,
                 toolCalls: [

@@ -86,41 +86,42 @@ describe('agent tool catalog', () => {
             (schema) => schema.function.name === AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME
         );
 
-        expect(catalogSchema?.function.parameters).toMatchObject({
-            properties: { category: { type: 'string' }, names: { type: 'array' } },
-            required: ['category', 'names'],
-            additionalProperties: false,
-        });
-        expect(catalogSchema?.function.parameters.properties).not.toHaveProperty('intent');
-        expect(catalogSchema?.function.parameters.properties.page).toEqual({
+        expect(catalogSchema?.function.parameters).toEqual({
             type: 'object',
             properties: {
-                limit: { type: 'integer', minimum: 1, maximum: 8 },
-                cursor: { type: 'string', minLength: 1, maxLength: 2048, pattern: '^[A-Za-z0-9_-]+$' },
+                category: {
+                    type: 'string',
+                    enum: [
+                        'query',
+                        'resolve',
+                        'capability',
+                        'catalog',
+                        'preview',
+                        'command',
+                        'commit',
+                        'history',
+                        'render',
+                        'analysis',
+                        'approval',
+                    ],
+                },
+                names: {
+                    type: 'array',
+                    minItems: 1,
+                    maxItems: 8,
+                    items: { type: 'string', minLength: 1, maxLength: 128 },
+                },
+                page: {
+                    type: 'object',
+                    properties: {
+                        limit: { type: 'integer', minimum: 1, maximum: 8 },
+                        cursor: { type: 'string', minLength: 1, maxLength: 2048, pattern: '^[A-Za-z0-9_-]+$' },
+                    },
+                    additionalProperties: false,
+                },
             },
+            required: ['category', 'names'],
             additionalProperties: false,
-        });
-        expect(catalogSchema?.function.parameters.properties.names).toEqual({
-            type: 'array',
-            minItems: 1,
-            maxItems: 8,
-            items: { type: 'string', minLength: 1, maxLength: 128 },
-        });
-        expect(catalogSchema?.function.parameters.properties.category).toEqual({
-            type: 'string',
-            enum: [
-                'query',
-                'resolve',
-                'capability',
-                'catalog',
-                'preview',
-                'command',
-                'commit',
-                'history',
-                'render',
-                'analysis',
-                'approval',
-            ],
         });
         expect(indexSchema?.function.parameters).toEqual({
             type: 'object',
