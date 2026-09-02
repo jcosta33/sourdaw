@@ -3,6 +3,7 @@ import { transportStore } from '#/modules/Transport/stores';
 import { type MidiClipNoteSnapshot } from '#/utils/handlerContract';
 
 import { midiStore } from '../../stores/midiStore';
+import { isRestoreMidiClipNotesReplayArguments } from '../../transformers/isRestoreMidiClipNotesReplayArguments';
 import { midiNotesEqual } from '../../transformers/midiNotesEqual';
 
 export type GetRestoreMidiClipNotesStatusInput = {
@@ -48,6 +49,16 @@ export function getRestoreMidiClipNotesStatus({
     projectedNotesBucketPresent,
     projectedNoteTransformReplayTarget,
 }: GetRestoreMidiClipNotesStatusInput): 'written' | 'no-write' | 'conflict' {
+    if (
+        !isRestoreMidiClipNotesReplayArguments({
+            notes,
+            expectedNotes,
+            notesBucketPresent,
+            expectedNotesBucketPresent,
+        })
+    ) {
+        return 'conflict';
+    }
     const state = midiStore.value;
     if (!state) {
         return 'conflict';

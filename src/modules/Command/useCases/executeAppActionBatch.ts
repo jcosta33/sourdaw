@@ -748,12 +748,13 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 }
                 if (options?.requireCompensation && description?.inverseAction) {
                     const inverseHandler = getCommandHandler(description.inverseAction);
+                    const compensationActions = [...canonicalActions.slice(0, index + 1), description.inverseAction];
                     if (
                         !inverseHandler?.validate ||
                         inverseHandler.batchRestriction === 'missing-validation' ||
                         inverseHandler.canReapplyAfterDivergence?.(description.inverseAction, {
-                            actions: canonicalActions,
-                            actionIndex: index,
+                            actions: compensationActions,
+                            actionIndex: compensationActions.length - 1,
                             signal: options?.signal,
                         }) !== true
                     ) {

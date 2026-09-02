@@ -2369,6 +2369,8 @@ type ActionHandlerCommon<Action extends AppAction> = {
     materializeCommandArguments?: (action: Action) => void;
     /** Owner-provided strict validation for a payload after application-owned materialization. */
     validateMaterializedCommandArguments?: (payload: unknown) => boolean;
+    /** Owner-provided strict validation for an internal persisted replay payload. */
+    validateSessionActionArguments?: (payload: unknown) => boolean;
     /** Capture an owner-provided rollback for non-CRDT pre-commit state before dispatch begins. */
     prepareAbort?: (action: Action) => HandlerAfterCommit;
     /** True when the canonical action is already reflected in project truth. */

@@ -2,6 +2,7 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
+import { isRestoreMidiClipNotesReplayArguments } from '../../transformers/isRestoreMidiClipNotesReplayArguments';
 import { getRestoreMidiClipNotesStatus } from '../../useCases/midiNoteTransforms/getRestoreMidiClipNotesStatus';
 import { projectMidiNotesByClipIdThroughRestores } from '../../useCases/midiNoteTransforms/projectMidiNotesByClipIdThroughRestores';
 import { restoreMidiClipNotes } from '../../useCases/midiNoteTransforms/restoreMidiClipNotes';
@@ -72,10 +73,13 @@ function getRestoreStatus(action: RestoreMidiClipNotesAction, context?: HandlerV
 
 export const handleRestoreMidiClipNotes = createHandler<'restoreMidiClipNotes'>({
     execute: (action) => ({ status: restoreMidiClipNotes(action.payload) }),
-    validate: (action, context) => getRestoreStatus(action, context) !== 'conflict',
-    canReapplyAfterDivergence: (action, context) => getRestoreStatus(action, context) !== 'conflict',
+    validate: (action, context) =>
+        isRestoreMidiClipNotesReplayArguments(action.payload) && getRestoreStatus(action, context) !== 'conflict',
+    canReapplyAfterDivergence: (action, context) =>
+        isRestoreMidiClipNotesReplayArguments(action.payload) && getRestoreStatus(action, context) !== 'conflict',
     describe: () => ({ label: 'Restore MIDI clip notes' }),
     previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
+    validateSessionActionArguments: isRestoreMidiClipNotesReplayArguments,
     undoable: false,
 });

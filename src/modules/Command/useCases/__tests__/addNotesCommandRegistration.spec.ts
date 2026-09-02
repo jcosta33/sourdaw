@@ -612,6 +612,39 @@ describe('addNotes command registration', () => {
         expect(undoStore.value?.past).toEqual([]);
     });
 
+    it('rejects absent-bucket restore flags that could delete pre-existing notes during undo', async () => {
+        const registration = getExecutableCommandRegistration('addNotes');
+        const entry = createPersistedAddNotesEntry();
+        const persistedEntry = {
+            ...entry,
+            inverseAction: {
+                ...entry.inverseAction,
+                payload: { ...entry.inverseAction.payload, notesBucketPresent: false },
+            },
+            redoAction: {
+                ...entry.redoAction,
+                payload: { ...entry.redoAction.payload, expectedNotesBucketPresent: false },
+            },
+            actionOperationVersion: registration.operationVersion,
+            inverseActionOperationVersion: 1,
+            redoActionOperationVersion: 1,
+        };
+        createMidiClipFixture();
+        midiStore.set({
+            notesByClipId: { 'clip-midi': entry.redoAction.payload.notes },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        sessionStorage.setItem('sourdaw-undo-session', JSON.stringify({ past: [persistedEntry], future: [] }));
+        clearHandlerRegistry();
+
+        registerAllProductionHandlers();
+
+        expect(undoStore.value?.past).toEqual([]);
+        await undo();
+        expect(midiStore.value?.notesByClipId['clip-midi']).toEqual(entry.redoAction.payload.notes);
+    });
+
     it.each([
         [
             'an action/inverse track ID mismatch',

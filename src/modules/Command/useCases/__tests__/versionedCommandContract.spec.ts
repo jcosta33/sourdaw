@@ -10,6 +10,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { commandDeviceVersionsPort } from '../commandDeviceVersionsPort';
+import { commandProjectDivergencePort } from '../commandProjectDivergencePort';
 import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
 import { commandTrackDefaultsPort } from '../commandTrackDefaultsPort';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
@@ -52,6 +53,7 @@ describe('versioned command contract', () => {
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         commandProjectRevisionPort.setProvider(null);
+        commandProjectDivergencePort.setProvider(null);
         commandDeviceVersionsPort.setDeviceTypeResolver(null);
         commandDeviceVersionsPort.setResolver(null);
         commandTrackDefaultsPort.setTrackColorProvider(null);
@@ -849,6 +851,70 @@ describe('versioned command contract', () => {
 
         expect(result.status).toBe('executed');
         expect(observed).toEqual([true]);
+    });
+
+    it('supplies complete ordered batch context to versioned divergence admission', async () => {
+        commandProjectRevisionPort.setProvider(() => 'revision-live');
+        commandProjectDivergencePort.setProvider(({ commandsCompatible, targetIds }) => ({
+            kind: 'compatible-same-object',
+            mayReapply: commandsCompatible,
+            repairCandidates: [],
+            targetIds,
+        }));
+        const contexts: Array<{ type: AppAction['type']; actions?: readonly AppAction[]; actionIndex?: number }> = [];
+        registerHandlerMap({
+            setTrackGain: {
+                canReapplyAfterDivergence: (action, context) => {
+                    contexts.push({ type: action.type, actions: context?.actions, actionIndex: context?.actionIndex });
+                    return true;
+                },
+                describe: () => ({ label: 'Set track gain' }),
+                execute: () => ({ status: 'written' }),
+                undoable: false,
+                validate: () => true,
+            },
+            setTrackPan: {
+                canReapplyAfterDivergence: (action, context) => {
+                    contexts.push({ type: action.type, actions: context?.actions, actionIndex: context?.actionIndex });
+                    return true;
+                },
+                describe: () => ({ label: 'Set track pan' }),
+                execute: () => ({ status: 'written' }),
+                undoable: false,
+                validate: () => true,
+            },
+        });
+        const firstAction: AppAction = {
+            type: 'setTrackGain',
+            payload: { trackId: 'track-gain', gain: 0.8, expectedGain: 1 },
+        };
+        const secondAction: AppAction = {
+            type: 'setTrackPan',
+            payload: { trackId: 'track-pan', pan: -0.2, expectedPan: 0 },
+        };
+        const first = createExecutionCommandEnvelope({
+            action: firstAction,
+            expectedEffect: 'Track gain changes.',
+            normalizedProjectRevision: 'revision-stale',
+        }).envelope;
+        const second = createExecutionCommandEnvelope({
+            action: secondAction,
+            dependencyIds: [first.commandId],
+            expectedEffect: 'Track pan changes.',
+            normalizedProjectRevision: 'revision-stale',
+        }).envelope;
+
+        const result = await executeVersionedCommandBatch({
+            commands: [serializeVersionedCommandEnvelope(first), serializeVersionedCommandEnvelope(second)],
+            options: { skipUndo: true },
+        });
+
+        expect(result.status).toBe('committed');
+        const actions: readonly AppAction[] = [firstAction, secondAction];
+        expect(contexts).toEqual([
+            { type: 'setTrackGain', actions, actionIndex: 0 },
+            { type: 'setTrackPan', actions, actionIndex: 1 },
+        ]);
     });
 
     it('executes one caller-revision envelope in a standalone Command harness', async () => {

@@ -493,6 +493,39 @@ describe('command batch contract', () => {
         });
     });
 
+    it('rejects the same malformed serialized addNotes command before and after owner registration', () => {
+        const rawAddNotes = actionCommand({
+            action: {
+                type: 'addNotes',
+                payload: {
+                    clipId: 'clip-midi',
+                    notes: [
+                        {
+                            id: 'note-noncanonical',
+                            pitch: 60,
+                            startBeat: 0,
+                            duration: 1,
+                            velocity: 100,
+                            probability: 99,
+                        },
+                    ],
+                },
+            },
+            commandId: '66666666-6666-4666-8666-666666666666',
+        });
+        const serialized = serializeVersionedCommandEnvelope(rawAddNotes);
+        const expected = {
+            status: 'invalid',
+            reason: 'Command operation is not deterministic at the serialized boundary',
+        } as const;
+
+        clearHandlerRegistry();
+        expect(parseVersionedCommandEnvelope(serialized)).toEqual(expected);
+
+        registerHandlerMap(getMidiNoteTransformHandlers());
+        expect(parseVersionedCommandEnvelope(serialized)).toEqual(expected);
+    });
+
     it.each([
         [
             'a negative start beat',

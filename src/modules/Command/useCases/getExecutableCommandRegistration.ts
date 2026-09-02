@@ -28,6 +28,8 @@ export function getExecutableCommandRegistration<ActionType extends ExecutableAp
         actionType,
         operationVersion: getExecutableAppActionOperationVersion(actionType),
         providerSchema: descriptor.parameters,
+        materializedArgumentsValidation:
+            'materializedArgumentsValidation' in descriptor ? descriptor.materializedArgumentsValidation : undefined,
         discoverability: 'discoverability' in descriptor ? (descriptor.discoverability ?? 'visible') : 'visible',
         runtimeSchema: {
             validate: (value: unknown) => validateVersionedCommandArguments(actionType, value),

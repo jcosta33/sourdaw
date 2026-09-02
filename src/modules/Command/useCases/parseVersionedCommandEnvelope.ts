@@ -143,6 +143,9 @@ function isDeterministicSerializedOperation(operation: string, value: unknown): 
     }
     const registration = getExecutableCommandRegistration(operation);
     const materializedArgumentsValidator = registration.materializedArgumentsValidator;
+    if (registration.materializedArgumentsValidation === 'owner-required') {
+        return materializedArgumentsValidator?.(value) === true;
+    }
     if (materializedArgumentsValidator !== undefined) {
         return materializedArgumentsValidator(value);
     }

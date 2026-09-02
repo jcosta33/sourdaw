@@ -25,6 +25,7 @@ type HandlerConfig<ActionType extends AppAction['type']> = {
     ) => boolean;
     materializeCommandArguments?: (action: Extract<AppAction, { type: ActionType }>) => void;
     validateMaterializedCommandArguments?: (payload: unknown) => boolean;
+    validateSessionActionArguments?: (payload: unknown) => boolean;
     prepareAbort?: (action: Extract<AppAction, { type: ActionType }>) => () => void | Promise<void>;
     isNoop?: (action: Extract<AppAction, { type: ActionType }>) => boolean;
     validateSessionEntry?: (entry: HandlerSessionActionEntry) => boolean;
@@ -74,6 +75,7 @@ export function createHandler<ActionType extends AppAction['type']>(
         canReapplyAfterDivergence: config.canReapplyAfterDivergence,
         materializeCommandArguments: config.materializeCommandArguments,
         validateMaterializedCommandArguments: config.validateMaterializedCommandArguments,
+        validateSessionActionArguments: config.validateSessionActionArguments,
         prepareAbort: config.prepareAbort,
         isNoop: config.isNoop,
         validateSessionEntry: config.validateSessionEntry,

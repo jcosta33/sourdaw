@@ -145,6 +145,7 @@ type ExecutableAppActionDescriptor = {
     directionalIntent?: ExecutableAppActionDirectionalIntent;
     targetRules: readonly ExecutableAppActionTargetRule[];
     valueRules?: readonly ExecutableAppActionValueRule[];
+    materializedArgumentsValidation?: 'owner-required';
     parameters: {
         properties: Record<string, unknown>;
         required: readonly string[];
@@ -910,6 +911,7 @@ export const executableAppActionDescriptors = [
         description: 'Add one or more MIDI notes to one unlocked MIDI clip.',
         intentPhrases: ['add notes', 'add midi notes'],
         targetRules: writableMidiClipTargetRules,
+        materializedArgumentsValidation: 'owner-required',
         parameters: {
             properties: {
                 clipId: { type: 'string' },

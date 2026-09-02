@@ -87,7 +87,7 @@ describe('createAddNotesToolSchema', () => {
                     items: {
                         type: 'object',
                         additionalProperties: false,
-                        required: ['pitch', 'startBeat', 'duration'],
+                        required: ['velocity', 'duration', 'pitch'],
                         properties: {
                             pitch: { type: 'number', minimum: 0, maximum: 127, multipleOf: 0.5 },
                             startBeat: { type: 'number', minimum: 0, maximum: 64, multipleOf: 0.25 },
@@ -121,6 +121,7 @@ describe('createAddNotesToolSchema', () => {
             enum: ['clip-pinned'],
         });
         expect(notes).toMatchObject({ type: 'array', minItems: 2, maxItems: 24 });
+        expect(items.required).toEqual(['velocity', 'duration', 'pitch']);
         expect(noteProperties.pitch).toEqual({
             type: 'number',
             minimum: 0,

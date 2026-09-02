@@ -68,7 +68,11 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
         }
         let description: ReturnType<PreviewActionHandler['describe']>;
         try {
-            description = handler.describe(action);
+            description = handler.describe(action, {
+                actions,
+                actionIndex,
+                executionMode: 'isolated-preview',
+            });
         } catch (error) {
             return {
                 status: 'rejected' as const,

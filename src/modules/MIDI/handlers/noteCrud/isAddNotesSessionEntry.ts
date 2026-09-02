@@ -1,5 +1,7 @@
 import { type HandlerSessionActionEntry } from '#/utils/handlerContract';
 
+import { isRestoreMidiClipNotesReplayArguments } from '../../transformers/isRestoreMidiClipNotesReplayArguments';
+
 import { isMaterializedAddNotesArguments } from './isMaterializedAddNotesArguments';
 
 type JsonRecord = Record<string, unknown>;
@@ -40,6 +42,17 @@ function isWritableMidiClipReplayGuard(value: unknown): value is JsonRecord {
     );
 }
 
+function getStringIds(values: readonly unknown[]): string[] | null {
+    const ids: string[] = [];
+    for (const value of values) {
+        if (!isRecord(value) || typeof value.id !== 'string') {
+            return null;
+        }
+        ids.push(value.id);
+    }
+    return ids;
+}
+
 export function isAddNotesSessionEntry(entry: HandlerSessionActionEntry): boolean {
     if (
         entry.action.type !== 'addNotes' ||
@@ -61,6 +74,8 @@ export function isAddNotesSessionEntry(entry: HandlerSessionActionEntry): boolea
         !Array.isArray(inversePayload.expectedNotes) ||
         !Array.isArray(redoPayload.notes) ||
         !Array.isArray(redoPayload.expectedNotes) ||
+        !isRestoreMidiClipNotesReplayArguments(inversePayload) ||
+        !isRestoreMidiClipNotesReplayArguments(redoPayload) ||
         typeof inversePayload.notesBucketPresent !== 'boolean' ||
         typeof inversePayload.expectedNotesBucketPresent !== 'boolean' ||
         typeof redoPayload.notesBucketPresent !== 'boolean' ||
@@ -77,10 +92,12 @@ export function isAddNotesSessionEntry(entry: HandlerSessionActionEntry): boolea
         return false;
     }
     const noteIds = actionPayload.notes.map((note) => note.id);
-    const baseNoteIds = inversePayload.notes.flatMap((note) =>
-        isRecord(note) && typeof note.id === 'string' ? [note.id] : []
-    );
-    if (new Set(noteIds).size !== noteIds.length || noteIds.some((id) => baseNoteIds.includes(id))) {
+    const baseNoteIds = getStringIds(inversePayload.notes);
+    if (baseNoteIds === null) {
+        return false;
+    }
+    const baseNoteIdSet = new Set(baseNoteIds);
+    if (new Set(noteIds).size !== noteIds.length || noteIds.some((id) => baseNoteIdSet.has(id))) {
         return false;
     }
 
