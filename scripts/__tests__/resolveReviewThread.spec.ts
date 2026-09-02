@@ -1647,7 +1647,8 @@ async function waitForProcessExitWithoutReviewResolutionLock(
 async function waitForFile(path: string): Promise<void> {
     for (let attempt = 0; attempt < 200; attempt += 1) {
         try {
-            if (statSync(path).isFile()) {
+            const stats = statSync(path);
+            if (stats.isFile() && stats.size > 0) {
                 return;
             }
         } catch {
