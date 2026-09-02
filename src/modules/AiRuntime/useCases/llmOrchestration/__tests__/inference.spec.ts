@@ -104,6 +104,17 @@ const toolSchemas: ToolSchema[] = [
     },
 ];
 
+function toolSchema(name: string): ToolSchema {
+    return {
+        type: 'function',
+        function: {
+            name,
+            description: `${name} tool.`,
+            parameters: { type: 'object', additionalProperties: false, properties: {}, required: [] },
+        },
+    };
+}
+
 describe('generateToolPlanningOutcome', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -201,6 +212,34 @@ describe('generateToolPlanningOutcome', () => {
             backend: 'webllm',
             modelId: 'Qwen3-4B-q4f16_1-MLC',
         });
+    });
+
+    it('keeps both catalog tools available to WebLLM under 30-tool selection pressure', async () => {
+        mocks.backendChain.value = ['webllm'];
+        mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
+        const competingTools = Array.from({ length: 30 }, (_, index) => toolSchema(`competingTool${String(index)}`));
+        const schemas = [
+            toolSchema('project.query'),
+            toolSchema('command.batch.propose'),
+            ...competingTools,
+            toolSchema('agent.command-index.search'),
+            toolSchema('agent.catalog.discover'),
+        ];
+
+        await expect(generateToolPlanningOutcome('system', 'plan a command', schemas)).resolves.toMatchObject({
+            status: 'complete',
+        });
+
+        const advertisedTools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? [];
+        expect(advertisedTools).toHaveLength(30);
+        expect(advertisedTools.map((tool: ToolSchema) => tool.function.name)).toEqual(
+            expect.arrayContaining([
+                'project.query',
+                'command.batch.propose',
+                'agent.command-index.search',
+                'agent.catalog.discover',
+            ])
+        );
     });
 
     it.each(['disclosure-publication', 'provider-start'] as const)(

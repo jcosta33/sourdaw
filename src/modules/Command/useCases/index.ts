@@ -30,6 +30,11 @@ export { getVerifiedBatchReceiptIdentity } from './getVerifiedBatchReceiptIdenti
 export { getAppActionExecutionPolicy } from './getAppActionExecutionPolicy';
 export { getAppActionStaticAuthority } from './getAppActionStaticAuthority';
 export { getAgentActionRiskPolicy } from './getAgentActionRiskPolicy';
+export { getExecutableAppActionIntentCatalog } from './getExecutableAppActionIntentCatalog';
+export {
+    MAX_EXECUTABLE_APP_ACTION_INTENT_CATALOG_INTENT_LENGTH,
+    getExecutableAppActionIntentCatalogUnicodeLength,
+} from './getExecutableAppActionIntentCatalogUnicodeLength';
 export { getExecutableAppActionToolSchemas } from './getExecutableAppActionToolSchemas';
 export { getExecutableAppActionGroundingCatalog } from './getExecutableAppActionGroundingCatalog';
 export { getExecutableAppActionGroundingRules } from './getExecutableAppActionGroundingRules';
