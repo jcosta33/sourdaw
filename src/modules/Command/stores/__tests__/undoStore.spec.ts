@@ -98,9 +98,8 @@ describe('undoStore / pushUndo', () => {
 
     it('rejects internal replay actions as persisted forward entries', async () => {
         const undoStoreModule = await import('../undoStore');
-        const { getInternalUndoSessionReplayContracts } = await import(
-            '../../useCases/getInternalUndoSessionReplayContracts'
-        );
+        const { getInternalUndoSessionReplayContracts } =
+            await import('../../useCases/getInternalUndoSessionReplayContracts');
         const restoreAction = {
             type: 'restoreMidiClipNotes',
             payload: {
@@ -140,9 +139,8 @@ describe('undoStore / pushUndo', () => {
 
     it('rejects an internal inverse unless its forward contract validates the whole entry', async () => {
         const undoStoreModule = await import('../undoStore');
-        const { getInternalUndoSessionReplayContracts } = await import(
-            '../../useCases/getInternalUndoSessionReplayContracts'
-        );
+        const { getInternalUndoSessionReplayContracts } =
+            await import('../../useCases/getInternalUndoSessionReplayContracts');
         const { validateVersionedCommandArguments } = await import('../../useCases/versionedCommandArgumentKeys');
         const restoreAction = {
             type: 'restoreMidiClipNotes',
