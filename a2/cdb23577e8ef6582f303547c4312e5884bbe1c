@@ -1,0 +1,19 @@
+tests/e2e/clipTrimEndFadeOutTestId.spec.ts
+  s_24b1bdbc3c31ad::t_c34bd1aa9f928d 1-2,7-8,10-15,17-18,21-27,30,35,38,40-44,47-50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "a2cdb23577e8ef6582f303547c4312e5884bbe1c",
+  "prompts": {},
+  "sessions": {
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
