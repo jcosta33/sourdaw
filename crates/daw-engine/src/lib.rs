@@ -1,5 +1,6 @@
 pub mod audio_bridge;
 pub mod audio_thread;
+pub mod capture;
 pub(crate) mod device;
 pub mod engine_events;
 pub mod midi;
