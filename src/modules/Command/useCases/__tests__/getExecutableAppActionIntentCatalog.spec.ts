@@ -42,16 +42,29 @@ describe('getExecutableAppActionIntentCatalog', () => {
 
     it('rejects a cursor reused with a distinct astral intent that yields the same result set', () => {
         const firstPage = getExecutableAppActionIntentCatalog({ intent: 'operation 𐐀', page: { limit: 1 } });
-        if (firstPage.nextCursor === null) {
+        const cursor = firstPage.nextCursor;
+        if (cursor === null) {
             throw new Error('Expected an intent catalog cursor.');
         }
 
         expect(() =>
             getExecutableAppActionIntentCatalog({
                 intent: 'operation 𐐁',
-                page: { cursor: firstPage.nextCursor, limit: 1 },
+                page: { cursor, limit: 1 },
             })
         ).toThrow('Command catalog cursor does not match the strict catalog contract.');
+    });
+
+    it('accepts a cursor reused with a normalization-equivalent intent', () => {
+        const firstPage = getExecutableAppActionIntentCatalog({ intent: 'Operation', page: { limit: 1 } });
+        const cursor = firstPage.nextCursor;
+        if (cursor === null) {
+            throw new Error('Expected an intent catalog cursor.');
+        }
+
+        const nextPage = getExecutableAppActionIntentCatalog({ intent: 'operation', page: { cursor, limit: 1 } });
+
+        expect(nextPage.page.offset).toBe(1);
     });
 
     it('keeps a schema-admitted ligature intent reusable with its cursor', () => {

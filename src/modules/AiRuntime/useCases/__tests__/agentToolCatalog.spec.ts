@@ -92,6 +92,14 @@ describe('agent tool catalog', () => {
             additionalProperties: false,
         });
         expect(catalogSchema?.function.parameters.properties).not.toHaveProperty('intent');
+        expect(catalogSchema?.function.parameters.properties.page).toEqual({
+            type: 'object',
+            properties: {
+                limit: { type: 'integer', minimum: 1, maximum: 8 },
+                cursor: { type: 'string', minLength: 1, maxLength: 2048, pattern: '^[A-Za-z0-9_-]+$' },
+            },
+            additionalProperties: false,
+        });
         expect(catalogSchema?.function.parameters.properties.names).toEqual({
             type: 'array',
             minItems: 1,

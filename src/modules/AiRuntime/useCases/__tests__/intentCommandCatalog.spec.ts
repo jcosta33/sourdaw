@@ -222,7 +222,7 @@ describe('intent command catalog', () => {
         expect(firstCatalog.nextCursor?.length).toBeLessThanOrEqual(2048);
         expect(firstReceipt).toMatchObject({
             summary: 'command-index: 1 command(s)',
-            warnings: ['Command index page is truncated; continue with the same intent and cursor.'],
+            warnings: ['Command index page is truncated; continue with the same normalized search intent and cursor.'],
         });
 
         const nextPage = await runApplicationOwnedToolLoop({
@@ -400,6 +400,15 @@ describe('intent command catalog', () => {
         const firstCatalog = commandIndexCatalogReceipt(firstPage.receipts[0]?.data);
 
         expect(firstCatalog.intent).toBe('MIDI Café');
+        expect(firstPage).toMatchObject({
+            receipts: [
+                {
+                    warnings: [
+                        'Command index page is truncated; continue with the same normalized search intent and cursor.',
+                    ],
+                },
+            ],
+        });
         if (firstCatalog.nextCursor === null) {
             throw new Error('Expected a command-index cursor.');
         }
@@ -715,75 +724,89 @@ describe('intent command catalog', () => {
         });
     });
 
-    it('rejects a command schema that changes after exact disclosure and before proposal grounding', async () => {
-        const originalImplementation = mockGetAgentToolCatalogEntries.getMockImplementation();
-        if (originalImplementation === undefined) {
-            throw new Error('Expected the catalog implementation.');
-        }
-        let commandSchemaReads = 0;
-        mockGetAgentToolCatalogEntries.mockImplementation((input) => {
-            const catalog = originalImplementation(input);
-            if (input.category !== 'command' || input.names[0] !== 'setTempo') {
-                return catalog;
+    it.each(['description', 'parameters'] as const)(
+        'rejects %s command schema drift after exact disclosure and before proposal grounding',
+        async (drift) => {
+            const originalImplementation = mockGetAgentToolCatalogEntries.getMockImplementation();
+            if (originalImplementation === undefined) {
+                throw new Error('Expected the catalog implementation.');
             }
-            commandSchemaReads += 1;
-            if (commandSchemaReads !== 2) {
-                return catalog;
-            }
-            const items = catalog.items.map((item) => {
-                if (!isToolSchema(item)) {
-                    throw new Error('Expected an exact command tool schema.');
+            let commandSchemaReads = 0;
+            mockGetAgentToolCatalogEntries.mockImplementation((input) => {
+                const catalog = originalImplementation(input);
+                if (input.category !== 'command' || input.names[0] !== 'setTempo') {
+                    return catalog;
                 }
-                return {
-                    ...item,
-                    function: {
-                        ...item.function,
-                        parameters: {
-                            ...item.function.parameters,
-                            properties: { ...item.function.parameters.properties, staleSchema: { type: 'boolean' } },
+                if (catalog.category !== 'command') {
+                    throw new Error('Expected a command catalog.');
+                }
+                commandSchemaReads += 1;
+                if (commandSchemaReads !== 2) {
+                    return catalog;
+                }
+                const items = catalog.items.map((item) => {
+                    if (!isToolSchema(item)) {
+                        throw new Error('Expected an exact command tool schema.');
+                    }
+                    return {
+                        ...item,
+                        function: {
+                            ...item.function,
+                            ...(drift === 'description'
+                                ? { description: `${item.function.description} changed.` }
+                                : {
+                                      parameters: {
+                                          ...item.function.parameters,
+                                          properties: {
+                                              ...item.function.parameters.properties,
+                                              staleSchema: { type: 'boolean' },
+                                          },
+                                      },
+                                  }),
                         },
-                    },
+                    };
+                });
+                return {
+                    ...catalog,
+                    items,
                 };
             });
-            return {
-                ...catalog,
-                items,
-            };
-        });
 
-        const result = await runApplicationOwnedToolLoop({
-            loopId: 'intent-command-catalog-stale-schema',
-            terminalToolNames: new Set(['command.batch.propose']),
-            requestTurn: vi
-                .fn()
-                .mockResolvedValueOnce({
-                    status: 'complete',
-                    toolCalls: [
-                        {
-                            id: 'exact-schema',
-                            name: 'agent.catalog.discover',
-                            arguments: { category: 'command', names: ['setTempo'] },
-                        },
-                    ],
-                })
-                .mockResolvedValueOnce({
-                    status: 'complete',
-                    toolCalls: [
-                        {
-                            id: 'stale-proposal',
-                            name: 'command.batch.propose',
-                            arguments: { commands: [{ name: 'setTempo', arguments: { bpm: 128 } }] },
-                        },
-                    ],
-                }),
-        });
+            const result = await runApplicationOwnedToolLoop({
+                loopId: `intent-command-catalog-stale-schema-${drift}`,
+                terminalToolNames: new Set(['command.batch.propose']),
+                requestTurn: vi
+                    .fn()
+                    .mockResolvedValueOnce({
+                        status: 'complete',
+                        toolCalls: [
+                            {
+                                id: 'exact-schema',
+                                name: 'agent.catalog.discover',
+                                arguments: { category: 'command', names: ['setTempo'] },
+                            },
+                        ],
+                    })
+                    .mockResolvedValueOnce({
+                        status: 'complete',
+                        toolCalls: [
+                            {
+                                id: 'stale-proposal',
+                                name: 'command.batch.propose',
+                                arguments: { commands: [{ name: 'setTempo', arguments: { bpm: 128 } }] },
+                            },
+                        ],
+                    }),
+            });
 
-        expect(result).toMatchObject({
-            status: 'rejected',
-            reason: 'Provider command proposal referenced a stale catalog command schema.',
-            receipts: [{ callId: 'exact-schema', status: 'success' }],
-        });
-    });
+            expect(result).toMatchObject({
+                status: 'rejected',
+                reason: 'Provider command proposal referenced a stale catalog command schema.',
+                receipts: [{ callId: 'exact-schema', status: 'success' }],
+            });
+            expect(result).not.toHaveProperty('toolCalls');
+        }
+    );
 
     it('keeps the complete outer receipt identity for command-index success and failure', async () => {
         const requestTurn = vi

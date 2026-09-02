@@ -717,7 +717,7 @@ function executeCatalogDiscovery(call: ToolCallResult, callId: string, turn: num
             warnings: catalog.truncated
                 ? [
                       isCommandIndex
-                          ? 'Command index page is truncated; continue with the same intent and cursor.'
+                          ? 'Command index page is truncated; continue with the same normalized search intent and cursor.'
                           : 'Catalog page is truncated; continue only this exact requested name set.',
                   ]
                 : [],
