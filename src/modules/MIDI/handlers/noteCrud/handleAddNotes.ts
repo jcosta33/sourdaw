@@ -45,6 +45,10 @@ function getMaterializedNotes(action: AddNotesAction): MaterializedNote[] {
 }
 
 export const handleAddNotes = createHandler<'addNotes'>({
+    materializeCommandArguments: (action) => {
+        const notes = getMaterializedNotes(action);
+        action.payload.notes = notes;
+    },
     execute: (action) => {
         if (getWritableMidiClipReplayGuard(action.payload.clipId) === null) {
             return { status: 'conflict' };

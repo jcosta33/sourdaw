@@ -18,6 +18,7 @@ export function registerProductionCommandHandlers(handlerMaps: readonly HandlerM
         ...registrations.map((registration) => ({
             actionType: registration.actionType,
             operationVersion: registration.operationVersion,
+            role: 'forward' as const,
             validateArguments: registration.runtimeSchema.validate,
             validateEntry: registration.sessionEntryValidator,
         })),

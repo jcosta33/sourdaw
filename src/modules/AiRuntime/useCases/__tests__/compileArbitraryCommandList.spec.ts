@@ -96,6 +96,30 @@ const duplicateClipContext = {
     ),
 };
 
+const emptyMidiClipContext = {
+    ...context,
+    tracks: [
+        {
+            ...context.tracks[0]!,
+            id: 'track-midi',
+            name: 'MIDI',
+            kind: 'midi' as const,
+            clipCount: 1,
+            clips: [
+                {
+                    id: 'clip-empty-midi',
+                    name: 'Empty MIDI',
+                    type: 'midi' as const,
+                    startBeat: 0,
+                    endBeat: 4,
+                    noteCount: 0,
+                },
+            ],
+        },
+        context.tracks[1]!,
+    ],
+};
+
 const plan = (targetIds: string[], protectedTargetIds: string[] = []) => ({
     semantic: { classification: 'simple', uncertainty: [] },
     objective: 'Mute the requested drum tracks.',
@@ -617,6 +641,93 @@ describe('compileArbitraryCommandList', () => {
                 commands: [{ name: 'duplicateClip', arguments: { clipId: 'clip-kick-a' } }],
             },
         });
+    });
+
+    it('compiles and replays addNotes for an unlocked empty MIDI clip with its parent-track identity', async () => {
+        const calls = [
+            {
+                name: 'command.batch.propose',
+                arguments: {
+                    plan: plan(['clip-empty-midi']),
+                    list: {
+                        schemaVersion: 1,
+                        items: [
+                            {
+                                id: 'add-empty-midi-note',
+                                name: 'addNotes',
+                                arguments: { notes: [{ pitch: 60, startBeat: 0, duration: 1 }] },
+                                selector: {
+                                    targetArgument: 'clipId',
+                                    entity: 'clip',
+                                    where: { name: 'Empty MIDI' },
+                                    quantity: { unit: 'targets', exactly: 1 },
+                                },
+                            },
+                        ],
+                    },
+                },
+            },
+        ];
+        const compiled = compileArbitraryCommandList({
+            context: emptyMidiClipContext,
+            revision: 'revision-empty-midi',
+            calls,
+        });
+
+        expect(compiled).toMatchObject({
+            status: 'accepted',
+            compilerEvidence: {
+                commands: [
+                    {
+                        name: 'addNotes',
+                        arguments: {
+                            clipId: 'clip-empty-midi',
+                            notes: [{ pitch: 60, startBeat: 0, duration: 1 }],
+                        },
+                    },
+                ],
+            },
+        });
+        if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+            return;
+        }
+        expect(compiled.compilerEvidence.providerKnownTargetIds).toEqual(['clip-empty-midi']);
+        expect(
+            validateArbitraryCommandListEvidence({
+                evidence: compiled.compilerEvidence,
+                calls: compiled.compilerEvidence.commands,
+                context: emptyMidiClipContext,
+                revision: 'revision-empty-midi',
+            })
+        ).toMatchObject({
+            status: 'accepted',
+            targetOverridesByCallIndex: new Map([
+                [
+                    0,
+                    [
+                        {
+                            argument: 'clipId',
+                            capability: 'writable-midi-clip',
+                            cardinality: 'one',
+                            stableIds: ['clip-empty-midi'],
+                        },
+                    ],
+                ],
+            ]),
+        });
+
+        const agentReferenceCandidate = await import('../agentReference/isAgentReferenceCapabilityCandidate');
+        const candidate = agentReferenceCandidate.isAgentReferenceCapabilityCandidate;
+        vi.spyOn(agentReferenceCandidate, 'isAgentReferenceCapabilityCandidate').mockImplementation((input) =>
+            input.capability === 'writable-midi-clip' ? false : candidate(input)
+        );
+        expect(
+            compileArbitraryCommandList({
+                context: emptyMidiClipContext,
+                revision: 'revision-empty-midi',
+                calls,
+            })
+        ).toMatchObject({ status: 'rejected', reason: expect.stringContaining('target') });
     });
 
     it('fails closed when an app-derived identity has no materialization contract', async () => {

@@ -4016,6 +4016,7 @@ const schemaDefinitions = [
             startBeat: 1,
             duration: 1,
             velocity: 1,
+            probability: 1,
         },
         required: ['pitch', 'startBeat', 'duration'],
         additionalProperties: false,

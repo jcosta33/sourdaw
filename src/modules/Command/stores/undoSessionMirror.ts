@@ -14,6 +14,11 @@ const MAX_UNDO_PERSIST = 100;
 export type SessionActionContract = {
     readonly actionType: string;
     readonly operationVersion: number;
+    /**
+     * Forward contracts are allowed to begin a persisted undo entry. Internal
+     * replay contracts exist solely as an inverse or redo of such an entry.
+     */
+    readonly role: 'forward' | 'internal-replay';
     readonly validateArguments: (payload: unknown) => boolean;
     readonly validateEntry?: (entry: SessionActionEntry) => boolean;
 };
@@ -53,8 +58,12 @@ function getActionContract(action: unknown): SessionActionContract | null {
     return sessionActionContracts?.get(action.type) ?? null;
 }
 
-function getCurrentOperationVersion(action: unknown): number | null {
-    return getActionContract(action)?.operationVersion ?? null;
+function getCurrentOperationVersion(action: unknown, role?: SessionActionContract['role']): number | null {
+    const contract = getActionContract(action);
+    if (contract === null || (role !== undefined && contract.role !== role)) {
+        return null;
+    }
+    return contract.operationVersion;
 }
 
 function getStoredOperationVersion(value: Record<string, unknown>, key: string): number | null | undefined {
@@ -77,12 +86,20 @@ function getStoredOperationVersion(value: Record<string, unknown>, key: string):
  * restore. An action declared without a payload validates against the empty
  * argument record its schema describes.
  */
-function actionMatchesCurrentContract(action: unknown, storedVersion: number | undefined): action is AppAction {
+function actionMatchesCurrentContract(
+    action: unknown,
+    storedVersion: number | undefined,
+    role?: SessionActionContract['role']
+): action is AppAction {
     if (!isRecord(action)) {
         return false;
     }
     const contract = getActionContract(action);
-    if (contract === null || (storedVersion ?? 1) !== contract.operationVersion) {
+    if (
+        contract === null ||
+        (role !== undefined && contract.role !== role) ||
+        (storedVersion ?? 1) !== contract.operationVersion
+    ) {
         return false;
     }
     return contract.validateArguments(action.payload === undefined ? {} : action.payload);
@@ -92,7 +109,7 @@ function serializeSessionActionEntry(entry: UndoEntry): SerializedActionUndoEntr
     if (!isActionEntry(entry)) {
         return null;
     }
-    const actionOperationVersion = getCurrentOperationVersion(entry.action);
+    const actionOperationVersion = getCurrentOperationVersion(entry.action, 'forward');
     if (actionOperationVersion === null) {
         return null;
     }
@@ -104,6 +121,17 @@ function serializeSessionActionEntry(entry: UndoEntry): SerializedActionUndoEntr
     const redoActionOperationVersion =
         entry.redoAction === undefined ? null : getCurrentOperationVersion(entry.redoAction);
     if (entry.redoAction !== undefined && redoActionOperationVersion === null) {
+        return null;
+    }
+    const forwardContract = getActionContract(entry.action);
+    const inverseContract = entry.inverseAction === null ? null : getActionContract(entry.inverseAction);
+    const redoContract = entry.redoAction === undefined ? null : getActionContract(entry.redoAction);
+    const requiresWholeEntryValidation =
+        inverseContract?.role === 'internal-replay' || redoContract?.role === 'internal-replay';
+    if (
+        (requiresWholeEntryValidation && forwardContract?.validateEntry === undefined) ||
+        (forwardContract?.validateEntry !== undefined && !forwardContract.validateEntry(entry))
+    ) {
         return null;
     }
 
@@ -142,7 +170,7 @@ function sanitizeStoredEntry(value: unknown): ActionUndoEntry | null {
 
     const action = value.action;
     const actionOperationVersion = getStoredOperationVersion(value, 'actionOperationVersion');
-    if (actionOperationVersion === null || !actionMatchesCurrentContract(action, actionOperationVersion)) {
+    if (actionOperationVersion === null || !actionMatchesCurrentContract(action, actionOperationVersion, 'forward')) {
         return null;
     }
 
@@ -215,8 +243,16 @@ function sanitizeStoredEntry(value: unknown): ActionUndoEntry | null {
         entry.redoAction = redoAction;
     }
 
-    const validateEntry = getActionContract(action)?.validateEntry;
-    if (validateEntry !== undefined && !validateEntry(entry)) {
+    const forwardContract = getActionContract(action);
+    const inverseContract = inverseAction === null ? null : getActionContract(inverseAction);
+    const redoContract = redoAction === undefined ? null : getActionContract(redoAction);
+    const requiresWholeEntryValidation =
+        inverseContract?.role === 'internal-replay' || redoContract?.role === 'internal-replay';
+    const validateEntry = forwardContract?.validateEntry;
+    if (
+        (requiresWholeEntryValidation && validateEntry === undefined) ||
+        (validateEntry !== undefined && !validateEntry(entry))
+    ) {
         return null;
     }
 

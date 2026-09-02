@@ -2110,6 +2110,8 @@ export type AppAction =
                   startBeat: number;
                   duration: number;
                   velocity?: number;
+                  /** Canonical handler materialization writes the default probability. */
+                  probability?: number;
               }>;
           };
       }

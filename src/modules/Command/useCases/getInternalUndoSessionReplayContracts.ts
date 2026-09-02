@@ -15,6 +15,7 @@ export function getInternalUndoSessionReplayContracts(): readonly SessionActionC
     return Object.entries(INTERNAL_UNDO_SESSION_REPLAY_OPERATION_VERSIONS).map(([actionType, operationVersion]) => ({
         actionType,
         operationVersion,
+        role: 'internal-replay',
         validateArguments: (payload: unknown) => validateVersionedCommandArguments(actionType, payload),
     }));
 }

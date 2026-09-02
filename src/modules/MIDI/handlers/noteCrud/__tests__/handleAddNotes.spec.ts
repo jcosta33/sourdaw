@@ -145,6 +145,29 @@ describe('handleAddNotes', () => {
         expect(handleAddNotes.isNoop?.({ type: 'addNotes', payload: { clipId: CLIP_ID, notes: [] } })).toBe(true);
     });
 
+    it('materializes canonical note values before the command envelope persists the action', () => {
+        const action = {
+            type: 'addNotes' as const,
+            payload: {
+                clipId: CLIP_ID,
+                notes: [{ id: 'note-command-1', pitch: 60.6, startBeat: -2, duration: 0.01, velocity: 96.7 }],
+            },
+        };
+
+        handleAddNotes.materializeCommandArguments?.(action);
+
+        expect(action.payload.notes).toEqual([
+            {
+                id: 'note-command-1',
+                pitch: 61,
+                startBeat: 0,
+                duration: 0.0625,
+                velocity: 97,
+                probability: 100,
+            },
+        ]);
+    });
+
     it('executes a non-empty addNotes command through the registered Command handler path', async () => {
         const action = {
             type: 'addNotes' as const,

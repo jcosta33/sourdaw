@@ -74,4 +74,75 @@ describe('createAddNotesToolSchema', () => {
             expect(props.velocity!.maximum).toBe(127);
         }
     });
+
+    it('derives from a varied canonical provider schema without owning note constraints', () => {
+        const providerSchema = {
+            properties: {
+                clipId: { type: 'string', title: 'Canonical clip' },
+                notes: {
+                    type: 'array',
+                    minItems: 2,
+                    maxItems: 24,
+                    items: {
+                        type: 'object',
+                        additionalProperties: false,
+                        required: ['pitch', 'startBeat', 'duration'],
+                        properties: {
+                            pitch: { type: 'number', minimum: 0, maximum: 127, multipleOf: 0.5 },
+                            startBeat: { type: 'number', minimum: 0, maximum: 64, multipleOf: 0.25 },
+                            duration: { type: 'number', exclusiveMinimum: 0, maximum: 8 },
+                            velocity: { type: 'number', minimum: 1, maximum: 127, multipleOf: 0.5 },
+                        },
+                    },
+                },
+            },
+            required: ['clipId', 'notes'],
+        };
+
+        const schema = createAddNotesToolSchema({
+            allowNegativeStartBeat: true,
+            expectedClipId: 'clip-pinned',
+            providerSchema,
+        });
+        const properties = schema.function.parameters.properties as Record<string, Record<string, unknown>>;
+        const notes = properties.notes!;
+        const items = notes.items as Record<string, unknown>;
+        const noteProperties = items.properties as Record<string, Record<string, unknown>>;
+
+        expect(properties.clipId).toEqual({
+            type: 'string',
+            title: 'Canonical clip',
+            minLength: 1,
+            pattern: '\\S',
+            description: 'Target clip ID',
+            enum: ['clip-pinned'],
+        });
+        expect(notes).toMatchObject({ type: 'array', minItems: 2, maxItems: 24 });
+        expect(noteProperties.pitch).toEqual({
+            type: 'number',
+            minimum: 0,
+            maximum: 127,
+            multipleOf: 0.5,
+            description: 'MIDI note number (60=C4, 64=E4, 67=G4)',
+        });
+        expect(noteProperties.startBeat).toEqual({
+            type: 'number',
+            maximum: 64,
+            multipleOf: 0.25,
+            description: 'Start position in beats within the clip',
+        });
+        expect(noteProperties.duration).toEqual({
+            type: 'number',
+            exclusiveMinimum: 0,
+            maximum: 8,
+            description: 'Note length in beats (0.25=16th, 0.5=8th, 1=quarter)',
+        });
+        expect(noteProperties.velocity).toEqual({
+            type: 'number',
+            minimum: 1,
+            maximum: 127,
+            multipleOf: 0.5,
+            description: '1-127, default 100',
+        });
+    });
 });

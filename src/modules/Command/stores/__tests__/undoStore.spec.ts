@@ -23,6 +23,7 @@ async function loadSubject() {
         SUPPORTED_SESSION_ACTION_TYPES.map((actionType) => ({
             actionType,
             operationVersion: 1,
+            role: 'forward' as const,
             validateArguments: (payload: unknown) => validateVersionedCommandArguments(actionType, payload),
         }))
     );
@@ -93,6 +94,96 @@ describe('undoStore / pushUndo', () => {
     afterEach(async () => {
         await flushPersistence();
         sessionStorage.removeItem(UNDO_SESSION_KEY);
+    });
+
+    it('rejects internal replay actions as persisted forward entries', async () => {
+        const undoStoreModule = await import('../undoStore');
+        const { getInternalUndoSessionReplayContracts } = await import('../../useCases/getInternalUndoSessionReplayContracts');
+        const restoreAction = {
+            type: 'restoreMidiClipNotes',
+            payload: {
+                clipId: 'clip-midi',
+                notes: [],
+                expectedNotes: [],
+                noteTransformReplayGuard: {
+                    trackId: 'track-midi',
+                    expectedTrackFrozen: false,
+                    expectedClipLocked: false,
+                },
+            },
+        };
+        sessionStorage.setItem(
+            UNDO_SESSION_KEY,
+            JSON.stringify({
+                past: [
+                    {
+                        id: 'internal-forward',
+                        kind: 'action',
+                        label: 'Internal forward',
+                        action: restoreAction,
+                        inverseAction: null,
+                        timestamp: 1,
+                        source: 'ai',
+                        actionOperationVersion: 1,
+                    },
+                ],
+                future: [],
+            })
+        );
+
+        undoStoreModule.hydrateUndoStoreFromSession(getInternalUndoSessionReplayContracts());
+
+        expect(undoStoreModule.undoStore.value).toEqual({ past: [], future: [] });
+    });
+
+    it('rejects an internal inverse unless its forward contract validates the whole entry', async () => {
+        const undoStoreModule = await import('../undoStore');
+        const { getInternalUndoSessionReplayContracts } = await import('../../useCases/getInternalUndoSessionReplayContracts');
+        const { validateVersionedCommandArguments } = await import('../../useCases/versionedCommandArgumentKeys');
+        const restoreAction = {
+            type: 'restoreMidiClipNotes',
+            payload: {
+                clipId: 'clip-midi',
+                notes: [],
+                expectedNotes: [],
+                noteTransformReplayGuard: {
+                    trackId: 'track-midi',
+                    expectedTrackFrozen: false,
+                    expectedClipLocked: false,
+                },
+            },
+        };
+        sessionStorage.setItem(
+            UNDO_SESSION_KEY,
+            JSON.stringify({
+                past: [
+                    {
+                        id: 'unrelated-internal-inverse',
+                        kind: 'action',
+                        label: 'Unrelated internal inverse',
+                        action: { type: 'setTempo', payload: { bpm: 120 } },
+                        inverseAction: restoreAction,
+                        timestamp: 1,
+                        source: 'ai',
+                        actionOperationVersion: 1,
+                        inverseActionOperationVersion: 1,
+                    },
+                ],
+                future: [],
+            })
+        );
+
+        undoStoreModule.hydrateUndoStoreFromSession([
+            {
+                actionType: 'setTempo',
+                operationVersion: 1,
+                role: 'forward',
+                validateArguments: (payload: unknown) => validateVersionedCommandArguments('setTempo', payload),
+            },
+            ...getInternalUndoSessionReplayContracts(),
+        ]);
+
+        expect(undoStoreModule.undoStore.value).toEqual({ past: [], future: [] });
     });
 
     it('should append an entry to past and clear future', async () => {

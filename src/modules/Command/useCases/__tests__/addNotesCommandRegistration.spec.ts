@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
+import { getAutomationHandlers } from '#/modules/Automation/useCases';
+import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import { getTransportHandlers } from '#/modules/Transport/useCases';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { hydrateUndoStoreFromSession, undoStore } from '../../stores/undoStore';
@@ -25,7 +30,7 @@ function createPersistedAddNotesEntry() {
         label: 'Add MIDI note',
         action: {
             type: 'addNotes',
-            payload: { clipId: 'clip-midi', notes: [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1 }] },
+            payload: { clipId: 'clip-midi', notes },
         },
         inverseAction: {
             type: 'restoreMidiClipNotes',
@@ -160,6 +165,7 @@ describe('addNotes command registration', () => {
             {
                 actionType: registration.actionType,
                 operationVersion: registration.operationVersion,
+                role: 'forward',
                 validateArguments: registration.runtimeSchema.validate,
                 validateEntry: registration.sessionEntryValidator,
             },
@@ -289,6 +295,7 @@ describe('addNotes command registration', () => {
             {
                 actionType: registration.actionType,
                 operationVersion: registration.operationVersion,
+                role: 'forward',
                 validateArguments: registration.runtimeSchema.validate,
                 validateEntry: registration.sessionEntryValidator,
             },
@@ -296,6 +303,92 @@ describe('addNotes command registration', () => {
         ]);
 
         expect(undoStore.value?.past).toEqual([]);
+    });
+
+    it.each([
+        ['channel', 1],
+        ['pressure', 0.5],
+        ['slide', 0.5],
+        ['pitchBend', 0.5],
+        ['pitchBendRangeSemitones', 2],
+        ['articulation', 'staccato'],
+    ])('rejects a future redo snapshot with state-significant %s', (field, value) => {
+        const registration = getExecutableCommandRegistration('addNotes');
+        const entry = createPersistedAddNotesEntry();
+        const tamperedRedoNotes = [{ ...entry.redoAction.payload.notes[0]!, [field]: value }];
+        sessionStorage.setItem(
+            'sourdaw-undo-session',
+            JSON.stringify({
+                past: [],
+                future: [
+                    {
+                        ...entry,
+                        redoAction: {
+                            ...entry.redoAction,
+                            payload: { ...entry.redoAction.payload, notes: tamperedRedoNotes },
+                        },
+                        actionOperationVersion: registration.operationVersion,
+                        inverseActionOperationVersion: 1,
+                        redoActionOperationVersion: 1,
+                    },
+                ],
+            })
+        );
+
+        hydrateUndoStoreFromSession([
+            {
+                actionType: registration.actionType,
+                operationVersion: registration.operationVersion,
+                role: 'forward',
+                validateArguments: registration.runtimeSchema.validate,
+                validateEntry: registration.sessionEntryValidator,
+            },
+            ...getInternalUndoSessionReplayContracts(),
+        ]);
+
+        expect(undoStore.value?.future).toEqual([]);
+    });
+
+    it('rejects a future addNotes pair whose materialized probability is not canonical', () => {
+        const registration = getExecutableCommandRegistration('addNotes');
+        const entry = createPersistedAddNotesEntry();
+        const nonCanonicalNote = { ...entry.action.payload.notes[0]!, probability: 99 };
+        sessionStorage.setItem(
+            'sourdaw-undo-session',
+            JSON.stringify({
+                past: [],
+                future: [
+                    {
+                        ...entry,
+                        action: { ...entry.action, payload: { ...entry.action.payload, notes: [nonCanonicalNote] } },
+                        inverseAction: {
+                            ...entry.inverseAction,
+                            payload: { ...entry.inverseAction.payload, expectedNotes: [nonCanonicalNote] },
+                        },
+                        redoAction: {
+                            ...entry.redoAction,
+                            payload: { ...entry.redoAction.payload, notes: [nonCanonicalNote] },
+                        },
+                        actionOperationVersion: registration.operationVersion,
+                        inverseActionOperationVersion: 1,
+                        redoActionOperationVersion: 1,
+                    },
+                ],
+            })
+        );
+
+        hydrateUndoStoreFromSession([
+            {
+                actionType: registration.actionType,
+                operationVersion: registration.operationVersion,
+                role: 'forward',
+                validateArguments: registration.runtimeSchema.validate,
+                validateEntry: registration.sessionEntryValidator,
+            },
+            ...getInternalUndoSessionReplayContracts(),
+        ]);
+
+        expect(undoStore.value?.future).toEqual([]);
     });
 
     it('hydrates the private restore inverse through production handler registration', () => {
@@ -317,7 +410,14 @@ describe('addNotes command registration', () => {
         );
         clearHandlerRegistry();
 
-        registerProductionCommandHandlers([getMidiNoteTransformHandlers()]);
+        registerProductionCommandHandlers([
+            getArrangementHandlers(),
+            getAudioRenderingHandlers(),
+            getAutomationHandlers(),
+            getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+            getMidiNoteTransformHandlers(),
+            getTransportHandlers(),
+        ]);
 
         expect(undoStore.value?.past).toMatchObject([{ action: entry.action, inverseAction: entry.inverseAction }]);
     });

@@ -30,13 +30,26 @@ function isMaterializedAddNote(value: unknown): value is JsonRecord & { id: stri
     return isRecord(value) && typeof value.id === 'string' && value.id.length > 0;
 }
 
+const CANONICAL_ADDED_NOTE_KEYS = ['duration', 'id', 'pitch', 'probability', 'startBeat', 'velocity'] as const;
+
+function isCanonicalAddedNote(value: unknown): value is JsonRecord & { id: string } {
+    if (!isMaterializedAddNote(value) || value.probability !== 100) {
+        return false;
+    }
+    const keys = Object.keys(value).sort();
+    return (
+        keys.length === CANONICAL_ADDED_NOTE_KEYS.length &&
+        keys.every((key, index) => key === CANONICAL_ADDED_NOTE_KEYS[index])
+    );
+}
+
 function getMaterializedNoteIds(value: unknown): string[] | null {
     if (!Array.isArray(value)) {
         return null;
     }
     const ids: string[] = [];
     for (const note of value) {
-        if (!isMaterializedAddNote(note)) {
+        if (!isCanonicalAddedNote(note)) {
             return null;
         }
         ids.push(note.id);
@@ -111,14 +124,7 @@ function hasExactAddNotesRestorePair(entry: SessionActionEntry): boolean {
 
     return actionPayload.notes.every((note, index) => {
         const snapshot: unknown = expectedAddedNotes[index];
-        return (
-            isRecord(snapshot) &&
-            snapshot.id === note.id &&
-            snapshot.pitch === note.pitch &&
-            snapshot.startBeat === note.startBeat &&
-            snapshot.duration === note.duration &&
-            snapshot.velocity === (note.velocity ?? 100)
-        );
+        return isCanonicalAddedNote(snapshot) && valuesEqual(snapshot, note);
     });
 }
 
