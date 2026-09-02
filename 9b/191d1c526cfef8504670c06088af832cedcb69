@@ -1,0 +1,29 @@
+crates/daw-engine/src/audio_thread.rs
+  s_9b530f08172a54::t_4898112521cfbe 793-801
+  s_9b530f08172a54::t_fd1ba87624fd3d 756-759
+  s_9b530f08172a54::t_36b45f93df441e 723
+  s_9b530f08172a54::t_0861910f04a7ac 1238-1268
+  s_9b530f08172a54::t_1096045885036b 709,712-722,724-725
+crates/daw-engine/src/lib.rs
+  s_9b530f08172a54::t_685fbc444981c1 1082-1086
+  s_9b530f08172a54::t_0f3c355c86236e 2192,2195-2201
+  s_9b530f08172a54::t_15c826329dcc8f 2373,2376-2382
+  s_9b530f08172a54::t_8bca24fed9f3cd 1068-1081,1087-1110,1135,1138-1144
+  s_9b530f08172a54::t_89720586e7ff3d 1153-1154
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "9b191d1c526cfef8504670c06088af832cedcb69",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
