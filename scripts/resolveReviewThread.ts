@@ -5372,6 +5372,36 @@ function hasExactImmutableResolveThreadEnvelope(
     return true;
 }
 
+function hasExactResolvedImmutableResolveThreadEnvelope(
+    number: number,
+    owner: CurrentReviewResolutionLockOwner,
+    inspection: ReviewThreadInspection,
+    context: ResolutionReviewContext,
+    thread: ReviewThread,
+    immutableEnvelope: ReviewResolutionMarkerSnapshot,
+    port: ResolveReviewThreadPort
+): boolean {
+    if (!thread.isResolved) {
+        return false;
+    }
+    assertCompletedResolution(thread, owner.threadId);
+    assertManagedReplyMarkersReadable(thread, context, ['PENDING', 'COMMENTED'], true);
+    const managed = managedReplyMarkers(thread, context, ['COMMENTED'], true);
+    if (managed.length !== 1 || hasBlockingAuthorPendingReview(inspection.pendingReviews, thread, context)) {
+        return false;
+    }
+    const [candidate] = managed;
+    if (
+        candidate === undefined ||
+        !isImmutableEmptySubmittedReview(candidate.review) ||
+        !matchesReviewResolutionMarkerSnapshot(candidate, immutableEnvelope)
+    ) {
+        return false;
+    }
+    assertExclusiveBackfillReviewAttachment(number, candidate.review.id, context, port, inspection.head);
+    return true;
+}
+
 function hasRecoveredReviewResolutionMutation(
     number: number,
     owner: CurrentReviewResolutionLockOwner,
@@ -5443,14 +5473,13 @@ function hasRecoveredReviewResolutionMutation(
         }
         case 'resolveThread':
             if (mutation.immutableEnvelope !== undefined) {
-                return hasExactImmutableResolveThreadEnvelope(
+                return hasExactResolvedImmutableResolveThreadEnvelope(
                     number,
                     owner,
                     inspection,
                     context,
                     thread,
                     mutation.immutableEnvelope,
-                    true,
                     port
                 );
             }
@@ -6071,17 +6100,35 @@ export function recoverReviewResolutionLockOwnerState(
         case 'resolveThread': {
             if (mutation.immutableEnvelope !== undefined) {
                 if (
-                    hasExactImmutableResolveThreadEnvelope(
+                    hasExactResolvedImmutableResolveThreadEnvelope(
                         number,
                         owner,
                         inspection,
                         context,
                         inspection.thread!,
                         mutation.immutableEnvelope,
-                        true,
                         port
                     )
                 ) {
+                    inspection = inspectReviewResolutionRecovery(number, owner, port);
+                    const terminalContext = resolutionReviewContext(
+                        inspection.pullRequestId,
+                        owner.threadId,
+                        owner.head
+                    );
+                    if (
+                        !hasExactResolvedImmutableResolveThreadEnvelope(
+                            number,
+                            owner,
+                            inspection,
+                            terminalContext,
+                            inspection.thread!,
+                            mutation.immutableEnvelope,
+                            port
+                        )
+                    ) {
+                        fail(unreconciledReviewResolutionMutationMessage(number, mutation));
+                    }
                     break;
                 }
                 if (
@@ -6103,14 +6150,13 @@ export function recoverReviewResolutionLockOwnerState(
                 inspection = inspectReviewResolutionRecovery(number, owner, port);
                 const terminalContext = resolutionReviewContext(inspection.pullRequestId, owner.threadId, owner.head);
                 if (
-                    !hasExactImmutableResolveThreadEnvelope(
+                    !hasExactResolvedImmutableResolveThreadEnvelope(
                         number,
                         owner,
                         inspection,
                         terminalContext,
                         inspection.thread!,
                         mutation.immutableEnvelope,
-                        true,
                         port
                     )
                 ) {
