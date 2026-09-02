@@ -1,0 +1,35 @@
+src/modules/AiRuntime/useCases/__tests__/planPromptActions.spec.ts
+  s_bbdfb911119c4f::t_e7a4f5b802e3fa 16
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_bbdfb911119c4f::t_896a24eb4b5fbe 94-95
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/ExpandedChannelStrip.spec.tsx
+  s_bbdfb911119c4f::t_36c62824ad1656 51-52
+src/modules/AiRuntime/useCases/__tests__/pendingChatActions.spec.ts
+  s_bbdfb911119c4f::t_fd0d6344dbb391 92-93
+src/modules/Arrangement/presentations/views/__tests__/ClipContextMenu.spec.tsx
+  s_bbdfb911119c4f::t_38123cc9029253 162-163
+src/app/__tests__/main.spec.tsx
+  s_bbdfb911119c4f::t_836a80d5392d55 144
+src/modules/Arrangement/presentations/views/__tests__/TrackListView.spec.tsx
+  s_bbdfb911119c4f::t_0e888975578ed7 120-121
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/orchestratePromptChatRequest.spec.ts
+  s_bbdfb911119c4f::t_fe718915ffae7b 41
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/WaveformEditor.spec.tsx
+  s_bbdfb911119c4f::t_df4e9d9db2d380 195-196
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "f8bf326edfe0b157e9bfe9bc6c9be3a2ac514844",
+  "prompts": {},
+  "sessions": {
+    "s_bbdfb911119c4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fa21d5-2a8a-4f80-98ab-b72059373843",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
