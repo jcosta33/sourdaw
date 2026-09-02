@@ -1,0 +1,79 @@
+crates/proof-chamber/tests/engine_reset_is_factory_fresh.rs
+  s_bbdfb911119c4f::t_a867f497b6f3a8 1-244
+src/modules/Arrangement/models/PluginDescriptors/__tests__/descriptorEngineParamWeld.spec.ts
+  s_bbdfb911119c4f::t_45877765ba5342 502
+  s_bbdfb911119c4f::t_ed69ee2fed2514 490-494
+  s_bbdfb911119c4f::t_72f7ed7942e9ba 51-55
+crates/proof-chamber/src/early_reflections.rs
+  s_bbdfb911119c4f::t_38a70eb04df824 116-133
+crates/proof-chamber/src/fdn.rs
+  s_bbdfb911119c4f::t_a29bef145b66e1 510-574
+  s_bbdfb911119c4f::t_97e1d83c25f437 467
+  s_bbdfb911119c4f::t_c5dda5ee286372 338-357
+crates/proof-chamber/src/reverse.rs
+  s_bbdfb911119c4f::t_eaf6801e1c701f 63-83
+crates/proof-chamber/src/spring.rs
+  s_bbdfb911119c4f::t_7a4ab60d133408 123-153
+crates/proof-chamber/src/proof_chamber.rs
+  s_bbdfb911119c4f::t_fc64a17d1d5ace 224-231
+  s_bbdfb911119c4f::t_c82fcca8b077f7 847-848
+  s_bbdfb911119c4f::t_7072093a2f1adb 364,369,384-404
+  s_bbdfb911119c4f::t_865854d3e4dd61 338-355
+  s_bbdfb911119c4f::t_889b68df21c0e2 405,860-941
+  s_bbdfb911119c4f::t_b35ea9792c08b2 94-100
+  s_bbdfb911119c4f::t_73cc4faca7fc47 332-337
+  s_bbdfb911119c4f::t_5ff8c084ca4287 406
+crates/proof-chamber/src/lib.rs
+  s_bbdfb911119c4f::t_1e6419589c1fd0 531-532
+  s_bbdfb911119c4f::t_2ef005549a8fd2 179,184-187
+  s_bbdfb911119c4f::t_2091fc30479705 544-600
+  s_bbdfb911119c4f::t_e2f0a58dbfd029 623-626
+  s_bbdfb911119c4f::t_7c96a382496f91 609-614,617-621
+  s_bbdfb911119c4f::t_bc6b72156b0ab8 442-465
+  s_bbdfb911119c4f::t_8ac7dc22468821 509-511
+  s_bbdfb911119c4f::t_b8a6f5854f7d0f 430
+  s_bbdfb911119c4f::t_b3cab9ce03adb1 696-726,728-761
+  s_bbdfb911119c4f::t_322853966f44e2 763-765,767-768
+  s_bbdfb911119c4f::t_d1e8b9d4521899 60-74,76-97
+  s_bbdfb911119c4f::t_3c927f20dc19ed 310-311,327-334
+  s_bbdfb911119c4f::t_76271823fa55e4 282
+  s_bbdfb911119c4f::t_ac4da1cad755f4 416
+  s_bbdfb911119c4f::t_93283480641c0d 640-644,646-652,656
+  s_bbdfb911119c4f::t_2a87dae900e83a 358,362-367
+  s_bbdfb911119c4f::t_c33cf1b741f0f2 500
+  s_bbdfb911119c4f::t_9d76acbb156278 214
+  s_bbdfb911119c4f::t_13de0a790a76f9 380,382-389
+  s_bbdfb911119c4f::t_e0dbbdc5d8902a 762
+crates/proof-chamber/src/output_stage.rs
+  s_bbdfb911119c4f::t_f101d1cf1b72a4 156-165
+src/utils/nativeDspEngineGaps.ts
+  s_bbdfb911119c4f::t_f397247d9dee4a 204,208
+src/modules/ProofChamber/models/__tests__/proofChamberParamMapClosure.spec.ts
+  s_bbdfb911119c4f::t_e952fcb0fd0500 65-66
+crates/proof-chamber/AGENTS.md
+  s_bbdfb911119c4f::t_b50b9239df4e4b 14-15
+public/wasm/manifest.json
+  s_bbdfb911119c4f::t_ed0d04a95eef7c 26,30-32,35
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_bbdfb911119c4f::t_57a18d2e2b97c8 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_bbdfb911119c4f::t_34cd8e8f1d6853 1
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_bbdfb911119c4f::t_c08669a4b78305 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d43f811f8f65ae882db28c868f7fc3c1172142a4",
+  "prompts": {},
+  "sessions": {
+    "s_bbdfb911119c4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fa21d5-2a8a-4f80-98ab-b72059373843",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
