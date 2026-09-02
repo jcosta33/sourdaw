@@ -46,21 +46,27 @@ export function zoomTimeline(delta: number): void {
 }
 
 /**
- * Sets an absolute zoom level and horizontal scroll position together,
- * clamped with the same rules {@link zoomTimeline} and {@link setScrollX}
- * use. Every other field is left untouched. Intended for callers that
- * compute both values from a target (zoom-to-fit, zoom-to-selection) rather
- * than nudging the current value.
+ * Sets an absolute zoom level and derives the horizontal scroll position from
+ * a scroll target expressed in BEATS, rather than accepting pre-computed
+ * pixels. Deriving `scrollX` here — from the CLAMPED `pixelsPerBeat` — is
+ * what {@link zoomTimeline} and {@link setScrollX}'s clamp rules give every
+ * caller for free: a call site that instead computed `scrollX` itself from
+ * the raw, pre-clamp zoom could disagree with the zoom the store actually
+ * applied and land the viewport far from the intended target (#3321). Every
+ * other field is left untouched. Intended for callers that compute both
+ * values from a target (zoom-to-fit, zoom-to-selection) rather than nudging
+ * the current value.
  */
-export function setTimelineZoom(pixelsPerBeat: number, scrollX: number): void {
+export function setTimelineZoom(pixelsPerBeat: number, scrollStartBeat: number): void {
     const state = timelineViewStore.value;
     if (!state) {
         return;
     }
+    const clampedPixelsPerBeat = clampPixelsPerBeat(pixelsPerBeat);
     timelineViewStore.set({
         ...state,
-        pixelsPerBeat: clampPixelsPerBeat(pixelsPerBeat),
-        scrollX: Math.max(0, scrollX),
+        pixelsPerBeat: clampedPixelsPerBeat,
+        scrollX: Math.max(0, scrollStartBeat * clampedPixelsPerBeat),
     });
 }
 

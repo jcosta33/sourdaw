@@ -175,9 +175,8 @@ export const TimelineSurface = (): ReactElement => {
             const canvasWidth = container.getBoundingClientRect().width;
             const ppb = canvasWidth / paddedRange;
             const paddingBeats = range * 0.1;
-            const scrollX = (startBeat - paddingBeats) * ppb;
 
-            setTimelineZoom(ppb, scrollX);
+            setTimelineZoom(ppb, startBeat - paddingBeats);
         };
 
         const handleScrollToPlayhead = () => {

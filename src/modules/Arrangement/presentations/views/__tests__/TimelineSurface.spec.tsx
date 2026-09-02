@@ -124,15 +124,20 @@ vi.mock('../../../stores/timelineViewStore', () => {
         }
         store.set({ ...state, scrollX: Math.max(0, scrollX) });
     };
-    const setTimelineZoom = (pixelsPerBeat: number, scrollX: number): void => {
+    // scrollStartBeat is a BEAT position, not a pixel offset — the real
+    // store derives scrollX from it using the CLAMPED pixelsPerBeat, so this
+    // fixture must too, or it would stop exercising the same clamp
+    // agreement the production setTimelineZoom guarantees (#3321).
+    const setTimelineZoom = (pixelsPerBeat: number, scrollStartBeat: number): void => {
         const state = store.value;
         if (!state) {
             return;
         }
+        const clampedPixelsPerBeat = Math.max(2, Math.min(80, pixelsPerBeat));
         store.set({
             ...state,
-            pixelsPerBeat: Math.max(2, Math.min(80, pixelsPerBeat)),
-            scrollX: Math.max(0, scrollX),
+            pixelsPerBeat: clampedPixelsPerBeat,
+            scrollX: Math.max(0, scrollStartBeat * clampedPixelsPerBeat),
         });
     };
     return {
@@ -534,20 +539,78 @@ describe('TimelineSurface — zoom & scroll handlers', () => {
         expect(after.pixelsPerBeat).toBe(before.pixelsPerBeat);
     });
 
-    it('scroll-to-playhead sets scrollX to keep the playhead centred', () => {
-        renderWithTooltip(<TimelineSurface />);
-        zoomHandlers.timelineViewStoreRef.current?.set({
-            scrollX: 0,
-            scrollY: 0,
-            pixelsPerBeat: 10,
-            autoScrollEnabled: true,
+    // Regression (#3321): a tight selection can demand a raw pixelsPerBeat
+    // far outside the 2..80 clamp, and scrollX must be computed from the
+    // CLAMPED value the store actually applies — not the raw, pre-clamp one
+    // — or the view lands far from the selection. Swapping setTimelineZoom's
+    // two arguments at the call site fails this: 100 (a beat position, not
+    // scroll x) never clamps and drives an entirely different scrollX.
+    it('zoom-to-selection sets exact pixelsPerBeat and scrollX for a range that clamps above 80', () => {
+        const originalGetBoundingClientRect = HTMLDivElement.prototype.getBoundingClientRect;
+        HTMLDivElement.prototype.getBoundingClientRect = () => ({
+            x: 0,
+            y: 0,
+            top: 0,
+            left: 0,
+            right: 1000,
+            bottom: 600,
+            width: 1000,
+            height: 600,
+            toJSON: () => ({}),
         });
-        act(() => {
-            zoomHandlers.playhead!();
+        try {
+            renderWithTooltip(<TimelineSurface />);
+            act(() => {
+                zoomHandlers.selection!({ startBeat: 100, endBeat: 100.5 });
+            });
+            const after = zoomHandlers.timelineViewStoreRef.current?.value as {
+                pixelsPerBeat: number;
+                scrollX: number;
+            };
+            // range 0.5 beats padded to 0.6 → raw ppb 1000/0.6 ≈ 1666.67,
+            // clamped to 80. paddingBeats = 0.05 → scroll target beat 99.95
+            // → scrollX = 99.95 * 80 = 7996 (not 99.95 * 1666.67 ≈ 166583,
+            // which is what deriving from the raw, pre-clamp ppb would give).
+            expect(after.pixelsPerBeat).toBe(80);
+            expect(after.scrollX).toBe(7996);
+        } finally {
+            HTMLDivElement.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+        }
+    });
+
+    it('scroll-to-playhead sets scrollX to keep the playhead centred', async () => {
+        const originalGetBoundingClientRect = HTMLDivElement.prototype.getBoundingClientRect;
+        HTMLDivElement.prototype.getBoundingClientRect = () => ({
+            x: 0,
+            y: 0,
+            top: 0,
+            left: 0,
+            right: 800,
+            bottom: 600,
+            width: 800,
+            height: 600,
+            toJSON: () => ({}),
         });
-        const after = zoomHandlers.timelineViewStoreRef.current?.value as { scrollX: number };
-        // playheadPx=0 → targetScrollX = max(0, 0 - width/2) = 0.
-        expect(after.scrollX).toBeGreaterThanOrEqual(0);
+        try {
+            renderWithTooltip(<TimelineSurface />);
+            zoomHandlers.timelineViewStoreRef.current?.set({
+                scrollX: 0,
+                scrollY: 0,
+                pixelsPerBeat: 10,
+                autoScrollEnabled: true,
+            });
+            const { playheadPositionRef } = await import('#/modules/Transport/stores');
+            playheadPositionRef.current = 50;
+
+            act(() => {
+                zoomHandlers.playhead!();
+            });
+            const after = zoomHandlers.timelineViewStoreRef.current?.value as { scrollX: number };
+            // playheadPx = 50 beats * 10 px/beat = 500. targetScrollX = 500 - 800/2 = 100.
+            expect(after.scrollX).toBe(100);
+        } finally {
+            HTMLDivElement.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+        }
     });
 });
 

@@ -57,18 +57,25 @@ describe('timelineViewStore view helpers', () => {
         expect(timelineViewStore.value?.autoScrollEnabled).toBe(true);
     });
 
-    it('should clamp setTimelineZoom pixelsPerBeat between 2 and 80', () => {
-        setTimelineZoom(100, 10);
+    // Regression (#3321): scrollX must be derived from the CLAMPED
+    // pixelsPerBeat, not the raw requested value, or a caller whose zoom gets
+    // clamped ends up with a scroll position computed at a different scale
+    // than the zoom the store actually applied.
+    it('should clamp setTimelineZoom pixelsPerBeat and derive scrollX from the clamped value', () => {
+        setTimelineZoom(1667, 99.95);
         expect(timelineViewStore.value?.pixelsPerBeat).toBe(80);
-        setTimelineZoom(-200, 10);
+        expect(timelineViewStore.value?.scrollX).toBe(7996);
+
+        setTimelineZoom(0.833, 900);
         expect(timelineViewStore.value?.pixelsPerBeat).toBe(2);
+        expect(timelineViewStore.value?.scrollX).toBe(1800);
     });
 
     it('should clamp setTimelineZoom scrollX to non-negative values', () => {
         setTimelineZoom(20, -50);
         expect(timelineViewStore.value?.scrollX).toBe(0);
         setTimelineZoom(20, 40);
-        expect(timelineViewStore.value?.scrollX).toBe(40);
+        expect(timelineViewStore.value?.scrollX).toBe(800);
     });
 
     it('should preserve scrollY, autoScrollEnabled, and viewportHeight when setTimelineZoom is called', () => {
@@ -81,7 +88,7 @@ describe('timelineViewStore view helpers', () => {
         });
         setTimelineZoom(30, 15);
         expect(timelineViewStore.value).toEqual({
-            scrollX: 15,
+            scrollX: 450,
             scrollY: 55,
             pixelsPerBeat: 30,
             autoScrollEnabled: false,
