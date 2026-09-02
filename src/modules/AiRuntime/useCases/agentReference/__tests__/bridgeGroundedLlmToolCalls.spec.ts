@@ -2644,6 +2644,22 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(result.rejections[0]?.reason).toContain('not unambiguously grounded');
     });
 
+    it('refuses a bound track creation whose kind is an inherited object key', () => {
+        const bound = bridge(
+            [{ name: 'addTrack', arguments: { name: 'Aux', kind: 'toString', binding: 'aux' } }],
+            'create a toString track called Aux'
+        );
+        const unbound = bridge(
+            [{ name: 'addTrack', arguments: { name: 'Aux', kind: 'toString' } }],
+            'create an audio track called Aux'
+        );
+
+        expect(bound.actions).toEqual([]);
+        expect(bound.rejections[0]?.reason).toBe('A bound creation must declare one typed created object');
+        expect(unbound.actions).toEqual([]);
+        expect(unbound.rejections[0]?.reason).toBe('Provider value kind does not match the user request');
+    });
+
     it('rejects a bare anaphoric bus target after an intervening compatible track target', () => {
         const result = bridge(
             [

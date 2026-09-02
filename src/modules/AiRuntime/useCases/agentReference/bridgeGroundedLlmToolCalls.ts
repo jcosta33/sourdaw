@@ -478,7 +478,7 @@ function countCompatiblePlannedCreations(
         if (call.name !== 'addTrack' || typeof call.arguments.kind !== 'string') {
             return false;
         }
-        return BATCH_LOCAL_TRACK_PRODUCERS_BY_KIND[call.arguments.kind]?.capabilities.includes(capability) ?? false;
+        return BATCH_LOCAL_TRACK_PRODUCERS_BY_KIND.get(call.arguments.kind)?.capabilities.includes(capability) ?? false;
     }).length;
 }
 

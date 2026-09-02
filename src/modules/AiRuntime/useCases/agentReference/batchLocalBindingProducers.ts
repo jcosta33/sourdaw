@@ -51,23 +51,29 @@ const CREATED_TRACK_CAPABILITIES: readonly string[] = [
     'vca-member-track',
 ];
 
-/** Keyed by the `kind` an `addTrack` plan item may declare; any other kind creates no bindable track. */
-export const BATCH_LOCAL_TRACK_PRODUCERS_BY_KIND: Readonly<Record<string, BatchLocalBindingProducer>> = {
-    audio: {
-        capabilities: [...CREATED_TRACK_CAPABILITIES, 'routable-source'],
-        producerArgument: 'id',
-        trackKind: 'audio',
-    },
-    folder: { capabilities: CREATED_TRACK_CAPABILITIES, producerArgument: 'id', trackKind: 'folder' },
-    midi: {
-        capabilities: [...CREATED_TRACK_CAPABILITIES, 'routable-source'],
-        producerArgument: 'id',
-        trackKind: 'midi',
-    },
-};
+/**
+ * Keyed by the `kind` an `addTrack` plan item may declare; any other kind creates no bindable track.
+ * A map rather than a record because the key is provider-controlled, and an object index would
+ * answer an inherited `Object.prototype` name with a value that is not a producer.
+ */
+export const BATCH_LOCAL_TRACK_PRODUCERS_BY_KIND: ReadonlyMap<string, BatchLocalBindingProducer> = new Map([
+    [
+        'audio',
+        {
+            capabilities: [...CREATED_TRACK_CAPABILITIES, 'routable-source'],
+            producerArgument: 'id',
+            trackKind: 'audio',
+        },
+    ],
+    ['folder', { capabilities: CREATED_TRACK_CAPABILITIES, producerArgument: 'id', trackKind: 'folder' }],
+    [
+        'midi',
+        { capabilities: [...CREATED_TRACK_CAPABILITIES, 'routable-source'], producerArgument: 'id', trackKind: 'midi' },
+    ],
+]);
 
 function resolveCreatedTrackProducer(kind: unknown): BatchLocalBindingProducer | null {
-    return typeof kind === 'string' ? (BATCH_LOCAL_TRACK_PRODUCERS_BY_KIND[kind] ?? null) : null;
+    return typeof kind === 'string' ? (BATCH_LOCAL_TRACK_PRODUCERS_BY_KIND.get(kind) ?? null) : null;
 }
 
 type CreatedClipParent = { frozen: boolean; kind: string };
