@@ -748,7 +748,10 @@ function windowsProcessTreeIsLive(
                 fail('review-publication lock Windows process liveness is unreadable');
             }
             if (current.parentPid === ownerFence.rootPid) {
-                return true;
+                if (currentStartedAt > ownerStartedAt) {
+                    return true;
+                }
+                break;
             }
             const parent = rowsByPid.get(current.parentPid);
             if (parent === undefined) {

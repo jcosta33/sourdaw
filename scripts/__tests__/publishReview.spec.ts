@@ -852,6 +852,14 @@ describe('review publish', () => {
                 ],
             },
         ],
+        [
+            'inline comment body',
+            {
+                comments: [
+                    { path: 'scripts/deliverPullRequest.ts', line: 10, side: 'RIGHT' as const, body: 'different' },
+                ],
+            },
+        ],
     ] as const)('rejects an otherwise matching landed review with %s drift', (_label, drift) => {
         const document = {
             event: 'REQUEST_CHANGES' as const,
@@ -1491,13 +1499,18 @@ describe('shellPort postReview state verification', () => {
 
     it('releases a dead prepared owner after two definitive no-review reads', async () => {
         const fixture = createJournaledRecoveryFixture('prepared');
+        let inspections = 0;
         try {
             await expect(
                 runRecoverPublishReviewLockCli(
                     [String(fixture.number), '--owner', fixture.ownerOid],
-                    recoveryDependencies(fixture.root, (expectedHead) => ({ state: 'OPEN', head: expectedHead, reviews: [] }))
+                    recoveryDependencies(fixture.root, (expectedHead) => {
+                        inspections += 1;
+                        return { state: 'OPEN', head: expectedHead, reviews: [] };
+                    })
                 )
             ).resolves.toBe(0);
+            expect(inspections).toBe(2);
             expect(
                 readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
             ).toBeUndefined();
@@ -1684,21 +1697,22 @@ describe('shellPort postReview state verification', () => {
 
     it('releases only the exact trusted PR 3342 legacy receipt and owner after no-review reads', async () => {
         const fixture = createTrustedIncidentRecoveryFixture();
+        let inspections = 0;
         try {
             expect(fixture.ownerOid).toBe(fixture.incident.ownerOid);
             await expect(
                 runRecoverPublishReviewLockCli(
                     [String(fixture.incident.number), '--owner', fixture.incident.ownerOid],
                     {
-                        ...recoveryDependencies(fixture.root, (expectedHead) => ({
-                            state: 'OPEN',
-                            head: expectedHead,
-                            reviews: [],
-                        })),
+                        ...recoveryDependencies(fixture.root, (expectedHead) => {
+                            inspections += 1;
+                            return { state: 'OPEN', head: expectedHead, reviews: [] };
+                        }),
                         isLegacyOwnerLive: () => false,
                     }
                 )
             ).resolves.toBe(0);
+            expect(inspections).toBe(2);
             expect(
                 readPullRequestMutationLockOid(
                     fixture.root,
@@ -2321,6 +2335,14 @@ describe('shellPort postReview state verification', () => {
             });
             writePowerShellOutput(JSON.stringify({ ProcessId: 42, ParentProcessId: 1, CreationDate: startedAt }));
             expect(reviewPublicationOwnerFenceIsLive(owner, 'win32')).toBe(true);
+            writePowerShellOutput(
+                JSON.stringify({ ProcessId: 99, ParentProcessId: 42, CreationDate: '2026-09-02T10:00:01.0000000Z' })
+            );
+            expect(reviewPublicationOwnerFenceIsLive(owner, 'win32')).toBe(true);
+            writePowerShellOutput(
+                JSON.stringify({ ProcessId: 99, ParentProcessId: 42, CreationDate: '2026-09-02T09:59:59.0000000Z' })
+            );
+            expect(reviewPublicationOwnerFenceIsLive(owner, 'win32')).toBe(false);
             writePowerShellOutput(
                 JSON.stringify({ ProcessId: 99, ParentProcessId: 42, CreationDate: '2026-09-02T10:00:01.0000000Z' })
             );
