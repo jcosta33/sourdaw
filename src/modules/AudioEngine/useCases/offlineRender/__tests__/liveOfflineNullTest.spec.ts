@@ -218,7 +218,7 @@ const { createOfflineBusStrip } = await import('../createOfflineBusStrip');
 const { createOfflineTrackStrip } = await import('../createOfflineTrackStrip');
 const { createWebAudioOfflineBackend } = await import('../createWebAudioOfflineBackend');
 const { scheduleOfflineClipSource } = await import('../scheduleOfflineClipSource');
-const { MICRO_FADE_SECONDS } = await import('../constants');
+const { MICRO_FADE_SECONDS } = await import('#/utils/clipFadeScheduleClamp');
 
 type TrackFixture = {
     name: string;

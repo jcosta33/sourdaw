@@ -10,7 +10,11 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { collaborationStore } from '#/modules/Collaboration/stores';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
-import { clampClipFadeInDurationSeconds, clampClipFadeOutStartSeconds } from '#/utils/clipFadeScheduleClamp';
+import {
+    MICRO_FADE_SECONDS,
+    clampClipFadeInDurationSeconds,
+    clampClipFadeOutStartSeconds,
+} from '#/utils/clipFadeScheduleClamp';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
@@ -23,8 +27,6 @@ import { type SourceWithFade } from '../playheadScheduler/schedulerSession';
 import { gainNodePool } from './audioClipSchedulingState';
 import { disposeAudioClipScheduling } from './disposeAudioClipScheduling';
 import { scheduleFrozenTrack } from './scheduleFrozenTrack';
-
-const MICRO_FADE_SECONDS = 0.003;
 
 function acquireGainNode(ctx: BaseAudioContext): GainNode {
     const node = gainNodePool.pop();
@@ -325,8 +327,7 @@ export function scheduleAudioClips(
                             );
                         const fadeInSeconds = clampClipFadeInDurationSeconds(
                             userFadeEndTime - soundStartTime,
-                            playDuration,
-                            MICRO_FADE_SECONDS
+                            playDuration
                         );
                         const fadeInEnd = soundStartTime + fadeInSeconds;
                         if (effectiveStart < fadeInEnd) {

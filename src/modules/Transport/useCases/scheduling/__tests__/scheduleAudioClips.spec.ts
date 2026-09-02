@@ -9,7 +9,11 @@ import {
     getCurrentTime,
 } from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
-import { clampClipFadeInDurationSeconds, clampClipFadeOutStartSeconds } from '#/utils/clipFadeScheduleClamp';
+import {
+    MICRO_FADE_SECONDS,
+    clampClipFadeInDurationSeconds,
+    clampClipFadeOutStartSeconds,
+} from '#/utils/clipFadeScheduleClamp';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
@@ -890,10 +894,9 @@ describe('scheduleAudioClips', () => {
         const clipStartSeconds = 4;
         const playDurationSeconds = 1;
         const requestedFadeInSeconds = 1.6 / 2;
-        const microFadeSeconds = 0.003;
         const offlinePlateauSeconds =
             clipStartSeconds +
-            clampClipFadeInDurationSeconds(requestedFadeInSeconds, playDurationSeconds, microFadeSeconds);
+            clampClipFadeInDurationSeconds(requestedFadeInSeconds, playDurationSeconds, MICRO_FADE_SECONDS);
 
         expect(offlinePlateauSeconds).toBe(clipStartSeconds + playDurationSeconds * 0.5);
         expect(fadeGain.gain.setValueAtTime).toHaveBeenCalledWith(0, clipStartSeconds);
@@ -931,13 +934,20 @@ describe('scheduleAudioClips', () => {
         const soundStartTime = clipHeadSeconds + preRollSeconds;
         const playDurationSeconds = 1 - preRollSeconds;
         const userFadeEndSeconds = clipHeadSeconds + 1;
-        const microFadeSeconds = 0.003;
         const plateauSeconds =
             soundStartTime +
-            clampClipFadeInDurationSeconds(userFadeEndSeconds - soundStartTime, playDurationSeconds, microFadeSeconds);
+            clampClipFadeInDurationSeconds(
+                userFadeEndSeconds - soundStartTime,
+                playDurationSeconds,
+                MICRO_FADE_SECONDS
+            );
         const wrongLivePlateauSeconds =
             clipHeadSeconds +
-            clampClipFadeInDurationSeconds(userFadeEndSeconds - clipHeadSeconds, playDurationSeconds, microFadeSeconds);
+            clampClipFadeInDurationSeconds(
+                userFadeEndSeconds - clipHeadSeconds,
+                playDurationSeconds,
+                MICRO_FADE_SECONDS
+            );
 
         expect(plateauSeconds).toBe(soundStartTime + playDurationSeconds * 0.5);
         expect(wrongLivePlateauSeconds).not.toBe(plateauSeconds);

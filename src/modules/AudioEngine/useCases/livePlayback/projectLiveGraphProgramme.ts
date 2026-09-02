@@ -57,6 +57,7 @@
  */
 
 import { type Track } from '#/modules/Arrangement/stores';
+import { MICRO_FADE_SECONDS } from '#/utils/clipFadeScheduleClamp';
 
 import { type AudioGraphClipPlayback } from '../../models/AudioGraphBackend';
 import {
@@ -64,7 +65,6 @@ import {
     type OfflineTempoAtBeatResolver,
 } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { admitNativeClipExpansion, MAX_NATIVE_TRACK_CLIPS } from '../offlineRender/admitNativeClipExpansion';
-import { MICRO_FADE_SECONDS } from '../offlineRender/constants';
 import { projectNativeClipFade } from '../offlineRender/projectNativeClipFade';
 import { projectOfflineAudioClipPlaybacks } from '../offlineRender/projectOfflineAudioClipPlaybacks';
 import { resolveTrackClipsWithComping } from '../offlineRender/resolveTrackClipsWithComping';
