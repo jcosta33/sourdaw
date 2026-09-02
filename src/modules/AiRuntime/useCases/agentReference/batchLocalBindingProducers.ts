@@ -5,8 +5,12 @@ export const BATCH_LOCAL_BINDING_PATTERN = /^[a-z][a-z0-9-]{0,63}$/u;
 /** Devices and their parameters are only identifiable inside an already-immutable owner. */
 export const CAPABILITIES_REQUIRING_CONCRETE_DEPENDENCY: ReadonlySet<string> = new Set(['device', 'device-parameter']);
 
+const BATCH_LOCAL_BINDING_PRODUCER_NAME_LIST = ['createBus', 'addTrack', 'addClip'] as const;
+
+export type BatchLocalBindingProducerName = (typeof BATCH_LOCAL_BINDING_PRODUCER_NAME_LIST)[number];
+
 /** The catalog commands whose plan item may mint a batch-local `$binding`. */
-export const BATCH_LOCAL_BINDING_PRODUCER_NAMES: ReadonlySet<string> = new Set(['createBus', 'addTrack', 'addClip']);
+export const BATCH_LOCAL_BINDING_PRODUCER_NAMES: ReadonlySet<string> = new Set(BATCH_LOCAL_BINDING_PRODUCER_NAME_LIST);
 
 export type BatchLocalCreatedTrackKind = 'audio' | 'midi' | 'folder' | 'bus';
 
@@ -75,19 +79,15 @@ function resolveCreatedClipParent(input: {
 }
 
 /**
- * `addClip` derives the new clip's type from its track exactly as the arrangement handler does —
- * MIDI only under a MIDI track, audio everywhere else. A freshly created clip never carries notes,
- * so `editable-midi-clip`, which the canonical contract grants only to a clip that already has
- * some, is never granted here.
+ * The provider-facing `addClip` creates one empty MIDI clip on an unfrozen MIDI track, and the
+ * bridge refuses every other destination, so no other parent yields a clip a later plan item could
+ * bind to. A freshly created clip carries no notes, so `editable-midi-clip`, which the canonical
+ * contract grants only to a clip that already has some, is never among these grants.
  */
-function resolveCreatedClipCapabilities(parent: CreatedClipParent): readonly string[] | null {
-    if (parent.kind === 'vca') {
-        return null;
-    }
-    if (parent.kind !== 'midi') {
-        return ['clip', 'editable-clip', 'editable-audio-clip'];
-    }
-    return parent.frozen ? ['clip', 'editable-clip'] : ['clip', 'editable-clip', 'writable-midi-clip'];
+export const BATCH_LOCAL_CLIP_CAPABILITIES: readonly string[] = ['clip', 'editable-clip', 'writable-midi-clip'];
+
+function acceptsCreatedClip(parent: CreatedClipParent | null): boolean {
+    return parent !== null && parent.kind === 'midi' && !parent.frozen;
 }
 
 function resolveCreatedClipProducer(input: {
@@ -104,11 +104,14 @@ function resolveCreatedClipProducer(input: {
         producersByBinding: input.producersByBinding,
         trackReference,
     });
-    const capabilities = parent === null ? null : resolveCreatedClipCapabilities(parent);
-    if (capabilities === null) {
+    if (!acceptsCreatedClip(parent)) {
         return null;
     }
-    return { capabilities, parentTrackReference: trackReference, producerArgument: 'id' };
+    return {
+        capabilities: BATCH_LOCAL_CLIP_CAPABILITIES,
+        parentTrackReference: trackReference,
+        producerArgument: 'id',
+    };
 }
 
 /**

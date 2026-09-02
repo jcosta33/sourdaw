@@ -26,8 +26,11 @@ import {
 import { type BatchLocalActionIdentity } from './BatchLocalActionIdentity';
 import {
     BATCH_LOCAL_BINDING_PATTERN,
+    BATCH_LOCAL_BINDING_PRODUCER_NAMES,
     BATCH_LOCAL_BUS_CAPABILITIES,
+    BATCH_LOCAL_CLIP_CAPABILITIES,
     type BatchLocalBindingProducer,
+    type BatchLocalBindingProducerName,
     resolveBatchLocalBindingProducer,
 } from './batchLocalBindingProducers';
 import { bridgeBackingVocalPlatePlan } from './bridgeBackingVocalPlatePlan';
@@ -121,7 +124,7 @@ type BridgeGroundedLlmToolCallsResult = LlmActionBridgeResult & {
 
 type BatchLocalCreationBinding = BatchLocalBindingProducer & {
     actionOrdinal: number;
-    actionType: BatchLocalActionIdentity['actionType'];
+    actionType: BatchLocalBindingProducerName;
     binding: string;
     callIndex: number;
     createdId: string;
@@ -207,15 +210,14 @@ function rejection(index: number, name: string, reason: string): LlmActionReject
     return { index, name, reason };
 }
 
-const GENERATED_ID_PREFIXES: Readonly<Record<BatchLocalActionIdentity['actionType'], string>> = {
+const GENERATED_ID_PREFIXES: Readonly<Record<BatchLocalBindingProducerName, string>> = {
     addClip: 'clip-ai-',
-    addDevice: 'device-ai-',
     addTrack: 'track-ai-',
     createBus: 'bus-ai-',
 };
 
-function isBatchLocalCreationActionType(name: string): name is BatchLocalActionIdentity['actionType'] {
-    return name === 'createBus' || name === 'addTrack' || name === 'addClip';
+function isBatchLocalCreationActionType(name: string): name is BatchLocalBindingProducerName {
+    return BATCH_LOCAL_BINDING_PRODUCER_NAMES.has(name);
 }
 
 function namesOverlap(left: string, right: string): boolean {
@@ -379,9 +381,8 @@ function resolveBatchLocalCreationReference(
     return { status: 'rejected', reason: `Unknown batch-local reference: ${assertedValue}` };
 }
 
-const CREATION_ANAPHORA_PATTERNS: Readonly<Record<BatchLocalActionIdentity['actionType'], RegExp>> = {
+const CREATION_ANAPHORA_PATTERNS: Readonly<Record<BatchLocalBindingProducerName, RegExp>> = {
     addClip: /\b(?:that clip|this clip|the new clip|new clip|newly created clip|created clip)\b/u,
-    addDevice: /\b(?:that device|this device|the new device|new device|newly created device|created device)\b/u,
     addTrack: /\b(?:that track|this track|the new track|new track|newly created track|created track)\b/u,
     createBus: /\b(?:that bus|this bus|the new bus|new bus|newly created bus|created bus)\b/u,
 };
@@ -460,12 +461,7 @@ function isCompatibleTargetId(
 }
 
 const BUS_CANDIDATE_CAPABILITIES: ReadonlySet<string> = new Set(BATCH_LOCAL_BUS_CAPABILITIES);
-const CREATED_CLIP_CANDIDATE_CAPABILITIES: ReadonlySet<string> = new Set([
-    'clip',
-    'editable-clip',
-    'editable-audio-clip',
-    'writable-midi-clip',
-]);
+const CREATED_CLIP_CANDIDATE_CAPABILITIES: ReadonlySet<string> = new Set(BATCH_LOCAL_CLIP_CAPABILITIES);
 
 function countCompatiblePlannedCreations(
     calls: readonly ToolCallResult[],
@@ -504,9 +500,6 @@ function toBatchLocalActionIdentity(binding: BatchLocalCreationBinding): BatchLo
     }
     if (binding.actionType === 'addClip') {
         return { actionOrdinal, actionType: 'addClip', clipId: createdId };
-    }
-    if (binding.actionType === 'addDevice') {
-        return { actionOrdinal, actionType: 'addDevice', deviceId: createdId };
     }
     return { actionOrdinal, actionType: 'createBus', busId: createdId };
 }

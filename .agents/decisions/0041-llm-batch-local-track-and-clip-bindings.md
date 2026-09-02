@@ -51,9 +51,11 @@ if the object already existed. Two consequences follow and are load-bearing:
 - A freshly created clip has no notes, so `editable-midi-clip` — which the canonical contract grants
   only to a clip that already has some — is never granted to a batch-local clip. `writable-midi-clip`
   is, which is what lets `addNotes` name it.
-- A created clip's type follows its parent track exactly as the arrangement handler derives it: MIDI
-  under a MIDI track, audio everywhere else. The grant is therefore read from the plan's own parent,
-  which may itself still be a `$binding`.
+- A bound clip exists only under an unfrozen MIDI parent, because that is the only clip the
+  provider-facing `addClip` can create: the catalog describes it as one empty MIDI clip on a MIDI
+  track, and the bridge refuses every other destination. Any other parent declares no producer, so
+  the binding is refused before a mutation is planned. The parent is read from the plan itself and
+  may still be a `$binding`.
 
 A created object is also projected into the plan's temporary grounding context, so a later concrete
 check sees the object the plan will actually produce rather than a snapshot that predates it. The

@@ -2497,6 +2497,27 @@ describe('bridgeGroundedLlmToolCalls', () => {
         ]);
     });
 
+    it('binds a clip on a concrete MIDI track only while that track is unfrozen', () => {
+        const keys = createTrack({ id: 'track-keys', name: 'Keys', kind: 'midi' });
+        const call = {
+            name: 'addClip',
+            arguments: { trackId: 'track-keys', startBeat: 8, endBeat: 16, name: 'Verse', binding: 'verse' },
+        };
+        const prompt = 'create a MIDI clip named Verse on Keys from beat 8 to beat 16';
+
+        const unfrozen = bridge([call], prompt, { ...projectContext, tracks: [...projectContext.tracks, keys] });
+        const frozen = bridge([call], prompt, {
+            ...projectContext,
+            tracks: [...projectContext.tracks, { ...keys, frozen: true }],
+        });
+
+        expect(unfrozen.rejections).toEqual([]);
+        expect(frozen.actions).toEqual([]);
+        expect(frozen.rejections).toEqual([
+            { index: 0, name: 'addClip', reason: 'A bound creation must declare one typed created object' },
+        ]);
+    });
+
     it('rejects forward and capability-incompatible references to plan-created tracks and clips', () => {
         const forwardTrack = bridge(
             [

@@ -4857,15 +4857,37 @@ describe('compileArbitraryCommandList', () => {
     });
 
     it.each([
-        { accepted: true, capability: 'writable-midi-clip', consumer: 'addNotes', trackKind: 'midi' },
-        { accepted: false, capability: 'editable-midi-clip', consumer: 'quantizeNotes', trackKind: 'midi' },
-        { accepted: true, capability: 'editable-audio-clip', consumer: 'normalizeClip', trackKind: 'audio' },
-        { accepted: false, capability: 'writable-midi-clip', consumer: 'addNotes', trackKind: 'audio' },
-        { accepted: true, capability: 'editable-audio-clip', consumer: 'normalizeClip', trackKind: 'bus' },
-        { accepted: false, capability: 'writable-midi-clip', consumer: 'addNotes', trackKind: 'bus' },
+        {
+            accepted: true,
+            capability: 'writable-midi-clip',
+            consumer: 'addNotes',
+            reason: null,
+            trackKind: 'midi',
+        },
+        {
+            accepted: false,
+            capability: 'editable-midi-clip',
+            consumer: 'quantizeNotes',
+            reason: 'Batch-local target $fresh requires an earlier bounded producer dependency.',
+            trackKind: 'midi',
+        },
+        {
+            accepted: false,
+            capability: 'editable-audio-clip',
+            consumer: 'normalizeClip',
+            reason: 'Batch-local binding producer does not create a typed object: fresh',
+            trackKind: 'audio',
+        },
+        {
+            accepted: false,
+            capability: 'editable-audio-clip',
+            consumer: 'normalizeClip',
+            reason: 'Batch-local binding producer does not create a typed object: fresh',
+            trackKind: 'bus',
+        },
     ])(
         'admits a freshly created clip as $capability on a $trackKind parent: $accepted',
-        ({ accepted, consumer, trackKind }) => {
+        ({ accepted, consumer, reason, trackKind }) => {
             const consumerArguments: Record<string, Record<string, unknown>> = {
                 addNotes: { clipId: '$fresh', notes: [{ pitch: 60, startBeat: 0, duration: 1 }] },
                 normalizeClip: { clipId: '$fresh' },
@@ -4908,7 +4930,11 @@ describe('compileArbitraryCommandList', () => {
                 ],
             });
 
-            expect(result.status).toBe(accepted ? 'accepted' : 'rejected');
+            if (accepted) {
+                expect(result).toMatchObject({ status: 'accepted' });
+                return;
+            }
+            expect(result).toMatchObject({ status: 'rejected', reason });
         }
     );
 
