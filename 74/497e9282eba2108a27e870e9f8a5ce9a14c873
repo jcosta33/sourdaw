@@ -1,0 +1,65 @@
+AGENTS.md
+  s_c9dfe76a613250::t_fc668443869bd1 503-508
+docs/07-conventions.md
+  s_c9dfe76a613250::t_aacb4e5fb3510d 765-769
+eslint.config.mjs
+  s_c9dfe76a613250::t_88024a1c07c046 30-31,2581-2615,2763-2782,2810-2825
+eslint.size-baseline.d.mts
+  s_c9dfe76a613250::t_ffc30298f724f6 1-5
+eslint.size-baseline.mjs
+  s_c9dfe76a613250::t_751698d2fb5bd4 1-558
+release/dependency-license-proofs.json
+  s_c9dfe76a613250::t_53a53cdcea983d 60
+release/open-source-inventory.json
+  s_c9dfe76a613250::t_c32d1e18998f91 59-60,165,1691
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_ac03a4ebaa3f6e::t_134d68ed6e6a6d 38,458-480,738,789,884,917,919,1007,1034-1035,1038,1045,1055-1058,1297,1378-1379,1396-1405,1462-1469,1513,1518,1556,1558,1566-1567,1578-1583,1704,1857,1899,1966,2324,2382,2846-2847
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_c9dfe76a613250::t_cac2847d5a7113 542,712-719,883-892,966,5383-5384,5836,5843,5876-5953,5955,5962,6125,6127,7820,10338-10409
+scripts/__tests__/lintSizeBaseline.spec.ts
+  s_c9dfe76a613250::t_93640c2836b77d 1-37
+scripts/__tests__/resolveThread.spec.ts
+  s_c9dfe76a613250::t_97c97d3e8f301a 1-536
+scripts/deliverPullRequest.ts
+  s_c9dfe76a613250::t_17a1d6bbab974b 92-93,166-173,329,335-390,2967-3007,3093
+scripts/pullRequestMutationLock.ts
+  s_c9dfe76a613250::t_2656bbf10dbc63 58
+scripts/resolveThread.ts
+  s_c9dfe76a613250::t_ca44a2456e23bf 1,7-8,14-24,27-33,35-40,43-46,48-56,58,63,65,67-75,77,79-81,83,86-135,137-138,141-156,158,161-164,167-192,194-237,239-324,329-330,336,338,340,342,345-346,348-349
+src/modules/Project/useCases/projectPersistence/__tests__/newProject.spec.ts
+  s_c9dfe76a613250::t_b9328f2fd795f8 42-43,48,94-112,114,117
+scripts/trustedGithubWriteBootstrap.ts
+  s_9be953ad681c69::t_74aedeac74b167 23,157,169,784,992,999,1024,1029
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "74497e9282eba2108a27e870e9f8a5ce9a14c873",
+  "prompts": {},
+  "sessions": {
+    "s_9be953ad681c69": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a063ca-b7ee-7051-8583-66f037577c92",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c9dfe76a613250": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a063a6-ce16-7052-9c0c-a6ec6522efdd",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
