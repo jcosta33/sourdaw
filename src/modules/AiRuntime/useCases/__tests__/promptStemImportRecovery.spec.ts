@@ -144,7 +144,7 @@ vi.mock('#/modules/Command/useCases', async () => {
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     releasePreviewAudioBuffer: mocks.releasePreviewAudioBuffer,
 }));
-// prepareStemImport, discardPreparedStemImportResources, and createStemImportConfirmationResourceLease import getAssetTransfer.
+// discardPreparedStemImportResources and createStemImportConfirmationResourceLease import getAssetTransfer.
 vi.mock('#/modules/Collaboration/useCases', () => ({
     getAssetTransfer: () => ({
         prepareDurablePromotionRecovery: mocks.prepareDurablePromotionRecovery,
