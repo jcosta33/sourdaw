@@ -833,27 +833,71 @@ export function exactPublishedReview(
     });
 }
 
+type RecoveryReceiptBase = {
+    operation: 'review-publication-recovery';
+    number: number;
+    ownerOid: string;
+    head: string;
+    payloadDigest: string;
+    outcome: 'absent' | 'landed';
+};
+
+type LegacyRecoveryReceipt = RecoveryReceiptBase & {
+    version: 1;
+};
+
+type RecoveryReceipt = RecoveryReceiptBase & {
+    version: 2;
+    adoptedOwnerOid: string;
+};
+
 function recoveryReceipt(
     number: number,
     ownerOid: string,
+    adoptedOwnerOid: string,
     head: string,
     payloadDigest: string,
-    outcome: string
-): object {
-    return { version: 1, operation: 'review-publication-recovery', number, ownerOid, head, payloadDigest, outcome };
+    outcome: 'absent' | 'landed'
+): RecoveryReceipt {
+    return {
+        version: 2,
+        operation: 'review-publication-recovery',
+        number,
+        ownerOid,
+        adoptedOwnerOid,
+        head,
+        payloadDigest,
+        outcome,
+    };
 }
 
-function isMatchingRecoveryReceipt(value: unknown, number: number, ownerOid: string): boolean {
+function isMatchingRecoveryReceipt(
+    value: unknown,
+    number: number,
+    ownerOid: string
+): value is LegacyRecoveryReceipt | RecoveryReceipt {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
         return false;
     }
     const receipt = value as Record<string, unknown>;
     return (
-        Object.keys(receipt).length === 7 &&
+        Object.keys(receipt).length === (receipt.version === 1 ? 7 : 8) &&
         Object.keys(receipt).every((key) =>
-            ['version', 'operation', 'number', 'ownerOid', 'head', 'payloadDigest', 'outcome'].includes(key)
+            [
+                'version',
+                'operation',
+                'number',
+                'ownerOid',
+                'adoptedOwnerOid',
+                'head',
+                'payloadDigest',
+                'outcome',
+            ].includes(key)
         ) &&
-        receipt.version === 1 &&
+        (receipt.version === 1 ||
+            (receipt.version === 2 &&
+                typeof receipt.adoptedOwnerOid === 'string' &&
+                /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(receipt.adoptedOwnerOid))) &&
         receipt.operation === 'review-publication-recovery' &&
         receipt.number === number &&
         receipt.ownerOid === ownerOid &&
@@ -862,6 +906,19 @@ function isMatchingRecoveryReceipt(value: unknown, number: number, ownerOid: str
         typeof receipt.payloadDigest === 'string' &&
         /^[0-9a-f]{64}$/u.test(receipt.payloadDigest) &&
         (receipt.outcome === 'absent' || receipt.outcome === 'landed')
+    );
+}
+
+function isReplayableAdoptedRecoveryReceipt(
+    value: unknown,
+    number: number,
+    ownerOid: string,
+    adoptedOwnerOid: string
+): value is RecoveryReceipt {
+    return (
+        isMatchingRecoveryReceipt(value, number, ownerOid) &&
+        value.version === 2 &&
+        value.adoptedOwnerOid === adoptedOwnerOid
     );
 }
 
@@ -901,20 +958,28 @@ export async function runRecoverPublishReviewLockCli(
     const ownerOid = parsed.owner!;
     const primaryRoot = dependencies.primaryRoot();
     const currentOid = readPullRequestMutationLockOid(primaryRoot, pullRequestMutationLockRef(number), number);
+    const persistedReceipt = readPullRequestMutationLockReceipt(primaryRoot, number, ownerOid);
     if (currentOid === undefined) {
-        if (
-            isMatchingRecoveryReceipt(
-                readPullRequestMutationLockReceipt(primaryRoot, number, ownerOid),
-                number,
-                ownerOid
-            )
-        ) {
+        if (isMatchingRecoveryReceipt(persistedReceipt, number, ownerOid)) {
             console.log(`review-publication-lock-already-recovered:${number}:${ownerOid}`);
             return 0;
         }
         fail(`PR #${number} review-publication lock is absent without an exact recovery receipt`);
     }
     if (currentOid !== ownerOid) {
+        if (isReplayableAdoptedRecoveryReceipt(persistedReceipt, number, ownerOid, currentOid)) {
+            const adoptedOwner = readPullRequestMutationLockOwner(primaryRoot, currentOid, number);
+            if (
+                !isReviewPublicationPullRequestMutationLockOwner(adoptedOwner) ||
+                adoptedOwner.expectedHead !== persistedReceipt.head ||
+                adoptedOwner.payloadDigest !== persistedReceipt.payloadDigest
+            ) {
+                fail('review-publication recovery receipt does not attest the exact adopted owner, head, and payload');
+            }
+            releasePullRequestMutationLockOwner(primaryRoot, number, currentOid);
+            console.log(`review-publication-lock-recovered:${number}:${ownerOid}:${persistedReceipt.outcome}`);
+            return 0;
+        }
         fail(`PR #${number} delivery lock ownership changed before recovery`);
     }
     const originalOwner = readPullRequestMutationLockOwner(primaryRoot, currentOid, number);
@@ -1098,15 +1163,12 @@ export async function runRecoverPublishReviewLockCli(
             const absentReleaseIsAttested =
                 journaledOwner?.mutation.phase === 'prepared' || legacyIncident?.definitiveNoMutationHttpStatus === 422;
             if (outcome === 'absent' && !absentReleaseIsAttested) {
-                fail('review-publication recovery cannot release an owner that attempted a remote mutation without landed evidence');
+                fail(
+                    'review-publication recovery cannot release an owner that attempted a remote mutation without landed evidence'
+                );
             }
-            const receipt = recoveryReceipt(number, ownerOid, expectedHead, expectedDigest, outcome);
-            recordReviewPublicationRecoveryReceipt(
-                primaryRoot,
-                number,
-                ownerOid,
-                receipt
-            );
+            const receipt = recoveryReceipt(number, ownerOid, adoptedOid, expectedHead, expectedDigest, outcome);
+            recordReviewPublicationRecoveryReceipt(primaryRoot, number, ownerOid, receipt);
             if (!hasExactRecoveryReceipt(readPullRequestMutationLockReceipt(primaryRoot, number, ownerOid), receipt)) {
                 fail('review-publication recovery receipt does not attest the exact owner, head, payload, and outcome');
             }

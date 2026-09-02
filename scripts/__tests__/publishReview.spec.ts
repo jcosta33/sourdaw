@@ -1472,6 +1472,7 @@ describe('shellPort postReview state verification', () => {
             const retainedOwner = readPullRequestMutationLockOwner(root, retainedOid!, number);
             expect(retainedOwner).toMatchObject({ mutation: { phase: 'remote-mutation-attempted' } });
 
+            inspections = 0;
             await expect(
                 runRecoverPublishReviewLockCli([String(number), '--owner', retainedOid!], {
                     primaryRoot: () => root,
@@ -1480,15 +1481,21 @@ describe('shellPort postReview state verification', () => {
                         session: { configDir: '/tmp/reviewer', env: {}, dispose: () => undefined },
                     }),
                     repositoryName: () => 'jcosta33/sourdaw',
-                    inspect: () => ({ state: 'OPEN', head, reviews: [] }),
+                    inspect: () => {
+                        inspections += 1;
+                        return { state: 'OPEN', head, reviews: [] };
+                    },
                     isOwnerLive: () => false,
                     currentOwnerFence: () => ({ kind: 'pid', pid: process.pid, startedAt: 'test-process' }),
                 })
             ).rejects.toThrow(/attempted a remote mutation without landed evidence/);
+            expect(inspections).toBe(2);
             const retryRetainedOid = readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number);
             expect(retryRetainedOid).toMatch(/^[0-9a-f]{40}$/);
+            expect(retryRetainedOid).not.toBe(retainedOid);
             expect(readPullRequestMutationLockOwner(root, retryRetainedOid!, number)).toMatchObject({
-                mutation: { phase: 'remote-mutation-attempted' },
+                ownerFence: { kind: 'pid', pid: process.pid, startedAt: 'test-process' },
+                mutation: { phase: 'remote-mutation-attempted', epoch: 3 },
             });
             expect(readPullRequestMutationLockReceipt(root, number, ownerOid)).toBeUndefined();
             expect(readPullRequestMutationLockReceipt(root, number, retainedOid!)).toBeUndefined();
@@ -1542,13 +1549,12 @@ describe('shellPort postReview state verification', () => {
             expect(
                 readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
             ).toBeUndefined();
-            expect(
-                readPullRequestMutationLockReceipt(fixture.root, fixture.number, fixture.ownerOid)
-            ).toEqual({
-                version: 1,
+            expect(readPullRequestMutationLockReceipt(fixture.root, fixture.number, fixture.ownerOid)).toMatchObject({
+                version: 2,
                 operation: 'review-publication-recovery',
                 number: fixture.number,
                 ownerOid: fixture.ownerOid,
+                adoptedOwnerOid: expect.stringMatching(/^[0-9a-f]{40}$/),
                 head: fixture.head,
                 payloadDigest: reviewPublicationPayloadDigest(
                     reviewPublicationPayload({
@@ -1563,6 +1569,123 @@ describe('shellPort postReview state verification', () => {
             await expect(
                 runRecoverPublishReviewLockCli([String(fixture.number), '--owner', fixture.ownerOid], dependencies)
             ).resolves.toBe(0);
+        } finally {
+            rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
+    it('replays a persisted recovery receipt by releasing only its exact adopted owner', async () => {
+        const fixture = createJournaledRecoveryFixture('prepared');
+        let authenticated = false;
+        try {
+            const originalOwner = readPullRequestMutationLockOwner(fixture.root, fixture.ownerOid, fixture.number);
+            if (originalOwner.version !== 3) {
+                throw new Error('test fixture is not a journaled publication owner');
+            }
+            const adoptedOid = writePullRequestMutationLockOwner(
+                fixture.root,
+                {
+                    ...originalOwner,
+                    pid: process.pid,
+                    ownerFence: { kind: 'pid', pid: process.pid, startedAt: 'replay-process' },
+                    mutation: { ...originalOwner.mutation, epoch: originalOwner.mutation.epoch + 1 },
+                },
+                fixture.number
+            );
+            runGit(fixture.root, [
+                'update-ref',
+                pullRequestMutationLockRef(fixture.number),
+                adoptedOid,
+                fixture.ownerOid,
+            ]);
+            const receiptOid = writePullRequestMutationLockReceipt(
+                fixture.root,
+                {
+                    version: 2,
+                    operation: 'review-publication-recovery',
+                    number: fixture.number,
+                    ownerOid: fixture.ownerOid,
+                    adoptedOwnerOid: adoptedOid,
+                    head: fixture.head,
+                    payloadDigest: 'c'.repeat(64),
+                    outcome: 'absent',
+                },
+                fixture.number
+            );
+            runGit(fixture.root, [
+                'update-ref',
+                reviewPublicationRecoveryReceiptRef(fixture.number, fixture.ownerOid),
+                receiptOid,
+            ]);
+
+            await expect(
+                runRecoverPublishReviewLockCli([String(fixture.number), '--owner', fixture.ownerOid], {
+                    ...recoveryDependencies(fixture.root, (expectedHead) => ({
+                        state: 'OPEN',
+                        head: expectedHead,
+                        reviews: [],
+                    })),
+                    authenticateReviewer: async () => {
+                        authenticated = true;
+                        throw new Error('replay must not authenticate');
+                    },
+                })
+            ).rejects.toThrow(/exact adopted owner, head, and payload/);
+            expect(
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
+            ).toBe(adoptedOid);
+            const exactReceiptOid = writePullRequestMutationLockReceipt(
+                fixture.root,
+                {
+                    version: 2,
+                    operation: 'review-publication-recovery',
+                    number: fixture.number,
+                    ownerOid: fixture.ownerOid,
+                    adoptedOwnerOid: adoptedOid,
+                    head: fixture.head,
+                    payloadDigest: originalOwner.payloadDigest,
+                    outcome: 'absent',
+                },
+                fixture.number
+            );
+            runGit(fixture.root, [
+                'update-ref',
+                reviewPublicationRecoveryReceiptRef(fixture.number, fixture.ownerOid),
+                exactReceiptOid,
+                receiptOid,
+            ]);
+
+            await expect(
+                runRecoverPublishReviewLockCli([String(fixture.number), '--owner', fixture.ownerOid], {
+                    ...recoveryDependencies(fixture.root, (expectedHead) => ({
+                        state: 'OPEN',
+                        head: expectedHead,
+                        reviews: [],
+                    })),
+                    authenticateReviewer: async () => {
+                        authenticated = true;
+                        throw new Error('replay must not authenticate');
+                    },
+                })
+            ).resolves.toBe(0);
+            expect(authenticated).toBe(false);
+            expect(
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
+            ).toBeUndefined();
+            await expect(
+                runRecoverPublishReviewLockCli([String(fixture.number), '--owner', fixture.ownerOid], {
+                    ...recoveryDependencies(fixture.root, (expectedHead) => ({
+                        state: 'OPEN',
+                        head: expectedHead,
+                        reviews: [],
+                    })),
+                    authenticateReviewer: async () => {
+                        authenticated = true;
+                        throw new Error('replay must not authenticate');
+                    },
+                })
+            ).resolves.toBe(0);
+            expect(authenticated).toBe(false);
         } finally {
             rmSync(fixture.root, { recursive: true, force: true });
         }
@@ -2338,7 +2461,7 @@ describe('shellPort postReview state verification', () => {
             writePowerShellOutput(
                 JSON.stringify({ ProcessId: 99, ParentProcessId: 42, CreationDate: '2026-09-02T10:00:01.0000000Z' })
             );
-            expect(reviewPublicationOwnerFenceIsLive(owner, 'win32')).toBe(true);
+            expect(reviewPublicationOwnerFenceIsLive(owner, 'win32')).toBe(false);
             writePowerShellOutput(
                 JSON.stringify({ ProcessId: 99, ParentProcessId: 42, CreationDate: '2026-09-02T09:59:59.0000000Z' })
             );
@@ -2346,7 +2469,7 @@ describe('shellPort postReview state verification', () => {
             writePowerShellOutput(
                 JSON.stringify({ ProcessId: 99, ParentProcessId: 42, CreationDate: '2026-09-02T10:00:01.0000000Z' })
             );
-            expect(reviewPublicationOwnerFenceIsLive(owner, 'win32')).toBe(true);
+            expect(reviewPublicationOwnerFenceIsLive(owner, 'win32')).toBe(false);
             writePowerShellOutput(
                 JSON.stringify([
                     { ProcessId: 42, ParentProcessId: 1, CreationDate: '2026-09-02T11:00:00.0000000Z' },

@@ -734,36 +734,6 @@ function windowsProcessTreeIsLive(
         }
         return hasPreReuseWindowsDescendant(rows, ownerFence.rootPid, ownerStartedAt, rootStartedAt);
     }
-    const rowsByPid = new Map(rows.map((row) => [row.pid, row]));
-    for (const candidate of rows) {
-        const visited = new Set<number>();
-        let current: WindowsProcessRow | undefined = candidate;
-        while (current !== undefined) {
-            if (visited.has(current.pid)) {
-                fail('review-publication lock Windows process liveness is unreadable');
-            }
-            visited.add(current.pid);
-            const currentStartedAt = parseWindowsProcessStartedAt(current.startedAt);
-            if (currentStartedAt === undefined) {
-                fail('review-publication lock Windows process liveness is unreadable');
-            }
-            if (current.parentPid === ownerFence.rootPid) {
-                if (currentStartedAt > ownerStartedAt) {
-                    return true;
-                }
-                break;
-            }
-            const parent = rowsByPid.get(current.parentPid);
-            if (parent === undefined) {
-                break;
-            }
-            const parentStartedAt = parseWindowsProcessStartedAt(parent.startedAt);
-            if (parentStartedAt === undefined || currentStartedAt < parentStartedAt) {
-                fail('review-publication lock Windows process liveness is unreadable');
-            }
-            current = parent;
-        }
-    }
     return false;
 }
 
