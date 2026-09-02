@@ -200,7 +200,12 @@ function expectFirstPaintRendered(): void {
 }
 
 function expectAppShellMarkerInRoot(): void {
-    expect(document.getElementById('root')?.querySelector('[data-testid="app-shell"]')).not.toBeNull();
+    const root = document.getElementById('root');
+    expect(root).not.toBeNull();
+    if (root === null) {
+        throw new Error('#root was not mounted');
+    }
+    expect(root.querySelector('[data-testid="app-shell"]')).not.toBeNull();
 }
 
 function expectMountBusesBoundBeforeRender(): void {
