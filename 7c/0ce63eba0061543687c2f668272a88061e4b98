@@ -1,0 +1,43 @@
+src/modules/Command/useCases/__tests__/undoWitnessPersistenceStamp.integration.spec.ts
+  s_bbdfb911119c4f::t_be16ad31467433 84
+  s_bbdfb911119c4f::t_2e99870b5f6e2b 9,13,31,37,58,62,66-67,80-83,89,97,101-102,106-108,118,128,133,141-147,154
+src/modules/Command/stores/undoStore.ts
+  s_bbdfb911119c4f::t_d50d20038da98a 107,111-124,137
+src/modules/CrdtDocument/useCases/crdtPersistenceQueueCoordinator.ts
+  s_bbdfb911119c4f::t_d871afc1d520bb 600-602
+  s_bbdfb911119c4f::t_cf517903be4126 648-653
+  s_bbdfb911119c4f::t_db595e33e0dcc4 158,164-168
+  s_bbdfb911119c4f::t_8e806054e2a695 597-599
+  s_bbdfb911119c4f::t_ef155f93ace747 202-205,207,209
+  s_bbdfb911119c4f::t_884df9106bad61 113
+  s_bbdfb911119c4f::t_94cb6ec75e4c27 555-565,577,584,593,625,629-633
+  s_bbdfb911119c4f::t_c7a67c9b7094c9 654
+src/modules/CrdtDocument/useCases/__tests__/crdtPersistenceQueueCoordinator.spec.ts
+  s_bbdfb911119c4f::t_49b121c073c970 166
+  s_bbdfb911119c4f::t_e67e634192c1fd 21
+  s_bbdfb911119c4f::t_4986895df5d3a1 48-49,51
+  s_bbdfb911119c4f::t_dba983c3991904 130-165,167-176
+  s_bbdfb911119c4f::t_92c2110790240d 1
+src/app/__tests__/bootstrap.spec.ts
+  s_bbdfb911119c4f::t_aef39a6441212f 110-111
+  s_bbdfb911119c4f::t_48dbb0174703ae 184-185
+  s_bbdfb911119c4f::t_825464fd97e8f7 356
+  s_bbdfb911119c4f::t_de3520bcc68f65 764-769
+  s_bbdfb911119c4f::t_f1e700664736a3 324
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "7c0ce63eba0061543687c2f668272a88061e4b98",
+  "prompts": {},
+  "sessions": {
+    "s_bbdfb911119c4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fa21d5-2a8a-4f80-98ab-b72059373843",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
