@@ -2512,6 +2512,12 @@ describe('bridgeGroundedLlmToolCalls', () => {
         });
 
         expect(unfrozen.rejections).toEqual([]);
+        const clipIdentities = (unfrozen.batchLocalActionIdentities ?? []).filter(
+            (identity) => identity.actionType === 'addClip'
+        );
+        expect(clipIdentities).toHaveLength(1);
+        expect(clipIdentities[0]).toMatchObject({ clipId: expect.stringMatching(/^clip-ai-/u) });
+        expect(unfrozen.actions).toMatchObject([{ type: 'addClip', payload: { trackId: 'track-keys' } }]);
         expect(frozen.actions).toEqual([]);
         expect(frozen.rejections).toEqual([
             { index: 0, name: 'addClip', reason: 'A bound creation must declare one typed created object' },
