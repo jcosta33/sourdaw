@@ -12,7 +12,7 @@ import { previewDirtyFlag } from '../../stores/clipDragPreviewRef';
 import { clipSelectionStore, defaultClipSelectionState } from '../../stores/clipSelectionStore';
 import { markerStore } from '../../stores/markerStore';
 import { takeLaneStore } from '../../stores/takeLaneStore';
-import { setAutoScroll, timelineViewStore } from '../../stores/timelineViewStore';
+import { setAutoScroll, setScrollX, setTimelineZoom, timelineViewStore } from '../../stores/timelineViewStore';
 import { trackStore } from '../../stores/trackStore';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { useTimelineInteractions } from '../hooks/useTimelineInteractions';
@@ -156,16 +156,9 @@ export const TimelineSurface = (): ReactElement => {
             const padding = maxEndBeat * 0.05;
             const totalBeats = maxEndBeat + padding;
             const canvasWidth = container.getBoundingClientRect().width;
-            const ppb = Math.max(2, Math.min(80, canvasWidth / totalBeats));
+            const ppb = canvasWidth / totalBeats;
 
-            const current = timelineViewStore.value;
-            timelineViewStore.set({
-                scrollX: 0,
-                scrollY: current?.scrollY ?? 0,
-                pixelsPerBeat: ppb,
-                autoScrollEnabled: current?.autoScrollEnabled ?? true,
-                viewportHeight: current?.viewportHeight ?? 0,
-            });
+            setTimelineZoom(ppb, 0);
         };
 
         const handleZoomToSelection = ({ startBeat, endBeat }: { startBeat: number; endBeat: number }) => {
@@ -180,18 +173,11 @@ export const TimelineSurface = (): ReactElement => {
 
             const paddedRange = range * 1.2;
             const canvasWidth = container.getBoundingClientRect().width;
-            const ppb = Math.max(2, Math.min(80, canvasWidth / paddedRange));
+            const ppb = canvasWidth / paddedRange;
             const paddingBeats = range * 0.1;
-            const scrollX = Math.max(0, (startBeat - paddingBeats) * ppb);
+            const scrollX = (startBeat - paddingBeats) * ppb;
 
-            const current = timelineViewStore.value;
-            timelineViewStore.set({
-                scrollX,
-                scrollY: current?.scrollY ?? 0,
-                pixelsPerBeat: ppb,
-                autoScrollEnabled: current?.autoScrollEnabled ?? true,
-                viewportHeight: current?.viewportHeight ?? 0,
-            });
+            setTimelineZoom(ppb, scrollX);
         };
 
         const handleScrollToPlayhead = () => {
@@ -206,8 +192,7 @@ export const TimelineSurface = (): ReactElement => {
             }
             const playheadPx = playheadPositionRef.current * viewState.pixelsPerBeat;
             const canvasWidth = container.getBoundingClientRect().width;
-            const targetScrollX = Math.max(0, playheadPx - canvasWidth / 2);
-            timelineViewStore.set({ ...viewState, scrollX: targetScrollX });
+            setScrollX(playheadPx - canvasWidth / 2);
         };
 
         const unsubs = [
@@ -320,8 +305,7 @@ export const TimelineSurface = (): ReactElement => {
                         const leftEdge = viewState.scrollX;
 
                         if (playheadPx > rightThreshold || playheadPx < leftEdge) {
-                            const targetScrollX = Math.max(0, playheadPx - viewportWidth * 0.25);
-                            timelineViewStore.set({ ...viewState, scrollX: targetScrollX });
+                            setScrollX(playheadPx - viewportWidth * 0.25);
                         }
                     }
 

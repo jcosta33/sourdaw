@@ -10,6 +10,7 @@ import {
     toggleAutoScroll,
     setScrollY,
     setTimelineViewportHeight,
+    setTimelineZoom,
 } from '../timelineViewStore';
 import { trackStore } from '../trackStore';
 
@@ -56,6 +57,44 @@ describe('timelineViewStore view helpers', () => {
         expect(timelineViewStore.value?.autoScrollEnabled).toBe(true);
     });
 
+    it('should clamp setTimelineZoom pixelsPerBeat between 2 and 80', () => {
+        setTimelineZoom(100, 10);
+        expect(timelineViewStore.value?.pixelsPerBeat).toBe(80);
+        setTimelineZoom(-200, 10);
+        expect(timelineViewStore.value?.pixelsPerBeat).toBe(2);
+    });
+
+    it('should clamp setTimelineZoom scrollX to non-negative values', () => {
+        setTimelineZoom(20, -50);
+        expect(timelineViewStore.value?.scrollX).toBe(0);
+        setTimelineZoom(20, 40);
+        expect(timelineViewStore.value?.scrollX).toBe(40);
+    });
+
+    it('should preserve scrollY, autoScrollEnabled, and viewportHeight when setTimelineZoom is called', () => {
+        timelineViewStore.set({
+            scrollX: 0,
+            scrollY: 55,
+            pixelsPerBeat: 12,
+            autoScrollEnabled: false,
+            viewportHeight: 300,
+        });
+        setTimelineZoom(30, 15);
+        expect(timelineViewStore.value).toEqual({
+            scrollX: 15,
+            scrollY: 55,
+            pixelsPerBeat: 30,
+            autoScrollEnabled: false,
+            viewportHeight: 300,
+        });
+    });
+
+    it('should not throw and should not write when setTimelineZoom is called on a null store', () => {
+        timelineViewStore.set(null);
+        setTimelineZoom(30, 15);
+        expect(timelineViewStore.value).toBeNull();
+    });
+
     it('should clamp setScrollY when there are no tracks', () => {
         setScrollY(500);
         expect(timelineViewStore.value?.scrollY).toBe(0);
@@ -99,6 +138,7 @@ describe('timelineViewStore view helpers', () => {
         setAutoScroll(true);
         toggleAutoScroll();
         setScrollY(0);
+        setTimelineZoom(20, 0);
         expect(timelineViewStore.value).toBeNull();
     });
 });

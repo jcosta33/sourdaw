@@ -32,13 +32,36 @@ export const timelineViewStore = createStore<TimelineViewState>({
     },
 });
 
+function clampPixelsPerBeat(pixelsPerBeat: number): number {
+    return Math.max(2, Math.min(80, pixelsPerBeat));
+}
+
 export function zoomTimeline(delta: number): void {
     const state = timelineViewStore.value;
     if (!state) {
         return;
     }
-    const newPpb = Math.max(2, Math.min(80, state.pixelsPerBeat + delta));
+    const newPpb = clampPixelsPerBeat(state.pixelsPerBeat + delta);
     timelineViewStore.set({ ...state, pixelsPerBeat: newPpb });
+}
+
+/**
+ * Sets an absolute zoom level and horizontal scroll position together,
+ * clamped with the same rules {@link zoomTimeline} and {@link setScrollX}
+ * use. Every other field is left untouched. Intended for callers that
+ * compute both values from a target (zoom-to-fit, zoom-to-selection) rather
+ * than nudging the current value.
+ */
+export function setTimelineZoom(pixelsPerBeat: number, scrollX: number): void {
+    const state = timelineViewStore.value;
+    if (!state) {
+        return;
+    }
+    timelineViewStore.set({
+        ...state,
+        pixelsPerBeat: clampPixelsPerBeat(pixelsPerBeat),
+        scrollX: Math.max(0, scrollX),
+    });
 }
 
 export function scrollTimeline(deltaX: number): void {

@@ -105,13 +105,41 @@ vi.mock('../../../useCases/buildTimelineRenderModel', () => ({
 }));
 
 vi.mock('../../../stores/timelineViewStore', () => {
-    const store = createReactiveStoreFixture({
+    const store = createReactiveStoreFixture<{
+        scrollX: number;
+        scrollY: number;
+        pixelsPerBeat: number;
+        autoScrollEnabled: boolean;
+    }>({
         initialValue: { scrollX: 0, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true },
     });
     zoomHandlers.timelineViewStoreRef.current = store;
+    // Mirror the real store's own setters (and their clamp rules) against this
+    // fixture, so the component's writes exercise the same clamp behaviour the
+    // production `timelineViewStore` module provides.
+    const setScrollX = (scrollX: number): void => {
+        const state = store.value;
+        if (!state) {
+            return;
+        }
+        store.set({ ...state, scrollX: Math.max(0, scrollX) });
+    };
+    const setTimelineZoom = (pixelsPerBeat: number, scrollX: number): void => {
+        const state = store.value;
+        if (!state) {
+            return;
+        }
+        store.set({
+            ...state,
+            pixelsPerBeat: Math.max(2, Math.min(80, pixelsPerBeat)),
+            scrollX: Math.max(0, scrollX),
+        });
+    };
     return {
         timelineViewStore: store,
         setAutoScroll: vi.fn(),
+        setScrollX: vi.fn(setScrollX),
+        setTimelineZoom: vi.fn(setTimelineZoom),
     };
 });
 
