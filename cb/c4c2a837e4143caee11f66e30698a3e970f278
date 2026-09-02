@@ -1,0 +1,45 @@
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/MixHealthDialog.spec.tsx
+  s_bbdfb911119c4f::t_bc5f4800090e8b 153-169
+src/modules/AiRuntime/presentations/views/ChatPanel.tsx
+  s_bbdfb911119c4f::t_1f9fcffd4f82ef 7
+  s_bbdfb911119c4f::t_a37a232f415650 144
+src/components/__tests__/SafeMarkdown.spec.tsx
+  s_bbdfb911119c4f::t_7634c63bd4aa64 4-18
+src/modules/AiRuntime/useCases/__tests__/mixHealthAnalysis.spec.ts
+  s_bbdfb911119c4f::t_9535ecc978f73a 13
+  s_bbdfb911119c4f::t_4bfeafa4a383fe 103-135
+src/modules/MixerConsole/presentations/views/Mixer/MixHealthDialog.tsx
+  s_bbdfb911119c4f::t_ace9614cd6655e 145
+  s_bbdfb911119c4f::t_53f47b3c21e416 10
+src/modules/AiRuntime/useCases/mixHealthAnalysis.ts
+  s_bbdfb911119c4f::t_840a9d78b14d00 92
+  s_bbdfb911119c4f::t_8fab4d772da824 19-65,75
+  s_a40848e8f8cca9::t_f3896abd321b3b 76
+src/components/SafeMarkdown.tsx
+  s_bbdfb911119c4f::t_cac1cee700564d 1-12,14-77
+  s_bbdfb911119c4f::t_980bd89cdb5e17 13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "cbc4c2a837e4143caee11f66e30698a3e970f278",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bbdfb911119c4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fa21d5-2a8a-4f80-98ab-b72059373843",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
