@@ -1,0 +1,22 @@
+src/modules/Project/useCases/projectPersistence/fileIO/exportProjectFile.ts
+  s_c9dfe76a613250::t_16aaea0f4c5e94 1,30,32-34,38-40
+  s_c9dfe76a613250::t_4131f6b2ee330d 31,35-37
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.spec.ts
+  s_c9dfe76a613250::t_086c94fe136dce 3,18-26,85,206-220
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "8d6c190328a7b46755dd26c5314b4acc913243e3",
+  "prompts": {},
+  "sessions": {
+    "s_c9dfe76a613250": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a063a6-ce16-7052-9c0c-a6ec6522efdd",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
