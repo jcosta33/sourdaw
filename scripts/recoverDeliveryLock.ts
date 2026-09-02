@@ -27,7 +27,7 @@ const INCIDENT = {
     receiptId: 5506507863,
 } as const;
 
-const usage = 'usage: pnpm deliver:recover-lock 3344 --owner 9f9c875746e69d6282e4233b32dfb1d07f418724';
+const usage = 'usage: pnpm deliver --recover-lock 3344 --owner 9f9c875746e69d6282e4233b32dfb1d07f418724';
 
 export type RecoverDeliveryLockArgs = { help: boolean; number?: number; ownerOid?: string };
 
@@ -153,7 +153,7 @@ function defaultProcessIsDead(pid: number): boolean {
 
 function resolveDependencies(dependencies: DeliveryLockRecoveryDependencies | undefined): ResolvedDependencies {
     if (dependencies?.trustedLauncher === undefined) {
-        fail('deliver:recover-lock must run through the protected primary checkout launcher');
+        fail('deliver --recover-lock must run through the protected primary checkout launcher');
     }
     return {
         trustedLauncher: dependencies.trustedLauncher,

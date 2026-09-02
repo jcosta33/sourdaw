@@ -6989,6 +6989,15 @@ describe('delivery CLI', () => {
         expect(parseCliArgs(['42'])).toEqual({ number: 42, help: false });
     });
 
+    it('parses the exact retained-lock recovery route', () => {
+        expect(parseCliArgs(['--recover-lock', '3344', '--owner', '9f9c875746e69d6282e4233b32dfb1d07f418724'])).toEqual(
+            {
+                help: false,
+                recoverLockArgs: ['3344', '--owner', '9f9c875746e69d6282e4233b32dfb1d07f418724'],
+            }
+        );
+    });
+
     it.each([
         [['42', '--unknown'], /unknown option/],
         [['0'], /usage/],

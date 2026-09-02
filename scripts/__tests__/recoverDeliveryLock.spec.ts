@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { AUTHOR_BOT_NODE_ID } from '../githubAppIdentity.ts';
+import { runDeliverCli } from '../deliverPullRequest.ts';
 import { composeDeliveryReceipt } from '../prContract.ts';
 import { runRecoverDeliveryLockCli, type DeliveryLockRecoveryDependencies } from '../recoverDeliveryLock.ts';
 
@@ -79,7 +80,24 @@ function dependencies(root: string, states: ReturnType<typeof remoteState>[]): D
     };
 }
 
-describe('deliver:recover-lock', () => {
+describe('deliver --recover-lock', () => {
+    it('routes recovery through the existing deliver command', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-recovery-'));
+        initialize(root);
+        const state = remoteState();
+
+        try {
+            await expect(
+                runDeliverCli(['--recover-lock', '3344', '--owner', OWNER_OID], {
+                    recovery: dependencies(root, [state, state]),
+                })
+            ).resolves.toBe(0);
+            expect(() => git(root, ['rev-parse', '--verify', REF])).toThrow();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('releases only the exact retained incident lock after two stable authoritative reads', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-recovery-'));
         initialize(root);

@@ -755,9 +755,7 @@ describe('package scripts and gitignore', () => {
         expect(pkg.scripts['review:resolve:recover']).toBe(
             'node scripts/trustedGithubWriteBootstrap.ts review:resolve:recover'
         );
-        expect(pkg.scripts['deliver:recover-lock']).toBe(
-            'node scripts/trustedGithubWriteBootstrap.ts deliver:recover-lock'
-        );
+        expect(pkg.scripts['deliver:recover-lock']).toBeUndefined();
         expect(pkg.scripts['pr:supersede']).toBe('node scripts/supersedePullRequest.ts');
         expect(pkg.scripts['issue:reconcile']).toBe('node scripts/trustedGithubWriteBootstrap.ts issue:reconcile');
         expect(pkg.scripts['lane:remove']).toBe('node scripts/removeLane.ts');
@@ -878,6 +876,7 @@ describe('package scripts and gitignore', () => {
         expect(paths).toEqual([
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/deliverPullRequest.ts',
+            'scripts/recoverDeliveryLock.ts',
             'scripts/pullRequestMutationLock.ts',
             'scripts/reconcileTrackerIssue.ts',
             'scripts/trackerIssueReconciliation.ts',
@@ -888,13 +887,6 @@ describe('package scripts and gitignore', () => {
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/recoverReviewResolutionLock.ts',
             'scripts/resolveReviewThread.ts',
-            'scripts/pullRequestMutationLock.ts',
-            'scripts/githubAppIdentity.ts',
-            'scripts/prContract.ts',
-        ]);
-        expect(trustedDependencyPaths('deliver:recover-lock')).toEqual([
-            'scripts/trustedGithubWriteBootstrap.ts',
-            'scripts/recoverDeliveryLock.ts',
             'scripts/pullRequestMutationLock.ts',
             'scripts/githubAppIdentity.ts',
             'scripts/prContract.ts',

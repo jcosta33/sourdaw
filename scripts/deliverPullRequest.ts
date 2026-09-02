@@ -35,6 +35,11 @@ import {
     type PullRequestRemoteMutationBoundary,
     withPullRequestMutationLock,
 } from './pullRequestMutationLock.ts';
+import {
+    runRecoverDeliveryLockCli,
+    type DeliveryLockRecoveryDependencies,
+    type DeliveryLockRecoveryTrustedLauncher,
+} from './recoverDeliveryLock.ts';
 import { shellPort as trackerIssueShellPort } from './reconcileTrackerIssue.ts';
 import { completeTrackerIssue, type ReconcileTrackerIssuePort } from './trackerIssueReconciliation.ts';
 
@@ -3126,12 +3131,17 @@ export function shellPort(
     };
 }
 
-export function parseCliArgs(args: string[]): { number?: number; help: boolean } {
+export type DeliverCliArgs = { number?: number; recoverLockArgs?: string[]; help: boolean };
+
+export function parseCliArgs(args: string[]): DeliverCliArgs {
     if (args[0] === '--help') {
         if (args.length !== 1) {
             fail('--help takes no other arguments');
         }
         return { help: true };
+    }
+    if (args[0] === '--recover-lock') {
+        return { help: false, recoverLockArgs: args.slice(1) };
     }
     const number = Number(args[0]);
     if (!Number.isSafeInteger(number) || number <= 0) {
@@ -3800,15 +3810,40 @@ export async function coordinateDelivery(
     );
 }
 
-export async function runDeliverCli(args: string[], dependencies?: DeliveryCoordinatorDependencies): Promise<number> {
+export type DeliverCliTrustedDependencies = {
+    trustedLauncher?: DeliveryLockRecoveryTrustedLauncher;
+    recovery?: DeliveryLockRecoveryDependencies;
+};
+
+export type DeliverCliDependencies = DeliveryCoordinatorDependencies | DeliverCliTrustedDependencies;
+
+function isDeliveryCoordinatorDependencies(
+    dependencies: DeliverCliDependencies | undefined
+): dependencies is DeliveryCoordinatorDependencies {
+    return dependencies !== undefined && 'primaryRoot' in dependencies;
+}
+
+function recoveryDependencies(
+    dependencies: DeliverCliDependencies | undefined
+): DeliveryLockRecoveryDependencies | undefined {
+    if (dependencies === undefined || isDeliveryCoordinatorDependencies(dependencies)) {
+        return undefined;
+    }
+    return dependencies.recovery ?? { trustedLauncher: dependencies.trustedLauncher };
+}
+
+export async function runDeliverCli(args: string[], dependencies?: DeliverCliDependencies): Promise<number> {
     const parsed = parseCliArgs(args);
     if (parsed.help) {
         console.log('Usage: pnpm deliver <pr-number>');
         return 0;
     }
+    if (parsed.recoverLockArgs !== undefined) {
+        return runRecoverDeliveryLockCli(parsed.recoverLockArgs, recoveryDependencies(dependencies));
+    }
     if (parsed.number === undefined) {
         fail('usage: pnpm deliver <pr-number>');
     }
-    await coordinateDelivery(parsed.number, dependencies);
+    await coordinateDelivery(parsed.number, isDeliveryCoordinatorDependencies(dependencies) ? dependencies : undefined);
     return 0;
 }
