@@ -53,6 +53,7 @@ describe('generateAnthropicToolCalls', () => {
                 systemPrompt: 'system',
                 userMessage: 'faster',
                 toolSchemas,
+                maxOutputTokens: 8192,
                 signal: new AbortController().signal,
             })
         ).resolves.toEqual([{ id: 'tool-1', name: 'setTempo', arguments: { bpm: 120 } }]);
@@ -65,6 +66,10 @@ describe('generateAnthropicToolCalls', () => {
     });
 
     it('marks the system prompt and only the last tool as cacheable', async () => {
+        // Three tools, not two: with only two, `index !== 0` and `index === lastToolIndex`
+        // agree on every index, so a regression that cache-marks "every tool but the
+        // first" instead of "every tool but the last" would still pass. A middle tool
+        // (index 1 of 3) disambiguates the two rules.
         const multiToolSchemas = [
             toolSchemas[0]!,
             {
@@ -80,6 +85,19 @@ describe('generateAnthropicToolCalls', () => {
                     },
                 },
             },
+            {
+                type: 'function' as const,
+                function: {
+                    name: 'setPan',
+                    description: 'Set pan',
+                    parameters: {
+                        type: 'object' as const,
+                        properties: { pan: { type: 'number' } },
+                        required: ['pan'],
+                        additionalProperties: false,
+                    },
+                },
+            },
         ];
         returnPayload({
             content: [{ type: 'tool_use', id: 'tool-1', name: 'setTempo', input: { bpm: 120 } }],
@@ -91,6 +109,7 @@ describe('generateAnthropicToolCalls', () => {
             systemPrompt: 'system',
             userMessage: 'faster',
             toolSchemas: multiToolSchemas,
+            maxOutputTokens: 8192,
             signal: new AbortController().signal,
         });
 
@@ -105,8 +124,34 @@ describe('generateAnthropicToolCalls', () => {
         };
         expect(body.max_tokens).toBe(8192);
         expect(body.system).toEqual([{ type: 'text', text: 'system', cache_control: { type: 'ephemeral' } }]);
-        expect(body.tools[0]?.cache_control).toBeUndefined();
-        expect(body.tools[1]?.cache_control).toEqual({ type: 'ephemeral' });
+        expect(body.tools).toHaveLength(3);
+        for (const tool of body.tools.slice(0, -1)) {
+            expect(tool.cache_control).toBeUndefined();
+        }
+        expect(body.tools.at(-1)?.cache_control).toEqual({ type: 'ephemeral' });
+    });
+
+    it('sends the caller-provided max_tokens on the wire rather than an internal constant', async () => {
+        returnPayload({
+            content: [{ type: 'tool_use', id: 'tool-1', name: 'setTempo', input: { bpm: 120 } }],
+            stop_reason: 'tool_use',
+        });
+
+        await generateAnthropicToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'faster',
+            toolSchemas,
+            maxOutputTokens: 4096,
+            signal: new AbortController().signal,
+        });
+
+        const request = requestProvider.mock.calls[0]?.[0] as { body: string } | undefined;
+        if (!request) {
+            throw new Error('Expected a recorded provider request');
+        }
+        const body = JSON.parse(request.body) as { max_tokens: number };
+        expect(body.max_tokens).toBe(4096);
     });
 
     it('rejects a tool plan truncated at the token limit instead of returning it partial', async () => {
@@ -121,6 +166,7 @@ describe('generateAnthropicToolCalls', () => {
                 systemPrompt: 'system',
                 userMessage: 'faster',
                 toolSchemas,
+                maxOutputTokens: 8192,
                 signal: new AbortController().signal,
             })
         ).rejects.toThrow('Hosted AI tool plan was truncated at the token limit');
@@ -134,6 +180,7 @@ describe('generateAnthropicToolCalls', () => {
                 systemPrompt: 'system',
                 userMessage: 'nothing',
                 toolSchemas,
+                maxOutputTokens: 8192,
                 signal: new AbortController().signal,
             })
         ).resolves.toEqual([]);
@@ -147,6 +194,7 @@ describe('generateAnthropicToolCalls', () => {
                 systemPrompt: 'system',
                 userMessage: 'faster',
                 toolSchemas,
+                maxOutputTokens: 8192,
                 signal: new AbortController().signal,
             })
         ).rejects.toThrow('non-tool response');
@@ -159,6 +207,7 @@ describe('generateAnthropicToolCalls', () => {
             systemPrompt: 'system',
             userMessage: 'faster',
             toolSchemas,
+            maxOutputTokens: 8192,
             signal: new AbortController().signal,
         }).catch((error: unknown) => error);
 
@@ -181,6 +230,7 @@ describe('generateAnthropicToolCalls', () => {
                 systemPrompt: 'system',
                 userMessage: 'faster',
                 toolSchemas,
+                maxOutputTokens: 8192,
                 signal: new AbortController().signal,
             })
         ).rejects.toThrow('invalid tool-planning content type');
@@ -212,6 +262,7 @@ describe('generateAnthropicToolCalls', () => {
             systemPrompt: 'system',
             userMessage: 'what tracks exist',
             toolSchemas: dottedSchemas,
+            maxOutputTokens: 8192,
             signal: new AbortController().signal,
         });
 

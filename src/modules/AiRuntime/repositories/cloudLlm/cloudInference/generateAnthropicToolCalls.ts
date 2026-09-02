@@ -9,12 +9,6 @@ import { requestAnthropicProvider } from './requestAnthropicProvider';
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 
-// Multi-action DAW plans (several tool calls per turn) can outgrow a couple thousand
-// tokens; 8192 stays well under every current hosted model's documented output
-// ceiling (up to 128K on claude-sonnet-5, the catalog default) while giving the
-// planner enough room that a legitimate plan is never cut mid-call.
-const MAX_TOOL_PLAN_TOKENS = 8192;
-
 const CACHE_CONTROL = { type: 'ephemeral' } as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -26,6 +20,10 @@ export async function generateAnthropicToolCalls(input: {
     systemPrompt: string;
     userMessage: string;
     toolSchemas: readonly ToolSchema[];
+    // The admitted provider request (llmOrchestration/inference.ts) is the single source of
+    // truth for this budget — see models/HostedToolPlanLimits.ts. The wire request must use
+    // exactly what was admitted, not a constant of its own, or the two can silently drift.
+    maxOutputTokens: number;
     signal: AbortSignal;
 }): Promise<ToolCallResult[]> {
     const chunks: Uint8Array[] = [];
@@ -34,7 +32,7 @@ export async function generateAnthropicToolCalls(input: {
     const lastToolIndex = input.toolSchemas.length - 1;
     const body = JSON.stringify({
         model: input.runtime.model,
-        max_tokens: MAX_TOOL_PLAN_TOKENS,
+        max_tokens: input.maxOutputTokens,
         system: [{ type: 'text', text: input.systemPrompt, cache_control: CACHE_CONTROL }],
         tools: input.toolSchemas.map((schema, index) => ({
             name: codec.encode(schema.function.name),

@@ -9,6 +9,7 @@ import { createModelProviderFailureError, isModelProviderFailureError } from '..
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
 import { REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
 import { PROJECT_QUERY_TOOL_NAME } from '../../models/ApplicationOwnedTool';
+import { TOOL_PLAN_MAX_OUTPUT_TOKENS } from '../../models/HostedToolPlanLimits';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
 import {
@@ -391,9 +392,13 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         parameters: tool.function.parameters,
                     })),
                     stream: false,
-                    limits: { maxOutputTokens: 2_048 },
+                    limits: { maxOutputTokens: TOOL_PLAN_MAX_OUTPUT_TOKENS },
                     controls: { cache: 'provider-default', reasoning: 'provider-default' },
-                    budget: { maxInputTokens: 32_768, maxOutputTokens: 2_048, maxTotalTokens: 34_816 },
+                    budget: {
+                        maxInputTokens: 32_768,
+                        maxOutputTokens: TOOL_PLAN_MAX_OUTPUT_TOKENS,
+                        maxTotalTokens: 32_768 + TOOL_PLAN_MAX_OUTPUT_TOKENS,
+                    },
                     dataPolicy: backend === 'cloud' ? 'remote-allowed' : 'local-only',
                     ...(remoteDisclosure === undefined
                         ? {}
@@ -465,13 +470,15 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         cloudInference = generateCloudToolCalls(
                             providerSystemPrompt,
                             providerUserMessage,
-                            providerTools
+                            providerTools,
+                            providerRequest.limits.maxOutputTokens
                         );
                     } else {
                         cloudInference = generateCloudToolCalls(
                             providerSystemPrompt,
                             providerUserMessage,
                             providerTools,
+                            providerRequest.limits.maxOutputTokens,
                             signal
                         );
                     }
