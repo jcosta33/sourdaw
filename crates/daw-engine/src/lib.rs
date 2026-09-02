@@ -562,8 +562,9 @@ impl EngineHandle {
     /// Feed a native plugin the audio the input device captures, block by
     /// block, alongside the graph audio it already renders.
     ///
-    /// Refused here, before the command crosses the ring, when the bus is full
-    /// or already carries this id: the callback refuses on the same two
+    /// Refused before the command crosses the ring — by [`Self::push`], which
+    /// holds the ceiling for every route onto it — when the bus is full or
+    /// already carries this id. The callback refuses on the same two
     /// conditions but can only count its refusal, and a consumer that was
     /// never registered is indistinguishable from one whose input is silent.
     ///
@@ -571,17 +572,6 @@ impl EngineHandle {
     /// registration ahead of the `AddPlugin` that answers it, and until the id
     /// resolves the callback skips it.
     pub fn register_capture_consumer(&mut self, plugin_id: usize) -> Result<(), String> {
-        // The duplicate answers first: on a full bus it is also the truthful
-        // answer, and a caller told the bus is full looks for a consumer to
-        // evict rather than for the registration it already made.
-        if self.capture_consumers.contains(&plugin_id) {
-            return Err(capture_consumer_registered_error(plugin_id));
-        }
-        if self.capture_consumers.len() >= CRUMBS_CAPTURE_RESERVE {
-            return Err(capture_bus_full_error());
-        }
-        // The ledger itself is written by `push`, for every route onto the
-        // ring rather than this one.
         self.push(GraphCommand::RegisterCaptureConsumer(plugin_id))
     }
 
@@ -593,16 +583,6 @@ impl EngineHandle {
     /// callback then refuses where nobody can hear it.
     pub fn unregister_capture_consumer(&mut self, plugin_id: usize) -> Result<(), String> {
         self.push(GraphCommand::UnregisterCaptureConsumer(plugin_id))
-    }
-
-    /// Put an id on the capture ledger, ignoring one it already holds — the
-    /// callback's bus is a set, and a second registration for the same id is
-    /// what it refuses rather than a second slot it takes.
-    fn admit_capture_consumer(&mut self, plugin_id: usize) {
-        if self.capture_consumers.contains(&plugin_id) {
-            return;
-        }
-        self.capture_consumers.push(plugin_id);
     }
 
     /// Take an id off the capture ledger, wherever it leaves the bus from.
@@ -925,10 +905,17 @@ impl EngineHandle {
     /// The one route onto the command ring, and with it the one place the
     /// effect-table ledger and the capture ledger are kept.
     ///
-    /// A registration past the ceiling is refused here rather than pushed: the
-    /// audio thread's own refusal is a counter it cannot return to anyone, so
-    /// past this point the instance is loaded, reports success, and passes dry
-    /// audio forever with nothing saying it was refused.
+    /// Both ceilings are enforced here rather than pushed past — the effect
+    /// table's and the input bus's. The audio thread's own refusal is a counter
+    /// it cannot return to anyone, so past this point the instance is loaded,
+    /// reports success, and passes dry audio forever with nothing saying it was
+    /// refused.
+    ///
+    /// The typed methods and [`Self::send_graph_batch`] check the same ceilings
+    /// earlier, where a caller can be told before it builds state it now has to
+    /// unwind, and a batch is checked whole so it stays atomic. Neither is what
+    /// makes a ceiling hold: this is, because every command reaches the ring
+    /// through here.
     fn push(&mut self, command: GraphCommand) -> Result<(), String> {
         let delta = command.effect_table_delta();
         if delta > 0 && self.effect_registrations + delta as usize > EFFECT_TABLE_CAPACITY {
@@ -939,11 +926,22 @@ impl EngineHandle {
         // ring passes here, including `send_graph_batch`, so a batch cannot
         // move the callback's bus without the ledger seeing it.
         let capture_effect = capture_ledger_effect(&command);
+        if let Some(CaptureLedgerEffect::Register(id)) = capture_effect {
+            if self.capture_consumers.contains(&id) {
+                return Err(capture_consumer_registered_error(id));
+            }
+            if self.capture_consumers.len() >= CRUMBS_CAPTURE_RESERVE {
+                return Err(capture_bus_full_error());
+            }
+        }
         self.command_tx
             .push(command)
             .map_err(|_| "Audio command queue full".to_string())?;
         match capture_effect {
-            Some(CaptureLedgerEffect::Register(id)) => self.admit_capture_consumer(id),
+            // The refusals above proved the id absent and the reserve unspent,
+            // so this never duplicates an entry nor grows past the capacity
+            // the vector was built with.
+            Some(CaptureLedgerEffect::Register(id)) => self.capture_consumers.push(id),
             Some(CaptureLedgerEffect::Release(id)) => self.prune_capture_consumer(id),
             None => {}
         }
@@ -1948,6 +1946,152 @@ mod tests {
             engine.registered_effect_count(),
             scheduler.effect_table_len(),
             "the control-side ledger must equal the table it claims to count"
+        );
+    }
+
+    /// The capture ledger's whole claim is that it holds the ids the
+    /// callback's bus holds. Every other capture assertion in this module
+    /// reads the ledger against the reserve or against itself, and the
+    /// scheduler's own bus tests build their rings by hand and never involve
+    /// an `EngineHandle` — so a [`capture_ledger_effect`] arm that classifies
+    /// a command as neutral when the callback treats it as a release still
+    /// compiles, still passes, and silently walks the two apart. Only this
+    /// comparison makes an author write the right arm.
+    ///
+    /// The stream carries one of everything the classification has to tell
+    /// apart: registrations by both doors, a removal that names the plugin
+    /// directly, and the two retirements that free an effect through a strip
+    /// rather than by name — each landing on a chain that really holds the
+    /// effect it names, so the callback really does drop it.
+    #[test]
+    fn the_capture_ledger_matches_the_bus_it_claims_to_hold() {
+        let (mut engine, command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(64);
+        let (retired_tx, _retired_rx) = RingBuffer::new(64);
+        let mut scheduler = AudioScheduler::new(command_rx, retired_tx, 48_000.0);
+
+        // Sorted, because the two sides swap-remove independently: the sets
+        // are what must agree, never the order either one happens to hold.
+        fn assert_agree(engine: &EngineHandle, scheduler: &AudioScheduler, step: &str) {
+            let mut ledger = engine.capture_consumers.clone();
+            let mut bus = scheduler.capture_consumers().to_vec();
+            ledger.sort_unstable();
+            bus.sort_unstable();
+            assert_eq!(
+                ledger, bus,
+                "the ledger must hold exactly the bus it counts, after {step}"
+            );
+        }
+
+        engine.add_track(1).expect("the track registers");
+        engine.add_bus(50).expect("the bus registers");
+
+        // Two plugins that will leave through a strip retirement, and one that
+        // leaves by name. The reserve is smaller than that, so they cycle.
+        // The bridge handles stay alive for the whole stream: dropping one
+        // would tear its plugin down for a reason the classification under
+        // test has nothing to do with.
+        let _bridge_handles: Vec<_> = (7..=9usize)
+            .map(|id| {
+                let (bridge, bridge_handle) = create_audio_bridge(id);
+                engine
+                    .add_plugin_with_bridge(id, Box::new(OverwritingPlugin), bridge)
+                    .expect("the plugin registers");
+                bridge_handle
+            })
+            .collect();
+        engine
+            .insert_track_device(
+                1,
+                ChainEntry {
+                    effect_id: 7,
+                    kind: DeviceKind::Effect,
+                },
+                0,
+            )
+            .expect("the track splice registers");
+        engine
+            .insert_bus_device(
+                50,
+                ChainEntry {
+                    effect_id: 8,
+                    kind: DeviceKind::Effect,
+                },
+                0,
+            )
+            .expect("the bus splice registers");
+        scheduler.update_graph();
+        assert_agree(
+            &engine,
+            &scheduler,
+            "the graph is built and nothing is on the bus",
+        );
+
+        // Door one: the typed method.
+        engine
+            .register_capture_consumer(7)
+            .expect("an empty bus takes the first consumer");
+        scheduler.update_graph();
+        assert_agree(&engine, &scheduler, "a typed registration");
+
+        // A retirement through the track chain. The handle never names the
+        // plugin, so only the classification connects this to the bus.
+        engine
+            .send_graph_batch(vec![GraphCommand::RemoveTrackDeviceRetired {
+                track_id: 1,
+                effect_id: 7,
+            }])
+            .expect("a retirement against a chain that holds it is admitted");
+        scheduler.update_graph();
+        assert_eq!(
+            scheduler.effect_table_len(),
+            2,
+            "the retirement must really free its slot, or the bus below is compared against nothing"
+        );
+        assert_agree(&engine, &scheduler, "a track-device retirement");
+
+        // Door two: a batch, filling the reserve.
+        engine
+            .send_graph_batch(vec![
+                GraphCommand::RegisterCaptureConsumer(8),
+                GraphCommand::RegisterCaptureConsumer(9),
+            ])
+            .expect("a batch that exactly fills the reserve is admitted");
+        scheduler.update_graph();
+        assert_agree(&engine, &scheduler, "a batch registration");
+
+        // A retirement through the bus chain, same argument as the track one.
+        engine
+            .send_graph_batch(vec![GraphCommand::RemoveBusDeviceRetired {
+                bus_id: 50,
+                effect_id: 8,
+            }])
+            .expect("a retirement against a chain that holds it is admitted");
+        scheduler.update_graph();
+        assert_eq!(
+            scheduler.effect_table_len(),
+            1,
+            "the retirement must really free its slot"
+        );
+        assert_agree(&engine, &scheduler, "a bus-device retirement");
+
+        // A removal that names the plugin, and an unregistration by batch.
+        engine.remove_plugin(9).expect("the plugin comes off");
+        scheduler.update_graph();
+        assert_agree(&engine, &scheduler, "a plugin removal");
+
+        engine
+            .register_capture_consumer(7)
+            .expect("the freed slots take a consumer again");
+        engine
+            .send_graph_batch(vec![GraphCommand::UnregisterCaptureConsumer(7)])
+            .expect("an unregistration is always admitted");
+        scheduler.update_graph();
+        assert_agree(&engine, &scheduler, "a batch unregistration");
+
+        assert!(
+            engine.capture_consumers.is_empty(),
+            "the stream ended with every consumer gone, so an equality that \
+             held on two empty sets throughout would prove nothing"
         );
     }
 

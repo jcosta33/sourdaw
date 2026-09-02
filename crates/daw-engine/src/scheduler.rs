@@ -1550,6 +1550,17 @@ impl AudioScheduler {
         self.effects.len()
     }
 
+    /// The ids currently on the input bus.
+    ///
+    /// The control side keeps a ledger claiming to hold exactly these
+    /// ([`crate::EngineHandle`]), and it is a ledger of ids rather than a
+    /// count, so only a comparison of the two sets can catch a classification
+    /// that moves one and not the other.
+    #[cfg(test)]
+    pub(crate) fn capture_consumers(&self) -> &[usize] {
+        &self.capture_consumers
+    }
+
     #[cfg(test)]
     fn reset_rt_work_counters(&mut self) {
         self.rt_work = RtWorkCounters::default();
