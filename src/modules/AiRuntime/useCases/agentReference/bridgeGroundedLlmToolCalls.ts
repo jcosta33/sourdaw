@@ -1712,7 +1712,7 @@ function followingClauseStillNamesTrackControlTarget(
     }
     const prefixTrackIds = collectNamedProjectTracks(normalized.slice(0, protection.index), tracks);
     const spanTrackIds = new Set(collectNamedProjectTracks(normalized.slice(protection.index), tracks));
-    return prefixTrackIds.some((trackId) => !spanTrackIds.has(trackId)) && spanTrackIds.size > 0;
+    return prefixTrackIds.some((trackId) => !spanTrackIds.has(trackId));
 }
 
 function isTrackControlProtectionQualifier(
