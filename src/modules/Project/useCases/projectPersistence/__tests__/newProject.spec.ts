@@ -60,11 +60,30 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRevision: vi.fn(),
     compactProject: vi.fn().mockResolvedValue(undefined),
+    createCrdtDoc: vi.fn(),
     createCrdtProject: vi.fn().mockResolvedValue(undefined),
+    DOC_BRANCHES: '__branches__',
+    DOC_PREFIX_ROOT: 'root',
+    getCrdtDoc: vi.fn(),
+    getCrdtDocIds: vi.fn(),
+    hasCrdtDoc: vi.fn(),
+    mutateCrdtDoc: vi.fn(),
+    persistCrdtProject: vi.fn(),
+    preserveBranchStateForSession: vi.fn(),
     projectActionHistoryToStore: vi.fn(),
+    removeCrdtDoc: vi.fn(),
+    replaceBranchState: vi.fn(),
+    replaceCrdtDoc: vi.fn(),
     resetCrdtProjectAuthority: vi.fn(),
+    restoreBranchStateAfterSession: vi.fn(),
+    runCrdtPersistenceBarrier: vi.fn(),
+    sanitizeIncomingCrdtDocument: vi.fn(),
+    setupProjectionBridge: vi.fn(),
     startCrdtAutoSave: vi.fn().mockReturnValue(() => {}),
+    subscribeToCrdtChanges: vi.fn(),
+    waitForCrdtDocumentTransition: vi.fn(),
 }));
 
 vi.mock('../helpers/resetModuleStoresToDefault', () => ({

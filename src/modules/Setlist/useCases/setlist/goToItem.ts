@@ -2,6 +2,7 @@ import { inject } from '#/infra/di/inject';
 
 import { setlistStore } from '../../stores/setlistStore';
 
+import { applySetlistItemTransport } from './applySetlistItemTransport';
 import { SetlistEventBus } from './setlistEventBus';
 
 /**
@@ -21,6 +22,8 @@ export const goToItem = inject({ eventBus: SetlistEventBus })(
             if (!item) {
                 return;
             }
+
+            applySetlistItemTransport(item);
 
             if (item.programChange) {
                 void bus.emit('midi.out', {

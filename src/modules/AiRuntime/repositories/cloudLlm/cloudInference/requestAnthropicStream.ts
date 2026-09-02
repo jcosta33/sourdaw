@@ -27,7 +27,18 @@ export async function requestAnthropicStream({
     signal,
     onEvent,
 }: RequestAnthropicStreamInput): Promise<void> {
-    const body = JSON.stringify({ model, max_tokens: maxTokens, system, messages, stream: true });
+    // Every caller of this streaming path rebuilds `system` per turn (chat context, MIDI
+    // prompts), so it is never byte-identical across requests — a cache breakpoint here
+    // would pay a write and never earn a read. The tool-plan request
+    // (generateAnthropicToolCalls.ts) has a static system prompt and large tool schemas
+    // and carries its own breakpoint instead.
+    const body = JSON.stringify({
+        model,
+        max_tokens: maxTokens,
+        system: [{ type: 'text', text: system }],
+        messages,
+        stream: true,
+    });
     const decoder = new TextDecoder();
     let rawBytes = 0;
     let lineBuffer = '';

@@ -1570,6 +1570,8 @@ export type AppAction =
                *  before reverse mirrored them still decode. */
               fadeInBeats?: number;
               fadeOutBeats?: number;
+              /** Offset the restore puts back; optional so older undo entries still decode. */
+              audioOffsetBeats?: number;
               blobs?: KneadPitchBlobSnapshot[];
               contour?: PitchContourSnapshot;
           };

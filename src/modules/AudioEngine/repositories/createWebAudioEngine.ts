@@ -208,15 +208,22 @@ function toSortedCountRecord(counts: Map<string, number>): Record<string, number
 }
 
 /**
- * Transport SharedArrayBuffer layout (one 64-byte buffer shared with worklet
+ * Transport SharedArrayBuffer layout (one 72-byte buffer shared with worklet
  * readers, e.g. {@link kneadProcessor}).
  *
- * The seven transport fields are read as `Float64Array` slots 0–6 (bytes 0–55);
- * a single 32-bit sequence counter lives at `Int32Array` index 14 (bytes 56–59,
- * the otherwise-unused 8th f64 slot). The counter guards the seven fields with a
- * seqlock: the writer makes it odd before the field writes and even after, and a
- * reader retries while it is odd or changes across the read — so a worklet never
- * observes a snapshot torn across the seven non-atomic field writes.
+ * The transport fields are read as `Float64Array` slots 0–6 and 8; a single
+ * 32-bit sequence counter lives at `Int32Array` index 14 (bytes 56–59, the low
+ * half of the otherwise-unused 8th f64 slot). The counter guards every field
+ * with a seqlock: the writer makes it odd before the field writes and even
+ * after, and a reader retries while it is odd or changes across the read — so a
+ * worklet never observes a snapshot torn across the non-atomic field writes.
+ *
+ * `positionSeconds` sits beside `beat` because a beat alone does not locate the
+ * transport in time: converting one to the other means integrating the tempo
+ * map, which lives on the main thread. A worklet that needs seconds — Knead,
+ * whose pitch blobs are measured in them — reads the integration rather than
+ * repeating it against the single `tempo` scalar, which is only the tempo in
+ * force at the playhead and says nothing about the span behind it.
  *
  * `Atomics` requires an integer-typed view, hence the separate `Int32Array` for
  * the counter; the data fields stay `Float64Array` (they carry fractional beats
@@ -230,10 +237,11 @@ const TRANSPORT_F64 = {
     loopEnd: 4,
     isPlaying: 5,
     isLooping: 6,
+    positionSeconds: 8,
 } as const;
 
-/** Byte length of the transport SAB: 8 f64 slots (7 data + 1 holding the seq counter). */
-const TRANSPORT_SAB_BYTES = 64;
+/** Byte length of the transport SAB: 9 f64 slots (8 data + 1 holding the seq counter). */
+const TRANSPORT_SAB_BYTES = 72;
 
 /** `Int32Array` index of the seqlock sequence counter (byte offset 56, the 8th f64 slot). */
 const TRANSPORT_SEQ_I32 = 14;
@@ -2028,6 +2036,7 @@ class AudioEngineImpl implements AudioEngine {
 
     public setTransportInfo(
         beat: number,
+        positionSeconds: number,
         tempo: number,
         isPlaying: boolean,
         loopStart = 0,
@@ -2055,6 +2064,7 @@ class AudioEngineImpl implements AudioEngine {
         value[TRANSPORT_F64.loopEnd] = loopEnd;
         value[TRANSPORT_F64.isPlaying] = isPlaying ? 1 : 0;
         value[TRANSPORT_F64.isLooping] = isLooping ? 1 : 0;
+        value[TRANSPORT_F64.positionSeconds] = positionSeconds;
         Atomics.store(seq, TRANSPORT_SEQ_I32, odd + 1);
     }
 

@@ -1,5 +1,32 @@
 import { zipSync, strToU8 } from 'fflate';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+/**
+ * No real Worker exists in the jsdom test environment, so this spec fakes
+ * only the Worker transport and delegates to the real, synchronous
+ * extraction core (`runDawProjectZipWorkerRequest`) — the same logic that
+ * runs inside `dawProjectZip.worker.ts` in production. This keeps the round
+ * trip through real ZIP bytes and real XML while avoiding the environment
+ * gap; the Worker lifecycle itself is covered by
+ * `extractDawProjectZipEntries.spec.ts`.
+ */
+vi.mock('../extractDawProjectZipEntries', async () => {
+    const { runDawProjectZipWorkerRequest } = await import('../runDawProjectZipWorkerRequest');
+    return {
+        extractDawProjectZipEntries: (input: {
+            bytes: Uint8Array<ArrayBuffer>;
+            phase: 'header' | 'audio';
+            restrictLimits?: unknown;
+        }) =>
+            Promise.resolve({
+                entries: runDawProjectZipWorkerRequest({
+                    bytes: input.bytes.buffer,
+                    phase: input.phase,
+                    restrictLimits: input.restrictLimits as never,
+                }),
+            }),
+    };
+});
 
 import { parseDawProject } from '../parseDawProject';
 
@@ -102,8 +129,8 @@ function buildMalformedProjectWithCorruptAudio(): ArrayBuffer {
 }
 
 describe('parseDawProject', () => {
-    it('reads metadata, transport, tracks and clips from a synthetic fixture', () => {
-        const result = parseDawProject(buildDawProjectZip());
+    it('reads metadata, transport, tracks and clips from a synthetic fixture', async () => {
+        const result = await parseDawProject(buildDawProjectZip());
 
         expect(result.meta.title).toBe('Test Song');
         expect(result.meta.artist).toBe('Sourdaw QA');
@@ -145,14 +172,14 @@ describe('parseDawProject', () => {
         expect(result.audioAssets.has('audio/drum-loop.wav')).toBe(true);
     });
 
-    it('throws a clear error when project.xml is missing', () => {
+    it('throws a clear error when project.xml is missing', async () => {
         const zipped = zipSync({ 'metadata.xml': asRealmUint8(strToU8(metadataXml)) });
         const copy = new Uint8Array(zipped.byteLength);
         copy.set(zipped);
-        expect(() => parseDawProject(copy.buffer)).toThrow(/missing project\.xml/);
+        await expect(parseDawProject(copy.buffer)).rejects.toThrow(/missing project\.xml/);
     });
 
-    it('rejects malformed project XML before inflating audio assets', () => {
-        expect(() => parseDawProject(buildMalformedProjectWithCorruptAudio())).toThrow(/invalid XML/i);
+    it('rejects malformed project XML before inflating audio assets', async () => {
+        await expect(parseDawProject(buildMalformedProjectWithCorruptAudio())).rejects.toThrow(/invalid XML/i);
     });
 });
