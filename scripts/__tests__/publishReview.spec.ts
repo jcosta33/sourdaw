@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -27,6 +27,7 @@ import {
     pullRequestMutationLockRef,
     readPullRequestMutationLockOwner,
     readPullRequestMutationLockOid,
+    reviewPublicationOwnerFenceIsLive,
     withPullRequestMutationLock,
     writePullRequestMutationLockOwner,
 } from '../pullRequestMutationLock.ts';
@@ -47,6 +48,19 @@ function runGit(root: string, args: string[]): string {
     }
     if (result.status !== 0) {
         throw new Error(`git ${args.join(' ')} failed: ${result.stderr}`);
+    }
+    return result.stdout.trim();
+}
+
+function writeRawLockOwner(root: string, contents: string): string {
+    const result = spawnSync('git', ['hash-object', '-w', '--stdin'], {
+        cwd: root,
+        encoding: 'utf8',
+        input: contents,
+        shell: false,
+    });
+    if (result.status !== 0) {
+        throw new Error(`could not write raw test owner: ${result.stderr}`);
     }
     return result.stdout.trim();
 }
@@ -396,6 +410,7 @@ describe('review publish', () => {
 
     it.each([
         ['state', { state: 'APPROVED' }],
+        ['actor', { actorNodeId: 'wrong-reviewer' }],
         ['body', { body: 'different' }],
         ['path', { comments: [{ path: 'other.ts', line: 10, side: 'RIGHT' as const, body: 'a. b. c.' }] }],
         [
@@ -1143,6 +1158,182 @@ describe('shellPort postReview state verification', () => {
             expect(retainedOid).not.toBe(fixture.ownerOid);
         } finally {
             rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
+    it.each([
+        ['invalid JSON', '{'],
+        ['missing start-time fence', JSON.stringify({ ...createJournaledRecoveryFixture, version: 3 })],
+    ])('retains malformed v3 owner data (%s)', async (_label, contents) => {
+        const fixture = createJournaledRecoveryFixture();
+        try {
+            const malformed =
+                contents === '{'
+                    ? contents
+                    : JSON.stringify({
+                          version: 3,
+                          pid: 999_999,
+                          token: '44444444-4444-4444-8444-444444444444',
+                          operation: 'review-publication',
+                          number: fixture.number,
+                          expectedHead: fixture.head,
+                          payloadDigest: 'd'.repeat(64),
+                          reviewerActorNodeId: REVIEWER_BOT_NODE_ID,
+                          ownerFence: { kind: 'pid', pid: 999_999 },
+                          mutation: { phase: 'prepared', epoch: 1 },
+                      });
+            const oid = writeRawLockOwner(fixture.root, malformed);
+            runGit(fixture.root, ['update-ref', pullRequestMutationLockRef(fixture.number), oid]);
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.number), '--owner', oid],
+                    recoveryDependencies(fixture.root, (expectedHead) => ({
+                        state: 'OPEN',
+                        head: expectedHead,
+                        reviews: [],
+                    }))
+                )
+            ).rejects.toThrow(/delivery lock ownership is malformed/);
+            expect(
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
+            ).toBe(oid);
+        } finally {
+            rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
+    it.each([
+        ['remote head drift', (_head: string) => ({ state: 'OPEN', head: 'b'.repeat(40), reviews: [] })],
+        ['remote state drift', (head: string) => ({ state: 'CLOSED', head, reviews: [] })],
+        [
+            'uncertain remote read',
+            () => {
+                throw new Error('remote read is uncertain');
+            },
+        ],
+    ])('retains the original owner on %s', async (_label, inspect) => {
+        const fixture = createJournaledRecoveryFixture();
+        try {
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.number), '--owner', fixture.ownerOid],
+                    recoveryDependencies(fixture.root, inspect)
+                )
+            ).rejects.toThrow();
+            expect(
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
+            ).toBe(fixture.ownerOid);
+        } finally {
+            rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
+    it.each([
+        [
+            'wrong owner',
+            (fixture: { ownerOid: string; head: string }, digest: string) => [
+                'f'.repeat(40),
+                fixture.head,
+                digest,
+                '422',
+            ],
+        ],
+        [
+            'wrong head',
+            (fixture: { ownerOid: string; head: string }, digest: string) => [
+                fixture.ownerOid,
+                'b'.repeat(40),
+                digest,
+                '422',
+            ],
+        ],
+        [
+            'wrong digest',
+            (fixture: { ownerOid: string; head: string }, _digest: string) => [
+                fixture.ownerOid,
+                fixture.head,
+                'c'.repeat(64),
+                '422',
+            ],
+        ],
+        [
+            'wrong status',
+            (fixture: { ownerOid: string; head: string }, digest: string) => [
+                fixture.ownerOid,
+                fixture.head,
+                digest,
+                '400',
+            ],
+        ],
+    ])('retains legacy v1 ownership on %s attestation', async (_label, argsFor) => {
+        const fixture = createLegacyRecoveryFixture();
+        const digest = reviewPublicationPayloadDigest(
+            reviewPublicationPayload({
+                commitId: fixture.head,
+                event: 'APPROVE',
+                body: 'Attacked; held.',
+                comments: [],
+            })
+        );
+        try {
+            const [owner, head, attestedDigest, status] = argsFor(fixture, digest);
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [
+                        String(fixture.number),
+                        '--owner',
+                        owner,
+                        '--head',
+                        head,
+                        '--payload-digest',
+                        attestedDigest,
+                        '--definitive-no-mutation-http-status',
+                        status,
+                    ],
+                    recoveryDependencies(fixture.root, (expectedHead) => ({
+                        state: 'OPEN',
+                        head: expectedHead,
+                        reviews: [],
+                    }))
+                )
+            ).rejects.toThrow();
+            expect(
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
+            ).toBe(fixture.ownerOid);
+        } finally {
+            rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
+    it('treats a reused PID with a different start-time identity as stale', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-publication-ps-'));
+        const executable = join(root, 'ps');
+        const previous = process.env.SOURDAW_TRUSTED_PS_PATH;
+        try {
+            writeFileSync(executable, '#!/bin/sh\nprintf "%s\\n" "reused-pid-start"\n');
+            chmodSync(executable, 0o700);
+            process.env.SOURDAW_TRUSTED_PS_PATH = executable;
+            expect(
+                reviewPublicationOwnerFenceIsLive({
+                    version: 3,
+                    pid: 999_999,
+                    token: '55555555-5555-4555-8555-555555555555',
+                    operation: 'review-publication',
+                    number: 42,
+                    expectedHead: 'a'.repeat(40),
+                    payloadDigest: 'b'.repeat(64),
+                    reviewerActorNodeId: REVIEWER_BOT_NODE_ID,
+                    ownerFence: { kind: 'pid', pid: 999_999, startedAt: 'original-pid-start' },
+                    mutation: { phase: 'prepared', epoch: 1 },
+                })
+            ).toBe(false);
+        } finally {
+            if (previous === undefined) {
+                delete process.env.SOURDAW_TRUSTED_PS_PATH;
+            } else {
+                process.env.SOURDAW_TRUSTED_PS_PATH = previous;
+            }
+            rmSync(root, { recursive: true, force: true });
         }
     });
 });
