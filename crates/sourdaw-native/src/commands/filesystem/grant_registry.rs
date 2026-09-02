@@ -260,8 +260,15 @@ fn save_grants(document: &PersistedGrants) -> Result<(), String> {
 /// A path that no longer resolves is dropped rather than kept as a stale
 /// entry: the registry answers "is this path granted", and a grant on a path
 /// that does not exist can only ever admit whatever later takes that name.
+///
+/// The private directory is created first, before any command has had the
+/// chance to name a path into it: once it exists, canonicalisation corrects
+/// the spelling a caller supplied, so the refusal and the resolution agree on
+/// one path rather than on however the caller happened to write it.
 #[cfg(not(test))]
 fn restore_grants() -> GrantRegistry {
+    super::ensure_private_state_directory();
+
     let Some(location) = grant_file_location() else {
         return GrantRegistry::empty();
     };

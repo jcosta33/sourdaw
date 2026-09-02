@@ -486,8 +486,8 @@ fn ensure_allowed_root(resolved_path: &Path, mode: GrantMode) -> Result<(), Stri
 fn built_in_roots() -> Vec<PathBuf> {
     let mut roots = vec![std::env::temp_dir()];
 
-    if let Some(data_dir) = dirs::data_dir() {
-        roots.push(data_dir.join(APP_DIR_NAME));
+    if let Some(data_dir) = application_data_directory() {
+        roots.push(data_dir);
     }
     if let Some(cache_dir) = dirs::cache_dir() {
         roots.push(cache_dir.join(APP_DIR_NAME));
@@ -501,14 +501,54 @@ fn built_in_roots() -> Vec<PathBuf> {
 
 /// Whether `resolved_path` is inside the directory only native code may touch.
 ///
+/// Matched as "the component after the application data directory, whatever
+/// its spelling" rather than as a resolved prefix, because a byte comparison
+/// against the resolved private path is escapable. `canonicalize_through_missing_tail`
+/// re-appends a component that does not exist yet using the caller's own
+/// spelling, so before the first launch creates the directory, `PRIVATE`
+/// resolves to `PRIVATE` and misses a prefix test that says `private` — while a
+/// case-insensitive volume, which is the default on macOS and on Windows, reads
+/// the file straight back out of `private` at the next launch. Refusing every
+/// spelling costs a case-sensitive volume a directory name nothing else uses.
+///
 /// A missing private directory still refuses: the path a renderer would write
 /// the grant document to does not exist yet either, and a check that only
 /// applied once the directory was there would leave exactly one launch during
 /// which the document could be planted.
 fn is_private_state_path(resolved_path: &Path) -> bool {
-    private_state_directory()
-        .and_then(|directory| canonicalize_through_missing_tail(&directory).ok())
-        .is_some_and(|resolved_directory| resolved_path.starts_with(resolved_directory))
+    let Some(application_data) = application_data_directory() else {
+        return false;
+    };
+    let Ok(resolved_root) = canonicalize_through_missing_tail(&application_data) else {
+        return false;
+    };
+    let Ok(below_root) = resolved_path.strip_prefix(&resolved_root) else {
+        return false;
+    };
+    below_root.components().next().is_some_and(|component| {
+        component
+            .as_os_str()
+            .to_string_lossy()
+            .eq_ignore_ascii_case(PRIVATE_DIR_NAME)
+    })
+}
+
+/// Create the private directory before anything can resolve a path into it.
+///
+/// Once it exists, canonicalisation corrects the spelling of the component a
+/// caller supplied, so every later resolution lands on the one path the
+/// refusal was written against instead of on a variant of it.
+pub(crate) fn ensure_private_state_directory() {
+    let Some(directory) = private_state_directory() else {
+        return;
+    };
+    if let Err(error) = std::fs::create_dir_all(&directory) {
+        eprintln!("[Filesystem] Failed to create the private native state directory: {error}");
+    }
+}
+
+fn application_data_directory() -> Option<PathBuf> {
+    Some(dirs::data_dir()?.join(APP_DIR_NAME))
 }
 
 /// The application-data subdirectory that holds native-only state.
@@ -518,7 +558,7 @@ fn is_private_state_path(resolved_path: &Path) -> bool {
 /// what the renderer may reach can be stored without the renderer being able
 /// to author it.
 pub(crate) fn private_state_directory() -> Option<PathBuf> {
-    Some(dirs::data_dir()?.join(APP_DIR_NAME).join(PRIVATE_DIR_NAME))
+    Some(application_data_directory()?.join(PRIVATE_DIR_NAME))
 }
 
 /// Where Sourdaw keeps its own projects.
@@ -699,9 +739,30 @@ mod tests {
     }
 
     fn private_state_path(name: &str) -> PathBuf {
-        let directory = private_state_directory()
-            .expect("an account should have an application data directory");
-        canonicalize_through_missing_tail(&directory.join(name))
+        spelled_private_state_path(PRIVATE_DIR_NAME, name)
+    }
+
+    /// The grant document's own filename, taken from the location the registry
+    /// writes rather than repeated here, so the two cannot drift apart.
+    fn grant_document_name() -> String {
+        grant_registry::grant_file_location()
+            .and_then(|location| {
+                location
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+            })
+            .expect("an account should have an application data directory")
+    }
+
+    /// A path under the private directory written the way a caller spelled it.
+    ///
+    /// Resolved exactly as a renderer's path would be, so a spelling the
+    /// filesystem has nothing to correct against survives into the comparison.
+    fn spelled_private_state_path(private_spelling: &str, name: &str) -> PathBuf {
+        let application_data = dirs::data_dir()
+            .expect("an account should have an application data directory")
+            .join(APP_DIR_NAME);
+        canonicalize_through_missing_tail(&application_data.join(private_spelling).join(name))
             .expect("the application data directory should resolve")
     }
 
@@ -744,6 +805,34 @@ mod tests {
         .unwrap_err();
 
         assert_eq!(error, "Path is outside allowed native file roots");
+    }
+
+    /// Before the first launch creates the private directory there is nothing
+    /// on disk for canonicalisation to correct a spelling against, so `PRIVATE`
+    /// stayed `PRIVATE` and slipped past a refusal written as a byte prefix —
+    /// then a case-insensitive volume, the default on macOS and on Windows,
+    /// handed the planted document back as `private` at the next launch.
+    #[tokio::test]
+    async fn a_case_variant_spelling_does_not_reach_the_private_directory() {
+        for spelling in ["PRIVATE", "Private", "pRiVaTe"] {
+            let destination = spelled_private_state_path(spelling, &grant_document_name());
+
+            assert_eq!(
+                ensure_allowed_root(&destination, GrantMode::Read).unwrap_err(),
+                "Path is outside allowed native file roots",
+                "{spelling} must be refused for reading"
+            );
+            assert_eq!(
+                write_file_bytes(
+                    destination.to_string_lossy().into_owned(),
+                    br#"{"schema_version":1,"grants":[{"path":"/","mode":"read_write","recursive":true}]}"#,
+                )
+                .await
+                .unwrap_err(),
+                "Path is outside allowed native file roots",
+                "{spelling} must be refused for writing"
+            );
+        }
     }
 
     /// The private directory sits inside the application data root, and a user

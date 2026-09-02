@@ -512,6 +512,41 @@ describe('the grants a dialog mints', () => {
         expect(vi.mocked(grantPath).mock.calls).toEqual([['/music/Mix.wav', 'readwrite', false]]);
     });
 
+    it('refuses a filter list long enough to erase the grant file, before showing a dialog', async () => {
+        // Each grant rewrites the whole grant document, and the registry drops
+        // a document holding more grants than a person could have picked — so
+        // an unbounded filter list is a way to revoke every grant the user
+        // ever made.
+        const { native, grantPath } = grantRecorder();
+        const showSaveDialog = vi.fn(async (_options: SaveDialogOptions) => ({
+            canceled: false,
+            filePath: '/music/Mix.wav',
+        }));
+        const handler = dialogHandlers({ showSaveDialog }, native).get(DIALOG_SAVE_CHANNEL);
+        const extensions = Array.from({ length: 17 }, (_value, index) => `fmt${index}`);
+
+        await expect(handler?.(APP_FRAME, { filters: [{ name: 'Audio', extensions }] })).rejects.toThrow(
+            /at most 16 distinct filter extensions/u
+        );
+        expect(showSaveDialog).not.toHaveBeenCalled();
+        expect(grantPath).not.toHaveBeenCalled();
+
+        await expect(
+            handler?.(APP_FRAME, { filters: [{ name: 'Audio', extensions: extensions.slice(0, 16) }] })
+        ).resolves.toBe('/music/Mix.wav');
+    });
+
+    it('refuses a save pick rather than answering with a path the grant failed for', async () => {
+        // The mirror of the open handler's refusal: a save path whose grant
+        // never landed is a render that fails at its first write.
+        const { native } = grantRecorder(async () => {
+            throw new Error('the grant file is read-only');
+        });
+        const handler = dialogHandlers(savePicking('/music/Mix.wav'), native).get(DIALOG_SAVE_CHANNEL);
+
+        await expect(handler?.(APP_FRAME, {})).rejects.toThrow(/read-only/u);
+    });
+
     it('grants nothing when the user cancelled or picked nothing', async () => {
         const { native, grantPath } = grantRecorder();
         const handlers = dialogHandlers(pickedDirectories([]), native);

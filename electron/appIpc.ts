@@ -173,6 +173,20 @@ const optionalFilters = (value: unknown): FileFilter[] | undefined => {
 const SAVE_EXTENSION_PATTERN = /\.[a-z0-9]+$/i;
 
 /**
+ * The most formats one save may be granted for.
+ *
+ * Each grant rewrites and fsyncs the grant file, and the registry drops the
+ * whole document once it holds more grants than a person could have picked, so
+ * an unbounded filter list is a way to erase every grant the user ever made.
+ * No real export offers anything near this many container formats.
+ */
+const MAX_SAVE_EXTENSIONS = 16;
+
+const distinctSaveExtensions = (filters: readonly FileFilter[] | undefined): string[] => [
+    ...new Set(filters?.flatMap((filter) => filter.extensions).filter((extension) => /^[a-z0-9]+$/i.test(extension))),
+];
+
+/**
  * Every path this save could be written to, given the formats the dialog
  * offered (jcosta33/sourdaw#3313).
  *
@@ -186,13 +200,12 @@ const SAVE_EXTENSION_PATTERN = /\.[a-z0-9]+$/i;
  * A pick carrying no extension is left as it is, because that is what the
  * writer's own swap does with it.
  */
-const saveTargets = (pickedPath: string, filters: readonly FileFilter[] | undefined): string[] => {
-    const siblings = (filters ?? [])
-        .flatMap((filter) => filter.extensions)
-        .filter((extension) => /^[a-z0-9]+$/i.test(extension))
-        .map((extension) => pickedPath.replace(SAVE_EXTENSION_PATTERN, `.${extension}`));
-    return [...new Set([pickedPath, ...siblings])];
-};
+const saveTargets = (pickedPath: string, extensions: readonly string[]): string[] => [
+    ...new Set([
+        pickedPath,
+        ...extensions.map((extension) => pickedPath.replace(SAVE_EXTENSION_PATTERN, `.${extension}`)),
+    ]),
+];
 
 const messageKind = (value: unknown): 'info' | 'warning' | 'error' =>
     value === 'warning' || value === 'error' ? value : 'info';
@@ -246,6 +259,10 @@ export const registerDialogChannels = ({
         withTrustedSender('dialog.save', isTrustedFrameUrl, async (options) => {
             const request = asRecord(options);
             const filters = optionalFilters(request.filters);
+            const extensions = distinctSaveExtensions(filters);
+            if (extensions.length > MAX_SAVE_EXTENSIONS) {
+                throw new TypeError(`dialog.save expects at most ${MAX_SAVE_EXTENSIONS} distinct filter extensions`);
+            }
             const result = await dialogs.showSaveDialog({
                 title: optionalString(request.title),
                 defaultPath: optionalString(request.defaultPath),
@@ -254,7 +271,7 @@ export const registerDialogChannels = ({
             if (result.canceled || result.filePath === '') {
                 return null;
             }
-            await grantPickedPaths(native, saveTargets(result.filePath, filters), {
+            await grantPickedPaths(native, saveTargets(result.filePath, extensions), {
                 mode: 'readwrite',
                 recursive: false,
             });
