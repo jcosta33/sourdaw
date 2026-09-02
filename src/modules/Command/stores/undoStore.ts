@@ -104,13 +104,23 @@ undoStore.subscribe((value) => {
     flushScheduled = true;
     queueMicrotask(() => {
         flushScheduled = false;
-        const current = undoStore.value;
-        if (!current) {
-            return;
-        }
-        writeSessionMirror({ ...current, projectId: owner?.projectId, witness: owner?.captureWitness() });
+        writeCurrentSessionMirror(owner);
     });
 });
+
+/**
+ * Re-mirrors the live stacks against `nextOwner`'s witness, or clears the
+ * mirror's owner tag when there isn't one. A no-op when the live stacks are
+ * unset — both call sites reach here only through a store subscription or
+ * an explicit stamp, so an unset store means there is nothing to mirror.
+ */
+function writeCurrentSessionMirror(nextOwner: UndoStoreOwner | undefined): void {
+    const current = undoStore.value;
+    if (!current) {
+        return;
+    }
+    writeSessionMirror({ ...current, projectId: nextOwner?.projectId, witness: nextOwner?.captureWitness() });
+}
 
 /**
  * Re-mirrors the live stacks against the document witness `owner.captureWitness()`
@@ -124,11 +134,7 @@ export function stampSessionUndoWitness(): void {
     if (!owner) {
         return;
     }
-    const current = undoStore.value;
-    if (!current) {
-        return;
-    }
-    writeSessionMirror({ ...current, projectId: owner.projectId, witness: owner.captureWitness() });
+    writeCurrentSessionMirror(owner);
 }
 
 /**

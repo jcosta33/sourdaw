@@ -1,15 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
     captureDurableDocumentWitness,
     clearActionHistory as clearCrdtActionHistory,
     createCrdtDoc,
     markActionHistoryEntryReverted,
+    persistCrdtProject,
     recordActionHistoryEntry,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
+    sessionUndoWitnessStampPort,
 } from '#/modules/CrdtDocument/useCases';
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
@@ -27,13 +28,13 @@ type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
 const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 const PROJECT_ID = 'project-e1';
 
-const no_action_history_metadata_port = {
+const noActionHistoryMetadataPort = {
     record: () => [],
     markReverted: () => ({ status: 'unavailable' as const }),
     clear: () => undefined,
 };
 
-const session_action_contracts = [
+const sessionActionContracts = [
     {
         actionType: 'setTempo',
         operationVersion: 1,
@@ -54,16 +55,16 @@ function readMirroredWitness(): string | undefined {
     return isRecord(parsed) && typeof parsed.witness === 'string' ? parsed.witness : undefined;
 }
 
-async function flush_pending_frame(): Promise<void> {
+async function flushPendingFrame(): Promise<void> {
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 }
 
-function flush_pending_microtask(): Promise<void> {
+function flushPendingMicrotask(): Promise<void> {
     return new Promise((resolve) => queueMicrotask(resolve));
 }
 
-describe('Command undo witness persistence stamp integration (#3331-repair-2, E1)', () => {
-    let unsubscribe_action_history: (() => void) | null = null;
+describe('Command undo witness persistence stamp integration (#3331-repair-2, E1 / #3331-repair-3, G2)', () => {
+    let unsubscribeActionHistory: (() => void) | null = null;
 
     beforeEach(() => {
         vi.clearAllMocks();
@@ -76,12 +77,16 @@ describe('Command undo witness persistence stamp integration (#3331-repair-2, E1
             markReverted: markActionHistoryEntryReverted,
             clear: clearCrdtActionHistory,
         });
-        unsubscribe_action_history = actionHistoryStore.subscribe(() => undefined);
+        // Wires the real production stamp, exactly as `src/app/bootstrap.ts`
+        // does, so this spec drives the actual port a deleted or unwired
+        // bootstrap line would leave unstamped (#3331-repair-3, G2).
+        sessionUndoWitnessStampPort.setProvider(stampSessionUndoWitness);
+        unsubscribeActionHistory = actionHistoryStore.subscribe(() => undefined);
         clearHandlerRegistry();
         clearUndoHistory();
         sessionStorage.removeItem(UNDO_SESSION_KEY);
 
-        const set_tempo_handler: ActionHandler<SetTempoAction> = {
+        const setTempoHandler: ActionHandler<SetTempoAction> = {
             undoable: true,
             execute: () => undefined,
             describe: (action) => ({
@@ -89,17 +94,18 @@ describe('Command undo witness persistence stamp integration (#3331-repair-2, E1
                 inverseAction: { type: 'setTempo', payload: { bpm: action.payload.bpm - 10 } },
             }),
         };
-        registerHandlerMap({ setTempo: set_tempo_handler });
+        registerHandlerMap({ setTempo: setTempoHandler });
     });
 
     afterEach(async () => {
-        unsubscribe_action_history?.();
-        unsubscribe_action_history = null;
+        unsubscribeActionHistory?.();
+        unsubscribeActionHistory = null;
         clearHandlerRegistry();
         clearUndoHistory();
         clearCrdtActionHistory();
-        await flush_pending_frame();
-        setActionHistoryMetadataPort(no_action_history_metadata_port);
+        await flushPendingFrame();
+        setActionHistoryMetadataPort(noActionHistoryMetadataPort);
+        sessionUndoWitnessStampPort.setProvider(null);
         removeCrdtDoc('root');
         sessionStorage.removeItem(UNDO_SESSION_KEY);
         vi.restoreAllMocks();
@@ -109,7 +115,7 @@ describe('Command undo witness persistence stamp integration (#3331-repair-2, E1
         // Establishes the executable action set the mirror hydrates/persists
         // against, and (since sessionStorage is empty here) hydrates to no
         // owner — matching a fresh boot with no prior mirror.
-        hydrateUndoStoreFromSession(session_action_contracts);
+        hydrateUndoStoreFromSession(sessionActionContracts);
         reconcileSessionUndoForProject({ projectId: PROJECT_ID, captureWitness: captureDurableDocumentWitness });
 
         await executeAppAction({ type: 'setTempo', payload: { bpm: 130 } });
@@ -119,12 +125,12 @@ describe('Command undo witness persistence stamp integration (#3331-repair-2, E1
         // synchronously commits the undo entry, before that frame runs) — the
         // witness it captures can be stale relative to what later becomes
         // durable. Assert that race is live here rather than assumed.
-        await flush_pending_microtask();
+        await flushPendingMicrotask();
         const witnessBeforeFrame = captureDurableDocumentWitness();
         const staleMirroredWitness = readMirroredWitness();
         expect(staleMirroredWitness).toBe(witnessBeforeFrame);
 
-        await flush_pending_frame();
+        await flushPendingFrame();
         const witnessAfterFrame = captureDurableDocumentWitness();
         expect(witnessAfterFrame).not.toBe(witnessBeforeFrame);
         // The microtask flush already ran and is not re-triggered by the
@@ -132,20 +138,20 @@ describe('Command undo witness persistence stamp integration (#3331-repair-2, E1
         // re-witnesses it.
         expect(readMirroredWitness()).toBe(staleMirroredWitness);
 
-        // The persistence step: force this generation's deferred writes to
-        // land (a no-op here since the frame already landed them, exactly
-        // like the debounced-incremental and compact paths force it before
-        // reading bytes regardless of timing), then re-witness the mirror
-        // against that settled state.
-        flushAutomergeStorageWrites();
-        stampSessionUndoWitness();
+        // The real production persistence step, driven end to end: no
+        // IndexedDB is available in this test environment, so the CRDT
+        // persistence repositories resolve as a graceful no-op commit —
+        // but the coordinator still force-flushes this generation's
+        // deferred writes and stamps the undo witness through the real
+        // port before returning, exactly as it does in production.
+        await persistCrdtProject();
 
         expect(readMirroredWitness()).toBe(witnessAfterFrame);
 
         // Simulate the next boot: hydrate from the mirror the stamp just
         // wrote, then reconcile against the same project id and the real
         // capture — the stacks must be kept, not cleared.
-        hydrateUndoStoreFromSession(session_action_contracts);
+        hydrateUndoStoreFromSession(sessionActionContracts);
         reconcileSessionUndoForProject({ projectId: PROJECT_ID, captureWitness: captureDurableDocumentWitness });
 
         expect(undoStore.value?.past).toHaveLength(1);

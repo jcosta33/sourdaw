@@ -107,6 +107,8 @@ const {
     setProjectIdentityTransitionDependenciesMock,
     commandRuntimeRepairPortMock,
     repairRuntimeGraphFromProjectMock,
+    sessionUndoWitnessStampPortMock,
+    stampSessionUndoWitnessMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
@@ -179,6 +181,8 @@ const {
         setNotificationEventBusMock: vi.fn<(eventBus: NotificationEventBus) => void>(),
         commandRuntimeRepairPortMock: { setProvider: vi.fn() },
         repairRuntimeGraphFromProjectMock: vi.fn(() => Promise.resolve()),
+        sessionUndoWitnessStampPortMock: { setProvider: vi.fn() },
+        stampSessionUndoWitnessMock: vi.fn(),
     };
 });
 
@@ -317,7 +321,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     setCommandEventBus: noop,
     syncActionReplayMetadata: noop,
     captureCommandTargetFingerprints: noop,
-    stampSessionUndoWitness: noop,
+    stampSessionUndoWitness: stampSessionUndoWitnessMock,
 }));
 
 vi.mock('#/modules/ControlRoom/useCases', () => ({
@@ -349,7 +353,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     recordActionHistoryEntry: noop,
     clearActionHistory: noop,
     registerCrdtStorageRuntime: registerCrdtStorageRuntimeMock,
-    sessionUndoWitnessStampPort: { setProvider: noop },
+    sessionUndoWitnessStampPort: sessionUndoWitnessStampPortMock,
 }));
 
 vi.mock('#/modules/DawInterchange/useCases', () => ({
@@ -754,6 +758,12 @@ describe('bootstrap', () => {
     it('wires command recovery to the awaited runtime graph repair owner', () => {
         expect(commandRuntimeRepairPortMock.setProvider).toHaveBeenCalledExactlyOnceWith(
             repairRuntimeGraphFromProjectMock
+        );
+    });
+
+    it('wires the undo session witness stamp port to the real production stamp (#3331-repair-3, G2)', () => {
+        expect(sessionUndoWitnessStampPortMock.setProvider).toHaveBeenCalledExactlyOnceWith(
+            stampSessionUndoWitnessMock
         );
     });
 

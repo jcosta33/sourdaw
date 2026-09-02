@@ -110,7 +110,7 @@ if (persistenceState.version !== CRDT_PERSISTENCE_QUEUE_STATE_VERSION) {
     const migrationGeneration = persistenceState.persistenceGeneration;
     const migrationRecovery = previousOperationTail.then(async () => {
         await reconcileMigrationPersistenceSnapshot(migrationGeneration);
-        return compactCrdtProject(migrationGeneration);
+        return compactCrdtProject(migrationGeneration, true);
     });
     // Keep the tail usable after recovery failure. Snapshot reconciliation
     // remains required, while a failed full write retains its captured bytes.
@@ -155,13 +155,17 @@ function runCrdtPersistenceBarrier(operation: CrdtPersistenceBarrierOperation): 
         await operation({
             persistCurrentProject: async (expectedRootHeads) => {
                 if (!expectedRootHeads) {
-                    await persistIncrementalCrdtProject(generation);
+                    await persistIncrementalCrdtProject(generation, true);
                     return;
                 }
                 await automergeRepository.transactSnapshot(async (snapshotTransaction) => {
                     automergeRepository.reserveSnapshotTransactionDocuments(snapshotTransaction, [DOC_PREFIX_ROOT]);
                     assertExpectedRootHeads(expectedRootHeads);
-                    await persistIncrementalCrdtProject(generation);
+                    // The caller demands the root's exact heads survive this
+                    // persist unmoved, so this call must not force this
+                    // generation's own deferred writes to land: doing so could
+                    // move the root heads the assert below re-checks (#3331-repair-3, G1).
+                    await persistIncrementalCrdtProject(generation, false);
                     assertExpectedRootHeads(expectedRootHeads);
                 });
             },
@@ -195,10 +199,14 @@ function runCrdtPersistenceOperation(
             return;
         }
         assertExpectedRootHeads(expectedRootHeads);
+        // An exact-heads caller (collaboration) must not have this generation's
+        // own deferred writes forced to land here: that could move the root
+        // heads the assert below re-checks (#3331-repair-3, G1).
+        const settlePendingWrites = expectedRootHeads === undefined;
         if (operation === 'compact') {
-            await compactCrdtProject(generation);
+            await compactCrdtProject(generation, settlePendingWrites);
         } else {
-            await persistIncrementalCrdtProject(generation);
+            await persistIncrementalCrdtProject(generation, settlePendingWrites);
         }
         assertExpectedRootHeads(expectedRootHeads);
     });
@@ -544,7 +552,17 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
     return typeof value.then === 'function';
 }
 
-async function persistIncrementalCrdtProject(generation: number): Promise<void> {
+/**
+ * @param settlePendingWrites Force this generation's rAF-deferred, unscoped
+ * CRDT writes (e.g. the action-history entry `executeAppAction` just
+ * recorded) to land before anything below reads document bytes — otherwise a
+ * debounced save that happens to run before that animation frame would
+ * persist stale bytes. An exact-heads caller (collaboration) passes `false`:
+ * forcing a landing here could move the root heads it re-checks once this
+ * call returns, so it accepts whatever is already settled instead
+ * (#3331-repair-3, G1).
+ */
+async function persistIncrementalCrdtProject(generation: number, settlePendingWrites: boolean): Promise<void> {
     await flushPendingFullSnapshot(generation);
     const expectedAuthority = await ensurePersistenceAuthority(generation);
     await flushPendingChunks(generation);
@@ -556,14 +574,14 @@ async function persistIncrementalCrdtProject(generation: number): Promise<void> 
         persistenceState.nextRootLineage !== null &&
         persistenceState.nextRootLineage !== expectedAuthority.rootLineage
     ) {
-        await compactCrdtProject(generation);
+        await compactCrdtProject(generation, settlePendingWrites);
         return;
     }
 
     const activeDocIds = getActiveDocIds();
     if (activeDocIds.length === 0) {
         if (persistenceState.persistedBaseDocIds.size > 0) {
-            await compactCrdtProject(generation);
+            await compactCrdtProject(generation, settlePendingWrites);
         }
         return;
     }
@@ -572,18 +590,16 @@ async function persistIncrementalCrdtProject(generation: number): Promise<void> 
     // newly created or removed document changes the persisted shape, so write
     // one current full bundle before advancing any new incremental cursor.
     if (hasPersistedDocumentShapeChanged(activeDocIds)) {
-        await compactCrdtProject(generation);
+        await compactCrdtProject(generation, settlePendingWrites);
         return;
     }
 
-    // Force this generation's rAF-deferred, unscoped CRDT writes (e.g. the
-    // action-history entry `executeAppAction` just recorded) to land on the
-    // live documents before reading their bytes — otherwise a debounced save
-    // that happens to run before that animation frame would persist stale
-    // bytes. The witness stamp immediately after re-mirrors the undo session
-    // witness against that same now-settled document state (#3331-repair-2,
-    // E1), so the two never disagree about what was saved.
-    flushAutomergeStorageWrites();
+    if (settlePendingWrites) {
+        flushAutomergeStorageWrites();
+    }
+    // Re-mirrors the undo session witness against the document state this
+    // generation is about to read below, whether or not a flush just settled
+    // it further (#3331-repair-2, E1).
     sessionUndoWitnessStampPort.stamp();
 
     for (const id of activeDocIds) {
@@ -606,16 +622,15 @@ async function persistIncrementalCrdtProject(generation: number): Promise<void> 
     }
 
     if (crdtProjectCompactionState.incrementalSaveCount >= CRDT_PROJECT_COMPACTION_THRESHOLD) {
-        await compactCrdtProject(generation);
+        await compactCrdtProject(generation, settlePendingWrites);
     }
 }
 
-async function compactCrdtProject(generation: number): Promise<void> {
-    // See the matching comment in `persistIncrementalCrdtProject`: force any
-    // rAF-deferred write to land, then re-mirror the undo session witness
-    // against that settled state, before anything below reads document bytes.
-    flushAutomergeStorageWrites();
-    sessionUndoWitnessStampPort.stamp();
+/** See `persistIncrementalCrdtProject`'s `settlePendingWrites` doc. */
+async function compactCrdtProject(generation: number, settlePendingWrites: boolean): Promise<void> {
+    if (settlePendingWrites) {
+        flushAutomergeStorageWrites();
+    }
     await flushPendingChunks(generation);
     if (generation !== persistenceState.persistenceGeneration) {
         return;
@@ -629,6 +644,13 @@ async function compactCrdtProject(generation: number): Promise<void> {
     if (generation !== persistenceState.persistenceGeneration) {
         return;
     }
+
+    // Stamped here, immediately before the bundle reads below, rather than at
+    // the top: nothing between here and `saveAllOffThread()` in either branch
+    // awaits, so a write landing during the chunk/snapshot flushes above
+    // cannot outrun what this witness records (#3331-repair-2 E1,
+    // #3331-repair-3 G1).
+    sessionUndoWitnessStampPort.stamp();
 
     if (failedSnapshot) {
         // CC-8 — the full re-encode runs in the CRDT worker; it degrades to a
