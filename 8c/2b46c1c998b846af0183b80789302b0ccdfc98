@@ -1,0 +1,41 @@
+src/app/__tests__/bootstrap.spec.ts
+  s_bbdfb911119c4f::t_d209664e2c34a5 764
+src/modules/Command/stores/__tests__/undoStore.spec.ts
+  s_bbdfb911119c4f::t_00c883dfc01689 686
+  s_bbdfb911119c4f::t_fb32bb985c364e 514
+src/modules/CrdtDocument/useCases/crdtPersistenceQueueCoordinator.ts
+  s_bbdfb911119c4f::t_44d1a115e193a9 167
+  s_bbdfb911119c4f::t_751706212c02a8 562
+  s_bbdfb911119c4f::t_1132ecdfbb4a87 650
+  s_bbdfb911119c4f::t_e0782e48a85adf 601
+  s_bbdfb911119c4f::t_e258588b81fd25 204
+src/modules/Command/useCases/__tests__/undoWitnessPersistenceStamp.integration.spec.ts
+  s_bbdfb911119c4f::t_6c556b4fbcf75a 66
+  s_bbdfb911119c4f::t_5c4ab867b16053 82
+src/modules/Command/stores/undoStore.ts
+  s_bbdfb911119c4f::t_741571d28a99a9 89
+  s_bbdfb911119c4f::t_55a9fc091afa19 90-92
+  s_bbdfb911119c4f::t_3e387df9a45851 127
+src/modules/Command/useCases/stampSessionUndoWitness.ts
+  s_bbdfb911119c4f::t_ca5a141e9a08a9 6-8
+src/modules/CrdtDocument/useCases/__tests__/crdtPersistenceQueueCoordinator.spec.ts
+  s_bbdfb911119c4f::t_28629395cd8ceb 131
+src/modules/CrdtDocument/useCases/sessionUndoWitnessStampPort.ts
+  s_bbdfb911119c4f::t_973d3fdfc1b3aa 7-8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "8c2b46c1c998b846af0183b80789302b0ccdfc98",
+  "prompts": {},
+  "sessions": {
+    "s_bbdfb911119c4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fa21d5-2a8a-4f80-98ab-b72059373843",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
