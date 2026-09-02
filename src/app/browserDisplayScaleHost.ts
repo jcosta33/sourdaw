@@ -76,7 +76,9 @@ export function mountBrowserDisplayScaleHost(root: HTMLElement): void {
     frame.style.position = 'absolute';
     frame.style.top = '0';
     frame.style.transformOrigin = 'top left';
-    sizeViewport(frame, 1);
+
+    let lastAppliedScale = 1;
+    sizeViewport(frame, lastAppliedScale);
 
     const focusApplication = (): void => {
         frame.contentWindow?.focus();
@@ -87,7 +89,7 @@ export function mountBrowserDisplayScaleHost(root: HTMLElement): void {
     const startupCapability: BrowserDisplayScaleHostCapability = {
         resetForChildStartup: (source): void => {
             if (source === frame.contentWindow) {
-                sizeViewport(frame, 1);
+                sizeViewport(frame, lastAppliedScale);
             }
         },
     };
@@ -101,6 +103,7 @@ export function mountBrowserDisplayScaleHost(root: HTMLElement): void {
         if (scale === null) {
             return;
         }
+        lastAppliedScale = scale;
         sizeViewport(frame, scale);
     };
     const handlePageShow = (event: PageTransitionEvent): void => {
