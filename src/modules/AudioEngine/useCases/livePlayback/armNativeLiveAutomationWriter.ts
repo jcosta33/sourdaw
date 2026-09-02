@@ -22,9 +22,13 @@
  *
  * A ramp is never split, so a looped span drops a write still gliding at the
  * loop end rather than sending a trajectory the wrap will cancel mid-flight.
- * That is a property of the span, not of a moment in it, so it is applied here
- * — where the span is fixed for the life of the pass — instead of being
- * re-decided on every pump against numbers that cannot have changed.
+ * A write *stamped* at the end is dropped with it: the engine renders frames
+ * strictly below a wrapping span's end and the wrap is not a locate, so the
+ * playhead never walks past such a stamp and its queue slot is never released
+ * — resent once per pass, it fills the lane's queue with dead copies of
+ * itself. That is a property of the span, not of a moment in it, so it is
+ * applied here — where the span is fixed for the life of the pass — instead
+ * of being re-decided on every pump against numbers that cannot have changed.
  *
  * ── Why it does not await its own first pump ──────────────────────────────
  *
@@ -97,15 +101,29 @@ function writeLandSeconds(write: AudioGraphParameterWrite): number {
     return write.time;
 }
 
+/** `seconds_to_frames` in `graph.rs`, which is what every stamp is compared as. */
+function secondsToFrames(seconds: number, sampleRate: number): number {
+    return Math.round(seconds * sampleRate);
+}
+
 function orderedWrites(
     writes: readonly AudioGraphParameterWrite[],
-    span: PassSpan
+    span: PassSpan,
+    sampleRate: number
 ): readonly AudioGraphParameterWrite[] {
     const ordered = [...writes].sort((left, right) => writeStartSeconds(left) - writeStartSeconds(right));
     if (!span.clipsAtEnd) {
         return ordered;
     }
-    return ordered.filter((write) => writeLandSeconds(write) <= span.endSeconds);
+    // The release proof walks frames (`proven_popped`), so the start clip is
+    // taken on the frame the stamp rounds onto: a write starting at or past
+    // the end frame is one the engine can never walk past while it wraps.
+    const endFrame = secondsToFrames(span.endSeconds, sampleRate);
+    return ordered.filter(
+        (write) =>
+            secondsToFrames(writeStartSeconds(write), sampleRate) < endFrame &&
+            writeLandSeconds(write) <= span.endSeconds
+    );
 }
 
 type SpanTargets = Readonly<{ targets: LiveAutomationWriterTarget[]; exclusions: readonly string[] }>;
@@ -119,7 +137,12 @@ function readSpan(input: ArmNativeLiveAutomationWriterInput, span: PassSpan): Sp
     });
     const targets = entries
         .map((entry): LiveAutomationWriterTarget => {
-            return { target: entry.target, writes: orderedWrites(entry.writes, span), cursor: 0, queued: [] };
+            return {
+                target: entry.target,
+                writes: orderedWrites(entry.writes, span, input.sampleRate),
+                cursor: 0,
+                queued: [],
+            };
         })
         .filter((slot) => slot.writes.length > 0);
     const reported = exclusions.map(

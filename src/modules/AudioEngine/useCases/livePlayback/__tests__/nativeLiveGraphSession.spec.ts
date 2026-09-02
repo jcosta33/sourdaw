@@ -20,11 +20,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
 
 import { type AudioGraphCommand, type AudioGraphCommandBatch } from '../../../models/AudioGraphBackend';
-import { type EngineTransportMaps } from '../../../models/EngineTransportPosition';
+import { type EngineTransportMaps, type EngineTransportPosition } from '../../../models/EngineTransportPosition';
 import { type SetEngineTransportMapsResult } from '../../../repositories/engineTransport/setEngineTransportMaps';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
 import { type NativeGraphAvailability } from '../../../repositories/nativeGraph/probeNativeGraphTransport';
 import { registeredNativeTimelineSampleIds } from '../../../repositories/nativeGraph/registeredNativeTimelineSampleIds';
+import { nativeEnginePlayheadFeed } from '../nativeEnginePlayheadFeedState';
+import { nativeLiveAutomationWriter } from '../nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
 import { type LiveGraphTopologyInput } from '../projectLiveGraphTopology';
 import { repositionNativeLiveGraphSession } from '../repositionNativeLiveGraphSession';
@@ -155,6 +157,21 @@ const LOOPED_MAPS = {
     loopRegion: { enabled: true, startSeconds: 2, endSeconds: 4 },
 };
 
+/** The feed's snapshot of a rolling engine, as a re-arm reads it. */
+function rollingReading(positionSeconds: number): EngineTransportPosition {
+    return {
+        running: true,
+        playing: true,
+        positionSeconds,
+        playheadFrame: positionSeconds * SAMPLE_RATE,
+        loopWraps: 0,
+        batchesApplied: 0,
+        tempo: 120,
+        timeSigNum: 4,
+        timeSigDenom: 4,
+    };
+}
+
 const APPLIED = { acceptance: 'accepted', application: 'applied', runtimeRevision: 1, reports: [] };
 
 /**
@@ -244,6 +261,13 @@ beforeEach(() => {
     nativeLiveGraphSession.loopRegion = null;
     nativeLiveGraphSession.loopEnabled = false;
     nativeLiveGraphSession.pending = Promise.resolve();
+    // The start and the maps update arm the real writer, and its pass is what
+    // the arm-wiring cases below read — so it is reset with the session's own.
+    nativeLiveAutomationWriter.epoch += 1;
+    nativeLiveAutomationWriter.inFlightEpoch = null;
+    nativeLiveAutomationWriter.pass = null;
+    nativeLiveAutomationWriter.reportedExclusions = null;
+    nativeEnginePlayheadFeed.reading = null;
     trackStore.set({ tracks: [createTrack({ id: 'audio-1' })], selectedTrackId: null, ghostClips: [] });
 });
 
@@ -371,6 +395,49 @@ describe('startNativeLiveGraphSession', () => {
         const mapsInstalled = mocks.setEngineTransportMaps.mock.invocationCallOrder[0]!;
         expect(mapsInstalled).toBeGreaterThan(mocks.applyGraphCommands.mock.invocationCallOrder[0]!);
         expect(mapsInstalled).toBeLessThan(mocks.applyGraphCommands.mock.invocationCallOrder[1]!);
+    });
+
+    it('opens the automation pass once the engine is rolling, stamped with the roll’s own fence', async () => {
+        // Topology, then the roll: the second batch carries the fence the
+        // pass's snapshots are dated against, and the maps install's fence
+        // (1) says nothing about it.
+        mocks.applyGraphCommands.mockResolvedValueOnce(APPLIED).mockResolvedValueOnce({ ...APPLIED, admittedBatch: 6 });
+
+        const result = await startNativeLiveGraphSession({
+            positionSeconds: 2.5,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        expect(result).toMatchObject({ outcome: 'started' });
+        // The headline path of pressing play on the native engine: a pass
+        // opens where the transport rolled, proven against the roll's batch.
+        expect(nativeLiveAutomationWriter.pass).toMatchObject({
+            entrySeconds: 2.5,
+            sampleRate: SAMPLE_RATE,
+            provenAfterBatch: 6,
+            looping: false,
+        });
+    });
+
+    it('opens no automation pass when the roll is declined and the engine stays parked', async () => {
+        mocks.applyGraphCommands.mockResolvedValueOnce(APPLIED).mockResolvedValueOnce({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'command-queue-full',
+        });
+
+        const result = await startNativeLiveGraphSession({
+            positionSeconds: 2.5,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        // A parked engine plays no automation because it plays nothing: the
+        // session stands, and no pass opens over it.
+        expect(result).toMatchObject({ outcome: 'started' });
+        expect(nativeLiveGraphSession.rolling).toBe(false);
+        expect(nativeLiveAutomationWriter.pass).toBeNull();
     });
 
     it('installs the transport maps outside the topology batch, and only once it is applied', async () => {
@@ -591,6 +658,39 @@ describe('updateNativeLiveGraphSessionTransportMaps', () => {
         // which is the one thing this must not state: the region changed, where
         // the playhead stands and whether it is moving did not.
         expect(appliedBatches()).toHaveLength(batchesBefore);
+    });
+
+    it('re-arms the pass from where the engine stands when the install changes the region', async () => {
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+        const epochAtStart = nativeLiveAutomationWriter.epoch;
+        expect(nativeLiveAutomationWriter.pass?.entrySeconds).toBe(0);
+
+        // The pass was written for the region that is about to go away. The
+        // feed has read the engine since the start, so its snapshot is where
+        // the re-armed pass begins; the install's own fence is what its
+        // snapshots are dated against, because the region is not the engine's
+        // until that batch has drained.
+        nativeEnginePlayheadFeed.reading = rollingReading(3.25);
+        mocks.setEngineTransportMaps.mockResolvedValueOnce({
+            outcome: 'applied',
+            applied: {
+                sampleRate: SAMPLE_RATE,
+                tempoSegments: 1,
+                timeSignatureSegments: 1,
+                loopEnabled: true,
+                admittedBatch: 7,
+            },
+        });
+
+        const result = await updateNativeLiveGraphSessionTransportMaps({ transportMaps: LOOPED_MAPS });
+
+        expect(result).toEqual({ outcome: 'updated' });
+        expect(nativeLiveAutomationWriter.epoch).toBeGreaterThan(epochAtStart);
+        expect(nativeLiveAutomationWriter.pass).toMatchObject({
+            entrySeconds: 3.25,
+            provenAfterBatch: 7,
+            looping: true,
+        });
     });
 
     it('replaces the stale pair on a session parked by declined maps, and still does not roll it', async () => {

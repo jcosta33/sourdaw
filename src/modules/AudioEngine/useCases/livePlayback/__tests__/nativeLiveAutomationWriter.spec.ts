@@ -71,7 +71,12 @@ vi.mock('../readLiveAutomationWrites', () => ({
             .map((entry) => {
                 const inside = (entry.writes as AudioGraphParameterWrite[]).filter((write) => {
                     const at = write.shape === 'ramp-to' ? write.startTime : write.time;
-                    return at >= input.regionStartSeconds && at < input.regionEndSeconds;
+                    // The producer's own clip is end-inclusive: a step landing
+                    // exactly on the window end is emitted
+                    // (`compileAutomationEvents`), so the double must hand one
+                    // through too — which is exactly the write the seam clip
+                    // answers for.
+                    return at >= input.regionStartSeconds && at <= input.regionEndSeconds;
                 });
                 // The compiler's leading `set`: whatever else a span carries, it
                 // opens by establishing the value the lane holds where it starts.
@@ -632,6 +637,67 @@ describe('the live automation writer', () => {
         // What fits beside what is still queued, and no more: the reopened
         // region establishes its value and steps forward from there.
         expect(writesOf(2)).toEqual([step(1, 0.5), step(1.01, 0.9), step(1.02, 0.8)]);
+    });
+
+    it('drops a step stamped at the loop end rather than starving the lane one dead copy per pass', async () => {
+        // The engine renders frames strictly below the loop end while it wraps
+        // (`render_timeline_spans`), and the wrap is not a locate, so a stamp
+        // on the end frame is never walked past: it sits in the queue
+        // unreleased, every pass resends it, and seven passes later the lane's
+        // whole queue is dead copies of a write that never sounded.
+        const engine = engineQueueBackend();
+        mocks.apply.mockImplementation((batch) => engine.apply(batch));
+        nativeLiveGraphSession.loopRegion = { enabled: true, startSeconds: 2, endSeconds: 4 };
+        nativeLiveGraphSession.loopEnabled = true;
+        mocks.curve = [
+            {
+                target: FADER,
+                opensAt: 0.5,
+                writes: [step(2.5, 0.9), step(2.95, 0.8), step(3.45, 0.7), step(3.95, 0.6), step(4, 0.1)],
+            },
+        ];
+
+        arm(2, 1);
+        await flush();
+
+        // Nine passes — two past the queue's seven usable slots. Each tick's
+        // window holds one write, so the ledger fake's apply-time echo proves
+        // every stamp popped as the playhead passes it, and the last tick
+        // stands past the final interior step so its stamp releases before
+        // the wrap.
+        let wraps = 0;
+        for (let pass = 0; pass < 9; pass++) {
+            for (const at of [2.45, 2.9, 3.4, 3.99]) {
+                engineEchoSeconds = at;
+                await pump(at, wraps, 1);
+            }
+            wraps += 1;
+            engineEchoSeconds = 2.05;
+            await pump(2.05, wraps, 1);
+        }
+
+        const refusals = mocks.warn.mock.calls.filter(([message]) => String(message).includes('refused'));
+        expect(refusals).toEqual([]);
+        const sent = writeBatches().flatMap((commands) => commands.map((command) => command.write));
+        // The end-stamped step never left this side…
+        expect(sent).not.toContainEqual(step(4, 0.1));
+        // …and the lane it would have silenced sounds on every pass: the
+        // opening set once per pass plus the arm's own, each interior step
+        // once per pass walked.
+        expect(sent.filter((write) => write.shape === 'step' && write.time === 2 && write.value === 0.5)).toHaveLength(
+            10
+        );
+        for (const at of [2.5, 2.95, 3.45, 3.95]) {
+            expect(sent.filter((write) => write.shape === 'step' && write.time === at)).toHaveLength(9);
+        }
+        // Nine passes in, the mirror holds only what this pass still owes the
+        // engine: the opening set it just sent, and the last interior step
+        // carried across the seam until the playhead passes it again. Nothing
+        // stamped at or past the end frame survives a single wrap.
+        expect(nativeLiveAutomationWriter.pass?.targets[0]?.queued).toEqual([
+            { startFrame: Math.round(3.95 * SAMPLE_RATE), landFrame: Math.round(3.95 * SAMPLE_RATE) },
+            { startFrame: Math.round(2 * SAMPLE_RATE), landFrame: Math.round(2 * SAMPLE_RATE) },
+        ]);
     });
 
     it('counts a step as an append, so the writes it does not cancel keep their slots', async () => {

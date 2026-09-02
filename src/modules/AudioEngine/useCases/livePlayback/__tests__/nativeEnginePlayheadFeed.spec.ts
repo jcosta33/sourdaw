@@ -8,7 +8,9 @@ import {
     pollNativeEnginePlayheadOnce,
     NATIVE_ENGINE_PLAYHEAD_FEED_ID,
 } from '../nativeEnginePlayheadFeedState';
+import { nativeLiveAutomationWriter } from '../nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
+import { pumpNativeLiveAutomationWriter } from '../pumpNativeLiveAutomationWriter';
 import { readNativeEnginePlayheadSeconds } from '../readNativeEnginePlayheadSeconds';
 import { startNativeEnginePlayheadFeed } from '../startNativeEnginePlayheadFeed';
 import { stopNativeEnginePlayheadFeed } from '../stopNativeEnginePlayheadFeed';
@@ -18,6 +20,9 @@ vi.mock('../../../repositories/engineTransport/getEngineTransportPosition', () =
 }));
 vi.mock('#/utils/DOM/AnimationScheduler', () => ({
     animationScheduler: { register: vi.fn(), unregister: vi.fn() },
+}));
+vi.mock('../pumpNativeLiveAutomationWriter', () => ({
+    pumpNativeLiveAutomationWriter: vi.fn(),
 }));
 
 const rollingAt = (positionSeconds: number) => ({
@@ -40,6 +45,7 @@ describe('the native engine playhead feed', () => {
         vi.mocked(animationScheduler.register).mockClear();
         vi.mocked(animationScheduler.unregister).mockClear();
         vi.mocked(getEngineTransportPosition).mockReset();
+        vi.mocked(pumpNativeLiveAutomationWriter).mockClear();
     });
 
     it('polls on the animation frame rather than on a timer of its own', () => {
@@ -66,6 +72,33 @@ describe('the native engine playhead feed', () => {
         await vi.waitFor(() => expect(nativeEnginePlayheadFeed.reading).not.toBeNull());
 
         expect(readNativeEnginePlayheadSeconds()).toBe(3.25);
+    });
+
+    it('drives the automation writer from a settled rolling poll, stamped with the writer epoch the poll captured', async () => {
+        // The progress tick is the writer's only steady-state clock: nothing
+        // else sends the curve after an arm's own first window.
+        let settle = (_reading: ReturnType<typeof rollingAt>): void => undefined;
+        const polled = new Promise<ReturnType<typeof rollingAt>>((resolve) => {
+            settle = resolve;
+        });
+        vi.mocked(getEngineTransportPosition).mockReturnValueOnce(polled);
+        startNativeEnginePlayheadFeed();
+
+        pollNativeEnginePlayheadOnce();
+        const capturedAtPoll = nativeLiveAutomationWriter.epoch;
+        // A re-arm lands behind the poll: the reading about to settle belongs
+        // to the pass that asked for it, not the one that replaced it.
+        nativeLiveAutomationWriter.epoch += 1;
+
+        settle({ ...rollingAt(3.25), loopWraps: 2, batchesApplied: 7 });
+        await vi.waitFor(() => expect(vi.mocked(pumpNativeLiveAutomationWriter)).toHaveBeenCalled());
+
+        expect(vi.mocked(pumpNativeLiveAutomationWriter)).toHaveBeenCalledWith({
+            positionSeconds: 3.25,
+            loopWraps: 2,
+            batchesApplied: 7,
+            writerEpoch: capturedAtPoll,
+        });
     });
 
     it('does not stack a second request behind an unanswered one', () => {
