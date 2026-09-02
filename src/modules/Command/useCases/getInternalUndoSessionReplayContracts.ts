@@ -3,6 +3,8 @@ import { validateVersionedCommandArguments } from './versionedCommandArgumentKey
 import type { SessionActionContract } from '../stores/undoSessionMirror';
 
 const INTERNAL_UNDO_SESSION_REPLAY_OPERATION_VERSIONS = {
+    discardCreatedTrack: 1,
+    discardDuplicatedClip: 1,
     restoreMidiClipNotes: 1,
 } as const;
 

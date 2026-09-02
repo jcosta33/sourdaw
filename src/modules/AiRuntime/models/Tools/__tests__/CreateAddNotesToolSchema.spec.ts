@@ -96,7 +96,7 @@ describe('createAddNotesToolSchema', () => {
                     },
                 },
             },
-            required: ['clipId', 'notes'],
+            required: ['notes'],
         };
 
         const schema = createAddNotesToolSchema({
@@ -109,6 +109,7 @@ describe('createAddNotesToolSchema', () => {
         const items = notes.items as Record<string, unknown>;
         const noteProperties = items.properties as Record<string, Record<string, unknown>>;
 
+        expect(schema.function.parameters.required).toEqual(['notes']);
         expect(properties.clipId).toEqual({
             type: 'string',
             title: 'Canonical clip',

@@ -3,6 +3,7 @@ import {
     type AppAction,
     type HandlerDescribeResult,
     type HandlerExecutionResult,
+    type HandlerSessionActionEntry,
     type HandlerValidationContext,
 } from './handlerContract';
 
@@ -22,6 +23,7 @@ type HandlerConfig<ActionType extends AppAction['type']> = {
     materializeCommandArguments?: (action: Extract<AppAction, { type: ActionType }>) => void;
     prepareAbort?: (action: Extract<AppAction, { type: ActionType }>) => () => void | Promise<void>;
     isNoop?: (action: Extract<AppAction, { type: ActionType }>) => boolean;
+    validateSessionEntry?: (entry: HandlerSessionActionEntry) => boolean;
     requiresAbortCompensation?: boolean;
     executionKind?: 'project' | 'runtime';
     batchExecution?: 'singleton';
@@ -69,6 +71,7 @@ export function createHandler<ActionType extends AppAction['type']>(
         materializeCommandArguments: config.materializeCommandArguments,
         prepareAbort: config.prepareAbort,
         isNoop: config.isNoop,
+        validateSessionEntry: config.validateSessionEntry,
         requiresAbortCompensation: config.requiresAbortCompensation,
         executionKind: config.executionKind,
         batchExecution,

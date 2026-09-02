@@ -190,9 +190,12 @@ describe('undoStore / pushUndo', () => {
 
     it('omits a malformed addNotes replay pair from the session mirror before reload', async () => {
         const undoStoreModule = await import('../undoStore');
+        const { getMidiNoteTransformHandlers } = await import('#/modules/MIDI/useCases');
+        const { registerHandlerMap } = await import('../handlerRegistry');
         const { getExecutableCommandRegistration } = await import('../../useCases/getExecutableCommandRegistration');
         const { getInternalUndoSessionReplayContracts } =
             await import('../../useCases/getInternalUndoSessionReplayContracts');
+        registerHandlerMap(getMidiNoteTransformHandlers());
         const registration = getExecutableCommandRegistration('addNotes');
         undoStoreModule.hydrateUndoStoreFromSession([
             {
@@ -258,6 +261,72 @@ describe('undoStore / pushUndo', () => {
 
         const persisted = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
         expect(persisted.past).toEqual([]);
+    });
+
+    it('omits an entire reachable group when one member cannot be serialized', async () => {
+        const { createUndoEntry, undoStore } = await loadSubject();
+        const older = createUndoEntry(
+            'older',
+            { type: 'setTempo', payload: { bpm: 120 } },
+            { type: 'setTempo', payload: { bpm: 110 } }
+        );
+        const validGroupMember = createUndoEntry(
+            'valid group member',
+            { type: 'setTempo', payload: { bpm: 130 } },
+            { type: 'setTempo', payload: { bpm: 120 } }
+        );
+        validGroupMember.groupId = 'partly-serializable-group';
+        const unsupportedGroupMember = createUndoEntry(
+            'unsupported group member',
+            { type: 'addTrack', payload: { id: 'track-new', name: 'New', kind: 'midi' } },
+            null
+        );
+        unsupportedGroupMember.groupId = 'partly-serializable-group';
+
+        undoStore.set({ past: [older, validGroupMember, unsupportedGroupMember], future: [] });
+        await flushPersistence();
+
+        const persisted = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        expect(persisted.past).toEqual([]);
+    });
+
+    it('rejects an entire reachable stored group when one member cannot hydrate', async () => {
+        sessionStorage.setItem(
+            UNDO_SESSION_KEY,
+            JSON.stringify({
+                past: [
+                    {
+                        id: 'invalid-group-member',
+                        kind: 'action',
+                        label: 'Invalid group member',
+                        action: { type: 'setTempo', payload: { bpm: 'invalid' } },
+                        inverseAction: { type: 'setTempo', payload: { bpm: 110 } },
+                        timestamp: 1,
+                        source: 'ai',
+                        groupId: 'partly-hydratable-group',
+                        actionOperationVersion: 1,
+                        inverseActionOperationVersion: 1,
+                    },
+                    {
+                        id: 'valid-group-member',
+                        kind: 'action',
+                        label: 'Valid group member',
+                        action: { type: 'setTempo', payload: { bpm: 130 } },
+                        inverseAction: { type: 'setTempo', payload: { bpm: 120 } },
+                        timestamp: 2,
+                        source: 'ai',
+                        groupId: 'partly-hydratable-group',
+                        actionOperationVersion: 1,
+                        inverseActionOperationVersion: 1,
+                    },
+                ],
+                future: [],
+            })
+        );
+
+        const reloaded = await loadSubject();
+
+        expect(reloaded.undoStore.value?.past).toEqual([]);
     });
 
     it('should append an entry to past and clear future', async () => {

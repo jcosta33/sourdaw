@@ -6,7 +6,6 @@ import {
     executableAppActionMutationIdentityRulesByType,
     type ExecutableAppActionType,
 } from './executableAppActionRegistry';
-import { getCommandUndoSessionEntryValidator } from './getCommandUndoSessionEntryValidator';
 import { getExecutableAppActionOperationVersion } from './getExecutableAppActionOperationVersion';
 import { getExecutableCommandConfirmation } from './getExecutableCommandConfirmation';
 import { validateVersionedCommandArguments } from './versionedCommandArgumentKeys';
@@ -33,7 +32,9 @@ export function getExecutableCommandRegistration<ActionType extends ExecutableAp
         runtimeSchema: {
             validate: (value: unknown) => validateVersionedCommandArguments(actionType, value),
         },
-        sessionEntryValidator: getCommandUndoSessionEntryValidator(actionType),
+        get sessionEntryValidator() {
+            return getRegisteredHandler().validateSessionEntry;
+        },
         toolDescription: descriptor.description,
         intentPhrases: descriptor.intentPhrases,
         selectionPhrases: 'selectionPhrases' in descriptor ? descriptor.selectionPhrases : [],

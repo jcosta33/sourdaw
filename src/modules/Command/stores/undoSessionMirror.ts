@@ -154,6 +154,22 @@ function getOptionalString(value: Record<string, unknown>, key: string): string 
     return maybeString;
 }
 
+function getPersistedGroupId(value: unknown): string | undefined {
+    return isRecord(value) && typeof value.groupId === 'string' ? value.groupId : undefined;
+}
+
+function getReachableUnitEnd(values: readonly unknown[], start: number): number {
+    const groupId = getPersistedGroupId(values[start]);
+    if (groupId === undefined) {
+        return start + 1;
+    }
+    let end = start + 1;
+    while (end < values.length && getPersistedGroupId(values[end]) === groupId) {
+        end += 1;
+    }
+    return end;
+}
+
 function sanitizeStoredEntry(value: unknown): ActionUndoEntry | null {
     if (!isRecord(value)) {
         return null;
@@ -268,12 +284,46 @@ function sanitizeStoredEntry(value: unknown): ActionUndoEntry | null {
 function sanitizeReachableEntries(values: unknown[], nearestFirst: boolean): ActionUndoEntry[] {
     const ordered = nearestFirst ? values : [...values].reverse();
     const reachable: ActionUndoEntry[] = [];
-    for (const value of ordered) {
-        const entry = sanitizeStoredEntry(value);
-        if (entry === null) {
+    let start = 0;
+    while (start < ordered.length) {
+        const end = getReachableUnitEnd(ordered, start);
+        const unit: ActionUndoEntry[] = [];
+        for (const value of ordered.slice(start, end)) {
+            const entry = sanitizeStoredEntry(value);
+            if (entry === null) {
+                return nearestFirst ? reachable : reachable.reverse();
+            }
+            unit.push(entry);
+        }
+        reachable.push(...unit);
+        start = end;
+    }
+    return nearestFirst ? reachable : reachable.reverse();
+}
+
+function serializeReachableEntries(
+    entries: readonly UndoEntry[],
+    nearestFirst: boolean,
+    limit: number
+): SerializedActionUndoEntry[] {
+    const ordered = nearestFirst ? entries : [...entries].reverse();
+    const reachable: SerializedActionUndoEntry[] = [];
+    let start = 0;
+    while (start < ordered.length) {
+        const end = getReachableUnitEnd(ordered, start);
+        if (reachable.length + (end - start) > limit) {
             break;
         }
-        reachable.push(entry);
+        const unit: SerializedActionUndoEntry[] = [];
+        for (const entry of ordered.slice(start, end)) {
+            const storedEntry = serializeSessionActionEntry(entry);
+            if (storedEntry === null) {
+                return nearestFirst ? reachable : reachable.reverse();
+            }
+            unit.push(storedEntry);
+        }
+        reachable.push(...unit);
+        start = end;
     }
     return nearestFirst ? reachable : reachable.reverse();
 }
@@ -308,18 +358,13 @@ export function hydrateSessionMirror(actionContracts: Iterable<SessionActionCont
 }
 
 function serializeSessionStacks(stacks: PersistableUndoStacks, limit: number): string {
-    function persistable(entries: readonly UndoEntry[]): SerializedActionUndoEntry[] {
-        return entries.flatMap((entry) => {
-            const storedEntry = serializeSessionActionEntry(entry);
-            return storedEntry === null ? [] : [storedEntry];
-        });
-    }
     // Trim from the end furthest from the present, so a truncated mirror keeps
     // the entries the next session reaches first: the newest of `past`, the
-    // nearest of `future`.
+    // nearest of `future`. A contiguous group is one reachable unit: it is
+    // retained whole or becomes the stopping point for that stack.
     return JSON.stringify({
-        past: persistable(stacks.past).slice(-limit),
-        future: persistable(stacks.future).slice(0, limit),
+        past: serializeReachableEntries(stacks.past, false, limit),
+        future: serializeReachableEntries(stacks.future, true, limit),
     });
 }
 

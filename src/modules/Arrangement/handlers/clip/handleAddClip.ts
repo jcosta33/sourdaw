@@ -5,6 +5,7 @@ import { addClip } from '../../useCases/clip/addClip';
 import { getNextAppActionClipId } from '../../useCases/clip/getNextAppActionClipId';
 import { getPlannedTrackState } from '../getPlannedTrackState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
+import { isAddClipSessionEntry } from '../validateCreationSessionEntries';
 
 type AddClipAction = { payload: { id?: string } };
 
@@ -29,6 +30,7 @@ function getAddClipState(action: AddClipAction): AddClipState {
 }
 
 export const handleAddClip = createHandler<'addClip'>({
+    validateSessionEntry: isAddClipSessionEntry,
     validate: (action, context) => {
         const track = getPlannedTrackState(context, action.payload.trackId);
         return (

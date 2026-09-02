@@ -7,6 +7,8 @@ import { normalizeMidiNoteInput } from '../../transformers/normalizeMidiNoteInpu
 import { batchAddMidiNotes } from '../../useCases/midiNoteCrud/batchAddMidiNotes';
 import { getMidiClipNotesSnapshot } from '../../useCases/midiNoteTransforms/getMidiClipNotesSnapshot';
 
+import { isAddNotesSessionEntry } from './isAddNotesSessionEntry';
+
 type AddNotesAction = {
     payload: {
         clipId: string;
@@ -152,6 +154,7 @@ function hasDistinctMaterializedNoteIds(action: AddNotesAction, context?: Handle
 }
 
 export const handleAddNotes = createHandler<'addNotes'>({
+    validateSessionEntry: isAddNotesSessionEntry,
     materializeCommandArguments: (action) => {
         const notes = getMaterializedNotes(action);
         action.payload.notes = notes;

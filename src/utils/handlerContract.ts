@@ -2343,6 +2343,14 @@ export type HandlerValidationContext = {
     readonly executionMode?: 'isolated-preview';
 };
 
+/** Neutral persisted-history shape supplied to an owning handler after Command
+ *  has validated each action against its current operation contract. */
+export type HandlerSessionActionEntry = {
+    readonly action: AppAction;
+    readonly inverseAction: AppAction | null;
+    readonly redoAction?: AppAction;
+};
+
 export type HandlerDeferredEffectAttempt = {
     readonly kind: 'work-attempt';
     readonly operation: AppActionType;
@@ -2363,6 +2371,8 @@ type ActionHandlerCommon<Action extends AppAction> = {
     prepareAbort?: (action: Action) => HandlerAfterCommit;
     /** True when the canonical action is already reflected in project truth. */
     isNoop?: (action: Action) => boolean;
+    /** Owner-provided relationship validation for a persisted forward/inverse/redo entry. */
+    validateSessionEntry?: (entry: HandlerSessionActionEntry) => boolean;
     /** False when transaction abort fully rolls back the write and no pre-commit external effect can run. */
     requiresAbortCompensation?: boolean;
     /** Runtime handlers execute outside Automerge and cannot join project-mutation batches. */

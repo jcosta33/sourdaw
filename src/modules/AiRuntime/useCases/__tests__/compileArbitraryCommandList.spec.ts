@@ -730,6 +730,65 @@ describe('compileArbitraryCommandList', () => {
         ).toMatchObject({ status: 'rejected', reason: expect.stringContaining('target') });
     });
 
+    it('rejects addNotes compilation and evidence replay for a MIDI clip on a frozen track', () => {
+        const calls = [
+            {
+                name: 'command.batch.propose',
+                arguments: {
+                    plan: plan(['clip-empty-midi']),
+                    list: {
+                        schemaVersion: 1,
+                        items: [
+                            {
+                                id: 'add-frozen-midi-note',
+                                name: 'addNotes',
+                                arguments: { notes: [{ pitch: 60, startBeat: 0, duration: 1 }] },
+                                selector: {
+                                    targetArgument: 'clipId',
+                                    entity: 'clip',
+                                    where: { name: 'Empty MIDI' },
+                                    quantity: { unit: 'targets', exactly: 1 },
+                                },
+                            },
+                        ],
+                    },
+                },
+            },
+        ];
+        const frozenMidiClipContext = {
+            ...emptyMidiClipContext,
+            tracks: emptyMidiClipContext.tracks.map((track, index) =>
+                index === 0 ? { ...track, frozen: true } : track
+            ),
+        };
+
+        expect(
+            compileArbitraryCommandList({
+                context: frozenMidiClipContext,
+                revision: 'revision-frozen-midi',
+                calls,
+            })
+        ).toMatchObject({ status: 'rejected' });
+
+        const compiled = compileArbitraryCommandList({
+            context: emptyMidiClipContext,
+            revision: 'revision-frozen-midi',
+            calls,
+        });
+        expect(compiled).toMatchObject({ status: 'accepted' });
+        if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+            return;
+        }
+        expect(
+            validateArbitraryCommandListEvidence({
+                evidence: compiled.compilerEvidence,
+                calls: compiled.compilerEvidence.commands,
+                context: frozenMidiClipContext,
+                revision: 'revision-frozen-midi',
+            })
+        ).toMatchObject({ status: 'rejected' });
+    });
+
     it('fails closed when an app-derived identity has no materialization contract', async () => {
         const commandUseCases = await import('#/modules/Command/useCases');
         const getGroundingRules = commandUseCases.getExecutableAppActionGroundingRules;

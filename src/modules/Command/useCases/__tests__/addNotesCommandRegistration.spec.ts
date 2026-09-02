@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { defaultTrackState } from '#/modules/Arrangement/stores';
-import { addClip, createTrack, getArrangementHandlers, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import {
+    addClip,
+    createTrack,
+    getArrangementHandlers,
+    getTrackStoreState,
+    setArrangementEventBus,
+    setTrackStoreState,
+} from '#/modules/Arrangement/useCases';
 import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
@@ -160,6 +167,7 @@ describe('addNotes command registration', () => {
             ],
         });
         expect(registration.confirmation.required).toBe(false);
+        expect(registration.sessionEntryValidator).toBe(registration.handler.validateSessionEntry);
         expect(registration.noOpDetector?.({ type: 'addNotes', payload: { clipId: 'clip-midi', notes: [] } })).toBe(
             true
         );
@@ -342,6 +350,123 @@ describe('addNotes command registration', () => {
         expect(midiStore.value?.notesByClipId['clip-midi']).toEqual(baseNotes);
         await redo();
         expect(midiStore.value?.notesByClipId['clip-midi']).toEqual(expectedNotes);
+    });
+
+    it('persists and rehydrates every member of an addTrack, addClip, addNotes group', async () => {
+        setTrackStoreState(defaultTrackState);
+        setArrangementEventBus({ emit: async () => undefined });
+        midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        clearHandlerRegistry();
+        registerAllProductionHandlers();
+
+        await expect(
+            executeAppActionBatch(
+                [
+                    {
+                        type: 'addTrack',
+                        payload: {
+                            id: 'track-created-midi',
+                            name: 'Created MIDI',
+                            kind: 'midi',
+                            withoutDefaultDevice: true,
+                        },
+                    },
+                    {
+                        type: 'addClip',
+                        payload: {
+                            id: 'clip-created-midi',
+                            trackId: 'track-created-midi',
+                            startBeat: 0,
+                            endBeat: 4,
+                            name: 'Created MIDI clip',
+                            type: 'midi',
+                        },
+                    },
+                    {
+                        type: 'addNotes',
+                        payload: {
+                            clipId: 'clip-created-midi',
+                            notes: [{ id: 'note-created-midi', pitch: 60, startBeat: 0, duration: 1, velocity: 96 }],
+                        },
+                    },
+                ],
+                { groupId: 'created-midi-group', groupLabel: 'Create MIDI phrase', source: 'ai' }
+            )
+        ).resolves.toMatchObject({ status: 'committed' });
+        await flushUndoSessionWrite();
+        reloadUndoHistoryThroughProductionRegistration();
+
+        expect(
+            undoStore.value?.past.map((entry) => (entry.kind === 'action' ? entry.action.type : entry.kind))
+        ).toEqual(['addTrack', 'addClip', 'addNotes']);
+        expect(getTrackStoreState()?.tracks[0]?.clips.map((clip) => clip.id)).toEqual(['clip-created-midi']);
+        expect(midiStore.value?.notesByClipId['clip-created-midi']).toEqual([
+            {
+                id: 'note-created-midi',
+                pitch: 60,
+                startBeat: 0,
+                duration: 1,
+                velocity: 96,
+                probability: 100,
+            },
+        ]);
+
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(getTrackStoreState()?.tracks).toEqual([]);
+        expect(midiStore.value?.notesByClipId).not.toHaveProperty('clip-created-midi');
+
+        await redo();
+        expect(getTrackStoreState()?.tracks[0]?.clips.map((clip) => clip.id)).toEqual(['clip-created-midi']);
+        expect(midiStore.value?.notesByClipId['clip-created-midi']).toEqual([
+            {
+                id: 'note-created-midi',
+                pitch: 60,
+                startBeat: 0,
+                duration: 1,
+                velocity: 96,
+                probability: 100,
+            },
+        ]);
+    });
+
+    it('truncates reachable history when restore pairs omit every notes-bucket presence field', () => {
+        const registration = getExecutableCommandRegistration('addNotes');
+        const entry = createPersistedAddNotesEntry();
+        const inversePayload: Record<string, unknown> = { ...entry.inverseAction.payload };
+        const redoPayload: Record<string, unknown> = { ...entry.redoAction.payload };
+        delete inversePayload.notesBucketPresent;
+        delete inversePayload.expectedNotesBucketPresent;
+        delete redoPayload.notesBucketPresent;
+        delete redoPayload.expectedNotesBucketPresent;
+        sessionStorage.setItem(
+            'sourdaw-undo-session',
+            JSON.stringify({
+                past: [
+                    {
+                        ...entry,
+                        inverseAction: { ...entry.inverseAction, payload: inversePayload },
+                        redoAction: { ...entry.redoAction, payload: redoPayload },
+                        actionOperationVersion: registration.operationVersion,
+                        inverseActionOperationVersion: 1,
+                        redoActionOperationVersion: 1,
+                    },
+                ],
+                future: [],
+            })
+        );
+
+        hydrateUndoStoreFromSession([
+            {
+                actionType: registration.actionType,
+                operationVersion: registration.operationVersion,
+                role: 'forward',
+                validateArguments: registration.runtimeSchema.validate,
+                validateEntry: registration.sessionEntryValidator,
+            },
+            ...getInternalUndoSessionReplayContracts(),
+        ]);
+
+        expect(undoStore.value?.past).toEqual([]);
     });
 
     it.each([
