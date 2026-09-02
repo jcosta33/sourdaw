@@ -5,6 +5,7 @@ import {
     readBrowserDisplayScaleHostCapability,
     resetBrowserDisplayScaleForChildStartup,
 } from '../browserDisplayScaleHost';
+import { BROWSER_APPLICATION_FRAME_NAME } from '../resolveAppComposition';
 
 const DISPLAY_SCALE_HOST_CAPABILITY_KEY = '__sourdawBrowserDisplayScaleHost';
 
@@ -188,5 +189,44 @@ describe('mountBrowserDisplayScaleHost', () => {
         );
 
         expect(frame.style.transform).toBe('scale(1)');
+    });
+
+    it('names the application frame so a nested reload stays the application composition', () => {
+        const root = document.getElementById('root')!;
+        mountBrowserDisplayScaleHost(root);
+        const frame = document.querySelector('iframe');
+
+        expect(frame).not.toBeNull();
+        expect(frame!.name).toBe(BROWSER_APPLICATION_FRAME_NAME);
+        expect(frame!.title).toBe('Sourdaw');
+    });
+
+    it('reapplies a persisted scale after the child resets the frame for remount', () => {
+        const root = document.getElementById('root')!;
+        mountBrowserDisplayScaleHost(root);
+        const frame = document.querySelector('iframe')!;
+
+        window.dispatchEvent(
+            new MessageEvent('message', {
+                data: { type: 'sourdaw:browser-display-scale', scale: 2 },
+                origin: window.location.origin,
+                source: frame.contentWindow,
+            })
+        );
+        readBrowserDisplayScaleHostCapability(window)?.resetForChildStartup(frame.contentWindow!);
+        expect(frame.style.transform).toBe('scale(1)');
+        expect(frame.style.width).toBe('100vw');
+
+        window.dispatchEvent(
+            new MessageEvent('message', {
+                data: { type: 'sourdaw:browser-display-scale', scale: 2 },
+                origin: window.location.origin,
+                source: frame.contentWindow,
+            })
+        );
+
+        expect(frame.style.width).toBe('50vw');
+        expect(frame.style.height).toBe('50vh');
+        expect(frame.style.transform).toBe('scale(2)');
     });
 });

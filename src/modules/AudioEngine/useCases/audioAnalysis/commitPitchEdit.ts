@@ -74,6 +74,6 @@ export async function commitPitchEdit({
         throw new Error('Could not get audio buffer for clip');
     }
 
-    processPitchEditWasm(buffer, segments, contour, outputAudioBufferId);
+    await processPitchEditWasm(buffer, segments, contour, outputAudioBufferId);
     return { renderedAudioBufferId: outputAudioBufferId };
 }

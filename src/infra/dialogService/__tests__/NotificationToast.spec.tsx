@@ -37,6 +37,8 @@ describe('NotificationToast', () => {
         act(() => {
             notifyHandlerRef.current!({ message: 'Hello', level: 'warning' });
         });
-        expect(screen.getByRole('alert')).toHaveTextContent('Hello');
+        const alert = screen.getByRole('alert');
+        expect(alert).toHaveTextContent('Hello');
+        expect(alert.className).toContain('z-[10000]');
     });
 });

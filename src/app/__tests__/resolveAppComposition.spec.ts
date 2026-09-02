@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolveAppComposition } from '../resolveAppComposition';
+import { BROWSER_APPLICATION_FRAME_NAME, resolveAppComposition } from '../resolveAppComposition';
 
 const topLevelWebDocument = {
     hasDesktopBridge: false,
@@ -53,6 +53,15 @@ describe('resolveAppComposition', () => {
 
     it('runs the application directly inside a nested web document', () => {
         expect(resolveAppComposition({ ...topLevelWebDocument, isTopLevel: false })).toBe('application');
+    });
+
+    it('hosts a top-level Chrome document even when its window is named like the application frame', () => {
+        expect(
+            resolveAppComposition({
+                ...topLevelWebDocument,
+                windowName: BROWSER_APPLICATION_FRAME_NAME,
+            })
+        ).toBe('browser-host');
     });
 
     it('allows the direct Page fixture marker on a development server', () => {

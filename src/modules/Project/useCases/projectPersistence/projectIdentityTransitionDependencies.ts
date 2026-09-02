@@ -1,19 +1,11 @@
-type ProjectIdentityTransitionDependencies = {
-    leaveCollaborationSession: () => Promise<void>;
-    /** Consume durable owner handoffs only after this load proved the persisted root identity. */
-    resumeDurableAssetOwnerHandoffsAfterProjectLoad?: (authority: {
-        ownerId: string;
-        isCurrent: () => boolean;
-        signal: AbortSignal;
-    }) => Promise<void>;
-};
+import {
+    projectIdentityTransitionConfiguration,
+    projectIdentityTransitionDependencies,
+    type ProjectIdentityTransitionDependencies,
+} from './helpers/projectIdentityTransitionConfiguration';
 
-export let projectIdentityTransitionDependencies: ProjectIdentityTransitionDependencies = {
-    leaveCollaborationSession: async () => {
-        throw new Error('Project identity transition dependencies are not configured');
-    },
-};
+export { projectIdentityTransitionDependencies };
 
 export function setProjectIdentityTransitionDependencies(dependencies: ProjectIdentityTransitionDependencies): void {
-    projectIdentityTransitionDependencies = dependencies;
+    projectIdentityTransitionConfiguration.apply(dependencies);
 }
