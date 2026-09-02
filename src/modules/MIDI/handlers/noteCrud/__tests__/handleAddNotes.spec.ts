@@ -1,15 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
-import {
-    commandProjectRevisionPort,
-    createExecutionCommandEnvelope,
-    executeAppAction,
-    executeVersionedCommandEnvelope,
-    serializeVersionedCommandEnvelope,
-} from '#/modules/Command/useCases';
+import { clearUndoHistory, createVersionedCommandEnvelope, executeAppAction } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type MidiNote } from '../../../models/MidiNote';
@@ -57,7 +51,7 @@ describe('handleAddNotes', () => {
         vi.restoreAllMocks();
         clearHandlerRegistry();
         registerHandlerMap({ addNotes: handleAddNotes, restoreMidiClipNotes: handleRestoreMidiClipNotes });
-        undoStore.set({ past: [], future: [] });
+        clearUndoHistory();
         resetMidiClipFixture();
         midiStore.set({
             notesByClipId: {
@@ -66,10 +60,6 @@ describe('handleAddNotes', () => {
             ccByClipId: {},
             pitchBendByClipId: {},
         });
-    });
-
-    afterEach(() => {
-        commandProjectRevisionPort.setProvider(null);
     });
 
     it('allocates stable note ids and returns exact guarded inverse and redo snapshots', async () => {
@@ -180,28 +170,34 @@ describe('handleAddNotes', () => {
     });
 
     it('canonicalizes an envelope-backed addNotes action before persisting its undo entry', async () => {
-        commandProjectRevisionPort.setProvider(() => 'revision-envelope');
-        const command = createExecutionCommandEnvelope({
-            action: {
-                type: 'addNotes',
-                payload: {
-                    clipId: CLIP_ID,
-                    notes: [
-                        {
-                            id: 'note-envelope-1',
-                            pitch: 60.6,
-                            startBeat: -2,
-                            duration: 0.01,
-                            velocity: 96.7,
-                        },
-                    ],
-                },
+        const action = {
+            type: 'addNotes' as const,
+            payload: {
+                clipId: CLIP_ID,
+                notes: [
+                    {
+                        id: 'note-envelope-1',
+                        pitch: 60.6,
+                        startBeat: -2,
+                        duration: 0.01,
+                        velocity: 96.7,
+                    },
+                ],
             },
+        };
+        const envelope = createVersionedCommandEnvelope({
+            action,
+            applicationAssignedIds: [{ argument: 'notes[0].id', value: 'note-envelope-1' }],
+            availableDeviceVersions: {},
             expectedEffect: 'Add one MIDI note.',
             normalizedProjectRevision: 'revision-envelope',
+            objectReferences: [{ argument: 'clipId', id: CLIP_ID, scope: 'stable' }],
+            parameterUnits: [],
+            reason: 'Add one MIDI note.',
+            time: [],
         });
 
-        await executeVersionedCommandEnvelope(serializeVersionedCommandEnvelope(command.envelope));
+        await executeAppAction(action, { commandEnvelope: envelope });
 
         expect(undoStore.value?.past.at(-1)).toMatchObject({
             action: {
