@@ -1,0 +1,68 @@
+src/modules/Command/useCases/__tests__/undoWitnessPersistenceStamp.integration.spec.ts
+  s_bbdfb911119c4f::t_142d185579e303 17,21
+  s_bbdfb911119c4f::t_2262a37b39ab41 149
+  s_bbdfb911119c4f::t_f5284c78caaa90 113
+  s_bbdfb911119c4f::t_6383bd6a7bf9e4 1-16,18-20,22-112,114-148,150-154
+src/app/bootstrap.ts
+  s_bbdfb911119c4f::t_8919fdedc2b036 202
+  s_bbdfb911119c4f::t_3e3571d15b4232 90
+  s_bbdfb911119c4f::t_4aaab494bfea5a 106
+src/app/__tests__/bootstrap.spec.ts
+  s_bbdfb911119c4f::t_73209014237435 352
+  s_bbdfb911119c4f::t_2c8122b2d0bb36 320
+src/modules/CrdtDocument/useCases/crdtPersistenceQueueCoordinator.ts
+  s_bbdfb911119c4f::t_b375bf111a378f 579-582,586,588
+  s_bbdfb911119c4f::t_6ae21ad056e198 583-585,587
+  s_bbdfb911119c4f::t_7502685593ab80 31
+  s_bbdfb911119c4f::t_a8e6654a7ede46 614-616
+  s_bbdfb911119c4f::t_66919d41a983ce 618
+src/modules/Command/AGENTS.md
+  s_bbdfb911119c4f::t_56a2557ebb5439 9
+src/modules/CrdtDocument/AGENTS.md
+  s_bbdfb911119c4f::t_a411358134a99b 9
+src/modules/Command/useCases/stampSessionUndoWitness.ts
+  s_bbdfb911119c4f::t_7a70e54edd8d90 1-12
+src/modules/CrdtDocument/useCases/sessionUndoWitnessStampPort.ts
+  s_bbdfb911119c4f::t_c2c3a633bcd35b 1-25
+src/modules/Command/stores/__tests__/undoStore.spec.ts
+  s_bbdfb911119c4f::t_7ca5713a4e8e12 685-746
+  s_bbdfb911119c4f::t_3acf9d68c2b425 20,33
+  s_bbdfb911119c4f::t_0bf270604d1a7f 747-754
+src/modules/Command/useCases/index.ts
+  s_bbdfb911119c4f::t_5a026ea065162a 92
+src/modules/Command/stores/undoStore.ts
+  s_bbdfb911119c4f::t_b953a092311488 88-97,114-122,131
+  s_bbdfb911119c4f::t_fd9b2269613e69 123-130
+  s_a40848e8f8cca9::t_4e08fa463a786f 132
+src/modules/CrdtDocument/useCases/index.ts
+  s_bbdfb911119c4f::t_26004415abd00e 24
+src/modules/Command/stores/undoSessionMirror.ts
+  s_bbdfb911119c4f::t_ef384bfc4f8143 228-233,235-239,241,243-244,247,252-253
+  s_bbdfb911119c4f::t_546c7cb0c45641 300-306,315-316
+  s_bbdfb911119c4f::t_fe1c94ac58f44c 307-308
+  s_a40848e8f8cca9::t_2967c7441dd46e 254-255
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "ae271175cc6270998a209210a7c8e2cd04f86edb",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bbdfb911119c4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fa21d5-2a8a-4f80-98ab-b72059373843",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
