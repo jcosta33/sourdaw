@@ -27,10 +27,18 @@ test.describe('Bottom Dock — Modulation, Automation & Elastic', () => {
         await expect(panel.getByRole('button').first()).toBeVisible({ timeout: 5000 });
     });
 
-    test('Elastic tab is absent without an audio clip', async ({ page }) => {
-        // AppShell only renders the tab when `isAudioClipSelected` is true
-        // (src/modules/WorkspaceShell/presentations/views/AppShell.tsx); this
-        // project has a MIDI track only, so no audio clip can be selected.
+    test('Elastic tab stays absent with a MIDI clip selected', async ({ page }) => {
+        // AppShell renders the tab only when `isAudioClipSelected` is true
+        // (src/modules/WorkspaceShell/presentations/views/AppShell.tsx); the
+        // tab is gated on the selected clip's type, so a selected MIDI clip
+        // must not show it.
+        const timeline = page.getByLabel('Timeline editor surface');
+        await timeline.click({ button: 'right', position: { x: 300, y: 30 } });
+        await page.getByRole('menuitem', { name: /Add Clip Here/i }).click();
+        await page.waitForTimeout(500);
+        await timeline.dblclick({ position: { x: 300, y: 30 } });
+        await page.getByLabel('Piano roll editor').waitFor({ state: 'visible', timeout: 10000 });
+
         const elastic_tab = page.locator('#bottom-dock-tab-elastic');
         await expect(elastic_tab).toHaveCount(0);
     });
