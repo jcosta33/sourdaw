@@ -17,8 +17,9 @@ import {
 import { composeReviewCommentBody, fail, type ReviewCommentContent } from './prContract.ts';
 import { reviewBundlePath } from './prepareReview.ts';
 import {
-    type PullRequestMutationSerialization,
     type PullRequestRemoteMutationBoundary,
+    type PullRequestReviewPublicationMutationBoundary,
+    type PullRequestReviewPublicationMutationSerialization,
     currentReviewPublicationOwnerFence,
     isReviewPublicationPullRequestMutationLockOwner,
     pullRequestMutationLockRef,
@@ -29,7 +30,7 @@ import {
     replacePullRequestMutationLockOwner,
     releasePullRequestMutationLockOwner,
     reviewPublicationOwnerFenceIsLive,
-    withPullRequestMutationLock,
+    withPullRequestReviewPublicationMutationLock,
 } from './pullRequestMutationLock.ts';
 import { legacyReviewPublicationIncidents } from './reviewPublicationLegacyIncidents.ts';
 
@@ -85,7 +86,7 @@ export type PublishReviewAuthentication = {
 
 export type PublishReviewCoordinatorDependencies = {
     primaryRoot: () => string;
-    serializeMutation: PullRequestMutationSerialization;
+    serializeMutation: PullRequestReviewPublicationMutationSerialization;
     authenticateReviewer: (primaryRoot: string) => Promise<PublishReviewAuthentication>;
     repositoryName: (session: GhSession, primaryRoot: string) => string;
     reviewPort: (
@@ -97,7 +98,7 @@ export type PublishReviewCoordinatorDependencies = {
         number: number,
         prepared: PreparedReviewPublication,
         port: PublishReviewPort,
-        boundary?: PullRequestRemoteMutationBoundary
+        boundary: PullRequestReviewPublicationMutationBoundary
     ) => number;
 };
 
@@ -201,7 +202,7 @@ export function publishPreparedReview(
     number: number,
     prepared: PreparedReviewPublication,
     port: PublishReviewPort,
-    boundary?: PullRequestRemoteMutationBoundary
+    boundary?: PullRequestReviewPublicationMutationBoundary
 ): number {
     boundary?.journalReviewPublication({
         expectedHead: prepared.head,
@@ -229,7 +230,7 @@ export function publishPreparedReview(
 export function publishReview(
     number: number,
     port: PublishReviewPort,
-    boundary?: PullRequestRemoteMutationBoundary
+    boundary?: PullRequestReviewPublicationMutationBoundary
 ): number {
     return publishPreparedReview(number, prepareReviewPublication(number, port), port, boundary);
 }
@@ -525,7 +526,7 @@ function parseCommentEntries(entries: unknown[]): ReviewComment[] {
 export function defaultPublishReviewCoordinatorDependencies(): PublishReviewCoordinatorDependencies {
     return {
         primaryRoot: () => resolvePrimaryRoot(),
-        serializeMutation: withPullRequestMutationLock,
+        serializeMutation: withPullRequestReviewPublicationMutationLock,
         authenticateReviewer: (primaryRoot) => authenticateRole({ primaryRoot, role: 'reviewer' }),
         repositoryName: (session, primaryRoot) =>
             spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
@@ -736,6 +737,7 @@ export function inspectReviewPublicationRemote(
             continue;
         }
         if (
+            typeof record.id !== 'number' ||
             !Number.isSafeInteger(record.id) ||
             typeof record.state !== 'string' ||
             typeof record.body !== 'string' ||
@@ -866,6 +868,25 @@ function isMatchingRecoveryReceipt(value: unknown, number: number, ownerOid: str
     );
 }
 
+function requireLegacyReviewPublicationIncident(
+    incident: (typeof legacyReviewPublicationIncidents)[number] | undefined
+): (typeof legacyReviewPublicationIncidents)[number] {
+    if (incident === undefined) {
+        fail('legacy review-publication recovery requires the exact trusted incident receipt');
+    }
+    return incident;
+}
+
+function requireReviewPublicationOwner(
+    owner: import('./pullRequestMutationLock.ts').PullRequestMutationLockOwner,
+    number: number
+): Extract<import('./pullRequestMutationLock.ts').PullRequestMutationLockOwner, { version: 3 }> {
+    if (!isReviewPublicationPullRequestMutationLockOwner(owner)) {
+        fail(`PR #${number} recovery requires a review-publication lock owner`);
+    }
+    return owner;
+}
+
 export async function runRecoverPublishReviewLockCli(
     args: string[],
     dependencies: RecoverPublishReviewDependencies = defaultRecoverPublishReviewDependencies()
@@ -897,9 +918,7 @@ export async function runRecoverPublishReviewLockCli(
     }
     const originalOwner = readPullRequestMutationLockOwner(primaryRoot, currentOid, number);
     const legacy = originalOwner.version === 1;
-    if (!legacy && !isReviewPublicationPullRequestMutationLockOwner(originalOwner)) {
-        fail(`PR #${number} recovery requires a review-publication lock owner`);
-    }
+    const journaledOwner = legacy ? undefined : requireReviewPublicationOwner(originalOwner, number);
     const trustedIncident = legacy
         ? legacyReviewPublicationIncidents.find(
               (candidate) => candidate.number === number && candidate.ownerOid === ownerOid
@@ -922,19 +941,18 @@ export async function runRecoverPublishReviewLockCli(
         fail('legacy review-publication recovery requires the exact trusted incident receipt');
     }
     const recoveryIncident =
-        !legacy && originalOwner.recovery !== undefined
+        journaledOwner?.recovery !== undefined
             ? legacyReviewPublicationIncidents.find(
                   (candidate) =>
-                      candidate.number === number && candidate.ownerOid === originalOwner.recovery?.legacyOwnerOid
+                      candidate.number === number && candidate.ownerOid === journaledOwner.recovery?.legacyOwnerOid
               )
             : undefined;
     if (
-        !legacy &&
-        originalOwner.recovery !== undefined &&
+        journaledOwner?.recovery !== undefined &&
         (recoveryIncident === undefined ||
-            originalOwner.expectedHead !== recoveryIncident.expectedHead ||
-            originalOwner.reviewerActorNodeId !== recoveryIncident.reviewerActorNodeId ||
-            originalOwner.payloadDigest !==
+            journaledOwner.expectedHead !== recoveryIncident.expectedHead ||
+            journaledOwner.reviewerActorNodeId !== recoveryIncident.reviewerActorNodeId ||
+            journaledOwner.payloadDigest !==
                 reviewPublicationPayloadDigest(
                     reviewPublicationPayload({
                         commitId: recoveryIncident.expectedHead,
@@ -943,12 +961,15 @@ export async function runRecoverPublishReviewLockCli(
                         comments: recoveryIncident.preparedPayload.comments,
                     })
                 ) ||
-            originalOwner.mutation.phase !== 'prepared' ||
-            originalOwner.mutation.epoch !== 1)
+            journaledOwner.mutation.phase !== 'prepared' ||
+            journaledOwner.mutation.epoch !== 1)
     ) {
         fail('review-publication recovery requires an exact journaled incident binding');
     }
-    if (!legacy && (dependencies.isOwnerLive ?? reviewPublicationOwnerFenceIsLive)(originalOwner)) {
+    if (
+        journaledOwner !== undefined &&
+        (dependencies.isOwnerLive ?? reviewPublicationOwnerFenceIsLive)(journaledOwner)
+    ) {
         fail(`PR #${number} review-publication lock is still held by a live process`);
     }
     if (legacy) {
@@ -966,8 +987,12 @@ export async function runRecoverPublishReviewLockCli(
             }
         }
     }
-    const expectedHead = legacy ? incident.expectedHead : originalOwner.expectedHead;
-    const expectedActorNodeId = legacy ? incident.reviewerActorNodeId : originalOwner.reviewerActorNodeId;
+    const legacyIncident = legacy ? requireLegacyReviewPublicationIncident(incident) : undefined;
+    const expectedHead = legacyIncident?.expectedHead ?? journaledOwner?.expectedHead;
+    const expectedActorNodeId = legacyIncident?.reviewerActorNodeId ?? journaledOwner?.reviewerActorNodeId;
+    if (expectedHead === undefined || expectedActorNodeId === undefined) {
+        fail(`PR #${number} recovery requires a review-publication lock owner`);
+    }
     const auth = await dependencies.authenticateReviewer(primaryRoot);
     try {
         if (!isReviewerBotNodeId(auth.minted.actorNodeId)) {
@@ -980,7 +1005,10 @@ export async function runRecoverPublishReviewLockCli(
         const bundle = reviewBundlePath(primaryRoot, number, expectedHead);
         const document = parseReviewDocument(JSON.parse(readFileSync(join(bundle, 'review.json'), 'utf8')) as unknown);
         assertReviewCommentLinesInBundleDiff(document.comments, readFileSync(join(bundle, 'diff.patch'), 'utf8'));
-        if (legacy && JSON.stringify(document) !== JSON.stringify(incident.preparedPayload)) {
+        if (
+            legacyIncident !== undefined &&
+            JSON.stringify(document) !== JSON.stringify(legacyIncident.preparedPayload)
+        ) {
             fail('legacy review-publication recovery bundle does not match the trusted incident receipt');
         }
         const payloadDigest = reviewPublicationPayloadDigest(
@@ -991,16 +1019,17 @@ export async function runRecoverPublishReviewLockCli(
                 comments: document.comments,
             })
         );
-        const expectedDigest = legacy
-            ? reviewPublicationPayloadDigest(
-                  reviewPublicationPayload({
-                      commitId: expectedHead,
-                      event: incident.preparedPayload.event,
-                      body: incident.preparedPayload.body,
-                      comments: incident.preparedPayload.comments,
-                  })
-              )
-            : originalOwner.payloadDigest;
+        const expectedDigest =
+            legacyIncident === undefined
+                ? requireReviewPublicationOwner(originalOwner, number).payloadDigest
+                : reviewPublicationPayloadDigest(
+                      reviewPublicationPayload({
+                          commitId: expectedHead,
+                          event: legacyIncident.preparedPayload.event,
+                          body: legacyIncident.preparedPayload.body,
+                          comments: legacyIncident.preparedPayload.comments,
+                      })
+                  );
         if (payloadDigest !== expectedDigest) {
             fail('review-publication recovery payload does not match the retained lock');
         }
@@ -1029,8 +1058,14 @@ export async function runRecoverPublishReviewLockCli(
             payloadDigest: expectedDigest,
             reviewerActorNodeId: expectedActorNodeId,
             ownerFence: dependencies.currentOwnerFence?.() ?? currentReviewPublicationOwnerFence(),
-            mutation: { phase: 'prepared' as const, epoch: legacy ? 1 : originalOwner.mutation.epoch + 1 },
-            ...(legacy
+            mutation: {
+                phase: 'prepared' as const,
+                epoch:
+                    legacyIncident === undefined
+                        ? requireReviewPublicationOwner(originalOwner, number).mutation.epoch + 1
+                        : 1,
+            },
+            ...(legacyIncident !== undefined
                 ? {
                       recovery: {
                           legacyOwnerOid: ownerOid,

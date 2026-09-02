@@ -32,6 +32,7 @@ import {
     readPullRequestMutationLockOwner,
     readPullRequestMutationLockOid,
     reviewPublicationOwnerFenceIsLive,
+    withPullRequestReviewPublicationMutationLock,
     withPullRequestMutationLock,
     writePullRequestMutationLockOwner,
     writePullRequestMutationLockReceipt,
@@ -262,7 +263,9 @@ function recoveryDependencies(
 
 describe('review publish', () => {
     it('holds the per-PR mutation fence across head validation and review creation', async () => {
-        expect(defaultPublishReviewCoordinatorDependencies().serializeMutation).toBe(withPullRequestMutationLock);
+        expect(defaultPublishReviewCoordinatorDependencies().serializeMutation).toBe(
+            withPullRequestReviewPublicationMutationLock
+        );
         const { port } = fakePort();
         const calls: string[] = [];
         const fencedPort: PublishReviewPort = {
@@ -385,7 +388,7 @@ describe('review publish', () => {
             process.env.SOURDAW_TRUSTED_PS_PATH = executable;
             const dependencies: PublishReviewCoordinatorDependencies = {
                 primaryRoot: () => root,
-                serializeMutation: withPullRequestMutationLock,
+                serializeMutation: withPullRequestReviewPublicationMutationLock,
                 authenticateReviewer: async () => ({
                     minted: { actorNodeId: REVIEWER_BOT_NODE_ID },
                     session: { configDir: '/tmp/reviewer', env: {}, dispose: () => undefined },
@@ -460,7 +463,7 @@ describe('review publish', () => {
     });
 
     it.each([
-        ['expected head', (head: string, digest: string, actor: string) => ['b'.repeat(40), digest, actor]],
+        ['expected head', (_head: string, digest: string, actor: string) => ['b'.repeat(40), digest, actor]],
         ['payload digest', (head: string, _digest: string, actor: string) => [head, 'c'.repeat(64), actor]],
         ['reviewer actor', (head: string, digest: string, _actor: string) => [head, digest, 'other-actor']],
     ])('refuses a publication lock whose acquired %s is not the prepared payload', async (_label, mutate) => {
@@ -490,8 +493,11 @@ describe('review publish', () => {
                 expectedDigest,
                 REVIEWER_BOT_NODE_ID
             );
+            if (expectedHeadAtLock === undefined || digestAtLock === undefined || actorAtLock === undefined) {
+                throw new Error('publication lock test fixture is incomplete');
+            }
             await expect(
-                withPullRequestMutationLock(
+                withPullRequestReviewPublicationMutationLock(
                     root,
                     number,
                     async (boundary) => {
@@ -806,14 +812,28 @@ describe('review publish', () => {
             body: 'Review body.',
             comments: [{ ...validComment, defect: 'a', consequence: 'b', done: 'c' }],
         };
-        const review = {
+        const defaultComment = {
+            path: 'scripts/deliverPullRequest.ts',
+            line: 10,
+            side: 'RIGHT' as const,
+            body: 'a. b. c.',
+        };
+        const driftedComments = 'comments' in drift ? drift.comments : undefined;
+        const comments: Parameters<typeof exactPublishedReview>[0]['comments'] = [];
+        for (const comment of driftedComments ?? [defaultComment]) {
+            if (comment === undefined) {
+                throw new Error('review drift test fixture is incomplete');
+            }
+            comments.push({ ...comment });
+        }
+        const review: Parameters<typeof exactPublishedReview>[0] = {
             id: 1,
             state: 'CHANGES_REQUESTED',
             body: document.body,
             commitId: 'a'.repeat(40),
             actorNodeId: REVIEWER_BOT_NODE_ID,
-            comments: [{ path: 'scripts/deliverPullRequest.ts', line: 10, side: 'RIGHT' as const, body: 'a. b. c.' }],
             ...drift,
+            comments,
         };
 
         expect(exactPublishedReview(review, document, 'a'.repeat(40), REVIEWER_BOT_NODE_ID)).toBe(false);
@@ -949,8 +969,6 @@ describe('review publish', () => {
                     {
                         pull_request_review_id: 7,
                         path: 'file.ts',
-                        line: null,
-                        side: null,
                         original_line: 12,
                         side: 'RIGHT',
                         body: 'immutable comment',
@@ -1402,6 +1420,40 @@ describe('shellPort postReview state verification', () => {
             await expect(
                 runRecoverPublishReviewLockCli([String(fixture.number), '--owner', fixture.ownerOid], dependencies)
             ).resolves.toBe(0);
+        } finally {
+            rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
+    it('retains the adopted owner when the exact reviewer review appears between reconciliation reads', async () => {
+        const fixture = createJournaledRecoveryFixture();
+        const exact = {
+            id: 1,
+            state: 'APPROVED',
+            body: 'Attacked; held.',
+            commitId: fixture.head,
+            actorNodeId: REVIEWER_BOT_NODE_ID,
+            comments: [],
+        };
+        let inspections = 0;
+        try {
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.number), '--owner', fixture.ownerOid],
+                    recoveryDependencies(fixture.root, (expectedHead) => {
+                        inspections += 1;
+                        return {
+                            state: 'OPEN',
+                            head: expectedHead,
+                            reviews: inspections === 1 ? [] : [exact],
+                        };
+                    })
+                )
+            ).rejects.toThrow(/remote state changed during reconciliation.*preserved exact lock owner [0-9a-f]{40}/);
+            expect(inspections).toBe(2);
+            expect(
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
+            ).not.toBe(fixture.ownerOid);
         } finally {
             rmSync(fixture.root, { recursive: true, force: true });
         }
@@ -1889,6 +1941,9 @@ describe('shellPort postReview state verification', () => {
         );
         try {
             const [owner, head, attestedDigest, status] = argsFor(fixture, digest);
+            if (owner === undefined || head === undefined || attestedDigest === undefined || status === undefined) {
+                throw new Error('legacy attestation test fixture is incomplete');
+            }
             await expect(
                 runRecoverPublishReviewLockCli(
                     [
@@ -2001,7 +2056,7 @@ describe('shellPort postReview state verification', () => {
                     commitId: fixture.incident.expectedHead,
                     event: fixture.incident.preparedPayload.event,
                     body: fixture.incident.preparedPayload.body,
-                    comments: fixture.incident.preparedPayload.comments,
+                    comments: [...fixture.incident.preparedPayload.comments],
                 })
             );
             const owner = {
@@ -2182,6 +2237,47 @@ describe('shellPort postReview state verification', () => {
             }
         }
     );
+
+    it('rejects a valid recovery receipt for a different pull request before authentication', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-wrong-recovery-receipt-pr-'));
+        const number = 42;
+        const ownerOid = 'a'.repeat(40);
+        let authenticated = false;
+        try {
+            runGit(root, ['init']);
+            const receiptOid = writePullRequestMutationLockReceipt(
+                root,
+                {
+                    version: 1,
+                    operation: 'review-publication-recovery',
+                    number: number + 1,
+                    ownerOid,
+                    head: 'b'.repeat(40),
+                    payloadDigest: 'c'.repeat(64),
+                    outcome: 'absent',
+                },
+                number
+            );
+            runGit(root, ['update-ref', reviewPublicationRecoveryReceiptRef(number, ownerOid), receiptOid]);
+
+            await expect(
+                runRecoverPublishReviewLockCli([String(number), '--owner', ownerOid], {
+                    ...recoveryDependencies(root, (expectedHead) => ({
+                        state: 'OPEN',
+                        head: expectedHead,
+                        reviews: [],
+                    })),
+                    authenticateReviewer: async () => {
+                        authenticated = true;
+                        throw new Error('must not authenticate');
+                    },
+                })
+            ).rejects.toThrow(`PR #${number} review-publication lock is absent without an exact recovery receipt`);
+            expect(authenticated).toBe(false);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
 
     it.each([
         ['empty object', {}],

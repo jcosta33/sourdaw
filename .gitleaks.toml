@@ -38,4 +38,8 @@ regexes = [
   # on unrelated pull requests.
   '''123e4567-e89b-12d3-a456-426614174000''',
   '''123e4567-e89b-12d3-a456-426614174001''',
+
+  # Exact v1 lock-owner UUID in the audited PR #3342 recovery incident. This
+  # record is an immutable historical lock receipt, not an App credential.
+  '''2cd01237-cf63-4579-9e58-85893794529d''',
 ]

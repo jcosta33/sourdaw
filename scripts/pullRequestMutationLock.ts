@@ -73,13 +73,25 @@ export type PullRequestMutationSerialization = <Value>(
 export type PullRequestRemoteMutationBoundary = {
     markRemoteMutationAttempt: () => void;
     ownerOid: string;
+    registerSuccessfulCompletion: (cleanup: () => void) => void;
+};
+
+export type PullRequestReviewPublicationMutationBoundary = PullRequestRemoteMutationBoundary & {
     journalReviewPublication: (publication: {
         expectedHead: string;
         payloadDigest: string;
         reviewerActorNodeId: string;
     }) => void;
-    registerSuccessfulCompletion: (cleanup: () => void) => void;
 };
+
+export type PullRequestReviewPublicationMutationSerialization = <Value>(
+    primaryRoot: string,
+    number: number,
+    operation: (boundary: PullRequestReviewPublicationMutationBoundary) => Promise<Value>,
+    options: PullRequestMutationLockOptions & {
+        reviewPublication: NonNullable<PullRequestMutationLockOptions['reviewPublication']>;
+    }
+) => Promise<Value>;
 
 const LOCK_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
@@ -594,8 +606,7 @@ function parseWindowsProcessRows(output: string): WindowsProcessRow[] {
         if (
             candidate === undefined ||
             !isPositiveSafeInteger(candidate.ProcessId) ||
-            !Number.isSafeInteger(candidate.ParentProcessId) ||
-            candidate.ParentProcessId < 0 ||
+            !isNonNegativeSafeInteger(candidate.ParentProcessId) ||
             typeof candidate.CreationDate !== 'string' ||
             parseWindowsProcessStartedAt(candidate.CreationDate) === undefined ||
             seen.has(candidate.ProcessId)
@@ -614,6 +625,10 @@ function parseWindowsProcessRows(output: string): WindowsProcessRow[] {
 
 function isPositiveSafeInteger(value: unknown): value is number {
     return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+}
+
+function isNonNegativeSafeInteger(value: unknown): value is number {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
 function parseWindowsProcessStartedAt(value: string): bigint | undefined {
@@ -842,10 +857,10 @@ function releaseMutationLock(primaryRoot: string, ref: string, oid: string, numb
     }
 }
 
-export async function withPullRequestMutationLock<Value>(
+async function withPullRequestMutationLockImplementation<Value>(
     primaryRoot: string,
     number: number,
-    operation: (boundary: PullRequestRemoteMutationBoundary) => Promise<Value>,
+    operation: (boundary: PullRequestReviewPublicationMutationBoundary) => Promise<Value>,
     options?: PullRequestMutationLockOptions
 ): Promise<Value> {
     const lock = acquireMutationLock(primaryRoot, number, options);
@@ -902,4 +917,24 @@ export async function withPullRequestMutationLock<Value>(
             releaseMutationLock(primaryRoot, lock.ref, ownerOid, number);
         }
     }
+}
+
+export function withPullRequestMutationLock<Value>(
+    primaryRoot: string,
+    number: number,
+    operation: (boundary: PullRequestRemoteMutationBoundary) => Promise<Value>,
+    options?: PullRequestMutationLockOptions
+): Promise<Value> {
+    return withPullRequestMutationLockImplementation(primaryRoot, number, operation, options);
+}
+
+export function withPullRequestReviewPublicationMutationLock<Value>(
+    primaryRoot: string,
+    number: number,
+    operation: (boundary: PullRequestReviewPublicationMutationBoundary) => Promise<Value>,
+    options: PullRequestMutationLockOptions & {
+        reviewPublication: NonNullable<PullRequestMutationLockOptions['reviewPublication']>;
+    }
+): Promise<Value> {
+    return withPullRequestMutationLockImplementation(primaryRoot, number, operation, options);
 }

@@ -47,6 +47,7 @@ import {
     trustedDependencyPaths,
     trustedSnapshotEnv,
 } from '../trustedGithubWriteBootstrap.ts';
+import { withPullRequestReviewPublicationMutationLock } from '../pullRequestMutationLock.ts';
 
 import type {
     DeliveryAuthentication,
@@ -2099,7 +2100,7 @@ describe('package scripts and gitignore', () => {
         const entered: string[] = [];
         const publishDependencies: PublishReviewCoordinatorDependencies = {
             primaryRoot: () => root,
-            serializeMutation: withPullRequestDeliveryLock,
+            serializeMutation: withPullRequestReviewPublicationMutationLock,
             authenticateReviewer: async () => {
                 entered.push('publish:authenticate');
                 return expect.fail('reviewer authentication should not start');

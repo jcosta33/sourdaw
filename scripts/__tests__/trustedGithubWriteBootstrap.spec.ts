@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
     bareModuleSpecifiers,
+    executeTrustedSnapshot,
     forwardTrustedSnapshotSignal,
     snapshotImportSpecifiers,
     trustedSnapshotRunsDetached,
@@ -171,5 +172,25 @@ describe('trusted GitHub write snapshot launcher', () => {
             { target: 42, signal: 'SIGINT' },
             { target: 42, signal: 'SIGHUP' },
         ]);
+    });
+
+    it('forwards cancellation to the detached snapshot child group and waits for it to terminate', async () => {
+        await expect(
+            executeTrustedSnapshot('review:publish', [], {
+                commit: 'test-snapshot',
+                sources: new Map([
+                    [
+                        'scripts/publishReview.ts',
+                        [
+                            'export async function runPublishReviewCli() {',
+                            "  setTimeout(() => process.kill(process.ppid, 'SIGTERM'), 100);",
+                            '  await new Promise(() => undefined);',
+                            '  return 0;',
+                            '}',
+                        ].join('\n'),
+                    ],
+                ]),
+            })
+        ).rejects.toThrow('trusted snapshot terminated by SIGTERM');
     });
 });
