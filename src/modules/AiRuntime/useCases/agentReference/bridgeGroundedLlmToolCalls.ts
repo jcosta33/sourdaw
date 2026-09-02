@@ -1730,7 +1730,19 @@ function isTrackControlProtectionQualifier(
 }
 
 function stripTrackControlProtectionSpans(text: string): string {
-    const withoutGerund = text.replace(/\b(?:leaving|keeping|preserving|retaining)\b[\s\S]*$/iu, '').trim();
+    const laterTrackControlIntent = /\b(?:mute|unmute|solo|unsolo)\b/iu;
+    const mutedComplement = /\b(?:muted|unmuted|soloed|unsoloed)\b/iu;
+    const gerund = /\b(?:leaving|keeping|preserving|retaining)\b/iu.exec(text);
+    let withoutGerund = text;
+    if (gerund?.index !== undefined) {
+        const afterGerund = text.slice(gerund.index + gerund[0].length);
+        if (!mutedComplement.test(afterGerund)) {
+            const laterIntent = laterTrackControlIntent.exec(afterGerund);
+            const gerundEnd =
+                laterIntent?.index === undefined ? text.length : gerund.index + gerund[0].length + laterIntent.index;
+            withoutGerund = `${text.slice(0, gerund.index)}${text.slice(gerundEnd)}`.trim();
+        }
+    }
     const withoutUnchanged = withoutGerund
         .replace(/\b(?:leave|keep|preserve|retain)\b[\s\S]*\bunchanged\b[\s\S]*$/iu, '')
         .trim();

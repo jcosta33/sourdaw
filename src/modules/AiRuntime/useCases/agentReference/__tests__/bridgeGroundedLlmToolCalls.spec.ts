@@ -3376,6 +3376,107 @@ describe('bridgeGroundedLlmToolCalls', () => {
         ]);
     });
 
+    it('does not let a leaving-unchanged gerund eat a later unsplit mute', () => {
+        const roomMic = createTrack({ id: 'track-room-mic', name: 'Room Mic' });
+        const guitar = createTrack({ id: 'track-guitar', name: 'Guitar' });
+        const drumBus = createTrack({ id: 'track-drum-bus', name: 'Drum Bus' });
+        const laterMuteContext = {
+            ...projectContext,
+            tracks: [roomMic, guitar, drumBus, master],
+        };
+        const unsplit = 'mute Room Mic leaving the Drum Bus unchanged mute Guitar';
+        const room = bridge(
+            [{ name: 'muteTrack', arguments: { trackId: roomMic.id, muted: true } }],
+            unsplit,
+            laterMuteContext
+        );
+        const later = bridge(
+            [{ name: 'muteTrack', arguments: { trackId: guitar.id, muted: true } }],
+            unsplit,
+            laterMuteContext
+        );
+        const laterSolo = bridge(
+            [{ name: 'soloTrack', arguments: { trackId: guitar.id, soloed: true } }],
+            unsplit,
+            laterMuteContext
+        );
+        expect(room.actions).toEqual([]);
+        expect(later.actions).toEqual([]);
+        expect(room.rejections).toEqual([
+            {
+                index: 0,
+                name: 'muteTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+        expect(later.rejections).toEqual([
+            {
+                index: 0,
+                name: 'muteTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+        expect(laterSolo.rejections).not.toEqual([
+            {
+                index: 0,
+                name: 'soloTrack',
+                reason: 'Provider target trackId does not match the uniquely grounded project reference',
+            },
+        ]);
+        const punctuated = 'mute Room Mic leaving the Drum Bus unchanged and mute Guitar';
+        const both = bridge(
+            [
+                { name: 'muteTrack', arguments: { trackId: roomMic.id, muted: true } },
+                { name: 'muteTrack', arguments: { trackId: guitar.id, muted: true } },
+            ],
+            punctuated,
+            laterMuteContext
+        );
+        expect(both.actions).toEqual([
+            { type: 'muteTrack', payload: { trackId: roomMic.id, muted: true } },
+            { type: 'muteTrack', payload: { trackId: guitar.id, muted: true } },
+        ]);
+        expect(both.rejections).toEqual([]);
+    });
+
+    it.each(['mute Guitar leaving Vocals muted', 'mute Guitar leave Vocals muted'] as const)(
+        'keeps both names when %s uses a muted complement',
+        (prompt) => {
+            const vocals = createTrack({ id: 'track-vocals-muted-complement', name: 'Vocals' });
+            const guitar = createTrack({ id: 'track-guitar', name: 'Guitar' });
+            const complementContext = {
+                ...projectContext,
+                tracks: [vocals, guitar, master],
+            };
+            const named = bridge(
+                [{ name: 'muteTrack', arguments: { trackId: guitar.id, muted: true } }],
+                prompt,
+                complementContext
+            );
+            const other = bridge(
+                [{ name: 'muteTrack', arguments: { trackId: vocals.id, muted: true } }],
+                prompt,
+                complementContext
+            );
+            expect(named.actions, prompt).toEqual([]);
+            expect(other.actions, prompt).toEqual([]);
+            expect(named.rejections, prompt).toEqual([
+                {
+                    index: 0,
+                    name: 'muteTrack',
+                    reason: 'Target trackId is ambiguous in the user request',
+                },
+            ]);
+            expect(other.rejections, prompt).toEqual([
+                {
+                    index: 0,
+                    name: 'muteTrack',
+                    reason: 'Target trackId is ambiguous in the user request',
+                },
+            ]);
+        }
+    );
+
     it('rejects solo-safe writes to a bus created earlier in the same provider plan', () => {
         const result = bridge(
             [
