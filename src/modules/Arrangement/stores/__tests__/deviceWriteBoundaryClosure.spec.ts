@@ -14,6 +14,7 @@ import {
     ScriptTarget,
     SyntaxKind,
     createScanner,
+    createPrinter,
     createSourceFile,
     forEachChild,
     isArrayLiteralExpression,
@@ -1028,9 +1029,13 @@ function rawSourceContainsCommentIntroducer(source: string): boolean {
 const commentScanner = createScanner(ScriptTarget.Latest, false);
 
 function stripComments(path: string, source: string): string {
-    const isTsx = path.endsWith('.tsx');
-    commentScanner.setLanguageVariant(isTsx ? LanguageVariant.JSX : LanguageVariant.Standard);
-    commentScanner.setScriptKind(isTsx ? ScriptKind.TSX : ScriptKind.TS);
+    if (path.endsWith('.tsx')) {
+        const sourceFile = createSourceFile(path, source, ScriptTarget.Latest, false, ScriptKind.TSX);
+        return createPrinter({ removeComments: true }).printFile(sourceFile);
+    }
+
+    commentScanner.setLanguageVariant(LanguageVariant.Standard);
+    commentScanner.setScriptKind(ScriptKind.TS);
     commentScanner.setText(source);
 
     const parts: string[] = [];
@@ -1536,6 +1541,16 @@ describe('device write boundary closure', () => {
             ),
         ]);
         expect(counts['src/modules/Arrangement/stringLiteralCommentText.ts']).toBe(1);
+    });
+
+    it('does not treat http:// in JSX text as a line comment', () => {
+        const parsed = productionSource(
+            'src/modules/Arrangement/jsxHttpText.tsx',
+            'export const C = () => <div>http://x.com</div>; const x = persistDeviceParam;\n'
+        );
+        expect(parsed.code).toContain('persistDeviceParam');
+        const counts = countByPath([parsed], SINK_DEFINITIONS['persistence-runtime']);
+        expect(counts['src/modules/Arrangement/jsxHttpText.tsx']).toBe(1);
     });
 
     it('still counts code occurrences after comment stripping', () => {
