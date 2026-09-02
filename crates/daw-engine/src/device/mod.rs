@@ -179,6 +179,12 @@ pub(crate) trait InputBackend {
     /// Open the default input and negotiate format. No audio flows yet: the
     /// caller reads [`OpenInput::negotiated`], sizes its capture ring on
     /// those facts, then starts the stream.
+    // The tests already call this; only the non-test build has no caller until
+    // the audio thread gains one.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "wired by the audio-thread capture slice of #3069")
+    )]
     fn open_default_input(request: InputOpenRequest) -> Result<Self::Open, InputOpenRefusal>;
 }
 
@@ -187,10 +193,12 @@ pub(crate) trait OpenInput {
     /// The running stream. Stopping is dropping, as on the output side.
     type Stream;
 
+    #[expect(dead_code, reason = "wired by the audio-thread capture slice of #3069")]
     fn negotiated(&self) -> NegotiatedInput;
 
     /// Start the stream: `capture` receives every device buffer from here on,
     /// and `on_error` every mid-stream error the backend sees.
+    #[expect(dead_code, reason = "wired by the audio-thread capture slice of #3069")]
     fn start(
         self,
         capture: CaptureFn,
@@ -219,6 +227,7 @@ pub(crate) type PlatformStream =
     <<PlatformOutputBackend as OutputBackend>::Open as OpenOutput>::Stream;
 
 /// The input stream type the platform backend produces.
+#[expect(dead_code, reason = "wired by the audio-thread capture slice of #3069")]
 pub(crate) type PlatformInputStream =
     <<PlatformInputBackend as InputBackend>::Open as OpenInput>::Stream;
 
