@@ -30,6 +30,9 @@ const mocks = vi.hoisted(() => ({
     executionOverride: 'none' as 'ambiguous-before-commit' | 'none',
     obscureCommittedResult: 'none' as 'ambiguous' | 'mismatched' | 'missing' | 'none',
     observedCommandResult: { value: null as null | { status: string; reason?: string } },
+    describePlannedAction: vi.fn(() => 'Prompt action'),
+    getProjectContext: vi.fn(() => ({ tracks: [] })),
+    planPromptActions: vi.fn(),
     prepareDurablePromotionRecovery: vi.fn(),
     commitDurablePromotionRecovery: vi.fn(),
     completeDurablePromotionRecovery: vi.fn(),
@@ -41,16 +44,31 @@ const mocks = vi.hoisted(() => ({
     releaseStagedAsset: vi.fn(),
 }));
 
-// completeMidiLearn needs executeAppAction at Command barrel load; submitAdmittedPromptRequest imports parseVersionedCommandBatchEnvelope; compileAgentActionExecution imports compileVersionedCommandBatchEnvelope and parseVersionedCommandBatchEnvelope; reconcilePreparedStemImportRecovery imports getVersionedCommandBatchIdempotentReplay and parseVersionedCommandBatchEnvelope; executePlannedActions imports executeVersionedCommandBatchEnvelope and generateGroupId; prepareStemImport confirmation uses getVersionedCommandBatchCommitProof via createStemImportConfirmationResourceLease; parsePromptToActions imports getExecutableAppActionToolSchemas and requiresAppActionConfirmation; applicationOwnedToolLoop imports MAX_EXECUTABLE_APP_ACTION_INTENT_CATALOG_INTENT_LENGTH and getExecutableAppActionIntentCatalogUnicodeLength.
+vi.mock('../getProjectContext', () => ({ getProjectContext: mocks.getProjectContext }));
+vi.mock('../planPromptActions', () => ({ planPromptActions: mocks.planPromptActions }));
+vi.mock('../describePlannedAction', () => ({ describePlannedAction: mocks.describePlannedAction }));
+// This spec imports captureProjectRevision, createCrdtDoc, getCrdtDoc, registerCrdtStorageRuntime, removeCrdtDoc, and resetCrdtProjectAuthority; submitAdmittedPromptRequest imports settlePendingProjectWritesAndCaptureRevision.
+vi.mock('#/modules/CrdtDocument/useCases', async () => {
+    const original = await vi.importActual<typeof import('#/modules/CrdtDocument/useCases')>(
+        '#/modules/CrdtDocument/useCases'
+    );
+    return {
+        captureProjectRevision: original.captureProjectRevision,
+        createCrdtDoc: original.createCrdtDoc,
+        getCrdtDoc: original.getCrdtDoc,
+        registerCrdtStorageRuntime: original.registerCrdtStorageRuntime,
+        removeCrdtDoc: original.removeCrdtDoc,
+        resetCrdtProjectAuthority: original.resetCrdtProjectAuthority,
+        settlePendingProjectWritesAndCaptureRevision: original.settlePendingProjectWritesAndCaptureRevision,
+    };
+});
+// submitAdmittedPromptRequest imports parseVersionedCommandBatchEnvelope; compileAgentActionExecution imports compileVersionedCommandBatchEnvelope and parseVersionedCommandBatchEnvelope; compilePlannedActionCommandBatch imports compileVersionedCommandBatchEnvelope and parseVersionedCommandEnvelope; compilePendingActionCommandEnvelopes imports migrateLegacyAppActionToVersionedCommandEnvelope and serializeVersionedCommandEnvelope; compileAgentRiskApproval imports commandBatchPreflightPort, getAgentActionRiskPolicy, getVersionedCommandBatchDivergenceTargetIds, and parseVersionedCommandBatchEnvelope; reconcilePreparedStemImportRecovery imports getVersionedCommandBatchIdempotentReplay and parseVersionedCommandBatchEnvelope; executePlannedActions imports executeVersionedCommandBatchEnvelope and generateGroupId; executePromptActionGroup imports generateGroupId, isExecutableAppActionType, and parseVersionedCommandBatchEnvelope; createStemImportConfirmationResourceLease imports getVersionedCommandBatchCommitProof; issueAgentCommandApprovalBinding imports issueCommandApprovalBinding; completeMidiLearn imports executeAppAction when the CrdtDocument useCases barrel loads at runtime.
 vi.mock('#/modules/Command/useCases', async () => {
     const original = await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
     return {
-        MAX_EXECUTABLE_APP_ACTION_INTENT_CATALOG_INTENT_LENGTH:
-            original.MAX_EXECUTABLE_APP_ACTION_INTENT_CATALOG_INTENT_LENGTH,
         commandBatchPreflightPort: original.commandBatchPreflightPort,
         compileVersionedCommandBatchEnvelope: original.compileVersionedCommandBatchEnvelope,
         configureCommandBatchIdempotency: original.configureCommandBatchIdempotency,
-        describeAction: original.describeAction,
         executeAppAction: original.executeAppAction,
         executeVersionedCommandBatchEnvelope: async (
             ...args: Parameters<typeof original.executeVersionedCommandBatchEnvelope>
@@ -87,11 +105,6 @@ vi.mock('#/modules/Command/useCases', async () => {
         },
         generateGroupId: original.generateGroupId,
         getAgentActionRiskPolicy: original.getAgentActionRiskPolicy,
-        getExecutableAppActionGroundingCatalog: original.getExecutableAppActionGroundingCatalog,
-        getExecutableAppActionGroundingRules: original.getExecutableAppActionGroundingRules,
-        getExecutableAppActionIntentCatalog: original.getExecutableAppActionIntentCatalog,
-        getExecutableAppActionIntentCatalogUnicodeLength: original.getExecutableAppActionIntentCatalogUnicodeLength,
-        getExecutableAppActionToolSchemas: original.getExecutableAppActionToolSchemas,
         getVersionedCommandBatchCommitProof: original.getVersionedCommandBatchCommitProof,
         getVersionedCommandBatchDivergenceTargetIds: original.getVersionedCommandBatchDivergenceTargetIds,
         getVersionedCommandBatchIdempotentReplay: async (
@@ -118,23 +131,17 @@ vi.mock('#/modules/Command/useCases', async () => {
             }
             return original.getVersionedCommandBatchIdempotentReplay(input);
         },
-        getVersionedCommandTargetRanges: original.getVersionedCommandTargetRanges,
         isExecutableAppActionType: original.isExecutableAppActionType,
         issueCommandApprovalBinding: original.issueCommandApprovalBinding,
         migrateLegacyAppActionToVersionedCommandEnvelope: original.migrateLegacyAppActionToVersionedCommandEnvelope,
         parseVersionedCommandBatchEnvelope: original.parseVersionedCommandBatchEnvelope,
         parseVersionedCommandEnvelope: original.parseVersionedCommandEnvelope,
-        requiresAppActionConfirmation: original.requiresAppActionConfirmation,
         resetActionReplayAuthority: original.resetActionReplayAuthority,
-        selectExecutableAppActionToolSchemasForPrompt: original.selectExecutableAppActionToolSchemasForPrompt,
         serializeVersionedCommandEnvelope: original.serializeVersionedCommandEnvelope,
     };
 });
-// prepareStemImport and discardPreparedStemImportResources import decodeAudioFile and releasePreviewAudioBuffer; applicationOwnedToolLoop imports getAgentBuiltinDeviceRuntimeManifest; getBackingVocalPlatePromptScope imports getDeviceChainTailSeconds.
+// discardPreparedStemImportResources imports releasePreviewAudioBuffer.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
-    decodeAudioFile: vi.fn(),
-    getAgentBuiltinDeviceRuntimeManifest: vi.fn(),
-    getDeviceChainTailSeconds: vi.fn(),
     releasePreviewAudioBuffer: mocks.releasePreviewAudioBuffer,
 }));
 // prepareStemImport, discardPreparedStemImportResources, and createStemImportConfirmationResourceLease import getAssetTransfer.
