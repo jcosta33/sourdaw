@@ -2408,7 +2408,7 @@ describe('package scripts and gitignore', () => {
         }
     });
 
-    it('releases the exact owner after a definitive merge rejection records the mutation as absent', async () => {
+    it('releases the exact owner when a known-absent record precedes an error', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
         initializeDeliveryLockRepository(root);
 
@@ -2561,6 +2561,73 @@ describe('package scripts and gitignore', () => {
             expect(dispatched).toBe(1);
         }
     );
+
+    it('forwards the known-absent marker so a definitive merge rejection releases the exact owner', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
+        initializeDeliveryLockRepository(root);
+        const authentication: DeliveryAuthentication = {
+            minted: {
+                token: 'ghs_delivery',
+                login: 'renamed-author[bot]',
+                actorNodeId: AUTHOR_BOT_NODE_ID,
+                permissions: {},
+            },
+            session: { configDir: '/tmp/sourdaw-delivery', env: {}, dispose: () => undefined },
+        };
+        const unusedPort: DeliveryPort = {
+            fetch: () => expect.fail('delivery domain should not run'),
+            pullRequest: () => expect.fail('delivery domain should not run'),
+            gateRequiredCheckNames: () => expect.fail('delivery domain should not run'),
+            headCheckRuns: () => expect.fail('delivery domain should not run'),
+            reviewState: () => expect.fail('delivery domain should not run'),
+            dependents: () => expect.fail('delivery domain should not run'),
+            repositoryDeletesMergedBranches: () => expect.fail('delivery domain should not run'),
+            merge: () => expect.fail('delivery domain should not run'),
+            retarget: () => expect.fail('delivery domain should not run'),
+            deliveryReceipts: () => expect.fail('delivery domain should not run'),
+            deliveryReceiptProof: () => expect.fail('delivery domain should not run'),
+            addDeliveryReceipt: () => expect.fail('delivery domain should not run'),
+            readDeliveryReceiptAuthority: () => expect.fail('delivery domain should not run'),
+            writeDeliveryReceiptAuthority: () => expect.fail('delivery domain should not run'),
+            clearDeliveryReceiptAuthority: () => expect.fail('delivery domain should not run'),
+            log: () => expect.fail('delivery domain should not run'),
+        };
+        let markRemoteMutationAttempt: (() => void) | undefined;
+        let forwardedKnownAbsent: (() => void) | undefined;
+        const dependencies: DeliveryCoordinatorDependencies = {
+            primaryRoot: () => root,
+            serializeDelivery: withPullRequestDeliveryLock,
+            authenticateAuthor: async () => authentication,
+            authenticateTracker: async () => authentication,
+            repositoryName: () => 'jcosta33/sourdaw',
+            deliveryPort: (_repository, _authentication, _primaryRoot, attempt) => {
+                markRemoteMutationAttempt = attempt;
+                return unusedPort;
+            },
+            trackerPort: () => ({
+                withMutationLease: (operation) => operation(),
+                inspect: () => expect.fail('tracker should not be inspected before the merge'),
+                update: () => expect.fail('tracker should not be updated before the merge'),
+                comment: () => expect.fail('tracker should not receive a comment before the merge'),
+                log: () => undefined,
+            }),
+            completeIssue: () => expect.fail('no issue completes before the merge'),
+            deliver: (_number, _port, _tracker, markRemoteMutationKnownAbsent) => {
+                forwardedKnownAbsent = markRemoteMutationKnownAbsent;
+                markRemoteMutationAttempt?.();
+                markRemoteMutationKnownAbsent?.();
+                throw new DeliveryMergeRejectedError('PR #2495 was not merged: HTTP 422', 'definitive-no-merge');
+            },
+        };
+
+        try {
+            await expect(coordinateDelivery(2495, dependencies)).rejects.toThrow(/was not merged/);
+            expect(forwardedKnownAbsent).toBeInstanceOf(Function);
+            expect(deliveryLockExists(root, 2495)).toBe(false);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
 
     it('does not release a delivery lock whose ownership token changed', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));

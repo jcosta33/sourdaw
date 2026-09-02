@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { AUTHOR_BOT_NODE_ID } from '../githubAppIdentity.ts';
+import { AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID } from '../githubAppIdentity.ts';
 import { runDeliverCli } from '../deliverPullRequest.ts';
 import { composeDeliveryReceipt } from '../prContract.ts';
 import { runRecoverDeliveryLockCli, type DeliveryLockRecoveryDependencies } from '../recoverDeliveryLock.ts';
@@ -176,6 +176,32 @@ describe('deliver --recover-lock', () => {
         try {
             await expect(runRecoverDeliveryLockCli(['3344', '--owner', OWNER_OID], configured)).rejects.toThrow(
                 expectedError
+            );
+            expect(git(root, ['rev-parse', '--verify', REF])).toBe(OWNER_OID);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it.each([
+        ['reviewer actor', REVIEWER_BOT_NODE_ID],
+        ['unexpected actor', 'BOT_other'],
+    ])('refuses a minted %s without deleting the retained ref', async (_label, actorNodeId) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-recovery-'));
+        initialize(root);
+        const state = remoteState();
+        const base = dependencies(root, [state, state]);
+        const configured: DeliveryLockRecoveryDependencies = {
+            ...base,
+            authenticateAuthor: async () => ({
+                minted: { actorNodeId },
+                session: { configDir: root, env: {}, dispose: () => undefined },
+            }),
+        };
+
+        try {
+            await expect(runRecoverDeliveryLockCli(['3344', '--owner', OWNER_OID], configured)).rejects.toThrow(
+                /minted actor .+ is not/
             );
             expect(git(root, ['rev-parse', '--verify', REF])).toBe(OWNER_OID);
         } finally {

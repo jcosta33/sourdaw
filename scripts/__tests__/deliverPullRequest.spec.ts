@@ -915,9 +915,9 @@ function shellMergeRejection(status: '409' | '422'): DeliveryMergeRejectedError 
 
 describe('pull-request delivery', () => {
     it.each([
-        ['definitive HTTP 422', '422', false],
-        ['ambiguous HTTP 409', '409', true],
-    ] as const)('releases only $0 and retains $1 for reacquisition refusal', async (_label, status, retainsLock) => {
+        ['releases the lock after definitive HTTP 422', '422', false],
+        ['retains the lock and refuses reacquisition after ambiguous HTTP 409', '409', true],
+    ] as const)('%s', async (_label, status, retainsLock) => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-rejection-lock-'));
         initializeDeliveryLockRepository(root);
         const { port, tracker } = fakePort({ dependentSets: [[], []] });
