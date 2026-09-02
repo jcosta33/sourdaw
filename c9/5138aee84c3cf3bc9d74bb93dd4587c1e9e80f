@@ -1,0 +1,36 @@
+src/modules/AudioEngine/useCases/offlineRender/constants.ts
+  s_9b530f08172a54::t_2a9df6d0d6de3c 1
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClips.spec.ts
+  s_9b530f08172a54::t_a702a70d69b18a 12
+  s_9b530f08172a54::t_ea3f336ed0eb0d 13-16,899,939-943,946-950
+src/modules/AudioEngine/useCases/offlineRender/__tests__/constants.spec.ts
+  s_9b530f08172a54::t_cf1d5cd008da4e 20-23
+  s_9b530f08172a54::t_83b4056abfd7f5 10
+src/utils/__tests__/clipFadeScheduleClamp.spec.ts
+  s_9b530f08172a54::t_c948d25ffc6295 53-87
+  s_9b530f08172a54::t_a40e216d8cfb19 3-5,7
+  s_9b530f08172a54::t_f94523b64322ae 6
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_9b530f08172a54::t_e03b6fbcd7df99 13
+  s_9b530f08172a54::t_b7ff1c7464c423 14-17,330
+src/utils/clipFadeScheduleClamp.ts
+  s_9b530f08172a54::t_6ea648e6a618d6 15-17,25
+  s_9b530f08172a54::t_be91250c0f8507 38
+  s_9b530f08172a54::t_f74b4176bc809a 39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "c95138aee84c3cf3bc9d74bb93dd4587c1e9e80f",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
