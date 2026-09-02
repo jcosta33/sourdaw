@@ -490,6 +490,48 @@ mod tests {
         assert_eq!(error, "no native engine is running");
     }
 
+    /// A batch the ring refused is not a fence, so the install must number one
+    /// only once the push has been taken. Numbering above the send would run
+    /// `batches_sent` ahead of the engine's `batches_applied` for the rest of
+    /// the session: every later batch would report a number one past the count
+    /// it is held against, `admittedBatch` would promise a drain that never
+    /// comes, and the live automation writer would discard every snapshot it
+    /// polls.
+    #[test]
+    fn a_refused_maps_push_numbers_no_fence() {
+        use crate::commands::graph::apply_graph_commands;
+
+        let state = AppState::default();
+        // A ring of one holds a single fence and nothing more, so the maps
+        // batch has to grow it; with the retirement adoption channel gone that
+        // growth fails, which is the engine's refusal — nothing pushed.
+        let (engine, _command_rx, retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(1);
+        drop(retired_adoption_rx);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let refusal = crate::block_on_test(set_transport_maps(maps_payload(), &state))
+            .expect_err("a batch the ring will not take is not installed");
+        assert!(
+            refusal.contains("transport maps were not applied"),
+            "got: {refusal}"
+        );
+
+        // One fence still fits the untouched ring, and it is the first fence of
+        // the session: the refused install left the counter where it found it.
+        let batch = crate::block_on_test(apply_graph_commands(
+            serde_json::json!({ "schemaVersion": 1, "commands": [] }),
+            &state,
+        ))
+        .expect("the batch resolves to a result");
+        assert_eq!(batch["application"], "applied");
+        assert_eq!(
+            batch["admittedBatch"].as_u64(),
+            Some(1),
+            "the first fence the engine will drain is this batch's, not the refused install's"
+        );
+    }
+
     /// The maps install publishes a fence of its own, outside the graph batch
     /// path, and both fences are numbered by the one counter the engine counts
     /// with. An install that sent its fence without numbering it would leave
