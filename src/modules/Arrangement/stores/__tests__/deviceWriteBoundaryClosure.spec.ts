@@ -8,10 +8,12 @@ import {
     type FunctionDeclaration,
     type FunctionExpression,
     type Node,
+    LanguageVariant,
     NodeFlags,
     ScriptKind,
     ScriptTarget,
-    createPrinter,
+    SyntaxKind,
+    createScanner,
     createSourceFile,
     forEachChild,
     isArrayLiteralExpression,
@@ -982,8 +984,8 @@ const GUARDED_EXECUTABLE_PATHS = [
 // device-data property names and AST entry points, and the executable guard.
 // Files whose raw text contains none of these cannot contribute a match, so
 // they skip code preparation entirely. Comment-free censused files use raw
-// source as code and skip the printer. Sources with comment introducers still
-// require parsing so comment text is stripped before counting.
+// source as code and skip stripping. Sources with comment introducers still
+// require a scan so comment text is stripped before counting.
 const CENSUS_TOKENS = [
     'persistDeviceParam',
     'persistDevicePatch',
@@ -1019,18 +1021,68 @@ function rawSourceContainsCommentIntroducer(source: string): boolean {
     return source.includes('//') || source.includes('/*');
 }
 
-// Compiler-printer comment removal, not hand-rolled scanning: censused sources
-// carry comment-like text inside string literals (`'audio/*,.wav'` accept
-// filters), and only the parser reliably tells a comment from a string.
+// Scanner comment removal, not a parse+print and not a regex stripper: censused
+// sources carry comment-like text inside string literals (`'audio/*,.wav'`
+// accept filters). The TypeScript scanner keeps those literals intact while
+// skipping comment trivia.
+const commentScanner = createScanner(ScriptTarget.Latest, false);
+
 function stripComments(path: string, source: string): string {
-    const sourceFile = createSourceFile(
-        path,
-        source,
-        ScriptTarget.Latest,
-        true,
-        path.endsWith('.tsx') ? ScriptKind.TSX : ScriptKind.TS
-    );
-    return createPrinter({ removeComments: true }).printFile(sourceFile);
+    const isTsx = path.endsWith('.tsx');
+    commentScanner.setLanguageVariant(isTsx ? LanguageVariant.JSX : LanguageVariant.Standard);
+    commentScanner.setScriptKind(isTsx ? ScriptKind.TSX : ScriptKind.TS);
+    commentScanner.setText(source);
+
+    const parts: string[] = [];
+    const templates: Array<{ braceDepth: number }> = [];
+    let copyFrom = 0;
+
+    try {
+        while (true) {
+            let kind = commentScanner.scan();
+            if (kind === SyntaxKind.EndOfFileToken) {
+                parts.push(source.slice(copyFrom));
+                break;
+            }
+
+            if (kind === SyntaxKind.SingleLineCommentTrivia || kind === SyntaxKind.MultiLineCommentTrivia) {
+                parts.push(source.slice(copyFrom, commentScanner.getTokenStart()));
+                copyFrom = commentScanner.getTokenEnd();
+                continue;
+            }
+
+            if (kind === SyntaxKind.TemplateHead) {
+                templates.push({ braceDepth: 0 });
+                continue;
+            }
+
+            const template = templates.at(-1);
+            if (template === undefined) {
+                continue;
+            }
+
+            if (kind === SyntaxKind.OpenBraceToken) {
+                template.braceDepth += 1;
+                continue;
+            }
+            if (kind !== SyntaxKind.CloseBraceToken) {
+                continue;
+            }
+            if (template.braceDepth > 0) {
+                template.braceDepth -= 1;
+                continue;
+            }
+
+            kind = commentScanner.reScanTemplateToken(false);
+            if (kind === SyntaxKind.TemplateTail) {
+                templates.pop();
+            }
+        }
+
+        return parts.join('');
+    } finally {
+        commentScanner.setText(undefined);
+    }
 }
 
 function productionSource(path: string, source: string): ProductionSource {
@@ -1067,11 +1119,11 @@ function productionSources(root: string): ProductionSource[] {
 }
 
 /**
- * One sweep of `src/`, shared by every case below. Parsing and re-printing the
- * whole tree costs seconds; doing it once per case put every case in this file
- * over its timeout. The working tree cannot change mid-run, so one sweep is the
- * same evidence as fourteen, and each case still composes its own synthetic
- * file onto a copy.
+ * One sweep of `src/`, shared by every case below. Walking the tree and
+ * stripping comments still costs real time; doing it once per case put every
+ * case in this file over its timeout. The working tree cannot change mid-run,
+ * so one sweep is the same evidence as fourteen, and each case still composes
+ * its own synthetic file onto a copy.
  */
 const productionSourcesByRoot = new Map<string, ProductionSource[]>();
 
@@ -1439,8 +1491,8 @@ describe('device write boundary closure', () => {
             'src/modules/Arrangement/commentToken.ts',
             '// persistDeviceParam is documented here\nexport const value = 1;'
         );
-        expect(parsed.code).toBe('export const value = 1;\n');
         expect(parsed.code).not.toContain('persistDeviceParam');
+        expect(parsed.code).toContain('export const value = 1;');
         const counts = countByPath([parsed], SINK_DEFINITIONS['persistence-runtime']);
         expect(counts['src/modules/Arrangement/commentToken.ts']).toBeUndefined();
     });
