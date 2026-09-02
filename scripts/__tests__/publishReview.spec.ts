@@ -9,15 +9,12 @@ import { REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
 import {
     coordinatePublishReview,
     defaultPublishReviewCoordinatorDependencies,
-    exactPublishedReview,
-    inspectReviewPublicationRemote,
     parsePublishReviewArgs,
     parseReviewDocument,
     publishPreparedReview,
     publishReview,
     reviewPublicationPayload,
     reviewPublicationPayloadDigest,
-    runRecoverPublishReviewLockCli,
     runPublishReviewCli,
     shellPort,
     type PublishReviewCoordinatorDependencies,
@@ -37,7 +34,9 @@ import {
     writePullRequestMutationLockOwner,
     writePullRequestMutationLockReceipt,
 } from '../pullRequestMutationLock.ts';
+import { runRecoverPublishReviewLockCli } from '../recoverPublishReviewLock.ts';
 import { legacyReviewPublicationIncidents } from '../reviewPublicationLegacyIncidents.ts';
+import { exactPublishedReview, inspectReviewPublicationRemote } from '../reviewPublicationRemoteInspection.ts';
 
 const validComment = {
     path: 'scripts/deliverPullRequest.ts',

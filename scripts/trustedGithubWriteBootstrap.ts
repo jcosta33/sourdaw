@@ -132,7 +132,7 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
     'review:publish': [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/publishReview.ts',
-        'scripts/reviewPublicationLegacyIncidents.ts',
+        'scripts/reviewCommentDiffPreflight.ts',
         'scripts/prepareReview.ts',
         'scripts/pullRequestMutationLock.ts',
         'scripts/githubAppIdentity.ts',
@@ -140,8 +140,12 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
     ],
     'review:publish:recover': [
         'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/recoverPublishReviewLock.ts',
         'scripts/publishReview.ts',
+        'scripts/reviewCommentDiffPreflight.ts',
         'scripts/reviewPublicationLegacyIncidents.ts',
+        'scripts/reviewPublicationRecoveryReceipt.ts',
+        'scripts/reviewPublicationRemoteInspection.ts',
         'scripts/prepareReview.ts',
         'scripts/pullRequestMutationLock.ts',
         'scripts/githubAppIdentity.ts',
@@ -160,7 +164,7 @@ const commandEntries: Record<TrustedGithubWriteCommand, { path: string; runner: 
     'issue:reconcile': { path: 'scripts/reconcileTrackerIssue.ts', runner: 'runReconcileTrackerIssueCli' },
     'lane:publish': { path: 'scripts/publishLane.ts', runner: 'runPublishLaneCli' },
     'review:publish': { path: 'scripts/publishReview.ts', runner: 'runPublishReviewCli' },
-    'review:publish:recover': { path: 'scripts/publishReview.ts', runner: 'runRecoverPublishReviewLockCli' },
+    'review:publish:recover': { path: 'scripts/recoverPublishReviewLock.ts', runner: 'runRecoverPublishReviewLockCli' },
     'review:resolve': { path: 'scripts/resolveThread.ts', runner: 'runResolveReviewThreadCli' },
 };
 

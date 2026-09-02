@@ -30,11 +30,11 @@ import { AUTHOR_BOT_NODE_ID, REQUIRED_REPOSITORY, REVIEWER_BOT_NODE_ID } from '.
 import {
     coordinatePublishReview,
     runPublishReviewCli,
-    runRecoverPublishReviewLockCli,
     type PublishReviewCoordinatorDependencies,
 } from '../publishReview.ts';
 import { withPullRequestReviewPublicationMutationLock } from '../pullRequestMutationLock.ts';
 import { githubTrackerIssuePort } from '../reconcileTrackerIssue.ts';
+import { runRecoverPublishReviewLockCli } from '../recoverPublishReviewLock.ts';
 import { runResolveReviewThreadCli } from '../resolveThread.ts';
 import {
     BOOTSTRAP_PATH,
@@ -483,6 +483,10 @@ function trustedReviewMutationFixture(root: string, mutationLog: string): void {
         'prContract.ts',
         'reviewPublicationLegacyIncidents.ts',
         'prepareReview.ts',
+        'recoverPublishReviewLock.ts',
+        'reviewCommentDiffPreflight.ts',
+        'reviewPublicationRecoveryReceipt.ts',
+        'reviewPublicationRemoteInspection.ts',
     ]) {
         writeFileSync(join(root, 'scripts', path), 'export {};\n');
     }
@@ -878,6 +882,10 @@ describe('package scripts and gitignore', () => {
             'publishLane.ts',
             'prepareReview.ts',
             'publishReview.ts',
+            'recoverPublishReviewLock.ts',
+            'reviewCommentDiffPreflight.ts',
+            'reviewPublicationRecoveryReceipt.ts',
+            'reviewPublicationRemoteInspection.ts',
             'deliverPullRequest.ts',
             'pullRequestMutationLock.ts',
             'removeLane.ts',
@@ -922,8 +930,12 @@ describe('package scripts and gitignore', () => {
         ]);
         expect(trustedDependencyPaths('review:publish:recover')).toEqual([
             'scripts/trustedGithubWriteBootstrap.ts',
+            'scripts/recoverPublishReviewLock.ts',
             'scripts/publishReview.ts',
+            'scripts/reviewCommentDiffPreflight.ts',
             'scripts/reviewPublicationLegacyIncidents.ts',
+            'scripts/reviewPublicationRecoveryReceipt.ts',
+            'scripts/reviewPublicationRemoteInspection.ts',
             'scripts/prepareReview.ts',
             'scripts/pullRequestMutationLock.ts',
             'scripts/githubAppIdentity.ts',
@@ -1008,7 +1020,7 @@ describe('package scripts and gitignore', () => {
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/publishReview.ts',
-                    'scripts/reviewPublicationLegacyIncidents.ts',
+                    'scripts/reviewCommentDiffPreflight.ts',
                     'scripts/prepareReview.ts',
                     'scripts/pullRequestMutationLock.ts',
                     'scripts/githubAppIdentity.ts',
@@ -1017,12 +1029,16 @@ describe('package scripts and gitignore', () => {
             },
             {
                 command: 'review:publish:recover' as const,
-                entry: 'scripts/publishReview.ts',
+                entry: 'scripts/recoverPublishReviewLock.ts',
                 required: 'scripts/pullRequestMutationLock.ts',
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
+                    'scripts/recoverPublishReviewLock.ts',
                     'scripts/publishReview.ts',
+                    'scripts/reviewCommentDiffPreflight.ts',
                     'scripts/reviewPublicationLegacyIncidents.ts',
+                    'scripts/reviewPublicationRecoveryReceipt.ts',
+                    'scripts/reviewPublicationRemoteInspection.ts',
                     'scripts/prepareReview.ts',
                     'scripts/pullRequestMutationLock.ts',
                     'scripts/githubAppIdentity.ts',
@@ -1845,7 +1861,7 @@ describe('package scripts and gitignore', () => {
         },
         {
             command: 'review:publish:recover' as const,
-            entry: 'scripts/publishReview.ts',
+            entry: 'scripts/recoverPublishReviewLock.ts',
             runner: 'runRecoverPublishReviewLockCli',
             args: ['3344', '--owner', 'b'.repeat(40)],
         },
