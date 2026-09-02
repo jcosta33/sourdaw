@@ -28,6 +28,7 @@ import {
 
 import { DOC_PREFIX_ROOT } from './crdtDocumentTypes';
 import { CRDT_PROJECT_COMPACTION_THRESHOLD, crdtProjectCompactionState } from './crdtProjectCompactionState';
+import { sessionUndoWitnessStampPort } from './sessionUndoWitnessStampPort';
 
 type PendingIncrementalChunk = {
     generation: number;
@@ -575,6 +576,16 @@ async function persistIncrementalCrdtProject(generation: number): Promise<void> 
         return;
     }
 
+    // Force this generation's rAF-deferred, unscoped CRDT writes (e.g. the
+    // action-history entry `executeAppAction` just recorded) to land on the
+    // live documents before reading their bytes — otherwise a debounced save
+    // that happens to run before that animation frame would persist stale
+    // bytes. The witness stamp immediately after re-mirrors the undo session
+    // witness against that same now-settled document state (#3331-repair-2,
+    // E1), so the two never disagree about what was saved.
+    flushAutomergeStorageWrites();
+    sessionUndoWitnessStampPort.stamp();
+
     for (const id of activeDocIds) {
         const chunk = automergeRepository.saveDocIncremental(id);
         if (!chunk || chunk.length === 0) {
@@ -600,7 +611,11 @@ async function persistIncrementalCrdtProject(generation: number): Promise<void> 
 }
 
 async function compactCrdtProject(generation: number): Promise<void> {
+    // See the matching comment in `persistIncrementalCrdtProject`: force any
+    // rAF-deferred write to land, then re-mirror the undo session witness
+    // against that settled state, before anything below reads document bytes.
     flushAutomergeStorageWrites();
+    sessionUndoWitnessStampPort.stamp();
     await flushPendingChunks(generation);
     if (generation !== persistenceState.persistenceGeneration) {
         return;

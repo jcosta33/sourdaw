@@ -85,6 +85,16 @@ export function clearUndoStoreOwner(): void {
 // (§85.2). Rapid undo pushes (AI action batches, drag gestures) produced
 // hundreds of writes per second. Defer the write to a microtask flush so
 // successive pushes in the same turn produce exactly one serialize.
+//
+// This flush's captured witness can be stale (#3331-repair-2, E1): it runs
+// before the animation frame that lands the action-history entry's own
+// deferred CRDT write, so `owner.captureWitness()` here can report the
+// document as it was just before that write, not as it durably ends up.
+// `stampSessionUndoWitness` re-captures and re-writes the mirror once CRDT
+// persistence has forced that write to land, which supersedes whatever this
+// flush recorded. A witness this flush leaves stale with no later persist to
+// supersede it is harmless: nothing durable changed, so the next boot's
+// witness comparison still matches.
 let flushScheduled = false;
 undoStore.subscribe((value) => {
     if (!value || flushScheduled) {
@@ -100,6 +110,25 @@ undoStore.subscribe((value) => {
         writeSessionMirror({ ...current, projectId: owner?.projectId, witness: owner?.captureWitness() });
     });
 });
+
+/**
+ * Re-mirrors the live stacks against the document witness `owner.captureWitness()`
+ * reports RIGHT NOW. CRDT persistence calls this once it has force-flushed its own
+ * deferred writes and before it serializes bytes for IndexedDB, so the witness this
+ * writes matches what actually becomes durable — see the microtask-flush comment
+ * above for why that flush alone cannot make this guarantee. A no-op when the live
+ * stacks carry no project/document owner.
+ */
+export function stampSessionUndoWitness(): void {
+    if (!owner) {
+        return;
+    }
+    const current = undoStore.value;
+    if (!current) {
+        return;
+    }
+    writeSessionMirror({ ...current, projectId: owner.projectId, witness: owner.captureWitness() });
+}
 
 /**
  * Raw setter. Pushes an entry onto the past stack and clears future.

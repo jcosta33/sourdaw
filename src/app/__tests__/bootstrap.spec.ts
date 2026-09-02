@@ -317,6 +317,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     setCommandEventBus: noop,
     syncActionReplayMetadata: noop,
     captureCommandTargetFingerprints: noop,
+    stampSessionUndoWitness: noop,
 }));
 
 vi.mock('#/modules/ControlRoom/useCases', () => ({
@@ -348,6 +349,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     recordActionHistoryEntry: noop,
     clearActionHistory: noop,
     registerCrdtStorageRuntime: registerCrdtStorageRuntimeMock,
+    sessionUndoWitnessStampPort: { setProvider: noop },
 }));
 
 vi.mock('#/modules/DawInterchange/useCases', () => ({

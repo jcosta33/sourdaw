@@ -6,7 +6,7 @@ Automerge CRDT document repository, reactive store projections, multi-branch sta
 
 - `stores`: `actionHistoryStore`, `agentProjectRepairStateStore`, `branchStore` (and `MAIN_BRANCH_ID`), `setSemanticContext`, `getSemanticContext`, `clearSemanticContext`.
 - `useCases`:
-    - **Document & Project Lifecycle**: `createCrdtDoc`, `getCrdtDoc`, `getCrdtDocIds`, `hasCrdtDoc`, `removeCrdtDoc`, `replaceCrdtDoc`, `mutateCrdtDoc`, `compactProject`, `resetCrdtProjectAuthority`, `createCrdtProject`, `loadCrdtProject`, `persistCrdtProject`, `getPersistenceBackend`, `registerCrdtStorageRuntime`, `startCrdtAutoSave`, `subscribeToCrdtChanges`, `waitForCrdtDocumentTransition`, `transactSnapshot`.
+    - **Document & Project Lifecycle**: `createCrdtDoc`, `getCrdtDoc`, `getCrdtDocIds`, `hasCrdtDoc`, `removeCrdtDoc`, `replaceCrdtDoc`, `mutateCrdtDoc`, `compactProject`, `resetCrdtProjectAuthority`, `createCrdtProject`, `loadCrdtProject`, `persistCrdtProject`, `getPersistenceBackend`, `registerCrdtStorageRuntime`, `startCrdtAutoSave`, `subscribeToCrdtChanges`, `waitForCrdtDocumentTransition`, `transactSnapshot`, `sessionUndoWitnessStampPort`.
     - **Action History**: `recordActionHistoryEntry`, `clearActionHistory`, `markActionHistoryEntryReverted`.
     - **Branching**: `initBranchState`, `preserveBranchStateForSession`, `replaceBranchState`, `restoreBranchStateAfterSession`, `captureActiveBranchReference`, `getDrumPreviewBranchHandlers`.
     - **Projections**: `projectCrdtToStores`, `projectActionHistoryToStore`, `setupProjectionBridge`.

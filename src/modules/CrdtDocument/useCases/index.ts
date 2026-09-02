@@ -21,6 +21,7 @@ export { getPersistenceBackend } from './crdtProjectLifecycle';
 export { loadCrdtProject } from './loadCrdtProject';
 export { persistCrdtProject } from './persistCrdtProject';
 export { runCrdtPersistenceBarrier } from './runCrdtPersistenceBarrier';
+export { sessionUndoWitnessStampPort } from './sessionUndoWitnessStampPort';
 
 export { createCrdtDoc } from './createCrdtDoc';
 export { clearActionHistory } from './clearActionHistory';

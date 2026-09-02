@@ -17,6 +17,7 @@ const SUPPORTED_SESSION_ACTION_TYPES = [
 async function loadSubject() {
     vi.resetModules();
     const createUndoEntryModule = await import('../../useCases/createUndoEntry');
+    const createCallbackUndoEntryModule = await import('../../useCases/createCallbackUndoEntry');
     const { validateVersionedCommandArguments } = await import('../../useCases/versionedCommandArgumentKeys');
     const undoStoreModule = await import('../undoStore');
     const { clearUndoHistory } = await import('../clearUndoHistory');
@@ -29,6 +30,7 @@ async function loadSubject() {
     );
     return {
         createUndoEntry: createUndoEntryModule.createUndoEntry,
+        createCallbackUndoEntry: createCallbackUndoEntryModule.createCallbackUndoEntry,
         pushUndo: undoStoreModule.pushUndo,
         undoStore: undoStoreModule.undoStore,
         reconcileUndoStoreForProject: undoStoreModule.reconcileUndoStoreForProject,
@@ -678,5 +680,75 @@ describe('undoStore / reconcileUndoStoreForProject (#3331, #3331-repair)', () =>
         const reloaded = await loadSubject();
         reloaded.reconcileUndoStoreForProject('project-d', () => 'witness-d');
         expect(reloaded.undoStore.value).toEqual({ past: [], future: [] });
+    });
+});
+
+describe('undoStore / session mirror write truncates at the first unserializable entry (#3331-repair-2, E2)', () => {
+    beforeEach(() => {
+        sessionStorage.removeItem(UNDO_SESSION_KEY);
+    });
+
+    afterEach(async () => {
+        await flushPersistence();
+        sessionStorage.removeItem(UNDO_SESSION_KEY);
+    });
+
+    it('drops a callback entry and everything behind it from the persisted past, instead of splicing an invisible hole', async () => {
+        const { createUndoEntry, createCallbackUndoEntry, undoStore } = await loadSubject();
+        // Oldest first: a move, then a callback-only slip (drags/slips/splits/
+        // imports have no serializable inverse), then a mute nearest the
+        // present. The buggy `flatMap` would splice the slip out and persist
+        // `[move, mute]` as if they were adjacent — corrupting undo order,
+        // because a later undo would invert `mute` and then `move`, silently
+        // skipping the slip it never mirrored. The fix stops at the slip and
+        // keeps only the unbroken run nearest the present.
+        const move = createUndoEntry(
+            'move',
+            { type: 'setTempo', payload: { bpm: 120 } },
+            { type: 'setTempo', payload: { bpm: 110 } }
+        );
+        const slip = createCallbackUndoEntry({ label: 'slip', undo: () => undefined, redo: () => undefined });
+        const mute = createUndoEntry(
+            'mute',
+            { type: 'setMasterGain', payload: { gain: 0 } },
+            { type: 'setMasterGain', payload: { gain: 1 } }
+        );
+        undoStore.set({ past: [move, slip, mute], future: [] });
+        await flushPersistence();
+
+        const parsed = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        expect(persistedEntryLabels(parsed.past)).toEqual(['mute']);
+
+        // Live in-memory stacks are untouched by the mirror write: only the
+        // persisted, next-boot-visible copy truncates.
+        expect(undoStore.value?.past).toEqual([move, slip, mute]);
+    });
+
+    it('drops a callback entry and everything behind it from the persisted future', async () => {
+        const { createUndoEntry, createCallbackUndoEntry, undoStore } = await loadSubject();
+        // Nearest first: a redoable tempo change is reachable, then a
+        // callback-only redo, then a further redoable gain change that the
+        // callback strands.
+        const redoNearest = createUndoEntry(
+            'redo-nearest',
+            { type: 'setTempo', payload: { bpm: 130 } },
+            { type: 'setTempo', payload: { bpm: 120 } }
+        );
+        const redoCallback = createCallbackUndoEntry({
+            label: 'redo-callback',
+            undo: () => undefined,
+            redo: () => undefined,
+        });
+        const redoStranded = createUndoEntry(
+            'redo-stranded',
+            { type: 'setMasterGain', payload: { gain: 0.8 } },
+            { type: 'setMasterGain', payload: { gain: 0.5 } }
+        );
+        undoStore.set({ past: [], future: [redoNearest, redoCallback, redoStranded] });
+        await flushPersistence();
+
+        const parsed = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        expect(persistedEntryLabels(parsed.future)).toEqual(['redo-nearest']);
+        expect(undoStore.value?.future).toEqual([redoNearest, redoCallback, redoStranded]);
     });
 });
