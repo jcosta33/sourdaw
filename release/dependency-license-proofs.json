@@ -57,7 +57,7 @@
             },
             {
                 "path": "package.json",
-                "sha256": "48398436363a1fa5bde02975a273e7f8ce1b5775f78699e7e3e6fecd60b93ae2"
+                "sha256": "b296d05f5bb3c18fe092857068ad7ba3f3e7f71ae98bcb70a4a5a27b3c27f40e"
             },
             {
                 "path": "rust-toolchain.toml",
