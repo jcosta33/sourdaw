@@ -1,0 +1,25 @@
+src/modules/Crumbs/useCases/crumbsLifecycle/__tests__/teardownCrumbsEngine.spec.ts
+  s_9b530f08172a54::t_bd7803e01c55ca 20,23
+src/modules/Crumbs/useCases/recording/__tests__/stopCrumbsRecording.spec.ts
+  s_9b530f08172a54::t_541c3d8fdfc5c6 18,21,25
+src/modules/AudioEngine/AGENTS.md
+  s_9b530f08172a54::t_dbde803c95e733 19
+crates/sourdaw-native/src/commands/plugins.rs
+  s_9b530f08172a54::t_3888d96b54d0b1 1981-1982
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b1d1923b9fdbfa8b23a6906a99c0bd42b7193971",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
