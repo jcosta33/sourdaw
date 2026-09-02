@@ -656,6 +656,14 @@ export type RecoverPublishReviewDependencies = {
         number: number,
         ownerOid: string
     ) => (typeof legacyReviewPublicationIncidents)[number] | undefined;
+    beforeReplayReceiptRelease?: (receipt: {
+        number: number;
+        ownerOid: string;
+        adoptedOwnerOid: string;
+        head: string;
+        payloadDigest: string;
+        outcome: 'absent' | 'landed';
+    }) => void;
 };
 
 const recoverPublishReviewUsage = 'usage: pnpm review:publish:recover <pr-number> --owner <lock-object-id>';
@@ -976,6 +984,7 @@ export async function runRecoverPublishReviewLockCli(
             ) {
                 fail('review-publication recovery receipt does not attest the exact adopted owner, head, and payload');
             }
+            dependencies.beforeReplayReceiptRelease?.(persistedReceipt);
             releasePullRequestMutationLockOwner(primaryRoot, number, currentOid);
             console.log(`review-publication-lock-recovered:${number}:${ownerOid}:${persistedReceipt.outcome}`);
             return 0;

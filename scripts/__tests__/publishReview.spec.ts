@@ -1413,6 +1413,8 @@ describe('shellPort postReview state verification', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-publication-recovery-'));
         const number = 42;
         const head = 'a'.repeat(40);
+        const firstFence = { kind: 'pid' as const, pid: process.pid, startedAt: 'first-retry-process' };
+        const retryFence = { kind: 'pid' as const, pid: process.pid, startedAt: 'second-retry-process' };
         try {
             runGit(root, ['init']);
             const bundle = join(root, '.agents', 'review-bundles', `${number}-${head}`);
@@ -1460,7 +1462,7 @@ describe('shellPort postReview state verification', () => {
                         return { state: 'OPEN', head, reviews: [] };
                     },
                     isOwnerLive: () => false,
-                    currentOwnerFence: () => ({ kind: 'pid', pid: process.pid, startedAt: 'test-process' }),
+                    currentOwnerFence: () => firstFence,
                 })
             ).rejects.toThrow(/attempted a remote mutation without landed evidence/);
             expect(inspections).toBe(2);
@@ -1470,7 +1472,10 @@ describe('shellPort postReview state verification', () => {
             expect(retainedOid).toMatch(/^[0-9a-f]{40}$/);
             expect(retainedOid).not.toBe(ownerOid);
             const retainedOwner = readPullRequestMutationLockOwner(root, retainedOid!, number);
-            expect(retainedOwner).toMatchObject({ mutation: { phase: 'remote-mutation-attempted' } });
+            expect(retainedOwner).toMatchObject({
+                ownerFence: firstFence,
+                mutation: { phase: 'remote-mutation-attempted', epoch: 2 },
+            });
 
             inspections = 0;
             await expect(
@@ -1486,7 +1491,7 @@ describe('shellPort postReview state verification', () => {
                         return { state: 'OPEN', head, reviews: [] };
                     },
                     isOwnerLive: () => false,
-                    currentOwnerFence: () => ({ kind: 'pid', pid: process.pid, startedAt: 'test-process' }),
+                    currentOwnerFence: () => retryFence,
                 })
             ).rejects.toThrow(/attempted a remote mutation without landed evidence/);
             expect(inspections).toBe(2);
@@ -1494,7 +1499,7 @@ describe('shellPort postReview state verification', () => {
             expect(retryRetainedOid).toMatch(/^[0-9a-f]{40}$/);
             expect(retryRetainedOid).not.toBe(retainedOid);
             expect(readPullRequestMutationLockOwner(root, retryRetainedOid!, number)).toMatchObject({
-                ownerFence: { kind: 'pid', pid: process.pid, startedAt: 'test-process' },
+                ownerFence: retryFence,
                 mutation: { phase: 'remote-mutation-attempted', epoch: 3 },
             });
             expect(readPullRequestMutationLockReceipt(root, number, ownerOid)).toBeUndefined();
@@ -1653,6 +1658,56 @@ describe('shellPort postReview state verification', () => {
                 reviewPublicationRecoveryReceiptRef(fixture.number, fixture.ownerOid),
                 exactReceiptOid,
                 receiptOid,
+            ]);
+
+            let replacementOid: string | undefined;
+            await expect(
+                runRecoverPublishReviewLockCli([String(fixture.number), '--owner', fixture.ownerOid], {
+                    ...recoveryDependencies(fixture.root, (expectedHead) => ({
+                        state: 'OPEN',
+                        head: expectedHead,
+                        reviews: [],
+                    })),
+                    authenticateReviewer: async () => {
+                        authenticated = true;
+                        throw new Error('replay must not authenticate');
+                    },
+                    beforeReplayReceiptRelease: (receipt) => {
+                        expect(receipt).toMatchObject({
+                            number: fixture.number,
+                            ownerOid: fixture.ownerOid,
+                            adoptedOwnerOid: adoptedOid,
+                            head: fixture.head,
+                            payloadDigest: originalOwner.payloadDigest,
+                            outcome: 'absent',
+                        });
+                        replacementOid = writePullRequestMutationLockOwner(
+                            fixture.root,
+                            {
+                                ...originalOwner,
+                                pid: process.pid,
+                                ownerFence: { kind: 'pid', pid: process.pid, startedAt: 'replacement-process' },
+                                mutation: { ...originalOwner.mutation, epoch: originalOwner.mutation.epoch + 2 },
+                            },
+                            fixture.number
+                        );
+                        runGit(fixture.root, [
+                            'update-ref',
+                            pullRequestMutationLockRef(fixture.number),
+                            replacementOid!,
+                            adoptedOid,
+                        ]);
+                    },
+                })
+            ).rejects.toThrow(/delivery lock ownership changed before release/);
+            expect(
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
+            ).toBe(replacementOid);
+            runGit(fixture.root, [
+                'update-ref',
+                pullRequestMutationLockRef(fixture.number),
+                adoptedOid,
+                replacementOid!,
             ]);
 
             await expect(
