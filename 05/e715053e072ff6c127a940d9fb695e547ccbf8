@@ -1,0 +1,35 @@
+src/modules/Command/useCases/__tests__/addNotesCommandRegistration.spec.ts
+  s_a40848e8f8cca9::t_21a804cf5e1511 406-454
+src/modules/MIDI/handlers/noteCrud/handleAddNotes.ts
+  s_a40848e8f8cca9::t_5dd132386cc948 59
+src/modules/Command/useCases/__tests__/commandBatchContract.spec.ts
+  s_a40848e8f8cca9::t_ec77170b77e47c 13,494-516
+  s_a40848e8f8cca9::t_9fe3ee82aeafa8 517-518
+src/modules/MIDI/handlers/noteCrud/__tests__/handleAddNotes.spec.ts
+  s_a40848e8f8cca9::t_a9c9328ea33241 8,12,305,322-323,327-382,385
+  s_a40848e8f8cca9::t_8e0a760cb5dd48 14,156,165-169,171,181-182
+  s_a40848e8f8cca9::t_21a804cf5e1511 306-321,324-326,383-384,386-408,508-530
+  s_a40848e8f8cca9::t_a7d01e118b5206 437-441
+  s_a40848e8f8cca9::t_184810b6322beb 436,442-489,531
+  s_a40848e8f8cca9::t_a01f7de615ed8e 183
+  s_a40848e8f8cca9::t_29e90c655c5dec 532
+src/modules/Command/useCases/getCommandUndoSessionEntryValidator.ts
+  s_a40848e8f8cca9::t_5900ad10a2ef3d 38,48
+  s_a40848e8f8cca9::t_5dd132386cc948 36-37,39-47,49-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "05e715053e072ff6c127a940d9fb695e547ccbf8",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
