@@ -39,7 +39,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     },
 }));
 
-// Non-spread listing of clampDeviceParameterValue and quantiseDeviceParameterValue — normalizeGrandBoulePersistedParamValue imports both for micPosition commits.
+// Non-spread listing of clampDeviceParameterValue, getAllTracks, and quantiseDeviceParameterValue — normalizeGrandBoulePersistedParamValue imports the first and third for micPosition commits; resolveGrandBouleEngine imports getAllTracks for the engine readiness tile.
 vi.mock('#/modules/Arrangement/useCases', () => ({
     clampDeviceParameterValue: ({ value }: { value: number }) => value,
     getAllTracks: () => [],
