@@ -24,12 +24,14 @@ import {
     shellPort,
     withPullRequestDeliveryLock,
 } from '../deliverPullRequest.ts';
-import { AUTHOR_BOT_NODE_ID, REQUIRED_REPOSITORY } from '../githubAppIdentity.ts';
+import { AUTHOR_BOT_NODE_ID, REQUIRED_REPOSITORY, REVIEWER_BOT_NODE_ID } from '../githubAppIdentity.ts';
 import {
     coordinatePublishReview,
     runPublishReviewCli,
+    runRecoverPublishReviewLockCli,
     type PublishReviewCoordinatorDependencies,
 } from '../publishReview.ts';
+import { withPullRequestReviewPublicationMutationLock } from '../pullRequestMutationLock.ts';
 import { githubTrackerIssuePort } from '../reconcileTrackerIssue.ts';
 import {
     coordinateResolveReviewThread,
@@ -47,7 +49,6 @@ import {
     trustedDependencyPaths,
     trustedSnapshotEnv,
 } from '../trustedGithubWriteBootstrap.ts';
-import { withPullRequestReviewPublicationMutationLock } from '../pullRequestMutationLock.ts';
 
 import type {
     DeliveryAuthentication,
@@ -453,7 +454,12 @@ function trustedReviewMutationFixture(root: string, mutationLog: string): void {
             ].join('\n')
         );
     }
-    for (const path of ['githubAppIdentity.ts', 'prContract.ts', 'prepareReview.ts']) {
+    for (const path of [
+        'githubAppIdentity.ts',
+        'prContract.ts',
+        'reviewPublicationLegacyIncidents.ts',
+        'prepareReview.ts',
+    ]) {
         writeFileSync(join(root, 'scripts', path), 'export {};\n');
     }
     runGit(root, ['init', '-b', 'main']);
@@ -2113,6 +2119,12 @@ describe('package scripts and gitignore', () => {
             args: ['3239', 'value with spaces'],
         },
         {
+            command: 'review:publish:recover' as const,
+            entry: 'scripts/publishReview.ts',
+            runner: 'runRecoverPublishReviewLockCli',
+            args: ['3344', '--owner', 'b'.repeat(40)],
+        },
+        {
             command: 'review:resolve' as const,
             entry: 'scripts/resolveReviewThread.ts',
             runner: 'runResolveReviewThreadCli',
@@ -2136,9 +2148,12 @@ describe('package scripts and gitignore', () => {
                 })
             ).resolves.toBe(0);
             expect(JSON.parse(readFileSync(recordPath, 'utf8'))).toEqual(args);
-            expect(command === 'review:publish' ? runPublishReviewCli : runResolveReviewThreadCli).toBeTypeOf(
-                'function'
-            );
+            const importedRunners = {
+                'review:publish': runPublishReviewCli,
+                'review:publish:recover': runRecoverPublishReviewLockCli,
+                'review:resolve': runResolveReviewThreadCli,
+            } as const;
+            expect(importedRunners[command]).toBeTypeOf('function');
         } finally {
             rmSync(fixtureRoot, { recursive: true, force: true });
         }
@@ -2221,19 +2236,48 @@ describe('package scripts and gitignore', () => {
         }
     });
 
-    it('refuses reviewer mutations before remote work while delivery owns the same PR fence', async () => {
+    it('refuses reviewer remote mutations while delivery owns the same PR fence', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
         initializeDeliveryLockRepository(root);
+        const head = 'e'.repeat(40);
+        const bundle = join(root, '.agents', 'review-bundles', `2495-${head}`);
+        mkdirSync(bundle, { recursive: true });
+        writeFileSync(
+            join(bundle, 'review.json'),
+            JSON.stringify({ event: 'APPROVE', body: 'Attacked; held.', comments: [] })
+        );
+        writeFileSync(join(bundle, 'diff.patch'), '');
+        const executable = join(root, 'ps');
+        const previousPs = process.env.SOURDAW_TRUSTED_PS_PATH;
+        writeFileSync(
+            executable,
+            '#!/bin/sh\nif [ "$2" = "pgid=" ]; then printf "%s\\n" "$4"; else printf "%s\\n" "publication-process-start"; fi\n'
+        );
+        chmodSync(executable, 0o700);
+        process.env.SOURDAW_TRUSTED_PS_PATH = executable;
         const entered: string[] = [];
+        // Publication journals its payload at lock acquisition, so reviewer authentication and
+        // read-only preflight run before the fence is attempted; the fence must still refuse the
+        // mutation itself while delivery owns the PR.
         const publishDependencies: PublishReviewCoordinatorDependencies = {
             primaryRoot: () => root,
             serializeMutation: withPullRequestReviewPublicationMutationLock,
             authenticateReviewer: async () => {
                 entered.push('publish:authenticate');
-                return expect.fail('reviewer authentication should not start');
+                return {
+                    minted: { actorNodeId: REVIEWER_BOT_NODE_ID },
+                    session: { configDir: '/tmp/reviewer', env: {}, dispose: () => undefined },
+                };
             },
-            repositoryName: () => expect.fail('publish repository lookup should not start'),
-            reviewPort: () => expect.fail('publish port should not be created'),
+            repositoryName: () => REQUIRED_REPOSITORY,
+            reviewPort: () => ({
+                primaryRoot: () => root,
+                pullRequest: () => ({ state: 'OPEN', head }),
+                readReviewJson: (path: string) => JSON.parse(readFileSync(path, 'utf8')),
+                readBundleDiff: (path: string) => readFileSync(path, 'utf8'),
+                postReview: () => expect.fail('review creation should not start'),
+                log: () => undefined,
+            }),
             publish: () => {
                 entered.push('publish:post');
                 return expect.fail('review creation should not start');
@@ -2262,11 +2306,16 @@ describe('package scripts and gitignore', () => {
                 await expect(
                     coordinateResolveReviewThread(2495, 'PRRT_example', 'a'.repeat(40), resolveDependencies)
                 ).rejects.toThrow(/already being delivered/);
-                expect(entered).toEqual([]);
+                expect(entered).toEqual(['publish:authenticate']);
                 expect(deliveryLockExists(root, 2495)).toBe(true);
             });
             expect(deliveryLockExists(root, 2495)).toBe(false);
         } finally {
+            if (previousPs === undefined) {
+                delete process.env.SOURDAW_TRUSTED_PS_PATH;
+            } else {
+                process.env.SOURDAW_TRUSTED_PS_PATH = previousPs;
+            }
             rmSync(root, { recursive: true, force: true });
         }
     });

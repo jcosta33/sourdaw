@@ -46,7 +46,11 @@ export type PullRequestMutationLockOwner =
           payloadDigest: string;
           reviewerActorNodeId: string;
           ownerFence: PullRequestMutationLockOwnerFence;
-          mutation: { phase: 'prepared' | 'remote-mutation-attempted'; epoch: number };
+          mutation: {
+              phase: 'prepared' | 'remote-mutation-attempted';
+              epoch: number;
+              definitiveNoMutationHttpStatus?: 422;
+          };
           recovery?: { legacyOwnerOid: string; definitiveNoMutationHttpStatus: 422 };
       };
 export type PullRequestMutationLockOptions = {
@@ -82,6 +86,7 @@ export type PullRequestReviewPublicationMutationBoundary = PullRequestRemoteMuta
         payloadDigest: string;
         reviewerActorNodeId: string;
     }) => void;
+    markDefinitiveNoMutationHttpStatus: (status: 422) => void;
 };
 
 export type PullRequestReviewPublicationMutationSerialization = <Value>(
@@ -205,6 +210,39 @@ const reviewPublicationOwnerKeys = [
 ] as const;
 const recoveredReviewPublicationOwnerKeys = [...reviewPublicationOwnerKeys, 'recovery'] as const;
 
+type ReviewPublicationMutationJournal = Extract<PullRequestMutationLockOwner, { version: 3 }>['mutation'];
+
+/**
+ * The mutation journal is the one part of a v3 owner rewritten after acquisition, so it parses
+ * under its own exact-key rule: a `definitiveNoMutationHttpStatus` attestation may appear only
+ * beside a `remote-mutation-attempted` phase, and may only record 422 — the one create-review
+ * answer that proves GitHub rejected the request during validation, before anything was created.
+ */
+function parseReviewPublicationMutationJournal(value: unknown): ReviewPublicationMutationJournal | undefined {
+    if (typeof value !== 'object' || value === null) {
+        return undefined;
+    }
+    const journal = value as Record<string, unknown>;
+    const attested = 'definitiveNoMutationHttpStatus' in journal;
+    if (Object.keys(journal).length !== (attested ? 3 : 2)) {
+        return undefined;
+    }
+    if (journal.phase !== 'prepared' && journal.phase !== 'remote-mutation-attempted') {
+        return undefined;
+    }
+    if (typeof journal.epoch !== 'number' || !Number.isSafeInteger(journal.epoch) || journal.epoch < 0) {
+        return undefined;
+    }
+    if (attested && (journal.phase !== 'remote-mutation-attempted' || journal.definitiveNoMutationHttpStatus !== 422)) {
+        return undefined;
+    }
+    return {
+        phase: journal.phase,
+        epoch: journal.epoch,
+        ...(attested ? { definitiveNoMutationHttpStatus: 422 as const } : {}),
+    };
+}
+
 function parseMutationLockOwner(contents: string, number: number): PullRequestMutationLockOwner {
     let value: unknown;
     try {
@@ -245,6 +283,7 @@ function parseMutationLockOwner(contents: string, number: number): PullRequestMu
     }
     const isNormalReviewPublicationOwner = hasExactTopLevelKeys(owner, reviewPublicationOwnerKeys);
     const isRecoveredReviewPublicationOwner = hasExactTopLevelKeys(owner, recoveredReviewPublicationOwnerKeys);
+    const publicationMutation = parseReviewPublicationMutationJournal(owner.mutation);
     if (
         owner.version === 3 &&
         (isNormalReviewPublicationOwner || isRecoveredReviewPublicationOwner) &&
@@ -260,14 +299,7 @@ function parseMutationLockOwner(contents: string, number: number): PullRequestMu
         isExecutionFence(owner.ownerFence) &&
         isExecutionFenceBoundToOwnerPid(owner.ownerFence, owner.pid) &&
         isPublicationOwnerFence(owner.ownerFence) &&
-        typeof owner.mutation === 'object' &&
-        owner.mutation !== null &&
-        Object.keys(owner.mutation).length === 2 &&
-        ((owner.mutation as { phase?: unknown }).phase === 'prepared' ||
-            (owner.mutation as { phase?: unknown }).phase === 'remote-mutation-attempted') &&
-        typeof (owner.mutation as { epoch?: unknown }).epoch === 'number' &&
-        Number.isSafeInteger((owner.mutation as { epoch: number }).epoch) &&
-        (owner.mutation as { epoch: number }).epoch >= 0 &&
+        publicationMutation !== undefined &&
         (isNormalReviewPublicationOwner ||
             (typeof owner.recovery === 'object' &&
                 owner.recovery !== null &&
@@ -289,10 +321,7 @@ function parseMutationLockOwner(contents: string, number: number): PullRequestMu
             payloadDigest: owner.payloadDigest.toLowerCase(),
             reviewerActorNodeId: owner.reviewerActorNodeId,
             ownerFence: owner.ownerFence,
-            mutation: {
-                phase: (owner.mutation as { phase: 'prepared' | 'remote-mutation-attempted' }).phase,
-                epoch: (owner.mutation as { epoch: number }).epoch,
-            },
+            mutation: publicationMutation,
             ...(owner.recovery === undefined
                 ? {}
                 : {
@@ -879,6 +908,22 @@ async function withPullRequestMutationLockImplementation<Value>(
                     });
                 }
                 remoteMutationAttempted = true;
+            },
+            markDefinitiveNoMutationHttpStatus: (status: 422) => {
+                const currentOwner = readPullRequestMutationLockOwner(primaryRoot, ownerOid, number);
+                if (isReviewPublicationPullRequestMutationLockOwner(currentOwner)) {
+                    if (currentOwner.mutation.phase !== 'remote-mutation-attempted') {
+                        fail(`PR #${number} review-publication lock records no remote mutation attempt to attest`);
+                    }
+                    ownerOid = replacePullRequestMutationLockOwner(primaryRoot, number, ownerOid, {
+                        ...currentOwner,
+                        mutation: {
+                            phase: currentOwner.mutation.phase,
+                            epoch: currentOwner.mutation.epoch + 1,
+                            definitiveNoMutationHttpStatus: status,
+                        },
+                    });
+                }
             },
             journalReviewPublication: ({ expectedHead, payloadDigest, reviewerActorNodeId }) => {
                 if (readPullRequestMutationLockOid(primaryRoot, lock.ref, number) !== ownerOid) {

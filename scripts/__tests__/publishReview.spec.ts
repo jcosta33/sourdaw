@@ -148,7 +148,10 @@ function fakePort(
     return { port, calls, logs, posted };
 }
 
-function createJournaledRecoveryFixture(phase: 'prepared' | 'remote-mutation-attempted' = 'remote-mutation-attempted') {
+function createJournaledRecoveryFixture(
+    phase: 'prepared' | 'remote-mutation-attempted' = 'remote-mutation-attempted',
+    definitiveNoMutationHttpStatus?: 422
+) {
     const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-publication-recovery-'));
     const number = 42;
     const head = 'a'.repeat(40);
@@ -175,12 +178,80 @@ function createJournaledRecoveryFixture(phase: 'prepared' | 'remote-mutation-att
             payloadDigest: digest,
             reviewerActorNodeId: REVIEWER_BOT_NODE_ID,
             ownerFence: { kind: 'pid', pid: 999_999, startedAt: 'Thu Jan 01 00:00:00 1970' },
-            mutation: { phase, epoch: 1 },
+            mutation: {
+                phase,
+                epoch: 1,
+                ...(definitiveNoMutationHttpStatus === 422 ? { definitiveNoMutationHttpStatus } : {}),
+            },
         },
         number
     );
     runGit(root, ['update-ref', pullRequestMutationLockRef(number), ownerOid]);
     return { root, number, head, ownerOid };
+}
+
+function writeTrustedPsFixture(root: string): () => void {
+    const executable = join(root, 'ps');
+    const previous = process.env.SOURDAW_TRUSTED_PS_PATH;
+    writeFileSync(
+        executable,
+        '#!/bin/sh\nif [ "$2" = "pgid=" ]; then printf "%s\\n" "$4"; else printf "%s\\n" "publication-process-start"; fi\n'
+    );
+    chmodSync(executable, 0o700);
+    process.env.SOURDAW_TRUSTED_PS_PATH = executable;
+    return () => {
+        if (previous === undefined) {
+            delete process.env.SOURDAW_TRUSTED_PS_PATH;
+        } else {
+            process.env.SOURDAW_TRUSTED_PS_PATH = previous;
+        }
+    };
+}
+
+/**
+ * Drives the real coordinator, lock, and shell port through a review POST that fails with the
+ * given message, leaving exactly the retained owner a real crash would leave for recovery.
+ */
+async function runFailingReviewPublication(root: string, number: number, head: string, failureMessage: string) {
+    const bundle = join(root, '.agents', 'review-bundles', `${number}-${head}`);
+    mkdirSync(bundle, { recursive: true });
+    writeFileSync(
+        join(bundle, 'review.json'),
+        JSON.stringify({ event: 'APPROVE', body: 'Attacked; held.', comments: [] })
+    );
+    writeFileSync(join(bundle, 'diff.patch'), '');
+    const session: GhSession = { configDir: '/tmp/reviewer', env: {}, dispose: () => undefined };
+    const dependencies: PublishReviewCoordinatorDependencies = {
+        primaryRoot: () => root,
+        serializeMutation: withPullRequestReviewPublicationMutationLock,
+        authenticateReviewer: async () => ({ minted: { actorNodeId: REVIEWER_BOT_NODE_ID }, session }),
+        repositoryName: () => 'jcosta33/sourdaw',
+        reviewPort: (portSession, primaryRoot, markRemoteMutationAttempt, markDefinitiveNoMutationHttpStatus) =>
+            shellPort(
+                portSession,
+                primaryRoot,
+                (command, args) => {
+                    if (command === 'git' && args[0] === 'rev-parse') {
+                        return `${root}/.git`;
+                    }
+                    if (command === 'gh' && args[0] === 'pr') {
+                        return JSON.stringify({ state: 'OPEN', headRefOid: head });
+                    }
+                    if (command === 'gh' && args[0] === 'api') {
+                        throw new Error(failureMessage);
+                    }
+                    throw new Error(`unexpected command in test: ${command} ${args.join(' ')}`);
+                },
+                markRemoteMutationAttempt,
+                markDefinitiveNoMutationHttpStatus
+            ),
+        publish: publishPreparedReview,
+    };
+    await expect(coordinatePublishReview(number, dependencies)).rejects.toThrow(
+        new RegExp(
+            `retained exact review-publication owner: pnpm review:publish:recover ${number} --owner [0-9a-f]{40}`
+        )
+    );
 }
 
 function publicationLivenessOwner(
@@ -309,6 +380,7 @@ describe('review publish', () => {
                     return await operation({
                         ownerOid: 'f'.repeat(40),
                         markRemoteMutationAttempt: () => calls.push('attempt'),
+                        markDefinitiveNoMutationHttpStatus: () => undefined,
                         journalReviewPublication: () => calls.push('journal'),
                         registerSuccessfulCompletion: () => undefined,
                     });
@@ -395,6 +467,7 @@ describe('review publish', () => {
                         ownerOid: 'f'.repeat(40),
                         journalReviewPublication: () => calls.push('journal'),
                         markRemoteMutationAttempt: () => calls.push('attempt'),
+                        markDefinitiveNoMutationHttpStatus: () => undefined,
                         registerSuccessfulCompletion: () => undefined,
                     }),
                 authenticateReviewer: async () => ({
@@ -586,6 +659,7 @@ describe('review publish', () => {
                 operation({
                     ownerOid: 'f'.repeat(40),
                     markRemoteMutationAttempt: () => undefined,
+                    markDefinitiveNoMutationHttpStatus: () => undefined,
                     journalReviewPublication: () => undefined,
                     registerSuccessfulCompletion: () => undefined,
                 }),
@@ -684,6 +758,57 @@ describe('review publish', () => {
         publishReview(42, port);
 
         expect(calls.some((call) => call.startsWith('post:'))).toBe(true);
+    });
+
+    const contextHunkDiff = [
+        '--- a/context.ts',
+        '+++ b/context.ts',
+        '@@ -10,3 +10,3 @@',
+        ' before',
+        '-old',
+        '+new',
+        ' after',
+    ].join('\n');
+
+    // GitHub renders unchanged lines inside a hunk and accepts comments on them from both sides,
+    // so preflight must record hunk context lines as commentable, not only advance past them.
+    it.each([
+        ['RIGHT', 10],
+        ['LEFT', 10],
+        ['RIGHT', 12],
+        ['LEFT', 12],
+    ] as const)('accepts an inline comment on an in-hunk context line (%s %s)', (side, line) => {
+        const { port, calls } = fakePort({
+            diff: contextHunkDiff,
+            json: {
+                event: 'REQUEST_CHANGES',
+                body: 'Fix the context line.',
+                comments: [{ ...validComment, path: 'context.ts', side, line }],
+            },
+        });
+
+        publishReview(42, port);
+
+        expect(calls.some((call) => call.startsWith('post:'))).toBe(true);
+    });
+
+    it.each([
+        ['RIGHT', 9],
+        ['LEFT', 9],
+        ['RIGHT', 13],
+        ['LEFT', 13],
+    ] as const)('refuses an inline comment outside any hunk (%s %s)', (side, line) => {
+        const { port, calls } = fakePort({
+            diff: contextHunkDiff,
+            json: {
+                event: 'REQUEST_CHANGES',
+                body: 'Fix the context line.',
+                comments: [{ ...validComment, path: 'context.ts', side, line }],
+            },
+        });
+
+        expect(() => publishReview(42, port)).toThrow(/not a changed line/i);
+        expect(calls.some((call) => call.startsWith('post:'))).toBe(false);
     });
 
     it.each(['space name.ts', 'tab\tname.ts', 'control\u0001name.ts', 'café.ts', 'quote"name.ts', 'back\\slash.ts'])(
@@ -827,6 +952,7 @@ describe('review publish', () => {
     it.each([
         ['state', { state: 'APPROVED' }],
         ['actor', { actorNodeId: 'wrong-reviewer' }],
+        ['head', { commitId: 'b'.repeat(40) }],
         ['body', { body: 'different' }],
         ['missing remote comment', { comments: [] }],
         [
@@ -1344,6 +1470,59 @@ describe('shellPort postReview state verification', () => {
         }
     });
 
+    it('journals the definitive no-mutation status when the review POST fails with HTTP 422', () => {
+        const capture = (command: string, args: string[]): string => {
+            if (command === 'git' && args[0] === 'rev-parse') {
+                return `${process.cwd()}/.git`;
+            }
+            if (command === 'gh' && args[0] === 'api') {
+                throw new Error('gh: Validation Failed (HTTP 422): review could not be created');
+            }
+            throw new Error(`unexpected command in test: ${command} ${args.join(' ')}`);
+        };
+        const attestations: number[] = [];
+        const port = shellPort(
+            session,
+            process.cwd(),
+            capture,
+            () => undefined,
+            (status) => attestations.push(status)
+        );
+
+        expect(() =>
+            port.postReview({ number: 42, commitId: 'sha', event: 'APPROVE', body: 'no', comments: [] })
+        ).toThrow('gh: Validation Failed (HTTP 422)');
+        expect(attestations).toEqual([422]);
+    });
+
+    it.each(['gh: Conflict (HTTP 409)', 'gh: Internal Server Error (HTTP 500)', 'socket hang up'])(
+        'does not journal a no-mutation status when the review POST fails with %s',
+        (failure) => {
+            const capture = (command: string, args: string[]): string => {
+                if (command === 'git' && args[0] === 'rev-parse') {
+                    return `${process.cwd()}/.git`;
+                }
+                if (command === 'gh' && args[0] === 'api') {
+                    throw new Error(failure);
+                }
+                throw new Error(`unexpected command in test: ${command} ${args.join(' ')}`);
+            };
+            const attestations: number[] = [];
+            const port = shellPort(
+                session,
+                process.cwd(),
+                capture,
+                () => undefined,
+                (status) => attestations.push(status)
+            );
+
+            expect(() =>
+                port.postReview({ number: 42, commitId: 'sha', event: 'APPROVE', body: 'no', comments: [] })
+            ).toThrow(failure);
+            expect(attestations).toEqual([]);
+        }
+    );
+
     it('posts successfully when APPROVE is recorded as APPROVED', () => {
         const capture = fakeCapture({
             id: 43,
@@ -1528,6 +1707,147 @@ describe('shellPort postReview state verification', () => {
                 )
             ).resolves.toBe(0);
             expect(inspections).toBe(2);
+            expect(
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
+            ).toBeUndefined();
+        } finally {
+            rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
+    it('releases a journaled HTTP 422 owner after two definitive empty remote reads, then replays its receipt', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-publication-422-recovery-'));
+        const number = 3344;
+        const head = 'a'.repeat(40);
+        const restorePs = writeTrustedPsFixture(root);
+        try {
+            runGit(root, ['init']);
+            await runFailingReviewPublication(root, number, head, 'gh: Validation Failed (HTTP 422)');
+            const retainedOid = readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number);
+            expect(retainedOid).toMatch(/^[0-9a-f]{40}$/);
+            expect(readPullRequestMutationLockOwner(root, retainedOid!, number)).toMatchObject({
+                mutation: { phase: 'remote-mutation-attempted', epoch: 2, definitiveNoMutationHttpStatus: 422 },
+            });
+
+            let inspections = 0;
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(number), '--owner', retainedOid!],
+                    recoveryDependencies(root, (expectedHead) => {
+                        inspections += 1;
+                        return { state: 'OPEN', head: expectedHead, reviews: [] };
+                    })
+                )
+            ).resolves.toBe(0);
+            expect(inspections).toBe(2);
+            expect(readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number)).toBeUndefined();
+            expect(readPullRequestMutationLockReceipt(root, number, retainedOid!)).toMatchObject({
+                version: 2,
+                operation: 'review-publication-recovery',
+                number,
+                ownerOid: retainedOid,
+                head,
+                outcome: 'absent',
+            });
+
+            let authenticated = false;
+            await expect(
+                runRecoverPublishReviewLockCli([String(number), '--owner', retainedOid!], {
+                    ...recoveryDependencies(root, () => {
+                        throw new Error('replay must not inspect');
+                    }),
+                    authenticateReviewer: async () => {
+                        authenticated = true;
+                        throw new Error('replay must not authenticate');
+                    },
+                })
+            ).resolves.toBe(0);
+            expect(authenticated).toBe(false);
+        } finally {
+            restorePs();
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it.each(['gh: Conflict (HTTP 409)', 'gh: Internal Server Error (HTTP 500)', 'socket hang up'])(
+        'retains a journaled owner whose review POST failed with %s',
+        async (failureMessage) => {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-publication-unattested-recovery-'));
+            const number = 3344;
+            const head = 'a'.repeat(40);
+            const restorePs = writeTrustedPsFixture(root);
+            try {
+                runGit(root, ['init']);
+                await runFailingReviewPublication(root, number, head, failureMessage);
+                const retainedOid = readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number);
+                expect(retainedOid).toMatch(/^[0-9a-f]{40}$/);
+                const retained = readPullRequestMutationLockOwner(root, retainedOid!, number);
+                if (retained.version !== 3) {
+                    throw new Error('retained owner is not a journaled publication owner');
+                }
+                expect(retained.mutation).toEqual({ phase: 'remote-mutation-attempted', epoch: 1 });
+
+                let inspections = 0;
+                await expect(
+                    runRecoverPublishReviewLockCli(
+                        [String(number), '--owner', retainedOid!],
+                        recoveryDependencies(root, (expectedHead) => {
+                            inspections += 1;
+                            return { state: 'OPEN', head: expectedHead, reviews: [] };
+                        })
+                    )
+                ).rejects.toThrow(/attempted a remote mutation without landed evidence/);
+                expect(inspections).toBe(2);
+                expect(readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number)).not.toBe(
+                    retainedOid
+                );
+            } finally {
+                restorePs();
+                rmSync(root, { recursive: true, force: true });
+            }
+        }
+    );
+
+    it('keeps the no-mutation attestation on the adopted owner when recovery is interrupted before the receipt', async () => {
+        const fixture = createJournaledRecoveryFixture('remote-mutation-attempted', 422);
+        let inspections = 0;
+        try {
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.number), '--owner', fixture.ownerOid],
+                    recoveryDependencies(fixture.root, (expectedHead) => {
+                        inspections += 1;
+                        if (inspections === 2) {
+                            throw new Error('remote read failed');
+                        }
+                        return { state: 'OPEN', head: expectedHead, reviews: [] };
+                    })
+                )
+            ).rejects.toThrow(
+                /remote read failed; PR #42 review-publication recovery preserved exact lock owner [0-9a-f]{40}/
+            );
+            const adoptedOid = readPullRequestMutationLockOid(
+                fixture.root,
+                pullRequestMutationLockRef(fixture.number),
+                fixture.number
+            );
+            expect(adoptedOid).toMatch(/^[0-9a-f]{40}$/);
+            expect(adoptedOid).not.toBe(fixture.ownerOid);
+            expect(readPullRequestMutationLockOwner(fixture.root, adoptedOid!, fixture.number)).toMatchObject({
+                mutation: { phase: 'remote-mutation-attempted', epoch: 2, definitiveNoMutationHttpStatus: 422 },
+            });
+
+            let retries = 0;
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.number), '--owner', adoptedOid!],
+                    recoveryDependencies(fixture.root, (expectedHead) => {
+                        retries += 1;
+                        return { state: 'OPEN', head: expectedHead, reviews: [] };
+                    })
+                )
+            ).resolves.toBe(0);
+            expect(retries).toBe(2);
             expect(
                 readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
             ).toBeUndefined();
@@ -2220,26 +2540,25 @@ describe('shellPort postReview state verification', () => {
 
     it.each([
         ['invalid JSON', '{'],
-        ['missing start-time fence', JSON.stringify({ ...createJournaledRecoveryFixture, version: 3 })],
+        [
+            'missing start-time fence',
+            JSON.stringify({
+                version: 3,
+                pid: 999_999,
+                token: '44444444-4444-4444-8444-444444444444',
+                operation: 'review-publication',
+                number: 42,
+                expectedHead: 'a'.repeat(40),
+                payloadDigest: 'd'.repeat(64),
+                reviewerActorNodeId: REVIEWER_BOT_NODE_ID,
+                ownerFence: { kind: 'pid', pid: 999_999 },
+                mutation: { phase: 'prepared', epoch: 1 },
+            }),
+        ],
     ])('retains malformed v3 owner data (%s)', async (_label, contents) => {
         const fixture = createJournaledRecoveryFixture();
         try {
-            const malformed =
-                contents === '{'
-                    ? contents
-                    : JSON.stringify({
-                          version: 3,
-                          pid: 999_999,
-                          token: '44444444-4444-4444-8444-444444444444',
-                          operation: 'review-publication',
-                          number: fixture.number,
-                          expectedHead: fixture.head,
-                          payloadDigest: 'd'.repeat(64),
-                          reviewerActorNodeId: REVIEWER_BOT_NODE_ID,
-                          ownerFence: { kind: 'pid', pid: 999_999 },
-                          mutation: { phase: 'prepared', epoch: 1 },
-                      });
-            const oid = writeRawLockOwner(fixture.root, malformed);
+            const oid = writeRawLockOwner(fixture.root, contents);
             runGit(fixture.root, ['update-ref', pullRequestMutationLockRef(fixture.number), oid]);
             await expect(
                 runRecoverPublishReviewLockCli(

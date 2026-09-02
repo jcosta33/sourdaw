@@ -92,7 +92,8 @@ export type PublishReviewCoordinatorDependencies = {
     reviewPort: (
         session: GhSession,
         primaryRoot: string,
-        markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt']
+        markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt'],
+        markDefinitiveNoMutationHttpStatus: PullRequestReviewPublicationMutationBoundary['markDefinitiveNoMutationHttpStatus']
     ) => PublishReviewPort;
     publish: (
         number: number,
@@ -242,7 +243,9 @@ export function shellPort(
     session: GhSession,
     cwd: string = process.cwd(),
     capture: typeof spawnCapture = spawnCapture,
-    markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt'] = () => undefined
+    markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt'] = () => undefined,
+    markDefinitiveNoMutationHttpStatus: PullRequestReviewPublicationMutationBoundary['markDefinitiveNoMutationHttpStatus'] = () =>
+        undefined
 ): PublishReviewPort {
     const primaryRoot = resolvePrimaryRoot(
         (command, args, directory) => capture(command, args, { cwd: directory }),
@@ -266,17 +269,26 @@ export function shellPort(
         postReview: ({ number, commitId, event, body, comments }) => {
             const input = reviewPublicationPayload({ commitId, event, body, comments });
             markRemoteMutationAttempt();
+            let created: string;
+            try {
+                created = gh(
+                    ['api', '--method', 'POST', `repos/${REQUIRED_REPOSITORY}/pulls/${number}/reviews`, '--input', '-'],
+                    input
+                );
+            } catch (error) {
+                // GitHub validates a review creation before persisting it, so its 422 answer
+                // proves the POST created nothing. Journal that proof into the lock owner so
+                // exact-owner recovery can tell this failure apart from an indeterminate one.
+                if (error instanceof Error && /\bHTTP 422\b/u.test(error.message)) {
+                    markDefinitiveNoMutationHttpStatus(422);
+                }
+                throw error;
+            }
             const response = parseJson<{
                 id: number;
                 state?: string;
                 user?: { node_id?: string; login?: string };
-            }>(
-                gh(
-                    ['api', '--method', 'POST', `repos/${REQUIRED_REPOSITORY}/pulls/${number}/reviews`, '--input', '-'],
-                    input
-                ),
-                'create review'
-            );
+            }>(created, 'create review');
             if (!Number.isSafeInteger(response.id) || response.id <= 0) {
                 fail('create review returned an unreadable id');
             }
@@ -369,6 +381,18 @@ function changedDiffLines(diff: string): Map<string, { left: Set<number>; right:
             }
             rightLine += 1;
         } else if (line.startsWith(' ')) {
+            // GitHub renders unchanged context lines inside a hunk and accepts review comments on
+            // them from either side, so both counters are recorded here, not only advanced.
+            if (oldPath !== undefined) {
+                const entry = changed.get(oldPath) ?? { left: new Set<number>(), right: new Set<number>() };
+                entry.left.add(leftLine);
+                changed.set(oldPath, entry);
+            }
+            if (newPath !== undefined) {
+                const entry = changed.get(newPath) ?? { left: new Set<number>(), right: new Set<number>() };
+                entry.right.add(rightLine);
+                changed.set(newPath, entry);
+            }
             leftLine += 1;
             rightLine += 1;
         } else {
@@ -530,8 +554,14 @@ export function defaultPublishReviewCoordinatorDependencies(): PublishReviewCoor
                 env: session.env,
                 cwd: primaryRoot,
             }),
-        reviewPort: (session, primaryRoot, markRemoteMutationAttempt) =>
-            shellPort(session, primaryRoot, spawnCapture, markRemoteMutationAttempt),
+        reviewPort: (session, primaryRoot, markRemoteMutationAttempt, markDefinitiveNoMutationHttpStatus) =>
+            shellPort(
+                session,
+                primaryRoot,
+                spawnCapture,
+                markRemoteMutationAttempt,
+                markDefinitiveNoMutationHttpStatus
+            ),
         publish: publishPreparedReview,
     };
 }
@@ -548,7 +578,12 @@ export async function coordinatePublishReview(
                 fail(`minted actor ${auth.minted.actorNodeId} is not ${REVIEWER_BOT_NODE_ID}`);
             }
             assertRequiredRepository(dependencies.repositoryName(auth.session, primaryRoot));
-            const preflightPort = dependencies.reviewPort(auth.session, primaryRoot, () => undefined);
+            const preflightPort = dependencies.reviewPort(
+                auth.session,
+                primaryRoot,
+                () => undefined,
+                () => undefined
+            );
             const prepared = prepareReviewPublication(number, preflightPort);
             await dependencies.serializeMutation(
                 primaryRoot,
@@ -557,7 +592,12 @@ export async function coordinatePublishReview(
                     dependencies.publish(
                         number,
                         prepared,
-                        dependencies.reviewPort(auth.session, primaryRoot, boundary.markRemoteMutationAttempt),
+                        dependencies.reviewPort(
+                            auth.session,
+                            primaryRoot,
+                            boundary.markRemoteMutationAttempt,
+                            boundary.markDefinitiveNoMutationHttpStatus
+                        ),
                         boundary
                     ),
                 {
@@ -1149,6 +1189,11 @@ export async function runRecoverPublishReviewLockCli(
                     legacyIncident === undefined
                         ? requireReviewPublicationOwner(originalOwner, number).mutation.epoch + 1
                         : 1,
+                // An attested no-mutation proof must survive adoption: without it a crash between
+                // adoption and receipt persistence recreates the unrecoverable owner it closed.
+                ...(legacyIncident === undefined && journaledOwner!.mutation.definitiveNoMutationHttpStatus === 422
+                    ? { definitiveNoMutationHttpStatus: 422 as const }
+                    : {}),
             },
             ...(legacyIncident !== undefined
                 ? {
@@ -1180,7 +1225,9 @@ export async function runRecoverPublishReviewLockCli(
             }
             const outcome = second.reviews.length === 1 ? 'landed' : 'absent';
             const absentReleaseIsAttested =
-                journaledOwner?.mutation.phase === 'prepared' || legacyIncident?.definitiveNoMutationHttpStatus === 422;
+                journaledOwner?.mutation.phase === 'prepared' ||
+                legacyIncident?.definitiveNoMutationHttpStatus === 422 ||
+                journaledOwner?.mutation.definitiveNoMutationHttpStatus === 422;
             if (outcome === 'absent' && !absentReleaseIsAttested) {
                 fail(
                     'review-publication recovery cannot release an owner that attempted a remote mutation without landed evidence'
