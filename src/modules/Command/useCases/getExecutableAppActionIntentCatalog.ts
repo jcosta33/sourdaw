@@ -233,6 +233,7 @@ function inflectionVariants(term: string): readonly string[] {
 export function getExecutableAppActionIntentCatalog(input: { intent: string; page?: IntentCatalogPage }) {
     const { intent, searchKey } = intentSearchKey(input.intent);
     const entries = getExecutableCommandRegistrations()
+        .filter((registration) => registration.discoverability === 'visible')
         .map((registration, index) => {
             const entry: IntentCatalogEntry = {
                 name: registration.actionType,

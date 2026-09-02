@@ -170,7 +170,8 @@ function isClipCapability(capability: AgentReferenceCapability): boolean {
         capability === 'clip' ||
         capability === 'editable-clip' ||
         capability === 'editable-audio-clip' ||
-        capability === 'editable-midi-clip'
+        capability === 'editable-midi-clip' ||
+        capability === 'writable-midi-clip'
     );
 }
 
@@ -495,15 +496,18 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
         const requiresEditableClip =
             input.capability === 'editable-clip' ||
             input.capability === 'editable-audio-clip' ||
-            input.capability === 'editable-midi-clip';
+            input.capability === 'editable-midi-clip' ||
+            input.capability === 'writable-midi-clip';
         const hasEligibleAudioContent = input.capability !== 'editable-audio-clip' || clip?.type === 'audio';
         const hasEligibleMidiContent =
             input.capability !== 'editable-midi-clip' || (clip?.type === 'midi' && clip.noteCount > 0);
+        const hasWritableMidiTarget = input.capability !== 'writable-midi-clip' || clip?.type === 'midi';
         if (
             !clip ||
             (requiresEditableClip && clip.locked === true) ||
             !hasEligibleAudioContent ||
-            !hasEligibleMidiContent
+            !hasEligibleMidiContent ||
+            !hasWritableMidiTarget
         ) {
             return { status: 'rejected', reason: 'ungrounded-target' };
         }

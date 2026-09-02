@@ -99,6 +99,10 @@ function resolveMidiClip(prompt: string, assertedId: string, project = createCli
     return resolveAgentReference({ prompt, assertedId, capability: 'editable-midi-clip', context: project });
 }
 
+function resolveWritableMidiClip(prompt: string, assertedId: string, project = createClipProjectState()) {
+    return resolveAgentReference({ prompt, assertedId, capability: 'writable-midi-clip', context: project });
+}
+
 function resolveAudioClip(prompt: string, assertedId: string, project = createClipProjectState()) {
     return resolveAgentReference({ prompt, assertedId, capability: 'editable-audio-clip', context: project });
 }
@@ -866,6 +870,22 @@ describe('resolveAgentReference', () => {
         expect(resolveMidiClip('quantize notes in Piano MIDI', 'clip-midi', ambiguousContext)).toMatchObject({
             status: 'rejected',
             reason: 'ambiguous-target',
+        });
+    });
+
+    it('admits empty unlocked MIDI clips but rejects locked MIDI and audio clips for note writes', () => {
+        expect(resolveWritableMidiClip('add notes in Empty MIDI', 'clip-empty-midi')).toEqual({
+            status: 'resolved',
+            id: 'clip-empty-midi',
+            evidence: 'exact-name',
+        });
+        expect(resolveWritableMidiClip('add notes in Locked MIDI', 'clip-locked-midi')).toMatchObject({
+            status: 'rejected',
+            reason: 'ungrounded-target',
+        });
+        expect(resolveWritableMidiClip('add notes in Intro', 'clip-intro')).toMatchObject({
+            status: 'rejected',
+            reason: 'ungrounded-target',
         });
     });
 

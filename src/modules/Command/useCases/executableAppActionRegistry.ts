@@ -24,7 +24,8 @@ export type ExecutableAppActionTargetCapability =
     | 'clip'
     | 'editable-clip'
     | 'editable-audio-clip'
-    | 'editable-midi-clip';
+    | 'editable-midi-clip'
+    | 'writable-midi-clip';
 
 export type ExecutableAppActionTargetRule = {
     argument: string;
@@ -47,7 +48,8 @@ export type ExecutableAppActionParentTrackTargetCapability =
     | 'clip'
     | 'editable-clip'
     | 'editable-audio-clip'
-    | 'editable-midi-clip';
+    | 'editable-midi-clip'
+    | 'writable-midi-clip';
 
 export type ExecutableAppActionDerivedMutationIdentityArgument = 'parentTrackIds';
 
@@ -130,11 +132,14 @@ export type ExecutableAppActionDirectionalIntent = {
     falsePhrases: readonly string[];
 };
 
+export type ExecutableAppActionDiscoverability = 'hidden' | 'visible';
+
 type ExecutableAppActionDescriptor = {
     actionType: AppActionType;
     operationVersion?: number;
     risk: ExecutableAppActionRisk;
     description: string;
+    discoverability?: ExecutableAppActionDiscoverability;
     intentPhrases: readonly string[];
     selectionPhrases?: readonly string[];
     directionalIntent?: ExecutableAppActionDirectionalIntent;
@@ -168,6 +173,10 @@ const editableAudioClipTargetRules = [
 
 const editableMidiClipTargetRules = [
     { argument: 'clipId', capability: 'editable-midi-clip' },
+] as const satisfies readonly ExecutableAppActionTargetRule[];
+
+const writableMidiClipTargetRules = [
+    { argument: 'clipId', capability: 'writable-midi-clip', allowBatchLocal: true },
 ] as const satisfies readonly ExecutableAppActionTargetRule[];
 
 const sendTargetRules = [
@@ -892,6 +901,35 @@ export const executableAppActionDescriptors = [
                 },
             },
             required: ['clipId', 'targetBeats'],
+        },
+    },
+    {
+        actionType: 'addNotes',
+        risk: 'bounded-reversible',
+        discoverability: 'hidden',
+        description: 'Add one or more MIDI notes to one unlocked MIDI clip.',
+        intentPhrases: ['add notes', 'add midi notes'],
+        targetRules: writableMidiClipTargetRules,
+        parameters: {
+            properties: {
+                clipId: { type: 'string' },
+                notes: {
+                    type: 'array',
+                    minItems: 1,
+                    items: {
+                        type: 'object',
+                        additionalProperties: false,
+                        properties: {
+                            pitch: { type: 'integer', minimum: 0, maximum: 127 },
+                            startBeat: { type: 'number', minimum: 0 },
+                            duration: { type: 'number', exclusiveMinimum: 0 },
+                            velocity: { type: 'integer', minimum: 1, maximum: 127 },
+                        },
+                        required: ['pitch', 'startBeat', 'duration'],
+                    },
+                },
+            },
+            required: ['clipId', 'notes'],
         },
     },
     {
@@ -2414,6 +2452,9 @@ const CLIP_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY = createParentTrackResourceR
     'editable-audio-clip',
     'editable-midi-clip',
 ]);
+const WRITABLE_MIDI_CLIP_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY = createParentTrackResourceReferenceIdentity([
+    'writable-midi-clip',
+]);
 const DEVICE_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY = createParentTrackResourceReferenceIdentity(['device']);
 const SEND_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY = createParentTrackResourceReferenceIdentity([
     'routable-source',
@@ -2428,6 +2469,10 @@ const SIDECHAIN_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY = createParentTrackReso
 const CLIP_MUTATION_IDENTITY = [
     { arguments: [{ argument: 'clipId' }], resourceFamily: 'clip' },
     ...CLIP_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
+] as const;
+const ADD_NOTES_MUTATION_IDENTITY = [
+    { arguments: [{ argument: 'clipId' }], resourceFamily: 'clip' },
+    ...WRITABLE_MIDI_CLIP_PARENT_TRACK_RESOURCE_REFERENCE_IDENTITY,
 ] as const;
 const MANY_CLIPS_MUTATION_IDENTITY = [
     { arguments: [{ argument: 'clipIds', cardinality: 'many' }], resourceFamily: 'clip' },
@@ -2543,6 +2588,7 @@ export const executableAppActionMutationIdentityRulesByType = {
     setClipStretchMode: CLIP_MUTATION_IDENTITY,
     setClipStretchRatio: CLIP_MUTATION_IDENTITY,
     fitClipToBeats: CLIP_MUTATION_IDENTITY,
+    addNotes: ADD_NOTES_MUTATION_IDENTITY,
     quantizeNotes: CLIP_MUTATION_IDENTITY,
     removeShortMidiOverlaps: CLIP_MUTATION_IDENTITY,
     arpeggiate: CLIP_MUTATION_IDENTITY,
@@ -2643,6 +2689,7 @@ export const executableAppActionMutationIdempotenceByType = {
     setClipStretchMode: true,
     setClipStretchRatio: true,
     fitClipToBeats: false,
+    addNotes: false,
     quantizeNotes: false,
     removeShortMidiOverlaps: false,
     arpeggiate: false,

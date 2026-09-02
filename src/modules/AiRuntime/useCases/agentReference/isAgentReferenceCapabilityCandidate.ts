@@ -21,7 +21,8 @@ export type AgentReferenceCapability =
     | 'clip'
     | 'editable-clip'
     | 'editable-audio-clip'
-    | 'editable-midi-clip';
+    | 'editable-midi-clip'
+    | 'writable-midi-clip';
 
 const duplicableTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'bus', 'folder']);
 const routableTrackKinds: ReadonlySet<string> = new Set(['audio', 'midi', 'bus']);
@@ -95,7 +96,12 @@ export function isAgentReferenceCapabilityCandidate(input: {
     const clip = input.context.tracks
         .flatMap((candidate) => candidate.clips)
         .find((candidate) => candidate.id === input.id);
-    if (!clip || !['clip', 'editable-clip', 'editable-audio-clip', 'editable-midi-clip'].includes(input.capability)) {
+    if (
+        !clip ||
+        !['clip', 'editable-clip', 'editable-audio-clip', 'editable-midi-clip', 'writable-midi-clip'].includes(
+            input.capability
+        )
+    ) {
         return false;
     }
     if (input.capability === 'clip') {
@@ -106,6 +112,9 @@ export function isAgentReferenceCapabilityCandidate(input: {
     }
     if (input.capability === 'editable-audio-clip') {
         return clip.type === 'audio';
+    }
+    if (input.capability === 'writable-midi-clip') {
+        return clip.type === 'midi';
     }
     return input.capability !== 'editable-midi-clip' || (clip.type === 'midi' && clip.noteCount > 0);
 }

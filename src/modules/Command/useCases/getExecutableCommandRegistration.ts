@@ -28,6 +28,7 @@ export function getExecutableCommandRegistration<ActionType extends ExecutableAp
         actionType,
         operationVersion: getExecutableAppActionOperationVersion(actionType),
         providerSchema: descriptor.parameters,
+        discoverability: 'discoverability' in descriptor ? descriptor.discoverability ?? 'visible' : 'visible',
         runtimeSchema: {
             validate: (value: unknown) => validateVersionedCommandArguments(actionType, value),
         },

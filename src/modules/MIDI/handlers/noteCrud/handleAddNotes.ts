@@ -63,6 +63,7 @@ export const handleAddNotes = createHandler<'addNotes'>({
         };
     },
     undoable: true,
+    isNoop: (action) => action.payload.notes.length === 0,
     previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
 });

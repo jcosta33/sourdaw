@@ -107,4 +107,8 @@ describe('handleAddNotes', () => {
         expect(currentNotes()).toEqual(redo.payload.notes);
         expect(handleAddNotes.requiresAbortCompensation).toBe(false);
     });
+
+    it('keeps an internal empty note list as a no-op after provider admission has rejected it', () => {
+        expect(handleAddNotes.isNoop?.({ type: 'addNotes', payload: { clipId: CLIP_ID, notes: [] } })).toBe(true);
+    });
 });
