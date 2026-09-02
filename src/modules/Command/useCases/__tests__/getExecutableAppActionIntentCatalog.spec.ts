@@ -3,6 +3,55 @@ import { describe, expect, it } from 'vitest';
 import { getExecutableAppActionIntentCatalog } from '../getExecutableAppActionIntentCatalog';
 import { getExecutableCommandRegistrations } from '../getExecutableCommandRegistrations';
 
+const SEMANTIC_CATEGORY_NOISE_WORDS = new Set([
+    'a',
+    'an',
+    'and',
+    'at',
+    'by',
+    'existing',
+    'for',
+    'from',
+    'immediately',
+    'in',
+    'into',
+    'new',
+    'of',
+    'on',
+    'one',
+    'or',
+    'the',
+    'to',
+    'with',
+]);
+
+function normalizedTokens(value: string): string[] {
+    return (
+        value
+            .normalize('NFKC')
+            .replaceAll(/([\p{Ll}\p{N}])(\p{Lu})/gu, '$1 $2')
+            .replaceAll(/(\p{Lu})(\p{Lu}\p{Ll})/gu, '$1 $2')
+            .toLowerCase()
+            .match(/[\p{L}\p{N}]+/gu) ?? []
+    );
+}
+
+function expectedSemanticCategories(registration: {
+    actionType: string;
+    intentPhrases: readonly string[];
+    capabilityChecks: readonly { capability: string }[];
+}): string[] {
+    const candidates = [
+        ...normalizedTokens(registration.actionType),
+        ...registration.intentPhrases.flatMap(normalizedTokens),
+        ...registration.capabilityChecks.flatMap(({ capability }) => normalizedTokens(capability)),
+    ];
+    return ['operation', ...new Set(candidates.filter((token) => !SEMANTIC_CATEGORY_NOISE_WORDS.has(token)))].slice(
+        0,
+        8
+    );
+}
+
 describe('getExecutableAppActionIntentCatalog', () => {
     it.each([{} as never, { intent: '' }])('rejects a missing or empty public intent', (input) => {
         expect(() => getExecutableAppActionIntentCatalog(input)).toThrow(
@@ -41,7 +90,7 @@ describe('getExecutableAppActionIntentCatalog', () => {
         });
     });
 
-    it('publishes every registered command purpose through its compact index entry', () => {
+    it('publishes every registered command as its canonical compact index entry', () => {
         for (const registration of getExecutableCommandRegistrations()) {
             const catalog = getExecutableAppActionIntentCatalog({
                 intent: registration.actionType,
@@ -51,7 +100,11 @@ describe('getExecutableAppActionIntentCatalog', () => {
             if (entry === undefined) {
                 throw new Error(`Expected compact catalog entry for ${registration.actionType}.`);
             }
-            expect(entry.purpose).toBe(registration.toolDescription);
+            expect(entry).toEqual({
+                name: registration.actionType,
+                purpose: registration.toolDescription,
+                semanticCategories: expectedSemanticCategories(registration),
+            });
         }
     });
 
