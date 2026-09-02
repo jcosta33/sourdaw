@@ -14,8 +14,10 @@ const DEVICE_ID = 'device-1';
 // Controllable engine / persistence sinks. `helpers.ts` wires these at module
 // level (no DI), so we intercept them at the module boundary and keep the real
 // paramBatcher / encodeCrustValue so the cancel-on-load behaviour is genuinely
-// exercised. vi.hoisted lifts the shared spies/state so the hoisted vi.mock
-// factories below can reference them.
+// exercised. Only `updateDeviceParam` is a wired spy; the other AudioEngine
+// keys listed in the mock are unread graph-coverage stubs (`vi.fn()` and
+// `audioEngine: {}`). vi.hoisted lifts the shared spies/state so the hoisted
+// vi.mock factories below can reference them.
 const mocks = vi.hoisted(() => ({
     updateDeviceParam: vi.fn(),
     persistDeviceParam: vi.fn(),
@@ -38,6 +40,53 @@ const { updateDeviceParam, persistDeviceParam } = mocks;
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: mocks.updateDeviceParam,
+    addMidiFxToStrip: vi.fn(),
+    analyzePitchForClip: vi.fn(),
+    applyNoteExpression: vi.fn(),
+    applyRuntimeGraphDelta: vi.fn(),
+    audioEngine: {},
+    cacheAudioBuffer: vi.fn(),
+    clearReportedLatency: vi.fn(),
+    createRuntimeGraphTopologyFingerprint: vi.fn(),
+    decodeAudioFile: vi.fn(),
+    ensureBusStrip: vi.fn(),
+    garbageCollectCachedAudioBuffersByAge: vi.fn(),
+    garbageCollectCachedAudioBuffersBySize: vi.fn(),
+    garbageCollectFreezeAudioBuffers: vi.fn(),
+    getAudioContext: vi.fn(),
+    getCachedAudioBuffer: vi.fn(),
+    getCompensationDelay: vi.fn(),
+    getDefaultBendRangeSemitones: vi.fn(),
+    getDeviceChainTailSeconds: vi.fn(),
+    getEngineState: vi.fn(),
+    getFactoryDrumKitByIndex: vi.fn(),
+    getLiveEngineSampleRate: vi.fn(),
+    getRuntimeGraphRevision: vi.fn(),
+    getTrackStrip: vi.fn(),
+    initializeTrackStripFromSnapshot: vi.fn(),
+    matchesRuntimeDeviceChainTopology: vi.fn(),
+    removeBusStrip: vi.fn(),
+    removeMidiFxFromStrip: vi.fn(),
+    removeSend: vi.fn(),
+    removeTrackStrip: vi.fn(),
+    renderTrackSubgraphOffline: vi.fn(),
+    reportBridgeRoundTripFrames: vi.fn(),
+    reportLatency: vi.fn(),
+    resolveToasterPadBinding: vi.fn(),
+    setBusGain: vi.fn(),
+    setSend: vi.fn(),
+    setTrackGain: vi.fn(),
+    setTrackMute: vi.fn(),
+    setTrackOutput: vi.fn(),
+    setTrackPan: vi.fn(),
+    setTrackSoloGate: vi.fn(),
+    startInputMonitoring: vi.fn(),
+    stopInputMonitoring: vi.fn(),
+    unwireSidechainRoute: vi.fn(),
+    updateDeviceBypass: vi.fn(),
+    updateMidiFxBypass: vi.fn(),
+    updateMidiFxParam: vi.fn(),
+    wireSidechainRoute: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
