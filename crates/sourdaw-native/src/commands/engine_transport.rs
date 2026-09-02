@@ -28,10 +28,14 @@
 //! is deliberately taken from the transport channel rather than from
 //! `GraphProgressSnapshot`, whose `playhead_frame` is the command-admission
 //! ledger's release evidence and means a happens-before, not a cursor position.
+//! That channel is the *whole* of the reading, batch count included: the two
+//! channels are published one after another at the end of every callback, so a
+//! reader taking one field from each can pair a count with a playhead the
+//! engine never held at the same moment.
 
 use crate::commands::graph::{finite, seconds_to_frames};
 use crate::state::AppState;
-use daw_engine::scheduler::{GraphCommand, GraphProgressSnapshot, TransportPositionSnapshot};
+use daw_engine::scheduler::{GraphCommand, TransportPositionSnapshot};
 use daw_engine::transport_map::{
     LoopRegion, TempoMap, TempoSegment, TimeSignatureMap, TimeSignatureSegment, TransportMaps,
 };
@@ -114,7 +118,9 @@ pub struct TransportMapsApplied {
 /// reading may still report where the transport was before it. The count is
 /// the witness — a reading carrying a count at or above the fence number a
 /// command was admitted at was taken after that command reached the audio
-/// thread.
+/// thread. It travels on the transport snapshot itself
+/// ([`TransportPositionSnapshot::batches_applied`]), which is what makes it a
+/// statement about *this* playhead rather than about some other callback's.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EngineTransportPosition {
@@ -129,12 +135,8 @@ pub struct EngineTransportPosition {
     pub time_sig_denom: u16,
 }
 
-/// Compose one reading out of the two channels it is drawn from.
-///
-/// Its own function because the order the two are *read* in is a contract the
-/// caller keeps and this composition cannot: see [`engine_transport_position`].
+/// The engine's own snapshot, in the wire's units.
 fn transport_position_payload(
-    progress: GraphProgressSnapshot,
     snapshot: TransportPositionSnapshot,
     sample_rate: f64,
 ) -> EngineTransportPosition {
@@ -144,7 +146,7 @@ fn transport_position_payload(
         position_seconds: snapshot.playhead_frame as f64 / sample_rate,
         playhead_frame: snapshot.playhead_frame as f64,
         loop_wraps: snapshot.loop_wraps as f64,
-        batches_applied: progress.batches_applied as f64,
+        batches_applied: snapshot.batches_applied as f64,
         tempo: snapshot.tempo,
         time_sig_num: snapshot.time_sig_num,
         time_sig_denom: snapshot.time_sig_denom,
@@ -307,18 +309,12 @@ pub async fn engine_transport_position(
     };
 
     let sample_rate = f64::from(engine.sample_rate());
-    // The batch count is read *before* the position, and the order is the
-    // whole of what makes it a witness. Both channels are published once per
-    // callback and read between callbacks, so reading the count second could
-    // take it from a later callback than the position beside it — and a
-    // consumer would then be told a command had drained by a reading that
-    // predates the drain. Read first, the count can only lag the position,
-    // which costs a frame of admission and never asserts a happens-before that
-    // did not happen.
-    let progress = engine.graph_progress_snapshot();
+    // One read, deliberately. The batch count that dates this reading rides on
+    // the transport snapshot itself, so the pairing is the engine's own single
+    // publish rather than an ordering this side could only hope for.
     let snapshot = engine.transport_position_snapshot();
 
-    Ok(transport_position_payload(progress, snapshot, sample_rate))
+    Ok(transport_position_payload(snapshot, sample_rate))
 }
 
 #[cfg(test)]
@@ -445,38 +441,29 @@ mod tests {
         );
     }
 
-    /// `batchesApplied` is the drained-fence count and nothing else. It is the
-    /// one field a caller uses to date the reading against a command it sent,
-    /// so it has to come from the progress echo — the channel that counts
-    /// drains — rather than from anything the transport channel happens to
-    /// carry. The two snapshots below deliberately disagree about `loop_wraps`
-    /// so each field's source is pinned, not merely its value.
+    /// Every field of a reading comes from the one snapshot the engine
+    /// published, `batchesApplied` included. That field is what a caller uses
+    /// to date the reading against a command it sent, so a count drawn from a
+    /// second channel would be a count for a different callback than the
+    /// playhead beside it.
     #[test]
-    fn a_position_takes_its_batch_count_from_the_progress_echo() {
-        let progress = GraphProgressSnapshot {
-            batches_applied: 11,
-            playhead_frame: 96_000,
-            loop_wraps: 5,
-            last_wrap_frame: 48_000,
-        };
+    fn a_position_is_the_transport_snapshot_the_engine_published() {
         let snapshot = TransportPositionSnapshot {
             playing: true,
             playhead_frame: 72_000,
             loop_wraps: 2,
+            batches_applied: 11,
             tempo: 128.0,
             time_sig_num: 5,
             time_sig_denom: 4,
         };
 
-        let position = transport_position_payload(progress, snapshot, 48_000.0);
+        let position = transport_position_payload(snapshot, 48_000.0);
 
         assert_eq!(position.batches_applied, 11.0);
         assert_eq!(position.playhead_frame, 72_000.0);
         assert_eq!(position.position_seconds, 1.5);
-        assert_eq!(
-            position.loop_wraps, 2.0,
-            "the wrap count stays the cursor's, beside a batch count that is not"
-        );
+        assert_eq!(position.loop_wraps, 2.0);
     }
 
     #[test]
@@ -501,5 +488,48 @@ mod tests {
             .expect_err("there is no engine to hold the maps");
 
         assert_eq!(error, "no native engine is running");
+    }
+
+    /// The maps install publishes a fence of its own, outside the graph batch
+    /// path, and both fences are numbered by the one counter the engine counts
+    /// with. An install that sent its fence without numbering it would leave
+    /// every later graph batch reporting a number the engine had already passed
+    /// — the ledger would release writes the audio thread never popped, and a
+    /// transport reading taken before a locate would pass for one taken after.
+    #[test]
+    fn installing_maps_numbers_its_fence_in_the_same_count_a_graph_batch_uses() {
+        use crate::commands::graph::apply_graph_commands;
+
+        let state = AppState::default();
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let applied = crate::block_on_test(set_transport_maps(maps_payload(), &state))
+            .expect("the maps install onto a running engine");
+        assert_eq!(
+            applied.admitted_batch, 1,
+            "the install numbered its own fence against a fresh ledger"
+        );
+
+        let mut fences = 0;
+        while let Ok(command) = command_rx.pop() {
+            if matches!(command, GraphCommand::BeginBatch { .. }) {
+                fences += 1;
+            }
+        }
+        assert_eq!(fences, 1, "one fence, the one the number is about");
+
+        let batch = crate::block_on_test(apply_graph_commands(
+            serde_json::json!({ "schemaVersion": 1, "commands": [] }),
+            &state,
+        ))
+        .expect("the batch resolves to a result");
+        assert_eq!(batch["application"], "applied");
+        assert_eq!(
+            batch["admittedBatch"].as_u64(),
+            Some(applied.admitted_batch + 1),
+            "a graph batch is numbered after the install's fence, not over it"
+        );
     }
 }

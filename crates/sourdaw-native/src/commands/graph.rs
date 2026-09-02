@@ -4473,6 +4473,89 @@ mod tests {
         );
     }
 
+    /// How many fences a drain would meet on this ring, leaving it empty for
+    /// the next batch. `GraphCommand` carries no `Debug`, so the ring is
+    /// counted rather than printed.
+    fn drain_counting_fences(commands: &mut rtrb::Consumer<GraphCommand>) -> usize {
+        let mut fences = 0;
+        while let Ok(command) = commands.pop() {
+            if matches!(command, GraphCommand::BeginBatch { .. }) {
+                fences += 1;
+            }
+        }
+        fences
+    }
+
+    /// The number an applied batch reports is the fence it actually published
+    /// on the engine's ring, taken from the ledger that stamped its writes.
+    /// The three have to be one number: the caller holds the report against the
+    /// engine's `batches_applied`, which counts drained fences, and releases
+    /// the ledger's stamps by the same count. A report drawn from anywhere else
+    /// — the revision, the previous count — would let a poll taken before this
+    /// batch drained pass for one taken after it, which is exactly the reading
+    /// the live automation writer refuses to act on.
+    #[test]
+    fn an_applied_batch_reports_the_fence_it_published() {
+        let state = AppState::default();
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        // Filling the slot first is what makes this a capture engine: the
+        // lazy bootstrap in `apply_graph_commands` starts one only into an
+        // empty slot, so it reuses this handle rather than opening a device.
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let first = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": [track_strip("t1"), pan_step("t1", 0.1, 1.0)] }),
+            &state,
+        ))
+        .expect("the batch resolves to a result");
+        assert_eq!(first["application"], "applied");
+        let reported = first["admittedBatch"]
+            .as_u64()
+            .expect("an applied batch names the fence it published");
+        assert_eq!(
+            drain_counting_fences(&mut command_rx),
+            1,
+            "one fence reached the engine, and the report is about that fence"
+        );
+
+        {
+            let registry = state.graph.lock().expect("the registry is readable");
+            assert_eq!(
+                reported, registry.batches_sent,
+                "the reported number is the ledger's own count of fences sent"
+            );
+            let charged: Vec<u64> = registry
+                .automation_pending
+                .values()
+                .flatten()
+                .map(|stamp| stamp.admitted_batch)
+                .collect();
+            assert!(
+                !charged.is_empty(),
+                "the batch carried writes, so the ledger holds stamps for them"
+            );
+            assert_eq!(
+                charged,
+                vec![reported; charged.len()],
+                "every write is released against the number the caller was told"
+            );
+        }
+
+        let second = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": [pan_step("t1", 0.2, 2.0)] }),
+            &state,
+        ))
+        .expect("the second batch resolves to a result");
+        assert_eq!(second["application"], "applied");
+        assert_eq!(
+            second["admittedBatch"].as_u64(),
+            Some(reported + 1),
+            "each applied batch reports the next fence, never the one before it"
+        );
+        assert_eq!(drain_counting_fences(&mut command_rx), 1);
+    }
+
     /// Debt 3, refusal ordering: a batch that lost its revision race rejects
     /// with the contract's semantics — refused before the graph changed —
     /// and before the lazy bootstrap, so a lost batch never starts an
