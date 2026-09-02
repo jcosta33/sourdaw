@@ -248,6 +248,27 @@ describe('addNotes command registration', () => {
             },
         ],
         [
+            'a changed base note in the expected replay snapshots',
+            () => {
+                const entry = createPersistedAddNotesEntry();
+                const changedBaseNotes = entry.inverseAction.payload.notes.map((note, index) =>
+                    index === 0 ? { ...note, velocity: 81 } : note
+                );
+                const expectedNotes = [...changedBaseNotes, ...entry.action.payload.notes];
+                return {
+                    ...entry,
+                    inverseAction: {
+                        ...entry.inverseAction,
+                        payload: { ...entry.inverseAction.payload, expectedNotes },
+                    },
+                    redoAction: {
+                        ...entry.redoAction,
+                        payload: { ...entry.redoAction.payload, notes: expectedNotes },
+                    },
+                };
+            },
+        ],
+        [
             'duplicate materialized ids',
             () => {
                 const entry = createPersistedAddNotesEntry();

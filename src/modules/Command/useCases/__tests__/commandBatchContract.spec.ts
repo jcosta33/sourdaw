@@ -546,6 +546,34 @@ describe('command batch contract', () => {
         ).toThrow('Command operation is not deterministic at the serialized boundary');
     });
 
+    it('rejects canonical addNotes arguments changed after their digest was issued', () => {
+        const action: Extract<AppAction, { type: 'addNotes' }> = {
+            type: 'addNotes',
+            payload: {
+                clipId: 'clip-midi',
+                notes: [
+                    { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100, probability: 100 },
+                ],
+            },
+        };
+        const envelope = actionCommand({
+            action,
+            commandId: '77777777-7777-4777-8777-777777777777',
+        });
+        const tamperedEnvelope = {
+            ...envelope,
+            arguments: {
+                ...envelope.arguments,
+                notes: [{ ...action.payload.notes[0]!, pitch: 61 }],
+            },
+        };
+
+        expect(parseVersionedCommandEnvelope(serializeVersionedCommandEnvelope(tamperedEnvelope))).toEqual({
+            status: 'invalid',
+            reason: 'Command arguments failed integrity validation',
+        });
+    });
+
     it('rejects a target interval that crosses a protected range between its endpoints', () => {
         const section = actionCommand({
             action: {

@@ -68,6 +68,7 @@ function createHandler<Action extends AppAction>(input: {
     describe?: ActionHandler<Action>['describe'];
     executionKind?: ActionHandler<Action>['executionKind'];
     isNoop?: ActionHandler<Action>['isNoop'];
+    materializeCommandArguments?: ActionHandler<Action>['materializeCommandArguments'];
     validate?: ActionHandler<Action>['validate'];
     requiresAbortCompensation?: boolean;
     undoable?: boolean;
@@ -78,6 +79,7 @@ function createHandler<Action extends AppAction>(input: {
         describe: input.describe ?? ((action) => ({ label: 'Batch action', inverseAction: action })),
         executionKind: input.executionKind,
         isNoop: input.isNoop,
+        materializeCommandArguments: input.materializeCommandArguments,
         validate: input.validate ?? (() => true),
         requiresAbortCompensation: input.requiresAbortCompensation,
         undoable: input.undoable ?? true,
@@ -219,6 +221,26 @@ describe('executeAppActionBatch', () => {
         });
         expect(firstEffect).not.toHaveBeenCalled();
         expect(secondEffect).not.toHaveBeenCalled();
+    });
+
+    it('rejects a batch before dispatch when handler argument materialization fails', async () => {
+        const execute = vi.fn();
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute,
+                materializeCommandArguments: () => {
+                    throw new Error('editing tool arguments are invalid');
+                },
+            }),
+        });
+
+        await expect(executeAppActionBatch([action])).resolves.toEqual({
+            status: 'rejected',
+            reason: 'Could not preflight setEditingTool: editing tool arguments are invalid',
+            actions: [],
+        });
+        expect(execute).not.toHaveBeenCalled();
     });
 
     it('passes the exact execution signal through the command boundary to project handlers', async () => {

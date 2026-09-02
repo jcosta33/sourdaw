@@ -663,25 +663,25 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                         actions: [],
                     };
                 }
-                action = materializeCommandHandlerArguments(action, handler);
-                if (
-                    suppliedEnvelope &&
-                    (suppliedEnvelope.operation !== action.type ||
-                        suppliedEnvelope.groupId !== options.groupId ||
-                        suppliedEnvelope.argumentsDigest !==
-                            getVersionedCommandArgumentsDigest({
-                                operation: action.type,
-                                arguments: action.payload ?? {},
-                            }))
-                ) {
-                    return {
-                        status: 'rejected',
-                        reason: `Command envelope does not match action ${action.type}`,
-                        actions: [],
-                    };
-                }
                 let description: HandlerDescribeResult | null;
                 try {
+                    action = materializeCommandHandlerArguments(action, handler);
+                    if (
+                        suppliedEnvelope &&
+                        (suppliedEnvelope.operation !== action.type ||
+                            suppliedEnvelope.groupId !== options.groupId ||
+                            suppliedEnvelope.argumentsDigest !==
+                                getVersionedCommandArgumentsDigest({
+                                    operation: action.type,
+                                    arguments: action.payload ?? {},
+                                }))
+                    ) {
+                        return {
+                            status: 'rejected',
+                            reason: `Command envelope does not match action ${action.type}`,
+                            actions: [],
+                        };
+                    }
                     description = null;
                     if (handler.undoable || handler.executionKind === 'runtime') {
                         description = handler.describe(action);
