@@ -114,8 +114,11 @@ pub(crate) struct InputOpenRequest {
 pub(crate) struct NegotiatedInput {
     pub sample_rate: f32,
     pub channels: usize,
-    /// Frames the device is expected to deliver per capture callback. The
-    /// ring carries slack for a device that hands back more.
+    /// The most frames one capture callback can carry: the maximum the
+    /// device advertises, never a period the engine would have preferred. A
+    /// device that advertises no bound is refused rather than assigned one,
+    /// so this is a ceiling a ring can be sized against — see
+    /// [`CaptureFn`].
     pub period_frames: usize,
 }
 
