@@ -169,7 +169,6 @@ describe('addNotes command registration', () => {
                 {
                     argument: 'clipId',
                     capability: 'writable-midi-clip',
-                    allowBatchLocal: true,
                 },
             ],
             mutationIdentityRules: [

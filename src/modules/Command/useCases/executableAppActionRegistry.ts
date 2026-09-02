@@ -177,7 +177,7 @@ const editableMidiClipTargetRules = [
 ] as const satisfies readonly ExecutableAppActionTargetRule[];
 
 const writableMidiClipTargetRules = [
-    { argument: 'clipId', capability: 'writable-midi-clip', allowBatchLocal: true },
+    { argument: 'clipId', capability: 'writable-midi-clip' },
 ] as const satisfies readonly ExecutableAppActionTargetRule[];
 
 const sendTargetRules = [
