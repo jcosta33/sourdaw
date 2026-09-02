@@ -71,12 +71,24 @@ function getRestoreStatus(action: RestoreMidiClipNotesAction, context?: HandlerV
     });
 }
 
+/**
+ * MF-03 replay eligibility: an inverse that carries no replay guard states nothing about the state
+ * it expects, so re-applying it after divergence would write blind.
+ */
+function hasReplayGuard(action: RestoreMidiClipNotesAction): boolean {
+    return (
+        action.payload.articulationReplayGuard !== undefined || action.payload.noteTransformReplayGuard !== undefined
+    );
+}
+
 export const handleRestoreMidiClipNotes = createHandler<'restoreMidiClipNotes'>({
     execute: (action) => ({ status: restoreMidiClipNotes(action.payload) }),
     validate: (action, context) =>
         isRestoreMidiClipNotesReplayArguments(action.payload) && getRestoreStatus(action, context) !== 'conflict',
     canReapplyAfterDivergence: (action, context) =>
-        isRestoreMidiClipNotesReplayArguments(action.payload) && getRestoreStatus(action, context) !== 'conflict',
+        hasReplayGuard(action) &&
+        isRestoreMidiClipNotesReplayArguments(action.payload) &&
+        getRestoreStatus(action, context) !== 'conflict',
     describe: () => ({ label: 'Restore MIDI clip notes' }),
     previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
