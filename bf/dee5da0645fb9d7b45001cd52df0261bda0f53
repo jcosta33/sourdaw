@@ -1,0 +1,80 @@
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/runBranchLineageTransition.spec.ts
+  s_bbdfb911119c4f::t_4c4e3bb5c0f7ee 14-15
+  s_bbdfb911119c4f::t_47abed7850122f 39-40,49-51
+  s_bbdfb911119c4f::t_9094ff3d1e68df 52
+src/modules/Command/useCases/restoreUndoHistory.ts
+  s_bbdfb911119c4f::t_5cd4afabca8c8f 1-10
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/switchBranch.spec.ts
+  s_bbdfb911119c4f::t_a5e43052331a3e 67-71
+  s_bbdfb911119c4f::t_298d495239e973 19-20
+  s_bbdfb911119c4f::t_884cf66c16f858 183
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchWritesUnderStoragePressure.spec.ts
+  s_bbdfb911119c4f::t_b6dc9e696be045 26-29
+src/modules/Command/useCases/__tests__/captureUndoHistory.spec.ts
+  s_bbdfb911119c4f::t_21a62d3fe174e8 1-40
+  s_bbdfb911119c4f::t_a40269d2b7ef19 41-60
+src/modules/CrdtDocument/useCases/crdtBranching/runBranchTransition.ts
+  s_bbdfb911119c4f::t_0bdbddf473bb78 68,73,78-82
+  s_bbdfb911119c4f::t_1112998f879aaa 6
+  s_bbdfb911119c4f::t_8b09bf66d639a7 115,130
+src/modules/Command/useCases/captureUndoHistory.ts
+  s_bbdfb911119c4f::t_4489dac368b6dd 1-17
+src/modules/Command/useCases/__tests__/restoreUndoHistory.spec.ts
+  s_bbdfb911119c4f::t_4af82eae8393bc 1-26
+  s_bbdfb911119c4f::t_521dc090afe0f7 27-34
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/runBranchTransition.spec.ts
+  s_bbdfb911119c4f::t_2ae4546bdb803d 61-63
+  s_bbdfb911119c4f::t_4c642f71b247a7 1-60,64-133
+src/modules/Command/useCases/index.ts
+  s_bbdfb911119c4f::t_1725403d407c07 91-92
+src/modules/AiRuntime/useCases/__tests__/aiPanelActions.spec.ts
+  s_bbdfb911119c4f::t_40ab730a2135ac 17-18
+src/modules/AiRuntime/useCases/aiPanelActions/__tests__/runAppAction.spec.ts
+  s_bbdfb911119c4f::t_3aa0926b28ffc3 33-34
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx
+  s_bbdfb911119c4f::t_1b5a8608e3436c 75-76
+src/modules/Arrangement/presentations/views/__tests__/ClipContextMenu.spec.tsx
+  s_bbdfb911119c4f::t_a5bbcd5e3754dd 170-171
+src/modules/Arrangement/presentations/views/__tests__/TrackListView.spec.tsx
+  s_bbdfb911119c4f::t_62d5924c1adcde 128-129
+src/modules/GrandBoule/presentations/views/__tests__/GrandBoulePanel.spec.tsx
+  s_bbdfb911119c4f::t_bbc38009a67fd7 88-89
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleMasterGain.spec.ts
+  s_bbdfb911119c4f::t_65c4a0d4f5f403 21-22
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleSoundboardSend.spec.ts
+  s_bbdfb911119c4f::t_3934c1bff867b8 21-22
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleSympatheticSend.spec.ts
+  s_bbdfb911119c4f::t_4b5118e38e56bf 21-22
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/ExpandedChannelStrip.spec.tsx
+  s_bbdfb911119c4f::t_473d0fb030654b 59-60
+src/modules/Project/useCases/__tests__/recentProjects.spec.ts
+  s_bbdfb911119c4f::t_80c6e67ec33d08 71-72
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/KneadEditor.spec.tsx
+  s_bbdfb911119c4f::t_699c71af82e672 127-128
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollContextMenu.spec.tsx
+  s_bbdfb911119c4f::t_5ad0e82bfbd471 75-76
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/WaveformEditor.spec.tsx
+  s_bbdfb911119c4f::t_feba9173ae42e7 204-205
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipInspector.spec.tsx
+  s_bbdfb911119c4f::t_5a071bc3aee12e 203-204
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackDevicesSection.spec.tsx
+  s_bbdfb911119c4f::t_f662c9a98ac5a6 86-87
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackLevelSection.spec.tsx
+  s_bbdfb911119c4f::t_36a8da7e058191 31-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "bfdee5da0645fb9d7b45001cd52df0261bda0f53",
+  "prompts": {},
+  "sessions": {
+    "s_bbdfb911119c4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fa21d5-2a8a-4f80-98ab-b72059373843",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
