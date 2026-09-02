@@ -1693,9 +1693,9 @@ describe('device write boundary closure', () => {
 
         const braceRegex = productionSource(
             'src/modules/Arrangement/braceRegex.ts',
-            'if (x) { return 1; } /re/.test(y); export const z = persistDeviceParam;\n'
+            'if (x) { return 1; } /a\\/*b/; export const z = persistDeviceParam;\n'
         );
-        expect(braceRegex.code).toContain('/re/');
+        expect(braceRegex.code).toContain('/a\\/*b/');
         expect(braceRegex.code).toContain('persistDeviceParam');
         expect(
             countByPath([braceRegex], SINK_DEFINITIONS['persistence-runtime'])['src/modules/Arrangement/braceRegex.ts']
