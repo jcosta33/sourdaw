@@ -11,12 +11,44 @@ const mocks = vi.hoisted(() => ({
     resetBrowserDisplayScaleForChildStartup: vi.fn(),
     resetDisplayScaleForStartup: vi.fn(),
     resolveAppComposition: vi.fn(),
+    setCommandEventBus: vi.fn(),
+    setNotificationEventBus: vi.fn(),
+    setVoiceToggleEventBus: vi.fn(),
+    setWebMidiRuntimeEventBus: vi.fn(),
+    setWorkspaceEventBus: vi.fn(),
 }));
 
 function observeNextRender(): Promise<void> {
     return new Promise((resolve) => {
         mocks.render.mockImplementationOnce(() => resolve());
     });
+}
+
+function expectFirstPaintBusesRegisteredBeforeRender(): void {
+    expect(mocks.setWorkspaceEventBus).toHaveBeenCalledOnce();
+    expect(mocks.setVoiceToggleEventBus).toHaveBeenCalledOnce();
+    expect(mocks.setNotificationEventBus).toHaveBeenCalledOnce();
+    expect(mocks.setWebMidiRuntimeEventBus).toHaveBeenCalledOnce();
+    expect(mocks.setCommandEventBus).toHaveBeenCalledOnce();
+    const renderOrder = mocks.render.mock.invocationCallOrder[0];
+    expect(renderOrder).toBeDefined();
+    if (renderOrder === undefined) {
+        throw new Error('Application render did not run');
+    }
+    for (const setter of [
+        mocks.setWorkspaceEventBus,
+        mocks.setVoiceToggleEventBus,
+        mocks.setNotificationEventBus,
+        mocks.setWebMidiRuntimeEventBus,
+        mocks.setCommandEventBus,
+    ]) {
+        const order = setter.mock.invocationCallOrder[0];
+        expect(order).toBeDefined();
+        if (order === undefined) {
+            throw new Error('A first-paint bus setter did not run');
+        }
+        expect(order).toBeLessThan(renderOrder);
+    }
 }
 
 vi.mock('../bootstrap', () => {
@@ -39,6 +71,83 @@ vi.mock('../reloadApplication', () => ({ reloadApplication: mocks.reloadApplicat
 
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     resetDisplayScaleForStartup: mocks.resetDisplayScaleForStartup,
+    setWorkspaceEventBus: mocks.setWorkspaceEventBus,
+}));
+
+vi.mock('#/modules/AiRuntime/useCases', () => ({
+    setVoiceToggleEventBus: mocks.setVoiceToggleEventBus,
+}));
+
+vi.mock('#/modules/MIDI/useCases', () => ({
+    setWebMidiRuntimeEventBus: mocks.setWebMidiRuntimeEventBus,
+    adaptGrooveTemplateForConsumer: vi.fn(),
+    addChordEvent: vi.fn(),
+    appendMidiNotes: vi.fn(),
+    arpeggiate: vi.fn(),
+    assignGrooveTemplate: vi.fn(),
+    canPrepareMidiClipGlueState: vi.fn(),
+    createGrooveTemplate: vi.fn(),
+    downloadMidiFile: vi.fn(),
+    duplicateClipNotes: vi.fn(),
+    duplicateMidiClipData: vi.fn(),
+    getCanonicalGrooveTemplateKey: vi.fn(),
+    getChordAtBeat: vi.fn(),
+    getGrooveTemplate: vi.fn(),
+    getMidiInputTrack: vi.fn(),
+    getMidiInputTrackOwnerId: vi.fn(),
+    getMidiInputTrackRevision: vi.fn(),
+    getMidiStoreState: vi.fn(),
+    getScopedGrooveAssignment: vi.fn(),
+    getScopedGrooveConsumerId: vi.fn(),
+    getStraightGrooveTemplateId: vi.fn(),
+    hasActiveStepRecordingDependency: vi.fn(),
+    hydrateGrooveTemplates: vi.fn(),
+    hydrateMidiProjectState: vi.fn(),
+    mergeImportedMidiClipNotes: vi.fn(),
+    midiClipGlueStateMatches: vi.fn(),
+    midiClipSplitStateMatches: vi.fn(),
+    migrateAbsoluteMidiNotes: vi.fn(),
+    panicLiveNotes: vi.fn(),
+    prepareMidiClipGlueState: vi.fn(),
+    prepareMidiClipSplit: vi.fn(),
+    projectClipMidiEvents: vi.fn(),
+    projectCommittedGroove: vi.fn(),
+    projectDrumPreviewCandidateNotes: vi.fn(),
+    readLegacyChordTrackMigration: vi.fn(),
+    readMidiFile: vi.fn(),
+    removeMidiClipData: vi.fn(),
+    replaceChordTrackState: vi.fn(),
+    resetMidiState: vi.fn(),
+    resetMidiStoreForProject: vi.fn(),
+    resolveMidiNoteArticulationId: vi.fn(),
+    restoreGrooveAssignment: vi.fn(),
+    restoreMidiClipData: vi.fn(),
+    restoreMidiClipGlueState: vi.fn(),
+    restoreMidiClipNotes: vi.fn(),
+    restoreMidiClipSplitState: vi.fn(),
+    serializeMidiStateForClips: vi.fn(),
+    setMidiInputTrack: vi.fn(),
+    setMidiStoreState: vi.fn(),
+    setNotesForClip: vi.fn(),
+    shouldPlayMidiEvent: vi.fn(),
+    splitMidiNotesAtBeat: vi.fn(),
+    transposeForChordTrack: vi.fn(),
+}));
+
+vi.mock('#/modules/Command/useCases', () => ({
+    setCommandEventBus: mocks.setCommandEventBus,
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    clearUndoHistory: vi.fn(),
+    executeAppAction: vi.fn(),
+    isAppActionCommittedError: vi.fn(() => false),
+    pushUndoEntry: vi.fn(),
+    resetActionReplayAuthority: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
+}));
+
+vi.mock('#/utils/Notification/notificationEventBus', () => ({
+    NotificationEventBus: class NotificationEventBus {},
+    setNotificationEventBus: mocks.setNotificationEventBus,
 }));
 
 vi.mock('../App', () => ({ App: () => null }));
@@ -72,6 +181,11 @@ describe('app main composition', () => {
         expect(mocks.resetBrowserDisplayScaleForChildStartup).not.toHaveBeenCalled();
         expect(mocks.bootstrap).not.toHaveBeenCalled();
         expect(mocks.render).not.toHaveBeenCalled();
+        expect(mocks.setWorkspaceEventBus).not.toHaveBeenCalled();
+        expect(mocks.setVoiceToggleEventBus).not.toHaveBeenCalled();
+        expect(mocks.setNotificationEventBus).not.toHaveBeenCalled();
+        expect(mocks.setWebMidiRuntimeEventBus).not.toHaveBeenCalled();
+        expect(mocks.setCommandEventBus).not.toHaveBeenCalled();
     });
 
     it('initializes the application directly in a desktop renderer', async () => {
@@ -109,6 +223,7 @@ describe('app main composition', () => {
         expect(resetCallOrder).toBeLessThan(renderCallOrder);
         expect(mocks.resetBrowserDisplayScaleForChildStartup).not.toHaveBeenCalled();
         expect(mocks.mountBrowserDisplayScaleHost).not.toHaveBeenCalled();
+        expectFirstPaintBusesRegisteredBeforeRender();
     });
 
     it('resets the browser host before importing and rendering a child application', async () => {
@@ -126,6 +241,7 @@ describe('app main composition', () => {
         expect(mocks.resetBrowserDisplayScaleForChildStartup).toHaveBeenCalledOnce();
         expect(mocks.resetDisplayScaleForStartup).not.toHaveBeenCalled();
         expect(mocks.mountBrowserDisplayScaleHost).not.toHaveBeenCalled();
+        expectFirstPaintBusesRegisteredBeforeRender();
     });
 
     it('renders only the fatal startup surface when a desktop document has no bridge', async () => {
@@ -150,5 +266,10 @@ describe('app main composition', () => {
         expect(mocks.resetDisplayScaleForStartup).not.toHaveBeenCalled();
         expect(mocks.bootstrap).not.toHaveBeenCalled();
         expect(mocks.mountBrowserDisplayScaleHost).not.toHaveBeenCalled();
+        expect(mocks.setWorkspaceEventBus).not.toHaveBeenCalled();
+        expect(mocks.setVoiceToggleEventBus).not.toHaveBeenCalled();
+        expect(mocks.setNotificationEventBus).not.toHaveBeenCalled();
+        expect(mocks.setWebMidiRuntimeEventBus).not.toHaveBeenCalled();
+        expect(mocks.setCommandEventBus).not.toHaveBeenCalled();
     });
 });

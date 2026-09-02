@@ -13,6 +13,8 @@ import {
     type PostTargetScopeAdmissionStrategy,
     type PostTargetScopeAdmissionStrategyDefinition,
 } from './createPostTargetScopeAdmissionStrategyRegistry';
+import { hasReferenceOutsideMatchedIntent } from './hasReferenceOutsideMatchedIntent';
+import { hasTrackControlRestriction } from './hasTrackControlRestriction';
 
 type PostTargetActionScope = PostTargetScopeAdmissionInput['actionScope'];
 
@@ -133,52 +135,116 @@ const universalClearSolosIntentPhrases: ReadonlySet<string> = new Set([
     'unsolo everything',
 ]);
 
-function hasReferenceOutsideMatchedIntent(text: string, intentPhrase: string, reference: string): boolean {
-    const normalizedText = normalizePromptText(text);
-    const normalizedIntent = normalizePromptText(intentPhrase);
-    const normalizedReference = normalizePromptText(reference);
-    if (normalizedReference.length === 0) {
-        return false;
-    }
-    const intentStart = normalizedText.indexOf(normalizedIntent);
-    if (intentStart < 0) {
-        return true;
-    }
-    const intentEnd = intentStart + normalizedIntent.length;
-    const referencePattern = new RegExp(
-        `(?<![\\p{L}\\p{N}])${escapeRegExp(normalizedReference)}(?![\\p{L}\\p{N}])`,
-        'gu'
-    );
-    return [...normalizedText.matchAll(referencePattern)].some((match) => {
-        const referenceStart = match.index;
-        const referenceEnd = referenceStart + normalizedReference.length;
-        return referenceStart < intentStart || referenceEnd > intentEnd;
+function promptHasForeignControlIntent(text: string): boolean {
+    const catalog = getExecutableAppActionGroundingCatalog();
+    const normalized = ` ${normalizePromptText(text)} `;
+    return catalog.some((entry) => {
+        if (entry.actionType === 'clearSolos') {
+            return false;
+        }
+        return entry.intentPhrases.some((phrase) => {
+            const normalizedPhrase = normalizePromptText(phrase);
+            return normalizedPhrase.length > 0 && normalized.includes(` ${normalizedPhrase} `);
+        });
     });
 }
 
-function isUniversalClearSolosScope(actionScope: PostTargetActionScope, context: ProjectContext): boolean {
+function isUnrelatedMuteContinuation(text: string): boolean {
+    return (
+        /(?:keep(?:ing)?|leav(?:e|ing)|preserv(?:e|ing)|retain(?:ing)?)/iu.test(text) && !/\bsolo(?:ed)?\b/iu.test(text)
+    );
+}
+
+function getPromptSegments(prompt: string): string[] {
+    return prompt
+        .split(/\s+(?:and then|then|and|but)\s+|[;,\n]+|\.(?!\d)/giu)
+        .map((segment) => segment.trim())
+        .filter((segment) => segment.length > 0);
+}
+
+function getClearSolosFollowingNoIntentText(prompt: string, actionScope: PostTargetActionScope): string {
+    const segments = getPromptSegments(prompt);
+    if (segments.length === 0) {
+        return '';
+    }
+    const startIndex = segments.findIndex(
+        (segment) =>
+            segment === actionScope.text.trim() ||
+            normalizePromptText(segment).includes(normalizePromptText(actionScope.matchedIntentPhrase))
+    );
+    if (startIndex < 0) {
+        return '';
+    }
+    let endIndex = startIndex;
+    for (let index = startIndex + 1; index < segments.length; index += 1) {
+        const segment = segments[index];
+        if (!segment || promptHasForeignControlIntent(segment) || isUnrelatedMuteContinuation(segment)) {
+            break;
+        }
+        endIndex = index;
+    }
+    if (endIndex === startIndex) {
+        return '';
+    }
+    let searchFrom = 0;
+    const ranges: { end: number; start: number }[] = [];
+    for (const segment of segments) {
+        const start = prompt.indexOf(segment, searchFrom);
+        if (start < 0) {
+            return '';
+        }
+        ranges.push({ start, end: start + segment.length });
+        searchFrom = start + segment.length;
+    }
+    const start = ranges[startIndex]?.start;
+    const end = ranges[endIndex]?.end;
+    if (start === undefined || end === undefined || end < start) {
+        return '';
+    }
+    return prompt.slice(start, end);
+}
+
+function getClearSolosRestrictionScanText(prompt: string, actionScope: PostTargetActionScope): string {
+    const followingText = getClearSolosFollowingNoIntentText(prompt, actionScope);
+    if (followingText.length === 0) {
+        return actionScope.text;
+    }
+    const normalizedScope = normalizePromptText(actionScope.text);
+    const normalizedFollowing = normalizePromptText(followingText);
+    if (normalizedScope.includes(normalizedFollowing)) {
+        return actionScope.text;
+    }
+    if (normalizedFollowing.includes(normalizedScope)) {
+        return followingText;
+    }
+    return `${actionScope.text} ${followingText}`;
+}
+
+function isUniversalClearSolosScope(
+    actionScope: PostTargetActionScope,
+    context: ProjectContext,
+    prompt: string
+): boolean {
     if (!universalClearSolosIntentPhrases.has(normalizePromptText(actionScope.matchedIntentPhrase))) {
         return false;
     }
-    const normalizedScope = normalizePromptText(actionScope.text);
-    const hasRestriction = collectClearSolosRestrictionClauses(actionScope.text).length > 0;
+    const scanText = getClearSolosRestrictionScanText(prompt, actionScope);
+    const restrictionEvidence = normalizePromptText(scanText);
+    const hasRestriction =
+        collectClearSolosRestrictionClauses(scanText).length > 0 || hasTrackControlRestriction(scanText);
     const hasRelativeTrackReference =
-        /\b(?:selected|current|this|that|these|those)\s+tracks?\b/u.test(normalizedScope) ||
-        /\btrack\s+selection\b/u.test(normalizedScope);
+        /\b(?:selected|current|this|that|these|those)\s+tracks?\b/u.test(restrictionEvidence) ||
+        /\btrack\s+selection\b/u.test(restrictionEvidence);
     if (hasRestriction || hasRelativeTrackReference) {
         return false;
     }
     const trackReferences = context.tracks.flatMap((track) => [track.id, track.name]);
     return !trackReferences.some((reference) =>
-        hasReferenceOutsideMatchedIntent(actionScope.text, actionScope.matchedIntentPhrase, reference)
+        hasReferenceOutsideMatchedIntent(scanText, actionScope.matchedIntentPhrase, reference)
     );
 }
 
-function validateRemoveFromVcaGroupEvidence(
-    actionScope: PostTargetActionScope,
-    trackId: unknown,
-    context: ProjectContext
-): string | null {
+function validateRemoveFromVcaGroupEvidence(trackId: unknown, context: ProjectContext, prompt: string): string | null {
     if (typeof trackId !== 'string') {
         return 'Provider VCA membership target is not grounded in the user request';
     }
@@ -186,7 +252,7 @@ function validateRemoveFromVcaGroupEvidence(
     let hasAmbiguousGroupReference = false;
     for (const group of context.vcaGroups ?? []) {
         const result = resolveAgentReference({
-            prompt: actionScope.text,
+            prompt,
             assertedId: group.id,
             capability: 'vca-group',
             context,
@@ -254,15 +320,15 @@ export const postTargetScopeAdmissionStrategyDefinitions = [
     },
     {
         name: 'clearSolos',
-        transform: ({ actionScope, context }) =>
-            isUniversalClearSolosScope(actionScope, context)
+        transform: ({ actionScope, context, prompt }) =>
+            isUniversalClearSolosScope(actionScope, context, prompt)
                 ? null
                 : 'Provider clear-solos scope is not explicitly universal',
     },
     {
         name: 'removeFromVca',
-        transform: ({ actionScope, context, groundedArguments }) =>
-            validateRemoveFromVcaGroupEvidence(actionScope, groundedArguments.trackId, context),
+        transform: ({ context, groundedArguments, prompt }) =>
+            validateRemoveFromVcaGroupEvidence(groundedArguments.trackId, context, prompt),
     },
     { name: 'quantizeNotes', transform: midiWholeClipStrategy },
     { name: 'transposeNotes', transform: midiWholeClipStrategy },

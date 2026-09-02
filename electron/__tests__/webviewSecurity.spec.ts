@@ -79,7 +79,14 @@ describe('the production Content-Security-Policy', () => {
     const directives = parseCsp(PRODUCTION_CSP);
 
     it('admits no eval and no inline script', () => {
-        expect(directives.get('script-src')).toEqual(["'self'", "'wasm-unsafe-eval'"]);
+        // `blob:` is required, not merely `'self'`: `@grame/faustwasm`
+        // (`node_modules/@grame/faustwasm/dist/esm/index.js`) imports its
+        // compiler module from a `URL.createObjectURL` blob and registers every
+        // Faust processor through `audioWorklet.addModule(blobUrl)`, a load
+        // `script-src` governs. A blob URL is never same-origin under that
+        // directive, so without this source adding a Faust device fails in a
+        // packaged build and nowhere else.
+        expect(directives.get('script-src')).toEqual(["'self'", "'wasm-unsafe-eval'", 'blob:']);
         expect([...directives.values()].flat()).not.toContain("'unsafe-eval'");
         expect(directives.get('script-src')).not.toContain("'unsafe-inline'");
     });

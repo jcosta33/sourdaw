@@ -53,6 +53,10 @@ function resolveTrack(prompt: string, assertedId: string, project = createProjec
     return resolveAgentReference({ prompt, assertedId, capability: 'track', context: project });
 }
 
+function resolveRemovableTrack(prompt: string, assertedId: string, project = createProjectState()) {
+    return resolveAgentReference({ prompt, assertedId, capability: 'removable-track', context: project });
+}
+
 function createClipProjectState(): ProjectContext {
     const project = createProjectState();
     const vocals = project.tracks[0];
@@ -361,6 +365,328 @@ describe('resolveAgentReference', () => {
         expect(resolveTrack('adjust the embassy', 'track-bass', projectState)).toEqual({
             status: 'rejected',
             reason: 'ungrounded-target',
+        });
+    });
+
+    it('resolves a literal track id when a duplicate name is a token of that id', () => {
+        const projectState = createProjectState();
+        const firstTrack = projectState.tracks[0];
+        if (!firstTrack) {
+            throw new Error('Expected a track fixture');
+        }
+        const duplicateNameContext = {
+            ...projectState,
+            tracks: [
+                { ...firstTrack, id: 'track-guitar', name: 'Guitar' },
+                { ...firstTrack, id: 'track-guitar-2', name: 'Guitar' },
+            ],
+        };
+
+        expect(resolveTrack('delete track-guitar', 'track-guitar', duplicateNameContext)).toEqual({
+            status: 'resolved',
+            id: 'track-guitar',
+            evidence: 'literal-id',
+        });
+        expect(resolveTrack('delete Guitar', 'track-guitar', duplicateNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+    });
+
+    it('keeps an independent name mention ambiguous next to a literal id that contains that name token', () => {
+        const projectState = createProjectState();
+        const firstTrack = projectState.tracks[0];
+        if (!firstTrack) {
+            throw new Error('Expected a track fixture');
+        }
+        const independentNameContext = {
+            ...projectState,
+            tracks: [
+                { ...firstTrack, id: 'track-guitar', name: 'Bass' },
+                { ...firstTrack, id: 'track-keys', name: 'Guitar' },
+            ],
+        };
+
+        expect(resolveTrack('delete Guitar and track-guitar', 'track-guitar', independentNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('delete Guitar and track-guitar', 'track-keys', independentNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('mute Guitar', 'track-keys', independentNameContext)).toEqual({
+            status: 'resolved',
+            id: 'track-keys',
+            evidence: 'exact-name',
+        });
+    });
+
+    it('keeps an accented exact name ambiguous next to a hyphenated literal id that contains the folded name', () => {
+        const projectState = createProjectState();
+        const firstTrack = projectState.tracks[0];
+        if (!firstTrack) {
+            throw new Error('Expected a track fixture');
+        }
+        const accentedNameContext = {
+            ...projectState,
+            tracks: [
+                { ...firstTrack, id: 'track-cafe', name: 'Bass' },
+                { ...firstTrack, id: 'track-keys', name: 'Café' },
+            ],
+        };
+
+        expect(resolveTrack('delete Café and track-cafe', 'track-cafe', accentedNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('delete Café and track-cafe', 'track-keys', accentedNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('delete Cafe and track-cafe', 'track-cafe', accentedNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('delete Cafe and track-cafe', 'track-keys', accentedNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+    });
+
+    it('keeps an ASCII exact name ambiguous next to a hyphenated literal id when the prompt token is accented', () => {
+        const projectState = createProjectState();
+        const firstTrack = projectState.tracks[0];
+        if (!firstTrack) {
+            throw new Error('Expected a track fixture');
+        }
+        const asciiNameContext = {
+            ...projectState,
+            tracks: [
+                { ...firstTrack, id: 'track-cafe', name: 'Bass' },
+                { ...firstTrack, id: 'track-keys', name: 'Cafe' },
+            ],
+        };
+
+        expect(resolveTrack('delete Café and track-cafe', 'track-cafe', asciiNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('delete Café and track-cafe', 'track-keys', asciiNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('delete Cafe and track-cafe', 'track-cafe', asciiNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('delete Cafe and track-cafe', 'track-keys', asciiNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('mute Café', 'track-keys', asciiNameContext)).toEqual({
+            status: 'resolved',
+            id: 'track-keys',
+            evidence: 'exact-name',
+        });
+        expect(resolveTrack('mute Café and track-cafe', 'track-cafe', asciiNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('mute Café and track-cafe', 'track-keys', asciiNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('solo Café and track-cafe', 'track-cafe', asciiNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+    });
+
+    it('keeps Guitar and a hyphenated track-lead-guitar id ambiguous when both are cited', () => {
+        const projectState = createProjectState();
+        const firstTrack = projectState.tracks[0];
+        if (!firstTrack) {
+            throw new Error('Expected a track fixture');
+        }
+        const nestedNameContext = {
+            ...projectState,
+            tracks: [
+                { ...firstTrack, id: 'track-lead-guitar', name: 'Rhythm' },
+                { ...firstTrack, id: 'track-keys', name: 'Guitar' },
+            ],
+        };
+
+        expect(
+            resolveTrack('delete Guitar and track-lead-guitar', 'track-lead-guitar', nestedNameContext)
+        ).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('delete Guitar and track-lead-guitar', 'track-keys', nestedNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+    });
+
+    it('keeps a spaced nested name and a hyphenated literal id ambiguous when both are cited', () => {
+        const projectState = createProjectState();
+        const firstTrack = projectState.tracks[0];
+        if (!firstTrack) {
+            throw new Error('Expected a track fixture');
+        }
+        const spacedNestedNameContext = {
+            ...projectState,
+            tracks: [
+                { ...firstTrack, id: 'track-lead-guitar', name: 'Rhythm' },
+                { ...firstTrack, id: 'track-aux', name: 'Lead Guitar' },
+            ],
+        };
+
+        expect(
+            resolveTrack('delete Lead Guitar and track-lead-guitar', 'track-lead-guitar', spacedNestedNameContext)
+        ).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(
+            resolveTrack('delete Lead Guitar and track-lead-guitar', 'track-aux', spacedNestedNameContext)
+        ).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+    });
+
+    it('keeps a slash-collapsed nested name and a hyphenated literal id ambiguous when both are cited', () => {
+        const projectState = createProjectState();
+        const firstTrack = projectState.tracks[0];
+        if (!firstTrack) {
+            throw new Error('Expected a track fixture');
+        }
+        const slashNestedNameContext = {
+            ...projectState,
+            tracks: [
+                { ...firstTrack, id: 'track-lead-guitar', name: 'Rhythm' },
+                { ...firstTrack, id: 'track-aux', name: 'Lead Guitar' },
+            ],
+        };
+
+        expect(
+            resolveTrack('delete Lead/Guitar and track-lead-guitar', 'track-lead-guitar', slashNestedNameContext)
+        ).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(
+            resolveTrack('delete Lead/Guitar and track-lead-guitar', 'track-aux', slashNestedNameContext)
+        ).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+    });
+
+    it('does not resolve a hyphenated id from a whitespace-separated kind and name', () => {
+        const projectState = createProjectState();
+        const firstTrack = projectState.tracks[0];
+        if (!firstTrack) {
+            throw new Error('Expected a track fixture');
+        }
+        const loneHyphenatedIdContext = {
+            ...projectState,
+            tracks: [{ ...firstTrack, id: 'track-guitar', name: 'Bass' }],
+        };
+
+        expect(resolveTrack('mute track Guitar', 'track-guitar', loneHyphenatedIdContext)).toEqual({
+            status: 'rejected',
+            reason: 'ungrounded-target',
+        });
+    });
+
+    it('does not treat a whitespace-separated kind and name as a hyphenated literal id', () => {
+        const projectState = createProjectState();
+        const firstTrack = projectState.tracks[0];
+        if (!firstTrack) {
+            throw new Error('Expected a track fixture');
+        }
+        const spacedKindNameContext = {
+            ...projectState,
+            tracks: [
+                { ...firstTrack, id: 'track-guitar', name: 'Bass' },
+                { ...firstTrack, id: 'track-keys', name: 'Guitar' },
+            ],
+        };
+        const spacedLeadGuitarContext = {
+            ...projectState,
+            tracks: [
+                { ...firstTrack, id: 'track-lead-guitar', name: 'Rhythm' },
+                { ...firstTrack, id: 'track-keys', name: 'Guitar' },
+                { ...firstTrack, id: 'track-aux', name: 'Lead Guitar' },
+            ],
+        };
+
+        expect(resolveTrack('mute track Guitar', 'track-guitar', spacedKindNameContext)).toEqual({
+            status: 'rejected',
+            reason: 'asserted-target-mismatch',
+        });
+        expect(resolveTrack('mute track Guitar', 'track-keys', spacedKindNameContext)).toEqual({
+            status: 'resolved',
+            id: 'track-keys',
+            evidence: 'exact-name',
+        });
+        expect(resolveTrack('delete the track Lead Guitar', 'track-lead-guitar', spacedLeadGuitarContext)).toEqual({
+            status: 'rejected',
+            reason: 'asserted-target-mismatch',
+        });
+        expect(resolveTrack('delete the track Lead Guitar', 'track-aux', spacedLeadGuitarContext)).toEqual({
+            status: 'resolved',
+            id: 'track-aux',
+            evidence: 'exact-name',
+        });
+    });
+
+    it('does not treat list punctuation as collapsing a name into a hyphenated literal id', () => {
+        const projectState = createProjectState();
+        const firstTrack = projectState.tracks[0];
+        if (!firstTrack) {
+            throw new Error('Expected a track fixture');
+        }
+        const punctuationContext = {
+            ...projectState,
+            tracks: [
+                { ...firstTrack, id: 'track-lead-guitar', name: 'Rhythm' },
+                { ...firstTrack, id: 'track-keys', name: 'Guitar' },
+            ],
+        };
+
+        expect(
+            resolveRemovableTrack('delete track-lead-guitar / Guitar', 'track-lead-guitar', punctuationContext)
+        ).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(
+            resolveRemovableTrack('delete track-lead-guitar / Guitar', 'track-keys', punctuationContext)
+        ).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(
+            resolveRemovableTrack('delete track-lead-guitar, Guitar', 'track-lead-guitar', punctuationContext)
+        ).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(
+            resolveRemovableTrack('delete track-lead-guitar, Guitar', 'track-keys', punctuationContext)
+        ).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(
+            resolveRemovableTrack('delete Guitar and track-lead-guitar', 'track-lead-guitar', punctuationContext)
+        ).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
         });
     });
 

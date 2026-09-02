@@ -82,6 +82,10 @@ vi.mock('../../stores/tempoMapStore', () => ({
 }));
 vi.mock('../../models/TempoMap', () => ({
     getTempoAtBeat: vi.fn(() => 120),
+    // Flat 120 BPM — two beats a second — to match the tempo above. This spec
+    // exercises the tick's control flow, not the integration; the integration
+    // itself is covered where the tempo map is real.
+    secondsBetweenBeats: vi.fn((_changes: unknown, fromBeat: number, toBeat: number) => (toBeat - fromBeat) / 2),
 }));
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: harness.track_store,

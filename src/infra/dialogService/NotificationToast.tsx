@@ -31,7 +31,7 @@ export const NotificationToast = (): ReactElement | null => {
     return (
         <div
             className={cn(
-                'fixed bottom-16 left-4 z-50 w-80 rounded-lg border p-3 shadow-xl animate-in slide-in-from-left-5',
+                'fixed bottom-16 left-4 z-[10000] w-80 rounded-lg border p-3 shadow-xl animate-in slide-in-from-left-5',
                 levelSurface
             )}
             role="alert"

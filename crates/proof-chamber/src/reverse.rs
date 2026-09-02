@@ -60,6 +60,27 @@ impl ReverseReverb {
         }
     }
 
+    /// Return to the state `new` leaves behind, reusing the two capture
+    /// buffers rather than allocating a pair of fresh ones.
+    ///
+    /// Selecting an algorithm is audio-thread work, so the engine that becomes
+    /// active is reset here instead of being rebuilt. Every value below is the
+    /// constructor's, and `tests/engine_reset_is_factory_fresh.rs` renders the
+    /// two against each other so they cannot drift apart.
+    pub fn reset(&mut self) {
+        self.buffer_a.fill(0.0);
+        self.buffer_b.fill(0.0);
+        self.write_pos = 0;
+        self.reverse_len = (self.sample_rate * 1.5) as usize;
+        self.a_is_writing = true;
+        self.read_pos = 0;
+        self.crossfade_len = (self.sample_rate * 0.015) as usize;
+        self.envelope_phase = 0.0;
+        self.mix = 0.3;
+        self.decay = 0.7;
+        self.output.reset();
+    }
+
     pub fn set_param(&mut self, name: &str, value: f32) {
         if self.output.set_param(name, value) {
             return;

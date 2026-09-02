@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { lstatSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 
 import {
@@ -90,12 +92,23 @@ export type DeliveryPort = CheckEvidencePort & {
     reviewState: (number: number, expectedHead: string) => ReviewState;
     dependents: (baseBranch: string) => StackedPullRequest[];
     repositoryDeletesMergedBranches: () => boolean;
-    merge: (number: number, expectedHead: string, hasDependents: boolean) => void;
+    merge: (number: number, expectedHead: string, hasDependents: boolean, expectedTitle?: string) => void;
     retarget: (number: number, baseBranch: string) => void;
     deliveryReceipts: (number: number) => DeliveryReceiptComment[];
+    deliveryReceiptProof: (number: number) => DeliveryReceiptProof;
     addDeliveryReceipt: (number: number, body: string) => DeliveryReceiptComment;
+    readDeliveryReceiptAuthority: (number: number) => PersistedDeliveryReceiptAuthority | undefined;
+    writeDeliveryReceiptAuthority: (
+        number: number,
+        authority: PersistedDeliveryReceiptAuthority,
+        expectedCurrent?: DeliveryReceiptAuthorityExpectation
+    ) => void;
+    clearDeliveryReceiptAuthority: (number: number, expectedCurrent?: DeliveryReceiptAuthorityExpectation) => void;
     log: (message: string) => void;
 };
+
+export type DeliveryReceiptAuthorityExpectation =
+    { mode: 'absent' } | { mode: 'present'; authority: PersistedDeliveryReceiptAuthority };
 
 export type DeliveryReceiptComment = {
     id: string;
@@ -109,6 +122,13 @@ export type DeliveryReceiptComment = {
 
 export type TrackerCompletionPort = {
     complete: (issueNumber: number) => void;
+};
+
+export type DeliveryReceiptProof = {
+    totalCount: number;
+    latestCommentId: string | undefined;
+    commentIds?: string[];
+    editedCommentIds?: string[];
 };
 
 export type ShellRunner = {
@@ -141,6 +161,125 @@ const STRUCTURAL_MERGEABILITY_REFRESH_LIMIT = 1;
 type CiAdmissionMode = 'advisory' | 'required';
 
 const ACTIVE_CI_ADMISSION_MODE: CiAdmissionMode = 'advisory';
+
+export type DeliveryReceiptAuthorityPhase = 'released' | 'prepared' | 'merge-authorized' | 'terminal';
+
+export class DeliveryMergeRejectedError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'DeliveryMergeRejectedError';
+    }
+}
+
+function classifyGithubMergeRejection(number: number, error: unknown): DeliveryMergeRejectedError | undefined {
+    const detail = error instanceof Error ? error.message : String(error);
+    if (!/\bHTTP (403|404|405|409|422)\b/u.test(detail)) {
+        return undefined;
+    }
+    return new DeliveryMergeRejectedError(`PR #${number} was not merged: ${detail}`);
+}
+
+export type PersistedPreparedPostMergeValidation = {
+    headRefOid: string;
+    headRefName: string;
+    baseRefName: string;
+    bodySha256: string;
+    trackerTarget: number | null;
+    title?: string;
+};
+
+type PersistedDeliveryReceiptAuthorityBase = {
+    receiptId: string;
+};
+
+type CurrentPersistedDeliveryReceiptAuthorityBase = PersistedDeliveryReceiptAuthorityBase & {
+    receiptBody?: string;
+};
+
+type LegacyPersistedDeliveryReceiptAuthority = PersistedDeliveryReceiptAuthorityBase & {
+    phase: 'legacy';
+};
+
+type CurrentPersistedPreparedDeliveryReceiptAuthority = CurrentPersistedDeliveryReceiptAuthorityBase & {
+    phase: 'prepared';
+    postMergeValidation?: PersistedPreparedPostMergeValidation;
+};
+
+type CurrentPersistedReleasedDeliveryReceiptAuthority = CurrentPersistedDeliveryReceiptAuthorityBase & {
+    phase: 'released';
+};
+
+type CurrentPersistedMergeRecoveredDeliveryReceiptAuthority = CurrentPersistedDeliveryReceiptAuthorityBase & {
+    phase: 'merge-authorized' | 'terminal';
+    postMergeValidation?: PersistedPreparedPostMergeValidation;
+};
+
+type CurrentPersistedDeliveryReceiptAuthority =
+    | CurrentPersistedReleasedDeliveryReceiptAuthority
+    | CurrentPersistedPreparedDeliveryReceiptAuthority
+    | CurrentPersistedMergeRecoveredDeliveryReceiptAuthority;
+
+export type PersistedDeliveryReceiptAuthority =
+    | LegacyPersistedDeliveryReceiptAuthority
+    | CurrentPersistedReleasedDeliveryReceiptAuthority
+    | CurrentPersistedPreparedDeliveryReceiptAuthority
+    | CurrentPersistedMergeRecoveredDeliveryReceiptAuthority;
+
+type StoredLegacyDeliveryReceiptAuthority = {
+    version: 1;
+    receiptId: string;
+};
+
+type StoredCurrentDeliveryReceiptAuthority =
+    | ({ version: 2 } & CurrentPersistedReleasedDeliveryReceiptAuthority)
+    | ({ version: 2 } & CurrentPersistedPreparedDeliveryReceiptAuthority)
+    | ({ version: 2 } & CurrentPersistedMergeRecoveredDeliveryReceiptAuthority);
+
+type StoredDeliveryReceiptAuthority = StoredLegacyDeliveryReceiptAuthority | StoredCurrentDeliveryReceiptAuthority;
+
+function isCurrentPersistedDeliveryReceiptAuthority(
+    authority: PersistedDeliveryReceiptAuthority
+): authority is CurrentPersistedDeliveryReceiptAuthority {
+    return authority.phase !== 'legacy';
+}
+
+function isFrozenPersistedDeliveryReceiptAuthority(
+    authority: PersistedDeliveryReceiptAuthority | undefined
+): authority is CurrentPersistedDeliveryReceiptAuthority {
+    return (
+        authority !== undefined &&
+        authority.phase !== 'legacy' &&
+        (authority.phase === 'merge-authorized' ||
+            authority.phase === 'terminal' ||
+            (authority.phase === 'prepared' && authority.postMergeValidation !== undefined))
+    );
+}
+
+function assertFrozenPersistedDeliveryReceiptAuthority(
+    number: number,
+    current: CurrentPersistedDeliveryReceiptAuthority,
+    next: CurrentPersistedDeliveryReceiptAuthority
+): void {
+    if (current.receiptId !== next.receiptId) {
+        fail(`PR #${number} delivery receipt changed during delivery`);
+    }
+    if (
+        current.receiptBody !== undefined &&
+        next.receiptBody !== undefined &&
+        current.receiptBody !== next.receiptBody
+    ) {
+        fail(`PR #${number} delivery receipt changed during delivery`);
+    }
+    if (
+        current.phase !== 'released' &&
+        next.phase !== 'released' &&
+        current.postMergeValidation !== undefined &&
+        next.postMergeValidation !== undefined &&
+        !samePreparedPostMergeValidation(current.postMergeValidation, next.postMergeValidation)
+    ) {
+        fail(`PR #${number} delivery receipt changed during delivery`);
+    }
+}
 
 function validatePullRequest(
     pullRequest: PullRequestSnapshot,
@@ -203,28 +342,40 @@ function validateStructuralMergeability(pullRequest: PullRequestSnapshot): void 
     fail(`PR #${pullRequest.number} has invalid structural mergeability ${String(pullRequest.mergeable)}`);
 }
 
-function resolveStructuralMergeability(
+function refreshStructuralMergeability(
     initial: PullRequestSnapshot,
-    port: Pick<DeliveryPort, 'pullRequest'>
+    port: Pick<DeliveryPort, 'pullRequest'>,
+    observe?: (pullRequest: PullRequestSnapshot) => void
 ): PullRequestSnapshot {
     let pullRequest = initial;
-    if (pullRequest.state === 'MERGED') {
+    observe?.(pullRequest);
+    if (pullRequest.state === 'MERGED' || pullRequest.state === 'CLOSED') {
         return pullRequest;
     }
     for (
         let refreshes = 0;
-        pullRequest.state !== 'MERGED' &&
+        pullRequest.state === 'OPEN' &&
         pullRequest.mergeable === 'UNKNOWN' &&
         refreshes < STRUCTURAL_MERGEABILITY_REFRESH_LIMIT;
         refreshes += 1
     ) {
-        pullRequest = port.pullRequest(initial.number);
-        validateStablePullRequest(initial, pullRequest);
-        if (pullRequest.state === 'MERGED') {
-            return pullRequest;
+        const refreshed = port.pullRequest(initial.number);
+        observe?.(refreshed);
+        if (refreshed.state === 'MERGED' || refreshed.state === 'CLOSED') {
+            return refreshed;
         }
+        validateStablePullRequest(initial, refreshed);
+        pullRequest = refreshed;
     }
-    if (pullRequest.state === 'MERGED') {
+    return pullRequest;
+}
+
+function resolveStructuralMergeability(
+    initial: PullRequestSnapshot,
+    port: Pick<DeliveryPort, 'pullRequest'>
+): PullRequestSnapshot {
+    const pullRequest = refreshStructuralMergeability(initial, port);
+    if (pullRequest.state === 'MERGED' || pullRequest.state === 'CLOSED') {
         return pullRequest;
     }
     validateStructuralMergeability(pullRequest);
@@ -532,7 +683,7 @@ function validateBaseBranch(pullRequest: PullRequestSnapshot): void {
 }
 
 function validateStablePullRequest(before: PullRequestSnapshot, after: PullRequestSnapshot): void {
-    const fields: Array<keyof PullRequestSnapshot> = ['headRefOid', 'headRefName', 'baseRefName', 'body'];
+    const fields: Array<keyof PullRequestSnapshot> = ['headRefOid', 'headRefName', 'baseRefName', 'title', 'body'];
     for (const field of fields) {
         if (before[field] !== after[field]) {
             fail(`PR #${before.number} ${field} changed during delivery`);
@@ -546,30 +697,299 @@ function validateStableTrackerTarget(number: number, before: number | undefined,
     }
 }
 
+function bodySha256(body: string | null): string {
+    return createHash('sha256')
+        .update(body ?? '')
+        .digest('hex');
+}
+
+function persistedPreparedPostMergeValidation(
+    pullRequest: Pick<PullRequestSnapshot, 'headRefOid' | 'headRefName' | 'baseRefName' | 'title' | 'body'>,
+    trackerTarget: number | undefined
+): PersistedPreparedPostMergeValidation {
+    return {
+        headRefOid: pullRequest.headRefOid,
+        headRefName: pullRequest.headRefName,
+        baseRefName: pullRequest.baseRefName,
+        title: pullRequest.title,
+        bodySha256: bodySha256(pullRequest.body),
+        trackerTarget: trackerTarget ?? null,
+    };
+}
+
 function validatePostMergeSnapshot(
-    authorized: PullRequestSnapshot,
+    expected: PersistedPreparedPostMergeValidation,
     merged: PullRequestSnapshot,
-    number: number,
-    expectedTrackerTarget: number | undefined
+    number: number
 ): void {
+    if (expected.title === undefined) {
+        fail(`PR #${number} delivery receipt authority cannot be proven`);
+    }
     validateAuthorAppMerger(merged);
     validateBaseBranch(merged);
-    validateStableTrackerTarget(number, expectedTrackerTarget, trackerCompletionTarget(merged));
-    validateStablePullRequest(authorized, merged);
+    if (expected.title !== merged.title) {
+        fail(`PR #${number} title changed during delivery`);
+    }
+    if (expected.bodySha256 !== bodySha256(merged.body)) {
+        fail(`PR #${number} body changed during delivery`);
+    }
+    if (expected.headRefOid !== merged.headRefOid) {
+        fail(`PR #${number} headRefOid changed during delivery`);
+    }
+    if (expected.headRefName !== merged.headRefName) {
+        fail(`PR #${number} headRefName changed during delivery`);
+    }
+    if (expected.baseRefName !== merged.baseRefName) {
+        fail(`PR #${number} baseRefName changed during delivery`);
+    }
+    validateStableTrackerTarget(number, expected.trackerTarget ?? undefined, trackerCompletionTarget(merged));
+}
+
+function validateReceiptPayloadAgainstPreparedPostMergeValidation(
+    number: number,
+    payload: DeliveryReceiptPayload,
+    validation: PersistedPreparedPostMergeValidation,
+    phase: 'delivery' | 'recovery'
+): void {
+    const timing = phase === 'delivery' ? 'during delivery' : 'during recovery';
+    if (payload.schemaVersion === 1) {
+        fail(`PR #${number} delivery receipt changed ${timing}`);
+    }
+    if (payload.head !== validation.headRefOid) {
+        fail(`PR #${number} delivery receipt changed ${timing}`);
+    }
+    if (payload.bodySha256 !== validation.bodySha256) {
+        fail(`PR #${number} delivery receipt changed ${timing}`);
+    }
+    if ((payload.closingIssue ?? undefined) !== (validation.trackerTarget ?? undefined)) {
+        fail(`PR #${number} delivery receipt changed ${timing}`);
+    }
 }
 
 function expectedDeliveryReceipt(
     pullRequest: PullRequestSnapshot,
-    closingIssue: number | undefined
+    closingIssue: number | undefined,
+    ciAdmissionMode: CiAdmissionMode,
+    checks: CheckEvidencePort
 ): DeliveryReceiptPayload {
     return {
+        schemaVersion: 2,
         pullRequest: pullRequest.number,
         head: pullRequest.headRefOid,
-        bodySha256: createHash('sha256')
-            .update(pullRequest.body ?? '')
-            .digest('hex'),
+        bodySha256: bodySha256(pullRequest.body),
         closingIssue,
+        ciAdmissionMode,
+        ...(ciAdmissionMode === 'advisory' ? { observedCiState: observedAdvisoryCiState(pullRequest, checks) } : {}),
     };
+}
+
+function observedAdvisoryCiState(
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>,
+    checks: CheckEvidencePort
+): NonNullable<DeliveryReceiptPayload['observedCiState']> {
+    try {
+        return normalizeObservedCiState(checks.headCheckRuns(pullRequest.number, pullRequest.headRefOid));
+    } catch {
+        return 'unavailable';
+    }
+}
+
+const PENDING_CHECK_STATUSES = new Set(['QUEUED', 'IN_PROGRESS', 'PENDING', 'EXPECTED', 'REQUESTED', 'WAITING']);
+
+function normalizeObservedCiState(checkRuns: HeadCheckRun[]): NonNullable<DeliveryReceiptPayload['observedCiState']> {
+    if (checkRuns.length === 0) {
+        return 'absent';
+    }
+    const successfulNames = new Set<string>();
+    const cancelledNames = new Set<string>();
+    let sawSuccess = false;
+    let sawSkipped = false;
+    let sawPending = false;
+    let sawFailed = false;
+    let sawMalformed = false;
+    for (const check of checkRuns) {
+        const state = observedCheckRunState(check);
+        if (state === 'successful') {
+            sawSuccess = true;
+            successfulNames.add(check.name);
+            continue;
+        }
+        if (state === 'skipped') {
+            sawSkipped = true;
+            continue;
+        }
+        if (state === 'cancelled') {
+            cancelledNames.add(check.name);
+            continue;
+        }
+        if (state === 'pending') {
+            sawPending = true;
+            continue;
+        }
+        if (state === 'failed') {
+            sawFailed = true;
+            continue;
+        }
+        sawMalformed = true;
+    }
+    if (sawMalformed) {
+        return 'malformed';
+    }
+    if (sawFailed) {
+        return 'failed';
+    }
+    if (sawPending) {
+        return 'pending';
+    }
+    for (const name of cancelledNames) {
+        if (!successfulNames.has(name)) {
+            return 'cancelled';
+        }
+    }
+    if (cancelledNames.size > 0) {
+        return 'unstable';
+    }
+    if (sawSuccess) {
+        return 'successful';
+    }
+    return sawSkipped ? 'skipped' : 'absent';
+}
+
+function observedCheckRunState(
+    check: HeadCheckRun
+): 'successful' | 'skipped' | 'failed' | 'pending' | 'cancelled' | 'malformed' {
+    if (check.name === '') {
+        return 'malformed';
+    }
+    if (check.status === SETTLED_CHECK_STATUS) {
+        if (check.conclusion === PASSING_CONCLUSION) {
+            return 'successful';
+        }
+        if (check.conclusion === 'SKIPPED') {
+            return 'skipped';
+        }
+        if (check.conclusion === SUPERSEDED_CONCLUSION) {
+            return 'cancelled';
+        }
+        if (check.conclusion === null || check.conclusion === '') {
+            return 'malformed';
+        }
+        return 'failed';
+    }
+    if (check.conclusion !== null) {
+        return 'malformed';
+    }
+    return PENDING_CHECK_STATUSES.has(check.status) ? 'pending' : 'malformed';
+}
+
+function sameDeliveryReceiptKey(left: DeliveryReceiptPayload, right: DeliveryReceiptPayload): boolean {
+    return (
+        left.pullRequest === right.pullRequest &&
+        left.head === right.head &&
+        left.bodySha256 === right.bodySha256 &&
+        left.closingIssue === right.closingIssue
+    );
+}
+
+function sameExactDeliveryReceipt(left: DeliveryReceiptPayload, right: DeliveryReceiptPayload): boolean {
+    if (!sameDeliveryReceiptKey(left, right)) {
+        return false;
+    }
+    if (left.schemaVersion === 1 || right.schemaVersion === 1) {
+        return left.schemaVersion === 1 && right.schemaVersion === 1;
+    }
+    if (left.ciAdmissionMode !== right.ciAdmissionMode) {
+        return false;
+    }
+    if (left.ciAdmissionMode !== 'advisory') {
+        return true;
+    }
+    return left.observedCiState === right.observedCiState;
+}
+
+function sameDeliveryReceiptMode(left: DeliveryReceiptPayload, right: DeliveryReceiptPayload): boolean {
+    if (!sameDeliveryReceiptKey(left, right)) {
+        return false;
+    }
+    if (left.schemaVersion === 1 || right.schemaVersion === 1) {
+        return true;
+    }
+    return left.ciAdmissionMode === right.ciAdmissionMode;
+}
+
+function frozenCurrentDeliveryReceiptPayload(
+    number: number,
+    receiptBody: string,
+    expected: DeliveryReceiptPayload
+): DeliveryReceiptPayload {
+    const payload = parseDeliveryReceipt(receiptBody);
+    if (payload === undefined || payload.schemaVersion === 1 || !sameDeliveryReceiptMode(payload, expected)) {
+        fail(`PR #${number} delivery receipt changed during delivery`);
+    }
+    return payload;
+}
+
+function deliveryReceiptKey(payload: DeliveryReceiptPayload): string {
+    return [payload.pullRequest, payload.head, payload.bodySha256, payload.closingIssue ?? 'none'].join(':');
+}
+
+function assertCompatibleDeliveryReceiptLineage(
+    lineage: DeliveryReceiptComment[],
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
+): void {
+    const seenV2ByKey = new Map<string, DeliveryReceiptPayload>();
+    for (const comment of lineage) {
+        const payload = assertDeliveryReceiptForHead(comment, pullRequest);
+        if (payload.schemaVersion === 1) {
+            continue;
+        }
+        const key = deliveryReceiptKey(payload);
+        const previous = seenV2ByKey.get(key);
+        if (previous !== undefined && !sameDeliveryReceiptMode(previous, payload)) {
+            fail(`PR #${pullRequest.number} has an invalid delivery receipt lineage`);
+        }
+        seenV2ByKey.set(key, payload);
+    }
+}
+
+function assertExpectedDeliveryReceiptAuthority(
+    lineage: DeliveryReceiptComment[],
+    expected: DeliveryReceiptPayload,
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
+): void {
+    if (expected.schemaVersion === 1) {
+        return;
+    }
+    for (const comment of lineage) {
+        const payload = assertDeliveryReceiptForHead(comment, pullRequest);
+        if (!sameDeliveryReceiptKey(payload, expected) || payload.schemaVersion === 1) {
+            continue;
+        }
+        if (!sameDeliveryReceiptMode(payload, expected)) {
+            fail(`PR #${pullRequest.number} has an invalid delivery receipt lineage`);
+        }
+    }
+}
+
+function authoritativeEquivalentDeliveryReceipt(
+    lineage: DeliveryReceiptComment[],
+    expected: DeliveryReceiptPayload,
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
+): DeliveryReceiptComment | undefined {
+    assertExpectedDeliveryReceiptAuthority(lineage, expected, pullRequest);
+    if (
+        !lineage.some((receipt) => sameDeliveryReceiptKey(assertDeliveryReceiptForHead(receipt, pullRequest), expected))
+    ) {
+        return undefined;
+    }
+    const newest = lineage.at(-1);
+    if (newest === undefined) {
+        return undefined;
+    }
+    if (sameExactDeliveryReceipt(assertDeliveryReceiptForHead(newest, pullRequest), expected)) {
+        return newest;
+    }
+    return undefined;
 }
 
 function deliveryReceiptsForHead(
@@ -598,16 +1018,7 @@ function orderedDeliveryReceiptLineage(
     pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
 ): DeliveryReceiptComment[] {
     const ordered = deliveryReceiptsForHead(comments, pullRequest);
-    for (let index = 1; index < ordered.length; index += 1) {
-        const previous = ordered[index - 1];
-        const current = ordered[index];
-        if (previous === undefined || current === undefined) {
-            fail(`PR #${pullRequest.number} has an invalid delivery receipt lineage`);
-        }
-        if (previous.body === current.body) {
-            fail(`PR #${pullRequest.number} has duplicate delivery receipts`);
-        }
-    }
+    assertCompatibleDeliveryReceiptLineage(ordered, pullRequest);
     return ordered;
 }
 
@@ -650,23 +1061,763 @@ function assertCanonicalDeliveryReceipt(
     expected: DeliveryReceiptPayload
 ): DeliveryReceiptPayload {
     const payload = assertDeliveryReceiptForHead(comment, pullRequest);
-    if (comment.body !== composeDeliveryReceipt(expected)) {
+    if (!sameExactDeliveryReceipt(payload, expected)) {
         fail(`PR #${pullRequest.number} has an invalid delivery receipt`);
     }
     return payload;
 }
 
-function newestDeliveryReceipt(lineage: DeliveryReceiptComment[], pullRequestNumber: number): DeliveryReceiptComment {
-    const receipt = lineage.at(-1);
-    if (receipt === undefined) {
-        fail(`PR #${pullRequestNumber} has no delivery receipt for its current head`);
+function deliveryReceiptAuthorityPhaseRank(phase: DeliveryReceiptAuthorityPhase): number {
+    if (phase === 'released') {
+        return -1;
     }
+    if (phase === 'prepared') {
+        return 0;
+    }
+    if (phase === 'merge-authorized') {
+        return 1;
+    }
+    return 2;
+}
+
+function samePreparedPostMergeValidation(
+    left: PersistedPreparedPostMergeValidation | undefined,
+    right: PersistedPreparedPostMergeValidation | undefined
+): boolean {
+    return (
+        left?.headRefOid === right?.headRefOid &&
+        left?.headRefName === right?.headRefName &&
+        left?.baseRefName === right?.baseRefName &&
+        left?.title === right?.title &&
+        left?.bodySha256 === right?.bodySha256 &&
+        left?.trackerTarget === right?.trackerTarget
+    );
+}
+
+function samePersistedDeliveryReceiptAuthority(
+    left: PersistedDeliveryReceiptAuthority | undefined,
+    right: PersistedDeliveryReceiptAuthority
+): boolean {
+    if (left?.phase === 'legacy' || right.phase === 'legacy') {
+        return left?.phase === right.phase && left?.receiptId === right.receiptId;
+    }
+    return (
+        left?.phase === right.phase &&
+        left?.receiptId === right.receiptId &&
+        left?.receiptBody === right.receiptBody &&
+        samePreparedPostMergeValidation(
+            left?.phase !== 'released' ? left.postMergeValidation : undefined,
+            right.phase !== 'released' ? right.postMergeValidation : undefined
+        )
+    );
+}
+
+export function expectedAbsentDeliveryReceiptAuthority(): DeliveryReceiptAuthorityExpectation {
+    return { mode: 'absent' };
+}
+
+function exactDeliveryReceiptAuthorityExpectation(
+    authority: PersistedDeliveryReceiptAuthority | undefined
+): DeliveryReceiptAuthorityExpectation {
+    if (authority === undefined) {
+        return expectedAbsentDeliveryReceiptAuthority();
+    }
+    return { mode: 'present', authority };
+}
+
+function matchesDeliveryReceiptAuthorityExpectation(
+    current: PersistedDeliveryReceiptAuthority | undefined,
+    expected: DeliveryReceiptAuthorityExpectation
+): boolean {
+    if (expected.mode === 'absent') {
+        return current === undefined;
+    }
+    return samePersistedDeliveryReceiptAuthority(current, expected.authority);
+}
+
+function mergePersistedDeliveryReceiptAuthority(
+    current: PersistedDeliveryReceiptAuthority,
+    next: CurrentPersistedDeliveryReceiptAuthority
+): PersistedDeliveryReceiptAuthority {
+    if (current.phase === 'legacy') {
+        return next;
+    }
+    if (current.receiptId !== next.receiptId) {
+        return next;
+    }
+    const currentRank = deliveryReceiptAuthorityPhaseRank(current.phase);
+    const nextRank = deliveryReceiptAuthorityPhaseRank(next.phase);
+    if (currentRank > nextRank) {
+        return current;
+    }
+    if (nextRank > currentRank) {
+        return next;
+    }
+    const receiptBody = next.receiptBody ?? current.receiptBody;
+    let postMergeValidation: PersistedPreparedPostMergeValidation | undefined;
+    if (current.phase !== 'released' && next.phase !== 'released') {
+        postMergeValidation = next.postMergeValidation ?? current.postMergeValidation;
+    }
+    if (current.phase === 'released' && next.phase === 'released') {
+        return {
+            phase: 'released',
+            receiptId: current.receiptId,
+            ...(receiptBody === undefined ? {} : { receiptBody }),
+        };
+    }
+    if (current.phase === 'prepared' && next.phase === 'prepared') {
+        return {
+            phase: 'prepared',
+            receiptId: current.receiptId,
+            ...(receiptBody === undefined ? {} : { receiptBody }),
+            ...(postMergeValidation === undefined ? {} : { postMergeValidation }),
+        };
+    }
+    return {
+        phase: next.phase,
+        receiptId: current.receiptId,
+        ...(receiptBody === undefined ? {} : { receiptBody }),
+        ...(postMergeValidation === undefined ? {} : { postMergeValidation }),
+    };
+}
+
+function persistDeliveryReceiptAuthority(
+    number: number,
+    authority: PersistedDeliveryReceiptAuthority,
+    port: DeliveryPort
+): void {
+    if (!isCurrentPersistedDeliveryReceiptAuthority(authority)) {
+        fail(`PR #${number} delivery receipt authority is malformed`);
+    }
+    const current = port.readDeliveryReceiptAuthority(number);
+    if (isFrozenPersistedDeliveryReceiptAuthority(current)) {
+        assertFrozenPersistedDeliveryReceiptAuthority(number, current, authority);
+    }
+    const next = current === undefined ? authority : mergePersistedDeliveryReceiptAuthority(current, authority);
+    if (samePersistedDeliveryReceiptAuthority(current, next)) {
+        return;
+    }
+    port.writeDeliveryReceiptAuthority(number, next, exactDeliveryReceiptAuthorityExpectation(current));
+}
+
+function persistPreparedDeliveryReceiptAuthority(
+    number: number,
+    receipt: Pick<DeliveryReceiptComment, 'id' | 'body'>,
+    port: DeliveryPort,
+    postMergeValidation?: PersistedPreparedPostMergeValidation
+): void {
+    persistDeliveryReceiptAuthority(
+        number,
+        {
+            phase: 'prepared',
+            receiptId: receipt.id,
+            receiptBody: receipt.body,
+            ...(postMergeValidation === undefined ? {} : { postMergeValidation }),
+        },
+        port
+    );
+}
+
+function releasedDeliveryReceiptAuthority(
+    authority: Pick<CurrentPersistedDeliveryReceiptAuthority, 'receiptId' | 'receiptBody'>
+): CurrentPersistedReleasedDeliveryReceiptAuthority {
+    return {
+        phase: 'released',
+        receiptId: authority.receiptId,
+        ...(authority.receiptBody === undefined ? {} : { receiptBody: authority.receiptBody }),
+    };
+}
+
+function preparedDeliveryReceiptAuthority(
+    receipt: Pick<DeliveryReceiptComment, 'id' | 'body'>,
+    postMergeValidation?: PersistedPreparedPostMergeValidation
+): CurrentPersistedPreparedDeliveryReceiptAuthority {
+    return {
+        phase: 'prepared',
+        receiptId: receipt.id,
+        receiptBody: receipt.body,
+        ...(postMergeValidation === undefined ? {} : { postMergeValidation }),
+    };
+}
+
+function restorePreArmedDeliveryReceiptAuthority(
+    number: number,
+    beforeArming: PersistedDeliveryReceiptAuthority | undefined,
+    armed: CurrentPersistedPreparedDeliveryReceiptAuthority,
+    port: DeliveryPort
+): void {
+    const current = port.readDeliveryReceiptAuthority(number);
+    if (!samePersistedDeliveryReceiptAuthority(current, armed)) {
+        return;
+    }
+    if (beforeArming === undefined || beforeArming.phase === 'legacy') {
+        port.clearDeliveryReceiptAuthority(number, exactDeliveryReceiptAuthorityExpectation(current));
+        return;
+    }
+    if (samePersistedDeliveryReceiptAuthority(current, beforeArming)) {
+        return;
+    }
+    port.writeDeliveryReceiptAuthority(number, beforeArming, exactDeliveryReceiptAuthorityExpectation(current));
+}
+
+function replacePersistedDeliveryReceiptAuthorityIfUnchanged(
+    number: number,
+    expectedCurrent: CurrentPersistedDeliveryReceiptAuthority,
+    next: CurrentPersistedDeliveryReceiptAuthority,
+    port: DeliveryPort
+): void {
+    if (samePersistedDeliveryReceiptAuthority(expectedCurrent, next)) {
+        return;
+    }
+    port.writeDeliveryReceiptAuthority(number, next, exactDeliveryReceiptAuthorityExpectation(expectedCurrent));
+}
+
+function frozenDeliveryReceiptAuthorityHead(
+    number: number,
+    authority: CurrentPersistedDeliveryReceiptAuthority
+): string | undefined {
+    if (authority.phase === 'prepared' && authority.postMergeValidation !== undefined) {
+        return authority.postMergeValidation.headRefOid;
+    }
+    if (authority.receiptBody === undefined) {
+        return undefined;
+    }
+    const payload = parseDeliveryReceipt(authority.receiptBody);
+    if (payload === undefined || payload.schemaVersion === 1) {
+        fail(`PR #${number} delivery receipt authority cannot be proven`);
+    }
+    return payload.head;
+}
+
+function samePreparedDeliveryInputsForOpenRetry(
+    pullRequest: PullRequestSnapshot,
+    authority: CurrentPersistedPreparedDeliveryReceiptAuthority
+): boolean {
+    if (authority.postMergeValidation === undefined) {
+        return false;
+    }
+    return samePreparedPostMergeValidation(
+        authority.postMergeValidation,
+        persistedPreparedPostMergeValidation(pullRequest, trackerCompletionTarget(pullRequest))
+    );
+}
+
+function releaseStaleFrozenDeliveryReceiptAuthorityBeforeOpenRetry(
+    pullRequest: PullRequestSnapshot,
+    port: DeliveryPort
+): void {
+    const current = port.readDeliveryReceiptAuthority(pullRequest.number);
+    if (!isFrozenPersistedDeliveryReceiptAuthority(current)) {
+        return;
+    }
+    if (current.phase === 'prepared' && current.postMergeValidation !== undefined) {
+        if (samePreparedDeliveryInputsForOpenRetry(pullRequest, current)) {
+            return;
+        }
+        replacePersistedDeliveryReceiptAuthorityIfUnchanged(
+            pullRequest.number,
+            current,
+            releasedDeliveryReceiptAuthority(current),
+            port
+        );
+        return;
+    }
+    const frozenHead = frozenDeliveryReceiptAuthorityHead(pullRequest.number, current);
+    if (frozenHead === undefined || frozenHead === pullRequest.headRefOid) {
+        return;
+    }
+    replacePersistedDeliveryReceiptAuthorityIfUnchanged(
+        pullRequest.number,
+        current,
+        releasedDeliveryReceiptAuthority(current),
+        port
+    );
+}
+
+function shouldRestorePreArmedDeliveryReceiptAuthorityAfterFinalObservation(pullRequest: PullRequestSnapshot): boolean {
+    return pullRequest.state === 'CLOSED' || (pullRequest.state === 'OPEN' && pullRequest.mergeable !== 'UNKNOWN');
+}
+
+function restoreDeliveryReceiptAuthorityBeforeClosedRetry(number: number, port: DeliveryPort): void {
+    const current = port.readDeliveryReceiptAuthority(number);
+    if (current?.phase === 'legacy') {
+        persistDeliveryReceiptAuthority(number, { phase: 'released', receiptId: current.receiptId }, port);
+        return;
+    }
+    if (current?.phase !== 'prepared' || current.postMergeValidation === undefined) {
+        return;
+    }
+    const beforeArming = releasedDeliveryReceiptAuthority(current);
+    restorePreArmedDeliveryReceiptAuthority(number, beforeArming, current, port);
+}
+
+function withRestorablePreArmedDeliveryReceiptAuthority<Result>(
+    number: number,
+    beforeArming: PersistedDeliveryReceiptAuthority | undefined,
+    armed: CurrentPersistedPreparedDeliveryReceiptAuthority,
+    port: DeliveryPort,
+    shouldRestore: () => boolean,
+    run: () => Result
+): Result {
+    try {
+        return run();
+    } catch (error) {
+        if (shouldRestore()) {
+            restorePreArmedDeliveryReceiptAuthority(number, beforeArming, armed, port);
+        }
+        throw error;
+    }
+}
+
+function resolveFinalSnapshotWithRestorablePreparedAuthority(
+    number: number,
+    beforeArming: PersistedDeliveryReceiptAuthority | undefined,
+    armed: CurrentPersistedPreparedDeliveryReceiptAuthority,
+    port: DeliveryPort
+): PullRequestSnapshot {
+    let latestDefinitiveUnmerged: PullRequestSnapshot | undefined;
+    let sawFinalSnapshot = false;
+
+    try {
+        port.fetch();
+        const initial = port.pullRequest(number);
+        sawFinalSnapshot = true;
+        if (shouldRestorePreArmedDeliveryReceiptAuthorityAfterFinalObservation(initial)) {
+            latestDefinitiveUnmerged = initial;
+        }
+        const finalSnapshot = refreshStructuralMergeability(initial, port, (pullRequest) => {
+            if (shouldRestorePreArmedDeliveryReceiptAuthorityAfterFinalObservation(pullRequest)) {
+                latestDefinitiveUnmerged = pullRequest;
+            }
+        });
+        if (finalSnapshot.state !== 'MERGED') {
+            validateStructuralMergeability(finalSnapshot);
+        }
+        return finalSnapshot;
+    } catch (error) {
+        if (!sawFinalSnapshot) {
+            try {
+                const recovered = resolveStructuralMergeability(port.pullRequest(number), port);
+                if (shouldRestorePreArmedDeliveryReceiptAuthorityAfterFinalObservation(recovered)) {
+                    latestDefinitiveUnmerged = recovered;
+                }
+            } catch {
+                // Preserve the armed authority when the post-merge state remains unreadable.
+            }
+        }
+        if (latestDefinitiveUnmerged !== undefined) {
+            restorePreArmedDeliveryReceiptAuthority(number, beforeArming, armed, port);
+        }
+        throw error;
+    }
+}
+
+function tryRestorePreArmedDeliveryReceiptAuthorityAfterMergeFailure(
+    number: number,
+    beforeArming: PersistedDeliveryReceiptAuthority | undefined,
+    armed: CurrentPersistedPreparedDeliveryReceiptAuthority,
+    port: DeliveryPort
+): void {
+    let latestObserved: PullRequestSnapshot | undefined;
+    try {
+        port.fetch();
+        const raw = port.pullRequest(number);
+        latestObserved = raw;
+        if (raw.state === 'MERGED') {
+            return;
+        }
+        if (raw.state === 'CLOSED') {
+            restorePreArmedDeliveryReceiptAuthority(number, beforeArming, armed, port);
+            return;
+        }
+        if (raw.state !== 'OPEN') {
+            return;
+        }
+        const current = refreshStructuralMergeability(raw, port, (pullRequest) => {
+            latestObserved = pullRequest;
+        });
+        latestObserved = current;
+        if (current.state === 'MERGED') {
+            return;
+        }
+        if (current.state === 'OPEN' && current.mergeable === 'CONFLICTING') {
+            restorePreArmedDeliveryReceiptAuthority(number, beforeArming, armed, port);
+            return;
+        }
+        if (current.state !== 'OPEN' && current.state !== 'CLOSED') {
+            return;
+        }
+    } catch {
+        if (
+            latestObserved !== undefined &&
+            shouldRestorePreArmedDeliveryReceiptAuthorityAfterFinalObservation(latestObserved)
+        ) {
+            restorePreArmedDeliveryReceiptAuthority(number, beforeArming, armed, port);
+        }
+        return;
+    }
+    if (
+        latestObserved !== undefined &&
+        shouldRestorePreArmedDeliveryReceiptAuthorityAfterFinalObservation(latestObserved)
+    ) {
+        restorePreArmedDeliveryReceiptAuthority(number, beforeArming, armed, port);
+    }
+}
+
+function persistMergeAuthorizedDeliveryReceiptAuthority(
+    number: number,
+    receipt: Pick<DeliveryReceiptComment, 'id' | 'body'>,
+    postMergeValidation: PersistedPreparedPostMergeValidation | undefined,
+    port: DeliveryPort
+): void {
+    persistDeliveryReceiptAuthority(
+        number,
+        {
+            phase: 'merge-authorized',
+            receiptId: receipt.id,
+            receiptBody: receipt.body,
+            ...(postMergeValidation === undefined ? {} : { postMergeValidation }),
+        },
+        port
+    );
+}
+
+function persistTerminalDeliveryReceiptAuthority(
+    number: number,
+    receipt: Pick<DeliveryReceiptComment, 'id' | 'body'>,
+    postMergeValidation: PersistedPreparedPostMergeValidation | undefined,
+    port: DeliveryPort
+): void {
+    persistDeliveryReceiptAuthority(
+        number,
+        {
+            phase: 'terminal',
+            receiptId: receipt.id,
+            receiptBody: receipt.body,
+            ...(postMergeValidation === undefined ? {} : { postMergeValidation }),
+        },
+        port
+    );
+}
+
+function readExactDeliveryReceipt(
+    pullRequest: PullRequestSnapshot,
+    port: DeliveryPort,
+    expectedReceiptId: string
+): DeliveryReceiptComment {
+    const lineage = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest);
+    const receipt = lineage.find((comment) => comment.id === expectedReceiptId);
+    if (receipt === undefined) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+    assertDeliveryReceiptForHead(receipt, pullRequest);
     return receipt;
 }
 
-function readDeliveryReceipt(pullRequest: PullRequestSnapshot, port: DeliveryPort): DeliveryReceiptPayload {
-    const lineage = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest);
-    return assertDeliveryReceiptForHead(newestDeliveryReceipt(lineage, pullRequest.number), pullRequest);
+function readStableExactDeliveryReceipt(
+    pullRequest: PullRequestSnapshot,
+    port: DeliveryPort,
+    expectedReceiptId: string
+): DeliveryReceiptComment {
+    const firstLineage = orderedDeliveryReceiptLineage(provenDeliveryReceiptComments(pullRequest, port), pullRequest);
+    const first = firstLineage.find((comment) => comment.id === expectedReceiptId);
+    const secondLineage = orderedDeliveryReceiptLineage(provenDeliveryReceiptComments(pullRequest, port), pullRequest);
+    const second = secondLineage.find((comment) => comment.id === expectedReceiptId);
+    if (first === undefined || second === undefined) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during delivery`);
+    }
+    if (first.id !== second.id) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during delivery`);
+    }
+    assertDeliveryReceiptForHead(second, pullRequest);
+    return second;
+}
+
+function readStableExactMergedRecoveryReceipt(
+    pullRequest: PullRequestSnapshot,
+    port: DeliveryPort,
+    expectedReceiptId: string,
+    validate: (
+        lineage: DeliveryReceiptComment[],
+        receipt: DeliveryReceiptComment,
+        payload: DeliveryReceiptPayload
+    ) => void
+): DeliveryReceiptComment {
+    const read = () => {
+        const lineage = orderedDeliveryReceiptLineage(provenDeliveryReceiptComments(pullRequest, port), pullRequest);
+        const receipt = lineage.find((comment) => comment.id === expectedReceiptId);
+        if (receipt === undefined) {
+            fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+        }
+        const payload = assertDeliveryReceiptForHead(receipt, pullRequest);
+        validate(lineage, receipt, payload);
+        return receipt;
+    };
+    const first = read();
+    const second = read();
+    if (first.id !== second.id || first.body !== second.body) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+    return second;
+}
+
+function assertCompleteDeliveryReceiptProof(
+    number: number,
+    comments: DeliveryReceiptComment[],
+    proof: DeliveryReceiptProof
+): void {
+    if (!Array.isArray(proof.commentIds) || proof.commentIds.some((commentId) => typeof commentId !== 'string')) {
+        fail(`PR #${number} delivery receipt authority cannot be proven`);
+    }
+    if (new Set(proof.commentIds).size !== proof.commentIds.length) {
+        fail(`PR #${number} delivery receipt authority cannot be proven`);
+    }
+    if (
+        !Array.isArray(proof.editedCommentIds) ||
+        proof.editedCommentIds.some((commentId) => typeof commentId !== 'string') ||
+        new Set(proof.editedCommentIds).size !== proof.editedCommentIds.length
+    ) {
+        fail(`PR #${number} delivery receipt authority cannot be proven`);
+    }
+    if (proof.commentIds.length !== proof.totalCount) {
+        fail(`PR #${number} delivery receipt authority cannot be proven`);
+    }
+    if (comments.length !== proof.totalCount) {
+        fail(`PR #${number} delivery receipt authority cannot be proven`);
+    }
+    const commentIdSet = new Set(proof.commentIds);
+    const editedCommentIds = new Set(proof.editedCommentIds);
+    for (const editedCommentId of editedCommentIds) {
+        if (!commentIdSet.has(editedCommentId)) {
+            fail(`PR #${number} delivery receipt authority cannot be proven`);
+        }
+    }
+    if (proof.totalCount === 0) {
+        if (proof.latestCommentId !== undefined || proof.commentIds.length > 0 || proof.editedCommentIds.length > 0) {
+            fail(`PR #${number} delivery receipt authority cannot be proven`);
+        }
+        return;
+    }
+    if (proof.latestCommentId !== undefined && !commentIdSet.has(proof.latestCommentId)) {
+        fail(`PR #${number} delivery receipt authority cannot be proven`);
+    }
+    const restCommentIds = comments.map((comment) => comment.id);
+    for (const commentId of restCommentIds) {
+        if (!commentIdSet.has(commentId)) {
+            fail(`PR #${number} delivery receipt authority cannot be proven`);
+        }
+    }
+    for (let index = 0; index < comments.length; index += 1) {
+        const comment = comments[index];
+        if (
+            comment !== undefined &&
+            editedCommentIds.has(comment.id) &&
+            isAuthorBotNodeId(comment.authorNodeId) &&
+            comment.authorType === 'Bot'
+        ) {
+            fail(`PR #${number} delivery receipt authority cannot be proven`);
+        }
+    }
+}
+
+function provenDeliveryReceiptComments(
+    pullRequest: Pick<PullRequestSnapshot, 'number'>,
+    port: DeliveryPort
+): DeliveryReceiptComment[] {
+    const comments = port.deliveryReceipts(pullRequest.number);
+    assertCompleteDeliveryReceiptProof(pullRequest.number, comments, port.deliveryReceiptProof(pullRequest.number));
+    for (const comment of comments) {
+        if (
+            isAuthorBotNodeId(comment.authorNodeId) &&
+            comment.authorType === 'Bot' &&
+            comment.createdAt !== comment.updatedAt
+        ) {
+            fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
+        }
+    }
+    return comments;
+}
+
+function newestCanonicalDeliveryReceiptForKey(
+    lineage: DeliveryReceiptComment[],
+    key: string,
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
+): DeliveryReceiptComment {
+    for (let index = lineage.length - 1; index >= 0; index -= 1) {
+        const comment = lineage[index];
+        if (comment === undefined) {
+            continue;
+        }
+        const payload = assertDeliveryReceiptForHead(comment, pullRequest);
+        if (deliveryReceiptKey(payload) !== key) {
+            continue;
+        }
+        return comment;
+    }
+    fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
+    throw new Error('unreachable');
+}
+
+function newestLogicalDeliveryReceiptAuthority(
+    lineage: DeliveryReceiptComment[],
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
+): DeliveryReceiptComment {
+    const newest = lineage.at(-1);
+    if (newest === undefined) {
+        fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
+    }
+    const payload = assertDeliveryReceiptForHead(newest, pullRequest);
+    return newestCanonicalDeliveryReceiptForKey(lineage, deliveryReceiptKey(payload), pullRequest);
+}
+
+function readStrictStableEquivalentDeliveryReceipt(
+    pullRequest: PullRequestSnapshot,
+    port: DeliveryPort,
+    expected: DeliveryReceiptPayload
+): DeliveryReceiptComment | undefined {
+    const firstLineage = orderedDeliveryReceiptLineage(provenDeliveryReceiptComments(pullRequest, port), pullRequest);
+    const first = authoritativeEquivalentDeliveryReceipt(firstLineage, expected, pullRequest);
+    const secondLineage = orderedDeliveryReceiptLineage(provenDeliveryReceiptComments(pullRequest, port), pullRequest);
+    const second = authoritativeEquivalentDeliveryReceipt(secondLineage, expected, pullRequest);
+    if (first === undefined || second === undefined) {
+        if (first === undefined && second === undefined) {
+            return undefined;
+        }
+        fail(`PR #${pullRequest.number} delivery receipt changed during delivery`);
+    }
+    if (first.id !== second.id) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during delivery`);
+    }
+    return second;
+}
+
+function tryStableHistoricalDeliveryReceipt(
+    pullRequest: PullRequestSnapshot,
+    port: DeliveryPort,
+    expected: DeliveryReceiptPayload
+): DeliveryReceiptComment | undefined {
+    try {
+        return readStrictStableEquivalentDeliveryReceipt(pullRequest, port, expected);
+    } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        if (
+            /delivery receipt authority cannot be proven/u.test(detail) ||
+            /delivery receipt changed during delivery/u.test(detail)
+        ) {
+            return undefined;
+        }
+        throw error;
+    }
+}
+
+function compatibleBodylessPersistedMergedRecoveryReceipt(
+    lineage: DeliveryReceiptComment[],
+    authority: CurrentPersistedDeliveryReceiptAuthority,
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>
+): DeliveryReceiptComment {
+    const stored = lineage.find((receipt) => receipt.id === authority.receiptId);
+    if (stored === undefined) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+    const storedPayload = assertDeliveryReceiptForHead(stored, pullRequest);
+    if (storedPayload.schemaVersion === 1) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+    if (authority.phase !== 'released') {
+        const validation = authority.postMergeValidation;
+        if (validation === undefined) {
+            fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
+        }
+        validateReceiptPayloadAgainstPreparedPostMergeValidation(
+            pullRequest.number,
+            storedPayload,
+            validation,
+            'recovery'
+        );
+    }
+    const authoritative = newestLogicalDeliveryReceiptAuthority(lineage, pullRequest);
+    const authoritativePayload = assertDeliveryReceiptForHead(authoritative, pullRequest);
+    if (
+        !sameDeliveryReceiptKey(storedPayload, authoritativePayload) ||
+        !sameDeliveryReceiptMode(storedPayload, authoritativePayload)
+    ) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+    return stored;
+}
+
+function validateLegacyPersistedMergedRecoveryReceipt(
+    pullRequest: PullRequestSnapshot,
+    payload: DeliveryReceiptPayload
+): void {
+    if (payload.schemaVersion !== 1) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+    if (payload.bodySha256 !== bodySha256(pullRequest.body)) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+    if ((payload.closingIssue ?? undefined) !== trackerCompletionTarget(pullRequest)) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+}
+
+function readCompatibleBodylessPersistedMergedRecoveryReceipt(
+    pullRequest: PullRequestSnapshot,
+    port: DeliveryPort,
+    authority: CurrentPersistedDeliveryReceiptAuthority
+): DeliveryReceiptComment {
+    return readStableExactMergedRecoveryReceipt(
+        pullRequest,
+        port,
+        authority.receiptId,
+        (lineage, _receipt, _payload) => {
+            compatibleBodylessPersistedMergedRecoveryReceipt(lineage, authority, pullRequest);
+        }
+    );
+}
+
+function readPersistedMergedRecoveryReceipt(
+    pullRequest: PullRequestSnapshot,
+    port: DeliveryPort,
+    authority: PersistedDeliveryReceiptAuthority
+): DeliveryReceiptComment {
+    if (authority.phase === 'legacy') {
+        return readStableExactMergedRecoveryReceipt(
+            pullRequest,
+            port,
+            authority.receiptId,
+            (_lineage, _receipt, payload) => validateLegacyPersistedMergedRecoveryReceipt(pullRequest, payload)
+        );
+    }
+    if (authority.phase === 'released') {
+        fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
+    }
+    if (authority.postMergeValidation === undefined) {
+        fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
+    }
+    const preparedPostMergeValidation = authority.postMergeValidation;
+    validatePostMergeSnapshot(preparedPostMergeValidation, pullRequest, pullRequest.number);
+    if (authority.receiptBody === undefined) {
+        return readCompatibleBodylessPersistedMergedRecoveryReceipt(pullRequest, port, authority);
+    }
+    const receipt = readStableExactMergedRecoveryReceipt(pullRequest, port, authority.receiptId, () => undefined);
+    if (receipt.body !== authority.receiptBody) {
+        fail(`PR #${pullRequest.number} delivery receipt changed during recovery`);
+    }
+    if (preparedPostMergeValidation !== undefined) {
+        const payload = assertDeliveryReceiptForHead(receipt, pullRequest);
+        if (payload.schemaVersion === 1) {
+            validateLegacyPersistedMergedRecoveryReceipt(pullRequest, payload);
+            return receipt;
+        }
+        validateReceiptPayloadAgainstPreparedPostMergeValidation(
+            pullRequest.number,
+            payload,
+            preparedPostMergeValidation,
+            'recovery'
+        );
+    }
+    return receipt;
 }
 
 function validateStableDeliveryReceipt(
@@ -674,7 +1825,7 @@ function validateStableDeliveryReceipt(
     expected: DeliveryReceiptPayload,
     recovered: DeliveryReceiptPayload
 ): void {
-    if (composeDeliveryReceipt(expected) !== composeDeliveryReceipt(recovered)) {
+    if (!sameExactDeliveryReceipt(expected, recovered)) {
         fail(`PR #${number} delivery receipt changed during delivery`);
     }
 }
@@ -682,20 +1833,80 @@ function validateStableDeliveryReceipt(
 function ensureDeliveryReceipt(
     pullRequest: PullRequestSnapshot,
     closingIssue: number | undefined,
-    port: DeliveryPort
-): DeliveryReceiptPayload {
-    const expected = expectedDeliveryReceipt(pullRequest, closingIssue);
+    port: DeliveryPort,
+    ciAdmissionMode: CiAdmissionMode
+): DeliveryReceiptComment {
+    const expected = expectedDeliveryReceipt(pullRequest, closingIssue, ciAdmissionMode, port);
     const expectedBody = composeDeliveryReceipt(expected);
-    const existing = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest);
-    let receipt = existing.at(-1);
-    if (receipt?.body !== expectedBody) {
+    const persistedAuthority = port.readDeliveryReceiptAuthority(pullRequest.number);
+    const currentPersistedAuthority =
+        persistedAuthority !== undefined && isCurrentPersistedDeliveryReceiptAuthority(persistedAuthority)
+            ? persistedAuthority
+            : undefined;
+    const frozenAuthority = isFrozenPersistedDeliveryReceiptAuthority(currentPersistedAuthority)
+        ? currentPersistedAuthority
+        : undefined;
+    let receipt: DeliveryReceiptComment | undefined;
+    let expectedReceipt = expected;
+    if (frozenAuthority !== undefined) {
+        if (frozenAuthority.receiptBody === undefined) {
+            fail(`PR #${pullRequest.number} delivery receipt authority cannot be proven`);
+        }
+        expectedReceipt = frozenCurrentDeliveryReceiptPayload(
+            pullRequest.number,
+            frozenAuthority.receiptBody,
+            expected
+        );
+        try {
+            receipt = readStableExactDeliveryReceipt(pullRequest, port, frozenAuthority.receiptId);
+        } catch {
+            fail(`PR #${pullRequest.number} delivery receipt changed during delivery`);
+        }
+        if (receipt.body !== frozenAuthority.receiptBody) {
+            fail(`PR #${pullRequest.number} delivery receipt changed during delivery`);
+        }
+        if (frozenAuthority.phase === 'prepared' && frozenAuthority.postMergeValidation !== undefined) {
+            validateReceiptPayloadAgainstPreparedPostMergeValidation(
+                pullRequest.number,
+                expectedReceipt,
+                frozenAuthority.postMergeValidation,
+                'delivery'
+            );
+        }
+        assertCanonicalDeliveryReceipt(receipt, pullRequest, expectedReceipt);
+    }
+    const existing =
+        receipt === undefined
+            ? orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest)
+            : [];
+    const knownReceiptIds = new Set(existing.map((existingReceipt) => existingReceipt.id));
+    const historical = authoritativeEquivalentDeliveryReceipt(existing, expected, pullRequest);
+    if (receipt === undefined) {
+        receipt =
+            historical === undefined ? undefined : tryStableHistoricalDeliveryReceipt(pullRequest, port, expected);
+    }
+    if (
+        receipt === undefined &&
+        currentPersistedAuthority?.phase !== 'released' &&
+        currentPersistedAuthority?.receiptBody === expectedBody
+    ) {
+        try {
+            receipt = readExactDeliveryReceipt(pullRequest, port, currentPersistedAuthority.receiptId);
+        } catch {
+            fail(`PR #${pullRequest.number} delivery receipt was not durably verified`);
+        }
+    }
+    if (receipt === undefined) {
         try {
             receipt = port.addDeliveryReceipt(pullRequest.number, expectedBody);
         } catch (error) {
-            const recovered = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest).at(
-                -1
-            );
-            if (recovered?.body !== expectedBody) {
+            let recovered: DeliveryReceiptComment | undefined;
+            try {
+                recovered = readStrictStableEquivalentDeliveryReceipt(pullRequest, port, expected);
+            } catch {
+                throw error;
+            }
+            if (recovered === undefined || knownReceiptIds.has(recovered.id)) {
                 throw error;
             }
             receipt = recovered;
@@ -704,12 +1915,27 @@ function ensureDeliveryReceipt(
     if (receipt === undefined) {
         fail(`PR #${pullRequest.number} delivery receipt was not durably verified`);
     }
-    assertCanonicalDeliveryReceipt(receipt, pullRequest, expected);
-    const verified = orderedDeliveryReceiptLineage(port.deliveryReceipts(pullRequest.number), pullRequest).at(-1);
-    if (verified === undefined || verified.id !== receipt.id || verified.body !== expectedBody) {
+    const receiptPayload = assertCanonicalDeliveryReceipt(receipt, pullRequest, expectedReceipt);
+    persistPreparedDeliveryReceiptAuthority(pullRequest.number, receipt, port);
+    let verified: DeliveryReceiptComment | undefined;
+    try {
+        verified =
+            frozenAuthority === undefined
+                ? readStrictStableEquivalentDeliveryReceipt(pullRequest, port, expectedReceipt)
+                : readStableExactDeliveryReceipt(pullRequest, port, receipt.id);
+    } catch {
         fail(`PR #${pullRequest.number} delivery receipt was not durably verified`);
     }
-    return assertCanonicalDeliveryReceipt(verified, pullRequest, expected);
+    if (
+        verified === undefined ||
+        verified.id !== receipt.id ||
+        verified.body !== receipt.body ||
+        !sameExactDeliveryReceipt(assertDeliveryReceiptForHead(verified, pullRequest), expectedReceipt)
+    ) {
+        fail(`PR #${pullRequest.number} delivery receipt was not durably verified`);
+    }
+    assertCanonicalDeliveryReceipt(verified, pullRequest, receiptPayload);
+    return verified;
 }
 
 function validateDependent(current: PullRequestSnapshot, expected: StackedPullRequest): void {
@@ -789,17 +2015,43 @@ function deliverPullRequestWithCiAdmission(
     ciAdmissionMode: CiAdmissionMode
 ): void {
     port.fetch();
-    const initial = resolveStructuralMergeability(port.pullRequest(number), port);
+    const rawInitial = port.pullRequest(number);
+    if (rawInitial.state === 'CLOSED') {
+        restoreDeliveryReceiptAuthorityBeforeClosedRetry(number, port);
+    }
+    const initial = resolveStructuralMergeability(rawInitial, port);
+    if (initial.state === 'CLOSED') {
+        restoreDeliveryReceiptAuthorityBeforeClosedRetry(number, port);
+    }
     if (initial.state === 'MERGED') {
         validateBaseBranch(initial);
         validateAuthorAppMerger(initial);
-        const receipt = readDeliveryReceipt(initial, port);
+        const receiptAuthority = port.readDeliveryReceiptAuthority(number);
+        if (receiptAuthority === undefined) {
+            fail(`PR #${number} delivery receipt authority cannot be proven`);
+        }
+        const receipt = readPersistedMergedRecoveryReceipt(initial, port, receiptAuthority);
+        const receiptPayload = assertDeliveryReceiptForHead(receipt, initial);
+        let recoveryPostMergeValidation: PersistedPreparedPostMergeValidation | undefined;
+        if (receiptAuthority.phase === 'legacy') {
+            recoveryPostMergeValidation = persistedPreparedPostMergeValidation(
+                initial,
+                receiptPayload.closingIssue ?? undefined
+            );
+        } else if (receiptAuthority.phase !== 'released') {
+            recoveryPostMergeValidation = receiptAuthority.postMergeValidation;
+        }
+        if (receiptAuthority.phase !== 'terminal') {
+            persistMergeAuthorizedDeliveryReceiptAuthority(number, receipt, recoveryPostMergeValidation, port);
+        }
         const remaining = port.dependents(initial.headRefName).filter((candidate) => candidate.number !== number);
         retargetDependents(remaining, initial.baseRefName, port);
-        completeIssueAfterMerge(number, receipt.closingIssue, tracker);
+        completeIssueAfterMerge(number, receiptPayload.closingIssue, tracker);
+        persistTerminalDeliveryReceiptAuthority(number, receipt, recoveryPostMergeValidation, port);
         port.log(`PR #${number} was already merged; repaired ${remaining.length} remaining dependent(s)`);
         return;
     }
+    releaseStaleFrozenDeliveryReceiptAuthorityBeforeOpenRetry(initial, port);
     validateBaseBranch(initial);
     const initialTrackerTarget = trackerCompletionTarget(initial);
     validatePullRequest(initial, port, ciAdmissionMode);
@@ -811,20 +2063,31 @@ function deliverPullRequestWithCiAdmission(
     }
     port.log(`review size: ${initial.changedFiles} file(s), +${initial.additions}/-${initial.deletions}`);
 
-    const receipt = ensureDeliveryReceipt(initial, initialTrackerTarget, port);
+    const receipt = ensureDeliveryReceipt(initial, initialTrackerTarget, port, ciAdmissionMode);
+    const receiptPayload = assertDeliveryReceiptForHead(receipt, initial);
+    const preparedPostMergeValidation = persistedPreparedPostMergeValidation(initial, initialTrackerTarget);
+    const authorityBeforeFinalFetchArming = port.readDeliveryReceiptAuthority(number);
+    const finalFetchArmedAuthority = preparedDeliveryReceiptAuthority(receipt, preparedPostMergeValidation);
+    persistPreparedDeliveryReceiptAuthority(number, receipt, port, preparedPostMergeValidation);
 
-    port.fetch();
-    const finalSnapshot = resolveStructuralMergeability(port.pullRequest(number), port);
+    const finalSnapshot = resolveFinalSnapshotWithRestorablePreparedAuthority(
+        number,
+        authorityBeforeFinalFetchArming,
+        finalFetchArmedAuthority,
+        port
+    );
     if (finalSnapshot.state === 'MERGED') {
-        validateAuthorAppMerger(finalSnapshot);
-    }
-    const finalTrackerTarget = trackerCompletionTarget(finalSnapshot);
-    validateStableTrackerTarget(number, initialTrackerTarget, finalTrackerTarget);
-    validateStablePullRequest(initial, finalSnapshot);
-    if (finalSnapshot.state === 'MERGED') {
-        validateBaseBranch(finalSnapshot);
-        const recoveredReceipt = readDeliveryReceipt(finalSnapshot, port);
-        validateStableDeliveryReceipt(number, receipt, recoveredReceipt);
+        validatePostMergeSnapshot(preparedPostMergeValidation, finalSnapshot, number);
+        const recoveredReceipt = readStableExactDeliveryReceipt(finalSnapshot, port, receipt.id);
+        const recoveredPayload = assertCanonicalDeliveryReceipt(recoveredReceipt, finalSnapshot, receiptPayload);
+        validateReceiptPayloadAgainstPreparedPostMergeValidation(
+            number,
+            recoveredPayload,
+            preparedPostMergeValidation,
+            'delivery'
+        );
+        validateStableDeliveryReceipt(number, receiptPayload, recoveredPayload);
+        persistMergeAuthorizedDeliveryReceiptAuthority(number, recoveredReceipt, preparedPostMergeValidation, port);
         const finalDependents = port
             .dependents(finalSnapshot.headRefName)
             .filter((candidate) => candidate.number !== number);
@@ -833,26 +2096,93 @@ function deliverPullRequestWithCiAdmission(
             validateDependent(port.pullRequest(dependent.number), dependent);
         }
         retargetDependents(finalDependents, finalSnapshot.baseRefName, port);
-        completeIssueAfterMerge(number, recoveredReceipt.closingIssue, tracker);
+        completeIssueAfterMerge(number, recoveredPayload.closingIssue, tracker);
+        persistTerminalDeliveryReceiptAuthority(number, recoveredReceipt, preparedPostMergeValidation, port);
         port.log(`PR #${number} became merged during delivery; repaired ${finalDependents.length} dependent(s)`);
         return;
     }
-    validatePullRequest(finalSnapshot, port, ciAdmissionMode);
-    validateBaseBranch(finalSnapshot);
-    validateReview(number, port.reviewState(number, finalSnapshot.headRefOid));
-    const finalDependents = port
-        .dependents(finalSnapshot.headRefName)
-        .filter((candidate) => candidate.number !== number);
-    validateDependentSet(dependents, finalDependents);
-    for (const dependent of finalDependents) {
-        validateDependent(port.pullRequest(dependent.number), dependent);
-    }
+    const { finalDependents, finalTrackerTarget, finalReceipt, finalReceiptPayload, preMergeArmedAuthority } =
+        withRestorablePreArmedDeliveryReceiptAuthority(
+            number,
+            authorityBeforeFinalFetchArming,
+            finalFetchArmedAuthority,
+            port,
+            () => shouldRestorePreArmedDeliveryReceiptAuthorityAfterFinalObservation(finalSnapshot),
+            () => {
+                restorePreArmedDeliveryReceiptAuthority(
+                    number,
+                    authorityBeforeFinalFetchArming,
+                    finalFetchArmedAuthority,
+                    port
+                );
+                const finalTrackerTarget = trackerCompletionTarget(finalSnapshot);
+                validateStableTrackerTarget(number, initialTrackerTarget, finalTrackerTarget);
+                validateStablePullRequest(initial, finalSnapshot);
+                validatePullRequest(finalSnapshot, port, ciAdmissionMode);
+                validateBaseBranch(finalSnapshot);
+                validateReview(number, port.reviewState(number, finalSnapshot.headRefOid));
+                const finalDependents = port
+                    .dependents(finalSnapshot.headRefName)
+                    .filter((candidate) => candidate.number !== number);
+                validateDependentSet(dependents, finalDependents);
+                for (const dependent of finalDependents) {
+                    validateDependent(port.pullRequest(dependent.number), dependent);
+                }
 
-    port.merge(number, finalSnapshot.headRefOid, finalDependents.length > 0);
+                const finalReceipt = ensureDeliveryReceipt(finalSnapshot, finalTrackerTarget, port, ciAdmissionMode);
+                const finalReceiptPayload = assertDeliveryReceiptForHead(finalReceipt, finalSnapshot);
+                const preMergeArmedAuthority = preparedDeliveryReceiptAuthority(
+                    finalReceipt,
+                    persistedPreparedPostMergeValidation(finalSnapshot, finalTrackerTarget)
+                );
+                persistPreparedDeliveryReceiptAuthority(
+                    number,
+                    finalReceipt,
+                    port,
+                    preMergeArmedAuthority.postMergeValidation
+                );
+                return {
+                    finalDependents,
+                    finalTrackerTarget,
+                    finalReceipt,
+                    finalReceiptPayload,
+                    preMergeArmedAuthority,
+                };
+            }
+        );
+    try {
+        port.merge(number, finalSnapshot.headRefOid, finalDependents.length > 0, `${finalSnapshot.title} (#${number})`);
+    } catch (error) {
+        if (error instanceof DeliveryMergeRejectedError) {
+            tryRestorePreArmedDeliveryReceiptAuthorityAfterMergeFailure(
+                number,
+                authorityBeforeFinalFetchArming,
+                preMergeArmedAuthority,
+                port
+            );
+        }
+        throw error;
+    }
     const mergedSnapshot = port.pullRequest(number);
-    validatePostMergeSnapshot(finalSnapshot, mergedSnapshot, number, finalTrackerTarget);
+    validatePostMergeSnapshot(
+        persistedPreparedPostMergeValidation(finalSnapshot, finalTrackerTarget),
+        mergedSnapshot,
+        number
+    );
+    persistMergeAuthorizedDeliveryReceiptAuthority(
+        number,
+        finalReceipt,
+        persistedPreparedPostMergeValidation(finalSnapshot, finalTrackerTarget),
+        port
+    );
     retargetDependents(finalDependents, finalSnapshot.baseRefName, port);
-    completeIssueAfterMerge(number, receipt.closingIssue, tracker);
+    completeIssueAfterMerge(number, finalReceiptPayload.closingIssue, tracker);
+    persistTerminalDeliveryReceiptAuthority(
+        number,
+        finalReceipt,
+        persistedPreparedPostMergeValidation(finalSnapshot, finalTrackerTarget),
+        port
+    );
 }
 
 export function deliverPullRequest(number: number, port: DeliveryPort, tracker: TrackerCompletionPort): void {
@@ -869,7 +2199,12 @@ export function deliverPullRequestWithRequiredCi(
 }
 
 function capture(command: string, args: string[]): string {
-    const result = spawnSync(command, args, { cwd: process.cwd(), encoding: 'utf8', shell: false });
+    const result = spawnSync(command, args, {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        shell: false,
+        ...(command === 'git' ? { env: trustedDeliveryGitEnv() } : {}),
+    });
     if (result.error !== undefined) {
         throw result.error;
     }
@@ -880,7 +2215,12 @@ function capture(command: string, args: string[]): string {
 }
 
 function run(command: string, args: string[]): void {
-    const result = spawnSync(command, args, { cwd: process.cwd(), stdio: 'inherit', shell: false });
+    const result = spawnSync(command, args, {
+        cwd: process.cwd(),
+        stdio: 'inherit',
+        shell: false,
+        ...(command === 'git' ? { env: trustedDeliveryGitEnv() } : {}),
+    });
     if (result.error !== undefined) {
         throw result.error;
     }
@@ -947,6 +2287,7 @@ type RawRollupContexts = {
 };
 
 type RawRollupEntry = {
+    id?: unknown;
     __typename?: unknown;
     name?: unknown;
     status?: unknown;
@@ -955,6 +2296,25 @@ type RawRollupEntry = {
     context?: unknown;
     state?: unknown;
     createdAt?: unknown;
+};
+
+type RollupNode = {
+    id: string;
+    checkRun: HeadCheckRun;
+};
+
+type DeliveryReceiptProofResponse = {
+    data?: {
+        repository?: {
+            pullRequest?: {
+                comments?: {
+                    totalCount?: unknown;
+                    pageInfo?: { hasNextPage?: unknown; endCursor?: unknown } | null;
+                    nodes?: Array<{ id?: unknown; lastEditedAt?: unknown } | null> | null;
+                } | null;
+            } | null;
+        };
+    };
 };
 
 const UNSETTLED_STATUS_CONTEXT_STATES = new Set(['PENDING', 'EXPECTED']);
@@ -971,8 +2331,8 @@ const ROLLUP_QUERY = `query($owner:String!,$name:String!,$oid:GitObjectID!,$curs
             pageInfo{hasNextPage endCursor}
             nodes{
               __typename
-              ... on CheckRun{name status conclusion startedAt}
-              ... on StatusContext{context state createdAt}
+              ... on CheckRun{id name status conclusion startedAt}
+              ... on StatusContext{id context state createdAt}
             }
           }
         }
@@ -987,20 +2347,51 @@ const ROLLUP_QUERY = `query($owner:String!,$name:String!,$oid:GitObjectID!,$curs
  * conclusion this gate draws from the rollup — a tolerated cancellation as much as a refusal — would
  * then rest on evidence that may simply be absent, and each further review event adds a whole run's
  * worth of contexts, so heads cross that line in the ordinary course of a long review. The rollup is
- * read through GraphQL instead, paged until the nodes account for `totalCount`, and refused when
- * they do not. A partial list is never merged over.
+ * read through GraphQL instead, pinned to the first page's declared total, paged through every page
+ * GitHub offers, and refused unless the terminal page accounts for that exact unique node count.
+ * A partial or self-contradictory list is never merged over.
  */
 function readHeadCheckRuns(pullRequestNumber: number, readPage: (cursor: string | null) => RollupPage): HeadCheckRun[] {
+    const runs: HeadCheckRun[] = [];
+    const seenNodeIds = new Set<string>();
+    const emittedCursors = new Set<string>();
     let page = readPage(null);
-    const nodes: unknown[] = [...page.nodes];
-    while (page.pageInfo.hasNextPage && page.pageInfo.endCursor !== null && nodes.length < page.totalCount) {
-        page = readPage(page.pageInfo.endCursor);
-        nodes.push(...page.nodes);
+    let cursor: string | null = null;
+    const expectedTotalCount = page.totalCount;
+    while (true) {
+        if (page.totalCount !== expectedTotalCount) {
+            fail(`cannot read all ${expectedTotalCount} checks on PR #${pullRequestNumber}: rollup totalCount drifted`);
+        }
+        for (const entry of page.nodes) {
+            const node = toRollupNode(entry, pullRequestNumber);
+            if (seenNodeIds.has(node.id)) {
+                fail(
+                    `cannot read all ${expectedTotalCount} checks on PR #${pullRequestNumber}: rollup repeated a node`
+                );
+            }
+            seenNodeIds.add(node.id);
+            runs.push(node.checkRun);
+        }
+        if (runs.length > expectedTotalCount) {
+            fail(`cannot read all ${expectedTotalCount} checks on PR #${pullRequestNumber}: got ${runs.length}`);
+        }
+        if (!page.pageInfo.hasNextPage) {
+            break;
+        }
+        if (page.pageInfo.endCursor === null || page.pageInfo.endCursor === cursor) {
+            fail(`cannot read all ${expectedTotalCount} checks on PR #${pullRequestNumber}: cursor did not advance`);
+        }
+        if (emittedCursors.has(page.pageInfo.endCursor)) {
+            fail(`cannot read all ${expectedTotalCount} checks on PR #${pullRequestNumber}: cursor did not advance`);
+        }
+        emittedCursors.add(page.pageInfo.endCursor);
+        cursor = page.pageInfo.endCursor;
+        page = readPage(cursor);
     }
-    if (nodes.length !== page.totalCount) {
-        fail(`cannot read all ${page.totalCount} checks on PR #${pullRequestNumber}: got ${nodes.length}`);
+    if (runs.length !== expectedTotalCount) {
+        fail(`cannot read all ${expectedTotalCount} checks on PR #${pullRequestNumber}: got ${runs.length}`);
     }
-    return nodes.map((entry) => toHeadCheckRun(entry, pullRequestNumber));
+    return runs;
 }
 
 function parseRollupPage(response: string, pullRequestNumber: number): RollupPage {
@@ -1031,20 +2422,36 @@ function parseRollupPage(response: string, pullRequestNumber: number): RollupPag
  * only the `CheckRun` arm would drop a failing status context out of the evidence entirely, so an
  * entry that matches neither arm refuses rather than being skipped.
  */
-function toHeadCheckRun(value: unknown, pullRequestNumber: number): HeadCheckRun {
+function toRollupNode(value: unknown, pullRequestNumber: number): RollupNode {
     const entry = (value === null || typeof value !== 'object' ? {} : value) as RawRollupEntry;
-    if (entry.__typename === 'CheckRun' && typeof entry.name === 'string' && typeof entry.status === 'string') {
+    if (
+        typeof entry.id === 'string' &&
+        entry.__typename === 'CheckRun' &&
+        typeof entry.name === 'string' &&
+        typeof entry.status === 'string'
+    ) {
         return {
-            name: entry.name,
-            status: entry.status,
-            conclusion: typeof entry.conclusion === 'string' && entry.conclusion !== '' ? entry.conclusion : null,
-            startedAt: reportedTimestamp(entry.startedAt),
+            id: entry.id,
+            checkRun: {
+                name: entry.name,
+                status: entry.status,
+                conclusion: typeof entry.conclusion === 'string' && entry.conclusion !== '' ? entry.conclusion : null,
+                startedAt: reportedTimestamp(entry.startedAt),
+            },
         };
     }
-    if (entry.__typename === 'StatusContext' && typeof entry.context === 'string' && typeof entry.state === 'string') {
+    if (
+        typeof entry.id === 'string' &&
+        entry.__typename === 'StatusContext' &&
+        typeof entry.context === 'string' &&
+        typeof entry.state === 'string'
+    ) {
         // A status context carries no start of its own; its creation is when the reporting integration
         // first spoke about this commit, which is the same ordering evidence for the same purpose.
-        return toStatusContextCheckRun(entry.context, entry.state, reportedTimestamp(entry.createdAt));
+        return {
+            id: entry.id,
+            checkRun: toStatusContextCheckRun(entry.context, entry.state, reportedTimestamp(entry.createdAt)),
+        };
     }
     return fail(`cannot read a check on PR #${pullRequestNumber}`);
 }
@@ -1138,6 +2545,117 @@ function readMergedByActorNodeId(
         fail(`PR #${number} merger cannot be verified`);
     }
     return mergedBy.id;
+}
+
+function readDeliveryReceiptProofFromGithub(
+    number: number,
+    repository: { owner: string; name: string },
+    shell: Pick<ShellRunner, 'capture'>
+): DeliveryReceiptProof {
+    const query = `query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){comments(first:${ROLLUP_PAGE_SIZE},after:$cursor,orderBy:{field:UPDATED_AT,direction:ASC}){totalCount pageInfo{hasNextPage endCursor} nodes{id lastEditedAt}}}}}`;
+    const readPage = (cursor: string | null) => {
+        const response = parseJson<DeliveryReceiptProofResponse>(
+            shell.capture('gh', [
+                'api',
+                'graphql',
+                '-f',
+                `query=${query}`,
+                '-f',
+                `owner=${repository.owner}`,
+                '-f',
+                `name=${repository.name}`,
+                '-F',
+                `number=${number}`,
+                ...(cursor === null ? [] : ['-f', `cursor=${cursor}`]),
+            ]),
+            `PR #${number} delivery receipt proof`
+        );
+        const comments = response.data?.repository?.pullRequest?.comments;
+        if (
+            typeof comments?.totalCount !== 'number' ||
+            typeof comments.pageInfo?.hasNextPage !== 'boolean' ||
+            !Array.isArray(comments.nodes)
+        ) {
+            fail(`cannot inspect delivery receipts for PR #${number}`);
+        }
+        return {
+            totalCount: comments.totalCount,
+            pageInfo: {
+                hasNextPage: comments.pageInfo.hasNextPage,
+                endCursor: typeof comments.pageInfo.endCursor === 'string' ? comments.pageInfo.endCursor : null,
+            },
+            nodes: comments.nodes.map((comment) => {
+                if (comment === null || comment === undefined || typeof comment.id !== 'string') {
+                    fail(`cannot inspect delivery receipts for PR #${number}`);
+                }
+                if (
+                    comment.lastEditedAt !== undefined &&
+                    comment.lastEditedAt !== null &&
+                    typeof comment.lastEditedAt !== 'string'
+                ) {
+                    fail(`cannot inspect delivery receipts for PR #${number}`);
+                }
+                return {
+                    id: comment.id,
+                    lastEditedAt: typeof comment.lastEditedAt === 'string' ? comment.lastEditedAt : undefined,
+                };
+            }),
+        };
+    };
+    let page = readPage(null);
+    const expectedTotalCount = page.totalCount;
+    const commentIds: string[] = [];
+    const editedCommentIds: string[] = [];
+    const seenCommentIds = new Set<string>();
+    const emittedCursors = new Set<string>();
+    let cursor: string | null = null;
+    while (true) {
+        if (page.totalCount !== expectedTotalCount) {
+            fail(`cannot inspect delivery receipts for PR #${number}`);
+        }
+        let pageContributed = 0;
+        for (const node of page.nodes) {
+            if (seenCommentIds.has(node.id)) {
+                fail(`cannot inspect delivery receipts for PR #${number}`);
+            }
+            seenCommentIds.add(node.id);
+            commentIds.push(node.id);
+            if (node.lastEditedAt !== undefined) {
+                editedCommentIds.push(node.id);
+            }
+            pageContributed += 1;
+        }
+        if (commentIds.length > expectedTotalCount) {
+            fail(`cannot inspect delivery receipts for PR #${number}`);
+        }
+        if (!page.pageInfo.hasNextPage) {
+            break;
+        }
+        if (cursor !== null && pageContributed === 0) {
+            fail(`cannot inspect delivery receipts for PR #${number}`);
+        }
+        if (page.pageInfo.endCursor === null || page.pageInfo.endCursor === cursor) {
+            fail(`cannot inspect delivery receipts for PR #${number}`);
+        }
+        if (commentIds.length >= expectedTotalCount) {
+            fail(`cannot inspect delivery receipts for PR #${number}`);
+        }
+        if (emittedCursors.has(page.pageInfo.endCursor)) {
+            fail(`cannot inspect delivery receipts for PR #${number}`);
+        }
+        emittedCursors.add(page.pageInfo.endCursor);
+        cursor = page.pageInfo.endCursor;
+        page = readPage(cursor);
+    }
+    if (commentIds.length !== expectedTotalCount) {
+        fail(`cannot inspect delivery receipts for PR #${number}`);
+    }
+    return {
+        totalCount: expectedTotalCount,
+        latestCommentId: commentIds.at(-1),
+        commentIds,
+        editedCommentIds,
+    };
 }
 
 type PullRequestReviewRecord = {
@@ -1362,6 +2880,7 @@ export function shellPort(
     options: {
         gitToken?: string;
         helperDir?: string;
+        primaryRoot?: string;
         markRemoteMutationAttempt?: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt'];
     } = {}
 ): DeliveryPort {
@@ -1369,6 +2888,7 @@ export function shellPort(
     if (owner === undefined || name === undefined) {
         fail(`invalid GitHub repository: ${repository}`);
     }
+    const primaryRoot = options.primaryRoot ?? process.cwd();
     const pullRequestFields = [
         'number',
         'state',
@@ -1507,27 +3027,36 @@ export function shellPort(
         },
         repositoryDeletesMergedBranches: () =>
             shell.capture('gh', ['api', `repos/${repository}`, '--jq', '.delete_branch_on_merge']) === 'true',
-        merge: (number, expectedHead, hasDependents) => {
+        merge: (number, expectedHead, hasDependents, expectedTitle) => {
             const policy = repositoryMergePolicy(repository, shell);
             if (hasDependents && policy.deletesMergedBranches) {
                 fail('automatic merged-branch deletion must be disabled before delivering a stacked PR');
             }
             options.markRemoteMutationAttempt?.();
-            const result = parseJson<{ merged: boolean; message: string }>(
-                shell.capture('gh', [
-                    'api',
-                    '--method',
-                    'PUT',
-                    `repos/${repository}/pulls/${number}/merge`,
-                    '-f',
-                    `sha=${expectedHead}`,
-                    '-f',
-                    `merge_method=${policy.method}`,
-                ]),
-                'merge request'
-            );
+            const mergeArgs = [
+                'api',
+                '--method',
+                'PUT',
+                `repos/${repository}/pulls/${number}/merge`,
+                '-f',
+                `sha=${expectedHead}`,
+                '-f',
+                `merge_method=${policy.method}`,
+                ...(expectedTitle === undefined ? [] : ['-f', `commit_title=${expectedTitle}`]),
+            ];
+            let response: string;
+            try {
+                response = shell.capture('gh', mergeArgs);
+            } catch (error) {
+                const rejection = classifyGithubMergeRejection(number, error);
+                if (rejection !== undefined) {
+                    throw rejection;
+                }
+                throw error;
+            }
+            const result = parseJson<{ merged: boolean; message: string }>(response, 'merge request');
             if (!result.merged) {
-                fail(`PR #${number} was not merged: ${result.message}`);
+                throw new DeliveryMergeRejectedError(`PR #${number} was not merged: ${result.message}`);
             }
         },
         retarget: (number, baseBranch) => {
@@ -1563,6 +3092,7 @@ export function shellPort(
             }
             return comments;
         },
+        deliveryReceiptProof: (number) => readDeliveryReceiptProofFromGithub(number, { owner, name }, shell),
         addDeliveryReceipt: (number, body) => {
             options.markRemoteMutationAttempt?.();
             return toDeliveryReceiptComment(
@@ -1579,6 +3109,11 @@ export function shellPort(
                 )
             );
         },
+        readDeliveryReceiptAuthority: (number) => readDeliveryReceiptAuthority(primaryRoot, number),
+        writeDeliveryReceiptAuthority: (number, authority, expectedCurrent) =>
+            writeDeliveryReceiptAuthority(primaryRoot, number, authority, expectedCurrent),
+        clearDeliveryReceiptAuthority: (number, expectedCurrent) =>
+            clearDeliveryReceiptAuthority(primaryRoot, number, expectedCurrent),
         log: (message) => console.log(message),
     };
 }
@@ -1604,6 +3139,529 @@ export type DeliveryAuthentication = {
     minted: { token: string; login: string; actorNodeId: string; permissions: Record<string, string> };
     session: { configDir: string; env: NodeJS.ProcessEnv; dispose: () => void };
 };
+
+type DeliveryReceiptAuthority = StoredDeliveryReceiptAuthority;
+
+function deliveryReceiptAuthorityRef(number: number): string {
+    if (!Number.isSafeInteger(number) || number <= 0) {
+        fail('delivery receipt authority requires a positive pull-request number');
+    }
+    return `refs/sourdaw/delivery-receipt/pr-${number}`;
+}
+
+function deliveryLockGit(primaryRoot: string, args: string[], input?: string) {
+    return spawnSync('git', args, {
+        cwd: primaryRoot,
+        env: trustedDeliveryGitEnv(),
+        encoding: 'utf8',
+        shell: false,
+        ...(input === undefined ? {} : { input }),
+    });
+}
+
+function trustedDeliveryGitEnv(parent: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+    return {
+        ...parent,
+        GIT_NO_REPLACE_OBJECTS: '1',
+    };
+}
+
+function deliveryObjectId(value: string, invalidMessage: string): string {
+    const oid = value.trim();
+    if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(oid)) {
+        fail(invalidMessage);
+    }
+    return oid;
+}
+
+function isPersistedPreparedPostMergeValidation(value: unknown): value is PersistedPreparedPostMergeValidation {
+    const allowedKeys = new Set(['headRefOid', 'headRefName', 'baseRefName', 'title', 'bodySha256', 'trackerTarget']);
+    const keys = typeof value === 'object' && value !== null ? Object.keys(value) : [];
+    return (
+        typeof value === 'object' &&
+        value !== null &&
+        (keys.length === 5 || keys.length === 6) &&
+        keys.every((key) => allowedKeys.has(key)) &&
+        'headRefOid' in value &&
+        typeof value.headRefOid === 'string' &&
+        value.headRefOid !== '' &&
+        'headRefName' in value &&
+        typeof value.headRefName === 'string' &&
+        value.headRefName !== '' &&
+        'baseRefName' in value &&
+        typeof value.baseRefName === 'string' &&
+        value.baseRefName !== '' &&
+        'bodySha256' in value &&
+        typeof value.bodySha256 === 'string' &&
+        /^[0-9a-f]{64}$/u.test(value.bodySha256) &&
+        (!('title' in value) || (typeof value.title === 'string' && value.title !== '')) &&
+        'trackerTarget' in value &&
+        (value.trackerTarget === null ||
+            (typeof value.trackerTarget === 'number' &&
+                Number.isSafeInteger(value.trackerTarget) &&
+                value.trackerTarget > 0))
+    );
+}
+
+function skipJsonWhitespace(source: string, index: number): number {
+    while (index < source.length && /\s/u.test(source[index] ?? '')) {
+        index += 1;
+    }
+    return index;
+}
+
+function readJsonStringToken(source: string, start: number): { value: string; end: number } {
+    if (source[start] !== '"') {
+        throw new Error('expected JSON string');
+    }
+    let index = start + 1;
+    while (index < source.length) {
+        const character = source[index];
+        if (character === '"') {
+            const end = index + 1;
+            return { value: JSON.parse(source.slice(start, end)) as string, end };
+        }
+        if (character === '\\') {
+            index += 2;
+            continue;
+        }
+        if (character === undefined || character < ' ') {
+            throw new Error('invalid JSON string');
+        }
+        index += 1;
+    }
+    throw new Error('unterminated JSON string');
+}
+
+function readJsonNumberEnd(source: string, start: number): number {
+    let index = start;
+    if (source[index] === '-') {
+        index += 1;
+    }
+    const firstDigit = source[index];
+    if (firstDigit === '0') {
+        index += 1;
+    } else {
+        if (firstDigit === undefined || firstDigit < '1' || firstDigit > '9') {
+            throw new Error('invalid JSON number');
+        }
+        index += 1;
+        while (index < source.length) {
+            const digit = source[index];
+            if (digit === undefined || digit < '0' || digit > '9') {
+                break;
+            }
+            index += 1;
+        }
+    }
+    if (source[index] === '.') {
+        index += 1;
+        const fractionDigit = source[index];
+        if (fractionDigit === undefined || fractionDigit < '0' || fractionDigit > '9') {
+            throw new Error('invalid JSON number');
+        }
+        index += 1;
+        while (index < source.length) {
+            const digit = source[index];
+            if (digit === undefined || digit < '0' || digit > '9') {
+                break;
+            }
+            index += 1;
+        }
+    }
+    const exponent = source[index];
+    if (exponent === 'e' || exponent === 'E') {
+        index += 1;
+        const sign = source[index];
+        if (sign === '+' || sign === '-') {
+            index += 1;
+        }
+        const exponentDigit = source[index];
+        if (exponentDigit === undefined || exponentDigit < '0' || exponentDigit > '9') {
+            throw new Error('invalid JSON number');
+        }
+        index += 1;
+        while (index < source.length) {
+            const digit = source[index];
+            if (digit === undefined || digit < '0' || digit > '9') {
+                break;
+            }
+            index += 1;
+        }
+    }
+    return index;
+}
+
+function readJsonLiteralEnd(source: string, start: number, literal: 'true' | 'false' | 'null'): number {
+    if (!source.startsWith(literal, start)) {
+        throw new Error(`invalid JSON literal ${literal}`);
+    }
+    return start + literal.length;
+}
+
+function scanJsonValueForDuplicateMembers(source: string, start: number): number {
+    const index = skipJsonWhitespace(source, start);
+    const character = source[index];
+    if (character === '{') {
+        return scanJsonObjectForDuplicateMembers(source, index);
+    }
+    if (character === '[') {
+        return scanJsonArrayForDuplicateMembers(source, index);
+    }
+    if (character === '"') {
+        return readJsonStringToken(source, index).end;
+    }
+    if (character === 't') {
+        return readJsonLiteralEnd(source, index, 'true');
+    }
+    if (character === 'f') {
+        return readJsonLiteralEnd(source, index, 'false');
+    }
+    if (character === 'n') {
+        return readJsonLiteralEnd(source, index, 'null');
+    }
+    return readJsonNumberEnd(source, index);
+}
+
+function scanJsonObjectForDuplicateMembers(source: string, start: number): number {
+    let index = skipJsonWhitespace(source, start + 1);
+    const keys = new Set<string>();
+    if (source[index] === '}') {
+        return index + 1;
+    }
+    while (true) {
+        const key = readJsonStringToken(source, index);
+        if (keys.has(key.value)) {
+            throw new Error(`duplicate key ${key.value}`);
+        }
+        keys.add(key.value);
+        index = skipJsonWhitespace(source, key.end);
+        if (source[index] !== ':') {
+            throw new Error('expected object colon');
+        }
+        index = scanJsonValueForDuplicateMembers(source, index + 1);
+        index = skipJsonWhitespace(source, index);
+        if (source[index] === '}') {
+            return index + 1;
+        }
+        if (source[index] !== ',') {
+            throw new Error('expected object comma');
+        }
+        index = skipJsonWhitespace(source, index + 1);
+    }
+}
+
+function scanJsonArrayForDuplicateMembers(source: string, start: number): number {
+    let index = skipJsonWhitespace(source, start + 1);
+    if (source[index] === ']') {
+        return index + 1;
+    }
+    while (true) {
+        index = scanJsonValueForDuplicateMembers(source, index);
+        index = skipJsonWhitespace(source, index);
+        if (source[index] === ']') {
+            return index + 1;
+        }
+        if (source[index] !== ',') {
+            throw new Error('expected array comma');
+        }
+        index = skipJsonWhitespace(source, index + 1);
+    }
+}
+
+function parseJsonWithoutDuplicateMembers<Value>(source: string): Value {
+    const end = scanJsonValueForDuplicateMembers(source, 0);
+    if (skipJsonWhitespace(source, end) !== source.length) {
+        throw new Error('unexpected trailing JSON content');
+    }
+    return JSON.parse(source) as Value;
+}
+
+function parseDeliveryReceiptAuthority(contents: string, number: number): DeliveryReceiptAuthority {
+    let value: unknown;
+    try {
+        value = parseJsonWithoutDuplicateMembers<unknown>(contents);
+    } catch {
+        fail(`PR #${number} delivery receipt authority is malformed`);
+    }
+    if (typeof value !== 'object' || value === null) {
+        fail(`PR #${number} delivery receipt authority is malformed`);
+    }
+    const authority = value as Record<string, unknown>;
+    if (
+        Object.keys(authority).length === 2 &&
+        authority.version === 1 &&
+        typeof authority.receiptId === 'string' &&
+        authority.receiptId !== ''
+    ) {
+        return { version: 1, receiptId: authority.receiptId };
+    }
+    const keys = Object.keys(authority);
+    if (
+        !keys.includes('version') ||
+        authority.version !== 2 ||
+        !keys.includes('phase') ||
+        (authority.phase !== 'released' &&
+            authority.phase !== 'prepared' &&
+            authority.phase !== 'merge-authorized' &&
+            authority.phase !== 'terminal') ||
+        !keys.includes('receiptId') ||
+        typeof authority.receiptId !== 'string' ||
+        authority.receiptId === '' ||
+        keys.some((key) => !['version', 'phase', 'receiptId', 'receiptBody', 'postMergeValidation'].includes(key))
+    ) {
+        fail(`PR #${number} delivery receipt authority is malformed`);
+    }
+    if (
+        authority.receiptBody !== undefined &&
+        (typeof authority.receiptBody !== 'string' || authority.receiptBody === '')
+    ) {
+        fail(`PR #${number} delivery receipt authority is malformed`);
+    }
+    if (authority.phase === 'released' && authority.postMergeValidation !== undefined) {
+        fail(`PR #${number} delivery receipt authority is malformed`);
+    }
+    if (
+        authority.postMergeValidation !== undefined &&
+        !isPersistedPreparedPostMergeValidation(authority.postMergeValidation)
+    ) {
+        fail(`PR #${number} delivery receipt authority is malformed`);
+    }
+    const receiptBody = typeof authority.receiptBody === 'string' ? authority.receiptBody : undefined;
+    const postMergeValidation =
+        authority.phase !== 'released' && isPersistedPreparedPostMergeValidation(authority.postMergeValidation)
+            ? authority.postMergeValidation
+            : undefined;
+    return {
+        version: 2,
+        phase: authority.phase,
+        receiptId: authority.receiptId,
+        ...(receiptBody === undefined ? {} : { receiptBody }),
+        ...(postMergeValidation === undefined ? {} : { postMergeValidation }),
+    };
+}
+
+function writeDeliveryReceiptAuthorityBlob(
+    primaryRoot: string,
+    authority: DeliveryReceiptAuthority,
+    number: number
+): string {
+    const result = deliveryLockGit(primaryRoot, ['hash-object', '-w', '--stdin'], JSON.stringify(authority));
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status !== 0) {
+        fail(`PR #${number} delivery receipt authority could not be stored`);
+    }
+    return deliveryObjectId(result.stdout, `PR #${number} delivery receipt authority object identity is malformed`);
+}
+
+function readOptionalDeliveryRefOid(
+    primaryRoot: string,
+    ref: string,
+    number: number,
+    label: string
+): string | undefined {
+    const refPath = deliveryLockGit(primaryRoot, ['rev-parse', '--git-path', ref]);
+    if (refPath.error !== undefined) {
+        throw refPath.error;
+    }
+    if (refPath.status !== 0) {
+        fail(`PR #${number} ${label} cannot be verified`);
+    }
+    const exactRefPath = resolve(primaryRoot, refPath.stdout.trim());
+    let exactPathKind: 'missing' | 'directory' | 'regular' = 'missing';
+    let refStats: ReturnType<typeof lstatSync> | undefined;
+    try {
+        refStats = lstatSync(exactRefPath);
+    } catch (error) {
+        if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') {
+            throw error;
+        }
+        exactPathKind = 'missing';
+    }
+    if (refStats !== undefined) {
+        if (refStats.isDirectory()) {
+            exactPathKind = 'directory';
+        } else if (refStats.isFile()) {
+            exactPathKind = 'regular';
+        } else {
+            fail(`PR #${number} ${label} cannot be verified`);
+        }
+    }
+    const result = deliveryLockGit(primaryRoot, [
+        'for-each-ref',
+        '--format=%(refname)%00%(objectname)%00%(symref)',
+        '--',
+        ref,
+    ]);
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status !== 0) {
+        fail(`PR #${number} ${label} cannot be verified`);
+    }
+    const entries = result.stdout
+        .split('\n')
+        .filter((entry) => entry.length > 0)
+        .map((entry) => entry.split('\u0000'));
+    if (entries.length > 1) {
+        fail(`PR #${number} ${label} cannot be verified`);
+    }
+    const entry = entries[0];
+    if (entry !== undefined) {
+        if (exactPathKind === 'directory') {
+            fail(`PR #${number} ${label} cannot be verified`);
+        }
+        const [resolvedRef = '', oid = '', symref = ''] = entry;
+        if (resolvedRef !== ref) {
+            fail(`PR #${number} ${label} cannot be verified`);
+        }
+        if (symref !== '') {
+            fail(`PR #${number} ${label} cannot be verified`);
+        }
+        return deliveryObjectId(oid, `PR #${number} ${label} object identity is malformed`);
+    }
+    if (exactPathKind !== 'missing' && exactPathKind !== 'directory') {
+        fail(`PR #${number} ${label} cannot be verified`);
+    }
+    return undefined;
+}
+
+function readDeliveryReceiptAuthorityBlob(primaryRoot: string, oid: string, number: number): DeliveryReceiptAuthority {
+    const type = deliveryLockGit(primaryRoot, ['cat-file', '-t', oid]);
+    if (type.error !== undefined) {
+        throw type.error;
+    }
+    if (type.status !== 0 || type.stdout.trim() !== 'blob') {
+        fail(`PR #${number} delivery receipt authority cannot be verified`);
+    }
+    const result = deliveryLockGit(primaryRoot, ['cat-file', 'blob', oid]);
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status !== 0) {
+        fail(`PR #${number} delivery receipt authority cannot be verified`);
+    }
+    return parseDeliveryReceiptAuthority(result.stdout, number);
+}
+
+function updateDeliveryLockRef(primaryRoot: string, args: string[]): boolean {
+    const result = deliveryLockGit(primaryRoot, ['update-ref', ...args]);
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    return result.status === 0;
+}
+
+function toPersistedDeliveryReceiptAuthority(authority: DeliveryReceiptAuthority): PersistedDeliveryReceiptAuthority {
+    if (authority.version === 1) {
+        return { phase: 'legacy', receiptId: authority.receiptId };
+    }
+    return {
+        phase: authority.phase,
+        receiptId: authority.receiptId,
+        ...(authority.receiptBody === undefined ? {} : { receiptBody: authority.receiptBody }),
+        ...(authority.phase === 'released' || authority.postMergeValidation === undefined
+            ? {}
+            : { postMergeValidation: authority.postMergeValidation }),
+    };
+}
+
+function readDeliveryReceiptAuthority(
+    primaryRoot: string,
+    number: number
+): PersistedDeliveryReceiptAuthority | undefined {
+    return readDeliveryReceiptAuthorityEntry(primaryRoot, number)?.authority;
+}
+
+function readDeliveryReceiptAuthorityEntry(
+    primaryRoot: string,
+    number: number
+): { oid: string; authority: PersistedDeliveryReceiptAuthority } | undefined {
+    const oid = readOptionalDeliveryRefOid(
+        primaryRoot,
+        deliveryReceiptAuthorityRef(number),
+        number,
+        'delivery receipt authority'
+    );
+    if (oid === undefined) {
+        return undefined;
+    }
+    return {
+        oid,
+        authority: toPersistedDeliveryReceiptAuthority(readDeliveryReceiptAuthorityBlob(primaryRoot, oid, number)),
+    };
+}
+
+function writeDeliveryReceiptAuthority(
+    primaryRoot: string,
+    number: number,
+    authority: PersistedDeliveryReceiptAuthority,
+    expectedCurrent?: DeliveryReceiptAuthorityExpectation
+): void {
+    if (!isCurrentPersistedDeliveryReceiptAuthority(authority)) {
+        fail(`PR #${number} delivery receipt authority is malformed`);
+    }
+    if (authority.receiptId === '') {
+        fail(`PR #${number} delivery receipt authority is malformed`);
+    }
+    if (authority.receiptBody !== undefined && authority.receiptBody === '') {
+        fail(`PR #${number} delivery receipt authority is malformed`);
+    }
+    const stored: StoredCurrentDeliveryReceiptAuthority = {
+        version: 2,
+        phase: authority.phase,
+        receiptId: authority.receiptId,
+        ...(authority.receiptBody === undefined ? {} : { receiptBody: authority.receiptBody }),
+        ...(authority.phase === 'released' || authority.postMergeValidation === undefined
+            ? {}
+            : { postMergeValidation: authority.postMergeValidation }),
+    };
+    const current = readDeliveryReceiptAuthorityEntry(primaryRoot, number);
+    if (
+        expectedCurrent !== undefined &&
+        !matchesDeliveryReceiptAuthorityExpectation(current?.authority, expectedCurrent)
+    ) {
+        fail(`PR #${number} delivery receipt authority could not be stored`);
+    }
+    if (samePersistedDeliveryReceiptAuthority(current?.authority, authority)) {
+        return;
+    }
+    const oid = writeDeliveryReceiptAuthorityBlob(primaryRoot, stored, number);
+    const expectedOldOid = current?.oid ?? '0'.repeat(oid.length);
+    if (!updateDeliveryLockRef(primaryRoot, ['--no-deref', deliveryReceiptAuthorityRef(number), oid, expectedOldOid])) {
+        fail(`PR #${number} delivery receipt authority could not be stored`);
+    }
+    const verified = readDeliveryReceiptAuthority(primaryRoot, number);
+    if (!samePersistedDeliveryReceiptAuthority(verified, authority)) {
+        fail(`PR #${number} delivery receipt authority could not be verified`);
+    }
+}
+
+function clearDeliveryReceiptAuthority(
+    primaryRoot: string,
+    number: number,
+    expectedCurrent?: DeliveryReceiptAuthorityExpectation
+): void {
+    const ref = deliveryReceiptAuthorityRef(number);
+    const current = readDeliveryReceiptAuthorityEntry(primaryRoot, number);
+    if (
+        expectedCurrent !== undefined &&
+        !matchesDeliveryReceiptAuthorityExpectation(current?.authority, expectedCurrent)
+    ) {
+        fail(`PR #${number} delivery receipt authority could not be cleared`);
+    }
+    if (current === undefined) {
+        return;
+    }
+    if (!updateDeliveryLockRef(primaryRoot, ['--no-deref', '-d', ref, current.oid])) {
+        fail(`PR #${number} delivery receipt authority could not be cleared`);
+    }
+    if (readDeliveryReceiptAuthority(primaryRoot, number) !== undefined) {
+        fail(`PR #${number} delivery receipt authority could not be verified`);
+    }
+}
 
 export type DeliverySerialization = PullRequestMutationSerialization;
 export { withPullRequestMutationLock as withPullRequestDeliveryLock };
@@ -1639,12 +3697,26 @@ function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinato
         deliveryPort: (repository, authentication, primaryRoot, markRemoteMutationAttempt) => {
             const shell: ShellRunner = {
                 capture: (command, args) =>
-                    spawnCapture(command, args, { env: authentication.session.env, cwd: primaryRoot }),
-                run: (command, args) => spawnRun(command, args, { env: authentication.session.env, cwd: primaryRoot }),
+                    spawnCapture(command, args, {
+                        env:
+                            command === 'git'
+                                ? trustedDeliveryGitEnv(authentication.session.env)
+                                : authentication.session.env,
+                        cwd: primaryRoot,
+                    }),
+                run: (command, args) =>
+                    spawnRun(command, args, {
+                        env:
+                            command === 'git'
+                                ? trustedDeliveryGitEnv(authentication.session.env)
+                                : authentication.session.env,
+                        cwd: primaryRoot,
+                    }),
             };
             return shellPort(repository, shell, {
                 gitToken: authentication.minted.token,
                 helperDir: authentication.session.configDir,
+                primaryRoot,
                 markRemoteMutationAttempt,
             });
         },

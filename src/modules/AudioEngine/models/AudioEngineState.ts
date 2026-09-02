@@ -551,8 +551,14 @@ export type AudioEngine = {
         keyDelayFor: (route: { sourceTrackId: string; targetTrackId: string; targetDeviceId: string }) => number
     ): void;
     waitForDevices(): Promise<void>;
+    /**
+     * Publish the playhead to the worklet readers. `positionSeconds` is the same
+     * instant as `beat`, integrated through the tempo map by the caller that
+     * owns it — `bpm` is only the tempo in force there and cannot recover it.
+     */
     setTransportInfo(
         beat: number,
+        positionSeconds: number,
         bpm: number,
         playing: boolean,
         loopStart?: number,
