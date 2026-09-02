@@ -25,6 +25,7 @@ import {
 } from '../publishReview.ts';
 import {
     pullRequestMutationLockRef,
+    readPullRequestMutationLockOwner,
     readPullRequestMutationLockOid,
     withPullRequestMutationLock,
     writePullRequestMutationLockOwner,
@@ -1044,6 +1045,43 @@ describe('shellPort postReview state verification', () => {
             expect(
                 readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
             ).toBe(fixture.ownerOid);
+        } finally {
+            rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
+    it('fails closed when the exact-owner adoption CAS loses the shared ref', async () => {
+        const fixture = createJournaledRecoveryFixture();
+        let replacementOid: string | undefined;
+        try {
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.number), '--owner', fixture.ownerOid],
+                    recoveryDependencies(fixture.root, (expectedHead) => {
+                        if (replacementOid === undefined) {
+                            const owner = readPullRequestMutationLockOwner(
+                                fixture.root,
+                                fixture.ownerOid,
+                                fixture.number
+                            );
+                            replacementOid = writePullRequestMutationLockOwner(
+                                fixture.root,
+                                { ...owner, token: '33333333-3333-4333-8333-333333333333' },
+                                fixture.number
+                            );
+                            runGit(fixture.root, [
+                                'update-ref',
+                                pullRequestMutationLockRef(fixture.number),
+                                replacementOid,
+                            ]);
+                        }
+                        return { state: 'OPEN', head: expectedHead, reviews: [] };
+                    })
+                )
+            ).rejects.toThrow(/delivery lock ownership changed before recovery/);
+            expect(
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
+            ).toBe(replacementOid);
         } finally {
             rmSync(fixture.root, { recursive: true, force: true });
         }
