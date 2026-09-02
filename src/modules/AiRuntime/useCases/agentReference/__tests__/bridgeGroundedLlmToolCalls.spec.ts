@@ -3175,6 +3175,129 @@ describe('bridgeGroundedLlmToolCalls', () => {
         }
     });
 
+    it('admits compiler-expanded muteTrack without per-target names for unrestricted mute all audio tracks', () => {
+        const prompt = 'mute all audio tracks';
+        const compiled = compileArbitraryCommandList({
+            context: projectContext,
+            revision: 'revision-unrestricted-mute-all-audio',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: {
+                            semantic: { classification: 'simple', uncertainty: [] },
+                            objective: prompt,
+                            constraints: [],
+                            scope: {
+                                targetIds: [vocals.id, guitar.id],
+                                targetRanges: [],
+                                protectedTargetIds: [],
+                                protectedRanges: [],
+                            },
+                            capabilityIds: [],
+                            assetIds: [],
+                            alternatives: [],
+                            validationStrategy: [],
+                            stoppingConditions: [],
+                        },
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'bulk-audio-tracks',
+                                    name: 'muteTrack',
+                                    arguments: { muted: true },
+                                    selector: {
+                                        targetArgument: 'trackId',
+                                        entity: 'track',
+                                        where: { kind: 'audio' },
+                                        quantity: { unit: 'targets', exactly: 2 },
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+        if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+            throw new Error(compiled.status === 'rejected' ? compiled.reason : 'Expected compiler evidence');
+        }
+        expect(
+            compiled.compilerEvidence.commands.map((command) => ({
+                name: command.name,
+                trackId: command.arguments.trackId,
+            }))
+        ).toEqual([
+            { name: 'muteTrack', trackId: vocals.id },
+            { name: 'muteTrack', trackId: guitar.id },
+        ]);
+        const result = bridgeGroundedLlmToolCalls({
+            calls: compiled.compilerEvidence.commands,
+            compilerEvidence: compiled.compilerEvidence,
+            context: projectContext,
+            projectRevision: 'revision-unrestricted-mute-all-audio',
+            prompt,
+        });
+        expect(result.actions).toEqual([
+            { type: 'muteTrack', payload: { trackId: vocals.id, muted: true } },
+            { type: 'muteTrack', payload: { trackId: guitar.id, muted: true } },
+        ]);
+        expect(result.rejections).toEqual([]);
+    });
+
+    it('does not borrow a following leaving-unchanged qualifier into mix muteTrack grounding', () => {
+        const leadVocal = createTrack({ id: 'track-lead-vocal', name: 'Lead Vocal' });
+        const guitarLeft = createTrack({ id: 'track-guitar-left', name: 'Guitar Left' });
+        const guitarRight = createTrack({ id: 'track-guitar-right', name: 'Guitar Right' });
+        const roomMic = createTrack({ id: 'track-room-mic', name: 'Room Mic' });
+        const drumBus = createTrack({ id: 'track-drum-bus', name: 'Drum Bus' });
+        const mixContext = {
+            ...projectContext,
+            tracks: [leadVocal, guitarLeft, guitarRight, roomMic, drumBus, master],
+        };
+        const prompt =
+            'Set Lead Vocal gain to 70%, pan Guitar Left 20% left and Guitar Right 20% right, and mute Room Mic, leaving the Drum Bus unchanged.';
+        const result = bridge(
+            [
+                { name: 'setTrackGain', arguments: { trackId: leadVocal.id, gain: 0.7 } },
+                { name: 'setTrackPan', arguments: { trackId: guitarLeft.id, pan: -20 } },
+                { name: 'setTrackPan', arguments: { trackId: guitarRight.id, pan: 20 } },
+                { name: 'muteTrack', arguments: { trackId: roomMic.id, muted: true } },
+            ],
+            prompt,
+            mixContext
+        );
+        expect(result.actions).toEqual([
+            { type: 'setTrackGain', payload: { trackId: leadVocal.id, gain: 0.7 } },
+            { type: 'setTrackPan', payload: { trackId: guitarLeft.id, pan: -20 } },
+            { type: 'setTrackPan', payload: { trackId: guitarRight.id, pan: 20 } },
+            { type: 'muteTrack', payload: { trackId: roomMic.id, muted: true } },
+        ]);
+        expect(result.rejections).toEqual([]);
+    });
+
+    it.each([
+        'mute Room Mic, leaving the Drum Bus unchanged.',
+        'mute Room Mic and leaving the Drum Bus unchanged.',
+        'mute Room Mic; leaving the Drum Bus unchanged.',
+        'mute Room Mic. leaving the Drum Bus unchanged.',
+    ] as const)('grounds muteTrack to Room Mic without borrowing %s', (prompt) => {
+        const roomMic = createTrack({ id: 'track-room-mic', name: 'Room Mic' });
+        const drumBus = createTrack({ id: 'track-drum-bus', name: 'Drum Bus' });
+        const qualifierContext = {
+            ...projectContext,
+            tracks: [roomMic, drumBus, master],
+        };
+        const result = bridge(
+            [{ name: 'muteTrack', arguments: { trackId: roomMic.id, muted: true } }],
+            prompt,
+            qualifierContext
+        );
+        expect(result.actions, prompt).toEqual([{ type: 'muteTrack', payload: { trackId: roomMic.id, muted: true } }]);
+        expect(result.rejections, prompt).toEqual([]);
+    });
+
     it('rejects solo-safe writes to a bus created earlier in the same provider plan', () => {
         const result = bridge(
             [

@@ -54,6 +54,7 @@ import {
     collectClearSolosRestrictionClauses,
     type ClearSolosRestrictionActionSpan,
 } from './groundingStrategies/collectClearSolosRestrictionClauses';
+import { getUniversalTrackControlIntentPhrases } from './groundingStrategies/getUniversalTrackControlIntentPhrases';
 import { hasRestrictedTrackControlScope } from './groundingStrategies/hasRestrictedTrackControlScope';
 import { groundPostTargetScopeAdmission } from './groundingStrategies/postTargetScopeAdmissionStrategy';
 import { resolveAgentReference } from './resolveAgentReference';
@@ -1659,6 +1660,15 @@ function resolveActionPromptScope({
     return selectedScope;
 }
 
+function isTrackControlProtectionQualifier(clauseText: string): boolean {
+    const normalized = normalizePromptText(clauseText);
+    return (
+        /^(?:leaving|keeping|preserving|retaining)\b/u.test(normalized) ||
+        /\b(?:stays|remains)\b/u.test(normalized) ||
+        /\bunchanged\b/u.test(normalized)
+    );
+}
+
 function getTrackControlTargetPrompt(
     prompt: string,
     actionScope: ActionPromptScope,
@@ -1675,7 +1685,8 @@ function getTrackControlTargetPrompt(
         if (
             !clause ||
             resolveClauseActionIntent(clause.masked, catalog) !== null ||
-            collectClearSolosRestrictionClauses(`clear all solos ${clause.text}`).length > 0
+            collectClearSolosRestrictionClauses(`clear all solos ${clause.text}`).length > 0 ||
+            isTrackControlProtectionQualifier(clause.text)
         ) {
             break;
         }
@@ -3410,6 +3421,13 @@ function resolveAgentReferenceArray({
     return { status: 'resolved', ids: [...assertedIds] };
 }
 
+function admitsCompilerResolvedTrackControlTarget(actionName: string, prompt: string): boolean {
+    return (
+        (actionName !== 'muteTrack' && actionName !== 'soloTrack') ||
+        getUniversalTrackControlIntentPhrases(prompt).length > 0
+    );
+}
+
 function groundToolCall({
     actionOrdinal,
     batchLocalBusBindings,
@@ -3730,8 +3748,7 @@ function groundToolCall({
         if (
             compilerTargetOverride !== undefined &&
             'stableIds' in compilerTargetOverride &&
-            call.name !== 'muteTrack' &&
-            call.name !== 'soloTrack'
+            admitsCompilerResolvedTrackControlTarget(call.name, prompt)
         ) {
             if (
                 compilerTargetOverride.cardinality !== 'one' ||
