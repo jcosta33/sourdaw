@@ -1,0 +1,35 @@
+src/modules/CrdtDocument/useCases/__tests__/crdtPersistenceQueueCoordinator.spec.ts
+  s_bbdfb911119c4f::t_2b0e9490fe5f02 63-65
+  s_bbdfb911119c4f::t_856c7199fb4dfa 190-266
+  s_bbdfb911119c4f::t_c731ea5cbfc7ac 28-39
+src/modules/CrdtDocument/useCases/crdtPersistenceQueueCoordinator.ts
+  s_bbdfb911119c4f::t_7cfa78b015f29e 1
+  s_bbdfb911119c4f::t_650f2aa4b449cd 614
+  s_bbdfb911119c4f::t_0d62b0b859ae02 648
+  s_bbdfb911119c4f::t_a0cc88ae32c3cb 557-571
+  s_a40848e8f8cca9::t_66ba98ea2902ef 556
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "ca224c22eddf3b5a96ddc6afa0b88faba7a9b7da",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bbdfb911119c4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fa21d5-2a8a-4f80-98ab-b72059373843",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
