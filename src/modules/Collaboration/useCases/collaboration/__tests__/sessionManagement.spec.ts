@@ -813,6 +813,17 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(sessionRuntimePrimitives.state.assetTransfer).toBeNull();
         });
 
+        // The secret authorises relay room membership, so a session that has
+        // been torn down must not leave one behind for the next join to reuse.
+        it('clears the room secret so a torn-down session cannot authorise a join', () => {
+            sessionRuntimePrimitives.initialize('project-owner-1');
+            sessionRuntimePrimitives.state.sessionSecret = 'room-secret-1';
+
+            sessionRuntimePrimitives.cleanup();
+
+            expect(sessionRuntimePrimitives.state.sessionSecret).toBeNull();
+        });
+
         // Dropping the reference alone leaves in-flight transfers holding
         // partial chunk buffers and armed stall timers that fire against a
         // torn-down session.
