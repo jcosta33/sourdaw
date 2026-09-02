@@ -20,11 +20,19 @@ export type SessionActionContract = {
 export type UndoSessionStacks = {
     past: UndoEntry[];
     future: UndoEntry[];
+    /** The project these stacks were hydrated against, or `undefined` for a
+     *  mirror written before identity tagging existed or with no known owner. */
+    projectId: string | undefined;
+    /** The document witness (see `CrdtDocument`'s `captureDurableDocumentWitness`)
+     *  recorded alongside `projectId`; `undefined` under the same conditions. */
+    witness: string | undefined;
 };
 
 type PersistableUndoStacks = {
     readonly past: readonly UndoEntry[];
     readonly future: readonly UndoEntry[];
+    readonly projectId: string | undefined;
+    readonly witness: string | undefined;
 };
 
 type SerializedActionUndoEntry = ActionUndoEntry & {
@@ -217,21 +225,42 @@ function sanitizeStoredEntry(value: unknown): ActionUndoEntry | null {
 
 /**
  * Both stacks are consumed from the end nearest the present: undo pops the
- * tail of `past`, redo takes the head of `future`. A rejected entry therefore
- * strands everything beyond it — stepping over the hole would apply an inverse
- * out of order — so only the unbroken run adjacent to the present is kept.
+ * tail of `past`, redo takes the head of `future`. An entry that fails to
+ * convert therefore strands everything beyond it — stepping over the hole
+ * would apply an inverse out of order — so only the unbroken run adjacent to
+ * the present is kept, on both the read side (an entry that no longer
+ * parses) and the write side (an entry, e.g. a `kind: 'callback'` entry, that
+ * has no serializable form at all).
  */
-function sanitizeReachableEntries(values: unknown[], nearestFirst: boolean): ActionUndoEntry[] {
+function reachableRunFromPresent<TInput, TOutput>(
+    values: readonly TInput[],
+    nearestFirst: boolean,
+    toOutput: (value: TInput) => TOutput | null
+): TOutput[] {
     const ordered = nearestFirst ? values : [...values].reverse();
-    const reachable: ActionUndoEntry[] = [];
+    const reachable: TOutput[] = [];
     for (const value of ordered) {
-        const entry = sanitizeStoredEntry(value);
-        if (entry === null) {
+        const output = toOutput(value);
+        if (output === null) {
             break;
         }
-        reachable.push(entry);
+        reachable.push(output);
     }
     return nearestFirst ? reachable : reachable.reverse();
+}
+
+function sanitizeReachableEntries(values: unknown[], nearestFirst: boolean): ActionUndoEntry[] {
+    return reachableRunFromPresent(values, nearestFirst, sanitizeStoredEntry);
+}
+
+function readStoredProjectId(value: Record<string, unknown>): string | undefined {
+    const projectId = value.projectId;
+    return typeof projectId === 'string' && projectId.length > 0 ? projectId : undefined;
+}
+
+function readStoredWitness(value: Record<string, unknown>): string | undefined {
+    const witness = value.witness;
+    return typeof witness === 'string' && witness.length > 0 ? witness : undefined;
 }
 
 function readStoredStacks(): UndoSessionStacks {
@@ -243,13 +272,17 @@ function readStoredStacks(): UndoSessionStacks {
                 return {
                     past: sanitizeReachableEntries(parsed.past, false),
                     future: sanitizeReachableEntries(parsed.future, true),
+                    // A mirror with no recorded identity predates identity tagging or
+                    // never had one; the caller treats it as belonging to no project.
+                    projectId: readStoredProjectId(parsed),
+                    witness: readStoredWitness(parsed),
                 };
             }
         }
     } catch {
         /* unreadable or unparseable: there is nothing this build can trust */
     }
-    return { past: [], future: [] };
+    return { past: [], future: [], projectId: undefined, witness: undefined };
 }
 
 /**
@@ -264,18 +297,25 @@ export function hydrateSessionMirror(actionContracts: Iterable<SessionActionCont
 }
 
 function serializeSessionStacks(stacks: PersistableUndoStacks, limit: number): string {
-    function persistable(entries: readonly UndoEntry[]): SerializedActionUndoEntry[] {
-        return entries.flatMap((entry) => {
-            const storedEntry = serializeSessionActionEntry(entry);
-            return storedEntry === null ? [] : [storedEntry];
-        });
-    }
+    // `past` is stored oldest-first (nearest the present at the tail); `future`
+    // is stored nearest-first. Walking each with `reachableRunFromPresent`
+    // stops at the first entry with no serializable form (e.g. a `kind:
+    // 'callback'` entry — a clip drag, slip, split, or import — which never
+    // serializes), so an unserializable entry buried in the middle of a stack
+    // strands everything behind it instead of leaving an invisible hole that
+    // would silently misorder a later undo/redo.
+    const persistablePast = reachableRunFromPresent(stacks.past, false, serializeSessionActionEntry);
+    const persistableFuture = reachableRunFromPresent(stacks.future, true, serializeSessionActionEntry);
     // Trim from the end furthest from the present, so a truncated mirror keeps
     // the entries the next session reaches first: the newest of `past`, the
-    // nearest of `future`.
+    // nearest of `future`. `JSON.stringify` omits an `undefined` projectId and
+    // witness, so an untagged write round-trips back to the same "no known
+    // owner" state.
     return JSON.stringify({
-        past: persistable(stacks.past).slice(-limit),
-        future: persistable(stacks.future).slice(0, limit),
+        past: persistablePast.slice(-limit),
+        future: persistableFuture.slice(0, limit),
+        projectId: stacks.projectId,
+        witness: stacks.witness,
     });
 }
 

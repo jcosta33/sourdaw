@@ -1,8 +1,9 @@
 import { logger } from '#/infra/logger/appLogger';
 import { batchStoreUpdates } from '#/infra/store/createStore';
 import { getAudioContext, prepareCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
-import { clearUndoHistory, executeAppAction } from '#/modules/Command/useCases';
+import { executeAppAction, reconcileSessionUndoForProject } from '#/modules/Command/useCases';
 import {
+    captureDurableDocumentWitness,
     DOC_PREFIX_ROOT,
     getCrdtDoc,
     loadCrdtProject,
@@ -95,7 +96,19 @@ export async function loadProject(): Promise<boolean> {
             // `projectCrdtToStores` so both sides of the comparison are current.
             verifyAudioBufferReferences();
 
-            clearUndoHistory();
+            // `getDurableProjectOwnerId()` is not usable here: it demands
+            // `initialized`, which this batch has not flipped true yet, so it
+            // would read undefined for every restore. The raw projectId
+            // `projectCrdtToStores` just hydrated is compared instead. A
+            // legacy project without a canonical id tags `undefined` here,
+            // so its first post-migration reload clears the mirror once;
+            // `migrateActiveProjectIdentity` below then persists the
+            // canonical id, and every later session tags and compares that
+            // migrated id, so matching resumes from that reload on.
+            reconcileSessionUndoForProject({
+                projectId: projectStore.value?.projectId,
+                captureWitness: captureDurableDocumentWitness,
+            });
         });
     } finally {
         preparedBuffers.cancel();

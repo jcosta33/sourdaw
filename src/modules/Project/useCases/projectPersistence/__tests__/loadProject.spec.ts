@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { clearUndoHistory, executeAppAction, resetActionReplayAuthority } from '#/modules/Command/useCases';
+import { executeAppAction, resetActionReplayAuthority } from '#/modules/Command/useCases';
 import {
     createCrdtProject,
     loadCrdtProject,
@@ -29,6 +29,8 @@ const mocks = vi.hoisted(() => ({
     },
     projectStoreSet: vi.fn(),
     createCrdtProject: vi.fn(),
+    reconcileSessionUndoForProject: vi.fn(),
+    captureDurableDocumentWitness: vi.fn(() => 'document-witness'),
     executeAppAction: vi.fn<
         (
             action: unknown,
@@ -110,6 +112,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     wireSidechainRoute: vi.fn(),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureDurableDocumentWitness: mocks.captureDurableDocumentWitness,
     captureProjectRevision: vi.fn(),
     createCrdtDoc: vi.fn(),
     createCrdtProject: mocks.createCrdtProject,
@@ -135,7 +138,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     waitForCrdtDocumentTransition: vi.fn(),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
-    clearUndoHistory: vi.fn(),
+    reconcileSessionUndoForProject: mocks.reconcileSessionUndoForProject,
     executeAppAction: mocks.executeAppAction,
     resetActionReplayAuthority: vi.fn(),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
@@ -217,7 +220,14 @@ describe('loadProject', () => {
             resetYeastState: false,
         });
         expect(projectCrdtToStores).toHaveBeenCalledTimes(1);
-        expect(clearUndoHistory).toHaveBeenCalledTimes(1);
+        expect(mocks.reconcileSessionUndoForProject).toHaveBeenCalledTimes(1);
+        expect(mocks.reconcileSessionUndoForProject).toHaveBeenCalledWith({
+            projectId: CANONICAL_PROJECT_ID,
+            captureWitness: mocks.captureDurableDocumentWitness,
+        });
+        expect(mocks.projectCrdtToStores.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.reconcileSessionUndoForProject.mock.invocationCallOrder[0]!
+        );
         expect(startCrdtAutoSave).toHaveBeenCalledTimes(1);
         expect(mocks.migrateActiveProjectIdentity).toHaveBeenCalledTimes(1);
         expect(mocks.resumeDurableAssetOwnerHandoffsAfterProjectLoad).toHaveBeenCalledTimes(1);
@@ -253,7 +263,7 @@ describe('loadProject', () => {
 
         expect(createCrdtProject).not.toHaveBeenCalled();
         expect(projectCrdtToStores).not.toHaveBeenCalled();
-        expect(clearUndoHistory).not.toHaveBeenCalled();
+        expect(mocks.reconcileSessionUndoForProject).not.toHaveBeenCalled();
         expect(startCrdtAutoSave).not.toHaveBeenCalled();
         expect(projectStore.set).not.toHaveBeenCalled();
     });

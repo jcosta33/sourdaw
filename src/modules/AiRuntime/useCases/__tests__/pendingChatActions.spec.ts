@@ -89,7 +89,8 @@ const mocks = vi.hoisted(() => ({
     notifyAiChange: vi.fn(),
 }));
 
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
+vi.mock('#/modules/CrdtDocument/useCases', async (import_original) => ({
+    ...(await import_original<typeof import('#/modules/CrdtDocument/useCases')>()),
     captureProjectMutationAuthorization: projectMutationAuthorization.capture,
     captureProjectRevision: () => mocks.projectRevision.value,
     captureUnownedProjectMutations: () => mocks.unownedMutationEpoch.value,

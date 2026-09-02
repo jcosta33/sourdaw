@@ -142,6 +142,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),
     isAppActionCommittedError: vi.fn(() => false),
     pushUndoEntry: vi.fn(),
+    reconcileSessionUndoForProject: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
     syncActionReplayMetadata: vi.fn(),
 }));
