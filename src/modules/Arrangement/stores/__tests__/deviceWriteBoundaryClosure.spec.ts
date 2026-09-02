@@ -1057,6 +1057,7 @@ function slashStartsRegularExpression(previousKind: SyntaxKind | undefined): boo
         case SyntaxKind.SuperKeyword:
         case SyntaxKind.CloseParenToken:
         case SyntaxKind.CloseBracketToken:
+        case SyntaxKind.GreaterThanToken:
         case SyntaxKind.PlusPlusToken:
         case SyntaxKind.MinusMinusToken:
         case SyntaxKind.NoSubstitutionTemplateLiteral:
@@ -1629,6 +1630,38 @@ describe('device write boundary closure', () => {
                 'src/modules/Arrangement/divisionLineComment.ts'
             ]
         ).toBeUndefined();
+
+        const genericDiv = productionSource(
+            'src/modules/Arrangement/genericDiv.ts',
+            'const x = Array<number>/2; // persistDeviceParam\nexport const y = persistDeviceParam;\n'
+        );
+        expect(genericDiv.code).not.toContain('// persistDeviceParam');
+        expect(genericDiv.code).toContain('export const y = persistDeviceParam;');
+        expect(
+            countByPath([genericDiv], SINK_DEFINITIONS['persistence-runtime'])['src/modules/Arrangement/genericDiv.ts']
+        ).toBe(1);
+
+        const genericDivSpaced = productionSource(
+            'src/modules/Arrangement/genericDivSpaced.ts',
+            'const x = Array<number> / 2; // persistDeviceParam\nexport const y = persistDeviceParam;\n'
+        );
+        expect(genericDivSpaced.code).not.toContain('// persistDeviceParam');
+        expect(genericDivSpaced.code).toContain('export const y = persistDeviceParam;');
+        expect(
+            countByPath([genericDivSpaced], SINK_DEFINITIONS['persistence-runtime'])[
+                'src/modules/Arrangement/genericDivSpaced.ts'
+            ]
+        ).toBe(1);
+
+        const braceRegex = productionSource(
+            'src/modules/Arrangement/braceRegex.ts',
+            'if (x) { return 1; } /re/.test(y); export const z = persistDeviceParam;\n'
+        );
+        expect(braceRegex.code).toContain('/re/');
+        expect(braceRegex.code).toContain('persistDeviceParam');
+        expect(
+            countByPath([braceRegex], SINK_DEFINITIONS['persistence-runtime'])['src/modules/Arrangement/braceRegex.ts']
+        ).toBe(1);
     });
 
     it('does not treat http:// in JSX text as a line comment', () => {
