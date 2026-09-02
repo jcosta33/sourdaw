@@ -1,0 +1,21 @@
+crates/daw-engine/src/capture.rs
+  s_9b530f08172a54::t_c96160b0601f77 55-62,68-69,72,82,84-85,279-285,287-292,302-307,334-340,342-345,349-350,355-356,370-371,375,384-386,389,483-485,767-776,836-890,895-896,908-912,916-917,919
+crates/daw-engine/src/lib.rs
+  s_9b530f08172a54::t_1892ba8c23c4eb 232-237
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "1114645bcd739592d2373dc2f71ac5236323b1cf",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
