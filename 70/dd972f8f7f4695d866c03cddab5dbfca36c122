@@ -1,0 +1,88 @@
+src/modules/Command/useCases/getExecutableCommandRegistration.ts
+  s_a40848e8f8cca9::t_1732fd42882d2c 59
+  s_a40848e8f8cca9::t_935a2774b84339 58,60
+src/modules/MIDI/handlers/noteCrud/isMaterializedAddNotesArguments.ts
+  s_a40848e8f8cca9::t_935a2774b84339 3-4,16,19,40-43
+  s_a40848e8f8cca9::t_ffd8140651dba0 46,51
+src/modules/MIDI/handlers/noteCrud/isAddNotesSessionEntry.ts
+  s_a40848e8f8cca9::t_935a2774b84339 3,5,76
+src/modules/Command/stores/actionReplayCapabilities.ts
+  s_a40848e8f8cca9::t_9729eb7aa71120 92-95,99-111
+  s_a40848e8f8cca9::t_e19653eec4369d 96-98
+src/modules/CrdtDocument/useCases/recordActionHistoryEntries.ts
+  s_a40848e8f8cca9::t_9729eb7aa71120 1-9
+src/modules/Command/useCases/refreshVersionedCommandBatchForApproval.ts
+  s_a40848e8f8cca9::t_d0335359dfd328 42,44
+src/modules/Command/useCases/commitUndoEntries.ts
+  s_a40848e8f8cca9::t_9729eb7aa71120 1,3-16
+  s_a40848e8f8cca9::t_b7091348de3809 2
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_a40848e8f8cca9::t_d0335359dfd328 754-758
+  s_a40848e8f8cca9::t_ed98417978aad1 22,24,26,478-482,522-527,529-530,565,586-600
+src/modules/Command/useCases/executeVersionedCommandBatch.ts
+  s_a40848e8f8cca9::t_d0335359dfd328 99,101
+release/open-source-inventory.json
+  s_a40848e8f8cca9::t_d1962d43817adc 1193
+src/modules/Command/stores/__tests__/undoStore.spec.ts
+  s_a40848e8f8cca9::t_30d244af7df052 3-4
+  s_a40848e8f8cca9::t_6b9f5b749ca191 299-340
+src/modules/Command/useCases/parseVersionedCommandEnvelope.ts
+  s_a40848e8f8cca9::t_935a2774b84339 144-148
+src/modules/Command/useCases/actionHistoryMetadataPort.ts
+  s_a40848e8f8cca9::t_ed98417978aad1 33-35
+  s_a40848e8f8cca9::t_9729eb7aa71120 14,37-41,45,47
+  s_a40848e8f8cca9::t_69af138af3db86 42-44,46
+src/app/bootstrap.ts
+  s_a40848e8f8cca9::t_9729eb7aa71120 103,200
+src/app/__tests__/bootstrap.spec.ts
+  s_a40848e8f8cca9::t_e19653eec4369d 354
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_935a2774b84339 2367,2370-2371
+src/utils/createHandler.ts
+  s_a40848e8f8cca9::t_935a2774b84339 22-25,27,76
+src/modules/Command/useCases/previewVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_d0335359dfd328 107-111
+src/modules/AiRuntime/models/Tools/CreateAddNotesToolSchema.ts
+  s_a40848e8f8cca9::t_935a2774b84339 54,68,98
+src/modules/CrdtDocument/useCases/index.ts
+  s_a40848e8f8cca9::t_9729eb7aa71120 30
+src/modules/AiRuntime/models/Tools/__tests__/CreateAddNotesToolSchema.spec.ts
+  s_a40848e8f8cca9::t_810f6ad56dd18d 82,100,113-114
+src/modules/MIDI/handlers/noteCrud/handleAddNotes.ts
+  s_a40848e8f8cca9::t_935a2774b84339 11,159
+src/modules/Command/stores/undoStore.ts
+  s_a40848e8f8cca9::t_9729eb7aa71120 146-149,155
+src/modules/CrdtDocument/stores/actionHistoryStore.ts
+  s_a40848e8f8cca9::t_9729eb7aa71120 30-33,38
+src/modules/Command/useCases/__tests__/commandBatchContract.spec.ts
+  s_a40848e8f8cca9::t_8b5529cbea3b3f 526,552,579
+  s_a40848e8f8cca9::t_1732fd42882d2c 4
+src/modules/Command/useCases/__tests__/addNotesCommandRegistration.spec.ts
+  s_a40848e8f8cca9::t_59f5c607444ef5 1
+  s_a40848e8f8cca9::t_b9ae6f0d0297c7 21,125-132,137,143,184,187-197,199-200,203-204,206,468-539,580-654,656-705,707-750,752-753
+  s_a40848e8f8cca9::t_46d22d2508bf0a 182-183,185-186,198,201-202,205
+  s_a40848e8f8cca9::t_1e08dc52a11e48 655,706
+  s_a40848e8f8cca9::t_76ebb860d58e14 751,754
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_a40848e8f8cca9::t_e19653eec4369d 60-64
+  s_a40848e8f8cca9::t_5875d891e293ce 65-68
+  s_a40848e8f8cca9::t_ecacd758c381b0 1468-1473
+src/modules/MIDI/handlers/noteTransform/handleRestoreMidiClipNotes.ts
+  s_a40848e8f8cca9::t_d0335359dfd328 63-72,75-76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "70dd972f8f7f4695d866c03cddab5dbfca36c122",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
