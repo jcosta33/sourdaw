@@ -348,10 +348,22 @@ describe('sessionRuntimePrimitives', () => {
     });
 
     describe('generateSessionId', () => {
-        it('returns the first 8 hex characters of a UUID', () => {
+        it('returns a whole UUID rather than a truncated prefix of one', () => {
             const id = sessionRuntimePrimitives.generateSessionId();
-            expect(id).toHaveLength(8);
-            expect(id).toMatch(/^[0-9a-f]{8}$/i);
+            expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+        });
+    });
+
+    describe('generateSessionSecret', () => {
+        it('returns 128 bits of base64url with no padding', () => {
+            const secret = sessionRuntimePrimitives.generateSessionSecret();
+            expect(secret).toMatch(/^[A-Za-z0-9_-]{22}$/);
+        });
+
+        it('does not repeat a secret across sessions', () => {
+            const first = sessionRuntimePrimitives.generateSessionSecret();
+            const second = sessionRuntimePrimitives.generateSessionSecret();
+            expect(first).not.toBe(second);
         });
     });
 

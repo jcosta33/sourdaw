@@ -64,7 +64,20 @@ export type PresenceDelta = Pick<PresenceData, 'peerId' | 'name' | 'color'> &
  * These are used to establish WebRTC connections, not for project data.
  */
 export type SignalingMessage =
-    | { type: 'offer'; peerId: PeerId; name: string; sessionId: string; sdp: string; pendingPeerId: PeerId }
+    | {
+          type: 'offer';
+          peerId: PeerId;
+          name: string;
+          sessionId: string;
+          sdp: string;
+          pendingPeerId: PeerId;
+          /**
+           * The room capability the relay checks on `join`. It travels with the
+           * invite because the invite is already the thing that grants access —
+           * carrying it separately would mean a second secret to share.
+           */
+          sessionSecret: string;
+      }
     | { type: 'answer'; peerId: PeerId; name: string; sdp: string; pendingPeerId: PeerId };
 
 /**
