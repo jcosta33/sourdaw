@@ -2630,6 +2630,20 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(result.rejections[0]?.reason).toContain('not unambiguously grounded');
     });
 
+    it('rejects a routable anaphor when an unbound planned audio track is also routable', () => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Parallel', kind: 'audio' } },
+                { name: 'createBus', arguments: { name: 'Plate', binding: 'plate' } },
+                { name: 'setTrackOutput', arguments: { trackId: '$plate', outputId: 'master' } },
+            ],
+            'create an audio track called Parallel, create a bus called Plate, and route it to Master'
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('not unambiguously grounded');
+    });
+
     it('rejects a bare anaphoric bus target after an intervening compatible track target', () => {
         const result = bridge(
             [

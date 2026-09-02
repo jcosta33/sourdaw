@@ -29,6 +29,7 @@ import {
     BATCH_LOCAL_BINDING_PRODUCER_NAMES,
     BATCH_LOCAL_BUS_CAPABILITIES,
     BATCH_LOCAL_CLIP_CAPABILITIES,
+    BATCH_LOCAL_TRACK_PRODUCERS_BY_KIND,
     type BatchLocalBindingProducer,
     type BatchLocalBindingProducerName,
     resolveBatchLocalBindingProducer,
@@ -477,19 +478,7 @@ function countCompatiblePlannedCreations(
         if (call.name !== 'addTrack' || typeof call.arguments.kind !== 'string') {
             return false;
         }
-        if (capability === 'track' || capability === 'armable-track' || capability === 'removable-track') {
-            return true;
-        }
-        if (capability === 'duplicable-track' || capability === 'device-host-track') {
-            return call.arguments.kind !== 'vca';
-        }
-        if (capability === 'routable-source') {
-            return call.arguments.kind === 'audio' || call.arguments.kind === 'midi' || call.arguments.kind === 'bus';
-        }
-        if (capability === 'bus' || capability === 'output') {
-            return call.arguments.kind === 'bus';
-        }
-        return false;
+        return BATCH_LOCAL_TRACK_PRODUCERS_BY_KIND[call.arguments.kind]?.capabilities.includes(capability) ?? false;
     }).length;
 }
 

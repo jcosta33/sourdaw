@@ -36,6 +36,12 @@ export const BATCH_LOCAL_BUS_CAPABILITIES: readonly string[] = [
     'device-host-track',
 ];
 
+/**
+ * A freshly created clip carries no notes, so `editable-midi-clip` — which the canonical contract
+ * grants only to a clip that already has some — is never among these grants.
+ */
+export const BATCH_LOCAL_CLIP_CAPABILITIES: readonly string[] = ['clip', 'editable-clip', 'writable-midi-clip'];
+
 const CREATED_TRACK_CAPABILITIES: readonly string[] = [
     'track',
     'armable-track',
@@ -45,7 +51,8 @@ const CREATED_TRACK_CAPABILITIES: readonly string[] = [
     'vca-member-track',
 ];
 
-const CREATED_TRACK_PRODUCERS: Readonly<Record<string, BatchLocalBindingProducer>> = {
+/** Keyed by the `kind` an `addTrack` plan item may declare; any other kind creates no bindable track. */
+export const BATCH_LOCAL_TRACK_PRODUCERS_BY_KIND: Readonly<Record<string, BatchLocalBindingProducer>> = {
     audio: {
         capabilities: [...CREATED_TRACK_CAPABILITIES, 'routable-source'],
         producerArgument: 'id',
@@ -60,7 +67,7 @@ const CREATED_TRACK_PRODUCERS: Readonly<Record<string, BatchLocalBindingProducer
 };
 
 function resolveCreatedTrackProducer(kind: unknown): BatchLocalBindingProducer | null {
-    return typeof kind === 'string' ? (CREATED_TRACK_PRODUCERS[kind] ?? null) : null;
+    return typeof kind === 'string' ? (BATCH_LOCAL_TRACK_PRODUCERS_BY_KIND[kind] ?? null) : null;
 }
 
 type CreatedClipParent = { frozen: boolean; kind: string };
@@ -81,11 +88,8 @@ function resolveCreatedClipParent(input: {
 /**
  * The provider-facing `addClip` creates one empty MIDI clip on an unfrozen MIDI track, and the
  * bridge refuses every other destination, so no other parent yields a clip a later plan item could
- * bind to. A freshly created clip carries no notes, so `editable-midi-clip`, which the canonical
- * contract grants only to a clip that already has some, is never among these grants.
+ * bind to.
  */
-export const BATCH_LOCAL_CLIP_CAPABILITIES: readonly string[] = ['clip', 'editable-clip', 'writable-midi-clip'];
-
 function acceptsCreatedClip(parent: CreatedClipParent | null): boolean {
     return parent !== null && parent.kind === 'midi' && !parent.frozen;
 }
