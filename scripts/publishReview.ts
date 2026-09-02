@@ -31,6 +31,7 @@ import {
     reviewPublicationOwnerFenceIsLive,
     withPullRequestMutationLock,
 } from './pullRequestMutationLock.ts';
+import { legacyReviewPublicationIncidents } from './reviewPublicationLegacyIncidents.ts';
 
 export type ReviewEvent = 'APPROVE' | 'REQUEST_CHANGES';
 
@@ -462,10 +463,7 @@ function retainedReviewPublicationRecoveryCommand(primaryRoot: string, number: n
             return undefined;
         }
         const owner = readPullRequestMutationLockOwner(primaryRoot, ownerOid, number);
-        if (
-            !isReviewPublicationPullRequestMutationLockOwner(owner) ||
-            owner.mutation.phase !== 'remote-mutation-attempted'
-        ) {
+        if (!isReviewPublicationPullRequestMutationLockOwner(owner)) {
             return undefined;
         }
         return `pnpm review:publish:recover ${number} --owner ${ownerOid}`;
@@ -493,9 +491,6 @@ export async function runPublishReviewCli(
 export type RecoverPublishReviewArgs = {
     number?: number;
     owner?: string;
-    head?: string;
-    payloadDigest?: string;
-    definitiveNoMutationHttpStatus?: 422;
     help: boolean;
 };
 
@@ -529,14 +524,13 @@ export type RecoverPublishReviewDependencies = {
     currentOwnerFence?: () => import('./pullRequestMutationLock.ts').PullRequestMutationLockOwnerFence;
 };
 
-const recoverPublishReviewUsage =
-    'usage: pnpm review:publish:recover <pr-number> --owner <lock-object-id> [--head <head> --payload-digest <sha256> --definitive-no-mutation-http-status 422]';
+const recoverPublishReviewUsage = 'usage: pnpm review:publish:recover <pr-number> --owner <lock-object-id>';
 
 export function parseRecoverPublishReviewArgs(args: string[]): RecoverPublishReviewArgs {
     if (args.length === 1 && args[0] === '--help') {
         return { help: true };
     }
-    if (args.length < 3 || !/^[1-9][0-9]*$/u.test(args[0] ?? '') || args[1] !== '--owner') {
+    if (args.length !== 3 || !/^[1-9][0-9]*$/u.test(args[0] ?? '') || args[1] !== '--owner') {
         fail(recoverPublishReviewUsage);
     }
     const number = Number(args[0]);
@@ -544,40 +538,7 @@ export function parseRecoverPublishReviewArgs(args: string[]): RecoverPublishRev
     if (!Number.isSafeInteger(number) || owner === undefined || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/iu.test(owner)) {
         fail(recoverPublishReviewUsage);
     }
-    const values = new Map<string, string>();
-    for (let index = 3; index < args.length; index += 2) {
-        const key = args[index];
-        const value = args[index + 1];
-        if (
-            key === undefined ||
-            value === undefined ||
-            !['--head', '--payload-digest', '--definitive-no-mutation-http-status'].includes(key) ||
-            values.has(key)
-        ) {
-            fail(recoverPublishReviewUsage);
-        }
-        values.set(key, value);
-    }
-    const head = values.get('--head');
-    const payloadDigest = values.get('--payload-digest');
-    const status = values.get('--definitive-no-mutation-http-status');
-    if (
-        (head !== undefined && !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/iu.test(head)) ||
-        (payloadDigest !== undefined && !/^[0-9a-f]{64}$/iu.test(payloadDigest)) ||
-        (status !== undefined && status !== '422') ||
-        ((head !== undefined || payloadDigest !== undefined || status !== undefined) &&
-            (head === undefined || payloadDigest === undefined || status !== '422'))
-    ) {
-        fail(recoverPublishReviewUsage);
-    }
-    return {
-        number,
-        owner: owner.toLowerCase(),
-        ...(head === undefined ? {} : { head: head.toLowerCase() }),
-        ...(payloadDigest === undefined ? {} : { payloadDigest: payloadDigest.toLowerCase() }),
-        ...(status === undefined ? {} : { definitiveNoMutationHttpStatus: 422 }),
-        help: false,
-    };
+    return { number, owner: owner.toLowerCase(), help: false };
 }
 
 function defaultRecoverPublishReviewDependencies(): RecoverPublishReviewDependencies {
@@ -775,23 +736,19 @@ export async function runRecoverPublishReviewLockCli(
     if (!legacy && !isReviewPublicationPullRequestMutationLockOwner(originalOwner)) {
         fail(`PR #${number} recovery requires a review-publication lock owner`);
     }
+    const incident = legacy
+        ? legacyReviewPublicationIncidents.find(
+              (candidate) => candidate.number === number && candidate.ownerOid === ownerOid
+          )
+        : undefined;
     if (
         legacy &&
-        (parsed.head === undefined ||
-            parsed.payloadDigest === undefined ||
-            parsed.definitiveNoMutationHttpStatus !== 422)
+        (incident === undefined ||
+            originalOwner.pid !== incident.owner.pid ||
+            originalOwner.token !== incident.owner.token ||
+            incident.definitiveNoMutationHttpStatus !== 422)
     ) {
-        fail(
-            'legacy review-publication recovery requires exact head, payload digest, and definitive HTTP status 422 attestation'
-        );
-    }
-    if (
-        !legacy &&
-        (parsed.head !== undefined ||
-            parsed.payloadDigest !== undefined ||
-            parsed.definitiveNoMutationHttpStatus !== undefined)
-    ) {
-        fail('journaled review-publication recovery accepts only the exact owner object id');
+        fail('legacy review-publication recovery requires the exact trusted incident receipt');
     }
     if (!legacy && (dependencies.isOwnerLive ?? reviewPublicationOwnerFenceIsLive)(originalOwner)) {
         fail(`PR #${number} review-publication lock is still held by a live process`);
@@ -806,8 +763,8 @@ export async function runRecoverPublishReviewLockCli(
             }
         }
     }
-    const expectedHead = legacy ? parsed.head! : originalOwner.expectedHead;
-    const expectedDigest = legacy ? parsed.payloadDigest! : originalOwner.payloadDigest;
+    const expectedHead = legacy ? incident.expectedHead : originalOwner.expectedHead;
+    const expectedActorNodeId = legacy ? incident.reviewerActorNodeId : originalOwner.reviewerActorNodeId;
     const auth = await dependencies.authenticateReviewer(primaryRoot);
     try {
         if (!isReviewerBotNodeId(auth.minted.actorNodeId)) {
@@ -817,6 +774,9 @@ export async function runRecoverPublishReviewLockCli(
         const bundle = reviewBundlePath(primaryRoot, number, expectedHead);
         const document = parseReviewDocument(JSON.parse(readFileSync(join(bundle, 'review.json'), 'utf8')) as unknown);
         assertReviewCommentLinesInBundleDiff(document.comments, readFileSync(join(bundle, 'diff.patch'), 'utf8'));
+        if (legacy && JSON.stringify(document) !== JSON.stringify(incident.preparedPayload)) {
+            fail('legacy review-publication recovery bundle does not match the trusted incident receipt');
+        }
         const payloadDigest = reviewPublicationPayloadDigest(
             reviewPublicationPayload({
                 commitId: expectedHead,
@@ -825,17 +785,24 @@ export async function runRecoverPublishReviewLockCli(
                 comments: document.comments,
             })
         );
+        const expectedDigest = legacy
+            ? reviewPublicationPayloadDigest(
+                  reviewPublicationPayload({
+                      commitId: expectedHead,
+                      event: incident.preparedPayload.event,
+                      body: incident.preparedPayload.body,
+                      comments: incident.preparedPayload.comments,
+                  })
+              )
+            : originalOwner.payloadDigest;
         if (payloadDigest !== expectedDigest) {
             fail('review-publication recovery payload does not match the retained lock');
         }
-        const first = dependencies.inspect(number, REVIEWER_BOT_NODE_ID, expectedHead, auth.session, primaryRoot);
-        if (first.state !== 'OPEN' || first.head !== expectedHead) {
-            fail('review-publication recovery pull request state or head drifted');
-        }
+        const first = dependencies.inspect(number, expectedActorNodeId, expectedHead, auth.session, primaryRoot);
         if (
             first.reviews.length > 1 ||
             (first.reviews.length === 1 &&
-                !exactPublishedReview(first.reviews[0]!, document, expectedHead, REVIEWER_BOT_NODE_ID))
+                !exactPublishedReview(first.reviews[0]!, document, expectedHead, expectedActorNodeId))
         ) {
             fail('review-publication recovery found ambiguous or non-exact remote review evidence');
         }
@@ -847,7 +814,7 @@ export async function runRecoverPublishReviewLockCli(
             number,
             expectedHead,
             payloadDigest: expectedDigest,
-            reviewerActorNodeId: REVIEWER_BOT_NODE_ID,
+            reviewerActorNodeId: expectedActorNodeId,
             ownerFence: dependencies.currentOwnerFence?.() ?? currentReviewPublicationOwnerFence(),
             mutation: { phase: 'prepared' as const, epoch: legacy ? 1 : originalOwner.mutation.epoch + 1 },
             ...(legacy
@@ -861,13 +828,13 @@ export async function runRecoverPublishReviewLockCli(
         };
         const adoptedOid = replacePullRequestMutationLockOwner(primaryRoot, number, ownerOid, adoptedOwner);
         try {
-            const second = dependencies.inspect(number, REVIEWER_BOT_NODE_ID, expectedHead, auth.session, primaryRoot);
+            const second = dependencies.inspect(number, expectedActorNodeId, expectedHead, auth.session, primaryRoot);
             if (
-                second.state !== 'OPEN' ||
-                second.head !== expectedHead ||
+                second.state !== first.state ||
+                second.head !== first.head ||
                 second.reviews.length !== first.reviews.length ||
                 (second.reviews.length === 1 &&
-                    !exactPublishedReview(second.reviews[0]!, document, expectedHead, REVIEWER_BOT_NODE_ID))
+                    !exactPublishedReview(second.reviews[0]!, document, expectedHead, expectedActorNodeId))
             ) {
                 fail('review-publication recovery remote state changed during reconciliation');
             }

@@ -105,6 +105,7 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
     'review:publish': [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/publishReview.ts',
+        'scripts/reviewPublicationLegacyIncidents.ts',
         'scripts/prepareReview.ts',
         'scripts/pullRequestMutationLock.ts',
         'scripts/githubAppIdentity.ts',
@@ -113,6 +114,7 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
     'review:publish:recover': [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/publishReview.ts',
+        'scripts/reviewPublicationLegacyIncidents.ts',
         'scripts/prepareReview.ts',
         'scripts/pullRequestMutationLock.ts',
         'scripts/githubAppIdentity.ts',

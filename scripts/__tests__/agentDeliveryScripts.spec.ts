@@ -839,6 +839,7 @@ describe('package scripts and gitignore', () => {
         expect(trustedDependencyPaths('review:publish:recover')).toEqual([
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/publishReview.ts',
+            'scripts/reviewPublicationLegacyIncidents.ts',
             'scripts/prepareReview.ts',
             'scripts/pullRequestMutationLock.ts',
             'scripts/githubAppIdentity.ts',
@@ -891,6 +892,7 @@ describe('package scripts and gitignore', () => {
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/publishReview.ts',
+                    'scripts/reviewPublicationLegacyIncidents.ts',
                     'scripts/prepareReview.ts',
                     'scripts/pullRequestMutationLock.ts',
                     'scripts/githubAppIdentity.ts',
@@ -904,6 +906,7 @@ describe('package scripts and gitignore', () => {
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/publishReview.ts',
+                    'scripts/reviewPublicationLegacyIncidents.ts',
                     'scripts/prepareReview.ts',
                     'scripts/pullRequestMutationLock.ts',
                     'scripts/githubAppIdentity.ts',

@@ -462,6 +462,16 @@ describe('review publish', () => {
         ['state', { state: 'APPROVED' }],
         ['actor', { actorNodeId: 'wrong-reviewer' }],
         ['body', { body: 'different' }],
+        ['missing remote comment', { comments: [] }],
+        [
+            'extra remote comment',
+            {
+                comments: [
+                    { path: 'scripts/deliverPullRequest.ts', line: 10, side: 'RIGHT' as const, body: 'a. b. c.' },
+                    { path: 'extra.ts', line: 1, side: 'RIGHT' as const, body: 'extra' },
+                ],
+            },
+        ],
         ['path', { comments: [{ path: 'other.ts', line: 10, side: 'RIGHT' as const, body: 'a. b. c.' }] }],
         [
             'line',
@@ -1022,6 +1032,34 @@ describe('shellPort postReview state verification', () => {
     });
 
     it.each([
+        ['advanced head', 'OPEN', 'b'.repeat(40)],
+        ['closed pull request', 'CLOSED', 'b'.repeat(40)],
+    ])('reconciles an exact expected-head review after an %s', async (_label, state, currentHead) => {
+        const fixture = createJournaledRecoveryFixture();
+        const exact = {
+            id: 1,
+            state: 'APPROVED',
+            body: 'Attacked; held.',
+            commitId: fixture.head,
+            actorNodeId: REVIEWER_BOT_NODE_ID,
+            comments: [],
+        };
+        try {
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.number), '--owner', fixture.ownerOid],
+                    recoveryDependencies(fixture.root, () => ({ state, head: currentHead, reviews: [exact] }))
+                )
+            ).resolves.toBe(0);
+            expect(
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
+            ).toBeUndefined();
+        } finally {
+            rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
+    it.each([
         [
             'wrong definitive status',
             [
@@ -1042,16 +1080,8 @@ describe('shellPort postReview state verification', () => {
         expect(() => parseRecoverPublishReviewArgs(args)).toThrow(/usage: pnpm review:publish:recover/);
     });
 
-    it('adopts and releases the #3342-shaped legacy v1 owner only with an exact 422 attestation', async () => {
+    it('rejects every legacy v1 owner not named by the trusted incident receipt', async () => {
         const fixture = createLegacyRecoveryFixture();
-        const digest = reviewPublicationPayloadDigest(
-            reviewPublicationPayload({
-                commitId: fixture.head,
-                event: 'APPROVE',
-                body: 'Attacked; held.',
-                comments: [],
-            })
-        );
         try {
             await expect(
                 runRecoverPublishReviewLockCli(
@@ -1062,33 +1092,10 @@ describe('shellPort postReview state verification', () => {
                         reviews: [],
                     }))
                 )
-            ).rejects.toThrow(/requires exact head, payload digest, and definitive HTTP status 422 attestation/);
+            ).rejects.toThrow(/requires the exact trusted incident receipt/);
             expect(
                 readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
             ).toBe(fixture.ownerOid);
-            await expect(
-                runRecoverPublishReviewLockCli(
-                    [
-                        String(fixture.number),
-                        '--owner',
-                        fixture.ownerOid,
-                        '--head',
-                        fixture.head,
-                        '--payload-digest',
-                        digest,
-                        '--definitive-no-mutation-http-status',
-                        '422',
-                    ],
-                    recoveryDependencies(fixture.root, (expectedHead) => ({
-                        state: 'OPEN',
-                        head: expectedHead,
-                        reviews: [],
-                    }))
-                )
-            ).resolves.toBe(0);
-            expect(
-                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
-            ).toBeUndefined();
         } finally {
             rmSync(fixture.root, { recursive: true, force: true });
         }
@@ -1286,8 +1293,6 @@ describe('shellPort postReview state verification', () => {
     });
 
     it.each([
-        ['remote head drift', (_head: string) => ({ state: 'OPEN', head: 'b'.repeat(40), reviews: [] })],
-        ['remote state drift', (head: string) => ({ state: 'CLOSED', head, reviews: [] })],
         [
             'uncertain remote read',
             () => {
