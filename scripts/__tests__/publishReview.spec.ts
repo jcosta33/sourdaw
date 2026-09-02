@@ -382,41 +382,44 @@ describe('review publish', () => {
     it.each([
         ['closes', { state: 'CLOSED', head: 'headsha' }],
         ['moves', { state: 'OPEN', head: 'moved-head' }],
-    ])('does not journal or attempt a review when the pull request %s after preflight', async (_label, lockedPullRequest) => {
-        const { port } = fakePort();
-        const calls: string[] = [];
-        let reads = 0;
-        const dependencies: PublishReviewCoordinatorDependencies = {
-            primaryRoot: () => '/repo',
-            serializeMutation: async (_primaryRoot, _number, operation) =>
-                operation({
-                    ownerOid: 'f'.repeat(40),
-                    journalReviewPublication: () => calls.push('journal'),
-                    markRemoteMutationAttempt: () => calls.push('attempt'),
-                    registerSuccessfulCompletion: () => undefined,
+    ])(
+        'does not journal or attempt a review when the pull request %s after preflight',
+        async (_label, lockedPullRequest) => {
+            const { port } = fakePort();
+            const calls: string[] = [];
+            let reads = 0;
+            const dependencies: PublishReviewCoordinatorDependencies = {
+                primaryRoot: () => '/repo',
+                serializeMutation: async (_primaryRoot, _number, operation) =>
+                    operation({
+                        ownerOid: 'f'.repeat(40),
+                        journalReviewPublication: () => calls.push('journal'),
+                        markRemoteMutationAttempt: () => calls.push('attempt'),
+                        registerSuccessfulCompletion: () => undefined,
+                    }),
+                authenticateReviewer: async () => ({
+                    minted: { actorNodeId: REVIEWER_BOT_NODE_ID },
+                    session: { configDir: '/tmp/reviewer', env: {}, dispose: () => undefined },
                 }),
-            authenticateReviewer: async () => ({
-                minted: { actorNodeId: REVIEWER_BOT_NODE_ID },
-                session: { configDir: '/tmp/reviewer', env: {}, dispose: () => undefined },
-            }),
-            repositoryName: () => 'jcosta33/sourdaw',
-            reviewPort: () => ({
-                ...port,
-                pullRequest: (number) => {
-                    reads += 1;
-                    return reads === 1 ? port.pullRequest(number) : lockedPullRequest;
-                },
-                postReview: () => {
-                    calls.push('post');
-                    throw new Error('must not post');
-                },
-            }),
-            publish: publishPreparedReview,
-        };
+                repositoryName: () => 'jcosta33/sourdaw',
+                reviewPort: () => ({
+                    ...port,
+                    pullRequest: (number) => {
+                        reads += 1;
+                        return reads === 1 ? port.pullRequest(number) : lockedPullRequest;
+                    },
+                    postReview: () => {
+                        calls.push('post');
+                        throw new Error('must not post');
+                    },
+                }),
+                publish: publishPreparedReview,
+            };
 
-        await expect(coordinatePublishReview(42, dependencies)).rejects.toThrow(/refusing to post|head moved/);
-        expect(calls).toEqual([]);
-    });
+            await expect(coordinatePublishReview(42, dependencies)).rejects.toThrow(/refusing to post|head moved/);
+            expect(calls).toEqual([]);
+        }
+    );
 
     it('reports the exact retained owner and recovery command after an ordinary review POST HTTP 422', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-publication-post-failure-'));
@@ -1406,7 +1409,9 @@ describe('shellPort postReview state verification', () => {
         expect(payload).toBe(
             '{"commit_id":"0123456789012345678901234567890123456789","event":"REQUEST_CHANGES","body":"Request changes.","comments":[{"path":"scripts/deliverPullRequest.ts","line":10,"side":"RIGHT","body":"COMMENT still authorizes merge. A stale COMMENT could ship. Require reviewer APPROVED on this head."}]}'
         );
-        expect(reviewPublicationPayloadDigest(payload)).toBe('15e97754a7af071d05cb92ef1594eb18737a7b9ab7851e2c3409cc9526d51a11');
+        expect(reviewPublicationPayloadDigest(payload)).toBe(
+            '15e97754a7af071d05cb92ef1594eb18737a7b9ab7851e2c3409cc9526d51a11'
+        );
     });
 
     it('retains a dead owner that attempted a remote mutation after two no-review reads', async () => {
@@ -1546,31 +1551,28 @@ describe('shellPort postReview state verification', () => {
             | undefined;
         try {
             await expect(
-                runRecoverPublishReviewLockCli(
-                    [String(fixture.number), '--owner', fixture.ownerOid],
-                    {
-                        ...recoveryDependencies(fixture.root, (expectedHead) => ({
-                            state: 'OPEN',
-                            head: expectedHead,
-                            reviews: [],
-                        })),
-                        afterRecoveryReceiptPersisted: (receipt) => {
-                            persistedReceipt = receipt;
-                            expect(receipt.adoptedOwnerOid).not.toBe(fixture.ownerOid);
-                            expect(readPullRequestMutationLockReceipt(fixture.root, fixture.number, fixture.ownerOid)).toEqual(
-                                receipt
-                            );
-                            expect(
-                                readPullRequestMutationLockOid(
-                                    fixture.root,
-                                    pullRequestMutationLockRef(fixture.number),
-                                    fixture.number
-                                )
-                            ).toBe(receipt.adoptedOwnerOid);
-                            throw new Error('injected crash after exact receipt persistence');
-                        },
-                    }
-                )
+                runRecoverPublishReviewLockCli([String(fixture.number), '--owner', fixture.ownerOid], {
+                    ...recoveryDependencies(fixture.root, (expectedHead) => ({
+                        state: 'OPEN',
+                        head: expectedHead,
+                        reviews: [],
+                    })),
+                    afterRecoveryReceiptPersisted: (receipt) => {
+                        persistedReceipt = receipt;
+                        expect(receipt.adoptedOwnerOid).not.toBe(fixture.ownerOid);
+                        expect(
+                            readPullRequestMutationLockReceipt(fixture.root, fixture.number, fixture.ownerOid)
+                        ).toEqual(receipt);
+                        expect(
+                            readPullRequestMutationLockOid(
+                                fixture.root,
+                                pullRequestMutationLockRef(fixture.number),
+                                fixture.number
+                            )
+                        ).toBe(receipt.adoptedOwnerOid);
+                        throw new Error('injected crash after exact receipt persistence');
+                    },
+                })
             ).rejects.toThrow(/injected crash after exact receipt persistence/);
             expect(persistedReceipt).toBeDefined();
             expect(persistedReceipt!.adoptedOwnerOid).not.toBe(fixture.ownerOid);
@@ -1578,11 +1580,7 @@ describe('shellPort postReview state verification', () => {
                 persistedReceipt
             );
             expect(
-                readPullRequestMutationLockOid(
-                    fixture.root,
-                    pullRequestMutationLockRef(fixture.number),
-                    fixture.number
-                )
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
             ).toBe(persistedReceipt!.adoptedOwnerOid);
             let authenticated = false;
             const replayDependencies = {
@@ -1604,11 +1602,7 @@ describe('shellPort postReview state verification', () => {
             ).resolves.toBe(0);
             expect(authenticated).toBe(false);
             expect(
-                readPullRequestMutationLockOid(
-                    fixture.root,
-                    pullRequestMutationLockRef(fixture.number),
-                    fixture.number
-                )
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
             ).toBeUndefined();
             expect(readPullRequestMutationLockReceipt(fixture.root, fixture.number, fixture.ownerOid)).toEqual(
                 persistedReceipt
@@ -1788,7 +1782,7 @@ describe('shellPort postReview state verification', () => {
                         runGit(fixture.root, [
                             'update-ref',
                             pullRequestMutationLockRef(fixture.number),
-                            replacementOid!,
+                            replacementOid,
                             adoptedOid,
                         ]);
                     },
@@ -2323,7 +2317,11 @@ describe('shellPort postReview state verification', () => {
             await expect(
                 runRecoverPublishReviewLockCli(
                     [String(fixture.incident.number), '--owner', oid],
-                    recoveryDependencies(fixture.root, (expectedHead) => ({ state: 'OPEN', head: expectedHead, reviews: [] }))
+                    recoveryDependencies(fixture.root, (expectedHead) => ({
+                        state: 'OPEN',
+                        head: expectedHead,
+                        reviews: [],
+                    }))
                 )
             ).rejects.toThrow(/delivery lock ownership is malformed/);
             expect(
