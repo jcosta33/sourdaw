@@ -1,0 +1,126 @@
+scripts/__tests__/ddspMirrorConfig.spec.ts
+  s_27578aec2aab3b::t_96da978ce1f5c4 1-53
+tests/e2e/ddspRenderElectron.playwright.config.ts
+  s_27578aec2aab3b::t_189745c14cc254 17-33
+tests/e2e/ddspRender.playwright.config.ts
+  s_27578aec2aab3b::t_189745c14cc254 16,18-34
+electron/main.ts
+  s_27578aec2aab3b::t_c4969581100539 27-30,32,89,271-273,288-289,439-445
+  s_27578aec2aab3b::t_b74f3175878bde 263
+.agents/decisions/open-decision-docket.md
+  s_27578aec2aab3b::t_c587c376dad02d 158
+scripts/__tests__/prepareDdspMirror.spec.ts
+  s_27578aec2aab3b::t_c2b12c81d5623d 32-33
+  s_27578aec2aab3b::t_96da978ce1f5c4 1-31,34-121
+src/modules/BrowserAi/models/DdspArtifactManifest.ts
+  s_27578aec2aab3b::t_ecca46a0aed57a 10,12
+electron/__tests__/webviewSecurity.spec.ts
+  s_27578aec2aab3b::t_a2cb0e7b19f8da 27-29,53-58,118,133,140,180
+tests/e2e/ddspRender.spec.ts
+  s_27578aec2aab3b::t_189745c14cc254 46,55
+src/modules/TimelineEditor/presentations/views/Inspector/ClipMidiAiSection.tsx
+  s_27578aec2aab3b::t_ccd2fdd997c155 976
+scripts/prepareDdspMirror.ts
+  s_27578aec2aab3b::t_0d91423abbf2ac 1-3,5-152
+  s_27578aec2aab3b::t_c2b12c81d5623d 4
+.agents/decisions/0030-exact-model-release-admission.md
+  s_27578aec2aab3b::t_c587c376dad02d 17,42,49-57
+release/open-source-inventory.json
+  s_27578aec2aab3b::t_b550d1870085f0 1434
+  s_27578aec2aab3b::t_891e4422fe9693 332-334,349,355-357,360,362,364,413,478,499-501,513
+  s_27578aec2aab3b::t_a59f576a8ee262 473,981
+tests/e2e/ddspProductionCspElectron.spec.ts
+  s_27578aec2aab3b::t_b181fb459b3374 4,49,125-137,176,183
+electron/protocol.ts
+  s_27578aec2aab3b::t_a8df5991c68ae0 15,29-84,86,139-140,144,155-160,170-177,312,314,325,333,338,344,355,357
+  s_27578aec2aab3b::t_b74f3175878bde 136-137
+vite.config.ts
+  s_27578aec2aab3b::t_a8df5991c68ae0 17
+  s_27578aec2aab3b::t_ecca46a0aed57a 12-16,18,22-30,55,61-70,154
+src/modules/BrowserAi/repositories/modelDownloadManager.ts
+  s_27578aec2aab3b::t_c379504486defa 40-43,95-127,140-149,203-207
+  s_2175fca1f07426::t_bc5a07ffc7ddfe 208
+scripts/__tests__/runDdspMirrorFixture.spec.ts
+  s_27578aec2aab3b::t_4d7667d61ae2f4 1-25,34-58
+  s_27578aec2aab3b::t_aa0f850e479e69 26-33
+src/modules/BrowserAi/presentations/views/ModelManagerPanel.tsx
+  s_27578aec2aab3b::t_ccd2fdd997c155 235-236,310-311
+tests/e2e/ddspProductionCspElectron.playwright.config.ts
+  s_27578aec2aab3b::t_189745c14cc254 1-2,13-20
+src/modules/BrowserAi/models/__tests__/DdspInstrumentCatalog.spec.ts
+  s_27578aec2aab3b::t_09c6e776b7f9bc 9-11
+  s_27578aec2aab3b::t_27051362627a32 1-8,12-26
+docs/architecture/09-ai-stack.md
+  s_27578aec2aab3b::t_c587c376dad02d 36-39
+scripts/checkReleaseInventory.ts
+  s_27578aec2aab3b::t_29e1363ab1975b 10-14,82-84,99,105-107,110,113-114,217,237-239,251,255-272,861
+  s_27578aec2aab3b::t_40dcf643a00d15 163
+electron/__tests__/ddspMirrorProtocol.spec.ts
+  s_27578aec2aab3b::t_c0aea93cd85307 1-59
+public/legal/THIRD-PARTY-NOTICES.md
+  s_27578aec2aab3b::t_c587c376dad02d 52-66
+scripts/ddspMirrorConfig.ts
+  s_27578aec2aab3b::t_0d91423abbf2ac 3,5-65
+  s_27578aec2aab3b::t_ecca46a0aed57a 1-2,4
+src/types/ddsp-artifact-origin.d.ts
+  s_27578aec2aab3b::t_40dcf643a00d15 1
+scripts/runDdspMirrorFixture.ts
+  s_27578aec2aab3b::t_c2b12c81d5623d 4-5
+  s_27578aec2aab3b::t_aa0f850e479e69 30-35
+  s_27578aec2aab3b::t_ebeb90670bde1e 1-3,6-29,36-164
+src/modules/BrowserAi/useCases/downloadDdspInstrument.ts
+  s_27578aec2aab3b::t_c379504486defa 58-59
+src/modules/BrowserAi/models/DdspInstrumentCatalog.ts
+  s_27578aec2aab3b::t_ecca46a0aed57a 4-6,14-29,39-42,51
+src/modules/BrowserAi/presentations/views/__tests__/ModelManagerPanel.spec.tsx
+  s_27578aec2aab3b::t_ccd2fdd997c155 84,95,114
+tests/e2e/ddspRenderElectron.spec.ts
+  s_27578aec2aab3b::t_189745c14cc254 83,100
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_27578aec2aab3b::t_40dcf643a00d15 105
+  s_27578aec2aab3b::t_fab588d4ceb744 9,101-104,110-119
+src/modules/BrowserAi/useCases/__tests__/downloadDdspInstrument.spec.ts
+  s_27578aec2aab3b::t_e7cb358203d881 19-20,100
+  s_27578aec2aab3b::t_c379504486defa 101
+src/modules/BrowserAi/repositories/__tests__/modelDownloadManager.spec.ts
+  s_27578aec2aab3b::t_e7cb358203d881 36-41,65,302-352
+  s_24b1bdbc3c31ad::t_872bb21c90d41f 353
+tests/e2e/modelManagerAdmission.spec.ts
+  s_27578aec2aab3b::t_ccd2fdd997c155 33,35
+scripts/runElectronE2E.ts
+  s_27578aec2aab3b::t_ef4063b3356156 42
+package.json
+  s_27578aec2aab3b::t_189745c14cc254 33-36,66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b93536db4c3fd7c27982252fe2c4e82856f3e393",
+  "prompts": {},
+  "sessions": {
+    "s_2175fca1f07426": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "71899df4-613e-451d-a15d-8fb7a9d71258",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_24b1bdbc3c31ad": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "121e88d7-ede7-4cc3-be49-24c4296272b9",
+        "model": "grok-4.6"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_27578aec2aab3b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01ed2-2ea3-7212-a47f-269fe978a1ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
