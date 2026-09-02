@@ -428,22 +428,50 @@ export async function coordinatePublishReview(
     dependencies: PublishReviewCoordinatorDependencies = defaultPublishReviewCoordinatorDependencies()
 ): Promise<void> {
     const primaryRoot = dependencies.primaryRoot();
-    await dependencies.serializeMutation(primaryRoot, number, async (boundary) => {
-        const auth = await dependencies.authenticateReviewer(primaryRoot);
-        try {
-            if (!isReviewerBotNodeId(auth.minted.actorNodeId)) {
-                fail(`minted actor ${auth.minted.actorNodeId} is not ${REVIEWER_BOT_NODE_ID}`);
+    try {
+        await dependencies.serializeMutation(primaryRoot, number, async (boundary) => {
+            const auth = await dependencies.authenticateReviewer(primaryRoot);
+            try {
+                if (!isReviewerBotNodeId(auth.minted.actorNodeId)) {
+                    fail(`minted actor ${auth.minted.actorNodeId} is not ${REVIEWER_BOT_NODE_ID}`);
+                }
+                assertRequiredRepository(dependencies.repositoryName(auth.session, primaryRoot));
+                dependencies.publish(
+                    number,
+                    dependencies.reviewPort(auth.session, primaryRoot, boundary.markRemoteMutationAttempt),
+                    boundary
+                );
+            } finally {
+                auth.session.dispose();
             }
-            assertRequiredRepository(dependencies.repositoryName(auth.session, primaryRoot));
-            dependencies.publish(
-                number,
-                dependencies.reviewPort(auth.session, primaryRoot, boundary.markRemoteMutationAttempt),
-                boundary
-            );
-        } finally {
-            auth.session.dispose();
+        });
+    } catch (error) {
+        const recovery = retainedReviewPublicationRecoveryCommand(primaryRoot, number);
+        if (recovery === undefined) {
+            throw error;
         }
-    });
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`${message}; retained exact review-publication owner: ${recovery}`, { cause: error });
+    }
+}
+
+function retainedReviewPublicationRecoveryCommand(primaryRoot: string, number: number): string | undefined {
+    try {
+        const ownerOid = readPullRequestMutationLockOid(primaryRoot, pullRequestMutationLockRef(number), number);
+        if (ownerOid === undefined) {
+            return undefined;
+        }
+        const owner = readPullRequestMutationLockOwner(primaryRoot, ownerOid, number);
+        if (
+            !isReviewPublicationPullRequestMutationLockOwner(owner) ||
+            owner.mutation.phase !== 'remote-mutation-attempted'
+        ) {
+            return undefined;
+        }
+        return `pnpm review:publish:recover ${number} --owner ${ownerOid}`;
+    } catch {
+        return undefined;
+    }
 }
 
 export async function runPublishReviewCli(

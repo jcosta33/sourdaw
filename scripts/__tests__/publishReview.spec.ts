@@ -257,6 +257,56 @@ describe('review publish', () => {
         ]);
     });
 
+    it('reports the exact retained owner and recovery command after an ordinary review POST HTTP 422', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-publication-post-failure-'));
+        const number = 3344;
+        const executable = join(root, 'ps');
+        const previous = process.env.SOURDAW_TRUSTED_PS_PATH;
+        try {
+            runGit(root, ['init']);
+            writeFileSync(executable, '#!/bin/sh\nprintf "%s\\n" "publication-process-start"\n');
+            chmodSync(executable, 0o700);
+            process.env.SOURDAW_TRUSTED_PS_PATH = executable;
+            const dependencies: PublishReviewCoordinatorDependencies = {
+                primaryRoot: () => root,
+                serializeMutation: withPullRequestMutationLock,
+                authenticateReviewer: async () => ({
+                    minted: { actorNodeId: REVIEWER_BOT_NODE_ID },
+                    session: { configDir: '/tmp/reviewer', env: {}, dispose: () => undefined },
+                }),
+                repositoryName: () => 'jcosta33/sourdaw',
+                reviewPort: (_session, _primaryRoot, markRemoteMutationAttempt) => ({
+                    primaryRoot: () => root,
+                    currentHead: () => 'a'.repeat(40),
+                    readReviewJson: () => ({ event: 'APPROVE', body: 'Attacked; held.', comments: [] }),
+                    readBundleDiff: () => '',
+                    postReview: () => {
+                        markRemoteMutationAttempt();
+                        throw new Error('create review failed: HTTP 422');
+                    },
+                    log: () => undefined,
+                }),
+                publish: publishReview,
+            };
+
+            await expect(coordinatePublishReview(number, dependencies)).rejects.toThrow(
+                /create review failed: HTTP 422; retained exact review-publication owner: pnpm review:publish:recover 3344 --owner [0-9a-f]{40}/
+            );
+            const retainedOid = readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number);
+            expect(retainedOid).toMatch(/^[0-9a-f]{40}$/);
+            await expect(coordinatePublishReview(number, dependencies)).rejects.toThrow(
+                new RegExp(`--owner ${retainedOid}`)
+            );
+        } finally {
+            if (previous === undefined) {
+                delete process.env.SOURDAW_TRUSTED_PS_PATH;
+            } else {
+                process.env.SOURDAW_TRUSTED_PS_PATH = previous;
+            }
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('forwards the exact valid CLI pull-request number to the live coordinator', async () => {
         const { port } = fakePort();
         const forwarded: number[] = [];
@@ -1197,6 +1247,39 @@ describe('shellPort postReview state verification', () => {
             expect(
                 readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
             ).toBe(oid);
+        } finally {
+            rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects a mixed paginated review response before recovery can adopt the owner', async () => {
+        const fixture = createJournaledRecoveryFixture();
+        try {
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.number), '--owner', fixture.ownerOid],
+                    recoveryDependencies(fixture.root, (expectedHead) =>
+                        inspectReviewPublicationRemote(fixture.number, REVIEWER_BOT_NODE_ID, expectedHead, (args) => {
+                            if (args[0] === 'pr') {
+                                return JSON.stringify({ state: 'OPEN', headRefOid: expectedHead });
+                            }
+                            return JSON.stringify([
+                                [],
+                                {
+                                    id: 1,
+                                    state: 'APPROVED',
+                                    body: 'unexpected bare review',
+                                    commit_id: expectedHead,
+                                    user: { node_id: REVIEWER_BOT_NODE_ID },
+                                },
+                            ]);
+                        })
+                    )
+                )
+            ).rejects.toThrow(/review-publication recovery reviews are unreadable/);
+            expect(
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
+            ).toBe(fixture.ownerOid);
         } finally {
             rmSync(fixture.root, { recursive: true, force: true });
         }
