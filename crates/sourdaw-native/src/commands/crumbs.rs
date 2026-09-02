@@ -823,18 +823,6 @@ pub async fn stop_recording(instance_id: String, state: &CrumbsState) -> Result<
     Ok(())
 }
 
-/// Accept and discard one block of the app's monitored input.
-///
-/// The sampler's record feed is the engine's own input tap, delivered to the
-/// slot on the audio thread (`host/native_bridge.rs` —
-/// `CrumbsPluginSlot::process_capture_input`). Nothing pushed here can reach
-/// a take, and `Ok` is the honest answer: the caller has no hole to report
-/// and no retry to make. This command and its TypeScript producer leave
-/// together, in the change that retires the app-side record feed.
-pub async fn feed_record_input(_audio_bytes: Vec<u8>, _app_state: &AppState) -> Result<(), String> {
-    Ok(())
-}
-
 // ── Helpers ────────────────────────────────────────────────────────────
 
 /// The name table lives in `daw_dsp::crumbs::types` so this command and the
@@ -1696,24 +1684,6 @@ mod tests {
                 .expect("crumbs state lock should be available")
                 .is_empty(),
             "a refused create must leave no instance behind"
-        );
-    }
-
-    /// The app-side record feed is retired: the command answers its caller and
-    /// changes nothing the caller can observe.
-    #[test]
-    fn feed_record_input_accepts_a_block_and_changes_nothing() {
-        let app_state = AppState::default();
-
-        crate::block_on_test(feed_record_input(vec![0u8; 1024], &app_state))
-            .expect("the retired feed must not fail its caller");
-
-        assert_eq!(
-            app_state
-                .bridge_input_blocks_refused
-                .load(Ordering::Relaxed),
-            0,
-            "a retired feed has no block to refuse"
         );
     }
 }

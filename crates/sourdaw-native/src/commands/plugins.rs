@@ -1978,9 +1978,8 @@ pub async fn process_plugin_audio(
     let frames = audio_bytes.len() / BYTES_PER_FRAME;
 
     // Push input to the audio thread. A refusal means the input ring was full,
-    // so this block never reaches the plugin — and on the native sampler's
-    // record feed that is a hole in the recording, not a dropped frame of
-    // monitoring. It cannot fail the command: the caller is the worklet relay,
+    // so this block never reaches the plugin and its output is a hole in the
+    // processed stream. It cannot fail the command: the caller is the worklet relay,
     // an error there costs the output block that IS ready below, and the very
     // condition being reported is the engine already running behind. So it is
     // counted where `engine_rt_diagnostics` can see it, alongside the engine's

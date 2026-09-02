@@ -16,7 +16,7 @@ Owns the WebAudio runtime graph (`AudioContext`, track/bus strips, send/sidechai
 
 ## Key Subsystems
 
-- **`engine/`**: Runtime graph nodes (`TrackNode`, `BusNode`, `AdjustmentBusNode`, `AdjustmentLayerRuntime`, `CrumbsRecordFeedNode`, built-in WASM device nodes: `BacteriaNode`, `CrumbsNode`, `CrustNode`, `FermenterNode`, `GlutenNode`, `GrandBouleNode`, `GrinderNode`, `KneadNode`, `LevainNode`, `NativePluginBridgeNode`, `ProofChamberNode`, `ProofNode`, `ScoringNode`, `ToasterNode`), `audioDeviceRuntimeSink.ts`, `wasmDeviceRegistry.ts`, `telemetryAllocator.ts`, `dropoutCounter.ts`. (Device id "Dutch Oven" is the ProofChamber reverb — there is no separate Dutch Oven module).
+- **`engine/`**: Runtime graph nodes (`TrackNode`, `BusNode`, `AdjustmentBusNode`, `AdjustmentLayerRuntime`, built-in WASM device nodes: `BacteriaNode`, `CrumbsNode`, `CrustNode`, `FermenterNode`, `GlutenNode`, `GrandBouleNode`, `GrinderNode`, `KneadNode`, `LevainNode`, `NativePluginBridgeNode`, `ProofChamberNode`, `ProofNode`, `ScoringNode`, `ToasterNode`), `audioDeviceRuntimeSink.ts`, `wasmDeviceRegistry.ts`, `telemetryAllocator.ts`, `dropoutCounter.ts`. (Device id "Dutch Oven" is the ProofChamber reverb — there is no separate Dutch Oven module).
 - **`wasm/`**: Generated JS glue for compiled Rust WASM crates (`crates/{daw-dsp,proof-chamber,scoring,daw-wasm-decoder}`).
 - **`worklets/`**: AudioWorklet processors and node wrappers.
 - **`workers/`**: Background workers (e.g. Grand Boule Worker behind SharedArrayBuffer ring).

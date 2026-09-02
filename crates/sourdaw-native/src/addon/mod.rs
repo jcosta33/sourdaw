@@ -1223,17 +1223,6 @@ impl SourdawNative {
         reason(commands::crumbs::stop_recording(instance_id, &self.singletons.crumbs).await)
     }
 
-    /// Accept and discard one block of the monitored input bus. The samplers
-    /// record the engine's own capture tap, so this command reaches no take;
-    /// it survives only until its TypeScript producer is retired with it.
-    #[napi]
-    pub async fn feed_crumbs_record_input(&self, audio_bytes: Buffer) -> Result<()> {
-        reason(
-            commands::crumbs::feed_record_input(audio_bytes.to_vec(), &self.singletons.app_state)
-                .await,
-        )
-    }
-
     // ── Pitch edit ─────────────────────────────────────────────────────
 
     #[napi]
