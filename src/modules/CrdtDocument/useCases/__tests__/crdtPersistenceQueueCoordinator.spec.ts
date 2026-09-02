@@ -286,6 +286,42 @@ describe('crdtPersistenceQueueCoordinator / compaction paths stamp the undo witn
         expect(observedHeads).toEqual(['post-chunk-flush-head']);
         stampSpy.mockRestore();
     });
+
+    it('stamps the undo witness with the heads a full-snapshot retry this compaction awaited just landed on a direct compact operation', async () => {
+        // Leaves a failed full snapshot pending from a prior compact attempt, so
+        // `compactCrdtProject`'s own `await flushPendingFullSnapshot(generation)`
+        // has a real retry to await rather than the no-op an empty queue gives it.
+        const pendingBundle = new Map([['root', new Uint8Array([9])]]);
+        mockAutomergeRepo.saveAllOffThread.mockResolvedValue(pendingBundle);
+        mockSaveAllToIdb.mockClear();
+        mockSaveAllToIdb.mockImplementationOnce(() =>
+            Promise.reject(new Error('simulated transient full-save failure'))
+        );
+
+        await expect(crdtPersistenceQueueCoordinator.runOperation('compact')).rejects.toThrow(
+            'simulated transient full-save failure'
+        );
+
+        // The retried full snapshot save lands the write; only a stamp placed
+        // after that awaited flush should observe its heads.
+        mockAutomergeRepo.getHeads.mockReturnValue(['pre-retry-head']);
+        mockSaveAllToIdb.mockImplementationOnce(() => {
+            mockAutomergeRepo.getHeads.mockReturnValue(['post-full-snapshot-retry-head']);
+            return Promise.resolve({
+                status: 'committed',
+                authority: { epoch: 'test-epoch', revision: 2, rootLineage: 'main' },
+            });
+        });
+        let observedHeads: string[] | undefined;
+        const stampSpy = vi.spyOn(sessionUndoWitnessStampPort, 'stamp').mockImplementation(() => {
+            observedHeads = mockAutomergeRepo.getHeads('root');
+        });
+
+        await crdtPersistenceQueueCoordinator.runOperation('compact');
+
+        expect(observedHeads).toEqual(['post-full-snapshot-retry-head']);
+        stampSpy.mockRestore();
+    });
 });
 
 describe('crdtPersistenceQueueCoordinator / a failed pending-write settle still stamps and persists (#3331)', () => {
