@@ -14,7 +14,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { startAutomationRecording, applyModulation, applyModulationToEngine } from '#/modules/Automation/useCases';
 
-import { getTempoAtBeat } from '../../models/TempoMap';
+import { getTempoAtBeat, secondsBetweenBeats } from '../../models/TempoMap';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { tempoMapStore } from '../../stores/tempoMapStore';
@@ -357,9 +357,16 @@ export function startPlayheadScheduler(): void {
         // and every decision here follows without being rewritten.
         playheadPositionRef.current = readNativeEngineCursorBeats() ?? newPosition;
 
-        // Sync to AudioEngine for real-time DSP (SAB-backed)
+        // Sync to AudioEngine for real-time DSP (SAB-backed).
+        //
+        // The beat goes over with the seconds it maps to. A worklet cannot
+        // integrate the tempo map — it does not have one — so publishing only
+        // the beat and the tempo in force leaves every seconds-domain reader
+        // dividing one by the other, which is the flat conversion that drifts
+        // across a tempo change.
         audioEngine.setTransportInfo(
             newPosition,
+            secondsBetweenBeats(changes, 0, newPosition, current.tempo),
             currentTempo,
             current.isPlaying,
             current.loopStart,

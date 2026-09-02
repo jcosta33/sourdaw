@@ -13,3 +13,4 @@ export { transportStore, defaultTransportState, MIN_TEMPO, MAX_TEMPO } from './t
 export type { TransportState } from './transportStore';
 
 export { readTempoAtBeat } from './readTempoAtBeat';
+export { readSecondsAtBeat } from './readSecondsAtBeat';
