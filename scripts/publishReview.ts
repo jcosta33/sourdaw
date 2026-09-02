@@ -1060,7 +1060,7 @@ export async function runRecoverPublishReviewLockCli(
             reviewerActorNodeId: expectedActorNodeId,
             ownerFence: dependencies.currentOwnerFence?.() ?? currentReviewPublicationOwnerFence(),
             mutation: {
-                phase: 'prepared' as const,
+                phase: legacyIncident === undefined ? journaledOwner!.mutation.phase : ('prepared' as const),
                 epoch:
                     legacyIncident === undefined
                         ? requireReviewPublicationOwner(originalOwner, number).mutation.epoch + 1

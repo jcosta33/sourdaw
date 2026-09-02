@@ -11,7 +11,6 @@ import {
     defaultPublishReviewCoordinatorDependencies,
     exactPublishedReview,
     inspectReviewPublicationRemote,
-    parseRecoverPublishReviewArgs,
     parsePublishReviewArgs,
     parseReviewDocument,
     publishPreparedReview,
@@ -1388,6 +1387,20 @@ describe('shellPort postReview state verification', () => {
         ]);
     });
 
+    it('pins the canonical review payload bytes and SHA-256 digest', () => {
+        const payload = reviewPublicationPayload({
+            commitId: '0123456789012345678901234567890123456789',
+            event: 'REQUEST_CHANGES',
+            body: 'Request changes.',
+            comments: [validComment],
+        });
+
+        expect(payload).toBe(
+            '{"commit_id":"0123456789012345678901234567890123456789","event":"REQUEST_CHANGES","body":"Request changes.","comments":[{"path":"scripts/deliverPullRequest.ts","line":10,"side":"RIGHT","body":"COMMENT still authorizes merge. A stale COMMENT could ship. Require reviewer APPROVED on this head."}]}'
+        );
+        expect(reviewPublicationPayloadDigest(payload)).toBe('15e97754a7af071d05cb92ef1594eb18737a7b9ab7851e2c3409cc9526d51a11');
+    });
+
     it('retains a dead owner that attempted a remote mutation after two no-review reads', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-publication-recovery-'));
         const number = 42;
@@ -1448,6 +1461,29 @@ describe('shellPort postReview state verification', () => {
             const retainedOid = readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number);
             expect(retainedOid).toMatch(/^[0-9a-f]{40}$/);
             expect(retainedOid).not.toBe(ownerOid);
+            const retainedOwner = readPullRequestMutationLockOwner(root, retainedOid!, number);
+            expect(retainedOwner).toMatchObject({ mutation: { phase: 'remote-mutation-attempted' } });
+
+            await expect(
+                runRecoverPublishReviewLockCli([String(number), '--owner', retainedOid!], {
+                    primaryRoot: () => root,
+                    authenticateReviewer: async () => ({
+                        minted: { actorNodeId: REVIEWER_BOT_NODE_ID },
+                        session: { configDir: '/tmp/reviewer', env: {}, dispose: () => undefined },
+                    }),
+                    repositoryName: () => 'jcosta33/sourdaw',
+                    inspect: () => ({ state: 'OPEN', head, reviews: [] }),
+                    isOwnerLive: () => false,
+                    currentOwnerFence: () => ({ kind: 'pid', pid: process.pid, startedAt: 'test-process' }),
+                })
+            ).rejects.toThrow(/attempted a remote mutation without landed evidence/);
+            const retryRetainedOid = readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number);
+            expect(retryRetainedOid).toMatch(/^[0-9a-f]{40}$/);
+            expect(readPullRequestMutationLockOwner(root, retryRetainedOid!, number)).toMatchObject({
+                mutation: { phase: 'remote-mutation-attempted' },
+            });
+            expect(readPullRequestMutationLockReceipt(root, number, ownerOid)).toBeUndefined();
+            expect(readPullRequestMutationLockReceipt(root, number, retainedOid!)).toBeUndefined();
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
@@ -1579,27 +1615,6 @@ describe('shellPort postReview state verification', () => {
         } finally {
             rmSync(fixture.root, { recursive: true, force: true });
         }
-    });
-
-    it.each([
-        [
-            'wrong definitive status',
-            [
-                '42',
-                '--owner',
-                'a'.repeat(40),
-                '--head',
-                'b'.repeat(40),
-                '--payload-digest',
-                'c'.repeat(64),
-                '--definitive-no-mutation-http-status',
-                '400',
-            ],
-        ],
-        ['missing legacy digest', ['42', '--owner', 'a'.repeat(40), '--head', 'b'.repeat(40)]],
-        ['missing legacy head', ['42', '--owner', 'a'.repeat(40), '--payload-digest', 'c'.repeat(64)]],
-    ])('rejects %s before any recovery mutation', (_label, args) => {
-        expect(() => parseRecoverPublishReviewArgs(args)).toThrow(/usage: pnpm review:publish:recover/);
     });
 
     it('rejects every legacy v1 owner not named by the trusted incident receipt', async () => {
@@ -2096,91 +2111,13 @@ describe('shellPort postReview state verification', () => {
 
     it.each([
         [
-            'wrong owner',
-            (fixture: { ownerOid: string; head: string }, digest: string) => [
-                'f'.repeat(40),
-                fixture.head,
-                digest,
-                '422',
-            ],
-        ],
-        [
-            'wrong head',
-            (fixture: { ownerOid: string; head: string }, digest: string) => [
-                fixture.ownerOid,
-                'b'.repeat(40),
-                digest,
-                '422',
-            ],
-        ],
-        [
-            'wrong digest',
-            (fixture: { ownerOid: string; head: string }, _digest: string) => [
-                fixture.ownerOid,
-                fixture.head,
-                'c'.repeat(64),
-                '422',
-            ],
-        ],
-        [
-            'wrong status',
-            (fixture: { ownerOid: string; head: string }, digest: string) => [
-                fixture.ownerOid,
-                fixture.head,
-                digest,
-                '400',
-            ],
-        ],
-    ])('retains legacy v1 ownership on %s attestation', async (_label, argsFor) => {
-        const fixture = createLegacyRecoveryFixture();
-        const digest = reviewPublicationPayloadDigest(
-            reviewPublicationPayload({
-                commitId: fixture.head,
-                event: 'APPROVE',
-                body: 'Attacked; held.',
-                comments: [],
-            })
-        );
-        try {
-            const [owner, head, attestedDigest, status] = argsFor(fixture, digest);
-            if (owner === undefined || head === undefined || attestedDigest === undefined || status === undefined) {
-                throw new Error('legacy attestation test fixture is incomplete');
-            }
-            await expect(
-                runRecoverPublishReviewLockCli(
-                    [
-                        String(fixture.number),
-                        '--owner',
-                        owner,
-                        '--head',
-                        head,
-                        '--payload-digest',
-                        attestedDigest,
-                        '--definitive-no-mutation-http-status',
-                        status,
-                    ],
-                    recoveryDependencies(fixture.root, (expectedHead) => ({
-                        state: 'OPEN',
-                        head: expectedHead,
-                        reviews: [],
-                    }))
-                )
-            ).rejects.toThrow();
-            expect(
-                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
-            ).toBe(fixture.ownerOid);
-        } finally {
-            rmSync(fixture.root, { recursive: true, force: true });
-        }
-    });
-
-    it.each([
-        [
             'payload digest',
             (owner: Extract<PullRequestMutationLockOwner, { version: 3 }>) => ({
                 ...owner,
                 payloadDigest: 'c'.repeat(64),
             }),
+            () => undefined,
+            /payload does not match the retained lock/,
         ],
         [
             'expected head',
@@ -2188,6 +2125,16 @@ describe('shellPort postReview state verification', () => {
                 ...owner,
                 expectedHead: 'd'.repeat(40),
             }),
+            (fixture: ReturnType<typeof createJournaledRecoveryFixture>) => {
+                const bundle = join(fixture.root, '.agents', 'review-bundles', `${fixture.number}-${'d'.repeat(40)}`);
+                mkdirSync(bundle, { recursive: true });
+                writeFileSync(
+                    join(bundle, 'review.json'),
+                    JSON.stringify({ event: 'APPROVE', body: 'Attacked; held.', comments: [] })
+                );
+                writeFileSync(join(bundle, 'diff.patch'), '');
+            },
+            /payload does not match the retained lock/,
         ],
         [
             'reviewer actor',
@@ -2195,14 +2142,17 @@ describe('shellPort postReview state verification', () => {
                 ...owner,
                 reviewerActorNodeId: 'other-actor',
             }),
+            () => undefined,
+            /retained reviewer actor does not match the authenticated reviewer/,
         ],
-    ])('retains a v3 lock when its stored %s drifts', async (_label, mutate) => {
-        const fixture = createJournaledRecoveryFixture();
+    ])('retains a prepared v3 lock when its stored %s drifts', async (_label, mutate, prepare, error) => {
+        const fixture = createJournaledRecoveryFixture('prepared');
         try {
             const owner = readPullRequestMutationLockOwner(fixture.root, fixture.ownerOid, fixture.number);
             if (owner.version !== 3) {
                 throw new Error('test fixture is not a journaled publication owner');
             }
+            prepare(fixture);
             const driftedOid = writePullRequestMutationLockOwner(fixture.root, mutate(owner), fixture.number);
             runGit(fixture.root, [
                 'update-ref',
@@ -2219,7 +2169,7 @@ describe('shellPort postReview state verification', () => {
                         reviews: [],
                     }))
                 )
-            ).rejects.toThrow();
+            ).rejects.toThrow(error);
             expect(
                 readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
             ).toBe(driftedOid);

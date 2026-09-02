@@ -527,8 +527,22 @@ expect(!/^\s*paths\s*=/mu.test(gitleaksConfig), 'trusted Gitleaks config must no
 const rfc4122ExampleUuid = ['123e4567', 'e89b', '12d3', 'a456', '426614174000'].join('-');
 const rfc4122ExampleUuidSuccessor = ['123e4567', 'e89b', '12d3', 'a456', '426614174001'].join('-');
 const reviewPublicationRecoveryUuid = ['2cd01237', 'cf63', '4579', '9e58', '85893794529d'].join('-');
-const allowlistRegexes = /\[allowlist\][\s\S]*?regexes\s*=\s*\[([\s\S]*?)\]/u.exec(gitleaksConfig)?.[1];
-const configuredAllowlistRegexes = [...(allowlistRegexes ?? '').matchAll(/'''([^']*)'''/gu)].map((match) => match[1]);
+function trustedAllowlistRegexes(config) {
+    const allowlist = /^\[allowlist\]\s*$([\s\S]*)/mu.exec(config)?.[1];
+    const array = allowlist === undefined ? undefined : /^\s*regexes\s*=\s*\[([\s\S]*?)^\s*\]/mu.exec(allowlist)?.[1];
+    if (array === undefined) {
+        return undefined;
+    }
+    const entries = array
+        .replace(/#.*$/gmu, '')
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter((entry) => entry !== '');
+    const values = entries.map((entry) => /^'''([^']*)'''$/u.exec(entry));
+    return values.every((value) => value !== null) ? values.map((value) => value[1]) : undefined;
+}
+
+const configuredAllowlistRegexes = trustedAllowlistRegexes(gitleaksConfig);
 const exactAllowlistRegexes = [
     '64c64660ceed813476b314f52136d9698e075622',
     '0354489231f6a874331aer4927569297c7fea4d5',
@@ -544,7 +558,7 @@ expect(
     'trusted Gitleaks config must allowlist RFC 4122 example UUID token fixtures'
 );
 expect(
-    allowlistRegexes?.includes(`'''${reviewPublicationRecoveryUuid}'''`) === true,
+    configuredAllowlistRegexes?.includes(reviewPublicationRecoveryUuid) === true,
     'trusted Gitleaks config must allowlist the exact PR #3342 review-publication recovery UUID'
 );
 expect(
@@ -552,8 +566,14 @@ expect(
     'trusted Gitleaks config must preserve the exact audited literal allowlist without wildcard or alternation broadening'
 );
 expect(
-    !configuredAllowlistRegexes.includes(`${reviewPublicationRecoveryUuid}|.*`),
-    'trusted Gitleaks config must reject the exact review-publication UUID-or-dot-star mutation'
+    JSON.stringify(trustedAllowlistRegexes(gitleaksConfig.replace(`'''${reviewPublicationRecoveryUuid}'''`, `'''${reviewPublicationRecoveryUuid}|.*'''`))) !==
+        JSON.stringify(exactAllowlistRegexes),
+    'trusted Gitleaks config must reject the triple-quoted review-publication UUID-or-dot-star mutation'
+);
+expect(
+    trustedAllowlistRegexes(gitleaksConfig.replace(`'''${reviewPublicationRecoveryUuid}'''`, `"${reviewPublicationRecoveryUuid}|.*"`)) ===
+        undefined,
+    'trusted Gitleaks config must reject a basic-quoted review-publication UUID-or-dot-star mutation'
 );
 expect(gitleaksHelper.includes('--log-opts=--all'), 'secret scan must scan the full fetched git history, not only a PR diff');
 expect(gitleaksHelper.includes('--redact=100'), 'secret scan must redact secrets from logs and stdout');
