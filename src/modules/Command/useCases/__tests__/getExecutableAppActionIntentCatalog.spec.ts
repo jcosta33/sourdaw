@@ -39,4 +39,18 @@ describe('getExecutableAppActionIntentCatalog', () => {
             semanticCategories: expect.arrayContaining(['clip']),
         });
     });
+
+    it('rejects a cursor reused with a distinct astral intent that yields the same result set', () => {
+        const firstPage = getExecutableAppActionIntentCatalog({ intent: 'operation 𐐀', page: { limit: 1 } });
+        if (firstPage.nextCursor === null) {
+            throw new Error('Expected an intent catalog cursor.');
+        }
+
+        expect(() =>
+            getExecutableAppActionIntentCatalog({
+                intent: 'operation 𐐁',
+                page: { cursor: firstPage.nextCursor, limit: 1 },
+            })
+        ).toThrow('Command catalog cursor does not match the strict catalog contract.');
+    });
 });

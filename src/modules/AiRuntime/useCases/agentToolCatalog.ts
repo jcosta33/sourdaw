@@ -14,6 +14,14 @@ export const COMMAND_BATCH_PROPOSAL_TOOL_NAME = 'command.batch.propose';
 export const COMMAND_HISTORY_TOOL_NAME = 'command.history';
 export const RENDER_REQUEST_TOOL_NAME = 'render.request';
 export const ANALYSIS_REQUEST_TOOL_NAME = 'analysis.request';
+export const AGENT_CATALOG_CURSOR_MAX_LENGTH = 2048;
+export const AGENT_CATALOG_CURSOR_PATTERN = '^[A-Za-z0-9_-]+$';
+export const AGENT_CATALOG_CURSOR_JSON_SCHEMA = {
+    type: 'string',
+    minLength: 1,
+    maxLength: AGENT_CATALOG_CURSOR_MAX_LENGTH,
+    pattern: AGENT_CATALOG_CURSOR_PATTERN,
+} as const;
 
 const MAX_DISCOVERED_SCHEMAS = 8;
 const EXACT_CATALOG_CATEGORIES = [
@@ -73,7 +81,7 @@ function getCatalogDiscoverySchema(): ToolSchema {
         type: 'object',
         properties: {
             limit: { type: 'integer', minimum: 1, maximum: MAX_DISCOVERED_SCHEMAS },
-            cursor: { type: 'string', maxLength: 2048 },
+            cursor: { ...AGENT_CATALOG_CURSOR_JSON_SCHEMA },
         },
         additionalProperties: false,
     };
@@ -104,7 +112,7 @@ function getCommandIndexSearchSchema(): ToolSchema {
                 type: 'object',
                 properties: {
                     limit: { type: 'integer', minimum: 1, maximum: MAX_DISCOVERED_SCHEMAS },
-                    cursor: { type: 'string', maxLength: 2048 },
+                    cursor: { ...AGENT_CATALOG_CURSOR_JSON_SCHEMA },
                 },
                 additionalProperties: false,
             },

@@ -1,8 +1,8 @@
-import { getExecutableCommandRegistrations } from './getExecutableCommandRegistrations';
 import {
     getExecutableAppActionIntentCatalogUnicodeLength,
     MAX_EXECUTABLE_APP_ACTION_INTENT_CATALOG_INTENT_LENGTH,
 } from './getExecutableAppActionIntentCatalogUnicodeLength';
+import { getExecutableCommandRegistrations } from './getExecutableCommandRegistrations';
 
 const MAX_CATALOG_PAGE_SIZE = 8;
 const MAX_CURSOR_LENGTH = 2048;
@@ -155,11 +155,11 @@ function resultSetFingerprint(names: readonly string[]): string {
 }
 
 function intentFingerprint(intent: string): string {
-    let hash = 2_166_136_261;
-    for (const character of intent) {
-        hash = Math.imul(hash ^ character.charCodeAt(0), 16_777_619);
+    let hash = 0x6c62272e07bb014262b821756295c58dn;
+    for (const byte of new TextEncoder().encode(intent)) {
+        hash = BigInt.asUintN(128, (hash ^ BigInt(byte)) * 0x0000000001000000000000000000013bn);
     }
-    return `${String(intent.length)}-${String(hash >>> 0)}`;
+    return hash.toString(36);
 }
 
 function pageOffset(input: {

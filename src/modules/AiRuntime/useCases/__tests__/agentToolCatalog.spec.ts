@@ -116,7 +116,7 @@ describe('agent tool catalog', () => {
                     type: 'object',
                     properties: {
                         limit: { type: 'integer', minimum: 1, maximum: 8 },
-                        cursor: { type: 'string', maxLength: 2048 },
+                        cursor: { type: 'string', minLength: 1, maxLength: 2048, pattern: '^[A-Za-z0-9_-]+$' },
                     },
                     additionalProperties: false,
                 },

@@ -17,6 +17,8 @@ import { type ToolCallResult } from '../transformers/toolCallParser';
 
 import {
     AGENT_CAPABILITIES_TOOL_NAME,
+    AGENT_CATALOG_CURSOR_MAX_LENGTH,
+    AGENT_CATALOG_CURSOR_PATTERN,
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
@@ -31,7 +33,7 @@ import {
 import { getAgentToolCatalogEntries } from './getAgentToolCatalogEntries';
 
 const DEFAULT_LIMITS = {
-    maxTurns: 3,
+    maxTurns: 4,
     maxCallsPerTurn: 4,
     maxTotalCalls: 8,
     maxReceiptBytesPerCall: 16_384,
@@ -41,9 +43,8 @@ const DEFAULT_LIMITS = {
 const MAX_CALL_ID_LENGTH = 256;
 const MAX_FILTER_STRING_LENGTH = 256;
 const MAX_CURSOR_LENGTH = 256;
-const MAX_CATALOG_CURSOR_LENGTH = 2048;
 const MAX_REVISION_LENGTH = 65_536;
-const CATALOG_CURSOR_PATTERN = /^[A-Za-z0-9_-]+$/;
+const CATALOG_CURSOR_PATTERN = new RegExp(AGENT_CATALOG_CURSOR_PATTERN, 'u');
 
 type QueryInput = Parameters<typeof querySemanticProject>[0];
 type QueryFilters = NonNullable<QueryInput['filters']>;
@@ -590,7 +591,7 @@ function parseCatalogDiscoveryArguments(argumentsValue: Record<string, unknown>)
             (pageValue.cursor !== undefined &&
                 (typeof pageValue.cursor !== 'string' ||
                     pageValue.cursor.length === 0 ||
-                    pageValue.cursor.length > MAX_CATALOG_CURSOR_LENGTH ||
+                    pageValue.cursor.length > AGENT_CATALOG_CURSOR_MAX_LENGTH ||
                     !CATALOG_CURSOR_PATTERN.test(pageValue.cursor))) ||
             (pageValue.limit !== undefined &&
                 (typeof pageValue.limit !== 'number' ||
@@ -657,7 +658,7 @@ function parseCommandIndexSearchArguments(argumentsValue: Record<string, unknown
         (pageValue.cursor !== undefined &&
             (typeof pageValue.cursor !== 'string' ||
                 pageValue.cursor.length === 0 ||
-                pageValue.cursor.length > MAX_CATALOG_CURSOR_LENGTH ||
+                pageValue.cursor.length > AGENT_CATALOG_CURSOR_MAX_LENGTH ||
                 !CATALOG_CURSOR_PATTERN.test(pageValue.cursor))) ||
         (pageValue.limit !== undefined &&
             (typeof pageValue.limit !== 'number' ||

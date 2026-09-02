@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME } from '../agentToolCatalog';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 
+type GetAgentToolCatalogEntries = typeof import('../getAgentToolCatalogEntries').getAgentToolCatalogEntries;
+
 const { mockGetAgentToolCatalogEntries } = vi.hoisted(() => ({
-    mockGetAgentToolCatalogEntries: vi.fn(),
+    mockGetAgentToolCatalogEntries: vi.fn<GetAgentToolCatalogEntries>(),
 }));
 
 vi.mock('../getAgentToolCatalogEntries', async (importOriginal) => {
@@ -415,6 +417,8 @@ describe('intent command catalog', () => {
         }
         const cursor = decodeCursor(catalog.nextCursor);
         const tamperedCursors = [
+            '',
+            '+',
             encodeCursor({ ...cursor, unexpected: true }),
             encodeCursor({ ...cursor, schemaVersion: 2 }),
             encodeCursor({ ...cursor, intentFingerprint: 'different' }),
@@ -642,10 +646,15 @@ describe('intent command catalog', () => {
             }
             return {
                 ...catalog,
-                items: catalog.items.map((item) => ({
-                    ...item,
-                    function: { ...item.function, description: `${item.function.description} Changed.` },
-                })),
+                items: catalog.items.map((item) => {
+                    if (!('function' in item)) {
+                        return item;
+                    }
+                    return {
+                        ...item,
+                        function: { ...item.function, description: `${item.function.description} Changed.` },
+                    };
+                }),
             };
         });
 
@@ -768,5 +777,93 @@ describe('intent command catalog', () => {
                 'warnings',
             ],
         ]);
+    });
+
+    it('completes two command-index pages, exact schema discovery, and a proposal within the default bounded loop', async () => {
+        const requestTurn = vi.fn(async ({ turn, receiptContext }: { turn: number; receiptContext: string | null }) => {
+            if (turn === 1) {
+                return {
+                    status: 'complete' as const,
+                    toolCalls: [
+                        {
+                            id: 'index-page-1',
+                            name: AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+                            arguments: { intent: 'tempo operation', page: { limit: 1 } },
+                        },
+                    ],
+                };
+            }
+            if (turn === 2) {
+                if (receiptContext === null) {
+                    throw new Error('Expected the first command-index receipt.');
+                }
+                const serializedReceipts = receiptContext.split('\n').at(-1);
+                if (serializedReceipts === undefined) {
+                    throw new Error('Expected serialized command-index receipts.');
+                }
+                const receiptEnvelope: unknown = JSON.parse(serializedReceipts);
+                if (!isRecord(receiptEnvelope) || !Array.isArray(receiptEnvelope.receipts)) {
+                    throw new Error('Expected a command-index receipt envelope.');
+                }
+                const firstReceipt = receiptEnvelope.receipts[0];
+                if (
+                    !isRecord(firstReceipt) ||
+                    !isRecord(firstReceipt.data) ||
+                    typeof firstReceipt.data.nextCursor !== 'string'
+                ) {
+                    throw new Error('Expected a next cursor for the first command-index page.');
+                }
+                const cursor = firstReceipt.data.nextCursor;
+                return {
+                    status: 'complete' as const,
+                    toolCalls: [
+                        {
+                            id: 'index-page-2',
+                            name: AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+                            arguments: { intent: 'tempo operation', page: { cursor, limit: 1 } },
+                        },
+                    ],
+                };
+            }
+            if (turn === 3) {
+                return {
+                    status: 'complete' as const,
+                    toolCalls: [
+                        {
+                            id: 'tempo-schema',
+                            name: 'agent.catalog.discover',
+                            arguments: { category: 'command', names: ['setTempo'] },
+                        },
+                    ],
+                };
+            }
+            return {
+                status: 'complete' as const,
+                toolCalls: [
+                    {
+                        id: 'tempo-proposal',
+                        name: 'command.batch.propose',
+                        arguments: { commands: [{ name: 'setTempo', arguments: { bpm: 128 } }] },
+                    },
+                ],
+            };
+        });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'intent-command-catalog-default-four-step',
+            terminalToolNames: new Set(['command.batch.propose']),
+            requestTurn,
+        });
+
+        expect(result).toMatchObject({
+            status: 'complete',
+            turns: 4,
+            receipts: [
+                { callId: 'index-page-1', status: 'success' },
+                { callId: 'index-page-2', status: 'success' },
+                { callId: 'tempo-schema', status: 'success' },
+            ],
+            toolCalls: [{ id: 'tempo-proposal', name: 'command.batch.propose' }],
+        });
     });
 });
