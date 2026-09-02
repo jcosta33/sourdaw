@@ -20,17 +20,43 @@
 //! alternative — resampling to hold them together — is the thing this crate
 //! refuses to do.
 //!
+//! A block the writer cannot interpret is refused whole rather than written
+//! in part: one whose channel count is not the ring's, and one whose length is
+//! not a whole number of frames. Writing a partial frame would rotate which
+//! channel every later sample belongs to for the rest of the session, which is
+//! silent corruption rather than counted loss. A block merely longer or
+//! shorter than the nominal period is *not* refused — the ring is a sample
+//! FIFO, and absorbing a device that jitters its block size is what it is for.
+//!
 //! **The settle law.** Mirrored from [`crate::audio_bridge`], because the
 //! shape of the problem is the same: a producer and a consumer on cadences
-//! nothing locks together, and a depth that only ever grows if left alone.
-//! Capacity spans the largest callback the engine accepts plus four input
-//! periods of slack; the depth the ring settles at covers the output period
-//! twice over plus a period of slack either side, clamped to what the ring
-//! holds. The reader fills to that depth before it hands anything out, then
-//! takes exactly one output period per callback. A depth above the target
-//! after a take is drift the reader shortens by one input period per pass —
-//! processed nowhere, counted here — so capture latency settles at the target
-//! instead of ratcheting up to the ring's capacity and staying there.
+//! nothing locks together, and a depth that only ever grows if left alone. The
+//! depth the ring settles at covers the output period twice over plus a period
+//! of slack either side. The reader fills to that depth before it hands
+//! anything out, then takes exactly one output period per callback. A depth
+//! above the target after a take is drift the reader shortens by one input
+//! period per pass — processed nowhere, counted here — so capture latency
+//! settles at the target instead of ratcheting up to the ring's capacity and
+//! staying there.
+//!
+//! **Why capacity follows the target.** The ring holds the settled depth, a
+//! whole output period on top of it, and slack besides. Both terms are load
+//! bearing. The reader takes an output period whole or not at all, so a ring
+//! that cannot hold the depth it settles at *plus* one of those reads can
+//! never serve one and underruns for the life of the stream. Sizing from the
+//! largest callback the engine accepts is not enough on its own, because an
+//! output period above that limit is a shape the engine really runs: a device
+//! whose whole advertised buffer range sits above the limit is opened on its
+//! own default period
+//! (see [`crate::audio_thread::negotiated_buffer_size`]). Capacity is
+//! therefore derived from the target rather than clamping the target to fit
+//! capacity — a target clamped to what the ring holds is a target the shed can
+//! never act on, which is the ratchet the shed exists to stop.
+//!
+//! **After a stall.** An underrun drops the reader back to unsettled, so it
+//! refills to the target before serving again. A reader that kept taking
+//! whatever happened to be there would run at the ring's floor for the rest of
+//! the session while still publishing the settled latency figure below.
 //!
 //! **What the latency figure means.** [`CaptureShape::latency_frames`] is the
 //! input period plus the settled depth: the frames between a sample arriving
@@ -39,11 +65,12 @@
 //! the two periods and nothing the callback measures — so a control thread
 //! reads it once and it stays true for the life of the stream.
 //!
-//! **What is counted.** Input blocks the writer refused because the ring was
-//! full, reads that could not fill a whole output period after the ring had
-//! settled, and samples the reader discarded to hold the settled depth. Every
-//! sample this path loses is one of those three, and each is an atomic the
-//! control side reads.
+//! **What is counted.** Input blocks the writer refused, whether because the
+//! ring was full or because the block's layout was not the ring's; reads that
+//! could not fill a whole output period after the ring had settled; and
+//! samples the reader discarded to hold the settled depth. Every sample this
+//! path loses is one of those three, and each is an atomic the control side
+//! reads.
 
 use rtrb::{Consumer, Producer, RingBuffer};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -51,9 +78,9 @@ use std::sync::Arc;
 
 use crate::audio_thread::MAX_CALLBACK_FRAMES;
 
-/// Input periods of slack the ring carries above the largest callback the
-/// engine accepts. Mirrors the four blocks [`crate::audio_bridge`] carries,
-/// for the same reason: ordinary jitter must not reach the refusal path.
+/// Input periods of slack the ring carries above what the settle law needs.
+/// Mirrors the four blocks [`crate::audio_bridge`] carries, for the same
+/// reason: ordinary jitter must not reach the refusal path.
 const RING_SLACK_PERIODS: usize = 4;
 
 /// The facts an input open settled, in the units the ring works in.
@@ -68,29 +95,25 @@ pub struct CaptureShape {
 }
 
 impl CaptureShape {
-    /// Input periods the ring holds.
-    ///
-    /// Sized from the largest callback the engine accepts rather than from
-    /// the negotiated output period, so a device that hands back a longer
-    /// block than the engine asked for still fits.
-    pub const fn ring_periods(self) -> usize {
-        MAX_CALLBACK_FRAMES.div_ceil(self.period()) + RING_SLACK_PERIODS
+    /// Input periods one read takes.
+    pub const fn read_periods(self) -> usize {
+        self.output_period_frames.div_ceil(self.period())
     }
 
     /// Input periods the ring settles at — the law of
     /// [`crate::audio_bridge::target_depth_blocks`], in input periods.
-    ///
-    /// The clamp keeps the target meaningful: a target above what the ring
-    /// holds could never be crossed, and a depth that never crosses its
-    /// target is the ratchet the shed exists to stop.
     pub const fn target_depth_periods(self) -> usize {
-        let periods_per_output = self.output_period_frames.div_ceil(self.period());
-        let target = periods_per_output * 2 + 2;
-        let capacity = self.ring_periods();
-        if target > capacity {
-            capacity
+        self.read_periods() * 2 + 2
+    }
+
+    /// Input periods the ring holds.
+    pub const fn ring_periods(self) -> usize {
+        let holding = self.target_depth_periods() + self.read_periods() + RING_SLACK_PERIODS;
+        let spanning = MAX_CALLBACK_FRAMES.div_ceil(self.period()) + RING_SLACK_PERIODS;
+        if holding > spanning {
+            holding
         } else {
-            target
+            spanning
         }
     }
 
@@ -100,10 +123,12 @@ impl CaptureShape {
         self.period() + self.target_depth_periods() * self.period()
     }
 
+    /// The input period every calculation here works in.
+    ///
+    /// A zero period is refused at the seam. Standing it up as one frame keeps
+    /// the arithmetic total, so a defensive caller gets a small usable ring
+    /// rather than a zero-capacity one on the thread that owns the stream.
     const fn period(self) -> usize {
-        // A zero period is refused at the seam; keeping the arithmetic total
-        // means a defensive caller gets a small ring rather than a panic on
-        // the thread that owns the stream.
         if self.input_period_frames == 0 {
             1
         } else {
@@ -111,8 +136,18 @@ impl CaptureShape {
         }
     }
 
+    /// The interleaved channel count every calculation here works in, on the
+    /// same footing as [`Self::period`].
+    const fn lanes(self) -> usize {
+        if self.channels == 0 {
+            1
+        } else {
+            self.channels
+        }
+    }
+
     const fn interleaved(self, frames: usize) -> usize {
-        frames * if self.channels == 0 { 1 } else { self.channels }
+        frames * self.lanes()
     }
 }
 
@@ -130,14 +165,15 @@ pub struct CaptureCounters {
 }
 
 impl CaptureCounters {
-    /// Input blocks the device delivered and the ring could not hold.
+    /// Input blocks the writer refused: the ring could not hold them, or their
+    /// layout was not the ring's.
     pub fn blocks_refused(&self) -> u64 {
         self.blocks_refused.load(Ordering::Relaxed)
     }
 
     /// Reads that could not fill a whole output period once the ring had
-    /// settled. Startup fill is not counted here: it is the settle, not a
-    /// shortfall.
+    /// settled. Startup fill, and the refill after a stall, are not counted
+    /// here: filling is not a shortfall.
     pub fn underruns(&self) -> u64 {
         self.underruns.load(Ordering::Relaxed)
     }
@@ -166,10 +202,14 @@ impl CaptureRingWriter {
     /// `channels` travels with the block, as it does on the render side, so a
     /// device-invalidation recovery that resumes this callback on a different
     /// layout is refused rather than written into a ring shaped for the old
-    /// one.
+    /// one. A length that is not a whole number of frames is refused for the
+    /// stronger reason: writing it would rotate every later sample's channel.
     #[inline]
     pub fn write_block(&mut self, block: &[f32], channels: usize) {
-        if channels != self.channels || self.producer.push_entire_slice(block).is_err() {
+        if channels != self.channels
+            || block.len() % self.channels != 0
+            || self.producer.push_entire_slice(block).is_err()
+        {
             self.counters.blocks_refused.fetch_add(1, Ordering::Relaxed);
         }
     }
@@ -204,6 +244,10 @@ impl CaptureRingReader {
 
         if self.consumer.pop_entire_slice(out).is_err() {
             self.counters.underruns.fetch_add(1, Ordering::Relaxed);
+            // Rebuild the slack before serving again. Carrying on from
+            // whatever survived the stall would leave the reader running at
+            // the ring's floor while still publishing the settled latency.
+            self.settled = false;
             return false;
         }
 
@@ -249,21 +293,20 @@ impl CaptureRingReader {
 /// thread that opens the stream.
 pub fn capture_ring(shape: CaptureShape) -> (CaptureRingWriter, CaptureRingReader) {
     let counters = Arc::new(CaptureCounters::default());
-    let capacity = shape.interleaved(shape.ring_periods() * shape.input_period_frames);
+    let capacity = shape.interleaved(shape.ring_periods() * shape.period());
     let (producer, consumer) = RingBuffer::new(capacity);
 
     let writer = CaptureRingWriter {
         producer,
         counters: Arc::clone(&counters),
-        channels: shape.channels,
+        channels: shape.lanes(),
     };
     let reader = CaptureRingReader {
         consumer,
         counters,
         shape,
-        target_depth_samples: shape
-            .interleaved(shape.target_depth_periods() * shape.input_period_frames),
-        input_period_samples: shape.interleaved(shape.input_period_frames),
+        target_depth_samples: shape.interleaved(shape.target_depth_periods() * shape.period()),
+        input_period_samples: shape.interleaved(shape.period()),
         settled: false,
     };
 
@@ -281,6 +324,22 @@ mod tests {
         channels: 2,
     };
 
+    /// Output periods the engine really runs that sit above the largest
+    /// callback it accepts: a device whose whole advertised range is above the
+    /// limit keeps its own default period.
+    const LONG_OUTPUT_SHAPES: [CaptureShape; 2] = [
+        CaptureShape {
+            input_period_frames: 128,
+            output_period_frames: 4096,
+            channels: 2,
+        },
+        CaptureShape {
+            input_period_frames: 128,
+            output_period_frames: 6144,
+            channels: 2,
+        },
+    ];
+
     fn block(frames: usize) -> Vec<f32> {
         vec![0.5; frames * SHAPE.channels]
     }
@@ -294,6 +353,53 @@ mod tests {
             SHAPE.latency_frames(),
             SHAPE.input_period_frames * (SHAPE.target_depth_periods() + 1)
         );
+    }
+
+    #[test]
+    fn the_ring_holds_its_settled_depth_and_a_whole_read() {
+        // The reader takes an output period whole or not at all, so a ring
+        // that cannot hold the settled depth and one of those reads at the
+        // same time can never serve one.
+        for shape in [SHAPE, LONG_OUTPUT_SHAPES[0], LONG_OUTPUT_SHAPES[1]] {
+            let capacity = shape.ring_periods() * shape.input_period_frames;
+            let needed = shape.target_depth_periods() * shape.input_period_frames
+                + shape.output_period_frames;
+            assert!(
+                capacity >= needed,
+                "an output period of {} frames needs {needed} frames of ring, sized at {capacity}",
+                shape.output_period_frames
+            );
+        }
+    }
+
+    #[test]
+    fn an_output_period_above_the_callback_limit_still_settles_and_sheds() {
+        for shape in LONG_OUTPUT_SHAPES {
+            let (mut writer, mut reader) = capture_ring(shape);
+            let input = vec![0.5f32; shape.input_period_frames * shape.channels];
+            let mut out = vec![0.0; shape.output_period_frames * shape.channels];
+            let writes_per_read = shape.output_period_frames / shape.input_period_frames + 1;
+
+            let mut served = 0;
+            for _ in 0..400 {
+                for _ in 0..writes_per_read {
+                    writer.write_block(&input, shape.channels);
+                }
+                if reader.read_into(&mut out) {
+                    served += 1;
+                }
+            }
+
+            assert!(
+                served > 0,
+                "a ring too small for its own target never settles at {} frames out",
+                shape.output_period_frames
+            );
+            assert!(
+                reader.counters().samples_shed() > 0,
+                "the shed has to reach a target the ring can actually exceed"
+            );
+        }
     }
 
     #[test]
@@ -318,6 +424,32 @@ mod tests {
         writer.write_block(&block(SHAPE.input_period_frames), SHAPE.channels + 1);
 
         assert_eq!(reader.counters().blocks_refused(), 1);
+    }
+
+    #[test]
+    fn a_block_carrying_a_partial_frame_is_refused_and_leaves_the_ring_untouched() {
+        let (mut writer, reader) = capture_ring(SHAPE);
+
+        // Half a frame at the end. Written, it would swap which channel every
+        // later sample belongs to for the rest of the session.
+        let misaligned = vec![0.5f32; SHAPE.input_period_frames * SHAPE.channels + 1];
+        writer.write_block(&misaligned, SHAPE.channels);
+
+        assert_eq!(reader.counters().blocks_refused(), 1);
+        assert_eq!(
+            reader.consumer.slots(),
+            0,
+            "a refused block writes no part of itself"
+        );
+
+        // A device that jitters its block size is absorbed, not refused: the
+        // ring is a sample FIFO, not a queue of fixed-size blocks.
+        writer.write_block(&block(SHAPE.input_period_frames / 2), SHAPE.channels);
+        assert_eq!(reader.counters().blocks_refused(), 1);
+        assert_eq!(
+            reader.consumer.slots(),
+            SHAPE.input_period_frames / 2 * SHAPE.channels
+        );
     }
 
     #[test]
@@ -356,6 +488,27 @@ mod tests {
     }
 
     #[test]
+    fn the_shed_takes_at_most_one_input_period_per_read() {
+        let (mut writer, mut reader) = capture_ring(SHAPE);
+        let input = block(SHAPE.input_period_frames);
+        let mut out = vec![0.0; SHAPE.output_period_frames * SHAPE.channels];
+
+        // Far enough above the target that one read leaves several periods of
+        // excess: a shed that took all of it would drop a whole burst of
+        // captured audio in one callback instead of easing the depth down.
+        for _ in 0..SHAPE.target_depth_periods() + SHAPE.read_periods() + 4 {
+            writer.write_block(&input, SHAPE.channels);
+        }
+        assert!(reader.read_into(&mut out));
+
+        assert_eq!(
+            reader.counters().samples_shed() as usize,
+            SHAPE.input_period_frames * SHAPE.channels,
+            "one pass sheds one input period, however far above target the ring sits"
+        );
+    }
+
+    #[test]
     fn a_read_short_of_a_period_underruns_only_once_the_ring_has_settled() {
         let (mut writer, mut reader) = capture_ring(SHAPE);
         let input = block(SHAPE.input_period_frames);
@@ -376,6 +529,48 @@ mod tests {
         // for the read that could not be served.
         while reader.read_into(&mut out) {}
         assert_eq!(reader.counters().underruns(), 1);
+
+        // The stall drops the reader back to filling. One period back is not
+        // the settled depth, so this read is refill rather than a second
+        // shortfall — a reader that stayed settled would count it as one.
+        writer.write_block(&input, SHAPE.channels);
+        assert!(!reader.read_into(&mut out));
+        assert_eq!(
+            reader.counters().underruns(),
+            1,
+            "refilling after a stall is not a shortfall"
+        );
+
+        // Once the slack is back, the reader serves again.
+        for _ in 0..SHAPE.target_depth_periods() {
+            writer.write_block(&input, SHAPE.channels);
+        }
+        assert!(reader.read_into(&mut out));
+        assert_eq!(reader.counters().underruns(), 1);
+    }
+
+    #[test]
+    fn a_zero_input_period_still_builds_a_ring_the_reader_can_use() {
+        // The seam refuses a zero period; the arithmetic here stays total so
+        // a defensive caller gets a small usable ring rather than one of zero
+        // capacity that can never hand out a sample.
+        let shape = CaptureShape {
+            input_period_frames: 0,
+            output_period_frames: 4,
+            channels: 2,
+        };
+        let (mut writer, mut reader) = capture_ring(shape);
+        let mut out = [0.0f32; 8];
+
+        for _ in 0..shape.target_depth_periods() {
+            writer.write_block(&[0.25, 0.75], shape.channels);
+        }
+
+        assert!(
+            reader.read_into(&mut out),
+            "a zero-capacity ring can never serve a read"
+        );
+        assert_eq!(reader.counters().blocks_refused(), 0);
     }
 
     #[test]
@@ -421,18 +616,21 @@ mod tests {
         fn the_capture_callback_allocates_nothing() {
             let (mut writer, mut reader) = capture_ring(SHAPE);
             let input = block(SHAPE.input_period_frames);
+            let misaligned = vec![0.5f32; SHAPE.input_period_frames * SHAPE.channels + 1];
             let mut out = vec![0.0; SHAPE.output_period_frames * SHAPE.channels];
 
             assert_no_alloc(|| {
                 // Every arm of both callbacks: the write that fits, the write
-                // the full ring refuses, the read below the settle depth, the
-                // read that fills, the read that underruns, and the shed that
-                // holds the depth.
+                // the full ring refuses, the write refused for its layout and
+                // the one refused for a partial frame, the read below the
+                // settle depth, the read that fills, the read that underruns,
+                // and the shed that holds the depth.
                 for _ in 0..SHAPE.ring_periods() + 2 {
                     writer.write_block(&input, SHAPE.channels);
                 }
                 writer.write_block(&input, SHAPE.channels + 1);
-                for _ in 0..8 {
+                writer.write_block(&misaligned, SHAPE.channels);
+                for _ in 0..16 {
                     reader.read_into(&mut out);
                 }
             });
