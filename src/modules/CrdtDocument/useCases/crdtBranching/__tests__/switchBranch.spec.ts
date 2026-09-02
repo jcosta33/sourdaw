@@ -168,16 +168,20 @@ describe('switchBranch', () => {
     it('restores the undo history captured before the swap when the transition rejects', async () => {
         const persistenceFailure = new Error('compaction failed');
         mocks.compactProject.mockRejectedValueOnce(persistenceFailure);
+        const preSwitchSnapshot = { past: [{ id: 'undo-1', label: 'Move clip' }], future: [] };
+        mocks.captureUndoHistory.mockReturnValueOnce(preSwitchSnapshot);
 
         await expect(switchBranch('other')).rejects.toBe(persistenceFailure);
 
         // `apply()` clears undo history as a side effect of swapping the root
-        // document; a rejected transition must restore exactly what capture saw
-        // before the swap, not some other value.
-        const capturedSnapshot = mocks.captureUndoHistory.mock.results[0]?.value;
-        expect(capturedSnapshot).toBeDefined();
-        expect(mocks.restoreUndoHistory).toHaveBeenCalledOnce();
-        expect(mocks.restoreUndoHistory).toHaveBeenCalledWith(capturedSnapshot);
+        // document; a rejected transition must restore the exact object capture
+        // returned before the swap — not a structurally-equal stand-in, and not
+        // a snapshot taken after clearUndoHistory() has already run.
+        expect(mocks.captureUndoHistory).toHaveBeenCalledOnce();
+        expect(mocks.restoreUndoHistory.mock.calls[0]?.[0]).toBe(preSwitchSnapshot);
+        expect(mocks.captureUndoHistory.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.clearUndoHistory.mock.invocationCallOrder[0]
+        );
     });
 
     it('does not restore undo history when the switch succeeds', async () => {
