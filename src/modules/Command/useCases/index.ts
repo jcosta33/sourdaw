@@ -88,6 +88,8 @@ export { clearActionHistory } from './clearActionHistory';
 export { resetActionReplayAuthority } from './resetActionReplayAuthority';
 export { syncActionReplayMetadata } from './syncActionReplayMetadata';
 export { clearUndoHistory } from './clearUndoHistory';
+export { captureUndoHistory } from './captureUndoHistory';
+export { restoreUndoHistory } from './restoreUndoHistory';
 export { pushUndoEntry } from './pushUndoEntry';
 export { commitActionUndoEntry } from './commitActionUndoEntry';
 // Pitch-edit dispatch (`getPitchHandlers`) and dependency injection
