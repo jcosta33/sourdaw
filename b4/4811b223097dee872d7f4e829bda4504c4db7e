@@ -1,0 +1,19 @@
+src/modules/SampleLibrary/AGENTS.md
+  s_64e02c50bf88e9::t_28817db492efc9 13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b44811b223097dee872d7f4e829bda4504c4db7e",
+  "prompts": {},
+  "sessions": {
+    "s_64e02c50bf88e9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a6e1b7b8d56ce0499",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
