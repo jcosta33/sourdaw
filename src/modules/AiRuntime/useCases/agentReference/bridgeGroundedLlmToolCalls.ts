@@ -1791,12 +1791,23 @@ function stripTrackControlProtectionSpans(text: string, tracks: readonly { id: s
                     true
                 );
             } else {
-                withoutGerund = sliceThroughLaterTrackControlIntent(
-                    text,
-                    gerund.index,
-                    afterGerund,
-                    laterTrackControlIntent
-                );
+                const namedTrackEnd = endIndexAfterLeftmostNamedTrack(text.slice(afterGerund), tracks);
+                if (namedTrackEnd === undefined) {
+                    withoutGerund = sliceThroughLaterTrackControlIntent(
+                        text,
+                        gerund.index,
+                        afterGerund,
+                        laterTrackControlIntent
+                    );
+                } else {
+                    withoutGerund = sliceThroughLaterTrackControlIntent(
+                        text,
+                        gerund.index,
+                        afterGerund + namedTrackEnd,
+                        laterTrackControlIntent,
+                        true
+                    );
+                }
             }
         }
     }
@@ -1868,7 +1879,7 @@ function getTrackControlTargetPrompt(
             if (/\b(?:muted|unmuted|soloed|unsoloed)\b/u.test(normalized)) {
                 break;
             }
-            if (/\bunchanged\b/u.test(normalized) || /^(?:leave|keep|preserve|retain)\b/u.test(normalized)) {
+            if (/\bunchanged\b/u.test(normalized) || isTrackControlProtectionVerb(normalized)) {
                 continue;
             }
             break;
