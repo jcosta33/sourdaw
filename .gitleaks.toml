@@ -38,4 +38,10 @@ regexes = [
   # on unrelated pull requests.
   '''123e4567-e89b-12d3-a456-426614174000''',
   '''123e4567-e89b-12d3-a456-426614174001''',
+
+  # Mutation lock owner token fixture in `scripts/__tests__/publishReview.spec.ts`.
+  # `generic-api-key` matched only because the assignment is named `token`. It was
+  # never an issued credential. Audited 2026-09-02; Nightly `--all` still sees
+  # commit a63ddf4a on PR #3344 / `agent/review-publication-lock-recovery`.
+  '''2cd01237-cf63-4579-9e58-85893794529d''',
 ]

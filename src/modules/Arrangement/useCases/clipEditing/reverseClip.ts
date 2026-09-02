@@ -1,9 +1,12 @@
 import { cacheAudioBuffer, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { clearClipPitchAnalysis } from '#/modules/Knead/useCases';
+import { readTempoAtBeat } from '#/modules/Transport/stores';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
+
+import { reversedClipAudioOffsetBeats } from './reversedClipAudioOffsetBeats';
 
 /**
  * `reversedBufferId` is resolved by the command layer before dispatch rather than minted
@@ -43,9 +46,19 @@ export function reverseClip(clipId: string, reversedBufferId?: string): boolean 
     }
 
     const newId = reversedBufferId ?? `reversed-${clip.audioBufferId}-${Date.now()}`;
+    const clipTempo = readTempoAtBeat({ beat: clip.startBeat });
     const didWrite = updateClip(target.clipId, (candidate) => {
         cacheAudioBuffer({ buffer: reversed, bufferId: newId });
-        return {
+        const remappedAudioOffsetBeats = reversedClipAudioOffsetBeats({
+            audioOffsetBeats: candidate.audioOffsetBeats ?? 0,
+            clipLengthBeats: candidate.endBeat - candidate.startBeat,
+            bufferLength: buffer.length,
+            sampleRate: buffer.sampleRate,
+            tempo: clipTempo,
+            stretchMode: candidate.stretchMode,
+            stretchRatio: candidate.stretchRatio,
+        });
+        const reversedClip = {
             ...candidate,
             audioBufferId: newId,
             name: `${candidate.name} (reversed)`,
@@ -54,6 +67,10 @@ export function reverseClip(clipId: string, reversedBufferId?: string): boolean 
             fadeInBeats: candidate.fadeOutBeats,
             fadeOutBeats: candidate.fadeInBeats,
         };
+        if (remappedAudioOffsetBeats === undefined) {
+            return reversedClip;
+        }
+        return { ...reversedClip, audioOffsetBeats: remappedAudioOffsetBeats };
     });
     if (!didWrite) {
         return false;

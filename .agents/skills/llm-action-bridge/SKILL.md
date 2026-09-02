@@ -63,6 +63,12 @@ For any prompt, answer: what the model proposed, what validation accepted, what 
 
 **Why:** without those four answers, partial model wrongness is undiagnosable.
 
+### 9. Preserve qualifiers through prompt segmentation
+
+When a multi-action prompt is segmented, retain each action's exclusions, qualifiers, and reference ambiguity without borrowing adjacent action text. Test connector and punctuation variants, and mutate literal-ID versus display-name and Unicode-overlap evidence so exact identifiers never erase genuine ambiguity.
+
+**Why:** clause boundaries are a parsing convenience, not permission to widen a destructive action or collapse competing targets.
+
 ## References
 
 - [docs/architecture/03-typescript-module.md](../../../docs/architecture/03-typescript-module.md) — use cases and command surfaces actions must hit.
