@@ -9,37 +9,59 @@ import { runProjectLoadTransaction } from '../projectPersistence/helpers/runProj
 import { setProjectIdentityTransitionDependencies } from '../projectPersistence/projectIdentityTransitionDependencies';
 import { markDirty } from '../projectPersistence/saveProject/markDirty';
 
-const {
-    cancelPendingAudioBufferImport,
-    cancelPreparedBuffers,
-    prepareCachedAudioBuffersFromIdb,
-    publishPreparedBuffers,
-} = vi.hoisted(() => ({
-    cancelPendingAudioBufferImport: vi.fn(),
+const { cancelPreparedBuffers, prepareCachedAudioBuffersFromIdb, publishPreparedBuffers } = vi.hoisted(() => ({
     cancelPreparedBuffers: vi.fn(),
     prepareCachedAudioBuffersFromIdb: vi.fn(),
     publishPreparedBuffers: vi.fn(() => 1),
 }));
 
+// switchArrangement imports getAudioContext and prepareCachedAudioBuffersFromIdb;
+// runProjectLoadTransaction.activate imports cancelPendingAudioBufferImport.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
-    cancelPendingAudioBufferImport,
+    cancelPendingAudioBufferImport: vi.fn(),
     getAudioContext: vi.fn(() => ({})),
     prepareCachedAudioBuffersFromIdb,
 }));
 
-vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Transport/useCases')>();
+// switchArrangement imports stopPlayback; loadSnapshot imports restoreTimelineMapSnapshot.
+vi.mock('#/modules/Transport/useCases', async () => {
+    const { restoreTimelineMapSnapshot } = await import('#/modules/Transport/useCases/restoreTimelineMapSnapshot');
     return {
-        ...actual,
         stopPlayback: vi.fn(),
+        restoreTimelineMapSnapshot,
     };
 });
 vi.mock('../projectPersistence/saveProject/markDirty', () => ({ markDirty: vi.fn() }));
-vi.mock('#/modules/Command/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Command/useCases')>();
+// switchArrangement imports clearUndoHistory; runProjectLoadTransaction.prepare imports resetActionReplayAuthority.
+vi.mock('#/modules/Command/useCases', async () => {
+    const { resetActionReplayAuthority } = await import('#/modules/Command/useCases/resetActionReplayAuthority');
     return {
-        ...actual,
         clearUndoHistory: vi.fn(),
+        resetActionReplayAuthority,
+    };
+});
+// loadSnapshot imports restoreTrackSnapshot and restoreArrangementMetadataSnapshot.
+vi.mock('#/modules/Arrangement/useCases', async () => {
+    const { restoreArrangementMetadataSnapshot } =
+        await import('#/modules/Arrangement/useCases/restoreArrangementMetadataSnapshot');
+    const { restoreTrackSnapshot } = await import('#/modules/Arrangement/useCases/restoreTrackSnapshot');
+    return {
+        restoreArrangementMetadataSnapshot,
+        restoreTrackSnapshot,
+    };
+});
+// loadSnapshot imports restoreAutomationSnapshot.
+vi.mock('#/modules/Automation/useCases', async () => {
+    const { restoreAutomationSnapshot } = await import('#/modules/Automation/useCases/restoreAutomationSnapshot');
+    return {
+        restoreAutomationSnapshot,
+    };
+});
+// loadSnapshot imports setMidiStoreState.
+vi.mock('#/modules/MIDI/useCases', async () => {
+    const { setMidiStoreState } = await import('#/modules/MIDI/useCases/setMidiStoreState');
+    return {
+        setMidiStoreState,
     };
 });
 
