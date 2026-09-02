@@ -1245,6 +1245,39 @@ describe('executeAppActionBatch', () => {
         }
     });
 
+    it('rejects a missing automation target before a valid sibling can write', async () => {
+        const previousTracks = trackStore.value ? structuredClone(trackStore.value) : null;
+        setTrackStoreState({
+            ...structuredClone(defaultTrackState),
+            tracks: [createTrack({ id: 'track-existing', kind: 'audio', name: 'Existing' })],
+        });
+        registerHandlerMap(getArrangementHandlers());
+
+        try {
+            const result = await executeAppActionBatch(
+                [
+                    { type: 'setAutomationMode', payload: { trackId: 'track-existing', mode: 'write' } },
+                    { type: 'setAutomationMode', payload: { trackId: 'track-missing', mode: 'touch' } },
+                ],
+                { requireCompensation: true }
+            );
+
+            expect(result).toEqual({
+                status: 'conflicted',
+                reason: 'Action conflicts with current project state: setAutomationMode',
+                actions: [],
+            });
+            expect(getTrackStoreState()?.tracks.find((track) => track.id === 'track-existing')?.automationMode).toBe(
+                'read'
+            );
+            expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        } finally {
+            if (previousTracks) {
+                setTrackStoreState(previousTracks);
+            }
+        }
+    });
+
     it('records planned automation-mode inverses so one grouped undo restores the original mode', async () => {
         const previousTracks = trackStore.value ? structuredClone(trackStore.value) : null;
         const previousUndo = undoStore.value ? structuredClone(undoStore.value) : null;

@@ -77,19 +77,21 @@ describe('handleSetAutomationMode', () => {
 
     it('omits the inverse when the track does not exist', () => {
         mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+        const action = {
+            type: 'setAutomationMode' as const,
+            payload: { trackId: 'missing', mode: 'touch' as const },
+        };
 
-        const desc = handleSetAutomationMode.describe({
-            type: 'setAutomationMode',
-            payload: { trackId: 'missing', mode: 'touch' },
-        });
+        const desc = handleSetAutomationMode.describe(action);
 
-        expect(desc.inverseAction).toBeNull();
         expect(
-            handleSetAutomationMode.isNoop?.({
-                type: 'setAutomationMode',
-                payload: { trackId: 'missing', mode: 'touch' },
+            handleSetAutomationMode.validate?.(action, {
+                actions: [action],
+                actionIndex: 0,
             })
-        ).toBe(true);
+        ).toBe(false);
+        expect(desc.inverseAction).toBeNull();
+        expect(handleSetAutomationMode.isNoop?.(action)).toBe(true);
     });
 
     it('is a no-op when the requested mode is already active', () => {
