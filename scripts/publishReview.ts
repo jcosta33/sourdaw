@@ -66,7 +66,7 @@ export type ReviewDocument = {
 
 export type PublishReviewPort = {
     primaryRoot: () => string;
-    currentHead: (number: number) => string;
+    pullRequest: (number: number) => { state: string; head: string };
     readReviewJson: (path: string) => unknown;
     readBundleDiff: (path: string) => string;
     postReview: (input: {
@@ -174,7 +174,7 @@ export type PreparedReviewPublication = {
 };
 
 function prepareReviewPublication(number: number, port: PublishReviewPort): PreparedReviewPublication {
-    const head = port.currentHead(number);
+    const head = port.pullRequest(number).head;
     const bundle = reviewBundlePath(port.primaryRoot(), number, head);
     let parsed: unknown;
     try {
@@ -204,15 +204,18 @@ export function publishPreparedReview(
     port: PublishReviewPort,
     boundary?: PullRequestReviewPublicationMutationBoundary
 ): number {
+    const pullRequest = port.pullRequest(number);
+    if (pullRequest.state !== 'OPEN') {
+        fail(`pull request is ${pullRequest.state}; refusing to post a review`);
+    }
+    if (pullRequest.head !== prepared.head) {
+        fail('pull-request head moved; refusing to post a stale review');
+    }
     boundary?.journalReviewPublication({
         expectedHead: prepared.head,
         payloadDigest: prepared.payloadDigest,
         reviewerActorNodeId: REVIEWER_BOT_NODE_ID,
     });
-    const current = port.currentHead(number);
-    if (current !== prepared.head) {
-        fail('pull-request head moved; refusing to post a stale review');
-    }
     const posted = port.postReview({
         number,
         commitId: prepared.head,
@@ -248,22 +251,16 @@ export function shellPort(
     const gh = (args: string[], input?: string) => capture('gh', args, { cwd: primaryRoot, env: session.env, input });
     return {
         primaryRoot: () => primaryRoot,
-        currentHead: (number) =>
-            capture(
-                'gh',
-                [
-                    'pr',
-                    'view',
-                    String(number),
-                    '--repo',
-                    REQUIRED_REPOSITORY,
-                    '--json',
-                    'headRefOid',
-                    '--jq',
-                    '.headRefOid',
-                ],
-                { cwd: primaryRoot, env: session.env }
-            ),
+        pullRequest: (number) => {
+            const pullRequest = parseJson<{ state?: unknown; headRefOid?: unknown }>(
+                gh(['pr', 'view', String(number), '--repo', REQUIRED_REPOSITORY, '--json', 'state,headRefOid']),
+                'review publication pull request'
+            );
+            if (typeof pullRequest.state !== 'string' || typeof pullRequest.headRefOid !== 'string') {
+                fail('review publication pull request is unreadable');
+            }
+            return { state: pullRequest.state, head: pullRequest.headRefOid };
+        },
         readReviewJson: (path) => JSON.parse(readFileSync(path, 'utf8')) as unknown,
         readBundleDiff: (path) => readFileSync(path, 'utf8'),
         postReview: ({ number, commitId, event, body, comments }) => {
@@ -868,6 +865,10 @@ function isMatchingRecoveryReceipt(value: unknown, number: number, ownerOid: str
     );
 }
 
+function hasExactRecoveryReceipt(value: unknown, receipt: object): boolean {
+    return JSON.stringify(value) === JSON.stringify(receipt);
+}
+
 function requireLegacyReviewPublicationIncident(
     incident: (typeof legacyReviewPublicationIncidents)[number] | undefined
 ): (typeof legacyReviewPublicationIncidents)[number] {
@@ -1094,12 +1095,21 @@ export async function runRecoverPublishReviewLockCli(
                 fail('review-publication recovery remote state changed during reconciliation');
             }
             const outcome = second.reviews.length === 1 ? 'landed' : 'absent';
+            const absentReleaseIsAttested =
+                journaledOwner?.mutation.phase === 'prepared' || legacyIncident?.definitiveNoMutationHttpStatus === 422;
+            if (outcome === 'absent' && !absentReleaseIsAttested) {
+                fail('review-publication recovery cannot release an owner that attempted a remote mutation without landed evidence');
+            }
+            const receipt = recoveryReceipt(number, ownerOid, expectedHead, expectedDigest, outcome);
             recordReviewPublicationRecoveryReceipt(
                 primaryRoot,
                 number,
                 ownerOid,
-                recoveryReceipt(number, ownerOid, expectedHead, expectedDigest, outcome)
+                receipt
             );
+            if (!hasExactRecoveryReceipt(readPullRequestMutationLockReceipt(primaryRoot, number, ownerOid), receipt)) {
+                fail('review-publication recovery receipt does not attest the exact owner, head, payload, and outcome');
+            }
             releasePullRequestMutationLockOwner(primaryRoot, number, adoptedOid);
             console.log(`review-publication-lock-recovered:${number}:${ownerOid}:${outcome}`);
             return 0;

@@ -528,6 +528,16 @@ const rfc4122ExampleUuid = ['123e4567', 'e89b', '12d3', 'a456', '426614174000'].
 const rfc4122ExampleUuidSuccessor = ['123e4567', 'e89b', '12d3', 'a456', '426614174001'].join('-');
 const reviewPublicationRecoveryUuid = ['2cd01237', 'cf63', '4579', '9e58', '85893794529d'].join('-');
 const allowlistRegexes = /\[allowlist\][\s\S]*?regexes\s*=\s*\[([\s\S]*?)\]/u.exec(gitleaksConfig)?.[1];
+const configuredAllowlistRegexes = [...(allowlistRegexes ?? '').matchAll(/'''([^']*)'''/gu)].map((match) => match[1]);
+const exactAllowlistRegexes = [
+    '64c64660ceed813476b314f52136d9698e075622',
+    '0354489231f6a874331aer4927569297c7fea4d5',
+    'idempotency-1',
+    '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb',
+    rfc4122ExampleUuid,
+    rfc4122ExampleUuidSuccessor,
+    reviewPublicationRecoveryUuid,
+];
 expect(
     gitleaksConfig.includes(`'''${rfc4122ExampleUuid}'''`) &&
         gitleaksConfig.includes(`'''${rfc4122ExampleUuidSuccessor}'''`),
@@ -538,8 +548,12 @@ expect(
     'trusted Gitleaks config must allowlist the exact PR #3342 review-publication recovery UUID'
 );
 expect(
-    !/'''(?:\\^)?\.\*(?:\\$)?'''|"(?:\\\\\\^)?\.\*(?:\\\\\\$)?"/u.test(allowlistRegexes ?? ''),
-    'trusted Gitleaks config must reject broad regex allowlists such as .*'
+    JSON.stringify(configuredAllowlistRegexes) === JSON.stringify(exactAllowlistRegexes),
+    'trusted Gitleaks config must preserve the exact audited literal allowlist without wildcard or alternation broadening'
+);
+expect(
+    !configuredAllowlistRegexes.includes(`${reviewPublicationRecoveryUuid}|.*`),
+    'trusted Gitleaks config must reject the exact review-publication UUID-or-dot-star mutation'
 );
 expect(gitleaksHelper.includes('--log-opts=--all'), 'secret scan must scan the full fetched git history, not only a PR diff');
 expect(gitleaksHelper.includes('--redact=100'), 'secret scan must redact secrets from logs and stdout');
