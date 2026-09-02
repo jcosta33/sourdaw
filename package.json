@@ -46,7 +46,6 @@
         "review:prepare": "node scripts/prepareReview.ts",
         "review:publish": "node scripts/trustedGithubWriteBootstrap.ts review:publish",
         "review:resolve": "node scripts/trustedGithubWriteBootstrap.ts review:resolve",
-        "review:resolve:recover": "node scripts/trustedGithubWriteBootstrap.ts review:resolve:recover",
         "pr:supersede": "node scripts/supersedePullRequest.ts",
         "issue:reconcile": "node scripts/trustedGithubWriteBootstrap.ts issue:reconcile",
         "issue:file": "node scripts/fileTrackerIssue.ts",
