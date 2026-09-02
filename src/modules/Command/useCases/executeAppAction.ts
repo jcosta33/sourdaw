@@ -51,6 +51,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 ? { action, applicationAssignedIds: options.commandEnvelope.applicationAssignedIds }
                 : materializeCommandApplicationIds(action);
             action = materialized.action;
+            traceAppAction(action.type, options?.source ?? 'manual');
 
             const handler = getCommandHandler(action);
             if (!handler) {
@@ -72,7 +73,6 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             ) {
                 throw new Error(`Command envelope does not match action ${action.type}`);
             }
-            traceAppAction(action.type, options?.source ?? 'manual');
 
             if (handler.executionKind === 'runtime') {
                 if (options?.shouldExecute && !options.shouldExecute()) {

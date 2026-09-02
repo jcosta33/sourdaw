@@ -41,6 +41,12 @@ type StopPlaybackAction = Extract<AppAction, { type: 'stopPlayback' }>;
 type ToggleSidebarAction = Extract<AppAction, { type: 'toggleSidebar' }>;
 type RemoveDeviceAction = Extract<AppAction, { type: 'removeDevice' }>;
 type SetTrackGainAction = Extract<AppAction, { type: 'setTrackGain' }>;
+type TraceEntry = { type: string; source: string; timestamp: number };
+type SourdawTraceGlobals = { __sourdaw_trace__?: { entries(): TraceEntry[] } };
+
+function readTraceEntries(): TraceEntry[] {
+    return (window as typeof window & SourdawTraceGlobals).__sourdaw_trace__?.entries() ?? [];
+}
 
 type MockCommandHandler<Action extends AppAction> = ActionHandler<Action> & {
     execute: Mock<(action: Action) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>>;
@@ -525,6 +531,7 @@ describe('executeAppAction', () => {
 
     it('should reject as not dispatched and log when no handler is found', async () => {
         const action: ToggleSidebarAction = { type: 'toggleSidebar' };
+        delete (window as typeof window & SourdawTraceGlobals).__sourdaw_trace__;
 
         await expect(executeAppAction(action)).rejects.toBeInstanceOf(AppActionNotDispatchedError);
 
@@ -532,6 +539,9 @@ describe('executeAppAction', () => {
         expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        // The dispatch trace is a triage primitive, and an action that reached no handler is
+        // exactly the one an operator goes looking for, so it is recorded before dispatch fails.
+        expect(readTraceEntries().map((entry) => entry.type)).toEqual(['toggleSidebar']);
     });
 
     it('should publicly discriminate committed failures without exposing the private error class', () => {
