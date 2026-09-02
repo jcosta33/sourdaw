@@ -351,6 +351,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     inspectAgentProjectDivergence: noop,
     markActionHistoryEntryReverted: noop,
     recordActionHistoryEntry: noop,
+    recordActionHistoryEntries: noop,
     clearActionHistory: noop,
     registerCrdtStorageRuntime: registerCrdtStorageRuntimeMock,
     sessionUndoWitnessStampPort: sessionUndoWitnessStampPortMock,

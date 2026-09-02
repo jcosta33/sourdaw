@@ -100,8 +100,10 @@ describe('getExecutableAppActionIntentCatalog', () => {
         });
     });
 
-    it('publishes every registered command as its canonical compact index entry', () => {
-        for (const registration of executableCommandRegistrations.getExecutableCommandRegistrations()) {
+    it('publishes every discoverable registered command as its canonical compact index entry', () => {
+        for (const registration of executableCommandRegistrations
+            .getExecutableCommandRegistrations()
+            .filter((candidate) => candidate.discoverability === 'visible')) {
             const catalog = getExecutableAppActionIntentCatalog({
                 intent: registration.actionType,
                 page: { limit: 8 },

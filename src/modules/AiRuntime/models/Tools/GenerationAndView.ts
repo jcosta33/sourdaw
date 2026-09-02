@@ -1,7 +1,4 @@
-import { createAddNotesToolSchema } from './CreateAddNotesToolSchema';
 import { tool, type ToolSchema } from './Types';
-
-export const generationTools: readonly ToolSchema[] = [createAddNotesToolSchema()];
 
 export const markerTools: readonly ToolSchema[] = [
     tool(

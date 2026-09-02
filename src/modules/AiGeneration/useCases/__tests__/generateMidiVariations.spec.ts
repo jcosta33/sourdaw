@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { defaultTrackState } from '#/modules/Arrangement/stores';
+import { createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+
 import { generateMidiVariations } from '../generateMidiVariations';
+
+import type { AppAction } from '#/utils/handlerContract';
 
 const mocks = vi.hoisted(() => ({
     captureProjectRevision: vi.fn(() => 'revision-1'),
@@ -86,6 +92,38 @@ describe('generateMidiVariations', () => {
         ]);
         expect(actions[0]?.payload).toMatchObject({ trackId: 'track-1', startBeat: 12, endBeat: 16 });
         expect(options).toMatchObject({ source: 'ai', requireCompensation: true });
+    });
+
+    it('draws compensable variations from a locked source clip', async () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                {
+                    id: 'track-1',
+                    clips: [{ id: 'clip-1', name: 'Verse', type: 'midi', startBeat: 8, endBeat: 12, locked: true }],
+                },
+            ],
+        });
+        setTrackStoreState({
+            ...defaultTrackState,
+            tracks: [createTrack({ id: 'track-1', kind: 'midi', name: 'Keys' })],
+        });
+
+        await expect(generateMidiVariations('clip-1')).resolves.toBe(3);
+
+        const actions = mocks.executeAppActionBatch.mock.calls[0]?.[0] as AppAction[];
+        const clipLocks = actions
+            .filter((action) => action.type === 'addClip')
+            .map((action) => action.payload.locked ?? false);
+
+        expect(clipLocks).toEqual([false, false, false]);
+        // A variation batch is dispatched with requireCompensation, and addNotes only describes an
+        // inverse for a clip its own batch created unlocked — a copied source lock rejects the batch.
+        const addNotes = getMidiNoteTransformHandlers().addNotes;
+        const inverses = actions.map((action, actionIndex) =>
+            action.type === 'addNotes' ? addNotes.describe(action, { actions, actionIndex }).inverseAction : undefined
+        );
+
+        expect(inverses.filter((inverse) => inverse !== null && inverse !== undefined)).toHaveLength(3);
     });
 
     it('does not dispatch a write after incomplete hosted output', async () => {

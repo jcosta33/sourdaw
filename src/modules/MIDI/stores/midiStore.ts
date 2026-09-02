@@ -2,7 +2,14 @@ import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 import { type Store } from '#/infra/store/types';
 
-import { isValidMidiArticulation, type MidiNote, type MidiCC, type MidiPitchBend } from '../models/MidiNote';
+import {
+    isValidMidiArticulation,
+    MIDI_NOTE_OPTIONAL_KEYS,
+    MIDI_NOTE_REQUIRED_KEYS,
+    type MidiNote,
+    type MidiCC,
+    type MidiPitchBend,
+} from '../models/MidiNote';
 
 const DOC_PREFIX_ROOT = 'root';
 
@@ -32,16 +39,6 @@ export const defaultMidiStoreState: MidiStoreState = {
 
 const MIDI_STORE_STATE_KEYS = ['probabilitySeed', 'notesByClipId', 'ccByClipId', 'pitchBendByClipId'] as const;
 const MIDI_STORE_STATE_OPTIONAL_KEYS = ['migratedAbsoluteNoteClipIds'] as const;
-const MIDI_NOTE_REQUIRED_KEYS = ['id', 'pitch', 'startBeat', 'duration', 'velocity'] as const;
-const MIDI_NOTE_OPTIONAL_KEYS = [
-    'probability',
-    'pressure',
-    'slide',
-    'pitchBend',
-    'pitchBendRangeSemitones',
-    'channel',
-    'articulation',
-] as const;
 const MIDI_CC_KEYS = ['id', 'controller', 'value', 'beat', 'channel'] as const;
 const MIDI_PITCH_BEND_KEYS = ['id', 'value', 'beat', 'channel'] as const;
 

@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+
 const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 // Large enough to hold a halved mirror, far too small for the whole stack the
 // oversized case pushes, so a refusal has to shrink the mirror to land at all.
@@ -25,6 +27,7 @@ async function loadSubject() {
         SUPPORTED_SESSION_ACTION_TYPES.map((actionType) => ({
             actionType,
             operationVersion: 1,
+            role: 'forward' as const,
             validateArguments: (payload: unknown) => validateVersionedCommandArguments(actionType, payload),
         }))
     );
@@ -98,6 +101,280 @@ describe('undoStore / pushUndo', () => {
     afterEach(async () => {
         await flushPersistence();
         sessionStorage.removeItem(UNDO_SESSION_KEY);
+    });
+
+    it('rejects internal replay actions as persisted forward entries', async () => {
+        const undoStoreModule = await import('../undoStore');
+        const { getInternalUndoSessionReplayContracts } =
+            await import('../../useCases/getInternalUndoSessionReplayContracts');
+        const restoreAction = {
+            type: 'restoreMidiClipNotes',
+            payload: {
+                clipId: 'clip-midi',
+                notes: [],
+                expectedNotes: [],
+                noteTransformReplayGuard: {
+                    trackId: 'track-midi',
+                    expectedTrackFrozen: false,
+                    expectedClipLocked: false,
+                },
+            },
+        };
+        sessionStorage.setItem(
+            UNDO_SESSION_KEY,
+            JSON.stringify({
+                past: [
+                    {
+                        id: 'internal-forward',
+                        kind: 'action',
+                        label: 'Internal forward',
+                        action: restoreAction,
+                        inverseAction: null,
+                        timestamp: 1,
+                        source: 'ai',
+                        actionOperationVersion: 1,
+                    },
+                ],
+                future: [],
+            })
+        );
+
+        undoStoreModule.hydrateUndoStoreFromSession(getInternalUndoSessionReplayContracts());
+
+        expect(undoStoreModule.undoStore.value).toEqual({ past: [], future: [] });
+    });
+
+    it('rejects an internal inverse unless its forward contract validates the whole entry', async () => {
+        const undoStoreModule = await import('../undoStore');
+        const { getInternalUndoSessionReplayContracts } =
+            await import('../../useCases/getInternalUndoSessionReplayContracts');
+        const { validateVersionedCommandArguments } = await import('../../useCases/versionedCommandArgumentKeys');
+        const restoreAction = {
+            type: 'restoreMidiClipNotes',
+            payload: {
+                clipId: 'clip-midi',
+                notes: [],
+                expectedNotes: [],
+                noteTransformReplayGuard: {
+                    trackId: 'track-midi',
+                    expectedTrackFrozen: false,
+                    expectedClipLocked: false,
+                },
+            },
+        };
+        sessionStorage.setItem(
+            UNDO_SESSION_KEY,
+            JSON.stringify({
+                past: [
+                    {
+                        id: 'unrelated-internal-inverse',
+                        kind: 'action',
+                        label: 'Unrelated internal inverse',
+                        action: { type: 'setTempo', payload: { bpm: 120 } },
+                        inverseAction: restoreAction,
+                        timestamp: 1,
+                        source: 'ai',
+                        actionOperationVersion: 1,
+                        inverseActionOperationVersion: 1,
+                    },
+                ],
+                future: [],
+            })
+        );
+
+        undoStoreModule.hydrateUndoStoreFromSession([
+            {
+                actionType: 'setTempo',
+                operationVersion: 1,
+                role: 'forward',
+                validateArguments: (payload: unknown) => validateVersionedCommandArguments('setTempo', payload),
+            },
+            ...getInternalUndoSessionReplayContracts(),
+        ]);
+
+        expect(undoStoreModule.undoStore.value).toEqual({ past: [], future: [] });
+    });
+
+    it('omits a malformed addNotes replay pair from the session mirror before reload', async () => {
+        const undoStoreModule = await import('../undoStore');
+        const { registerHandlerMap } = await import('../handlerRegistry');
+        const { getExecutableCommandRegistration } = await import('../../useCases/getExecutableCommandRegistration');
+        const { getInternalUndoSessionReplayContracts } =
+            await import('../../useCases/getInternalUndoSessionReplayContracts');
+        registerHandlerMap(getMidiNoteTransformHandlers());
+        const registration = getExecutableCommandRegistration('addNotes');
+        undoStoreModule.hydrateUndoStoreFromSession([
+            {
+                actionType: registration.actionType,
+                operationVersion: registration.operationVersion,
+                role: 'forward',
+                validateArguments: registration.runtimeSchema.validate,
+                validateEntry: registration.sessionEntryValidator,
+            },
+            ...getInternalUndoSessionReplayContracts(),
+        ]);
+        const baseNotes = [{ id: 'base', pitch: 48, startBeat: 0, duration: 1, velocity: 80 }];
+        const duplicateNotes = [
+            { id: 'note-duplicate', pitch: 60, startBeat: 1, duration: 1, velocity: 100, probability: 100 },
+            { id: 'note-duplicate', pitch: 64, startBeat: 2, duration: 1, velocity: 96, probability: 100 },
+        ];
+        const expectedNotes = [...baseNotes, ...duplicateNotes];
+        undoStoreModule.undoStore.set({
+            past: [
+                {
+                    id: 'undo-malformed-add-notes',
+                    kind: 'action',
+                    label: 'Add MIDI notes',
+                    action: { type: 'addNotes', payload: { clipId: 'clip-midi', notes: duplicateNotes } },
+                    inverseAction: {
+                        type: 'restoreMidiClipNotes',
+                        payload: {
+                            clipId: 'clip-midi',
+                            notes: baseNotes,
+                            expectedNotes,
+                            notesBucketPresent: true,
+                            expectedNotesBucketPresent: true,
+                            noteTransformReplayGuard: {
+                                trackId: 'track-midi',
+                                expectedTrackFrozen: false,
+                                expectedClipLocked: false,
+                            },
+                        },
+                    },
+                    redoAction: {
+                        type: 'restoreMidiClipNotes',
+                        payload: {
+                            clipId: 'clip-midi',
+                            notes: expectedNotes,
+                            expectedNotes: baseNotes,
+                            notesBucketPresent: true,
+                            expectedNotesBucketPresent: true,
+                            noteTransformReplayGuard: {
+                                trackId: 'track-midi',
+                                expectedTrackFrozen: false,
+                                expectedClipLocked: false,
+                            },
+                        },
+                    },
+                    timestamp: 1,
+                    source: 'ai',
+                },
+            ],
+            future: [],
+        });
+
+        await flushPersistence();
+
+        const persisted = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        expect(persisted.past).toEqual([]);
+    });
+
+    it('omits an entire reachable group when one member cannot be serialized', async () => {
+        const { createUndoEntry, undoStore } = await loadSubject();
+        const older = createUndoEntry(
+            'older',
+            { type: 'setTempo', payload: { bpm: 120 } },
+            { type: 'setTempo', payload: { bpm: 110 } }
+        );
+        const validGroupMember = createUndoEntry(
+            'valid group member',
+            { type: 'setTempo', payload: { bpm: 130 } },
+            { type: 'setTempo', payload: { bpm: 120 } }
+        );
+        validGroupMember.groupId = 'partly-serializable-group';
+        const unsupportedGroupMember = createUndoEntry(
+            'unsupported group member',
+            { type: 'addTrack', payload: { id: 'track-new', name: 'New', kind: 'midi' } },
+            null
+        );
+        unsupportedGroupMember.groupId = 'partly-serializable-group';
+
+        undoStore.set({ past: [older, validGroupMember, unsupportedGroupMember], future: [] });
+        await flushPersistence();
+
+        const persisted = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        expect(persisted.past).toEqual([]);
+    });
+
+    it('omits an entire past group when the group crosses the remaining session limit', async () => {
+        const { createUndoEntry, undoStore } = await loadSubject();
+        const createEntry = (label: string) =>
+            createUndoEntry(
+                label,
+                { type: 'setTempo', payload: { bpm: 120 } },
+                { type: 'setTempo', payload: { bpm: 110 } }
+            );
+        const group = [createEntry('past-group-first'), createEntry('past-group-second')];
+        for (const entry of group) {
+            entry.groupId = 'past-limit-group';
+        }
+        const nearestEntries = Array.from({ length: 99 }, (_, index) => createEntry(`past-nearest-${index}`));
+
+        undoStore.set({ past: [...group, ...nearestEntries], future: [] });
+        await flushPersistence();
+
+        const persisted = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        expect(persistedEntryLabels(persisted.past)).toEqual(nearestEntries.map((entry) => entry.label));
+    });
+
+    it('omits an entire future group when the group exceeds the remaining session limit', async () => {
+        const { createUndoEntry, undoStore } = await loadSubject();
+        const createEntry = (label: string) =>
+            createUndoEntry(
+                label,
+                { type: 'setTempo', payload: { bpm: 120 } },
+                { type: 'setTempo', payload: { bpm: 110 } }
+            );
+        const nearestEntries = Array.from({ length: 99 }, (_, index) => createEntry(`future-nearest-${index}`));
+        const group = [createEntry('future-group-first'), createEntry('future-group-second')];
+        for (const entry of group) {
+            entry.groupId = 'future-limit-group';
+        }
+
+        undoStore.set({ past: [], future: [...nearestEntries, ...group] });
+        await flushPersistence();
+
+        const persisted = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        expect(persistedEntryLabels(persisted.future)).toEqual(nearestEntries.map((entry) => entry.label));
+    });
+
+    it('rejects an entire reachable stored group when one member cannot hydrate', async () => {
+        sessionStorage.setItem(
+            UNDO_SESSION_KEY,
+            JSON.stringify({
+                past: [
+                    {
+                        id: 'invalid-group-member',
+                        kind: 'action',
+                        label: 'Invalid group member',
+                        action: { type: 'setTempo', payload: { bpm: 'invalid' } },
+                        inverseAction: { type: 'setTempo', payload: { bpm: 110 } },
+                        timestamp: 1,
+                        source: 'ai',
+                        groupId: 'partly-hydratable-group',
+                        actionOperationVersion: 1,
+                        inverseActionOperationVersion: 1,
+                    },
+                    {
+                        id: 'valid-group-member',
+                        kind: 'action',
+                        label: 'Valid group member',
+                        action: { type: 'setTempo', payload: { bpm: 130 } },
+                        inverseAction: { type: 'setTempo', payload: { bpm: 120 } },
+                        timestamp: 2,
+                        source: 'ai',
+                        groupId: 'partly-hydratable-group',
+                        actionOperationVersion: 1,
+                        inverseActionOperationVersion: 1,
+                    },
+                ],
+                future: [],
+            })
+        );
+
+        const reloaded = await loadSubject();
+
+        expect(reloaded.undoStore.value?.past).toEqual([]);
     });
 
     it('should append an entry to past and clear future', async () => {

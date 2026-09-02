@@ -27,11 +27,15 @@ export const actionHistoryStore = createStore<ActionHistoryState>({
 });
 
 export function pushActionHistoryEntry(entry: ActionHistoryEntry): string[] {
+    return pushActionHistoryEntries([entry]);
+}
+
+export function pushActionHistoryEntries(entriesToAdd: readonly ActionHistoryEntry[]): string[] {
     const state = actionHistoryStore.value;
     if (!state) {
         return [];
     }
-    const unbounded_entries = [...state.entries, entry];
+    const unbounded_entries = [...state.entries, ...entriesToAdd];
     const evicted_entry_count = Math.max(0, unbounded_entries.length - MAX_HISTORY);
     const evicted_entry_ids = unbounded_entries.slice(0, evicted_entry_count).map((history_entry) => history_entry.id);
     const entries = unbounded_entries.slice(evicted_entry_count);

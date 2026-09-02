@@ -89,17 +89,26 @@ export function registerActionReplayCapability({
     inverseAction,
     metadata,
 }: RegisterActionReplayCapabilityInput): void {
-    action_replay_capabilities.delete(entryId);
-    action_replay_tombstones.delete(entryId);
-    action_replay_capabilities.set(entryId, {
-        state: 'available',
-        claim: {
-            inverseAction,
-            generation: action_replay_generation,
-            entryEpoch: advanceActionReplayEntryEpoch(),
-            metadataFingerprint: getActionReplayMetadataFingerprint(metadata),
-        },
-    });
+    registerActionReplayCapabilities([{ entryId, inverseAction, metadata }]);
+}
+
+export function registerActionReplayCapabilities(inputs: readonly RegisterActionReplayCapabilityInput[]): void {
+    if (inputs.length === 0) {
+        return;
+    }
+    for (const { entryId, inverseAction, metadata } of inputs) {
+        action_replay_capabilities.delete(entryId);
+        action_replay_tombstones.delete(entryId);
+        action_replay_capabilities.set(entryId, {
+            state: 'available',
+            claim: {
+                inverseAction,
+                generation: action_replay_generation,
+                entryEpoch: advanceActionReplayEntryEpoch(),
+                metadataFingerprint: getActionReplayMetadataFingerprint(metadata),
+            },
+        });
+    }
     pruneActionReplayCapabilities();
     bumpActionReplayRevision();
 }

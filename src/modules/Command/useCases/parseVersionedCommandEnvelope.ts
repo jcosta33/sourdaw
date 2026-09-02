@@ -24,13 +24,6 @@ const STOCHASTIC_OPERATIONS = new Set([
     'humanizeNotes',
 ]);
 
-// These actions still derive semantic output, nested identities, or external
-// model results after the serialized envelope has been fixed. They remain
-// available through their owning in-process workflows, but are not admitted at
-// the replayable serialized-command boundary until those results are fully
-// materialized into the command contract.
-const ADDITIONAL_SERIALIZED_OPERATIONS = new Set(['addNotes']);
-
 const ENVELOPE_KEYS = [
     'schemaVersion',
     'commandId',
@@ -142,11 +135,19 @@ function hasValidArguments(operation: string, value: unknown): boolean {
 }
 
 function isDeterministicSerializedOperation(operation: string, value: unknown): boolean {
-    if (!isExecutableAppActionType(operation) && !ADDITIONAL_SERIALIZED_OPERATIONS.has(operation)) {
+    if (!isExecutableAppActionType(operation)) {
         return false;
     }
     if (!isRecord(value)) {
         return false;
+    }
+    const registration = getExecutableCommandRegistration(operation);
+    const materializedArgumentsValidator = registration.materializedArgumentsValidator;
+    if (registration.materializedArgumentsValidation === 'owner-required') {
+        return materializedArgumentsValidator?.(value) === true;
+    }
+    if (materializedArgumentsValidator !== undefined) {
+        return materializedArgumentsValidator(value);
     }
     if (operation === 'addTrack') {
         return (

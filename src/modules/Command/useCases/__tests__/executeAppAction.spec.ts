@@ -41,6 +41,12 @@ type StopPlaybackAction = Extract<AppAction, { type: 'stopPlayback' }>;
 type ToggleSidebarAction = Extract<AppAction, { type: 'toggleSidebar' }>;
 type RemoveDeviceAction = Extract<AppAction, { type: 'removeDevice' }>;
 type SetTrackGainAction = Extract<AppAction, { type: 'setTrackGain' }>;
+type TraceEntry = { type: string; source: string; timestamp: number };
+type SourdawTraceGlobals = { __sourdaw_trace__?: { entries(): TraceEntry[] } };
+
+function readTraceEntries(): TraceEntry[] {
+    return (window as typeof window & SourdawTraceGlobals).__sourdaw_trace__?.entries() ?? [];
+}
 
 type MockCommandHandler<Action extends AppAction> = ActionHandler<Action> & {
     execute: Mock<(action: Action) => void | HandlerExecutionResult | Promise<void | HandlerExecutionResult>>;
@@ -54,6 +60,7 @@ type CreateMockHandlerInput<Action extends AppAction> = {
     describe?: (action: Action) => HandlerDescribeResult;
     executionKind?: ActionHandler<Action>['executionKind'];
     isNoop?: (action: Action) => boolean;
+    materializeCommandArguments?: ActionHandler<Action>['materializeCommandArguments'];
     undoable?: boolean;
 };
 
@@ -66,6 +73,7 @@ function create_mock_handler<Action extends AppAction>({
     describe = () => ({ label }),
     executionKind,
     isNoop,
+    materializeCommandArguments,
     undoable = true,
 }: CreateMockHandlerInput<Action> = {}): CreateMockHandlerOutput<Action> {
     return {
@@ -76,6 +84,7 @@ function create_mock_handler<Action extends AppAction>({
         executionKind,
         undoable,
         isNoop,
+        materializeCommandArguments,
     };
 }
 
@@ -165,6 +174,35 @@ describe('executeAppAction', () => {
         await expect(executeAppAction(action)).rejects.toBeInstanceOf(AppActionConflictError);
         expect(handler.execute).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('captures and rechecks the handler-materialized single-action production-lock footprint', async () => {
+        const capturedTools: string[] = [];
+        const checkedTools: string[] = [];
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'select' } };
+        const handler = create_mock_handler<SetEditingToolAction>({
+            materializeCommandArguments: (candidate) => {
+                candidate.payload.tool = 'marquee';
+            },
+        });
+        registerHandlerMap({ [action.type]: handler });
+        productionBriefAdmissionPort.setGuard((actions) => {
+            const candidate = actions[0];
+            const tool = candidate?.type === 'setEditingTool' ? candidate.payload.tool : 'missing';
+            capturedTools.push(tool);
+            return {
+                allowsCurrent: () => {
+                    checkedTools.push(tool);
+                    return tool === 'marquee';
+                },
+            };
+        });
+
+        await expect(executeAppAction(action)).resolves.toBeUndefined();
+
+        expect(action.payload.tool).toBe('select');
+        expect(capturedTools).toEqual(['marquee']);
+        expect(checkedTools).toEqual(['marquee', 'marquee']);
     });
 
     it('aborts with a replayable conflict when a collaborator locks a removed device parent before commit', async () => {
@@ -493,6 +531,7 @@ describe('executeAppAction', () => {
 
     it('should reject as not dispatched and log when no handler is found', async () => {
         const action: ToggleSidebarAction = { type: 'toggleSidebar' };
+        delete (window as typeof window & SourdawTraceGlobals).__sourdaw_trace__;
 
         await expect(executeAppAction(action)).rejects.toBeInstanceOf(AppActionNotDispatchedError);
 
@@ -500,6 +539,9 @@ describe('executeAppAction', () => {
         expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        // The dispatch trace is a triage primitive, and an action that reached no handler is
+        // exactly the one an operator goes looking for, so it is recorded before dispatch fails.
+        expect(readTraceEntries().map((entry) => entry.type)).toEqual(['toggleSidebar']);
     });
 
     it('should publicly discriminate committed failures without exposing the private error class', () => {

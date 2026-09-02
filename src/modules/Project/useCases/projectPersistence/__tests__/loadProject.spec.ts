@@ -164,6 +164,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     midiClipSplitStateMatches: vi.fn(),
     prepareMidiClipGlueState: vi.fn(),
     prepareMidiClipSplit: vi.fn(),
+    projectMidiNotesByClipIdThroughRestores: vi.fn(() => ({})),
     readLegacyChordTrackMigration: mocks.readLegacyChordTrackMigration,
     readMidiFile: vi.fn(),
     removeMidiClipData: vi.fn(),

@@ -5,13 +5,19 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { type Clip } from '#/modules/Arrangement/stores';
-import { createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import {
+    createTrack,
+    getArrangementHandlers,
+    setArrangementEventBus,
+    setTrackStoreState,
+} from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { setMidiStoreState } from '#/modules/MIDI/useCases';
 import { type AppAction, type MidiClipNoteSnapshot } from '#/utils/handlerContract';
 
+import { handleAddNotes } from '../../noteCrud/handleAddNotes';
 import { handleCopyMidiArticulations } from '../handleCopyMidiArticulations';
 import { handleRestoreMidiClipNotes } from '../handleRestoreMidiClipNotes';
 
@@ -198,6 +204,71 @@ describe('handleRestoreMidiClipNotes', () => {
 
         expect(canReapplyAfterDivergence(inverse)).toBe(false);
         expect(validate(inverse, { actions: [inverse], actionIndex: 0 })).toBe(false);
+    });
+
+    it('admits addNotes compensation against the projected post-forward notes on an existing clip', async () => {
+        arrangeCopyFixture();
+        registerHandlerMap({ addNotes: handleAddNotes, restoreMidiClipNotes: handleRestoreMidiClipNotes });
+
+        const result = await executeAppActionBatch(
+            [
+                {
+                    type: 'addNotes',
+                    payload: {
+                        clipId: targetClipId,
+                        notes: [{ id: 'added-note', pitch: 72, startBeat: 2, duration: 1, velocity: 100 }],
+                    },
+                },
+            ],
+            { groupId: 'batch-add-notes-existing', requireCompensation: true }
+        );
+
+        expect(result.status).toBe('committed');
+        expect(midiStoreSnapshot(targetClipId)?.map((note) => note.id)).toEqual(['target-note', 'added-note']);
+    });
+
+    it('admits addNotes compensation after batch-local MIDI track and clip creation', async () => {
+        setTrackStoreState({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        setMidiStoreState({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        setArrangementEventBus({ emit: async () => undefined });
+        registerHandlerMap(getArrangementHandlers());
+        registerHandlerMap({ addNotes: handleAddNotes, restoreMidiClipNotes: handleRestoreMidiClipNotes });
+
+        const result = await executeAppActionBatch(
+            [
+                {
+                    type: 'addTrack',
+                    payload: {
+                        id: 'track-created',
+                        kind: 'midi',
+                        name: 'Created MIDI',
+                        withoutDefaultDevice: true,
+                    },
+                },
+                {
+                    type: 'addClip',
+                    payload: {
+                        id: 'clip-created',
+                        trackId: 'track-created',
+                        startBeat: 0,
+                        endBeat: 4,
+                        name: 'Created clip',
+                        type: 'midi',
+                    },
+                },
+                {
+                    type: 'addNotes',
+                    payload: {
+                        clipId: 'clip-created',
+                        notes: [{ id: 'created-note', pitch: 60, startBeat: 0, duration: 1, velocity: 96 }],
+                    },
+                },
+            ],
+            { groupId: 'batch-add-notes-created', requireCompensation: true }
+        );
+
+        expect(result.status).toBe('committed');
+        expect(midiStoreSnapshot('clip-created')?.map((note) => note.id)).toEqual(['created-note']);
     });
 });
 

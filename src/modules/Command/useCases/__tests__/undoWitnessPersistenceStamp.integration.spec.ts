@@ -38,6 +38,7 @@ const sessionActionContracts = [
     {
         actionType: 'setTempo',
         operationVersion: 1,
+        role: 'forward' as const,
         validateArguments: (payload: unknown) => validateVersionedCommandArguments('setTempo', payload),
     },
 ];

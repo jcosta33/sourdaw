@@ -122,6 +122,7 @@ export { projectShortMidiOverlapRemoval } from './midiNoteTransforms/projectShor
 export { projectSyncopatedArpeggio } from './midiNoteTransforms/projectSyncopatedArpeggio';
 export { projectDrumPreviewCandidateNotes } from './midiNoteTransforms/projectDrumPreviewCandidateNotes';
 export { restoreMidiClipNotes } from './midiNoteTransforms/restoreMidiClipNotes';
+export { projectMidiNotesByClipIdThroughRestores } from './midiNoteTransforms/projectMidiNotesByClipIdThroughRestores';
 export { quantizeNoteLengths } from './midiNoteTransforms/quantizeNoteLengths';
 export { quantizeNotes } from './midiNoteTransforms/quantizeNotes';
 export { retrogradeNotes } from './midiNoteTransforms/retrogradeNotes';

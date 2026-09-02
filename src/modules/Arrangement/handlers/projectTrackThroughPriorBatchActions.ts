@@ -35,6 +35,10 @@ export function projectTrackThroughPriorBatchActions(track: Track, context: Hand
             projected.devices.splice(anchorIndex + 1, 0, device);
             continue;
         }
+        if (action.type === 'discardDuplicatedClip') {
+            projected.clips = projected.clips.filter((clip) => clip.id !== action.payload.clipId);
+            continue;
+        }
         if (action.type === 'setTrackGain') {
             projected.gain = action.payload.gain;
         } else if (action.type === 'renameTrack') {
