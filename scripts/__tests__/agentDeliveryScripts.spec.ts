@@ -33,7 +33,7 @@ import {
     type PublishReviewCoordinatorDependencies,
 } from '../publishReview.ts';
 import { githubTrackerIssuePort } from '../reconcileTrackerIssue.ts';
-import { runResolveReviewThreadCli } from '../resolveReviewThread.ts';
+import { runResolveReviewThreadCli } from '../resolveThread.ts';
 import {
     BOOTSTRAP_PATH,
     assertTrustedSourceGraph,
@@ -467,7 +467,7 @@ function trustedReviewMutationFixture(root: string, mutationLog: string): void {
         ].join('\n')
     );
     writeFileSync(
-        join(root, 'scripts/resolveReviewThread.ts'),
+        join(root, 'scripts/resolveThread.ts'),
         [
             "import { appendFileSync } from 'node:fs';",
             'export async function runResolveReviewThreadCli(args) {',
@@ -870,7 +870,7 @@ describe('package scripts and gitignore', () => {
             'deliverPullRequest.ts',
             'pullRequestMutationLock.ts',
             'removeLane.ts',
-            'resolveReviewThread.ts',
+            'resolveThread.ts',
             'recoverDeliveryLock.ts',
             'supersedePullRequest.ts',
             'reconcileTrackerIssue.ts',
@@ -905,7 +905,7 @@ describe('package scripts and gitignore', () => {
         ]);
         expect(trustedDependencyPaths('review:resolve')).toEqual([
             'scripts/trustedGithubWriteBootstrap.ts',
-            'scripts/resolveReviewThread.ts',
+            'scripts/resolveThread.ts',
             'scripts/githubAppIdentity.ts',
             'scripts/prContract.ts',
         ]);
@@ -996,11 +996,11 @@ describe('package scripts and gitignore', () => {
             },
             {
                 command: 'review:resolve' as const,
-                entry: 'scripts/resolveReviewThread.ts',
+                entry: 'scripts/resolveThread.ts',
                 required: 'scripts/githubAppIdentity.ts',
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
-                    'scripts/resolveReviewThread.ts',
+                    'scripts/resolveThread.ts',
                     'scripts/githubAppIdentity.ts',
                     'scripts/prContract.ts',
                 ],
@@ -1678,7 +1678,7 @@ describe('package scripts and gitignore', () => {
         },
         {
             command: 'review:resolve' as const,
-            entry: 'scripts/resolveReviewThread.ts',
+            entry: 'scripts/resolveThread.ts',
             runner: 'runResolveReviewThreadCli',
             args: ['3239', '--thread', 'PRRT_example', '--head', 'a'.repeat(40)],
         },
@@ -1717,7 +1717,7 @@ describe('package scripts and gitignore', () => {
         try {
             trustedReviewMutationFixture(primary, mutationLog);
             runGit(primary, ['worktree', 'add', '-b', 'agent/test/reviewer-route', lane]);
-            for (const entry of ['publishReview.ts', 'resolveReviewThread.ts']) {
+            for (const entry of ['publishReview.ts', 'resolveThread.ts']) {
                 expect(readFileSync(join(lane, 'scripts', entry), 'utf8')).toBe(
                     runGit(primary, ['show', `refs/remotes/origin/main:scripts/${entry}`])
                 );

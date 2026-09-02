@@ -101,7 +101,7 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
     ],
     'review:resolve': [
         'scripts/trustedGithubWriteBootstrap.ts',
-        'scripts/resolveReviewThread.ts',
+        'scripts/resolveThread.ts',
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
     ],
@@ -112,7 +112,7 @@ const commandEntries: Record<TrustedGithubWriteCommand, { path: string; runner: 
     'issue:reconcile': { path: 'scripts/reconcileTrackerIssue.ts', runner: 'runReconcileTrackerIssueCli' },
     'lane:publish': { path: 'scripts/publishLane.ts', runner: 'runPublishLaneCli' },
     'review:publish': { path: 'scripts/publishReview.ts', runner: 'runPublishReviewCli' },
-    'review:resolve': { path: 'scripts/resolveReviewThread.ts', runner: 'runResolveReviewThreadCli' },
+    'review:resolve': { path: 'scripts/resolveThread.ts', runner: 'runResolveReviewThreadCli' },
 };
 
 export function trustedDependencyPaths(command: TrustedGithubWriteCommand): readonly string[] {

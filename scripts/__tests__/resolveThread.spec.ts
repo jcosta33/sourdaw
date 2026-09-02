@@ -23,7 +23,7 @@ import {
     type ResolveReviewThreadPort,
     type ThreadReply,
     type ThreadState,
-} from '../resolveReviewThread.ts';
+} from '../resolveThread.ts';
 
 const HEAD = 'a'.repeat(40);
 const OTHER_HEAD = 'b'.repeat(40);
