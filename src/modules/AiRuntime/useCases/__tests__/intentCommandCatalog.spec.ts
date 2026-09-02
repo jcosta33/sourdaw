@@ -205,7 +205,6 @@ describe('intent command catalog', () => {
             throw new Error('Expected the canonical setTempo schema.');
         }
         expect(disclosedSchema).toEqual(canonicalSchema);
-        expect(indexItem.purpose).toBe(canonicalSchema.function.description);
     });
 
     it('does not disclose invented command names after intent search', async () => {

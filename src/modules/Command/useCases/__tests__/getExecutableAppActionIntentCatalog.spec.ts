@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { getExecutableAppActionIntentCatalog } from '../getExecutableAppActionIntentCatalog';
+import { getExecutableCommandRegistrations } from '../getExecutableCommandRegistrations';
 
 describe('getExecutableAppActionIntentCatalog', () => {
     it.each([{} as never, { intent: '' }])('rejects a missing or empty public intent', (input) => {
@@ -38,6 +39,20 @@ describe('getExecutableAppActionIntentCatalog', () => {
             name: 'addClip',
             semanticCategories: expect.arrayContaining(['clip']),
         });
+    });
+
+    it('publishes every registered command purpose through its compact index entry', () => {
+        for (const registration of getExecutableCommandRegistrations()) {
+            const catalog = getExecutableAppActionIntentCatalog({
+                intent: registration.actionType,
+                page: { limit: 8 },
+            });
+            const entry = catalog.items.find((item) => item.name === registration.actionType);
+            if (entry === undefined) {
+                throw new Error(`Expected compact catalog entry for ${registration.actionType}.`);
+            }
+            expect(entry.purpose).toBe(registration.toolDescription);
+        }
     });
 
     it('rejects a cursor reused with a distinct astral intent that yields the same result set', () => {
