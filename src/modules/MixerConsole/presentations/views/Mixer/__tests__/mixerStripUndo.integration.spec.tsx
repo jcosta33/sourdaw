@@ -69,51 +69,25 @@ vi.mock('#/modules/Metering/presentations/views', () => ({
         <div data-testid="level-meter" data-track-id={trackId ?? ''} />
     ),
 }));
-// Non-spread listing of every Arrangement name the strip graph imports — cuts the
-// handler-map barrel walk that pulls freeze/bounce/import handlers and their
-// unread AudioEngine dependencies, while keeping live handlers via importActual.
+// Non-spread listing of Arrangement names the remaining strip graph imports,
+// plus live handler-map wiring — cuts the barrel walk that pulls freeze/bounce
+// handlers and their unread AudioEngine dependencies.
 vi.mock('#/modules/Arrangement/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/Arrangement/useCases')>(
         '#/modules/Arrangement/useCases'
     );
     return {
-        acceptsExternalPluginAutomationParameter: actual.acceptsExternalPluginAutomationParameter,
         addMidiFx: actual.addMidiFx,
-        addTake: actual.addTake,
-        addTakeLane: actual.addTakeLane,
-        addTrack: actual.addTrack,
-        applySoloLogic: actual.applySoloLogic,
         captureArrangementToScratchPad: actual.captureArrangementToScratchPad,
-        clampDeviceParameterValue: actual.clampDeviceParameterValue,
-        clampExternalPluginAutomationValue: actual.clampExternalPluginAutomationValue,
-        commitLegacyVcaTemplateState: actual.commitLegacyVcaTemplateState,
-        compileLoadPresetActions: actual.compileLoadPresetActions,
         compileReorderDevicesAction: actual.compileReorderDevicesAction,
         createAndAssignVcaGroup: actual.createAndAssignVcaGroup,
-        createTrack: actual.createTrack,
         executeAddDeviceAction: actual.executeAddDeviceAction,
         getArrangementHandlers: actual.getArrangementHandlers,
-        getEffectiveGain: actual.getEffectiveGain,
-        getFactoryPresets: actual.getFactoryPresets,
-        getGainAtBeat: actual.getGainAtBeat,
         getPlatformPlugins: actual.getPlatformPlugins,
-        getPluginById: actual.getPluginById,
-        getSynthParamsForTrack: actual.getSynthParamsForTrack,
-        getTrackStoreState: actual.getTrackStoreState,
         getVcaGroups: actual.getVcaGroups,
-        hydrateClipGainEnvelopes: actual.hydrateClipGainEnvelopes,
-        hydrateVcaGroups: actual.hydrateVcaGroups,
         importAudioFile: actual.importAudioFile,
         importMidiFile: actual.importMidiFile,
-        isDeviceParameterAutomatable: actual.isDeviceParameterAutomatable,
-        projectTrackToLiveStrip: actual.projectTrackToLiveStrip,
-        quantiseDeviceParameterValue: actual.quantiseDeviceParameterValue,
         removeFromVca: actual.removeFromVca,
-        resetArrangementStoresForProject: actual.resetArrangementStoresForProject,
-        resolveClipsWithComping: actual.resolveClipsWithComping,
-        restoreAdjustmentLayerSnapshot: actual.restoreAdjustmentLayerSnapshot,
-        restoreArrangementMetadataSnapshot: actual.restoreArrangementMetadataSnapshot,
-        restoreTrackSnapshot: actual.restoreTrackSnapshot,
         selectTrack: actual.selectTrack,
         setArrangementEventBus: actual.setArrangementEventBus,
         setMarqueeSelection: actual.setMarqueeSelection,
@@ -121,14 +95,10 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
         setTrackGain: actual.setTrackGain,
         setTrackOutput: actual.setTrackOutput,
         setTrackPan: actual.setTrackPan,
-        setTrackState: actual.setTrackState,
         soloTrackExclusive: actual.soloTrackExclusive,
-        startRecording: actual.startRecording,
-        stopRecording: actual.stopRecording,
         toggleInputMonitoring: actual.toggleInputMonitoring,
         toggleSendPreFader: actual.toggleSendPreFader,
         toggleVcaMembership: actual.toggleVcaMembership,
-        updateClip: actual.updateClip,
     };
 });
 // Non-spread listing of the MIDI names the checker graph imports plus the names
@@ -142,7 +112,7 @@ vi.mock('#/modules/MIDI/useCases', async () => {
         removeMidiClipData: actual.removeMidiClipData,
     };
 });
-// Non-spread listing of every Project name the CRDT graph imports — cuts project
+// Non-spread listing of Project names WorkspaceShell handlers import — cuts
 // persistence helpers that reset modules and pull AudioEngine cache APIs.
 vi.mock('#/modules/Project/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/Project/useCases')>('#/modules/Project/useCases');
