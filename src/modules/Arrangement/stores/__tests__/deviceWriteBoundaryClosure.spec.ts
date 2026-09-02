@@ -39,7 +39,7 @@ import {
     isVariableDeclaration,
     isVariableDeclarationList,
 } from 'typescript';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 type CountByPath = Readonly<Record<string, number>>;
 type SourceText = { path: string; source: string };
@@ -1575,9 +1575,14 @@ function assertProductionClosure(files: ReadonlyArray<ProductionSource>): void {
 }
 
 describe('device write boundary closure', () => {
+    let productionFiles: ProductionSource[];
+
+    beforeAll(() => {
+        productionFiles = readProductionSources(process.cwd());
+    });
+
     it('classifies every production sink by family, path, and exact count', () => {
-        const files = readProductionSources(process.cwd());
-        expect(() => assertProductionClosure(files)).not.toThrow();
+        expect(() => assertProductionClosure(productionFiles)).not.toThrow();
     });
 
     it('skips comment stripping when raw source has no census tokens', () => {
