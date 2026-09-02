@@ -1,0 +1,67 @@
+src/modules/Command/stores/undoSessionMirror.ts
+  s_a40848e8f8cca9::t_d691ac382cee48 18,21-22,218-220
+  s_a40848e8f8cca9::t_11791a3f844f1a 221-222
+src/modules/AiRuntime/useCases/requireMidiNoteGenerationToolCall.ts
+  s_a40848e8f8cca9::t_03efaa7a7b5c2c 45,53-56
+src/modules/MIDI/handlers/noteCrud/handleAddNotes.ts
+  s_a40848e8f8cca9::t_89d8de5c9f9d27 2,18-30,58-61,70,79
+src/modules/AiRuntime/useCases/getMidiNoteGenerationToolSchemas.ts
+  s_a40848e8f8cca9::t_e6e25ee61b2fbe 1-2,12-17
+src/modules/AiRuntime/useCases/__tests__/requireMidiNoteGenerationToolCall.spec.ts
+  s_a40848e8f8cca9::t_b5a1221c6c9cea 75-77
+  s_a40848e8f8cca9::t_e3e50a1a95de9f 74
+src/modules/Command/useCases/registerProductionCommandHandlers.ts
+  s_a40848e8f8cca9::t_d691ac382cee48 22
+src/modules/AiRuntime/useCases/__tests__/getMidiNoteGenerationToolSchemas.spec.ts
+  s_a40848e8f8cca9::t_e656caa55334ee 100-105
+  s_a40848e8f8cca9::t_03efaa7a7b5c2c 3-4,30,33,79-99,106
+  s_a40848e8f8cca9::t_3e05d681e6e81f 107
+src/modules/MIDI/handlers/noteCrud/__tests__/handleAddNotes.spec.ts
+  s_a40848e8f8cca9::t_dab8051132e7e8 5-6,52-53,147-157
+  s_a40848e8f8cca9::t_72f19be9bb7575 3-4,15-34,54,93-98,158-191
+  s_a40848e8f8cca9::t_f581555852ffc2 192-203
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_a40848e8f8cca9::t_7f38c1e5b78bc9 3754-3841
+src/modules/AiRuntime/models/Tools/__tests__/GenerationAndView.spec.ts
+  s_a40848e8f8cca9::t_545a084b562e4b 3,10
+  s_a40848e8f8cca9::t_9dde71a3bf7cea 7,9
+src/modules/Command/useCases/getExecutableAppActionProviderSchema.ts
+  s_a40848e8f8cca9::t_e6e25ee61b2fbe 1-14
+src/modules/Command/useCases/getCommandUndoSessionEntryValidator.ts
+  s_a40848e8f8cca9::t_07348895d76883 94
+  s_a40848e8f8cca9::t_410e42e5ab9a03 37-46,70-72
+  s_a40848e8f8cca9::t_d691ac382cee48 1-36,47-69,73-93,95-110
+src/modules/Command/useCases/getExecutableCommandRegistration.ts
+  s_a40848e8f8cca9::t_d691ac382cee48 10,32,36
+src/modules/Command/useCases/__tests__/addNotesCommandRegistration.spec.ts
+  s_a40848e8f8cca9::t_9185f03c436f45 13-47,98-103,123-128,141,143-189,191-196,198-199,204-210,212-219,228-253,259,262,274,279-300
+  s_a40848e8f8cca9::t_5c32f036f91337 190,197,200-203,211,220-227
+  s_a40848e8f8cca9::t_3159bd76edd3e9 301-303
+src/modules/Command/useCases/index.ts
+  s_a40848e8f8cca9::t_e6e25ee61b2fbe 39
+src/modules/AiRuntime/models/Tools/__tests__/CreateAddNotesToolSchema.spec.ts
+  s_a40848e8f8cca9::t_9dde71a3bf7cea 3-4,18-23,25,29,37,43,57
+src/modules/AiRuntime/models/Tools/GenerationAndView.ts
+  s_a40848e8f8cca9::t_e6e25ee61b2fbe 3
+src/modules/AiRuntime/models/Tools/CreateAddNotesToolSchema.ts
+  s_a40848e8f8cca9::t_243a7e8f55fe68 43,49,62
+  s_a40848e8f8cca9::t_07348895d76883 20-23,26-28,31-42,53-61,63
+  s_a40848e8f8cca9::t_a645d3c88f6fa2 6-9,12-15,24-25,29-30,44-48,50-52,64-66,70,73-74,77,95,99,106,110,115,119
+  s_a40848e8f8cca9::t_f22aa4b9950080 16-19,67-68,103,108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d644646375916e763621b0de620f318736a38b72",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
