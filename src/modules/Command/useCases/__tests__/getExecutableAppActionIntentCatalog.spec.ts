@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { getExecutableAppActionIntentCatalog } from '../getExecutableAppActionIntentCatalog';
-import { getExecutableCommandRegistrations } from '../getExecutableCommandRegistrations';
+import * as executableCommandRegistrations from '../getExecutableCommandRegistrations';
 
 const SEMANTIC_CATEGORY_NOISE_WORDS = new Set([
     'a',
@@ -101,7 +101,7 @@ describe('getExecutableAppActionIntentCatalog', () => {
     });
 
     it('publishes every registered command as its canonical compact index entry', () => {
-        for (const registration of getExecutableCommandRegistrations()) {
+        for (const registration of executableCommandRegistrations.getExecutableCommandRegistrations()) {
             const catalog = getExecutableAppActionIntentCatalog({
                 intent: registration.actionType,
                 page: { limit: 8 },
@@ -131,6 +131,26 @@ describe('getExecutableAppActionIntentCatalog', () => {
                 page: { cursor, limit: 1 },
             })
         ).toThrow('Command catalog cursor does not match the strict catalog contract.');
+    });
+
+    it('rejects a cursor continued against reordered command registrations', () => {
+        const firstPage = getExecutableAppActionIntentCatalog({ intent: 'operation', page: { limit: 1 } });
+        const cursor = firstPage.nextCursor;
+        if (cursor === null) {
+            throw new Error('Expected an intent catalog cursor.');
+        }
+
+        const registrations = executableCommandRegistrations.getExecutableCommandRegistrations();
+        const registrationSpy = vi
+            .spyOn(executableCommandRegistrations, 'getExecutableCommandRegistrations')
+            .mockReturnValue([...registrations].reverse());
+        try {
+            expect(() =>
+                getExecutableAppActionIntentCatalog({ intent: 'operation', page: { cursor, limit: 1 } })
+            ).toThrow('Command catalog cursor does not match the strict catalog contract.');
+        } finally {
+            registrationSpy.mockRestore();
+        }
     });
 
     it('accepts a cursor reused with a normalization-equivalent intent', () => {
