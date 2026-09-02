@@ -1,17 +1,11 @@
-import { isValidMidiArticulation, type MidiNote } from '../models/MidiNote';
+import {
+    isValidMidiArticulation,
+    MIDI_NOTE_OPTIONAL_KEYS,
+    MIDI_NOTE_REQUIRED_KEYS,
+    type MidiNote,
+} from '../models/MidiNote';
 
 type JsonRecord = Record<string, unknown>;
-
-const MIDI_NOTE_REQUIRED_KEYS = ['duration', 'id', 'pitch', 'startBeat', 'velocity'] as const;
-const MIDI_NOTE_OPTIONAL_KEYS = [
-    'articulation',
-    'channel',
-    'pitchBend',
-    'pitchBendRangeSemitones',
-    'pressure',
-    'probability',
-    'slide',
-] as const;
 
 function isRecord(value: unknown): value is JsonRecord {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
