@@ -1,0 +1,78 @@
+src/modules/Command/stores/__tests__/undoStore.spec.ts
+  s_a40848e8f8cca9::t_096596e0ac0268 226-227,241-242
+src/modules/Arrangement/handlers/clip/__tests__/handleAddClip.spec.ts
+  s_a40848e8f8cca9::t_29de19dd3d2673 3-4,24
+  s_a40848e8f8cca9::t_a6f3f3faa86e1f 5-7,23,25-41,52,177-205,207
+  s_a40848e8f8cca9::t_0c84ac8ba57c97 206
+src/modules/MIDI/useCases/midiNoteTransforms/getRestoreMidiClipNotesStatus.ts
+  s_a40848e8f8cca9::t_a536602e1fd2ef 12-13,42-43,92-103,107
+  s_a40848e8f8cca9::t_948f19212adb27 31-35,49,78,80-83
+  s_a40848e8f8cca9::t_37688ff7c8174f 29-30,47-48,90-91
+  s_a40848e8f8cca9::t_8eace5ac790a30 108-110
+src/modules/Arrangement/handlers/isGeneratedMidiStateCurrent.ts
+  s_a40848e8f8cca9::t_37688ff7c8174f 20,75,104-107
+  s_a40848e8f8cca9::t_38c5ec4d9d8607 3
+src/modules/MIDI/handlers/noteCrud/handleAddNotes.ts
+  s_a40848e8f8cca9::t_456d037c1ff8a2 19-23,100-107,124-142,148-150,168,171-172,188-195,203-204
+  s_a40848e8f8cca9::t_d185ddd501485b 5
+src/modules/MIDI/useCases/index.ts
+  s_a40848e8f8cca9::t_37688ff7c8174f 125
+src/modules/MIDI/useCases/serializeMidiStateForClips.ts
+  s_a40848e8f8cca9::t_37688ff7c8174f 4-7,9,15-16
+  s_a40848e8f8cca9::t_060c956af9ca80 1
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_a536602e1fd2ef 1484-1487
+src/modules/MIDI/handlers/noteTransform/handleRestoreMidiClipNotes.ts
+  s_a40848e8f8cca9::t_de952f7fc964f7 1
+  s_a40848e8f8cca9::t_37688ff7c8174f 3,6,13,15-22,71
+  s_a40848e8f8cca9::t_a536602e1fd2ef 12
+  s_a40848e8f8cca9::t_948f19212adb27 23,25-35,37-42,44-55,57-58,60-62,64-66,72-76
+  s_a40848e8f8cca9::t_c0d20abb52bd4d 36,43,56,59,63
+  s_a40848e8f8cca9::t_c115fbc2ee8858 14
+src/modules/MIDI/useCases/midiNoteTransforms/restoreMidiClipNotes.ts
+  s_a40848e8f8cca9::t_a536602e1fd2ef 12-13,22-23,36-41,44
+src/modules/Command/useCases/__tests__/executeAppAction.spec.ts
+  s_a40848e8f8cca9::t_08e91e46009748 175,187-192,198-199
+  s_a40848e8f8cca9::t_09845b24a7b20e 57,70,81,173-174,176-186,193-197
+  s_a40848e8f8cca9::t_40001eabbddf4a 200-201
+src/modules/Command/useCases/getCommandUndoSessionEntryValidator.ts
+  s_a40848e8f8cca9::t_096596e0ac0268 65-68,94-95
+src/modules/Command/useCases/__tests__/addNotesCommandRegistration.spec.ts
+  s_a40848e8f8cca9::t_096596e0ac0268 51-58,66-67,496-504,507
+  s_a40848e8f8cca9::t_e6416ebe29edcf 299-332,334-342,505
+  s_a40848e8f8cca9::t_ed9dafc76af79c 110-116,261,292,333
+  s_a40848e8f8cca9::t_cf1fe363527ad9 15-16,506,508
+src/modules/MIDI/handlers/noteCrud/__tests__/handleAddNotes.spec.ts
+  s_a40848e8f8cca9::t_d96666b1e9adb3 655-678
+  s_a40848e8f8cca9::t_a87f55a7daf804 163-164,177,180,575,577-578,612-654,679-730
+  s_a40848e8f8cca9::t_37688ff7c8174f 28-33,43-49,51-52,91-92
+  s_a40848e8f8cca9::t_38c5ec4d9d8607 3,5-11,50
+src/modules/Arrangement/handlers/clip/handleDiscardDuplicatedClip.ts
+  s_a40848e8f8cca9::t_37688ff7c8174f 9,18-20
+  s_a40848e8f8cca9::t_b04d4ece9a0433 1
+src/modules/MIDI/useCases/midiNoteTransforms/projectMidiNotesByClipIdThroughRestores.ts
+  s_a40848e8f8cca9::t_37688ff7c8174f 1-13,18-29
+  s_a40848e8f8cca9::t_38c5ec4d9d8607 14-17
+src/modules/Arrangement/handlers/projectTrackThroughPriorBatchActions.ts
+  s_a40848e8f8cca9::t_33e0861cac98f2 38-41
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_a40848e8f8cca9::t_282f8b02d62b0f 740
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_a40848e8f8cca9::t_178fda4ba7a095 2471-2472
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "2638f806475f59da8d5f60a06c0ab2cbef5f2d8d",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
