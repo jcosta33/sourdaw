@@ -172,6 +172,7 @@ describe('disposableIgnored', () => {
         ['release/open-source-inventory.json', false],
         ['release/desktop-runtime-material.json', false],
         ['crates/sourdaw-native/src/lib.rs', false],
+        ['crates/sourdaw-native/nested/x.node', false],
         ['crates/other/x.node', false],
         ['packages/electron/out/x', false],
         ['.env', false],

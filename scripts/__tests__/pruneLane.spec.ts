@@ -281,7 +281,10 @@ describe('prunes a real worktree without touching git state', () => {
             git(['init', '-b', 'main']);
             git(['config', 'user.name', 'Fixture']);
             git(['config', 'user.email', 'fixture@example.com']);
-            writeFileSync(join(repository, '.gitignore'), 'node_modules/\ntarget/\ndist/\n.env\nelectron/out/\n');
+            writeFileSync(
+                join(repository, '.gitignore'),
+                'node_modules/\ntarget/\ndist/\n.env\nelectron/out/\nrelease/desktop/\n'
+            );
             writeFileSync(join(repository, 'tracked.txt'), 'fixture\n');
             mkdirSync(join(repository, 'release'), { recursive: true });
             writeFileSync(join(repository, 'release/desktop-runtime-material.json'), '{}\n');
@@ -315,15 +318,18 @@ describe('prunes a real worktree without touching git state', () => {
             writeFileSync(join(lane, 'dist/app.js'), 'generated\n');
             mkdirSync(join(lane, 'electron/out'), { recursive: true });
             writeFileSync(join(lane, 'electron/out/main.js'), 'generated\n');
+            mkdirSync(join(lane, 'release/desktop'), { recursive: true });
+            writeFileSync(join(lane, 'release/desktop/Sourdaw.zip'), 'generated\n');
             writeFileSync(join(lane, '.env'), 'SECRET=keep\n');
 
             const deleted = pruneTarget(resolvedLane, port);
 
-            expect(deleted).toEqual(['dist/', 'electron/out/', 'node_modules/', 'target/']);
+            expect(deleted).toEqual(['dist/', 'electron/out/', 'node_modules/', 'release/desktop/', 'target/']);
             expect(existsSync(join(lane, 'node_modules'))).toBe(false);
             expect(existsSync(join(lane, 'target'))).toBe(false);
             expect(existsSync(join(lane, 'dist'))).toBe(false);
             expect(existsSync(join(lane, 'electron/out'))).toBe(false);
+            expect(existsSync(join(lane, 'release/desktop'))).toBe(false);
             expect(existsSync(join(lane, '.env'))).toBe(true);
             expect(existsSync(join(lane, 'tracked.txt'))).toBe(true);
             expect(existsSync(join(lane, 'release/desktop-runtime-material.json'))).toBe(true);
