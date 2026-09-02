@@ -25,43 +25,46 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 
 // switchArrangement imports stopPlayback; loadSnapshot imports restoreTimelineMapSnapshot.
 vi.mock('#/modules/Transport/useCases', async () => {
-    const { restoreTimelineMapSnapshot } = await import('#/modules/Transport/useCases/restoreTimelineMapSnapshot');
+    const actual = await vi.importActual<typeof import('#/modules/Transport/useCases')>('#/modules/Transport/useCases');
     return {
         stopPlayback: vi.fn(),
-        restoreTimelineMapSnapshot,
+        restoreTimelineMapSnapshot: actual.restoreTimelineMapSnapshot,
     };
 });
 vi.mock('../projectPersistence/saveProject/markDirty', () => ({ markDirty: vi.fn() }));
 // switchArrangement imports clearUndoHistory; runProjectLoadTransaction.prepare imports resetActionReplayAuthority.
 vi.mock('#/modules/Command/useCases', async () => {
-    const { resetActionReplayAuthority } = await import('#/modules/Command/useCases/resetActionReplayAuthority');
+    const actual = await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
     return {
         clearUndoHistory: vi.fn(),
-        resetActionReplayAuthority,
+        resetActionReplayAuthority: actual.resetActionReplayAuthority,
+        executeAppAction: actual.executeAppAction,
     };
 });
 // loadSnapshot imports restoreTrackSnapshot and restoreArrangementMetadataSnapshot.
 vi.mock('#/modules/Arrangement/useCases', async () => {
-    const { restoreArrangementMetadataSnapshot } =
-        await import('#/modules/Arrangement/useCases/restoreArrangementMetadataSnapshot');
-    const { restoreTrackSnapshot } = await import('#/modules/Arrangement/useCases/restoreTrackSnapshot');
+    const actual = await vi.importActual<typeof import('#/modules/Arrangement/useCases')>(
+        '#/modules/Arrangement/useCases'
+    );
     return {
-        restoreArrangementMetadataSnapshot,
-        restoreTrackSnapshot,
+        restoreArrangementMetadataSnapshot: actual.restoreArrangementMetadataSnapshot,
+        restoreTrackSnapshot: actual.restoreTrackSnapshot,
     };
 });
 // loadSnapshot imports restoreAutomationSnapshot.
 vi.mock('#/modules/Automation/useCases', async () => {
-    const { restoreAutomationSnapshot } = await import('#/modules/Automation/useCases/restoreAutomationSnapshot');
+    const actual = await vi.importActual<typeof import('#/modules/Automation/useCases')>(
+        '#/modules/Automation/useCases'
+    );
     return {
-        restoreAutomationSnapshot,
+        restoreAutomationSnapshot: actual.restoreAutomationSnapshot,
     };
 });
 // loadSnapshot imports setMidiStoreState.
 vi.mock('#/modules/MIDI/useCases', async () => {
-    const { setMidiStoreState } = await import('#/modules/MIDI/useCases/setMidiStoreState');
+    const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
     return {
-        setMidiStoreState,
+        setMidiStoreState: actual.setMidiStoreState,
     };
 });
 
