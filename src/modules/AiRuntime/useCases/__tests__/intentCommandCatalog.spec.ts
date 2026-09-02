@@ -204,7 +204,7 @@ describe('intent command catalog', () => {
         if (disclosedSchema === undefined || canonicalSchema === undefined) {
             throw new Error('Expected the canonical setTempo schema.');
         }
-        expect(disclosedSchema.function.parameters).toEqual(canonicalSchema.function.parameters);
+        expect(disclosedSchema).toEqual(canonicalSchema);
     });
 
     it('does not disclose invented command names after intent search', async () => {
