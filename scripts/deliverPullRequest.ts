@@ -2974,9 +2974,11 @@ type BranchRulesetRule = {
 /**
  * A live read of the rule GitHub itself merges against, as opposed to `readGateRequiredCheckNames`,
  * which derives a name from the pinned workflow for the required-CI path's own, unrelated purpose.
- * This one exists only to name what a `BLOCKED` head is waiting on, so a malformed or missing rule
- * yields an empty list rather than refusing the read outright: the caller treats "found nothing" the
- * same as a failed read.
+ * This one exists only to name what a `BLOCKED` head is waiting on, and the caller's own "found
+ * nothing" outcome — every required check already succeeded, so the block is something else — is
+ * only true when the ruleset itself explicitly says so. A missing or malformed
+ * `required_status_checks` rule has not said that; it is a failed read, and must land in the caller's
+ * could-not-be-listed branch rather than being mistaken for an explicit, empty requirement.
  */
 function readRequiredStatusCheckContexts(repository: string, shell: ShellRunner): string[] {
     const rules = parseJson<BranchRulesetRule[]>(
@@ -2984,7 +2986,11 @@ function readRequiredStatusCheckContexts(repository: string, shell: ShellRunner)
         `branch ruleset for ${repository}`
     );
     const requiredStatusChecks = rules.find((rule) => rule.type === 'required_status_checks');
-    return (requiredStatusChecks?.parameters?.required_status_checks ?? []).map((check) => check.context);
+    const contexts = requiredStatusChecks?.parameters?.required_status_checks;
+    if (contexts === undefined) {
+        fail(`branch ruleset for ${repository} carries no required_status_checks rule with a parameters array`);
+    }
+    return contexts.map((check) => check.context);
 }
 
 export function shellPort(

@@ -10325,4 +10325,38 @@ describe('delivery shell boundary', () => {
             unresolvedThreads: 0,
         });
     });
+
+    function rulesetPort(response: string) {
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (command, args) => {
+                if (args.join(' ') === 'api repos/jcosta33/sourdaw/rules/branches/main') {
+                    return response;
+                }
+                throw new Error(`unexpected capture: ${command} ${args.join(' ')}`);
+            },
+            run: () => undefined,
+        });
+        return port;
+    }
+
+    /**
+     * The caller reads an empty list as "every required check the ruleset names already succeeded",
+     * which is only true when the ruleset itself explicitly names zero required checks. A rule that
+     * never parsed has said nothing, so it must not be mistaken for that explicit, empty requirement.
+     */
+    it('refuses to read required status check contexts from a ruleset with no required_status_checks rule', () => {
+        const port = rulesetPort(JSON.stringify([{ type: 'pull_request' }]));
+
+        expect(() => port.requiredStatusCheckContexts()).toThrow(
+            'branch ruleset for jcosta33/sourdaw carries no required_status_checks rule with a parameters array'
+        );
+    });
+
+    it('reads an explicit, empty required_status_checks rule as no required contexts', () => {
+        const port = rulesetPort(
+            JSON.stringify([{ type: 'required_status_checks', parameters: { required_status_checks: [] } }])
+        );
+
+        expect(port.requiredStatusCheckContexts()).toEqual([]);
+    });
 });
