@@ -25,7 +25,8 @@ use rtrb::{Consumer, Producer, PushError, RingBuffer};
 use scheduler::{
     graph_progress_channel, transport_position_channel, BuiltinEffectType, GraphCommand,
     GraphProgressReader, GraphProgressSnapshot, PluginCore, RetiredGraphObjects,
-    TransportPositionReader, TransportPositionSnapshot, EFFECT_TABLE_CAPACITY,
+    TransportPositionReader, TransportPositionSnapshot, CRUMBS_CAPTURE_RESERVE,
+    EFFECT_TABLE_CAPACITY,
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::Sender;
@@ -117,6 +118,18 @@ pub struct EngineHandle {
     /// resets, so slots are returned by diffing against this baseline rather
     /// than by consuming the raw snapshot.
     reconciled_effect_id_collisions: u64,
+    /// Plugin ids this handle has put on the scheduler's input tap and not
+    /// taken off again.
+    ///
+    /// The same shape of ledger as [`Self::effect_registrations`] and for the
+    /// same reason: the callback's own refusal is a counter it cannot return
+    /// to the caller who asked, so the ceiling is enforced where an `Err`
+    /// reaches that caller and the callback's refusal stays the last line. It
+    /// needs no reconciliation, though — a registration is refused here on
+    /// exactly the conditions the callback refuses on, and both read the same
+    /// ledger of ids rather than a count, so the two cannot disagree about
+    /// which ids are on the bus.
+    capture_consumers: Vec<usize>,
     midi_rt_diagnostics: ActiveMidiRtDiagnosticsReader,
     timeline_rt_diagnostics: TimelineRtDiagnosticsReader,
     graph_progress: GraphProgressReader,
@@ -168,11 +181,11 @@ impl EngineHandle {
             graph_progress_tx,
             transport_position_tx,
             engine_event_tx,
-            // Nothing consumes captured audio yet: the scheduler gains its
-            // input bus in the lane after this one (jcosta33/sourdaw#3069),
-            // and an input stream opened before then would ask the musician
-            // for microphone access to feed a ring nobody drains. Handing an
-            // event ring over here is the whole of asking for capture.
+            // The scheduler has an input bus, but booting the engine still
+            // opens no input device: asking a musician for microphone access
+            // is a consent moment that belongs where a recorder is created,
+            // not to engine start-up. Handing an event ring over here is the
+            // whole of asking for capture.
             None,
             force_default_buffer,
         )?;
@@ -187,6 +200,7 @@ impl EngineHandle {
             // reads is built in this same `spawn` call, and both its ends
             // start from a zeroed snapshot.
             reconciled_effect_id_collisions: 0,
+            capture_consumers: Vec::with_capacity(CRUMBS_CAPTURE_RESERVE),
             midi_rt_diagnostics: diagnostics_reader,
             timeline_rt_diagnostics: timeline_diagnostics_reader,
             graph_progress: graph_progress_reader,
@@ -531,6 +545,53 @@ impl EngineHandle {
         self.push(GraphCommand::RemovePluginWithBridge(id))
     }
 
+    /// Feed a native plugin the audio the input device captures, block by
+    /// block, alongside the graph audio it already renders.
+    ///
+    /// Refused here, before the command crosses the ring, when the bus is full
+    /// or already carries this id: the callback refuses on the same two
+    /// conditions but can only count its refusal, and a consumer that was
+    /// never registered is indistinguishable from one whose input is silent.
+    ///
+    /// The plugin need not be on the graph yet. One batch may carry the
+    /// registration ahead of the `AddPlugin` that answers it, and until the id
+    /// resolves the callback skips it.
+    pub fn register_capture_consumer(&mut self, plugin_id: usize) -> Result<(), String> {
+        // The duplicate answers first: on a full bus it is also the truthful
+        // answer, and a caller told the bus is full looks for a consumer to
+        // evict rather than for the registration it already made.
+        if self.capture_consumers.contains(&plugin_id) {
+            return Err(format!(
+                "capture-consumer-registered: plugin {plugin_id} already receives the engine's \
+                 captured input"
+            ));
+        }
+        if self.capture_consumers.len() >= CRUMBS_CAPTURE_RESERVE {
+            return Err(capture_bus_full_error());
+        }
+        self.push(GraphCommand::RegisterCaptureConsumer(plugin_id))?;
+        self.capture_consumers.push(plugin_id);
+        Ok(())
+    }
+
+    /// Stop feeding a native plugin the captured input.
+    ///
+    /// The ledger slot goes back before the push and stays back however the
+    /// push ends: an id held here after a failed push would refuse the next
+    /// registration on behalf of a consumer the callback is not feeding, while
+    /// the callback treats an unregistration for an id it does not hold as the
+    /// no-op it is.
+    pub fn unregister_capture_consumer(&mut self, plugin_id: usize) -> Result<(), String> {
+        if let Some(slot) = self
+            .capture_consumers
+            .iter()
+            .position(|held| *held == plugin_id)
+        {
+            self.capture_consumers.swap_remove(slot);
+        }
+        self.push(GraphCommand::UnregisterCaptureConsumer(plugin_id))
+    }
+
     /// Send a MIDI note event to a specific plugin (lock-free).
     pub fn send_midi_note(
         &mut self,
@@ -844,6 +905,15 @@ fn effect_table_full_error() -> String {
     )
 }
 
+/// The one wording for a refusal against the engine's input tap, so the control
+/// ledger and any later producer report the same ceiling.
+fn capture_bus_full_error() -> String {
+    format!(
+        "capture-bus-full: the engine's captured input already feeds its maximum of \
+         {CRUMBS_CAPTURE_RESERVE} consumers"
+    )
+}
+
 /// Build a handle whose commands land in the returned consumer.
 ///
 /// The audio thread is the only thing an `EngineHandle` cannot have in a test —
@@ -874,6 +944,7 @@ pub fn engine_handle_for_command_capture(
             next_plugin_id: 1000,
             effect_registrations: 0,
             reconciled_effect_id_collisions: 0,
+            capture_consumers: Vec::with_capacity(CRUMBS_CAPTURE_RESERVE),
             midi_rt_diagnostics: diagnostics_reader,
             timeline_rt_diagnostics: timeline_diagnostics_reader,
             graph_progress: graph_progress_reader,
@@ -893,7 +964,7 @@ pub fn engine_handle_for_command_capture(
 mod tests {
     use super::{
         engine_handle_for_command_capture, spawn_with_fallback, GraphBatchError,
-        EFFECT_TABLE_CAPACITY,
+        CRUMBS_CAPTURE_RESERVE, EFFECT_TABLE_CAPACITY,
     };
     use crate::audio_bridge::create_audio_bridge;
     use crate::engine_events::engine_event_channel;
@@ -1084,6 +1155,76 @@ mod tests {
             Ok(GraphCommand::SetParam(id, DeviceParam::ShiftSemitones, value))
                 if id == 7 && value == 3.0
         ));
+    }
+
+    /// The input tap's ceiling is enforced where the caller hears it. The
+    /// callback refuses on the same two conditions, but all it can do is count
+    /// the refusal: past that point a consumer that was never registered is
+    /// indistinguishable from one whose input happens to be silent.
+    #[test]
+    fn a_capture_consumer_past_the_reserve_or_already_on_the_bus_refuses_before_the_ring() {
+        let (mut engine, command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(16);
+
+        for id in 0..CRUMBS_CAPTURE_RESERVE {
+            engine
+                .register_capture_consumer(id)
+                .expect("the reserve admits this one");
+        }
+        let admitted = command_rx.slots();
+
+        let full = engine
+            .register_capture_consumer(CRUMBS_CAPTURE_RESERVE)
+            .expect_err("the bus is full");
+        let duplicate = engine
+            .register_capture_consumer(0)
+            .expect_err("the bus already holds this id");
+
+        assert!(full.starts_with("capture-bus-full:"), "{full}");
+        assert!(
+            duplicate.starts_with("capture-consumer-registered:"),
+            "{duplicate}"
+        );
+        assert_eq!(
+            command_rx.slots(),
+            admitted,
+            "a refused registration must not cross the ring"
+        );
+    }
+
+    #[test]
+    fn unregistering_a_capture_consumer_frees_the_ledger_slot_it_held() {
+        let (mut engine, mut command_rx, _retired_adoption_rx) =
+            engine_handle_for_command_capture(16);
+
+        for id in 0..CRUMBS_CAPTURE_RESERVE {
+            engine
+                .register_capture_consumer(id)
+                .expect("the reserve admits this one");
+        }
+        engine
+            .unregister_capture_consumer(0)
+            .expect("an id on the bus comes off it");
+        engine
+            .register_capture_consumer(CRUMBS_CAPTURE_RESERVE)
+            .expect("the freed slot takes the next consumer");
+
+        let mut sent = Vec::new();
+        while let Ok(command) = command_rx.pop() {
+            match command {
+                GraphCommand::RegisterCaptureConsumer(id) => sent.push((true, id)),
+                GraphCommand::UnregisterCaptureConsumer(id) => sent.push((false, id)),
+                _ => panic!("the bus methods push nothing else onto the ring"),
+            }
+        }
+
+        // In order and complete: the callback keeps its own bus by replaying
+        // exactly this sequence, so a ledger that agreed only on counts would
+        // still leave the two holding different ids.
+        let mut expected: Vec<(bool, usize)> =
+            (0..CRUMBS_CAPTURE_RESERVE).map(|id| (true, id)).collect();
+        expected.push((false, 0));
+        expected.push((true, CRUMBS_CAPTURE_RESERVE));
+        assert_eq!(sent, expected);
     }
 
     #[test]
@@ -1587,6 +1728,7 @@ mod tests {
                 next_plugin_id: 1000,
                 effect_registrations: 0,
                 reconciled_effect_id_collisions: 0,
+                capture_consumers: Vec::with_capacity(CRUMBS_CAPTURE_RESERVE),
                 midi_rt_diagnostics: diagnostics_reader,
                 timeline_rt_diagnostics: timeline_diagnostics_reader,
                 graph_progress: graph_progress_reader,
