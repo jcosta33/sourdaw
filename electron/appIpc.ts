@@ -34,6 +34,7 @@ import {
 import { commandChannel } from './commands.js';
 import { asPositionalArguments, withTrustedSender, withTrustedSenderEvent, type IpcMainLike } from './router.js';
 
+import type { NativeHost } from './native.js';
 import type { ScanSupervisor } from './scan.js';
 import type {
     FileFilter,
@@ -103,6 +104,42 @@ export type RegisterDialogChannelsInput = {
     readonly ipcMain: IpcMainLike;
     readonly isTrustedFrameUrl: TrustGuard;
     readonly dialogs: NativeDialogs;
+    /**
+     * Resolved lazily: the host is built after these channels are registered,
+     * and a shell whose addon failed to load never builds one at all.
+     */
+    readonly native: () => NativeHost | undefined;
+};
+
+/**
+ * Grant the native file commands access to a path the user just picked
+ * (jcosta33/sourdaw#3313).
+ *
+ * This is the whole of how a path outside Sourdaw's own storage becomes
+ * reachable. A directory pick is granted recursively and writably, because
+ * that is what choosing an export folder or a sample library means; a save
+ * target is granted writable and alone, so answering one save dialog does not
+ * open the folder it sits in; an opened file is granted read-only, because
+ * being shown a file is not permission to overwrite it.
+ *
+ * A shell with no addon grants nothing and says nothing: there are no native
+ * file commands to reach in that shell either, so the pick is no less usable
+ * for it. A grant that fails while the addon *is* present is raised to the
+ * caller — returning a path whose first write would be refused is the silent
+ * failure this replaces.
+ */
+const grantPickedPaths = async (
+    native: () => NativeHost | undefined,
+    paths: readonly string[],
+    { mode, recursive }: { readonly mode: 'read' | 'readwrite'; readonly recursive: boolean }
+): Promise<void> => {
+    const host = native();
+    if (host === undefined) {
+        return;
+    }
+    for (const path of paths) {
+        await host.grantPath(path, mode, recursive);
+    }
 };
 
 const asRecord = (value: unknown): Record<string, unknown> =>
@@ -145,24 +182,36 @@ const messageKind = (value: unknown): 'info' | 'warning' | 'error' =>
  * successful pick of an object — which, for the save dialog, means writing a
  * render to a path that is not a path.
  */
-export const registerDialogChannels = ({ ipcMain, isTrustedFrameUrl, dialogs }: RegisterDialogChannelsInput): void => {
+export const registerDialogChannels = ({
+    ipcMain,
+    isTrustedFrameUrl,
+    dialogs,
+    native,
+}: RegisterDialogChannelsInput): void => {
     ipcMain.handle(
         DIALOG_OPEN_CHANNEL,
         withTrustedSender('dialog.open', isTrustedFrameUrl, async (options) => {
             const request = asRecord(options);
             const multiple = request.multiple === true;
+            const directory = request.directory === true;
             const result = await dialogs.showOpenDialog({
                 title: optionalString(request.title),
                 defaultPath: optionalString(request.defaultPath),
                 filters: optionalFilters(request.filters),
                 properties: [
-                    request.directory === true ? 'openDirectory' : 'openFile',
+                    directory ? 'openDirectory' : 'openFile',
                     ...(multiple ? (['multiSelections'] as const) : []),
                 ],
             });
             if (result.canceled || result.filePaths.length === 0) {
                 return null;
             }
+            // Granted before the paths are answered, never after: the renderer
+            // may call a file command the moment it has them.
+            await grantPickedPaths(native, result.filePaths, {
+                mode: directory ? 'readwrite' : 'read',
+                recursive: directory,
+            });
             return multiple ? result.filePaths : result.filePaths[0];
         })
     );
@@ -176,7 +225,11 @@ export const registerDialogChannels = ({ ipcMain, isTrustedFrameUrl, dialogs }: 
                 defaultPath: optionalString(request.defaultPath),
                 filters: optionalFilters(request.filters),
             });
-            return result.canceled || result.filePath === '' ? null : result.filePath;
+            if (result.canceled || result.filePath === '') {
+                return null;
+            }
+            await grantPickedPaths(native, [result.filePath], { mode: 'readwrite', recursive: false });
+            return result.filePath;
         })
     );
 

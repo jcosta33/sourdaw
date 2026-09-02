@@ -36,6 +36,7 @@ import {
 } from '../channels.js';
 import { commandChannel } from '../commands.js';
 
+import type { NativeHost } from '../native.js';
 import type { IpcMainLike, SenderFrameCarrier } from '../router.js';
 import type { ScanSupervisor } from '../scan.js';
 import type { MessageBoxOptions, OpenDialogOptions, SaveDialogOptions } from 'electron';
@@ -57,9 +58,29 @@ const cancelledDialogs = (): NativeDialogs => ({
     showMessageBox: async (_options: MessageBoxOptions) => ({ response: 0 }),
 });
 
-const dialogHandlers = (answers: Partial<NativeDialogs> = {}): Map<string, Handler> => {
+/** No addon loaded, which is the shell that has no native file commands either. */
+const noNativeHost = (): NativeHost | undefined => undefined;
+
+/**
+ * A host that records the grants a dialog mints, standing in for the addon.
+ *
+ * `grantPath` is the only member the dialogs reach, so the rest of `NativeHost`
+ * is deliberately absent rather than stubbed: a dialog that started calling
+ * anything else should fail here, not find a fake waiting for it.
+ */
+const grantRecorder = (
+    grantPath: NativeHost['grantPath'] = async () => undefined
+): { readonly native: () => NativeHost; readonly grantPath: NativeHost['grantPath'] } => {
+    const spy = vi.fn(grantPath);
+    return { native: () => ({ grantPath: spy }) as unknown as NativeHost, grantPath: spy };
+};
+
+const dialogHandlers = (
+    answers: Partial<NativeDialogs> = {},
+    native: () => NativeHost | undefined = noNativeHost
+): Map<string, Handler> => {
     const { ipcMain, handlers } = collectingIpc();
-    registerDialogChannels({ ipcMain, isTrustedFrameUrl, dialogs: { ...cancelledDialogs(), ...answers } });
+    registerDialogChannels({ ipcMain, isTrustedFrameUrl, dialogs: { ...cancelledDialogs(), ...answers }, native });
     return handlers;
 };
 
@@ -406,6 +427,88 @@ describe('the save dialog', () => {
     });
 });
 
+/**
+ * The grants a dialog mints (jcosta33/sourdaw#3313).
+ *
+ * The native file commands reach the user's own folders only through these, so
+ * what each dialog grants is the access model itself: too little and a save the
+ * user just asked for is refused, too much and answering one dialog reopens the
+ * blanket directory access this replaced.
+ */
+describe('the grants a dialog mints', () => {
+    const pickedDirectories = (filePaths: readonly string[]): Partial<NativeDialogs> => ({
+        showOpenDialog: async (_options: OpenDialogOptions) => ({ canceled: false, filePaths: [...filePaths] }),
+    });
+
+    it('grants a picked directory recursively and writably, one grant per path', async () => {
+        const { native, grantPath } = grantRecorder();
+        const handler = dialogHandlers(pickedDirectories(['/samples/kit', '/samples/vox']), native).get(
+            DIALOG_OPEN_CHANNEL
+        );
+
+        await handler?.(APP_FRAME, { directory: true, multiple: true });
+
+        expect(vi.mocked(grantPath).mock.calls).toEqual([
+            ['/samples/kit', 'readwrite', true],
+            ['/samples/vox', 'readwrite', true],
+        ]);
+    });
+
+    it('grants an opened file read-only and only that file', async () => {
+        // Being shown a file is not permission to overwrite it, and the folder
+        // it sits in was never picked at all.
+        const { native, grantPath } = grantRecorder();
+        const handler = dialogHandlers(pickedDirectories(['/music/take-1.wav']), native).get(DIALOG_OPEN_CHANNEL);
+
+        await handler?.(APP_FRAME, {});
+
+        expect(vi.mocked(grantPath).mock.calls).toEqual([['/music/take-1.wav', 'read', false]]);
+    });
+
+    it('grants a save target writably and alone', async () => {
+        const { native, grantPath } = grantRecorder();
+        const handler = dialogHandlers(
+            {
+                showSaveDialog: async (_options: SaveDialogOptions) => ({
+                    canceled: false,
+                    filePath: '/music/mix.wav',
+                }),
+            },
+            native
+        ).get(DIALOG_SAVE_CHANNEL);
+
+        await expect(handler?.(APP_FRAME, {})).resolves.toBe('/music/mix.wav');
+        expect(vi.mocked(grantPath).mock.calls).toEqual([['/music/mix.wav', 'readwrite', false]]);
+    });
+
+    it('grants nothing when the user cancelled or picked nothing', async () => {
+        const { native, grantPath } = grantRecorder();
+        const handlers = dialogHandlers(pickedDirectories([]), native);
+
+        await handlers.get(DIALOG_OPEN_CHANNEL)?.(APP_FRAME, { directory: true });
+        await handlers.get(DIALOG_SAVE_CHANNEL)?.(APP_FRAME, {});
+
+        expect(grantPath).not.toHaveBeenCalled();
+    });
+
+    it('refuses the pick rather than answering with a path the grant failed for', async () => {
+        // Answering anyway hands the renderer a path whose first write is
+        // refused, with nothing to attribute the refusal to.
+        const { native } = grantRecorder(async () => {
+            throw new Error('the grant file is read-only');
+        });
+        const handler = dialogHandlers(pickedDirectories(['/samples/kit']), native).get(DIALOG_OPEN_CHANNEL);
+
+        await expect(handler?.(APP_FRAME, { directory: true })).rejects.toThrow(/read-only/u);
+    });
+
+    it('still answers when no addon is loaded, because that shell has no file commands either', async () => {
+        const handler = dialogHandlers(pickedDirectories(['/samples/kit'])).get(DIALOG_OPEN_CHANNEL);
+
+        await expect(handler?.(APP_FRAME, { directory: true })).resolves.toBe('/samples/kit');
+    });
+});
+
 describe('the message box', () => {
     it('resolves to nothing rather than to a button index', async () => {
         await expect(
@@ -459,7 +562,7 @@ describe('the path helpers', () => {
 describe('the origin guard on every non-command channel', () => {
     it('refuses a foreign frame on each one', () => {
         const { ipcMain, handlers } = collectingIpc();
-        registerDialogChannels({ ipcMain, isTrustedFrameUrl, dialogs: cancelledDialogs() });
+        registerDialogChannels({ ipcMain, isTrustedFrameUrl, dialogs: cancelledDialogs(), native: noNativeHost });
         registerPathChannels({
             ipcMain,
             isTrustedFrameUrl,

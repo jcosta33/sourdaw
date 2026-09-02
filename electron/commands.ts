@@ -139,6 +139,13 @@ export const EXPOSED_COMMANDS = [
  * stream, which is why `pluginCommandAdmission` closes it with the plugin
  * runtime surface at quit.
  *
+ * `grant_path` is denied for the reason it exists (jcosta33/sourdaw#3313). It
+ * is the only way to widen what the native file commands will touch, so a
+ * renderer able to name it could grant itself the user directories those
+ * commands used to admit outright. The main process calls it directly on the
+ * addon, for the path a native dialog is about to return, which is what makes
+ * "the user picked this" the only way a path becomes reachable.
+ *
  * `is_plugin_gui_supported` moved here from the exposed list when its
  * renderer repository was retired (#2307): the inspector reads editor
  * capability through `resolvePluginEditorCapability`, so no `src/` caller
@@ -161,6 +168,7 @@ export const DENIED_COMMANDS = [
     'enable_link',
     'get_asr_status',
     'get_link_status',
+    'grant_path',
     'hide_all_plugin_guis',
     'is_plugin_gui_supported',
     'link_start_playing',

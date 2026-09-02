@@ -450,6 +450,17 @@ impl SourdawNative {
         json(reason(commands::filesystem::list_directory(path).await)?)
     }
 
+    /// Grant access to one path the user picked. Main process only.
+    ///
+    /// The shell withholds this from the renderer's command surface, and that
+    /// is the whole point of it: a page that could mint its own grant would be
+    /// back to the blanket directory access this replaced. The shell calls it
+    /// for the path a native dialog is about to return.
+    #[napi]
+    pub async fn grant_path(&self, path: String, mode: String, recursive: bool) -> Result<()> {
+        reason(commands::filesystem::grant_path(path, mode, recursive).await)
+    }
+
     // ── Plugin hosting ─────────────────────────────────────────────────
 
     #[napi]

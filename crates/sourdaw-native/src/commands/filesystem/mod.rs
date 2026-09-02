@@ -1,10 +1,31 @@
+//! The native file commands, and the grants that bound them.
+//!
+//! Every path the renderer names is resolved here and checked against a root
+//! before any I/O happens. Two kinds of root exist and they are not
+//! interchangeable: the built-in ones the application owns outright
+//! ([`built_in_roots`]), and the individual paths a user picked in a native
+//! dialog, held in [`grant_registry`]. Nothing else is reachable, whatever the
+//! renderer sends.
+
+pub mod grant_registry;
+
+use grant_registry::{FileGrant, GrantMode};
 use hound::{WavSpec, WavWriter};
 use serde::{Deserialize, Serialize};
+use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 
 pub(crate) const APP_DIR_NAME: &str = "com.sourdaw.app";
 const IPC_TEMP_DIR_NAME: &str = "sourdaw_ipc";
+
+/// The folder Sourdaw keeps its own projects in, under the user's documents.
+///
+/// A built-in root rather than a grant: it is the application's own storage,
+/// the way the data and cache directories are, and a musician who saves a
+/// project into the app's own project folder has not picked anything for the
+/// app to remember.
+const PROJECT_DIR_NAME: &str = "Sourdaw Projects";
 const MAX_FILE_IPC_BYTES: u64 = 1024 * 1024 * 1024;
 const MAX_RENDERER_PATH_BYTES: usize = 4096;
 
@@ -227,10 +248,38 @@ pub async fn list_directory(path: String) -> Result<Vec<DirectoryEntry>, String>
     Ok(entries)
 }
 
+/// Grant the renderer access to one path the user picked.
+///
+/// The one production route into [`grant_registry`], and it is reachable only
+/// from the desktop shell's main process: the command is withheld from the
+/// renderer's command surface, so a page cannot widen its own reach by asking.
+/// The shell calls it with the path a native dialog is about to return —
+/// recursively writable for a directory pick, the single file for a save, that
+/// file read-only for an open.
+pub async fn grant_path(path: String, mode: String, recursive: bool) -> Result<(), String> {
+    let mode = parse_grant_mode(&mode)?;
+    let requested = normalize_absolute_path(Path::new(path.trim()))?;
+    let canonical = grant_registry::resolve_grant_target(&requested)?;
+    grant_registry::grant(FileGrant {
+        canonical,
+        mode,
+        recursive,
+    });
+    Ok(())
+}
+
+fn parse_grant_mode(mode: &str) -> Result<GrantMode, String> {
+    match mode {
+        "read" => Ok(GrantMode::Read),
+        "readwrite" => Ok(GrantMode::ReadWrite),
+        other => Err(format!("Unknown file grant mode: {other}")),
+    }
+}
+
 pub fn resolve_existing_file_path(path: &str) -> Result<PathBuf, String> {
     let resolved = resolve_renderer_path(path)?;
     let canonical = canonicalize_existing_path(&resolved)?;
-    ensure_allowed_root(&canonical)?;
+    ensure_allowed_root(&canonical, GrantMode::Read)?;
     if !canonical.is_file() {
         return Err("Path is not a file".to_string());
     }
@@ -240,7 +289,7 @@ pub fn resolve_existing_file_path(path: &str) -> Result<PathBuf, String> {
 pub fn resolve_existing_directory_path(path: &str) -> Result<PathBuf, String> {
     let resolved = resolve_renderer_path(path)?;
     let canonical = canonicalize_existing_path(&resolved)?;
-    ensure_allowed_root(&canonical)?;
+    ensure_allowed_root(&canonical, GrantMode::Read)?;
     if !canonical.is_dir() {
         return Err("Not a directory".to_string());
     }
@@ -250,18 +299,23 @@ pub fn resolve_existing_directory_path(path: &str) -> Result<PathBuf, String> {
 pub fn resolve_writable_file_path(path: &str) -> Result<PathBuf, String> {
     let resolved = resolve_renderer_path(path)?;
     if let Ok(canonical) = canonicalize_existing_path(&resolved) {
-        ensure_allowed_root(&canonical)?;
+        ensure_allowed_root(&canonical, GrantMode::ReadWrite)?;
         if canonical.is_dir() {
             return Err("Path is a directory".to_string());
         }
         return Ok(canonical);
     }
 
-    let parent = resolved
-        .parent()
-        .ok_or_else(|| "Path must include a parent directory".to_string())?;
-    let canonical_parent = canonicalize_existing_parent(parent)?;
-    ensure_allowed_root(&canonical_parent)?;
+    // The destination does not exist yet, so the check runs against the whole
+    // path with its existing part resolved — not against the nearest existing
+    // ancestor alone. A grant, and the projects root, name a directory that may
+    // itself be the missing part, and an ancestor-only check answers about the
+    // directory *above* the root rather than about the destination.
+    if resolved.parent().is_none() {
+        return Err("Path must include a parent directory".to_string());
+    }
+    let destination = canonicalize_through_missing_tail(&resolved)?;
+    ensure_allowed_root(&destination, GrantMode::ReadWrite)?;
     Ok(resolved)
 }
 
@@ -341,30 +395,71 @@ fn canonicalize_existing_path(path: &Path) -> Result<PathBuf, String> {
         .map_err(|_| "File not found or not accessible".to_string())
 }
 
-fn canonicalize_existing_parent(path: &Path) -> Result<PathBuf, String> {
-    let mut current = path;
+/// Resolve `path` as far as the filesystem allows, keeping what is missing.
+///
+/// `canonicalize` refuses a path that does not exist, and both a save target
+/// and an application directory on first launch are exactly that. This walks up
+/// to the deepest ancestor that does exist, canonicalises it, and re-appends
+/// the components below it. Those components do not exist, so they cannot be
+/// symlinks; every link in the part that does exist has already been followed,
+/// which is what makes the result comparable against another resolved path.
+pub(crate) fn canonicalize_through_missing_tail(path: &Path) -> Result<PathBuf, String> {
+    if let Ok(canonical) = path.canonicalize() {
+        return Ok(canonical);
+    }
+
+    let mut missing: Vec<OsString> = Vec::new();
+    let mut current = path.to_path_buf();
     loop {
-        if let Ok(canonical) = current.canonicalize() {
-            return Ok(canonical);
-        }
-        current = current
+        let name = current
+            .file_name()
+            .ok_or_else(|| "No existing parent directory for path".to_string())?
+            .to_os_string();
+        let parent = current
             .parent()
-            .ok_or_else(|| "No existing parent directory for path".to_string())?;
+            .ok_or_else(|| "No existing parent directory for path".to_string())?
+            .to_path_buf();
+        missing.push(name);
+
+        if let Ok(canonical_parent) = parent.canonicalize() {
+            let mut resolved = canonical_parent;
+            for segment in missing.iter().rev() {
+                resolved.push(segment);
+            }
+            return Ok(resolved);
+        }
+        current = parent;
     }
 }
 
-fn ensure_allowed_root(canonical_path: &Path) -> Result<(), String> {
-    for root in allowed_roots() {
-        if let Ok(canonical_root) = root.canonicalize() {
-            if canonical_path.starts_with(canonical_root) {
+/// Refuse a path that is neither inside a built-in root nor granted.
+///
+/// Order matters only for cost: the built-in roots are the app's own storage
+/// and admit both modes, so they answer first and the registry is consulted
+/// for everything else. `starts_with` is component-wise, so a root never
+/// admits a sibling directory whose name merely shares its prefix.
+fn ensure_allowed_root(resolved_path: &Path, mode: GrantMode) -> Result<(), String> {
+    for root in built_in_roots() {
+        if let Ok(resolved_root) = canonicalize_through_missing_tail(&root) {
+            if resolved_path.starts_with(resolved_root) {
                 return Ok(());
             }
         }
     }
+    if grant_registry::admits(resolved_path, mode) {
+        return Ok(());
+    }
     Err("Path is outside allowed native file roots".to_string())
 }
 
-fn allowed_roots() -> Vec<PathBuf> {
+/// The roots Sourdaw owns, readable and writable without a user pick.
+///
+/// Each one is storage the application itself created: the IPC scratch space
+/// exports cross through, its data and cache directories, and the folder it
+/// keeps projects in. The user's documents, downloads, desktop and music
+/// folders were roots here once (#3313); they are the user's, not the app's,
+/// and reach them now only through a grant the user made in a dialog.
+fn built_in_roots() -> Vec<PathBuf> {
     let mut roots = vec![std::env::temp_dir()];
 
     if let Some(data_dir) = dirs::data_dir() {
@@ -373,20 +468,16 @@ fn allowed_roots() -> Vec<PathBuf> {
     if let Some(cache_dir) = dirs::cache_dir() {
         roots.push(cache_dir.join(APP_DIR_NAME));
     }
-    if let Some(document_dir) = dirs::document_dir() {
-        roots.push(document_dir);
-    }
-    if let Some(download_dir) = dirs::download_dir() {
-        roots.push(download_dir);
-    }
-    if let Some(desktop_dir) = dirs::desktop_dir() {
-        roots.push(desktop_dir);
-    }
-    if let Some(audio_dir) = dirs::audio_dir() {
-        roots.push(audio_dir);
+    if let Some(project_dir) = project_directory() {
+        roots.push(project_dir);
     }
 
     roots
+}
+
+/// Where Sourdaw keeps its own projects.
+fn project_directory() -> Option<PathBuf> {
+    Some(dirs::document_dir()?.join(PROJECT_DIR_NAME))
 }
 
 #[cfg(test)]
@@ -397,7 +488,7 @@ mod tests {
     fn native_application_data_paths_share_one_directory_identity() {
         assert_eq!(APP_DIR_NAME, "com.sourdaw.app");
 
-        let roots = allowed_roots();
+        let roots = built_in_roots();
         if let Some(data_dir) = dirs::data_dir() {
             assert!(roots.contains(&data_dir.join(APP_DIR_NAME)));
         }
@@ -406,8 +497,8 @@ mod tests {
         }
 
         for source in [
-            include_str!("verified_cached_model.rs"),
-            include_str!("../host/plugin_registry_store.rs"),
+            include_str!("../verified_cached_model.rs"),
+            include_str!("../../host/plugin_registry_store.rs"),
         ] {
             assert!(
                 source.contains(".join(APP_DIR_NAME)"),
@@ -470,6 +561,98 @@ mod tests {
         assert_eq!(
             result.unwrap_err(),
             "Path is outside allowed native file roots"
+        );
+    }
+
+    /// A directory the user owns and Sourdaw does not: the documents folder,
+    /// which was a blanket root before #3313 and is now reachable only through
+    /// a grant. Resolved the same way the guard resolves a destination, so a
+    /// grant written here and the path the resolver computes are comparable.
+    fn user_documents_directory() -> PathBuf {
+        let home = dirs::home_dir().expect("an account should have a home directory");
+        canonicalize_through_missing_tail(&home.join("Documents"))
+            .expect("the home directory should resolve")
+    }
+
+    fn grant_of(canonical: PathBuf, mode: GrantMode, recursive: bool) -> FileGrant {
+        FileGrant {
+            canonical,
+            mode,
+            recursive,
+        }
+    }
+
+    fn writable(path: &Path) -> Result<PathBuf, String> {
+        resolve_writable_file_path(&path.to_string_lossy())
+    }
+
+    /// The reproduction on #3313: a renderer that named a path in the user's
+    /// documents folder could write there, because the folder itself was an
+    /// allowed root. With no grant it must be refused.
+    #[test]
+    fn an_ungranted_user_document_is_not_writable() {
+        let destination = user_documents_directory().join("sourdaw-grant-probe.txt");
+
+        let error = grant_registry::with_grants_for_test(Vec::new(), || {
+            writable(&destination).unwrap_err()
+        });
+
+        assert_eq!(error, "Path is outside allowed native file roots");
+    }
+
+    #[test]
+    fn a_writable_directory_grant_admits_a_file_below_it() {
+        let documents = user_documents_directory();
+        let destination = documents.join("sourdaw-grant-probe.txt");
+
+        let resolved = grant_registry::with_grants_for_test(
+            vec![grant_of(documents, GrantMode::ReadWrite, true)],
+            || writable(&destination),
+        );
+
+        assert_eq!(resolved.unwrap(), destination);
+    }
+
+    #[test]
+    fn a_read_grant_refuses_a_writable_resolution() {
+        let documents = user_documents_directory();
+        let destination = documents.join("sourdaw-grant-probe.txt");
+
+        let error = grant_registry::with_grants_for_test(
+            vec![grant_of(documents, GrantMode::Read, true)],
+            || writable(&destination).unwrap_err(),
+        );
+
+        assert_eq!(error, "Path is outside allowed native file roots");
+    }
+
+    #[test]
+    fn a_single_file_grant_refuses_a_sibling() {
+        let documents = user_documents_directory();
+        let granted = documents.join("sourdaw-granted-save.txt");
+        let sibling = documents.join("sourdaw-other-save.txt");
+
+        let (granted_result, sibling_error) = grant_registry::with_grants_for_test(
+            vec![grant_of(granted.clone(), GrantMode::ReadWrite, false)],
+            || (writable(&granted), writable(&sibling).unwrap_err()),
+        );
+
+        assert_eq!(granted_result.unwrap(), granted);
+        assert_eq!(sibling_error, "Path is outside allowed native file roots");
+    }
+
+    #[test]
+    fn a_grant_resolves_the_path_it_was_asked_for_and_refuses_a_relative_one() {
+        let documents = user_documents_directory();
+
+        assert_eq!(
+            grant_registry::resolve_grant_target(&documents.join("new-export.wav")).unwrap(),
+            documents.join("new-export.wav"),
+            "a save target that does not exist yet still resolves through its parent"
+        );
+        assert_eq!(
+            grant_registry::resolve_grant_target(Path::new("relative/pick.wav")).unwrap_err(),
+            "Granted path must be absolute"
         );
     }
 

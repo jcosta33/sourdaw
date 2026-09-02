@@ -508,6 +508,22 @@ describe('Library Persistence', () => {
             expectRestoredRoot({ id: 'root-1', status: 'path_missing' });
         });
 
+        it('should mark restored native roots permission_required when the path is no longer granted', async () => {
+            // A desktop root reaches the native file commands through the grant
+            // minted when the user picked the folder. Without it the folder is
+            // still there and reconnecting restores it, which is the same
+            // recovery a browser handle with a lapsed permission needs — so it
+            // must not restore as `offline`, which offers the user nothing.
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            vi.mocked(readNativeDirectory).mockRejectedValue('Path is outside allowed native file roots');
+            const root = createNativeRoot();
+            vi.spyOn(helpers, 'openDb').mockResolvedValue(createRestoreDb({ roots: [root] }) as any);
+
+            await restoreLibrary();
+
+            expectRestoredRoot({ id: 'root-1', status: 'permission_required' });
+        });
+
         it('should keep restored native roots ready when a child entry fails after the root opens', async () => {
             vi.mocked(isDesktopRuntime).mockReturnValue(true);
             vi.mocked(readNativeDirectory).mockRejectedValue('Failed to read entry: Operation not permitted');
