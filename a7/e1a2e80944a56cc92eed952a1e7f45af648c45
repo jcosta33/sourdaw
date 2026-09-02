@@ -1,0 +1,22 @@
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_bbdfb911119c4f::t_b02d9bb47d05f3 10328-10361
+scripts/deliverPullRequest.ts
+  s_bbdfb911119c4f::t_c2470e8e46c12c 2977-2981
+  s_bbdfb911119c4f::t_522d030f53e0d5 2989-2993
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "a7e1a2e80944a56cc92eed952a1e7f45af648c45",
+  "prompts": {},
+  "sessions": {
+    "s_bbdfb911119c4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fa21d5-2a8a-4f80-98ab-b72059373843",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": null
+    }
+  }
+}
