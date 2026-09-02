@@ -3,51 +3,16 @@ import { randomUUID } from 'node:crypto';
 
 import { fail } from './prContract.ts';
 
-export type PullRequestMutationLockOwnerFence =
-    | {
-          kind: 'pgid';
-          pgid: number;
-          leaderStartedAt?: string;
-      }
-    | {
-          kind: 'pid';
-          pid: number;
-      }
-    | {
-          kind: 'win32-process-tree';
-          version: 1;
-          rootPid: number;
-          rootStartedAt: string;
-      };
-export type PullRequestMutationLockOwner =
-    | {
-          version: 1;
-          pid: number;
-          token: string;
-      }
-    | {
-          version: 2;
-          pid: number;
-          token: string;
-          operation: 'review-resolution';
-          number: number;
-          threadId: string;
-          head: string;
-          ownerFence: PullRequestMutationLockOwnerFence;
-      };
-export type PullRequestMutationLockOptions = {
-    reviewResolution?: {
-        threadId: string;
-        head: string;
-        ownerFence: PullRequestMutationLockOwnerFence | (() => PullRequestMutationLockOwnerFence);
-    };
+export type PullRequestMutationLockOwner = {
+    version: 1;
+    pid: number;
+    token: string;
 };
 
 export type PullRequestMutationSerialization = <Value>(
     primaryRoot: string,
     number: number,
-    operation: (boundary: PullRequestRemoteMutationBoundary) => Promise<Value>,
-    options?: PullRequestMutationLockOptions
+    operation: (boundary: PullRequestRemoteMutationBoundary) => Promise<Value>
 ) => Promise<Value>;
 
 export type PullRequestRemoteMutationBoundary = {
@@ -77,51 +42,6 @@ function mutationLockGit(primaryRoot: string, args: string[], input?: string, gi
     });
 }
 
-function isExecutionFence(value: unknown): value is PullRequestMutationLockOwnerFence {
-    if (typeof value !== 'object' || value === null || !('kind' in value)) {
-        return false;
-    }
-    const candidate = value as Record<string, unknown>;
-    if (candidate.kind === 'pgid') {
-        return (
-            Object.keys(candidate).length === (candidate.leaderStartedAt === undefined ? 2 : 3) &&
-            typeof candidate.pgid === 'number' &&
-            Number.isSafeInteger(candidate.pgid) &&
-            candidate.pgid > 0 &&
-            (candidate.leaderStartedAt === undefined ||
-                (typeof candidate.leaderStartedAt === 'string' && candidate.leaderStartedAt.trim() !== ''))
-        );
-    }
-    if (candidate.kind === 'pid') {
-        return (
-            Object.keys(candidate).length === 2 &&
-            typeof candidate.pid === 'number' &&
-            Number.isSafeInteger(candidate.pid) &&
-            candidate.pid > 0
-        );
-    }
-    return (
-        candidate.kind === 'win32-process-tree' &&
-        Object.keys(candidate).length === 4 &&
-        candidate.version === 1 &&
-        typeof candidate.rootPid === 'number' &&
-        Number.isSafeInteger(candidate.rootPid) &&
-        candidate.rootPid > 0 &&
-        typeof candidate.rootStartedAt === 'string' &&
-        candidate.rootStartedAt.trim() !== ''
-    );
-}
-
-function isExecutionFenceBoundToOwnerPid(ownerFence: PullRequestMutationLockOwnerFence, pid: number): boolean {
-    if (ownerFence.kind === 'pid') {
-        return ownerFence.pid === pid;
-    }
-    if (ownerFence.kind === 'pgid') {
-        return ownerFence.pgid === pid;
-    }
-    return ownerFence.rootPid === pid;
-}
-
 function hasOwnerIdentity(
     value: Record<string, unknown>
 ): value is Record<string, unknown> & { pid: number; token: string } {
@@ -148,37 +68,7 @@ function parseMutationLockOwner(contents: string, number: number): PullRequestMu
     if (owner.version === 1 && Object.keys(owner).length === 3 && hasOwnerIdentity(owner)) {
         return { version: 1, pid: owner.pid, token: owner.token };
     }
-    if (
-        owner.version === 2 &&
-        Object.keys(owner).length === 8 &&
-        hasOwnerIdentity(owner) &&
-        owner.operation === 'review-resolution' &&
-        owner.number === number &&
-        typeof owner.threadId === 'string' &&
-        owner.threadId !== '' &&
-        typeof owner.head === 'string' &&
-        /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/iu.test(owner.head) &&
-        isExecutionFence(owner.ownerFence) &&
-        isExecutionFenceBoundToOwnerPid(owner.ownerFence, owner.pid)
-    ) {
-        return {
-            version: 2,
-            pid: owner.pid,
-            token: owner.token,
-            operation: 'review-resolution',
-            number: owner.number,
-            threadId: owner.threadId,
-            head: owner.head.toLowerCase(),
-            ownerFence: owner.ownerFence,
-        };
-    }
     return fail(`PR #${number} delivery lock ownership is malformed`);
-}
-
-export function isReviewResolutionPullRequestMutationLockOwner(
-    owner: PullRequestMutationLockOwner
-): owner is Extract<PullRequestMutationLockOwner, { version: 2 }> {
-    return owner.version === 2 && owner.operation === 'review-resolution';
 }
 
 function mutationLockObjectId(value: string, number: number): string {
@@ -248,34 +138,14 @@ function updateMutationLockRef(primaryRoot: string, args: string[]): boolean {
     return result.status === 0;
 }
 
-function acquireMutationLock(
-    primaryRoot: string,
-    number: number,
-    options: PullRequestMutationLockOptions | undefined
-): { ref: string; oid: string } {
+function acquireMutationLock(primaryRoot: string, number: number): { ref: string; oid: string } {
     const ref = pullRequestMutationLockRef(number);
     const existingOid = readPullRequestMutationLockOid(primaryRoot, ref, number);
     if (existingOid !== undefined) {
         const existingOwner = readPullRequestMutationLockOwner(primaryRoot, existingOid, number);
         return fail(`PR #${number} is already being delivered by process ${existingOwner.pid}`);
     }
-    const reviewResolution = options?.reviewResolution;
-    const owner: PullRequestMutationLockOwner =
-        reviewResolution === undefined
-            ? { version: 1, pid: process.pid, token: randomUUID() }
-            : {
-                  version: 2,
-                  pid: process.pid,
-                  token: randomUUID(),
-                  operation: 'review-resolution',
-                  number,
-                  threadId: reviewResolution.threadId,
-                  head: reviewResolution.head,
-                  ownerFence:
-                      typeof reviewResolution.ownerFence === 'function'
-                          ? reviewResolution.ownerFence()
-                          : reviewResolution.ownerFence,
-              };
+    const owner: PullRequestMutationLockOwner = { version: 1, pid: process.pid, token: randomUUID() };
     const oid = writePullRequestMutationLockOwner(primaryRoot, owner, number);
     if (updateMutationLockRef(primaryRoot, [ref, oid, '0'.repeat(oid.length)])) {
         return { ref, oid };
@@ -346,10 +216,9 @@ export function releasePullRequestMutationLockExact(
 export async function withPullRequestMutationLock<Value>(
     primaryRoot: string,
     number: number,
-    operation: (boundary: PullRequestRemoteMutationBoundary) => Promise<Value>,
-    options?: PullRequestMutationLockOptions
+    operation: (boundary: PullRequestRemoteMutationBoundary) => Promise<Value>
 ): Promise<Value> {
-    const lock = acquireMutationLock(primaryRoot, number, options);
+    const lock = acquireMutationLock(primaryRoot, number);
     let remoteMutationAttempted = false;
     let remoteMutationKnownAbsent = false;
     let succeeded = false;
