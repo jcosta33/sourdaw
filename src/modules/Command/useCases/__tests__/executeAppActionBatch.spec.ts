@@ -14,6 +14,7 @@ import { type ActionHandler, type AppAction, type HandlerValidationContext } fro
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { type ActionHistoryMetadata } from '../actionHistoryMetadataPort';
+import { commandTrackDefaultsPort } from '../commandTrackDefaultsPort';
 import { executeAppActionBatch } from '../executeAppActionBatch';
 import { productionBriefAdmissionPort } from '../productionBriefAdmissionPort';
 
@@ -24,6 +25,7 @@ type StopPlaybackAction = Extract<AppAction, { type: 'stopPlayback' }>;
 type RestoreDeviceAction = Extract<AppAction, { type: 'restoreDevice' }>;
 type RestoreTrackAction = Extract<AppAction, { type: 'restoreTrack' }>;
 type RemoveClipAction = Extract<AppAction, { type: 'removeClip' }>;
+type AddTrackAction = Extract<AppAction, { type: 'addTrack' }>;
 
 const mocks = vi.hoisted(() => ({
     agentProjectRepairStateStore: { value: null as null | { status: 'repair-required' } },
@@ -157,6 +159,7 @@ describe('executeAppActionBatch', () => {
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => true }));
+        commandTrackDefaultsPort.setTrackColorProvider(null);
     });
 
     it('commits every action as one project document mutation', async () => {
@@ -1452,7 +1455,7 @@ describe('executeAppActionBatch', () => {
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
     });
 
-    it('captures and rechecks the handler-materialized production-lock footprint', async () => {
+    it('gates on the requested footprint, then captures and rechecks the handler-materialized one', async () => {
         const capturedTools: string[] = [];
         const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'select' } };
         registerHandlerMap({
@@ -1469,7 +1472,7 @@ describe('executeAppActionBatch', () => {
             return {
                 allowsCurrent: () => {
                     capturedTools.push(tool);
-                    return tool === 'marquee';
+                    return true;
                 },
             };
         });
@@ -1477,7 +1480,37 @@ describe('executeAppActionBatch', () => {
         await expect(executeAppActionBatch([action])).resolves.toMatchObject({ status: 'committed' });
 
         expect(action.payload.tool).toBe('select');
-        expect(capturedTools).toEqual(['marquee', 'marquee']);
+        // The pre-canonicalization gate sees what the caller asked for; the admission that carries
+        // authority, and its commit-time recheck, both see what the handler will actually write.
+        expect(capturedTools).toEqual(['select', 'marquee', 'marquee']);
+    });
+
+    it('spends no application default on a batch the production brief refuses', async () => {
+        const palette = ['oklch(0.40 0.08 250)', 'oklch(0.55 0.09 140)'];
+        let reservations = 0;
+        commandTrackDefaultsPort.setTrackColorProvider(() => palette[reservations++] ?? 'oklch(0 0 0)');
+        const executedColors: Array<string | undefined> = [];
+        registerHandlerMap({
+            addTrack: createHandler<AddTrackAction>({
+                execute: (action) => {
+                    executedColors.push(action.payload.color);
+                },
+            }),
+        });
+        const addTrack: AddTrackAction = { type: 'addTrack', payload: { name: 'Bass', kind: 'audio' } };
+        productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => false }));
+
+        await expect(executeAppActionBatch([addTrack])).resolves.toMatchObject({ status: 'conflicted' });
+
+        expect(reservations).toBe(0);
+
+        productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => true }));
+
+        await expect(executeAppActionBatch([addTrack])).resolves.toMatchObject({ status: 'committed' });
+
+        // The refused batch left the palette where it found it, so the first accepted track still
+        // draws the colour it would have drawn had that batch never been dispatched.
+        expect(executedColors).toEqual([palette[0]]);
     });
 
     it('reports the caller action objects to onCommitted while handlers execute canonical arguments', async () => {

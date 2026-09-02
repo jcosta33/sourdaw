@@ -661,6 +661,16 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     actions: [],
                 };
             }
+            // Canonicalization draws session-wide application defaults — the next track colour
+            // leaves the shared palette here — so a batch the production brief already refuses is
+            // turned away on its requested actions, before the loop can spend any of them.
+            if (!productionBriefAdmissionPort.capture(actions).allowsCurrent()) {
+                return {
+                    status: 'conflicted',
+                    reason: 'Action batch conflicts with locked production intent',
+                    actions: [],
+                };
+            }
             const canonicalizedActions: CanonicalizedBatchAction[] = [];
             for (const [index, requestedAction] of actions.entries()) {
                 const suppliedEnvelope = options?.commandEnvelopes?.[index];
