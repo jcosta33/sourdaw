@@ -39,12 +39,13 @@ function createDeferred<T>(): Deferred<T> {
     return { promise, resolve: resolveDeferred };
 }
 
-vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Transport/useCases')>()),
+// newProject imports ensureTrackStrips and stopPlayback.
+vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: vi.fn(),
     stopPlayback: vi.fn(),
 }));
 
+// newProject imports clearRuntimeCachedAudioBuffers and resetAudioGraph.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     clearRuntimeCachedAudioBuffers: vi.fn(),
     resetAudioGraph: vi.fn(),
@@ -90,30 +91,32 @@ vi.mock('../helpers/resetModuleStoresToDefault', () => ({
     resetModuleStoresToDefault: vi.fn(),
 }));
 
-vi.mock('../helpers/runProjectLoadTransaction', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('../helpers/runProjectLoadTransaction')>()),
-    runProjectLoadTransaction: vi.fn(() => ({
-        prepare: vi.fn(() => Promise.resolve(true)),
-        activate: vi.fn(() => true),
-        canActivate: () => true,
-        isCurrent: () => true,
-        signal: new AbortController().signal,
-    })),
-}));
+// newProject imports runProjectLoadTransaction; activateNewProject uses projectLoadEpoch at runtime.
+vi.mock('../helpers/runProjectLoadTransaction', async () => {
+    const actual = await vi.importActual<typeof import('../helpers/runProjectLoadTransaction')>(
+        '../helpers/runProjectLoadTransaction'
+    );
+    return {
+        projectLoadEpoch: actual.projectLoadEpoch,
+        runProjectLoadTransaction: vi.fn(() => ({
+            prepare: vi.fn(() => Promise.resolve(true)),
+            activate: vi.fn(() => true),
+            canActivate: () => true,
+            isCurrent: () => true,
+            signal: new AbortController().signal,
+        })),
+    };
+});
 
-vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
+// newProject imports addTrack; getDurableProjectOwnerId pulls getPluginById via semanticProjectIndex.
+vi.mock('#/modules/Arrangement/useCases', () => ({
     addTrack: vi.fn(),
+    getPluginById: vi.fn(),
 }));
 
+// newProject imports clearUndoHistory.
 vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: vi.fn(),
     clearUndoHistory: vi.fn(),
-    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
-    isAppActionCommittedError: vi.fn(() => false),
-    pushUndoEntry: vi.fn(),
-    resetActionReplayAuthority: vi.fn(),
-    syncActionReplayMetadata: vi.fn(),
 }));
 
 vi.mock('../../../repositories/project/removeProjectJson', () => ({
