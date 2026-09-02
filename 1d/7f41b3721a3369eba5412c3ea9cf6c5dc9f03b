@@ -1,0 +1,20 @@
+src/modules/MIDI/handlers/noteTransform/handleRestoreMidiClipNotes.ts
+  s_ac03a4ebaa3f6e::t_0ba62cce20bf2b 89-91
+  s_ac03a4ebaa3f6e::t_710fef93f6d9da 74-83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "1d7f41b3721a3369eba5412c3ea9cf6c5dc9f03b",
+  "prompts": {},
+  "sessions": {
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
