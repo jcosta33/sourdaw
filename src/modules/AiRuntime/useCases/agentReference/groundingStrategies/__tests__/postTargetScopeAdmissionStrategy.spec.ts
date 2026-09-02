@@ -171,6 +171,70 @@ describe('post-target scope admission strategies', () => {
         ).toBe('Provider clear-solos scope is not explicitly universal');
     });
 
+    it('rejects leftover restricted clear-solos when a later catalog intent follows Unnamed', () => {
+        const leftoverContext: ProjectContext = {
+            ...context,
+            tracks: [
+                {
+                    id: 'track-unnamed',
+                    name: 'Unnamed',
+                    kind: 'audio',
+                    muted: false,
+                    soloed: true,
+                    soloSafe: false,
+                    armed: false,
+                    gain: 0.8,
+                    pan: 0,
+                    automationMode: 'read',
+                    outputId: 'master',
+                    clipCount: 0,
+                    deviceCount: 0,
+                    clips: [],
+                    devices: [],
+                    sends: [],
+                },
+                {
+                    id: 'track-guitar',
+                    name: 'Guitar',
+                    kind: 'audio',
+                    muted: false,
+                    soloed: true,
+                    soloSafe: false,
+                    armed: false,
+                    gain: 0.8,
+                    pan: 0,
+                    automationMode: 'read',
+                    outputId: 'master',
+                    clipCount: 0,
+                    deviceCount: 0,
+                    clips: [],
+                    devices: [],
+                    sends: [],
+                },
+            ],
+        };
+        const input = {
+            actionName: 'clearSolos' as const,
+            actionScope: { matchedIntentPhrase: 'clear all solos', text: 'clear all solos' },
+            bulkMutedEmptyTrackDeletionTargetIds: null,
+            context: leftoverContext,
+            groundedArguments: {},
+            plannedActionNames: ['clearSolos', 'muteTrack'],
+        };
+        expect(
+            groundPostTargetScopeAdmission({
+                ...input,
+                prompt: 'clear all solos but Unnamed and mute Guitar',
+            })
+        ).toBe('Provider clear-solos scope is not explicitly universal');
+        expect(
+            groundPostTargetScopeAdmission({
+                ...input,
+                prompt: 'clear all solos, Unnamed stays soloed, and mute Guitar',
+            })
+        ).toBe('Provider clear-solos scope is not explicitly universal');
+    });
+
     it('rejects a dual VCA group reference that lives outside the split clause', () => {
         const vocals = {
             id: 'track-vocals',

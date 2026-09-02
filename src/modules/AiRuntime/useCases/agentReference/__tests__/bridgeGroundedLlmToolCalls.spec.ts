@@ -2930,6 +2930,37 @@ describe('bridgeGroundedLlmToolCalls', () => {
         }
     });
 
+    it('rejects leftover restricted clear-solos when a later catalog intent follows Unnamed', () => {
+        const unnamed = createTrack({ id: 'track-unnamed', name: 'Unnamed' });
+        const leftoverContext = {
+            ...projectContext,
+            tracks: [unnamed, guitar, master].map((track) => ({ ...track, soloed: true })),
+        };
+        const leftoverPrompts = [
+            'clear all solos but Unnamed and mute Guitar',
+            'clear all solos, Unnamed stays soloed, and mute Guitar',
+        ] as const;
+        for (const prompt of leftoverPrompts) {
+            const result = bridge(
+                [
+                    { name: 'clearSolos', arguments: {} },
+                    { name: 'muteTrack', arguments: { trackId: guitar.id, muted: true } },
+                ],
+                prompt,
+                leftoverContext
+            );
+            expect(
+                result.actions.filter((action) => action.type === 'clearSolos'),
+                prompt
+            ).toEqual([]);
+            expect(result.rejections, prompt).toContainEqual({
+                index: 0,
+                name: 'clearSolos',
+                reason: 'Provider clear-solos scope is not explicitly universal',
+            });
+        }
+    });
+
     it('binds clear-solo restrictions to the action span they qualify', () => {
         const bass = createTrack({ id: 'track-bass', name: 'Bass' });
         const soloedContext = {

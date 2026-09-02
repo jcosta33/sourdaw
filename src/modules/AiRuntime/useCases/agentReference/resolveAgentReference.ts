@@ -100,7 +100,24 @@ function getContiguousReferenceRanges(prompt: string, reference: string): readon
 }
 
 function getExactNameOverlapRanges(prompt: string, reference: string): readonly { end: number; start: number }[] {
-    return getTokenReferenceRanges(prompt, reference, '[^\\p{L}\\p{N}]+');
+    const foldedRanges = getTokenReferenceRanges(prompt, reference, '[^\\p{L}\\p{N}]+');
+    const surfaceTokens = reference.split(/[^\p{L}\p{N}]+/u).filter((token) => token.length > 0);
+    if (surfaceTokens.length === 0) {
+        return foldedRanges;
+    }
+    const needle = surfaceTokens.map((token) => escapeRegExp(token)).join('[^\\p{L}\\p{N}]+');
+    const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${needle}(?![\\p{L}\\p{N}])`, 'giu');
+    const surfaceRanges = [...prompt.matchAll(pattern)].flatMap((match) => {
+        if (match.index === undefined) {
+            return [];
+        }
+        return [{ start: match.index, end: match.index + match[0].length }];
+    });
+    const ranges = [...foldedRanges, ...surfaceRanges];
+    return ranges.filter(
+        (range, index) =>
+            ranges.findIndex((candidate) => candidate.start === range.start && candidate.end === range.end) === index
+    );
 }
 
 function getExactPhraseRanges(prompt: string, reference: string): readonly { end: number; start: number }[] {

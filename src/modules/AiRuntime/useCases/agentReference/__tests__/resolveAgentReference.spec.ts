@@ -422,6 +422,38 @@ describe('resolveAgentReference', () => {
         });
     });
 
+    it('keeps an accented exact name ambiguous next to a hyphenated literal id that contains the folded name', () => {
+        const projectState = createProjectState();
+        const firstTrack = projectState.tracks[0];
+        if (!firstTrack) {
+            throw new Error('Expected a track fixture');
+        }
+        const accentedNameContext = {
+            ...projectState,
+            tracks: [
+                { ...firstTrack, id: 'track-cafe', name: 'Bass' },
+                { ...firstTrack, id: 'track-keys', name: 'Café' },
+            ],
+        };
+
+        expect(resolveTrack('delete Café and track-cafe', 'track-cafe', accentedNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('delete Café and track-cafe', 'track-keys', accentedNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('delete Cafe and track-cafe', 'track-cafe', accentedNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('delete Cafe and track-cafe', 'track-keys', accentedNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+    });
+
     it('keeps Guitar and a hyphenated track-lead-guitar id ambiguous when both are cited', () => {
         const projectState = createProjectState();
         const firstTrack = projectState.tracks[0];
