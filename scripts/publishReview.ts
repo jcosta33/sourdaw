@@ -55,6 +55,7 @@ export type PublishReviewPort = {
     primaryRoot: () => string;
     currentHead: (number: number) => string;
     readReviewJson: (path: string) => unknown;
+    readBundleDiff: (path: string) => string;
     postReview: (input: {
         number: number;
         commitId: string;
@@ -135,6 +136,7 @@ export function publishReview(number: number, port: PublishReviewPort): number {
         fail(`missing review.json at ${join(bundle, 'review.json')}`);
     }
     const document = parseReviewDocument(parsed);
+    assertReviewCommentLinesInBundleDiff(document.comments, port.readBundleDiff(join(bundle, 'diff.patch')));
     const current = port.currentHead(number);
     if (current !== headSha) {
         fail('pull-request head moved; refusing to post a stale review');
@@ -183,6 +185,7 @@ export function shellPort(
                 { cwd: primaryRoot, env: session.env }
             ),
         readReviewJson: (path) => JSON.parse(readFileSync(path, 'utf8')) as unknown,
+        readBundleDiff: (path) => readFileSync(path, 'utf8'),
         postReview: ({ number, commitId, event, body, comments }) => {
             const input = JSON.stringify({
                 commit_id: commitId,
@@ -236,6 +239,56 @@ function commentsArray(value: unknown): unknown[] {
         fail('review.json comments must be an array');
     }
     return value;
+}
+
+function assertReviewCommentLinesInBundleDiff(comments: ReviewComment[], diff: string): void {
+    const changed = changedDiffLines(diff);
+    for (const [index, comment] of comments.entries()) {
+        const lines = changed.get(comment.path);
+        const side = comment.side === 'RIGHT' ? lines?.right : lines?.left;
+        if (side?.has(comment.line) !== true) {
+            fail(
+                `review.json comments[${index}] ${comment.side} ${comment.path}:${comment.line} is not a changed line in bundle diff.patch`
+            );
+        }
+    }
+}
+
+function changedDiffLines(diff: string): Map<string, { left: Set<number>; right: Set<number> }> {
+    const changed = new Map<string, { left: Set<number>; right: Set<number> }>();
+    let path: string | undefined;
+    let leftLine: number | undefined;
+    let rightLine: number | undefined;
+    for (const line of diff.split('\n')) {
+        if (line.startsWith('+++ b/')) {
+            path = line.slice(6);
+            leftLine = undefined;
+            rightLine = undefined;
+            continue;
+        }
+        const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+        if (hunk !== null) {
+            leftLine = Number(hunk[1]);
+            rightLine = Number(hunk[2]);
+            continue;
+        }
+        if (path === undefined || leftLine === undefined || rightLine === undefined || line === '') {
+            continue;
+        }
+        const entry = changed.get(path) ?? { left: new Set<number>(), right: new Set<number>() };
+        if (line.startsWith('-') && !line.startsWith('---')) {
+            entry.left.add(leftLine++);
+        } else if (line.startsWith('+') && !line.startsWith('+++')) {
+            entry.right.add(rightLine++);
+        } else if (line.startsWith(' ')) {
+            leftLine += 1;
+            rightLine += 1;
+        } else {
+            continue;
+        }
+        changed.set(path, entry);
+    }
+    return changed;
 }
 
 /**

@@ -44,6 +44,7 @@ function fakePort(
         head?: string;
         laterHead?: string;
         json?: unknown;
+        diff?: string;
         missing?: boolean;
         actorNodeId?: string;
         login?: string;
@@ -69,6 +70,14 @@ function fakePort(
             }
             return input.json ?? { event: 'APPROVE', body: 'ok', comments: [] };
         },
+        readBundleDiff: () =>
+            input.diff ??
+            [
+                'diff --git a/scripts/deliverPullRequest.ts b/scripts/deliverPullRequest.ts',
+                '+++ b/scripts/deliverPullRequest.ts',
+                '@@ -10 +10 @@',
+                '+review',
+            ].join('\n'),
         postReview: (review) => {
             calls.push(`post:${review.commitId}:${review.event}:${review.body}`);
             posted.review = review;
@@ -202,6 +211,19 @@ describe('review publish', () => {
         // parsed document's comments actually reached postReview — only the captured argument can.
         // This must go red if `publishReview` ever forwards an empty or substituted comments array.
         expect(posted.review?.comments).toEqual([validComment]);
+    });
+
+    it('refuses an inline comment outside the prepared head diff before posting', () => {
+        const { port, calls } = fakePort({
+            json: {
+                event: 'REQUEST_CHANGES',
+                body: 'Please fix the merge gate.',
+                comments: [{ ...validComment, line: 11 }],
+            },
+        });
+
+        expect(() => publishReview(42, port)).toThrow(/comments\[0\].*scripts\/deliverPullRequest\.ts.*11.*diff/i);
+        expect(calls.some((call) => call.startsWith('post:'))).toBe(false);
     });
 
     it('rejects the renamed reviewer login when the posted review has the wrong actor ID', () => {
