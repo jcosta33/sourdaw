@@ -2,8 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
 import { isModelProviderFailureError } from '../../../errors/ModelProviderFailureError';
+import { TOOL_PLAN_MAX_OUTPUT_TOKENS } from '../../../models/HostedToolPlanLimits';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
-import { generateToolPlanningOutcome } from '../inference';
+import { generateToolPlanningOutcome, type ProviderAttemptAdmission } from '../inference';
 
 const mocks = vi.hoisted(() => ({
     backendChain: { value: [] as ('cloud' | 'webllm')[] },
@@ -136,6 +137,46 @@ describe('generateToolPlanningOutcome', () => {
             backend: 'cloud',
             modelId: 'hosted-model',
         });
+    });
+
+    it('admits the compiled request with the single-sourced output budget and wires it to the provider call', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.generateCloudToolCalls.mockResolvedValue([
+            { id: 'provider-call', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } },
+        ]);
+        const onProviderAttempt = vi.fn((_input: ProviderAttemptAdmission) => ({ status: 'admitted' as const }));
+
+        await expect(
+            generateToolPlanningOutcome(
+                'system',
+                'mute the first track',
+                toolSchemas,
+                undefined,
+                'mute the first track',
+                undefined,
+                undefined,
+                onProviderAttempt
+            )
+        ).resolves.toMatchObject({ status: 'complete' });
+
+        expect(onProviderAttempt).toHaveBeenCalledOnce();
+        const admission = onProviderAttempt.mock.calls[0]?.[0];
+        expect(admission?.request.limits).toEqual({ maxOutputTokens: TOOL_PLAN_MAX_OUTPUT_TOKENS });
+        expect(admission?.request.budget).toEqual({
+            maxInputTokens: 32_768,
+            maxOutputTokens: TOOL_PLAN_MAX_OUTPUT_TOKENS,
+            maxTotalTokens: 32_768 + TOOL_PLAN_MAX_OUTPUT_TOKENS,
+        });
+        expect(admission?.estimate.outputTokenCeiling).toBe(TOOL_PLAN_MAX_OUTPUT_TOKENS);
+
+        // The wire request must derive `max_tokens` from what was admitted above, not from a
+        // constant of its own — otherwise the two are free to drift apart.
+        expect(mocks.generateCloudToolCalls).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.anything(),
+            expect.anything(),
+            TOOL_PLAN_MAX_OUTPUT_TOKENS
+        );
     });
 
     it('initializes and dispatches WebLLM through the same normalized outcome', async () => {
