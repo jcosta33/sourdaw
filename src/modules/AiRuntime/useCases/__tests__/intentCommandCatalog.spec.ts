@@ -313,6 +313,11 @@ describe('intent command catalog', () => {
             arguments: { intent: 'tempo', names: ['setTempo'] },
         },
         {
+            label: 'empty catalog name',
+            name: 'agent.catalog.discover',
+            arguments: { category: 'command', names: [''] },
+        },
+        {
             label: 'catalog command-index category',
             name: 'agent.catalog.discover',
             arguments: { category: 'command-index', names: ['setTempo'] },

@@ -53,4 +53,13 @@ describe('getExecutableAppActionIntentCatalog', () => {
             })
         ).toThrow('Command catalog cursor does not match the strict catalog contract.');
     });
+
+    it('refuses an intent whose normalized receipt could not round-trip its cursor', () => {
+        expect(() =>
+            getExecutableAppActionIntentCatalog({
+                intent: `operation ${'ﬀ'.repeat(502)}`,
+                page: { limit: 1 },
+            })
+        ).toThrow('Command catalog intent does not match the strict catalog contract.');
+    });
 });

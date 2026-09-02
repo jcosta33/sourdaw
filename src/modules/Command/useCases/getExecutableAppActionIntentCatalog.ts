@@ -79,11 +79,12 @@ function normalizedIntent(value: string): string {
     if (typeof value !== 'string') {
         throw new TypeError('Command catalog intent does not match the strict catalog contract.');
     }
-    const length = getExecutableAppActionIntentCatalogUnicodeLength(value);
+    const normalizedValue = value.normalize('NFKC');
+    const length = getExecutableAppActionIntentCatalogUnicodeLength(normalizedValue);
     if (length === 0 || length > MAX_EXECUTABLE_APP_ACTION_INTENT_CATALOG_INTENT_LENGTH) {
         throw new Error('Command catalog intent does not match the strict catalog contract.');
     }
-    const terms = words(value).filter((word) => !GRAMMATICAL_QUERY_STOP_WORDS.has(word));
+    const terms = words(normalizedValue).filter((word) => !GRAMMATICAL_QUERY_STOP_WORDS.has(word));
     if (terms.length === 0) {
         throw new Error('Command catalog intent does not match the strict catalog contract.');
     }

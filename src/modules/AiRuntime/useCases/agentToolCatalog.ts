@@ -94,7 +94,7 @@ function getCatalogDiscoverySchema(): ToolSchema {
                 type: 'array',
                 minItems: 1,
                 maxItems: MAX_DISCOVERED_SCHEMAS,
-                items: { type: 'string', maxLength: 128 },
+                items: { type: 'string', minLength: 1, maxLength: 128 },
             },
             page,
         },
