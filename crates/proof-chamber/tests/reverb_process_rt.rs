@@ -71,8 +71,11 @@ fn peak(samples: &[f32]) -> f32 {
 }
 
 /// Build an instance on `algorithm`, settle it, and return it with its input
-/// blocks prepared. `set_param("algorithm", …)` reconstructs the engine and so
-/// allocates by design — it is control-rate and stays outside every guard.
+/// blocks prepared. `set_param("algorithm", …)` allocates nothing: it selects
+/// one of the engines `ProofChamberInstance::new` already built and resets it in
+/// place, so it is inside the allocation contract rather than excused from it
+/// (#3307, guarded by `algorithm_switch_does_not_allocate` and
+/// `the_algorithm_arm_selects_rather_than_constructs`).
 fn configured(algorithm: f32) -> ProofChamberInstance {
     let mut instance = ProofChamberInstance::new(SAMPLE_RATE);
     instance.set_param("algorithm", algorithm);
@@ -83,8 +86,9 @@ fn configured(algorithm: f32) -> ProofChamberInstance {
 }
 
 /// Same, for an engine no wire value can select. `set_param("algorithm", …)`
-/// cannot reach these, so the Rust-only selector stands in; it allocates by
-/// construction and stays outside every guard, exactly like the wire path.
+/// cannot reach these, so the Rust-only selector stands in. Unlike the wire
+/// path it still constructs, which is allowed because no worklet message can
+/// reach it; it therefore stays outside every guard.
 fn unexposed(which: UnexposedEngine) -> ProofChamberInstance {
     let mut instance = ProofChamberInstance::new(SAMPLE_RATE);
     instance.select_unexposed_engine(which);
