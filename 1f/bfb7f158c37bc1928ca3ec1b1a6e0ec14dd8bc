@@ -1,0 +1,40 @@
+src/modules/Command/useCases/__tests__/actionHistoryReplay.integration.spec.ts
+  s_a40848e8f8cca9::t_9b2dbe5b301aa9 187,190-205,207-209
+  s_a40848e8f8cca9::t_22d0114dbda111 20,206
+  s_a40848e8f8cca9::t_3a35220587a0e4 188-189
+src/modules/MIDI/handlers/noteCrud/handleAddNotes.ts
+  s_a40848e8f8cca9::t_9000856499c7bc 136-137,140
+  s_a40848e8f8cca9::t_80c8d795bbeece 6,169,171-173
+  s_a40848e8f8cca9::t_1b1b4d4a03c8ac 138-139
+  s_a40848e8f8cca9::t_7d0b62a83232b5 170,180
+src/modules/MIDI/handlers/noteCrud/isAddNotesSessionEntry.ts
+  s_a40848e8f8cca9::t_a9fd29e8b8263f 3,82-91,94-95
+src/modules/MIDI/useCases/midiNoteTransforms/projectMidiNotesByClipIdThroughRestores.ts
+  s_a40848e8f8cca9::t_80c8d795bbeece 5,20-22
+src/modules/Command/useCases/__tests__/addNotesCommandRegistration.spec.ts
+  s_a40848e8f8cca9::t_de81cd459dcc1a 480
+  s_a40848e8f8cca9::t_9b2dbe5b301aa9 330,332-344,346-348,350-362,364,366-367,441-478,510-513,741-784
+  s_a40848e8f8cca9::t_a01a7d3a3436b8 114-125,331,349
+  s_a40848e8f8cca9::t_9000856499c7bc 345,365
+  s_a40848e8f8cca9::t_a9fd29e8b8263f 363
+  s_a40848e8f8cca9::t_5de3b6b858dc92 479
+  s_a40848e8f8cca9::t_fed5d8884c577c 785
+src/modules/MIDI/transformers/isMaterializedAddNotesArguments.ts
+  s_a40848e8f8cca9::t_80c8d795bbeece 3-18,21,33-38,40,57,61-64,71-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "1fbfb7f158c37bc1928ca3ec1b1a6e0ec14dd8bc",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
