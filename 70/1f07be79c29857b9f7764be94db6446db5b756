@@ -1,0 +1,49 @@
+src/modules/AiRuntime/models/Tools/__tests__/CreateAddNotesToolSchema.spec.ts
+  s_a40848e8f8cca9::t_219bdde9cd64fc 77-147
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_ebf4cb20634ba3 2113-2114
+src/modules/Command/useCases/getCommandUndoSessionEntryValidator.ts
+  s_a40848e8f8cca9::t_ca36c42e08d11b 33-45,52,127
+src/modules/Command/stores/undoSessionMirror.ts
+  s_a40848e8f8cca9::t_7e4953de2b508c 17-21,61-66,89-93,112,173,246-251
+  s_a40848e8f8cca9::t_c76ea289abb6fd 98-102,126-136,252-255
+src/modules/Command/useCases/__tests__/addNotesCommandRegistration.spec.ts
+  s_a40848e8f8cca9::t_ca36c42e08d11b 168,298
+  s_a40848e8f8cca9::t_6e6e430923cc31 352-393
+  s_a40848e8f8cca9::t_ebf4cb20634ba3 308-351
+  s_a40848e8f8cca9::t_1632c9095c78e9 3-6,8,33,413-420
+src/modules/Command/stores/__tests__/undoStore.spec.ts
+  s_a40848e8f8cca9::t_1632c9095c78e9 99-188
+  s_a40848e8f8cca9::t_ca36c42e08d11b 26
+src/modules/MIDI/handlers/noteCrud/__tests__/handleAddNotes.spec.ts
+  s_a40848e8f8cca9::t_56ed78c503c8d5 148-170
+src/modules/Command/useCases/getInternalUndoSessionReplayContracts.ts
+  s_a40848e8f8cca9::t_7e4953de2b508c 18
+src/modules/Command/useCases/executeAppAction.ts
+  s_a40848e8f8cca9::t_7e4953de2b508c 61-63
+src/modules/MIDI/handlers/noteCrud/handleAddNotes.ts
+  s_a40848e8f8cca9::t_7e4953de2b508c 48-51
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_a40848e8f8cca9::t_fbf1f82d6f6d44 4019
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_a40848e8f8cca9::t_bdbfde3635432e 99-122,646-730
+  s_a40848e8f8cca9::t_9a5bb5a5d3e9e6 731-732
+src/modules/Command/useCases/registerProductionCommandHandlers.ts
+  s_a40848e8f8cca9::t_7e4953de2b508c 21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "701f07be79c29857b9f7764be94db6446db5b756",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
