@@ -1,0 +1,33 @@
+.github/workflows/nightly.yml
+  s_ac03a4ebaa3f6e::t_b3475fe3988f1e 917,922
+.prettierignore
+  s_ac03a4ebaa3f6e::t_7286175c64ac7f 26-28
+scripts/__tests__/fileTrackerIssue.spec.ts
+  s_ac03a4ebaa3f6e::t_393aac2034076c 16,156-167
+scripts/fileTrackerIssue.ts
+  s_c9dfe76a613250::t_39e8968fd26625 92,114-115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "7747a2b8176557a9418f52cf7136ba2a2ae9ec69",
+  "prompts": {},
+  "sessions": {
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c9dfe76a613250": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a063a6-ce16-7052-9c0c-a6ec6522efdd",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
