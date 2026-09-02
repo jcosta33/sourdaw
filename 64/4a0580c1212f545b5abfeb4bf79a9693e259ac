@@ -1,0 +1,163 @@
+src/modules/AiRuntime/useCases/agentReference/batchLocalBindingProducers.ts
+  s_ac03a4ebaa3f6e::t_7a645d1f183431 6-16
+  s_ac03a4ebaa3f6e::t_b138f9f0967cf0 135
+  s_ac03a4ebaa3f6e::t_d667f6ca0a6a39 1-5,17-30,32-50,64-65,67-68,70-80,82-84,89,93,95-96,98-113,116-117,119-134,136-137
+  s_ac03a4ebaa3f6e::t_54983563aa4b9d 69,81,85-88,90-92,94,97
+  s_ac03a4ebaa3f6e::t_a3d6af15bae189 51-63,66
+  s_ac03a4ebaa3f6e::t_bbc37db7e9fc8b 31
+  s_ac03a4ebaa3f6e::t_a69d4780064549 114-115,118
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_ac03a4ebaa3f6e::t_e66609eb964264 442,450
+  s_ac03a4ebaa3f6e::t_a147511d08418c 487
+  s_ac03a4ebaa3f6e::t_43b2db318c1582 513
+  s_ac03a4ebaa3f6e::t_2d08a136e6a224 385-400,404-405,407-409
+  s_ac03a4ebaa3f6e::t_bd349ef07dc743 551,562
+  s_ac03a4ebaa3f6e::t_9684aaabe9f386 679
+  s_ac03a4ebaa3f6e::t_252b6e11a5b637 16-22
+  s_ac03a4ebaa3f6e::t_888a3add330155 975-979,981-986
+  s_ac03a4ebaa3f6e::t_81bac5af117fd8 465
+  s_ac03a4ebaa3f6e::t_25171a2da2461b 90-91
+  s_ac03a4ebaa3f6e::t_cad2469f9b2d88 987
+  s_5717acca78aac9::t_3bf62ac5863fac 766,822,828,882,933,1026,1082
+src/modules/AiRuntime/models/ExecutableRuntimeAction.ts
+  s_ac03a4ebaa3f6e::t_4ed260e1467fc1 7-9,11
+src/modules/AiRuntime/useCases/agentReference/BatchLocalActionIdentity.ts
+  s_ac03a4ebaa3f6e::t_8c1e92dfa48c32 15-24
+src/modules/AiRuntime/useCases/agentReference/materializeBatchLocalActionIdentities.ts
+  s_ac03a4ebaa3f6e::t_1ed82326d15bd8 9-13,15-22,25,30-43,45,47,49-50,54-55,57,59,62-101,103-108,110-119,122,125-127,129-130,134,138
+  s_ac03a4ebaa3f6e::t_af1addf397f272 23-24,26-29
+src/modules/AiRuntime/useCases/validateArbitraryCommandListEvidence.ts
+  s_ac03a4ebaa3f6e::t_60021f1778adf3 528-550,552
+  s_ac03a4ebaa3f6e::t_9a658073201f6b 609
+  s_ac03a4ebaa3f6e::t_c87a02c85b1421 9-15
+  s_ac03a4ebaa3f6e::t_483bd7ea5ef161 131
+  s_ac03a4ebaa3f6e::t_6115d420474491 213
+  s_5717acca78aac9::t_1a91ab9b99041f 321,426
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_ac03a4ebaa3f6e::t_423ef31b749e8f 366-371
+  s_ac03a4ebaa3f6e::t_ad59e455ca9a45 293-298
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_ac03a4ebaa3f6e::t_cbe30d2c71bf18 431-434
+  s_ac03a4ebaa3f6e::t_9feea04566008d 210-219
+  s_ac03a4ebaa3f6e::t_883d6013a2c472 462
+  s_ac03a4ebaa3f6e::t_7b86d5280969a8 66
+  s_ac03a4ebaa3f6e::t_502e2405012e4a 3958,3961-3962,3975,3979
+  s_ac03a4ebaa3f6e::t_8c372617f41996 27-32
+  s_ac03a4ebaa3f6e::t_b56af02f9b3020 4907,4913-4918,4923-4924
+  s_ac03a4ebaa3f6e::t_e64c70c5e9027a 416
+  s_ac03a4ebaa3f6e::t_9c6bf63fa2a75b 4854
+  s_ac03a4ebaa3f6e::t_038d19e05f2f53 248-273,276-278,281,284,287-288,298,305,308-314,317,320-321,324,327-337,339-343,345,348,358,363,369,377,379
+  s_ac03a4ebaa3f6e::t_a6545d45ac65ff 448-450
+  s_ac03a4ebaa3f6e::t_7bbfea5add2c24 361-362,394
+  s_ac03a4ebaa3f6e::t_2be7504fde58ac 122-124,127,137,140-141,145-148
+  s_ac03a4ebaa3f6e::t_fe172fa583c580 382-389,391,400-402
+  s_ac03a4ebaa3f6e::t_d0670f62439c38 463-470,476-479
+  s_ac03a4ebaa3f6e::t_b048a11186c893 515
+  s_ac03a4ebaa3f6e::t_036bf7f98b24da 500-511
+  s_ac03a4ebaa3f6e::t_896a0d007043ac 4919-4922
+  s_5717acca78aac9::t_1a9a09ee76c13e 82,86,3701,3705,3993,3997,4002,4013,4864,4884,4888,5012
+src/modules/AiRuntime/useCases/agentReference/projectBatchLocalCreation.ts
+  s_ac03a4ebaa3f6e::t_fa763b0ea31643 54-55
+  s_ac03a4ebaa3f6e::t_8964631a13e45b 1-6,8-10,12-53,56-78
+  s_ac03a4ebaa3f6e::t_12627cf2f9f620 7,11
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_ac03a4ebaa3f6e::t_b4844c22cb08d0 2445-2447
+  s_ac03a4ebaa3f6e::t_4154dc733f11ea 2488-2495
+  s_ac03a4ebaa3f6e::t_370093903d54b5 2457-2484,2486-2487,2496-2532
+  s_ac03a4ebaa3f6e::t_be3487af3dd5f6 2485
+  s_ac03a4ebaa3f6e::t_c4c55344e7a955 2533
+src/modules/Command/useCases/__tests__/agentCreationBindings.spec.ts
+  s_ac03a4ebaa3f6e::t_f8bd4a5e686956 69
+  s_ac03a4ebaa3f6e::t_d40fbf2a5b9746 1-7,9-31,33-68,70-110,112-140,145-171
+  s_ac03a4ebaa3f6e::t_7631dc3fb1772f 32
+  s_ac03a4ebaa3f6e::t_6353e5517e1be5 111
+  s_ac03a4ebaa3f6e::t_6bde2c43096a6d 141-144
+  s_ac03a4ebaa3f6e::t_17744d22305966 8
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_ac03a4ebaa3f6e::t_f1e495843f05c1 117-121
+  s_ac03a4ebaa3f6e::t_7a435b2c3a4eb3 76-80
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_ac03a4ebaa3f6e::t_9beee31f340896 5034-5036
+  s_ac03a4ebaa3f6e::t_a1a08c7dfb7a93 4863-4865
+  s_ac03a4ebaa3f6e::t_f47b9d9d800fa2 4915
+  s_ac03a4ebaa3f6e::t_35f55e1008eb55 4711,4715,4720-4721,4726,4730-4857,4859,4882-4914,4916-4937,4941-4942,4945-4948,4952,4954,4957,4967,4972,5017,5023,5027,5033,5037-5058
+  s_ac03a4ebaa3f6e::t_28226f6eafd8e0 4939-4940
+  s_ac03a4ebaa3f6e::t_32efb74221c40f 4949,4968,4973,4977,4980-4982,5028
+  s_ac03a4ebaa3f6e::t_fa2cc25e1cf29d 4708-4710
+  s_ac03a4ebaa3f6e::t_4f44ad19bb9da5 4712-4714
+  s_ac03a4ebaa3f6e::t_9d2a75025516a3 4716-4719
+  s_ac03a4ebaa3f6e::t_76ea2ea50501c4 4722-4725
+  s_ac03a4ebaa3f6e::t_e7cc0dac4f0f31 4727-4729
+  s_ac03a4ebaa3f6e::t_b39d1ea8710138 4858
+  s_ac03a4ebaa3f6e::t_e3fc83603b131f 4860-4862
+  s_ac03a4ebaa3f6e::t_762720530a889f 4866-4868,4879-4881
+  s_ac03a4ebaa3f6e::t_49d8aec8a8ffac 4938
+  s_ac03a4ebaa3f6e::t_31e7bc6cea4a8e 4943-4944
+  s_ac03a4ebaa3f6e::t_a80208e4748026 4950-4951
+  s_ac03a4ebaa3f6e::t_304c5e5ce7e38a 4953
+  s_ac03a4ebaa3f6e::t_448b3785f2cb9c 4955-4956
+  s_ac03a4ebaa3f6e::t_e77b96e33fd81a 4958-4960,4964-4966
+  s_ac03a4ebaa3f6e::t_c2620ffac0cb83 4969-4971
+  s_ac03a4ebaa3f6e::t_7f1173852648e2 4974-4976
+  s_ac03a4ebaa3f6e::t_51374b783d4f4c 4978-4979
+  s_ac03a4ebaa3f6e::t_406771bfcd7312 4983-4985,5014-5016
+  s_ac03a4ebaa3f6e::t_2f19f858f75de1 5018-5022
+  s_ac03a4ebaa3f6e::t_7a1fd66e1cc2f1 5024-5026
+  s_ac03a4ebaa3f6e::t_08e009e1966bce 5029-5032
+  s_5717acca78aac9::t_5e35402b920dde 4869-4878,4961-4963,4986-5013
+src/modules/AiRuntime/useCases/agentReference/__tests__/materializeBatchLocalActionIdentities.spec.ts
+  s_ac03a4ebaa3f6e::t_eeeebdafb67c05 81-140
+  s_ac03a4ebaa3f6e::t_c15546f8ac0790 7-9
+  s_ac03a4ebaa3f6e::t_b73ab6f1f8cfed 141
+.agents/decisions/README.md
+  s_ac03a4ebaa3f6e::t_3ec657f9122fe4 57
+.agents/decisions/0041-llm-batch-local-track-and-clip-bindings.md
+  s_ac03a4ebaa3f6e::t_43234691f80f94 25,70,85
+  s_ac03a4ebaa3f6e::t_01ad6d306fc879 1-24,26-69,71-84
+src/modules/Command/useCases/__tests__/agentBatchBindings.spec.ts
+  s_ac03a4ebaa3f6e::t_1e6dd7f1b18079 352-354
+  s_ac03a4ebaa3f6e::t_70800eee96ef3e 48,65,84,88,92,98,108-118,127
+  s_ac03a4ebaa3f6e::t_aaf4db37628932 45-47
+  s_ac03a4ebaa3f6e::t_f33e7eb842ebd9 49-51,62-64
+  s_ac03a4ebaa3f6e::t_838245664c5cf6 66-68,81-83
+  s_ac03a4ebaa3f6e::t_956abdafba37f6 85-87
+  s_ac03a4ebaa3f6e::t_bedca76eff42b4 89-91
+  s_ac03a4ebaa3f6e::t_949e12f66cdcbb 93-97
+  s_ac03a4ebaa3f6e::t_84270f29318354 99-101,105-107
+  s_ac03a4ebaa3f6e::t_433ee6217a0ebd 119-121,124-126
+  s_ac03a4ebaa3f6e::t_9371f750cda454 128-130,349-351
+  s_ac03a4ebaa3f6e::t_dac42185193a44 355-357
+  s_9b530f08172a54::t_82f4e81cd8225a 1-44,52-61,69-80,102-104,122-123,131-348,358-362
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "644a0580c1212f545b5abfeb4bf79a9693e259ac",
+  "prompts": {},
+  "sessions": {
+    "s_5717acca78aac9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a358784c473e2b97f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
