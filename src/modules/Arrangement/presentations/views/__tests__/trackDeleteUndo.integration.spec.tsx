@@ -41,21 +41,151 @@ import { TrackListView } from '../TrackListView';
  * Arrangement handler map, `executeAppAction`, a real Automerge document, the
  * real undo stack. Only the audio-engine seam, the confirm dialog and the
  * routing/event fan-out are stubbed, none of which this assertion reads.
+ *
+ * Graph-cut (non-spread listings, not fake handler maps): Metering views
+ * (`LevelMeter` only), AiRuntime/useCases, WorkspaceShell/useCases,
+ * Arrangement/useCases, MIDI/useCases, Project/useCases, Yeast/useCases, and
+ * Knead/useCases. `getArrangementHandlers` / `setArrangementEventBus` stay live
+ * via relative imports.
  */
 
 vi.mock('#/utils/Notification/confirmUser', () => ({ confirmUser: vi.fn() }));
 vi.mock('#/utils/UI/useContextMenuDismiss', () => ({ useContextMenuDismiss: vi.fn() }));
+// Non-spread listing of only LevelMeter — TrackListView never imports this
+// barrel, but WorkspaceShell handlers that remain in the graph can.
+vi.mock('#/modules/Metering/presentations/views', () => ({
+    LevelMeter: ({ trackId }: { trackId: string | null }) => (
+        <div data-testid="level-meter" data-track-id={trackId ?? ''} />
+    ),
+}));
+// Non-spread listing of injectPromptDraft — TrackListView is the only
+// delete/undo-graph importer of AiRuntime/useCases.
+vi.mock('#/modules/AiRuntime/useCases', () => ({
+    injectPromptDraft: vi.fn(),
+}));
+// Non-spread listing of setWorkspaceMode plus setSoloMode, which
+// resetPreferences and updatePreferences import.
+vi.mock('#/modules/WorkspaceShell/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/WorkspaceShell/useCases')>(
+        '#/modules/WorkspaceShell/useCases'
+    );
+    return {
+        setSoloMode: actual.setSoloMode,
+        setWorkspaceMode: actual.setWorkspaceMode,
+    };
+});
+// Non-spread cut of freeze/bounce AudioEngine walks — WorkspaceShell's
+// handleSetMarqueeSelection imports setMarqueeSelection; other listed names
+// cover handler-map wiring and WorkspaceShell imports of importAudioFile,
+// importMidiFile, and captureArrangementToScratchPad on the remaining graph.
+vi.mock('#/modules/Arrangement/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/Arrangement/useCases')>(
+        '#/modules/Arrangement/useCases'
+    );
+    return {
+        captureArrangementToScratchPad: actual.captureArrangementToScratchPad,
+        getArrangementHandlers: actual.getArrangementHandlers,
+        importAudioFile: actual.importAudioFile,
+        importMidiFile: actual.importMidiFile,
+        setArrangementEventBus: actual.setArrangementEventBus,
+        setMarqueeSelection: actual.setMarqueeSelection,
+    };
+});
+// Non-spread listing of MIDI names the live handler map imports through the
+// barrel plus removeMidiClipData / restoreMidiClipData on the delete/undo path.
+vi.mock('#/modules/MIDI/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
+    return {
+        arpeggiate: actual.arpeggiate,
+        downloadMidiFile: actual.downloadMidiFile,
+        duplicateClipNotes: actual.duplicateClipNotes,
+        duplicateMidiClipData: actual.duplicateMidiClipData,
+        getMidiInputTrack: actual.getMidiInputTrack,
+        getMidiInputTrackOwnerId: actual.getMidiInputTrackOwnerId,
+        getMidiInputTrackRevision: actual.getMidiInputTrackRevision,
+        getMidiStoreState: actual.getMidiStoreState,
+        hasActiveStepRecordingDependency: actual.hasActiveStepRecordingDependency,
+        mergeImportedMidiClipNotes: actual.mergeImportedMidiClipNotes,
+        midiClipGlueStateMatches: actual.midiClipGlueStateMatches,
+        midiClipSplitStateMatches: actual.midiClipSplitStateMatches,
+        prepareMidiClipGlueState: actual.prepareMidiClipGlueState,
+        prepareMidiClipSplit: actual.prepareMidiClipSplit,
+        projectDrumPreviewCandidateNotes: actual.projectDrumPreviewCandidateNotes,
+        readMidiFile: actual.readMidiFile,
+        removeMidiClipData: actual.removeMidiClipData,
+        restoreMidiClipData: actual.restoreMidiClipData,
+        restoreMidiClipGlueState: actual.restoreMidiClipGlueState,
+        restoreMidiClipNotes: actual.restoreMidiClipNotes,
+        restoreMidiClipSplitState: actual.restoreMidiClipSplitState,
+        serializeMidiStateForClips: actual.serializeMidiStateForClips,
+        setMidiInputTrack: actual.setMidiInputTrack,
+        setNotesForClip: actual.setNotesForClip,
+        splitMidiNotesAtBeat: actual.splitMidiNotesAtBeat,
+    };
+});
+// Non-spread listing of Project names WorkspaceShell handlers import — cuts
+// persistence helpers that reset modules and pull AudioEngine cache APIs.
+vi.mock('#/modules/Project/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/Project/useCases')>('#/modules/Project/useCases');
+    return {
+        exportProjectFile: actual.exportProjectFile,
+        newProject: actual.newProject,
+        pickFiles: actual.pickFiles,
+        saveProject: actual.saveProject,
+    };
+});
+// Non-spread listing of hydrateYeastCrdtProjection, which projectSlotProjections
+// imports — TrackListView imports no Yeast/useCases names.
+vi.mock('#/modules/Yeast/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/Yeast/useCases')>('#/modules/Yeast/useCases');
+    return {
+        hydrateYeastCrdtProjection: actual.hydrateYeastCrdtProjection,
+    };
+});
+// Non-spread listing of hydrateKneadFromTrackStore plus pitch-analysis names
+// handleReverseClip, reverseClip, and handleRestoreReversedClip import.
+vi.mock('#/modules/Knead/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/Knead/useCases')>('#/modules/Knead/useCases');
+    return {
+        captureClipPitchAnalysis: actual.captureClipPitchAnalysis,
+        clearClipPitchAnalysis: actual.clearClipPitchAnalysis,
+        hydrateKneadFromTrackStore: actual.hydrateKneadFromTrackStore,
+        restoreClipPitchAnalysis: actual.restoreClipPitchAnalysis,
+    };
+});
 vi.mock('#/modules/AudioEngine/useCases', () => ({
-    updateDeviceParam: vi.fn(),
+    applyRuntimeGraphDelta: vi.fn(),
+    cacheAudioBuffer: vi.fn(),
+    clearReportedLatency: vi.fn(),
+    createRuntimeGraphTopologyFingerprint: vi.fn(),
+    decodeAudioFile: vi.fn(),
     getAudioContext: vi.fn(() => ({ currentTime: 0, sampleRate: 48000 })),
     getAudioDevices: vi.fn(() => Promise.resolve([])),
-    getTrackAnalyser: vi.fn(() => null),
+    getCachedAudioBuffer: vi.fn(),
+    getCompensationDelay: vi.fn(() => 0),
+    getDeviceChainTailSeconds: vi.fn(() => 0),
+    getLiveEngineSampleRate: vi.fn(() => 48000),
     getMasterAnalyser: vi.fn(() => null),
+    getRuntimeGraphRevision: vi.fn(() => 0),
+    getTrackAnalyser: vi.fn(() => null),
+    getTrackStrip: vi.fn(),
+    initializeTrackStripFromSnapshot: vi.fn(),
+    matchesRuntimeDeviceChainTopology: vi.fn(() => true),
+    removeBusStrip: vi.fn(),
     removeTrackStrip: vi.fn(),
+    renderTrackSubgraphOffline: vi.fn(),
+    reportBridgeRoundTripFrames: vi.fn(),
+    reportLatency: vi.fn(),
+    resolveToasterPadBinding: vi.fn(() => null),
     setTrackGain: vi.fn(),
-    setTrackPan: vi.fn(),
     setTrackMute: vi.fn(),
-    setTrackSolo: vi.fn(),
+    setTrackOutput: vi.fn(),
+    setTrackPan: vi.fn(),
+    setTrackSoloGate: vi.fn(),
+    startInputMonitoring: vi.fn(),
+    stopInputMonitoring: vi.fn(),
+    updateDeviceBypass: vi.fn(),
+    updateDeviceParam: vi.fn(),
 }));
 vi.mock('#/modules/Routing/useCases', () => ({
     addSidechainRoute: vi.fn(),
