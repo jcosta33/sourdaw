@@ -278,8 +278,8 @@ describe('versioned command contract', () => {
                 payload: {
                     clipId: 'clip-1',
                     notes: [
-                        { pitch: 60, startBeat: 0, duration: 1 },
-                        { pitch: 64, startBeat: 1, duration: 1, velocity: 96 },
+                        { pitch: 60, startBeat: 0, duration: 1, velocity: 100, probability: 100 },
+                        { pitch: 64, startBeat: 1, duration: 1, velocity: 96, probability: 100 },
                     ],
                 },
             },
@@ -297,6 +297,8 @@ describe('versioned command contract', () => {
                         pitch: 60,
                         startBeat: 0,
                         duration: 1,
+                        velocity: 100,
+                        probability: 100,
                     },
                     {
                         id: 'note-command-22222222-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
@@ -304,6 +306,7 @@ describe('versioned command contract', () => {
                         startBeat: 1,
                         duration: 1,
                         velocity: 96,
+                        probability: 100,
                     },
                 ],
             },

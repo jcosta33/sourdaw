@@ -1,6 +1,7 @@
 import { type SessionActionEntry } from '../stores/undoSessionMirror';
 
 import { type ExecutableAppActionType } from './executableAppActionRegistry';
+import { isCanonicalSerializedAddNotesArguments } from './isCanonicalSerializedAddNotesArguments';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -24,54 +25,6 @@ function valuesEqual(left: unknown, right: unknown): boolean {
         leftKeys.length === rightKeys.length &&
         leftKeys.every((key, index) => key === rightKeys[index] && valuesEqual(left[key], right[key]))
     );
-}
-
-function isMaterializedAddNote(value: unknown): value is JsonRecord & { id: string } {
-    return isRecord(value) && typeof value.id === 'string' && value.id.length > 0;
-}
-
-const CANONICAL_ADDED_NOTE_KEYS = ['duration', 'id', 'pitch', 'probability', 'startBeat', 'velocity'] as const;
-
-function isCanonicalAddedNote(value: unknown): value is JsonRecord & { id: string } {
-    if (
-        !isMaterializedAddNote(value) ||
-        typeof value.pitch !== 'number' ||
-        !Number.isInteger(value.pitch) ||
-        value.pitch < 0 ||
-        value.pitch > 127 ||
-        typeof value.startBeat !== 'number' ||
-        !Number.isFinite(value.startBeat) ||
-        value.startBeat < 0 ||
-        typeof value.duration !== 'number' ||
-        !Number.isFinite(value.duration) ||
-        value.duration < 0.0625 ||
-        typeof value.velocity !== 'number' ||
-        !Number.isInteger(value.velocity) ||
-        value.velocity < 1 ||
-        value.velocity > 127 ||
-        value.probability !== 100
-    ) {
-        return false;
-    }
-    const keys = Object.keys(value).sort();
-    return (
-        keys.length === CANONICAL_ADDED_NOTE_KEYS.length &&
-        keys.every((key, index) => key === CANONICAL_ADDED_NOTE_KEYS[index])
-    );
-}
-
-function getMaterializedNoteIds(value: unknown): string[] | null {
-    if (!Array.isArray(value)) {
-        return null;
-    }
-    const ids: string[] = [];
-    for (const note of value) {
-        if (!isCanonicalAddedNote(note)) {
-            return null;
-        }
-        ids.push(note.id);
-    }
-    return ids;
 }
 
 function isRestoreMidiClipNotesAction(value: unknown): value is { type: 'restoreMidiClipNotes'; payload: JsonRecord } {
@@ -105,8 +58,6 @@ function hasExactAddNotesRestorePair(entry: SessionActionEntry): boolean {
         typeof actionPayload.clipId !== 'string' ||
         actionPayload.clipId !== inversePayload.clipId ||
         actionPayload.clipId !== redoPayload.clipId ||
-        !Array.isArray(actionPayload.notes) ||
-        actionPayload.notes.length === 0 ||
         !Array.isArray(inversePayload.notes) ||
         !Array.isArray(inversePayload.expectedNotes) ||
         !Array.isArray(redoPayload.notes) ||
@@ -119,10 +70,10 @@ function hasExactAddNotesRestorePair(entry: SessionActionEntry): boolean {
         return false;
     }
 
-    const noteIds = getMaterializedNoteIds(actionPayload.notes);
-    if (noteIds === null) {
+    if (!isCanonicalSerializedAddNotesArguments(actionPayload)) {
         return false;
     }
+    const noteIds = actionPayload.notes.map((note) => note.id);
     const baseNoteIds = inversePayload.notes.flatMap((note) =>
         isRecord(note) && typeof note.id === 'string' ? [note.id] : []
     );
@@ -143,7 +94,7 @@ function hasExactAddNotesRestorePair(entry: SessionActionEntry): boolean {
 
     return actionPayload.notes.every((note, index) => {
         const snapshot: unknown = expectedAddedNotes[index];
-        return isCanonicalAddedNote(snapshot) && valuesEqual(snapshot, note);
+        return valuesEqual(snapshot, note);
     });
 }
 

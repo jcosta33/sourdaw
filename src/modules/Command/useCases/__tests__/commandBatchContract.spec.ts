@@ -9,6 +9,7 @@ import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
 import { parseVersionedCommandBatchEnvelope } from '../parseVersionedCommandBatchEnvelope';
+import { parseVersionedCommandEnvelope } from '../parseVersionedCommandEnvelope';
 import { resolveVersionedCommandBatchBindings } from '../resolveVersionedCommandBatchBindings';
 import { serializeVersionedCommandEnvelope } from '../serializeVersionedCommandEnvelope';
 import { serializeVersionedCommandBatchEnvelope } from '../serializeVersionedCommandBatchEnvelope';
@@ -503,17 +504,23 @@ describe('command batch contract', () => {
             commandId: '66666666-6666-4666-8666-666666666666',
         });
 
+        const serialized = serializeVersionedCommandEnvelope(rawAddNotes);
+
+        expect(parseVersionedCommandEnvelope(serialized)).toEqual({
+            status: 'invalid',
+            reason: 'Command operation is not deterministic at the serialized boundary',
+        });
         expect(() =>
             compileVersionedCommandBatchEnvelope({
                 batchId: 'batch-add-notes-negative-start',
                 baseRevision: 'revision-1',
-                commands: [serializeVersionedCommandEnvelope(rawAddNotes)],
+                commands: [serialized],
                 intent: 'Add one MIDI note.',
                 projectId: 'project-1',
                 protectedRanges: [{ startBeat: 0, endBeat: 1 }],
                 runId: 'run-add-notes-negative-start',
             })
-        ).toThrow();
+        ).toThrow('Command operation is not deterministic at the serialized boundary');
     });
 
     it('rejects a target interval that crosses a protected range between its endpoints', () => {

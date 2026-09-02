@@ -12,6 +12,7 @@ import {
     executeVersionedCommandBatch,
     executeVersionedCommandEnvelope,
     migrateLegacyAppActionToVersionedCommandEnvelope,
+    parseVersionedCommandEnvelope,
     serializeVersionedCommandEnvelope,
 } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
@@ -181,6 +182,20 @@ describe('handleAddNotes', () => {
         expect(envelope.time).toEqual([
             { argument: 'notes[0].startBeat', domain: 'musical', unit: 'beats', value: 0 },
         ]);
+        const serialized = serializeVersionedCommandEnvelope(envelope);
+
+        expect(parseVersionedCommandEnvelope(serialized)).toEqual({ status: 'valid', envelope });
+        expect(() =>
+            compileVersionedCommandBatchEnvelope({
+                baseRevision: 'revision-materialized',
+                batchId: 'batch-materialized',
+                commands: [serialized],
+                intent: 'Add one MIDI note.',
+                projectId: 'project-materialized',
+                protectedRanges: [{ startBeat: 1, endBeat: 2 }],
+                runId: 'run-materialized',
+            })
+        ).not.toThrow();
     });
 
     it('canonicalizes an envelope-backed addNotes action before persisting its undo entry', async () => {
