@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { type Track } from '#/modules/Arrangement/stores';
+import { type Clip, type Track } from '#/modules/Arrangement/stores';
 import { clampFaderGain, dbToGain, FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 import { type AutomationLane, type AutomationPoint } from '../../../models/AutomationViewTypes';
@@ -55,6 +55,21 @@ function createTrack(overrides?: Partial<Track>): Track {
 
 function point(beat: number, value: number, curve: AutomationPoint['curve'] = 'step'): AutomationPoint {
     return { beat, value, curve, tension: 0 };
+}
+
+function clip(overrides: Partial<Clip> & Pick<Clip, 'id' | 'startBeat' | 'endBeat'>): Clip {
+    return {
+        trackId: 'track-1',
+        name: 'Clip',
+        type: 'audio',
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+        gain: 1,
+        color: '#00ff00',
+        locked: false,
+        muted: false,
+        ...overrides,
+    };
 }
 
 /**
@@ -267,6 +282,73 @@ describe('projectStripAutomationWrites — an orphan device lane (#3124)', () =>
         }
         expect(result.entries.map((entry) => entry.target.kind)).toEqual(['track-fader']);
         expect(result.entries[0]!.writes).toHaveLength(1);
+    });
+});
+
+describe('projectStripAutomationWrites — clip-scoped lanes', () => {
+    it("confines a clip-scoped gain lane's writes to its own clip window", () => {
+        // The clip window is `scheduleTrackAutomation`'s own bound
+        // (`activeWindowSeconds`), keyed by `clipBoundsById` — built inside
+        // this extraction from the track's own `clips`. `projectBeatToSeconds`
+        // is the identity here, so the clip's beat window and its expected
+        // second window are the same numbers, computed independently of
+        // whatever tempo the fixture happens to carry.
+        const scopedClip = clip({ id: 'clip-1', startBeat: 2, endBeat: 6 });
+        const track = createTrack({ clips: [scopedClip] });
+        const lanes: AutomationLane[] = [
+            lane({
+                parameterId: 'gain',
+                clipId: scopedClip.id,
+                points: [point(0, 0.2), point(3, 0.6), point(8, 0.9)],
+                minValue: 0,
+                maxValue: 2,
+            }),
+        ];
+
+        const result = projectStripAutomationWrites({
+            ...baseInput,
+            track,
+            admittedSendBusIds: [],
+            lanes,
+            durationSeconds: 10,
+        });
+
+        expect(result.outcome).toBe('converted');
+        if (result.outcome !== 'converted') {
+            throw new Error('unreachable: asserted above');
+        }
+        const faderEntry = result.entries.find((entry) => entry.target.kind === 'track-fader');
+        expect(faderEntry).toBeDefined();
+        expect(faderEntry!.writes.length).toBeGreaterThan(0);
+        for (const write of faderEntry!.writes) {
+            const time = (write as { time: number }).time;
+            expect(time).toBeGreaterThanOrEqual(scopedClip.startBeat);
+            expect(time).toBeLessThanOrEqual(scopedClip.endBeat);
+        }
+    });
+
+    it('emits nothing for a lane scoped to a clip the track does not hold', () => {
+        // `clipBoundsById` is built from the track's own `clips`, which is
+        // empty here — a clip id the track never carries resolves to no
+        // bounds, and the scheduler's own drop condition (mirrored in
+        // `clipBoundsById?.get(...) ?? continue`) skips the lane exactly as it
+        // would skip one on a clip that was deleted out from under it. A
+        // `clipBoundsById` built from an empty map turns this red: the
+        // lane would then resolve to no clip either way, but for the wrong
+        // reason — a regression here is exactly that this behaviour keeps
+        // holding once the map is built from the track's real clips.
+        const track = createTrack({ clips: [] });
+        const lanes: AutomationLane[] = [
+            lane({ parameterId: 'gain', clipId: 'clip-does-not-exist', points: [point(0, 0.5)] }),
+        ];
+
+        const result = projectStripAutomationWrites({ ...baseInput, track, admittedSendBusIds: [], lanes });
+
+        expect(result.outcome).toBe('converted');
+        if (result.outcome !== 'converted') {
+            throw new Error('unreachable: asserted above');
+        }
+        expect(result.entries.find((entry) => entry.target.kind === 'track-fader')).toBeUndefined();
     });
 });
 

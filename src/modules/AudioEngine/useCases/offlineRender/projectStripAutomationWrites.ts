@@ -29,6 +29,7 @@ import {
     type OfflineDeviceAutomationLaw,
 } from '../../repositories/offlineScheduler/automationScheduling';
 
+import { clipBoundsById } from './clipBoundsById';
 import { convertRecordedAutomationEvents } from './convertRecordedAutomationEvents';
 import { createAutomationRecorder, type AutomationRecorder } from './createAutomationRecorder';
 
@@ -127,14 +128,6 @@ export function projectStripAutomationWrites(input: StripAutomationWritesInput):
         return { outcome: 'converted', entries: [] };
     }
 
-    // Both callers (the export and the live producer) build this from the
-    // same `track.clips`; building it here once removes the duplicated loop
-    // each used to carry just to hand this map back in.
-    const clipBoundsById = new Map<string, { startBeat: number; endBeat: number }>();
-    for (const clip of track.clips) {
-        clipBoundsById.set(clip.id, { startBeat: clip.startBeat, endBeat: clip.endBeat });
-    }
-
     const gainRecorder = createAutomationRecorder();
     const panRecorder = createAutomationRecorder();
     const sendRecorders: { busId: string; recorder: AutomationRecorder }[] = [];
@@ -166,7 +159,7 @@ export function projectStripAutomationWrites(input: StripAutomationWritesInput):
         projectBeatToSeconds,
         sampleRate,
         compensationDelaySec,
-        clipBoundsById,
+        clipBoundsById: clipBoundsById(track),
         vcaMultiplier,
         resolveLaneCeiling,
     });

@@ -54,6 +54,7 @@ import { resolveLinkedLane } from '#/utils/automationLaneLink';
 
 import { type AudioGraphParameterWrite, type AudioGraphStripParameterTarget } from '../../models/AudioGraphBackend';
 import { type AutomationLane } from '../../models/AutomationViewTypes';
+import { clipBoundsById } from '../offlineRender/clipBoundsById';
 import {
     projectStripAutomationWrites,
     type StripAutomationWritesInput,
@@ -113,12 +114,13 @@ const DEVICE_AUTOMATION_EXCLUSION_REASON = 'device parameter automation has no n
  * built), and a lane that resolves — after following its link chain — to no
  * points at all.
  */
-function deviceParameterLanes(
-    lanes: readonly AutomationLane[],
-    laneById: ReadonlyMap<string, AutomationLane>,
-    trackId: string,
-    clipBoundsById: ReadonlyMap<string, { startBeat: number; endBeat: number }>
-): readonly AutomationLane[] {
+function deviceParameterLanes(input: {
+    lanes: readonly AutomationLane[];
+    laneById: ReadonlyMap<string, AutomationLane>;
+    trackId: string;
+    clipBounds: ReadonlyMap<string, { startBeat: number; endBeat: number }>;
+}): readonly AutomationLane[] {
+    const { lanes, laneById, trackId, clipBounds } = input;
     return lanes.filter((lane) => {
         if (lane.trackId !== trackId || lane.enabled === false) {
             return false;
@@ -126,7 +128,7 @@ function deviceParameterLanes(
         if (KNOWN_STRIP_PARAMETER_IDS.has(lane.parameterId) || lane.parameterId.startsWith(SEND_PARAMETER_PREFIX)) {
             return false;
         }
-        if (lane.clipId && !clipBoundsById.has(lane.clipId)) {
+        if (lane.clipId && !clipBounds.has(lane.clipId)) {
             return false;
         }
         const resolved = resolveLinkedLane(lane.id, (id) => laneById.get(id));
@@ -183,17 +185,19 @@ export function projectLiveAutomationWrites(input: LiveAutomationWritesInput): L
     const exclusions: LiveAutomationWritesExclusion[] = [];
 
     for (const track of stripTracks) {
-        const clipBoundsById = new Map<string, { startBeat: number; endBeat: number }>();
-        for (const clip of track.clips) {
-            clipBoundsById.set(clip.id, { startBeat: clip.startBeat, endBeat: clip.endBeat });
-        }
-
         // `automationMode: 'off'` produces no writes at all — enforced inside
         // `projectStripAutomationWrites` itself, and it reads no lane at all,
         // the orphan device lane included. So a strip with automation turned
-        // off never earns an exclusion for a lane it was never going to read.
+        // off never earns an exclusion for a lane it was never going to read,
+        // and has no consumer for the clip-bounds map either.
         if (track.automationMode !== 'off') {
-            for (const lane of deviceParameterLanes(lanes, laneById, track.id, clipBoundsById)) {
+            const lanesToExclude = deviceParameterLanes({
+                lanes,
+                laneById,
+                trackId: track.id,
+                clipBounds: clipBoundsById(track),
+            });
+            for (const lane of lanesToExclude) {
                 exclusions.push({ stripId: track.id, subjectId: lane.id, reason: DEVICE_AUTOMATION_EXCLUSION_REASON });
             }
         }

@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { type Track } from '#/modules/Arrangement/stores';
+import { type Clip, type Track } from '#/modules/Arrangement/stores';
 
 import { type AutomationLane, type AutomationPoint } from '../../../models/AutomationViewTypes';
 import { projectLiveAutomationWrites, type LiveAutomationWritesInput } from '../projectLiveAutomationWrites';
@@ -66,6 +66,21 @@ function lane(
         enabled: true,
         minValue: 0,
         maxValue: 1,
+        ...overrides,
+    };
+}
+
+function clip(overrides: Partial<Clip> & Pick<Clip, 'id' | 'startBeat' | 'endBeat'>): Clip {
+    return {
+        trackId: 'track-1',
+        name: 'Clip',
+        type: 'audio',
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+        gain: 1,
+        color: '#00ff00',
+        locked: false,
+        muted: false,
         ...overrides,
     };
 }
@@ -309,6 +324,135 @@ describe('projectLiveAutomationWrites — device-lane exclusion', () => {
             {
                 stripId: track.id,
                 subjectId: populatedLane.id,
+                reason: 'device parameter automation has no native body yet (#3124)',
+            },
+        ]);
+    });
+});
+
+describe('projectLiveAutomationWrites — device-lane clip scope', () => {
+    it('does not exclude a device lane scoped to a clip the strip does not hold', () => {
+        // No spec on the prior head carried a lane with a `clipId` at all, so
+        // both the guard and its absence deleted green. `clipBoundsById` here
+        // is built from the track's own (empty) `clips` — a clip id the strip
+        // never carries resolves to no bounds, the same drop
+        // `scheduleTrackAutomation` itself applies, so the lane contributes no
+        // automation and must not be named as an exclusion either.
+        const track = createTrack();
+        const deviceLane = lane({
+            trackId: track.id,
+            parameterId: 'grinder-1:cutoff',
+            clipId: 'clip-not-on-strip',
+            points: [point(0, 0.3, 'step')],
+        });
+        const lanes: AutomationLane[] = [
+            lane({ trackId: track.id, parameterId: 'gain', points: [point(0, 0.5, 'step')] }),
+            deviceLane,
+        ];
+
+        const result = projectLiveAutomationWrites({
+            ...baseInput,
+            stripTracks: [track],
+            lanes,
+            regionStartSeconds: 0,
+            regionEndSeconds: 4,
+        });
+
+        expect(result.exclusions).toEqual([]);
+    });
+
+    it('excludes the same lane once it is scoped to a clip the strip does hold', () => {
+        const heldClip = clip({ id: 'clip-1', startBeat: 0, endBeat: 4 });
+        const track = createTrack({ clips: [heldClip] });
+        const deviceLane = lane({
+            trackId: track.id,
+            parameterId: 'grinder-1:cutoff',
+            clipId: heldClip.id,
+            points: [point(0, 0.3, 'step')],
+        });
+        const lanes: AutomationLane[] = [
+            lane({ trackId: track.id, parameterId: 'gain', points: [point(0, 0.5, 'step')] }),
+            deviceLane,
+        ];
+
+        const result = projectLiveAutomationWrites({
+            ...baseInput,
+            stripTracks: [track],
+            lanes,
+            regionStartSeconds: 0,
+            regionEndSeconds: 4,
+        });
+
+        expect(result.exclusions).toEqual([
+            {
+                stripId: track.id,
+                subjectId: deviceLane.id,
+                reason: 'device parameter automation has no native body yet (#3124)',
+            },
+        ]);
+    });
+});
+
+describe('projectLiveAutomationWrites — device-lane link resolution', () => {
+    it('does not exclude a device lane linked to a lane that does not exist', () => {
+        const track = createTrack();
+        const deviceLane = lane({
+            trackId: track.id,
+            parameterId: 'grinder-1:cutoff',
+            linkedLaneId: 'lane-does-not-exist',
+            points: [],
+        });
+        const lanes: AutomationLane[] = [
+            lane({ trackId: track.id, parameterId: 'gain', points: [point(0, 0.5, 'step')] }),
+            deviceLane,
+        ];
+
+        const result = projectLiveAutomationWrites({
+            ...baseInput,
+            stripTracks: [track],
+            lanes,
+            regionStartSeconds: 0,
+            regionEndSeconds: 4,
+        });
+
+        expect(result.exclusions).toEqual([]);
+    });
+
+    it('excludes a device lane linked to a populated source lane', () => {
+        // The source lane lives on an unrelated track on purpose: link
+        // resolution walks the project's whole lane set regardless of which
+        // strip it runs for, so this pins that the walk itself — not an
+        // accidental trackId match — is what finds the source's points.
+        const track = createTrack();
+        const sourceLane = lane({
+            trackId: 'unrelated-track',
+            parameterId: 'grinder-1:cutoff',
+            points: [point(0, 0.3, 'step')],
+        });
+        const deviceLane = lane({
+            trackId: track.id,
+            parameterId: 'grinder-1:cutoff',
+            linkedLaneId: sourceLane.id,
+            points: [],
+        });
+        const lanes: AutomationLane[] = [
+            lane({ trackId: track.id, parameterId: 'gain', points: [point(0, 0.5, 'step')] }),
+            deviceLane,
+            sourceLane,
+        ];
+
+        const result = projectLiveAutomationWrites({
+            ...baseInput,
+            stripTracks: [track],
+            lanes,
+            regionStartSeconds: 0,
+            regionEndSeconds: 4,
+        });
+
+        expect(result.exclusions).toEqual([
+            {
+                stripId: track.id,
+                subjectId: deviceLane.id,
                 reason: 'device parameter automation has no native body yet (#3124)',
             },
         ]);
