@@ -169,11 +169,13 @@ const DEPLOY_CHANGED_REVISION_CONDITION = `${DEPLOY_FRESH_REVISION_CONDITION} &&
 // Only the freshness check itself runs on credential presence alone; it decides
 // for everything after it, and its output is empty when it never ran.
 const DEPLOY_CREDENTIAL_GATED_STEPS = [DEPLOY_WEB_FRESHNESS_STEP] as const;
+const PNPM_SETUP_STEP = 'Set up pnpm';
+const NODE_SETUP_STEP = 'Set up Node';
 const DEPLOY_FRESH_GATED_STEPS = [
     'Checkout the validated revision',
     'Enable Corepack',
-    'Set up pnpm',
-    'Set up Node',
+    PNPM_SETUP_STEP,
+    NODE_SETUP_STEP,
     'Resolve the current production revision',
 ] as const;
 const DEPLOY_REVISION_GATED_STEPS = [
@@ -641,6 +643,59 @@ function assertNightlySecurityGraph(candidate: UnknownRecord): void {
     if (stepNamed(e2e, 'Run shard')['continue-on-error'] !== undefined) {
         throw new Error('nightly e2e Run shard must not continue on error');
     }
+}
+
+function stepUsesPnpmCache(step: UnknownRecord): boolean {
+    const setupOptions = step.with;
+    if (setupOptions === undefined) {
+        return false;
+    }
+    return recordAt(step, 'with').cache === 'pnpm';
+}
+
+function assertNightlyPnpmBeforeNodeOrder(candidate: UnknownRecord): void {
+    for (const [jobId, jobValue] of Object.entries(recordAt(candidate, 'jobs'))) {
+        const job = asRecord(jobValue, `${jobId} job`);
+        const steps = arrayAt(job, 'steps');
+        for (let index = 0; index < steps.length; index += 1) {
+            const step = asRecord(steps[index], 'step');
+            if (step.name !== NODE_SETUP_STEP || !stepUsesPnpmCache(step)) {
+                continue;
+            }
+            if (index === 0) {
+                throw new Error(
+                    `${jobId} must run ${PNPM_SETUP_STEP} immediately before ${NODE_SETUP_STEP} when setup-node caches pnpm`
+                );
+            }
+            const previous = asRecord(steps[index - 1], 'previous step');
+            if (previous.name !== PNPM_SETUP_STEP) {
+                throw new Error(
+                    `${jobId} must run ${PNPM_SETUP_STEP} immediately before ${NODE_SETUP_STEP} when setup-node caches pnpm`
+                );
+            }
+        }
+    }
+}
+
+function removeStepNamed(job: UnknownRecord, name: string): void {
+    const steps = arrayAt(job, 'steps');
+    const index = steps.findIndex((candidate) => asRecord(candidate, 'step').name === name);
+    if (index === -1) {
+        throw new Error(`missing workflow step: ${name}`);
+    }
+    steps.splice(index, 1);
+}
+
+function swapStepsNamed(job: UnknownRecord, firstName: string, secondName: string): void {
+    const steps = arrayAt(job, 'steps');
+    const firstIndex = steps.findIndex((candidate) => asRecord(candidate, 'step').name === firstName);
+    const secondIndex = steps.findIndex((candidate) => asRecord(candidate, 'step').name === secondName);
+    if (firstIndex === -1 || secondIndex === -1) {
+        throw new Error(`missing workflow steps to swap: ${firstName}, ${secondName}`);
+    }
+    const first = steps[firstIndex];
+    steps[firstIndex] = steps[secondIndex];
+    steps[secondIndex] = first;
 }
 
 function assertUnitProvenanceHistory(candidate: UnknownRecord): void {
@@ -1222,6 +1277,28 @@ describe('health gates workflow contract', () => {
         stepNamed(jobAt(permissiveNightlyUnit, 'unit'), 'Run shard')['continue-on-error'] = true;
         expect(() => assertNightlySecurityGraph(permissiveNightlyUnit)).toThrow(
             'nightly unit Run shard must not continue on error'
+        );
+    });
+
+    it('requires Set up pnpm immediately before Set up Node on every pnpm-cached nightly job', () => {
+        expect(() => assertNightlyPnpmBeforeNodeOrder(nightly)).not.toThrow();
+
+        const missingPnpmSetup = asRecord(structuredClone(nightly), 'missing pnpm setup nightly');
+        removeStepNamed(jobAt(missingPnpmSetup, 'unit'), PNPM_SETUP_STEP);
+        expect(() => assertNightlyPnpmBeforeNodeOrder(missingPnpmSetup)).toThrow(
+            `unit must run ${PNPM_SETUP_STEP} immediately before ${NODE_SETUP_STEP} when setup-node caches pnpm`
+        );
+
+        const reversedSetup = asRecord(structuredClone(nightly), 'reversed pnpm setup nightly');
+        swapStepsNamed(jobAt(reversedSetup, 'unit'), PNPM_SETUP_STEP, NODE_SETUP_STEP);
+        expect(() => assertNightlyPnpmBeforeNodeOrder(reversedSetup)).toThrow(
+            `unit must run ${PNPM_SETUP_STEP} immediately before ${NODE_SETUP_STEP} when setup-node caches pnpm`
+        );
+
+        const reversedDeploySetup = asRecord(structuredClone(nightly), 'reversed deploy pnpm setup nightly');
+        swapStepsNamed(jobAt(reversedDeploySetup, DEPLOY_WEB_JOB), PNPM_SETUP_STEP, NODE_SETUP_STEP);
+        expect(() => assertNightlyPnpmBeforeNodeOrder(reversedDeploySetup)).toThrow(
+            `${DEPLOY_WEB_JOB} must run ${PNPM_SETUP_STEP} immediately before ${NODE_SETUP_STEP} when setup-node caches pnpm`
         );
     });
 
