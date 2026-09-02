@@ -22,6 +22,7 @@ describe('clearUndoHistory', () => {
         clearUndoHistory();
 
         expect(clearUndoStoreOwner).toHaveBeenCalled();
+        expect(clearUndoStoreOwner.mock.invocationCallOrder[0]).toBeLessThan(undoStoreSet.mock.invocationCallOrder[0]!);
         expect(undoStoreSet).toHaveBeenCalledWith({ past: [], future: [] });
     });
 });
