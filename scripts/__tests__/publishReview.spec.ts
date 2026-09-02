@@ -25,11 +25,13 @@ import {
 } from '../publishReview.ts';
 import {
     pullRequestMutationLockRef,
+    reviewPublicationRecoveryReceiptRef,
     readPullRequestMutationLockOwner,
     readPullRequestMutationLockOid,
     reviewPublicationOwnerFenceIsLive,
     withPullRequestMutationLock,
     writePullRequestMutationLockOwner,
+    writePullRequestMutationLockReceipt,
 } from '../pullRequestMutationLock.ts';
 
 const validComment = {
@@ -418,6 +420,46 @@ describe('review publish', () => {
 
     it.each([
         [
+            'two SQL deletion lines beginning with --',
+            'LEFT',
+            [
+                'diff --git a/schema.sql b/schema.sql',
+                '--- a/schema.sql',
+                '+++ b/schema.sql',
+                '@@ -10,2 +10,0 @@',
+                '--- old',
+                '--- older',
+            ].join('\n'),
+        ],
+        [
+            'two SQL addition lines beginning with ++',
+            'RIGHT',
+            [
+                'diff --git a/schema.sql b/schema.sql',
+                '--- a/schema.sql',
+                '+++ b/schema.sql',
+                '@@ -10,0 +10,2 @@',
+                '+++ new',
+                '+++ newer',
+            ].join('\n'),
+        ],
+    ] as const)('accepts %s as hunk content', (_label, side, diff) => {
+        const { port, calls } = fakePort({
+            diff,
+            json: {
+                event: 'REQUEST_CHANGES',
+                body: 'Fix the SQL marker.',
+                comments: [{ ...validComment, path: 'schema.sql', side, line: 11 }],
+            },
+        });
+
+        publishReview(42, port);
+
+        expect(calls.some((call) => call.startsWith('post:'))).toBe(true);
+    });
+
+    it.each([
+        [
             'deleted file on RIGHT',
             'deleted.ts',
             'RIGHT',
@@ -538,10 +580,26 @@ describe('review publish', () => {
                     ],
                 ]);
             }
-            if (endpoint?.endsWith('/reviews/3/comments?per_page=100')) {
+            if (endpoint?.endsWith('/comments?per_page=100')) {
                 return JSON.stringify([
-                    [{ path: 'one.ts', line: 1, side: 'RIGHT', body: 'first' }],
-                    [{ path: 'two.ts', line: 2, side: 'RIGHT', body: 'second' }],
+                    [
+                        {
+                            pull_request_review_id: 3,
+                            path: 'one.ts',
+                            original_line: 1,
+                            original_side: 'RIGHT',
+                            body: 'first',
+                        },
+                    ],
+                    [
+                        {
+                            pull_request_review_id: 3,
+                            path: 'two.ts',
+                            original_line: 2,
+                            original_side: 'RIGHT',
+                            body: 'second',
+                        },
+                    ],
                 ]);
             }
             throw new Error(`unexpected gh request: ${args.join(' ')}`);
@@ -586,6 +644,45 @@ describe('review publish', () => {
         };
 
         expect(inspectReviewPublicationRemote(42, REVIEWER_BOT_NODE_ID, expectedHead, gh).reviews).toEqual([]);
+    });
+
+    it('uses immutable original coordinates when a closed or advanced pull request nulls current inline coordinates', () => {
+        const head = 'a'.repeat(40);
+        const gh = (args: string[]): string => {
+            if (args[0] === 'pr') {
+                return JSON.stringify({ state: 'CLOSED', headRefOid: 'b'.repeat(40) });
+            }
+            if (args.at(-1)?.endsWith('/reviews?per_page=100')) {
+                return JSON.stringify([
+                    [
+                        {
+                            id: 7,
+                            state: 'CHANGES_REQUESTED',
+                            body: 'body',
+                            commit_id: head,
+                            user: { node_id: REVIEWER_BOT_NODE_ID },
+                        },
+                    ],
+                ]);
+            }
+            return JSON.stringify([
+                [
+                    {
+                        pull_request_review_id: 7,
+                        path: 'file.ts',
+                        line: null,
+                        side: null,
+                        original_line: 12,
+                        original_side: 'RIGHT',
+                        body: 'immutable comment',
+                    },
+                ],
+            ]);
+        };
+
+        expect(inspectReviewPublicationRemote(42, REVIEWER_BOT_NODE_ID, head, gh).reviews[0]?.comments).toEqual([
+            { path: 'file.ts', line: 12, side: 'RIGHT', body: 'immutable comment' },
+        ]);
     });
 
     it('rejects the renamed reviewer login when the posted review has the wrong actor ID', () => {
@@ -1424,4 +1521,37 @@ describe('shellPort postReview state verification', () => {
             rmSync(root, { recursive: true, force: true });
         }
     });
+
+    it.each(['no receipt', 'mismatched receipt'])(
+        'refuses an absent lock with %s before authentication',
+        async (shape) => {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-absent-review-publication-lock-'));
+            const number = 42;
+            const ownerOid = 'a'.repeat(40);
+            let authenticated = false;
+            try {
+                runGit(root, ['init']);
+                if (shape === 'mismatched receipt') {
+                    const receiptOid = writePullRequestMutationLockReceipt(root, { version: 1, wrong: true }, number);
+                    runGit(root, ['update-ref', reviewPublicationRecoveryReceiptRef(number, ownerOid), receiptOid]);
+                }
+                await expect(
+                    runRecoverPublishReviewLockCli([String(number), '--owner', ownerOid], {
+                        ...recoveryDependencies(root, (expectedHead) => ({
+                            state: 'OPEN',
+                            head: expectedHead,
+                            reviews: [],
+                        })),
+                        authenticateReviewer: async () => {
+                            authenticated = true;
+                            throw new Error('must not authenticate');
+                        },
+                    })
+                ).rejects.toThrow(`PR #${number} review-publication lock is absent without an exact recovery receipt`);
+                expect(authenticated).toBe(false);
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+            }
+        }
+    );
 });

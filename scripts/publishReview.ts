@@ -301,11 +301,18 @@ function changedDiffLines(diff: string): Map<string, { left: Set<number>; right:
     let leftLine: number | undefined;
     let rightLine: number | undefined;
     for (const line of diff.split('\n')) {
-        if (line.startsWith('--- ')) {
+        if (line.startsWith('diff --git ')) {
+            oldPath = undefined;
+            newPath = undefined;
+            leftLine = undefined;
+            rightLine = undefined;
+            continue;
+        }
+        if (leftLine === undefined && rightLine === undefined && line.startsWith('--- ')) {
             oldPath = diffPath(line.slice(4), 'a/');
             continue;
         }
-        if (line.startsWith('+++ ')) {
+        if (leftLine === undefined && rightLine === undefined && line.startsWith('+++ ')) {
             newPath = diffPath(line.slice(4), 'b/');
             leftLine = undefined;
             rightLine = undefined;
@@ -320,14 +327,14 @@ function changedDiffLines(diff: string): Map<string, { left: Set<number>; right:
         if (leftLine === undefined || rightLine === undefined || line === '') {
             continue;
         }
-        if (line.startsWith('-') && !line.startsWith('---')) {
+        if (line.startsWith('-')) {
             if (oldPath !== undefined) {
                 const entry = changed.get(oldPath) ?? { left: new Set<number>(), right: new Set<number>() };
                 entry.left.add(leftLine);
                 changed.set(oldPath, entry);
             }
             leftLine += 1;
-        } else if (line.startsWith('+') && !line.startsWith('+++')) {
+        } else if (line.startsWith('+')) {
             if (newPath !== undefined) {
                 const entry = changed.get(newPath) ?? { left: new Set<number>(), right: new Set<number>() };
                 entry.right.add(rightLine);
@@ -578,6 +585,13 @@ export function inspectReviewPublicationRemote(
         ),
         'review-publication recovery reviews'
     );
+    const remoteComments = flattenedGhPages(
+        parseJson<unknown>(
+            gh(['api', '--paginate', '--slurp', `repos/${REQUIRED_REPOSITORY}/pulls/${number}/comments?per_page=100`]),
+            'review-publication recovery pull-request comments'
+        ),
+        'review-publication recovery pull-request comments'
+    );
     const reviews: RemotePublishedReview[] = [];
     for (const entry of remote) {
         if (entry === null || typeof entry !== 'object') {
@@ -599,38 +613,42 @@ export function inspectReviewPublicationRemote(
         ) {
             fail('review-publication recovery review candidate is unreadable');
         }
-        const comments = flattenedGhPages(
-            parseJson<unknown>(
-                gh([
-                    'api',
-                    '--paginate',
-                    '--slurp',
-                    `repos/${REQUIRED_REPOSITORY}/pulls/${number}/reviews/${record.id}/comments?per_page=100`,
-                ]),
-                'review-publication recovery review comments'
-            ),
-            'review-publication recovery review comments'
-        );
         reviews.push({
             id: record.id,
             state: record.state,
             body: record.body,
             commitId: record.commit_id,
             actorNodeId: (user as { node_id: string }).node_id,
-            comments: comments.map((comment) => {
-                if (
-                    comment === null ||
-                    typeof comment !== 'object' ||
-                    typeof (comment as { path?: unknown }).path !== 'string' ||
-                    !Number.isSafeInteger((comment as { line?: unknown }).line) ||
-                    ((comment as { side?: unknown }).side !== 'LEFT' &&
-                        (comment as { side?: unknown }).side !== 'RIGHT') ||
-                    typeof (comment as { body?: unknown }).body !== 'string'
-                ) {
-                    fail('review-publication recovery review comment is unreadable');
-                }
-                return comment as { path: string; line: number; side: 'LEFT' | 'RIGHT'; body: string };
-            }),
+            comments: remoteComments
+                .filter((comment) => {
+                    if (
+                        comment === null ||
+                        typeof comment !== 'object' ||
+                        !Number.isSafeInteger((comment as { pull_request_review_id?: unknown }).pull_request_review_id)
+                    ) {
+                        fail('review-publication recovery pull-request comment is unreadable');
+                    }
+                    return (comment as { pull_request_review_id: number }).pull_request_review_id === record.id;
+                })
+                .map((comment) => {
+                    if (
+                        comment === null ||
+                        typeof comment !== 'object' ||
+                        typeof (comment as { path?: unknown }).path !== 'string' ||
+                        !Number.isSafeInteger((comment as { original_line?: unknown }).original_line) ||
+                        ((comment as { original_side?: unknown }).original_side !== 'LEFT' &&
+                            (comment as { original_side?: unknown }).original_side !== 'RIGHT') ||
+                        typeof (comment as { body?: unknown }).body !== 'string'
+                    ) {
+                        fail('review-publication recovery pull-request comment is unreadable');
+                    }
+                    return {
+                        path: (comment as { path: string }).path,
+                        line: (comment as { original_line: number }).original_line,
+                        side: (comment as { original_side: 'LEFT' | 'RIGHT' }).original_side,
+                        body: (comment as { body: string }).body,
+                    };
+                }),
         });
     }
     return { state: pullRequest.state, head: pullRequest.headRefOid.toLowerCase(), reviews };
