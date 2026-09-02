@@ -186,6 +186,25 @@ function hasOwnerIdentity(
     );
 }
 
+function hasExactTopLevelKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+    const actualKeys = Object.keys(value);
+    return actualKeys.length === keys.length && actualKeys.every((key) => keys.includes(key));
+}
+
+const reviewPublicationOwnerKeys = [
+    'version',
+    'pid',
+    'token',
+    'operation',
+    'number',
+    'expectedHead',
+    'payloadDigest',
+    'reviewerActorNodeId',
+    'ownerFence',
+    'mutation',
+] as const;
+const recoveredReviewPublicationOwnerKeys = [...reviewPublicationOwnerKeys, 'recovery'] as const;
+
 function parseMutationLockOwner(contents: string, number: number): PullRequestMutationLockOwner {
     let value: unknown;
     try {
@@ -224,9 +243,11 @@ function parseMutationLockOwner(contents: string, number: number): PullRequestMu
             ownerFence: owner.ownerFence,
         };
     }
+    const isNormalReviewPublicationOwner = hasExactTopLevelKeys(owner, reviewPublicationOwnerKeys);
+    const isRecoveredReviewPublicationOwner = hasExactTopLevelKeys(owner, recoveredReviewPublicationOwnerKeys);
     if (
         owner.version === 3 &&
-        (Object.keys(owner).length === 10 || Object.keys(owner).length === 11) &&
+        (isNormalReviewPublicationOwner || isRecoveredReviewPublicationOwner) &&
         hasOwnerIdentity(owner) &&
         owner.operation === 'review-publication' &&
         owner.number === number &&
@@ -247,7 +268,7 @@ function parseMutationLockOwner(contents: string, number: number): PullRequestMu
         typeof (owner.mutation as { epoch?: unknown }).epoch === 'number' &&
         Number.isSafeInteger((owner.mutation as { epoch: number }).epoch) &&
         (owner.mutation as { epoch: number }).epoch >= 0 &&
-        (owner.recovery === undefined ||
+        (isNormalReviewPublicationOwner ||
             (typeof owner.recovery === 'object' &&
                 owner.recovery !== null &&
                 Object.keys(owner.recovery).length === 2 &&

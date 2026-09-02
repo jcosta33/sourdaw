@@ -174,23 +174,26 @@ describe('trusted GitHub write snapshot launcher', () => {
         ]);
     });
 
-    it('forwards cancellation to the detached snapshot child group and waits for it to terminate', async () => {
-        await expect(
-            executeTrustedSnapshot('review:publish', [], {
-                commit: 'test-snapshot',
-                sources: new Map([
-                    [
-                        'scripts/publishReview.ts',
+    it.each(['SIGINT', 'SIGTERM', 'SIGHUP'] as const)(
+        'forwards %s cancellation to the detached snapshot child group and waits for it to terminate',
+        async (signal) => {
+            await expect(
+                executeTrustedSnapshot('review:publish', [], {
+                    commit: 'test-snapshot',
+                    sources: new Map([
                         [
-                            'export async function runPublishReviewCli() {',
-                            "  setTimeout(() => process.kill(process.ppid, 'SIGTERM'), 100);",
-                            '  await new Promise(() => undefined);',
-                            '  return 0;',
-                            '}',
-                        ].join('\n'),
-                    ],
-                ]),
-            })
-        ).rejects.toThrow('trusted snapshot terminated by SIGTERM');
-    });
+                            'scripts/publishReview.ts',
+                            [
+                                'export async function runPublishReviewCli() {',
+                                `  setTimeout(() => process.kill(process.ppid, '${signal}'), 100);`,
+                                '  await new Promise(() => undefined);',
+                                '  return 0;',
+                                '}',
+                            ].join('\n'),
+                        ],
+                    ]),
+                })
+            ).rejects.toThrow(`trusted snapshot terminated by ${signal}`);
+        }
+    );
 });
