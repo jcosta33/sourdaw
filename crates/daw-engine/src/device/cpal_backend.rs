@@ -116,7 +116,6 @@ pub(crate) struct CpalInputBackend;
 
 pub(crate) struct CpalOpenInput {
     device: cpal::Device,
-    sample_format: cpal::SampleFormat,
     stream_config: cpal::StreamConfig,
     negotiated: NegotiatedInput,
 }
@@ -172,6 +171,16 @@ impl InputBackend for CpalInputBackend {
             .default_input_config()
             .map_err(|error| InputOpenRefusal::Backend(StreamErrorKind::from(&error)))?;
 
+        // We strictly use f32 streams, on the capture side for the same
+        // reason as on the render side: a format ladder here would be a
+        // conversion the engine has decided not to make. Checked at open
+        // rather than at `start`: this is a refusal `open_default_input`
+        // can still name normally, and it leaves `start`'s own refusals as
+        // exactly the ones a stream build can produce.
+        if config.sample_format() != cpal::SampleFormat::F32 {
+            return Err(InputOpenRefusal::UnsupportedConfiguration);
+        }
+
         // Capture takes the device's own period rather than negotiating one:
         // see `capture_buffer_size`. There is no retry lever on this path
         // because there is nothing to retry — the engine sends no period, so
@@ -190,7 +199,6 @@ impl InputBackend for CpalInputBackend {
 
         Ok(CpalOpenInput {
             device,
-            sample_format: config.sample_format(),
             stream_config,
             negotiated,
         })
@@ -209,13 +217,11 @@ impl OpenInput for CpalOpenInput {
         mut capture: CaptureFn,
         mut on_error: StreamErrorFn,
     ) -> Result<cpal::Stream, InputOpenRefusal> {
-        // We strictly use f32 streams, on the capture side for the same
-        // reason as on the render side: a format ladder here would be a
-        // conversion the engine has decided not to make.
-        if self.sample_format != cpal::SampleFormat::F32 {
-            return Err(InputOpenRefusal::UnsupportedConfiguration);
-        }
-
+        // The two refusals left here are both stream-build failures cpal can
+        // only report once it tries to build or run the stream — the format
+        // check that used to live here moved to `open_default_input`, which
+        // already knows `config.sample_format()` before this is ever called.
+        //
         // Wait-free, like the output stream's: map the error onto a fixed
         // `Copy` kind and hand it to the seam's error sink. No formatting, no
         // stderr lock, no allocation.

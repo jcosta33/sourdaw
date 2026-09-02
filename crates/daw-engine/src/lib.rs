@@ -15,7 +15,7 @@ pub mod timeline;
 pub mod transport_map;
 
 use audio_thread::{spawn_audio_thread_with_diagnostics, AudioThreadHandle};
-use engine_events::{engine_event_channel, EngineEvent};
+use engine_events::{engine_event_channel, EngineEvent, StreamErrorKind, StreamSide};
 use midi::diagnostics::{
     active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsReader,
     ActiveMidiRtDiagnosticsSnapshot,
@@ -28,7 +28,7 @@ use scheduler::{
     TransportPositionReader, TransportPositionSnapshot, CRUMBS_CAPTURE_RESERVE,
     EFFECT_TABLE_CAPACITY,
 };
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use timeline::{
@@ -165,6 +165,18 @@ pub struct EngineHandle {
     /// What the capture ring published as its settled latency, in frames, or
     /// zero while it is not serving. Written by the audio thread, read here.
     input_latency_frames: Arc<AtomicUsize>,
+    /// The kind of the capture-side refusal `capture_side` last stored, or
+    /// zero for none, encoded as `kind as u8 + 1`.
+    ///
+    /// A refusal cannot cross the capture ring the way a mid-stream error
+    /// does: whichever route produced it — a refused open, or a refused
+    /// start, which by then has already handed the ring's producer to a
+    /// backend that dropped it — the producer may already be gone by the
+    /// time the refusal is known. This slot needs no producer, so it is
+    /// always available to store into (see `audio_thread::capture_side`).
+    /// [`Self::drain_engine_events`] swaps it back to zero on every drain and
+    /// turns a non-zero read into one `EngineEvent::StreamError`.
+    capture_refusal: Arc<AtomicU8>,
 }
 
 impl EngineHandle {
@@ -213,15 +225,21 @@ impl EngineHandle {
             // A refused or absent input never fails engine start — capture is
             // additive (see `audio_thread::capture_beside`) — so a refusal is
             // a logged line plus an `Input`-side `EngineEvent`, and the
-            // engine runs without capture. The open shares the output's
-            // startup timeout and its one fallback attempt
-            // (`spawn_with_fallback`, above): an input device whose open
-            // hangs fails the whole engine start exactly as a hung output
-            // would, and there is no in-session engine restart that could
-            // reopen it later. On macOS a denied microphone permission does
-            // not surface as a refusal at all — CoreAudio opens the stream
-            // and delivers silence in place of real input rather than an
-            // error, so a denial reads as capture that opened but never
+            // engine runs without capture. The event does not cross the ring
+            // a mid-stream error would: a refusal can still be discovered
+            // after `open.start` has already handed this producer to a
+            // backend that goes on to drop it, so `capture_side` instead
+            // stores the refused kind into a slot this handle also carries
+            // (`capture_refusal`), and `Self::drain_engine_events` is what
+            // turns that stored kind into the one reported `EngineEvent`. The
+            // open shares the output's startup timeout and its one fallback
+            // attempt (`spawn_with_fallback`, above): an input device whose
+            // open hangs fails the whole engine start exactly as a hung
+            // output would, and there is no in-session engine restart that
+            // could reopen it later. On macOS a denied microphone permission
+            // does not surface as a refusal at all — CoreAudio opens the
+            // stream and delivers silence in place of real input rather than
+            // an error, so a denial reads as capture that opened but never
             // carries audio.
             Some(capture_event_tx),
             force_default_buffer,
@@ -247,6 +265,7 @@ impl EngineHandle {
             sample_rate: spawned.sample_rate,
             bridge_round_trip_frames: spawned.bridge_round_trip_frames,
             input_latency_frames: spawned.input_latency_frames,
+            capture_refusal: spawned.capture_refusal,
         })
     }
 
@@ -492,7 +511,8 @@ impl EngineHandle {
     }
 
     /// Take every engine event published since the last drain, output-side
-    /// events before input-side ones.
+    /// ring events, then input-side ring events, then a capture refusal if
+    /// one is waiting.
     ///
     /// Consuming, not peeking: an event reported once is reported once. This
     /// runs on the control side, never in the audio callback, so allocating the
@@ -500,9 +520,25 @@ impl EngineHandle {
     /// because the output and input backends run their error callbacks on
     /// different threads and `EngineEvent`'s ring is SPSC (see
     /// `audio_thread::capture_beside`).
+    ///
+    /// A capture refusal is not on either ring: it is read from
+    /// `capture_refusal`, the slot `audio_thread::capture_side` stores into
+    /// because a refusal can be discovered after the ring's own producer is
+    /// already gone. The swap both clears the slot and reads it atomically,
+    /// so a refusal is turned into exactly one trailing `StreamError` on the
+    /// first drain after it is stored, and every later drain sees zero.
     pub fn drain_engine_events(&mut self) -> Vec<EngineEvent> {
         let mut events = engine_events::drain_engine_events(&mut self.engine_events);
         events.extend(engine_events::drain_engine_events(&mut self.capture_events));
+
+        let refusal = self.capture_refusal.swap(0, Ordering::Relaxed);
+        if let Some(kind) = StreamErrorKind::from_slot(refusal) {
+            events.push(EngineEvent::StreamError {
+                side: StreamSide::Input,
+                kind,
+            });
+        }
+
         events
     }
 
@@ -1068,14 +1104,16 @@ fn capture_consumer_registered_error(plugin_id: usize) -> String {
 /// Assemble a fixture `EngineHandle` around channel ends a caller already
 /// built.
 ///
-/// The three test constructors below — this module's and `mod tests`'s two —
-/// differ only in which ends of which channels they keep live and which they
-/// let drop; the sixteen-field literal itself never varies, so it is written
-/// once here rather than once per caller. Every reader and consumer is
-/// required rather than defaulted, so a caller wanting one dropped still has
-/// to build the pair and drop its other half explicitly — the same
+/// The test constructors below — this module's and `mod tests`'s — differ
+/// only in which ends of which channels they keep live and which they let
+/// drop; the struct literal itself never varies, so it is written once here
+/// rather than once per caller. Every reader and consumer is required rather
+/// than defaulted, so a caller wanting one dropped still has to build the
+/// pair and drop its other half explicitly — the same
 /// `let (_tx, rx) = channel();` pattern every call site already used before
-/// this was extracted.
+/// this was extracted. `capture_refusal` is likewise taken as a parameter
+/// rather than built internally: a caller driving `drain_engine_events`
+/// against a preset refusal needs to hold the same slot this handle reads.
 #[cfg(any(test, feature = "command-capture-fixture"))]
 fn engine_handle_fixture(
     command_tx: Producer<GraphCommand>,
@@ -1086,6 +1124,7 @@ fn engine_handle_fixture(
     transport_position: TransportPositionReader,
     engine_events: Consumer<EngineEvent>,
     capture_events: Consumer<EngineEvent>,
+    capture_refusal: Arc<AtomicU8>,
 ) -> EngineHandle {
     EngineHandle {
         command_tx,
@@ -1105,6 +1144,7 @@ fn engine_handle_fixture(
         // Seeded exactly as a real stream is before its first callback.
         bridge_round_trip_frames: audio_thread::new_bridge_round_trip_slot(),
         input_latency_frames: audio_thread::new_input_latency_slot(),
+        capture_refusal,
     }
 }
 
@@ -1141,6 +1181,7 @@ pub fn engine_handle_for_command_capture(
             transport_position_reader,
             engine_event_rx,
             capture_event_rx,
+            audio_thread::new_capture_refusal_slot(),
         ),
         command_rx,
         retired_adoption_rx,
@@ -2198,6 +2239,7 @@ mod tests {
                 transport_position_reader,
                 engine_event_rx,
                 capture_event_rx,
+                crate::audio_thread::new_capture_refusal_slot(),
             ),
             command_rx,
             diagnostics_tx,
@@ -2379,6 +2421,7 @@ mod tests {
                 transport_position_reader,
                 engine_event_rx,
                 capture_event_rx,
+                crate::audio_thread::new_capture_refusal_slot(),
             ),
             engine_event_tx,
             capture_event_tx,
@@ -2422,6 +2465,60 @@ mod tests {
                 },
             ],
             "the output-side event must be reported before the input-side one"
+        );
+    }
+
+    /// A capture refusal is not on either ring — `capture_side` cannot always
+    /// reach a producer to push into (see its doc) — so it crosses through
+    /// `capture_refusal` instead: [`EngineHandle::drain_engine_events`] swaps
+    /// the slot back to zero on read and turns a non-zero value into one
+    /// trailing `Input`-side `StreamError`, after whatever the two rings
+    /// held. A drain that finds the slot already zero reports nothing for
+    /// it, so a stored refusal surfaces exactly once. Mutation: replace the
+    /// `self.capture_refusal.swap(0, Ordering::Relaxed)` call in
+    /// `drain_engine_events` with a `load` — the first drain still reports
+    /// the refusal, but the second drain this test also checks then repeats
+    /// it instead of coming back empty, and this goes red.
+    #[test]
+    fn drain_engine_events_reports_a_capture_refusal_once() {
+        let (command_tx, _command_rx) = RingBuffer::new(1);
+        let (_diagnostics_tx, diagnostics_reader) = active_midi_rt_diagnostics_channel();
+        let (_timeline_diagnostics_tx, timeline_diagnostics_reader) =
+            timeline_rt_diagnostics_channel();
+        let (_graph_progress_tx, graph_progress_reader) = graph_progress_channel();
+        let (_transport_position_tx, transport_position_reader) = transport_position_channel();
+        let (_engine_event_tx, engine_event_rx) = engine_event_channel();
+        let (_capture_event_tx, capture_event_rx) = engine_event_channel();
+        let (retired_adoption_tx, _retired_adoption_rx) = std::sync::mpsc::channel();
+        let capture_refusal = crate::audio_thread::new_capture_refusal_slot();
+        capture_refusal.store(
+            StreamErrorKind::DeviceNotAvailable as u8 + 1,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+
+        let mut engine = engine_handle_fixture(
+            command_tx,
+            retired_adoption_tx,
+            diagnostics_reader,
+            timeline_diagnostics_reader,
+            graph_progress_reader,
+            transport_position_reader,
+            engine_event_rx,
+            capture_event_rx,
+            capture_refusal,
+        );
+
+        assert_eq!(
+            engine.drain_engine_events(),
+            vec![EngineEvent::StreamError {
+                side: StreamSide::Input,
+                kind: StreamErrorKind::DeviceNotAvailable,
+            }],
+            "a stored refusal is the whole of the first drain when both rings are empty"
+        );
+        assert!(
+            engine.drain_engine_events().is_empty(),
+            "the slot swaps back to zero, so a second drain reports nothing further"
         );
     }
 }

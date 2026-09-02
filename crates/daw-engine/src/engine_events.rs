@@ -59,6 +59,29 @@ impl From<&cpal::Error> for StreamErrorKind {
     }
 }
 
+impl StreamErrorKind {
+    /// Decode the value `audio_thread::capture_side` stores into the capture
+    /// refusal slot, where zero means "no refusal" and every kind is stored
+    /// as `kind as u8 + 1`.
+    ///
+    /// An explicit match rather than the arithmetic inverse of the encode: a
+    /// slot that was never written, or corrupted, decodes to `None` instead
+    /// of silently aliasing onto whichever variant its `u8` happens to land
+    /// on — the failure this exists to avoid is a wrong kind reported as a
+    /// right one.
+    pub(crate) fn from_slot(value: u8) -> Option<Self> {
+        match value {
+            1 => Some(Self::DeviceNotAvailable),
+            2 => Some(Self::DeviceBusy),
+            3 => Some(Self::DeviceChanged),
+            4 => Some(Self::StreamInvalidated),
+            5 => Some(Self::Xrun),
+            6 => Some(Self::BackendSpecific),
+            _ => None,
+        }
+    }
+}
+
 /// Which of the engine's two device streams a report came from.
 ///
 /// A failing capture stream and a failing playback stream are different
@@ -235,5 +258,24 @@ mod tests {
             StreamErrorKind::from(&error),
             StreamErrorKind::DeviceNotAvailable
         );
+    }
+
+    /// `from_slot` is the inverse of `capture_side`'s `kind as u8 + 1`
+    /// encoding, over every variant, and zero — the slot's "no refusal"
+    /// state — decodes to `None` rather than to a variant.
+    #[test]
+    fn from_slot_round_trips_every_stream_error_kind() {
+        for kind in [
+            StreamErrorKind::DeviceNotAvailable,
+            StreamErrorKind::DeviceBusy,
+            StreamErrorKind::DeviceChanged,
+            StreamErrorKind::StreamInvalidated,
+            StreamErrorKind::Xrun,
+            StreamErrorKind::BackendSpecific,
+        ] {
+            assert_eq!(StreamErrorKind::from_slot(kind as u8 + 1), Some(kind));
+        }
+
+        assert_eq!(StreamErrorKind::from_slot(0), None);
     }
 }
