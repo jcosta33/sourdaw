@@ -4,6 +4,9 @@ import { materializeBatchLocalActionIdentities } from '../materializeBatchLocalA
 
 const busId = 'bus-ai-12345678-1234-4123-8123-123456789abc';
 const deviceId = 'device-ai-12345678-1234-4123-8123-123456789abc';
+const trackId = 'track-ai-12345678-1234-4123-8123-123456789abc';
+const secondTrackId = 'track-ai-87654321-4321-4321-8321-cba987654321';
+const clipId = 'clip-ai-12345678-1234-4123-8123-123456789abc';
 
 describe('materializeBatchLocalActionIdentities', () => {
     it('adds an application-owned bus ID only after provider actions are validated', () => {
@@ -73,6 +76,67 @@ describe('materializeBatchLocalActionIdentities', () => {
         );
 
         expect(result).toEqual({ status: 'rejected', reason });
+    });
+
+    it('adds application-owned track and clip IDs to their own ordinals', () => {
+        const result = materializeBatchLocalActionIdentities(
+            [
+                { type: 'addTrack', payload: { name: 'Piano', kind: 'midi' } },
+                { type: 'addTrack', payload: { name: 'Strings', kind: 'midi' } },
+                { type: 'addClip', payload: { trackId, startBeat: 0, endBeat: 4, name: 'Melody' } },
+            ],
+            [
+                { actionType: 'addTrack', actionOrdinal: 1, trackId: secondTrackId },
+                { actionType: 'addTrack', actionOrdinal: 0, trackId },
+                { actionType: 'addClip', actionOrdinal: 0, clipId },
+            ]
+        );
+
+        expect(result).toEqual({
+            status: 'accepted',
+            actions: [
+                { type: 'addTrack', payload: { name: 'Piano', kind: 'midi', id: trackId } },
+                { type: 'addTrack', payload: { name: 'Strings', kind: 'midi', id: secondTrackId } },
+                { type: 'addClip', payload: { trackId, startBeat: 0, endBeat: 4, name: 'Melody', id: clipId } },
+            ],
+        });
+    });
+
+    it.each([
+        {
+            identity: { actionType: 'addTrack' as const, actionOrdinal: 0, trackId: busId },
+            reason: 'Invalid or duplicate batch-local action identity',
+        },
+        {
+            identity: { actionType: 'addClip' as const, actionOrdinal: 0, clipId: trackId },
+            reason: 'Invalid or duplicate batch-local action identity',
+        },
+        {
+            identity: { actionType: 'addClip' as const, actionOrdinal: 0, clipId },
+            reason: 'Batch-local action identity has no validated addClip action',
+        },
+    ])('refuses a creation identity whose shape does not match its own action type', ({ identity, reason }) => {
+        const result = materializeBatchLocalActionIdentities(
+            [{ type: 'addTrack', payload: { name: 'Piano', kind: 'midi' } }],
+            [identity]
+        );
+
+        expect(result).toEqual({ status: 'rejected', reason });
+    });
+
+    it('refuses two creation identities that mint the same ID', () => {
+        const result = materializeBatchLocalActionIdentities(
+            [
+                { type: 'addTrack', payload: { name: 'Piano', kind: 'midi' } },
+                { type: 'addTrack', payload: { name: 'Strings', kind: 'midi' } },
+            ],
+            [
+                { actionType: 'addTrack', actionOrdinal: 0, trackId },
+                { actionType: 'addTrack', actionOrdinal: 1, trackId },
+            ]
+        );
+
+        expect(result).toEqual({ status: 'rejected', reason: 'Invalid or duplicate batch-local action identity' });
     });
 
     it('rejects an application-owned device identity without a matching validated addDevice action', () => {

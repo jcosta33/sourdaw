@@ -2442,9 +2442,9 @@ describe('bridgeGroundedLlmToolCalls', () => {
         );
 
         expect(malformed.rejections[0]?.reason).toContain('binding must start with a lowercase letter');
-        expect(duplicate.rejections[0]?.reason).toContain('Duplicate batch-local bus binding');
-        expect(missing.rejections[0]?.reason).toContain('Unknown batch-local bus reference');
-        expect(forward.rejections[0]?.reason).toContain('Forward batch-local bus reference');
+        expect(duplicate.rejections[0]?.reason).toContain('Duplicate batch-local binding');
+        expect(missing.rejections[0]?.reason).toContain('Unknown batch-local reference');
+        expect(forward.rejections[0]?.reason).toContain('Forward batch-local reference');
         expect(colliding.rejections[0]?.reason).toContain('collides with an existing');
         expect(incompatible.rejections[0]?.reason).toContain('cannot satisfy target capability device');
         expect(
@@ -2452,6 +2452,110 @@ describe('bridgeGroundedLlmToolCalls', () => {
                 (result) => result.actions.length === 0
             )
         ).toBe(true);
+    });
+
+    it('mints typed track and clip identities and grounds the clip against the track the plan will create', () => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Piano', kind: 'midi', binding: 'piano' } },
+                {
+                    name: 'addClip',
+                    arguments: {
+                        trackId: '$piano',
+                        startBeat: 0,
+                        endBeat: 4,
+                        name: 'Melody',
+                        binding: 'melody',
+                    },
+                },
+            ],
+            'add a midi track named Piano and add a midi clip named Melody on the Piano track from beat 0 to beat 4'
+        );
+
+        expect(result.rejections).toEqual([]);
+        const identities = result.batchLocalActionIdentities ?? [];
+        const trackIdentity = identities.find((identity) => identity.actionType === 'addTrack');
+        const clipIdentity = identities.find((identity) => identity.actionType === 'addClip');
+        if (trackIdentity?.actionType !== 'addTrack' || clipIdentity?.actionType !== 'addClip') {
+            throw new Error('Expected one minted track identity and one minted clip identity');
+        }
+        expect(trackIdentity.trackId).toMatch(/^track-ai-/u);
+        expect(clipIdentity.clipId).toMatch(/^clip-ai-/u);
+        expect(result.actions).toEqual([
+            { type: 'addTrack', payload: { name: 'Piano', kind: 'midi', select: false } },
+            {
+                type: 'addClip',
+                payload: {
+                    trackId: trackIdentity.trackId,
+                    startBeat: 0,
+                    endBeat: 4,
+                    name: 'Melody',
+                    /** Derived from the projected MIDI track, which exists only in the plan. */
+                    type: 'midi',
+                },
+            },
+        ]);
+    });
+
+    it('binds a clip on a concrete MIDI track only while that track is unfrozen', () => {
+        const keys = createTrack({ id: 'track-keys', name: 'Keys', kind: 'midi' });
+        const call = {
+            name: 'addClip',
+            arguments: { trackId: 'track-keys', startBeat: 8, endBeat: 16, name: 'Verse', binding: 'verse' },
+        };
+        const prompt = 'create a MIDI clip named Verse on Keys from beat 8 to beat 16';
+
+        const unfrozen = bridge([call], prompt, { ...projectContext, tracks: [...projectContext.tracks, keys] });
+        const frozen = bridge([call], prompt, {
+            ...projectContext,
+            tracks: [...projectContext.tracks, { ...keys, frozen: true }],
+        });
+
+        expect(unfrozen.rejections).toEqual([]);
+        const clipIdentities = (unfrozen.batchLocalActionIdentities ?? []).filter(
+            (identity) => identity.actionType === 'addClip'
+        );
+        expect(clipIdentities).toHaveLength(1);
+        expect(clipIdentities[0]).toMatchObject({ clipId: expect.stringMatching(/^clip-ai-/u) });
+        expect(unfrozen.actions).toMatchObject([{ type: 'addClip', payload: { trackId: 'track-keys' } }]);
+        expect(frozen.actions).toEqual([]);
+        expect(frozen.rejections).toEqual([
+            { index: 0, name: 'addClip', reason: 'A bound creation must declare one typed created object' },
+        ]);
+    });
+
+    it('rejects forward and capability-incompatible references to plan-created tracks and clips', () => {
+        const forwardTrack = bridge(
+            [
+                {
+                    name: 'addClip',
+                    arguments: { trackId: '$piano', startBeat: 0, endBeat: 4, name: 'Melody' },
+                },
+                { name: 'addTrack', arguments: { name: 'Piano', kind: 'midi', binding: 'piano' } },
+            ],
+            'add a midi clip named Melody on the Piano track from beat 0 to beat 4 and add a midi track named Piano'
+        );
+        const clipAsDevice = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Piano', kind: 'midi', binding: 'piano' } },
+                {
+                    name: 'addClip',
+                    arguments: {
+                        trackId: '$piano',
+                        startBeat: 0,
+                        endBeat: 4,
+                        name: 'Melody',
+                        binding: 'melody',
+                    },
+                },
+                { name: 'removeDevice', arguments: { deviceId: '$melody' } },
+            ],
+            'add a midi track named Piano, add a midi clip named Melody on the Piano track from beat 0 to beat 4, and remove a device from it'
+        );
+
+        expect(forwardTrack.rejections[0]?.reason).toContain('Forward batch-local reference');
+        expect(clipAsDevice.rejections[0]?.reason).toContain('cannot satisfy target capability device');
+        expect([forwardTrack, clipAsDevice].every((result) => result.actions.length === 0)).toBe(true);
     });
 
     it('rejects an anaphoric bus target when multiple earlier created buses are compatible', () => {
@@ -2524,6 +2628,44 @@ describe('bridgeGroundedLlmToolCalls', () => {
 
         expect(result.actions).toEqual([]);
         expect(result.rejections[0]?.reason).toContain('not unambiguously grounded');
+    });
+
+    it('rejects a routable anaphor when an unbound planned audio track is also routable', () => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Parallel', kind: 'audio' } },
+                { name: 'createBus', arguments: { name: 'Plate', binding: 'plate' } },
+                { name: 'setTrackOutput', arguments: { trackId: '$plate', outputId: 'master' } },
+            ],
+            'create an audio track called Parallel, create a bus called Plate, and route it to Master'
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('not unambiguously grounded');
+    });
+
+    it('refuses a bound track creation whose kind is an inherited object key', () => {
+        const bound = bridge(
+            [{ name: 'addTrack', arguments: { name: 'Aux', kind: 'toString', binding: 'aux' } }],
+            'create a toString track called Aux'
+        );
+
+        expect(bound.actions).toEqual([]);
+        expect(bound.rejections[0]?.reason).toBe('A bound creation must declare one typed created object');
+    });
+
+    it('refuses an anaphoric binding target when an unbound planned track carries an inherited object key as kind', () => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Aux', kind: 'toString' } },
+                { name: 'createBus', arguments: { name: 'Plate', binding: 'plate' } },
+                { name: 'setTrackOutput', arguments: { trackId: '$plate', outputId: 'master' } },
+            ],
+            'add track called Aux, create a bus called Plate, and route it to Master'
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toBe('Expected a safe name and one of audio, midi, or folder');
     });
 
     it('rejects a bare anaphoric bus target after an intervening compatible track target', () => {
