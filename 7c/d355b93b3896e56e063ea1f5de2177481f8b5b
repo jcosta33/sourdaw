@@ -1,0 +1,65 @@
+AGENTS.md
+  s_c9dfe76a613250::t_50cf7e79594513 503-508
+docs/07-conventions.md
+  s_c9dfe76a613250::t_4a52e80b79d5e2 765-769
+eslint.config.mjs
+  s_c9dfe76a613250::t_aa86f1de5479d9 30-31,2581-2615,2763-2782,2810-2825
+eslint.size-baseline.d.mts
+  s_c9dfe76a613250::t_df5d63d0cf6791 1-5
+release/dependency-license-proofs.json
+  s_c9dfe76a613250::t_b521d4bb343e31 60
+release/open-source-inventory.json
+  s_c9dfe76a613250::t_7ae92b1ee1e28b 59-60,165,1691
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_c9dfe76a613250::t_7e4c6bb2c461fa 542,712-719,883-892,966,5383-5384,5836,5843,5876-5953,5955,5962,6125,6127,7820,10338-10409
+scripts/__tests__/lintSizeBaseline.spec.ts
+  s_c9dfe76a613250::t_58d7015c5f7b5d 1-37
+scripts/__tests__/resolveThread.spec.ts
+  s_c9dfe76a613250::t_b43dc31d2e3252 1-536
+scripts/deliverPullRequest.ts
+  s_c9dfe76a613250::t_e094fae5712c54 92-93,166-173,329,335-390,2967-3007,3093
+scripts/pullRequestMutationLock.ts
+  s_c9dfe76a613250::t_a718851439b4b2 58
+scripts/resolveThread.ts
+  s_c9dfe76a613250::t_72cd8ccff65cb9 1,7-8,14-24,27-33,35-40,43-46,48-56,58,63,65,67-75,77,79-81,83,86-135,137-138,141-156,158,161-164,167-192,194-237,239-324,329-330,336,338,340,342,345-346,348-349
+src/modules/Project/useCases/projectPersistence/__tests__/newProject.spec.ts
+  s_c9dfe76a613250::t_63d77238485625 42-43,48,94-112,114,117
+eslint.size-baseline.mjs
+  s_a36686bf9ed601::t_df99b947c12750 1-557
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_217e0d148c70df::t_da2f360df024f8 38,458-480,738,789,884,917,919,1007,1021,1034-1035,1038,1045,1055-1058,1297,1378-1379,1396-1405,1462-1469,1513,1518,1556,1558,1566-1567,1578-1583,1704,1712-1728,1730-1733,1854,1896,1963,2321,2379,2843-2844
+scripts/trustedGithubWriteBootstrap.ts
+  s_217e0d148c70df::t_56077098d51cca 18,152,164,779,987,994,1019,1024
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "7cd355b93b3896e56e063ea1f5de2177481f8b5b",
+  "prompts": {},
+  "sessions": {
+    "s_217e0d148c70df": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad760980a326e4dfe",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a36686bf9ed601": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a063df-ae30-74d1-9ba0-98dfed5adf64",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c9dfe76a613250": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a063a6-ce16-7052-9c0c-a6ec6522efdd",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
