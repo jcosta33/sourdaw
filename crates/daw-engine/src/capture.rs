@@ -58,19 +58,26 @@
 //! be there would run at the ring's floor for the rest of the session while
 //! still publishing the settled figure.
 //!
-//! **What the latency figure means.** The observed block plus the settled
-//! depth: the frames between a sample arriving at the device and the same
-//! sample leaving [`CaptureRingReader::read_into`]. The reader publishes it
-//! into a slot the control side holds, at the moment it settles, because
-//! before then neither term is known. Zero means the ring is not serving —
+//! **What the latency figure means.** The observed block plus the depth that
+//! block and the current read settle at: the frames between a sample arriving
+//! at the device and the same sample leaving
+//! [`CaptureRingReader::read_into`]. The reader publishes it into a slot the
+//! control side holds, and keeps publishing it — every served read republishes
+//! whenever the figure has moved, because a cadence can change under a running
+//! stream. CoreAudio's buffer frame size is device-global, so another
+//! application can walk a device from 512-frame callbacks to 4096-frame ones
+//! mid-session, and a figure written once at settle would then describe a
+//! cadence the stream stopped running. Zero means the ring is not serving —
 //! it has not settled yet, or a stall dropped it back to filling — and a
 //! control thread must read it as "no figure", never as "no latency".
 //!
 //! **What is counted.** Input blocks the writer refused, whether because the
-//! ring was full or because the block's layout was not the ring's; reads that
-//! could not be filled after the ring had settled; and samples the reader
-//! discarded to hold the settled depth. Every sample this path loses is one of
-//! those three, and each is an atomic the control side reads.
+//! ring was full, because the block's layout was not the ring's, or because it
+//! ran past the ceiling the ring was sized against; reads that could not be
+//! filled after the ring had settled, and reads refused for a shape the ring
+//! will not serve; and samples the reader discarded to hold the settled depth.
+//! Every sample this path loses is one of those three, and each is an atomic
+//! the control side reads.
 
 use rtrb::{Consumer, Producer, RingBuffer};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -199,6 +206,7 @@ pub struct CaptureRingWriter {
     producer: Producer<f32>,
     counters: Arc<CaptureCounters>,
     observed_block_frames: Arc<AtomicUsize>,
+    block_ceiling_samples: usize,
     channels: usize,
 }
 
@@ -215,6 +223,14 @@ impl CaptureRingWriter {
     /// one. A length that is not a whole number of frames is refused for the
     /// stronger reason: writing it would rotate every later sample's channel.
     ///
+    /// A block longer than the ceiling the ring was sized against is refused
+    /// too. This is an invariant guard rather than a recovery: the ceiling is
+    /// what the backend said the device may deliver, and no ALSA or CoreAudio
+    /// stream exceeds its own advertised maximum. Were one to, the depth the
+    /// reader would settle at could pass the ring's capacity and the reader
+    /// would never serve a sample again — a silent, permanent failure in
+    /// exchange for accepting one block the ring was never shaped for.
+    ///
     /// An accepted block also publishes its own size, which is the only place
     /// the running input cadence is ever observed. A refused block publishes
     /// nothing — it is not evidence of what the device delivers.
@@ -222,6 +238,7 @@ impl CaptureRingWriter {
     pub fn write_block(&mut self, block: &[f32], channels: usize) {
         if channels != self.channels
             || block.len() % self.channels != 0
+            || block.len() > self.block_ceiling_samples
             || self.producer.push_entire_slice(block).is_err()
         {
             self.counters.blocks_refused.fetch_add(1, Ordering::Relaxed);
@@ -239,6 +256,7 @@ pub struct CaptureRingReader {
     counters: Arc<CaptureCounters>,
     observed_block_frames: Arc<AtomicUsize>,
     latency_frames: Arc<AtomicUsize>,
+    published_latency: usize,
     capacity_samples: usize,
     channels: usize,
     settled: bool,
@@ -263,17 +281,22 @@ impl CaptureRingReader {
             return false;
         }
 
-        if out.len() > self.capacity_samples {
-            // A read the ring could never fill however long the writer ran.
-            // Unreachable from the engine — capacity covers the largest
-            // callback the engine accepts, which is the read ceiling the ring
-            // was sized with — but it must not leave the reader permanently
-            // unsettled, which is what falling through to the pop would do.
+        if out.len() > self.capacity_samples || out.len() % self.channels != 0 {
+            // Two reads the ring will not serve, and neither is reachable from
+            // the engine: capacity covers the largest callback it accepts, and
+            // a render callback's slice is always a whole number of frames.
+            // They are guarded rather than trusted because both fail silently.
+            // A slice longer than the ring could ever hold would underrun on
+            // every callback for the life of the stream, and a slice that is
+            // not a whole number of frames would rotate which channel every
+            // later sample belongs to — the same corruption `write_block`
+            // refuses a partial block for. Counted, and the reader is left
+            // exactly as it was.
             self.counters.underruns.fetch_add(1, Ordering::Relaxed);
             return false;
         }
 
-        let read_frames = out.len().div_ceil(self.channels);
+        let read_frames = out.len() / self.channels;
         let target_frames = target_depth_frames(block_frames, read_frames);
         let target_depth_samples = target_frames * self.channels;
 
@@ -282,8 +305,6 @@ impl CaptureRingReader {
                 return false;
             }
             self.settled = true;
-            self.latency_frames
-                .store(block_frames + target_frames, Ordering::Relaxed);
         }
 
         if self.consumer.pop_entire_slice(out).is_err() {
@@ -293,12 +314,31 @@ impl CaptureRingReader {
             // whatever survived the stall would leave the reader running at
             // the ring's floor while still reporting the settled latency.
             self.settled = false;
-            self.latency_frames.store(0, Ordering::Relaxed);
+            self.publish_latency(0);
             return false;
         }
 
+        self.publish_latency(block_frames + target_frames);
         self.shed_above_target(target_depth_samples, block_frames * self.channels);
         true
+    }
+
+    /// Publish what the ring currently costs, if it has moved.
+    ///
+    /// Every served read passes through here, because the cadence can change
+    /// under a running stream and a figure written once at settle would go on
+    /// describing a cadence the device stopped running. The comparison is
+    /// against the reader's own copy rather than a load of the slot, so the
+    /// common path — a stream whose cadence is steady — is one comparison and
+    /// no atomic traffic at all.
+    #[inline]
+    fn publish_latency(&mut self, frames: usize) {
+        if frames == self.published_latency {
+            return;
+        }
+
+        self.published_latency = frames;
+        self.latency_frames.store(frames, Ordering::Relaxed);
     }
 
     /// Frames of latency this ring is currently adding, or zero while it is
@@ -358,6 +398,7 @@ pub fn capture_ring(
         producer,
         counters: Arc::clone(&counters),
         observed_block_frames: Arc::clone(&observed_block_frames),
+        block_ceiling_samples: shape.interleaved(shape.block_ceiling()),
         channels: shape.lanes(),
     };
     let reader = CaptureRingReader {
@@ -365,6 +406,7 @@ pub fn capture_ring(
         counters,
         observed_block_frames,
         latency_frames,
+        published_latency: 0,
         capacity_samples: capacity,
         channels: shape.lanes(),
         settled: false,
@@ -543,12 +585,105 @@ mod tests {
             "a read nobody could serve must not retract the figure the ring is holding"
         );
 
-        // Still settled: the next ordinary read is served rather than refilled.
-        for _ in 0..READ.div_ceil(BLOCK) {
+        // Nothing is written before the follow-up read, deliberately. The ring
+        // now holds one whole read and less than the target, which only a
+        // reader that is still settled will serve — a reader knocked back to
+        // filling would resettle instead, and a ring topped back above the
+        // target first would hide the difference.
+        let depth = reader.consumer.slots() / CHANNELS;
+        assert!(depth >= READ && depth < target, "{depth} frames held");
+        assert!(reader.read_into(&mut destination));
+        assert_eq!(reader.counters().underruns(), 1);
+    }
+
+    #[test]
+    fn the_published_figure_follows_a_device_that_changes_its_block_size() {
+        // CoreAudio's buffer frame size is device-global, so another
+        // application can walk a running device from 512-frame callbacks to
+        // 4096-frame ones. A figure written once at settle would go on
+        // describing the cadence the stream used to run, and a take would be
+        // compensated by a delay it no longer suffers.
+        let (mut writer, mut reader, latency) = ring(SHAPE);
+        let mut destination = out(READ);
+        let larger = 512;
+
+        for _ in 0..target_depth_frames(BLOCK, READ).div_ceil(BLOCK) + 1 {
             writer.write_block(&block(BLOCK), CHANNELS);
         }
         assert!(reader.read_into(&mut destination));
+        assert_eq!(
+            latency.load(Ordering::Relaxed),
+            BLOCK + target_depth_frames(BLOCK, READ)
+        );
+
+        writer.write_block(&block(larger), CHANNELS);
+        assert!(reader.read_into(&mut destination));
+
+        assert_eq!(
+            latency.load(Ordering::Relaxed),
+            larger + target_depth_frames(larger, READ),
+            "the figure has to follow the cadence the device moved to"
+        );
+        assert_eq!(
+            reader.counters().underruns(),
+            0,
+            "a device changing its block size is not a stall"
+        );
+    }
+
+    #[test]
+    fn a_read_that_is_not_a_whole_number_of_frames_is_refused() {
+        // The mirror of the partial block the writer refuses: popping a slice
+        // that ends mid-frame would rotate which channel every later sample
+        // belongs to for the rest of the session. No render callback asks for
+        // one; the guard exists because the failure is silent corruption
+        // rather than counted loss.
+        let (mut writer, mut reader, latency) = ring(SHAPE);
+        let mut destination = out(READ);
+
+        for _ in 0..target_depth_frames(BLOCK, READ).div_ceil(BLOCK) + 1 {
+            writer.write_block(&block(BLOCK), CHANNELS);
+        }
+        assert!(reader.read_into(&mut destination));
+        let settled_latency = latency.load(Ordering::Relaxed);
+
+        let mut misaligned = vec![0.0f32; READ * CHANNELS + 1];
+        assert!(!reader.read_into(&mut misaligned));
         assert_eq!(reader.counters().underruns(), 1);
+        assert!(
+            misaligned.iter().all(|sample| *sample == 0.0),
+            "a refused read hands out no part of the ring"
+        );
+        assert_eq!(latency.load(Ordering::Relaxed), settled_latency);
+
+        // Still settled, so an ordinary read is served rather than refilled.
+        assert!(reader.read_into(&mut destination));
+        assert_eq!(reader.counters().underruns(), 1);
+    }
+
+    #[test]
+    fn a_block_longer_than_the_advertised_ceiling_is_refused() {
+        // No device exceeds the maximum its own backend advertised, so this is
+        // an invariant guard rather than a recovery. Accepting one would let
+        // the settled depth pass the ring's capacity, and the reader would
+        // never serve another sample — a permanent silent failure bought for
+        // one block the ring was never shaped for.
+        let (mut writer, mut reader, _latency) = ring(SHAPE);
+        let mut destination = out(READ);
+
+        writer.write_block(&block(SHAPE.input_block_ceiling + 1), CHANNELS);
+
+        assert_eq!(reader.counters().blocks_refused(), 1);
+        assert_eq!(
+            reader.consumer.slots(),
+            0,
+            "a refused block writes no part of itself"
+        );
+
+        // And it is not evidence of a cadence either: the ring still has none,
+        // so a read serves nothing and counts nothing.
+        assert!(!reader.read_into(&mut destination));
+        assert_eq!(reader.counters().underruns(), 0);
     }
 
     #[test]
@@ -793,17 +928,23 @@ mod tests {
             let misaligned = vec![0.5f32; BLOCK * CHANNELS + 1];
             let mut destination = out(READ);
             let mut oversized = out(SHAPE.ring_frames() + 1);
+            let mut misaligned_read = out(READ);
+            let oversized_block = block(SHAPE.input_block_ceiling + 1);
 
             assert_no_alloc(|| {
                 // Every arm of both callbacks: the read before any block has
-                // arrived, the read the ring could never hold, the write that
-                // fits, the write the full ring refuses, the write refused for
-                // its layout and the one refused for a partial frame, the read
-                // below the settle depth, the read that fills, the read that
-                // underruns, and the shed that holds the depth.
+                // arrived, the read the ring could never hold, the read that
+                // ends mid-frame, the write that fits, the write the full ring
+                // refuses, the write refused for its layout, the one refused
+                // for a partial frame and the one refused for exceeding the
+                // ceiling, the read below the settle depth, the read that
+                // fills, the read that underruns, the republish when the
+                // cadence moves, and the shed that holds the depth.
                 reader.read_into(&mut destination);
                 writer.write_block(&input, CHANNELS);
+                writer.write_block(&oversized_block, CHANNELS);
                 reader.read_into(&mut oversized);
+                reader.read_into(&mut misaligned_read[..READ * CHANNELS - 1]);
                 for _ in 0..SHAPE.ring_frames() / BLOCK + 2 {
                     writer.write_block(&input, CHANNELS);
                 }
