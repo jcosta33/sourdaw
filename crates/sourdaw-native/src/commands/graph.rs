@@ -510,6 +510,20 @@ pub struct GraphApplyResultPayload {
     pub correlation: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runtime_revision: Option<u64>,
+    /// The fence number the engine's `batches_applied` reaches once this batch
+    /// has drained — present only when a batch actually reached the live
+    /// engine's ring. A caller holds it against
+    /// `EngineTransportPosition::batchesApplied` to tell a transport reading
+    /// taken after this batch from one taken before it, which no position or
+    /// wrap count can say: `apply` resolves when the batch is fenced, not when
+    /// it is drained.
+    ///
+    /// Absent for a mapping (no runtime, so no fence), for a refusal (nothing
+    /// was pushed) and for a partial push (the fence stalls the drain, so the
+    /// count never reaches it) — a number in any of those cases would promise
+    /// a drain that is not coming.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub admitted_batch: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reports: Option<Vec<StripReportPayload>>,
 }
@@ -523,6 +537,7 @@ impl GraphApplyResultPayload {
             compensation: None,
             correlation: None,
             runtime_revision: None,
+            admitted_batch: None,
             reports: None,
         }
     }
@@ -530,6 +545,7 @@ impl GraphApplyResultPayload {
     fn applied(
         correlation: Option<Value>,
         runtime_revision: u64,
+        admitted_batch: u64,
         reports: Vec<StripReportPayload>,
     ) -> Self {
         Self {
@@ -539,6 +555,7 @@ impl GraphApplyResultPayload {
             compensation: None,
             correlation,
             runtime_revision: Some(runtime_revision),
+            admitted_batch: Some(admitted_batch),
             reports: Some(reports),
         }
     }
@@ -557,6 +574,7 @@ impl GraphApplyResultPayload {
             compensation: None,
             correlation,
             runtime_revision: None,
+            admitted_batch: None,
             reports: Some(reports),
         }
     }
@@ -574,6 +592,7 @@ impl GraphApplyResultPayload {
             compensation: Some("not-attempted"),
             correlation,
             runtime_revision: Some(runtime_revision),
+            admitted_batch: None,
             reports: Some(reports),
         }
     }
@@ -676,6 +695,25 @@ impl Default for GraphRegistry {
 }
 
 impl GraphRegistry {
+    /// Number a fence this process published outside [`map_batch`] — the
+    /// transport maps install, which sends its own batch
+    /// (`commands::engine_transport`).
+    ///
+    /// The engine numbers every fence it drains without caring which command
+    /// sent it, so [`Self::batches_sent`] is only comparable to
+    /// `batches_applied` while it counts them all. A fence left unnumbered
+    /// here would leave every later batch's [`PendingStamp::admitted_batch`]
+    /// below the count it is held against, and the ledger would release a
+    /// stamp on a batch horizon it had not actually cleared.
+    ///
+    /// Called after the push succeeds, for the same reason `map_batch`'s own
+    /// increment lives on a clone the caller only commits on success: a batch
+    /// the ring refused is not a fence.
+    pub(crate) fn record_fenced_batch(&mut self) -> u64 {
+        self.batches_sent += 1;
+        self.batches_sent
+    }
+
     fn allocate_node_id(&mut self) -> usize {
         let id = self.next_node_id;
         self.next_node_id += 1;
@@ -2478,10 +2516,15 @@ pub async fn apply_graph_commands(batch: Value, state: &AppState) -> Result<Valu
 
     working.runtime_revision = registry_guard.runtime_revision + 1;
     let revision = working.runtime_revision;
+    // `map_batch` advanced this count for the fence just published, so it is
+    // the number the engine's `batches_applied` reaches when this batch drains
+    // — the same number the ledger stamped every write in it with.
+    let admitted_batch = working.batches_sent;
     *registry_guard = working;
     result_json(&GraphApplyResultPayload::applied(
         correlation,
         revision,
+        admitted_batch,
         mapped.reports,
     ))
 }
@@ -4375,6 +4418,144 @@ mod tests {
         );
     }
 
+    /// The number a batch reports is the number its own writes were charged
+    /// against, and it counts *every* fence this process publishes — including
+    /// the transport maps install, which sends its own batch from
+    /// `commands::engine_transport` rather than through `map_batch`. A caller
+    /// compares it against the engine's `batches_applied`, which numbers
+    /// fences without caring who sent them, so a fence this counter skipped
+    /// would leave every later batch numbered below the count it is held
+    /// against.
+    #[test]
+    fn a_batchs_reported_number_is_the_one_its_writes_were_charged_against() {
+        let samples = sample_pool();
+        let mut registry = GraphRegistry::default();
+        let mut renderer = OfflineRenderer::new(48_000.0, 64);
+
+        admit_and_send(
+            &mut registry,
+            &mut renderer,
+            json!([
+                track_strip("t1"),
+                { "kind": "set-transport", "playing": true, "positionSeconds": 0.0 },
+            ]),
+            &samples,
+        )
+        .expect("the setup batch maps");
+        assert_eq!(registry.batches_sent, 1);
+
+        // The maps install's fence, published outside `map_batch`.
+        let maps_batch = registry.record_fenced_batch();
+        assert_eq!(maps_batch, 2);
+
+        admit_and_send(
+            &mut registry,
+            &mut renderer,
+            json!([pan_step("t1", 0.1, 1.0)]),
+            &samples,
+        )
+        .expect("the write admits");
+
+        assert_eq!(
+            registry.batches_sent, 3,
+            "the write's batch is numbered after the maps fence, not over it"
+        );
+        let charged: Vec<u64> = registry
+            .automation_pending
+            .values()
+            .flatten()
+            .map(|stamp| stamp.admitted_batch)
+            .collect();
+        assert_eq!(
+            charged,
+            vec![registry.batches_sent],
+            "the reported number and the ledger's stamps are one number"
+        );
+    }
+
+    /// How many fences a drain would meet on this ring, leaving it empty for
+    /// the next batch. `GraphCommand` carries no `Debug`, so the ring is
+    /// counted rather than printed.
+    fn drain_counting_fences(commands: &mut rtrb::Consumer<GraphCommand>) -> usize {
+        let mut fences = 0;
+        while let Ok(command) = commands.pop() {
+            if matches!(command, GraphCommand::BeginBatch { .. }) {
+                fences += 1;
+            }
+        }
+        fences
+    }
+
+    /// The number an applied batch reports is the fence it actually published
+    /// on the engine's ring, taken from the ledger that stamped its writes.
+    /// The three have to be one number: the caller holds the report against the
+    /// engine's `batches_applied`, which counts drained fences, and releases
+    /// the ledger's stamps by the same count. A report drawn from anywhere else
+    /// — the revision, the previous count — would let a poll taken before this
+    /// batch drained pass for one taken after it, which is exactly the reading
+    /// the live automation writer refuses to act on.
+    #[test]
+    fn an_applied_batch_reports_the_fence_it_published() {
+        let state = AppState::default();
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        // Filling the slot first is what makes this a capture engine: the
+        // lazy bootstrap in `apply_graph_commands` starts one only into an
+        // empty slot, so it reuses this handle rather than opening a device.
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let first = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": [track_strip("t1"), pan_step("t1", 0.1, 1.0)] }),
+            &state,
+        ))
+        .expect("the batch resolves to a result");
+        assert_eq!(first["application"], "applied");
+        let reported = first["admittedBatch"]
+            .as_u64()
+            .expect("an applied batch names the fence it published");
+        assert_eq!(
+            drain_counting_fences(&mut command_rx),
+            1,
+            "one fence reached the engine, and the report is about that fence"
+        );
+
+        {
+            let registry = state.graph.lock().expect("the registry is readable");
+            assert_eq!(
+                reported, registry.batches_sent,
+                "the reported number is the ledger's own count of fences sent"
+            );
+            let charged: Vec<u64> = registry
+                .automation_pending
+                .values()
+                .flatten()
+                .map(|stamp| stamp.admitted_batch)
+                .collect();
+            assert!(
+                !charged.is_empty(),
+                "the batch carried writes, so the ledger holds stamps for them"
+            );
+            assert_eq!(
+                charged,
+                vec![reported; charged.len()],
+                "every write is released against the number the caller was told"
+            );
+        }
+
+        let second = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": [pan_step("t1", 0.2, 2.0)] }),
+            &state,
+        ))
+        .expect("the second batch resolves to a result");
+        assert_eq!(second["application"], "applied");
+        assert_eq!(
+            second["admittedBatch"].as_u64(),
+            Some(reported + 1),
+            "each applied batch reports the next fence, never the one before it"
+        );
+        assert_eq!(drain_counting_fences(&mut command_rx), 1);
+    }
+
     /// Debt 3, refusal ordering: a batch that lost its revision race rejects
     /// with the contract's semantics — refused before the graph changed —
     /// and before the lazy bootstrap, so a lost batch never starts an
@@ -4449,6 +4630,9 @@ mod tests {
         assert_eq!(result["application"], "applied");
         // No runtime ran, so no runtime revision may be claimed.
         assert!(result.get("runtimeRevision").is_none());
+        // And no fence was published, so there is no batch number for a
+        // transport reading to be held against either.
+        assert!(result.get("admittedBatch").is_none());
         // The correlation is echoed, not validated: a mapping races nothing.
         assert_eq!(result["correlation"]["appRevision"], 3);
         // Reports cover exactly the strips the *incoming* batch touched —
@@ -4815,6 +4999,7 @@ mod tests {
         let applied = serde_json::to_string(&GraphApplyResultPayload::applied(
             None,
             3,
+            5,
             vec![StripReportPayload {
                 kind: "track",
                 id: "t1".to_string(),
@@ -4826,7 +5011,7 @@ mod tests {
             applied,
             concat!(
                 r#"{"acceptance":"accepted","application":"applied","runtimeRevision":3,"#,
-                r#""reports":[{"kind":"track","id":"t1","deviceIds":["d1"]}]}"#
+                r#""admittedBatch":5,"reports":[{"kind":"track","id":"t1","deviceIds":["d1"]}]}"#
             )
         );
 

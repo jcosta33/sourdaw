@@ -1,3 +1,7 @@
+export type LogSeverity = 'debug' | 'info' | 'warn' | 'error';
+
+export type ConsoleWriterMode = 'development' | 'production';
+
 export type LogWriter = {
     debug: (...args: unknown[]) => void;
     info: (...args: unknown[]) => void;

@@ -77,7 +77,6 @@ import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { issueAgentCommandApprovalBinding } from '../issueAgentCommandApprovalBinding';
 import { recoverAgentRunPendingEffects } from '../recoverAgentRunPendingEffects';
 
-import { configureAiWorkflowCommandCheckpointRuntime } from './aiWorkflowCommandCheckpointRuntime';
 import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
@@ -1254,9 +1253,14 @@ describe('confirmPendingChatActions transaction admission', () => {
         const batchId = 'group-non-render-finalization-unavailable';
         configureAiWorkflowCommandPreflightFixture('project-runtime-finalization');
         configureCommandBatchIdempotency({ canExecute: () => true });
-        configureAiWorkflowCommandCheckpointRuntime();
+        createCrdtDoc('root');
+        clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
+        resetActionReplayAuthority();
+        setArrangementEventBus({ emit: () => Promise.resolve() });
+        macroStore.set({ macros: [], recording: false, currentRecording: [] });
         trackStore.set({ tracks: [createRuntimeTestTrack()], selectedTrackId: null, ghostClips: [] });
+        flushAutomergeStorageWrites();
         const action = {
             type: 'addDevice',
             payload: {
@@ -1328,6 +1332,7 @@ describe('confirmPendingChatActions transaction admission', () => {
                 ],
                 continuation: { kind: 'manual-repair' },
             });
+            expect(execute).toHaveBeenCalled();
         } finally {
             execute.mockRestore();
             captureMutationAuthorization.mockRestore();

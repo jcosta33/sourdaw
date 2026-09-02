@@ -39,6 +39,8 @@
  * a fresh attempt at the maps.
  */
 
+import { armNativeLiveAutomationWriter } from './armNativeLiveAutomationWriter';
+import { nativeLiveAutomationWriter } from './nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 
 export type RepositionNativeLiveGraphSessionInput = Readonly<{
@@ -68,6 +70,22 @@ export function repositionNativeLiveGraphSession(
             // The session and its topology stand: a refused locate means the
             // engine is still where it was, not that the graph went away.
             return { outcome: 'declined', reason: result.reason };
+        }
+        const pass = nativeLiveAutomationWriter.pass;
+        if (pass) {
+            // Only now. The locate is what drops the automation the move made
+            // stale (`RampedParam::cancel_from`), so a pass re-armed ahead of
+            // it would have its first writes cancelled by the very command
+            // that made re-arming necessary.
+            armNativeLiveAutomationWriter({
+                stripTracks: pass.stripTracks,
+                sampleRate: pass.sampleRate,
+                programmeEndSeconds: pass.programmeEndSeconds,
+                positionSeconds: input.positionSeconds,
+                // The locate's own fence. Until the engine has drained it, its
+                // published position is still the one the musician left.
+                provenAfterBatch: result.admittedBatch ?? null,
+            });
         }
         return { outcome: 'repositioned' };
     });

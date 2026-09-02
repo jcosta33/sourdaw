@@ -20,6 +20,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
 
 import { type AudioGraphCommand, type AudioGraphCommandBatch } from '../../../models/AudioGraphBackend';
+import { type EngineTransportMaps } from '../../../models/EngineTransportPosition';
+import { type SetEngineTransportMapsResult } from '../../../repositories/engineTransport/setEngineTransportMaps';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
 import { type NativeGraphAvailability } from '../../../repositories/nativeGraph/probeNativeGraphTransport';
 import { registeredNativeTimelineSampleIds } from '../../../repositories/nativeGraph/registeredNativeTimelineSampleIds';
@@ -36,9 +38,22 @@ const mocks = vi.hoisted(() => ({
     /** Runs when the probe is awaited, which is before the project is read. */
     onProbe: vi.fn(),
     applyGraphCommands: vi.fn<(input: { batch: unknown }) => Promise<unknown>>(),
-    setEngineTransportMaps: vi.fn(
-        (_maps: unknown): Promise<{ outcome: 'applied' } | { outcome: 'declined'; reason: string }> =>
-            Promise.resolve({ outcome: 'applied' })
+    /**
+     * The engine's own answer about the pair it installed, `loopEnabled`
+     * included — not an echo of the request, but derived from it here because
+     * this double has no floor a short region could fall under.
+     */
+    setEngineTransportMaps: vi.fn((maps: unknown): Promise<SetEngineTransportMapsResult> =>
+        Promise.resolve({
+            outcome: 'applied',
+            applied: {
+                sampleRate: 48_000,
+                tempoSegments: 1,
+                timeSignatureSegments: 1,
+                loopEnabled: (maps as EngineTransportMaps).loopRegion?.enabled === true,
+                admittedBatch: 1,
+            },
+        })
     ),
     startPlayheadFeed: vi.fn(),
     stopPlayheadFeed: vi.fn(),
@@ -226,6 +241,8 @@ beforeEach(() => {
     nativeLiveGraphSession.audibleCarrier = false;
     nativeLiveGraphSession.monitorShadowed = true;
     nativeLiveGraphSession.rolling = false;
+    nativeLiveGraphSession.loopRegion = null;
+    nativeLiveGraphSession.loopEnabled = false;
     nativeLiveGraphSession.pending = Promise.resolve();
     trackStore.set({ tracks: [createTrack({ id: 'audio-1' })], selectedTrackId: null, ghostClips: [] });
 });
@@ -647,13 +664,22 @@ describe('updateNativeLiveGraphSessionTransportMaps', () => {
             [12, 0],
         ]);
         const reached: number[] = [];
-        const settleByRegion = (maps: unknown): Promise<{ outcome: 'applied' }> => {
+        const settleByRegion = (maps: unknown): Promise<SetEngineTransportMapsResult> => {
             const endSeconds = (maps as typeof LOOPED_MAPS).loopRegion.endSeconds;
             return new Promise((resolve) => {
                 setTimeout(
                     () => {
                         reached.push(endSeconds);
-                        resolve({ outcome: 'applied' });
+                        resolve({
+                            outcome: 'applied',
+                            applied: {
+                                sampleRate: 48_000,
+                                tempoSegments: 1,
+                                timeSignatureSegments: 1,
+                                loopEnabled: true,
+                                admittedBatch: 1,
+                            },
+                        });
                     },
                     settleMs.get(endSeconds) ?? 0
                 );

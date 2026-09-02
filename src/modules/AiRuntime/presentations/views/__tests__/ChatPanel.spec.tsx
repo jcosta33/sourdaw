@@ -82,8 +82,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     releasePreviewAudioBuffer: retainedPreviewMocks.release,
 }));
 
-vi.mock('#/modules/AudioRendering/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/AudioRendering/useCases')>()),
+// Non-spread so the AudioRendering barrel does not walk unread AudioEngine names.
+vi.mock('#/modules/AudioRendering/useCases', () => ({
     exportExactAgentSectionRenderArtifactAsWav: retainedPreviewMocks.exportWav,
     getExactAgentSectionRenderArtifact: retainedPreviewMocks.getExact,
 }));

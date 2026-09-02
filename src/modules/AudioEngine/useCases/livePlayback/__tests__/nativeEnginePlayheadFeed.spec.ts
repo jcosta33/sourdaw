@@ -26,6 +26,7 @@ const rollingAt = (positionSeconds: number) => ({
     positionSeconds,
     playheadFrame: positionSeconds * 48_000,
     loopWraps: 0,
+    batchesApplied: 0,
     tempo: 120,
     timeSigNum: 4,
     timeSigDenom: 4,

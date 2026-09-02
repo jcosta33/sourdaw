@@ -108,6 +108,18 @@ pub struct TransportPositionSnapshot {
     pub playhead_frame: u64,
     /// Loop seams closed since the engine started, monotonic.
     pub loop_wraps: u64,
+    /// Fenced batches applied whole, in order — the same count
+    /// [`GraphProgressSnapshot::batches_applied`] reports, carried here so a
+    /// reader can date **this** position against a command it sent.
+    ///
+    /// It rides on this channel rather than being read beside it because the
+    /// two channels are published one after the other, at the end of every
+    /// callback: a reader whose two reads straddle those writes pairs one
+    /// callback's count with the previous callback's playhead, and a count that
+    /// leads its position asserts a happens-before that has not happened. One
+    /// publish is the only thing that makes the pairing true, whatever order a
+    /// reader takes its reads in.
+    pub batches_applied: u64,
     /// The tempo in force at the playhead — the tempo map's answer while a map
     /// is installed, the flat scalar otherwise.
     pub tempo: f64,
@@ -1481,6 +1493,7 @@ impl AudioScheduler {
             playing: self.transport.is_playing,
             playhead_frame: self.playhead_frames,
             loop_wraps: self.loop_wraps,
+            batches_applied: self.batches_applied,
             tempo: self.transport.tempo,
             time_sig_num: self.transport.time_sig_num,
             time_sig_denom: self.transport.time_sig_denom,
@@ -6916,6 +6929,45 @@ mod timeline_tests {
         // The ledger's own snapshot still answers its own question.
         assert_eq!(harness.scheduler.graph_progress().playhead_frame, 256);
         assert_eq!(harness.scheduler.graph_progress().batches_applied, 0);
+    }
+
+    /// The cursor's channel carries the ledger's batch count, and carries the
+    /// same number the ledger's own snapshot reports.
+    ///
+    /// A consumer holds this count against the fence a command was admitted at
+    /// to decide whether this position postdates that command. Read from the
+    /// progress channel instead, it would be a count from one callback beside a
+    /// playhead from another, because the two channels are published in
+    /// sequence and a reader between them sees only one of the two writes.
+    #[test]
+    fn the_position_channel_carries_the_batch_count_the_ledger_reports() {
+        let mut harness = Harness::new(16);
+        harness.playing();
+        assert_eq!(harness.scheduler.transport_position().batches_applied, 0);
+
+        // Two fenced batches, each pushed whole before the drain runs: the
+        // fence defers the drain until every command of it is visible.
+        for track_id in [1_usize, 2] {
+            harness
+                .command_tx
+                .push(GraphCommand::BeginBatch { commands: 1 })
+                .expect("the fence fits");
+            harness
+                .command_tx
+                .push(GraphCommand::AddTrack(TimelineTrack::new(track_id)))
+                .expect("the body fits");
+            harness.scheduler.update_graph();
+        }
+        harness.render(256);
+
+        let position = harness.scheduler.transport_position();
+        assert_eq!(position.batches_applied, 2);
+        assert_eq!(
+            position.batches_applied,
+            harness.scheduler.graph_progress().batches_applied,
+            "one count, however many channels report it"
+        );
+        assert_eq!(position.playhead_frame, 256);
     }
 
     /// The maps arrive built and leave through the retirement channel, exactly

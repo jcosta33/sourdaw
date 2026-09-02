@@ -607,6 +607,18 @@ export type AudioGraphApplyResult =
           application: 'applied';
           correlation?: AudioGraphCorrelation;
           runtimeRevision: number;
+          /**
+           * The engine's fence number for this batch: what its
+           * `batchesApplied` count reaches once the audio thread has drained
+           * it. Present only from a backend that fenced a batch onto a live
+           * engine — a mapping and an in-process renderer have no such count.
+           *
+           * A caller that needs to know a transport reading postdates this
+           * batch compares the two. Nothing else on a reading can say it:
+           * this call resolves when the batch is queued, not when it is
+           * applied.
+           */
+          admittedBatch?: number;
           reports: readonly AudioGraphStripReport[];
       }>
     | Readonly<{

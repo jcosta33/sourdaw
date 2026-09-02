@@ -28,10 +28,10 @@ test.describe('Timeline navigation — test-id targeted', () => {
         const role = await minimap.getAttribute('role');
         expect(role).toBe('slider');
 
-        // And a numeric aria-valuenow.
-        const value = await minimap.getAttribute('aria-valuenow');
-        expect(value).not.toBeNull();
-        expect(Number(value)).toBeGreaterThanOrEqual(0);
+        // Scroll starts at 0 (timelineViewStore's default view state), and
+        // TimelineMinimap.tsx derives aria-valuenow from
+        // `Math.round((scrollX / ...) * 100)`, so a fresh project reads 0.
+        await expect(minimap).toHaveAttribute('aria-valuenow', '0');
     });
 
     test('timeline canvas surface is present', async ({ page }) => {
