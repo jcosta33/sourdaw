@@ -1,0 +1,24 @@
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_ac03a4ebaa3f6e::t_0111cf139f4682 962
+  s_ac03a4ebaa3f6e::t_a5de66b3f88e9c 132
+  s_ac03a4ebaa3f6e::t_c3aa265c02e6e0 785
+  s_ac03a4ebaa3f6e::t_58dad37c7531b7 706
+  s_ac03a4ebaa3f6e::t_75fabd6922de03 118
+  s_ac03a4ebaa3f6e::t_df19f4f3e3c3d1 104-107
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b0aa7015812fd6862ce19093e219fa5ceff4c37c",
+  "prompts": {},
+  "sessions": {
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
