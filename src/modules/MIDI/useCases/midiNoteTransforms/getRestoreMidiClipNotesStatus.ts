@@ -36,6 +36,17 @@ export type GetRestoreMidiClipNotesStatusInput = {
     };
 };
 
+type NoteTransformReplayTarget = NonNullable<GetRestoreMidiClipNotesStatusInput['projectedNoteTransformReplayTarget']>;
+
+function readLiveNoteTransformReplayTarget(trackId: string, clipId: string): NoteTransformReplayTarget | undefined {
+    const track = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
+    const clip = track?.clips.find((candidate) => candidate.id === clipId);
+    if (!track || !clip || clip.type !== 'midi') {
+        return undefined;
+    }
+    return { trackId: track.id, trackFrozen: track.frozen === true, clipLocked: clip.locked === true };
+}
+
 export function getRestoreMidiClipNotesStatus({
     clipId,
     notes,
@@ -84,16 +95,22 @@ export function getRestoreMidiClipNotesStatus({
         }
     }
     if (noteTransformReplayGuard) {
-        const track = trackStore.value?.tracks.find((candidate) => candidate.id === noteTransformReplayGuard.trackId);
-        const clip = track?.clips.find((candidate) => candidate.id === clipId);
-        const replayTarget = projectedNoteTransformReplayTarget;
+        const replayTarget =
+            projectedNoteTransformReplayTarget ??
+            readLiveNoteTransformReplayTarget(noteTransformReplayGuard.trackId, clipId);
+        if (!replayTarget) {
+            return 'conflict';
+        }
         if (
-            (replayTarget === undefined && (!track || !clip || clip.type !== 'midi')) ||
-            (replayTarget?.trackId ?? track?.id) !== noteTransformReplayGuard.trackId ||
-            (replayTarget?.trackFrozen ?? track?.frozen === true) !== noteTransformReplayGuard.expectedTrackFrozen ||
-            (replayTarget?.clipLocked ?? clip?.locked === true) !== noteTransformReplayGuard.expectedClipLocked ||
-            (noteTransformReplayGuard.expectedTempo !== undefined &&
-                transportStore.value?.tempo !== noteTransformReplayGuard.expectedTempo)
+            replayTarget.trackId !== noteTransformReplayGuard.trackId ||
+            replayTarget.trackFrozen !== noteTransformReplayGuard.expectedTrackFrozen ||
+            replayTarget.clipLocked !== noteTransformReplayGuard.expectedClipLocked
+        ) {
+            return 'conflict';
+        }
+        if (
+            noteTransformReplayGuard.expectedTempo !== undefined &&
+            transportStore.value?.tempo !== noteTransformReplayGuard.expectedTempo
         ) {
             return 'conflict';
         }
