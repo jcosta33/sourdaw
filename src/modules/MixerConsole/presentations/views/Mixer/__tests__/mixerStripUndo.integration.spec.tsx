@@ -69,9 +69,10 @@ vi.mock('#/modules/Metering/presentations/views', () => ({
         <div data-testid="level-meter" data-track-id={trackId ?? ''} />
     ),
 }));
-// Non-spread listing of Arrangement names the remaining strip graph imports,
-// plus live handler-map wiring — cuts the barrel walk that pulls freeze/bounce
-// handlers and their unread AudioEngine dependencies.
+// Non-spread cut of freeze/bounce AudioEngine walks — Arrangement names the
+// strip graph and handler-map wiring import, plus captureArrangementToScratchPad,
+// importAudioFile, importMidiFile, and setMarqueeSelection from WorkspaceShell
+// handlers and related remaining-graph walkers.
 vi.mock('#/modules/Arrangement/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/Arrangement/useCases')>(
         '#/modules/Arrangement/useCases'
