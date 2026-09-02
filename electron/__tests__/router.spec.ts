@@ -64,11 +64,21 @@ const refuseDictation = (name: string) => () => {
     throw new Error(`Unexpected dictation call from the command router: ${name}`);
 };
 
+// Minting a file grant is the dialog handlers' job, for the same reason: the
+// router has no channel for it and must never reach one.
+// Declared without parameters, like the dictation stubs: `NativeHost` also
+// carries a `Record<string, NativeCommand>` index signature, and a stub that
+// names its own argument types satisfies the member but not the index.
+const refuseGrant = () => {
+    throw new Error('Unexpected grant call from the command router: grantPath');
+};
+
 const hostWith = (methods: Record<string, (...args: readonly unknown[]) => unknown>): NativeHost => ({
     shutdown: () => undefined,
     startDictation: refuseDictation('startDictation'),
     stopDictation: refuseDictation('stopDictation'),
     cancelDictation: refuseDictation('cancelDictation'),
+    grantPath: refuseGrant,
     ...methods,
 });
 

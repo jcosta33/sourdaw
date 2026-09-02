@@ -226,10 +226,24 @@ function isNativeChildListingError(error: unknown): boolean {
 }
 
 /**
+ * The native refusal for a path the user has not granted.
+ *
+ * A desktop root reaches the native file commands only through a grant minted
+ * when the user picked the folder (jcosta33/sourdaw#3313), so a root whose
+ * grant is gone is the desktop counterpart of a browser handle whose permission
+ * lapsed — the folder is still where it was, and reconnecting it is what
+ * restores access.
+ */
+function isNativeUngrantedError(error: unknown): boolean {
+    return getNativeDirectoryErrorMessage(error) === 'Path is outside allowed native file roots';
+}
+
+/**
  * Validate that a restored native root's absolute path still resolves on disk.
  * Returns the status the root should take: `ready` when the path exists,
- * `path_missing` when it provably does not, and `offline` when we cannot tell
- * (not in a desktop runtime, no path recorded, or the check itself failed).
+ * `permission_required` when the path is no longer granted, `path_missing`
+ * when it provably does not exist, and `offline` when we cannot tell (not in a
+ * desktop runtime, no path recorded, or the check itself failed).
  */
 async function resolveNativeRootStatus(root: LibraryRoot): Promise<LibraryRoot['status']> {
     if (!isDesktopRuntime() || !root.rootRef) {
@@ -239,6 +253,9 @@ async function resolveNativeRootStatus(root: LibraryRoot): Promise<LibraryRoot['
         await readNativeDirectory({ path: root.rootRef });
         return 'ready';
     } catch (error) {
+        if (isNativeUngrantedError(error)) {
+            return 'permission_required';
+        }
         if (isNativeMissingDirectoryError(error)) {
             return 'path_missing';
         }
