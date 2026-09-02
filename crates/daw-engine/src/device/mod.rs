@@ -13,16 +13,19 @@
 //! invalidation through the engine's stream-error vocabulary.
 //!
 //! The seam has an input half in the same shape, and a backend answers
-//! five obligations there too — open the default input, report the
-//! period, rate and channel count the device will actually run so a
-//! capture ring can be sized from facts rather than hopes, start the
-//! stream around the engine's capture callback, stop on drop, and report
-//! invalidation through that same vocabulary. Two things differ, and
-//! both are deliberate. Capture negotiates no period: it takes the
-//! device's own, because asking for one rewrites a setting shared with
-//! every other client of that device. And capture may refuse to open at
-//! all — a platform without a capture path, a machine with no input
-//! device, or a device running a rate the engine is not — which is why
+//! five obligations there too — open the default input, report the rate
+//! and channel count the device will run plus an upper bound on the
+//! frames one capture block can carry, so a capture ring can be sized
+//! from facts rather than hopes, start the stream around the engine's
+//! capture callback, stop on drop, and report invalidation through that
+//! same vocabulary. Two things differ, and both are deliberate. Capture
+//! negotiates no period: it takes the device's own, because asking for
+//! one rewrites a setting shared with every other client of that device
+//! — which is why the reported period is a ceiling the device
+//! advertises rather than a figure the engine chose. And capture may
+//! refuse to open at all — a platform without a capture path, a machine
+//! with no input device, a device whose period the backend cannot
+//! bound, or a device running a rate the engine is not — which is why
 //! its refusals are named ([`InputOpenRefusal`]) rather than assumed
 //! away: an engine with no capture side still runs.
 

@@ -8,7 +8,7 @@ use super::{
     NegotiatedInput, NegotiatedOutput, OpenInput, OpenOutput, OutputBackend, RenderFn,
     StreamErrorFn,
 };
-use crate::audio_thread::{effective_buffer_size, MAX_CALLBACK_FRAMES};
+use crate::audio_thread::effective_buffer_size;
 use crate::engine_events::StreamErrorKind;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
@@ -139,28 +139,23 @@ const fn capture_buffer_size() -> cpal::BufferSize {
 
 /// Frames the device is expected to deliver per capture callback, at most.
 ///
-/// cpal reports no period back, so this is derived from what the device
-/// advertises rather than from what the engine sent it. Under `Default`
-/// nothing is sent at all and the device runs its own period, so the figure
-/// that bounds it is the top of the advertised range; a device that advertises
-/// no range gets the largest callback the engine accepts, which is the limit
-/// the rest of the engine is built around. Only a `Fixed` request makes the
-/// number the engine chose the number to expect.
+/// The engine sends no period (see `capture_buffer_size`), so the device runs
+/// its own and cpal reports none back. The only bound available is the one the
+/// device advertises, and it is the figure the capture ring is sized from.
 ///
-/// This is the figure the capture ring is sized from, so it has to be one the
-/// device can actually deliver: a period the engine merely prefers would leave
-/// the ring wrong from the first block.
+/// A device advertising no range is refused rather than guessed at. There is
+/// no engine-side constant standing in for a period a device never named: the
+/// callback limit is the size of the render scratch, not a promise any device
+/// makes, and cpal's ALSA host reports `Unknown` for exactly the devices that
+/// break that guess — a period range whose effective maximum falls below its
+/// minimum, which is how a device pinned above the limit presents. A ring
+/// sized from the guess would then refuse most of every block it was given.
 fn expected_period_frames(
     supported: &cpal::SupportedBufferSize,
-    requested: cpal::BufferSize,
-) -> usize {
-    if let cpal::BufferSize::Fixed(frames) = requested {
-        return frames as usize;
-    }
-
+) -> Result<usize, InputOpenRefusal> {
     match *supported {
-        cpal::SupportedBufferSize::Range { max, .. } => max as usize,
-        cpal::SupportedBufferSize::Unknown => MAX_CALLBACK_FRAMES,
+        cpal::SupportedBufferSize::Range { max, .. } => Ok(max as usize),
+        cpal::SupportedBufferSize::Unknown => Err(InputOpenRefusal::UnsupportedConfiguration),
     }
 }
 
@@ -188,7 +183,7 @@ impl InputBackend for CpalInputBackend {
             NegotiatedInput {
                 sample_rate: config.sample_rate() as f32,
                 channels: config.channels() as usize,
-                period_frames: expected_period_frames(config.buffer_size(), capture_buffer_size()),
+                period_frames: expected_period_frames(config.buffer_size())?,
             },
             request,
         )?;
@@ -248,35 +243,29 @@ impl OpenInput for CpalOpenInput {
 #[cfg(test)]
 mod tests {
     use super::{capture_buffer_size, expected_period_frames};
-    use crate::audio_thread::{negotiated_buffer_size, MAX_CALLBACK_FRAMES};
+    use crate::audio_thread::negotiated_buffer_size;
+    use crate::device::InputOpenRefusal;
 
     #[test]
     fn a_device_left_on_its_own_period_is_sized_from_the_range_it_advertises() {
-        // `Default` sends the device nothing, so it runs its own period and
+        // The engine sends the device nothing, so it runs its own period and
         // the advertised maximum is what bounds a capture block. Sizing the
         // ring from a period the engine merely prefers would be wrong from
         // the first block the device delivered.
         let range = cpal::SupportedBufferSize::Range { min: 64, max: 2048 };
-        assert_eq!(
-            expected_period_frames(&range, cpal::BufferSize::Default),
-            2048
-        );
+        assert_eq!(expected_period_frames(&range), Ok(2048));
+    }
 
-        // A fixed request is the one case where what the engine sent is what
-        // it should expect back.
+    #[test]
+    fn a_device_that_advertises_no_period_range_refuses_to_open() {
+        // cpal reports `Unknown` where a host cannot bound the period at all
+        // — an ALSA device whose effective maximum falls below its minimum,
+        // which is how one pinned above the engine's callback limit presents.
+        // Substituting a constant here would size the ring below the blocks
+        // that device actually delivers, so it is refused instead.
         assert_eq!(
-            expected_period_frames(&range, cpal::BufferSize::Fixed(256)),
-            256
-        );
-
-        // No advertised range leaves nothing to derive from, so the bound is
-        // the largest callback the engine accepts anywhere.
-        assert_eq!(
-            expected_period_frames(
-                &cpal::SupportedBufferSize::Unknown,
-                cpal::BufferSize::Default
-            ),
-            MAX_CALLBACK_FRAMES
+            expected_period_frames(&cpal::SupportedBufferSize::Unknown),
+            Err(InputOpenRefusal::UnsupportedConfiguration)
         );
     }
 
@@ -296,8 +285,8 @@ mod tests {
         // under the running output stream.
         assert!(matches!(capture_buffer_size(), cpal::BufferSize::Default));
         assert_eq!(
-            expected_period_frames(&range, capture_buffer_size()),
-            8192,
+            expected_period_frames(&range),
+            Ok(8192),
             "the reported period must be one the untouched device can deliver"
         );
     }
