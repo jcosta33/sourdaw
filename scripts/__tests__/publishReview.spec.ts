@@ -9,6 +9,9 @@ import { REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
 import {
     coordinatePublishReview,
     defaultPublishReviewCoordinatorDependencies,
+    exactPublishedReview,
+    inspectReviewPublicationRemote,
+    parseRecoverPublishReviewArgs,
     parsePublishReviewArgs,
     parseReviewDocument,
     publishReview,
@@ -98,6 +101,73 @@ function fakePort(
         log: (message) => logs.push(message),
     };
     return { port, calls, logs, posted };
+}
+
+function createJournaledRecoveryFixture() {
+    const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-publication-recovery-'));
+    const number = 42;
+    const head = 'a'.repeat(40);
+    runGit(root, ['init']);
+    const bundle = join(root, '.agents', 'review-bundles', `${number}-${head}`);
+    mkdirSync(bundle, { recursive: true });
+    writeFileSync(
+        join(bundle, 'review.json'),
+        JSON.stringify({ event: 'APPROVE', body: 'Attacked; held.', comments: [] })
+    );
+    writeFileSync(join(bundle, 'diff.patch'), '');
+    const digest = reviewPublicationPayloadDigest(
+        reviewPublicationPayload({ commitId: head, event: 'APPROVE', body: 'Attacked; held.', comments: [] })
+    );
+    const ownerOid = writePullRequestMutationLockOwner(
+        root,
+        {
+            version: 3,
+            pid: 999_999,
+            token: '11111111-1111-4111-8111-111111111111',
+            operation: 'review-publication',
+            number,
+            expectedHead: head,
+            payloadDigest: digest,
+            reviewerActorNodeId: REVIEWER_BOT_NODE_ID,
+            ownerFence: { kind: 'pid', pid: 999_999, startedAt: 'Thu Jan 01 00:00:00 1970' },
+            mutation: { phase: 'remote-mutation-attempted', epoch: 1 },
+        },
+        number
+    );
+    runGit(root, ['update-ref', pullRequestMutationLockRef(number), ownerOid]);
+    return { root, number, head, ownerOid };
+}
+
+function createLegacyRecoveryFixture() {
+    const fixture = createJournaledRecoveryFixture();
+    const legacyOwnerOid = writePullRequestMutationLockOwner(
+        fixture.root,
+        { version: 1, pid: 999_999, token: '22222222-2222-4222-8222-222222222222' },
+        fixture.number
+    );
+    runGit(fixture.root, ['update-ref', pullRequestMutationLockRef(fixture.number), legacyOwnerOid]);
+    return { ...fixture, ownerOid: legacyOwnerOid };
+}
+
+function recoveryDependencies(
+    root: string,
+    inspect: (expectedHead: string) => {
+        state: string;
+        head: string;
+        reviews: Parameters<typeof exactPublishedReview>[0][];
+    }
+) {
+    return {
+        primaryRoot: () => root,
+        authenticateReviewer: async () => ({
+            minted: { actorNodeId: REVIEWER_BOT_NODE_ID },
+            session: { configDir: '/tmp/reviewer', env: {}, dispose: () => undefined },
+        }),
+        repositoryName: () => 'jcosta33/sourdaw',
+        inspect: (_number: number, _actorNodeId: string, expectedHead: string) => inspect(expectedHead),
+        isOwnerLive: () => false,
+        currentOwnerFence: () => ({ kind: 'pid' as const, pid: process.pid, startedAt: 'test-process' }),
+    };
 }
 
 describe('review publish', () => {
@@ -321,6 +391,125 @@ describe('review publish', () => {
         });
 
         expect(() => publishReview(42, port)).toThrow(/not a changed line/i);
+    });
+
+    it.each([
+        ['state', { state: 'APPROVED' }],
+        ['body', { body: 'different' }],
+        ['path', { comments: [{ path: 'other.ts', line: 10, side: 'RIGHT' as const, body: 'a. b. c.' }] }],
+        [
+            'line',
+            {
+                comments: [
+                    { path: 'scripts/deliverPullRequest.ts', line: 11, side: 'RIGHT' as const, body: 'a. b. c.' },
+                ],
+            },
+        ],
+        [
+            'side',
+            {
+                comments: [
+                    { path: 'scripts/deliverPullRequest.ts', line: 10, side: 'LEFT' as const, body: 'a. b. c.' },
+                ],
+            },
+        ],
+    ] as const)('rejects an otherwise matching landed review with %s drift', (_label, drift) => {
+        const document = {
+            event: 'REQUEST_CHANGES' as const,
+            body: 'Review body.',
+            comments: [{ ...validComment, defect: 'a', consequence: 'b', done: 'c' }],
+        };
+        const review = {
+            id: 1,
+            state: 'CHANGES_REQUESTED',
+            body: document.body,
+            commitId: 'a'.repeat(40),
+            actorNodeId: REVIEWER_BOT_NODE_ID,
+            comments: [{ path: 'scripts/deliverPullRequest.ts', line: 10, side: 'RIGHT' as const, body: 'a. b. c.' }],
+            ...drift,
+        };
+
+        expect(exactPublishedReview(review, document, 'a'.repeat(40), REVIEWER_BOT_NODE_ID)).toBe(false);
+    });
+
+    it('flattens paginated reviewer responses while excluding prior-head and non-reviewer records', () => {
+        const head = 'b'.repeat(40);
+        const gh = (args: string[]): string => {
+            const endpoint = args.at(-1);
+            if (args[0] === 'pr') {
+                return JSON.stringify({ state: 'OPEN', headRefOid: head });
+            }
+            if (endpoint?.endsWith('/reviews?per_page=100')) {
+                return JSON.stringify([
+                    [
+                        {
+                            id: 1,
+                            state: 'CHANGES_REQUESTED',
+                            body: 'old',
+                            commit_id: 'a'.repeat(40),
+                            user: { node_id: REVIEWER_BOT_NODE_ID },
+                        },
+                        { id: 2, state: 'APPROVED', body: 'human', commit_id: head, user: { node_id: 'human' } },
+                    ],
+                    [
+                        {
+                            id: 3,
+                            state: 'CHANGES_REQUESTED',
+                            body: 'exact',
+                            commit_id: head,
+                            user: { node_id: REVIEWER_BOT_NODE_ID },
+                        },
+                    ],
+                ]);
+            }
+            if (endpoint?.endsWith('/reviews/3/comments?per_page=100')) {
+                return JSON.stringify([
+                    [{ path: 'one.ts', line: 1, side: 'RIGHT', body: 'first' }],
+                    [{ path: 'two.ts', line: 2, side: 'RIGHT', body: 'second' }],
+                ]);
+            }
+            throw new Error(`unexpected gh request: ${args.join(' ')}`);
+        };
+
+        expect(inspectReviewPublicationRemote(42, REVIEWER_BOT_NODE_ID, head, gh)).toEqual({
+            state: 'OPEN',
+            head,
+            reviews: [
+                {
+                    id: 3,
+                    state: 'CHANGES_REQUESTED',
+                    body: 'exact',
+                    commitId: head,
+                    actorNodeId: REVIEWER_BOT_NODE_ID,
+                    comments: [
+                        { path: 'one.ts', line: 1, side: 'RIGHT', body: 'first' },
+                        { path: 'two.ts', line: 2, side: 'RIGHT', body: 'second' },
+                    ],
+                },
+            ],
+        });
+    });
+
+    it('treats prior-head reviewer records as absent for a new expected head', () => {
+        const expectedHead = 'b'.repeat(40);
+        const gh = (args: string[]): string => {
+            if (args[0] === 'pr') {
+                return JSON.stringify({ state: 'OPEN', headRefOid: expectedHead });
+            }
+            return JSON.stringify([
+                [
+                    {
+                        id: 1,
+                        state: 'CHANGES_REQUESTED',
+                        body: 'old',
+                        commit_id: 'a'.repeat(40),
+                        user: { node_id: REVIEWER_BOT_NODE_ID },
+                    },
+                ],
+            ]);
+        };
+
+        expect(inspectReviewPublicationRemote(42, REVIEWER_BOT_NODE_ID, expectedHead, gh).reviews).toEqual([]);
     });
 
     it('rejects the renamed reviewer login when the posted review has the wrong actor ID', () => {
@@ -732,6 +921,190 @@ describe('shellPort postReview state verification', () => {
             expect(readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number)).toBeUndefined();
         } finally {
             rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('recognizes one exact landed review, records recovery, and makes its exact owner idempotent', async () => {
+        const fixture = createJournaledRecoveryFixture();
+        const exact = {
+            id: 1,
+            state: 'APPROVED',
+            body: 'Attacked; held.',
+            commitId: fixture.head,
+            actorNodeId: REVIEWER_BOT_NODE_ID,
+            comments: [],
+        };
+        try {
+            const dependencies = recoveryDependencies(fixture.root, (expectedHead) => ({
+                state: 'OPEN',
+                head: expectedHead,
+                reviews: [exact],
+            }));
+
+            await expect(
+                runRecoverPublishReviewLockCli([String(fixture.number), '--owner', fixture.ownerOid], dependencies)
+            ).resolves.toBe(0);
+            expect(
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
+            ).toBeUndefined();
+            await expect(
+                runRecoverPublishReviewLockCli([String(fixture.number), '--owner', fixture.ownerOid], dependencies)
+            ).resolves.toBe(0);
+        } finally {
+            rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
+    it.each([
+        [
+            'wrong definitive status',
+            [
+                '42',
+                '--owner',
+                'a'.repeat(40),
+                '--head',
+                'b'.repeat(40),
+                '--payload-digest',
+                'c'.repeat(64),
+                '--definitive-no-mutation-http-status',
+                '400',
+            ],
+        ],
+        ['missing legacy digest', ['42', '--owner', 'a'.repeat(40), '--head', 'b'.repeat(40)]],
+        ['missing legacy head', ['42', '--owner', 'a'.repeat(40), '--payload-digest', 'c'.repeat(64)]],
+    ])('rejects %s before any recovery mutation', (_label, args) => {
+        expect(() => parseRecoverPublishReviewArgs(args)).toThrow(/usage: pnpm review:publish:recover/);
+    });
+
+    it('adopts and releases the #3342-shaped legacy v1 owner only with an exact 422 attestation', async () => {
+        const fixture = createLegacyRecoveryFixture();
+        const digest = reviewPublicationPayloadDigest(
+            reviewPublicationPayload({
+                commitId: fixture.head,
+                event: 'APPROVE',
+                body: 'Attacked; held.',
+                comments: [],
+            })
+        );
+        try {
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.number), '--owner', fixture.ownerOid],
+                    recoveryDependencies(fixture.root, (expectedHead) => ({
+                        state: 'OPEN',
+                        head: expectedHead,
+                        reviews: [],
+                    }))
+                )
+            ).rejects.toThrow(/requires exact head, payload digest, and definitive HTTP status 422 attestation/);
+            expect(
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
+            ).toBe(fixture.ownerOid);
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [
+                        String(fixture.number),
+                        '--owner',
+                        fixture.ownerOid,
+                        '--head',
+                        fixture.head,
+                        '--payload-digest',
+                        digest,
+                        '--definitive-no-mutation-http-status',
+                        '422',
+                    ],
+                    recoveryDependencies(fixture.root, (expectedHead) => ({
+                        state: 'OPEN',
+                        head: expectedHead,
+                        reviews: [],
+                    }))
+                )
+            ).resolves.toBe(0);
+            expect(
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
+            ).toBeUndefined();
+        } finally {
+            rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
+    it('retains a live journaled owner without inspecting or adopting it', async () => {
+        const fixture = createJournaledRecoveryFixture();
+        try {
+            await expect(
+                runRecoverPublishReviewLockCli([String(fixture.number), '--owner', fixture.ownerOid], {
+                    ...recoveryDependencies(fixture.root, (expectedHead) => ({
+                        state: 'OPEN',
+                        head: expectedHead,
+                        reviews: [],
+                    })),
+                    isOwnerLive: () => true,
+                })
+            ).rejects.toThrow(/still held by a live process/);
+            expect(
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
+            ).toBe(fixture.ownerOid);
+        } finally {
+            rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
+    it('retains the owner when current-head reviewer evidence is multiple or non-exact', async () => {
+        const fixture = createJournaledRecoveryFixture();
+        const exact = {
+            id: 1,
+            state: 'APPROVED',
+            body: 'Attacked; held.',
+            commitId: fixture.head,
+            actorNodeId: REVIEWER_BOT_NODE_ID,
+            comments: [],
+        };
+        try {
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.number), '--owner', fixture.ownerOid],
+                    recoveryDependencies(fixture.root, (expectedHead) => ({
+                        state: 'OPEN',
+                        head: expectedHead,
+                        reviews: [exact, { ...exact, id: 2 }],
+                    }))
+                )
+            ).rejects.toThrow(/ambiguous or non-exact remote review evidence/);
+            expect(
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
+            ).toBe(fixture.ownerOid);
+        } finally {
+            rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
+    it('retains the adopted owner with its exact object id when the second remote read fails', async () => {
+        const fixture = createJournaledRecoveryFixture();
+        let calls = 0;
+        try {
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.number), '--owner', fixture.ownerOid],
+                    recoveryDependencies(fixture.root, (expectedHead) => {
+                        calls += 1;
+                        if (calls === 2) {
+                            throw new Error('remote read failed');
+                        }
+                        return { state: 'OPEN', head: expectedHead, reviews: [] };
+                    })
+                )
+            ).rejects.toThrow(
+                /remote read failed; PR #42 review-publication recovery preserved exact lock owner [0-9a-f]{40}/
+            );
+            const retainedOid = readPullRequestMutationLockOid(
+                fixture.root,
+                pullRequestMutationLockRef(fixture.number),
+                fixture.number
+            );
+            expect(retainedOid).toMatch(/^[0-9a-f]{40}$/);
+            expect(retainedOid).not.toBe(fixture.ownerOid);
+        } finally {
+            rmSync(fixture.root, { recursive: true, force: true });
         }
     });
 });

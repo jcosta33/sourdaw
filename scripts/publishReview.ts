@@ -471,7 +471,7 @@ export type RecoverPublishReviewArgs = {
     help: boolean;
 };
 
-type RemotePublishedReview = {
+export type RemotePublishedReview = {
     id: number;
     state: string;
     body: string;
@@ -563,91 +563,88 @@ function defaultRecoverPublishReviewDependencies(): RecoverPublishReviewDependen
             }),
         inspect: (number, expectedActorNodeId, expectedHead, session, primaryRoot) => {
             const gh = (args: string[]) => spawnCapture('gh', args, { env: session.env, cwd: primaryRoot });
-            const pullRequest = parseJson<{ state?: unknown; headRefOid?: unknown }>(
-                gh(['pr', 'view', String(number), '--repo', REQUIRED_REPOSITORY, '--json', 'state,headRefOid']),
-                'review-publication recovery pull request'
-            );
-            if (typeof pullRequest.state !== 'string' || typeof pullRequest.headRefOid !== 'string') {
-                fail('review-publication recovery pull request is unreadable');
-            }
-            const remote = flattenedGhPages(
-                parseJson<unknown>(
-                    gh([
-                        'api',
-                        '--paginate',
-                        '--slurp',
-                        `repos/${REQUIRED_REPOSITORY}/pulls/${number}/reviews?per_page=100`,
-                    ]),
-                    'review-publication recovery reviews'
-                ),
-                'review-publication recovery reviews'
-            );
-            const reviews: RemotePublishedReview[] = [];
-            for (const entry of remote) {
-                if (entry === null || typeof entry !== 'object') {
-                    fail('review-publication recovery reviews are unreadable');
-                }
-                const record = entry as Record<string, unknown>;
-                const user = record.user;
-                if (
-                    typeof user !== 'object' ||
-                    user === null ||
-                    typeof (user as { node_id?: unknown }).node_id !== 'string'
-                ) {
-                    fail('review-publication recovery reviews are unreadable');
-                }
-                if (
-                    (user as { node_id: string }).node_id !== expectedActorNodeId ||
-                    record.commit_id !== expectedHead
-                ) {
-                    continue;
-                }
-                if (
-                    !Number.isSafeInteger(record.id) ||
-                    typeof record.state !== 'string' ||
-                    typeof record.body !== 'string' ||
-                    typeof record.commit_id !== 'string'
-                ) {
-                    fail('review-publication recovery review candidate is unreadable');
-                }
-                const comments = flattenedGhPages(
-                    parseJson<unknown>(
-                        gh([
-                            'api',
-                            '--paginate',
-                            '--slurp',
-                            `repos/${REQUIRED_REPOSITORY}/pulls/${number}/reviews/${record.id}/comments?per_page=100`,
-                        ]),
-                        'review-publication recovery review comments'
-                    ),
-                    'review-publication recovery review comments'
-                );
-                reviews.push({
-                    id: record.id,
-                    state: record.state,
-                    body: record.body,
-                    commitId: record.commit_id,
-                    actorNodeId: (user as { node_id: string }).node_id,
-                    comments: comments.map((comment) => {
-                        if (
-                            comment === null ||
-                            typeof comment !== 'object' ||
-                            typeof (comment as { path?: unknown }).path !== 'string' ||
-                            !Number.isSafeInteger((comment as { line?: unknown }).line) ||
-                            ((comment as { side?: unknown }).side !== 'LEFT' &&
-                                (comment as { side?: unknown }).side !== 'RIGHT') ||
-                            typeof (comment as { body?: unknown }).body !== 'string'
-                        ) {
-                            fail('review-publication recovery review comment is unreadable');
-                        }
-                        return comment as { path: string; line: number; side: 'LEFT' | 'RIGHT'; body: string };
-                    }),
-                });
-            }
-            return { state: pullRequest.state, head: pullRequest.headRefOid.toLowerCase(), reviews };
+            return inspectReviewPublicationRemote(number, expectedActorNodeId, expectedHead, gh);
         },
         isOwnerLive: reviewPublicationOwnerFenceIsLive,
     };
+}
+
+export function inspectReviewPublicationRemote(
+    number: number,
+    expectedActorNodeId: string,
+    expectedHead: string,
+    gh: (args: string[]) => string
+): { state: string; head: string; reviews: RemotePublishedReview[] } {
+    const pullRequest = parseJson<{ state?: unknown; headRefOid?: unknown }>(
+        gh(['pr', 'view', String(number), '--repo', REQUIRED_REPOSITORY, '--json', 'state,headRefOid']),
+        'review-publication recovery pull request'
+    );
+    if (typeof pullRequest.state !== 'string' || typeof pullRequest.headRefOid !== 'string') {
+        fail('review-publication recovery pull request is unreadable');
+    }
+    const remote = flattenedGhPages(
+        parseJson<unknown>(
+            gh(['api', '--paginate', '--slurp', `repos/${REQUIRED_REPOSITORY}/pulls/${number}/reviews?per_page=100`]),
+            'review-publication recovery reviews'
+        ),
+        'review-publication recovery reviews'
+    );
+    const reviews: RemotePublishedReview[] = [];
+    for (const entry of remote) {
+        if (entry === null || typeof entry !== 'object') {
+            fail('review-publication recovery reviews are unreadable');
+        }
+        const record = entry as Record<string, unknown>;
+        const user = record.user;
+        if (typeof user !== 'object' || user === null || typeof (user as { node_id?: unknown }).node_id !== 'string') {
+            fail('review-publication recovery reviews are unreadable');
+        }
+        if ((user as { node_id: string }).node_id !== expectedActorNodeId || record.commit_id !== expectedHead) {
+            continue;
+        }
+        if (
+            !Number.isSafeInteger(record.id) ||
+            typeof record.state !== 'string' ||
+            typeof record.body !== 'string' ||
+            typeof record.commit_id !== 'string'
+        ) {
+            fail('review-publication recovery review candidate is unreadable');
+        }
+        const comments = flattenedGhPages(
+            parseJson<unknown>(
+                gh([
+                    'api',
+                    '--paginate',
+                    '--slurp',
+                    `repos/${REQUIRED_REPOSITORY}/pulls/${number}/reviews/${record.id}/comments?per_page=100`,
+                ]),
+                'review-publication recovery review comments'
+            ),
+            'review-publication recovery review comments'
+        );
+        reviews.push({
+            id: record.id,
+            state: record.state,
+            body: record.body,
+            commitId: record.commit_id,
+            actorNodeId: (user as { node_id: string }).node_id,
+            comments: comments.map((comment) => {
+                if (
+                    comment === null ||
+                    typeof comment !== 'object' ||
+                    typeof (comment as { path?: unknown }).path !== 'string' ||
+                    !Number.isSafeInteger((comment as { line?: unknown }).line) ||
+                    ((comment as { side?: unknown }).side !== 'LEFT' &&
+                        (comment as { side?: unknown }).side !== 'RIGHT') ||
+                    typeof (comment as { body?: unknown }).body !== 'string'
+                ) {
+                    fail('review-publication recovery review comment is unreadable');
+                }
+                return comment as { path: string; line: number; side: 'LEFT' | 'RIGHT'; body: string };
+            }),
+        });
+    }
+    return { state: pullRequest.state, head: pullRequest.headRefOid.toLowerCase(), reviews };
 }
 
 function flattenedGhPages(value: unknown, label: string): unknown[] {
@@ -663,7 +660,7 @@ function flattenedGhPages(value: unknown, label: string): unknown[] {
     return fail(`${label} are unreadable`);
 }
 
-function exactPublishedReview(
+export function exactPublishedReview(
     review: RemotePublishedReview,
     document: ReviewDocument,
     head: string,
