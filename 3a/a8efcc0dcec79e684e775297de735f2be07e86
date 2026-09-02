@@ -1,0 +1,25 @@
+src/modules/Collaboration/useCases/__tests__/automergeSync.spec.ts
+  s_c9dfe76a613250::t_1da6ac33b10b4d 1644,1646
+  s_c9dfe76a613250::t_05e936696ecdde 1396-1397,1585,1597
+  s_c9dfe76a613250::t_e533339efb32ec 1190-1212,1330
+  s_c9dfe76a613250::t_1cb08892d9c31b 1145-1148,1150,1152,1306,1329
+  s_c9dfe76a613250::t_7ce24f11c05a71 1289-1301,1326-1327
+  s_c9dfe76a613250::t_277d779bae0e0b 1399
+  s_c9dfe76a613250::t_2718dad8cd117a 1302
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "3aa8efcc0dcec79e684e775297de735f2be07e86",
+  "prompts": {},
+  "sessions": {
+    "s_c9dfe76a613250": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a063a6-ce16-7052-9c0c-a6ec6522efdd",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
