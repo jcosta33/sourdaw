@@ -54,6 +54,7 @@ import {
     collectClearSolosRestrictionClauses,
     type ClearSolosRestrictionActionSpan,
 } from './groundingStrategies/collectClearSolosRestrictionClauses';
+import { hasRestrictedTrackControlScope } from './groundingStrategies/hasRestrictedTrackControlScope';
 import { groundPostTargetScopeAdmission } from './groundingStrategies/postTargetScopeAdmissionStrategy';
 import { resolveAgentReference } from './resolveAgentReference';
 
@@ -1241,6 +1242,15 @@ function hasUnsafeControlCue(
     for (const match of commandSource.matchAll(
         /\b(?:do\s+not|don(?:['’]t|t)|don\s+t|if|unless|maybe|never|not|perhaps)\b/giu
     )) {
+        const isClearSolosNotIncludingRestriction =
+            /^not$/iu.test(match[0]) &&
+            /^\s+including\b/iu.test(commandSource.slice(match.index + match[0].length)) &&
+            carrierPhrases.some((phrase) =>
+                ['clear all solos', 'unsolo all tracks', 'unsolo everything'].includes(normalizePromptText(phrase))
+            );
+        if (isClearSolosNotIncludingRestriction) {
+            continue;
+        }
         if (
             carrierEnd === null ||
             !isCueWithinDirectionalTargetReference(commandSource, match.index, carrierEnd, targetReferences)
@@ -1647,6 +1657,46 @@ function resolveActionPromptScope({
         return null;
     }
     return selectedScope;
+}
+
+function getTrackControlTargetPrompt(
+    prompt: string,
+    actionScope: ActionPromptScope,
+    catalog: GroundingCatalog
+): string {
+    const clauses = getPromptClauses(prompt, prompt);
+    const startIndex = clauses.findIndex((clause) => clause.text === actionScope.text);
+    if (startIndex < 0) {
+        return prompt;
+    }
+    let endIndex = startIndex;
+    for (let index = startIndex + 1; index < clauses.length; index += 1) {
+        const clause = clauses[index];
+        if (
+            !clause ||
+            resolveClauseActionIntent(clause.masked, catalog) !== null ||
+            collectClearSolosRestrictionClauses(`clear all solos ${clause.text}`).length > 0
+        ) {
+            break;
+        }
+        endIndex = index;
+    }
+    let searchFrom = 0;
+    const ranges: { start: number; end: number }[] = [];
+    for (const clause of clauses) {
+        const start = prompt.indexOf(clause.text, searchFrom);
+        if (start < 0) {
+            return actionScope.text;
+        }
+        ranges.push({ start, end: start + clause.text.length });
+        searchFrom = start + clause.text.length;
+    }
+    const start = ranges[startIndex]?.start;
+    const end = ranges[endIndex]?.end;
+    if (start === undefined || end === undefined || end < start) {
+        return actionScope.text;
+    }
+    return prompt.slice(start, end);
 }
 
 function getTargetPromptScope(
@@ -3377,6 +3427,12 @@ function groundToolCall({
     visiblePlannedTrackCreations,
     workflowCapabilityId,
 }: GroundToolCallInput): ToolCallResult | LlmActionRejection {
+    if (call.name === 'muteTrack' && hasRestrictedTrackControlScope(prompt, context)) {
+        return rejection(index, call.name, 'Provider mute scope is not explicitly universal');
+    }
+    if (call.name === 'soloTrack' && hasRestrictedTrackControlScope(prompt, context)) {
+        return rejection(index, call.name, 'Provider solo scope is not explicitly universal');
+    }
     if (call.name === 'stopPlayback' && !isExplicitStopPlaybackPrompt(prompt)) {
         return rejection(index, call.name, 'Provider action is not grounded in an explicit transport-stop request');
     }
@@ -3468,7 +3524,12 @@ function groundToolCall({
         if (targetRule.optional && assertedValue === undefined) {
             continue;
         }
-        const targetPrompt = getTargetPromptScope(actionScope, targetRule.promptRole);
+        let targetPrompt = getTargetPromptScope(actionScope, targetRule.promptRole);
+        if (call.name === 'removeTrack' || targetRule.capability === 'removable-track') {
+            targetPrompt = prompt;
+        } else if (call.name === 'muteTrack' || call.name === 'soloTrack') {
+            targetPrompt = getTrackControlTargetPrompt(prompt, actionScope, catalog);
+        }
         if (
             articulationTransferScope?.status === 'request' &&
             call.name === 'copyMidiArticulations' &&
@@ -3666,7 +3727,12 @@ function groundToolCall({
             groundedArguments[targetRule.argument] = batchLocalReference.binding.busId;
             continue;
         }
-        if (compilerTargetOverride !== undefined && 'stableIds' in compilerTargetOverride) {
+        if (
+            compilerTargetOverride !== undefined &&
+            'stableIds' in compilerTargetOverride &&
+            call.name !== 'muteTrack' &&
+            call.name !== 'soloTrack'
+        ) {
             if (
                 compilerTargetOverride.cardinality !== 'one' ||
                 compilerTargetOverride.stableIds.length !== 1 ||
