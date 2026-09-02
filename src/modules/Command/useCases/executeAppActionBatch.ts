@@ -651,7 +651,10 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             for (const [index, requestedAction] of actions.entries()) {
                 const suppliedEnvelope = options?.commandEnvelopes?.[index];
                 const materialized = suppliedEnvelope
-                    ? { action: requestedAction, applicationAssignedIds: suppliedEnvelope.applicationAssignedIds }
+                    ? {
+                          action: structuredClone(requestedAction),
+                          applicationAssignedIds: suppliedEnvelope.applicationAssignedIds,
+                      }
                     : materializeCommandApplicationIds(requestedAction);
                 const action = materialized.action;
                 const handler = getCommandHandler(action);
@@ -662,6 +665,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                         actions: [],
                     };
                 }
+                handler.materializeCommandArguments?.(action);
                 if (
                     suppliedEnvelope &&
                     (suppliedEnvelope.operation !== action.type ||
@@ -678,7 +682,6 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                         actions: [],
                     };
                 }
-                handler.materializeCommandArguments?.(action);
                 let description: HandlerDescribeResult | null;
                 try {
                     description = null;

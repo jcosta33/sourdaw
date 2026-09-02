@@ -23,7 +23,15 @@ function createPersistedAddNotesEntry() {
         expectedTrackFrozen: false,
         expectedClipLocked: false,
     };
-    const notes = [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100, probability: 100 }];
+    const baseNotes = [
+        { id: 'existing-1', pitch: 48, startBeat: 0, duration: 1, velocity: 80 },
+        { id: 'existing-2', pitch: 52, startBeat: 1, duration: 1, velocity: 84 },
+    ];
+    const notes = [
+        { id: 'note-1', pitch: 60, startBeat: 2, duration: 1, velocity: 100, probability: 100 },
+        { id: 'note-2', pitch: 64, startBeat: 3, duration: 1, velocity: 96, probability: 100 },
+    ];
+    const expectedNotes = [...baseNotes, ...notes];
     return {
         id: 'undo-add-note',
         kind: 'action',
@@ -34,14 +42,14 @@ function createPersistedAddNotesEntry() {
         },
         inverseAction: {
             type: 'restoreMidiClipNotes',
-            payload: { clipId: 'clip-midi', notes: [], expectedNotes: notes, noteTransformReplayGuard },
+            payload: { clipId: 'clip-midi', notes: baseNotes, expectedNotes, noteTransformReplayGuard },
         },
         redoAction: {
             type: 'restoreMidiClipNotes',
             payload: {
                 clipId: 'clip-midi',
-                notes,
-                expectedNotes: [],
+                notes: expectedNotes,
+                expectedNotes: baseNotes,
                 noteTransformReplayGuard,
             },
         },
@@ -192,7 +200,9 @@ describe('addNotes command registration', () => {
             'mismatched snapshots',
             () => {
                 const entry = createPersistedAddNotesEntry();
-                const mismatchedNotes = [{ ...entry.inverseAction.payload.expectedNotes[0]!, pitch: 61 }];
+                const mismatchedNotes = entry.inverseAction.payload.expectedNotes.map((note, index) =>
+                    index === entry.inverseAction.payload.expectedNotes.length - 1 ? { ...note, pitch: 61 } : note
+                );
                 return {
                     ...entry,
                     inverseAction: {
@@ -213,26 +223,24 @@ describe('addNotes command registration', () => {
             'duplicate materialized ids',
             () => {
                 const entry = createPersistedAddNotesEntry();
-                const duplicatedNotes = [
-                    ...entry.inverseAction.payload.expectedNotes,
-                    entry.inverseAction.payload.expectedNotes[0]!,
-                ];
+                const duplicatedNotes = [...entry.action.payload.notes, { ...entry.action.payload.notes[0]! }];
+                const expectedNotes = [...entry.inverseAction.payload.notes, ...duplicatedNotes];
                 return {
                     ...entry,
                     action: {
                         ...entry.action,
                         payload: {
                             ...entry.action.payload,
-                            notes: [...entry.action.payload.notes, { ...entry.action.payload.notes[0]! }],
+                            notes: duplicatedNotes,
                         },
                     },
                     inverseAction: {
                         ...entry.inverseAction,
-                        payload: { ...entry.inverseAction.payload, expectedNotes: duplicatedNotes },
+                        payload: { ...entry.inverseAction.payload, expectedNotes },
                     },
                     redoAction: {
                         ...entry.redoAction,
-                        payload: { ...entry.redoAction.payload, notes: duplicatedNotes },
+                        payload: { ...entry.redoAction.payload, notes: expectedNotes },
                     },
                 };
             },
@@ -241,17 +249,21 @@ describe('addNotes command registration', () => {
             'a materialized id that collides with the pre-add snapshot',
             () => {
                 const entry = createPersistedAddNotesEntry();
-                const baseNotes = [{ id: 'note-1', pitch: 48, startBeat: 0, duration: 1, velocity: 80 }];
-                const expectedNotes = [...baseNotes, ...entry.inverseAction.payload.expectedNotes];
+                const collidingNotes = [
+                    { ...entry.action.payload.notes[0]!, id: entry.inverseAction.payload.notes[0]!.id },
+                    entry.action.payload.notes[1]!,
+                ];
+                const expectedNotes = [...entry.inverseAction.payload.notes, ...collidingNotes];
                 return {
                     ...entry,
+                    action: { ...entry.action, payload: { ...entry.action.payload, notes: collidingNotes } },
                     inverseAction: {
                         ...entry.inverseAction,
-                        payload: { ...entry.inverseAction.payload, notes: baseNotes, expectedNotes },
+                        payload: { ...entry.inverseAction.payload, expectedNotes },
                     },
                     redoAction: {
                         ...entry.redoAction,
-                        payload: { ...entry.redoAction.payload, notes: expectedNotes, expectedNotes: baseNotes },
+                        payload: { ...entry.redoAction.payload, notes: expectedNotes },
                     },
                 };
             },
@@ -260,14 +272,27 @@ describe('addNotes command registration', () => {
             'missing materialized ids',
             () => {
                 const entry = createPersistedAddNotesEntry();
+                const missingIdNotes = [
+                    { pitch: 60, startBeat: 2, duration: 1, velocity: 100, probability: 100 },
+                    entry.action.payload.notes[1]!,
+                ];
+                const expectedNotes = [...entry.inverseAction.payload.notes, ...missingIdNotes];
                 return {
                     ...entry,
                     action: {
                         ...entry.action,
                         payload: {
                             ...entry.action.payload,
-                            notes: [{ pitch: 60, startBeat: 0, duration: 1 }],
+                            notes: missingIdNotes,
                         },
+                    },
+                    inverseAction: {
+                        ...entry.inverseAction,
+                        payload: { ...entry.inverseAction.payload, expectedNotes },
+                    },
+                    redoAction: {
+                        ...entry.redoAction,
+                        payload: { ...entry.redoAction.payload, notes: expectedNotes },
                     },
                 };
             },
@@ -327,7 +352,10 @@ describe('addNotes command registration', () => {
     ])('rejects a future redo snapshot with state-significant %s', (field, value) => {
         const registration = getExecutableCommandRegistration('addNotes');
         const entry = createPersistedAddNotesEntry();
-        const tamperedRedoNotes = [{ ...entry.redoAction.payload.notes[0]!, [field]: value }];
+        const tamperedNotes = entry.action.payload.notes.map((note, index) =>
+            index === 0 ? { ...note, [field]: value } : note
+        );
+        const expectedNotes = [...entry.inverseAction.payload.notes, ...tamperedNotes];
         sessionStorage.setItem(
             'sourdaw-undo-session',
             JSON.stringify({
@@ -335,9 +363,14 @@ describe('addNotes command registration', () => {
                 future: [
                     {
                         ...entry,
+                        action: { ...entry.action, payload: { ...entry.action.payload, notes: tamperedNotes } },
+                        inverseAction: {
+                            ...entry.inverseAction,
+                            payload: { ...entry.inverseAction.payload, expectedNotes },
+                        },
                         redoAction: {
                             ...entry.redoAction,
-                            payload: { ...entry.redoAction.payload, notes: tamperedRedoNotes },
+                            payload: { ...entry.redoAction.payload, notes: expectedNotes },
                         },
                         actionOperationVersion: registration.operationVersion,
                         inverseActionOperationVersion: 1,
@@ -364,7 +397,10 @@ describe('addNotes command registration', () => {
     it('rejects a future addNotes pair whose materialized probability is not canonical', () => {
         const registration = getExecutableCommandRegistration('addNotes');
         const entry = createPersistedAddNotesEntry();
-        const nonCanonicalNote = { ...entry.action.payload.notes[0]!, probability: 99 };
+        const nonCanonicalNotes = entry.action.payload.notes.map((note, index) =>
+            index === 0 ? { ...note, probability: 99 } : note
+        );
+        const expectedNotes = [...entry.inverseAction.payload.notes, ...nonCanonicalNotes];
         sessionStorage.setItem(
             'sourdaw-undo-session',
             JSON.stringify({
@@ -372,14 +408,14 @@ describe('addNotes command registration', () => {
                 future: [
                     {
                         ...entry,
-                        action: { ...entry.action, payload: { ...entry.action.payload, notes: [nonCanonicalNote] } },
+                        action: { ...entry.action, payload: { ...entry.action.payload, notes: nonCanonicalNotes } },
                         inverseAction: {
                             ...entry.inverseAction,
-                            payload: { ...entry.inverseAction.payload, expectedNotes: [nonCanonicalNote] },
+                            payload: { ...entry.inverseAction.payload, expectedNotes },
                         },
                         redoAction: {
                             ...entry.redoAction,
-                            payload: { ...entry.redoAction.payload, notes: [nonCanonicalNote] },
+                            payload: { ...entry.redoAction.payload, notes: expectedNotes },
                         },
                         actionOperationVersion: registration.operationVersion,
                         inverseActionOperationVersion: 1,
@@ -413,21 +449,24 @@ describe('addNotes command registration', () => {
     ])('rejects a consistent restore pair with non-canonical %s', (field, value) => {
         const registration = getExecutableCommandRegistration('addNotes');
         const entry = createPersistedAddNotesEntry();
-        const tamperedNote = { ...entry.action.payload.notes[0]!, [field]: value };
+        const tamperedNotes = entry.action.payload.notes.map((note, index) =>
+            index === 0 ? { ...note, [field]: value } : note
+        );
+        const expectedNotes = [...entry.inverseAction.payload.notes, ...tamperedNotes];
         sessionStorage.setItem(
             'sourdaw-undo-session',
             JSON.stringify({
                 past: [
                     {
                         ...entry,
-                        action: { ...entry.action, payload: { ...entry.action.payload, notes: [tamperedNote] } },
+                        action: { ...entry.action, payload: { ...entry.action.payload, notes: tamperedNotes } },
                         inverseAction: {
                             ...entry.inverseAction,
-                            payload: { ...entry.inverseAction.payload, expectedNotes: [tamperedNote] },
+                            payload: { ...entry.inverseAction.payload, expectedNotes },
                         },
                         redoAction: {
                             ...entry.redoAction,
-                            payload: { ...entry.redoAction.payload, notes: [tamperedNote] },
+                            payload: { ...entry.redoAction.payload, notes: expectedNotes },
                         },
                         actionOperationVersion: registration.operationVersion,
                         inverseActionOperationVersion: 1,

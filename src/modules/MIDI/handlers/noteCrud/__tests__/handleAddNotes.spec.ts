@@ -242,7 +242,45 @@ describe('handleAddNotes', () => {
         expect(currentNotes()).toEqual(expectedNotes);
     });
 
-    it('canonicalizes a raw envelope-backed addNotes batch before recording its undo entry', async () => {
+    it('rejects a raw addNotes action against a supplied envelope before mutation', async () => {
+        const action = {
+            type: 'addNotes' as const,
+            payload: {
+                clipId: CLIP_ID,
+                notes: [
+                    {
+                        id: 'note-single-envelope-1',
+                        pitch: 60.6,
+                        startBeat: -2,
+                        duration: 0.01,
+                        velocity: 96.7,
+                    },
+                ],
+            },
+        };
+        const envelope = createVersionedCommandEnvelope({
+            action,
+            applicationAssignedIds: [{ argument: 'notes[0].id', value: 'note-single-envelope-1' }],
+            availableDeviceVersions: {},
+            expectedEffect: 'Add one MIDI note.',
+            normalizedProjectRevision: 'revision-envelope',
+            objectReferences: [{ argument: 'clipId', id: CLIP_ID, scope: 'stable' }],
+            parameterUnits: [],
+            reason: 'Add one MIDI note.',
+            time: [],
+        });
+        const notesBeforeExecution = currentNotes();
+
+        await expect(executeAppAction(action, { commandEnvelope: envelope })).rejects.toThrow(
+            'Command envelope does not match action addNotes'
+        );
+        expect(action.payload.notes).toEqual([
+            { id: 'note-single-envelope-1', pitch: 60.6, startBeat: -2, duration: 0.01, velocity: 96.7 },
+        ]);
+        expect(currentNotes()).toEqual(notesBeforeExecution);
+    });
+
+    it('rejects a raw envelope-backed addNotes batch before mutation', async () => {
         const action = {
             type: 'addNotes' as const,
             payload: {
@@ -268,6 +306,41 @@ describe('handleAddNotes', () => {
             parameterUnits: [],
             reason: 'Add one MIDI note.',
             time: [],
+        });
+        const notesBeforeExecution = currentNotes();
+
+        await expect(executeAppActionBatch([action], { commandEnvelopes: [envelope] })).resolves.toEqual({
+            status: 'rejected',
+            reason: 'Command envelope does not match action addNotes',
+            actions: [],
+        });
+        expect(action.payload.notes).toEqual([
+            { id: 'note-batch-envelope-1', pitch: 60.6, startBeat: -2, duration: 0.01, velocity: 96.7 },
+        ]);
+        expect(currentNotes()).toEqual(notesBeforeExecution);
+    });
+
+    it('executes a canonical envelope-backed addNotes batch and round-trips its history', async () => {
+        const action = {
+            type: 'addNotes' as const,
+            payload: {
+                clipId: CLIP_ID,
+                notes: [
+                    {
+                        id: 'note-batch-envelope-1',
+                        pitch: 61,
+                        startBeat: 0,
+                        duration: 0.0625,
+                        velocity: 97,
+                        probability: 100,
+                    },
+                ],
+            },
+        };
+        const envelope = migrateLegacyAppActionToVersionedCommandEnvelope({
+            action,
+            expectedEffect: 'Add one MIDI note.',
+            normalizedProjectRevision: 'revision-envelope',
         });
 
         await expect(executeAppActionBatch([action], { commandEnvelopes: [envelope] })).resolves.toMatchObject({
@@ -310,8 +383,22 @@ describe('handleAddNotes', () => {
             payload: {
                 clipId: CLIP_ID,
                 notes: [
-                    { id: 'note-batch-1', pitch: 61, startBeat: 0, duration: 0.0625, velocity: 97 },
-                    { id: 'note-batch-2', pitch: 63, startBeat: 1, duration: 0.5, velocity: 81 },
+                    {
+                        id: 'note-batch-1',
+                        pitch: 61,
+                        startBeat: 0,
+                        duration: 0.0625,
+                        velocity: 97,
+                        probability: 100,
+                    },
+                    {
+                        id: 'note-batch-2',
+                        pitch: 63,
+                        startBeat: 1,
+                        duration: 0.5,
+                        velocity: 81,
+                        probability: 100,
+                    },
                 ],
             },
         };
@@ -334,10 +421,12 @@ describe('handleAddNotes', () => {
                 { argument: 'notes[0].startBeat', unit: 'beats' },
                 { argument: 'notes[0].duration', unit: 'unitless' },
                 { argument: 'notes[0].velocity', unit: 'unitless' },
+                { argument: 'notes[0].probability', unit: 'unitless' },
                 { argument: 'notes[1].pitch', unit: 'unitless' },
                 { argument: 'notes[1].startBeat', unit: 'beats' },
                 { argument: 'notes[1].duration', unit: 'unitless' },
                 { argument: 'notes[1].velocity', unit: 'unitless' },
+                { argument: 'notes[1].probability', unit: 'unitless' },
             ],
             reason: 'Add two MIDI notes.',
             time: [
@@ -498,9 +587,10 @@ describe('handleAddNotes', () => {
         await handleAddNotes.execute(action);
         expect(handleRestoreMidiClipNotes.execute(inverse)).toEqual({ status: 'written' });
         setTrackStoreState({ ...defaultTrackState, tracks: [] });
+        const midiStateBeforeRedo = structuredClone(midiStore.value);
 
         expect(handleRestoreMidiClipNotes.execute(redo)).toEqual({ status: 'conflict' });
-        expect(midiStore.value?.notesByClipId).not.toHaveProperty(CLIP_ID);
+        expect(midiStore.value).toEqual(midiStateBeforeRedo);
     });
 
     it('conflicts without writing when redo reaches the same clip under a different MIDI track', async () => {

@@ -47,10 +47,9 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
     ({ logger }) =>
         async function executeAppAction(action: AppAction, options?: ExecuteAppActionOptions): Promise<void> {
             const materialized = options?.commandEnvelope
-                ? { action, applicationAssignedIds: options.commandEnvelope.applicationAssignedIds }
+                ? { action: structuredClone(action), applicationAssignedIds: options.commandEnvelope.applicationAssignedIds }
                 : materializeCommandApplicationIds(action);
             action = materialized.action;
-            traceAppAction(action.type, options?.source ?? 'manual');
 
             const handler = getCommandHandler(action);
             if (!handler) {
@@ -58,6 +57,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 logger.error(error);
                 throw error;
             }
+            handler.materializeCommandArguments?.(action);
             const historyGroupId = handler.batchExecution === 'singleton' ? undefined : options?.groupId;
             const historyGroupLabel = historyGroupId ? options?.groupLabel : undefined;
             if (
@@ -71,7 +71,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             ) {
                 throw new Error(`Command envelope does not match action ${action.type}`);
             }
-            handler.materializeCommandArguments?.(action);
+            traceAppAction(action.type, options?.source ?? 'manual');
 
             if (handler.executionKind === 'runtime') {
                 if (options?.shouldExecute && !options.shouldExecute()) {

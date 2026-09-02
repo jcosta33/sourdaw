@@ -492,15 +492,30 @@ describe('command batch contract', () => {
         });
     });
 
-    it('rejects a serialized addNotes command whose raw start beat would normalize into a protected beat', () => {
+    it.each([
+        [
+            'a negative start beat',
+            { id: 'note-1', pitch: 60, startBeat: -2, duration: 1, velocity: 100, probability: 100 },
+        ],
+        [
+            'a fractional pitch',
+            { id: 'note-1', pitch: 60.5, startBeat: 0, duration: 1, velocity: 100, probability: 100 },
+        ],
+        [
+            'a fractional velocity',
+            { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100.5, probability: 100 },
+        ],
+        [
+            'a duration below the MIDI minimum',
+            { id: 'note-1', pitch: 60, startBeat: 0, duration: 0.01, velocity: 100, probability: 100 },
+        ],
+        [
+            'a noncanonical probability',
+            { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100, probability: 99 },
+        ],
+    ])('rejects a serialized addNotes command with %s', (_description, note) => {
         const rawAddNotes = actionCommand({
-            action: {
-                type: 'addNotes',
-                payload: {
-                    clipId: 'clip-midi',
-                    notes: [{ id: 'note-1', pitch: 60, startBeat: -2, duration: 1, velocity: 100 }],
-                },
-            },
+            action: { type: 'addNotes', payload: { clipId: 'clip-midi', notes: [note] } },
             commandId: '66666666-6666-4666-8666-666666666666',
         });
 
