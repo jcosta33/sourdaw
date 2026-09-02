@@ -1530,7 +1530,6 @@
                 "src/modules/Project/useCases/projectTemplates/templateFiles/popSong.ts",
                 "src/modules/Project/useCases/projectTemplates/templateFiles/rockBand.ts",
                 "src/modules/Project/useCases/projectTemplates/templateFiles/singerSongwriter.ts",
-                "src/modules/SampleLibrary/services/sampleTaggingHelpers.ts",
                 "src/modules/Synth/useCases/proSynthInstruments.ts",
                 "src/modules/TimelineEditor/presentations/views/Inspector/layouts/BuiltinSynthLayout.tsx",
                 "src/modules/TimelineEditor/presentations/views/Inspector/layouts/FaustInstrumentLayout.tsx",
@@ -2286,7 +2285,6 @@
                 "src/modules/Project/useCases/projectTemplates/templateFiles/hipHopTrap.ts",
                 "src/modules/Project/useCases/projectTemplates/templateFiles/lofi.ts",
                 "src/modules/Project/useCases/projectTemplates/templateFiles/popSong.ts",
-                "src/modules/SampleLibrary/services/sampleTaggingHelpers.ts",
                 "src/modules/Synth/useCases/proSynthInstruments.ts"
             ]
         },
@@ -2482,8 +2480,7 @@
                 "src/modules/Project/useCases/projectTemplates/templateFiles/hipHopTrap.ts",
                 "src/modules/Project/useCases/projectTemplates/templateFiles/popSong.ts",
                 "src/modules/Project/useCases/projectTemplates/templateFiles/rockBand.ts",
-                "src/modules/Project/useCases/projectTemplates/templateFiles/singerSongwriter.ts",
-                "src/modules/SampleLibrary/services/sampleTaggingHelpers.ts"
+                "src/modules/Project/useCases/projectTemplates/templateFiles/singerSongwriter.ts"
             ]
         },
         {
