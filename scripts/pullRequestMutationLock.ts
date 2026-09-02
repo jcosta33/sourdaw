@@ -55,6 +55,12 @@ export type PullRequestMutationLockOptions = {
         head: string;
         ownerFence: PullRequestMutationLockOwnerFence | (() => PullRequestMutationLockOwnerFence);
     };
+    reviewPublication?: {
+        expectedHead: string;
+        payloadDigest: string;
+        reviewerActorNodeId: string;
+        ownerFence: PullRequestMutationLockOwnerFence | (() => PullRequestMutationLockOwnerFence);
+    };
 };
 
 export type PullRequestMutationSerialization = <Value>(
@@ -687,7 +693,10 @@ function windowsProcessTreeIsLive(
         if (rootStartedAt === undefined) {
             fail('review-publication lock Windows process liveness is unreadable');
         }
-        return rootStartedAt === ownerStartedAt;
+        if (rootStartedAt === ownerStartedAt) {
+            return true;
+        }
+        return hasPreReuseWindowsDescendant(rows, ownerFence.rootPid, ownerStartedAt, rootStartedAt);
     }
     const rowsByPid = new Map(rows.map((row) => [row.pid, row]));
     for (const candidate of rows) {
@@ -719,6 +728,33 @@ function windowsProcessTreeIsLive(
     return false;
 }
 
+function hasPreReuseWindowsDescendant(
+    rows: WindowsProcessRow[],
+    rootPid: number,
+    ownerStartedAt: bigint,
+    replacementRootStartedAt: bigint
+): boolean {
+    if (replacementRootStartedAt <= ownerStartedAt) {
+        fail('review-publication lock Windows process liveness is unreadable');
+    }
+    for (const row of rows) {
+        if (row.parentPid !== rootPid) {
+            continue;
+        }
+        const startedAt = parseWindowsProcessStartedAt(row.startedAt);
+        if (startedAt === undefined) {
+            fail('review-publication lock Windows process liveness is unreadable');
+        }
+        if (startedAt > ownerStartedAt && startedAt < replacementRootStartedAt) {
+            return true;
+        }
+        if (startedAt <= ownerStartedAt) {
+            fail('review-publication lock Windows process liveness is unreadable');
+        }
+    }
+    return false;
+}
+
 function acquireMutationLock(
     primaryRoot: string,
     number: number,
@@ -731,22 +767,29 @@ function acquireMutationLock(
         return fail(`PR #${number} is already being delivered by process ${existingOwner.pid}`);
     }
     const reviewResolution = options?.reviewResolution;
-    const owner: PullRequestMutationLockOwner =
-        reviewResolution === undefined
-            ? { version: 1, pid: process.pid, token: randomUUID() }
-            : {
-                  version: 2,
-                  pid: process.pid,
-                  token: randomUUID(),
-                  operation: 'review-resolution',
-                  number,
-                  threadId: reviewResolution.threadId,
-                  head: reviewResolution.head,
-                  ownerFence:
-                      typeof reviewResolution.ownerFence === 'function'
-                          ? reviewResolution.ownerFence()
-                          : reviewResolution.ownerFence,
-              };
+    const reviewPublication = options?.reviewPublication;
+    if (reviewResolution !== undefined && reviewPublication !== undefined) {
+        fail(`PR #${number} delivery lock cannot acquire two operation owners`);
+    }
+    let owner: PullRequestMutationLockOwner = { version: 1, pid: process.pid, token: randomUUID() };
+    if (reviewResolution !== undefined) {
+        owner = {
+            version: 2,
+            pid: process.pid,
+            token: randomUUID(),
+            operation: 'review-resolution',
+            number,
+            threadId: reviewResolution.threadId,
+            head: reviewResolution.head,
+            ownerFence:
+                typeof reviewResolution.ownerFence === 'function'
+                    ? reviewResolution.ownerFence()
+                    : reviewResolution.ownerFence,
+        };
+    }
+    if (reviewPublication !== undefined) {
+        owner = reviewPublicationLockOwner(number, reviewPublication);
+    }
     const oid = writePullRequestMutationLockOwner(primaryRoot, owner, number);
     if (updateMutationLockRef(primaryRoot, [ref, oid, '0'.repeat(oid.length)])) {
         return { ref, oid };
@@ -758,6 +801,39 @@ function acquireMutationLock(
     }
     const previousOwner = readPullRequestMutationLockOwner(primaryRoot, previousOid, number);
     return fail(`PR #${number} is already being delivered by process ${previousOwner.pid}`);
+}
+
+function reviewPublicationLockOwner(
+    number: number,
+    publication: NonNullable<PullRequestMutationLockOptions['reviewPublication']>
+): Extract<PullRequestMutationLockOwner, { version: 3 }> {
+    if (
+        !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/iu.test(publication.expectedHead) ||
+        !/^[0-9a-f]{64}$/iu.test(publication.payloadDigest) ||
+        publication.reviewerActorNodeId.trim() === ''
+    ) {
+        fail(`PR #${number} review-publication lock intent is malformed`);
+    }
+    const ownerFence = typeof publication.ownerFence === 'function' ? publication.ownerFence() : publication.ownerFence;
+    if (
+        !isExecutionFence(ownerFence) ||
+        !isExecutionFenceBoundToOwnerPid(ownerFence, process.pid) ||
+        !isPublicationOwnerFence(ownerFence)
+    ) {
+        fail(`PR #${number} review-publication lock fence is malformed`);
+    }
+    return {
+        version: 3,
+        pid: process.pid,
+        token: randomUUID(),
+        operation: 'review-publication',
+        number,
+        expectedHead: publication.expectedHead.toLowerCase(),
+        payloadDigest: publication.payloadDigest.toLowerCase(),
+        reviewerActorNodeId: publication.reviewerActorNodeId,
+        ownerFence,
+        mutation: { phase: 'prepared', epoch: 0 },
+    };
 }
 
 function releaseMutationLock(primaryRoot: string, ref: string, oid: string, number: number): void {
@@ -796,30 +872,19 @@ export async function withPullRequestMutationLock<Value>(
                 remoteMutationAttempted = true;
             },
             journalReviewPublication: ({ expectedHead, payloadDigest, reviewerActorNodeId }) => {
+                if (readPullRequestMutationLockOid(primaryRoot, lock.ref, number) !== ownerOid) {
+                    fail(`PR #${number} review-publication lock ownership changed before payload validation`);
+                }
                 const currentOwner = readPullRequestMutationLockOwner(primaryRoot, ownerOid, number);
-                if (currentOwner.version !== 1 || currentOwner.pid !== process.pid) {
-                    fail(`PR #${number} delivery lock cannot be journaled for review publication`);
-                }
                 if (
-                    !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/iu.test(expectedHead) ||
-                    !/^[0-9a-f]{64}$/iu.test(payloadDigest) ||
-                    reviewerActorNodeId.trim() === ''
+                    !isReviewPublicationPullRequestMutationLockOwner(currentOwner) ||
+                    currentOwner.mutation.phase !== 'prepared' ||
+                    currentOwner.expectedHead !== expectedHead.toLowerCase() ||
+                    currentOwner.payloadDigest !== payloadDigest.toLowerCase() ||
+                    currentOwner.reviewerActorNodeId !== reviewerActorNodeId
                 ) {
-                    fail(`PR #${number} review-publication lock intent is malformed`);
+                    fail(`PR #${number} review-publication lock does not match the prepared payload`);
                 }
-                const nextOwner: PullRequestMutationLockOwner = {
-                    version: 3,
-                    pid: currentOwner.pid,
-                    token: currentOwner.token,
-                    operation: 'review-publication',
-                    number,
-                    expectedHead: expectedHead.toLowerCase(),
-                    payloadDigest: payloadDigest.toLowerCase(),
-                    reviewerActorNodeId,
-                    ownerFence: currentReviewPublicationOwnerFence(),
-                    mutation: { phase: 'prepared', epoch: 0 },
-                };
-                ownerOid = replacePullRequestMutationLockOwner(primaryRoot, number, ownerOid, nextOwner);
             },
             registerSuccessfulCompletion: (cleanup) => {
                 if (successfulCompletion !== undefined) {

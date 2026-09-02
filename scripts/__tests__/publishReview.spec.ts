@@ -14,6 +14,7 @@ import {
     parseRecoverPublishReviewArgs,
     parsePublishReviewArgs,
     parseReviewDocument,
+    publishPreparedReview,
     publishReview,
     reviewPublicationPayload,
     reviewPublicationPayloadDigest,
@@ -25,6 +26,7 @@ import {
 } from '../publishReview.ts';
 import {
     type PullRequestMutationLockOwner,
+    currentReviewPublicationOwnerFence,
     pullRequestMutationLockRef,
     reviewPublicationRecoveryReceiptRef,
     readPullRequestMutationLockOwner,
@@ -260,8 +262,23 @@ describe('review publish', () => {
         };
         const dependencies: PublishReviewCoordinatorDependencies = {
             primaryRoot: () => '/repo',
-            serializeMutation: async (_primaryRoot, number, operation) => {
+            serializeMutation: async (_primaryRoot, number, operation, options) => {
                 calls.push(`lock:${number}:acquire`);
+                expect(options).toEqual({
+                    reviewPublication: {
+                        expectedHead: 'headsha',
+                        payloadDigest: reviewPublicationPayloadDigest(
+                            reviewPublicationPayload({
+                                commitId: 'headsha',
+                                event: 'APPROVE',
+                                body: 'ok',
+                                comments: [],
+                            })
+                        ),
+                        reviewerActorNodeId: REVIEWER_BOT_NODE_ID,
+                        ownerFence: expect.any(Function),
+                    },
+                });
                 try {
                     return await operation({
                         ownerOid: 'f'.repeat(40),
@@ -295,23 +312,45 @@ describe('review publish', () => {
                     return fencedPort.postReview(review);
                 },
             }),
-            publish: publishReview,
+            publish: publishPreparedReview,
         };
 
         await coordinatePublishReview(42, dependencies);
 
         expect(calls).toEqual([
-            'lock:42:acquire',
             'authenticate',
             'repository',
             'head',
+            'lock:42:acquire',
             'journal',
             'head',
             'attempt',
             'post',
-            'dispose',
             'lock:42:release',
+            'dispose',
         ]);
+    });
+
+    it('does not acquire a publication lock when immutable bundle preflight fails', async () => {
+        const { port } = fakePort({ missing: true });
+        let acquired = false;
+        const dependencies: PublishReviewCoordinatorDependencies = {
+            primaryRoot: () => '/repo',
+            serializeMutation: async () => {
+                acquired = true;
+                throw new Error('lock must not be acquired');
+            },
+            authenticateReviewer: async () => ({
+                minted: { actorNodeId: REVIEWER_BOT_NODE_ID },
+                session: { configDir: '/tmp/sourdaw-reviewer', env: {}, dispose: () => undefined },
+            }),
+            repositoryName: () => 'jcosta33/sourdaw',
+            reviewPort: () => port,
+            publish: publishPreparedReview,
+        };
+
+        await expect(coordinatePublishReview(42, dependencies)).rejects.toThrow(/missing review\.json/);
+        expect(acquired).toBe(false);
     });
 
     it('reports the exact retained owner and recovery command after an ordinary review POST HTTP 422', async () => {
@@ -319,6 +358,7 @@ describe('review publish', () => {
         const number = 3344;
         const executable = join(root, 'ps');
         const previous = process.env.SOURDAW_TRUSTED_PS_PATH;
+        let ownerAtPost: { oid: string; owner: Extract<PullRequestMutationLockOwner, { version: 3 }> } | undefined;
         try {
             runGit(root, ['init']);
             writeFileSync(
@@ -341,12 +381,21 @@ describe('review publish', () => {
                     readReviewJson: () => ({ event: 'APPROVE', body: 'Attacked; held.', comments: [] }),
                     readBundleDiff: () => '',
                     postReview: () => {
+                        const oid = readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number);
+                        if (oid === undefined) {
+                            throw new Error('publication lock was not acquired before POST');
+                        }
+                        const owner = readPullRequestMutationLockOwner(root, oid, number);
+                        if (owner.version !== 3) {
+                            throw new Error('publication lock was not journaled before POST');
+                        }
+                        ownerAtPost = { oid, owner };
                         markRemoteMutationAttempt();
                         throw new Error('create review failed: HTTP 422');
                     },
                     log: () => undefined,
                 }),
-                publish: publishReview,
+                publish: publishPreparedReview,
             };
 
             await expect(coordinatePublishReview(number, dependencies)).rejects.toThrow(
@@ -354,9 +403,99 @@ describe('review publish', () => {
             );
             const retainedOid = readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number);
             expect(retainedOid).toMatch(/^[0-9a-f]{40}$/);
+            expect(ownerAtPost).toEqual({
+                oid: expect.stringMatching(/^[0-9a-f]{40}$/),
+                owner: {
+                    version: 3,
+                    pid: process.pid,
+                    token: expect.stringMatching(/^[0-9a-f-]{36}$/),
+                    operation: 'review-publication',
+                    number,
+                    expectedHead: 'a'.repeat(40),
+                    payloadDigest: reviewPublicationPayloadDigest(
+                        reviewPublicationPayload({
+                            commitId: 'a'.repeat(40),
+                            event: 'APPROVE',
+                            body: 'Attacked; held.',
+                            comments: [],
+                        })
+                    ),
+                    reviewerActorNodeId: REVIEWER_BOT_NODE_ID,
+                    ownerFence: {
+                        kind: 'pgid',
+                        pgid: process.pid,
+                        leaderStartedAt: 'publication-process-start',
+                    },
+                    mutation: { phase: 'prepared', epoch: 0 },
+                },
+            });
+            expect(retainedOid).not.toBe(ownerAtPost?.oid);
             await expect(coordinatePublishReview(number, dependencies)).rejects.toThrow(
                 new RegExp(`--owner ${retainedOid}`)
             );
+        } finally {
+            if (previous === undefined) {
+                delete process.env.SOURDAW_TRUSTED_PS_PATH;
+            } else {
+                process.env.SOURDAW_TRUSTED_PS_PATH = previous;
+            }
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it.each([
+        ['expected head', (head: string, digest: string, actor: string) => ['b'.repeat(40), digest, actor]],
+        ['payload digest', (head: string, _digest: string, actor: string) => [head, 'c'.repeat(64), actor]],
+        ['reviewer actor', (head: string, digest: string, _actor: string) => [head, digest, 'other-actor']],
+    ])('refuses a publication lock whose acquired %s is not the prepared payload', async (_label, mutate) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-publication-bound-owner-'));
+        const number = 42;
+        const executable = join(root, 'ps');
+        const previous = process.env.SOURDAW_TRUSTED_PS_PATH;
+        const expectedHead = 'a'.repeat(40);
+        const expectedDigest = reviewPublicationPayloadDigest(
+            reviewPublicationPayload({
+                commitId: expectedHead,
+                event: 'APPROVE',
+                body: 'Attacked; held.',
+                comments: [],
+            })
+        );
+        try {
+            runGit(root, ['init']);
+            writeFileSync(
+                executable,
+                '#!/bin/sh\nif [ "$2" = "pgid=" ]; then printf "%s\\n" "$4"; else printf "%s\\n" "publication-process-start"; fi\n'
+            );
+            chmodSync(executable, 0o700);
+            process.env.SOURDAW_TRUSTED_PS_PATH = executable;
+            const [expectedHeadAtLock, digestAtLock, actorAtLock] = mutate(
+                expectedHead,
+                expectedDigest,
+                REVIEWER_BOT_NODE_ID
+            );
+            await expect(
+                withPullRequestMutationLock(
+                    root,
+                    number,
+                    async (boundary) => {
+                        boundary.journalReviewPublication({
+                            expectedHead,
+                            payloadDigest: expectedDigest,
+                            reviewerActorNodeId: REVIEWER_BOT_NODE_ID,
+                        });
+                    },
+                    {
+                        reviewPublication: {
+                            expectedHead: expectedHeadAtLock,
+                            payloadDigest: digestAtLock,
+                            reviewerActorNodeId: actorAtLock,
+                            ownerFence: currentReviewPublicationOwnerFence,
+                        },
+                    }
+                )
+            ).rejects.toThrow(/does not match the prepared payload/);
+            expect(readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number)).toBeUndefined();
         } finally {
             if (previous === undefined) {
                 delete process.env.SOURDAW_TRUSTED_PS_PATH;
@@ -1450,6 +1589,57 @@ describe('shellPort postReview state verification', () => {
         }
     });
 
+    it('retains the adopted owner when unauthorized landed evidence appears only on the second read', async () => {
+        const fixture = createJournaledRecoveryFixture();
+        let calls = 0;
+        try {
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.number), '--owner', fixture.ownerOid],
+                    recoveryDependencies(fixture.root, (expectedHead) => {
+                        calls += 1;
+                        if (calls === 1) {
+                            return { state: 'OPEN', head: expectedHead, reviews: [] };
+                        }
+                        return {
+                            state: 'OPEN',
+                            head: expectedHead,
+                            reviews: [],
+                            otherActorReviews: [
+                                {
+                                    id: 4,
+                                    state: 'APPROVED',
+                                    body: 'Attacked; held.',
+                                    commitId: expectedHead,
+                                    actorNodeId: 'human-actor',
+                                    comments: [],
+                                },
+                            ],
+                        };
+                    })
+                )
+            ).rejects.toThrow(
+                /unauthorized landed review evidence; PR #42 review-publication recovery preserved exact lock owner/
+            );
+            const retainedOid = readPullRequestMutationLockOid(
+                fixture.root,
+                pullRequestMutationLockRef(fixture.number),
+                fixture.number
+            );
+            expect(retainedOid).toMatch(/^[0-9a-f]{40}$/);
+            expect(retainedOid).not.toBe(fixture.ownerOid);
+            expect(
+                readPullRequestMutationLockOid(
+                    fixture.root,
+                    reviewPublicationRecoveryReceiptRef(fixture.number, fixture.ownerOid),
+                    fixture.number
+                )
+            ).toBeUndefined();
+        } finally {
+            rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
     it('retains the adopted owner with its exact object id when the second remote read fails', async () => {
         const fixture = createJournaledRecoveryFixture();
         let calls = 0;
@@ -1854,6 +2044,13 @@ describe('shellPort postReview state verification', () => {
             expect(reviewPublicationOwnerFenceIsLive(owner, 'win32')).toBe(true);
             writePowerShellOutput(
                 JSON.stringify({ ProcessId: 99, ParentProcessId: 42, CreationDate: '2026-09-02T10:00:01.0000000Z' })
+            );
+            expect(reviewPublicationOwnerFenceIsLive(owner, 'win32')).toBe(true);
+            writePowerShellOutput(
+                JSON.stringify([
+                    { ProcessId: 42, ParentProcessId: 1, CreationDate: '2026-09-02T11:00:00.0000000Z' },
+                    { ProcessId: 98, ParentProcessId: 42, CreationDate: '2026-09-02T10:30:00.0000000Z' },
+                ])
             );
             expect(reviewPublicationOwnerFenceIsLive(owner, 'win32')).toBe(true);
             writePowerShellOutput(

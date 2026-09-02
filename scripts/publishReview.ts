@@ -93,7 +93,12 @@ export type PublishReviewCoordinatorDependencies = {
         primaryRoot: string,
         markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt']
     ) => PublishReviewPort;
-    publish: (number: number, port: PublishReviewPort, boundary?: PullRequestRemoteMutationBoundary) => number;
+    publish: (
+        number: number,
+        prepared: PreparedReviewPublication,
+        port: PublishReviewPort,
+        boundary?: PullRequestRemoteMutationBoundary
+    ) => number;
 };
 
 export function parsePublishReviewArgs(args: string[]): { number?: number; help: boolean } {
@@ -161,13 +166,15 @@ export function reviewPublicationPayloadDigest(payload: string): string {
     return createHash('sha256').update(payload).digest('hex');
 }
 
-export function publishReview(
-    number: number,
-    port: PublishReviewPort,
-    boundary?: PullRequestRemoteMutationBoundary
-): number {
-    const headSha = port.currentHead(number);
-    const bundle = reviewBundlePath(port.primaryRoot(), number, headSha);
+export type PreparedReviewPublication = {
+    head: string;
+    document: ReviewDocument;
+    payloadDigest: string;
+};
+
+function prepareReviewPublication(number: number, port: PublishReviewPort): PreparedReviewPublication {
+    const head = port.currentHead(number);
+    const bundle = reviewBundlePath(port.primaryRoot(), number, head);
     let parsed: unknown;
     try {
         parsed = port.readReviewJson(join(bundle, 'review.json'));
@@ -176,33 +183,55 @@ export function publishReview(
     }
     const document = parseReviewDocument(parsed);
     assertReviewCommentLinesInBundleDiff(document.comments, port.readBundleDiff(join(bundle, 'diff.patch')));
-    const payload = reviewPublicationPayload({
-        commitId: headSha,
-        event: document.event,
-        body: document.body,
-        comments: document.comments,
-    });
-    boundary?.journalReviewPublication?.({
-        expectedHead: headSha,
-        payloadDigest: reviewPublicationPayloadDigest(payload),
+    return {
+        head,
+        document,
+        payloadDigest: reviewPublicationPayloadDigest(
+            reviewPublicationPayload({
+                commitId: head,
+                event: document.event,
+                body: document.body,
+                comments: document.comments,
+            })
+        ),
+    };
+}
+
+export function publishPreparedReview(
+    number: number,
+    prepared: PreparedReviewPublication,
+    port: PublishReviewPort,
+    boundary?: PullRequestRemoteMutationBoundary
+): number {
+    boundary?.journalReviewPublication({
+        expectedHead: prepared.head,
+        payloadDigest: prepared.payloadDigest,
         reviewerActorNodeId: REVIEWER_BOT_NODE_ID,
     });
     const current = port.currentHead(number);
-    if (current !== headSha) {
+    if (current !== prepared.head) {
         fail('pull-request head moved; refusing to post a stale review');
     }
     const posted = port.postReview({
         number,
-        commitId: headSha,
-        event: document.event,
-        body: document.body,
-        comments: document.comments,
+        commitId: prepared.head,
+        event: prepared.document.event,
+        body: prepared.document.body,
+        comments: prepared.document.comments,
     });
     if (!isReviewerBotNodeId(posted.actorNodeId)) {
         fail(`review was posted by actor ${posted.actorNodeId} (${posted.login}), not ${REVIEWER_BOT_NODE_ID}`);
     }
     port.log(String(posted.id));
     return posted.id;
+}
+
+export function publishReview(
+    number: number,
+    port: PublishReviewPort,
+    boundary?: PullRequestRemoteMutationBoundary
+): number {
+    return publishPreparedReview(number, prepareReviewPublication(number, port), port, boundary);
 }
 
 export function shellPort(
@@ -427,7 +456,7 @@ export function defaultPublishReviewCoordinatorDependencies(): PublishReviewCoor
             }),
         reviewPort: (session, primaryRoot, markRemoteMutationAttempt) =>
             shellPort(session, primaryRoot, spawnCapture, markRemoteMutationAttempt),
-        publish: publishReview,
+        publish: publishPreparedReview,
     };
 }
 
@@ -437,22 +466,36 @@ export async function coordinatePublishReview(
 ): Promise<void> {
     const primaryRoot = dependencies.primaryRoot();
     try {
-        await dependencies.serializeMutation(primaryRoot, number, async (boundary) => {
-            const auth = await dependencies.authenticateReviewer(primaryRoot);
-            try {
-                if (!isReviewerBotNodeId(auth.minted.actorNodeId)) {
-                    fail(`minted actor ${auth.minted.actorNodeId} is not ${REVIEWER_BOT_NODE_ID}`);
-                }
-                assertRequiredRepository(dependencies.repositoryName(auth.session, primaryRoot));
-                dependencies.publish(
-                    number,
-                    dependencies.reviewPort(auth.session, primaryRoot, boundary.markRemoteMutationAttempt),
-                    boundary
-                );
-            } finally {
-                auth.session.dispose();
+        const auth = await dependencies.authenticateReviewer(primaryRoot);
+        try {
+            if (!isReviewerBotNodeId(auth.minted.actorNodeId)) {
+                fail(`minted actor ${auth.minted.actorNodeId} is not ${REVIEWER_BOT_NODE_ID}`);
             }
-        });
+            assertRequiredRepository(dependencies.repositoryName(auth.session, primaryRoot));
+            const preflightPort = dependencies.reviewPort(auth.session, primaryRoot, () => undefined);
+            const prepared = prepareReviewPublication(number, preflightPort);
+            await dependencies.serializeMutation(
+                primaryRoot,
+                number,
+                async (boundary) =>
+                    dependencies.publish(
+                        number,
+                        prepared,
+                        dependencies.reviewPort(auth.session, primaryRoot, boundary.markRemoteMutationAttempt),
+                        boundary
+                    ),
+                {
+                    reviewPublication: {
+                        expectedHead: prepared.head,
+                        payloadDigest: prepared.payloadDigest,
+                        reviewerActorNodeId: auth.minted.actorNodeId,
+                        ownerFence: currentReviewPublicationOwnerFence,
+                    },
+                }
+            );
+        } finally {
+            auth.session.dispose();
+        }
     } catch (error) {
         const recovery = retainedReviewPublicationRecoveryCommand(primaryRoot, number);
         if (recovery === undefined) {
@@ -916,11 +959,15 @@ export async function runRecoverPublishReviewLockCli(
         try {
             const second = dependencies.inspect(number, expectedActorNodeId, expectedHead, auth.session, primaryRoot);
             if (
-                second.state !== first.state ||
-                second.head !== first.head ||
                 (second.otherActorReviews ?? []).some((review) =>
                     exactPublishedReview(review, document, expectedHead, review.actorNodeId)
-                ) ||
+                )
+            ) {
+                fail('review-publication recovery found unauthorized landed review evidence');
+            }
+            if (
+                second.state !== first.state ||
+                second.head !== first.head ||
                 second.reviews.length !== first.reviews.length ||
                 (second.reviews.length === 1 &&
                     !exactPublishedReview(second.reviews[0]!, document, expectedHead, expectedActorNodeId))
