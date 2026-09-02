@@ -3300,6 +3300,45 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(result.rejections, prompt).toEqual([]);
     });
 
+    it.each([
+        'mute Room Mic and Guitar leaving the Drum Bus unchanged',
+        'mute Room Mic and Guitar, leaving the Drum Bus unchanged',
+    ] as const)('rejects muteTrack as ambiguous when %s still names Guitar', (prompt) => {
+        const roomMic = createTrack({ id: 'track-room-mic', name: 'Room Mic' });
+        const guitar = createTrack({ id: 'track-guitar', name: 'Guitar' });
+        const drumBus = createTrack({ id: 'track-drum-bus', name: 'Drum Bus' });
+        const dualMuteContext = {
+            ...projectContext,
+            tracks: [roomMic, guitar, drumBus, master],
+        };
+        const named = bridge(
+            [{ name: 'muteTrack', arguments: { trackId: roomMic.id, muted: true } }],
+            prompt,
+            dualMuteContext
+        );
+        const other = bridge(
+            [{ name: 'muteTrack', arguments: { trackId: guitar.id, muted: true } }],
+            prompt,
+            dualMuteContext
+        );
+        expect(named.actions, prompt).toEqual([]);
+        expect(other.actions, prompt).toEqual([]);
+        expect(named.rejections, prompt).toEqual([
+            {
+                index: 0,
+                name: 'muteTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+        expect(other.rejections, prompt).toEqual([
+            {
+                index: 0,
+                name: 'muteTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+    });
+
     it('rejects solo-safe writes to a bus created earlier in the same provider plan', () => {
         const result = bridge(
             [

@@ -1674,10 +1674,43 @@ function clauseNamesProjectTrack(clauseText: string, tracks: readonly { id: stri
     });
 }
 
+function collectNamedProjectTracks(text: string, tracks: readonly { id: string; name: string }[]): readonly string[] {
+    const normalized = normalizePromptText(text);
+    return tracks.flatMap((track) => {
+        const references = [normalizePromptText(track.id), normalizePromptText(track.name)].filter(
+            (reference) => reference.length > 0
+        );
+        const named = references.some((reference) =>
+            new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(reference)}(?![\\p{L}\\p{N}])`, 'u').test(normalized)
+        );
+        return named ? [track.id] : [];
+    });
+}
+
+function followingClauseStillNamesTrackControlTarget(
+    clauseText: string,
+    tracks: readonly { id: string; name: string }[]
+): boolean {
+    const normalized = normalizePromptText(clauseText);
+    const protection =
+        /(?:leav(?:e|ing)|keep(?:ing)?|preserv(?:e|ing)|retain(?:ing)?|\bstays\b|\bremains\b|\bunchanged\b)/u.exec(
+            normalized
+        );
+    if (protection?.index === undefined || protection.index === 0) {
+        return false;
+    }
+    const prefixTrackIds = collectNamedProjectTracks(normalized.slice(0, protection.index), tracks);
+    const spanTrackIds = new Set(collectNamedProjectTracks(normalized.slice(protection.index), tracks));
+    return prefixTrackIds.some((trackId) => !spanTrackIds.has(trackId)) && spanTrackIds.size > 0;
+}
+
 function isTrackControlProtectionQualifier(
     clauseText: string,
     tracks: readonly { id: string; name: string }[]
 ): boolean {
+    if (followingClauseStillNamesTrackControlTarget(clauseText, tracks)) {
+        return false;
+    }
     const normalized = normalizePromptText(clauseText);
     if (/\b(?:stays|remains)\b/u.test(normalized) || /\bunchanged\b/u.test(normalized)) {
         return true;
