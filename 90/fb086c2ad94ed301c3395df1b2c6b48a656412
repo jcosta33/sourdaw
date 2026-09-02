@@ -1,0 +1,20 @@
+src/modules/MIDI/handlers/noteCrud/__tests__/handleAddNotes.spec.ts
+  s_a40848e8f8cca9::t_fc8e8814cda78f 1
+  s_a40848e8f8cca9::t_00fe560c1c29b4 6,54,173-185,187-191,194-197,200
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "90fb086c2ad94ed301c3395df1b2c6b48a656412",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
