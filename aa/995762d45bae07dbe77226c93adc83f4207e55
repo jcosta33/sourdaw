@@ -1,0 +1,39 @@
+src/modules/Command/useCases/__tests__/agentBatchBindings.spec.ts
+  s_ac03a4ebaa3f6e::t_1e6dd7f1b18079 352-354
+  s_ac03a4ebaa3f6e::t_70800eee96ef3e 48,65,84,88,92,98,108-118,127
+  s_ac03a4ebaa3f6e::t_aaf4db37628932 45-47
+  s_ac03a4ebaa3f6e::t_f33e7eb842ebd9 49-51,62-64
+  s_ac03a4ebaa3f6e::t_838245664c5cf6 66-68,81-83
+  s_ac03a4ebaa3f6e::t_956abdafba37f6 85-87
+  s_ac03a4ebaa3f6e::t_bedca76eff42b4 89-91
+  s_ac03a4ebaa3f6e::t_949e12f66cdcbb 93-97
+  s_ac03a4ebaa3f6e::t_84270f29318354 99-101,105-107
+  s_ac03a4ebaa3f6e::t_433ee6217a0ebd 119-121,124-126
+  s_ac03a4ebaa3f6e::t_9371f750cda454 128-130,349-351
+  s_ac03a4ebaa3f6e::t_dac42185193a44 355-357
+  s_9b530f08172a54::t_82f4e81cd8225a 1-44,52-61,69-80,102-104,122-123,131-348,358-362
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "aa995762d45bae07dbe77226c93adc83f4207e55",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
