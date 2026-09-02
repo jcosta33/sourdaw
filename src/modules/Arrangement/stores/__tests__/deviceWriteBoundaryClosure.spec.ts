@@ -1494,16 +1494,13 @@ function countDeviceDataAstWrites(file: SourceText): number {
     return writes.size;
 }
 
-// AST census walks only updateTrack and trackStore.set; property-syntax
+// AST census walks updateTrack and trackStore.set; property-syntax
 // devices:/parameterValues: hits are regex-owned and must not parse here.
 function codeMayContainDeviceDataAstWrites(code: string): boolean {
     if (code.length === 0) {
         return false;
     }
-    if (code.includes('updateTrack')) {
-        return true;
-    }
-    return code.includes('trackStore') && code.includes('.set');
+    return code.includes('updateTrack') || code.includes('trackStore');
 }
 
 function countDeviceDataByPath(files: ReadonlyArray<ProductionSource>): CountByPath {
@@ -1801,6 +1798,14 @@ describe('device write boundary closure', () => {
                 source: 'trackStore.set({ ...state, tracks: state.tracks.map((track) => { const devices = track.devices; const parameterValues = devices[0]?.parameterValues; const snapshot = { devices, parameterValues }; void snapshot; return track; }) });',
             })
         ).toBe(0);
+    });
+
+    it('counts shorthand devices in trackStore.set when .set is split across a line break', () => {
+        const source = 'const state = {}; const devices = []; trackStore.\nset({ ...state, devices });';
+        const parsed = productionSource('src/modules/Arrangement/splitTrackStoreSet.ts', source);
+        expect(countDeviceDataAstWrites({ path: parsed.path, source: parsed.source })).toBe(1);
+        const counts = countDeviceDataByPath([parsed]);
+        expect(counts['src/modules/Arrangement/splitTrackStoreSet.ts']).toBe(1);
     });
 
     it('resolves only the nearest local updater declaration', () => {
