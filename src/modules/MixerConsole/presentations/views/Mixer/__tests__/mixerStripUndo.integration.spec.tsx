@@ -52,13 +52,216 @@ import { ExpandedChannelStrip } from '../ExpandedChannelStrip';
  *
  * Everything under the pointer is real: the Arrangement handler map,
  * `executeAppAction`, a real Automerge document, the real undo stack, the real
- * `Fader`. Only the audio-engine seam, the confirm dialog and the routing/event
- * fan-out are stubbed, and the engine seam is stubbed so it can be *counted* —
+ * `Fader`. The audio-engine seam, confirm dialog, routing/event fan-out,
+ * Metering, Arrangement, MIDI, Transport, Project, and other
+ * use-case barrels the graph touches are stubbed or graph-cut; the
+ * engine seam is stubbed so it can be *counted* —
  * it is what proves the audio followed the fader mid-drag.
  */
 
 vi.mock('#/utils/Notification/confirmUser', () => ({ confirmUser: vi.fn() }));
 vi.mock('#/utils/UI/useContextMenuDismiss', () => ({ useContextMenuDismiss: vi.fn() }));
+// Non-spread listing of only LevelMeter — the barrel re-exports LUFS/goniometer/
+// views that pull dozens of unread AudioEngine names into the graph.
+vi.mock('#/modules/Metering/presentations/views', () => ({
+    LevelMeter: ({ trackId }: { trackId: string | null }) => (
+        <div data-testid="level-meter" data-track-id={trackId ?? ''} />
+    ),
+}));
+// Non-spread listing of every Arrangement name the strip graph imports — cuts the
+// handler-map barrel walk that pulls freeze/bounce/import handlers and their
+// unread AudioEngine dependencies, while keeping live handlers via importActual.
+vi.mock('#/modules/Arrangement/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/Arrangement/useCases')>(
+        '#/modules/Arrangement/useCases'
+    );
+    return {
+        acceptsExternalPluginAutomationParameter: actual.acceptsExternalPluginAutomationParameter,
+        addMidiFx: actual.addMidiFx,
+        addTake: actual.addTake,
+        addTakeLane: actual.addTakeLane,
+        addTrack: actual.addTrack,
+        applySoloLogic: actual.applySoloLogic,
+        captureArrangementToScratchPad: actual.captureArrangementToScratchPad,
+        clampDeviceParameterValue: actual.clampDeviceParameterValue,
+        clampExternalPluginAutomationValue: actual.clampExternalPluginAutomationValue,
+        commitLegacyVcaTemplateState: actual.commitLegacyVcaTemplateState,
+        compileLoadPresetActions: actual.compileLoadPresetActions,
+        compileReorderDevicesAction: actual.compileReorderDevicesAction,
+        createAndAssignVcaGroup: actual.createAndAssignVcaGroup,
+        createTrack: actual.createTrack,
+        executeAddDeviceAction: actual.executeAddDeviceAction,
+        getArrangementHandlers: actual.getArrangementHandlers,
+        getEffectiveGain: actual.getEffectiveGain,
+        getFactoryPresets: actual.getFactoryPresets,
+        getGainAtBeat: actual.getGainAtBeat,
+        getPlatformPlugins: actual.getPlatformPlugins,
+        getPluginById: actual.getPluginById,
+        getSynthParamsForTrack: actual.getSynthParamsForTrack,
+        getTrackStoreState: actual.getTrackStoreState,
+        getVcaGroups: actual.getVcaGroups,
+        hydrateClipGainEnvelopes: actual.hydrateClipGainEnvelopes,
+        hydrateVcaGroups: actual.hydrateVcaGroups,
+        importAudioFile: actual.importAudioFile,
+        importMidiFile: actual.importMidiFile,
+        isDeviceParameterAutomatable: actual.isDeviceParameterAutomatable,
+        projectTrackToLiveStrip: actual.projectTrackToLiveStrip,
+        quantiseDeviceParameterValue: actual.quantiseDeviceParameterValue,
+        removeFromVca: actual.removeFromVca,
+        resetArrangementStoresForProject: actual.resetArrangementStoresForProject,
+        resolveClipsWithComping: actual.resolveClipsWithComping,
+        restoreAdjustmentLayerSnapshot: actual.restoreAdjustmentLayerSnapshot,
+        restoreArrangementMetadataSnapshot: actual.restoreArrangementMetadataSnapshot,
+        restoreTrackSnapshot: actual.restoreTrackSnapshot,
+        selectTrack: actual.selectTrack,
+        setArrangementEventBus: actual.setArrangementEventBus,
+        setMarqueeSelection: actual.setMarqueeSelection,
+        setSend: actual.setSend,
+        setTrackGain: actual.setTrackGain,
+        setTrackOutput: actual.setTrackOutput,
+        setTrackPan: actual.setTrackPan,
+        setTrackState: actual.setTrackState,
+        soloTrackExclusive: actual.soloTrackExclusive,
+        startRecording: actual.startRecording,
+        stopRecording: actual.stopRecording,
+        toggleInputMonitoring: actual.toggleInputMonitoring,
+        toggleSendPreFader: actual.toggleSendPreFader,
+        toggleVcaMembership: actual.toggleVcaMembership,
+        updateClip: actual.updateClip,
+    };
+});
+// Non-spread listing of every MIDI name the strip graph imports — the fat barrel
+// otherwise walks web-MIDI and groove paths that reach unread AudioEngine keys.
+vi.mock('#/modules/MIDI/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
+    return {
+        MIDI_EFFECT_FACTORIES: actual.MIDI_EFFECT_FACTORIES,
+        adaptGrooveTemplateForConsumer: actual.adaptGrooveTemplateForConsumer,
+        addChordEvent: actual.addChordEvent,
+        appendMidiNotes: actual.appendMidiNotes,
+        arpeggiate: actual.arpeggiate,
+        assignGrooveTemplate: actual.assignGrooveTemplate,
+        canPrepareMidiClipGlueState: actual.canPrepareMidiClipGlueState,
+        createGrooveTemplate: actual.createGrooveTemplate,
+        downloadMidiFile: actual.downloadMidiFile,
+        duplicateClipNotes: actual.duplicateClipNotes,
+        duplicateMidiClipData: actual.duplicateMidiClipData,
+        getCanonicalGrooveTemplateKey: actual.getCanonicalGrooveTemplateKey,
+        getChordAtBeat: actual.getChordAtBeat,
+        getGrooveTemplate: actual.getGrooveTemplate,
+        getMidiInputTrack: actual.getMidiInputTrack,
+        getMidiInputTrackOwnerId: actual.getMidiInputTrackOwnerId,
+        getMidiInputTrackRevision: actual.getMidiInputTrackRevision,
+        getMidiStoreState: actual.getMidiStoreState,
+        getScopedGrooveAssignment: actual.getScopedGrooveAssignment,
+        getScopedGrooveConsumerId: actual.getScopedGrooveConsumerId,
+        getStraightGrooveTemplateId: actual.getStraightGrooveTemplateId,
+        hasActiveStepRecordingDependency: actual.hasActiveStepRecordingDependency,
+        hydrateGrooveTemplates: actual.hydrateGrooveTemplates,
+        hydrateMidiProjectState: actual.hydrateMidiProjectState,
+        mergeImportedMidiClipNotes: actual.mergeImportedMidiClipNotes,
+        midiClipGlueStateMatches: actual.midiClipGlueStateMatches,
+        midiClipSplitStateMatches: actual.midiClipSplitStateMatches,
+        migrateAbsoluteMidiNotes: actual.migrateAbsoluteMidiNotes,
+        panicLiveNotes: actual.panicLiveNotes,
+        prepareMidiClipGlueState: actual.prepareMidiClipGlueState,
+        prepareMidiClipSplit: actual.prepareMidiClipSplit,
+        projectClipMidiEvents: actual.projectClipMidiEvents,
+        projectCommittedGroove: actual.projectCommittedGroove,
+        projectDrumPreviewCandidateNotes: actual.projectDrumPreviewCandidateNotes,
+        readLegacyChordTrackMigration: actual.readLegacyChordTrackMigration,
+        readMidiFile: actual.readMidiFile,
+        removeMidiClipData: actual.removeMidiClipData,
+        replaceChordTrackState: actual.replaceChordTrackState,
+        resetMidiState: actual.resetMidiState,
+        resetMidiStoreForProject: actual.resetMidiStoreForProject,
+        resolveMidiNoteArticulationId: actual.resolveMidiNoteArticulationId,
+        restoreGrooveAssignment: actual.restoreGrooveAssignment,
+        restoreMidiClipData: actual.restoreMidiClipData,
+        restoreMidiClipGlueState: actual.restoreMidiClipGlueState,
+        restoreMidiClipNotes: actual.restoreMidiClipNotes,
+        restoreMidiClipSplitState: actual.restoreMidiClipSplitState,
+        serializeMidiStateForClips: actual.serializeMidiStateForClips,
+        setMidiInputTrack: actual.setMidiInputTrack,
+        setMidiStoreState: actual.setMidiStoreState,
+        setNotesForClip: actual.setNotesForClip,
+        shouldPlayMidiEvent: actual.shouldPlayMidiEvent,
+        splitMidiNotesAtBeat: actual.splitMidiNotesAtBeat,
+        transposeForChordTrack: actual.transposeForChordTrack,
+    };
+});
+// Non-spread listing of every Transport name the strip graph imports — cuts
+// playhead scheduling and offline graph repair paths that reach AudioEngine.
+vi.mock('#/modules/Transport/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/Transport/useCases')>('#/modules/Transport/useCases');
+    return {
+        addTempoChange: actual.addTempoChange,
+        addTimeSignatureChange: actual.addTimeSignatureChange,
+        defaultTransportState: actual.defaultTransportState,
+        ensureTrackStrips: actual.ensureTrackStrips,
+        repairRuntimeGraphFromProject: actual.repairRuntimeGraphFromProject,
+        replaceTempoMap: actual.replaceTempoMap,
+        replaceTimeSignatureMap: actual.replaceTimeSignatureMap,
+        restoreTimelineMapSnapshot: actual.restoreTimelineMapSnapshot,
+        restoreTransportSnapshot: actual.restoreTransportSnapshot,
+        stopPlayback: actual.stopPlayback,
+    };
+});
+// Non-spread listing of every Project name the CRDT graph imports — cuts project
+// persistence helpers that reset modules and pull AudioEngine cache APIs.
+vi.mock('#/modules/Project/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/Project/useCases')>('#/modules/Project/useCases');
+    return {
+        exportProjectFile: actual.exportProjectFile,
+        newProject: actual.newProject,
+        pickFiles: actual.pickFiles,
+        saveProject: actual.saveProject,
+    };
+});
+// Non-spread listing of every Synth name the strip graph imports.
+vi.mock('#/modules/Synth/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/Synth/useCases')>('#/modules/Synth/useCases');
+    return {
+        getDrumKitDefByIndex: actual.getDrumKitDefByIndex,
+        getSynthParamsFromDevices: actual.getSynthParamsFromDevices,
+        scheduleDrumKitNote: actual.scheduleDrumKitNote,
+        scheduleKitNote: actual.scheduleKitNote,
+        scheduleNote: actual.scheduleNote,
+    };
+});
+// Non-spread listing of every Yeast name the strip graph imports.
+vi.mock('#/modules/Yeast/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/Yeast/useCases')>('#/modules/Yeast/useCases');
+    return {
+        hydrateYeastCrdtProjection: actual.hydrateYeastCrdtProjection,
+        hydrateYeastState: actual.hydrateYeastState,
+        processYeastMidi: actual.processYeastMidi,
+        yeastPanic: actual.yeastPanic,
+    };
+});
+// Non-spread listing of every Toaster name the strip graph imports.
+vi.mock('#/modules/Toaster/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/Toaster/useCases')>('#/modules/Toaster/useCases');
+    return {
+        getDefaultPadNames: actual.getDefaultPadNames,
+    };
+});
+// Non-spread listing of every Knead name the strip graph imports.
+vi.mock('#/modules/Knead/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/Knead/useCases')>('#/modules/Knead/useCases');
+    return {
+        hydrateKneadFromTrackStore: actual.hydrateKneadFromTrackStore,
+    };
+});
+// Non-spread listing of every Collaboration name the strip graph imports.
+vi.mock('#/modules/Collaboration/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/Collaboration/useCases')>(
+        '#/modules/Collaboration/useCases'
+    );
+    return {
+        getAssetTransfer: actual.getAssetTransfer,
+    };
+});
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: vi.fn(),
     getAudioContext: vi.fn(() => ({ currentTime: 0, sampleRate: 48000 })),
