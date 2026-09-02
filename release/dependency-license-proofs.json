@@ -1,7 +1,7 @@
 {
     "schemaVersion": 4,
     "cargoRuntimeInventory": {
-        "cargoLockSha256": "bfe1982d1cdc8225a5076e82d2dbb5e2d839c7092a0fc2536d014bc4230b8a10",
+        "cargoLockSha256": "9b2ab84f93dbc9eb71b43c628508dbd2a9a74ffbeeff934a44ad32e45886195b",
         "sourceInputs": [
             {
                 "path": ".cargo/config.toml",
@@ -189,6 +189,32 @@
                 ]
             },
             {
+                "name": "audio-codec-algorithms",
+                "version": "0.8.1",
+                "source": "registry+https://github.com/rust-lang/crates.io-index",
+                "license": "0BSD OR Apache-2.0",
+                "legalFiles": [
+                    {
+                        "label": "LICENSE-0BSD",
+                        "sha256": "39741fbd828e4f94222ddba0aa2133bffd41247713ff2fb41005b28001425a06"
+                    },
+                    {
+                        "label": "LICENSE-APACHE",
+                        "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+                    }
+                ],
+                "reportedLegalFiles": [
+                    {
+                        "label": "LICENSE-0BSD",
+                        "sha256": "39741fbd828e4f94222ddba0aa2133bffd41247713ff2fb41005b28001425a06"
+                    },
+                    {
+                        "label": "LICENSE-APACHE",
+                        "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+                    }
+                ]
+            },
+            {
                 "name": "audioadapter",
                 "version": "5.0.0",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -224,7 +250,7 @@
             },
             {
                 "name": "audioadapter-buffers",
-                "version": "5.1.0",
+                "version": "5.2.0",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "MIT OR Apache-2.0",
                 "legalFiles": [
@@ -258,7 +284,7 @@
             },
             {
                 "name": "audioadapter-sample",
-                "version": "5.1.0",
+                "version": "5.2.0",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "MIT OR Apache-2.0",
                 "legalFiles": [
