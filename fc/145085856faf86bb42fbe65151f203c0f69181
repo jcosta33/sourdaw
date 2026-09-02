@@ -1,0 +1,77 @@
+src/modules/Command/useCases/parseVersionedCommandEnvelope.ts
+  s_a40848e8f8cca9::t_d27fd5bcf9b83a 146-148
+src/modules/Command/useCases/__tests__/actionHistoryReplay.integration.spec.ts
+  s_a40848e8f8cca9::t_d2d8dbf3ec006d 149,151-155,158
+  s_a40848e8f8cca9::t_5aca1cb44fd80d 12,25,58,148,162-185
+  s_a40848e8f8cca9::t_9e40e25b0dd55a 150,156-157,159-161
+src/modules/Command/useCases/getInternalUndoSessionReplayContracts.ts
+  s_a40848e8f8cca9::t_d27fd5bcf9b83a 1,7-20,24-26,34-38
+  s_a40848e8f8cca9::t_d4d77a2bc376ca 2,21-23
+src/modules/MIDI/handlers/noteTransform/handleRestoreMidiClipNotes.ts
+  s_a40848e8f8cca9::t_d4d77a2bc376ca 5
+  s_a40848e8f8cca9::t_d27fd5bcf9b83a 76-79,83
+src/modules/MIDI/handlers/noteTransform/__tests__/handleRestoreMidiClipNotes.spec.ts
+  s_a40848e8f8cca9::t_7c080a0c1b837f 8-13,208-272
+  s_a40848e8f8cca9::t_d4d77a2bc376ca 20
+release/open-source-inventory.json
+  s_a40848e8f8cca9::t_f6bc8aac1531e0 1193
+src/modules/Command/useCases/__tests__/versionedCommandContract.spec.ts
+  s_a40848e8f8cca9::t_be6f8508024413 13,56,856-865,867-870,872-875,877-880,882-886,895,898-900,902,904-912,914,917
+  s_a40848e8f8cca9::t_c78d1395590a29 866,871,876,881,887-894,896-897,901,903,913,915-916
+  s_a40848e8f8cca9::t_3632de1bd5b640 918-919
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_d27fd5bcf9b83a 2372-2373
+src/modules/Command/useCases/__tests__/addNotesCommandRegistration.spec.ts
+  s_a40848e8f8cca9::t_7c080a0c1b837f 615-647
+src/utils/createHandler.ts
+  s_a40848e8f8cca9::t_d27fd5bcf9b83a 28,78
+src/modules/MIDI/useCases/midiNoteTransforms/projectMidiNotesByClipIdThroughRestores.ts
+  s_a40848e8f8cca9::t_d27fd5bcf9b83a 7-9,18-24
+src/modules/Command/useCases/getExecutableCommandRegistration.ts
+  s_a40848e8f8cca9::t_d27fd5bcf9b83a 31-32
+src/modules/Command/useCases/__tests__/commandBatchContract.spec.ts
+  s_a40848e8f8cca9::t_7c080a0c1b837f 496-528
+src/modules/CrdtDocument/useCases/__tests__/previewCommandBatch.spec.ts
+  s_a40848e8f8cca9::t_be6f8508024413 23,152-155,157-158,160-168,170-171,173-189,191-193,195,197,204-206,208-209,211,218-245
+  s_a40848e8f8cca9::t_c78d1395590a29 156,159,169,172,190,194,196,198-203,207,210,212-213,216-217
+  s_a40848e8f8cca9::t_d92e156a3c7a5b 214-215
+  s_a40848e8f8cca9::t_6e88373e377cc4 246-247
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_a40848e8f8cca9::t_d27fd5bcf9b83a 148
+  s_a40848e8f8cca9::t_7f82c09e05a995 914
+src/modules/MIDI/transformers/isRestoreMidiClipNotesReplayArguments.ts
+  s_a40848e8f8cca9::t_8a625cb1fa58e5 1-21
+src/modules/Command/useCases/__tests__/refreshVersionedCommandBatchForApproval.spec.ts
+  s_a40848e8f8cca9::t_989df85dcec2fb 82,87,108
+  s_a40848e8f8cca9::t_02515b4b5e2b76 1-25,27-32,34-40,42-47,49-70,72,81,84-86,88,90-107,109-118
+  s_a40848e8f8cca9::t_c78d1395590a29 26,33,41,48,71,73-80,83,89
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_a40848e8f8cca9::t_d27fd5bcf9b83a 751,756-757
+src/modules/Command/useCases/previewVersionedCommandBatchEnvelope.ts
+  s_a40848e8f8cca9::t_d27fd5bcf9b83a 71-75
+src/modules/AiRuntime/models/Tools/__tests__/CreateAddNotesToolSchema.spec.ts
+  s_a40848e8f8cca9::t_7c080a0c1b837f 90,124
+src/modules/MIDI/handlers/noteCrud/isAddNotesSessionEntry.ts
+  s_a40848e8f8cca9::t_d4d77a2bc376ca 4
+  s_a40848e8f8cca9::t_d27fd5bcf9b83a 45-55,77-78,95-100
+  s_a40848e8f8cca9::t_8a625cb1fa58e5 3
+src/modules/MIDI/useCases/midiNoteTransforms/getRestoreMidiClipNotesStatus.ts
+  s_a40848e8f8cca9::t_d27fd5bcf9b83a 52-61
+  s_a40848e8f8cca9::t_8a625cb1fa58e5 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "fc145085856faf86bb42fbe65151f203c0f69181",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
