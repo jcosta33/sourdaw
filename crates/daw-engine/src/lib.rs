@@ -146,7 +146,16 @@ pub struct EngineHandle {
     timeline_rt_diagnostics: TimelineRtDiagnosticsReader,
     graph_progress: GraphProgressReader,
     transport_position: TransportPositionReader,
+    /// Stream errors the engine's output device reported.
     engine_events: Consumer<EngineEvent>,
+    /// Stream errors the engine's input device reported.
+    ///
+    /// Its own ring rather than a shared one: the two backends run their
+    /// error callbacks on different threads, and `EngineEvent`'s ring is
+    /// SPSC, so one `Producer` cannot serve both sides (see
+    /// `audio_thread::capture_beside`). [`Self::drain_engine_events`] merges
+    /// the two into one ordered `Vec`, output first.
+    capture_events: Consumer<EngineEvent>,
     /// The rate the stream actually opened at. Every command that names a time
     /// in seconds is converted to frames against this and nothing else.
     sample_rate: f32,
@@ -186,6 +195,7 @@ impl EngineHandle {
         let (graph_progress_tx, graph_progress_reader) = graph_progress_channel();
         let (transport_position_tx, transport_position_reader) = transport_position_channel();
         let (engine_event_tx, engine_event_rx) = engine_event_channel();
+        let (capture_event_tx, capture_event_rx) = engine_event_channel();
         let spawned = spawn_audio_thread_with_diagnostics(
             rx,
             diagnostics_tx,
@@ -193,12 +203,27 @@ impl EngineHandle {
             graph_progress_tx,
             transport_position_tx,
             engine_event_tx,
-            // The scheduler has an input bus, but booting the engine still
-            // opens no input device: asking a musician for microphone access
-            // is a consent moment that belongs where a recorder is created,
-            // not to engine start-up. Handing an event ring over here is the
-            // whole of asking for capture.
-            None,
+            // The engine opens the default input device when it starts, the
+            // way Logic, Live and Cubase do — not later, when a recorder is
+            // created. The packaged app carries `NSMicrophoneUsageDescription`,
+            // so this is the one moment the OS asks the musician for
+            // microphone access. Handing an event ring over here is the whole
+            // of asking for capture.
+            //
+            // A refused or absent input never fails engine start — capture is
+            // additive (see `audio_thread::capture_beside`) — so a refusal is
+            // a logged line plus an `Input`-side `EngineEvent`, and the
+            // engine runs without capture. The open shares the output's
+            // startup timeout and its one fallback attempt
+            // (`spawn_with_fallback`, above): an input device whose open
+            // hangs fails the whole engine start exactly as a hung output
+            // would, and there is no in-session engine restart that could
+            // reopen it later. On macOS a denied microphone permission does
+            // not surface as a refusal at all — CoreAudio opens the stream
+            // and delivers silence in place of real input rather than an
+            // error, so a denial reads as capture that opened but never
+            // carries audio.
+            Some(capture_event_tx),
             force_default_buffer,
         )?;
 
@@ -218,6 +243,7 @@ impl EngineHandle {
             graph_progress: graph_progress_reader,
             transport_position: transport_position_reader,
             engine_events: engine_event_rx,
+            capture_events: capture_event_rx,
             sample_rate: spawned.sample_rate,
             bridge_round_trip_frames: spawned.bridge_round_trip_frames,
             input_latency_frames: spawned.input_latency_frames,
@@ -465,13 +491,19 @@ impl EngineHandle {
         self.transport_position.snapshot()
     }
 
-    /// Take every engine event published since the last drain.
+    /// Take every engine event published since the last drain, output-side
+    /// events before input-side ones.
     ///
     /// Consuming, not peeking: an event reported once is reported once. This
     /// runs on the control side, never in the audio callback, so allocating the
-    /// `Vec` here is safe.
+    /// `Vec` here — and draining two rings into it — is safe. Two rings
+    /// because the output and input backends run their error callbacks on
+    /// different threads and `EngineEvent`'s ring is SPSC (see
+    /// `audio_thread::capture_beside`).
     pub fn drain_engine_events(&mut self) -> Vec<EngineEvent> {
-        engine_events::drain_engine_events(&mut self.engine_events)
+        let mut events = engine_events::drain_engine_events(&mut self.engine_events);
+        events.extend(engine_events::drain_engine_events(&mut self.capture_events));
+        events
     }
 
     /// Add a built-in effect to the native rendering graph.
@@ -1053,6 +1085,7 @@ pub fn engine_handle_for_command_capture(
     let (_graph_progress_tx, graph_progress_reader) = graph_progress_channel();
     let (_transport_position_tx, transport_position_reader) = transport_position_channel();
     let (_engine_event_tx, engine_event_rx) = engine_event_channel();
+    let (_capture_event_tx, capture_event_rx) = engine_event_channel();
     let (retired_adoption_tx, retired_adoption_rx) = std::sync::mpsc::channel();
 
     (
@@ -1069,6 +1102,7 @@ pub fn engine_handle_for_command_capture(
             graph_progress: graph_progress_reader,
             transport_position: transport_position_reader,
             engine_events: engine_event_rx,
+            capture_events: capture_event_rx,
             sample_rate: 48_000.0,
             // Seeded exactly as a real stream is before its first callback.
             bridge_round_trip_frames: audio_thread::new_bridge_round_trip_slot(),
@@ -1086,7 +1120,7 @@ mod tests {
         CRUMBS_CAPTURE_RESERVE, EFFECT_TABLE_CAPACITY,
     };
     use crate::audio_bridge::create_audio_bridge;
-    use crate::engine_events::engine_event_channel;
+    use crate::engine_events::{engine_event_channel, EngineEvent, StreamErrorKind, StreamSide};
     use crate::midi::diagnostics::{
         active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsSnapshot,
     };
@@ -1098,7 +1132,7 @@ mod tests {
     use crate::timeline::timeline_rt_diagnostics_channel;
     use crate::timeline::{ChainEntry, DeviceKind, DeviceParam, TimelineTrack};
     use crate::EngineHandle;
-    use rtrb::{Consumer, RingBuffer};
+    use rtrb::{Consumer, Producer, RingBuffer};
     use std::any::Any;
     use std::cell::RefCell;
     use triple_buffer::Input;
@@ -2117,6 +2151,7 @@ mod tests {
         let (_graph_progress_tx, graph_progress_reader) = graph_progress_channel();
         let (_transport_position_tx, transport_position_reader) = transport_position_channel();
         let (_engine_event_tx, engine_event_rx) = engine_event_channel();
+        let (_capture_event_tx, capture_event_rx) = engine_event_channel();
         let (retired_adoption_tx, _retired_adoption_rx) = std::sync::mpsc::channel();
 
         (
@@ -2133,6 +2168,7 @@ mod tests {
                 graph_progress: graph_progress_reader,
                 transport_position: transport_position_reader,
                 engine_events: engine_event_rx,
+                capture_events: capture_event_rx,
                 sample_rate: 48_000.0,
                 bridge_round_trip_frames: crate::audio_thread::new_bridge_round_trip_slot(),
                 input_latency_frames: crate::audio_thread::new_input_latency_slot(),
@@ -2285,5 +2321,89 @@ mod tests {
             .is_ok());
         engine.midi_rt_diagnostics_snapshot();
         assert_eq!(engine.registered_effect_count(), 0);
+    }
+
+    /// A handle whose two event producers stay live, for a test that pushes
+    /// onto them directly rather than through a running audio thread.
+    ///
+    /// Neither [`engine_handle_for_command_capture`] nor
+    /// `handle_with_live_diagnostics_input` hands its event producers back —
+    /// both drop them, because nothing else in this module writes to either
+    /// ring by hand. This exists for the one test that does.
+    fn engine_handle_with_live_event_producers(
+        capacity: usize,
+    ) -> (EngineHandle, Producer<EngineEvent>, Producer<EngineEvent>) {
+        let (command_tx, _command_rx) = RingBuffer::new(capacity);
+        let (_diagnostics_tx, diagnostics_reader) = active_midi_rt_diagnostics_channel();
+        let (_timeline_diagnostics_tx, timeline_diagnostics_reader) =
+            timeline_rt_diagnostics_channel();
+        let (_graph_progress_tx, graph_progress_reader) = graph_progress_channel();
+        let (_transport_position_tx, transport_position_reader) = transport_position_channel();
+        let (engine_event_tx, engine_event_rx) = engine_event_channel();
+        let (capture_event_tx, capture_event_rx) = engine_event_channel();
+        let (retired_adoption_tx, _retired_adoption_rx) = std::sync::mpsc::channel();
+
+        (
+            EngineHandle {
+                command_tx,
+                retired_adoption_tx,
+                _audio_thread: crate::audio_thread::detached_audio_thread_handle(),
+                next_plugin_id: 1000,
+                effect_registrations: 0,
+                reconciled_effect_id_collisions: 0,
+                capture_consumers: Vec::with_capacity(CRUMBS_CAPTURE_RESERVE),
+                midi_rt_diagnostics: diagnostics_reader,
+                timeline_rt_diagnostics: timeline_diagnostics_reader,
+                graph_progress: graph_progress_reader,
+                transport_position: transport_position_reader,
+                engine_events: engine_event_rx,
+                capture_events: capture_event_rx,
+                sample_rate: 48_000.0,
+                bridge_round_trip_frames: crate::audio_thread::new_bridge_round_trip_slot(),
+                input_latency_frames: crate::audio_thread::new_input_latency_slot(),
+            },
+            engine_event_tx,
+            capture_event_tx,
+        )
+    }
+
+    /// [`EngineHandle::drain_engine_events`] merges two rings — output and
+    /// input each run their error callback on a different backend thread, so
+    /// one `Producer<EngineEvent>` cannot serve both (see
+    /// `audio_thread::capture_beside`). An output-side event pushed first
+    /// must still come back before an input-side one pushed after it: the
+    /// merge is output-then-input, not push order across the two rings.
+    #[test]
+    fn drain_engine_events_reports_output_before_input() {
+        let (mut engine, mut engine_event_tx, mut capture_event_tx) =
+            engine_handle_with_live_event_producers(16);
+
+        engine_event_tx
+            .push(EngineEvent::StreamError {
+                side: StreamSide::Output,
+                kind: StreamErrorKind::Xrun,
+            })
+            .expect("an empty ring should accept the output-side event");
+        capture_event_tx
+            .push(EngineEvent::StreamError {
+                side: StreamSide::Input,
+                kind: StreamErrorKind::DeviceNotAvailable,
+            })
+            .expect("an empty ring should accept the input-side event");
+
+        assert_eq!(
+            engine.drain_engine_events(),
+            vec![
+                EngineEvent::StreamError {
+                    side: StreamSide::Output,
+                    kind: StreamErrorKind::Xrun,
+                },
+                EngineEvent::StreamError {
+                    side: StreamSide::Input,
+                    kind: StreamErrorKind::DeviceNotAvailable,
+                },
+            ],
+            "the output-side event must be reported before the input-side one"
+        );
     }
 }
