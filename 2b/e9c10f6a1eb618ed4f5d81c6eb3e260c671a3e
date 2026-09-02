@@ -1,0 +1,19 @@
+src/modules/AiRuntime/useCases/__tests__/intentCommandCatalog.spec.ts
+  s_a40848e8f8cca9::t_3cfa907d76493d 207
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "2be9c10f6a1eb618ed4f5d81c6eb3e260c671a3e",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
