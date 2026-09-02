@@ -122,6 +122,13 @@ type PreparedBatchAction = {
     label: string;
 };
 
+type CanonicalizedBatchAction = {
+    action: AppAction;
+    applicationAssignedIds: VersionedCommandEnvelope['applicationAssignedIds'];
+    handler: ActionHandler;
+    suppliedEnvelope: VersionedCommandEnvelope | undefined;
+};
+
 type AutomergeStorageTransactionScope = <Result>(callback: () => Result) => Result;
 
 class AppActionBatchCancelledError extends Error {
@@ -632,16 +639,6 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             if (options?.shouldExecute && !options.shouldExecute()) {
                 return { status: 'cancelled', reason: 'Batch execution authority was revoked', actions: [] };
             }
-            const productionBriefAdmission = productionBriefAdmissionPort.capture(actions);
-            if (!productionBriefAdmission.allowsCurrent()) {
-                return {
-                    status: 'conflicted',
-                    reason: 'Action batch conflicts with locked production intent',
-                    actions: [],
-                };
-            }
-
-            const preparedActions: PreparedBatchAction[] = [];
             if (options?.commandEnvelopes && options.commandEnvelopes.length !== actions.length) {
                 return {
                     status: 'rejected',
@@ -649,6 +646,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     actions: [],
                 };
             }
+            const canonicalizedActions: CanonicalizedBatchAction[] = [];
             for (const [index, requestedAction] of actions.entries()) {
                 const suppliedEnvelope = options?.commandEnvelopes?.[index];
                 const materialized = suppliedEnvelope
@@ -663,7 +661,6 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                         actions: [],
                     };
                 }
-                let description: HandlerDescribeResult | null;
                 try {
                     action = materializeCommandHandlerArguments(action, handler);
                     if (
@@ -682,9 +679,44 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                             actions: [],
                         };
                     }
+                } catch (error) {
+                    return {
+                        status: 'rejected',
+                        reason: `Could not preflight ${action.type}: ${failureReason(error)}`,
+                        actions: [],
+                    };
+                }
+                canonicalizedActions.push({
+                    action,
+                    applicationAssignedIds: materialized.applicationAssignedIds,
+                    handler,
+                    suppliedEnvelope,
+                });
+            }
+
+            const canonicalActions = canonicalizedActions.map((candidate) => candidate.action);
+            const productionBriefAdmission = productionBriefAdmissionPort.capture(canonicalActions);
+            if (!productionBriefAdmission.allowsCurrent()) {
+                return {
+                    status: 'conflicted',
+                    reason: 'Action batch conflicts with locked production intent',
+                    actions: [],
+                };
+            }
+
+            const preparedActions: PreparedBatchAction[] = [];
+            for (const [index, canonicalized] of canonicalizedActions.entries()) {
+                const { applicationAssignedIds, handler, suppliedEnvelope } = canonicalized;
+                const action = canonicalized.action;
+                let description: HandlerDescribeResult | null;
+                try {
                     description = null;
                     if (handler.undoable || handler.executionKind === 'runtime') {
-                        description = handler.describe(action);
+                        description = handler.describe(action, {
+                            actions: canonicalActions,
+                            actionIndex: index,
+                            signal: options?.signal,
+                        });
                     }
                 } catch (error) {
                     return {
@@ -696,6 +728,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 if (
                     options?.requireCompensation &&
                     handler.executionKind !== 'runtime' &&
+                    handler.requiresAbortCompensation !== false &&
                     !description?.inverseAction &&
                     !handler.isNoop?.(action)
                 ) {
@@ -705,7 +738,11 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                         actions: [],
                     };
                 }
-                if (options?.requireCompensation && description?.inverseAction) {
+                if (
+                    options?.requireCompensation &&
+                    handler.requiresAbortCompensation !== false &&
+                    description?.inverseAction
+                ) {
                     const inverseHandler = getCommandHandler(description.inverseAction);
                     if (
                         !inverseHandler?.validate ||
@@ -723,7 +760,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     ? { action, envelope: suppliedEnvelope }
                     : createExecutionCommandEnvelope({
                           action,
-                          applicationAssignedIds: materialized.applicationAssignedIds,
+                          applicationAssignedIds,
                           expectedEffect: description?.label ?? action.type,
                           options,
                       });

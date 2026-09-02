@@ -13,7 +13,10 @@ import {
  */
 type HandlerConfig<ActionType extends AppAction['type']> = {
     undoable: boolean;
-    describe: (action: Extract<AppAction, { type: ActionType }>) => HandlerDescribeResult;
+    describe: (
+        action: Extract<AppAction, { type: ActionType }>,
+        context?: HandlerValidationContext
+    ) => HandlerDescribeResult;
     validate?: (action: Extract<AppAction, { type: ActionType }>, context: HandlerValidationContext) => boolean;
     canReapplyAfterDivergence?: (action: Extract<AppAction, { type: ActionType }>) => boolean;
     materializeCommandArguments?: (action: Extract<AppAction, { type: ActionType }>) => void;

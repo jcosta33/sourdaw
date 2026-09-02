@@ -1443,6 +1443,30 @@ describe('executeAppActionBatch', () => {
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
     });
 
+    it('captures and rechecks the handler-materialized production-lock footprint', async () => {
+        const capturedTools: string[] = [];
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'select' } };
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute: vi.fn(),
+                materializeCommandArguments: (candidate) => {
+                    candidate.payload.tool = 'marquee';
+                },
+            }),
+        });
+        productionBriefAdmissionPort.setGuard((actions) => {
+            const candidate = actions[0];
+            const tool = candidate?.type === 'setEditingTool' ? candidate.payload.tool : 'missing';
+            capturedTools.push(tool);
+            return { allowsCurrent: () => tool === 'marquee' };
+        });
+
+        await expect(executeAppActionBatch([action])).resolves.toMatchObject({ status: 'committed' });
+
+        expect(action.payload.tool).toBe('select');
+        expect(capturedTools).toEqual(['marquee', 'marquee']);
+    });
+
     it('returns a typed no-op without history when every action already matches project truth', async () => {
         registerHandlerMap({
             setEditingTool: createHandler<SetEditingToolAction>({

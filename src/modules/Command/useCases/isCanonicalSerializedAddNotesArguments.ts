@@ -59,6 +59,7 @@ export function isCanonicalSerializedAddNotesArguments(value: unknown): value is
         value.clipId.trim().length > 0 &&
         Array.isArray(value.notes) &&
         value.notes.length > 0 &&
-        value.notes.every(isCanonicalSerializedAddNote)
+        value.notes.every(isCanonicalSerializedAddNote) &&
+        new Set(value.notes.map((note) => note.id)).size === value.notes.length
     );
 }

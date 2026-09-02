@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
-import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import { addClip, createTrack, getArrangementHandlers, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -520,6 +520,64 @@ describe('handleAddNotes', () => {
         expect(handleAddNotes.describe(action).inverseAction).toBeNull();
         expect(handleAddNotes.execute(action)).toEqual({ status: 'conflict' });
         expect(currentNotes()).toEqual([{ id: 'existing', pitch: 48, startBeat: 0, duration: 1, velocity: 80 }]);
+    });
+
+    it.each([
+        [
+            'duplicates a materialized note id in one action',
+            [
+                { id: 'note-duplicate', pitch: 60, startBeat: 0, duration: 1, velocity: 100 },
+                { id: 'note-duplicate', pitch: 64, startBeat: 1, duration: 1, velocity: 96 },
+            ],
+        ],
+        [
+            'collides with a note already in the target clip',
+            [{ id: 'existing', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
+        ],
+    ])('rejects addNotes before writing when it %s', async (_description, notes) => {
+        const action = { type: 'addNotes' as const, payload: { clipId: CLIP_ID, notes } };
+        const notesBeforeExecution = currentNotes();
+
+        await expect(executeAppAction(action)).rejects.toThrow('Action conflicts with current project state: addNotes');
+
+        expect(currentNotes()).toEqual(notesBeforeExecution);
+    });
+
+    it('executes an addTrack, addClip, addNotes atomic batch on its batch-local MIDI clip', async () => {
+        registerHandlerMap(getArrangementHandlers());
+        const actions = [
+            {
+                type: 'addTrack' as const,
+                payload: { id: 'track-batch-midi', name: 'Batch MIDI', kind: 'midi' as const },
+            },
+            {
+                type: 'addClip' as const,
+                payload: {
+                    id: 'clip-batch-midi',
+                    trackId: 'track-batch-midi',
+                    startBeat: 0,
+                    endBeat: 4,
+                    name: 'Batch MIDI clip',
+                    type: 'midi' as const,
+                },
+            },
+            {
+                type: 'addNotes' as const,
+                payload: {
+                    clipId: 'clip-batch-midi',
+                    notes: [{ id: 'note-batch-local', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }],
+                },
+            },
+        ];
+
+        await expect(executeAppActionBatch(actions, { groupId: 'batch-local-midi', requireCompensation: true })).resolves
+            .toMatchObject({ status: 'committed' });
+        expect(midiStore.value?.notesByClipId['clip-batch-midi']).toEqual([
+            { id: 'note-batch-local', pitch: 60, startBeat: 0, duration: 1, velocity: 100, probability: 100 },
+        ]);
+
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(trackStore.value?.tracks.some((track) => track.id === 'track-batch-midi')).toBe(false);
     });
 
     it('rejects a noncanonical planned action against a frozen target without mutating its caller payload', async () => {

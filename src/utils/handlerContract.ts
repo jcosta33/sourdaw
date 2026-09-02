@@ -2348,7 +2348,7 @@ export type HandlerDeferredEffectAttempt = {
 /** One dispatchable action's handler. Built via `createHandler` and merged into a module
  *  handler map by each `get<Module>Handlers` factory. */
 type ActionHandlerCommon<Action extends AppAction> = {
-    describe: (action: Action) => HandlerDescribeResult;
+    describe: (action: Action, context?: HandlerValidationContext) => HandlerDescribeResult;
     /** Side-effect-free authoritative domain validation run for the whole batch before its first effect. */
     validate?: (action: Action, context: HandlerValidationContext) => boolean;
     /** Explicit action-specific proof that authoritative validation can safely reapply this action after target divergence. */

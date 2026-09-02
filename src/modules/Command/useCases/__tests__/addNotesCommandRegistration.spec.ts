@@ -17,6 +17,8 @@ import { getExecutableAppActionIntentCatalog } from '../getExecutableAppActionIn
 import { getExecutableAppActionToolSchemas } from '../getExecutableAppActionToolSchemas';
 import { getExecutableCommandRegistration } from '../getExecutableCommandRegistration';
 import { getInternalUndoSessionReplayContracts } from '../getInternalUndoSessionReplayContracts';
+import { executeAppAction } from '../executeAppAction';
+import { executeAppActionBatch } from '../executeAppActionBatch';
 import { redo } from '../redo';
 import { registerProductionCommandHandlers } from '../registerProductionCommandHandlers';
 import { undo } from '../undo';
@@ -60,6 +62,40 @@ function createPersistedAddNotesEntry() {
         timestamp: 1,
         source: 'ai',
     };
+}
+
+function registerAllProductionHandlers(): void {
+    registerProductionCommandHandlers([
+        getArrangementHandlers(),
+        getAudioRenderingHandlers(),
+        getAutomationHandlers(),
+        getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
+        getMidiNoteTransformHandlers(),
+        getTransportHandlers(),
+    ]);
+}
+
+function createMidiClipFixture(): void {
+    setTrackStoreState({
+        ...defaultTrackState,
+        tracks: [createTrack({ id: 'track-midi', kind: 'midi', name: 'MIDI' })],
+    });
+    if (
+        addClip({
+            id: 'clip-midi',
+            trackId: 'track-midi',
+            startBeat: 0,
+            endBeat: 8,
+            name: 'MIDI clip',
+            type: 'midi',
+        }) === null
+    ) {
+        throw new Error('Expected MIDI clip fixture');
+    }
+}
+
+function flushUndoSessionWrite(): Promise<void> {
+    return new Promise((resolve) => queueMicrotask(resolve));
 }
 
 describe('addNotes command registration', () => {
@@ -157,22 +193,7 @@ describe('addNotes command registration', () => {
     it('hydrates and replays an exact addNotes restore pair through production registration', async () => {
         const registration = getExecutableCommandRegistration('addNotes');
         const entry = createPersistedAddNotesEntry();
-        setTrackStoreState({
-            ...defaultTrackState,
-            tracks: [createTrack({ id: 'track-midi', kind: 'midi', name: 'MIDI' })],
-        });
-        if (
-            addClip({
-                id: 'clip-midi',
-                trackId: 'track-midi',
-                startBeat: 0,
-                endBeat: 8,
-                name: 'MIDI clip',
-                type: 'midi',
-            }) === null
-        ) {
-            throw new Error('Expected MIDI clip fixture');
-        }
+        createMidiClipFixture();
         midiStore.set({
             notesByClipId: { 'clip-midi': entry.redoAction.payload.notes },
             ccByClipId: {},
@@ -193,14 +214,7 @@ describe('addNotes command registration', () => {
             })
         );
         clearHandlerRegistry();
-        registerProductionCommandHandlers([
-            getArrangementHandlers(),
-            getAudioRenderingHandlers(),
-            getAutomationHandlers(),
-            getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
-            getMidiNoteTransformHandlers(),
-            getTransportHandlers(),
-        ]);
+        registerAllProductionHandlers();
 
         expect(undoStore.value?.past).toMatchObject([entry]);
         expect(midiStore.value?.notesByClipId['clip-midi']).toEqual(entry.redoAction.payload.notes);
@@ -208,6 +222,67 @@ describe('addNotes command registration', () => {
         expect(midiStore.value?.notesByClipId['clip-midi']).toEqual(entry.inverseAction.payload.notes);
         await redo();
         expect(midiStore.value?.notesByClipId['clip-midi']).toEqual(entry.redoAction.payload.notes);
+    });
+
+    it('persists and rehydrates a canonical undo entry from an envelope-less addNotes action', async () => {
+        createMidiClipFixture();
+        midiStore.set({
+            notesByClipId: { 'clip-midi': [{ id: 'base', pitch: 48, startBeat: 0, duration: 1, velocity: 80 }] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        clearHandlerRegistry();
+        registerAllProductionHandlers();
+
+        await executeAppAction({
+            type: 'addNotes',
+            payload: {
+                clipId: 'clip-midi',
+                notes: [{ id: 'note-single', pitch: 60.6, startBeat: -2, duration: 0.01, velocity: 96.7 }],
+            },
+        });
+        await flushUndoSessionWrite();
+        registerAllProductionHandlers();
+
+        const expectedNotes = [
+            { id: 'base', pitch: 48, startBeat: 0, duration: 1, velocity: 80 },
+            { id: 'note-single', pitch: 61, startBeat: 0, duration: 0.0625, velocity: 97, probability: 100 },
+        ];
+        expect(midiStore.value?.notesByClipId['clip-midi']).toEqual(expectedNotes);
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(midiStore.value?.notesByClipId['clip-midi']).toEqual([expectedNotes[0]!]);
+        await redo();
+        expect(midiStore.value?.notesByClipId['clip-midi']).toEqual(expectedNotes);
+    });
+
+    it('persists and rehydrates canonical history from an envelope-less noncanonical addNotes batch', async () => {
+        createMidiClipFixture();
+        midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        clearHandlerRegistry();
+        registerAllProductionHandlers();
+
+        await expect(
+            executeAppActionBatch([
+                {
+                    type: 'addNotes',
+                    payload: {
+                        clipId: 'clip-midi',
+                        notes: [{ id: 'note-batch', pitch: 60.6, startBeat: -2, duration: 0.01, velocity: 96.7 }],
+                    },
+                },
+            ])
+        ).resolves.toMatchObject({ status: 'committed' });
+        await flushUndoSessionWrite();
+        registerAllProductionHandlers();
+
+        const expectedNotes = [
+            { id: 'note-batch', pitch: 61, startBeat: 0, duration: 0.0625, velocity: 97, probability: 100 },
+        ];
+        expect(midiStore.value?.notesByClipId['clip-midi']).toEqual(expectedNotes);
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(midiStore.value?.notesByClipId['clip-midi']).toEqual([]);
+        await redo();
+        expect(midiStore.value?.notesByClipId['clip-midi']).toEqual(expectedNotes);
     });
 
     it.each([
@@ -578,14 +653,7 @@ describe('addNotes command registration', () => {
         );
         clearHandlerRegistry();
 
-        registerProductionCommandHandlers([
-            getArrangementHandlers(),
-            getAudioRenderingHandlers(),
-            getAutomationHandlers(),
-            getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
-            getMidiNoteTransformHandlers(),
-            getTransportHandlers(),
-        ]);
+        registerAllProductionHandlers();
 
         expect(undoStore.value?.past).toMatchObject([{ action: entry.action, inverseAction: entry.inverseAction }]);
     });

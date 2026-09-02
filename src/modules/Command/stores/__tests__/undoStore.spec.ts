@@ -188,6 +188,74 @@ describe('undoStore / pushUndo', () => {
         expect(undoStoreModule.undoStore.value).toEqual({ past: [], future: [] });
     });
 
+    it('omits a malformed addNotes replay pair from the session mirror before reload', async () => {
+        const undoStoreModule = await import('../undoStore');
+        const { getExecutableCommandRegistration } = await import('../../useCases/getExecutableCommandRegistration');
+        const { getInternalUndoSessionReplayContracts } =
+            await import('../../useCases/getInternalUndoSessionReplayContracts');
+        const registration = getExecutableCommandRegistration('addNotes');
+        undoStoreModule.hydrateUndoStoreFromSession([
+            {
+                actionType: registration.actionType,
+                operationVersion: registration.operationVersion,
+                role: 'forward',
+                validateArguments: registration.runtimeSchema.validate,
+                validateEntry: registration.sessionEntryValidator,
+            },
+            ...getInternalUndoSessionReplayContracts(),
+        ]);
+        const baseNotes = [{ id: 'base', pitch: 48, startBeat: 0, duration: 1, velocity: 80 }];
+        const duplicateNotes = [
+            { id: 'note-duplicate', pitch: 60, startBeat: 1, duration: 1, velocity: 100, probability: 100 },
+            { id: 'note-duplicate', pitch: 64, startBeat: 2, duration: 1, velocity: 96, probability: 100 },
+        ];
+        const expectedNotes = [...baseNotes, ...duplicateNotes];
+        undoStoreModule.undoStore.set({
+            past: [
+                {
+                    id: 'undo-malformed-add-notes',
+                    kind: 'action',
+                    label: 'Add MIDI notes',
+                    action: { type: 'addNotes', payload: { clipId: 'clip-midi', notes: duplicateNotes } },
+                    inverseAction: {
+                        type: 'restoreMidiClipNotes',
+                        payload: {
+                            clipId: 'clip-midi',
+                            notes: baseNotes,
+                            expectedNotes,
+                            noteTransformReplayGuard: {
+                                trackId: 'track-midi',
+                                expectedTrackFrozen: false,
+                                expectedClipLocked: false,
+                            },
+                        },
+                    },
+                    redoAction: {
+                        type: 'restoreMidiClipNotes',
+                        payload: {
+                            clipId: 'clip-midi',
+                            notes: expectedNotes,
+                            expectedNotes: baseNotes,
+                            noteTransformReplayGuard: {
+                                trackId: 'track-midi',
+                                expectedTrackFrozen: false,
+                                expectedClipLocked: false,
+                            },
+                        },
+                    },
+                    timestamp: 1,
+                    source: 'ai',
+                },
+            ],
+            future: [],
+        });
+
+        await flushPersistence();
+
+        const persisted = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        expect(persisted.past).toEqual([]);
+    });
+
     it('should append an entry to past and clear future', async () => {
         const { createUndoEntry, pushUndo, undoStore } = await loadSubject();
         const alpha = createUndoEntry(

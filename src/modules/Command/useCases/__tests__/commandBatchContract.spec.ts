@@ -572,6 +572,28 @@ describe('command batch contract', () => {
         });
     });
 
+    it('rejects duplicate application-assigned note IDs at the serialized boundary', () => {
+        const duplicateIdAction: Extract<AppAction, { type: 'addNotes' }> = {
+            type: 'addNotes',
+            payload: {
+                clipId: 'clip-midi',
+                notes: [
+                    { id: 'note-duplicate', pitch: 60, startBeat: 0, duration: 1, velocity: 100, probability: 100 },
+                    { id: 'note-duplicate', pitch: 64, startBeat: 1, duration: 1, velocity: 96, probability: 100 },
+                ],
+            },
+        };
+        const envelope = actionCommand({
+            action: duplicateIdAction,
+            commandId: '88888888-8888-4888-8888-888888888888',
+        });
+
+        expect(parseVersionedCommandEnvelope(serializeVersionedCommandEnvelope(envelope))).toEqual({
+            status: 'invalid',
+            reason: 'Command operation is not deterministic at the serialized boundary',
+        });
+    });
+
     it('rejects a target interval that crosses a protected range between its endpoints', () => {
         const section = actionCommand({
             action: {
