@@ -101,6 +101,10 @@ type ExecuteAppActionBatchOptions = ExecuteOptions & {
         actions: readonly ExecutedBatchAction[];
         pendingEffects: readonly PendingPostCommitEffect[];
     }) => void;
+    /**
+     * Reports the caller's own action objects — never the canonical clones — in committed order, so
+     * an observer that correlates a commit back to what it dispatched can do so by identity.
+     */
     onCommitted?: (actions: readonly AppAction[]) => void;
 };
 
@@ -111,6 +115,7 @@ type ExecuteAppActionBatch = (
 
 type PreparedBatchAction = {
     action: AppAction;
+    requestedAction: AppAction;
     afterAbort: HandlerAfterCommit | null;
     afterCommit: HandlerAfterCommit | null;
     afterAmbiguousCommit: HandlerAfterCommit | null;
@@ -124,6 +129,7 @@ type PreparedBatchAction = {
 
 type CanonicalizedBatchAction = {
     action: AppAction;
+    requestedAction: AppAction;
     applicationAssignedIds: VersionedCommandEnvelope['applicationAssignedIds'];
     handler: ActionHandler;
     suppliedEnvelope: VersionedCommandEnvelope | undefined;
@@ -697,6 +703,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 }
                 canonicalizedActions.push({
                     action,
+                    requestedAction,
                     applicationAssignedIds: materialized.applicationAssignedIds,
                     handler,
                     suppliedEnvelope,
@@ -775,6 +782,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                       });
                 preparedActions.push({
                     action: command.action,
+                    requestedAction: canonicalized.requestedAction,
                     afterAbort: null,
                     afterCommit: null,
                     afterAmbiguousCommit: null,
@@ -951,7 +959,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 );
             }
 
-            const committedActions = executedActions.map(({ action }) => action);
+            const committedActions = executedActions.map(({ requestedAction }) => requestedAction);
             const executedBatchActions = executedActions.map(createExecutedBatchAction);
 
             try {
