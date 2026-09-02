@@ -541,16 +541,19 @@ fn is_private_state_path(resolved_path: &Path) -> bool {
 /// directory.
 ///
 /// Windows trims trailing periods and spaces from every segment on the way to
-/// the filesystem, so `private.` and `private ` both open `private`; its
-/// volumes are case-insensitive by default, as macOS volumes are, so `PRIVATE`
-/// does too. The refusal has to cover every name that lands there, and it
-/// covers them on every platform: over-refusing three unusable directory names
-/// on a case-sensitive volume costs nothing, and a check that varies by host is
-/// one nobody can test where they build.
+/// the filesystem, so `private.` and `private ` both open `private`. Its
+/// volumes then fold case, as macOS volumes do by default — and NTFS folds by
+/// Unicode upcasing, not by ASCII, so the dotless `ı` in `prıvate` upcases to
+/// `I` and opens the same directory. The comparison folds the same way, and it
+/// folds on every platform: over-refusing a handful of names nothing else uses
+/// costs a case-sensitive volume nothing, and the alternative is a refusal
+/// that behaves differently on the host that needs it most.
+///
+/// Folding here rather than leaning on the directory already existing is what
+/// makes this testable: the eager creation at addon construction is defence in
+/// depth, and no `cargo test` compiles it.
 fn names_private_directory(component: &str) -> bool {
-    component
-        .trim_end_matches(['.', ' '])
-        .eq_ignore_ascii_case(PRIVATE_DIR_NAME)
+    component.trim_end_matches(['.', ' ']).to_uppercase() == PRIVATE_DIR_NAME.to_uppercase()
 }
 
 /// Create the private directory before anything can resolve a path into it.
@@ -562,6 +565,12 @@ fn names_private_directory(component: &str) -> bool {
 /// answers an application-data path from the built-in roots without ever
 /// consulting the registry, so a lazy creation would still be pending during
 /// the first renderer command a fresh profile guards.
+/// The wrapper is the half that resolves the real application data directory,
+/// and its only in-crate callers are gated — `restore_grants` out of the test
+/// build, the addon behind its feature — so a test build compiles it with no
+/// caller at all. [`create_private_state_directory`] is where the work is, and
+/// that is what the test drives.
+#[cfg(not(test))]
 pub(crate) fn ensure_private_state_directory() {
     let Some(directory) = private_state_directory() else {
         return;
@@ -842,6 +851,11 @@ mod tests {
     /// handed the planted document back as `private` at the next launch.
     #[tokio::test]
     async fn a_case_variant_spelling_does_not_reach_the_private_directory() {
+        // The premise, stated rather than assumed: NTFS folds by Unicode
+        // upcasing, and this is the spelling that fold collapses onto the real
+        // directory name while an ASCII fold leaves it alone.
+        assert_eq!("prıvate".to_uppercase(), "PRIVATE");
+
         for spelling in [
             "PRIVATE",
             "Private",
@@ -850,6 +864,9 @@ mod tests {
             "private..",
             "private ",
             "PRIVATE. ",
+            "prıvate",
+            "PRıVATE",
+            "prıvate. ",
         ] {
             let destination = spelled_private_state_path(spelling, &grant_document_name());
 
@@ -867,6 +884,18 @@ mod tests {
                 .unwrap_err(),
                 "Path is outside allowed native file roots",
                 "{spelling} must be refused for writing"
+            );
+        }
+
+        // The control: a refusal that swallowed every neighbouring name would
+        // pass every assertion above and quietly take the app's own storage
+        // away from it. Checked without writing, because this half is admitted.
+        for admitted in ["privates", "private-old"] {
+            let destination = spelled_private_state_path(admitted, "state.json");
+
+            assert!(
+                ensure_allowed_root(&destination, GrantMode::ReadWrite).is_ok(),
+                "{admitted} is an ordinary directory in the app's own data root"
             );
         }
     }
