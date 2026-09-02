@@ -35,11 +35,7 @@ import {
 } from '../publishReview.ts';
 import { withPullRequestReviewPublicationMutationLock } from '../pullRequestMutationLock.ts';
 import { githubTrackerIssuePort } from '../reconcileTrackerIssue.ts';
-import {
-    coordinateResolveReviewThread,
-    runResolveReviewThreadCli,
-    type ResolveReviewThreadCoordinatorDependencies,
-} from '../resolveReviewThread.ts';
+import { runResolveReviewThreadCli } from '../resolveThread.ts';
 import {
     BOOTSTRAP_PATH,
     assertTrustedSourceGraph,
@@ -459,24 +455,29 @@ function trustedReviewMutationFixture(root: string, mutationLog: string): void {
             '}',
         ].join('\n')
     );
-    for (const [path, runner, label] of [
-        ['publishReview.ts', 'runPublishReviewCli', 'publish'],
-        ['resolveReviewThread.ts', 'runResolveReviewThreadCli', 'resolve'],
-    ] as const) {
-        writeFileSync(
-            join(root, 'scripts', path),
-            [
-                "import { appendFileSync } from 'node:fs';",
-                "import { withPullRequestMutationLock } from './pullRequestMutationLock.ts';",
-                `export async function ${runner}(args) {`,
-                '    await withPullRequestMutationLock(process.cwd(), 3239, async () => {',
-                `        appendFileSync(${JSON.stringify(mutationLog)}, ${JSON.stringify(`${label}:auth:`)} + JSON.stringify(args) + '\\n');`,
-                '    });',
-                '    return 0;',
-                '}',
-            ].join('\n')
-        );
-    }
+    writeFileSync(
+        join(root, 'scripts/publishReview.ts'),
+        [
+            "import { appendFileSync } from 'node:fs';",
+            "import { withPullRequestMutationLock } from './pullRequestMutationLock.ts';",
+            'export async function runPublishReviewCli(args) {',
+            '    await withPullRequestMutationLock(process.cwd(), 3239, async () => {',
+            `        appendFileSync(${JSON.stringify(mutationLog)}, 'publish:auth:' + JSON.stringify(args) + '\\n');`,
+            '    });',
+            '    return 0;',
+            '}',
+        ].join('\n')
+    );
+    writeFileSync(
+        join(root, 'scripts/resolveThread.ts'),
+        [
+            "import { appendFileSync } from 'node:fs';",
+            'export async function runResolveReviewThreadCli(args) {',
+            `    appendFileSync(${JSON.stringify(mutationLog)}, 'resolve:auth:' + JSON.stringify(args) + '\\n');`,
+            '    return 0;',
+            '}',
+        ].join('\n')
+    );
     for (const path of [
         'githubAppIdentity.ts',
         'prContract.ts',
@@ -734,6 +735,7 @@ describe('package scripts and gitignore', () => {
             },
             gateRequiredCheckNames: () => new Set(['Gate']),
             headCheckRuns: () => [],
+            requiredStatusCheckContexts: () => ['Gate'],
             reviewState: () => ({ latestReviewerStateOnHead: 'APPROVED', unresolvedThreads: 0 }),
             dependents: (baseBranch) => (baseBranch === initial.headRefName ? [dependentBefore] : []),
             repositoryDeletesMergedBranches: () => false,
@@ -784,9 +786,7 @@ describe('package scripts and gitignore', () => {
             'node scripts/trustedGithubWriteBootstrap.ts review:publish:recover'
         );
         expect(pkg.scripts['review:resolve']).toBe('node scripts/trustedGithubWriteBootstrap.ts review:resolve');
-        expect(pkg.scripts['review:resolve:recover']).toBe(
-            'node scripts/trustedGithubWriteBootstrap.ts review:resolve:recover'
-        );
+        expect(pkg.scripts['review:resolve:recover']).toBeUndefined();
         expect(pkg.scripts['deliver:recover-lock']).toBeUndefined();
         expect(pkg.scripts['pr:supersede']).toBe('node scripts/supersedePullRequest.ts');
         expect(pkg.scripts['issue:reconcile']).toBe('node scripts/trustedGithubWriteBootstrap.ts issue:reconcile');
@@ -881,8 +881,7 @@ describe('package scripts and gitignore', () => {
             'deliverPullRequest.ts',
             'pullRequestMutationLock.ts',
             'removeLane.ts',
-            'resolveReviewThread.ts',
-            'recoverReviewResolutionLock.ts',
+            'resolveThread.ts',
             'recoverDeliveryLock.ts',
             'supersedePullRequest.ts',
             'reconcileTrackerIssue.ts',
@@ -915,11 +914,9 @@ describe('package scripts and gitignore', () => {
             'scripts/githubAppIdentity.ts',
             'scripts/prContract.ts',
         ]);
-        expect(trustedDependencyPaths('review:resolve:recover')).toEqual([
+        expect(trustedDependencyPaths('review:resolve')).toEqual([
             'scripts/trustedGithubWriteBootstrap.ts',
-            'scripts/recoverReviewResolutionLock.ts',
-            'scripts/resolveReviewThread.ts',
-            'scripts/pullRequestMutationLock.ts',
+            'scripts/resolveThread.ts',
             'scripts/githubAppIdentity.ts',
             'scripts/prContract.ts',
         ]);
@@ -1007,7 +1004,7 @@ describe('package scripts and gitignore', () => {
             {
                 command: 'review:publish' as const,
                 entry: 'scripts/publishReview.ts',
-                lock: 'scripts/pullRequestMutationLock.ts',
+                required: 'scripts/pullRequestMutationLock.ts',
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/publishReview.ts',
@@ -1021,7 +1018,7 @@ describe('package scripts and gitignore', () => {
             {
                 command: 'review:publish:recover' as const,
                 entry: 'scripts/publishReview.ts',
-                lock: 'scripts/pullRequestMutationLock.ts',
+                required: 'scripts/pullRequestMutationLock.ts',
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/publishReview.ts',
@@ -1034,19 +1031,18 @@ describe('package scripts and gitignore', () => {
             },
             {
                 command: 'review:resolve' as const,
-                entry: 'scripts/resolveReviewThread.ts',
-                lock: 'scripts/pullRequestMutationLock.ts',
+                entry: 'scripts/resolveThread.ts',
+                required: 'scripts/githubAppIdentity.ts',
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
-                    'scripts/resolveReviewThread.ts',
-                    'scripts/pullRequestMutationLock.ts',
+                    'scripts/resolveThread.ts',
                     'scripts/githubAppIdentity.ts',
                     'scripts/prContract.ts',
                 ],
             },
         ];
 
-        for (const { command, entry, lock, expected } of cases) {
+        for (const { command, entry, required, expected } of cases) {
             const paths = trustedDependencyPaths(command);
             expect(paths).toEqual(expected);
             const sources = new Map(paths.map((path) => [path, readFileSync(join(repositoryRoot, path), 'utf8')]));
@@ -1056,8 +1052,10 @@ describe('package scripts and gitignore', () => {
             );
 
             const incomplete = new Map(sources);
-            incomplete.delete(lock);
-            expect(() => assertTrustedSourceGraph(command, incomplete)).toThrow(`trusted snapshot is missing ${lock}`);
+            incomplete.delete(required);
+            expect(() => assertTrustedSourceGraph(command, incomplete)).toThrow(
+                `trusted snapshot is missing ${required}`
+            );
 
             const extra = new Map(sources).set('scripts/unexpected.ts', 'export {};');
             expect(() => assertTrustedSourceGraph(command, extra)).toThrow(
@@ -1261,84 +1259,6 @@ describe('package scripts and gitignore', () => {
         expect(env.GIT_NO_REPLACE_OBJECTS).toBe('1');
     });
 
-    it.each([
-        [
-            'review:resolve',
-            'scripts/resolveReviewThread.ts',
-            'runResolveReviewThreadCli',
-            'stale',
-            JSON.stringify({ path: '/hostile/child-marker.json', token: 'stale-token' }),
-        ],
-        ['review:resolve', 'scripts/resolveReviewThread.ts', 'runResolveReviewThreadCli', 'invalid', '1'],
-        [
-            'review:resolve',
-            'scripts/resolveReviewThread.ts',
-            'runResolveReviewThreadCli',
-            'valid',
-            JSON.stringify({ path: '/trusted/child-marker.json', token: '11111111-1111-4111-8111-111111111111' }),
-        ],
-        [
-            'review:resolve:recover',
-            'scripts/recoverReviewResolutionLock.ts',
-            'runRecoverReviewResolutionLockCli',
-            'stale',
-            JSON.stringify({ path: '/hostile/child-marker.json', token: 'stale-token' }),
-        ],
-        [
-            'review:resolve:recover',
-            'scripts/recoverReviewResolutionLock.ts',
-            'runRecoverReviewResolutionLockCli',
-            'invalid',
-            '1',
-        ],
-        [
-            'review:resolve:recover',
-            'scripts/recoverReviewResolutionLock.ts',
-            'runRecoverReviewResolutionLockCli',
-            'valid',
-            JSON.stringify({ path: '/trusted/child-marker.json', token: '11111111-1111-4111-8111-111111111111' }),
-        ],
-    ] as const)(
-        'starts %s snapshot without a %s inherited detached-worker marker',
-        async (command, entryPath, runner, _markerKind, inheritedMarker) => {
-            const snapshot = {
-                commit: 'a'.repeat(40),
-                sources: new Map([
-                    [
-                        entryPath,
-                        `export async function ${runner}() { return Object.keys(process.env).some((key) => key.toUpperCase() === 'SOURDAW_REVIEW_RESOLUTION_CHILD') ? 23 : 0; }`,
-                    ],
-                ]),
-                launcher: {
-                    primaryRoot: '/repo',
-                    commonDir: '/repo/.git',
-                    gitPath: process.execPath,
-                    ghPath: process.execPath,
-                    psPath: process.execPath,
-                },
-            };
-
-            const inheritedKey =
-                command === 'review:resolve' ? 'sOuRdAw_ReViEw_ReSoLuTiOn_ChIlD' : 'SoUrDaW_rEvIeW_rEsOlUtIoN_cHiLd';
-            const env = trustedSnapshotEnv(snapshot, { [inheritedKey]: inheritedMarker });
-            const previousChildMarker = process.env[inheritedKey];
-
-            try {
-                process.env[inheritedKey] = inheritedMarker;
-                expect(Object.keys(env).some((key) => key.toUpperCase() === 'SOURDAW_REVIEW_RESOLUTION_CHILD')).toBe(
-                    false
-                );
-                await expect(executeTrustedSnapshot(command, [], snapshot)).resolves.toBe(0);
-            } finally {
-                if (previousChildMarker === undefined) {
-                    delete process.env[inheritedKey];
-                } else {
-                    process.env[inheritedKey] = previousChildMarker;
-                }
-            }
-        }
-    );
-
     it('does not enter inherited Node preloads or child PATH shims', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-child-env-'));
         const preloadMarker = join(root, 'preload-entered');
@@ -1366,10 +1286,6 @@ describe('package scripts and gitignore', () => {
                 encoding: 'utf8',
                 env: { ...process.env, PATH: previousPath },
             }).trim();
-            const psPath = execFileSync('/usr/bin/which', ['ps'], {
-                encoding: 'utf8',
-                env: { ...process.env, PATH: previousPath },
-            }).trim();
             const snapshot = {
                 commit: 'a'.repeat(40),
                 sources: new Map([
@@ -1378,13 +1294,7 @@ describe('package scripts and gitignore', () => {
                         "import { spawnSync } from 'node:child_process'; export async function runDeliverCli() { const result = spawnSync('git', ['--version']); return result.status ?? 1; }",
                     ],
                 ]),
-                launcher: {
-                    primaryRoot: '/repo',
-                    commonDir: '/repo/.git',
-                    gitPath,
-                    ghPath,
-                    psPath,
-                },
+                launcher: { primaryRoot: '/repo', commonDir: '/repo/.git', gitPath, ghPath },
             };
 
             expect(trustedSnapshotEnv(snapshot).NODE_OPTIONS).toBeUndefined();
@@ -1465,10 +1375,8 @@ describe('package scripts and gitignore', () => {
 
                 const binding = resolveTrustedLauncherBinding(
                     primary,
-                    {
-                        PATH: [gitBin, ghBin, psBin].join(delimiter),
-                    },
-                    'review:resolve'
+                    { PATH: [gitBin, ghBin, psBin].join(delimiter) },
+                    'review:publish'
                 );
 
                 expect(binding.primaryRoot).toBe(realpathSync(primary));
@@ -1485,7 +1393,16 @@ describe('package scripts and gitignore', () => {
                 expect(env.SOURDAW_TRUSTED_GIT_PATH).toBe(binding.gitPath);
                 expect(env.SOURDAW_TRUSTED_GH_PATH).toBe(binding.ghPath);
                 expect(env.SOURDAW_TRUSTED_PS_PATH).toBe(binding.psPath);
-                expect(env.PATH).toBe([...new Set([gitBin, ghBin, psBin, dirname(process.execPath)])].join(delimiter));
+                expect(env.PATH).toBe(
+                    [
+                        ...new Set([
+                            realpathSync(gitBin),
+                            realpathSync(ghBin),
+                            realpathSync(psBin),
+                            dirname(process.execPath),
+                        ]),
+                    ].join(delimiter)
+                );
             } finally {
                 rmSync(fixtureRoot, { recursive: true, force: true });
             }
@@ -1542,7 +1459,14 @@ describe('package scripts and gitignore', () => {
                 expect(env.SOURDAW_TRUSTED_POWERSHELL_PATH).toBe(powershellPath);
                 expect(env.SOURDAW_TRUSTED_PS_PATH).toBeUndefined();
                 expect(env.PATH).toBe(
-                    [...new Set([gitBin, ghBin, powerShellBin, dirname(process.execPath)])].join(delimiter)
+                    [
+                        ...new Set([
+                            realpathSync(gitBin),
+                            realpathSync(ghBin),
+                            realpathSync(powerShellBin),
+                            dirname(process.execPath),
+                        ]),
+                    ].join(delimiter)
                 );
             } finally {
                 rmSync(fixtureRoot, { recursive: true, force: true });
@@ -1586,12 +1510,12 @@ describe('package scripts and gitignore', () => {
                         PATH: [rejectedBin, gitBin, ghBin, powerShellBin].join(';'),
                         PATHEXT: '.EXE;.CMD;.BAT',
                     },
-                    'review:resolve',
+                    'review:publish',
                     'win32'
                 );
                 const powershellPath = binding.powershellPath;
                 if (powershellPath === undefined) {
-                    throw new Error('expected a trusted powershell executable for Windows review resolution');
+                    throw new Error('expected a trusted powershell executable for Windows review publication');
                 }
 
                 expect(binding.gitPath).toBe(realpathSync(gitWrapper));
@@ -1629,17 +1553,18 @@ describe('package scripts and gitignore', () => {
 
                 const path = [gitBin, ghBin].join(delimiter);
                 const windowsPath = [gitBin, ghBin].join(';');
-                expect(resolveTrustedLauncherBinding(primary, { PATH: path }, 'deliver')).toMatchObject({
+                expect(resolveTrustedLauncherBinding(primary, { PATH: path })).toEqual({
                     primaryRoot: realpathSync(primary),
+                    commonDir: realpathSync(join(primary, '.git')),
                     gitPath: realpathSync(gitWrapper),
                     ghPath: realpathSync(ghWrapper),
-                    psPath: undefined,
                 });
                 expect(resolveTrustedLauncherBinding(primary, { PATH: path }, 'lane:publish').psPath).toBeUndefined();
                 expect(
                     resolveTrustedLauncherBinding(primary, { PATH: path }, 'issue:reconcile').psPath
                 ).toBeUndefined();
-                for (const command of ['deliver', 'lane:publish', 'issue:reconcile'] as const) {
+                expect(resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:resolve').psPath).toBeUndefined();
+                for (const command of ['deliver', 'lane:publish', 'issue:reconcile', 'review:resolve'] as const) {
                     expect(
                         resolveTrustedLauncherBinding(primary, { PATH: windowsPath }, command, 'win32')
                     ).toMatchObject({
@@ -1650,29 +1575,23 @@ describe('package scripts and gitignore', () => {
                         powershellPath: undefined,
                     });
                 }
-                expect(() => resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:resolve')).toThrow(
-                    /cannot resolve trusted ps executable/i
-                );
+                expect(resolveTrustedLauncherBinding(primary, { PATH: windowsPath }, undefined, 'win32')).toEqual({
+                    primaryRoot: realpathSync(primary),
+                    commonDir: realpathSync(join(primary, '.git')),
+                    gitPath: realpathSync(windowsGitWrapper),
+                    ghPath: realpathSync(windowsGhWrapper),
+                });
                 expect(() => resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:publish')).toThrow(
                     /cannot resolve trusted ps executable/i
                 );
                 expect(() => resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:publish:recover')).toThrow(
                     /cannot resolve trusted ps executable/i
                 );
-                expect(() => resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:resolve:recover')).toThrow(
-                    /cannot resolve trusted ps executable/i
-                );
-                expect(() =>
-                    resolveTrustedLauncherBinding(primary, { PATH: windowsPath }, 'review:resolve', 'win32')
-                ).toThrow(/cannot resolve trusted powershell executable/i);
                 expect(() =>
                     resolveTrustedLauncherBinding(primary, { PATH: windowsPath }, 'review:publish', 'win32')
                 ).toThrow(/cannot resolve trusted powershell executable/i);
                 expect(() =>
                     resolveTrustedLauncherBinding(primary, { PATH: windowsPath }, 'review:publish:recover', 'win32')
-                ).toThrow(/cannot resolve trusted powershell executable/i);
-                expect(() =>
-                    resolveTrustedLauncherBinding(primary, { PATH: windowsPath }, 'review:resolve:recover', 'win32')
                 ).toThrow(/cannot resolve trusted powershell executable/i);
 
                 const result = spawnSync(
@@ -1782,7 +1701,7 @@ describe('package scripts and gitignore', () => {
             expect(result.stderr).toBe('');
             expect(readFileSync(outputPath, 'utf8')).toBe('literal:ordinary\n');
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
         }
     });
 
@@ -1790,32 +1709,28 @@ describe('package scripts and gitignore', () => {
      * Only `deliver` decides a merge, so no other command reads a workflow. A launcher that read one
      * for every command would make them fail over a file and a parser they never use.
      */
-    it.each([
-        'lane:publish',
-        'issue:reconcile',
-        'review:publish',
-        'review:publish:recover',
-        'review:resolve',
-        'review:resolve:recover',
-    ] as const)('reads no gating workflow for %s', async (command) => {
-        const originReads: string[] = [];
-        let gateWorkflow: unknown = 'unset';
+    it.each(['lane:publish', 'issue:reconcile', 'review:publish', 'review:publish:recover', 'review:resolve'] as const)(
+        'reads no gating workflow for %s',
+        async (command) => {
+            const originReads: string[] = [];
+            let gateWorkflow: unknown = 'unset';
 
-        await runTrustedGithubWriteCommand(command, [], {
-            resolveOriginMain: () => 'pinned-sha',
-            readOriginSource: (_commit, path) => {
-                originReads.push(path);
-                return 'trusted';
-            },
-            executeSnapshot: async (_command, _args, snapshot) => {
-                gateWorkflow = snapshot.gateWorkflow;
-                return 0;
-            },
-        });
+            await runTrustedGithubWriteCommand(command, [], {
+                resolveOriginMain: () => 'pinned-sha',
+                readOriginSource: (_commit, path) => {
+                    originReads.push(path);
+                    return 'trusted';
+                },
+                executeSnapshot: async (_command, _args, snapshot) => {
+                    gateWorkflow = snapshot.gateWorkflow;
+                    return 0;
+                },
+            });
 
-        expect(originReads).toEqual([...trustedDependencyPaths(command)]);
-        expect(gateWorkflow).toBeUndefined();
-    });
+            expect(originReads).toEqual([...trustedDependencyPaths(command)]);
+            expect(gateWorkflow).toBeUndefined();
+        }
+    );
 
     it('keeps the loader inside its own trusted closure', () => {
         for (const command of [
@@ -1825,239 +1740,10 @@ describe('package scripts and gitignore', () => {
             'review:publish',
             'review:publish:recover',
             'review:resolve',
-            'review:resolve:recover',
         ] as const) {
             expect(trustedDependencyPaths(command)).toContain(BOOTSTRAP_PATH);
         }
     });
-
-    it.each([
-        ['journaled v4 owner', true],
-        ['legacy v2 owner', false],
-    ] as const)('runs dead-holder %s recovery through the trusted bootstrap', async (_label, expectsRecovery) => {
-        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-resolution-recovery-'));
-        const reviewThreadId = 'PRRT_kwDOExample';
-        const reviewHead = 'a'.repeat(40);
-        const uppercaseReviewHead = reviewHead.toUpperCase();
-        const ref = 'refs/sourdaw/review-resolution/pr-42';
-        const validToken = '11111111-1111-4111-8111-111111111111';
-        const gitPath = execFileSync('/usr/bin/which', ['git'], { encoding: 'utf8' }).trim();
-        const ghPath = execFileSync('/usr/bin/which', ['gh'], { encoding: 'utf8' }).trim();
-        runGit(root, ['init', '--quiet']);
-        try {
-            const ownerOid = execFileSync('git', ['hash-object', '-w', '--stdin'], {
-                cwd: root,
-                encoding: 'utf8',
-                input: JSON.stringify(
-                    expectsRecovery
-                        ? {
-                              version: 4,
-                              pid: 999999,
-                              ownerFence: { kind: 'pgid', pgid: 999999 },
-                              threadId: reviewThreadId,
-                              head: uppercaseReviewHead,
-                              token: validToken,
-                              mutation: { phase: 'idle', epoch: 0 },
-                          }
-                        : {
-                              version: 2,
-                              pid: 999999,
-                              pgid: 999999,
-                              threadId: reviewThreadId,
-                              head: uppercaseReviewHead,
-                              token: validToken,
-                          }
-                ),
-            }).trim();
-            runGit(root, ['update-ref', ref, ownerOid, '0'.repeat(ownerOid.length)]);
-
-            const result = await runTrustedGithubWriteCommand(
-                'review:resolve:recover',
-                ['42', '--owner', ownerOid.toUpperCase()],
-                {
-                    resolveOriginMain: () => 'trusted-sha',
-                    readOriginSource: (_commit, path) => readFileSync(join(import.meta.dirname, '../..', path), 'utf8'),
-                    executeSnapshot: async (command, args, snapshot) =>
-                        executeTrustedSnapshot(
-                            command,
-                            args,
-                            {
-                                ...snapshot,
-                                launcher: {
-                                    primaryRoot: root,
-                                    commonDir: join(root, '.git'),
-                                    gitPath,
-                                    ghPath,
-                                    psPath: execFileSync('/usr/bin/which', ['ps'], { encoding: 'utf8' }).trim(),
-                                },
-                            },
-                            async (entryPath, runner, runnerArgs, currentSnapshot) => {
-                                const source = [
-                                    "import { spawnSync } from 'node:child_process';",
-                                    "import { dirname, join } from 'node:path';",
-                                    "import { pathToFileURL } from 'node:url';",
-                                    'const [entryPath, runner, ...args] = process.argv.slice(2);',
-                                    'const loaded = await import(pathToFileURL(entryPath).href);',
-                                    "const helper = await import(pathToFileURL(join(dirname(entryPath), 'resolveReviewThread.ts')).href);",
-                                    'const result = await loaded[runner](args, {',
-                                    `  trustedPrimaryRoot: () => { if (process.env.SOURDAW_TRUSTED_PRIMARY_ROOT !== ${JSON.stringify(root)}) throw new Error('missing trusted launcher binding'); return ${JSON.stringify(root)}; },`,
-                                    `  authenticateAuthor: async () => ({ minted: { actorNodeId: ${JSON.stringify(AUTHOR_BOT_NODE_ID)} }, session: { env: {}, dispose() {} } }),`,
-                                    `  repositoryName: () => ${JSON.stringify(REQUIRED_REPOSITORY)},`,
-                                    "  gh: () => () => '',",
-                                    `  inspectThread: (number, threadId) => ({ pullRequestId: 'PR_kwDOExamplePullRequest', head: ${JSON.stringify(reviewHead)}, thread: { id: threadId, isResolved: false, resolvedByNodeId: null, resolvedByLogin: null, resolvedByType: null, rootCommentId: null, rootCommentFullDatabaseId: null, rootAuthorNodeId: null, rootAuthorLogin: null, rootAuthorType: null, comments: [] }, pendingReviews: [] }),`,
-                                    '  recoverLock: (primaryRoot, number, expectedOwnerOid, reconcile) => helper.recoverPullRequestReviewResolutionLock(primaryRoot, number, expectedOwnerOid, reconcile, () => false),',
-                                    '});',
-                                    "if (!Number.isSafeInteger(result)) throw new Error('runner returned invalid exit code');",
-                                    'process.exitCode = result;',
-                                ].join('\n');
-                                const child = spawnSync(
-                                    process.execPath,
-                                    [
-                                        '--input-type=module',
-                                        '--eval',
-                                        source,
-                                        'trusted-review-recovery',
-                                        entryPath,
-                                        runner,
-                                        ...runnerArgs,
-                                    ],
-                                    {
-                                        cwd: process.cwd(),
-                                        env: trustedSnapshotEnv(currentSnapshot),
-                                        encoding: 'utf8',
-                                        shell: false,
-                                    }
-                                );
-                                if (child.error !== undefined) {
-                                    throw child.error;
-                                }
-                                expect(child.status).toBe(expectsRecovery ? 0 : 1);
-                                if (expectsRecovery) {
-                                    expect(child.stdout.trim()).toBe(
-                                        `review-resolution-lock-recovered:42:${reviewThreadId}:${reviewHead}:${reviewHead}:unresolved:0`
-                                    );
-                                } else {
-                                    expect(child.stderr).toMatch(/refuses an unjournaled legacy v2 lock owner/i);
-                                }
-                                return child.status ?? 1;
-                            }
-                        ),
-                }
-            );
-
-            expect(result).toBe(expectsRecovery ? 0 : 1);
-            const currentOid = spawnSync('git', ['rev-parse', '--verify', '--quiet', ref], {
-                cwd: root,
-                encoding: 'utf8',
-                shell: false,
-            });
-            expect(currentOid.status).toBe(expectsRecovery ? 1 : 0);
-            if (!expectsRecovery) {
-                expect(currentOid.stdout.trim()).toBe(ownerOid);
-            }
-        } finally {
-            rmSync(root, { recursive: true, force: true });
-        }
-    });
-
-    it.each([
-        ['review:resolve', 'scripts/resolveReviewThread.ts', 'runResolveReviewThreadCli'],
-        ['review:resolve:recover', 'scripts/recoverReviewResolutionLock.ts', 'runRecoverReviewResolutionLockCli'],
-    ] as const)(
-        'passes the trusted ps path into the generated %s snapshot dependencies',
-        async (command, entryPath, runner) => {
-            const root = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-review-ps-deps-'));
-            const psBin = join(root, 'trusted-bin');
-            const recordPath = join(root, 'trusted-ps-path.txt');
-            const psPath = join(psBin, 'ps');
-            const gitPath = execFileSync('/usr/bin/which', ['git'], { encoding: 'utf8' }).trim();
-            const ghPath = execFileSync('/usr/bin/which', ['gh'], { encoding: 'utf8' }).trim();
-            try {
-                mkdirSync(psBin, { recursive: true });
-                writeFileSync(psPath, '#!/bin/sh\nexit 0\n', { mode: 0o700 });
-                chmodSync(psPath, 0o700);
-
-                await expect(
-                    executeTrustedSnapshot(command, ['42', '--record', recordPath], {
-                        commit: 'a'.repeat(40),
-                        sources: new Map([
-                            [
-                                entryPath,
-                                [
-                                    "import { writeFileSync } from 'node:fs';",
-                                    `export async function ${runner}(_args, dependencies) {`,
-                                    '  const trustedLauncher = dependencies?.trustedLauncher;',
-                                    "  writeFileSync(process.argv.at(-1), trustedLauncher?.psPath ?? 'missing', 'utf8');",
-                                    '  return 0;',
-                                    '}',
-                                ].join('\n'),
-                            ],
-                        ]),
-                        launcher: {
-                            primaryRoot: '/repo',
-                            commonDir: '/repo/.git',
-                            gitPath,
-                            ghPath,
-                            psPath,
-                        },
-                    })
-                ).resolves.toBe(0);
-
-                expect(readFileSync(recordPath, 'utf8')).toBe(psPath);
-            } finally {
-                rmSync(root, { recursive: true, force: true });
-            }
-        }
-    );
-
-    it.each([
-        ['review:resolve', 'scripts/resolveReviewThread.ts', 'runResolveReviewThreadCli'],
-        ['review:resolve:recover', 'scripts/recoverReviewResolutionLock.ts', 'runRecoverReviewResolutionLockCli'],
-    ] as const)(
-        'passes a Windows powershell launcher without ps into the generated %s snapshot dependencies',
-        async (command, entryPath, runner) => {
-            const root = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-review-win32-deps-'));
-            const recordPath = join(root, 'trusted-launcher.json');
-            const gitPath = execFileSync('/usr/bin/which', ['git'], { encoding: 'utf8' }).trim();
-            const ghPath = execFileSync('/usr/bin/which', ['gh'], { encoding: 'utf8' }).trim();
-            const powershellPath = join(root, 'powershell.exe');
-            try {
-                await expect(
-                    executeTrustedSnapshot(command, ['42', '--record', recordPath], {
-                        commit: 'a'.repeat(40),
-                        sources: new Map([
-                            [
-                                entryPath,
-                                [
-                                    "import { writeFileSync } from 'node:fs';",
-                                    `export async function ${runner}(_args, dependencies) {`,
-                                    "  writeFileSync(process.argv.at(-1), JSON.stringify(dependencies?.trustedLauncher ?? null), 'utf8');",
-                                    '  return 0;',
-                                    '}',
-                                ].join('\n'),
-                            ],
-                        ]),
-                        launcher: {
-                            primaryRoot: '/repo',
-                            commonDir: '/repo/.git',
-                            gitPath,
-                            ghPath,
-                            powershellPath,
-                        },
-                    })
-                ).resolves.toBe(0);
-
-                expect(JSON.parse(readFileSync(recordPath, 'utf8'))).toEqual({
-                    primaryRoot: '/repo',
-                    gitPath,
-                    ghPath,
-                    powershellPath,
-                });
-            } finally {
-                rmSync(root, { recursive: true, force: true });
-            }
-        }
-    );
 
     it('should import the snapshot entry without direct execution and invoke its runner once with exact args', async () => {
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-entry-import-'));
@@ -2165,7 +1851,7 @@ describe('package scripts and gitignore', () => {
         },
         {
             command: 'review:resolve' as const,
-            entry: 'scripts/resolveReviewThread.ts',
+            entry: 'scripts/resolveThread.ts',
             runner: 'runResolveReviewThreadCli',
             args: ['3239', '--thread', 'PRRT_example', '--head', 'a'.repeat(40)],
         },
@@ -2207,7 +1893,7 @@ describe('package scripts and gitignore', () => {
         try {
             trustedReviewMutationFixture(primary, mutationLog);
             runGit(primary, ['worktree', 'add', '-b', 'agent/test/reviewer-route', lane]);
-            for (const entry of ['publishReview.ts', 'resolveReviewThread.ts']) {
+            for (const entry of ['publishReview.ts', 'resolveThread.ts']) {
                 expect(readFileSync(join(lane, 'scripts', entry), 'utf8')).toBe(
                     runGit(primary, ['show', `refs/remotes/origin/main:scripts/${entry}`])
                 );
@@ -2225,7 +1911,6 @@ describe('package scripts and gitignore', () => {
                 [
                     'pinned-lock',
                     `publish:auth:${JSON.stringify(publishArgs)}`,
-                    'pinned-lock',
                     `resolve:auth:${JSON.stringify(resolveArgs)}`,
                     '',
                 ].join('\n')
@@ -2275,7 +1960,7 @@ describe('package scripts and gitignore', () => {
         }
     });
 
-    it('refuses reviewer remote mutations while delivery owns the same PR fence', async () => {
+    it('refuses review publication before remote work while delivery owns the same PR fence', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
         initializeDeliveryLockRepository(root);
         const head = 'e'.repeat(40);
@@ -2322,29 +2007,11 @@ describe('package scripts and gitignore', () => {
                 return expect.fail('review creation should not start');
             },
         };
-        const resolveDependencies: ResolveReviewThreadCoordinatorDependencies = {
-            primaryRoot: () => root,
-            serializeMutation: withPullRequestDeliveryLock,
-            authenticateAuthor: async () => {
-                entered.push('resolve:authenticate');
-                return expect.fail('author authentication should not start');
-            },
-            repositoryName: () => expect.fail('resolve repository lookup should not start'),
-            threadPort: () => expect.fail('resolve port should not be created'),
-            resolve: () => {
-                entered.push('resolve:mutate');
-                return expect.fail('reply or resolution should not start');
-            },
-        };
-
         try {
             await withPullRequestDeliveryLock(root, 2495, async () => {
                 await expect(coordinatePublishReview(2495, publishDependencies)).rejects.toThrow(
                     /already being delivered/
                 );
-                await expect(
-                    coordinateResolveReviewThread(2495, 'PRRT_example', 'a'.repeat(40), resolveDependencies)
-                ).rejects.toThrow(/already being delivered/);
                 expect(entered).toEqual(['publish:authenticate']);
                 expect(deliveryLockExists(root, 2495)).toBe(true);
             });
@@ -2651,6 +2318,7 @@ describe('package scripts and gitignore', () => {
                     pullRequest: () => expect.fail('delivery domain should not run'),
                     gateRequiredCheckNames: () => expect.fail('delivery domain should not run'),
                     headCheckRuns: () => expect.fail('delivery domain should not run'),
+                    requiredStatusCheckContexts: () => expect.fail('delivery domain should not run'),
                     reviewState: () => expect.fail('delivery domain should not run'),
                     dependents: () => expect.fail('delivery domain should not run'),
                     repositoryDeletesMergedBranches: () => expect.fail('delivery domain should not run'),
@@ -2708,6 +2376,7 @@ describe('package scripts and gitignore', () => {
             pullRequest: () => expect.fail('delivery domain should not run'),
             gateRequiredCheckNames: () => expect.fail('delivery domain should not run'),
             headCheckRuns: () => expect.fail('delivery domain should not run'),
+            requiredStatusCheckContexts: () => expect.fail('delivery domain should not run'),
             reviewState: () => expect.fail('delivery domain should not run'),
             dependents: () => expect.fail('delivery domain should not run'),
             repositoryDeletesMergedBranches: () => expect.fail('delivery domain should not run'),
@@ -3171,6 +2840,8 @@ describe('package scripts and gitignore', () => {
             pullRequest: () => expect.fail('delivery domain should be injected in this coordinator test'),
             gateRequiredCheckNames: () => expect.fail('delivery domain should be injected in this coordinator test'),
             headCheckRuns: () => expect.fail('delivery domain should be injected in this coordinator test'),
+            requiredStatusCheckContexts: () =>
+                expect.fail('delivery domain should be injected in this coordinator test'),
             reviewState: () => expect.fail('delivery domain should be injected in this coordinator test'),
             dependents: () => [],
             repositoryDeletesMergedBranches: () => false,

@@ -145,7 +145,6 @@ describe('trusted GitHub write snapshot launcher', () => {
         ['review:publish', true],
         ['review:publish:recover', true],
         ['review:resolve', false],
-        ['review:resolve:recover', false],
     ] as const)('uses a detached POSIX process group only for %s: %s', (command, expected) => {
         expect(trustedSnapshotRunsDetached(command, 'linux')).toBe(expected);
         expect(trustedSnapshotRunsDetached(command, 'win32')).toBe(false);

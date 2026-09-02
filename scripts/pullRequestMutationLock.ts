@@ -27,16 +27,6 @@ export type PullRequestMutationLockOwner =
           token: string;
       }
     | {
-          version: 2;
-          pid: number;
-          token: string;
-          operation: 'review-resolution';
-          number: number;
-          threadId: string;
-          head: string;
-          ownerFence: PullRequestMutationLockOwnerFence;
-      }
-    | {
           version: 3;
           pid: number;
           token: string;
@@ -54,11 +44,6 @@ export type PullRequestMutationLockOwner =
           recovery?: { legacyOwnerOid: string; definitiveNoMutationHttpStatus: 422 };
       };
 export type PullRequestMutationLockOptions = {
-    reviewResolution?: {
-        threadId: string;
-        head: string;
-        ownerFence: PullRequestMutationLockOwnerFence | (() => PullRequestMutationLockOwnerFence);
-    };
     reviewPublication?: {
         expectedHead: string;
         payloadDigest: string;
@@ -70,8 +55,7 @@ export type PullRequestMutationLockOptions = {
 export type PullRequestMutationSerialization = <Value>(
     primaryRoot: string,
     number: number,
-    operation: (boundary: PullRequestRemoteMutationBoundary) => Promise<Value>,
-    options?: PullRequestMutationLockOptions
+    operation: (boundary: PullRequestRemoteMutationBoundary) => Promise<Value>
 ) => Promise<Value>;
 
 export type PullRequestRemoteMutationBoundary = {
@@ -259,30 +243,6 @@ function parseMutationLockOwner(contents: string, number: number): PullRequestMu
     if (owner.version === 1 && Object.keys(owner).length === 3 && hasOwnerIdentity(owner)) {
         return { version: 1, pid: owner.pid, token: owner.token };
     }
-    if (
-        owner.version === 2 &&
-        Object.keys(owner).length === 8 &&
-        hasOwnerIdentity(owner) &&
-        owner.operation === 'review-resolution' &&
-        owner.number === number &&
-        typeof owner.threadId === 'string' &&
-        owner.threadId !== '' &&
-        typeof owner.head === 'string' &&
-        /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/iu.test(owner.head) &&
-        isExecutionFence(owner.ownerFence) &&
-        isExecutionFenceBoundToOwnerPid(owner.ownerFence, owner.pid)
-    ) {
-        return {
-            version: 2,
-            pid: owner.pid,
-            token: owner.token,
-            operation: 'review-resolution',
-            number: owner.number,
-            threadId: owner.threadId,
-            head: owner.head.toLowerCase(),
-            ownerFence: owner.ownerFence,
-        };
-    }
     const isNormalReviewPublicationOwner = hasExactTopLevelKeys(owner, reviewPublicationOwnerKeys);
     const isRecoveredReviewPublicationOwner = hasExactTopLevelKeys(owner, recoveredReviewPublicationOwnerKeys);
     const publicationMutation = parseReviewPublicationMutationJournal(owner.mutation);
@@ -335,12 +295,6 @@ function parseMutationLockOwner(contents: string, number: number): PullRequestMu
         };
     }
     return fail(`PR #${number} delivery lock ownership is malformed`);
-}
-
-export function isReviewResolutionPullRequestMutationLockOwner(
-    owner: PullRequestMutationLockOwner
-): owner is Extract<PullRequestMutationLockOwner, { version: 2 }> {
-    return owner.version === 2 && owner.operation === 'review-resolution';
 }
 
 export function isReviewPublicationPullRequestMutationLockOwner(
@@ -806,27 +760,8 @@ function acquireMutationLock(
         const existingOwner = readPullRequestMutationLockOwner(primaryRoot, existingOid, number);
         return fail(`PR #${number} is already being delivered by process ${existingOwner.pid}`);
     }
-    const reviewResolution = options?.reviewResolution;
     const reviewPublication = options?.reviewPublication;
-    if (reviewResolution !== undefined && reviewPublication !== undefined) {
-        fail(`PR #${number} delivery lock cannot acquire two operation owners`);
-    }
     let owner: PullRequestMutationLockOwner = { version: 1, pid: process.pid, token: randomUUID() };
-    if (reviewResolution !== undefined) {
-        owner = {
-            version: 2,
-            pid: process.pid,
-            token: randomUUID(),
-            operation: 'review-resolution',
-            number,
-            threadId: reviewResolution.threadId,
-            head: reviewResolution.head,
-            ownerFence:
-                typeof reviewResolution.ownerFence === 'function'
-                    ? reviewResolution.ownerFence()
-                    : reviewResolution.ownerFence,
-        };
-    }
     if (reviewPublication !== undefined) {
         owner = reviewPublicationLockOwner(number, reviewPublication);
     }

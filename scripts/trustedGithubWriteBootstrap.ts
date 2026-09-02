@@ -15,13 +15,7 @@ import { delimiter, dirname, isAbsolute, join, posix, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url';
 
 export type TrustedGithubWriteCommand =
-    | 'deliver'
-    | 'issue:reconcile'
-    | 'lane:publish'
-    | 'review:publish'
-    | 'review:publish:recover'
-    | 'review:resolve'
-    | 'review:resolve:recover';
+    'deliver' | 'issue:reconcile' | 'lane:publish' | 'review:publish' | 'review:publish:recover' | 'review:resolve';
 
 export const BOOTSTRAP_PATH = 'scripts/trustedGithubWriteBootstrap.ts';
 export const HEALTH_GATES_WORKFLOW_PATH = '.github/workflows/health-gates.yml';
@@ -34,8 +28,6 @@ export const TRUSTED_PS_PATH_ENV = 'SOURDAW_TRUSTED_PS_PATH';
 export const TRUSTED_POWERSHELL_PATH_ENV = 'SOURDAW_TRUSTED_POWERSHELL_PATH';
 export const TRUSTED_ORIGIN_COMMIT_ENV = 'SOURDAW_TRUSTED_ORIGIN_COMMIT';
 export const TRUSTED_GATE_WORKFLOW_ENV = 'SOURDAW_TRUSTED_GATE_WORKFLOW';
-
-const REVIEW_RESOLUTION_CHILD_ENV = 'SOURDAW_REVIEW_RESOLUTION_CHILD';
 
 export type TrustedLauncherBinding = {
     primaryRoot: string;
@@ -157,16 +149,7 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
     ],
     'review:resolve': [
         'scripts/trustedGithubWriteBootstrap.ts',
-        'scripts/resolveReviewThread.ts',
-        'scripts/pullRequestMutationLock.ts',
-        'scripts/githubAppIdentity.ts',
-        'scripts/prContract.ts',
-    ],
-    'review:resolve:recover': [
-        'scripts/trustedGithubWriteBootstrap.ts',
-        'scripts/recoverReviewResolutionLock.ts',
-        'scripts/resolveReviewThread.ts',
-        'scripts/pullRequestMutationLock.ts',
+        'scripts/resolveThread.ts',
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
     ],
@@ -178,11 +161,7 @@ const commandEntries: Record<TrustedGithubWriteCommand, { path: string; runner: 
     'lane:publish': { path: 'scripts/publishLane.ts', runner: 'runPublishLaneCli' },
     'review:publish': { path: 'scripts/publishReview.ts', runner: 'runPublishReviewCli' },
     'review:publish:recover': { path: 'scripts/publishReview.ts', runner: 'runRecoverPublishReviewLockCli' },
-    'review:resolve': { path: 'scripts/resolveReviewThread.ts', runner: 'runResolveReviewThreadCli' },
-    'review:resolve:recover': {
-        path: 'scripts/recoverReviewResolutionLock.ts',
-        runner: 'runRecoverReviewResolutionLockCli',
-    },
+    'review:resolve': { path: 'scripts/resolveThread.ts', runner: 'runResolveReviewThreadCli' },
 };
 
 export function trustedDependencyPaths(command: TrustedGithubWriteCommand): readonly string[] {
@@ -797,7 +776,7 @@ async function runSnapshotModule(
         'const command = Reflect.get(loaded, runner);',
         "if (typeof command !== 'function') throw new Error(`trusted snapshot does not export ${runner}`);",
         'const trustedLauncher = typeof process.env.SOURDAW_TRUSTED_PRIMARY_ROOT === "string" && typeof process.env.SOURDAW_TRUSTED_GIT_PATH === "string" && typeof process.env.SOURDAW_TRUSTED_GH_PATH === "string" ? { primaryRoot: process.env.SOURDAW_TRUSTED_PRIMARY_ROOT, gitPath: process.env.SOURDAW_TRUSTED_GIT_PATH, ghPath: process.env.SOURDAW_TRUSTED_GH_PATH, ...(typeof process.env.SOURDAW_TRUSTED_PS_PATH === "string" ? { psPath: process.env.SOURDAW_TRUSTED_PS_PATH } : {}), ...(typeof process.env.SOURDAW_TRUSTED_POWERSHELL_PATH === "string" ? { powershellPath: process.env.SOURDAW_TRUSTED_POWERSHELL_PATH } : {}) } : undefined;',
-        'const dependencies = runner === "runDeliverCli" || runner === "runResolveReviewThreadCli" || runner === "runRecoverReviewResolutionLockCli" ? { trustedLauncher } : undefined;',
+        'const dependencies = runner === "runDeliverCli" ? { trustedLauncher } : undefined;',
         'const result = dependencies === undefined ? await command(args) : await command(args, dependencies);',
         "if (!Number.isSafeInteger(result)) throw new Error('trusted snapshot returned an invalid exit code');",
         'process.exitCode = result;',
@@ -855,11 +834,6 @@ export function trustedSnapshotEnv(
     parent: NodeJS.ProcessEnv = process.env
 ): NodeJS.ProcessEnv {
     const env = trustedGitReadEnv(parent);
-    for (const key of Object.keys(env)) {
-        if (key.toUpperCase() === REVIEW_RESOLUTION_CHILD_ENV) {
-            delete env[key];
-        }
-    }
     if (snapshot.gateWorkflow !== undefined) {
         env[TRUSTED_GATE_WORKFLOW_ENV] = JSON.stringify(snapshot.gateWorkflow);
     }
@@ -1010,26 +984,14 @@ export function resolveTrustedLauncherBinding(
 }
 
 function commandRequiresTrustedPs(command: TrustedGithubWriteCommand | undefined, platform: NodeJS.Platform): boolean {
-    return (
-        platform !== 'win32' &&
-        (command === 'review:publish' ||
-            command === 'review:publish:recover' ||
-            command === 'review:resolve' ||
-            command === 'review:resolve:recover')
-    );
+    return platform !== 'win32' && (command === 'review:publish' || command === 'review:publish:recover');
 }
 
 function commandRequiresTrustedPowerShell(
     command: TrustedGithubWriteCommand | undefined,
     platform: NodeJS.Platform
 ): boolean {
-    return (
-        platform === 'win32' &&
-        (command === 'review:publish' ||
-            command === 'review:publish:recover' ||
-            command === 'review:resolve' ||
-            command === 'review:resolve:recover')
-    );
+    return platform === 'win32' && (command === 'review:publish' || command === 'review:publish:recover');
 }
 
 function defaultPort(binding: TrustedLauncherBinding): TrustedSourcePort {
@@ -1054,13 +1016,12 @@ function parseCommand(value: string | undefined): TrustedGithubWriteCommand {
         value === 'lane:publish' ||
         value === 'review:publish' ||
         value === 'review:publish:recover' ||
-        value === 'review:resolve' ||
-        value === 'review:resolve:recover'
+        value === 'review:resolve'
     ) {
         return value;
     }
     throw new Error(
-        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:reconcile|lane:publish|review:publish|review:publish:recover|review:resolve|review:resolve:recover> [args...]'
+        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:reconcile|lane:publish|review:publish|review:publish:recover|review:resolve> [args...]'
     );
 }
 
