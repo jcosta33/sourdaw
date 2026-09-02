@@ -82,6 +82,17 @@ function currentNotes(): MidiNote[] {
     return midiStore.value?.notesByClipId[CLIP_ID] ?? [];
 }
 
+/**
+ * Every production dispatch path canonicalizes an addNotes action through the handler's own
+ * materialization hook before describe, validate, or execute sees it, leaving the caller's own
+ * action untouched. The handler fails closed on arguments that skipped it.
+ */
+function canonicalAddNotesAction(action: Extract<AppAction, { type: 'addNotes' }>) {
+    const canonicalAction = structuredClone(action);
+    handleAddNotes.materializeCommandArguments?.(canonicalAction);
+    return canonicalAction;
+}
+
 describe('handleAddNotes', () => {
     beforeEach(() => {
         vi.restoreAllMocks();
@@ -110,7 +121,8 @@ describe('handleAddNotes', () => {
             },
         };
 
-        const description = handleAddNotes.describe(action);
+        const canonicalAction = canonicalAddNotesAction(action);
+        const description = handleAddNotes.describe(canonicalAction);
         const inverse = requireRestoreAction(description.inverseAction);
         const redo = requireRestoreAction(description.redoAction);
 
@@ -136,7 +148,7 @@ describe('handleAddNotes', () => {
         });
         expect(redo.payload.noteTransformReplayGuard).toEqual(inverse.payload.noteTransformReplayGuard);
 
-        await handleAddNotes.execute(action);
+        await handleAddNotes.execute(canonicalAction);
         expect(currentNotes()).toEqual(inverse.payload.expectedNotes);
         expect(handleRestoreMidiClipNotes.execute(inverse)).toEqual({ status: 'written' });
         expect(currentNotes()).toEqual(inverse.payload.notes);
@@ -155,7 +167,8 @@ describe('handleAddNotes', () => {
             },
         };
 
-        const description = handleAddNotes.describe(action);
+        const canonicalAction = canonicalAddNotesAction(action);
+        const description = handleAddNotes.describe(canonicalAction);
         const inverse = requireRestoreAction(description.inverseAction);
         const redo = requireRestoreAction(description.redoAction);
 
@@ -172,7 +185,7 @@ describe('handleAddNotes', () => {
                 probability: 100,
             },
         ]);
-        await handleAddNotes.execute(action);
+        await handleAddNotes.execute(canonicalAction);
         expect(handleRestoreMidiClipNotes.execute(inverse)).toEqual({ status: 'written' });
         expect(midiStore.value?.notesByClipId).not.toHaveProperty(CLIP_ID);
         expect(handleRestoreMidiClipNotes.execute(redo)).toEqual({ status: 'written' });
@@ -825,13 +838,15 @@ describe('handleAddNotes', () => {
                 }),
         ],
     ])('validates %s as writable MIDI capability: %s', (_target, expected, setTargetState) => {
-        const action = {
-            type: 'addNotes' as const,
+        const canonicalAction = canonicalAddNotesAction({
+            type: 'addNotes',
             payload: { clipId: CLIP_ID, notes: [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1 }] },
-        };
+        });
         setTargetState();
 
-        expect(handleAddNotes.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(expected);
+        expect(handleAddNotes.validate?.(canonicalAction, { actions: [canonicalAction], actionIndex: 0 })).toBe(
+            expected
+        );
     });
 
     it('conflicts rather than writing an orphan note bucket when redo reaches a removed clip', async () => {
@@ -840,11 +855,12 @@ describe('handleAddNotes', () => {
             type: 'addNotes' as const,
             payload: { clipId: CLIP_ID, notes: [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1 }] },
         };
-        const description = handleAddNotes.describe(action);
+        const canonicalAction = canonicalAddNotesAction(action);
+        const description = handleAddNotes.describe(canonicalAction);
         const inverse = requireRestoreAction(description.inverseAction);
         const redo = requireRestoreAction(description.redoAction);
 
-        await handleAddNotes.execute(action);
+        await handleAddNotes.execute(canonicalAction);
         expect(handleRestoreMidiClipNotes.execute(inverse)).toEqual({ status: 'written' });
         setTrackStoreState({ ...defaultTrackState, tracks: [] });
         const midiStateBeforeRedo = structuredClone(midiStore.value);
@@ -858,11 +874,12 @@ describe('handleAddNotes', () => {
             type: 'addNotes' as const,
             payload: { clipId: CLIP_ID, notes: [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1 }] },
         };
-        const description = handleAddNotes.describe(action);
+        const canonicalAction = canonicalAddNotesAction(action);
+        const description = handleAddNotes.describe(canonicalAction);
         const inverse = requireRestoreAction(description.inverseAction);
         const redo = requireRestoreAction(description.redoAction);
 
-        await handleAddNotes.execute(action);
+        await handleAddNotes.execute(canonicalAction);
         expect(handleRestoreMidiClipNotes.execute(inverse)).toEqual({ status: 'written' });
         const originalTrack = trackStore.value!.tracks[0]!;
         const relocatedTrack = createTrack({ id: 'track-2', kind: 'midi', name: 'Relocated MIDI' });

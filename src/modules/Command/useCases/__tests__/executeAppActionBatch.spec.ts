@@ -13,6 +13,7 @@ import { doesProductionBriefAllowActionBatch, productionBriefActionBatchAdmissio
 import { type ActionHandler, type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
+import { type ActionHistoryMetadata } from '../actionHistoryMetadataPort';
 import { executeAppActionBatch } from '../executeAppActionBatch';
 import { productionBriefAdmissionPort } from '../productionBriefAdmissionPort';
 
@@ -35,7 +36,7 @@ const mocks = vi.hoisted(() => ({
     } satisfies Logger,
     setSemanticContext: vi.fn(),
     clearSemanticContext: vi.fn(),
-    recordActionHistoryMetadata: vi.fn(() => []),
+    recordActionHistoryMetadata: vi.fn<(entry: ActionHistoryMetadata) => string[]>(() => []),
     commitUndoEntry: vi.fn(),
     recordAction: vi.fn(),
     // Reached only through the barrel's import graph — `sessionManagement`
@@ -57,7 +58,7 @@ vi.mock('#/modules/CrdtDocument/stores', () => ({
 vi.mock('../actionHistoryMetadataPort', () => ({
     actionHistoryMetadataPort: {
         record: mocks.recordActionHistoryMetadata,
-        recordBatch: (entries: readonly unknown[]) =>
+        recordBatch: (entries: readonly ActionHistoryMetadata[]) =>
             entries.flatMap((entry) => mocks.recordActionHistoryMetadata(entry)),
     },
 }));
@@ -1477,6 +1478,40 @@ describe('executeAppActionBatch', () => {
 
         expect(action.payload.tool).toBe('select');
         expect(capturedTools).toEqual(['marquee', 'marquee']);
+    });
+
+    it('reports the caller action objects to onCommitted while handlers execute canonical arguments', async () => {
+        const executedTools: string[] = [];
+        const materializedAction: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'select' } };
+        const plainAction: SetSnapValueAction = { type: 'setSnapValue', payload: { value: 0.5 } };
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute: (action) => {
+                    executedTools.push(action.payload.tool);
+                },
+                materializeCommandArguments: (candidate) => {
+                    candidate.payload.tool = 'marquee';
+                },
+            }),
+            setSnapValue: createHandler<SetSnapValueAction>({ execute: vi.fn() }),
+        });
+        const onCommitted = vi.fn<(actions: readonly AppAction[]) => void>();
+
+        await expect(
+            executeAppActionBatch([materializedAction, plainAction], {
+                groupId: 'batch-committed-identity',
+                onCommitted,
+            })
+        ).resolves.toMatchObject({ status: 'committed' });
+
+        expect(executedTools).toEqual(['marquee']);
+        expect(materializedAction.payload.tool).toBe('select');
+        // Grouped redo correlates committed actions to their history entries by object identity,
+        // so a canonical clone reported here would leave that correlation with nothing to match.
+        const reportedActions = onCommitted.mock.calls[0]?.[0];
+        expect(reportedActions?.[0]).toBe(materializedAction);
+        expect(reportedActions?.[1]).toBe(plainAction);
+        expect(reportedActions).toHaveLength(2);
     });
 
     it('returns a typed no-op without history when every action already matches project truth', async () => {

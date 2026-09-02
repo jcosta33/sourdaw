@@ -12,6 +12,7 @@ import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { type CommandBatchIdempotencyRepository } from '../../models/CommandBatchIdempotency';
 import { commandBatchIdempotencyStore } from '../../stores/commandBatchIdempotencyStore';
+import { type ActionHistoryMetadata } from '../actionHistoryMetadataPort';
 import { commandBatchExecutionAuthorityPort } from '../commandBatchExecutionAuthorityPort';
 import { commandBatchIdempotencyPort } from '../commandBatchIdempotencyPort';
 import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
@@ -45,7 +46,7 @@ const mocks = vi.hoisted(() => ({
     clearSemanticContext: vi.fn(),
     commitUndoEntry: vi.fn(),
     recordAction: vi.fn(),
-    recordActionHistoryMetadata: vi.fn(() => []),
+    recordActionHistoryMetadata: vi.fn<(entry: ActionHistoryMetadata) => string[]>(() => []),
     setSemanticContext: vi.fn(),
 }));
 
@@ -58,7 +59,11 @@ vi.mock('#/modules/CrdtDocument/stores', () => ({
     setSemanticContext: mocks.setSemanticContext,
 }));
 vi.mock('../actionHistoryMetadataPort', () => ({
-    actionHistoryMetadataPort: { record: mocks.recordActionHistoryMetadata },
+    actionHistoryMetadataPort: {
+        record: mocks.recordActionHistoryMetadata,
+        recordBatch: (entries: readonly ActionHistoryMetadata[]) =>
+            entries.flatMap((entry) => mocks.recordActionHistoryMetadata(entry)),
+    },
 }));
 vi.mock('../commitUndoEntry', () => ({ commitUndoEntry: mocks.commitUndoEntry }));
 vi.mock('../macro/recording/recordAction', () => ({ recordAction: mocks.recordAction }));

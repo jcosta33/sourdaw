@@ -6,6 +6,7 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
@@ -269,6 +270,9 @@ describe('versioned command contract', () => {
     });
 
     it('materializes nested note identities before digesting and receipts every assignment', () => {
+        // addNotes declares `owner-required` materialized-argument validation, so parsing an
+        // envelope for it fails closed until its owning handler supplies that validator.
+        registerHandlerMap(getMidiNoteTransformHandlers());
         vi.spyOn(crypto, 'randomUUID')
             .mockReturnValueOnce('11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
             .mockReturnValueOnce('22222222-bbbb-4bbb-8bbb-bbbbbbbbbbbb')

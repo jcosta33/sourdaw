@@ -114,6 +114,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     projectClipMidiEvents: vi.fn(),
     projectCommittedGroove: vi.fn(),
     projectDrumPreviewCandidateNotes: vi.fn(),
+    projectMidiNotesByClipIdThroughRestores: vi.fn(() => ({})),
     readLegacyChordTrackMigration: vi.fn(),
     readMidiFile: vi.fn(),
     removeMidiClipData: vi.fn(),
