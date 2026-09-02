@@ -37,6 +37,9 @@ const mocks = vi.hoisted(() => {
         appImportPromise: null as Promise<{ App: () => null }> | null,
         bootstrap: vi.fn(),
         bootstrapFailure: null as Error | null,
+        criticalPathImportPending: false,
+        criticalPathImportPromise: null as Promise<Record<string, never>> | null,
+        criticalPathImportRelease: null as (() => void) | null,
         failIdentityTransition: vi.fn(),
         identity,
         mountBrowserDisplayScaleHost: vi.fn(),
@@ -72,6 +75,17 @@ vi.mock('../resolveAppComposition', () => ({
 }));
 
 vi.mock('../reloadApplication', () => ({ reloadApplication: vi.fn() }));
+
+vi.mock('#/styles/main.css', () => ({
+    __esModule: true,
+    then(onFulfilled: (value: Record<string, never>) => unknown, onRejected?: (reason: unknown) => unknown) {
+        const cssImport =
+            mocks.criticalPathImportPending && mocks.criticalPathImportPromise !== null
+                ? mocks.criticalPathImportPromise
+                : Promise.resolve({});
+        return cssImport.then(onFulfilled, onRejected);
+    },
+}));
 
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     setWorkspaceEventBus: mocks.setWorkspaceEventBus,
@@ -145,7 +159,7 @@ vi.mock('../App', () => ({
 
 vi.mock('react-dom/client', async (importOriginal) => {
     const actual = await importOriginal<typeof import('react-dom/client')>();
-    return {
+    const client = {
         createRoot: (container: Parameters<typeof actual.createRoot>[0]) => {
             const root = actual.createRoot(container);
             return {
@@ -156,6 +170,17 @@ vi.mock('react-dom/client', async (importOriginal) => {
                     });
                 },
             };
+        },
+    };
+    return {
+        __esModule: true,
+        ...client,
+        then(onFulfilled: (value: typeof client) => unknown, onRejected?: (reason: unknown) => unknown) {
+            const clientImport =
+                mocks.criticalPathImportPending && mocks.criticalPathImportPromise !== null
+                    ? mocks.criticalPathImportPromise.then(() => client)
+                    : Promise.resolve(client);
+            return clientImport.then(onFulfilled, onRejected);
         },
     };
 });
@@ -172,6 +197,10 @@ function expectFirstPaintRendered(): void {
     }
     expect(componentType.name).toBe('ApplicationFirstPaint');
     expect(document.querySelector('[data-testid="app-shell"]')).not.toBeNull();
+}
+
+function expectAppShellMarkerInRoot(): void {
+    expect(document.getElementById('root')?.querySelector('[data-testid="app-shell"]')).not.toBeNull();
 }
 
 function expectMountBusesBoundBeforeRender(): void {
@@ -218,6 +247,9 @@ describe('app main first paint', () => {
         mocks.appImportPending = false;
         mocks.appImportRelease = null;
         mocks.appImportPromise = null;
+        mocks.criticalPathImportPending = false;
+        mocks.criticalPathImportPromise = null;
+        mocks.criticalPathImportRelease = null;
         mocks.identity.reset();
         mocks.onNotification = null;
         Reflect.deleteProperty(window, 'sourdaw');
@@ -237,6 +269,35 @@ describe('app main first paint', () => {
         mocks.onNotification = onNotification;
         const { eventBus } = await import('../registerDependencies');
         mocks.sharedEventBus = eventBus;
+    });
+
+    // Runs first so no prior main import leaves async renderApplication on a stale #root.
+
+    it('exposes app-shell before css, react-dom, and first-paint imports resolve', async () => {
+        mocks.criticalPathImportPending = true;
+        mocks.criticalPathImportPromise = new Promise<Record<string, never>>((resolve) => {
+            mocks.criticalPathImportRelease = () => resolve({});
+        });
+
+        const mainImport = import('../main');
+
+        await vi.waitFor(() => {
+            expect(mocks.resetBrowserDisplayScaleForChildStartup).toHaveBeenCalledOnce();
+            expectAppShellMarkerInRoot();
+        });
+        expect(mocks.render).not.toHaveBeenCalled();
+
+        const release = mocks.criticalPathImportRelease;
+        if (release === null) {
+            throw new Error('Critical path imports were not gated');
+        }
+        release();
+        const rendered = new Promise<void>((resolve) => {
+            mocks.render.mockImplementationOnce(() => resolve());
+        });
+        await mainImport;
+        await rendered;
+        expectFirstPaintRendered();
     });
 
     it('renders the child application while bootstrap is still loading', async () => {
