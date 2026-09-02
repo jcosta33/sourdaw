@@ -1,0 +1,64 @@
+src/modules/Command/useCases/__tests__/versionedCommandContract.spec.ts
+  s_ac03a4ebaa3f6e::t_434a49c05d6934 9
+  s_ac03a4ebaa3f6e::t_490ec31962e8e7 273-275
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectPreservesSessionUndo.spec.ts
+  s_ac03a4ebaa3f6e::t_b69e41b10c47a7 149
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectDirtyTracking.integration.spec.ts
+  s_ac03a4ebaa3f6e::t_afac72729c0e35 140
+src/app/__tests__/main.spec.tsx
+  s_ac03a4ebaa3f6e::t_15542addc4172d 117
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_ac03a4ebaa3f6e::t_b264a4e46b5d6a 167
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_ac03a4ebaa3f6e::t_88112b54f57cbe 61
+  s_ac03a4ebaa3f6e::t_be83eff3e790f1 16
+  s_ac03a4ebaa3f6e::t_d0f29cc74e549c 39
+  s_ac03a4ebaa3f6e::t_8c1d0baaf95884 1483-1513,1515-1516
+  s_ac03a4ebaa3f6e::t_dfac57a3cd854e 1514
+src/modules/AiRuntime/useCases/agentReference/__tests__/composeVerifiedProviderProposalScope.spec.ts
+  s_ac03a4ebaa3f6e::t_2c1f4e29364a76 221,229-234
+src/modules/MIDI/handlers/noteCrud/__tests__/handleAddNotes.spec.ts
+  s_ac03a4ebaa3f6e::t_62e4a5f96033f6 877-878,882
+  s_ac03a4ebaa3f6e::t_dab1994273455b 151
+  s_ac03a4ebaa3f6e::t_4225cdf0940f2a 124-125
+  s_ac03a4ebaa3f6e::t_bdd535a24756da 858-859,863
+  s_ac03a4ebaa3f6e::t_83dd9d26804259 841-842,844,847-849
+  s_ac03a4ebaa3f6e::t_7febca8d0439c5 85-95
+  s_ac03a4ebaa3f6e::t_04d84a865b0039 170-171
+  s_ac03a4ebaa3f6e::t_3bcf9a049e5e23 188
+src/modules/MIDI/useCases/__tests__/getMidiNoteTransformHandlers.spec.ts
+  s_ac03a4ebaa3f6e::t_215332f35ca547 27-29,33-52,56
+  s_ac03a4ebaa3f6e::t_17cc5022d6bfbc 84-96
+src/modules/Project/useCases/projectPersistence/__tests__/missingMediaOnLoad.spec.ts
+  s_ac03a4ebaa3f6e::t_ea912a10254b38 154
+src/modules/Command/useCases/__tests__/verifiedBatchReceipt.spec.ts
+  s_ac03a4ebaa3f6e::t_d6bf051a0cb612 11
+  s_ac03a4ebaa3f6e::t_06e663fcea4355 48-52
+  s_ac03a4ebaa3f6e::t_eed396fdab35a1 38
+src/modules/Arrangement/handlers/__tests__/isGeneratedMidiStateCurrent.spec.ts
+  s_ac03a4ebaa3f6e::t_849671362254c2 78
+src/app/__tests__/getProductionCommandHandlerMaps.spec.ts
+  s_ac03a4ebaa3f6e::t_f70e814fe06b2c 89
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  s_ac03a4ebaa3f6e::t_3d4e0d39071145 49
+  s_ac03a4ebaa3f6e::t_d019dc0d148ae3 15
+  s_ac03a4ebaa3f6e::t_7cf7c5790feefb 62-66
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_ac03a4ebaa3f6e::t_d51a001a228857 134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "cb2f67448f6c319fb868a4e395c6e3481fa43074",
+  "prompts": {},
+  "sessions": {
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
