@@ -17,6 +17,7 @@ import { chordTrackStore } from '#/modules/MIDI/stores';
 import { getChordTrackHandlers } from '#/modules/MIDI/useCases';
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
+import { hasActionReplayCapability } from '../../stores/actionReplayCapabilities';
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { setActionHistoryMetadataPort } from '../actionHistoryMetadataPort';
 import { clearActionHistory } from '../clearActionHistory';
@@ -181,6 +182,29 @@ describe('Command action-history replay integration', () => {
                 source: 'ai',
             },
         ]);
+    });
+
+    it('revokes replay authority for grouped entries evicted before capability registration', async () => {
+        unsubscribe_action_history?.();
+        unsubscribe_action_history = null;
+        const evictedReplayableEntryId = '00000000-0000-4000-8000-000000000020';
+        vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce(evictedReplayableEntryId);
+        const actions: SetSnapValueAction[] = Array.from({ length: 202 }, (_, value) => ({
+            type: 'setSnapValue',
+            payload: { value },
+        }));
+
+        await expect(
+            executeAppActionBatch(actions, {
+                groupId: 'group-crossing-history-bound',
+                groupLabel: 'Cross history bound',
+            })
+        ).resolves.toMatchObject({ status: 'committed' });
+
+        expect(actionHistoryStore.value?.entries).toHaveLength(200);
+        expect(actionHistoryStore.value?.entries.some(({ id }) => id === evictedReplayableEntryId)).toBe(false);
+        expect(hasActionReplayCapability(evictedReplayableEntryId)).toBe(false);
+        expect(getActionReplayStatus(evictedReplayableEntryId)).toEqual({ status: 'unavailable' });
     });
 
     it('conflicts rather than overwriting a later chord edit', async () => {

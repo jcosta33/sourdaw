@@ -111,6 +111,18 @@ function createMidiClipFixture(): void {
     }
 }
 
+function createMidiClipWithBaseNotes() {
+    createMidiClipFixture();
+    midiStore.set({
+        notesByClipId: {
+            'clip-midi': [{ id: 'base', pitch: 48, startBeat: 0, duration: 1, velocity: 80 }],
+        },
+        ccByClipId: {},
+        pitchBendByClipId: {},
+    });
+    return structuredClone(midiStore.value);
+}
+
 function flushUndoSessionWrite(): Promise<void> {
     return new Promise((resolve) => queueMicrotask(resolve));
 }
@@ -315,6 +327,44 @@ describe('addNotes command registration', () => {
         expect(midiStore.value?.notesByClipId['clip-midi']).toEqual(expectedNotes);
     });
 
+    it('rejects a whitespace note ID during direct execution without mutating MIDI state', async () => {
+        const beforeExecution = createMidiClipWithBaseNotes();
+        clearHandlerRegistry();
+        registerAllProductionHandlers();
+
+        await expect(
+            executeAppAction({
+                type: 'addNotes',
+                payload: {
+                    clipId: 'clip-midi',
+                    notes: [{ id: '   ', pitch: 60, startBeat: 0, duration: 1, velocity: 96 }],
+                },
+            })
+        ).rejects.toThrow();
+
+        expect(midiStore.value).toEqual(beforeExecution);
+    });
+
+    it('rejects a NaN note during batch preflight without mutating MIDI state', async () => {
+        const beforeExecution = createMidiClipWithBaseNotes();
+        clearHandlerRegistry();
+        registerAllProductionHandlers();
+
+        await expect(
+            executeAppActionBatch([
+                {
+                    type: 'addNotes',
+                    payload: {
+                        clipId: 'clip-midi',
+                        notes: [{ id: 'note-nan', pitch: Number.NaN, startBeat: 0, duration: 1, velocity: 96 }],
+                    },
+                },
+            ])
+        ).resolves.toMatchObject({ status: 'conflicted' });
+
+        expect(midiStore.value).toEqual(beforeExecution);
+    });
+
     it('persists and rehydrates canonical history from an envelope-less noncanonical addNotes batch', async () => {
         createMidiClipFixture();
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
@@ -388,7 +438,46 @@ describe('addNotes command registration', () => {
         expect(midiStore.value?.notesByClipId['clip-midi']).toEqual(expectedNotes);
     });
 
-    it('persists and rehydrates every member of an addTrack, addClip, addNotes group', async () => {
+    it('round-trips an empty-then-nonempty addNotes group without creating an empty base bucket', async () => {
+        createMidiClipFixture();
+        midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        clearHandlerRegistry();
+        registerAllProductionHandlers();
+
+        await expect(
+            executeAppActionBatch(
+                [
+                    { type: 'addNotes', payload: { clipId: 'clip-midi', notes: [] } },
+                    {
+                        type: 'addNotes',
+                        payload: {
+                            clipId: 'clip-midi',
+                            notes: [{ id: 'note-after-empty', pitch: 60, startBeat: 0, duration: 1, velocity: 96 }],
+                        },
+                    },
+                ],
+                { groupId: 'empty-then-notes-existing' }
+            )
+        ).resolves.toMatchObject({ status: 'committed' });
+        await flushUndoSessionWrite();
+        reloadUndoHistoryThroughProductionRegistration();
+
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(midiStore.value?.notesByClipId).not.toHaveProperty('clip-midi');
+        await redo();
+        expect(midiStore.value?.notesByClipId['clip-midi']).toEqual([
+            {
+                id: 'note-after-empty',
+                pitch: 60,
+                startBeat: 0,
+                duration: 1,
+                velocity: 96,
+                probability: 100,
+            },
+        ]);
+    });
+
+    it('round-trips every effective member of an empty-then-nonempty batch-created MIDI group', async () => {
         setTrackStoreState(defaultTrackState);
         setArrangementEventBus({ emit: async () => undefined });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
@@ -417,6 +506,10 @@ describe('addNotes command registration', () => {
                             name: 'Created MIDI clip',
                             type: 'midi',
                         },
+                    },
+                    {
+                        type: 'addNotes',
+                        payload: { clipId: 'clip-created-midi', notes: [] },
                     },
                     {
                         type: 'addNotes',
@@ -643,6 +736,51 @@ describe('addNotes command registration', () => {
         expect(undoStore.value?.past).toEqual([]);
         await undo();
         expect(midiStore.value?.notesByClipId['clip-midi']).toEqual(entry.redoAction.payload.notes);
+    });
+
+    it.each([
+        [
+            'blank base note IDs',
+            (baseNotes: ReturnType<typeof createPersistedAddNotesEntry>['inverseAction']['payload']['notes']) =>
+                baseNotes.map((note, index) => (index === 0 ? { ...note, id: '   ' } : note)),
+        ],
+        [
+            'duplicate base note IDs',
+            (baseNotes: ReturnType<typeof createPersistedAddNotesEntry>['inverseAction']['payload']['notes']) =>
+                baseNotes.map((note, index) => (index === 1 ? { ...note, id: baseNotes[0]!.id } : note)),
+        ],
+    ])('rejects a consistent replay pair with %s', (_description, forgeBaseNotes) => {
+        const registration = getExecutableCommandRegistration('addNotes');
+        const entry = createPersistedAddNotesEntry();
+        const baseNotes = forgeBaseNotes(entry.inverseAction.payload.notes);
+        const expectedNotes = [...baseNotes, ...entry.action.payload.notes];
+        sessionStorage.setItem(
+            'sourdaw-undo-session',
+            JSON.stringify({
+                past: [
+                    {
+                        ...entry,
+                        inverseAction: {
+                            ...entry.inverseAction,
+                            payload: { ...entry.inverseAction.payload, notes: baseNotes, expectedNotes },
+                        },
+                        redoAction: {
+                            ...entry.redoAction,
+                            payload: { ...entry.redoAction.payload, notes: expectedNotes, expectedNotes: baseNotes },
+                        },
+                        actionOperationVersion: registration.operationVersion,
+                        inverseActionOperationVersion: 1,
+                        redoActionOperationVersion: 1,
+                    },
+                ],
+                future: [],
+            })
+        );
+        clearHandlerRegistry();
+
+        registerAllProductionHandlers();
+
+        expect(undoStore.value?.past).toEqual([]);
     });
 
     it.each([

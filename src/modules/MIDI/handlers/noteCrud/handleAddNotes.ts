@@ -3,12 +3,12 @@ import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { midiStore } from '../../stores/midiStore';
+import { isMaterializedAddNotesArguments } from '../../transformers/isMaterializedAddNotesArguments';
 import { normalizeMidiNoteInput } from '../../transformers/normalizeMidiNoteInput';
 import { batchAddMidiNotes } from '../../useCases/midiNoteCrud/batchAddMidiNotes';
 import { getMidiClipNotesSnapshot } from '../../useCases/midiNoteTransforms/getMidiClipNotesSnapshot';
 
 import { isAddNotesSessionEntry } from './isAddNotesSessionEntry';
-import { isMaterializedAddNotesArguments } from './isMaterializedAddNotesArguments';
 
 type AddNotesAction = {
     payload: {
@@ -133,7 +133,11 @@ function getBatchMidiNotesBucketSnapshot(
         return snapshot;
     }
     for (const action of context.actions.slice(0, context.actionIndex)) {
-        if (action.type !== 'addNotes' || action.payload.clipId !== clipId) {
+        if (
+            action.type !== 'addNotes' ||
+            action.payload.clipId !== clipId ||
+            !isMaterializedAddNotesArguments(action.payload)
+        ) {
             continue;
         }
         snapshot.notes.push(...getMaterializedNotes(action));
@@ -162,13 +166,18 @@ export const handleAddNotes = createHandler<'addNotes'>({
         action.payload.notes = notes;
     },
     execute: (action) => {
-        if (getWritableMidiClipReplayGuard(action.payload.clipId) === null || !hasDistinctMaterializedNoteIds(action)) {
+        if (
+            !isMaterializedAddNotesArguments(action.payload) ||
+            getWritableMidiClipReplayGuard(action.payload.clipId) === null ||
+            !hasDistinctMaterializedNoteIds(action)
+        ) {
             return { status: 'conflict' };
         }
         batchAddMidiNotes(action.payload.clipId, getMaterializedNotes(action));
         return undefined;
     },
     validate: (action, context) =>
+        (action.payload.notes.length === 0 || isMaterializedAddNotesArguments(action.payload)) &&
         getWritableMidiClipReplayGuardForBatch(action.payload.clipId, context) !== null &&
         hasDistinctMaterializedNoteIds(action, context),
     describe: (action, context) => {

@@ -2,6 +2,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { type MidiNote } from '../../models/MidiNote';
 import { midiStore } from '../../stores/midiStore';
+import { isMaterializedAddNotesArguments } from '../../transformers/isMaterializedAddNotesArguments';
 
 /**
  * Projects the notes buckets produced by earlier note writes without changing
@@ -16,6 +17,9 @@ export function projectMidiNotesByClipIdThroughRestores(actions: readonly AppAct
 
     for (const action of actions) {
         if (action.type === 'addNotes') {
+            if (!isMaterializedAddNotesArguments(action.payload)) {
+                continue;
+            }
             notesByClipId[action.payload.clipId] = [
                 ...(notesByClipId[action.payload.clipId] ?? []),
                 ...action.payload.notes.map((note) => ({ ...note })),

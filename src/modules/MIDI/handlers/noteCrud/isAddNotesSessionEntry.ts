@@ -1,8 +1,7 @@
 import { type HandlerSessionActionEntry } from '#/utils/handlerContract';
 
+import { isMaterializedAddNotesArguments } from '../../transformers/isMaterializedAddNotesArguments';
 import { isRestoreMidiClipNotesReplayArguments } from '../../transformers/isRestoreMidiClipNotesReplayArguments';
-
-import { isMaterializedAddNotesArguments } from './isMaterializedAddNotesArguments';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -40,17 +39,6 @@ function isWritableMidiClipReplayGuard(value: unknown): value is JsonRecord {
         value.expectedTrackFrozen === false &&
         value.expectedClipLocked === false
     );
-}
-
-function getStringIds(values: readonly unknown[]): string[] | null {
-    const ids: string[] = [];
-    for (const value of values) {
-        if (!isRecord(value) || typeof value.id !== 'string') {
-            return null;
-        }
-        ids.push(value.id);
-    }
-    return ids;
 }
 
 export function isAddNotesSessionEntry(entry: HandlerSessionActionEntry): boolean {
@@ -91,12 +79,20 @@ export function isAddNotesSessionEntry(entry: HandlerSessionActionEntry): boolea
     if (!isMaterializedAddNotesArguments(actionPayload)) {
         return false;
     }
-    const noteIds = actionPayload.notes.map((note) => note.id);
-    const baseNoteIds = getStringIds(inversePayload.notes);
-    if (baseNoteIds === null) {
+    const inverseNotes = { clipId: actionPayload.clipId, notes: inversePayload.notes };
+    const inverseExpectedNotes = { clipId: actionPayload.clipId, notes: inversePayload.expectedNotes };
+    const redoNotes = { clipId: actionPayload.clipId, notes: redoPayload.notes };
+    const redoExpectedNotes = { clipId: actionPayload.clipId, notes: redoPayload.expectedNotes };
+    if (
+        !isMaterializedAddNotesArguments(inverseNotes, 'snapshot') ||
+        !isMaterializedAddNotesArguments(inverseExpectedNotes, 'snapshot') ||
+        !isMaterializedAddNotesArguments(redoNotes, 'snapshot') ||
+        !isMaterializedAddNotesArguments(redoExpectedNotes, 'snapshot')
+    ) {
         return false;
     }
-    const baseNoteIdSet = new Set(baseNoteIds);
+    const noteIds = actionPayload.notes.map((note) => note.id);
+    const baseNoteIdSet = new Set(inverseNotes.notes.map((note) => note.id));
     if (new Set(noteIds).size !== noteIds.length || noteIds.some((id) => baseNoteIdSet.has(id))) {
         return false;
     }
