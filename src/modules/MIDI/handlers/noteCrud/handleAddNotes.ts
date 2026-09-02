@@ -1,6 +1,6 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { createHandler } from '#/utils/createHandler';
-import { type HandlerValidationContext } from '#/utils/handlerContract';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { normalizeMidiNoteInput } from '../../transformers/normalizeMidiNoteInput';
 import { batchAddMidiNotes } from '../../useCases/midiNoteCrud/batchAddMidiNotes';
@@ -8,6 +8,7 @@ import { getMidiClipNotesSnapshot } from '../../useCases/midiNoteTransforms/getM
 
 type AddNotesAction = {
     payload: {
+        clipId: string;
         notes: Array<{ id?: string; pitch: number; startBeat: number; duration: number; velocity?: number }>;
     };
 };
@@ -15,6 +16,31 @@ type AddNotesAction = {
 type MaterializedNote = ReturnType<typeof normalizeMidiNoteInput>;
 
 const notesByAction = new WeakMap<object, MaterializedNote[]>();
+
+function isUnlockedMidiClipProducer(
+    action: AppAction,
+    clipId: string
+): action is Extract<AppAction, { type: 'addClip' }> {
+    return (
+        action.type === 'addClip' &&
+        action.payload.id === clipId &&
+        action.payload.type === 'midi' &&
+        action.payload.locked !== true
+    );
+}
+
+function getEarlierUnlockedMidiClipProducer(
+    clipId: string,
+    context: HandlerValidationContext
+): Extract<AppAction, { type: 'addClip' }> | null {
+    for (let index = context.actionIndex - 1; index >= 0; index -= 1) {
+        const action = context.actions[index];
+        if (action && isUnlockedMidiClipProducer(action, clipId)) {
+            return action;
+        }
+    }
+    return null;
+}
 
 function getWritableMidiClipReplayGuard(clipId: string) {
     const track = trackStore.value?.tracks.find((candidate) => candidate.clips.some((clip) => clip.id === clipId));
@@ -29,22 +55,11 @@ function getWritableMidiClipReplayGuard(clipId: string) {
     };
 }
 
-function getBatchLocalWritableMidiClipReplayGuard(
-    clipId: string,
-    context: HandlerValidationContext | undefined
-) {
+function getBatchLocalWritableMidiClipReplayGuard(clipId: string, context: HandlerValidationContext | undefined) {
     if (!context) {
         return null;
     }
-    const clipProducer = context.actions
-        .slice(0, context.actionIndex)
-        .findLast(
-            (action) =>
-                action.type === 'addClip' &&
-                action.payload.id === clipId &&
-                action.payload.type === 'midi' &&
-                action.payload.locked !== true
-        );
+    const clipProducer = getEarlierUnlockedMidiClipProducer(clipId, context);
     if (!clipProducer) {
         return null;
     }
@@ -57,9 +72,11 @@ function getBatchLocalWritableMidiClipReplayGuard(
             expectedClipLocked: false,
         };
     }
-    const trackProducer = context.actions.slice(0, context.actionIndex).find(
-        (action) => action.type === 'addTrack' && action.payload.id === trackId && action.payload.kind === 'midi'
-    );
+    const trackProducer = context.actions
+        .slice(0, context.actionIndex)
+        .find(
+            (action) => action.type === 'addTrack' && action.payload.id === trackId && action.payload.kind === 'midi'
+        );
     if (!trackProducer) {
         return null;
     }
@@ -70,10 +87,7 @@ function getBatchLocalWritableMidiClipReplayGuard(
     };
 }
 
-function getWritableMidiClipReplayGuardForBatch(
-    clipId: string,
-    context: HandlerValidationContext | undefined
-) {
+function getWritableMidiClipReplayGuardForBatch(clipId: string, context: HandlerValidationContext | undefined) {
     return getWritableMidiClipReplayGuard(clipId) ?? getBatchLocalWritableMidiClipReplayGuard(clipId, context);
 }
 
