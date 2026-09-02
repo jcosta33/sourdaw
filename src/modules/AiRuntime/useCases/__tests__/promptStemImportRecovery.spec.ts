@@ -41,10 +41,17 @@ const mocks = vi.hoisted(() => ({
     releaseStagedAsset: vi.fn(),
 }));
 
-vi.mock('#/modules/Command/useCases', async (importOriginal) => {
-    const original = await importOriginal<typeof import('#/modules/Command/useCases')>();
+// completeMidiLearn needs executeAppAction at Command barrel load; submitAdmittedPromptRequest imports parseVersionedCommandBatchEnvelope; compileAgentActionExecution imports compileVersionedCommandBatchEnvelope and parseVersionedCommandBatchEnvelope; reconcilePreparedStemImportRecovery imports getVersionedCommandBatchIdempotentReplay and parseVersionedCommandBatchEnvelope; executePlannedActions imports executeVersionedCommandBatchEnvelope and generateGroupId; prepareStemImport confirmation uses getVersionedCommandBatchCommitProof via createStemImportConfirmationResourceLease; parsePromptToActions imports getExecutableAppActionToolSchemas and requiresAppActionConfirmation; applicationOwnedToolLoop imports MAX_EXECUTABLE_APP_ACTION_INTENT_CATALOG_INTENT_LENGTH and getExecutableAppActionIntentCatalogUnicodeLength.
+vi.mock('#/modules/Command/useCases', async () => {
+    const original = await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
     return {
-        ...original,
+        MAX_EXECUTABLE_APP_ACTION_INTENT_CATALOG_INTENT_LENGTH:
+            original.MAX_EXECUTABLE_APP_ACTION_INTENT_CATALOG_INTENT_LENGTH,
+        commandBatchPreflightPort: original.commandBatchPreflightPort,
+        compileVersionedCommandBatchEnvelope: original.compileVersionedCommandBatchEnvelope,
+        configureCommandBatchIdempotency: original.configureCommandBatchIdempotency,
+        describeAction: original.describeAction,
+        executeAppAction: original.executeAppAction,
         executeVersionedCommandBatchEnvelope: async (
             ...args: Parameters<typeof original.executeVersionedCommandBatchEnvelope>
         ) => {
@@ -78,6 +85,15 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => {
             }
             return result;
         },
+        generateGroupId: original.generateGroupId,
+        getAgentActionRiskPolicy: original.getAgentActionRiskPolicy,
+        getExecutableAppActionGroundingCatalog: original.getExecutableAppActionGroundingCatalog,
+        getExecutableAppActionGroundingRules: original.getExecutableAppActionGroundingRules,
+        getExecutableAppActionIntentCatalog: original.getExecutableAppActionIntentCatalog,
+        getExecutableAppActionIntentCatalogUnicodeLength: original.getExecutableAppActionIntentCatalogUnicodeLength,
+        getExecutableAppActionToolSchemas: original.getExecutableAppActionToolSchemas,
+        getVersionedCommandBatchCommitProof: original.getVersionedCommandBatchCommitProof,
+        getVersionedCommandBatchDivergenceTargetIds: original.getVersionedCommandBatchDivergenceTargetIds,
         getVersionedCommandBatchIdempotentReplay: async (
             input: Parameters<typeof original.getVersionedCommandBatchIdempotentReplay>[0]
         ) => {
@@ -102,13 +118,27 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => {
             }
             return original.getVersionedCommandBatchIdempotentReplay(input);
         },
+        getVersionedCommandTargetRanges: original.getVersionedCommandTargetRanges,
+        isExecutableAppActionType: original.isExecutableAppActionType,
+        issueCommandApprovalBinding: original.issueCommandApprovalBinding,
+        migrateLegacyAppActionToVersionedCommandEnvelope: original.migrateLegacyAppActionToVersionedCommandEnvelope,
+        parseVersionedCommandBatchEnvelope: original.parseVersionedCommandBatchEnvelope,
+        parseVersionedCommandEnvelope: original.parseVersionedCommandEnvelope,
+        requiresAppActionConfirmation: original.requiresAppActionConfirmation,
+        resetActionReplayAuthority: original.resetActionReplayAuthority,
+        selectExecutableAppActionToolSchemasForPrompt: original.selectExecutableAppActionToolSchemasForPrompt,
+        serializeVersionedCommandEnvelope: original.serializeVersionedCommandEnvelope,
     };
 });
+// prepareStemImport and discardPreparedStemImportResources import decodeAudioFile and releasePreviewAudioBuffer; applicationOwnedToolLoop imports getAgentBuiltinDeviceRuntimeManifest; getBackingVocalPlatePromptScope imports getDeviceChainTailSeconds.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    decodeAudioFile: vi.fn(),
+    getAgentBuiltinDeviceRuntimeManifest: vi.fn(),
+    getDeviceChainTailSeconds: vi.fn(),
     releasePreviewAudioBuffer: mocks.releasePreviewAudioBuffer,
 }));
-vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Collaboration/useCases')>()),
+// prepareStemImport, discardPreparedStemImportResources, and createStemImportConfirmationResourceLease import getAssetTransfer.
+vi.mock('#/modules/Collaboration/useCases', () => ({
     getAssetTransfer: () => ({
         prepareDurablePromotionRecovery: mocks.prepareDurablePromotionRecovery,
         commitDurablePromotionRecovery: mocks.commitDurablePromotionRecovery,
