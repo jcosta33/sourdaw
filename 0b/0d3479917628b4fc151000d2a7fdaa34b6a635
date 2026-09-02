@@ -1,0 +1,33 @@
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_a40848e8f8cca9::t_155bd8655a357c 654-657,668
+src/modules/Command/useCases/__tests__/addNotesCommandRegistration.spec.ts
+  s_a40848e8f8cca9::t_dae9a276317a67 355-358,366-370,373,400-403,411,414,418,452-455,462,465,469
+  s_a40848e8f8cca9::t_b8e26a2d2a0232 26-34,45,51-52
+  s_a40848e8f8cca9::t_74e5a46787c2a6 203-205,226-227,234,239,243,252-256,259,262,266,275-279,286,289-296
+src/modules/Command/useCases/executeAppAction.ts
+  s_a40848e8f8cca9::t_361bac428b615b 50,60,74
+src/modules/MIDI/handlers/noteCrud/__tests__/handleAddNotes.spec.ts
+  s_a40848e8f8cca9::t_2c705875df1c3f 386-401,424,429
+  s_a40848e8f8cca9::t_8e4c0daa123c70 283,310-344
+  s_a40848e8f8cca9::t_3a5ed51c587639 245-282
+  s_a40848e8f8cca9::t_cb11bf5db0ddaf 590,593
+src/modules/Command/useCases/__tests__/commandBatchContract.spec.ts
+  s_a40848e8f8cca9::t_87fc7494fed30d 496-515
+  s_a40848e8f8cca9::t_a5214b102437fd 495,516,518
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "0b0d3479917628b4fc151000d2a7fdaa34b6a635",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
