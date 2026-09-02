@@ -1,0 +1,21 @@
+scripts/__tests__/recoverDeliveryLock.spec.ts
+  s_c16f04dfa72fe0::t_9646eb41a63ec4 9
+scripts/deliverPullRequest.ts
+  s_c16f04dfa72fe0::t_684d156230be28 38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "4dce43a661caafd2083df54df401f9931c7634fc",
+  "prompts": {},
+  "sessions": {
+    "s_c16f04dfa72fe0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a061f1-8ec9-71e1-a757-bf2eab058323",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
