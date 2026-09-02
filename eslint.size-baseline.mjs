@@ -37,7 +37,6 @@ export const sizeBaselineFiles = [
     'scripts/pullRequestMutationLock.ts',
     'scripts/releaseProof.ts',
     'scripts/removeLane.ts',
-    'scripts/resolveReviewThread.ts',
     'scripts/resourceGuard.ts',
     'scripts/supersedePullRequest.ts',
     'scripts/trustedGithubWriteBootstrap.ts',
