@@ -57,14 +57,44 @@ fn init_panic_hook() {
 // Algorithm enum
 // ---------------------------------------------------------------------------
 
+/// Which engine renders.
+///
+/// The five a wire value selects carry nothing: their engines are built once in
+/// `ProofChamberInstance::new` and live in `ExposedEngines`, so this enum is
+/// only a discriminant. That is what makes `set_param("algorithm", …)`
+/// allocation-free — it arrives from the AudioWorklet's `port.onmessage`, on
+/// the render thread, and it used to construct the engine it selected (#3307).
+///
+/// The two convolution-backed variants carry theirs instead, because no wire
+/// value constructs them: `select_unexposed_engine` is Rust-only, off the audio
+/// thread, and free to allocate. The consequence is that leaving one — which
+/// only that same Rust-only path can arrive at — drops it, so a `set_param`
+/// reached with one of these live frees a buffer. That is the crate's existing
+/// convolution exception rather than a new one; nothing on the wire can put an
+/// instance into that state.
 enum ReverbEngine {
-    Plate(ProofChamber),
-    Fdn8(FdnReverb),
-    Fdn16(FdnReverb),
-    Spring(SpringReverb),
-    Convolution(ConvolutionEngine),
-    Hybrid(HybridReverb),
-    Reverse(ReverseReverb),
+    Plate,
+    Fdn8,
+    Fdn16,
+    Spring,
+    Reverse,
+    Convolution(Box<ConvolutionEngine>),
+    Hybrid(Box<HybridReverb>),
+}
+
+/// Every engine an `algorithm` write can select, all of them allocated once.
+///
+/// Held together rather than switched between, because the switch runs on the
+/// render thread: an FDN-16 built there allocates sixteen delay lines and a
+/// pre-delay buffer inside a 2.67 ms quantum, and a malloc that misses the
+/// deadline is an audible dropout. The one that becomes active is put back to
+/// its constructor state by `reset`, which reuses these allocations.
+struct ExposedEngines {
+    plate: ProofChamber,
+    fdn8: FdnReverb,
+    fdn16: FdnReverb,
+    spring: SpringReverb,
+    reverse: ReverseReverb,
 }
 
 /// An engine that is built and renders, but that no `algorithm` wire value
@@ -146,15 +176,15 @@ impl CachedParameter {
 }
 
 /// Every parameter write that has been forwarded to an engine, in
-/// most-recent-write order, so a newly constructed engine can be handed the
+/// most-recent-write order, so a newly selected engine can be handed the
 /// state its predecessor was running with.
 ///
 /// # Why this lives in the instance and not at the action layer
 ///
-/// `set_param("algorithm", n)` throws the current engine away and builds a new
-/// one. Something has to re-tell that engine what the user had set, and the
-/// obvious place to do it looked like the write path: after dispatching the
-/// algorithm change, re-dispatch every other parameter.
+/// `set_param("algorithm", n)` puts the engine it selects back to its
+/// constructor state. Something has to re-tell that engine what the user had
+/// set, and the obvious place to do it looked like the write path: after
+/// dispatching the algorithm change, re-dispatch every other parameter.
 ///
 /// That layer cannot host it. The replay has to be sourced from project truth
 /// (`Device.parameterValues`) rather than a panel store, or it writes stale
@@ -181,7 +211,7 @@ impl CachedParameter {
 /// Exactly the names that reach an engine, which is enforced structurally:
 /// `record` is called immediately before the forward, after `algorithm` and
 /// `vintage` have already returned. Those two are instance state, not engine
-/// state — `algorithm` *is* the reconstruction and `vintage` lives on a
+/// state — `algorithm` *is* the selection and `vintage` lives on a
 /// processor that survives it — so replaying either into an engine would be
 /// wrong.
 ///
@@ -249,7 +279,7 @@ impl ParameterCache {
         // A full cache evicts its oldest entry rather than refusing the write
         // that has just arrived. Refusing it is the worse direction by some
         // distance: the incoming name would be forwarded live and then
-        // dropped at the next reconstruction, which is #1544 again, silently
+        // dropped at the next algorithm switch, which is #1544 again, silently
         // and permanently for that name — while the entry being protected is
         // the one nobody has touched for longest. Entries are already held in
         // recency order, so the victim is the front.
@@ -271,47 +301,14 @@ impl ParameterCache {
     }
 }
 
-/// Hand `name = value` to whichever engine is currently selected.
-///
-/// A free function rather than a method so the replay loop can hold the cache
-/// and the engine at the same time, and so the two callers — a live write and
-/// a replayed one — provably take the same path. A replay that went straight
-/// to `engine.set_param` would skip the spring's derived `dispersion` write
-/// below and silently diverge from what a live write does.
-fn forward_to_engine(engine: &mut ReverbEngine, name: &str, value: f32) {
-    match engine {
-        ReverbEngine::Plate(p) => p.set_param(name, value),
-        ReverbEngine::Fdn8(f) | ReverbEngine::Fdn16(f) => f.set_param(name, value),
-        ReverbEngine::Spring(s) => {
-            s.set_param(name, value);
-            if name == "diffusion" {
-                s.set_param("dispersion", value);
-            }
-        }
-        // `decay` is converted to an IR stretch inside the convolution
-        // engine itself, so the hybrid path below inherits it unchanged.
-        ReverbEngine::Convolution(c) => c.set_param(name, value),
-        ReverbEngine::Hybrid(h) => h.set_param(name, value),
-        ReverbEngine::Reverse(r) => r.set_param(name, value),
-    }
-}
-
-fn apply_fdn_damping_version(engine: &mut ReverbEngine, version: u8) {
-    match engine {
-        ReverbEngine::Fdn8(reverb) | ReverbEngine::Fdn16(reverb) => {
-            reverb.set_damping_version(version);
-        }
-        _ => {}
-    }
-}
-
 // ---------------------------------------------------------------------------
 // WASM instance — unified interface
 // ---------------------------------------------------------------------------
 
 #[wasm_bindgen]
 pub struct ProofChamberInstance {
-    engine: ReverbEngine,
+    engines: ExposedEngines,
+    active: ReverbEngine,
     vintage: VintageProcessor,
     sample_rate: f32,
     out_left: Vec<f32>,
@@ -327,7 +324,14 @@ impl ProofChamberInstance {
     pub fn new(sample_rate: f32) -> Self {
         let max_block = 1024;
         Self {
-            engine: ReverbEngine::Plate(ProofChamber::new(sample_rate)),
+            engines: ExposedEngines {
+                plate: ProofChamber::new(sample_rate),
+                fdn8: FdnReverb::new(sample_rate, 8),
+                fdn16: FdnReverb::new(sample_rate, 16),
+                spring: SpringReverb::new(sample_rate),
+                reverse: ReverseReverb::new(sample_rate),
+            },
+            active: ReverbEngine::Plate,
             vintage: VintageProcessor::new(sample_rate),
             sample_rate,
             out_left: vec![0.0; max_block],
@@ -351,17 +355,16 @@ impl ProofChamberInstance {
                     2.0 => 2,
                     _ => return,
                 };
-                apply_fdn_damping_version(&mut self.engine, self.fdn_damping_version);
+                self.apply_fdn_damping_version();
                 return;
             }
             "algorithm" => {
-                let sr = self.sample_rate;
-                self.engine = match value as u8 {
-                    0 => ReverbEngine::Plate(ProofChamber::new(sr)),
-                    1 => ReverbEngine::Fdn8(FdnReverb::new(sr, 8)),
-                    2 => ReverbEngine::Fdn16(FdnReverb::new(sr, 16)),
-                    3 => ReverbEngine::Spring(SpringReverb::new(sr)),
-                    6 => ReverbEngine::Reverse(ReverseReverb::new(sr)),
+                self.active = match value as u8 {
+                    0 => ReverbEngine::Plate,
+                    1 => ReverbEngine::Fdn8,
+                    2 => ReverbEngine::Fdn16,
+                    3 => ReverbEngine::Spring,
+                    6 => ReverbEngine::Reverse,
                     // 4 (Convolution) and 5 (Hybrid) are reserved, not free.
                     // Both are built and both render, but both need an impulse
                     // response and nothing can deliver one: `load_ir` has no
@@ -374,9 +377,16 @@ impl ProofChamberInstance {
                     // into project files and replayed verbatim — and reusing 4
                     // or 5 for something else would silently repoint any value
                     // already stored.
-                    _ => ReverbEngine::Plate(ProofChamber::new(sr)),
+                    _ => ReverbEngine::Plate,
                 };
-                apply_fdn_damping_version(&mut self.engine, self.fdn_damping_version);
+                // The engine selected above is still holding the tail and the
+                // parameter values it had when it was last live. This is what
+                // the reconstruction that used to stand here produced for free,
+                // and what the replay below is written against: it puts the
+                // engine back to exactly its constructor state, reusing the
+                // buffers it already owns rather than allocating new ones.
+                self.reset_active_engine();
+                self.apply_fdn_damping_version();
                 // The engine above is factory-fresh and knows nothing about
                 // the sound the user had built. Without this line every
                 // parameter is discarded on every algorithm change, which is
@@ -403,7 +413,7 @@ impl ProofChamberInstance {
         // point is forwarded. Recording before the forward also means a name
         // the current engine drops is still remembered for one that reads it.
         self.params.record(name, value);
-        forward_to_engine(&mut self.engine, name, value);
+        self.forward_to_engine(name, value);
     }
 
     pub fn set_param_by_id(&mut self, param_id: u32, value: f32) {
@@ -417,7 +427,7 @@ impl ProofChamberInstance {
 
     /// Load an IR for the convolution engine.
     pub fn load_ir(&mut self, ir_data: Vec<f32>, channels: u8) {
-        match &mut self.engine {
+        match &mut self.active {
             ReverbEngine::Convolution(c) => c.load_ir(&ir_data, channels as usize),
             ReverbEngine::Hybrid(h) => h.convolution.load_ir(&ir_data, channels as usize),
             _ => {}
@@ -429,24 +439,35 @@ impl ProofChamberInstance {
         self.out_left[..size].copy_from_slice(&left_in[..size]);
         self.out_right[..size].copy_from_slice(&right_in[..size]);
 
-        match &mut self.engine {
-            ReverbEngine::Plate(p) => {
-                p.process(&mut self.out_left[..size], &mut self.out_right[..size])
-            }
-            ReverbEngine::Fdn8(f) | ReverbEngine::Fdn16(f) => {
-                f.process(&mut self.out_left[..size], &mut self.out_right[..size])
-            }
-            ReverbEngine::Spring(s) => {
-                s.process(&mut self.out_left[..size], &mut self.out_right[..size])
-            }
+        // One match on the active discriminant per block, exactly as before:
+        // the engines moved out of the enum, the dispatch did not change shape
+        // and no per-sample branch was added.
+        match &mut self.active {
+            ReverbEngine::Plate => self
+                .engines
+                .plate
+                .process(&mut self.out_left[..size], &mut self.out_right[..size]),
+            ReverbEngine::Fdn8 => self
+                .engines
+                .fdn8
+                .process(&mut self.out_left[..size], &mut self.out_right[..size]),
+            ReverbEngine::Fdn16 => self
+                .engines
+                .fdn16
+                .process(&mut self.out_left[..size], &mut self.out_right[..size]),
+            ReverbEngine::Spring => self
+                .engines
+                .spring
+                .process(&mut self.out_left[..size], &mut self.out_right[..size]),
+            ReverbEngine::Reverse => self
+                .engines
+                .reverse
+                .process(&mut self.out_left[..size], &mut self.out_right[..size]),
             ReverbEngine::Convolution(c) => {
                 c.process(&mut self.out_left[..size], &mut self.out_right[..size])
             }
             ReverbEngine::Hybrid(h) => {
                 h.process(&mut self.out_left[..size], &mut self.out_right[..size])
-            }
-            ReverbEngine::Reverse(r) => {
-                r.process(&mut self.out_left[..size], &mut self.out_right[..size])
             }
         }
 
@@ -476,7 +497,7 @@ impl ProofChamberInstance {
     /// absolute index plus HEAD_SIZE: tail-stage inputs are delayed to their
     /// segment offsets, and the head/dry reference takes the remaining 128.
     pub fn get_latency(&self) -> u32 {
-        match &self.engine {
+        match &self.active {
             ReverbEngine::Convolution(_) => 128, // convolution::GLOBAL_LATENCY (HEAD_SIZE)
             ReverbEngine::Hybrid(_) => 128,
             _ => 0, // algorithmic reverbs have zero latency
@@ -485,9 +506,9 @@ impl ProofChamberInstance {
 
     pub fn get_param_names(&self) -> String {
         let mut names: Vec<&str> = vec!["algorithm", "vintage"];
-        let engine_names: Vec<&str> = match &self.engine {
-            ReverbEngine::Plate(p) => p.param_names(),
-            ReverbEngine::Fdn8(_) | ReverbEngine::Fdn16(_) => {
+        let engine_names: Vec<&str> = match &self.active {
+            ReverbEngine::Plate => self.engines.plate.param_names(),
+            ReverbEngine::Fdn8 | ReverbEngine::Fdn16 => {
                 let mut names = vec![
                     "mix",
                     // The host-facing name is the descriptor's `decay`; `rt60`
@@ -507,10 +528,10 @@ impl ProofChamberInstance {
                 names.push(output_stage::OutputStage::WIDTH);
                 names
             }
-            ReverbEngine::Spring(s) => s.param_names(),
+            ReverbEngine::Spring => self.engines.spring.param_names(),
+            ReverbEngine::Reverse => self.engines.reverse.param_names(),
             ReverbEngine::Convolution(c) => c.param_names(),
             ReverbEngine::Hybrid(h) => h.param_names(),
-            ReverbEngine::Reverse(r) => r.param_names(),
         };
         names.extend(engine_names);
         serde_json::to_string(&names).unwrap_or_else(|_| "[]".to_string())
@@ -520,6 +541,63 @@ impl ProofChamberInstance {
 /// Rust-only affordances, deliberately outside the `#[wasm_bindgen]` block
 /// above so none of this reaches the JS surface.
 impl ProofChamberInstance {
+    /// Hand `name = value` to whichever engine is currently selected.
+    ///
+    /// One function rather than a call at each site, so the two callers — a
+    /// live write and a replayed one — provably take the same path. A replay
+    /// that went straight to an engine's `set_param` would skip the spring's
+    /// derived `dispersion` write below and silently diverge from what a live
+    /// write does.
+    fn forward_to_engine(&mut self, name: &str, value: f32) {
+        match &mut self.active {
+            ReverbEngine::Plate => self.engines.plate.set_param(name, value),
+            ReverbEngine::Fdn8 => self.engines.fdn8.set_param(name, value),
+            ReverbEngine::Fdn16 => self.engines.fdn16.set_param(name, value),
+            ReverbEngine::Spring => {
+                self.engines.spring.set_param(name, value);
+                if name == "diffusion" {
+                    self.engines.spring.set_param("dispersion", value);
+                }
+            }
+            ReverbEngine::Reverse => self.engines.reverse.set_param(name, value),
+            // `decay` is converted to an IR stretch inside the convolution
+            // engine itself, so the hybrid path below inherits it unchanged.
+            ReverbEngine::Convolution(c) => c.set_param(name, value),
+            ReverbEngine::Hybrid(h) => h.set_param(name, value),
+        }
+    }
+
+    /// Tell the selected engine which damping curve the instance is on, if it
+    /// is one of the two that has one.
+    fn apply_fdn_damping_version(&mut self) {
+        let version = self.fdn_damping_version;
+        match &self.active {
+            ReverbEngine::Fdn8 => self.engines.fdn8.set_damping_version(version),
+            ReverbEngine::Fdn16 => self.engines.fdn16.set_damping_version(version),
+            _ => {}
+        }
+    }
+
+    /// Put the selected engine back into the state its constructor leaves it
+    /// in, reusing every buffer it already owns.
+    ///
+    /// This is the whole of what the `algorithm` arm's reconstruction used to
+    /// buy, minus the allocation: an engine that was live earlier is still
+    /// carrying its tail and the parameters written to it, and the replay that
+    /// follows a switch assumes a factory-fresh engine underneath it.
+    fn reset_active_engine(&mut self) {
+        match &mut self.active {
+            ReverbEngine::Plate => self.engines.plate.reset(),
+            ReverbEngine::Fdn8 => self.engines.fdn8.reset(),
+            ReverbEngine::Fdn16 => self.engines.fdn16.reset(),
+            ReverbEngine::Spring => self.engines.spring.reset(),
+            ReverbEngine::Reverse => self.engines.reverse.reset(),
+            // Constructed on selection rather than kept, so one that is live
+            // is already as fresh as `select_unexposed_engine` left it.
+            ReverbEngine::Convolution(_) | ReverbEngine::Hybrid(_) => {}
+        }
+    }
+
     /// Switch to an engine no wire value selects.
     ///
     /// Not exported to JS, which is the whole point: the worklet has no way to
@@ -528,16 +606,24 @@ impl ProofChamberInstance {
     /// allocation pin in `tests/reverb_process_rt.rs` needs to drive the
     /// convolution render path — rather than being quietly untested code that
     /// nobody can run at all.
+    ///
+    /// This is the one selection that still *constructs*, and it is allowed to:
+    /// it is not reachable from the audio thread, and preallocating a
+    /// partitioned convolution into every instance to spare an allocation no
+    /// worklet can trigger would cost every project memory for an engine
+    /// nothing can select.
     pub fn select_unexposed_engine(&mut self, which: UnexposedEngine) {
         let sr = self.sample_rate;
-        self.engine = match which {
-            UnexposedEngine::Convolution => ReverbEngine::Convolution(ConvolutionEngine::new(sr)),
-            UnexposedEngine::Hybrid => ReverbEngine::Hybrid(HybridReverb::new(sr)),
+        self.active = match which {
+            UnexposedEngine::Convolution => {
+                ReverbEngine::Convolution(Box::new(ConvolutionEngine::new(sr)))
+            }
+            UnexposedEngine::Hybrid => ReverbEngine::Hybrid(Box::new(HybridReverb::new(sr))),
         };
-        // Same reconstruction, same replay, so this site cannot drift into
-        // the defect the wire path just came out of. What the replay does not
-        // carry is the impulse response: `load_ir` state is not a parameter
-        // and is not cached, so a reconstruction still drops it. That is the
+        // Same replay as the wire path, so this site cannot drift into the
+        // defect that one came out of. What the replay does not carry is the
+        // impulse response: `load_ir` state is not a parameter and is not
+        // cached, so a reconstruction still drops it. That is the
         // same defect shape one level down, and it is not fixed here because
         // `load_ir` has no caller anywhere in the application — when a
         // transport for it exists, it needs the same treatment.
@@ -551,19 +637,23 @@ impl ProofChamberInstance {
     /// engine at once; `CachedParameter` is `Copy`, so each entry is lifted
     /// out and the borrow of `self.params` ends before the forward.
     ///
-    /// This only ever runs from an engine construction, which has just
-    /// allocated every delay buffer in the engine, so it is not on the
-    /// steady-state parameter path that `numeric_automation_setter_does_not_
-    /// allocate` pins and carries no allocation claim of its own.
+    /// Every write here is a `set_param` forward and nothing more, so this runs
+    /// under the same allocation contract as a live automation write: an
+    /// `algorithm` change reaches it from the render thread, and
+    /// `algorithm_switch_does_not_allocate` pins that the whole path is silent
+    /// to the allocator.
     ///
-    /// It used to say allocation happened here, because an FDN `size` write
-    /// rebuilt its delay table. That write is allocation-free now — the tank is
-    /// allocated once at construction for its longest reachable delay — and
-    /// `crates/proof-chamber/tests/fdn_size_automation_rt.rs` guards it.
+    /// It used to say allocation happened here, because it only ever followed
+    /// an engine construction that had just allocated every delay buffer, and
+    /// because an FDN `size` write rebuilt its delay table. Neither is true:
+    /// the tank is allocated once for its longest reachable delay
+    /// (`crates/proof-chamber/tests/fdn_size_automation_rt.rs`), and the
+    /// selection ahead of this resets a preallocated engine rather than
+    /// building one (#3307).
     fn replay_cached_parameters(&mut self) {
         for index in 0..self.params.entries.len() {
             let entry = self.params.entries[index];
-            forward_to_engine(&mut self.engine, entry.name(), entry.value);
+            self.forward_to_engine(entry.name(), entry.value);
         }
     }
 }
@@ -603,13 +693,79 @@ mod tests {
         });
     }
 
-    fn fdn_hf_ratio(instance: &ProofChamberInstance) -> f32 {
-        match &instance.engine {
-            ReverbEngine::Fdn8(reverb) | ReverbEngine::Fdn16(reverb) => {
-                reverb.rt60_hf / reverb.rt60
+    /// Every wire value a stored `algorithm` can hold, plus one that no arm
+    /// claims: the fallthrough used to construct a plate, so a rejected value
+    /// paid the same allocation a real one did.
+    const WIRE_VALUES: [f32; 6] = [0.0, 1.0, 2.0, 3.0, 6.0, 9.0];
+
+    #[test]
+    fn algorithm_switch_does_not_allocate() {
+        // #3307. `ProofChamberInstance::set_param` is called from the
+        // AudioWorklet's `port.onmessage`, which runs in
+        // `AudioWorkletGlobalScope` — the render thread — and the `algorithm`
+        // arm used to build the selected engine there: sixteen delay lines and
+        // a pre-delay buffer for FDN-16, inside a 2.67 ms quantum.
+        //
+        // A violation aborts the process with `memory allocation of N bytes
+        // failed` rather than failing this assertion, because
+        // `assert_no_alloc`'s handler calls `std::alloc::handle_alloc_error`.
+        let mut instance = ProofChamberInstance::new(48_000.0);
+
+        // Written to before the switches so the replay has entries to carry:
+        // an empty cache would leave `replay_cached_parameters` iterating
+        // nothing, and the replay is on the same audio-thread path.
+        instance.set_param("mix", 0.7);
+        instance.set_param("decay", 0.62);
+        instance.set_param("size", 0.37);
+        instance.set_param("diffusion", 0.72);
+        instance.set_param("shimmer", 1.0);
+        instance.set_param("fdn_damping_version", 2.0);
+
+        assert_no_alloc(|| {
+            for value in WIRE_VALUES {
+                instance.set_param("algorithm", value);
             }
+            // And back down, so every ordered pair of engines is entered from
+            // something other than the plate at least once.
+            for value in WIRE_VALUES.iter().rev() {
+                instance.set_param("algorithm", *value);
+            }
+        });
+    }
+
+    #[test]
+    fn the_algorithm_arm_selects_rather_than_constructs() {
+        // The allocation guard above only reds while the engines it drives stay
+        // allocation-free to build. This one is about the shape of the code:
+        // the defect was a constructor call inside the arm, so the arm is
+        // asserted to hold none. Same instrument as
+        // `audio_thread_handle_uses_only_derived_thread_traits` in
+        // `crates/daw-engine/src/audio_thread.rs`.
+        let source = include_str!("lib.rs");
+        let arm_start = source
+            .find("\"algorithm\" => {")
+            .expect("`set_param` still has an `algorithm` arm");
+        let arm_end = arm_start
+            + source[arm_start..]
+                .find("\"vintage\" =>")
+                .expect("the `vintage` arm still follows the `algorithm` one");
+        let arm = &source[arm_start..arm_end];
+
+        assert!(
+            !arm.contains("::new("),
+            "the `algorithm` arm constructs an engine again (#3307); it runs on \
+             the render thread, so it must select one of the engines built in \
+             `ProofChamberInstance::new` and reset it"
+        );
+    }
+
+    fn fdn_hf_ratio(instance: &ProofChamberInstance) -> f32 {
+        let reverb = match &instance.active {
+            ReverbEngine::Fdn8 => &instance.engines.fdn8,
+            ReverbEngine::Fdn16 => &instance.engines.fdn16,
             _ => panic!("expected an FDN engine"),
-        }
+        };
+        reverb.rt60_hf / reverb.rt60
     }
 
     #[test]
