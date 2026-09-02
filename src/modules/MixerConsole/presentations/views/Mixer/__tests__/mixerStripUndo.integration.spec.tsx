@@ -131,13 +131,15 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
         updateClip: actual.updateClip,
     };
 });
-// Non-spread listing of the MIDI names the strip graph imports — the fat barrel
-// otherwise walks web-MIDI and groove paths that reach unread AudioEngine keys.
+// Non-spread listing of the MIDI names the checker graph imports plus the names
+// live importActual Arrangement handlers call on this spec's delete/undo/fader
+// path — not every MIDI barrel export.
 vi.mock('#/modules/MIDI/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
     return {
         MIDI_EFFECT_FACTORIES: actual.MIDI_EFFECT_FACTORIES,
         projectDrumPreviewCandidateNotes: actual.projectDrumPreviewCandidateNotes,
+        removeMidiClipData: actual.removeMidiClipData,
     };
 });
 // Non-spread listing of every Project name the CRDT graph imports — cuts project
