@@ -5,8 +5,8 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID } from '../githubAppIdentity.ts';
 import { runDeliverCli } from '../deliverPullRequest.ts';
+import { AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID } from '../githubAppIdentity.ts';
 import { composeDeliveryReceipt } from '../prContract.ts';
 import { runRecoverDeliveryLockCli, type DeliveryLockRecoveryDependencies } from '../recoverDeliveryLock.ts';
 

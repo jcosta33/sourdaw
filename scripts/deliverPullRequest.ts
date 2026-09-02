@@ -35,12 +35,12 @@ import {
     type PullRequestRemoteMutationBoundary,
     withPullRequestMutationLock,
 } from './pullRequestMutationLock.ts';
+import { shellPort as trackerIssueShellPort } from './reconcileTrackerIssue.ts';
 import {
     runRecoverDeliveryLockCli,
     type DeliveryLockRecoveryDependencies,
     type DeliveryLockRecoveryTrustedLauncher,
 } from './recoverDeliveryLock.ts';
-import { shellPort as trackerIssueShellPort } from './reconcileTrackerIssue.ts';
 import { completeTrackerIssue, type ReconcileTrackerIssuePort } from './trackerIssueReconciliation.ts';
 
 export type HeadCheckRun = {
