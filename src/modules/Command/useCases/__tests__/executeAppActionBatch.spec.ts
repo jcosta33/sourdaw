@@ -1278,7 +1278,7 @@ describe('executeAppActionBatch', () => {
         }
     });
 
-    it('records planned automation-mode inverses so one grouped undo restores the original mode', async () => {
+    it('records each planned automation mode so one grouped undo restores the original mode', async () => {
         const previousTracks = trackStore.value ? structuredClone(trackStore.value) : null;
         const previousUndo = undoStore.value ? structuredClone(undoStore.value) : null;
         setTrackStoreState({
@@ -1294,9 +1294,13 @@ describe('executeAppActionBatch', () => {
             type: 'setAutomationMode' as const,
             payload: { trackId: 'track-automation', mode: 'touch' as const, expectedMode: 'write' as const },
         };
+        const latchAction = {
+            type: 'setAutomationMode' as const,
+            payload: { trackId: 'track-automation', mode: 'latch' as const, expectedMode: 'touch' as const },
+        };
 
         try {
-            const result = await executeAppActionBatch([writeAction, touchAction], {
+            const result = await executeAppActionBatch([writeAction, touchAction, latchAction], {
                 groupId: 'automation-mode-batch',
                 groupLabel: 'Set automation modes',
                 requireCompensation: true,
@@ -1304,7 +1308,7 @@ describe('executeAppActionBatch', () => {
 
             expect(result).toMatchObject({ status: 'committed' });
             expect(getTrackStoreState()?.tracks.find((track) => track.id === 'track-automation')?.automationMode).toBe(
-                'touch'
+                'latch'
             );
 
             const undoEntries = mocks.commitUndoEntry.mock.calls.map(([entry]) => entry as UndoEntry);
@@ -1323,6 +1327,14 @@ describe('executeAppActionBatch', () => {
                     inverseAction: {
                         type: 'setAutomationMode',
                         payload: { trackId: 'track-automation', mode: 'write', expectedMode: 'touch' },
+                    },
+                },
+                {
+                    groupId: 'automation-mode-batch',
+                    action: latchAction,
+                    inverseAction: {
+                        type: 'setAutomationMode',
+                        payload: { trackId: 'track-automation', mode: 'touch', expectedMode: 'latch' },
                     },
                 },
             ]);
