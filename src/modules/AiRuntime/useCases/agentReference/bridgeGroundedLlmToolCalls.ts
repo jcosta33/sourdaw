@@ -1746,10 +1746,10 @@ function sliceThroughLaterTrackControlIntent(
     return `${text.slice(0, startIndex)}${text.slice(end)}`.trim();
 }
 
-function endIndexAfterLeftmostNamedTrack(
+function leftmostNamedTrackRange(
     text: string,
     tracks: readonly { id: string; name: string }[]
-): number | undefined {
+): ReferenceRange | undefined {
     const namedIds = new Set(collectNamedProjectTracks(text, tracks));
     let leftmost: ReferenceRange | undefined;
     for (const track of tracks) {
@@ -1769,7 +1769,28 @@ function endIndexAfterLeftmostNamedTrack(
             }
         }
     }
-    return leftmost?.end;
+    return leftmost;
+}
+
+function endIndexAfterStandalonePronoun(text: string, named: ReferenceRange | undefined): number | undefined {
+    const pronoun = /\b(?:it|that|this)\b/iu.exec(text);
+    if (pronoun === null) {
+        return undefined;
+    }
+    const pronounEnd = pronoun.index + pronoun[0].length;
+    if (named !== undefined && named.start < pronoun.index) {
+        return undefined;
+    }
+    const introducesNamedTrack = named !== undefined && /^\s*$/u.test(text.slice(pronounEnd, named.start));
+    if (introducesNamedTrack && !/^it$/iu.test(pronoun[0])) {
+        return undefined;
+    }
+    return pronounEnd;
+}
+
+function endIndexAfterLeaveObject(text: string, tracks: readonly { id: string; name: string }[]): number | undefined {
+    const named = leftmostNamedTrackRange(text, tracks);
+    return endIndexAfterStandalonePronoun(text, named) ?? named?.end;
 }
 
 function stripTrackControlProtectionSpans(text: string, tracks: readonly { id: string; name: string }[]): string {
@@ -1791,8 +1812,8 @@ function stripTrackControlProtectionSpans(text: string, tracks: readonly { id: s
                     true
                 );
             } else {
-                const namedTrackEnd = endIndexAfterLeftmostNamedTrack(text.slice(afterGerund), tracks);
-                if (namedTrackEnd === undefined) {
+                const leaveObjectEnd = endIndexAfterLeaveObject(text.slice(afterGerund), tracks);
+                if (leaveObjectEnd === undefined) {
                     withoutGerund = sliceThroughLaterTrackControlIntent(
                         text,
                         gerund.index,
@@ -1803,7 +1824,7 @@ function stripTrackControlProtectionSpans(text: string, tracks: readonly { id: s
                     withoutGerund = sliceThroughLaterTrackControlIntent(
                         text,
                         gerund.index,
-                        afterGerund + namedTrackEnd,
+                        afterGerund + leaveObjectEnd,
                         laterTrackControlIntent,
                         true
                     );
@@ -1835,8 +1856,8 @@ function stripTrackControlProtectionSpans(text: string, tracks: readonly { id: s
     if (mutedComplement.test(afterBare)) {
         return withoutUnchanged;
     }
-    const namedTrackEnd = endIndexAfterLeftmostNamedTrack(afterBare, tracks);
-    if (namedTrackEnd === undefined) {
+    const leaveObjectEnd = endIndexAfterLeaveObject(afterBare, tracks);
+    if (leaveObjectEnd === undefined) {
         return sliceThroughLaterTrackControlIntent(
             withoutUnchanged,
             bareLeave.index,
@@ -1847,7 +1868,7 @@ function stripTrackControlProtectionSpans(text: string, tracks: readonly { id: s
     return sliceThroughLaterTrackControlIntent(
         withoutUnchanged,
         bareLeave.index,
-        afterBareStart + namedTrackEnd,
+        afterBareStart + leaveObjectEnd,
         laterTrackControlIntent,
         true
     );
