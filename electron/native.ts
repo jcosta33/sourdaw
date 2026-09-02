@@ -30,9 +30,21 @@ export type NativeEventCallback = (event: string, payload: unknown) => void;
  * The live native host: one instance for the life of the process, holding every
  * managed singleton the command bodies address.
  */
+/** What a file grant permits, in the addon's own wire vocabulary. */
+export type FileGrantMode = 'read' | 'readwrite';
+
 export type NativeHost = {
     /** Run the exit cascade. Synchronous today; see `shutdown.ts`. */
     readonly shutdown: () => unknown;
+    /**
+     * Grant the renderer access to one path the user picked.
+     *
+     * Declared here rather than reached through the generic command record
+     * because it is main-process-only by design: it is withheld from
+     * `EXPOSED_COMMANDS`, so the dialogs that mint grants are its only callers
+     * and they call it with named, checked arguments.
+     */
+    readonly grantPath: (path: string, mode: FileGrantMode, recursive: boolean) => Promise<void>;
     /** Dedicated dictation controls stay outside generic renderer command routing. */
     readonly startDictation: (sessionId: string) => Promise<string>;
     readonly stopDictation: (sessionId: string) => void;

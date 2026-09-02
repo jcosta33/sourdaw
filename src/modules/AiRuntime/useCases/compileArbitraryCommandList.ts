@@ -392,6 +392,7 @@ function resolveParentTrackId(
         case 'editable-clip':
         case 'editable-audio-clip':
         case 'editable-midi-clip':
+        case 'writable-midi-clip':
             return context.tracks.find((track) => track.clips.some((clip) => clip.id === targetId))?.id ?? null;
     }
     const exhaustiveCapability: never = capability;
@@ -622,8 +623,20 @@ function capabilityRequiresConcreteDependency(capability: string): boolean {
 }
 
 type BatchLocalBindingProducer = {
+    capabilities: readonly string[];
     itemId: string;
 };
+
+const BATCH_LOCAL_BUS_TARGET_CAPABILITIES: ReadonlySet<string> = new Set([
+    'track',
+    'armable-track',
+    'duplicable-track',
+    'removable-track',
+    'routable-source',
+    'bus',
+    'output',
+    'device-host-track',
+]);
 
 function dependsTransitivelyOn(
     item: SemanticCommandListItem,
@@ -685,7 +698,11 @@ function validateTargetArgumentsWithoutSelectors(input: {
                 return { status: 'rejected', reason: `Malformed batch-local target reference: ${value}` };
             }
             const producer = input.producersByBinding.get(binding);
-            if (producer === undefined || !dependsTransitivelyOn(input.item, producer.itemId, input.itemsById)) {
+            if (
+                producer === undefined ||
+                !producer.capabilities.includes(targetRule.capability) ||
+                !dependsTransitivelyOn(input.item, producer.itemId, input.itemsById)
+            ) {
                 return {
                     status: 'rejected',
                     reason: `Batch-local target ${value} requires an earlier bounded producer dependency.`,
@@ -941,7 +958,10 @@ export function compileArbitraryCommandList(input: {
                 commandCount: commands.length - commandStart,
             });
             if (typeof declaredBinding === 'string') {
-                producersByBinding.set(declaredBinding, { itemId: item.id });
+                producersByBinding.set(declaredBinding, {
+                    capabilities: [...BATCH_LOCAL_BUS_TARGET_CAPABILITIES],
+                    itemId: item.id,
+                });
             }
             continue;
         }

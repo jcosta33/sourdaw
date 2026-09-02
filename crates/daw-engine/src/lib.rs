@@ -128,6 +128,9 @@ pub struct EngineHandle {
     /// What the render callback last published as the bridge's settled round
     /// trip, in frames. Written by the audio thread, read here.
     bridge_round_trip_frames: Arc<AtomicUsize>,
+    /// What the capture ring published as its settled latency, in frames, or
+    /// zero while it is not serving. Written by the audio thread, read here.
+    input_latency_frames: Arc<AtomicUsize>,
 }
 
 impl EngineHandle {
@@ -158,21 +161,26 @@ impl EngineHandle {
         let (graph_progress_tx, graph_progress_reader) = graph_progress_channel();
         let (transport_position_tx, transport_position_reader) = transport_position_channel();
         let (engine_event_tx, engine_event_rx) = engine_event_channel();
-        let (thread_handle, sample_rate, bridge_round_trip_frames, retired_adoption_tx) =
-            spawn_audio_thread_with_diagnostics(
-                rx,
-                diagnostics_tx,
-                timeline_diagnostics_tx,
-                graph_progress_tx,
-                transport_position_tx,
-                engine_event_tx,
-                force_default_buffer,
-            )?;
+        let spawned = spawn_audio_thread_with_diagnostics(
+            rx,
+            diagnostics_tx,
+            timeline_diagnostics_tx,
+            graph_progress_tx,
+            transport_position_tx,
+            engine_event_tx,
+            // Nothing consumes captured audio yet: the scheduler gains its
+            // input bus in the lane after this one (jcosta33/sourdaw#3069),
+            // and an input stream opened before then would ask the musician
+            // for microphone access to feed a ring nobody drains. Handing an
+            // event ring over here is the whole of asking for capture.
+            None,
+            force_default_buffer,
+        )?;
 
         Ok(Self {
             command_tx: tx,
-            retired_adoption_tx,
-            _audio_thread: thread_handle,
+            retired_adoption_tx: spawned.retired_adoption_tx,
+            _audio_thread: spawned.handle,
             next_plugin_id: 1000, // Start high to avoid collision with effect IDs
             effect_registrations: 0,
             // The zero baseline is exact: the diagnostics pair this handle
@@ -184,8 +192,9 @@ impl EngineHandle {
             graph_progress: graph_progress_reader,
             transport_position: transport_position_reader,
             engine_events: engine_event_rx,
-            sample_rate,
-            bridge_round_trip_frames,
+            sample_rate: spawned.sample_rate,
+            bridge_round_trip_frames: spawned.bridge_round_trip_frames,
+            input_latency_frames: spawned.input_latency_frames,
         })
     }
 
@@ -211,6 +220,29 @@ impl EngineHandle {
     /// graph, and the whole round trip this reports goes with it.
     pub fn bridge_round_trip_frames(&self) -> usize {
         self.bridge_round_trip_frames.load(Ordering::Relaxed)
+    }
+
+    /// Frames of latency the capture path is currently adding — the block the
+    /// input device delivers plus the depth its ring settled at — or zero
+    /// while capture is not serving.
+    ///
+    /// Zero means there is no figure, never that there is no delay. It reads
+    /// zero when this engine opened no input stream, and it also reads zero
+    /// after an open until the ring has filled to its settled depth, after a
+    /// stall until it resettles, and while it refills after a block or a
+    /// render callback larger than any since the last stall. The figure cannot
+    /// be published at open, because it follows the block size the device
+    /// turns out to deliver and the slice the render callback turns out to ask
+    /// for; the reader writes it each time it settles on a cadence, against a
+    /// depth it has just observed, and retracts it whenever it stops serving.
+    ///
+    /// A recording host offsets a take by this plus the output latency, the
+    /// way Logic, Live and Reaper do: what the player hears and where the
+    /// take is written are two quantities, and only the second one is this. A
+    /// host must therefore wait for a non-zero reading before it trusts one,
+    /// rather than compensating a take by zero.
+    pub fn input_latency_frames(&self) -> usize {
+        self.input_latency_frames.load(Ordering::Relaxed)
     }
 
     /// Publish one validated batch with all-or-nothing visibility.
@@ -850,6 +882,7 @@ pub fn engine_handle_for_command_capture(
             sample_rate: 48_000.0,
             // Seeded exactly as a real stream is before its first callback.
             bridge_round_trip_frames: audio_thread::new_bridge_round_trip_slot(),
+            input_latency_frames: audio_thread::new_input_latency_slot(),
         },
         command_rx,
         retired_adoption_rx,
@@ -1561,6 +1594,7 @@ mod tests {
                 engine_events: engine_event_rx,
                 sample_rate: 48_000.0,
                 bridge_round_trip_frames: crate::audio_thread::new_bridge_round_trip_slot(),
+                input_latency_frames: crate::audio_thread::new_input_latency_slot(),
             },
             command_rx,
             diagnostics_tx,

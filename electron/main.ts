@@ -694,7 +694,12 @@ void app.whenReady().then(() => {
         rebuildMacApplicationMenu();
     }
 
-    registerDialogChannels({ ipcMain, isTrustedFrameUrl: isAllowedFrameUrl, dialogs: dialog });
+    registerDialogChannels({
+        ipcMain,
+        isTrustedFrameUrl: isAllowedFrameUrl,
+        dialogs: dialog,
+        native: () => nativeHost,
+    });
     registerPathChannels({
         ipcMain,
         isTrustedFrameUrl: isAllowedFrameUrl,

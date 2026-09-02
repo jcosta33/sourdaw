@@ -7,7 +7,7 @@
 //! look identical to silence. This command is that reader.
 
 use crate::state::AppState;
-use daw_engine::engine_events::{EngineEvent, StreamErrorKind};
+use daw_engine::engine_events::{EngineEvent, StreamErrorKind, StreamSide};
 use daw_engine::midi::diagnostics::ActiveMidiRtDiagnosticsSnapshot;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::Ordering;
@@ -37,6 +37,23 @@ impl From<StreamErrorKind> for StreamErrorKindPayload {
     }
 }
 
+/// Which of the engine's device streams a report came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum StreamSidePayload {
+    Output,
+    Input,
+}
+
+impl From<StreamSide> for StreamSidePayload {
+    fn from(side: StreamSide) -> Self {
+        match side {
+            StreamSide::Output => Self::Output,
+            StreamSide::Input => Self::Input,
+        }
+    }
+}
+
 /// One engine event, tagged so the frontend can discriminate on `type`.
 ///
 /// `rename_all` on the enum renames the variants; a struct variant's own fields
@@ -45,13 +62,19 @@ impl From<StreamErrorKind> for StreamErrorKindPayload {
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum EngineEventPayload {
     #[serde(rename_all = "camelCase")]
-    StreamError { kind: StreamErrorKindPayload },
+    StreamError {
+        side: StreamSidePayload,
+        kind: StreamErrorKindPayload,
+    },
 }
 
 impl From<EngineEvent> for EngineEventPayload {
     fn from(event: EngineEvent) -> Self {
         match event {
-            EngineEvent::StreamError { kind } => Self::StreamError { kind: kind.into() },
+            EngineEvent::StreamError { side, kind } => Self::StreamError {
+                side: side.into(),
+                kind: kind.into(),
+            },
         }
     }
 }
@@ -166,6 +189,7 @@ mod tests {
             callback_frames_over_bridge_reach: 9,
             bridge_input_blocks_refused: 10,
             events: vec![EngineEventPayload::StreamError {
+                side: StreamSidePayload::Input,
                 kind: StreamErrorKindPayload::DeviceNotAvailable,
             }],
         };
@@ -181,7 +205,8 @@ mod tests {
                 r#""bridgeOutputBlocksDropped":6,"unmatchedBridgeBlocks":7,"#,
                 r#""bridgeBacklogBlocksShed":8,"callbackFramesOverBridgeReach":9,"#,
                 r#""bridgeInputBlocksRefused":10,"#,
-                r#""events":[{"type":"streamError","kind":"deviceNotAvailable"}]}"#
+                r#""events":[{"type":"streamError","side":"input","#,
+                r#""kind":"deviceNotAvailable"}]}"#
             )
         );
     }
@@ -254,6 +279,7 @@ mod tests {
         let diagnostics = running_engine_diagnostics(
             snapshot,
             vec![EngineEvent::StreamError {
+                side: StreamSide::Output,
                 kind: StreamErrorKind::DeviceBusy,
             }],
             11,
@@ -275,8 +301,48 @@ mod tests {
         assert_eq!(
             diagnostics.events,
             vec![EngineEventPayload::StreamError {
+                side: StreamSidePayload::Output,
                 kind: StreamErrorKindPayload::DeviceBusy,
             }]
+        );
+    }
+
+    /// A capture failure and a playback failure reach the frontend as the
+    /// same event type, so the side is the only thing telling them apart. A
+    /// mapping that dropped it would report a microphone that vanished as the
+    /// speakers going away.
+    #[test]
+    fn each_stream_side_has_its_own_wire_spelling_and_survives_the_mapping() {
+        let mapped: Vec<EngineEventPayload> = [StreamSide::Input, StreamSide::Output]
+            .into_iter()
+            .map(|side| {
+                EngineEventPayload::from(EngineEvent::StreamError {
+                    side,
+                    kind: StreamErrorKind::Xrun,
+                })
+            })
+            .collect();
+
+        assert_eq!(
+            mapped,
+            vec![
+                EngineEventPayload::StreamError {
+                    side: StreamSidePayload::Input,
+                    kind: StreamErrorKindPayload::Xrun,
+                },
+                EngineEventPayload::StreamError {
+                    side: StreamSidePayload::Output,
+                    kind: StreamErrorKindPayload::Xrun,
+                },
+            ]
+        );
+        assert_eq!(
+            serde_json::to_string(&StreamSidePayload::Input).expect("side should serialize"),
+            r#""input""#
+        );
+        assert_eq!(
+            serde_json::to_string(&StreamSidePayload::Output).expect("side should serialize"),
+            r#""output""#
         );
     }
 

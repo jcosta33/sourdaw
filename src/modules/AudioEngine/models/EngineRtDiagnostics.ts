@@ -11,9 +11,18 @@
 export type EngineStreamErrorKind =
     'deviceNotAvailable' | 'deviceBusy' | 'deviceChanged' | 'streamInvalidated' | 'xrun' | 'backendSpecific';
 
+/**
+ * Which of the engine's device streams a report came from. A failing capture
+ * stream costs the take being recorded; a failing playback stream costs
+ * monitoring outright, and nothing downstream can tell them apart without
+ * this.
+ */
+export type EngineStreamSide = 'output' | 'input';
+
 /** One drained engine event, discriminated on `type`. */
 export type EngineEvent = {
     type: 'streamError';
+    side: EngineStreamSide;
     kind: EngineStreamErrorKind;
 };
 

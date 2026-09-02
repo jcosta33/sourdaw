@@ -115,13 +115,19 @@ describe('mountBrowserDisplayScaleHost', () => {
         const capability = readBrowserDisplayScaleHostCapability(window);
         expect(capability).toBeDefined();
 
-        capability?.resetForChildStartup(window);
-        expect(frame.style.transform).toBe('scale(2)');
+        frame.style.width = '100vw';
+        frame.style.height = '100vh';
+        frame.style.transform = 'scale(1)';
 
-        capability?.resetForChildStartup(frame.contentWindow!);
+        capability?.resetForChildStartup(window);
         expect(frame.style.width).toBe('100vw');
         expect(frame.style.height).toBe('100vh');
         expect(frame.style.transform).toBe('scale(1)');
+
+        capability?.resetForChildStartup(frame.contentWindow!);
+        expect(frame.style.width).toBe('50vw');
+        expect(frame.style.height).toBe('50vh');
+        expect(frame.style.transform).toBe('scale(2)');
     });
 
     it('does not invoke a browser host startup reset from a top-level direct application', () => {
@@ -151,7 +157,9 @@ describe('mountBrowserDisplayScaleHost', () => {
 
         expect(frame.style.transform).toBe('scale(2)');
         capability?.resetForChildStartup(frame.contentWindow!);
-        expect(frame.style.transform).toBe('scale(1)');
+        expect(frame.style.width).toBe('50vw');
+        expect(frame.style.height).toBe('50vh');
+        expect(frame.style.transform).toBe('scale(2)');
     });
 
     it('focuses the application on load and persisted restore until the host is permanently unloaded', () => {
@@ -201,7 +209,7 @@ describe('mountBrowserDisplayScaleHost', () => {
         expect(frame!.title).toBe('Sourdaw');
     });
 
-    it('reapplies a persisted scale after the child resets the frame for remount', () => {
+    it('keeps last applied scale when the exact child resets for remount', () => {
         const root = document.getElementById('root')!;
         mountBrowserDisplayScaleHost(root);
         const frame = document.querySelector('iframe')!;
@@ -214,16 +222,6 @@ describe('mountBrowserDisplayScaleHost', () => {
             })
         );
         readBrowserDisplayScaleHostCapability(window)?.resetForChildStartup(frame.contentWindow!);
-        expect(frame.style.transform).toBe('scale(1)');
-        expect(frame.style.width).toBe('100vw');
-
-        window.dispatchEvent(
-            new MessageEvent('message', {
-                data: { type: 'sourdaw:browser-display-scale', scale: 2 },
-                origin: window.location.origin,
-                source: frame.contentWindow,
-            })
-        );
 
         expect(frame.style.width).toBe('50vw');
         expect(frame.style.height).toBe('50vh');

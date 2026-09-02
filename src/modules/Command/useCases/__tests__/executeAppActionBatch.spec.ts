@@ -13,6 +13,8 @@ import { doesProductionBriefAllowActionBatch, productionBriefActionBatchAdmissio
 import { type ActionHandler, type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
+import { type ActionHistoryMetadata } from '../actionHistoryMetadataPort';
+import { commandTrackDefaultsPort } from '../commandTrackDefaultsPort';
 import { executeAppActionBatch } from '../executeAppActionBatch';
 import { productionBriefAdmissionPort } from '../productionBriefAdmissionPort';
 
@@ -23,6 +25,7 @@ type StopPlaybackAction = Extract<AppAction, { type: 'stopPlayback' }>;
 type RestoreDeviceAction = Extract<AppAction, { type: 'restoreDevice' }>;
 type RestoreTrackAction = Extract<AppAction, { type: 'restoreTrack' }>;
 type RemoveClipAction = Extract<AppAction, { type: 'removeClip' }>;
+type AddTrackAction = Extract<AppAction, { type: 'addTrack' }>;
 
 const mocks = vi.hoisted(() => ({
     agentProjectRepairStateStore: { value: null as null | { status: 'repair-required' } },
@@ -35,7 +38,7 @@ const mocks = vi.hoisted(() => ({
     } satisfies Logger,
     setSemanticContext: vi.fn(),
     clearSemanticContext: vi.fn(),
-    recordActionHistoryMetadata: vi.fn(() => []),
+    recordActionHistoryMetadata: vi.fn<(entry: ActionHistoryMetadata) => string[]>(() => []),
     commitUndoEntry: vi.fn(),
     recordAction: vi.fn(),
     // Reached only through the barrel's import graph — `sessionManagement`
@@ -57,9 +60,17 @@ vi.mock('#/modules/CrdtDocument/stores', () => ({
 vi.mock('../actionHistoryMetadataPort', () => ({
     actionHistoryMetadataPort: {
         record: mocks.recordActionHistoryMetadata,
+        recordBatch: (entries: readonly ActionHistoryMetadata[]) =>
+            entries.flatMap((entry) => mocks.recordActionHistoryMetadata(entry)),
     },
 }));
-vi.mock('../commitUndoEntry', () => ({ commitUndoEntry: mocks.commitUndoEntry }));
+vi.mock('../commitUndoEntries', () => ({
+    commitUndoEntries: (entries: readonly unknown[]) => {
+        for (const entry of entries) {
+            mocks.commitUndoEntry(entry);
+        }
+    },
+}));
 vi.mock('../macro/recording/recordAction', () => ({ recordAction: mocks.recordAction }));
 
 function createHandler<Action extends AppAction>(input: {
@@ -68,6 +79,7 @@ function createHandler<Action extends AppAction>(input: {
     describe?: ActionHandler<Action>['describe'];
     executionKind?: ActionHandler<Action>['executionKind'];
     isNoop?: ActionHandler<Action>['isNoop'];
+    materializeCommandArguments?: ActionHandler<Action>['materializeCommandArguments'];
     validate?: ActionHandler<Action>['validate'];
     requiresAbortCompensation?: boolean;
     undoable?: boolean;
@@ -78,6 +90,7 @@ function createHandler<Action extends AppAction>(input: {
         describe: input.describe ?? ((action) => ({ label: 'Batch action', inverseAction: action })),
         executionKind: input.executionKind,
         isNoop: input.isNoop,
+        materializeCommandArguments: input.materializeCommandArguments,
         validate: input.validate ?? (() => true),
         requiresAbortCompensation: input.requiresAbortCompensation,
         undoable: input.undoable ?? true,
@@ -146,6 +159,7 @@ describe('executeAppActionBatch', () => {
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => true }));
+        commandTrackDefaultsPort.setTrackColorProvider(null);
     });
 
     it('commits every action as one project document mutation', async () => {
@@ -219,6 +233,26 @@ describe('executeAppActionBatch', () => {
         });
         expect(firstEffect).not.toHaveBeenCalled();
         expect(secondEffect).not.toHaveBeenCalled();
+    });
+
+    it('rejects a batch before dispatch when handler argument materialization fails', async () => {
+        const execute = vi.fn();
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute,
+                materializeCommandArguments: () => {
+                    throw new Error('editing tool arguments are invalid');
+                },
+            }),
+        });
+
+        await expect(executeAppActionBatch([action])).resolves.toEqual({
+            status: 'rejected',
+            reason: 'Could not preflight setEditingTool: editing tool arguments are invalid',
+            actions: [],
+        });
+        expect(execute).not.toHaveBeenCalled();
     });
 
     it('passes the exact execution signal through the command boundary to project handlers', async () => {
@@ -1419,6 +1453,98 @@ describe('executeAppActionBatch', () => {
         });
         expect(execute).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('gates on the requested footprint, then captures and rechecks the handler-materialized one', async () => {
+        const capturedTools: string[] = [];
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'select' } };
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute: vi.fn(),
+                materializeCommandArguments: (candidate) => {
+                    candidate.payload.tool = 'marquee';
+                },
+            }),
+        });
+        productionBriefAdmissionPort.setGuard((actions) => {
+            const candidate = actions[0];
+            const tool = candidate?.type === 'setEditingTool' ? candidate.payload.tool : 'missing';
+            return {
+                allowsCurrent: () => {
+                    capturedTools.push(tool);
+                    return true;
+                },
+            };
+        });
+
+        await expect(executeAppActionBatch([action])).resolves.toMatchObject({ status: 'committed' });
+
+        expect(action.payload.tool).toBe('select');
+        // The pre-canonicalization gate sees what the caller asked for; the admission that carries
+        // authority, and its commit-time recheck, both see what the handler will actually write.
+        expect(capturedTools).toEqual(['select', 'marquee', 'marquee']);
+    });
+
+    it('spends no application default on a batch the production brief refuses', async () => {
+        const palette = ['oklch(0.40 0.08 250)', 'oklch(0.55 0.09 140)'];
+        let reservations = 0;
+        commandTrackDefaultsPort.setTrackColorProvider(() => palette[reservations++] ?? 'oklch(0 0 0)');
+        const executedColors: Array<string | undefined> = [];
+        registerHandlerMap({
+            addTrack: createHandler<AddTrackAction>({
+                execute: (action) => {
+                    executedColors.push(action.payload.color);
+                },
+            }),
+        });
+        const addTrack: AddTrackAction = { type: 'addTrack', payload: { name: 'Bass', kind: 'audio' } };
+        productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => false }));
+
+        await expect(executeAppActionBatch([addTrack])).resolves.toMatchObject({ status: 'conflicted' });
+
+        expect(reservations).toBe(0);
+
+        productionBriefAdmissionPort.setGuard(() => ({ allowsCurrent: () => true }));
+
+        await expect(executeAppActionBatch([addTrack])).resolves.toMatchObject({ status: 'committed' });
+
+        // The refused batch left the palette where it found it, so the first accepted track still
+        // draws the colour it would have drawn had that batch never been dispatched.
+        expect(executedColors).toEqual([palette[0]]);
+    });
+
+    it('reports the caller action objects to onCommitted while handlers execute canonical arguments', async () => {
+        const executedTools: string[] = [];
+        const materializedAction: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'select' } };
+        const plainAction: SetSnapValueAction = { type: 'setSnapValue', payload: { value: 0.5 } };
+        registerHandlerMap({
+            setEditingTool: createHandler<SetEditingToolAction>({
+                execute: (action) => {
+                    executedTools.push(action.payload.tool);
+                },
+                materializeCommandArguments: (candidate) => {
+                    candidate.payload.tool = 'marquee';
+                },
+            }),
+            setSnapValue: createHandler<SetSnapValueAction>({ execute: vi.fn() }),
+        });
+        const onCommitted = vi.fn<(actions: readonly AppAction[]) => void>();
+
+        await expect(
+            executeAppActionBatch([materializedAction, plainAction], {
+                groupId: 'batch-committed-identity',
+                onCommitted,
+            })
+        ).resolves.toMatchObject({ status: 'committed' });
+
+        expect(executedTools).toEqual(['marquee']);
+        expect(materializedAction.payload.tool).toBe('select');
+        // Grouped redo correlates committed actions to their history entries by object identity,
+        // so a canonical clone reported here would leave that correlation with nothing to match.
+        const reportedActions = onCommitted.mock.calls[0]?.[0];
+        expect(reportedActions?.[0]).toBe(materializedAction);
+        expect(reportedActions?.[1]).toBe(plainAction);
+        expect(reportedActions).toHaveLength(2);
     });
 
     it('returns a typed no-op without history when every action already matches project truth', async () => {

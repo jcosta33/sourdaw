@@ -75,7 +75,7 @@ describe('isGeneratedMidiStateCurrent', () => {
                 },
             })
         ).toBe(true);
-        expect(mocks.serializeMidiStateForClips).toHaveBeenCalledWith(['generated-clip']);
+        expect(mocks.serializeMidiStateForClips).toHaveBeenCalledWith(['generated-clip'], undefined);
     });
 
     it('rejects deletion after MIDI or dependent routing changes', () => {

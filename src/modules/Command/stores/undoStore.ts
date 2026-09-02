@@ -143,12 +143,16 @@ export function stampSessionUndoWitness(): void {
  * `commitUndoEntry` from `#/modules/Command/useCases` instead.
  */
 export function pushUndo(entry: UndoEntry): void {
+    pushUndoEntries([entry]);
+}
+
+export function pushUndoEntries(entries: readonly UndoEntry[]): void {
     const state = undoStore.value;
     if (!state) {
         return;
     }
     undoStore.set({
-        past: [...state.past, entry],
+        past: [...state.past, ...entries],
         future: [],
     });
 }

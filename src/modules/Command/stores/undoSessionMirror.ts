@@ -14,8 +14,16 @@ const MAX_UNDO_PERSIST = 100;
 export type SessionActionContract = {
     readonly actionType: string;
     readonly operationVersion: number;
+    /**
+     * Forward contracts are allowed to begin a persisted undo entry. Internal
+     * replay contracts exist solely as an inverse or redo of such an entry.
+     */
+    readonly role: 'forward' | 'internal-replay';
     readonly validateArguments: (payload: unknown) => boolean;
+    readonly validateEntry?: (entry: SessionActionEntry) => boolean;
 };
+
+export type SessionActionEntry = Pick<ActionUndoEntry, 'action' | 'inverseAction' | 'redoAction'>;
 
 export type UndoSessionStacks = {
     past: UndoEntry[];
@@ -58,8 +66,12 @@ function getActionContract(action: unknown): SessionActionContract | null {
     return sessionActionContracts?.get(action.type) ?? null;
 }
 
-function getCurrentOperationVersion(action: unknown): number | null {
-    return getActionContract(action)?.operationVersion ?? null;
+function getCurrentOperationVersion(action: unknown, role?: SessionActionContract['role']): number | null {
+    const contract = getActionContract(action);
+    if (contract === null || (role !== undefined && contract.role !== role)) {
+        return null;
+    }
+    return contract.operationVersion;
 }
 
 function getStoredOperationVersion(value: Record<string, unknown>, key: string): number | null | undefined {
@@ -82,12 +94,20 @@ function getStoredOperationVersion(value: Record<string, unknown>, key: string):
  * restore. An action declared without a payload validates against the empty
  * argument record its schema describes.
  */
-function actionMatchesCurrentContract(action: unknown, storedVersion: number | undefined): action is AppAction {
+function actionMatchesCurrentContract(
+    action: unknown,
+    storedVersion: number | undefined,
+    role?: SessionActionContract['role']
+): action is AppAction {
     if (!isRecord(action)) {
         return false;
     }
     const contract = getActionContract(action);
-    if (contract === null || (storedVersion ?? 1) !== contract.operationVersion) {
+    if (
+        contract === null ||
+        (role !== undefined && contract.role !== role) ||
+        (storedVersion ?? 1) !== contract.operationVersion
+    ) {
         return false;
     }
     return contract.validateArguments(action.payload === undefined ? {} : action.payload);
@@ -97,7 +117,7 @@ function serializeSessionActionEntry(entry: UndoEntry): SerializedActionUndoEntr
     if (!isActionEntry(entry)) {
         return null;
     }
-    const actionOperationVersion = getCurrentOperationVersion(entry.action);
+    const actionOperationVersion = getCurrentOperationVersion(entry.action, 'forward');
     if (actionOperationVersion === null) {
         return null;
     }
@@ -109,6 +129,17 @@ function serializeSessionActionEntry(entry: UndoEntry): SerializedActionUndoEntr
     const redoActionOperationVersion =
         entry.redoAction === undefined ? null : getCurrentOperationVersion(entry.redoAction);
     if (entry.redoAction !== undefined && redoActionOperationVersion === null) {
+        return null;
+    }
+    const forwardContract = getActionContract(entry.action);
+    const inverseContract = entry.inverseAction === null ? null : getActionContract(entry.inverseAction);
+    const redoContract = entry.redoAction === undefined ? null : getActionContract(entry.redoAction);
+    const requiresWholeEntryValidation =
+        inverseContract?.role === 'internal-replay' || redoContract?.role === 'internal-replay';
+    if (
+        (requiresWholeEntryValidation && forwardContract?.validateEntry === undefined) ||
+        (forwardContract?.validateEntry !== undefined && !forwardContract.validateEntry(entry))
+    ) {
         return null;
     }
 
@@ -131,6 +162,22 @@ function getOptionalString(value: Record<string, unknown>, key: string): string 
     return maybeString;
 }
 
+function getPersistedGroupId(value: unknown): string | undefined {
+    return isRecord(value) && typeof value.groupId === 'string' ? value.groupId : undefined;
+}
+
+function getReachableUnitEnd(values: readonly unknown[], start: number): number {
+    const groupId = getPersistedGroupId(values[start]);
+    if (groupId === undefined) {
+        return start + 1;
+    }
+    let end = start + 1;
+    while (end < values.length && getPersistedGroupId(values[end]) === groupId) {
+        end += 1;
+    }
+    return end;
+}
+
 function sanitizeStoredEntry(value: unknown): ActionUndoEntry | null {
     if (!isRecord(value)) {
         return null;
@@ -147,7 +194,7 @@ function sanitizeStoredEntry(value: unknown): ActionUndoEntry | null {
 
     const action = value.action;
     const actionOperationVersion = getStoredOperationVersion(value, 'actionOperationVersion');
-    if (actionOperationVersion === null || !actionMatchesCurrentContract(action, actionOperationVersion)) {
+    if (actionOperationVersion === null || !actionMatchesCurrentContract(action, actionOperationVersion, 'forward')) {
         return null;
     }
 
@@ -220,6 +267,19 @@ function sanitizeStoredEntry(value: unknown): ActionUndoEntry | null {
         entry.redoAction = redoAction;
     }
 
+    const forwardContract = getActionContract(action);
+    const inverseContract = inverseAction === null ? null : getActionContract(inverseAction);
+    const redoContract = redoAction === undefined ? null : getActionContract(redoAction);
+    const requiresWholeEntryValidation =
+        inverseContract?.role === 'internal-replay' || redoContract?.role === 'internal-replay';
+    const validateEntry = forwardContract?.validateEntry;
+    if (
+        (requiresWholeEntryValidation && validateEntry === undefined) ||
+        (validateEntry !== undefined && !validateEntry(entry))
+    ) {
+        return null;
+    }
+
     return entry;
 }
 
@@ -235,16 +295,27 @@ function sanitizeStoredEntry(value: unknown): ActionUndoEntry | null {
 function reachableRunFromPresent<TInput, TOutput>(
     values: readonly TInput[],
     nearestFirst: boolean,
-    toOutput: (value: TInput) => TOutput | null
+    toOutput: (value: TInput) => TOutput | null,
+    limit: number = Number.POSITIVE_INFINITY
 ): TOutput[] {
     const ordered = nearestFirst ? values : [...values].reverse();
     const reachable: TOutput[] = [];
-    for (const value of ordered) {
-        const output = toOutput(value);
-        if (output === null) {
+    let start = 0;
+    while (start < ordered.length) {
+        const end = getReachableUnitEnd(ordered, start);
+        if (reachable.length + (end - start) > limit) {
             break;
         }
-        reachable.push(output);
+        const unit: TOutput[] = [];
+        for (const value of ordered.slice(start, end)) {
+            const output = toOutput(value);
+            if (output === null) {
+                return nearestFirst ? reachable : reachable.reverse();
+            }
+            unit.push(output);
+        }
+        reachable.push(...unit);
+        start = end;
     }
     return nearestFirst ? reachable : reachable.reverse();
 }
@@ -302,18 +373,17 @@ function serializeSessionStacks(stacks: PersistableUndoStacks, limit: number): s
     // stops at the first entry with no serializable form (e.g. a `kind:
     // 'callback'` entry — a clip drag, slip, split, or import — which never
     // serializes), so an unserializable entry buried in the middle of a stack
-    // strands everything behind it instead of leaving an invisible hole that
-    // would silently misorder a later undo/redo.
-    const persistablePast = reachableRunFromPresent(stacks.past, false, serializeSessionActionEntry);
-    const persistableFuture = reachableRunFromPresent(stacks.future, true, serializeSessionActionEntry);
+    // strands everything behind it. A contiguous group is retained as one
+    // reachable unit or omitted whole, including when it crosses the limit.
+    const persistablePast = reachableRunFromPresent(stacks.past, false, serializeSessionActionEntry, limit);
+    const persistableFuture = reachableRunFromPresent(stacks.future, true, serializeSessionActionEntry, limit);
     // Trim from the end furthest from the present, so a truncated mirror keeps
     // the entries the next session reaches first: the newest of `past`, the
-    // nearest of `future`. `JSON.stringify` omits an `undefined` projectId and
-    // witness, so an untagged write round-trips back to the same "no known
-    // owner" state.
+    // nearest of `future`. `JSON.stringify` also omits an `undefined` projectId
+    // and witness, so an untagged write round-trips to "no known owner".
     return JSON.stringify({
-        past: persistablePast.slice(-limit),
-        future: persistableFuture.slice(0, limit),
+        past: persistablePast,
+        future: persistableFuture,
         projectId: stacks.projectId,
         witness: stacks.witness,
     });
