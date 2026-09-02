@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
     insertDoc: vi.fn(),
     replaceDoc: vi.fn(),
     removeDoc: vi.fn(),
+    clearUndoHistory: vi.fn(),
     storeValue: {
         branches: [
             { branchId: 'main', rootDocId: 'root' },
@@ -61,6 +62,7 @@ vi.mock('../../loadCrdtProject', () => ({ loadCrdtProject: mocks.loadCrdtProject
 vi.mock('../../runCrdtPersistenceOperation', () => ({
     runCrdtPersistenceOperation: mocks.runCrdtPersistenceOperation,
 }));
+vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: mocks.clearUndoHistory }));
 
 describe('switchBranch', () => {
     beforeEach(() => {
@@ -155,6 +157,17 @@ describe('switchBranch', () => {
         expect(mocks.storeTrySet).toHaveBeenLastCalledWith(expect.objectContaining({ activeBranchId: 'feat' }));
         expect(docs.root).toEqual(ROOT_LIVE_DOC);
         expect(docs.branch_feat).toEqual(FEATURE_SNAPSHOT);
+    });
+
+    it('clears undo history when the root document is swapped', async () => {
+        await switchBranch('other');
+
+        // The undo stack's inverse entries are recorded against the outgoing
+        // branch's root document; once the root slot is swapped to another
+        // branch's document, replaying them would apply an inverse recorded
+        // against a document that is no longer active. Same reasoning as
+        // switchArrangement clearing undo history on snapshot load.
+        expect(mocks.clearUndoHistory).toHaveBeenCalledOnce();
     });
 
     it('is a no-op when switching to the already-active branch', async () => {

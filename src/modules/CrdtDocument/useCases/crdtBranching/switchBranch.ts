@@ -1,6 +1,7 @@
 import { clone as cloneDoc } from '@automerge/automerge';
 
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
+import { clearUndoHistory } from '#/modules/Command/useCases';
 
 import { createBranchError } from '../../errors/BranchError';
 import { DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
@@ -66,6 +67,12 @@ export async function switchBranch(branchId: string): Promise<void> {
         apply: () => {
             const stateWithOutgoingSnapshot = saveActiveBranchSnapshot({ state, liveRoot: liveDoc });
             automergeRepository.replaceDoc(DOC_PREFIX_ROOT, cloneDoc(branchDoc));
+            // The root slot now holds a different branch's document, so undo
+            // entries recorded against the outgoing branch's document would
+            // replay an inverse against a document that is no longer active.
+            // Same reasoning as switchArrangement clearing undo history on
+            // snapshot load.
+            clearUndoHistory();
             return {
                 nextState: { ...stateWithOutgoingSnapshot, activeBranchId: branchId },
                 result: undefined,
