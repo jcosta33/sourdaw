@@ -481,6 +481,37 @@ describe('the grants a dialog mints', () => {
         expect(vi.mocked(grantPath).mock.calls).toEqual([['/music/mix.wav', 'readwrite', false]]);
     });
 
+    const savePicking = (filePath: string): Partial<NativeDialogs> => ({
+        showSaveDialog: async (_options: SaveDialogOptions) => ({ canceled: false, filePath }),
+    });
+
+    it('grants every extension the save dialog offered, not only the one the user picked', async () => {
+        // A mixdown rendered as WAV and MP3 writes both by swapping the
+        // extension of the one path this dialog answers with, so a grant on
+        // the pick alone exports the first format and refuses the second.
+        const { native, grantPath } = grantRecorder();
+        const handler = dialogHandlers(savePicking('/music/Mix.wav'), native).get(DIALOG_SAVE_CHANNEL);
+
+        await expect(handler?.(APP_FRAME, { filters: [{ name: 'Audio', extensions: ['wav', 'mp3'] }] })).resolves.toBe(
+            '/music/Mix.wav'
+        );
+        expect(vi.mocked(grantPath).mock.calls).toEqual([
+            ['/music/Mix.wav', 'readwrite', false],
+            ['/music/Mix.mp3', 'readwrite', false],
+        ]);
+    });
+
+    it('grants one path when the only offered extension is the one the user picked', async () => {
+        // The sibling of a single-format save is the pick itself; granting it
+        // twice would be a second answer to a question asked once.
+        const { native, grantPath } = grantRecorder();
+        const handler = dialogHandlers(savePicking('/music/Mix.wav'), native).get(DIALOG_SAVE_CHANNEL);
+
+        await handler?.(APP_FRAME, { filters: [{ name: 'WAV', extensions: ['wav'] }] });
+
+        expect(vi.mocked(grantPath).mock.calls).toEqual([['/music/Mix.wav', 'readwrite', false]]);
+    });
+
     it('grants nothing when the user cancelled or picked nothing', async () => {
         const { native, grantPath } = grantRecorder();
         const handlers = dialogHandlers(pickedDirectories([]), native);

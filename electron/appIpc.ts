@@ -169,6 +169,31 @@ const optionalFilters = (value: unknown): FileFilter[] | undefined => {
     return filters.length > 0 ? filters : undefined;
 };
 
+/** The extension swap the mixdown writer performs, mirrored exactly. */
+const SAVE_EXTENSION_PATTERN = /\.[a-z0-9]+$/i;
+
+/**
+ * Every path this save could be written to, given the formats the dialog
+ * offered (jcosta33/sourdaw#3313).
+ *
+ * A save dialog answers with one filename, but an export that renders several
+ * formats at once writes one file per offered extension by swapping the
+ * extension of that pick. Granting the pick alone therefore lets the first
+ * format through and refuses the rest, which reads as a mixdown that half
+ * exported. The siblings are granted individually rather than by widening the
+ * pick to its folder: the user chose a name, not a directory.
+ *
+ * A pick carrying no extension is left as it is, because that is what the
+ * writer's own swap does with it.
+ */
+const saveTargets = (pickedPath: string, filters: readonly FileFilter[] | undefined): string[] => {
+    const siblings = (filters ?? [])
+        .flatMap((filter) => filter.extensions)
+        .filter((extension) => /^[a-z0-9]+$/i.test(extension))
+        .map((extension) => pickedPath.replace(SAVE_EXTENSION_PATTERN, `.${extension}`));
+    return [...new Set([pickedPath, ...siblings])];
+};
+
 const messageKind = (value: unknown): 'info' | 'warning' | 'error' =>
     value === 'warning' || value === 'error' ? value : 'info';
 
@@ -220,15 +245,19 @@ export const registerDialogChannels = ({
         DIALOG_SAVE_CHANNEL,
         withTrustedSender('dialog.save', isTrustedFrameUrl, async (options) => {
             const request = asRecord(options);
+            const filters = optionalFilters(request.filters);
             const result = await dialogs.showSaveDialog({
                 title: optionalString(request.title),
                 defaultPath: optionalString(request.defaultPath),
-                filters: optionalFilters(request.filters),
+                filters,
             });
             if (result.canceled || result.filePath === '') {
                 return null;
             }
-            await grantPickedPaths(native, [result.filePath], { mode: 'readwrite', recursive: false });
+            await grantPickedPaths(native, saveTargets(result.filePath, filters), {
+                mode: 'readwrite',
+                recursive: false,
+            });
             return result.filePath;
         })
     );

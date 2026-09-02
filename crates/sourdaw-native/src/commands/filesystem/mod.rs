@@ -26,6 +26,16 @@ const IPC_TEMP_DIR_NAME: &str = "sourdaw_ipc";
 /// project into the app's own project folder has not picked anything for the
 /// app to remember.
 const PROJECT_DIR_NAME: &str = "Sourdaw Projects";
+
+/// The application-data subdirectory no file command may resolve into.
+///
+/// The app data directory itself is a built-in root, so anything Sourdaw keeps
+/// there is writable by the renderer through `write_file_bytes`. State that
+/// decides what the renderer may reach cannot live under that rule — a forged
+/// grant document would survive the relaunch and be read back as authority —
+/// so it lives here instead, behind a refusal that outranks every root and
+/// every grant.
+const PRIVATE_DIR_NAME: &str = "private";
 const MAX_FILE_IPC_BYTES: u64 = 1024 * 1024 * 1024;
 const MAX_RENDERER_PATH_BYTES: usize = 4096;
 
@@ -434,11 +444,25 @@ pub(crate) fn canonicalize_through_missing_tail(path: &Path) -> Result<PathBuf, 
 
 /// Refuse a path that is neither inside a built-in root nor granted.
 ///
-/// Order matters only for cost: the built-in roots are the app's own storage
-/// and admit both modes, so they answer first and the registry is consulted
-/// for everything else. `starts_with` is component-wise, so a root never
-/// admits a sibling directory whose name merely shares its prefix.
+/// The private-state refusal runs first, and it is not an optimisation: the
+/// grant document lives there, and a renderer that could write it would be
+/// handing itself a recursive read-write grant on `/` for the next launch. The
+/// check therefore has to outrank both the built-in roots — the private
+/// directory sits inside the app data root — and the registry, so that a user
+/// grant on an ancestor cannot reach it either.
+///
+/// After that, order matters only for cost: the built-in roots are the app's
+/// own storage and admit both modes, so they answer before the registry.
+/// `starts_with` is component-wise throughout, so no root or grant admits a
+/// sibling directory whose name merely shares its prefix.
 fn ensure_allowed_root(resolved_path: &Path, mode: GrantMode) -> Result<(), String> {
+    if is_private_state_path(resolved_path) {
+        // Refused with the same message as anything else outside the roots.
+        // A distinct one would tell a probing renderer that it had found the
+        // directory holding the state that decides what it may reach.
+        return Err("Path is outside allowed native file roots".to_string());
+    }
+
     for root in built_in_roots() {
         if let Ok(resolved_root) = canonicalize_through_missing_tail(&root) {
             if resolved_path.starts_with(resolved_root) {
@@ -473,6 +497,28 @@ fn built_in_roots() -> Vec<PathBuf> {
     }
 
     roots
+}
+
+/// Whether `resolved_path` is inside the directory only native code may touch.
+///
+/// A missing private directory still refuses: the path a renderer would write
+/// the grant document to does not exist yet either, and a check that only
+/// applied once the directory was there would leave exactly one launch during
+/// which the document could be planted.
+fn is_private_state_path(resolved_path: &Path) -> bool {
+    private_state_directory()
+        .and_then(|directory| canonicalize_through_missing_tail(&directory).ok())
+        .is_some_and(|resolved_directory| resolved_path.starts_with(resolved_directory))
+}
+
+/// The application-data subdirectory that holds native-only state.
+///
+/// Everything under it is unreachable from any file command, whatever the
+/// renderer names and whatever the user has granted, so state that decides
+/// what the renderer may reach can be stored without the renderer being able
+/// to author it.
+pub(crate) fn private_state_directory() -> Option<PathBuf> {
+    Some(dirs::data_dir()?.join(APP_DIR_NAME).join(PRIVATE_DIR_NAME))
 }
 
 /// Where Sourdaw keeps its own projects.
@@ -631,14 +677,94 @@ mod tests {
         let documents = user_documents_directory();
         let granted = documents.join("sourdaw-granted-save.txt");
         let sibling = documents.join("sourdaw-other-save.txt");
+        let nested = granted.join("nested-save.txt");
 
-        let (granted_result, sibling_error) = grant_registry::with_grants_for_test(
+        let (granted_result, sibling_error, nested_error) = grant_registry::with_grants_for_test(
             vec![grant_of(granted.clone(), GrantMode::ReadWrite, false)],
-            || (writable(&granted), writable(&sibling).unwrap_err()),
+            || {
+                (
+                    writable(&granted),
+                    writable(&sibling).unwrap_err(),
+                    writable(&nested).unwrap_err(),
+                )
+            },
         );
 
         assert_eq!(granted_result.unwrap(), granted);
         assert_eq!(sibling_error, "Path is outside allowed native file roots");
+        assert_eq!(
+            nested_error, "Path is outside allowed native file roots",
+            "a grant on one file names that file, not a subtree beneath its name"
+        );
+    }
+
+    fn private_state_path(name: &str) -> PathBuf {
+        let directory = private_state_directory()
+            .expect("an account should have an application data directory");
+        canonicalize_through_missing_tail(&directory.join(name))
+            .expect("the application data directory should resolve")
+    }
+
+    /// The grant document decides what every later launch may reach, so no file
+    /// command may resolve to it in either direction. It used to sit beside the
+    /// app's other data, inside a built-in root, which put a forged document
+    /// carrying a recursive read-write grant on `/` one `write_file_bytes`
+    /// away.
+    #[test]
+    fn the_grant_document_is_refused_for_reading_and_for_writing() {
+        let location = canonicalize_through_missing_tail(
+            &grant_registry::grant_file_location()
+                .expect("an account should have an application data directory"),
+        )
+        .expect("the application data directory should resolve");
+
+        assert_eq!(
+            ensure_allowed_root(&location, GrantMode::Read).unwrap_err(),
+            "Path is outside allowed native file roots"
+        );
+        assert_eq!(
+            ensure_allowed_root(&location, GrantMode::ReadWrite).unwrap_err(),
+            "Path is outside allowed native file roots"
+        );
+    }
+
+    /// End to end through the command a renderer would forge with. The
+    /// destination is a probe name rather than the grant document itself, so a
+    /// mutation run that removes the guard plants a file nobody reads instead
+    /// of rewriting the real grants.
+    #[tokio::test]
+    async fn write_file_bytes_refuses_the_directory_holding_the_grant_document() {
+        let destination = private_state_path("sourdaw-forged-grants-probe.json");
+
+        let error = write_file_bytes(
+            destination.to_string_lossy().into_owned(),
+            br#"{"schema_version":1,"grants":[{"path":"/","mode":"read_write","recursive":true}]}"#,
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(error, "Path is outside allowed native file roots");
+    }
+
+    /// The private directory sits inside the application data root, and a user
+    /// could be talked into picking that root in a dialog. Neither route may
+    /// reach the state that decides what the other routes admit.
+    #[test]
+    fn a_recursive_grant_on_the_application_data_directory_still_refuses_the_private_directory() {
+        let application_data = canonicalize_through_missing_tail(
+            &dirs::data_dir()
+                .expect("an account should have an application data directory")
+                .join(APP_DIR_NAME),
+        )
+        .expect("the application data directory should resolve");
+        let destination = private_state_path("sourdaw-forged-grants-probe.json");
+
+        let error = grant_registry::with_grants_for_test(
+            vec![grant_of(application_data, GrantMode::ReadWrite, true)],
+            || ensure_allowed_root(&destination, GrantMode::ReadWrite).unwrap_err(),
+        );
+
+        assert_eq!(error, "Path is outside allowed native file roots");
     }
 
     #[test]

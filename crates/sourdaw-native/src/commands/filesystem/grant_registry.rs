@@ -20,6 +20,15 @@
 //! is there now — or is dropped. Paths are stored verbatim and absolute; a glob
 //! or a pattern would be a second, weaker matcher for the guard the resolver
 //! already performs component-wise.
+//!
+//! What it is trusted for is the set of paths themselves, and that is why it
+//! lives in [`super::private_state_directory`] rather than beside the app's
+//! other data. The app data directory is a built-in root, so a document stored
+//! there is one `write_file_bytes` away from saying whatever a renderer wants
+//! it to say — including a recursive read-write grant on `/`, which the next
+//! launch would read back as something the user had chosen. The private
+//! directory is refused by the resolver ahead of every root and every grant, so
+//! the only writer of this file is the code that owns it.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -27,7 +36,7 @@ use std::sync::{OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use serde::{Deserialize, Serialize};
 
-use super::{canonicalize_through_missing_tail, APP_DIR_NAME};
+use super::{canonicalize_through_missing_tail, private_state_directory};
 
 const GRANT_FILE_NAME: &str = "file-grants.json";
 
@@ -41,11 +50,9 @@ const GRANT_FILE_NAME: &str = "file-grants.json";
 const GRANT_SCHEMA_VERSION: u32 = 1;
 
 /// Refuse to parse a grant file larger than dialogs could have written.
-#[cfg(not(test))]
 const MAX_GRANT_FILE_BYTES: u64 = 1024 * 1024;
 
 /// Refuse a document carrying more grants than a person could have picked.
-#[cfg(not(test))]
 const MAX_GRANTS: usize = 4096;
 
 /// What a grant permits.
@@ -209,8 +216,10 @@ struct PersistedGrants {
     grants: Vec<PersistedGrant>,
 }
 
-fn grant_file_location() -> Option<PathBuf> {
-    Some(dirs::data_dir()?.join(APP_DIR_NAME).join(GRANT_FILE_NAME))
+/// Where the grant document lives: inside the private directory the resolver
+/// refuses ahead of every built-in root and every grant.
+pub(crate) fn grant_file_location() -> Option<PathBuf> {
+    Some(private_state_directory()?.join(GRANT_FILE_NAME))
 }
 
 fn persisted_document(registry: &GrantRegistry) -> PersistedGrants {
@@ -279,7 +288,13 @@ fn restore_grants() -> GrantRegistry {
     GrantRegistry { grants }
 }
 
-#[cfg(not(test))]
+/// Read and validate the grant document at `location`, or nothing.
+///
+/// Only [`restore_grants`] is gated out of the test binary, because it is the
+/// half that reads the real application data directory. The gates this applies
+/// — the size bound, the schema version, the row cap — are the reason a forged
+/// or corrupt document cannot become authority, so they are compiled and
+/// exercised like any other behaviour.
 fn read_grant_document(location: &Path) -> Option<PersistedGrants> {
     use std::io::Read;
 
@@ -349,6 +364,26 @@ mod tests {
     }
 
     #[test]
+    fn a_non_recursive_grant_admits_nothing_below_the_file_it_names() {
+        // A save target is one file. Were the match a prefix regardless of
+        // `recursive`, granting `/samples/loop.wav` would also grant every path
+        // spelled beneath it — which is what a directory that later replaced
+        // that file would be.
+        let registry = GrantRegistry::with_grants(vec![FileGrant {
+            canonical: PathBuf::from("/samples/loop.wav"),
+            mode: GrantMode::ReadWrite,
+            recursive: false,
+        }]);
+
+        assert!(registry.admits(Path::new("/samples/loop.wav"), GrantMode::ReadWrite));
+        assert!(!registry.admits(Path::new("/samples/loop.wav/nested"), GrantMode::Read));
+        assert!(!registry.admits(
+            Path::new("/samples/loop.wav/nested/deeper.wav"),
+            GrantMode::ReadWrite
+        ));
+    }
+
+    #[test]
     fn a_read_grant_never_admits_a_writable_resolution() {
         let registry = GrantRegistry::with_grants(vec![read_grant("/samples/loop.wav")]);
 
@@ -371,5 +406,96 @@ mod tests {
             !registry.admits(Path::new("/samples/loop.wav"), GrantMode::ReadWrite),
             "the replaced grant must not survive underneath the new one"
         );
+    }
+
+    struct TempGrantDir {
+        root: PathBuf,
+    }
+
+    impl TempGrantDir {
+        fn create(test_name: &str) -> Self {
+            let root = std::env::temp_dir().join(format!(
+                "sourdaw-grant-document-{test_name}-{}-{}",
+                std::process::id(),
+                uuid::Uuid::new_v4()
+            ));
+            fs::create_dir_all(&root).expect("test grant directory should be created");
+            Self { root }
+        }
+
+        fn write(&self, contents: &[u8]) -> PathBuf {
+            let location = self.root.join(GRANT_FILE_NAME);
+            fs::write(&location, contents).expect("test grant document should be written");
+            location
+        }
+    }
+
+    impl Drop for TempGrantDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    fn document_bytes(schema_version: u32, grants: usize) -> Vec<u8> {
+        let document = PersistedGrants {
+            schema_version,
+            grants: (0..grants)
+                .map(|index| PersistedGrant {
+                    path: format!("/samples/loop-{index}.wav"),
+                    mode: GrantMode::Read,
+                    recursive: false,
+                })
+                .collect(),
+        };
+        serde_json::to_vec(&document).expect("test grant document should serialize")
+    }
+
+    #[test]
+    fn a_grant_document_larger_than_the_cap_is_not_read() {
+        let dir = TempGrantDir::create("oversized");
+        let mut bytes = document_bytes(GRANT_SCHEMA_VERSION, 1);
+        // Padded with whitespace, which JSON would otherwise accept: what has
+        // to refuse this document is the size bound, not a parse failure.
+        bytes.resize(MAX_GRANT_FILE_BYTES as usize + 1, b' ');
+        let location = dir.write(&bytes);
+
+        assert!(read_grant_document(&location).is_none());
+    }
+
+    #[test]
+    fn a_grant_document_from_another_schema_version_is_not_read() {
+        let dir = TempGrantDir::create("schema");
+        let location = dir.write(&document_bytes(GRANT_SCHEMA_VERSION + 1, 1));
+
+        assert!(read_grant_document(&location).is_none());
+    }
+
+    #[test]
+    fn a_grant_document_carrying_more_grants_than_the_cap_is_not_read() {
+        let dir = TempGrantDir::create("count");
+        let location = dir.write(&document_bytes(GRANT_SCHEMA_VERSION, MAX_GRANTS + 1));
+
+        assert!(read_grant_document(&location).is_none());
+    }
+
+    #[test]
+    fn a_conforming_grant_document_survives_the_round_trip() {
+        let dir = TempGrantDir::create("round-trip");
+        let document = persisted_document(&GrantRegistry::with_grants(vec![FileGrant {
+            canonical: PathBuf::from("/samples/kit"),
+            mode: GrantMode::ReadWrite,
+            recursive: true,
+        }]));
+        let location = dir.write(
+            &serde_json::to_vec_pretty(&document).expect("test grant document should serialize"),
+        );
+
+        let read = read_grant_document(&location).expect("a conforming document should be read");
+
+        assert_eq!(read.schema_version, GRANT_SCHEMA_VERSION);
+        assert_eq!(read.grants.len(), 1);
+        assert_eq!(read.grants[0].path, "/samples/kit");
+        assert_eq!(read.grants[0].mode, GrantMode::ReadWrite);
+        assert!(read.grants[0].recursive);
     }
 }
