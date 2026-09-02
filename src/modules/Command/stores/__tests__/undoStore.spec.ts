@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 const UNDO_SESSION_KEY = 'sourdaw-undo-session';
+// Large enough to hold a halved mirror, far too small for the whole stack the
+// oversized case pushes, so a refusal has to shrink the mirror to land at all.
+const MIRROR_QUOTA_BYTES = 4096;
+const OVERSIZED_STACK_ENTRY_COUNT = 60;
 const SUPPORTED_SESSION_ACTION_TYPES = [
     'replayGeneratedMidi',
     'setMasterGain',
@@ -13,8 +17,15 @@ const SUPPORTED_SESSION_ACTION_TYPES = [
 async function loadSubject() {
     vi.resetModules();
     const createUndoEntryModule = await import('../../useCases/createUndoEntry');
+    const { validateVersionedCommandArguments } = await import('../../useCases/versionedCommandArgumentKeys');
     const undoStoreModule = await import('../undoStore');
-    undoStoreModule.hydrateUndoStoreFromSession(SUPPORTED_SESSION_ACTION_TYPES.map((type) => [type, 1] as const));
+    undoStoreModule.hydrateUndoStoreFromSession(
+        SUPPORTED_SESSION_ACTION_TYPES.map((actionType) => ({
+            actionType,
+            operationVersion: 1,
+            validateArguments: (payload: unknown) => validateVersionedCommandArguments(actionType, payload),
+        }))
+    );
     return {
         createUndoEntry: createUndoEntryModule.createUndoEntry,
         pushUndo: undoStoreModule.pushUndo,
@@ -40,6 +51,38 @@ function parsePersistedUndoState(raw: string | null): Record<string, unknown> {
         throw new Error('Expected persisted undo state to be an object');
     }
     return parsed;
+}
+
+function persistedEntryLabels(stack: unknown): string[] {
+    if (!Array.isArray(stack)) {
+        throw new TypeError('Expected a persisted undo stack to be an array');
+    }
+    const entries: unknown[] = stack;
+    return entries.map((entry) => {
+        if (!isRecord(entry) || typeof entry.label !== 'string') {
+            throw new TypeError('Expected a persisted undo entry to carry a label');
+        }
+        return entry.label;
+    });
+}
+
+/**
+ * Storage that refuses only what exceeds its quota, so the write lands exactly
+ * when the mirror has shrunk enough to fit.
+ */
+function stubQuotaLimitedSessionStorage() {
+    const originalSetItem = Storage.prototype.setItem;
+    return vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+        this: Storage,
+        key: string,
+        value: string
+    ): undefined {
+        if (key === UNDO_SESSION_KEY && value.length > MIRROR_QUOTA_BYTES) {
+            throw new DOMException('quota exceeded', 'QuotaExceededError');
+        }
+        originalSetItem.call(this, key, value);
+        return undefined;
+    });
 }
 
 describe('undoStore / pushUndo', () => {
@@ -279,7 +322,9 @@ describe('undoStore / pushUndo', () => {
         sessionStorage.setItem(
             UNDO_SESSION_KEY,
             JSON.stringify({
-                past: [validEntry, ...invalidEntries],
+                // The valid entry is the newest, because a rejected entry also
+                // drops every entry older than it.
+                past: [...invalidEntries, validEntry],
                 future: invalidEntries,
             })
         );
@@ -289,6 +334,158 @@ describe('undoStore / pushUndo', () => {
         expect(undoStore.value).toEqual({
             past: [validEntry],
             future: [],
+        });
+    });
+
+    it('should never serve a mirror left behind by a refused persistence write', async () => {
+        const { createUndoEntry, pushUndo } = await loadSubject();
+        pushUndo(
+            createUndoEntry(
+                'first',
+                { type: 'setTempo', payload: { bpm: 120 } },
+                { type: 'setTempo', payload: { bpm: 110 } }
+            )
+        );
+        await flushPersistence();
+        expect(sessionStorage.getItem(UNDO_SESSION_KEY)).not.toBeNull();
+
+        // `setItem` throws before it mutates, so the smaller first write
+        // survives in storage while the live stack has moved on.
+        const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation((key: string): undefined => {
+            if (key === UNDO_SESSION_KEY) {
+                throw new DOMException('quota exceeded', 'QuotaExceededError');
+            }
+            return undefined;
+        });
+        try {
+            pushUndo(
+                createUndoEntry(
+                    'second',
+                    { type: 'setMasterGain', payload: { gain: 0.5 } },
+                    { type: 'setMasterGain', payload: { gain: 1 } }
+                )
+            );
+            await flushPersistence();
+        } finally {
+            setItem.mockRestore();
+        }
+
+        const reloaded = await loadSubject();
+        expect(reloaded.undoStore.value).toEqual({ past: [], future: [] });
+    });
+
+    it('should shrink a refused mirror until it fits and keep the entries nearest the present', async () => {
+        const { createUndoEntry, pushUndo } = await loadSubject();
+        const setItem = stubQuotaLimitedSessionStorage();
+        const pushedLabels = Array.from({ length: OVERSIZED_STACK_ENTRY_COUNT }, (_, index) => `entry-${index}`);
+        try {
+            for (const label of pushedLabels) {
+                pushUndo(
+                    createUndoEntry(
+                        label,
+                        { type: 'setTempo', payload: { bpm: 120 } },
+                        { type: 'setTempo', payload: { bpm: 110 } }
+                    )
+                );
+            }
+            await flushPersistence();
+        } finally {
+            setItem.mockRestore();
+        }
+
+        const parsed = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        const survivingLabels = persistedEntryLabels(parsed.past);
+        expect(survivingLabels.length).toBeGreaterThan(0);
+        expect(survivingLabels.length).toBeLessThan(pushedLabels.length);
+        // Undo pops the tail of `past`, so the entries a shrunken mirror keeps
+        // are the newest ones, with the older tail dropped.
+        expect(survivingLabels).toEqual(pushedLabels.slice(-survivingLabels.length));
+        expect(persistedEntryLabels(parsed.future)).toEqual([]);
+
+        const reloaded = await loadSubject();
+        expect(reloaded.undoStore.value?.past.map((entry) => entry.label)).toEqual(survivingLabels);
+    });
+
+    it('should keep the nearest redo entries when a refused mirror shrinks a populated future', async () => {
+        const { createUndoEntry, undoStore } = await loadSubject();
+        const setItem = stubQuotaLimitedSessionStorage();
+        const buildStack = (prefix: string) =>
+            Array.from({ length: OVERSIZED_STACK_ENTRY_COUNT }, (_, index) =>
+                createUndoEntry(
+                    `${prefix}-${index}`,
+                    { type: 'setTempo', payload: { bpm: 120 } },
+                    { type: 'setTempo', payload: { bpm: 110 } }
+                )
+            );
+        // `past` runs oldest first; `future` runs nearest first, the order undo
+        // leaves behind when it prepends each entry it undoes.
+        const pastEntries = buildStack('edit');
+        const futureEntries = buildStack('redo');
+        try {
+            undoStore.set({ past: pastEntries, future: futureEntries });
+            await flushPersistence();
+        } finally {
+            setItem.mockRestore();
+        }
+
+        const parsed = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        const survivingRedoLabels = persistedEntryLabels(parsed.future);
+        expect(survivingRedoLabels.length).toBeGreaterThan(0);
+        expect(survivingRedoLabels.length).toBeLessThan(futureEntries.length);
+        // Redo takes the head of `future`, so a shrunken mirror keeps the
+        // entries the next session redoes first and drops the far tail.
+        expect(survivingRedoLabels).toEqual(
+            futureEntries.slice(0, survivingRedoLabels.length).map((entry) => entry.label)
+        );
+
+        const survivingPastLabels = persistedEntryLabels(parsed.past);
+        expect(survivingPastLabels).toEqual(pastEntries.slice(-survivingPastLabels.length).map((entry) => entry.label));
+
+        const reloadedFromShrunkenMirror = await loadSubject();
+        expect(reloadedFromShrunkenMirror.undoStore.value?.future.map((entry) => entry.label)).toEqual(
+            survivingRedoLabels
+        );
+        expect(reloadedFromShrunkenMirror.undoStore.value?.past.map((entry) => entry.label)).toEqual(
+            survivingPastLabels
+        );
+    });
+
+    it('should drop a hydrated entry whose arguments fail the current contract and every entry behind it', async () => {
+        const staleArgumentsEntry = {
+            id: 'undo-stale-arguments',
+            kind: 'action',
+            label: 'Stale gain',
+            action: { type: 'setMasterGain', payload: { gain: 'loud' } },
+            inverseAction: { type: 'setMasterGain', payload: { gain: 1 } },
+            timestamp: 3001,
+            source: 'manual',
+        };
+        const reachablePastEntry = {
+            id: 'undo-reachable-past',
+            kind: 'action',
+            label: 'Reachable tempo',
+            action: { type: 'setTempo', payload: { bpm: 128 } },
+            inverseAction: { type: 'setTempo', payload: { bpm: 120 } },
+            timestamp: 3002,
+            source: 'manual',
+        };
+        const olderPastEntry = { ...reachablePastEntry, id: 'undo-older-past', timestamp: 3000 };
+        const reachableFutureEntry = { ...reachablePastEntry, id: 'undo-reachable-future', timestamp: 3003 };
+        const strandedFutureEntry = { ...reachablePastEntry, id: 'undo-stranded-future', timestamp: 3004 };
+        sessionStorage.setItem(
+            UNDO_SESSION_KEY,
+            JSON.stringify({
+                // `past` runs oldest first; `future` runs nearest first.
+                past: [olderPastEntry, staleArgumentsEntry, reachablePastEntry],
+                future: [reachableFutureEntry, staleArgumentsEntry, strandedFutureEntry],
+            })
+        );
+
+        const { undoStore } = await loadSubject();
+
+        expect(undoStore.value).toEqual({
+            past: [reachablePastEntry],
+            future: [reachableFutureEntry],
         });
     });
 
