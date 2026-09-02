@@ -15,6 +15,7 @@ use crate::engine_events::{engine_event_channel, EngineEvent, StreamErrorKind, S
 use crate::midi::diagnostics::{
     active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsSnapshot,
 };
+use crate::plugin_slot::CaptureInputBlock;
 use crate::scheduler::{
     graph_progress_channel, transport_position_channel, AudioScheduler, GraphCommand,
     GraphProgressSnapshot, RetiredGraphObjects, TransportPositionSnapshot,
@@ -452,6 +453,68 @@ pub(crate) fn new_input_latency_slot() -> Arc<AtomicUsize> {
     Arc::new(AtomicUsize::new(0))
 }
 
+/// The capture ring's reader plus every buffer the render callback needs to
+/// turn a device's interleaved block into the engine's stereo pair.
+///
+/// It exists as one value because it travels as one: the reader has to reach
+/// a renderer the output stream already owns, and a lock is not open to the
+/// callback, so the whole feed crosses a one-slot SPSC ring instead. Every
+/// buffer here is allocated where the feed is built — on the thread that opens
+/// the stream — because the callback that uses them may allocate nothing.
+pub(crate) struct CaptureFeed {
+    reader: CaptureRingReader,
+    /// One render chunk of the device's own interleaved layout.
+    interleaved: Box<[f32]>,
+    left: Box<[f32; MAX_CALLBACK_FRAMES]>,
+    right: Box<[f32; MAX_CALLBACK_FRAMES]>,
+    /// The input device's channel count, which is not the output device's.
+    channels: usize,
+}
+
+impl CaptureFeed {
+    fn new(reader: CaptureRingReader, channels: usize) -> Self {
+        // Stood up the way `CaptureShape` stands its own lanes up, so a
+        // defensive zero cannot reach the deinterleave as a division by zero.
+        let channels = channels.max(1);
+        Self {
+            reader,
+            interleaved: vec![0.0f32; MAX_CALLBACK_FRAMES * channels].into_boxed_slice(),
+            left: Box::new([0.0f32; MAX_CALLBACK_FRAMES]),
+            right: Box::new([0.0f32; MAX_CALLBACK_FRAMES]),
+            channels,
+        }
+    }
+
+    /// Serve `frames` of captured audio into the deinterleaved pair, or leave
+    /// both silent and report that this chunk has none.
+    ///
+    /// A mono device duplicates its one channel into both sides — the
+    /// conventional treatment of a mono source on a stereo recorder, and what
+    /// keeps a single-input interface from recording a take that only exists
+    /// on the left. A device carrying more than two channels contributes its
+    /// first two: the engine opens the default input, and its stereo front is
+    /// what a record feed means.
+    #[inline]
+    fn serve(&mut self, frames: usize) -> bool {
+        let channels = self.channels;
+        let left = &mut self.left[..frames];
+        let right = &mut self.right[..frames];
+        let interleaved = &mut self.interleaved[..frames * channels];
+
+        if !self.reader.read_into(interleaved) {
+            left.fill(0.0);
+            right.fill(0.0);
+            return false;
+        }
+
+        for (index, frame) in interleaved.chunks_exact(channels).enumerate() {
+            left[index] = frame[0];
+            right[index] = if channels == 1 { frame[0] } else { frame[1] };
+        }
+        true
+    }
+}
+
 /// The render callback's state and body, as a value the device seam wraps.
 ///
 /// Named rather than written inline as a closure because it is the only place
@@ -471,16 +534,73 @@ pub(crate) struct DeviceRenderer {
     right_scratch: Box<[f32; MAX_CALLBACK_FRAMES]>,
     /// What the callback publishes the settled bridge round trip into.
     bridge_round_trip_slot: Arc<AtomicUsize>,
+    /// The one-slot handoff the capture side pushes its feed through. The
+    /// renderer is already inside the output stream by then, so this is the
+    /// only route to it that takes no lock.
+    capture_rx: Consumer<CaptureFeed>,
+    capture_feed: Option<CaptureFeed>,
+    /// Capture frames this renderer has delivered, counted whether or not the
+    /// ring served them. It is the monotonic timeline a consumer places a
+    /// block on, and it belongs to the renderer because nothing else sees
+    /// every chunk.
+    capture_position_frames: u64,
 }
 
 impl DeviceRenderer {
-    pub(crate) fn new(scheduler: AudioScheduler, bridge_round_trip_slot: Arc<AtomicUsize>) -> Self {
+    pub(crate) fn new(
+        scheduler: AudioScheduler,
+        bridge_round_trip_slot: Arc<AtomicUsize>,
+        capture_rx: Consumer<CaptureFeed>,
+    ) -> Self {
         Self {
             scheduler,
             left_scratch: Box::new([0.0f32; MAX_CALLBACK_FRAMES]),
             right_scratch: Box::new([0.0f32; MAX_CALLBACK_FRAMES]),
             bridge_round_trip_slot,
+            capture_rx,
+            capture_feed: None,
+            capture_position_frames: 0,
         }
+    }
+
+    /// Take the capture feed if one is waiting.
+    ///
+    /// One non-blocking pop per callback while the slot is empty: the capture
+    /// side pushes exactly once, after its input stream started, so this stops
+    /// costing anything the callback after that.
+    #[inline]
+    fn adopt_capture_feed(&mut self) {
+        if self.capture_feed.is_some() {
+            return;
+        }
+
+        if let Ok(feed) = self.capture_rx.pop() {
+            self.capture_feed = Some(feed);
+        }
+    }
+
+    /// Deliver one chunk of captured input to the scheduler's input bus.
+    ///
+    /// Without a feed nothing is delivered at all. An engine with no input
+    /// device has no take to gap, and delivering silence would tell a recorder
+    /// the microphone dropped out.
+    #[inline]
+    fn deliver_capture(&mut self, frames: usize) {
+        let Some(feed) = self.capture_feed.as_mut() else {
+            return;
+        };
+
+        let served = feed.serve(frames);
+        let position_frames = self.capture_position_frames;
+        self.capture_position_frames = position_frames.wrapping_add(frames as u64);
+        self.scheduler.deliver_capture(CaptureInputBlock {
+            left: &feed.left[..frames],
+            right: &feed.right[..frames],
+            frames,
+            served,
+            latency_frames: feed.reader.latency_frames(),
+            position_frames,
+        });
     }
 
     /// Fill one device buffer: interleaved f32, a whole number of frames.
@@ -495,6 +615,7 @@ impl DeviceRenderer {
 
         // 1. Process pending commands lock-free
         self.scheduler.update_graph();
+        self.adopt_capture_feed();
 
         // The monitor gate, read once for this callback after the drain that
         // can set it, so a session's shadow lands on the same block boundary
@@ -517,6 +638,13 @@ impl DeviceRenderer {
         // per buffer.
         for chunk in data.chunks_mut(MAX_CALLBACK_FRAMES * channels) {
             let frames = chunk.len() / channels;
+
+            // Captured input is delivered per chunk, ahead of the block that
+            // chunk renders, so a consumer's input and the graph's output
+            // advance on the same boundaries. It runs whether or not the
+            // monitor is shadowed: a shadowed session still records.
+            self.deliver_capture(frames);
+
             let left = &mut self.left_scratch[..frames];
             let right = &mut self.right_scratch[..frames];
             left.fill(0.0);
@@ -580,7 +708,7 @@ fn attach_capture<B: InputBackend>(
     engine_sample_rate: f32,
     on_error: StreamErrorFn,
     input_latency_slot: Arc<AtomicUsize>,
-) -> Result<(<B::Open as OpenInput>::Stream, CaptureRingReader), InputOpenRefusal> {
+) -> Result<(<B::Open as OpenInput>::Stream, CaptureFeed), InputOpenRefusal> {
     let open = B::open_default_input(InputOpenRequest { engine_sample_rate })?;
     let negotiated = open.negotiated();
     let (mut writer, reader) = capture_ring(
@@ -598,7 +726,11 @@ fn attach_capture<B: InputBackend>(
         writer.write_block(data, channels);
     });
 
-    open.start(capture, on_error).map(|stream| (stream, reader))
+    // Built here, on the thread that opens the stream, because the render
+    // callback that deinterleaves through it may not allocate.
+    let feed = CaptureFeed::new(reader, negotiated.channels);
+
+    open.start(capture, on_error).map(|stream| (stream, feed))
 }
 
 /// Accept a capture attempt and never fail the engine over it.
@@ -615,20 +747,39 @@ fn attach_capture<B: InputBackend>(
 /// render callback turns out to ask for, neither of which is known until
 /// audio is flowing, so the reader publishes the figure itself once it
 /// settles.
+///
+/// Handing the feed to the renderer is part of accepting the open, and it is
+/// the last thing that can fail. A feed that cannot reach the renderer is a
+/// ring nobody drains, which is exactly the state an unopened input leaves —
+/// so it takes the same route out, and the stream goes with it rather than
+/// writing into a ring whose consumer is about to be dropped.
 fn capture_side<Stream>(
-    attempt: Result<(Stream, CaptureRingReader), InputOpenRefusal>,
+    attempt: Result<(Stream, CaptureFeed), InputOpenRefusal>,
+    feed_tx: &mut Producer<CaptureFeed>,
     input_latency_slot: &AtomicUsize,
-) -> Option<(Stream, CaptureRingReader)> {
-    match attempt {
-        Ok(attached) => Some(attached),
+) -> Option<Stream> {
+    let (stream, feed) = match attempt {
+        Ok(attached) => attached,
         Err(refusal) => {
             // The owner thread, not the audio thread: reporting costs a
             // stderr lock here and would be forbidden inside the callback.
             eprintln!("[Engine] Audio capture unavailable: {refusal:?}");
             input_latency_slot.store(0, Ordering::Relaxed);
-            None
+            return None;
         }
+    };
+
+    if feed_tx.push(feed).is_err() {
+        // Unreachable: the slot is built empty and one attach fills it once.
+        // Reported rather than asserted because the failure is otherwise
+        // silent — a running input stream feeding a renderer that never
+        // reads it.
+        eprintln!("[Engine] Audio capture unavailable: the render feed slot was already taken");
+        input_latency_slot.store(0, Ordering::Relaxed);
+        return None;
     }
+
+    Some(stream)
 }
 
 /// Open the capture side beside an output stream that started, and only then.
@@ -651,13 +802,8 @@ fn capture_beside<Output, B: InputBackend>(
     capture_event_tx: Option<Producer<EngineEvent>>,
     engine_sample_rate: f32,
     input_latency_slot: &Arc<AtomicUsize>,
-) -> Result<
-    (
-        Option<(<B::Open as OpenInput>::Stream, CaptureRingReader)>,
-        Output,
-    ),
-    String,
-> {
+    feed_tx: &mut Producer<CaptureFeed>,
+) -> Result<(Option<<B::Open as OpenInput>::Stream>, Output), String> {
     let output = output?;
     let capture = capture_event_tx.and_then(|tx| {
         capture_side(
@@ -666,6 +812,7 @@ fn capture_beside<Output, B: InputBackend>(
                 stream_error_sink(StreamSide::Input, tx),
                 Arc::clone(input_latency_slot),
             ),
+            feed_tx,
             input_latency_slot,
         )
     });
@@ -700,12 +847,10 @@ fn stream_error_sink(
 /// The capture side is declared first so it stops before the ring it writes
 /// into is dropped, and the whole value is what the owner thread holds and
 /// drops: teardown stays a single `drop`, whether or not capture was opened.
-/// The reader travels with it because a ring whose consumer is gone refuses
-/// every push the capture callback makes.
-type OwnedDeviceStreams = (
-    Option<(PlatformInputStream, CaptureRingReader)>,
-    PlatformStream,
-);
+/// The ring's reader lives inside the renderer the output stream owns, so this
+/// order is what keeps the capture callback from writing into a ring whose
+/// consumer has already gone.
+type OwnedDeviceStreams = (Option<PlatformInputStream>, PlatformStream);
 
 #[allow(clippy::too_many_arguments)]
 fn build_audio_stream(
@@ -748,7 +893,10 @@ fn build_audio_stream(
         transport_position_tx,
     );
 
-    let mut renderer = DeviceRenderer::new(scheduler, bridge_round_trip_slot);
+    // Built before the renderer, because the renderer takes the consumer with
+    // it into the output stream and nothing can reach it afterwards.
+    let (mut capture_feed_tx, capture_feed_rx) = RingBuffer::<CaptureFeed>::new(1);
+    let mut renderer = DeviceRenderer::new(scheduler, bridge_round_trip_slot, capture_feed_rx);
     let render: RenderFn = Box::new(move |data: &mut [f32], channels: usize| {
         renderer.render(data, channels);
     });
@@ -761,18 +909,22 @@ fn build_audio_stream(
         capture_event_tx,
         sample_rate,
         input_latency_slot,
+        &mut capture_feed_tx,
     )
 }
 
 #[cfg(test)]
 mod capture_seam_tests {
-    use super::{attach_capture, capture_beside, capture_side, new_input_latency_slot};
+    use super::{
+        attach_capture, capture_beside, capture_side, new_input_latency_slot, CaptureFeed,
+    };
     use crate::capture::target_depth_frames;
     use crate::device::{
         CaptureFn, InputBackend, InputOpenRefusal, InputOpenRequest, NegotiatedInput, OpenInput,
         StreamErrorFn,
     };
     use crate::engine_events::{engine_event_channel, EngineEvent, StreamErrorKind, StreamSide};
+    use rtrb::{Consumer, Producer, RingBuffer};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
@@ -863,24 +1015,79 @@ mod capture_seam_tests {
         super::stream_error_sink(StreamSide::Input, tx)
     }
 
+    /// The one-slot handoff `build_audio_stream` builds, in the shape a test
+    /// can hold both ends of.
+    fn feed_channel() -> (Producer<CaptureFeed>, Consumer<CaptureFeed>) {
+        RingBuffer::new(1)
+    }
+
     /// A refusal costs the capture side and nothing else: it has no failure
     /// channel back to the caller, so a stream build that reaches it cannot be
     /// stopped by a machine with no microphone.
     #[test]
     fn a_refused_capture_open_yields_no_capture_side_and_no_latency() {
         let slot = new_input_latency_slot();
+        let (mut feed_tx, mut feed_rx) = feed_channel();
 
         let capture = capture_side(
             attach_capture::<AbsentInput>(ENGINE_RATE, error_sink(), Arc::clone(&slot)),
+            &mut feed_tx,
             &slot,
         );
 
         assert!(capture.is_none(), "no input device means no capture side");
+        assert!(
+            feed_rx.pop().is_err(),
+            "a renderer must not be handed a feed no device is writing"
+        );
         assert_eq!(
             slot.load(Ordering::Relaxed),
             0,
             "an absent capture publishes no latency to compensate"
         );
+    }
+
+    /// The handoff itself: a feed reaches the renderer's slot, and its reader
+    /// is the one the device that just started is writing into.
+    #[test]
+    fn an_opened_capture_hands_the_renderer_the_feed_its_device_writes() {
+        let slot = new_input_latency_slot();
+        let (mut feed_tx, mut feed_rx) = feed_channel();
+
+        let stream = capture_side(
+            attach_capture::<PresentInput>(ENGINE_RATE, error_sink(), Arc::clone(&slot)),
+            &mut feed_tx,
+            &slot,
+        );
+
+        assert!(stream.is_some(), "a present input device opens");
+        let mut feed = feed_rx.pop().expect("the renderer's slot holds the feed");
+        assert!(
+            feed.serve(RENDER_READ),
+            "the blocks the device delivered carry the ring past its target"
+        );
+    }
+
+    /// A feed the renderer cannot be handed leaves no capture side at all. The
+    /// alternative is a running input stream filling a ring nobody drains,
+    /// which reports as a healthy capture and records nothing.
+    #[test]
+    fn a_feed_that_cannot_reach_the_renderer_yields_no_capture_side() {
+        let slot = new_input_latency_slot();
+        let (mut feed_tx, _feed_rx) = feed_channel();
+        let (_taken, feed) =
+            attach_capture::<PresentInput>(ENGINE_RATE, error_sink(), Arc::clone(&slot))
+                .expect("a present input device opens");
+        feed_tx.push(feed).expect("the slot starts empty");
+
+        let stream = capture_side(
+            attach_capture::<PresentInput>(ENGINE_RATE, error_sink(), Arc::clone(&slot)),
+            &mut feed_tx,
+            &slot,
+        );
+
+        assert!(stream.is_none(), "a feed with no reader is not a capture");
+        assert_eq!(slot.load(Ordering::Relaxed), 0);
     }
 
     /// The figure the control side reads describes the cadence the stream
@@ -890,12 +1097,15 @@ mod capture_seam_tests {
     #[test]
     fn an_opened_capture_publishes_the_latency_its_ring_settles_at() {
         let slot = new_input_latency_slot();
+        let (mut feed_tx, mut feed_rx) = feed_channel();
 
-        let (_stream, mut reader) = capture_side(
+        capture_side(
             attach_capture::<PresentInput>(ENGINE_RATE, error_sink(), Arc::clone(&slot)),
+            &mut feed_tx,
             &slot,
         )
         .expect("a present input device opens");
+        let mut feed = feed_rx.pop().expect("the renderer's slot holds the feed");
 
         assert_eq!(
             slot.load(Ordering::Relaxed),
@@ -903,9 +1113,8 @@ mod capture_seam_tests {
             "an open that has not settled has no figure to publish"
         );
 
-        let mut out = vec![0.0f32; RENDER_READ * DEVICE_CHANNELS];
         assert!(
-            reader.read_into(&mut out),
+            feed.serve(RENDER_READ),
             "the blocks the device delivered carry the ring past its target"
         );
 
@@ -929,6 +1138,7 @@ mod capture_seam_tests {
     fn an_output_that_never_started_never_reaches_the_input_device() {
         let slot = new_input_latency_slot();
         let (tx, _rx) = engine_event_channel();
+        let (mut feed_tx, _feed_rx) = feed_channel();
         let before = OPENS_ATTEMPTED.load(Ordering::Relaxed);
 
         let built = capture_beside::<(), CountedInput>(
@@ -936,6 +1146,7 @@ mod capture_seam_tests {
             Some(tx),
             ENGINE_RATE,
             &slot,
+            &mut feed_tx,
         );
 
         assert!(built.is_err(), "a failed output build stays failed");
@@ -955,11 +1166,13 @@ mod capture_seam_tests {
         let (tx, _rx) = engine_event_channel();
         let before = OPENS_ATTEMPTED.load(Ordering::Relaxed);
 
+        let (mut feed_tx, mut feed_rx) = feed_channel();
         let (capture, ()) =
-            capture_beside::<(), CountedInput>(Ok(()), Some(tx), ENGINE_RATE, &slot)
+            capture_beside::<(), CountedInput>(Ok(()), Some(tx), ENGINE_RATE, &slot, &mut feed_tx)
                 .expect("a started output build stays started");
 
         assert!(capture.is_some());
+        assert!(feed_rx.pop().is_ok(), "a started capture hands over a feed");
         assert_eq!(OPENS_ATTEMPTED.load(Ordering::Relaxed), before + 1);
     }
 
@@ -970,10 +1183,13 @@ mod capture_seam_tests {
         let slot = new_input_latency_slot();
         let before = OPENS_ATTEMPTED.load(Ordering::Relaxed);
 
-        let (capture, ()) = capture_beside::<(), CountedInput>(Ok(()), None, ENGINE_RATE, &slot)
-            .expect("a started output build stays started");
+        let (mut feed_tx, mut feed_rx) = feed_channel();
+        let (capture, ()) =
+            capture_beside::<(), CountedInput>(Ok(()), None, ENGINE_RATE, &slot, &mut feed_tx)
+                .expect("a started output build stays started");
 
         assert!(capture.is_none());
+        assert!(feed_rx.pop().is_err());
         assert_eq!(OPENS_ATTEMPTED.load(Ordering::Relaxed), before);
         assert_eq!(slot.load(Ordering::Relaxed), 0);
     }
@@ -1393,6 +1609,435 @@ mod tests {
     }
 }
 
+/// The native input path, driven through the production render callback.
+///
+/// [`DeviceRenderer::render`] is where a capture ring becomes a block on the
+/// scheduler's input bus, so these drive that method with a device buffer of
+/// their own and a feed handed over exactly as the capture side hands one over.
+#[cfg(test)]
+mod capture_render_tests {
+    use super::{new_bridge_round_trip_slot, CaptureFeed, DeviceRenderer, MAX_CALLBACK_FRAMES};
+    use crate::capture::{capture_ring, target_depth_frames, CaptureRingWriter, CaptureShape};
+    use crate::midi::diagnostics::{
+        active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsReader,
+        ActiveMidiRtDiagnosticsSnapshot,
+    };
+    use crate::plugin_slot::{CaptureInputBlock, NativePlugin};
+    use crate::scheduler::{
+        graph_progress_channel, transport_position_channel, AudioScheduler, GraphCommand,
+        RetiredGraphObjects,
+    };
+    use crate::timeline::timeline_rt_diagnostics_channel;
+    use rtrb::{Consumer, Producer, RingBuffer};
+    use std::any::Any;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
+
+    const SAMPLE_RATE: f32 = 48_000.0;
+    const OUTPUT_CHANNELS: usize = 2;
+    const COMMAND_CAPACITY: usize = 32;
+    const CONSUMER_ID: usize = 77;
+    /// What the fake input device delivers, and what the render callback asks
+    /// for — deliberately different, because they are two devices' periods.
+    const DEVICE_BLOCK: usize = 128;
+    const CALLBACK_FRAMES: usize = 512;
+    /// Enough blocks to carry the ring past the depth this cadence settles at
+    /// and leave a few whole reads behind it.
+    const BLOCKS_AT_START: usize = 16;
+
+    /// One delivered block, copied out of the borrowed one the callback hands
+    /// over.
+    struct RecordedCapture {
+        left: Vec<f32>,
+        right: Vec<f32>,
+        frames: usize,
+        served: bool,
+        latency_frames: usize,
+        position_frames: u64,
+    }
+
+    struct CaptureRecordingPlugin {
+        recorded: Arc<Mutex<Vec<RecordedCapture>>>,
+    }
+
+    impl NativePlugin for CaptureRecordingPlugin {
+        fn process_audio(&mut self, _left: &mut [f32], _right: &mut [f32], _num_samples: usize) {}
+
+        fn process_capture_input(&mut self, block: CaptureInputBlock<'_>) {
+            self.recorded
+                .lock()
+                .expect("capture record lock")
+                .push(RecordedCapture {
+                    left: block.left.to_vec(),
+                    right: block.right.to_vec(),
+                    frames: block.frames,
+                    served: block.served,
+                    latency_frames: block.latency_frames,
+                    position_frames: block.position_frames,
+                });
+        }
+
+        fn name(&self) -> &str {
+            "capture-recording-plugin"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    /// The render callback plus every end a test needs to drive it: commands
+    /// in, retirements out, one capture feed to hand over, diagnostics back.
+    struct RenderHarness {
+        command_tx: Producer<GraphCommand>,
+        retired_rx: Consumer<RetiredGraphObjects>,
+        feed_tx: Producer<CaptureFeed>,
+        renderer: DeviceRenderer,
+        diagnostics: ActiveMidiRtDiagnosticsReader,
+    }
+
+    impl RenderHarness {
+        fn new() -> Self {
+            let (command_tx, command_rx) = RingBuffer::new(COMMAND_CAPACITY);
+            let (retired_tx, retired_rx) = RingBuffer::new(COMMAND_CAPACITY + 1);
+            let (midi_diagnostics_tx, diagnostics) = active_midi_rt_diagnostics_channel();
+            let (timeline_diagnostics_tx, _timeline_reader) = timeline_rt_diagnostics_channel();
+            let (graph_progress_tx, _progress_reader) = graph_progress_channel();
+            let (transport_position_tx, _position_reader) = transport_position_channel();
+            let scheduler = AudioScheduler::with_rt_diagnostics(
+                command_rx,
+                retired_tx,
+                SAMPLE_RATE,
+                midi_diagnostics_tx,
+                timeline_diagnostics_tx,
+                graph_progress_tx,
+                transport_position_tx,
+            );
+            let (feed_tx, feed_rx) = RingBuffer::new(1);
+            Self {
+                command_tx,
+                retired_rx,
+                feed_tx,
+                renderer: DeviceRenderer::new(scheduler, new_bridge_round_trip_slot(), feed_rx),
+                diagnostics,
+            }
+        }
+
+        fn send(&mut self, command: GraphCommand) {
+            self.command_tx
+                .push(command)
+                .map_err(|_| "the command ring should hold this test's batch")
+                .expect("push");
+        }
+
+        fn register_consumer(&mut self, plugin: Box<dyn NativePlugin>) {
+            self.send(GraphCommand::AddPlugin(CONSUMER_ID, plugin));
+            self.send(GraphCommand::RegisterCaptureConsumer(CONSUMER_ID));
+        }
+
+        fn render(&mut self, frames: usize) {
+            let mut data = vec![0.0f32; frames * OUTPUT_CHANNELS];
+            self.renderer.render(&mut data, OUTPUT_CHANNELS);
+            // This thread is both the command side and the render side, so
+            // freeing here is safe and keeps the retirement ring moving.
+            while self.retired_rx.pop().is_ok() {}
+        }
+
+        fn rt_diagnostics(&mut self) -> ActiveMidiRtDiagnosticsSnapshot {
+            self.diagnostics.snapshot()
+        }
+    }
+
+    /// A feed on a ring nothing has written yet, plus the writer that stands
+    /// in for the device's capture callback.
+    fn capture_feed(channels: usize) -> (CaptureRingWriter, CaptureFeed) {
+        let (writer, reader) = capture_ring(
+            CaptureShape {
+                input_block_ceiling: MAX_CALLBACK_FRAMES,
+                output_read_ceiling: MAX_CALLBACK_FRAMES,
+                channels,
+            },
+            Arc::new(AtomicUsize::new(0)),
+        );
+        (writer, CaptureFeed::new(reader, channels))
+    }
+
+    /// The device's own sample for one channel of one absolute frame. Distinct
+    /// per channel and per frame, so a deinterleave that crossed the two or
+    /// slipped a frame is visible rather than plausible.
+    fn device_sample(frame: usize, channel: usize) -> f32 {
+        (frame + 1) as f32 * if channel == 0 { 1.0 } else { -1.0 }
+    }
+
+    /// Write what a running device would have written by the time the first
+    /// render callback arrives.
+    fn write_blocks(writer: &mut CaptureRingWriter, channels: usize, blocks: usize) {
+        let mut frame = 0;
+        for _ in 0..blocks {
+            let mut block = Vec::with_capacity(DEVICE_BLOCK * channels);
+            for _ in 0..DEVICE_BLOCK {
+                for channel in 0..channels {
+                    block.push(device_sample(frame, channel));
+                }
+                frame += 1;
+            }
+            writer.write_block(&block, channels);
+        }
+    }
+
+    fn expected_channel(channel: usize) -> Vec<f32> {
+        (0..CALLBACK_FRAMES)
+            .map(|frame| device_sample(frame, channel))
+            .collect()
+    }
+
+    /// No input device is not a gap. A renderer with no feed must deliver
+    /// nothing at all, rather than delivering silence a recorder would write
+    /// as a dropout for the life of the session.
+    #[test]
+    fn a_renderer_with_no_feed_delivers_no_capture_block_at_all() {
+        let mut harness = RenderHarness::new();
+        let recorded = Arc::new(Mutex::new(Vec::new()));
+        harness.register_consumer(Box::new(CaptureRecordingPlugin {
+            recorded: Arc::clone(&recorded),
+        }));
+
+        for _ in 0..4 {
+            harness.render(CALLBACK_FRAMES);
+        }
+
+        assert!(
+            recorded.lock().expect("capture record lock").is_empty(),
+            "a registered consumer must hear nothing while no device feeds one"
+        );
+        let diagnostics = harness.rt_diagnostics();
+        assert_eq!(
+            diagnostics.capture_input_underruns, 0,
+            "an engine with no input device suffers no capture shortfall"
+        );
+        assert_eq!(diagnostics.capture_blocks_dropped, 0);
+    }
+
+    /// The handoff, end to end: the feed arrives after the renderer is already
+    /// inside its stream, and the very next callback delivers the audio the
+    /// device wrote — deinterleaved, with the ring's own settled latency.
+    #[test]
+    fn a_feed_pushed_after_the_renderer_was_built_reaches_the_consumer_next_callback() {
+        let mut harness = RenderHarness::new();
+        let recorded = Arc::new(Mutex::new(Vec::new()));
+        harness.register_consumer(Box::new(CaptureRecordingPlugin {
+            recorded: Arc::clone(&recorded),
+        }));
+        harness.render(CALLBACK_FRAMES);
+        assert!(recorded.lock().expect("capture record lock").is_empty());
+
+        let (mut writer, feed) = capture_feed(OUTPUT_CHANNELS);
+        write_blocks(&mut writer, OUTPUT_CHANNELS, BLOCKS_AT_START);
+        harness.feed_tx.push(feed).expect("the slot starts empty");
+
+        harness.render(CALLBACK_FRAMES);
+
+        let recorded = recorded.lock().expect("capture record lock");
+        assert_eq!(recorded.len(), 1, "one callback delivers one chunk");
+        assert!(recorded[0].served);
+        assert_eq!(recorded[0].frames, CALLBACK_FRAMES);
+        assert_eq!(recorded[0].position_frames, 0);
+        assert_eq!(
+            recorded[0].latency_frames,
+            DEVICE_BLOCK + target_depth_frames(DEVICE_BLOCK, CALLBACK_FRAMES),
+            "the block carries the figure the ring settled at, for the take offset"
+        );
+        assert_eq!(recorded[0].left, expected_channel(0));
+        assert_eq!(recorded[0].right, expected_channel(1));
+    }
+
+    /// A stereo device's channels reach the sides they belong to. Crossed or
+    /// slipped, a take records with its image reversed and nothing says so.
+    #[test]
+    fn a_stereo_input_maps_channel_zero_to_left_and_channel_one_to_right() {
+        let mut harness = RenderHarness::new();
+        let recorded = Arc::new(Mutex::new(Vec::new()));
+        harness.register_consumer(Box::new(CaptureRecordingPlugin {
+            recorded: Arc::clone(&recorded),
+        }));
+        let (mut writer, feed) = capture_feed(2);
+        write_blocks(&mut writer, 2, BLOCKS_AT_START);
+        harness.feed_tx.push(feed).expect("the slot starts empty");
+
+        harness.render(CALLBACK_FRAMES);
+
+        let recorded = recorded.lock().expect("capture record lock");
+        assert_eq!(recorded[0].left, expected_channel(0));
+        assert_eq!(recorded[0].right, expected_channel(1));
+        assert_ne!(
+            recorded[0].left, recorded[0].right,
+            "a stereo device's two channels must not arrive as one"
+        );
+    }
+
+    /// A mono interface records to both sides, the way every DAW treats a
+    /// mono source on a stereo recorder. Left alone, a single-input interface
+    /// would record takes that exist only on the left.
+    #[test]
+    fn a_mono_input_duplicates_its_one_channel_into_both_sides() {
+        let mut harness = RenderHarness::new();
+        let recorded = Arc::new(Mutex::new(Vec::new()));
+        harness.register_consumer(Box::new(CaptureRecordingPlugin {
+            recorded: Arc::clone(&recorded),
+        }));
+        let (mut writer, feed) = capture_feed(1);
+        write_blocks(&mut writer, 1, BLOCKS_AT_START);
+        harness.feed_tx.push(feed).expect("the slot starts empty");
+
+        harness.render(CALLBACK_FRAMES);
+
+        let recorded = recorded.lock().expect("capture record lock");
+        assert!(recorded[0].served);
+        assert_eq!(recorded[0].left, expected_channel(0));
+        assert_eq!(
+            recorded[0].right, recorded[0].left,
+            "a mono device's one channel has to reach both sides"
+        );
+    }
+
+    /// The capture position is a timeline, so it counts every chunk the feed
+    /// was asked for — including the ones the ring could not serve. A counter
+    /// that skipped a starved chunk would let a recorder splice across the
+    /// gap and place everything after it early by the length of the dropout.
+    #[test]
+    fn the_capture_position_advances_on_served_and_starved_chunks_alike() {
+        const CALLBACKS: usize = 8;
+
+        let mut harness = RenderHarness::new();
+        let recorded = Arc::new(Mutex::new(Vec::new()));
+        harness.register_consumer(Box::new(CaptureRecordingPlugin {
+            recorded: Arc::clone(&recorded),
+        }));
+        // Written once and never topped up, so the ring serves a few reads and
+        // then starves while the callbacks keep coming.
+        let (mut writer, feed) = capture_feed(OUTPUT_CHANNELS);
+        write_blocks(&mut writer, OUTPUT_CHANNELS, BLOCKS_AT_START);
+        harness.feed_tx.push(feed).expect("the slot starts empty");
+
+        for _ in 0..CALLBACKS {
+            harness.render(CALLBACK_FRAMES);
+        }
+
+        let recorded = recorded.lock().expect("capture record lock");
+        assert_eq!(recorded.len(), CALLBACKS);
+        for (index, block) in recorded.iter().enumerate() {
+            assert_eq!(
+                block.position_frames,
+                (index * CALLBACK_FRAMES) as u64,
+                "chunk {index} broke the capture timeline"
+            );
+        }
+        let starved = recorded.iter().filter(|block| !block.served).count();
+        assert!(
+            starved > 0 && starved < CALLBACKS,
+            "this cadence has to serve some chunks and starve on others, not one or the other"
+        );
+        for block in recorded.iter().filter(|block| !block.served) {
+            assert!(
+                block.left.iter().all(|sample| *sample == 0.0)
+                    && block.right.iter().all(|sample| *sample == 0.0),
+                "a starved chunk is silence, never the samples of the one before it"
+            );
+        }
+        assert_eq!(
+            harness.rt_diagnostics().capture_input_underruns,
+            starved as u64
+        );
+    }
+
+    /// The allocation guard for the capture path inside the render callback.
+    ///
+    /// The interceptor is installed as the test binary's global allocator by
+    /// the scheduler's own guards and exists only in debug builds
+    /// (`assert_no_alloc`'s `disable_release` feature is on by default), which
+    /// is why this module is `#[cfg(debug_assertions)]`.
+    #[cfg(debug_assertions)]
+    mod capture_render_alloc_guards {
+        use super::*;
+        use assert_no_alloc::assert_no_alloc;
+
+        struct CaptureCountingPlugin {
+            blocks: Arc<AtomicUsize>,
+            served: Arc<AtomicUsize>,
+        }
+
+        impl NativePlugin for CaptureCountingPlugin {
+            fn process_audio(
+                &mut self,
+                _left: &mut [f32],
+                _right: &mut [f32],
+                _num_samples: usize,
+            ) {
+            }
+
+            fn process_capture_input(&mut self, block: CaptureInputBlock<'_>) {
+                self.blocks.fetch_add(1, Ordering::Relaxed);
+                if block.served {
+                    self.served.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+
+            fn name(&self) -> &str {
+                "capture-counting-plugin"
+            }
+
+            fn as_any(&self) -> &dyn Any {
+                self
+            }
+
+            fn as_any_mut(&mut self) -> &mut dyn Any {
+                self
+            }
+        }
+
+        #[test]
+        fn the_render_callback_with_a_feed_allocates_nothing() {
+            const CALLBACKS: usize = 8;
+
+            let mut harness = RenderHarness::new();
+            let blocks = Arc::new(AtomicUsize::new(0));
+            let served = Arc::new(AtomicUsize::new(0));
+            harness.register_consumer(Box::new(CaptureCountingPlugin {
+                blocks: Arc::clone(&blocks),
+                served: Arc::clone(&served),
+            }));
+            let (mut writer, feed) = capture_feed(OUTPUT_CHANNELS);
+            write_blocks(&mut writer, OUTPUT_CHANNELS, BLOCKS_AT_START);
+            harness.feed_tx.push(feed).expect("the slot starts empty");
+            // Sized outside, the way a device buffer is: the callback is what
+            // is under test, not the buffer it is handed.
+            let mut data = vec![0.0f32; CALLBACK_FRAMES * OUTPUT_CHANNELS];
+
+            assert_no_alloc(|| {
+                // Every arm of the path: the drain that registers the
+                // consumer, the pop that adopts the feed, the served read and
+                // its deinterleave, the delivery, and the starved reads after
+                // the ring runs dry.
+                for _ in 0..CALLBACKS {
+                    harness.renderer.render(&mut data, OUTPUT_CHANNELS);
+                }
+            });
+
+            assert_eq!(blocks.load(Ordering::Relaxed), CALLBACKS);
+            let served = served.load(Ordering::Relaxed);
+            assert!(
+                served > 0 && served < CALLBACKS,
+                "the guarded run has to cover both the served and the starved arm"
+            );
+            while harness.retired_rx.pop().is_ok() {}
+        }
+    }
+}
+
 /// The shadow monitor gate, driven through the production render callback.
 ///
 /// [`DeviceRenderer::render`] is the callback the device seam carries, and the
@@ -1445,10 +2090,17 @@ mod shadow_monitor_tests {
                 graph_progress_tx,
                 transport_position_tx,
             );
+            // No capture side: this module drives the monitor gate, and the
+            // renderer with no feed delivers no input at all.
+            let (_capture_feed_tx, capture_feed_rx) = RingBuffer::new(1);
             Self {
                 command_tx,
                 retired_rx,
-                renderer: DeviceRenderer::new(scheduler, new_bridge_round_trip_slot()),
+                renderer: DeviceRenderer::new(
+                    scheduler,
+                    new_bridge_round_trip_slot(),
+                    capture_feed_rx,
+                ),
                 progress,
             }
         }
