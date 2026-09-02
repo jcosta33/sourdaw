@@ -1,5 +1,4 @@
 import { type ExecutableAppActionType } from './executableAppActionRegistry';
-
 import { getExecutableCommandRegistration } from './getExecutableCommandRegistration';
 
 export type ExecutableAppActionProviderSchema = {

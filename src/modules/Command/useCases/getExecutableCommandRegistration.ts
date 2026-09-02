@@ -6,8 +6,8 @@ import {
     executableAppActionMutationIdentityRulesByType,
     type ExecutableAppActionType,
 } from './executableAppActionRegistry';
-import { getExecutableAppActionOperationVersion } from './getExecutableAppActionOperationVersion';
 import { getCommandUndoSessionEntryValidator } from './getCommandUndoSessionEntryValidator';
+import { getExecutableAppActionOperationVersion } from './getExecutableAppActionOperationVersion';
 import { getExecutableCommandConfirmation } from './getExecutableCommandConfirmation';
 import { validateVersionedCommandArguments } from './versionedCommandArgumentKeys';
 

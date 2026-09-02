@@ -1,5 +1,6 @@
-import { type ExecutableAppActionType } from './executableAppActionRegistry';
 import { type SessionActionEntry } from '../stores/undoSessionMirror';
+
+import { type ExecutableAppActionType } from './executableAppActionRegistry';
 
 type JsonRecord = Record<string, unknown>;
 
