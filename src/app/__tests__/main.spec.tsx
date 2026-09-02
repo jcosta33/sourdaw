@@ -1,6 +1,7 @@
 import { isValidElement } from 'react';
 
 import { render } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     bootstrap: vi.fn(),
