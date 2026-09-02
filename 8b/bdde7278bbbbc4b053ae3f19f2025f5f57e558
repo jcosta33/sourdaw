@@ -1,0 +1,22 @@
+.agents/decisions/README.md
+  s_ac03a4ebaa3f6e::t_3ec657f9122fe4 57
+.agents/decisions/0041-llm-batch-local-track-and-clip-bindings.md
+  s_ac03a4ebaa3f6e::t_43234691f80f94 25,70,85
+  s_ac03a4ebaa3f6e::t_01ad6d306fc879 1-24,26-69,71-84
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "8bbdde7278bbbbc4b053ae3f19f2025f5f57e558",
+  "prompts": {},
+  "sessions": {
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
