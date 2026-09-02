@@ -762,6 +762,11 @@ file in the same change.
 - **DOM**: Prefer `textContent` over `innerText`. ([`unicorn/prefer-dom-node-text-content`](https://github.com/sindresorhus/eslint-plugin-unicorn/blob/main/docs/rules/prefer-dom-node-text-content.md))
 - **Imports**: Enforce group order and alphabetical sort. ([`import/order`](https://github.com/import-js/eslint-plugin-import/blob/main/docs/rules/order.md))
 - **Storage**: Do not use `localStorage` directly; persist via `Store` with `LocalStorageStorage`. This is enforced by a custom lint rule. ([`no-restricted-syntax`](https://eslint.org/docs/latest/rules/no-restricted-syntax))
+- **File size**: A file holds at most 600 non-blank, non-comment lines, so a reviewer can hold the whole file in their head; past that, split it by responsibility. ([`max-lines`](https://eslint.org/docs/latest/rules/max-lines))
+- **Function size**: A function body (IIFEs included) holds at most 100 non-blank, non-comment lines; a longer function is doing more than one thing and should be decomposed, per _Semantic decomposition_ above. ([`max-lines-per-function`](https://eslint.org/docs/latest/rules/max-lines-per-function))
+- **Nesting depth**: Control-flow blocks nest at most 4 deep; deeper nesting buries the happy path and calls for the guard clauses and early returns covered under _Prefer explicit control flow_. ([`max-depth`](https://eslint.org/docs/latest/rules/max-depth))
+- **Cyclomatic complexity**: A function's cyclomatic complexity stays at most 20; past that, its branching cannot be reasoned about or tested exhaustively and should be split. ([`complexity`](https://eslint.org/docs/latest/rules/complexity))
+- **Burn-down baseline**: Files that already exceed one of the four limits above are listed in `eslint.size-baseline.mjs`, which holds those files to `warn` instead of `error` so they keep reporting without failing the build. A file leaves the list only once it complies with all four rules; no file is ever added.
 
 ### Parameter patterns
 
