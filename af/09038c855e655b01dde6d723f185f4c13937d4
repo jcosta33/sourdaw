@@ -1,0 +1,31 @@
+scripts/__tests__/recoverDeliveryLock.spec.ts
+  s_ac03a4ebaa3f6e::t_1ea0f7af7bef0a 97,112,182,208,224,249,268,300
+scripts/__tests__/recoverDeliveryLock3437.spec.ts
+  s_9b530f08172a54::t_8472a98a533345 1-280
+scripts/recoverDeliveryLock.ts
+  s_9b530f08172a54::t_8f36a7534bd4d4 18-37,41,47-60,62-66,76,88-102,110-115,153-160,163,171-180,183,205-263,311,314,316,320,323-326,328,330-331,333-334,337,340,343-344,348-386,398-433,435-437,439,452-455,458-460,462-463,465,474-477,479,481-482
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "af09038c855e655b01dde6d723f185f4c13937d4",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
