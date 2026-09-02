@@ -487,6 +487,7 @@ export type RecoverPublishReviewDependencies = {
     inspect: (
         number: number,
         expectedActorNodeId: string,
+        expectedHead: string,
         session: GhSession,
         primaryRoot: string
     ) => {
@@ -560,7 +561,7 @@ function defaultRecoverPublishReviewDependencies(): RecoverPublishReviewDependen
                 env: session.env,
                 cwd: primaryRoot,
             }),
-        inspect: (number, expectedActorNodeId, session, primaryRoot) => {
+        inspect: (number, expectedActorNodeId, expectedHead, session, primaryRoot) => {
             const gh = (args: string[]) => spawnCapture('gh', args, { env: session.env, cwd: primaryRoot });
             const pullRequest = parseJson<{ state?: unknown; headRefOid?: unknown }>(
                 gh(['pr', 'view', String(number), '--repo', REQUIRED_REPOSITORY, '--json', 'state,headRefOid']),
@@ -595,7 +596,10 @@ function defaultRecoverPublishReviewDependencies(): RecoverPublishReviewDependen
                 ) {
                     fail('review-publication recovery reviews are unreadable');
                 }
-                if ((user as { node_id: string }).node_id !== expectedActorNodeId) {
+                if (
+                    (user as { node_id: string }).node_id !== expectedActorNodeId ||
+                    record.commit_id !== expectedHead
+                ) {
                     continue;
                 }
                 if (
@@ -799,7 +803,7 @@ export async function runRecoverPublishReviewLockCli(
         if (payloadDigest !== expectedDigest) {
             fail('review-publication recovery payload does not match the retained lock');
         }
-        const first = dependencies.inspect(number, REVIEWER_BOT_NODE_ID, auth.session, primaryRoot);
+        const first = dependencies.inspect(number, REVIEWER_BOT_NODE_ID, expectedHead, auth.session, primaryRoot);
         if (first.state !== 'OPEN' || first.head !== expectedHead) {
             fail('review-publication recovery pull request state or head drifted');
         }
@@ -832,7 +836,7 @@ export async function runRecoverPublishReviewLockCli(
         };
         const adoptedOid = replacePullRequestMutationLockOwner(primaryRoot, number, ownerOid, adoptedOwner);
         try {
-            const second = dependencies.inspect(number, REVIEWER_BOT_NODE_ID, auth.session, primaryRoot);
+            const second = dependencies.inspect(number, REVIEWER_BOT_NODE_ID, expectedHead, auth.session, primaryRoot);
             if (
                 second.state !== 'OPEN' ||
                 second.head !== expectedHead ||

@@ -709,6 +709,7 @@ describe('shellPort postReview state verification', () => {
             );
             runGit(root, ['update-ref', pullRequestMutationLockRef(number), ownerOid]);
             let inspections = 0;
+            const inspectedHeads: string[] = [];
             await expect(
                 runRecoverPublishReviewLockCli([String(number), '--owner', ownerOid], {
                     primaryRoot: () => root,
@@ -717,8 +718,9 @@ describe('shellPort postReview state verification', () => {
                         session: { configDir: '/tmp/reviewer', env: {}, dispose: () => undefined },
                     }),
                     repositoryName: () => 'jcosta33/sourdaw',
-                    inspect: () => {
+                    inspect: (_number, _actorNodeId, expectedHead) => {
                         inspections += 1;
+                        inspectedHeads.push(expectedHead);
                         return { state: 'OPEN', head, reviews: [] };
                     },
                     isOwnerLive: () => false,
@@ -726,6 +728,7 @@ describe('shellPort postReview state verification', () => {
                 })
             ).resolves.toBe(0);
             expect(inspections).toBe(2);
+            expect(inspectedHeads).toEqual([head, head]);
             expect(readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number)).toBeUndefined();
         } finally {
             rmSync(root, { recursive: true, force: true });
