@@ -17,11 +17,8 @@
  * because a `webview` is never framed by a foreign origin but a public web
  * page can be, and that is a clickjacking surface `Content-Security-Policy`
  * closes where `X-Frame-Options` cannot (multiple ancestors, no `'self'`-only
- * nuance); `frame-src 'self'`, so `src/app/browserDisplayScaleHost.ts` can
- * frame the same-origin document it hosts for every top-level web session;
- * and `script-src`'s `blob:`, so `@grame/faustwasm` can load its
- * `URL.createObjectURL` compiler module and register its blob-URL
- * `AudioWorklet`s.
+ * nuance); and `frame-src 'self'`, so `src/app/browserDisplayScaleHost.ts` can
+ * frame the same-origin document it hosts for every top-level web session.
  *
  * `connect-src` carries no `[::1]` entry: CSP source-list grammar (CSP3
  * `host-char` is `ALPHA / DIGIT / "-"`) cannot express an IPv6 literal, so a
