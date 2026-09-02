@@ -1,0 +1,29 @@
+crates/proof-chamber/src/lib.rs
+  s_bbdfb911119c4f::t_6b3faea90f15bf 736-752,757,761-770,772-802
+crates/proof-chamber/tests/reverb_process_rt.rs
+  s_bbdfb911119c4f::t_6e292f2c13b6d6 74-78,89-91
+public/wasm/manifest.json
+  s_bbdfb911119c4f::t_826526cb16da79 26,31-32,35
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_bbdfb911119c4f::t_660352f6cf66ae 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_bbdfb911119c4f::t_92ddb22e6dba5c 1
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_bbdfb911119c4f::t_fd28c01cb8a8dd 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "66bf14cb2d59a812405b007fc044a768868a9f99",
+  "prompts": {},
+  "sessions": {
+    "s_bbdfb911119c4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fa21d5-2a8a-4f80-98ab-b72059373843",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
