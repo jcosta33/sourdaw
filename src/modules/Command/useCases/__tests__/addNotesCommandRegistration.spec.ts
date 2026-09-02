@@ -17,8 +17,8 @@ import { getExecutableAppActionIntentCatalog } from '../getExecutableAppActionIn
 import { getExecutableAppActionToolSchemas } from '../getExecutableAppActionToolSchemas';
 import { getExecutableCommandRegistration } from '../getExecutableCommandRegistration';
 import { getInternalUndoSessionReplayContracts } from '../getInternalUndoSessionReplayContracts';
-import { registerProductionCommandHandlers } from '../registerProductionCommandHandlers';
 import { redo } from '../redo';
+import { registerProductionCommandHandlers } from '../registerProductionCommandHandlers';
 import { undo } from '../undo';
 
 function createPersistedAddNotesEntry() {
