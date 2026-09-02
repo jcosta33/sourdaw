@@ -7,7 +7,7 @@ Generation fails when configured records are missing or inconsistent.
 
 Source graph digests:
 - Cargo.lock sha256:d72565a4570428b48a8a40bdc308fff00be3f2f430a83d3a9166f190ef7a9258
-- pnpm-lock.yaml sha256:e1be22307c3110ef97fe8e5bb7e5c5738491b0006cfe5d33b14faf7690e49f7f
+- pnpm-lock.yaml sha256:7defb62cbb10dae234009138b35fe5629f467ce91176f61a0b7322f608b97f82
 - server/package-lock.json sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db
 
 Package inventory: 353 npm, 321 Cargo
@@ -549,7 +549,7 @@ npm:loglevel@1.9.2 | MIT | sha256:18e8cf5f0dbaf13d9562e93b9bef79aff2acff18fab698
 npm:long@4.0.0 | Apache-2.0 | sha256:3ddf9be5c28fe27dad143a5dc76eea25222ad1dd68934a047064e56ed2fa40c5 | pnpm-lock.yaml
 npm:long@5.3.2 | Apache-2.0 | sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30 | pnpm-lock.yaml
 npm:longest-streak@3.1.0 | MIT | sha256:9f084fac69d8cf1e6ce983ba5a3499c7695ed74a26ec625c38f0fd19fddd5e10 | pnpm-lock.yaml
-npm:lucide-react@1.33.0 | ISC | sha256:276fbb649bda6b64528dedc0db040efc6ec73a3a1881a737f850ffdcef114501,sha256:9ec5f4ca93d062230039f1904445eabeddf6ad7f87dffbfa1780d261443cdad0,sha256:b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57 | pnpm-lock.yaml
+npm:lucide-react@1.37.0 | ISC | sha256:276fbb649bda6b64528dedc0db040efc6ec73a3a1881a737f850ffdcef114501,sha256:4945692d2706b9e73236e58d964ecdfa54566c1fb6f90665cd037d99ebdbf99d,sha256:b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57 | pnpm-lock.yaml
 npm:markdown-table@3.0.4 | MIT | sha256:dd1081884a92952802f4803110a6bb543acea9a814c786d58605b4c1219b5ebb | pnpm-lock.yaml
 npm:math-intrinsics@1.1.0 | MIT | sha256:2b770a704c15de238c3f622b01b0044ddd60b49ee30608ea6991ebf19db7a7a1 | pnpm-lock.yaml
 npm:mdast-util-find-and-replace@3.0.2 | MIT | sha256:dd1081884a92952802f4803110a6bb543acea9a814c786d58605b4c1219b5ebb | pnpm-lock.yaml
@@ -5149,7 +5149,7 @@ limitations under the License.
 ===== sha256:276fbb649bda6b64528dedc0db040efc6ec73a3a1881a737f850ffdcef114501 =====
 Evidence labels: copyright.mjs.map
 Packages:
-- npm:lucide-react@1.33.0
+- npm:lucide-react@1.37.0
 
 {"version":3,"file":"copyright.mjs","sources":["../../../src/icons/copyright.ts"],"sourcesContent":["import createLucideIcon from '../createLucideIcon';\nimport { IconNode } from '../types';\n\nexport const __iconNode: IconNode = [\n  ['circle', { cx: '12', cy: '12', r: '10', key: '1mglay' }],\n  ['path', { d: 'M14.83 14.83a4 4 0 1 1 0-5.66', key: '1i56pz' }],\n];\n\n/**\n * @component @name Copyright\n * @description Lucide SVG icon component, renders SVG Element with children.\n *\n * @preview ![img](data:image/svg+xml;base64,PHN2ZyAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIyNCIKICBoZWlnaHQ9IjI0IgogIHZpZXdCb3g9IjAgMCAyNCAyNCIKICBmaWxsPSJub25lIgogIHN0cm9rZT0iIzAwMCIgc3R5bGU9ImJhY2tncm91bmQtY29sb3I6ICNmZmY7IGJvcmRlci1yYWRpdXM6IDJweCIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCj4KICA8Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSIxMCIgLz4KICA8cGF0aCBkPSJNMTQuODMgMTQuODNhNCA0IDAgMSAxIDAtNS42NiIgLz4KPC9zdmc+Cg==) - https://lucide.dev/icons/copyright\n * @see https://lucide.dev/guide/packages/lucide-react - Documentation\n *\n * @param {Object} props - Lucide icons props and any valid SVG attribute\n * @returns {JSX.Element} JSX Element\n *\n */\nconst Copyright = createLucideIcon('copyright', __iconNode);\n\nexport default Copyright;\n"],"names":[],"mappings":";;;;;;;;;AAGO,CAAA,CAAA,CAAA,CAAA,CAAA,CAAM,UAAA,CAAA,CAAA,CAAuB;AAAA,CAAA,CAClC,CAAC,QAAA,CAAA,CAAU,CAAA,CAAE,EAAA,CAAA,CAAI,CAAA,CAAA,CAAA,CAAA,EAAM,CAAA,CAAA,CAAA,CAAI,IAAA,CAAA,CAAM,CAAA,EAAG,CAAA,CAAA,CAAA,CAAA,CAAA,CAAM,GAAA,CAAA,CAAK,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,EAAU,CAAA;AAAA,CAAA,CACzD,CAAC,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAQ,CAAA,CAAE,GAAG,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAiC,CAAA,CAAA,CAAA,CAAA,CAAK,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,GAAU;AAChE,CAAA;AAaA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAM,SAAA,CAAA,CAAA,CAAY,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAiB,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,EAAa,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAU,CAAA;;"}
 
@@ -9078,6 +9078,30 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ===== end sha256:48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0 =====
+===== sha256:4945692d2706b9e73236e58d964ecdfa54566c1fb6f90665cd037d99ebdbf99d =====
+Evidence labels: copyright.mjs
+Packages:
+- npm:lucide-react@1.37.0
+
+/**
+ * @license lucide-react v1.37.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+
+import createLucideIcon from '../createLucideIcon.mjs';
+
+const __iconNode = [
+  ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
+  ["path", { d: "M14.83 14.83a4 4 0 1 1 0-5.66", key: "1i56pz" }]
+];
+const Copyright = createLucideIcon("copyright", __iconNode);
+
+export { __iconNode, Copyright as default };
+//# sourceMappingURL=copyright.mjs.map
+
+===== end sha256:4945692d2706b9e73236e58d964ecdfa54566c1fb6f90665cd037d99ebdbf99d =====
 ===== sha256:49d6a1c9a623784c61c6cb70f773f3457faceb1914a13c8560a9823b7631950c =====
 Evidence labels: LICENSE
 Packages:
@@ -19570,30 +19594,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ===== end sha256:9eacbcb81be660840c714a560a9d65ba07913db98dd4baf969f78dd499fdd60f =====
-===== sha256:9ec5f4ca93d062230039f1904445eabeddf6ad7f87dffbfa1780d261443cdad0 =====
-Evidence labels: copyright.mjs
-Packages:
-- npm:lucide-react@1.33.0
-
-/**
- * @license lucide-react v1.33.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-
-import createLucideIcon from '../createLucideIcon.mjs';
-
-const __iconNode = [
-  ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
-  ["path", { d: "M14.83 14.83a4 4 0 1 1 0-5.66", key: "1i56pz" }]
-];
-const Copyright = createLucideIcon("copyright", __iconNode);
-
-export { __iconNode, Copyright as default };
-//# sourceMappingURL=copyright.mjs.map
-
-===== end sha256:9ec5f4ca93d062230039f1904445eabeddf6ad7f87dffbfa1780d261443cdad0 =====
 ===== sha256:9ec821012cde87b7447430e242044069db6e51ece7e3fc7ec1a00c97403c875f =====
 Evidence labels: assembled license record from lock-resolved package metadata and SPDX 3.28.0
 Packages:
@@ -22294,7 +22294,7 @@ Packages:
 ===== sha256:b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57 =====
 Evidence labels: LICENSE
 Packages:
-- npm:lucide-react@1.33.0
+- npm:lucide-react@1.37.0
 
 ISC License
 
