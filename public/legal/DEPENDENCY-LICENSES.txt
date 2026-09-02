@@ -7,7 +7,7 @@ Generation fails when configured records are missing or inconsistent.
 
 Source graph digests:
 - Cargo.lock sha256:d72565a4570428b48a8a40bdc308fff00be3f2f430a83d3a9166f190ef7a9258
-- pnpm-lock.yaml sha256:7defb62cbb10dae234009138b35fe5629f467ce91176f61a0b7322f608b97f82
+- pnpm-lock.yaml sha256:7ac8f1246e6d8194f3ccf2d8dd241827ec4ccface6c161f745f3ec2d44a7242d
 - server/package-lock.json sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db
 
 Package inventory: 353 npm, 321 Cargo
@@ -414,8 +414,8 @@ npm:@rollup/plugin-node-resolve@15.3.1 | MIT | sha256:7b8136f76c483d03597500bfa9
 npm:@rollup/pluginutils@5.4.0 | MIT | sha256:7b8136f76c483d03597500bfa991aae9be68d4629e1121cbf9b93aa727efe305 | pnpm-lock.yaml
 npm:@spotify/basic-pitch@1.0.1 | Apache-2.0 | sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4 | pnpm-lock.yaml
 npm:@tanstack/history@1.162.1 | MIT | sha256:a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7 | pnpm-lock.yaml
-npm:@tanstack/query-core@5.101.4 | MIT | sha256:a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7 | pnpm-lock.yaml
-npm:@tanstack/react-query@5.101.4 | MIT | sha256:a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7 | pnpm-lock.yaml
+npm:@tanstack/query-core@5.102.8 | MIT | sha256:a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7 | pnpm-lock.yaml
+npm:@tanstack/react-query@5.102.8 | MIT | sha256:a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7 | pnpm-lock.yaml
 npm:@tanstack/react-router@1.170.31 | MIT | sha256:a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7 | pnpm-lock.yaml
 npm:@tanstack/react-store@0.9.3 | MIT | sha256:cb4a7917af22bd56340e877f10a5c5aa4fded7af2459162630ff7fcb48bb45c7 | pnpm-lock.yaml
 npm:@tanstack/router-core@1.171.26 | MIT | sha256:a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7 | pnpm-lock.yaml
@@ -441,7 +441,7 @@ npm:@types/hast@3.0.5 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b27482
 npm:@types/long@4.0.2 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 | pnpm-lock.yaml
 npm:@types/mdast@4.0.4 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 | pnpm-lock.yaml
 npm:@types/ms@2.1.0 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 | pnpm-lock.yaml
-npm:@types/node@26.2.0 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 | pnpm-lock.yaml
+npm:@types/node@26.4.0 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 | pnpm-lock.yaml
 npm:@types/node-fetch@2.6.13 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 | pnpm-lock.yaml
 npm:@types/offscreencanvas@2019.3.0 | MIT | sha256:dea9265341829002e2c23a7372393eb2ed6e26085fb623f38a4ba0af833f30a6 | pnpm-lock.yaml
 npm:@types/offscreencanvas@2019.7.3 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 | pnpm-lock.yaml
@@ -20016,8 +20016,8 @@ USE OR OTHER DEALINGS IN THE SOFTWARE.
 Evidence labels: LICENSE
 Packages:
 - npm:@tanstack/history@1.162.1
-- npm:@tanstack/query-core@5.101.4
-- npm:@tanstack/react-query@5.101.4
+- npm:@tanstack/query-core@5.102.8
+- npm:@tanstack/react-query@5.102.8
 - npm:@tanstack/react-router@1.170.31
 - npm:@tanstack/router-core@1.171.26
 
@@ -23808,7 +23808,7 @@ Packages:
 - npm:@types/mdast@4.0.4
 - npm:@types/ms@2.1.0
 - npm:@types/node-fetch@2.6.13
-- npm:@types/node@26.2.0
+- npm:@types/node@26.4.0
 - npm:@types/offscreencanvas@2019.7.3
 - npm:@types/react-dom@19.2.4
 - npm:@types/react@19.2.18
