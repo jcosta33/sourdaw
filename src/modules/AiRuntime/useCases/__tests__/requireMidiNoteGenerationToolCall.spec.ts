@@ -72,10 +72,6 @@ describe('requireMidiNoteGenerationToolCall', () => {
             arguments: { clipId: 'clip-1', notes: [{ pitch: 128, startBeat: 0, duration: 1 }] },
         },
         {
-            label: 'a fractional canonical MIDI field',
-            arguments: { clipId: 'clip-1', notes: [{ pitch: 60.5, startBeat: 0, duration: 1, velocity: 96.5 }] },
-        },
-        {
             label: 'an unexpected note field',
             arguments: {
                 clipId: 'clip-1',
@@ -97,6 +93,23 @@ describe('requireMidiNoteGenerationToolCall', () => {
                 expectedClipId: 'clip-1',
             })
         ).toThrow('valid non-empty MIDI note list');
+    });
+
+    it('preserves fractional pitch and velocity for downstream MIDI normalization', () => {
+        expect(
+            requireMidiNoteGenerationToolCall({
+                toolCalls: [
+                    {
+                        name: 'addNotes',
+                        arguments: {
+                            clipId: 'clip-1',
+                            notes: [{ pitch: 60.5, startBeat: 0, duration: 1, velocity: 96.5 }],
+                        },
+                    },
+                ],
+                expectedClipId: 'clip-1',
+            })
+        ).toEqual([{ pitch: 60.5, startBeat: 0, duration: 1, velocity: 96.5 }]);
     });
 
     it('allows a negative start beat only for backward completion', () => {

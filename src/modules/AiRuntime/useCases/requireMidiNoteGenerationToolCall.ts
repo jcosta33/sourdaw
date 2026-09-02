@@ -42,7 +42,6 @@ function isGeneratedMidiNote(value: unknown, allowNegativeStartBeat: boolean): v
     if (
         !hasRequiredKeys ||
         !isFiniteNumber(value.pitch) ||
-        !Number.isInteger(value.pitch) ||
         value.pitch < 0 ||
         value.pitch > 127 ||
         !isFiniteNumber(value.startBeat) ||
@@ -50,10 +49,7 @@ function isGeneratedMidiNote(value: unknown, allowNegativeStartBeat: boolean): v
         !isFiniteNumber(value.duration) ||
         value.duration <= 0 ||
         (value.velocity !== undefined &&
-            (!isFiniteNumber(value.velocity) ||
-                !Number.isInteger(value.velocity) ||
-                value.velocity < 1 ||
-                value.velocity > 127))
+            (!isFiniteNumber(value.velocity) || value.velocity < 1 || value.velocity > 127))
     ) {
         return false;
     }

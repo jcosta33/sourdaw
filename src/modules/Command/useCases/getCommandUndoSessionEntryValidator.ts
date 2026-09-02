@@ -1,6 +1,5 @@
-import type { SessionActionEntry } from '../stores/undoSessionMirror';
-
-import type { ExecutableAppActionType } from './executableAppActionRegistry';
+import { type ExecutableAppActionType } from './executableAppActionRegistry';
+import { type SessionActionEntry } from '../stores/undoSessionMirror';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -75,7 +74,10 @@ function hasExactAddNotesRestorePair(entry: SessionActionEntry): boolean {
     }
 
     const noteIds = actionPayload.notes.map((note) => note.id);
-    if (new Set(noteIds).size !== noteIds.length) {
+    const baseNoteIds = inversePayload.notes.flatMap((note) =>
+        isRecord(note) && typeof note.id === 'string' ? [note.id] : []
+    );
+    if (new Set(noteIds).size !== noteIds.length || noteIds.some((id) => baseNoteIds.includes(id))) {
         return false;
     }
 

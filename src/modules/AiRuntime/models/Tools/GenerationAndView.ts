@@ -1,7 +1,5 @@
 import { tool, type ToolSchema } from './Types';
 
-export const generationTools: readonly ToolSchema[] = [];
-
 export const markerTools: readonly ToolSchema[] = [
     tool(
         'addMarker',

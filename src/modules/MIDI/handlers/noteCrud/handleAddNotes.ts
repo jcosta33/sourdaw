@@ -1,5 +1,5 @@
-import { createHandler } from '#/utils/createHandler';
 import { trackStore } from '#/modules/Arrangement/stores';
+import { createHandler } from '#/utils/createHandler';
 
 import { normalizeMidiNoteInput } from '../../transformers/normalizeMidiNoteInput';
 import { batchAddMidiNotes } from '../../useCases/midiNoteCrud/batchAddMidiNotes';
@@ -46,7 +46,11 @@ function getMaterializedNotes(action: AddNotesAction): MaterializedNote[] {
 
 export const handleAddNotes = createHandler<'addNotes'>({
     execute: (action) => {
+        if (getWritableMidiClipReplayGuard(action.payload.clipId) === null) {
+            return { status: 'conflict' };
+        }
         batchAddMidiNotes(action.payload.clipId, getMaterializedNotes(action));
+        return undefined;
     },
     describe: (action) => {
         const label = `Add ${action.payload.notes.length} MIDI note${action.payload.notes.length === 1 ? '' : 's'}`;

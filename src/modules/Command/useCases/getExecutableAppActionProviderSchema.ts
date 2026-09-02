@@ -1,3 +1,5 @@
+import { type ExecutableAppActionType } from './executableAppActionRegistry';
+
 import { getExecutableCommandRegistration } from './getExecutableCommandRegistration';
 
 export type ExecutableAppActionProviderSchema = {
@@ -5,7 +7,9 @@ export type ExecutableAppActionProviderSchema = {
     readonly required: readonly string[];
 };
 
-export function getExecutableAppActionProviderSchema(actionType: 'addNotes'): ExecutableAppActionProviderSchema {
+export function getExecutableAppActionProviderSchema<ActionType extends ExecutableAppActionType>(
+    actionType: ActionType
+): ExecutableAppActionProviderSchema {
     const providerSchema = getExecutableCommandRegistration(actionType).providerSchema;
     return {
         properties: structuredClone(providerSchema.properties),

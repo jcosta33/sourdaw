@@ -4,11 +4,11 @@ import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { hydrateUndoStoreFromSession, undoStore } from '../../stores/undoStore';
+import { isExecutableAppActionType } from '../executableAppActionRegistry';
 import { getExecutableAppActionGroundingCatalog } from '../getExecutableAppActionGroundingCatalog';
 import { getExecutableAppActionIntentCatalog } from '../getExecutableAppActionIntentCatalog';
 import { getExecutableAppActionToolSchemas } from '../getExecutableAppActionToolSchemas';
 import { getExecutableCommandRegistration } from '../getExecutableCommandRegistration';
-import { isExecutableAppActionType } from '../executableAppActionRegistry';
 import { getInternalUndoSessionReplayContracts } from '../getInternalUndoSessionReplayContracts';
 import { registerProductionCommandHandlers } from '../registerProductionCommandHandlers';
 
@@ -111,10 +111,10 @@ describe('addNotes command registration', () => {
                     type: 'object',
                     additionalProperties: false,
                     properties: {
-                        pitch: { type: 'integer', minimum: 0, maximum: 127 },
+                        pitch: { type: 'number', minimum: 0, maximum: 127 },
                         startBeat: { type: 'number', minimum: 0 },
                         duration: { type: 'number', exclusiveMinimum: 0 },
-                        velocity: { type: 'integer', minimum: 1, maximum: 127 },
+                        velocity: { type: 'number', minimum: 1, maximum: 127 },
                     },
                     required: ['pitch', 'startBeat', 'duration'],
                 },
@@ -228,6 +228,25 @@ describe('addNotes command registration', () => {
                     redoAction: {
                         ...entry.redoAction,
                         payload: { ...entry.redoAction.payload, notes: duplicatedNotes },
+                    },
+                };
+            },
+        ],
+        [
+            'a materialized id that collides with the pre-add snapshot',
+            () => {
+                const entry = createPersistedAddNotesEntry();
+                const baseNotes = [{ id: 'note-1', pitch: 48, startBeat: 0, duration: 1, velocity: 80 }];
+                const expectedNotes = [...baseNotes, ...entry.inverseAction.payload.expectedNotes];
+                return {
+                    ...entry,
+                    inverseAction: {
+                        ...entry.inverseAction,
+                        payload: { ...entry.inverseAction.payload, notes: baseNotes, expectedNotes },
+                    },
+                    redoAction: {
+                        ...entry.redoAction,
+                        payload: { ...entry.redoAction.payload, notes: expectedNotes, expectedNotes: baseNotes },
                     },
                 };
             },

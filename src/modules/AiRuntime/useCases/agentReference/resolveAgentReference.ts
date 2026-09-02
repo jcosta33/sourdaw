@@ -490,9 +490,10 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
         }
     }
     if (isClipCapability(input.capability)) {
-        const clip = input.context.tracks
-            .flatMap((track) => track.clips)
-            .find((candidate) => candidate.id === input.assertedId);
+        const owningTrack = input.context.tracks.find((track) =>
+            track.clips.some((clip) => clip.id === input.assertedId)
+        );
+        const clip = owningTrack?.clips.find((candidate) => candidate.id === input.assertedId);
         const requiresEditableClip =
             input.capability === 'editable-clip' ||
             input.capability === 'editable-audio-clip' ||
@@ -501,7 +502,8 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
         const hasEligibleAudioContent = input.capability !== 'editable-audio-clip' || clip?.type === 'audio';
         const hasEligibleMidiContent =
             input.capability !== 'editable-midi-clip' || (clip?.type === 'midi' && clip.noteCount > 0);
-        const hasWritableMidiTarget = input.capability !== 'writable-midi-clip' || clip?.type === 'midi';
+        const hasWritableMidiTarget =
+            input.capability !== 'writable-midi-clip' || (clip?.type === 'midi' && owningTrack.frozen !== true);
         if (
             !clip ||
             (requiresEditableClip && clip.locked === true) ||

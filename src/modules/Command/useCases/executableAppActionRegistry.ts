@@ -920,10 +920,10 @@ export const executableAppActionDescriptors = [
                         type: 'object',
                         additionalProperties: false,
                         properties: {
-                            pitch: { type: 'integer', minimum: 0, maximum: 127 },
+                            pitch: { type: 'number', minimum: 0, maximum: 127 },
                             startBeat: { type: 'number', minimum: 0 },
                             duration: { type: 'number', exclusiveMinimum: 0 },
-                            velocity: { type: 'integer', minimum: 1, maximum: 127 },
+                            velocity: { type: 'number', minimum: 1, maximum: 127 },
                         },
                         required: ['pitch', 'startBeat', 'duration'],
                     },

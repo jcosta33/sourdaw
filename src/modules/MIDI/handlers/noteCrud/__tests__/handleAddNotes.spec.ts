@@ -157,6 +157,21 @@ describe('handleAddNotes', () => {
         expect(currentNotes()).toContainEqual(expect.objectContaining({ pitch: 60, startBeat: 0, duration: 1 }));
     });
 
+    it('fails closed before mutating when the writable MIDI target becomes frozen', async () => {
+        const action = {
+            type: 'addNotes' as const,
+            payload: { clipId: CLIP_ID, notes: [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1 }] },
+        };
+        setTrackStoreState({
+            ...defaultTrackState,
+            tracks: trackStore.value!.tracks.map((track) => ({ ...track, frozen: true })),
+        });
+
+        expect(handleAddNotes.describe(action).inverseAction).toBeNull();
+        expect(handleAddNotes.execute(action)).toEqual({ status: 'conflict' });
+        expect(currentNotes()).toEqual([{ id: 'existing', pitch: 48, startBeat: 0, duration: 1, velocity: 80 }]);
+    });
+
     it('conflicts rather than writing an orphan note bucket when redo reaches a removed clip', async () => {
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         const action = {

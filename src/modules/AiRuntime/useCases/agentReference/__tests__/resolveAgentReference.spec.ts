@@ -887,6 +887,18 @@ describe('resolveAgentReference', () => {
             status: 'rejected',
             reason: 'ungrounded-target',
         });
+        const project = createClipProjectState();
+        expect(
+            resolveWritableMidiClip('add notes in Empty MIDI', 'clip-empty-midi', {
+                ...project,
+                tracks: project.tracks.map((track) =>
+                    track.id === 'track-vocals' ? { ...track, frozen: true } : track
+                ),
+            })
+        ).toMatchObject({
+            status: 'rejected',
+            reason: 'ungrounded-target',
+        });
     });
 
     it('resolves only unlocked audio clips for audio processing', () => {
