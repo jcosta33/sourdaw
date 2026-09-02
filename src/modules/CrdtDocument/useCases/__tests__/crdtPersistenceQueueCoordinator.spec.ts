@@ -186,6 +186,22 @@ describe('crdtPersistenceQueueCoordinator / exact-heads collaboration persist do
         expect(saveOrder).toBeDefined();
         expect(flushOrder as number).toBeLessThan(saveOrder as number);
     });
+
+    it("stamps the undo witness with the heads this generation's forced flush just landed", async () => {
+        mockAutomergeRepo.getHeads.mockReturnValue(['pre-flush-head']);
+        vi.mocked(flushAutomergeStorageWrites).mockImplementation(() => {
+            mockAutomergeRepo.getHeads.mockReturnValue(['post-flush-head']);
+        });
+        let observedHeads: string[] | undefined;
+        const stampSpy = vi.spyOn(sessionUndoWitnessStampPort, 'stamp').mockImplementation(() => {
+            observedHeads = mockAutomergeRepo.getHeads('root');
+        });
+
+        await crdtPersistenceQueueCoordinator.runOperation('incremental');
+
+        expect(observedHeads).toEqual(['post-flush-head']);
+        stampSpy.mockRestore();
+    });
 });
 
 describe('crdtPersistenceQueueCoordinator / compaction paths stamp the undo witness before the bundle read (#3331)', () => {
@@ -233,6 +249,22 @@ describe('crdtPersistenceQueueCoordinator / compaction paths stamp the undo witn
         expect(stampOrder).toBeDefined();
         expect(saveOrder).toBeDefined();
         expect(stampOrder as number).toBeLessThan(saveOrder as number);
+        stampSpy.mockRestore();
+    });
+
+    it("stamps the undo witness with the heads this generation's forced flush just landed on a direct compact operation", async () => {
+        mockAutomergeRepo.getHeads.mockReturnValue(['pre-flush-head']);
+        vi.mocked(flushAutomergeStorageWrites).mockImplementation(() => {
+            mockAutomergeRepo.getHeads.mockReturnValue(['post-flush-head']);
+        });
+        let observedHeads: string[] | undefined;
+        const stampSpy = vi.spyOn(sessionUndoWitnessStampPort, 'stamp').mockImplementation(() => {
+            observedHeads = mockAutomergeRepo.getHeads('root');
+        });
+
+        await crdtPersistenceQueueCoordinator.runOperation('compact');
+
+        expect(observedHeads).toEqual(['post-flush-head']);
         stampSpy.mockRestore();
     });
 });

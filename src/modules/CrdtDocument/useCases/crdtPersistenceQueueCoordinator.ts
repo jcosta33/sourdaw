@@ -570,13 +570,15 @@ function settlePendingWritesBestEffort(): void {
 }
 
 /**
- * @param settlePendingWrites Force this generation's rAF-deferred, unscoped
- * CRDT writes (e.g. the action-history entry `executeAppAction` just
- * recorded) to land before anything below reads document bytes — otherwise a
- * debounced save that happens to run before that animation frame would
- * persist stale bytes. An exact-heads caller (collaboration) passes `false`:
- * forcing a landing here could move the root heads it re-checks once this
- * call returns, so it accepts whatever is already settled instead.
+ * @param settlePendingWrites Force whatever rAF-deferred, unscoped CRDT
+ * writes are currently pending (e.g. the action-history entry
+ * `executeAppAction` just recorded) to land before anything below reads
+ * document bytes — otherwise a debounced save that happens to run before
+ * that animation frame would persist stale bytes. The flush this triggers is
+ * global, not scoped to this generation. An exact-heads caller (collaboration)
+ * passes `false`: forcing a landing here could move the root heads it
+ * re-checks once this call returns, so it accepts whatever is already settled
+ * instead.
  */
 async function persistIncrementalCrdtProject(generation: number, settlePendingWrites: boolean): Promise<void> {
     await flushPendingFullSnapshot(generation);
@@ -661,10 +663,9 @@ async function compactCrdtProject(generation: number, settlePendingWrites: boole
         return;
     }
 
-    // Stamped here, immediately before the bundle reads below, rather than at
-    // the top: nothing between here and `saveAllOffThread()` in either branch
-    // awaits, so a write landing during the chunk/snapshot flushes above
-    // cannot outrun what this witness records.
+    // Captures the heads this compaction is about to encode. `saveAllOffThread()`
+    // re-encodes asynchronously in the worker; if it fails, compaction clears
+    // rather than persisting stale bytes, so no stale witness outlives it.
     sessionUndoWitnessStampPort.stamp();
 
     if (failedSnapshot) {
