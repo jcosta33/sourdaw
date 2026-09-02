@@ -3,6 +3,13 @@ import { reloadApplication } from './reloadApplication';
 import { resolveAppComposition } from './resolveAppComposition';
 
 const root = document.getElementById('root')!;
+
+function paintAppShellMarker(container: HTMLElement): void {
+    const shell = document.createElement('div');
+    shell.setAttribute('data-testid', 'app-shell');
+    container.replaceChildren(shell);
+}
+
 const hasDesktopBridge = 'sourdaw' in window;
 const composition = resolveAppComposition({
     hasDesktopBridge,
@@ -19,6 +26,7 @@ async function renderApplication(): Promise<void> {
         await resetDisplayScaleForStartup();
     } else {
         resetBrowserDisplayScaleForChildStartup();
+        paintAppShellMarker(root);
     }
 
     // A remounted iframe has a 5s window for AppShell. Bootstrap's import graph
