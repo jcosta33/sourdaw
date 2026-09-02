@@ -1,0 +1,52 @@
+src/modules/Command/useCases/__tests__/addNotesCommandRegistration.spec.ts
+  s_a40848e8f8cca9::t_692541490ca562 114,117,235-250
+  s_a40848e8f8cca9::t_920c5cd92950af 7
+  s_a40848e8f8cca9::t_b1dcdeb501d5c6 251-253
+src/modules/AiRuntime/models/Tools/__tests__/GenerationAndView.spec.ts
+  s_a40848e8f8cca9::t_692541490ca562 4,18,23,29
+src/modules/MIDI/handlers/noteCrud/handleAddNotes.ts
+  s_a40848e8f8cca9::t_920c5cd92950af 2,53
+  s_a40848e8f8cca9::t_99e427bdf2a320 49-51
+src/modules/AiRuntime/useCases/__tests__/getMidiNoteGenerationToolSchemas.spec.ts
+  s_a40848e8f8cca9::t_692541490ca562 30,33
+src/modules/AiRuntime/useCases/agentReference/__tests__/resolveAgentReference.spec.ts
+  s_a40848e8f8cca9::t_588e9e841e6ee5 890-899
+  s_a40848e8f8cca9::t_6a9afee2ada9d2 888-889
+src/modules/Command/useCases/getCommandUndoSessionEntryValidator.ts
+  s_a40848e8f8cca9::t_99e427bdf2a320 80
+  s_a40848e8f8cca9::t_920c5cd92950af 1-2,77-79
+src/modules/AiRuntime/useCases/agentReference/resolveAgentReference.ts
+  s_a40848e8f8cca9::t_99e427bdf2a320 493-496,505-506
+src/modules/AiRuntime/useCases/requireMidiNoteGenerationToolCall.ts
+  s_a40848e8f8cca9::t_99e427bdf2a320 52
+src/modules/AiRuntime/models/ToolDefinitions.ts
+  s_a40848e8f8cca9::t_692541490ca562 15
+src/modules/Command/useCases/getExecutableAppActionProviderSchema.ts
+  s_a40848e8f8cca9::t_99e427bdf2a320 10-12
+  s_a40848e8f8cca9::t_920c5cd92950af 1-2
+src/modules/AiRuntime/useCases/__tests__/requireMidiNoteGenerationToolCall.spec.ts
+  s_a40848e8f8cca9::t_692541490ca562 98-112
+  s_a40848e8f8cca9::t_890eeed6f393f3 113-114
+src/modules/AiRuntime/useCases/agentReference/isAgentReferenceCapabilityCandidate.ts
+  s_a40848e8f8cca9::t_99e427bdf2a320 96-97,116
+src/modules/MIDI/handlers/noteCrud/__tests__/handleAddNotes.spec.ts
+  s_a40848e8f8cca9::t_588e9e841e6ee5 160-174
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_a40848e8f8cca9::t_99e427bdf2a320 923,926
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "ba5e60208987385a7da04d200dcb61df319cc7b6",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
