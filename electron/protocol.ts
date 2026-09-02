@@ -68,10 +68,9 @@ export const APP_ENTRY_URL = `${APP_ORIGIN}/`;
  * - Loopback HTTP, for a user-run OpenAI-compatible LLM server. That is the
  *   only provider the renderer requests itself: a hosted `https:` provider is
  *   bound to a compiled adapter and streamed by the native provider gateway
- *   over IPC, a transport no CSP directive governs. `configureCloudProvider`
- *   accepts a third loopback spelling, `[::1]`, that this policy cannot express
- *   for the reason above, so such a base URL passes application validation and
- *   is then refused here.
+ *   over IPC, a transport no CSP directive governs. Application validation
+ *   admits only `localhost` and `127.0.0.1` for loopback HTTP, the same two
+ *   spellings this policy carries, so no admitted base URL is refused here.
  * - Hugging Face and its CDN redirect hosts, for Kokoro and WebLLM model
  *   artifacts.
  * - `raw.githubusercontent.com`, for the MLC wasm runtime. It is as
