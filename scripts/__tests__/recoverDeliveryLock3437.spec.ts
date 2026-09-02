@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -79,6 +79,58 @@ function dependencies(root: string, states: ReturnType<typeof remoteState>[]): D
     };
 }
 
+// The default missing-receipt reader shells out to `gh api`; this stub answers exactly the two
+// endpoints that reader calls and models --paginate honestly: without the flag only page one of
+// the comments exists, with it both pages come back slurped into one array of page arrays. The
+// script uses only shell builtins so it runs under the replaced child environment, which carries
+// no PATH.
+function writeStubGh(root: string): string {
+    const receipt = composeDeliveryReceipt({
+        pullRequest: NUMBER,
+        head: CURRENT_HEAD,
+        bodySha256: 'a'.repeat(64),
+    });
+    const pageOne = [{ id: 9000000001, user: { node_id: AUTHOR_BOT_NODE_ID }, body: 'ordinary discussion' }];
+    const pageTwo = [{ id: 9000000002, user: { node_id: AUTHOR_BOT_NODE_ID }, body: receipt }];
+    const pullRequestRecord = JSON.stringify({ state: 'open', head: { sha: CURRENT_HEAD }, merged: false });
+    const paginatedComments = JSON.stringify([pageOne, pageTwo]);
+    const firstPageComments = JSON.stringify([pageOne]);
+    const stubPath = join(root, 'gh');
+    writeFileSync(
+        stubPath,
+        [
+            '#!/bin/sh',
+            'url=',
+            'paginate=0',
+            'for arg in "$@"; do',
+            '    case "$arg" in',
+            '        --paginate) paginate=1 ;;',
+            '        repos/*) url=$arg ;;',
+            '    esac',
+            'done',
+            'case "$url" in',
+            `    repos/jcosta33/sourdaw/pulls/${NUMBER})`,
+            `        printf '%s\\n' '${pullRequestRecord}'`,
+            '        ;;',
+            `    repos/jcosta33/sourdaw/issues/${NUMBER}/comments*)`,
+            '        if [ "$paginate" = 1 ]; then',
+            `            printf '%s\\n' '${paginatedComments}'`,
+            '        else',
+            `            printf '%s\\n' '${firstPageComments}'`,
+            '        fi',
+            '        ;;',
+            '    *)',
+            '        echo "stub gh: unexpected arguments" >&2',
+            '        exit 1',
+            '        ;;',
+            'esac',
+            '',
+        ].join('\n')
+    );
+    chmodSync(stubPath, 0o700);
+    return stubPath;
+}
+
 describe('deliver --recover-lock 3437', () => {
     it('routes recovery through the existing deliver command', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-recovery-'));
@@ -132,6 +184,33 @@ describe('deliver --recover-lock 3437', () => {
         }
     });
 
+    it('finds an author delivery receipt on a later comments page through the default reader', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-recovery-'));
+        initialize(root);
+        const stubGh = writeStubGh(root);
+
+        try {
+            await expect(
+                runRecoverDeliveryLockCli(['3437', '--owner', OWNER_OID], {
+                    trustedLauncher: { primaryRoot: root, gitPath: 'git', ghPath: 'gh' },
+                    authenticateAuthor: async () => ({
+                        minted: { actorNodeId: AUTHOR_BOT_NODE_ID },
+                        session: {
+                            configDir: root,
+                            env: { SOURDAW_TRUSTED_GH_PATH: stubGh },
+                            dispose: () => undefined,
+                        },
+                    }),
+                    repositoryName: () => 'jcosta33/sourdaw',
+                    processIsDead: () => true,
+                })
+            ).rejects.toThrow(/already carries an author delivery receipt/);
+            expect(git(root, ['rev-parse', '--verify', REF])).toBe(OWNER_OID);
+        } finally {
+            rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+        }
+    });
+
     it.each<[string, () => IncidentTestChange]>([
         [
             'owner OID',
@@ -162,6 +241,32 @@ describe('deliver --recover-lock 3437', () => {
             'author receipt comment',
             () => ({
                 state: remoteState({ comments: [receiptComment()] }),
+                expectedError: /already carries an author delivery receipt/,
+            }),
+        ],
+        [
+            'a malformed author receipt-shaped comment',
+            () => ({
+                state: remoteState({
+                    comments: [receiptComment({ body: '<!-- sourdaw-delivery-receipt:v2\npull-request: 3437\n-->' })],
+                }),
+                expectedError: /invalid delivery receipt/,
+            }),
+        ],
+        [
+            'an author receipt naming a different pull request',
+            () => ({
+                state: remoteState({
+                    comments: [
+                        receiptComment({
+                            body: composeDeliveryReceipt({
+                                pullRequest: 9999,
+                                head: CURRENT_HEAD,
+                                bodySha256: 'a'.repeat(64),
+                            }),
+                        }),
+                    ],
+                }),
                 expectedError: /already carries an author delivery receipt/,
             }),
         ],
@@ -237,6 +342,25 @@ describe('deliver --recover-lock 3437', () => {
                     dependencies(root, [
                         remoteState(),
                         remoteState({ comments: [receiptComment({ id: 9000000003, body: 'ordinary discussion' })] }),
+                    ])
+                )
+            ).rejects.toThrow(/remote state changed/);
+            expect(git(root, ['rev-parse', '--verify', REF])).toBe(OWNER_OID);
+        } finally {
+            rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+        }
+    });
+
+    it('refuses same-id comment body drift between the two required state reads', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-recovery-'));
+        initialize(root);
+        try {
+            await expect(
+                runRecoverDeliveryLockCli(
+                    ['3437', '--owner', OWNER_OID],
+                    dependencies(root, [
+                        remoteState({ comments: [receiptComment({ body: 'original wording' })] }),
+                        remoteState({ comments: [receiptComment({ body: 'edited wording' })] }),
                     ])
                 )
             ).rejects.toThrow(/remote state changed/);
