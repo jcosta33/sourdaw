@@ -17,8 +17,10 @@ const SUPPORTED_SESSION_ACTION_TYPES = [
 async function loadSubject() {
     vi.resetModules();
     const createUndoEntryModule = await import('../../useCases/createUndoEntry');
+    const createCallbackUndoEntryModule = await import('../../useCases/createCallbackUndoEntry');
     const { validateVersionedCommandArguments } = await import('../../useCases/versionedCommandArgumentKeys');
     const undoStoreModule = await import('../undoStore');
+    const { clearUndoHistory } = await import('../clearUndoHistory');
     undoStoreModule.hydrateUndoStoreFromSession(
         SUPPORTED_SESSION_ACTION_TYPES.map((actionType) => ({
             actionType,
@@ -29,8 +31,11 @@ async function loadSubject() {
     );
     return {
         createUndoEntry: createUndoEntryModule.createUndoEntry,
+        createCallbackUndoEntry: createCallbackUndoEntryModule.createCallbackUndoEntry,
         pushUndo: undoStoreModule.pushUndo,
         undoStore: undoStoreModule.undoStore,
+        reconcileUndoStoreForProject: undoStoreModule.reconcileUndoStoreForProject,
+        clearUndoHistory,
     };
 }
 
@@ -737,5 +742,247 @@ describe('undoStore / pushUndo', () => {
             const { undoStore } = await loadSubject();
             expect(undoStore.value).toEqual({ past: [], future: [] });
         }
+    });
+});
+
+describe('undoStore / reconcileUndoStoreForProject (#3331)', () => {
+    beforeEach(() => {
+        sessionStorage.removeItem(UNDO_SESSION_KEY);
+    });
+
+    afterEach(async () => {
+        await flushPersistence();
+        sessionStorage.removeItem(UNDO_SESSION_KEY);
+    });
+
+    it('round-trips the project identity and document witness the mirror was written against', async () => {
+        const { createUndoEntry, pushUndo } = await loadSubject();
+        pushUndo(
+            createUndoEntry(
+                'tagged',
+                { type: 'setTempo', payload: { bpm: 120 } },
+                { type: 'setTempo', payload: { bpm: 110 } }
+            )
+        );
+        await flushPersistence();
+
+        // No `reconcileUndoStoreForProject` call has happened yet in this
+        // session, so the flush persisted no owner — the mirror should carry
+        // no `projectId` or `witness` at all.
+        const untaggedRaw = sessionStorage.getItem(UNDO_SESSION_KEY);
+        expect(untaggedRaw).not.toBeNull();
+        const untagged = parsePersistedUndoState(untaggedRaw);
+        expect(untagged).not.toHaveProperty('projectId');
+        expect(untagged).not.toHaveProperty('witness');
+
+        const { reconcileUndoStoreForProject, pushUndo: pushUndoAgain } = await loadSubject();
+        // Reconciling against the project this session's mirror was untagged
+        // for is a mismatch (no recorded owner), so the hydrated entry above is
+        // dropped and the live stacks start tagged to 'project-a' from here on.
+        reconcileUndoStoreForProject('project-a', () => 'witness-a');
+        pushUndoAgain(
+            createUndoEntry(
+                'project-a-edit',
+                { type: 'setTempo', payload: { bpm: 130 } },
+                { type: 'setTempo', payload: { bpm: 120 } }
+            )
+        );
+        await flushPersistence();
+
+        const taggedRaw = sessionStorage.getItem(UNDO_SESSION_KEY);
+        const parsed = parsePersistedUndoState(taggedRaw);
+        expect(parsed.projectId).toBe('project-a');
+        expect(parsed.witness).toBe('witness-a');
+        expect(persistedEntryLabels(parsed.past)).toEqual(['project-a-edit']);
+
+        // Hydrating a fresh session from that tagged mirror recovers the
+        // stacks, and reconciling against the same identity keeps them.
+        const reloaded = await loadSubject();
+        expect(reloaded.undoStore.value?.past.map((entry) => entry.label)).toEqual(['project-a-edit']);
+        reloaded.reconcileUndoStoreForProject('project-a', () => 'witness-a');
+        expect(reloaded.undoStore.value?.past.map((entry) => entry.label)).toEqual(['project-a-edit']);
+    });
+
+    it('clears stacks hydrated from a mirror with no recorded identity', async () => {
+        const untaggedEntry = {
+            id: 'undo-untagged',
+            kind: 'action',
+            label: 'Untagged edit',
+            action: { type: 'setTempo', payload: { bpm: 128 } },
+            inverseAction: { type: 'setTempo', payload: { bpm: 120 } },
+            timestamp: 4000,
+            source: 'manual',
+        };
+        // Backward-compatible shape: a mirror written before identity tagging
+        // existed carries no `projectId` or `witness` key at all.
+        sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify({ past: [untaggedEntry], future: [] }));
+
+        const { undoStore, reconcileUndoStoreForProject } = await loadSubject();
+        // Hydration itself still loads whatever entries validate; identity only
+        // gates what the boot-restore reconciliation keeps.
+        expect(undoStore.value?.past).toEqual([untaggedEntry]);
+
+        reconcileUndoStoreForProject('any-project', () => 'any-witness');
+
+        expect(undoStore.value).toEqual({ past: [], future: [] });
+    });
+
+    it('keeps hydrated stacks when both the reconciled project id and document witness match the mirrored identity', async () => {
+        const matchingEntry = {
+            id: 'undo-matching',
+            kind: 'action',
+            label: 'Matching edit',
+            action: { type: 'setTempo', payload: { bpm: 128 } },
+            inverseAction: { type: 'setTempo', payload: { bpm: 120 } },
+            timestamp: 5000,
+            source: 'manual',
+        };
+        sessionStorage.setItem(
+            UNDO_SESSION_KEY,
+            JSON.stringify({ past: [matchingEntry], future: [], projectId: 'project-b', witness: 'witness-b' })
+        );
+
+        const { undoStore, reconcileUndoStoreForProject } = await loadSubject();
+        expect(undoStore.value?.past).toEqual([matchingEntry]);
+
+        reconcileUndoStoreForProject('project-b', () => 'witness-b');
+
+        expect(undoStore.value?.past).toEqual([matchingEntry]);
+    });
+
+    it('clears hydrated stacks when the document witness differs even though the project id matches', async () => {
+        const staleDocumentEntry = {
+            id: 'undo-stale-document',
+            kind: 'action',
+            label: 'Stale document edit',
+            action: { type: 'setTempo', payload: { bpm: 128 } },
+            inverseAction: { type: 'setTempo', payload: { bpm: 120 } },
+            timestamp: 6000,
+            source: 'manual',
+        };
+        sessionStorage.setItem(
+            UNDO_SESSION_KEY,
+            JSON.stringify({
+                past: [staleDocumentEntry],
+                future: [],
+                projectId: 'project-c',
+                witness: 'witness-old',
+            })
+        );
+
+        const { undoStore, reconcileUndoStoreForProject } = await loadSubject();
+        expect(undoStore.value?.past).toEqual([staleDocumentEntry]);
+
+        // Same project id as the mirror, but the reloaded document no longer
+        // matches — a stale restore, or edits the mirror never captured.
+        reconcileUndoStoreForProject('project-c', () => 'witness-new');
+
+        expect(undoStore.value).toEqual({ past: [], future: [] });
+    });
+
+    it('clears the mirror owner on clearUndoHistory so the next flush, and the next reconcile, both treat the stacks as untagged', async () => {
+        const { reconcileUndoStoreForProject, pushUndo, undoStore, clearUndoHistory, createUndoEntry } =
+            await loadSubject();
+        reconcileUndoStoreForProject('project-d', () => 'witness-d');
+        pushUndo(
+            createUndoEntry(
+                'd-edit',
+                { type: 'setTempo', payload: { bpm: 128 } },
+                { type: 'setTempo', payload: { bpm: 120 } }
+            )
+        );
+        await flushPersistence();
+
+        const taggedRaw = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        expect(taggedRaw.projectId).toBe('project-d');
+        expect(taggedRaw.witness).toBe('witness-d');
+
+        // An in-session project transition (new project, template,
+        // arrangement switch, branch switch) calls this: it drops the owner
+        // alongside the stacks, per `Command/AGENTS.md`.
+        clearUndoHistory();
+        expect(undoStore.value).toEqual({ past: [], future: [] });
+        await flushPersistence();
+
+        const untaggedRaw = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        expect(untaggedRaw).not.toHaveProperty('projectId');
+        expect(untaggedRaw).not.toHaveProperty('witness');
+
+        // A fresh hydration from this untagged mirror, reconciled for the same
+        // project id and witness, still mismatches (no recorded owner) and
+        // clears again.
+        const reloaded = await loadSubject();
+        reloaded.reconcileUndoStoreForProject('project-d', () => 'witness-d');
+        expect(reloaded.undoStore.value).toEqual({ past: [], future: [] });
+    });
+});
+
+describe('undoStore / session mirror write truncates at the first unserializable entry (#3331)', () => {
+    beforeEach(() => {
+        sessionStorage.removeItem(UNDO_SESSION_KEY);
+    });
+
+    afterEach(async () => {
+        await flushPersistence();
+        sessionStorage.removeItem(UNDO_SESSION_KEY);
+    });
+
+    it('drops a callback entry and everything behind it from the persisted past, instead of splicing an invisible hole', async () => {
+        const { createUndoEntry, createCallbackUndoEntry, undoStore } = await loadSubject();
+        // Oldest first: a move, then a callback-only slip (drags/slips/splits/
+        // imports have no serializable inverse), then a mute nearest the
+        // present. The buggy `flatMap` would splice the slip out and persist
+        // `[move, mute]` as if they were adjacent — corrupting undo order,
+        // because a later undo would invert `mute` and then `move`, silently
+        // skipping the slip it never mirrored. The fix stops at the slip and
+        // keeps only the unbroken run nearest the present.
+        const move = createUndoEntry(
+            'move',
+            { type: 'setTempo', payload: { bpm: 120 } },
+            { type: 'setTempo', payload: { bpm: 110 } }
+        );
+        const slip = createCallbackUndoEntry({ label: 'slip', undo: () => undefined, redo: () => undefined });
+        const mute = createUndoEntry(
+            'mute',
+            { type: 'setMasterGain', payload: { gain: 0 } },
+            { type: 'setMasterGain', payload: { gain: 1 } }
+        );
+        undoStore.set({ past: [move, slip, mute], future: [] });
+        await flushPersistence();
+
+        const parsed = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        expect(persistedEntryLabels(parsed.past)).toEqual(['mute']);
+
+        // Live in-memory stacks are untouched by the mirror write: only the
+        // persisted, next-boot-visible copy truncates.
+        expect(undoStore.value?.past).toEqual([move, slip, mute]);
+    });
+
+    it('drops a callback entry and everything behind it from the persisted future', async () => {
+        const { createUndoEntry, createCallbackUndoEntry, undoStore } = await loadSubject();
+        // Nearest first: a redoable tempo change is reachable, then a
+        // callback-only redo, then a further redoable gain change that the
+        // callback strands.
+        const redoNearest = createUndoEntry(
+            'redo-nearest',
+            { type: 'setTempo', payload: { bpm: 130 } },
+            { type: 'setTempo', payload: { bpm: 120 } }
+        );
+        const redoCallback = createCallbackUndoEntry({
+            label: 'redo-callback',
+            undo: () => undefined,
+            redo: () => undefined,
+        });
+        const redoStranded = createUndoEntry(
+            'redo-stranded',
+            { type: 'setMasterGain', payload: { gain: 0.8 } },
+            { type: 'setMasterGain', payload: { gain: 0.5 } }
+        );
+        undoStore.set({ past: [], future: [redoNearest, redoCallback, redoStranded] });
+        await flushPersistence();
+
+        const parsed = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        expect(persistedEntryLabels(parsed.future)).toEqual(['redo-nearest']);
+        expect(undoStore.value?.future).toEqual([redoNearest, redoCallback, redoStranded]);
     });
 });

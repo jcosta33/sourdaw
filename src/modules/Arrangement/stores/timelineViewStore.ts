@@ -32,13 +32,35 @@ export const timelineViewStore = createStore<TimelineViewState>({
     },
 });
 
+function clampPixelsPerBeat(pixelsPerBeat: number): number {
+    return Math.max(2, Math.min(80, pixelsPerBeat));
+}
+
 export function zoomTimeline(delta: number): void {
     const state = timelineViewStore.value;
     if (!state) {
         return;
     }
-    const newPpb = Math.max(2, Math.min(80, state.pixelsPerBeat + delta));
+    const newPpb = clampPixelsPerBeat(state.pixelsPerBeat + delta);
     timelineViewStore.set({ ...state, pixelsPerBeat: newPpb });
+}
+
+/**
+ * Sets an absolute zoom level and derives horizontal scroll from a scroll
+ * target in beats, using the clamped zoom so the two cannot disagree.
+ * Other fields are untouched.
+ */
+export function setTimelineZoom(pixelsPerBeat: number, scrollStartBeat: number): void {
+    const state = timelineViewStore.value;
+    if (!state) {
+        return;
+    }
+    const clampedPixelsPerBeat = clampPixelsPerBeat(pixelsPerBeat);
+    timelineViewStore.set({
+        ...state,
+        pixelsPerBeat: clampedPixelsPerBeat,
+        scrollX: Math.max(0, scrollStartBeat * clampedPixelsPerBeat),
+    });
 }
 
 export function scrollTimeline(deltaX: number): void {

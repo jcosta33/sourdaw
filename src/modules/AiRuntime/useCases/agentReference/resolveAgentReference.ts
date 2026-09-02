@@ -345,6 +345,7 @@ function getReferenceCandidates(input: ResolveAgentReferenceInput): ReferenceCan
 }
 
 function removeOverlappedExactNameEvidence(
+    prompt: string,
     candidates: readonly ReferenceCandidate[],
     evidenceById: Map<string, AgentReferenceEvidence>
 ): void {
@@ -353,14 +354,27 @@ function removeOverlappedExactNameEvidence(
             continue;
         }
         const normalizedName = normalizeReferenceText(candidate.name);
-        const isContainedByLongerName = candidates.some((otherCandidate) => {
+        const longerCandidates = candidates.filter((otherCandidate) => {
             if (otherCandidate.id === candidate.id || evidenceById.get(otherCandidate.id) !== 'exact-name') {
                 return false;
             }
             const otherName = normalizeReferenceText(otherCandidate.name);
             return otherName.length > normalizedName.length && ` ${otherName} `.includes(` ${normalizedName} `);
         });
-        if (isContainedByLongerName) {
+        if (longerCandidates.length === 0) {
+            continue;
+        }
+        const nameRanges = getExactNameOverlapRanges(prompt, candidate.name);
+        if (nameRanges.length === 0) {
+            continue;
+        }
+        const longerRanges = longerCandidates.flatMap((otherCandidate) => [
+            ...getExactNameOverlapRanges(prompt, otherCandidate.name),
+        ]);
+        const everyNameOccurrenceIsInsideALongerName = nameRanges.every((nameRange) =>
+            longerRanges.some((longerRange) => nameRange.start >= longerRange.start && nameRange.end <= longerRange.end)
+        );
+        if (everyNameOccurrenceIsInsideALongerName) {
             evidenceById.delete(candidate.id);
         }
     }
@@ -472,7 +486,7 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
     }
 
     removeExactNameEvidenceOverlappedByLiteralIds(input.prompt, candidates, evidenceById);
-    removeOverlappedExactNameEvidence(candidates, evidenceById);
+    removeOverlappedExactNameEvidence(input.prompt, candidates, evidenceById);
 
     if (evidenceById.size === 0) {
         return { status: 'rejected', reason: 'ungrounded-target' };

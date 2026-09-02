@@ -6,7 +6,7 @@ Unified command execution dispatch kernel, undo/redo history and branching undo 
 
 - `useCases`:
     - **Action Execution & Batching**: `executeAppAction`, `executeAppActionBatch`, `executeVersionedCommandEnvelope`, `executeVersionedCommandBatch`, `executeVersionedCommandBatchEnvelope`, `createVersionedCommandEnvelope`, `compileVersionedCommandBatchEnvelope`, `parseVersionedCommandEnvelope`, `parseVersionedCommandBatchEnvelope`, `serializeVersionedCommandEnvelope`, `serializeVersionedCommandBatchEnvelope`, `resolveVersionedCommandBatchBindings`, `issueCommandApprovalBinding`, `createVersionedCommandReceipt`, `createVerifiedBatchReceipt`, `registerProductionCommandHandlers`.
-    - **Undo / Redo / History**: `undo`, `redo`, `pushUndoEntry`, `createUndoEntry`, `createCallbackUndoEntry`, `commitActionUndoEntry`, `clearUndoHistory`, `revertAction`, `revertActionGroup`, `clearActionHistory`, `resetActionReplayAuthority`, `syncActionReplayMetadata`, `getActionReplayStatus`, `REDO_NOT_APPLIED`.
+    - **Undo / Redo / History**: `undo`, `redo`, `pushUndoEntry`, `createUndoEntry`, `createCallbackUndoEntry`, `commitActionUndoEntry`, `clearUndoHistory`, `reconcileSessionUndoForProject`, `stampSessionUndoWitness`, `revertAction`, `revertActionGroup`, `clearActionHistory`, `resetActionReplayAuthority`, `syncActionReplayMetadata`, `getActionReplayStatus`, `REDO_NOT_APPLIED`.
     - **Macro Control**: `startMacroRecording`, `stopMacroRecording`, `getMacroHandlers`.
     - **Grounding & Policies**: `getAppActionExecutionPolicy`, `getAppActionStaticAuthority`, `getAgentActionRiskPolicy`, `getExecutableAppActionToolSchemas`, `getExecutableAppActionGroundingCatalog`, `getExecutableAppActionGroundingRules`, `getExecutableCommandRegistrations`, `isExecutableAppActionType`, `selectExecutableAppActionToolSchemasForPrompt`, `requiresAppActionConfirmation`, `configureCommandBatchIdempotency`, `buildSemanticProjectDiff`, `compilePartialCommandBatchAcceptance`.
     - **Handlers & Bus**: `getMacroHandlers`, `getUndoRedoHandlers`, `getUndoTreeHandlers`, `CommandEventBus`, `setCommandEventBus`.
@@ -26,6 +26,7 @@ Unified command execution dispatch kernel, undo/redo history and branching undo 
 - All state-mutating user and agent operations MUST flow through `executeAppAction` or `executeVersionedCommandBatchEnvelope` — direct store mutations bypass undo stacks, macro recording, and collaborative change tracking.
 - Every module handling AppActions must register its handler map in bootstrap via `registerHandlerMap` before any actions are executed.
 - Inverse operations in undo entries must be exact and idempotent; incomplete undo definitions cause project state corruption when stepping backward in history.
+- `clearUndoHistory` drops the live stacks' project/document tag along with the stacks themselves, so an in-session project switch (new project, template, arrangement switch, branch switch) always forfeits session-undo history across the next reload — including back to the project it left — because only `reconcileSessionUndoForProject` re-tags, and nothing re-tags after a plain clear.
 
 ## Verification
 

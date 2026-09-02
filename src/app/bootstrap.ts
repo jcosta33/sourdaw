@@ -87,6 +87,7 @@ import {
     commandRuntimeRepairPort,
     setCommandEventBus,
     syncActionReplayMetadata,
+    stampSessionUndoWitness,
 } from '#/modules/Command/useCases';
 import { setMidiLearnDependencies } from '#/modules/ControlSurface/useCases';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
@@ -102,6 +103,7 @@ import {
     recordActionHistoryEntry,
     clearActionHistory as clearCrdtActionHistory,
     registerCrdtStorageRuntime,
+    sessionUndoWitnessStampPort,
 } from '#/modules/CrdtDocument/useCases';
 import { initCrumbsDeviceStatePersistence, prepareCrumbsEngine } from '#/modules/Crumbs/useCases';
 import { updateCrustMeters, resetCrustMeters } from '#/modules/Crust/stores';
@@ -197,6 +199,7 @@ setActionHistoryMetadataPort({
     markReverted: markActionHistoryEntryReverted,
     clear: clearCrdtActionHistory,
 });
+sessionUndoWitnessStampPort.setProvider(stampSessionUndoWitness);
 productionBriefAdmissionPort.setGuard(productionBriefActionBatchAdmission.capture);
 commandProjectRevisionPort.setProvider(captureProjectRevision);
 commandProjectRevisionPort.setLiveMatchIgnoringCommandCheckpoint(projectRevisionMatchesLiveIgnoringCommandCheckpoint);
