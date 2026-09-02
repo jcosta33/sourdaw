@@ -35,14 +35,21 @@ function initialize(root: string): void {
 }
 
 function remoteState(
-    overrides: Partial<{ state: string; head: string; actor: string; edited: boolean; body: string }> = {}
+    overrides: Partial<{
+        state: string;
+        head: string;
+        receiptId: number;
+        actor: string;
+        edited: boolean;
+        body: string;
+    }> = {}
 ) {
     const createdAt = '2026-09-02T07:00:00Z';
     return {
         state: overrides.state ?? 'open',
         head: overrides.head ?? CURRENT_HEAD,
         receipt: {
-            id: 5506507863,
+            id: overrides.receiptId ?? 5506507863,
             body:
                 overrides.body ??
                 composeDeliveryReceipt({
@@ -94,6 +101,19 @@ describe('deliver:recover-lock', () => {
             () => ({ owner: { version: 1 as const, pid: 7, token: '00000000-0000-4000-8000-000000000000' } }),
         ],
         ['receipt actor', () => ({ state: remoteState({ actor: 'wrong-author' }) })],
+        ['receipt comment ID', () => ({ state: remoteState({ receiptId: 5506507864 }) })],
+        [
+            'receipt body head',
+            () => ({
+                state: remoteState({
+                    body: composeDeliveryReceipt({
+                        pullRequest: NUMBER,
+                        head: 'b'.repeat(40),
+                        bodySha256: 'a'.repeat(64),
+                    }),
+                }),
+            }),
+        ],
         ['edited receipt', () => ({ state: remoteState({ edited: true }) })],
         ['closed PR', () => ({ state: remoteState({ state: 'closed' }) })],
         ['rejected head still current', () => ({ state: remoteState({ head: REJECTED_HEAD }) })],
