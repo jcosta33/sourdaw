@@ -113,7 +113,7 @@ export function isAgentReferenceCapabilityCandidate(input: {
         return clip.type === 'audio';
     }
     if (input.capability === 'writable-midi-clip') {
-        return clip.type === 'midi' && owningTrack.frozen !== true;
+        return clip.type === 'midi' && owningTrack !== undefined && owningTrack.frozen !== true;
     }
     return input.capability !== 'editable-midi-clip' || (clip.type === 'midi' && clip.noteCount > 0);
 }

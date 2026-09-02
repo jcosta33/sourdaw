@@ -503,7 +503,8 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
         const hasEligibleMidiContent =
             input.capability !== 'editable-midi-clip' || (clip?.type === 'midi' && clip.noteCount > 0);
         const hasWritableMidiTarget =
-            input.capability !== 'writable-midi-clip' || (clip?.type === 'midi' && owningTrack.frozen !== true);
+            input.capability !== 'writable-midi-clip' ||
+            (clip?.type === 'midi' && owningTrack !== undefined && owningTrack.frozen !== true);
         if (
             !clip ||
             (requiresEditableClip && clip.locked === true) ||

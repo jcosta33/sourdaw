@@ -30,6 +30,20 @@ function isMaterializedAddNote(value: unknown): value is JsonRecord & { id: stri
     return isRecord(value) && typeof value.id === 'string' && value.id.length > 0;
 }
 
+function getMaterializedNoteIds(value: unknown): string[] | null {
+    if (!Array.isArray(value)) {
+        return null;
+    }
+    const ids: string[] = [];
+    for (const note of value) {
+        if (!isMaterializedAddNote(note)) {
+            return null;
+        }
+        ids.push(note.id);
+    }
+    return ids;
+}
+
 function isRestoreMidiClipNotesAction(value: unknown): value is { type: 'restoreMidiClipNotes'; payload: JsonRecord } {
     return isRecord(value) && value.type === 'restoreMidiClipNotes' && isRecord(value.payload);
 }
@@ -63,7 +77,6 @@ function hasExactAddNotesRestorePair(entry: SessionActionEntry): boolean {
         actionPayload.clipId !== redoPayload.clipId ||
         !Array.isArray(actionPayload.notes) ||
         actionPayload.notes.length === 0 ||
-        !actionPayload.notes.every(isMaterializedAddNote) ||
         !Array.isArray(inversePayload.notes) ||
         !Array.isArray(inversePayload.expectedNotes) ||
         !Array.isArray(redoPayload.notes) ||
@@ -74,7 +87,10 @@ function hasExactAddNotesRestorePair(entry: SessionActionEntry): boolean {
         return false;
     }
 
-    const noteIds = actionPayload.notes.map((note) => note.id);
+    const noteIds = getMaterializedNoteIds(actionPayload.notes);
+    if (noteIds === null) {
+        return false;
+    }
     const baseNoteIds = inversePayload.notes.flatMap((note) =>
         isRecord(note) && typeof note.id === 'string' ? [note.id] : []
     );
