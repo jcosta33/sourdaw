@@ -104,12 +104,21 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     },
 }));
 vi.mock('#/modules/Routing/useCases', () => ({
+    addSidechainRoute: vi.fn(),
+    addSidechainRouteSnapshot: vi.fn(),
+    ensureBusStrip: vi.fn(),
     getAllSidechainRoutes: vi.fn(() => []),
-    wireSidechainRoutes: vi.fn(),
-    setSend: vi.fn(),
-    // Returns the finalizer the restore handler pushes straight into its
-    // post-commit effect list, so it has to be callable.
+    getSidechainRoutesForTrack: vi.fn(),
+    getSidechainTargetCapability: vi.fn(),
+    hydrateSidechainRoutes: vi.fn(),
+    removeSend: vi.fn(),
+    removeSidechainRoute: vi.fn(),
+    removeSidechainRouteSnapshot: vi.fn(),
     restoreSidechainRoutes: vi.fn(() => () => undefined),
+    setBusGain: vi.fn(),
+    setSend: vi.fn(),
+    setSidechainRoutes: vi.fn(),
+    wireSidechainRoutes: vi.fn(),
 }));
 vi.mock('#/modules/PluginHost/useCases', () => ({
     activateExternalPlugin: vi.fn(() => Promise.resolve()),

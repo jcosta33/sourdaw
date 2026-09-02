@@ -83,12 +83,12 @@ export const PanKnob = ({ panLeft, panRight }: PanAmount): ReactElement => {
 
 ### React anti-patterns
 
-- **No `useEffect` for data fetching**: This is a critical pattern. Data fetching must be handled by TanStack Query (installed and wired via `src/app/queryClient.ts`; no call sites yet — until adoption, fetched server state simply has no query layer).
+- **No `useEffect` for data fetching**: This is a critical pattern. Data fetching must be handled by TanStack Query (wired via `src/app/queryClient.ts`).
 - **No `useEffect` for derived state**: Compute derived state directly during rendering.
 - **No manual memoization**: The [React Compiler](https://react.dev/learn/react-compiler) handles memoization automatically at build time. Do not use `useMemo`, `useCallback`, or `React.memo` manually -- the compiler inserts optimal memoization for you. Existing manual calls are harmless (the compiler skips already-memoized code) but should be removed when touching a file.
 - **No `forwardRef`**: In React 19, `ref` is a regular prop. Destructure it directly instead of wrapping with `forwardRef`.
 - **Prefer `use()` over `useContext`**: The `use()` hook replaces `useContext` for reading context. It can be called conditionally and also reads Promises for Suspense-based patterns.
-- **No manual form state**: A React Hook Form + Zod stack is the documented target ([forms](./02-forms.md)) but is **not installed yet**; until it lands, forms use local component state (`useState`).
+- **No manual form state**: The documented target is a React Hook Form + Zod stack ([forms](./02-forms.md)); forms without it use local component state (`useState`).
 
 ```tsx
 // ❌ Bad: Manual memoization (the React Compiler handles this automatically)

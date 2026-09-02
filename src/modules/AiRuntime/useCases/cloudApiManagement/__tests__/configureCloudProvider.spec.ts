@@ -60,6 +60,19 @@ describe('configureCloudProvider', () => {
         );
     });
 
+    it('rejects IPv6 loopback provider URLs', async () => {
+        await expect(
+            configureCloudProvider({
+                provider: 'openai-compatible',
+                model: 'qwen',
+                baseUrl: 'http://[::1]:11434/v1',
+                authentication: 'none',
+                apiKey: '',
+            })
+        ).rejects.toThrow('Provider base URL must use HTTPS or loopback HTTP');
+        expect(mocks.setCloudProviderConfig).not.toHaveBeenCalled();
+    });
+
     it('forwards an authenticated HTTPS compatible configuration with its normalized base URL', async () => {
         await configureCloudProvider({
             provider: 'openai-compatible',

@@ -12,7 +12,12 @@ import { syncKneadToEngine } from '#/modules/Knead/useCases';
 import { initWebMidi } from '#/modules/MIDI/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { projectStore } from '#/modules/Project/stores';
-import { loadProject, saveProject } from '#/modules/Project/useCases';
+import {
+    loadProject,
+    reportProjectLoadFailure,
+    saveProject,
+    whenProjectIdentityTransitionDependenciesConfigured,
+} from '#/modules/Project/useCases';
 import { restoreLibrary, seedFactoryLibrary } from '#/modules/SampleLibrary/useCases';
 import { registerProSynthInstruments } from '#/modules/Synth/useCases';
 import { ensureTrackStrips, getTransportState, syncTransportMapsToNativeSession } from '#/modules/Transport/useCases';
@@ -59,11 +64,20 @@ export const useAppInitialization = (): void => {
                 void initWebMidi();
                 registerProSynthInstruments();
 
+                await whenProjectIdentityTransitionDependenciesConfigured();
+                if (disposed) {
+                    return;
+                }
                 await loadProject();
                 ensureTrackStrips();
             } catch (error) {
                 logger.error(new Error('App initialization failed', { cause: error }));
-                notifyUser('App failed to load — please reload the page.', 'error');
+                const message = 'App failed to load — please reload the page.';
+                notifyUser(message, 'error');
+                reportProjectLoadFailure({
+                    message,
+                    projectName: projectStore.value?.name ?? 'Untitled Project',
+                });
             }
         })();
 

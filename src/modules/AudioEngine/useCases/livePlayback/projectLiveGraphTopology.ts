@@ -176,15 +176,11 @@ function createStripCommand(input: {
  *
  * Two kinds are dropped rather than sent, because the mapper refuses the *whole*
  * batch over either one and a declined batch is a play button that starts no
- * engine at all.
- *
- * A send naming no built bus carries no audio path in the project either, so
- * dropping it is the same answer the export path gives. A send *from* a bus does
- * carry one — bus into bus is ordinary practice, a reverb feeding a parallel
- * compressor — but the native send tap sits on track strips only, so the engine
- * refuses a bus-source send by name. What that path costs until the tap exists
- * is its own audio, and growing one is engine fidelity work, never a producer
- * emitting a command the engine refuses.
+ * engine at all. See `admittedSendBusIds.ts` for which two — that module
+ * states the same admission as a standalone predicate for
+ * `projectLiveAutomationWrites.ts`'s own admission of send-level automation
+ * targets, so a send this function drops carries no `add-send` command and a
+ * lane automating it must not receive writes either.
  */
 function sendCommands(input: { track: Track; busStripIds: ReadonlySet<string> }): AudioGraphCommand[] {
     const { track, busStripIds } = input;

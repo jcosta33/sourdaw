@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { secondsBetweenBeats } from '../../../models/TempoMap';
 import { defaultTransportState } from '../../../models/TransportState';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { applyAutomation } from '../../scheduling/applyAutomation/applyAutomation';
@@ -444,6 +445,43 @@ describe('startPlayheadScheduler', () => {
         // 0.2 beats of advance — not the 20 beats an unclamped 10s leap implies.
         expect(schedulerSession.accumulatedPosition).toBeLessThan(1);
         expect(schedulerSession.accumulatedPosition).toBeCloseTo(0.2, 5);
+    });
+
+    /**
+     * The worklet readers behind this SAB write measure their material in
+     * seconds and hold no tempo map, so the beat alone leaves them dividing it
+     * by the tempo in force — flat across a tempo change the transport already
+     * integrated. Publishing the integration removes the second clock.
+     */
+    it('publishes the song seconds the tempo map integrates beside the beat', async () => {
+        const changes = [
+            { id: 't1', beat: 0, tempo: 120, curve: 'instant' as const },
+            { id: 't2', beat: 8, tempo: 60, curve: 'instant' as const },
+        ];
+        tempoMapStoreState.value = { changes };
+        transportStoreState.value = playingState({ playheadPosition: 8 });
+
+        startPlayheadScheduler();
+        // 0.1 s of clock at the 60 BPM now in force: 0.1 beats past beat 8.
+        ctxTime.now = 0.1;
+        const worker = schedulerSession.worker as unknown as {
+            onmessage: ((event: { data: unknown }) => void) | null;
+        };
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        const call = audioEngineMocks.audioEngine.setTransportInfo.mock.calls.at(-1) as
+            [number, number, number, boolean] | undefined;
+        expect(call).toBeDefined();
+        const [beat, positionSeconds, tempo] = call!;
+        expect(beat).toBeCloseTo(8.1, 9);
+        expect(tempo).toBe(60);
+        // 4 s spent on the 120 BPM stretch plus 0.1 s past the change.
+        expect(positionSeconds).toBeCloseTo(secondsBetweenBeats(changes, 0, beat, defaultTransportState.tempo), 12);
+        expect(positionSeconds).toBeCloseTo(4.1, 9);
+        // Dividing the beat by the tempo beside it reads 8.1 s here.
+        expect(positionSeconds).not.toBeCloseTo((beat / tempo) * 60, 3);
     });
 
     it('clears the dedup Sets and stops active sources when the tempo map changes mid-playback', async () => {

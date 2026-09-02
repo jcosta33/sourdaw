@@ -8,9 +8,12 @@ import {
     type FunctionDeclaration,
     type FunctionExpression,
     type Node,
+    LanguageVariant,
     NodeFlags,
     ScriptKind,
     ScriptTarget,
+    SyntaxKind,
+    createScanner,
     createPrinter,
     createSourceFile,
     forEachChild,
@@ -36,7 +39,7 @@ import {
     isVariableDeclaration,
     isVariableDeclarationList,
 } from 'typescript';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 type CountByPath = Readonly<Record<string, number>>;
 type SourceText = { path: string; source: string };
@@ -982,8 +985,8 @@ const GUARDED_EXECUTABLE_PATHS = [
 // device-data property names and AST entry points, and the executable guard.
 // Files whose raw text contains none of these cannot contribute a match, so
 // they skip code preparation entirely. Comment-free censused files use raw
-// source as code and skip the printer. Sources with comment introducers still
-// require parsing so comment text is stripped before counting.
+// source as code and skip stripping. Sources with comment introducers still
+// require a scan so comment text is stripped before counting.
 const CENSUS_TOKENS = [
     'persistDeviceParam',
     'persistDevicePatch',
@@ -1019,18 +1022,163 @@ function rawSourceContainsCommentIntroducer(source: string): boolean {
     return source.includes('//') || source.includes('/*');
 }
 
-// Compiler-printer comment removal, not hand-rolled scanning: censused sources
-// carry comment-like text inside string literals (`'audio/*,.wav'` accept
-// filters), and only the parser reliably tells a comment from a string.
-function stripComments(path: string, source: string): string {
-    const sourceFile = createSourceFile(
-        path,
-        source,
-        ScriptTarget.Latest,
-        true,
-        path.endsWith('.tsx') ? ScriptKind.TSX : ScriptKind.TS
+// Scanner comment removal, not a parse+print and not a regex stripper: censused
+// sources carry comment-like text inside string literals (`'audio/*,.wav'`
+// accept filters) and regex bodies (`/a\/*b/`). The TypeScript scanner keeps
+// those intact while skipping comment trivia, provided a `/` in regex position
+// is re-scanned as one token — otherwise `/*` or `//` inside the body is trivia.
+const commentScanner = createScanner(ScriptTarget.Latest, false);
+
+function isIgnorableTrivia(kind: SyntaxKind): boolean {
+    return (
+        kind === SyntaxKind.WhitespaceTrivia ||
+        kind === SyntaxKind.NewLineTrivia ||
+        kind === SyntaxKind.ShebangTrivia ||
+        kind === SyntaxKind.ConflictMarkerTrivia ||
+        kind === SyntaxKind.NonTextFileMarkerTrivia
     );
-    return createPrinter({ removeComments: true }).printFile(sourceFile);
+}
+
+type BraceContext = 'expression' | 'statement';
+
+// `/` after `}` is regex only when that brace closed a statement block.
+// Object literals (and nested objects) close expressions, so the same `/` is
+// division — putting CloseBraceToken on the always-division list would turn
+// `} /re/` into division.
+function contextOpenedByBrace(previousKind: SyntaxKind | undefined, enclosing: BraceContext | undefined): BraceContext {
+    switch (previousKind) {
+        case SyntaxKind.EqualsToken:
+        case SyntaxKind.OpenParenToken:
+        case SyntaxKind.OpenBracketToken:
+        case SyntaxKind.CommaToken:
+        case SyntaxKind.ColonToken:
+            return 'expression';
+        case SyntaxKind.OpenBraceToken:
+            return enclosing ?? 'statement';
+        default:
+            return 'statement';
+    }
+}
+
+function slashStartsRegularExpression(
+    previousKind: SyntaxKind | undefined,
+    lastCloseBraceContext: BraceContext | undefined
+): boolean {
+    if (previousKind === undefined) {
+        return true;
+    }
+    if (previousKind === SyntaxKind.CloseBraceToken) {
+        return lastCloseBraceContext !== 'expression';
+    }
+    switch (previousKind) {
+        case SyntaxKind.Identifier:
+        case SyntaxKind.PrivateIdentifier:
+        case SyntaxKind.StringLiteral:
+        case SyntaxKind.NumericLiteral:
+        case SyntaxKind.BigIntLiteral:
+        case SyntaxKind.RegularExpressionLiteral:
+        case SyntaxKind.ThisKeyword:
+        case SyntaxKind.TrueKeyword:
+        case SyntaxKind.FalseKeyword:
+        case SyntaxKind.NullKeyword:
+        case SyntaxKind.SuperKeyword:
+        case SyntaxKind.CloseParenToken:
+        case SyntaxKind.CloseBracketToken:
+        case SyntaxKind.GreaterThanToken:
+        case SyntaxKind.PlusPlusToken:
+        case SyntaxKind.MinusMinusToken:
+        case SyntaxKind.NoSubstitutionTemplateLiteral:
+        case SyntaxKind.TemplateTail:
+            return false;
+        default:
+            return true;
+    }
+}
+
+function stripComments(path: string, source: string): string {
+    if (path.endsWith('.tsx')) {
+        const sourceFile = createSourceFile(path, source, ScriptTarget.Latest, false, ScriptKind.TSX);
+        return createPrinter({ removeComments: true }).printFile(sourceFile);
+    }
+
+    commentScanner.setLanguageVariant(LanguageVariant.Standard);
+    commentScanner.setScriptKind(ScriptKind.TS);
+    commentScanner.setText(source);
+
+    const parts: string[] = [];
+    const templates: Array<{ braceDepth: number }> = [];
+    const braces: BraceContext[] = [];
+    let copyFrom = 0;
+    let previousKind: SyntaxKind | undefined;
+    let lastCloseBraceContext: BraceContext | undefined;
+
+    try {
+        while (true) {
+            let kind = commentScanner.scan();
+            if (kind === SyntaxKind.EndOfFileToken) {
+                parts.push(source.slice(copyFrom));
+                break;
+            }
+
+            if (
+                (kind === SyntaxKind.SlashToken || kind === SyntaxKind.SlashEqualsToken) &&
+                slashStartsRegularExpression(previousKind, lastCloseBraceContext)
+            ) {
+                kind = commentScanner.reScanSlashToken();
+            }
+
+            if (kind === SyntaxKind.SingleLineCommentTrivia || kind === SyntaxKind.MultiLineCommentTrivia) {
+                parts.push(source.slice(copyFrom, commentScanner.getTokenStart()));
+                copyFrom = commentScanner.getTokenEnd();
+                continue;
+            }
+
+            if (!isIgnorableTrivia(kind)) {
+                if (kind === SyntaxKind.OpenBraceToken) {
+                    braces.push(contextOpenedByBrace(previousKind, braces.at(-1)));
+                } else if (kind === SyntaxKind.CloseBraceToken) {
+                    const template = templates.at(-1);
+                    const closesInterpolation = template !== undefined && template.braceDepth === 0;
+                    if (!closesInterpolation) {
+                        lastCloseBraceContext = braces.pop() ?? 'statement';
+                    }
+                }
+                previousKind = kind;
+            }
+
+            if (kind === SyntaxKind.TemplateHead) {
+                templates.push({ braceDepth: 0 });
+                continue;
+            }
+
+            const template = templates.at(-1);
+            if (template === undefined) {
+                continue;
+            }
+
+            if (kind === SyntaxKind.OpenBraceToken) {
+                template.braceDepth += 1;
+                continue;
+            }
+            if (kind !== SyntaxKind.CloseBraceToken) {
+                continue;
+            }
+            if (template.braceDepth > 0) {
+                template.braceDepth -= 1;
+                continue;
+            }
+
+            kind = commentScanner.reScanTemplateToken(false);
+            previousKind = kind;
+            if (kind === SyntaxKind.TemplateTail) {
+                templates.pop();
+            }
+        }
+
+        return parts.join('');
+    } finally {
+        commentScanner.setText(undefined);
+    }
 }
 
 function productionSource(path: string, source: string): ProductionSource {
@@ -1067,11 +1215,11 @@ function productionSources(root: string): ProductionSource[] {
 }
 
 /**
- * One sweep of `src/`, shared by every case below. Parsing and re-printing the
- * whole tree costs seconds; doing it once per case put every case in this file
- * over its timeout. The working tree cannot change mid-run, so one sweep is the
- * same evidence as fourteen, and each case still composes its own synthetic
- * file onto a copy.
+ * One sweep of `src/`, shared by every case below. Walking the tree and
+ * stripping comments still costs real time; doing it once per case put every
+ * case in this file over its timeout. The working tree cannot change mid-run,
+ * so one sweep is the same evidence as fourteen, and each case still composes
+ * its own synthetic file onto a copy.
  */
 const productionSourcesByRoot = new Map<string, ProductionSource[]>();
 
@@ -1346,12 +1494,24 @@ function countDeviceDataAstWrites(file: SourceText): number {
     return writes.size;
 }
 
+// AST census walks updateTrack and trackStore.set; property-syntax
+// devices:/parameterValues: hits are regex-owned and must not parse here.
+function codeMayContainDeviceDataAstWrites(code: string): boolean {
+    if (code.length === 0) {
+        return false;
+    }
+    return code.includes('updateTrack') || code.includes('trackStore');
+}
+
 function countDeviceDataByPath(files: ReadonlyArray<ProductionSource>): CountByPath {
     const result = countByPath(files, {
         pattern: /\b(?:parameterValues|devices)\s*:/g,
         includes: includeAllPaths,
     });
     for (const file of files) {
+        if (!codeMayContainDeviceDataAstWrites(file.code)) {
+            continue;
+        }
         const astWrites = countDeviceDataAstWrites(file);
         if (astWrites > 0) {
             result[file.path] = (result[file.path] ?? 0) + astWrites;
@@ -1412,9 +1572,14 @@ function assertProductionClosure(files: ReadonlyArray<ProductionSource>): void {
 }
 
 describe('device write boundary closure', () => {
+    let productionFiles: ProductionSource[];
+
+    beforeAll(() => {
+        productionFiles = readProductionSources(process.cwd());
+    });
+
     it('classifies every production sink by family, path, and exact count', () => {
-        const files = readProductionSources(process.cwd());
-        expect(() => assertProductionClosure(files)).not.toThrow();
+        expect(() => assertProductionClosure(productionFiles)).not.toThrow();
     });
 
     it('skips comment stripping when raw source has no census tokens', () => {
@@ -1439,8 +1604,8 @@ describe('device write boundary closure', () => {
             'src/modules/Arrangement/commentToken.ts',
             '// persistDeviceParam is documented here\nexport const value = 1;'
         );
-        expect(parsed.code).toBe('export const value = 1;\n');
         expect(parsed.code).not.toContain('persistDeviceParam');
+        expect(parsed.code).toContain('export const value = 1;');
         const counts = countByPath([parsed], SINK_DEFINITIONS['persistence-runtime']);
         expect(counts['src/modules/Arrangement/commentToken.ts']).toBeUndefined();
     });
@@ -1473,17 +1638,119 @@ describe('device write boundary closure', () => {
     });
 
     it('does not treat comment-like text inside string literals as comments', () => {
-        const counts = countDeviceDataByPath([
-            productionSource(
-                'src/modules/Arrangement/stringLiteralCommentText.ts',
-                [
-                    'const accept = "audio/*,.wav,.flac";',
-                    'const docs = "https://sourdaw.dev/panels";',
-                    'const devices: string[] = [];',
-                ].join('\n')
-            ),
-        ]);
+        const parsed = productionSource(
+            'src/modules/Arrangement/stringLiteralCommentText.ts',
+            [
+                'const accept = "audio/*,.wav,.flac";',
+                'const docs = "https://sourdaw.dev/panels";',
+                'const devices: string[] = [];',
+            ].join('\n')
+        );
+        expect(parsed.code).toContain('"audio/*,.wav,.flac"');
+        expect(parsed.code).toContain('"https://sourdaw.dev/panels"');
+        const counts = countDeviceDataByPath([parsed]);
         expect(counts['src/modules/Arrangement/stringLiteralCommentText.ts']).toBe(1);
+    });
+
+    it('does not treat regex-literal bodies as comments', () => {
+        const nestedBlock = productionSource(
+            'src/modules/Arrangement/regexComment.ts',
+            'const re = /a\\/*b/;\nexport const x = persistDeviceParam;\n'
+        );
+        expect(nestedBlock.code).toContain('persistDeviceParam');
+        expect(
+            countByPath([nestedBlock], SINK_DEFINITIONS['persistence-runtime'])[
+                'src/modules/Arrangement/regexComment.ts'
+            ]
+        ).toBe(1);
+
+        const escapedSlashes = productionSource(
+            'src/modules/Arrangement/regexLineComment.ts',
+            'const re = /\\/\\//; const x = persistDeviceParam;'
+        );
+        expect(escapedSlashes.code).toContain('persistDeviceParam');
+        expect(
+            countByPath([escapedSlashes], SINK_DEFINITIONS['persistence-runtime'])[
+                'src/modules/Arrangement/regexLineComment.ts'
+            ]
+        ).toBe(1);
+
+        const afterDivision = productionSource(
+            'src/modules/Arrangement/divisionLineComment.ts',
+            'const x = a / b; // persistDeviceParam'
+        );
+        expect(afterDivision.code).not.toContain('persistDeviceParam');
+        expect(
+            countByPath([afterDivision], SINK_DEFINITIONS['persistence-runtime'])[
+                'src/modules/Arrangement/divisionLineComment.ts'
+            ]
+        ).toBeUndefined();
+
+        const genericDiv = productionSource(
+            'src/modules/Arrangement/genericDiv.ts',
+            'const x = Array<number>/2; // persistDeviceParam\nexport const y = persistDeviceParam;\n'
+        );
+        expect(genericDiv.code).not.toContain('// persistDeviceParam');
+        expect(genericDiv.code).toContain('export const y = persistDeviceParam;');
+        expect(
+            countByPath([genericDiv], SINK_DEFINITIONS['persistence-runtime'])['src/modules/Arrangement/genericDiv.ts']
+        ).toBe(1);
+
+        const genericDivSpaced = productionSource(
+            'src/modules/Arrangement/genericDivSpaced.ts',
+            'const x = Array<number> / 2; // persistDeviceParam\nexport const y = persistDeviceParam;\n'
+        );
+        expect(genericDivSpaced.code).not.toContain('// persistDeviceParam');
+        expect(genericDivSpaced.code).toContain('export const y = persistDeviceParam;');
+        expect(
+            countByPath([genericDivSpaced], SINK_DEFINITIONS['persistence-runtime'])[
+                'src/modules/Arrangement/genericDivSpaced.ts'
+            ]
+        ).toBe(1);
+
+        const braceRegex = productionSource(
+            'src/modules/Arrangement/braceRegex.ts',
+            'if (x) { return 1; } /a\\/*b/; export const z = persistDeviceParam;\n'
+        );
+        expect(braceRegex.code).toContain('/a\\/*b/');
+        expect(braceRegex.code).toContain('persistDeviceParam');
+        expect(
+            countByPath([braceRegex], SINK_DEFINITIONS['persistence-runtime'])['src/modules/Arrangement/braceRegex.ts']
+        ).toBe(1);
+
+        const objectLiteralDiv = productionSource(
+            'src/modules/Arrangement/objectLiteralDiv.ts',
+            'const x = { n: 1 }/2; // persistDeviceParam\nexport const y = persistDeviceParam;\n'
+        );
+        expect(objectLiteralDiv.code).not.toContain('// persistDeviceParam');
+        expect(objectLiteralDiv.code).toContain('export const y = persistDeviceParam;');
+        expect(
+            countByPath([objectLiteralDiv], SINK_DEFINITIONS['persistence-runtime'])[
+                'src/modules/Arrangement/objectLiteralDiv.ts'
+            ]
+        ).toBe(1);
+
+        const objectLiteralDivSpaced = productionSource(
+            'src/modules/Arrangement/objectLiteralDivSpaced.ts',
+            'const x = { n: 1 } / 2; // persistDeviceParam\nexport const y = persistDeviceParam;\n'
+        );
+        expect(objectLiteralDivSpaced.code).not.toContain('// persistDeviceParam');
+        expect(objectLiteralDivSpaced.code).toContain('export const y = persistDeviceParam;');
+        expect(
+            countByPath([objectLiteralDivSpaced], SINK_DEFINITIONS['persistence-runtime'])[
+                'src/modules/Arrangement/objectLiteralDivSpaced.ts'
+            ]
+        ).toBe(1);
+    });
+
+    it('does not treat http:// in JSX text as a line comment', () => {
+        const parsed = productionSource(
+            'src/modules/Arrangement/jsxHttpText.tsx',
+            'export const C = () => <div>http://x.com</div>; const x = persistDeviceParam;\n'
+        );
+        expect(parsed.code).toContain('persistDeviceParam');
+        const counts = countByPath([parsed], SINK_DEFINITIONS['persistence-runtime']);
+        expect(counts['src/modules/Arrangement/jsxHttpText.tsx']).toBe(1);
     });
 
     it('still counts code occurrences after comment stripping', () => {
@@ -1531,6 +1798,14 @@ describe('device write boundary closure', () => {
                 source: 'trackStore.set({ ...state, tracks: state.tracks.map((track) => { const devices = track.devices; const parameterValues = devices[0]?.parameterValues; const snapshot = { devices, parameterValues }; void snapshot; return track; }) });',
             })
         ).toBe(0);
+    });
+
+    it('counts shorthand devices in trackStore.set when .set is split across a line break', () => {
+        const source = 'const state = {}; const devices = []; trackStore.\nset({ ...state, devices });';
+        const parsed = productionSource('src/modules/Arrangement/splitTrackStoreSet.ts', source);
+        expect(countDeviceDataAstWrites({ path: parsed.path, source: parsed.source })).toBe(1);
+        const counts = countDeviceDataByPath([parsed]);
+        expect(counts['src/modules/Arrangement/splitTrackStoreSet.ts']).toBe(1);
     });
 
     it('resolves only the nearest local updater declaration', () => {

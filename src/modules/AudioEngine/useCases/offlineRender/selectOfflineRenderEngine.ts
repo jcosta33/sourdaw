@@ -22,8 +22,6 @@
  *     Toaster routing, which are all devices.
  *   - **MIDI programme** — instruments render web-side; a native render of a
  *     MIDI clip would be a rest that reads as a correct file.
- *   - **Stretched clips** — the native timeline refuses any non-unity rate
- *     (`stretched-clip-unsupported`, #2219).
  *   - **Bus-source sends** are not a gate: live and offline native producers
  *     drop a send whose source strip is a bus (the same drop as a send naming
  *     no built bus), so native export runs minus that send's contribution.
@@ -89,10 +87,6 @@ function contentGateReason(input: SelectOfflineRenderEngineInput): string | null
             }
             if (clip.type === 'midi') {
                 return `track "${track.name}" plays MIDI programme`;
-            }
-            const stretched = clip.stretchMode && clip.stretchMode !== 'off' && (clip.stretchRatio ?? 1) !== 1;
-            if (stretched) {
-                return `clip "${clip.name || clip.id}" on track "${track.name}" is time-stretched (#2219)`;
             }
         }
     }

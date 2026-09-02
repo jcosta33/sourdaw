@@ -28,7 +28,7 @@ const CRC32_TABLE = Uint32Array.from({ length: 256 }, (_, index) => {
     }
     return value >>> 0;
 });
-type ZipExtractionLimits = { -readonly [Key in keyof typeof DEFAULT_LIMITS]: number };
+export type ZipExtractionLimits = { -readonly [Key in keyof typeof DEFAULT_LIMITS]: number };
 type ExtractGuardedZipInput = {
     bytes: Uint8Array;
     include?: (path: string) => boolean;
