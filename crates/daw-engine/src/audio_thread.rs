@@ -24,7 +24,7 @@ use crate::scheduler::{
 use crate::timeline::{timeline_rt_diagnostics_channel, TimelineRtDiagnosticsSnapshot};
 use rtrb::{Consumer, Producer, RingBuffer};
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, OnceLock};
 use std::thread;
@@ -238,6 +238,9 @@ pub(crate) struct SpawnedAudioThread {
     /// What the capture side published as its settled latency, or zero when
     /// no input stream was opened.
     pub input_latency_frames: Arc<AtomicUsize>,
+    /// The slot a refused capture open or start stores its kind into. See
+    /// [`new_capture_refusal_slot`].
+    pub capture_refusal: Arc<AtomicU8>,
     pub retired_adoption_tx: Sender<Consumer<RetiredGraphObjects>>,
 }
 
@@ -268,6 +271,8 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
     let bridge_round_trip_slot = Arc::clone(&bridge_round_trip_frames);
     let input_latency_frames = new_input_latency_slot();
     let input_latency_slot = Arc::clone(&input_latency_frames);
+    let capture_refusal = new_capture_refusal_slot();
+    let capture_refusal_slot = Arc::clone(&capture_refusal);
 
     let handle = spawn_owned_audio_stream(move || {
         match build_audio_stream(
@@ -283,6 +288,7 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
             &sample_rate_slot,
             Arc::clone(&bridge_round_trip_slot),
             &input_latency_slot,
+            &capture_refusal_slot,
         ) {
             Ok(streams) => Ok(StreamWithReclaimerShutdown(
                 Some(streams),
@@ -306,6 +312,7 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
         sample_rate,
         bridge_round_trip_frames,
         input_latency_frames,
+        capture_refusal,
         retired_adoption_tx,
     })
 }
@@ -451,6 +458,26 @@ pub(crate) fn new_bridge_round_trip_slot() -> Arc<AtomicUsize> {
 /// settles, and retracts it when it stops serving.
 pub(crate) fn new_input_latency_slot() -> Arc<AtomicUsize> {
     Arc::new(AtomicUsize::new(0))
+}
+
+/// The slot a refused capture publishes into, in place of the ring a refusal
+/// cannot cross.
+///
+/// Both of `capture_side`'s failure branches run synchronously on the owner
+/// thread, after whatever became of the `on_error` callback the open or start
+/// attempt was handed — recovered, consumed by a stream that is about to be
+/// dropped, or never handed anywhere at all. This slot does not depend on any
+/// of that: it is a plain reference threaded in beside `input_latency_slot`,
+/// written the same way at the same points.
+///
+/// Zero means "no refusal" and is never a valid encoding of a kind: a
+/// refusal stores `kind as u8 + 1`, so the reader — `drain_engine_events`,
+/// via [`crate::engine_events::StreamErrorKind::from_slot`] — can tell an
+/// unwritten slot from a stored `DeviceNotAvailable` (which is `0 + 1`).
+/// `drain_engine_events` swaps this back to zero on every read, so a refusal
+/// is reported exactly once, on the first drain after it is stored.
+pub(crate) fn new_capture_refusal_slot() -> Arc<AtomicU8> {
+    Arc::new(AtomicU8::new(0))
 }
 
 /// The capture ring's reader plus every buffer the render callback needs to
@@ -709,6 +736,16 @@ fn attach_capture<B: InputBackend>(
     on_error: StreamErrorFn,
     input_latency_slot: Arc<AtomicUsize>,
 ) -> Result<(<B::Open as OpenInput>::Stream, CaptureFeed), InputOpenRefusal> {
+    // There is one refusal route and it is not the ring: `on_error` is
+    // `FnMut`, so once it is handed to `open.start` below it may already be
+    // consumed by the backend it was handed to — a stream that failed to
+    // build or play drops it along with everything else the failed attempt
+    // owned, with no way to call it back. An open refusal here holds the
+    // callback un-consumed, and a start refusal never does, so calling
+    // `on_error` from exactly one of those two places would report one
+    // refusal shape and silently drop the other. Every refusal instead
+    // crosses through `capture_side`'s capture-refusal slot, which needs no
+    // callback at all: see its doc.
     let open = B::open_default_input(InputOpenRequest { engine_sample_rate })?;
     let negotiated = open.negotiated();
     let (mut writer, reader) = capture_ring(
@@ -738,9 +775,15 @@ fn attach_capture<B: InputBackend>(
 /// Capture is additive. An engine that refuses to start because the machine
 /// has no input device — or because its input device runs at another rate —
 /// leaves the musician with no playback either, which is strictly worse than
-/// starting without a record feed. So a refusal is named on the way past and
-/// the latency slot is left at zero, which is how the layer above reads "no
-/// capture".
+/// starting without a record feed. So a refusal is named on the way past, the
+/// latency slot is left at zero (how the layer above reads "no capture"), and
+/// the kind is stored into `capture_refusal_slot` as `kind as u8 + 1` — the
+/// encoding [`crate::engine_events::StreamErrorKind::from_slot`] decodes.
+/// This runs synchronously on the owner thread in both of this function's
+/// `Err` branches, which is what lets it report a refusal `attach_capture`
+/// cannot: see its doc. [`crate::EngineHandle::drain_engine_events`] is what
+/// turns a stored kind into the one `EngineEvent::StreamError` a host
+/// observes — never here, and never more than once per refusal.
 ///
 /// Nothing is published for an accepted open either. What the ring costs
 /// depends on the block the device turns out to deliver and the slice the
@@ -752,11 +795,15 @@ fn attach_capture<B: InputBackend>(
 /// the last thing that can fail. A feed that cannot reach the renderer is a
 /// ring nobody drains, which is exactly the state an unopened input leaves —
 /// so it takes the same route out, and the stream goes with it rather than
-/// writing into a ring whose consumer is about to be dropped.
+/// writing into a ring whose consumer is about to be dropped. It is stored
+/// under `BackendSpecific`: this crate has never observed it fire, so it
+/// carries no kind of its own, and `BackendSpecific` is the vocabulary's
+/// catch-all for exactly that case.
 fn capture_side<Stream>(
     attempt: Result<(Stream, CaptureFeed), InputOpenRefusal>,
     feed_tx: &mut Producer<CaptureFeed>,
     input_latency_slot: &AtomicUsize,
+    capture_refusal_slot: &AtomicU8,
 ) -> Option<Stream> {
     let (stream, feed) = match attempt {
         Ok(attached) => attached,
@@ -765,6 +812,7 @@ fn capture_side<Stream>(
             // stderr lock here and would be forbidden inside the callback.
             eprintln!("[Engine] Audio capture unavailable: {refusal:?}");
             input_latency_slot.store(0, Ordering::Relaxed);
+            capture_refusal_slot.store(refusal.stream_error_kind() as u8 + 1, Ordering::Relaxed);
             return None;
         }
     };
@@ -773,9 +821,14 @@ fn capture_side<Stream>(
         // Unreachable: the slot is built empty and one attach fills it once.
         // Reported rather than asserted because the failure is otherwise
         // silent — a running input stream feeding a renderer that never
-        // reads it.
+        // reads it. It is a refusal like any other, so it is stored the same
+        // way; see this function's doc for why `BackendSpecific`.
         eprintln!("[Engine] Audio capture unavailable: the render feed slot was already taken");
         input_latency_slot.store(0, Ordering::Relaxed);
+        capture_refusal_slot.store(
+            StreamErrorKind::BackendSpecific as u8 + 1,
+            Ordering::Relaxed,
+        );
         return None;
     }
 
@@ -803,6 +856,7 @@ fn capture_beside<Output, B: InputBackend>(
     engine_sample_rate: f32,
     input_latency_slot: &Arc<AtomicUsize>,
     feed_tx: &mut Producer<CaptureFeed>,
+    capture_refusal_slot: &Arc<AtomicU8>,
 ) -> Result<(Option<<B::Open as OpenInput>::Stream>, Output), String> {
     let output = output?;
     let capture = capture_event_tx.and_then(|tx| {
@@ -814,6 +868,7 @@ fn capture_beside<Output, B: InputBackend>(
             ),
             feed_tx,
             input_latency_slot,
+            capture_refusal_slot,
         )
     });
 
@@ -866,6 +921,7 @@ fn build_audio_stream(
     sample_rate_out: &OnceLock<f32>,
     bridge_round_trip_slot: Arc<AtomicUsize>,
     input_latency_slot: &Arc<AtomicUsize>,
+    capture_refusal_slot: &Arc<AtomicU8>,
 ) -> Result<OwnedDeviceStreams, String> {
     let open = PlatformOutputBackend::open_default_output(DeviceOpenRequest {
         force_default_period: force_default_buffer,
@@ -910,13 +966,15 @@ fn build_audio_stream(
         sample_rate,
         input_latency_slot,
         &mut capture_feed_tx,
+        capture_refusal_slot,
     )
 }
 
 #[cfg(test)]
 mod capture_seam_tests {
     use super::{
-        attach_capture, capture_beside, capture_side, new_input_latency_slot, CaptureFeed,
+        attach_capture, capture_beside, capture_side, new_capture_refusal_slot,
+        new_input_latency_slot, CaptureFeed,
     };
     use crate::capture::target_depth_frames;
     use crate::device::{
@@ -1027,12 +1085,14 @@ mod capture_seam_tests {
     #[test]
     fn a_refused_capture_open_yields_no_capture_side_and_no_latency() {
         let slot = new_input_latency_slot();
+        let refusal_slot = new_capture_refusal_slot();
         let (mut feed_tx, mut feed_rx) = feed_channel();
 
         let capture = capture_side(
             attach_capture::<AbsentInput>(ENGINE_RATE, error_sink(), Arc::clone(&slot)),
             &mut feed_tx,
             &slot,
+            &refusal_slot,
         );
 
         assert!(capture.is_none(), "no input device means no capture side");
@@ -1052,12 +1112,14 @@ mod capture_seam_tests {
     #[test]
     fn an_opened_capture_hands_the_renderer_the_feed_its_device_writes() {
         let slot = new_input_latency_slot();
+        let refusal_slot = new_capture_refusal_slot();
         let (mut feed_tx, mut feed_rx) = feed_channel();
 
         let stream = capture_side(
             attach_capture::<PresentInput>(ENGINE_RATE, error_sink(), Arc::clone(&slot)),
             &mut feed_tx,
             &slot,
+            &refusal_slot,
         );
 
         assert!(stream.is_some(), "a present input device opens");
@@ -1074,6 +1136,7 @@ mod capture_seam_tests {
     #[test]
     fn a_feed_that_cannot_reach_the_renderer_yields_no_capture_side() {
         let slot = new_input_latency_slot();
+        let refusal_slot = new_capture_refusal_slot();
         let (mut feed_tx, _feed_rx) = feed_channel();
         let (_taken, feed) =
             attach_capture::<PresentInput>(ENGINE_RATE, error_sink(), Arc::clone(&slot))
@@ -1084,6 +1147,7 @@ mod capture_seam_tests {
             attach_capture::<PresentInput>(ENGINE_RATE, error_sink(), Arc::clone(&slot)),
             &mut feed_tx,
             &slot,
+            &refusal_slot,
         );
 
         assert!(stream.is_none(), "a feed with no reader is not a capture");
@@ -1097,12 +1161,14 @@ mod capture_seam_tests {
     #[test]
     fn an_opened_capture_publishes_the_latency_its_ring_settles_at() {
         let slot = new_input_latency_slot();
+        let refusal_slot = new_capture_refusal_slot();
         let (mut feed_tx, mut feed_rx) = feed_channel();
 
         capture_side(
             attach_capture::<PresentInput>(ENGINE_RATE, error_sink(), Arc::clone(&slot)),
             &mut feed_tx,
             &slot,
+            &refusal_slot,
         )
         .expect("a present input device opens");
         let mut feed = feed_rx.pop().expect("the renderer's slot holds the feed");
@@ -1137,6 +1203,7 @@ mod capture_seam_tests {
     #[test]
     fn an_output_that_never_started_never_reaches_the_input_device() {
         let slot = new_input_latency_slot();
+        let refusal_slot = new_capture_refusal_slot();
         let (tx, _rx) = engine_event_channel();
         let (mut feed_tx, _feed_rx) = feed_channel();
         let before = OPENS_ATTEMPTED.load(Ordering::Relaxed);
@@ -1147,6 +1214,7 @@ mod capture_seam_tests {
             ENGINE_RATE,
             &slot,
             &mut feed_tx,
+            &refusal_slot,
         );
 
         assert!(built.is_err(), "a failed output build stays failed");
@@ -1163,13 +1231,20 @@ mod capture_seam_tests {
     #[test]
     fn a_started_output_is_what_lets_the_input_open() {
         let slot = new_input_latency_slot();
+        let refusal_slot = new_capture_refusal_slot();
         let (tx, _rx) = engine_event_channel();
         let before = OPENS_ATTEMPTED.load(Ordering::Relaxed);
 
         let (mut feed_tx, mut feed_rx) = feed_channel();
-        let (capture, ()) =
-            capture_beside::<(), CountedInput>(Ok(()), Some(tx), ENGINE_RATE, &slot, &mut feed_tx)
-                .expect("a started output build stays started");
+        let (capture, ()) = capture_beside::<(), CountedInput>(
+            Ok(()),
+            Some(tx),
+            ENGINE_RATE,
+            &slot,
+            &mut feed_tx,
+            &refusal_slot,
+        )
+        .expect("a started output build stays started");
 
         assert!(capture.is_some());
         assert!(feed_rx.pop().is_ok(), "a started capture hands over a feed");
@@ -1181,12 +1256,19 @@ mod capture_seam_tests {
     #[test]
     fn a_caller_that_asked_for_no_capture_opens_no_input_device() {
         let slot = new_input_latency_slot();
+        let refusal_slot = new_capture_refusal_slot();
         let before = OPENS_ATTEMPTED.load(Ordering::Relaxed);
 
         let (mut feed_tx, mut feed_rx) = feed_channel();
-        let (capture, ()) =
-            capture_beside::<(), CountedInput>(Ok(()), None, ENGINE_RATE, &slot, &mut feed_tx)
-                .expect("a started output build stays started");
+        let (capture, ()) = capture_beside::<(), CountedInput>(
+            Ok(()),
+            None,
+            ENGINE_RATE,
+            &slot,
+            &mut feed_tx,
+            &refusal_slot,
+        )
+        .expect("a started output build stays started");
 
         assert!(capture.is_none());
         assert!(feed_rx.pop().is_err());
@@ -1207,6 +1289,108 @@ mod capture_seam_tests {
         assert_eq!(
             refusal.stream_error_kind(),
             StreamErrorKind::DeviceNotAvailable
+        );
+    }
+
+    /// A refused open is not silent, but the event ring is no longer where
+    /// it is named: `capture_side` stores the refusal's kind into the
+    /// capture refusal slot instead, because `attach_capture`'s `on_error`
+    /// cannot be trusted un-consumed once a refusal can also come from
+    /// `open.start` (see `attach_capture`'s doc). Nothing crosses the ring
+    /// for either refusal route. Mutation: delete the
+    /// `capture_refusal_slot.store(refusal.stream_error_kind() as u8 + 1,
+    /// Ordering::Relaxed)` call in `capture_side`'s open-refusal branch —
+    /// the slot then reads zero and this goes red.
+    #[test]
+    fn a_refused_capture_open_stores_device_not_available_and_crosses_no_event() {
+        let slot = new_input_latency_slot();
+        let refusal_slot = new_capture_refusal_slot();
+        let (tx, mut rx) = engine_event_channel();
+        let (mut feed_tx, _feed_rx) = feed_channel();
+
+        let capture = capture_side(
+            attach_capture::<AbsentInput>(
+                ENGINE_RATE,
+                super::stream_error_sink(StreamSide::Input, tx),
+                Arc::clone(&slot),
+            ),
+            &mut feed_tx,
+            &slot,
+            &refusal_slot,
+        );
+
+        assert!(capture.is_none(), "no input device means no capture side");
+        assert_eq!(
+            StreamErrorKind::from_slot(refusal_slot.load(Ordering::Relaxed)),
+            Some(StreamErrorKind::DeviceNotAvailable)
+        );
+        assert!(
+            rx.pop().is_err(),
+            "no refusal crosses the event ring; the slot is the whole report"
+        );
+    }
+
+    /// A machine whose input device opens cleanly but whose stream refuses
+    /// to start — the shape every remaining start-route refusal takes now
+    /// that the format check moved into `open_default_input`
+    /// (`cpal_backend::CpalInputBackend::open_default_input`): a backend
+    /// build error or a play error, both discovered only once `start` runs.
+    struct BusyStartInput;
+
+    struct BusyStartOpen(OpenTestInput);
+
+    impl InputBackend for BusyStartInput {
+        type Open = BusyStartOpen;
+
+        fn open_default_input(request: InputOpenRequest) -> Result<Self::Open, InputOpenRefusal> {
+            PresentInput::open_default_input(request).map(BusyStartOpen)
+        }
+    }
+
+    impl OpenInput for BusyStartOpen {
+        type Stream = ();
+
+        fn negotiated(&self) -> NegotiatedInput {
+            self.0.negotiated()
+        }
+
+        fn start(
+            self,
+            _capture: CaptureFn,
+            _on_error: StreamErrorFn,
+        ) -> Result<Self::Stream, InputOpenRefusal> {
+            Err(InputOpenRefusal::Backend(StreamErrorKind::DeviceBusy))
+        }
+    }
+
+    /// A start-route refusal is stored exactly like an open-route one:
+    /// `capture_side` does not, and does not need to, distinguish which
+    /// route produced the `Err` it was handed. Mutation: delete the
+    /// `capture_refusal_slot.store(refusal.stream_error_kind() as u8 + 1,
+    /// Ordering::Relaxed)` call in `capture_side`'s open-refusal branch —
+    /// this goes red.
+    #[test]
+    fn a_start_refusal_stores_device_busy_and_leaves_no_latency() {
+        let slot = new_input_latency_slot();
+        let refusal_slot = new_capture_refusal_slot();
+        let (mut feed_tx, _feed_rx) = feed_channel();
+
+        let capture = capture_side(
+            attach_capture::<BusyStartInput>(ENGINE_RATE, error_sink(), Arc::clone(&slot)),
+            &mut feed_tx,
+            &slot,
+            &refusal_slot,
+        );
+
+        assert!(capture.is_none(), "a start refusal yields no capture side");
+        assert_eq!(
+            slot.load(Ordering::Relaxed),
+            0,
+            "a refused start publishes no latency to compensate"
+        );
+        assert_eq!(
+            StreamErrorKind::from_slot(refusal_slot.load(Ordering::Relaxed)),
+            Some(StreamErrorKind::DeviceBusy)
         );
     }
 
