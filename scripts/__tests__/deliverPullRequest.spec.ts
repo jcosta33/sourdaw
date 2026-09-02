@@ -5889,6 +5889,33 @@ describe('pull-request delivery', () => {
         }
     });
 
+    it('refuses a BLOCKED head whose required checks are all green, blaming a review thread or another ruleset rule rather than a check', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-green-lock-'));
+        initializeDeliveryLockRepository(root);
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
+            headCheckRuns: [checkRun({ status: 'COMPLETED', conclusion: 'SUCCESS' })],
+            requiredStatusCheckContexts: ['Gate'],
+        });
+
+        try {
+            await expect(
+                withPullRequestDeliveryLock(root, 42, async ({ markRemoteMutationKnownAbsent }) => {
+                    deliverPullRequest(42, port, tracker, markRemoteMutationKnownAbsent);
+                })
+            ).rejects.toThrow(
+                'PR #42 merge state is BLOCKED although every required check succeeded; the block is an ' +
+                    'unresolved review thread, the review decision, or another ruleset rule'
+            );
+
+            expect(calls).not.toContain('add-receipt:42');
+            expect(calls).not.toContain('merge:42:head');
+            expect(deliveryLockExists(root, 42)).toBe(false);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('refuses a BLOCKED head even when the live ruleset cannot be read, naming the check(s) as unlistable', () => {
         const { port, calls } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],

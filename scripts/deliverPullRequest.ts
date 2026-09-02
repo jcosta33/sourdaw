@@ -338,15 +338,25 @@ function validateCiAdmission(pullRequest: PullRequestSnapshot, checks: CheckEvid
  * comment and a merge call on a 405 the ruleset already decided, and both of those calls mark the
  * remote mutation boundary, which is what strands the per-PR lock. Refusing here, before either call,
  * lets the lock release normally. The named checks are read best-effort, purely to make the refusal
- * legible; a read that fails still refuses on the `BLOCKED` state alone.
+ * legible, and the three outcomes say different things: a failed read cannot name anything; an
+ * unsatisfied set names what is still pending or failing; an empty set means every required check the
+ * ruleset names is already a settled success, so the block is something else the ruleset also
+ * enforces — an unresolved review thread, the review decision, or another rule entirely — and saying
+ * "could not be listed" there would be false, not just uninformative.
  */
 function validateAdvisoryMergeGate(pullRequest: PullRequestSnapshot, checks: CheckEvidencePort): void {
     if (pullRequest.mergeStateStatus !== BLOCKED_MERGE_STATE) {
         return;
     }
     const unsatisfied = unsatisfiedAdvisoryRequiredContexts(pullRequest, checks);
-    if (unsatisfied === undefined || unsatisfied.length === 0) {
+    if (unsatisfied === undefined) {
         fail(`PR #${pullRequest.number} merge state is BLOCKED and the required checks could not be listed`);
+    }
+    if (unsatisfied.length === 0) {
+        fail(
+            `PR #${pullRequest.number} merge state is BLOCKED although every required check succeeded; ` +
+                `the block is an unresolved review thread, the review decision, or another ruleset rule`
+        );
     }
     fail(`PR #${pullRequest.number} merge state is BLOCKED on required check(s): ${unsatisfied.join(', ')}`);
 }
