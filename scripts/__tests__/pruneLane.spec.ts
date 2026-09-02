@@ -110,6 +110,8 @@ describe('lane pruning', () => {
                 'electron/out/main.js',
                 'release/desktop/Sourdaw.zip',
                 '.vscode/settings.json',
+                'release/open-source-inventory.json',
+                'release/desktop-runtime-material.json',
             ],
         });
 
@@ -124,6 +126,8 @@ describe('lane pruning', () => {
             { lane: target, entry: 'test-results/run.json' },
             { lane: target, entry: '.DS_Store' },
             { lane: target, entry: '.agents/ui-scripts/shot.png' },
+            { lane: target, entry: 'electron/out/main.js' },
+            { lane: target, entry: 'release/desktop/Sourdaw.zip' },
         ]);
     });
 
@@ -279,6 +283,8 @@ describe('prunes a real worktree without touching git state', () => {
             git(['config', 'user.email', 'fixture@example.com']);
             writeFileSync(join(repository, '.gitignore'), 'node_modules/\ntarget/\ndist/\n.env\nelectron/out/\n');
             writeFileSync(join(repository, 'tracked.txt'), 'fixture\n');
+            mkdirSync(join(repository, 'release'), { recursive: true });
+            writeFileSync(join(repository, 'release/desktop-runtime-material.json'), '{}\n');
             git(['add', '.']);
             git(['commit', '-m', 'fixture']);
             mkdirSync(join(repository, '.agents/worktrees'), { recursive: true });
@@ -313,13 +319,14 @@ describe('prunes a real worktree without touching git state', () => {
 
             const deleted = pruneTarget(resolvedLane, port);
 
-            expect(deleted).toEqual(['dist/', 'node_modules/', 'target/']);
+            expect(deleted).toEqual(['dist/', 'electron/out/', 'node_modules/', 'target/']);
             expect(existsSync(join(lane, 'node_modules'))).toBe(false);
             expect(existsSync(join(lane, 'target'))).toBe(false);
             expect(existsSync(join(lane, 'dist'))).toBe(false);
+            expect(existsSync(join(lane, 'electron/out'))).toBe(false);
             expect(existsSync(join(lane, '.env'))).toBe(true);
-            expect(existsSync(join(lane, 'electron/out/main.js'))).toBe(true);
             expect(existsSync(join(lane, 'tracked.txt'))).toBe(true);
+            expect(existsSync(join(lane, 'release/desktop-runtime-material.json'))).toBe(true);
             // Pruning never touches git state: the lane stays registered, author-locked, and clean.
             const state = git(['worktree', 'list', '--porcelain']);
             expect(state).toContain(resolvedLane);

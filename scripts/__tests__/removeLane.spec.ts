@@ -17,6 +17,7 @@ import { describe, expect, it } from 'vitest';
 import { AUTHOR_BOT_NODE_ID } from '../githubAppIdentity.ts';
 import { supersessionCommentBody } from '../prContract.ts';
 import {
+    disposableIgnored,
     parseStrandArgs,
     parseWorktrees,
     removeLane,
@@ -156,6 +157,28 @@ function fakeStrandPort(input: FakeInput = {}) {
     };
     return { port, calls: base.calls, receipts, receiptFiles };
 }
+
+describe('disposableIgnored', () => {
+    it.each([
+        ['node_modules/', true],
+        ['.DS_Store', true],
+        ['electron/out/', true],
+        ['electron/out/main.js', true],
+        ['release/desktop/', true],
+        ['release/desktop/mac-arm64/Sourdaw.app', true],
+        ['crates/sourdaw-native/sourdaw-native.node', true],
+        ['release/', false],
+        ['release', false],
+        ['release/open-source-inventory.json', false],
+        ['release/desktop-runtime-material.json', false],
+        ['crates/sourdaw-native/src/lib.rs', false],
+        ['crates/other/x.node', false],
+        ['packages/electron/out/x', false],
+        ['.env', false],
+    ])('treats %s as disposable: %s', (path, expected) => {
+        expect(disposableIgnored(path)).toBe(expected);
+    });
+});
 
 describe('lane removal', () => {
     it('recognizes an aliased registered lane while preserving aliased safety boundaries', () => {
@@ -1111,8 +1134,16 @@ describe('lane-removal shell boundary', () => {
             git(['init', '-b', 'main']);
             git(['config', 'user.name', 'Fixture']);
             git(['config', 'user.email', 'fixture@example.com']);
-            writeFileSync(join(repository, '.gitignore'), 'node_modules/\n.env\n');
+            writeFileSync(join(repository, '.gitignore'), 'node_modules/\n.env\nelectron/out/\nrelease/desktop/\n');
             writeFileSync(join(repository, 'tracked.txt'), 'fixture\n');
+            // A tracked sibling inside each ignored directory's parent, matching production
+            // (electron/ holds tracked shell code; release/ holds the tracked inventory), so
+            // `git ls-files --directory` cannot collapse the listing above `electron/out/` and
+            // `release/desktop/` themselves.
+            mkdirSync(join(repository, 'electron'), { recursive: true });
+            writeFileSync(join(repository, 'electron/main.ts'), 'fixture\n');
+            mkdirSync(join(repository, 'release'), { recursive: true });
+            writeFileSync(join(repository, 'release/open-source-inventory.json'), '{}\n');
             git(['add', '.']);
             git(['commit', '-m', 'fixture']);
             mkdirSync(join(repository, '.agents/worktrees'), { recursive: true });
@@ -1154,6 +1185,10 @@ describe('lane-removal shell boundary', () => {
             rmSync(join(lane, '.env'));
             mkdirSync(join(lane, 'node_modules'), { recursive: true });
             writeFileSync(join(lane, 'node_modules/cache'), 'generated\n');
+            mkdirSync(join(lane, 'electron/out'), { recursive: true });
+            writeFileSync(join(lane, 'electron/out/main.js'), 'generated\n');
+            mkdirSync(join(lane, 'release/desktop/mac-arm64'), { recursive: true });
+            writeFileSync(join(lane, 'release/desktop/mac-arm64/app'), 'generated\n');
             removeLane(resolvedLane, port);
             expect(existsSync(lane)).toBe(false);
         } finally {
