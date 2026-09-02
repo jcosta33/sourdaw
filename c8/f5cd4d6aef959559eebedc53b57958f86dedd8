@@ -1,0 +1,28 @@
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_a40848e8f8cca9::t_558e7186b3c3f8 1221-1223
+  s_a40848e8f8cca9::t_7acbf75b3509cf 1302-1306
+  s_a40848e8f8cca9::t_acb831f3631cfc 1475-1480
+  s_a40848e8f8cca9::t_a1cb8e585f7640 1481-1486
+  s_a40848e8f8cca9::t_000eff08f457f5 1152-1165,1167-1170
+  s_a40848e8f8cca9::t_8a29761bda2816 1466-1474,1487-1490
+  s_a40848e8f8cca9::t_95716b88e1ff4b 996,1042,1122,1132-1135,1138-1140,1147,1166,1232,1247,1249,1269-1272,1276,1278
+  s_a40848e8f8cca9::t_d3a83a9a5fc322 1297
+  s_a40848e8f8cca9::t_ce631c51e48755 1119-1121,1123-1131,1136-1137,1141-1146,1148-1151,1171-1220,1224-1231,1233-1246,1248,1250-1256,1277,1279
+  s_a40848e8f8cca9::t_f5ceef8c620599 1268,1491-1492
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "c8f5cd4d6aef959559eebedc53b57958f86dedd8",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
