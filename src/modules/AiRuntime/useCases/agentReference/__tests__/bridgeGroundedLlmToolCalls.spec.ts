@@ -2699,9 +2699,13 @@ describe('bridgeGroundedLlmToolCalls', () => {
     );
 
     it('grounds explicit solo-safe polarity and targetless clear-all intent', () => {
+        const unnamed = createTrack({ id: 'track-unnamed', name: 'Unnamed' });
         const soloedContext = {
             ...projectContext,
-            tracks: projectContext.tracks.map((track) => (track.id === vocals.id ? { ...track, soloed: true } : track)),
+            tracks: [
+                ...projectContext.tracks.map((track) => (track.id === vocals.id ? { ...track, soloed: true } : track)),
+                unnamed,
+            ],
         };
         const enable = bridge(
             [{ name: 'setSoloSafe', arguments: { trackId: vocals.id, soloSafe: true } }],
@@ -2811,6 +2815,9 @@ describe('bridgeGroundedLlmToolCalls', () => {
             'clear all solos with exception of Unnamed',
             'clear all solos with the exception of Unnamed',
             'clear all solos all but Unnamed',
+            'clear all solos but Unnamed',
+            'clear all solos, Unnamed stays soloed',
+            'clear all solos; Unnamed remains',
             'clear all solos but not Unnamed',
             'clear all solos not including Unnamed',
             'clear all solos but keep Unnamed soloed',
@@ -2923,6 +2930,37 @@ describe('bridgeGroundedLlmToolCalls', () => {
         }
     });
 
+    it('rejects leftover restricted clear-solos when a later catalog intent follows Unnamed', () => {
+        const unnamed = createTrack({ id: 'track-unnamed', name: 'Unnamed' });
+        const leftoverContext = {
+            ...projectContext,
+            tracks: [unnamed, guitar, master].map((track) => ({ ...track, soloed: true })),
+        };
+        const leftoverPrompts = [
+            'clear all solos but Unnamed and mute Guitar',
+            'clear all solos, Unnamed stays soloed, and mute Guitar',
+        ] as const;
+        for (const prompt of leftoverPrompts) {
+            const result = bridge(
+                [
+                    { name: 'clearSolos', arguments: {} },
+                    { name: 'muteTrack', arguments: { trackId: guitar.id, muted: true } },
+                ],
+                prompt,
+                leftoverContext
+            );
+            expect(
+                result.actions.filter((action) => action.type === 'clearSolos'),
+                prompt
+            ).toEqual([]);
+            expect(result.rejections, prompt).toContainEqual({
+                index: 0,
+                name: 'clearSolos',
+                reason: 'Provider clear-solos scope is not explicitly universal',
+            });
+        }
+    });
+
     it('binds clear-solo restrictions to the action span they qualify', () => {
         const bass = createTrack({ id: 'track-bass', name: 'Bass' });
         const soloedContext = {
@@ -2954,6 +2992,185 @@ describe('bridgeGroundedLlmToolCalls', () => {
         ]) {
             expect(bridge([{ name: 'clearSolos', arguments: {} }], prompt, soloedContext).actions, prompt).toEqual([
                 { type: 'clearSolos' },
+            ]);
+        }
+    });
+
+    it('rejects restricted mute and solo not-including scopes', () => {
+        const restrictedMutePrompts = [
+            'mute all tracks not including Vocals',
+            'mute all tracks except Vocals',
+            'mute all tracks excluding Vocals',
+            'mute all tracks all but Vocals',
+            'mute all tracks besides Vocals',
+            'mute all tracks minus Vocals',
+            'mute all tracks other than Vocals',
+            'mute all tracks rather than Vocals',
+            'mute all tracks apart from Vocals',
+            'mute all tracks save for Vocals',
+            'mute all tracks with exception of Vocals',
+            'mute all tracks with the exception of Vocals',
+        ];
+        const restrictedSoloPrompts = [
+            'solo all tracks not including Vocals',
+            'solo all tracks except Vocals',
+            'solo all tracks excluding Vocals',
+            'solo all tracks all but Vocals',
+            'solo all tracks besides Vocals',
+            'solo all tracks minus Vocals',
+            'solo all tracks other than Vocals',
+            'solo all tracks rather than Vocals',
+            'solo all tracks apart from Vocals',
+            'solo all tracks save for Vocals',
+            'solo all tracks with exception of Vocals',
+            'solo all tracks with the exception of Vocals',
+        ];
+
+        for (const prompt of restrictedMutePrompts) {
+            expect(bridge([{ name: 'muteTrack', arguments: { trackId: vocals.id, muted: true } }], prompt)).toEqual({
+                actions: [],
+                rejections: [
+                    {
+                        index: 0,
+                        name: 'muteTrack',
+                        reason: 'Provider mute scope is not explicitly universal',
+                    },
+                ],
+            });
+        }
+        for (const prompt of restrictedSoloPrompts) {
+            expect(bridge([{ name: 'soloTrack', arguments: { trackId: vocals.id, soloed: true } }], prompt)).toEqual({
+                actions: [],
+                rejections: [
+                    {
+                        index: 0,
+                        name: 'soloTrack',
+                        reason: 'Provider solo scope is not explicitly universal',
+                    },
+                ],
+            });
+        }
+    });
+
+    it('rejects leftover mute and solo scopes that remain after the universal clause', () => {
+        const leftoverMutePrompts = [
+            'mute all tracks but Vocals',
+            'mute all tracks, Vocals stays unmuted',
+            'mute all tracks; Vocals remains',
+        ];
+        const leftoverSoloPrompts = [
+            'solo all tracks but Vocals',
+            'solo all tracks, Vocals stays unmuted',
+            'solo all tracks; Vocals remains',
+        ];
+
+        for (const prompt of leftoverMutePrompts) {
+            expect(bridge([{ name: 'muteTrack', arguments: { trackId: vocals.id, muted: true } }], prompt)).toEqual({
+                actions: [],
+                rejections: [
+                    {
+                        index: 0,
+                        name: 'muteTrack',
+                        reason: 'Provider mute scope is not explicitly universal',
+                    },
+                ],
+            });
+        }
+        for (const prompt of leftoverSoloPrompts) {
+            expect(bridge([{ name: 'soloTrack', arguments: { trackId: vocals.id, soloed: true } }], prompt)).toEqual({
+                actions: [],
+                rejections: [
+                    {
+                        index: 0,
+                        name: 'soloTrack',
+                        reason: 'Provider solo scope is not explicitly universal',
+                    },
+                ],
+            });
+        }
+    });
+
+    it('rejects leftover mute and solo scopes after compiler-expanded kind-audio selectors', () => {
+        const leftoverPrompts = [
+            'mute all audio tracks but Vocals',
+            'mute all tracks, Vocals stays unmuted',
+            'mute all tracks; Vocals remains',
+            'solo all audio tracks but Vocals',
+        ] as const;
+        for (const prompt of leftoverPrompts) {
+            const actionName = prompt.startsWith('solo') ? 'soloTrack' : 'muteTrack';
+            const compiled = compileArbitraryCommandList({
+                context: projectContext,
+                revision: 'revision-leftover-mute-solo',
+                calls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: {
+                                semantic: { classification: 'simple', uncertainty: [] },
+                                objective: prompt,
+                                constraints: [],
+                                scope: {
+                                    targetIds: [vocals.id, guitar.id],
+                                    targetRanges: [],
+                                    protectedTargetIds: [],
+                                    protectedRanges: [],
+                                },
+                                capabilityIds: [],
+                                assetIds: [],
+                                alternatives: [],
+                                validationStrategy: [],
+                                stoppingConditions: [],
+                            },
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'bulk-audio-tracks',
+                                        name: actionName,
+                                        arguments: actionName === 'soloTrack' ? { soloed: true } : { muted: true },
+                                        selector: {
+                                            targetArgument: 'trackId',
+                                            entity: 'track',
+                                            where: { kind: 'audio' },
+                                            quantity: { unit: 'targets', exactly: 2 },
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            });
+            if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+                throw new Error(compiled.status === 'rejected' ? compiled.reason : 'Expected compiler evidence');
+            }
+            expect(
+                compiled.compilerEvidence.commands.map((command) => ({
+                    name: command.name,
+                    trackId: command.arguments.trackId,
+                }))
+            ).toEqual([
+                { name: actionName, trackId: vocals.id },
+                { name: actionName, trackId: guitar.id },
+            ]);
+            const result = bridgeGroundedLlmToolCalls({
+                calls: compiled.compilerEvidence.commands,
+                compilerEvidence: compiled.compilerEvidence,
+                context: projectContext,
+                projectRevision: 'revision-leftover-mute-solo',
+                prompt,
+            });
+            const expectedReason =
+                actionName === 'soloTrack'
+                    ? 'Provider solo scope is not explicitly universal'
+                    : 'Provider mute scope is not explicitly universal';
+            expect(
+                result.actions.filter((action) => action.type === 'muteTrack' || action.type === 'soloTrack')
+            ).toEqual([]);
+            expect(result.rejections).toEqual([
+                { index: 0, name: actionName, reason: expectedReason },
+                { index: 1, name: actionName, reason: expectedReason },
             ]);
         }
     });
@@ -3625,6 +3842,473 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(ambiguousMasterName.actions).toEqual([]);
         expect(selectedMasterNamedBus.actions).toEqual([
             { type: 'removeTrack', payload: { trackId: masterNamedBus.id } },
+        ]);
+    });
+
+    it('rejects a single removeTrack when the prompt cites both an independent name and a literal id', () => {
+        const independentNameContext = {
+            ...projectContext,
+            tracks: [
+                createTrack({ id: 'track-guitar', name: 'Bass' }),
+                createTrack({ id: 'track-keys', name: 'Guitar' }),
+                master,
+            ],
+        };
+        const named = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: 'track-keys' } }],
+            'delete Guitar and track-guitar',
+            independentNameContext
+        );
+        const literal = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: 'track-guitar' } }],
+            'delete Guitar and track-guitar',
+            independentNameContext
+        );
+
+        expect(named.actions).toEqual([]);
+        expect(literal.actions).toEqual([]);
+        expect(named.rejections).toEqual([
+            {
+                index: 0,
+                name: 'removeTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+        expect(literal.rejections).toEqual([
+            {
+                index: 0,
+                name: 'removeTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+    });
+
+    it('rejects a single removeTrack when Guitar and a hyphenated track-lead-guitar id are both cited', () => {
+        const nestedNameContext = {
+            ...projectContext,
+            tracks: [
+                createTrack({ id: 'track-lead-guitar', name: 'Rhythm' }),
+                createTrack({ id: 'track-keys', name: 'Guitar' }),
+                master,
+            ],
+        };
+        const named = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: 'track-keys' } }],
+            'delete Guitar and track-lead-guitar',
+            nestedNameContext
+        );
+        const literal = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: 'track-lead-guitar' } }],
+            'delete Guitar and track-lead-guitar',
+            nestedNameContext
+        );
+        expect(named.actions).toEqual([]);
+        expect(literal.actions).toEqual([]);
+        expect(named.rejections).toEqual([
+            {
+                index: 0,
+                name: 'removeTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+        expect(literal.rejections).toEqual([
+            {
+                index: 0,
+                name: 'removeTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+    });
+
+    it('rejects a single removeTrack when a spaced nested name and a hyphenated literal id are both cited', () => {
+        const spacedNestedNameContext = {
+            ...projectContext,
+            tracks: [
+                createTrack({ id: 'track-lead-guitar', name: 'Rhythm' }),
+                createTrack({ id: 'track-aux', name: 'Lead Guitar' }),
+                master,
+            ],
+        };
+        const named = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: 'track-aux' } }],
+            'delete Lead Guitar and track-lead-guitar',
+            spacedNestedNameContext
+        );
+        const literal = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: 'track-lead-guitar' } }],
+            'delete Lead Guitar and track-lead-guitar',
+            spacedNestedNameContext
+        );
+
+        expect(named.actions).toEqual([]);
+        expect(literal.actions).toEqual([]);
+        expect(named.rejections).toEqual([
+            {
+                index: 0,
+                name: 'removeTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+        expect(literal.rejections).toEqual([
+            {
+                index: 0,
+                name: 'removeTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+    });
+
+    it('rejects a single removeTrack when a slash-collapsed nested name and a hyphenated literal id are both cited', () => {
+        const slashNestedNameContext = {
+            ...projectContext,
+            tracks: [
+                createTrack({ id: 'track-lead-guitar', name: 'Rhythm' }),
+                createTrack({ id: 'track-aux', name: 'Lead Guitar' }),
+                master,
+            ],
+        };
+        const named = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: 'track-aux' } }],
+            'delete Lead/Guitar and track-lead-guitar',
+            slashNestedNameContext
+        );
+        const literal = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: 'track-lead-guitar' } }],
+            'delete Lead/Guitar and track-lead-guitar',
+            slashNestedNameContext
+        );
+
+        expect(named.actions).toEqual([]);
+        expect(literal.actions).toEqual([]);
+        expect(named.rejections).toEqual([
+            {
+                index: 0,
+                name: 'removeTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+        expect(literal.rejections).toEqual([
+            {
+                index: 0,
+                name: 'removeTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+    });
+
+    it('rejects muteTrack and soloTrack when a slash or spaced nested name and a hyphenated literal id are both cited', () => {
+        const dualCitationContext = {
+            ...projectContext,
+            tracks: [
+                createTrack({ id: 'track-lead-guitar', name: 'Rhythm' }),
+                createTrack({ id: 'track-aux', name: 'Lead Guitar' }),
+                master,
+            ],
+        };
+        const prompts = ['mute Lead/Guitar and track-lead-guitar', 'mute Lead Guitar and track-lead-guitar'] as const;
+        const soloPrompts = [
+            'solo Lead/Guitar and track-lead-guitar',
+            'solo Lead Guitar and track-lead-guitar',
+        ] as const;
+
+        for (const prompt of prompts) {
+            const named = bridge(
+                [{ name: 'muteTrack', arguments: { trackId: 'track-aux', muted: true } }],
+                prompt,
+                dualCitationContext
+            );
+            const literal = bridge(
+                [{ name: 'muteTrack', arguments: { trackId: 'track-lead-guitar', muted: true } }],
+                prompt,
+                dualCitationContext
+            );
+            expect(named.actions).toEqual([]);
+            expect(literal.actions).toEqual([]);
+            expect(named.rejections).toEqual([
+                {
+                    index: 0,
+                    name: 'muteTrack',
+                    reason: 'Target trackId is ambiguous in the user request',
+                },
+            ]);
+            expect(literal.rejections).toEqual([
+                {
+                    index: 0,
+                    name: 'muteTrack',
+                    reason: 'Target trackId is ambiguous in the user request',
+                },
+            ]);
+        }
+        for (const prompt of soloPrompts) {
+            const named = bridge(
+                [{ name: 'soloTrack', arguments: { trackId: 'track-aux', soloed: true } }],
+                prompt,
+                dualCitationContext
+            );
+            const literal = bridge(
+                [{ name: 'soloTrack', arguments: { trackId: 'track-lead-guitar', soloed: true } }],
+                prompt,
+                dualCitationContext
+            );
+            expect(named.actions).toEqual([]);
+            expect(literal.actions).toEqual([]);
+            expect(named.rejections).toEqual([
+                {
+                    index: 0,
+                    name: 'soloTrack',
+                    reason: 'Target trackId is ambiguous in the user request',
+                },
+            ]);
+            expect(literal.rejections).toEqual([
+                {
+                    index: 0,
+                    name: 'soloTrack',
+                    reason: 'Target trackId is ambiguous in the user request',
+                },
+            ]);
+        }
+    });
+
+    it('rejects muteTrack and soloTrack dual citations when the plan also sets tempo', () => {
+        const dualCitationContext = {
+            ...projectContext,
+            tracks: [
+                createTrack({ id: 'track-lead-guitar', name: 'Rhythm' }),
+                createTrack({ id: 'track-aux', name: 'Lead Guitar' }),
+                master,
+            ],
+        };
+        const mutePrompts = [
+            'mute Lead/Guitar and track-lead-guitar and set tempo to 120',
+            'mute Lead Guitar and track-lead-guitar and set tempo to 120',
+        ] as const;
+        const soloPrompts = [
+            'solo Lead/Guitar and track-lead-guitar and set tempo to 120',
+            'solo Lead Guitar and track-lead-guitar and set tempo to 120',
+        ] as const;
+
+        for (const prompt of mutePrompts) {
+            for (const trackId of ['track-aux', 'track-lead-guitar'] as const) {
+                const result = bridge(
+                    [
+                        { name: 'muteTrack', arguments: { trackId, muted: true } },
+                        { name: 'setTempo', arguments: { bpm: 120 } },
+                    ],
+                    prompt,
+                    dualCitationContext
+                );
+                expect(result.actions.filter((action) => action.type === 'muteTrack')).toEqual([]);
+                expect(result.rejections).toContainEqual({
+                    index: 0,
+                    name: 'muteTrack',
+                    reason: 'Target trackId is ambiguous in the user request',
+                });
+            }
+        }
+        for (const prompt of soloPrompts) {
+            for (const trackId of ['track-aux', 'track-lead-guitar'] as const) {
+                const result = bridge(
+                    [
+                        { name: 'soloTrack', arguments: { trackId, soloed: true } },
+                        { name: 'setTempo', arguments: { bpm: 120 } },
+                    ],
+                    prompt,
+                    dualCitationContext
+                );
+                expect(result.actions.filter((action) => action.type === 'soloTrack')).toEqual([]);
+                expect(result.rejections).toContainEqual({
+                    index: 0,
+                    name: 'soloTrack',
+                    reason: 'Target trackId is ambiguous in the user request',
+                });
+            }
+        }
+    });
+
+    it('rejects compiler-expanded muteTrack and soloTrack when a slash or spaced nested name and a hyphenated literal id are both cited', () => {
+        const dualCitationContext = {
+            ...projectContext,
+            tracks: [
+                createTrack({ id: 'track-lead-guitar', name: 'Rhythm' }),
+                createTrack({ id: 'track-aux', name: 'Lead Guitar' }),
+                vocals,
+                master,
+            ],
+        };
+        const leftoverPrompts = [
+            'mute Lead/Guitar and track-lead-guitar',
+            'mute Lead Guitar and track-lead-guitar',
+            'solo Lead/Guitar and track-lead-guitar',
+            'solo Lead Guitar and track-lead-guitar',
+        ] as const;
+        const expandedTrackIds = ['track-lead-guitar', 'track-aux', vocals.id] as const;
+        for (const prompt of leftoverPrompts) {
+            const actionName = prompt.startsWith('solo') ? 'soloTrack' : 'muteTrack';
+            const compiled = compileArbitraryCommandList({
+                context: dualCitationContext,
+                revision: 'revision-dual-citation-mute-solo',
+                calls: [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: {
+                                semantic: { classification: 'simple', uncertainty: [] },
+                                objective: prompt,
+                                constraints: [],
+                                scope: {
+                                    targetIds: [...expandedTrackIds],
+                                    targetRanges: [],
+                                    protectedTargetIds: [],
+                                    protectedRanges: [],
+                                },
+                                capabilityIds: [],
+                                assetIds: [],
+                                alternatives: [],
+                                validationStrategy: [],
+                                stoppingConditions: [],
+                            },
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'bulk-audio-tracks',
+                                        name: actionName,
+                                        arguments: actionName === 'soloTrack' ? { soloed: true } : { muted: true },
+                                        selector: {
+                                            targetArgument: 'trackId',
+                                            entity: 'track',
+                                            where: { kind: 'audio' },
+                                            quantity: { unit: 'targets', exactly: 3 },
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            });
+            if (compiled.status !== 'accepted' || compiled.compilerEvidence === undefined) {
+                throw new Error(compiled.status === 'rejected' ? compiled.reason : 'Expected compiler evidence');
+            }
+            expect(
+                compiled.compilerEvidence.commands.map((command) => ({
+                    name: command.name,
+                    trackId: command.arguments.trackId,
+                }))
+            ).toEqual(expandedTrackIds.map((trackId) => ({ name: actionName, trackId })));
+            const result = bridgeGroundedLlmToolCalls({
+                calls: compiled.compilerEvidence.commands,
+                compilerEvidence: compiled.compilerEvidence,
+                context: dualCitationContext,
+                projectRevision: 'revision-dual-citation-mute-solo',
+                prompt,
+            });
+            expect(
+                result.actions.filter((action) => action.type === 'muteTrack' || action.type === 'soloTrack')
+            ).toEqual([]);
+            expect(result.rejections).toEqual(
+                expandedTrackIds.map((_, index) => ({
+                    index,
+                    name: actionName,
+                    reason: 'Target trackId is ambiguous in the user request',
+                }))
+            );
+        }
+    });
+
+    it('grounds muteTrack to the exact name when a whitespace-separated kind and name is not a hyphenated id', () => {
+        const spacedKindNameContext = {
+            ...projectContext,
+            tracks: [
+                createTrack({ id: 'track-guitar', name: 'Bass' }),
+                createTrack({ id: 'track-keys', name: 'Guitar' }),
+                master,
+            ],
+        };
+        const literal = bridge(
+            [{ name: 'muteTrack', arguments: { trackId: 'track-guitar', muted: true } }],
+            'mute track Guitar',
+            spacedKindNameContext
+        );
+        const named = bridge(
+            [{ name: 'muteTrack', arguments: { trackId: 'track-keys', muted: true } }],
+            'mute track Guitar',
+            spacedKindNameContext
+        );
+
+        expect(literal.actions).toEqual([]);
+        expect(named.actions).toEqual([{ type: 'muteTrack', payload: { trackId: 'track-keys', muted: true } }]);
+        expect(literal.rejections).toEqual([
+            {
+                index: 0,
+                name: 'muteTrack',
+                reason: 'Provider target trackId does not match the uniquely grounded project reference',
+            },
+        ]);
+        expect(named.rejections).toEqual([]);
+    });
+
+    it('rejects a single removeTrack when a hyphenated literal id and a name are split by list punctuation', () => {
+        const punctuationContext = {
+            ...projectContext,
+            tracks: [
+                createTrack({ id: 'track-lead-guitar', name: 'Rhythm' }),
+                createTrack({ id: 'track-keys', name: 'Guitar' }),
+                master,
+            ],
+        };
+        const slashLiteral = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: 'track-lead-guitar' } }],
+            'delete track-lead-guitar / Guitar',
+            punctuationContext
+        );
+        const slashNamed = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: 'track-keys' } }],
+            'delete track-lead-guitar / Guitar',
+            punctuationContext
+        );
+        const commaLiteral = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: 'track-lead-guitar' } }],
+            'delete track-lead-guitar, Guitar',
+            punctuationContext
+        );
+        const commaNamed = bridge(
+            [{ name: 'removeTrack', arguments: { trackId: 'track-keys' } }],
+            'delete track-lead-guitar, Guitar',
+            punctuationContext
+        );
+
+        expect(slashLiteral.actions).toEqual([]);
+        expect(slashNamed.actions).toEqual([]);
+        expect(commaLiteral.actions).toEqual([]);
+        expect(commaNamed.actions).toEqual([]);
+        expect(slashLiteral.rejections).toEqual([
+            {
+                index: 0,
+                name: 'removeTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+        expect(slashNamed.rejections).toEqual([
+            {
+                index: 0,
+                name: 'removeTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+        expect(commaLiteral.rejections).toEqual([
+            {
+                index: 0,
+                name: 'removeTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+        expect(commaNamed.rejections).toEqual([
+            {
+                index: 0,
+                name: 'removeTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
         ]);
     });
 
