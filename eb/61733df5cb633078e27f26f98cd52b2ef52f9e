@@ -1,0 +1,23 @@
+docs/06-testing.md
+  s_64e02c50bf88e9::t_5eb64f0f0efc19 99,101,103
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_64e02c50bf88e9::t_7e9e5a9fd0a068 7887,8015,8087,8124,8204-8205,8264,8308,8362,8439-8440,8593-8594,8669,8697,8724,8762,8834-8835,8866,8910,8947,8984,9011,9034
+scripts/__tests__/publishReview.spec.ts
+  s_64e02c50bf88e9::t_fd37337ce0c61c 311-421
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "eb61733df5cb633078e27f26f98cd52b2ef52f9e",
+  "prompts": {},
+  "sessions": {
+    "s_64e02c50bf88e9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a6e1b7b8d56ce0499",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
