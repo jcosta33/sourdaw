@@ -7,6 +7,9 @@ const root = document.getElementById('root')!;
 function paintAppShellMarker(container: HTMLElement): void {
     const shell = document.createElement('div');
     shell.setAttribute('data-testid', 'app-shell');
+    shell.style.width = '100vw';
+    shell.style.height = '100vh';
+    shell.style.overflow = 'hidden';
     container.replaceChildren(shell);
 }
 

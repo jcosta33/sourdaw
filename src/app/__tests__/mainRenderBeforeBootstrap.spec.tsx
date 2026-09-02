@@ -205,7 +205,13 @@ function expectAppShellMarkerInRoot(): void {
     if (root === null) {
         throw new Error('#root was not mounted');
     }
-    expect(root.querySelector('[data-testid="app-shell"]')).not.toBeNull();
+    const shell = root.querySelector('[data-testid="app-shell"]');
+    expect(shell).not.toBeNull();
+    if (!(shell instanceof HTMLElement)) {
+        throw new Error('app-shell marker was not an HTMLElement');
+    }
+    expect(shell.style.width).toBe('100vw');
+    expect(shell.style.height).toBe('100vh');
 }
 
 function expectMountBusesBoundBeforeRender(): void {
