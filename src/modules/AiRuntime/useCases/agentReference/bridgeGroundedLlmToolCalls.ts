@@ -1660,24 +1660,51 @@ function resolveActionPromptScope({
     return selectedScope;
 }
 
-function isTrackControlProtectionQualifier(clauseText: string): boolean {
+function isTrackControlProtectionVerb(normalized: string): boolean {
+    return /^(?:leav(?:e|ing)|keep(?:ing)?|preserv(?:e|ing)|retain(?:ing)?)\b/u.test(normalized);
+}
+
+function clauseNamesProjectTrack(clauseText: string, tracks: readonly { id: string; name: string }[]): boolean {
     const normalized = normalizePromptText(clauseText);
-    return (
-        /^(?:leaving|keeping|preserving|retaining)\b/u.test(normalized) ||
-        /\b(?:stays|remains)\b/u.test(normalized) ||
-        /\bunchanged\b/u.test(normalized)
-    );
+    return tracks.some((track) => {
+        const references = [normalizePromptText(track.id), normalizePromptText(track.name)].filter(
+            (reference) => reference.length > 0
+        );
+        return references.some((reference) => normalized.includes(reference));
+    });
+}
+
+function isTrackControlProtectionQualifier(
+    clauseText: string,
+    tracks: readonly { id: string; name: string }[]
+): boolean {
+    const normalized = normalizePromptText(clauseText);
+    if (/\b(?:stays|remains)\b/u.test(normalized) || /\bunchanged\b/u.test(normalized)) {
+        return true;
+    }
+    return isTrackControlProtectionVerb(normalized) && clauseNamesProjectTrack(clauseText, tracks);
+}
+
+function stripTrackControlProtectionSpans(text: string): string {
+    const withoutGerund = text.replace(/\b(?:leaving|keeping|preserving|retaining)\b[\s\S]*$/iu, '').trim();
+    const withoutUnchanged = withoutGerund
+        .replace(/\b(?:leave|keep|preserve|retain)\b[\s\S]*\bunchanged\b[\s\S]*$/iu, '')
+        .trim();
+    return withoutUnchanged
+        .replace(/\b(?:leave|keep|preserve|retain)\b(?![\s\S]*\b(?:muted|unmuted|soloed|unsoloed)\b)[\s\S]*$/iu, '')
+        .trim();
 }
 
 function getTrackControlTargetPrompt(
     prompt: string,
     actionScope: ActionPromptScope,
-    catalog: GroundingCatalog
+    catalog: GroundingCatalog,
+    tracks: readonly { id: string; name: string }[]
 ): string {
     const clauses = getPromptClauses(prompt, prompt);
     const startIndex = clauses.findIndex((clause) => clause.text === actionScope.text);
     if (startIndex < 0) {
-        return prompt;
+        return stripTrackControlProtectionSpans(prompt);
     }
     let endIndex = startIndex;
     for (let index = startIndex + 1; index < clauses.length; index += 1) {
@@ -1686,7 +1713,7 @@ function getTrackControlTargetPrompt(
             !clause ||
             resolveClauseActionIntent(clause.masked, catalog) !== null ||
             collectClearSolosRestrictionClauses(`clear all solos ${clause.text}`).length > 0 ||
-            isTrackControlProtectionQualifier(clause.text)
+            isTrackControlProtectionQualifier(clause.text, tracks)
         ) {
             break;
         }
@@ -1697,7 +1724,7 @@ function getTrackControlTargetPrompt(
     for (const clause of clauses) {
         const start = prompt.indexOf(clause.text, searchFrom);
         if (start < 0) {
-            return actionScope.text;
+            return stripTrackControlProtectionSpans(actionScope.text);
         }
         ranges.push({ start, end: start + clause.text.length });
         searchFrom = start + clause.text.length;
@@ -1705,9 +1732,9 @@ function getTrackControlTargetPrompt(
     const start = ranges[startIndex]?.start;
     const end = ranges[endIndex]?.end;
     if (start === undefined || end === undefined || end < start) {
-        return actionScope.text;
+        return stripTrackControlProtectionSpans(actionScope.text);
     }
-    return prompt.slice(start, end);
+    return stripTrackControlProtectionSpans(prompt.slice(start, end));
 }
 
 function getTargetPromptScope(
@@ -3546,7 +3573,7 @@ function groundToolCall({
         if (call.name === 'removeTrack' || targetRule.capability === 'removable-track') {
             targetPrompt = prompt;
         } else if (call.name === 'muteTrack' || call.name === 'soloTrack') {
-            targetPrompt = getTrackControlTargetPrompt(prompt, actionScope, catalog);
+            targetPrompt = getTrackControlTargetPrompt(prompt, actionScope, catalog, context.tracks);
         }
         if (
             articulationTransferScope?.status === 'request' &&
