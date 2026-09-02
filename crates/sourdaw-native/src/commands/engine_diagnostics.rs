@@ -274,6 +274,12 @@ mod tests {
             unmatched_bridge_blocks: 7,
             bridge_backlog_blocks_shed: 8,
             callback_frames_over_bridge_reach: 9,
+            // The capture counters have no payload field yet; they are given
+            // distinct values so that the day one is wired, a mapping that
+            // reads the wrong snapshot field fails here rather than shipping.
+            capture_consumer_refusals: 10,
+            capture_blocks_dropped: 12,
+            capture_input_underruns: 13,
         };
 
         let diagnostics = running_engine_diagnostics(

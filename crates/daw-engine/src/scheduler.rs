@@ -1665,16 +1665,9 @@ impl AudioScheduler {
                 }
                 #[cfg(test)]
                 GraphCommand::RemovePlugin(id) => {
-                    self.unregister_capture_consumer(id);
                     self.remove_effect(id).map(RetiredGraphObjects::effect)
                 }
                 GraphCommand::RemovePluginWithBridge(id) => {
-                    // The bus holds ids, not instances, so a consumer left on
-                    // it after its plugin went would resolve to whatever id
-                    // reuse put in that slot next — or to nothing, counting a
-                    // dropped block every callback for the rest of the
-                    // session.
-                    self.unregister_capture_consumer(id);
                     RetiredGraphObjects::effect_with_bridge(
                         self.remove_effect(id),
                         self.remove_audio_bridge(id),
@@ -2225,7 +2218,18 @@ impl AudioScheduler {
     /// own order, every addressed command resolves through the id index, and
     /// the one iteration that reads slot order — the master insert loop —
     /// states its order contract on itself.
+    ///
+    /// This is where the input bus is pruned, because it is the one place an
+    /// effect is finally dropped — a plugin, a retired track device and a
+    /// retired bus device all leave through here. The bus holds ids, not
+    /// instances, so a consumer left on it after its effect went would resolve
+    /// to whatever id reuse puts in that slot next — or to nothing, counting a
+    /// dropped block every callback for the rest of the session. The prune
+    /// runs ahead of the lookup, so a removal for an id the table no longer
+    /// holds still clears the bus rather than stranding a registration that
+    /// arrived for an effect the graph never took.
     fn remove_effect(&mut self, id: usize) -> Option<ActiveEffect> {
+        self.unregister_capture_consumer(id);
         let slot = self.effect_index.delete(id)?;
         let old_tail = self.effects.len() - 1;
         self.parameter_work.remove(slot);
@@ -3054,6 +3058,7 @@ impl Drop for AudioScheduler {
 mod tests {
     use super::*;
     use crate::midi_fx::{MIDI_EVENT_BUFFER_CAPACITY, MIDI_FX_CHAIN_CAPACITY};
+    use crate::timeline::DeviceKind;
     use rtrb::RingBuffer;
     use std::any::Any;
     use std::sync::{
@@ -5045,7 +5050,9 @@ mod tests {
         assert_eq!(diagnostics.capture_input_underruns, 0);
     }
 
-    fn assert_removal_prunes_the_capture_bus(removal: GraphCommand) {
+    /// Register a consumer, place it however `placement` says, and assert the
+    /// bus is empty once `removal` has final-dropped it.
+    fn assert_removal_prunes_the_capture_bus(placement: Vec<GraphCommand>, removal: GraphCommand) {
         let (mut command_tx, mut scheduler, mut retired_rx) = create_scheduler();
         let tap = Arc::new(CaptureTap::default());
         command_tx
@@ -5057,6 +5064,9 @@ mod tests {
         command_tx
             .push(GraphCommand::RegisterCaptureConsumer(TAP_CONSUMER_ID))
             .unwrap();
+        for command in placement {
+            command_tx.push(command).unwrap();
+        }
         scheduler.update_graph();
 
         let audio = [0.5; 4];
@@ -5086,14 +5096,63 @@ mod tests {
 
     #[test]
     fn removing_a_plugin_takes_it_off_the_capture_bus() {
-        assert_removal_prunes_the_capture_bus(GraphCommand::RemovePlugin(TAP_CONSUMER_ID));
+        assert_removal_prunes_the_capture_bus(
+            Vec::new(),
+            GraphCommand::RemovePlugin(TAP_CONSUMER_ID),
+        );
     }
 
     #[test]
     fn removing_a_plugin_with_its_bridge_takes_it_off_the_capture_bus() {
-        assert_removal_prunes_the_capture_bus(GraphCommand::RemovePluginWithBridge(
-            TAP_CONSUMER_ID,
-        ));
+        assert_removal_prunes_the_capture_bus(
+            Vec::new(),
+            GraphCommand::RemovePluginWithBridge(TAP_CONSUMER_ID),
+        );
+    }
+
+    /// A consumer spliced onto a track chain leaves through the retired
+    /// variant, not through a plugin removal — the same final drop, so the
+    /// same prune has to cover it.
+    #[test]
+    fn retiring_a_track_device_takes_it_off_the_capture_bus() {
+        assert_removal_prunes_the_capture_bus(
+            vec![
+                GraphCommand::AddTrack(TimelineTrack::new(1)),
+                GraphCommand::InsertTrackDevice {
+                    track_id: 1,
+                    entry: ChainEntry {
+                        effect_id: TAP_CONSUMER_ID,
+                        kind: DeviceKind::Effect,
+                    },
+                    index: 0,
+                },
+            ],
+            GraphCommand::RemoveTrackDeviceRetired {
+                track_id: 1,
+                effect_id: TAP_CONSUMER_ID,
+            },
+        );
+    }
+
+    #[test]
+    fn retiring_a_bus_device_takes_it_off_the_capture_bus() {
+        assert_removal_prunes_the_capture_bus(
+            vec![
+                GraphCommand::AddBus(TimelineBus::new(50)),
+                GraphCommand::InsertBusDevice {
+                    bus_id: 50,
+                    entry: ChainEntry {
+                        effect_id: TAP_CONSUMER_ID,
+                        kind: DeviceKind::Effect,
+                    },
+                    index: 0,
+                },
+            ],
+            GraphCommand::RemoveBusDeviceRetired {
+                bus_id: 50,
+                effect_id: TAP_CONSUMER_ID,
+            },
+        );
     }
 
     /// Allocation guards for the command drain the audio callback runs.

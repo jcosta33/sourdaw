@@ -124,11 +124,15 @@ pub struct EngineHandle {
     /// The same shape of ledger as [`Self::effect_registrations`] and for the
     /// same reason: the callback's own refusal is a counter it cannot return
     /// to the caller who asked, so the ceiling is enforced where an `Err`
-    /// reaches that caller and the callback's refusal stays the last line. It
-    /// needs no reconciliation, though — a registration is refused here on
-    /// exactly the conditions the callback refuses on, and both read the same
-    /// ledger of ids rather than a count, so the two cannot disagree about
-    /// which ids are on the bus.
+    /// reaches that caller and the callback's refusal stays the last line.
+    ///
+    /// An id leaves this ledger on an unregistration and on every
+    /// plugin-removal command this handle sends, mirroring the callback, which
+    /// prunes the bus wherever an effect is finally dropped. Both rules are
+    /// needed: without the second one a plugin removed without being
+    /// unregistered first would hold a ledger slot for the life of the
+    /// session, and the handle would refuse a later registration the callback
+    /// would have taken.
     capture_consumers: Vec<usize>,
     midi_rt_diagnostics: ActiveMidiRtDiagnosticsReader,
     timeline_rt_diagnostics: TimelineRtDiagnosticsReader,
@@ -582,6 +586,16 @@ impl EngineHandle {
     /// the callback treats an unregistration for an id it does not hold as the
     /// no-op it is.
     pub fn unregister_capture_consumer(&mut self, plugin_id: usize) -> Result<(), String> {
+        self.prune_capture_consumer(plugin_id);
+        self.push(GraphCommand::UnregisterCaptureConsumer(plugin_id))
+    }
+
+    /// Take an id off the capture ledger, wherever it leaves the bus from.
+    ///
+    /// Two routes reach here: an explicit unregistration, and every command
+    /// that final-drops the plugin holding the slot, which [`Self::push`]
+    /// recognises as it goes onto the ring.
+    fn prune_capture_consumer(&mut self, plugin_id: usize) {
         if let Some(slot) = self
             .capture_consumers
             .iter()
@@ -589,7 +603,6 @@ impl EngineHandle {
         {
             self.capture_consumers.swap_remove(slot);
         }
-        self.push(GraphCommand::UnregisterCaptureConsumer(plugin_id))
     }
 
     /// Send a MIDI note event to a specific plugin (lock-free).
@@ -872,9 +885,16 @@ impl EngineHandle {
         if delta > 0 && self.effect_registrations + delta as usize > EFFECT_TABLE_CAPACITY {
             return Err(effect_table_full_error());
         }
+        // Read before the command is moved onto the ring, applied only once it
+        // is: the capture ledger follows what actually crossed, exactly as the
+        // effect ledger below does.
+        let final_dropped = final_dropped_effect_id(&command);
         self.command_tx
             .push(command)
             .map_err(|_| "Audio command queue full".to_string())?;
+        if let Some(id) = final_dropped {
+            self.prune_capture_consumer(id);
+        }
         if delta >= 0 {
             self.effect_registrations += delta as usize;
         } else {
@@ -903,6 +923,25 @@ fn effect_table_full_error() -> String {
         "effect-table-full: the engine already holds its maximum of {EFFECT_TABLE_CAPACITY} \
          native devices and plugins"
     )
+}
+
+/// The effect a command finally drops, if it drops one.
+///
+/// These are exactly the commands [`GraphCommand::effect_table_delta`] scores
+/// `-1`: the ones whose target the scheduler removes from the effect table
+/// rather than merely detaching, and so the ones whose target it also prunes
+/// off the input bus. The control-side capture ledger tracks that set, because
+/// an id left on it after its plugin went would refuse a later registration
+/// the callback would have taken.
+fn final_dropped_effect_id(command: &GraphCommand) -> Option<usize> {
+    match command {
+        GraphCommand::RemovePluginWithBridge(id) => Some(*id),
+        GraphCommand::RemoveTrackDeviceRetired { effect_id, .. }
+        | GraphCommand::RemoveBusDeviceRetired { effect_id, .. } => Some(*effect_id),
+        #[cfg(test)]
+        GraphCommand::RemovePlugin(id) => Some(*id),
+        _ => None,
+    }
 }
 
 /// The one wording for a refusal against the engine's input tap, so the control
@@ -1225,6 +1264,53 @@ mod tests {
         expected.push((false, 0));
         expected.push((true, CRUMBS_CAPTURE_RESERVE));
         assert_eq!(sent, expected);
+    }
+
+    /// Removing a plugin takes it off the bus on the callback, so the ledger
+    /// that guards the bus has to let it go too. A ledger that did not would
+    /// refuse the id for the life of the session, on behalf of a consumer the
+    /// callback stopped feeding the moment the removal drained.
+    #[test]
+    fn removing_a_plugin_frees_the_capture_ledger_slot_its_consumer_held() {
+        let (mut engine, mut command_rx, _retired_adoption_rx) =
+            engine_handle_for_command_capture(16);
+
+        engine
+            .register_capture_consumer(7)
+            .expect("an empty bus takes the first consumer");
+        engine.remove_plugin(7).expect("the plugin comes off");
+        engine
+            .register_capture_consumer(7)
+            .expect("the removal freed the id, so it registers again");
+
+        assert!(matches!(
+            command_rx.pop(),
+            Ok(GraphCommand::RegisterCaptureConsumer(7))
+        ));
+        assert!(matches!(
+            command_rx.pop(),
+            Ok(GraphCommand::RemovePluginWithBridge(7))
+        ));
+        assert!(matches!(
+            command_rx.pop(),
+            Ok(GraphCommand::RegisterCaptureConsumer(7))
+        ));
+    }
+
+    /// The reserve is a running capacity, not a lifetime budget: a session
+    /// that opens and closes recorders one at a time must keep working.
+    #[test]
+    fn the_capture_reserve_survives_a_full_cycle_of_removals() {
+        let (mut engine, _command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(64);
+
+        for id in 0..=CRUMBS_CAPTURE_RESERVE {
+            engine
+                .register_capture_consumer(id)
+                .unwrap_or_else(|error| panic!("consumer {id} should register: {error}"));
+            engine
+                .remove_plugin(id)
+                .unwrap_or_else(|error| panic!("plugin {id} should be removable: {error}"));
+        }
     }
 
     #[test]
