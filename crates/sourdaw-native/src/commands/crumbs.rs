@@ -17,7 +17,8 @@ use daw_dsp::crumbs::analysis::pitch::detect_pitch;
 use daw_dsp::crumbs::engine::{CrumbsEngine, CrumbsMetering};
 use daw_dsp::crumbs::sample::SampleData;
 use daw_dsp::crumbs::types::{CrumbsCommand, CrumbsParam, SampleId};
-use daw_engine::scheduler::CRUMBS_CAPTURE_RESERVE;
+use daw_engine::scheduler::{GraphCommand, CRUMBS_CAPTURE_RESERVE};
+use daw_engine::GraphBatchError;
 use rtrb::Producer;
 use serde::{Deserialize, Serialize};
 
@@ -285,13 +286,8 @@ pub async fn create_crumbs(
             return Err("Native engine not running".to_string());
         };
 
-        // The sampler takes a slot of the same shared effect table the
-        // project's devices and its plugins fill, so refuse before the id is
-        // reserved. The audio thread's refusal is a counter nothing here can
-        // read, and a slot refused there leaves armed recording capturing
-        // silence with nothing saying why.
-        engine_handle.ensure_effect_table_headroom(1)?;
-
+        // A reserved id is an opaque handle, never a dense index, so a refused
+        // batch below simply leaves this one unused.
         let id = engine_handle.reserve_plugin_id();
         // The device's rate, not the caller's: this engine renders on the
         // master chain and records the tap the same device feeds.
@@ -303,22 +299,30 @@ pub async fn create_crumbs(
             commit_tx,
             recycle_rx,
         };
-        engine_handle.add_plugin_with_id(id, Box::new(slot))?;
-
-        // The record feed. The ledger is the authority on the input bus, and
-        // it refuses at the reserve independently of the instance count
-        // `ensure_crumbs_capture_headroom` gates on — so a refusal here has to
-        // take the slot back out, or the session keeps a sampler that renders
-        // but can never record. Nothing else has been published yet, so the
-        // removal leaves no entry behind.
-        if let Err(reason) = engine_handle.register_capture_consumer(id) {
-            return Err(match engine_handle.remove_plugin(id) {
-                Ok(()) => reason,
-                Err(removal) => {
-                    format!("{reason} (the refused slot also failed to leave: {removal})")
-                }
-            });
-        }
+        // The slot and its record feed cross as one fenced batch. Admission
+        // checks the effect table and the capture ledger for the whole batch
+        // and provisions the ring to fit before the first push, so a refusal
+        // leaves nothing queued and nothing to unwind. Registering the two
+        // separately could strand a slot on the graph — audible, unrecordable,
+        // and owned by no instance — whenever the second command was refused.
+        engine_handle
+            .send_graph_batch(vec![
+                GraphCommand::AddPlugin(id, Box::new(slot)),
+                GraphCommand::RegisterCaptureConsumer(id),
+            ])
+            .map_err(|error| match error {
+                GraphBatchError::Refused(reason) => reason,
+                // Unreachable by construction, and deliberately not unwound:
+                // the only route to the audio thread is the ring that just
+                // failed, so a removal command would have nowhere to go.
+                GraphBatchError::Partial {
+                    pushed,
+                    total,
+                    error,
+                } => format!(
+                    "the crumbs slot was published in part ({pushed} of {total} commands): {error}"
+                ),
+            })?;
 
         id
     };
@@ -1021,25 +1025,31 @@ mod tests {
         assert!(!instances.contains_key("instance-overflow"));
     }
 
-    /// Pop the pair of engine commands one successful create queues — the
-    /// master-chain slot, then its registration on the engine's input bus —
-    /// and return the engine plugin id both name.
-    fn pop_create_commands(
-        command_rx: &mut rtrb::Consumer<daw_engine::scheduler::GraphCommand>,
-    ) -> usize {
+    /// Pop the fenced batch one successful create queues — the two-command
+    /// fence, the master-chain slot, then its registration on the engine's
+    /// input bus — and return the engine plugin id both commands name.
+    fn pop_create_commands(command_rx: &mut rtrb::Consumer<GraphCommand>) -> usize {
+        match command_rx.pop() {
+            Ok(GraphCommand::BeginBatch { commands }) => assert_eq!(
+                commands, 2,
+                "the create's fence must announce the slot and its capture registration"
+            ),
+            Ok(_) => panic!("a create must publish its registration behind a batch fence"),
+            Err(_) => panic!("a create must queue its batch fence"),
+        }
         let id = match command_rx.pop() {
-            Ok(daw_engine::scheduler::GraphCommand::AddPlugin(id, _)) => id,
-            Ok(_) => panic!("a create's first engine command must register the crumbs slot"),
+            Ok(GraphCommand::AddPlugin(id, _)) => id,
+            Ok(_) => panic!("the batch's first command must register the crumbs slot"),
             Err(_) => panic!("a create must queue the slot registration"),
         };
         match command_rx.pop() {
-            Ok(daw_engine::scheduler::GraphCommand::RegisterCaptureConsumer(registered)) => {
+            Ok(GraphCommand::RegisterCaptureConsumer(registered)) => {
                 assert_eq!(
                     registered, id,
                     "the capture registration must name the slot it feeds"
                 );
             }
-            Ok(_) => panic!("a create's second engine command must register the capture consumer"),
+            Ok(_) => panic!("the batch's second command must register the capture consumer"),
             Err(_) => panic!("a create must queue the capture registration"),
         }
         id
@@ -1155,10 +1165,11 @@ mod tests {
 
         let state = CrumbsState::default();
         let app_state = AppState::default();
-        // Exactly the two commands one create queues, so the ring is full when
-        // destroy asks for its removal.
+        // Exactly the create's batch — fence plus two commands — so the ring is
+        // full when destroy asks for its removal, and admission finds the room
+        // it needs without reallocating the channel out from under this test.
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(2);
+            daw_engine::engine_handle_for_command_capture(3);
         *app_state
             .engine
             .lock()
@@ -1583,8 +1594,13 @@ mod tests {
         ))
         .expect("a create with capture headroom should register its runtime");
 
+        match command_rx.pop() {
+            Ok(GraphCommand::BeginBatch { commands }) => assert_eq!(commands, 2),
+            Ok(_) => panic!("a create must publish its registration behind a batch fence"),
+            Err(_) => panic!("a create must queue its batch fence"),
+        }
         let registered_engine_plugin_id = match command_rx.pop() {
-            Ok(daw_engine::scheduler::GraphCommand::AddPlugin(id, plugin)) => {
+            Ok(GraphCommand::AddPlugin(id, plugin)) => {
                 let slot = plugin
                     .as_any()
                     .downcast_ref::<CrumbsPluginSlot>()
@@ -1596,22 +1612,22 @@ mod tests {
                 );
                 id
             }
-            Ok(_) => panic!("a create's first engine command must register the crumbs slot"),
+            Ok(_) => panic!("the batch's first command must register the crumbs slot"),
             Err(_) => panic!("a create must queue the slot registration"),
         };
         match command_rx.pop() {
-            Ok(daw_engine::scheduler::GraphCommand::RegisterCaptureConsumer(registered)) => {
+            Ok(GraphCommand::RegisterCaptureConsumer(registered)) => {
                 assert_eq!(
                     registered, registered_engine_plugin_id,
                     "the capture registration must name the slot it feeds"
                 );
             }
-            Ok(_) => panic!("a create's second engine command must register the capture consumer"),
+            Ok(_) => panic!("the batch's second command must register the capture consumer"),
             Err(_) => panic!("a create must queue the capture registration"),
         }
         assert!(
             command_rx.pop().is_err(),
-            "a create must queue the slot and its capture registration, nothing else"
+            "a create must queue its fence, the slot and its capture registration, nothing else"
         );
         assert_eq!(
             state
@@ -1627,11 +1643,11 @@ mod tests {
 
     /// The capture ledger is the authority on the input bus, and it refuses
     /// independently of the instance ceiling. A sampler that cannot record is
-    /// not a sampler, so the refused create takes its own slot back out and
-    /// reports the ledger's refusal — leaving no instance the panel would
-    /// then show as live.
+    /// not a sampler, so the batch is refused whole: nothing reaches the ring,
+    /// there is no slot to unwind, and no instance the panel would show as
+    /// live. Two separate pushes would leave the `AddPlugin` on the ring.
     #[test]
-    fn create_crumbs_removes_its_slot_when_the_capture_bus_refuses_it() {
+    fn create_crumbs_pushes_nothing_when_the_capture_bus_refuses_it() {
         let state = CrumbsState::default();
         let app_state = AppState::default();
         let (mut engine, mut command_rx, _retired_adoption_rx) =
@@ -1664,29 +1680,14 @@ mod tests {
             assert!(
                 matches!(
                     command_rx.pop(),
-                    Ok(daw_engine::scheduler::GraphCommand::RegisterCaptureConsumer(_))
+                    Ok(GraphCommand::RegisterCaptureConsumer(_))
                 ),
-                "the reserve's own registrations must precede the create's"
+                "the reserve's own registrations must be all the ring holds"
             );
-        }
-        let added = match command_rx.pop() {
-            Ok(daw_engine::scheduler::GraphCommand::AddPlugin(id, _)) => id,
-            Ok(_) => panic!("the refused create must still have queued its slot first"),
-            Err(_) => panic!("the refused create must have queued its slot before registering"),
-        };
-        match command_rx.pop() {
-            Ok(daw_engine::scheduler::GraphCommand::RemovePluginWithBridge(removed)) => {
-                assert_eq!(
-                    removed, added,
-                    "the rollback must remove the exact slot the create added"
-                );
-            }
-            Ok(_) => panic!("a refused registration must queue the slot's removal"),
-            Err(_) => panic!("a refused registration must queue the slot's removal"),
         }
         assert!(
             command_rx.pop().is_err(),
-            "the rollback must queue nothing beyond the removal"
+            "a refused batch must leave nothing at all on the ring — no fence, no slot"
         );
         assert!(
             state

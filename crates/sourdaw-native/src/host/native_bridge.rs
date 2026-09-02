@@ -1879,6 +1879,98 @@ mod tests {
         assert_eq!(slot.engine.sample_pool().count(), 0);
         assert_eq!(slot.engine.active_sample_id(), None);
     }
+
+    /// Queue the commands that make a slot sound: a sample, made active, and a
+    /// note at the root so nothing is transposed.
+    fn queue_a_sounding_note(tx: &mut rtrb::Producer<CrumbsCommand>) {
+        use daw_dsp::crumbs::sample::SampleData;
+
+        tx.push(CrumbsCommand::AddSample {
+            id: 1,
+            data: Arc::new(SampleData::from_mono(vec![0.1; 4800], 48_000)),
+        })
+        .unwrap();
+        tx.push(CrumbsCommand::SetActiveSample(1)).unwrap();
+        tx.push(CrumbsCommand::NoteOn {
+            note: 60,
+            velocity: 100,
+        })
+        .unwrap();
+    }
+
+    /// The slot is one member of the native master chain, and
+    /// `CrumbsEngine::process_block` sums into the buffers it is handed. It
+    /// must never zero them: on the master chain they carry what every member
+    /// ordered ahead of this one already wrote, and clearing them erases that
+    /// audio while the slot's own voice still comes out — so the chain sounds
+    /// plausible and everything upstream of the sampler is gone.
+    #[test]
+    fn crumbs_slot_adds_its_voice_into_the_mix_it_is_handed() {
+        const FRAMES: usize = 128;
+        const MIX_L: f32 = 0.25;
+        const MIX_R: f32 = 0.5;
+
+        // An idle slot must hand the mix back exactly as it found it.
+        let (mut idle, _idle_tx, _idle_commit, _idle_recycle) = crumbs_slot_with_rings();
+        let mut left = vec![MIX_L; FRAMES];
+        let mut right = vec![MIX_R; FRAMES];
+        idle.process_with_events(
+            &mut left,
+            &mut right,
+            FRAMES,
+            &[],
+            &TransportState::default(),
+        );
+        assert!(
+            left.iter().all(|&s| s == MIX_L) && right.iter().all(|&s| s == MIX_R),
+            "an idle slot must leave the mix it was handed untouched"
+        );
+
+        // A sounding slot must add to it. Two slots driven identically differ
+        // only in what they were handed, so their difference is the mix itself,
+        // frame for frame — which holds however the voice or the master gain
+        // ramps, because both ramp the same way.
+        let (mut voice_only, mut voice_tx, _voice_commit, _voice_recycle) =
+            crumbs_slot_with_rings();
+        let (mut over_mix, mut mix_tx, _mix_commit, _mix_recycle) = crumbs_slot_with_rings();
+        queue_a_sounding_note(&mut voice_tx);
+        queue_a_sounding_note(&mut mix_tx);
+
+        let mut bare_left = vec![0.0f32; FRAMES];
+        let mut bare_right = vec![0.0f32; FRAMES];
+        voice_only.process_with_events(
+            &mut bare_left,
+            &mut bare_right,
+            FRAMES,
+            &[],
+            &TransportState::default(),
+        );
+
+        let mut mixed_left = vec![MIX_L; FRAMES];
+        let mut mixed_right = vec![MIX_R; FRAMES];
+        over_mix.process_with_events(
+            &mut mixed_left,
+            &mut mixed_right,
+            FRAMES,
+            &[],
+            &TransportState::default(),
+        );
+
+        assert!(
+            bare_left.iter().any(|&s| s != 0.0),
+            "the triggered voice must actually sound, or this test proves nothing"
+        );
+        for frame in 0..FRAMES {
+            assert!(
+                (mixed_left[frame] - (bare_left[frame] + MIX_L)).abs() < 1.0e-6,
+                "frame {frame}: the slot must add its voice to the mix, not replace it"
+            );
+            assert!(
+                (mixed_right[frame] - (bare_right[frame] + MIX_R)).abs() < 1.0e-6,
+                "frame {frame}: the slot must add its voice to the mix, not replace it"
+            );
+        }
+    }
 }
 
 /// Crumbs plugin slot — adapts CrumbsEngine for the native audio thread.
@@ -1903,12 +1995,16 @@ pub struct CrumbsPluginSlot {
 impl CrumbsPluginSlot {
     /// Shared block body for every render path.
     ///
-    /// The buffers it is handed are output scratch and carry no input audio:
-    /// record input reaches the engine only through
-    /// [`NativePlugin::process_capture_input`], from the device's own capture
-    /// tap. Feeding render scratch to the recorder would splice a device
-    /// buffer of silence into every take (PR #564 review), so no path here
-    /// touches the record input.
+    /// The slot adds its voice into the mix it is handed. On the master chain
+    /// the buffers carry the native sum every member ordered ahead of this one
+    /// has already written, and `CrumbsEngine::process_block` sums into them,
+    /// so nothing here may zero them: doing so erases those members outright.
+    ///
+    /// The buffers carry no input audio either way. Record input reaches the
+    /// engine only through [`NativePlugin::process_capture_input`], from the
+    /// device's own capture tap; feeding render buffers to the recorder would
+    /// splice a device buffer of the mix into every take (PR #564 review), so
+    /// no path here touches the record input.
     fn process_block_internal(
         &mut self,
         left: &mut [f32],
@@ -1944,13 +2040,11 @@ impl CrumbsPluginSlot {
             }
         }
 
-        // CrumbsEngine adds to buffers, so we should zero them if we are the only generator
-        // in this slot. NativePlugin's contract is in-place, but for an instrument
-        // it usually means starting fresh in the given buffer.
-        left[..num_samples].fill(0.0);
-        right[..num_samples].fill(0.0);
-
-        self.engine.process_block(left, right);
+        // The slice is the block the scheduler asked for, because
+        // `process_block` measures its own work from the slice length rather
+        // than from a frame count.
+        self.engine
+            .process_block(&mut left[..num_samples], &mut right[..num_samples]);
 
         // Forward any committed take to the command side over the SPSC ring.
         // The engine did only pointer moves; the clone + pool insertion
