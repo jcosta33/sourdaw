@@ -19,6 +19,7 @@ import { reviewBundlePath } from './prepareReview.ts';
 import {
     type PullRequestMutationSerialization,
     type PullRequestRemoteMutationBoundary,
+    currentReviewPublicationOwnerFence,
     isReviewPublicationPullRequestMutationLockOwner,
     pullRequestMutationLockRef,
     readPullRequestMutationLockOid,
@@ -91,11 +92,7 @@ export type PublishReviewCoordinatorDependencies = {
         primaryRoot: string,
         markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt']
     ) => PublishReviewPort;
-    publish: (
-        number: number,
-        port: PublishReviewPort,
-        boundary?: PullRequestRemoteMutationBoundary
-    ) => number;
+    publish: (number: number, port: PublishReviewPort, boundary?: PullRequestRemoteMutationBoundary) => number;
 };
 
 export function parsePublishReviewArgs(args: string[]): { number?: number; help: boolean } {
@@ -298,12 +295,17 @@ function assertReviewCommentLinesInBundleDiff(comments: ReviewComment[], diff: s
 
 function changedDiffLines(diff: string): Map<string, { left: Set<number>; right: Set<number> }> {
     const changed = new Map<string, { left: Set<number>; right: Set<number> }>();
-    let path: string | undefined;
+    let oldPath: string | undefined;
+    let newPath: string | undefined;
     let leftLine: number | undefined;
     let rightLine: number | undefined;
     for (const line of diff.split('\n')) {
-        if (line.startsWith('+++ b/')) {
-            path = line.slice(6);
+        if (line.startsWith('--- ')) {
+            oldPath = diffPath(line.slice(4), 'a/');
+            continue;
+        }
+        if (line.startsWith('+++ ')) {
+            newPath = diffPath(line.slice(4), 'b/');
             leftLine = undefined;
             rightLine = undefined;
             continue;
@@ -314,23 +316,38 @@ function changedDiffLines(diff: string): Map<string, { left: Set<number>; right:
             rightLine = Number(hunk[2]);
             continue;
         }
-        if (path === undefined || leftLine === undefined || rightLine === undefined || line === '') {
+        if (leftLine === undefined || rightLine === undefined || line === '') {
             continue;
         }
-        const entry = changed.get(path) ?? { left: new Set<number>(), right: new Set<number>() };
         if (line.startsWith('-') && !line.startsWith('---')) {
-            entry.left.add(leftLine++);
+            if (oldPath !== undefined) {
+                const entry = changed.get(oldPath) ?? { left: new Set<number>(), right: new Set<number>() };
+                entry.left.add(leftLine);
+                changed.set(oldPath, entry);
+            }
+            leftLine += 1;
         } else if (line.startsWith('+') && !line.startsWith('+++')) {
-            entry.right.add(rightLine++);
+            if (newPath !== undefined) {
+                const entry = changed.get(newPath) ?? { left: new Set<number>(), right: new Set<number>() };
+                entry.right.add(rightLine);
+                changed.set(newPath, entry);
+            }
+            rightLine += 1;
         } else if (line.startsWith(' ')) {
             leftLine += 1;
             rightLine += 1;
         } else {
             continue;
         }
-        changed.set(path, entry);
     }
     return changed;
+}
+
+function diffPath(value: string, prefix: 'a/' | 'b/'): string | undefined {
+    if (value === '/dev/null') {
+        return undefined;
+    }
+    return value.startsWith(prefix) ? value.slice(prefix.length) : undefined;
 }
 
 /**
@@ -467,12 +484,20 @@ export type RecoverPublishReviewDependencies = {
     primaryRoot: () => string;
     authenticateReviewer: (primaryRoot: string) => Promise<PublishReviewAuthentication>;
     repositoryName: (session: GhSession, primaryRoot: string) => string;
-    inspect: (number: number, expectedActorNodeId: string, session: GhSession, primaryRoot: string) => {
+    inspect: (
+        number: number,
+        expectedActorNodeId: string,
+        session: GhSession,
+        primaryRoot: string
+    ) => {
         state: string;
         head: string;
         reviews: RemotePublishedReview[];
     };
-    isOwnerLive?: (owner: Extract<import('./pullRequestMutationLock.ts').PullRequestMutationLockOwner, { version: 3 }>) => boolean;
+    isOwnerLive?: (
+        owner: Extract<import('./pullRequestMutationLock.ts').PullRequestMutationLockOwner, { version: 3 }>
+    ) => boolean;
+    currentOwnerFence?: () => import('./pullRequestMutationLock.ts').PullRequestMutationLockOwnerFence;
 };
 
 const recoverPublishReviewUsage =
@@ -535,7 +560,7 @@ function defaultRecoverPublishReviewDependencies(): RecoverPublishReviewDependen
                 env: session.env,
                 cwd: primaryRoot,
             }),
-        inspect: (number, _expectedActorNodeId, session, primaryRoot) => {
+        inspect: (number, expectedActorNodeId, session, primaryRoot) => {
             const gh = (args: string[]) => spawnCapture('gh', args, { env: session.env, cwd: primaryRoot });
             const pullRequest = parseJson<{ state?: unknown; headRefOid?: unknown }>(
                 gh(['pr', 'view', String(number), '--repo', REQUIRED_REPOSITORY, '--json', 'state,headRefOid']),
@@ -544,13 +569,18 @@ function defaultRecoverPublishReviewDependencies(): RecoverPublishReviewDependen
             if (typeof pullRequest.state !== 'string' || typeof pullRequest.headRefOid !== 'string') {
                 fail('review-publication recovery pull request is unreadable');
             }
-            const remote = parseJson<unknown>(
-                gh(['api', `repos/${REQUIRED_REPOSITORY}/pulls/${number}/reviews?per_page=100`]),
+            const remote = flattenedGhPages(
+                parseJson<unknown>(
+                    gh([
+                        'api',
+                        '--paginate',
+                        '--slurp',
+                        `repos/${REQUIRED_REPOSITORY}/pulls/${number}/reviews?per_page=100`,
+                    ]),
+                    'review-publication recovery reviews'
+                ),
                 'review-publication recovery reviews'
             );
-            if (!Array.isArray(remote)) {
-                fail('review-publication recovery reviews are unreadable');
-            }
             const reviews: RemotePublishedReview[] = [];
             for (const entry of remote) {
                 if (entry === null || typeof entry !== 'object') {
@@ -558,22 +588,36 @@ function defaultRecoverPublishReviewDependencies(): RecoverPublishReviewDependen
                 }
                 const record = entry as Record<string, unknown>;
                 const user = record.user;
-                if (typeof user !== 'object' || user === null || typeof (user as { node_id?: unknown }).node_id !== 'string') {
+                if (
+                    typeof user !== 'object' ||
+                    user === null ||
+                    typeof (user as { node_id?: unknown }).node_id !== 'string'
+                ) {
                     fail('review-publication recovery reviews are unreadable');
                 }
-                if (record.commit_id !== pullRequest.headRefOid) {
+                if ((user as { node_id: string }).node_id !== expectedActorNodeId) {
                     continue;
                 }
-                if (!Number.isSafeInteger(record.id) || typeof record.state !== 'string' || typeof record.body !== 'string') {
+                if (
+                    !Number.isSafeInteger(record.id) ||
+                    typeof record.state !== 'string' ||
+                    typeof record.body !== 'string' ||
+                    typeof record.commit_id !== 'string'
+                ) {
                     fail('review-publication recovery review candidate is unreadable');
                 }
-                const comments = parseJson<unknown>(
-                    gh(['api', `repos/${REQUIRED_REPOSITORY}/pulls/${number}/reviews/${record.id}/comments?per_page=100`]),
+                const comments = flattenedGhPages(
+                    parseJson<unknown>(
+                        gh([
+                            'api',
+                            '--paginate',
+                            '--slurp',
+                            `repos/${REQUIRED_REPOSITORY}/pulls/${number}/reviews/${record.id}/comments?per_page=100`,
+                        ]),
+                        'review-publication recovery review comments'
+                    ),
                     'review-publication recovery review comments'
                 );
-                if (!Array.isArray(comments)) {
-                    fail('review-publication recovery review comments are unreadable');
-                }
                 reviews.push({
                     id: record.id,
                     state: record.state,
@@ -586,7 +630,8 @@ function defaultRecoverPublishReviewDependencies(): RecoverPublishReviewDependen
                             typeof comment !== 'object' ||
                             typeof (comment as { path?: unknown }).path !== 'string' ||
                             !Number.isSafeInteger((comment as { line?: unknown }).line) ||
-                            ((comment as { side?: unknown }).side !== 'LEFT' && (comment as { side?: unknown }).side !== 'RIGHT') ||
+                            ((comment as { side?: unknown }).side !== 'LEFT' &&
+                                (comment as { side?: unknown }).side !== 'RIGHT') ||
                             typeof (comment as { body?: unknown }).body !== 'string'
                         ) {
                             fail('review-publication recovery review comment is unreadable');
@@ -599,6 +644,19 @@ function defaultRecoverPublishReviewDependencies(): RecoverPublishReviewDependen
         },
         isOwnerLive: reviewPublicationOwnerFenceIsLive,
     };
+}
+
+function flattenedGhPages(value: unknown, label: string): unknown[] {
+    if (!Array.isArray(value)) {
+        fail(`${label} are unreadable`);
+    }
+    if (value.every((page) => Array.isArray(page))) {
+        return value.flat();
+    }
+    if (value.every((entry) => !Array.isArray(entry))) {
+        return value;
+    }
+    return fail(`${label} are unreadable`);
 }
 
 function exactPublishedReview(
@@ -628,7 +686,13 @@ function exactPublishedReview(
     });
 }
 
-function recoveryReceipt(number: number, ownerOid: string, head: string, payloadDigest: string, outcome: string): object {
+function recoveryReceipt(
+    number: number,
+    ownerOid: string,
+    head: string,
+    payloadDigest: string,
+    outcome: string
+): object {
     return { version: 1, operation: 'review-publication-recovery', number, ownerOid, head, payloadDigest, outcome };
 }
 
@@ -662,7 +726,13 @@ export async function runRecoverPublishReviewLockCli(
     const primaryRoot = dependencies.primaryRoot();
     const currentOid = readPullRequestMutationLockOid(primaryRoot, pullRequestMutationLockRef(number), number);
     if (currentOid === undefined) {
-        if (isMatchingRecoveryReceipt(readPullRequestMutationLockReceipt(primaryRoot, number, ownerOid), number, ownerOid)) {
+        if (
+            isMatchingRecoveryReceipt(
+                readPullRequestMutationLockReceipt(primaryRoot, number, ownerOid),
+                number,
+                ownerOid
+            )
+        ) {
             console.log(`review-publication-lock-already-recovered:${number}:${ownerOid}`);
             return 0;
         }
@@ -676,10 +746,22 @@ export async function runRecoverPublishReviewLockCli(
     if (!legacy && !isReviewPublicationPullRequestMutationLockOwner(originalOwner)) {
         fail(`PR #${number} recovery requires a review-publication lock owner`);
     }
-    if (legacy && (parsed.head === undefined || parsed.payloadDigest === undefined || parsed.definitiveNoMutationHttpStatus !== 422)) {
-        fail('legacy review-publication recovery requires exact head, payload digest, and definitive HTTP status 422 attestation');
+    if (
+        legacy &&
+        (parsed.head === undefined ||
+            parsed.payloadDigest === undefined ||
+            parsed.definitiveNoMutationHttpStatus !== 422)
+    ) {
+        fail(
+            'legacy review-publication recovery requires exact head, payload digest, and definitive HTTP status 422 attestation'
+        );
     }
-    if (!legacy && (parsed.head !== undefined || parsed.payloadDigest !== undefined || parsed.definitiveNoMutationHttpStatus !== undefined)) {
+    if (
+        !legacy &&
+        (parsed.head !== undefined ||
+            parsed.payloadDigest !== undefined ||
+            parsed.definitiveNoMutationHttpStatus !== undefined)
+    ) {
         fail('journaled review-publication recovery accepts only the exact owner object id');
     }
     if (!legacy && (dependencies.isOwnerLive ?? reviewPublicationOwnerFenceIsLive)(originalOwner)) {
@@ -707,7 +789,12 @@ export async function runRecoverPublishReviewLockCli(
         const document = parseReviewDocument(JSON.parse(readFileSync(join(bundle, 'review.json'), 'utf8')) as unknown);
         assertReviewCommentLinesInBundleDiff(document.comments, readFileSync(join(bundle, 'diff.patch'), 'utf8'));
         const payloadDigest = reviewPublicationPayloadDigest(
-            reviewPublicationPayload({ commitId: expectedHead, event: document.event, body: document.body, comments: document.comments })
+            reviewPublicationPayload({
+                commitId: expectedHead,
+                event: document.event,
+                body: document.body,
+                comments: document.comments,
+            })
         );
         if (payloadDigest !== expectedDigest) {
             fail('review-publication recovery payload does not match the retained lock');
@@ -716,7 +803,11 @@ export async function runRecoverPublishReviewLockCli(
         if (first.state !== 'OPEN' || first.head !== expectedHead) {
             fail('review-publication recovery pull request state or head drifted');
         }
-        if (first.reviews.length > 1 || (first.reviews.length === 1 && !exactPublishedReview(first.reviews[0]!, document, expectedHead, REVIEWER_BOT_NODE_ID))) {
+        if (
+            first.reviews.length > 1 ||
+            (first.reviews.length === 1 &&
+                !exactPublishedReview(first.reviews[0]!, document, expectedHead, REVIEWER_BOT_NODE_ID))
+        ) {
             fail('review-publication recovery found ambiguous or non-exact remote review evidence');
         }
         const adoptedOwner = {
@@ -728,7 +819,7 @@ export async function runRecoverPublishReviewLockCli(
             expectedHead,
             payloadDigest: expectedDigest,
             reviewerActorNodeId: REVIEWER_BOT_NODE_ID,
-            ownerFence: { kind: 'pid' as const, pid: process.pid },
+            ownerFence: dependencies.currentOwnerFence?.() ?? currentReviewPublicationOwnerFence(),
             mutation: { phase: 'prepared' as const, epoch: legacy ? 1 : originalOwner.mutation.epoch + 1 },
             ...(legacy
                 ? {
@@ -740,25 +831,34 @@ export async function runRecoverPublishReviewLockCli(
                 : {}),
         };
         const adoptedOid = replacePullRequestMutationLockOwner(primaryRoot, number, ownerOid, adoptedOwner);
-        const second = dependencies.inspect(number, REVIEWER_BOT_NODE_ID, auth.session, primaryRoot);
-        if (
-            second.state !== 'OPEN' ||
-            second.head !== expectedHead ||
-            second.reviews.length !== first.reviews.length ||
-            (second.reviews.length === 1 && !exactPublishedReview(second.reviews[0]!, document, expectedHead, REVIEWER_BOT_NODE_ID))
-        ) {
-            fail('review-publication recovery remote state changed during reconciliation');
+        try {
+            const second = dependencies.inspect(number, REVIEWER_BOT_NODE_ID, auth.session, primaryRoot);
+            if (
+                second.state !== 'OPEN' ||
+                second.head !== expectedHead ||
+                second.reviews.length !== first.reviews.length ||
+                (second.reviews.length === 1 &&
+                    !exactPublishedReview(second.reviews[0]!, document, expectedHead, REVIEWER_BOT_NODE_ID))
+            ) {
+                fail('review-publication recovery remote state changed during reconciliation');
+            }
+            const outcome = second.reviews.length === 1 ? 'landed' : 'absent';
+            recordReviewPublicationRecoveryReceipt(
+                primaryRoot,
+                number,
+                ownerOid,
+                recoveryReceipt(number, ownerOid, expectedHead, expectedDigest, outcome)
+            );
+            releasePullRequestMutationLockOwner(primaryRoot, number, adoptedOid);
+            console.log(`review-publication-lock-recovered:${number}:${ownerOid}:${outcome}`);
+            return 0;
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            throw new Error(
+                `${message}; PR #${number} review-publication recovery preserved exact lock owner ${adoptedOid}`,
+                { cause: error }
+            );
         }
-        const outcome = second.reviews.length === 1 ? 'landed' : 'absent';
-        recordReviewPublicationRecoveryReceipt(
-            primaryRoot,
-            number,
-            ownerOid,
-            recoveryReceipt(number, ownerOid, expectedHead, expectedDigest, outcome)
-        );
-        releasePullRequestMutationLockOwner(primaryRoot, number, adoptedOid);
-        console.log(`review-publication-lock-recovered:${number}:${ownerOid}:${outcome}`);
-        return 0;
     } finally {
         auth.session.dispose();
     }

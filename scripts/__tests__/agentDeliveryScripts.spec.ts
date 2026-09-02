@@ -1331,7 +1331,7 @@ describe('package scripts and gitignore', () => {
         }
     });
 
-    it('binds a trusted powershell path for Windows review-resolution commands without requiring ps', () => {
+    it('binds a trusted powershell path for Windows review-mutation commands without requiring ps', () => {
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-split-trusted-win32-tools-'));
         const primary = join(fixtureRoot, 'primary');
         const gitBin = join(fixtureRoot, 'git-bin');
@@ -1360,12 +1360,12 @@ describe('package scripts and gitignore', () => {
                     PATH: [gitBin, ghBin, powerShellBin].join(';'),
                     PATHEXT: '.EXE;.CMD;.BAT',
                 },
-                'review:resolve',
+                'review:publish',
                 'win32'
             );
             const powershellPath = binding.powershellPath;
             if (powershellPath === undefined) {
-                throw new Error('expected a trusted powershell executable for Windows review resolution');
+                throw new Error('expected a trusted powershell executable for Windows review publication');
             }
 
             expect(binding.primaryRoot).toBe(realpathSync(primary));
@@ -1470,7 +1470,7 @@ describe('package scripts and gitignore', () => {
         }
     });
 
-    it('requires a trusted ps binding on non-Windows review-resolution commands and trusted powershell on Windows, and reports invalid commands before binding', () => {
+    it('requires trusted process-identity bindings on review-mutation commands and reports invalid commands before binding', () => {
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-bootstrap-command-gating-'));
         const primary = join(fixtureRoot, 'primary');
         const gitBin = join(fixtureRoot, 'git-bin');
@@ -1516,11 +1516,23 @@ describe('package scripts and gitignore', () => {
             expect(() => resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:resolve')).toThrow(
                 /cannot resolve trusted ps executable/i
             );
+            expect(() => resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:publish')).toThrow(
+                /cannot resolve trusted ps executable/i
+            );
+            expect(() => resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:publish:recover')).toThrow(
+                /cannot resolve trusted ps executable/i
+            );
             expect(() => resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:resolve:recover')).toThrow(
                 /cannot resolve trusted ps executable/i
             );
             expect(() =>
                 resolveTrustedLauncherBinding(primary, { PATH: windowsPath }, 'review:resolve', 'win32')
+            ).toThrow(/cannot resolve trusted powershell executable/i);
+            expect(() =>
+                resolveTrustedLauncherBinding(primary, { PATH: windowsPath }, 'review:publish', 'win32')
+            ).toThrow(/cannot resolve trusted powershell executable/i);
+            expect(() =>
+                resolveTrustedLauncherBinding(primary, { PATH: windowsPath }, 'review:publish:recover', 'win32')
             ).toThrow(/cannot resolve trusted powershell executable/i);
             expect(() =>
                 resolveTrustedLauncherBinding(primary, { PATH: windowsPath }, 'review:resolve:recover', 'win32')
@@ -1594,28 +1606,25 @@ describe('package scripts and gitignore', () => {
         'review:publish:recover',
         'review:resolve',
         'review:resolve:recover',
-    ] as const)(
-        'reads no gating workflow for %s',
-        async (command) => {
-            const originReads: string[] = [];
-            let gateWorkflow: unknown = 'unset';
+    ] as const)('reads no gating workflow for %s', async (command) => {
+        const originReads: string[] = [];
+        let gateWorkflow: unknown = 'unset';
 
-            await runTrustedGithubWriteCommand(command, [], {
-                resolveOriginMain: () => 'pinned-sha',
-                readOriginSource: (_commit, path) => {
-                    originReads.push(path);
-                    return 'trusted';
-                },
-                executeSnapshot: async (_command, _args, snapshot) => {
-                    gateWorkflow = snapshot.gateWorkflow;
-                    return 0;
-                },
-            });
+        await runTrustedGithubWriteCommand(command, [], {
+            resolveOriginMain: () => 'pinned-sha',
+            readOriginSource: (_commit, path) => {
+                originReads.push(path);
+                return 'trusted';
+            },
+            executeSnapshot: async (_command, _args, snapshot) => {
+                gateWorkflow = snapshot.gateWorkflow;
+                return 0;
+            },
+        });
 
-            expect(originReads).toEqual([...trustedDependencyPaths(command)]);
-            expect(gateWorkflow).toBeUndefined();
-        }
-    );
+        expect(originReads).toEqual([...trustedDependencyPaths(command)]);
+        expect(gateWorkflow).toBeUndefined();
+    });
 
     it('binds the launcher to the primary checkout instead of a worktree alias', () => {
         const fixtureRoot = mkdtempSync(join(tmpdir(), 'sourdaw-launcher-root-'));

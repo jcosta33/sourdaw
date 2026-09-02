@@ -945,14 +945,26 @@ export function resolveTrustedLauncherBinding(
 }
 
 function commandRequiresTrustedPs(command: TrustedGithubWriteCommand | undefined, platform: NodeJS.Platform): boolean {
-    return platform !== 'win32' && (command === 'review:resolve' || command === 'review:resolve:recover');
+    return (
+        platform !== 'win32' &&
+        (command === 'review:publish' ||
+            command === 'review:publish:recover' ||
+            command === 'review:resolve' ||
+            command === 'review:resolve:recover')
+    );
 }
 
 function commandRequiresTrustedPowerShell(
     command: TrustedGithubWriteCommand | undefined,
     platform: NodeJS.Platform
 ): boolean {
-    return platform === 'win32' && (command === 'review:resolve' || command === 'review:resolve:recover');
+    return (
+        platform === 'win32' &&
+        (command === 'review:publish' ||
+            command === 'review:publish:recover' ||
+            command === 'review:resolve' ||
+            command === 'review:resolve:recover')
+    );
 }
 
 function defaultPort(binding: TrustedLauncherBinding): TrustedSourcePort {

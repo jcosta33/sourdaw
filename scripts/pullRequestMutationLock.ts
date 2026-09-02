@@ -12,6 +12,7 @@ export type PullRequestMutationLockOwnerFence =
     | {
           kind: 'pid';
           pid: number;
+          startedAt?: string;
       }
     | {
           kind: 'win32-process-tree';
@@ -115,10 +116,12 @@ function isExecutionFence(value: unknown): value is PullRequestMutationLockOwner
     }
     if (candidate.kind === 'pid') {
         return (
-            Object.keys(candidate).length === 2 &&
+            Object.keys(candidate).length === (candidate.startedAt === undefined ? 2 : 3) &&
             typeof candidate.pid === 'number' &&
             Number.isSafeInteger(candidate.pid) &&
-            candidate.pid > 0
+            candidate.pid > 0 &&
+            (candidate.startedAt === undefined ||
+                (typeof candidate.startedAt === 'string' && candidate.startedAt.trim() !== ''))
         );
     }
     return (
@@ -141,6 +144,16 @@ function isExecutionFenceBoundToOwnerPid(ownerFence: PullRequestMutationLockOwne
         return ownerFence.pgid === pid;
     }
     return ownerFence.rootPid === pid;
+}
+
+function isPublicationOwnerFence(ownerFence: PullRequestMutationLockOwnerFence): boolean {
+    if (ownerFence.kind === 'pid') {
+        return typeof ownerFence.startedAt === 'string' && ownerFence.startedAt.trim() !== '';
+    }
+    if (ownerFence.kind === 'pgid') {
+        return typeof ownerFence.leaderStartedAt === 'string' && ownerFence.leaderStartedAt.trim() !== '';
+    }
+    return true;
 }
 
 function hasOwnerIdentity(
@@ -207,6 +220,7 @@ function parseMutationLockOwner(contents: string, number: number): PullRequestMu
         owner.reviewerActorNodeId !== '' &&
         isExecutionFence(owner.ownerFence) &&
         isExecutionFenceBoundToOwnerPid(owner.ownerFence, owner.pid) &&
+        isPublicationOwnerFence(owner.ownerFence) &&
         typeof owner.mutation === 'object' &&
         owner.mutation !== null &&
         Object.keys(owner.mutation).length === 2 &&
@@ -223,7 +237,8 @@ function parseMutationLockOwner(contents: string, number: number): PullRequestMu
                 /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/iu.test(
                     (owner.recovery as { legacyOwnerOid: string }).legacyOwnerOid
                 ) &&
-                (owner.recovery as { definitiveNoMutationHttpStatus?: unknown }).definitiveNoMutationHttpStatus === 422))
+                (owner.recovery as { definitiveNoMutationHttpStatus?: unknown }).definitiveNoMutationHttpStatus ===
+                    422))
     ) {
         return {
             version: 3,
@@ -364,11 +379,7 @@ export function writePullRequestMutationLockReceipt(primaryRoot: string, receipt
     return mutationLockObjectId(result.stdout, number);
 }
 
-export function readPullRequestMutationLockReceipt(
-    primaryRoot: string,
-    number: number,
-    ownerOid: string
-): unknown | undefined {
+export function readPullRequestMutationLockReceipt(primaryRoot: string, number: number, ownerOid: string): unknown {
     const receiptOid = readPullRequestMutationLockOid(
         primaryRoot,
         reviewPublicationRecoveryReceiptRef(number, ownerOid),
@@ -387,7 +398,7 @@ export function readPullRequestMutationLockReceipt(
     try {
         return JSON.parse(result.stdout) as unknown;
     } catch {
-        fail(`PR #${number} review-publication recovery receipt is malformed`);
+        return fail(`PR #${number} review-publication recovery receipt is malformed`);
     }
 }
 
@@ -407,20 +418,91 @@ export function recordReviewPublicationRecoveryReceipt(
     }
 }
 
-export function reviewPublicationOwnerFenceIsLive(owner: Extract<PullRequestMutationLockOwner, { version: 3 }>): boolean {
-    try {
-        const target = owner.ownerFence.kind === 'pgid' ? -owner.ownerFence.pgid : owner.pid;
-        process.kill(target, 0);
-        return true;
-    } catch (error) {
-        if (error instanceof Error && 'code' in error && error.code === 'ESRCH') {
-            return false;
-        }
-        if (error instanceof Error && 'code' in error && error.code === 'EPERM') {
-            return true;
-        }
-        throw error;
+export function reviewPublicationOwnerFenceIsLive(
+    owner: Extract<PullRequestMutationLockOwner, { version: 3 }>
+): boolean {
+    const fence = owner.ownerFence;
+    if (fence.kind === 'pid') {
+        const observed = processStartedAt(owner.pid);
+        return observed !== undefined && observed === fence.startedAt;
     }
+    if (fence.kind === 'pgid') {
+        const observed = processGroupLeaderStartedAt(fence.pgid);
+        return observed !== undefined && observed === fence.leaderStartedAt;
+    }
+    const observed = windowsProcessStartedAt(fence.rootPid);
+    return observed !== undefined && observed === fence.rootStartedAt;
+}
+
+export function currentReviewPublicationOwnerFence(): PullRequestMutationLockOwnerFence {
+    if (process.platform === 'win32') {
+        const startedAt = windowsProcessStartedAt(process.pid);
+        if (startedAt === undefined) {
+            fail('review-publication lock could not determine the current Windows process identity');
+        }
+        return { kind: 'win32-process-tree', version: 1, rootPid: process.pid, rootStartedAt: startedAt };
+    }
+    const startedAt = processStartedAt(process.pid);
+    if (startedAt === undefined) {
+        fail('review-publication lock could not determine the current process identity');
+    }
+    return { kind: 'pid', pid: process.pid, startedAt };
+}
+
+function processStartedAt(pid: number): string | undefined {
+    const executable = process.env.SOURDAW_TRUSTED_PS_PATH;
+    if (typeof executable !== 'string' || executable === '') {
+        fail('review-publication lock requires the trusted ps executable');
+    }
+    const result = spawnSync(executable, ['-o', 'lstart=', '-p', String(pid)], {
+        encoding: 'utf8',
+        shell: false,
+        env: { LC_ALL: 'C', LANG: 'C', TZ: 'UTC' },
+    });
+    if (result.error !== undefined || (result.status !== 0 && result.status !== 1)) {
+        fail('review-publication lock process liveness is unreadable');
+    }
+    const startedAt = result.stdout.trim();
+    return startedAt === '' ? undefined : startedAt;
+}
+
+function processGroupLeaderStartedAt(pgid: number): string | undefined {
+    const executable = process.env.SOURDAW_TRUSTED_PS_PATH;
+    if (typeof executable !== 'string' || executable === '') {
+        fail('review-publication lock requires the trusted ps executable');
+    }
+    const result = spawnSync(executable, ['-o', 'lstart=', '-p', String(pgid)], {
+        encoding: 'utf8',
+        shell: false,
+        env: { LC_ALL: 'C', LANG: 'C', TZ: 'UTC' },
+    });
+    if (result.error !== undefined || (result.status !== 0 && result.status !== 1)) {
+        fail('review-publication lock process-group liveness is unreadable');
+    }
+    const startedAt = result.stdout.trim();
+    return startedAt === '' ? undefined : startedAt;
+}
+
+function windowsProcessStartedAt(pid: number): string | undefined {
+    const executable = process.env.SOURDAW_TRUSTED_POWERSHELL_PATH;
+    if (typeof executable !== 'string' || executable === '') {
+        fail('review-publication lock requires the trusted PowerShell executable');
+    }
+    const result = spawnSync(
+        executable,
+        [
+            '-NoProfile',
+            '-NonInteractive',
+            '-Command',
+            `Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}" | ForEach-Object { $_.CreationDate.ToUniversalTime().ToString('O',[System.Globalization.CultureInfo]::InvariantCulture) }`,
+        ],
+        { encoding: 'utf8', shell: false, env: { LC_ALL: 'C', LANG: 'C', TZ: 'UTC' } }
+    );
+    if (result.error !== undefined || result.status !== 0) {
+        fail('review-publication lock Windows process liveness is unreadable');
+    }
+    const startedAt = result.stdout.trim();
+    return startedAt === '' ? undefined : startedAt;
 }
 
 function acquireMutationLock(
@@ -520,7 +602,7 @@ export async function withPullRequestMutationLock<Value>(
                     expectedHead: expectedHead.toLowerCase(),
                     payloadDigest: payloadDigest.toLowerCase(),
                     reviewerActorNodeId,
-                    ownerFence: { kind: 'pid', pid: currentOwner.pid },
+                    ownerFence: currentReviewPublicationOwnerFence(),
                     mutation: { phase: 'prepared', epoch: 0 },
                 };
                 ownerOid = replacePullRequestMutationLockOwner(primaryRoot, number, ownerOid, nextOwner);

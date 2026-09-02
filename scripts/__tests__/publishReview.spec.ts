@@ -237,6 +237,92 @@ describe('review publish', () => {
         expect(calls.some((call) => call.startsWith('post:'))).toBe(false);
     });
 
+    it.each([
+        [
+            'deleted LEFT path',
+            'deleted.ts',
+            'LEFT',
+            3,
+            ['--- a/deleted.ts', '+++ /dev/null', '@@ -3 +0,0 @@', '-gone'].join('\n'),
+        ],
+        [
+            'added RIGHT path',
+            'added.ts',
+            'RIGHT',
+            5,
+            ['--- /dev/null', '+++ b/added.ts', '@@ -0,0 +5 @@', '+new'].join('\n'),
+        ],
+        [
+            'renamed LEFT old path',
+            'old.ts',
+            'LEFT',
+            7,
+            ['--- a/old.ts', '+++ b/new.ts', '@@ -7 +7 @@', '-old', '+new'].join('\n'),
+        ],
+        [
+            'renamed RIGHT new path',
+            'new.ts',
+            'RIGHT',
+            7,
+            ['--- a/old.ts', '+++ b/new.ts', '@@ -7 +7 @@', '-old', '+new'].join('\n'),
+        ],
+    ] as const)('accepts %s', (_label, path, side, line, diff) => {
+        const { port, calls } = fakePort({
+            diff,
+            json: {
+                event: 'REQUEST_CHANGES',
+                body: 'Fix the changed line.',
+                comments: [{ ...validComment, path, side, line }],
+            },
+        });
+
+        publishReview(42, port);
+
+        expect(calls.some((call) => call.startsWith('post:'))).toBe(true);
+    });
+
+    it.each([
+        [
+            'deleted file on RIGHT',
+            'deleted.ts',
+            'RIGHT',
+            3,
+            ['--- a/deleted.ts', '+++ /dev/null', '@@ -3 +0,0 @@', '-gone'].join('\n'),
+        ],
+        [
+            'added file on LEFT',
+            'added.ts',
+            'LEFT',
+            5,
+            ['--- /dev/null', '+++ b/added.ts', '@@ -0,0 +5 @@', '+new'].join('\n'),
+        ],
+        [
+            'renamed old path on RIGHT',
+            'old.ts',
+            'RIGHT',
+            7,
+            ['--- a/old.ts', '+++ b/new.ts', '@@ -7 +7 @@', '-old', '+new'].join('\n'),
+        ],
+        [
+            'renamed new path on LEFT',
+            'new.ts',
+            'LEFT',
+            7,
+            ['--- a/old.ts', '+++ b/new.ts', '@@ -7 +7 @@', '-old', '+new'].join('\n'),
+        ],
+    ] as const)('refuses %s', (_label, path, side, line, diff) => {
+        const { port } = fakePort({
+            diff,
+            json: {
+                event: 'REQUEST_CHANGES',
+                body: 'Fix the changed line.',
+                comments: [{ ...validComment, path, side, line }],
+            },
+        });
+
+        expect(() => publishReview(42, port)).toThrow(/not a changed line/i);
+    });
+
     it('rejects the renamed reviewer login when the posted review has the wrong actor ID', () => {
         const { port, logs } = fakePort({ actorNodeId: 'BOT_wrong', login: 'renamed-reviewer[bot]' });
 
@@ -597,7 +683,10 @@ describe('shellPort postReview state verification', () => {
             runGit(root, ['init']);
             const bundle = join(root, '.agents', 'review-bundles', `${number}-${head}`);
             mkdirSync(bundle, { recursive: true });
-            writeFileSync(join(bundle, 'review.json'), JSON.stringify({ event: 'APPROVE', body: 'Attacked; held.', comments: [] }));
+            writeFileSync(
+                join(bundle, 'review.json'),
+                JSON.stringify({ event: 'APPROVE', body: 'Attacked; held.', comments: [] })
+            );
             writeFileSync(join(bundle, 'diff.patch'), '');
             const digest = reviewPublicationPayloadDigest(
                 reviewPublicationPayload({ commitId: head, event: 'APPROVE', body: 'Attacked; held.', comments: [] })
@@ -613,7 +702,7 @@ describe('shellPort postReview state verification', () => {
                     expectedHead: head,
                     payloadDigest: digest,
                     reviewerActorNodeId: REVIEWER_BOT_NODE_ID,
-                    ownerFence: { kind: 'pid', pid: 999_999 },
+                    ownerFence: { kind: 'pid', pid: 999_999, startedAt: 'Thu Jan 01 00:00:00 1970' },
                     mutation: { phase: 'remote-mutation-attempted', epoch: 1 },
                 },
                 number
@@ -633,6 +722,7 @@ describe('shellPort postReview state verification', () => {
                         return { state: 'OPEN', head, reviews: [] };
                     },
                     isOwnerLive: () => false,
+                    currentOwnerFence: () => ({ kind: 'pid', pid: process.pid, startedAt: 'test-process' }),
                 })
             ).resolves.toBe(0);
             expect(inspections).toBe(2);
