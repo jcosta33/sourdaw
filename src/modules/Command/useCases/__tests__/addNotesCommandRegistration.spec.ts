@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const mocks = vi.hoisted(() => ({
+    notifyUser: vi.fn<(message: string, level?: string) => void>(),
+}));
+
+// Undo reports a divergence by notifying the user, so without this the conflict path throws on an
+// unregistered event bus and a diverged undo would surface as a crash instead of a failed assertion.
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
+
 import { defaultTrackState } from '#/modules/Arrangement/stores';
 import {
     addClip,
@@ -144,6 +152,7 @@ function resetActionHistoryMetadataPort(): void {
 
 describe('addNotes command registration', () => {
     beforeEach(() => {
+        vi.clearAllMocks();
         clearHandlerRegistry();
         registerHandlerMap(getMidiNoteTransformHandlers());
         resetActionHistoryMetadataPort();
@@ -594,8 +603,12 @@ describe('addNotes command registration', () => {
         ]);
 
         expect(await undo()).toEqual({ headConsumed: true });
+        // Undoing the group compensates each member against the state its own batch planned, so a
+        // projection that forgot an earlier discard would diverge here and be reported as a conflict.
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
         expect(getTrackStoreState()?.tracks).toEqual([]);
         expect(midiStore.value?.notesByClipId).not.toHaveProperty('clip-created-midi');
+        expect(undoStore.value?.past).toEqual([]);
 
         await redo();
         expect(getTrackStoreState()?.tracks[0]?.clips.map((clip) => clip.id)).toEqual(['clip-created-midi']);
