@@ -121,11 +121,12 @@ describe('faustInstrumentPresets', () => {
     });
 
     it('FM synth factory presets author current four-operator controls inside real bounds', () => {
-        const fmPresetIds = FAUST_INSTRUMENT_PRESETS.filter((preset) =>
-            preset.devices.some((device) => device.type === 'faust-fm-synth')
-        )
-            .map((preset) => preset.id)
-            .sort();
+        const fmDevices = FAUST_INSTRUMENT_PRESETS.flatMap((preset) =>
+            preset.devices
+                .filter((device) => device.type === 'faust-fm-synth')
+                .map((device) => ({ presetId: preset.id, device }))
+        );
+        const fmPresetIds = fmDevices.map(({ presetId }) => presetId).sort();
         expect(fmPresetIds).toEqual([
             'factory-faust-fm-crystal-keys',
             'factory-faust-fm-dx-bells',
@@ -140,11 +141,6 @@ describe('faustInstrumentPresets', () => {
             throw new Error('Expected a registerFaustDSP registration for faust-fm-synth');
         }
 
-        const fmDevices = FAUST_INSTRUMENT_PRESETS.flatMap((preset) =>
-            preset.devices
-                .filter((device) => device.type === 'faust-fm-synth')
-                .map((device) => ({ presetId: preset.id, device }))
-        );
         const timbreFingerprints = new Set<string>();
 
         for (const { presetId, device } of fmDevices) {
@@ -154,8 +150,9 @@ describe('faustInstrumentPresets', () => {
             );
             expect(parameterIds).not.toContain('freq');
             expect(parameterIds).not.toContain('gate');
-            expect(parameterIds.some((parameterId) => parameterId.startsWith('op1_'))).toBe(true);
-            expect(parameterIds.some((parameterId) => /^op[2-4]_/.test(parameterId))).toBe(true);
+            for (const operatorPrefix of ['op1_', 'op2_', 'op3_', 'op4_']) {
+                expect(parameterIds.some((parameterId) => parameterId.startsWith(operatorPrefix))).toBe(true);
+            }
 
             for (const [parameterId, value] of Object.entries(device.parameterValues)) {
                 const registeredParam = registeredParams.get(parameterId);
