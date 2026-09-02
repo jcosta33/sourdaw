@@ -328,15 +328,15 @@ describe('projectStripAutomationWrites — clip-scoped lanes', () => {
     });
 
     it('emits nothing for a lane scoped to a clip the track does not hold', () => {
-        // `clipBoundsById` is built from the track's own `clips`, which is
-        // empty here — a clip id the track never carries resolves to no
-        // bounds, and the scheduler's own drop condition (mirrored in
-        // `clipBoundsById?.get(...) ?? continue`) skips the lane exactly as it
-        // would skip one on a clip that was deleted out from under it. A
-        // `clipBoundsById` built from an empty map turns this red: the
-        // lane would then resolve to no clip either way, but for the wrong
-        // reason — a regression here is exactly that this behaviour keeps
-        // holding once the map is built from the track's real clips.
+        // The track's own `clips` is empty here, so this pins the drop
+        // itself — a clip id the track never carries resolves to no bounds,
+        // and the scheduler's own drop condition (mirrored in
+        // `clipBoundsById?.get(...) ?? continue`) skips the lane exactly as
+        // it would skip one on a clip that was deleted out from under it.
+        // An empty `clipBoundsById` would not turn this one red — an empty
+        // `track.clips` already produces an empty map, so the lane drops
+        // either way; it is the clip-window test above that pins what the
+        // map actually holds when a clip is present.
         const track = createTrack({ clips: [] });
         const lanes: AutomationLane[] = [
             lane({ parameterId: 'gain', clipId: 'clip-does-not-exist', points: [point(0, 0.5)] }),

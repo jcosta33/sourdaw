@@ -396,11 +396,15 @@ describe('projectLiveAutomationWrites — device-lane clip scope', () => {
 describe('projectLiveAutomationWrites — device-lane link resolution', () => {
     it('does not exclude a device lane linked to a lane that does not exist', () => {
         const track = createTrack();
+        // One point on the lane itself, deliberately: a linked lane's own
+        // points are never read (it adopts the source's), so the only thing
+        // that can produce "no exclusion" here is the failed link walk, not
+        // an empty-points lane that would have resolved to nothing anyway.
         const deviceLane = lane({
             trackId: track.id,
             parameterId: 'grinder-1:cutoff',
             linkedLaneId: 'lane-does-not-exist',
-            points: [],
+            points: [point(0, 0.3, 'step')],
         });
         const lanes: AutomationLane[] = [
             lane({ trackId: track.id, parameterId: 'gain', points: [point(0, 0.5, 'step')] }),
