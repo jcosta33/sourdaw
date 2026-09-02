@@ -1,0 +1,65 @@
+crates/sourdaw-native/src/commands/engine_transport.rs
+  s_a40848e8f8cca9::t_ef2dbed43fdfd0 34,94-100,110-117,126,132-153,228-231,262-269,279,284-288,310-318,321,431,442-443,448-481
+crates/sourdaw-native/src/commands/graph.rs
+  s_a40848e8f8cca9::t_2d0c08969a7132 513-526,540,548,558,577,595,698-716,2519-2522,2527,4421-4475,4550-4552,4919,4931
+src/modules/AudioEngine/models/AudioGraphBackend.ts
+  s_9b530f08172a54::t_b978f4d115f93e 610-621
+src/modules/AudioEngine/models/EngineTransportPosition.ts
+  s_9b530f08172a54::t_6e3be6927f23ea 29-40,53,96-102
+src/modules/AudioEngine/repositories/engineTransport/__tests__/getEngineTransportPosition.spec.ts
+  s_9b530f08172a54::t_0cdd244d4ebca7 23,62
+src/modules/AudioEngine/repositories/engineTransport/__tests__/setEngineTransportMaps.spec.ts
+  s_9b530f08172a54::t_3103d43a412946 28
+src/modules/AudioEngine/repositories/engineTransport/getEngineTransportPosition.ts
+  s_9b530f08172a54::t_41dd26b46db2ad 22
+src/modules/AudioEngine/repositories/engineTransport/setEngineTransportMaps.ts
+  s_9b530f08172a54::t_103983033c6e3a 18,22-23,33
+src/modules/AudioEngine/repositories/nativeGraph/createNativeLiveGraphBackend.ts
+  s_a40848e8f8cca9::t_d2cf2f0124ebfe 104-118
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeEnginePlayheadFeed.spec.ts
+  s_9b530f08172a54::t_c7c2a8a9ed9410 29
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveAutomationWriter.spec.ts
+  s_9b530f08172a54::t_2ed01e812f615b 157,163,167,171,405,547,563-660
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_9b530f08172a54::t_6502352f45f0de 54,680
+src/modules/AudioEngine/useCases/livePlayback/armNativeLiveAutomationWriter.ts
+  s_9b530f08172a54::t_cdab932d880cc0 59-65,163,174
+src/modules/AudioEngine/useCases/livePlayback/nativeEnginePlayheadFeedState.ts
+  s_9b530f08172a54::t_d54958657ad40b 100
+src/modules/AudioEngine/useCases/livePlayback/nativeLiveAutomationWriterState.ts
+  s_9b530f08172a54::t_f27a6862395e6c 109-120
+src/modules/AudioEngine/useCases/livePlayback/pumpNativeLiveAutomationWriter.ts
+  s_9b530f08172a54::t_fcf601bc82334d 58-64,94-120,134-139,250-252
+src/modules/AudioEngine/useCases/livePlayback/repositionNativeLiveGraphSession.ts
+  s_9b530f08172a54::t_ffeb3e219f0820 85-87
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_9b530f08172a54::t_0979b2b822c234 196-202,206,213,215,312,334-335,346
+src/modules/AudioEngine/useCases/livePlayback/updateNativeLiveGraphSessionTransportMaps.ts
+  s_9b530f08172a54::t_7c354bb40e34a0 109-111
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderOfflineNativeParity.spec.ts
+  s_9b530f08172a54::t_c0c3482c516bd2 603,614
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "5bf74bed91e3bd44695fb217eaf879bc6f06b1d0",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
