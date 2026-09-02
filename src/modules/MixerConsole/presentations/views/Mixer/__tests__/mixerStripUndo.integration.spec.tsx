@@ -53,12 +53,11 @@ import { ExpandedChannelStrip } from '../ExpandedChannelStrip';
  * Under the pointer stays real: Arrangement handlers (via `importActual` of
  * `getArrangementHandlers` / `setArrangementEventBus`), `executeAppAction`, a
  * real Automerge document, the real undo stack, the real `Fader`, and live
- * `setTrackGain` / `setTrackPan`. Graph-cut (non-spread listings, not fake
- * handler maps): Metering views (`LevelMeter` only), Arrangement/useCases,
- * MIDI/useCases, Transport/useCases, Project/useCases, and the other listed
- * use-case barrels. The engine seam, confirm dialog, and routing/event
- * fan-out remain stubbed so the engine can be *counted* —
- * it is what proves the audio followed the fader mid-drag.
+ * `setTrackGain` / `setTrackPan`. Graph-cut (non-spread listings, not fake handler maps): Metering views
+ * (`LevelMeter` only), Arrangement/useCases, MIDI/useCases, Project/useCases,
+ * Yeast/useCases, and Knead/useCases. The engine seam, confirm dialog, and
+ * routing/event fan-out remain stubbed so the engine can be *counted* — it is
+ * what proves the audio followed the fader mid-drag.
  */
 
 vi.mock('#/utils/Notification/confirmUser', () => ({ confirmUser: vi.fn() }));
@@ -132,81 +131,13 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
         updateClip: actual.updateClip,
     };
 });
-// Non-spread listing of every MIDI name the strip graph imports — the fat barrel
+// Non-spread listing of the MIDI names the strip graph imports — the fat barrel
 // otherwise walks web-MIDI and groove paths that reach unread AudioEngine keys.
 vi.mock('#/modules/MIDI/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
     return {
         MIDI_EFFECT_FACTORIES: actual.MIDI_EFFECT_FACTORIES,
-        adaptGrooveTemplateForConsumer: actual.adaptGrooveTemplateForConsumer,
-        addChordEvent: actual.addChordEvent,
-        appendMidiNotes: actual.appendMidiNotes,
-        arpeggiate: actual.arpeggiate,
-        assignGrooveTemplate: actual.assignGrooveTemplate,
-        canPrepareMidiClipGlueState: actual.canPrepareMidiClipGlueState,
-        createGrooveTemplate: actual.createGrooveTemplate,
-        downloadMidiFile: actual.downloadMidiFile,
-        duplicateClipNotes: actual.duplicateClipNotes,
-        duplicateMidiClipData: actual.duplicateMidiClipData,
-        getCanonicalGrooveTemplateKey: actual.getCanonicalGrooveTemplateKey,
-        getChordAtBeat: actual.getChordAtBeat,
-        getGrooveTemplate: actual.getGrooveTemplate,
-        getMidiInputTrack: actual.getMidiInputTrack,
-        getMidiInputTrackOwnerId: actual.getMidiInputTrackOwnerId,
-        getMidiInputTrackRevision: actual.getMidiInputTrackRevision,
-        getMidiStoreState: actual.getMidiStoreState,
-        getScopedGrooveAssignment: actual.getScopedGrooveAssignment,
-        getScopedGrooveConsumerId: actual.getScopedGrooveConsumerId,
-        getStraightGrooveTemplateId: actual.getStraightGrooveTemplateId,
-        hasActiveStepRecordingDependency: actual.hasActiveStepRecordingDependency,
-        hydrateGrooveTemplates: actual.hydrateGrooveTemplates,
-        hydrateMidiProjectState: actual.hydrateMidiProjectState,
-        mergeImportedMidiClipNotes: actual.mergeImportedMidiClipNotes,
-        midiClipGlueStateMatches: actual.midiClipGlueStateMatches,
-        midiClipSplitStateMatches: actual.midiClipSplitStateMatches,
-        migrateAbsoluteMidiNotes: actual.migrateAbsoluteMidiNotes,
-        panicLiveNotes: actual.panicLiveNotes,
-        prepareMidiClipGlueState: actual.prepareMidiClipGlueState,
-        prepareMidiClipSplit: actual.prepareMidiClipSplit,
-        projectClipMidiEvents: actual.projectClipMidiEvents,
-        projectCommittedGroove: actual.projectCommittedGroove,
         projectDrumPreviewCandidateNotes: actual.projectDrumPreviewCandidateNotes,
-        readLegacyChordTrackMigration: actual.readLegacyChordTrackMigration,
-        readMidiFile: actual.readMidiFile,
-        removeMidiClipData: actual.removeMidiClipData,
-        replaceChordTrackState: actual.replaceChordTrackState,
-        resetMidiState: actual.resetMidiState,
-        resetMidiStoreForProject: actual.resetMidiStoreForProject,
-        resolveMidiNoteArticulationId: actual.resolveMidiNoteArticulationId,
-        restoreGrooveAssignment: actual.restoreGrooveAssignment,
-        restoreMidiClipData: actual.restoreMidiClipData,
-        restoreMidiClipGlueState: actual.restoreMidiClipGlueState,
-        restoreMidiClipNotes: actual.restoreMidiClipNotes,
-        restoreMidiClipSplitState: actual.restoreMidiClipSplitState,
-        serializeMidiStateForClips: actual.serializeMidiStateForClips,
-        setMidiInputTrack: actual.setMidiInputTrack,
-        setMidiStoreState: actual.setMidiStoreState,
-        setNotesForClip: actual.setNotesForClip,
-        shouldPlayMidiEvent: actual.shouldPlayMidiEvent,
-        splitMidiNotesAtBeat: actual.splitMidiNotesAtBeat,
-        transposeForChordTrack: actual.transposeForChordTrack,
-    };
-});
-// Non-spread listing of every Transport name the strip graph imports — cuts
-// playhead scheduling and offline graph repair paths that reach AudioEngine.
-vi.mock('#/modules/Transport/useCases', async () => {
-    const actual = await vi.importActual<typeof import('#/modules/Transport/useCases')>('#/modules/Transport/useCases');
-    return {
-        addTempoChange: actual.addTempoChange,
-        addTimeSignatureChange: actual.addTimeSignatureChange,
-        defaultTransportState: actual.defaultTransportState,
-        ensureTrackStrips: actual.ensureTrackStrips,
-        repairRuntimeGraphFromProject: actual.repairRuntimeGraphFromProject,
-        replaceTempoMap: actual.replaceTempoMap,
-        replaceTimeSignatureMap: actual.replaceTimeSignatureMap,
-        restoreTimelineMapSnapshot: actual.restoreTimelineMapSnapshot,
-        restoreTransportSnapshot: actual.restoreTransportSnapshot,
-        stopPlayback: actual.stopPlayback,
     };
 });
 // Non-spread listing of every Project name the CRDT graph imports — cuts project
@@ -220,32 +151,11 @@ vi.mock('#/modules/Project/useCases', async () => {
         saveProject: actual.saveProject,
     };
 });
-// Non-spread listing of every Synth name the strip graph imports.
-vi.mock('#/modules/Synth/useCases', async () => {
-    const actual = await vi.importActual<typeof import('#/modules/Synth/useCases')>('#/modules/Synth/useCases');
-    return {
-        getDrumKitDefByIndex: actual.getDrumKitDefByIndex,
-        getSynthParamsFromDevices: actual.getSynthParamsFromDevices,
-        scheduleDrumKitNote: actual.scheduleDrumKitNote,
-        scheduleKitNote: actual.scheduleKitNote,
-        scheduleNote: actual.scheduleNote,
-    };
-});
-// Non-spread listing of every Yeast name the strip graph imports.
+// Non-spread listing of the Yeast name the strip graph imports.
 vi.mock('#/modules/Yeast/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/Yeast/useCases')>('#/modules/Yeast/useCases');
     return {
         hydrateYeastCrdtProjection: actual.hydrateYeastCrdtProjection,
-        hydrateYeastState: actual.hydrateYeastState,
-        processYeastMidi: actual.processYeastMidi,
-        yeastPanic: actual.yeastPanic,
-    };
-});
-// Non-spread listing of every Toaster name the strip graph imports.
-vi.mock('#/modules/Toaster/useCases', async () => {
-    const actual = await vi.importActual<typeof import('#/modules/Toaster/useCases')>('#/modules/Toaster/useCases');
-    return {
-        getDefaultPadNames: actual.getDefaultPadNames,
     };
 });
 // Non-spread listing of every Knead name the strip graph imports.
@@ -253,15 +163,6 @@ vi.mock('#/modules/Knead/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/Knead/useCases')>('#/modules/Knead/useCases');
     return {
         hydrateKneadFromTrackStore: actual.hydrateKneadFromTrackStore,
-    };
-});
-// Non-spread listing of every Collaboration name the strip graph imports.
-vi.mock('#/modules/Collaboration/useCases', async () => {
-    const actual = await vi.importActual<typeof import('#/modules/Collaboration/useCases')>(
-        '#/modules/Collaboration/useCases'
-    );
-    return {
-        getAssetTransfer: actual.getAssetTransfer,
     };
 });
 vi.mock('#/modules/AudioEngine/useCases', () => ({
@@ -280,8 +181,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
         runtimeRevision: 1,
     })),
     getAudioDevices: vi.fn(() => Promise.resolve([])),
-    getTrackAnalyser: vi.fn(() => null),
-    getMasterAnalyser: vi.fn(() => null),
     getTrackPeakLevel: vi.fn(() => 0),
     getMasterPeakLevel: vi.fn(() => 0),
     removeTrackStrip: vi.fn(),
@@ -296,17 +195,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     setTrackMute: vi.fn(),
     setTrackSolo: vi.fn(),
     setTrackSoloGate: vi.fn(),
-    // `LevelMeter` constructs one per strip on first render; it is never read by
-    // any assertion here, it only has to be constructible.
-    VUMeter: class {
-        update(): number {
-            return 0;
-        }
-        getPeakHold(): number {
-            return 0;
-        }
-        reset(): void {}
-    },
 }));
 vi.mock('#/modules/Routing/useCases', () => ({
     addSidechainRoute: vi.fn(),
