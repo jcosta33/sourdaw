@@ -40,16 +40,17 @@ import { TrackListView } from '../TrackListView';
  * back with its clip still on it. Everything under the click is real — the
  * Arrangement handler map, `executeAppAction`, a real Automerge document, the
  * real undo stack. Stubbed seams this assertion does not read: `confirmUser`,
- * `useContextMenuDismiss`, AiRuntime `injectPromptDraft`, WorkspaceShell
- * preference setters, the MIDI/useCases graph-cut listing, Yeast
- * `hydrateYeastCrdtProjection`, Knead pitch-analysis hydration, the
- * AudioEngine use-case surface, Routing sidechain/send fan-out, and
+ * `useContextMenuDismiss`, AiRuntime `injectPromptDraft`, the AudioEngine
+ * use-case surface, Routing sidechain/send fan-out, and
  * `projectTrackToLiveStrip`.
  *
  * Graph-cut (non-spread listings, not fake handler maps): AiRuntime/useCases,
  * WorkspaceShell/useCases, MIDI/useCases, Yeast/useCases, and Knead/useCases.
- * `getArrangementHandlers` / `setArrangementEventBus` stay live via relative
- * imports.
+ * WorkspaceShell preference setters, the MIDI/useCases barrel names the
+ * remaining graph imports, Yeast `hydrateYeastCrdtProjection`, and Knead
+ * pitch-analysis hydration return live `actual.*`; AiRuntime lists only the
+ * stubbed `injectPromptDraft`. `getArrangementHandlers` / `setArrangementEventBus`
+ * stay live via relative imports.
  */
 
 vi.mock('#/utils/Notification/confirmUser', () => ({ confirmUser: vi.fn() }));
