@@ -30,6 +30,7 @@ async function loadSubject() {
         createUndoEntry: createUndoEntryModule.createUndoEntry,
         pushUndo: undoStoreModule.pushUndo,
         undoStore: undoStoreModule.undoStore,
+        reconcileUndoStoreForProject: undoStoreModule.reconcileUndoStoreForProject,
     };
 }
 
@@ -503,5 +504,108 @@ describe('undoStore / pushUndo', () => {
             const { undoStore } = await loadSubject();
             expect(undoStore.value).toEqual({ past: [], future: [] });
         }
+    });
+});
+
+describe('undoStore / reconcileUndoStoreForProject (#3331)', () => {
+    beforeEach(() => {
+        sessionStorage.removeItem(UNDO_SESSION_KEY);
+    });
+
+    afterEach(async () => {
+        await flushPersistence();
+        sessionStorage.removeItem(UNDO_SESSION_KEY);
+    });
+
+    it('round-trips the project identity the mirror was written against', async () => {
+        const { createUndoEntry, pushUndo } = await loadSubject();
+        pushUndo(
+            createUndoEntry(
+                'tagged',
+                { type: 'setTempo', payload: { bpm: 120 } },
+                { type: 'setTempo', payload: { bpm: 110 } }
+            )
+        );
+        await flushPersistence();
+
+        // No `reconcileUndoStoreForProject` call has happened yet in this
+        // session, so the flush persisted no owner — the mirror should carry no
+        // `projectId` at all.
+        const untaggedRaw = sessionStorage.getItem(UNDO_SESSION_KEY);
+        expect(untaggedRaw).not.toBeNull();
+        expect(parsePersistedUndoState(untaggedRaw)).not.toHaveProperty('projectId');
+
+        const { reconcileUndoStoreForProject, pushUndo: pushUndoAgain } = await loadSubject();
+        // Reconciling against the project this session's mirror was untagged
+        // for is a mismatch (no recorded owner), so the hydrated entry above is
+        // dropped and the live stacks start tagged to 'project-a' from here on.
+        reconcileUndoStoreForProject('project-a');
+        pushUndoAgain(
+            createUndoEntry(
+                'project-a-edit',
+                { type: 'setTempo', payload: { bpm: 130 } },
+                { type: 'setTempo', payload: { bpm: 120 } }
+            )
+        );
+        await flushPersistence();
+
+        const taggedRaw = sessionStorage.getItem(UNDO_SESSION_KEY);
+        const parsed = parsePersistedUndoState(taggedRaw);
+        expect(parsed.projectId).toBe('project-a');
+        expect(persistedEntryLabels(parsed.past)).toEqual(['project-a-edit']);
+
+        // Hydrating a fresh session from that tagged mirror recovers both the
+        // stacks and the identity they were written against.
+        const reloaded = await loadSubject();
+        expect(reloaded.undoStore.value?.past.map((entry) => entry.label)).toEqual(['project-a-edit']);
+        reloaded.reconcileUndoStoreForProject('project-a');
+        expect(reloaded.undoStore.value?.past.map((entry) => entry.label)).toEqual(['project-a-edit']);
+    });
+
+    it('clears stacks hydrated from a mirror with no recorded identity', async () => {
+        const untaggedEntry = {
+            id: 'undo-untagged',
+            kind: 'action',
+            label: 'Untagged edit',
+            action: { type: 'setTempo', payload: { bpm: 128 } },
+            inverseAction: { type: 'setTempo', payload: { bpm: 120 } },
+            timestamp: 4000,
+            source: 'manual',
+        };
+        // Backward-compatible shape: a mirror written before identity tagging
+        // existed carries no `projectId` key at all.
+        sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify({ past: [untaggedEntry], future: [] }));
+
+        const { undoStore, reconcileUndoStoreForProject } = await loadSubject();
+        // Hydration itself still loads whatever entries validate; identity only
+        // gates what the boot-restore reconciliation keeps.
+        expect(undoStore.value?.past).toEqual([untaggedEntry]);
+
+        reconcileUndoStoreForProject('any-project');
+
+        expect(undoStore.value).toEqual({ past: [], future: [] });
+    });
+
+    it('keeps hydrated stacks when the reconciled project matches the mirrored identity', async () => {
+        const matchingEntry = {
+            id: 'undo-matching',
+            kind: 'action',
+            label: 'Matching edit',
+            action: { type: 'setTempo', payload: { bpm: 128 } },
+            inverseAction: { type: 'setTempo', payload: { bpm: 120 } },
+            timestamp: 5000,
+            source: 'manual',
+        };
+        sessionStorage.setItem(
+            UNDO_SESSION_KEY,
+            JSON.stringify({ past: [matchingEntry], future: [], projectId: 'project-b' })
+        );
+
+        const { undoStore, reconcileUndoStoreForProject } = await loadSubject();
+        expect(undoStore.value?.past).toEqual([matchingEntry]);
+
+        reconcileUndoStoreForProject('project-b');
+
+        expect(undoStore.value?.past).toEqual([matchingEntry]);
     });
 });

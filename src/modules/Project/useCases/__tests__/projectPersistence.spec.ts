@@ -34,7 +34,7 @@ const mocks = vi.hoisted(() => ({
     loadCrdtProject: vi.fn<(input?: { shouldCommit?: () => boolean }) => Promise<boolean>>(),
     projectCrdtToStores: vi.fn<() => void>(),
     startCrdtAutoSave: vi.fn<() => () => void>(() => vi.fn<() => void>()),
-    clearUndoHistory: vi.fn<() => void>(),
+    reconcileSessionUndoForProject: vi.fn<(projectId: string | undefined) => void>(),
     resetActionReplayAuthority: vi.fn<() => void>(),
     executeAppAction: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     captureProjectRevision: vi.fn<() => string>(() => 'saved-revision'),
@@ -92,7 +92,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.executeAppAction,
-    clearUndoHistory: mocks.clearUndoHistory,
+    reconcileSessionUndoForProject: mocks.reconcileSessionUndoForProject,
     resetActionReplayAuthority: mocks.resetActionReplayAuthority,
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
     isAppActionCommittedError: vi.fn(() => false),
@@ -249,7 +249,7 @@ describe('Project Persistence Use Cases', () => {
                 mocks.projectCrdtToStores.mock.invocationCallOrder[0]!
             );
             expect(mocks.projectCrdtToStores).toHaveBeenCalled();
-            expect(mocks.clearUndoHistory).toHaveBeenCalled();
+            expect(mocks.reconcileSessionUndoForProject).toHaveBeenCalledWith(mocks.projectStoreValue.value.projectId);
             expect(mocks.startCrdtAutoSave).toHaveBeenCalled();
         });
 
@@ -264,7 +264,7 @@ describe('Project Persistence Use Cases', () => {
             expect(mocks.projectCrdtToStores).not.toHaveBeenCalled();
             expect(mocks.persistCrdtProject).not.toHaveBeenCalled();
             expect(mocks.prepareCachedAudioBuffersFromIdb).not.toHaveBeenCalled();
-            expect(mocks.clearUndoHistory).not.toHaveBeenCalled();
+            expect(mocks.reconcileSessionUndoForProject).not.toHaveBeenCalled();
             expect(mocks.startCrdtAutoSave).not.toHaveBeenCalled();
         });
 

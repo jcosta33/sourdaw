@@ -14,12 +14,37 @@ export const undoStore = createStore<UndoStoreState>({
 });
 
 /**
+ * The project the live stacks are currently tagged as belonging to. Seeded at
+ * boot hydration from whatever identity the mirror was written against, and
+ * re-tagged by every `reconcileUndoStoreForProject` call so later mirror
+ * flushes stay attributed to the project actually driving the pushes.
+ */
+let activeUndoProjectId: string | undefined;
+
+/**
  * Hydrates persisted undo history only after production handler registration
  * has established the current executable action set. Unknown, retired, and
  * re-shaped actions never enter the live undo/redo stacks.
  */
 export function hydrateUndoStoreFromSession(actionContracts: Iterable<SessionActionContract>): void {
-    undoStore.set(hydrateSessionMirror(actionContracts));
+    const { past, future, projectId } = hydrateSessionMirror(actionContracts);
+    activeUndoProjectId = projectId;
+    undoStore.set({ past, future });
+}
+
+/**
+ * Boot restore reconciliation: keeps the hydrated stacks when they were
+ * mirrored against the same project `loadProject` just restored, and clears
+ * them otherwise (a different project, or a mirror with no recorded owner).
+ * Also re-tags the live stacks to `projectId` so this session's own mirror
+ * flushes record the right owner going forward.
+ */
+export function reconcileUndoStoreForProject(projectId: string | undefined): void {
+    const matchesHydratedProject = projectId !== undefined && projectId === activeUndoProjectId;
+    activeUndoProjectId = projectId;
+    if (!matchesHydratedProject) {
+        undoStore.set({ past: [], future: [] });
+    }
 }
 
 // Coalesce persistence writes: prior to this, every pushUndo triggered
@@ -39,7 +64,7 @@ undoStore.subscribe((value) => {
         if (!current) {
             return;
         }
-        writeSessionMirror(current);
+        writeSessionMirror({ ...current, projectId: activeUndoProjectId });
     });
 });
 

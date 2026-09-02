@@ -88,6 +88,7 @@ export { clearActionHistory } from './clearActionHistory';
 export { resetActionReplayAuthority } from './resetActionReplayAuthority';
 export { syncActionReplayMetadata } from './syncActionReplayMetadata';
 export { clearUndoHistory } from './clearUndoHistory';
+export { reconcileSessionUndoForProject } from './reconcileSessionUndoForProject';
 export { captureUndoHistory } from './captureUndoHistory';
 export { restoreUndoHistory } from './restoreUndoHistory';
 export { pushUndoEntry } from './pushUndoEntry';

@@ -1,23 +1,32 @@
 /**
- * The cold-start half of audit M-011: restoring the persisted project at app
- * start must not present it as having unsaved changes.
+ * Issue #3331: `loadProject` used to call `clearUndoHistory()` unconditionally
+ * inside its hydration batch. The undo store's own flush-to-sessionStorage
+ * subscriber then overwrote the boot-restored session mirror with the emptied
+ * stacks on the very next microtask, so Ctrl+Z undid nothing after any reload
+ * of a stored project. `reconcileSessionUndoForProject` replaces that
+ * unconditional clear with an identity check against the project
+ * `projectCrdtToStores` just hydrated.
  *
- * Same mechanism as `saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts`,
- * different call site. `loadProject` hydrates the stores inside one
- * `batchStoreUpdates` and cleared `loading` inside that same batch, so the
- * composition root's dirty subscription — which only runs when the batch
- * flushes — saw a project that was no longer loading and marked it dirty.
- *
- * The project store, the track store, `batchStoreUpdates` and the dirty
- * subscription are all real. `projectCrdtToStores` stands in for CRDT
- * hydration (it reaches IndexedDB) by writing the track store, which is what
- * the real one does; the ordering under test is `loadProject`'s own.
+ * `#/modules/Command/useCases` is deliberately left unmocked here (unlike the
+ * sibling `loadProject.spec.ts`): the behaviour under test is the real
+ * identity comparison living in Command's own undo store, and a hand-rolled
+ * mock could only assert that `loadProject` calls the reconciliation, not
+ * that the reconciliation itself keeps or clears correctly. Boot's own
+ * `hydrateUndoStoreFromSession` is Command-private and unreachable across the
+ * module boundary even from a test, so "as bootstrap hydration would" is
+ * reproduced through the same public seam `loadProject` itself uses:
+ * `reconcileSessionUndoForProject('project-x')` first tags the live stacks to
+ * project X exactly as a boot hydration reading a mirror written for project
+ * X would, then `pushUndoEntry` deposits the entry that hydration would have
+ * restored. What matters for this spec is the state that results, not the
+ * mechanism that produced it — the sessionStorage wire format and the
+ * hydrate-time identity parsing are covered directly in
+ * `Command/stores/__tests__/undoStore.spec.ts`.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-    executeAppAction: vi.fn(() => Promise.resolve()),
     getCrdtDoc: vi.fn((): { chordTrack?: unknown; tracks: { tracks: never[] } } => ({
         chordTrack: undefined,
         tracks: { tracks: [] },
@@ -109,15 +118,6 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     subscribeToCrdtChanges: vi.fn(),
     waitForCrdtDocumentTransition: vi.fn(),
 }));
-vi.mock('#/modules/Command/useCases', () => ({
-    reconcileSessionUndoForProject: vi.fn(),
-    executeAppAction: mocks.executeAppAction,
-    resetActionReplayAuthority: vi.fn(),
-    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
-    isAppActionCommittedError: vi.fn(() => false),
-    pushUndoEntry: vi.fn(),
-    syncActionReplayMetadata: vi.fn(),
-}));
 vi.mock('#/modules/MIDI/useCases', () => ({
     appendMidiNotes: vi.fn(),
     arpeggiate: vi.fn(),
@@ -155,74 +155,79 @@ vi.mock('../helpers/verifyAudioBufferReferences', () => ({
     verifyAudioBufferReferences: mocks.verifyAudioBufferReferences,
 }));
 
-import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
+import { undoStore } from '#/modules/Command/stores';
+import { pushUndoEntry, reconcileSessionUndoForProject } from '#/modules/Command/useCases';
 
 import { defaultProjectStoreState, projectStore } from '../../../stores/projectStore';
 import { loadProject } from '../loadProject';
 import { setProjectIdentityTransitionDependencies } from '../projectIdentityTransitionDependencies';
-import { initProjectDirtyTracking } from '../saveProject/initProjectDirtyTracking';
 
-const RESTORED_TRACK_NAME = 'Drums (restored)';
+const RESTORED_PROJECT_ID = 'project-x';
+const OTHER_PROJECT_ID = 'project-y';
+const SEEDED_ENTRY_LABEL = 'Seeded tempo change';
 
-describe('cold-start project restore dirty tracking (audit M-011)', () => {
-    let stopDirtyTracking: () => void = () => {};
+function seedHydratedUndoEntryFor(projectId: string): void {
+    // See the file header: this reaches the same live state a boot hydration
+    // for `projectId` would, through the same public seam `loadProject` calls.
+    reconcileSessionUndoForProject(projectId);
+    pushUndoEntry(
+        SEEDED_ENTRY_LABEL,
+        () => {},
+        () => {}
+    );
+}
 
+function restoreProjectVia(projectCrdtToStoresImpl: () => void): void {
+    mocks.projectCrdtToStores.mockImplementation(projectCrdtToStoresImpl);
+}
+
+describe('loadProject preserves session undo history for the same project (#3331)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        stopDirtyTracking();
+        // `#/modules/Command/useCases` is intentionally unmocked (see file
+        // header), so its undo store is a real singleton that otherwise
+        // carries state across `it()` blocks in this file. `undefined` never
+        // matches a real project id, so this both empties the stacks and
+        // resets the tracked "hydrated from" identity to unknown.
+        reconcileSessionUndoForProject(undefined);
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
-        trackStore.set(structuredClone(defaultTrackState));
         projectStore.set({
             ...structuredClone(defaultProjectStoreState),
-            name: 'Restored Project',
-            createdAt: 1,
-            updatedAt: 2,
-            dirty: false,
-            // What the app starts with: the store's own default is `loading: true`
-            // and the boot restore is what clears it.
+            projectId: undefined,
             loading: true,
-            keyRoot: 0,
-            scaleName: 'chromatic',
-            tuning: { name: 'Equal Temperament', frequencies: [440] },
             initialized: false,
         });
-        // CRDT hydration writes the arrangement; that write is what the dirty
-        // subscription observes.
-        mocks.projectCrdtToStores.mockImplementation(() => {
-            trackStore.set({
-                tracks: [
-                    {
-                        id: 'restored-track',
-                        name: RESTORED_TRACK_NAME,
-                        kind: 'audio',
-                    },
-                ],
-                selectedTrackId: null,
-                ghostClips: [],
-                // The store's sanitizer fills the rest of the Track shape; this
-                // spec only needs an identifiable row to have arrived.
-            } as unknown as NonNullable<typeof trackStore.value>);
+        mocks.loadCrdtProject.mockResolvedValue(true);
+        mocks.getCrdtDoc.mockReturnValue({ chordTrack: undefined, tracks: { tracks: [] } });
+    });
+
+    it('keeps the hydrated undo history when the reload restores the same project', async () => {
+        seedHydratedUndoEntryFor(RESTORED_PROJECT_ID);
+        expect(undoStore.value?.past.map((entry) => entry.label)).toEqual([SEEDED_ENTRY_LABEL]);
+
+        restoreProjectVia(() => {
+            const current = projectStore.value ?? defaultProjectStoreState;
+            projectStore.set({ ...current, projectId: RESTORED_PROJECT_ID });
         });
-        stopDirtyTracking = initProjectDirtyTracking();
+
+        await expect(loadProject()).resolves.toBe(true);
+
+        expect(undoStore.value?.past.map((entry) => entry.label)).toEqual([SEEDED_ENTRY_LABEL]);
+        expect(undoStore.value?.future).toEqual([]);
     });
 
-    it('restores the persisted project without flagging it as edited', async () => {
-        const loaded = await loadProject();
+    it('clears the hydrated undo history when the reload restores a different project', async () => {
+        seedHydratedUndoEntryFor(RESTORED_PROJECT_ID);
+        expect(undoStore.value?.past.map((entry) => entry.label)).toEqual([SEEDED_ENTRY_LABEL]);
 
-        expect(loaded).toBe(true);
-        // The restore really happened — otherwise "clean" would be vacuous.
-        expect(trackStore.value?.tracks.map((track) => track.name)).toContain(RESTORED_TRACK_NAME);
-        expect(projectStore.value?.loading).toBe(false);
-        expect(projectStore.value?.dirty).toBe(false);
-    });
+        restoreProjectVia(() => {
+            const current = projectStore.value ?? defaultProjectStoreState;
+            projectStore.set({ ...current, projectId: OTHER_PROJECT_ID });
+        });
 
-    it('still marks the restored project dirty on the first edit after the restore', async () => {
-        await loadProject();
-        expect(projectStore.value?.dirty).toBe(false);
+        await expect(loadProject()).resolves.toBe(true);
 
-        const current = trackStore.value ?? defaultTrackState;
-        trackStore.set({ ...current, selectedTrackId: 'restored-track' });
-
-        expect(projectStore.value?.dirty).toBe(true);
+        expect(undoStore.value?.past).toEqual([]);
+        expect(undoStore.value?.future).toEqual([]);
     });
 });

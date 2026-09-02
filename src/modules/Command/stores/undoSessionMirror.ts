@@ -20,11 +20,15 @@ export type SessionActionContract = {
 export type UndoSessionStacks = {
     past: UndoEntry[];
     future: UndoEntry[];
+    /** The project these stacks were hydrated against, or `undefined` for a
+     *  mirror written before identity tagging existed or with no known owner. */
+    projectId: string | undefined;
 };
 
 type PersistableUndoStacks = {
     readonly past: readonly UndoEntry[];
     readonly future: readonly UndoEntry[];
+    readonly projectId: string | undefined;
 };
 
 type SerializedActionUndoEntry = ActionUndoEntry & {
@@ -234,6 +238,11 @@ function sanitizeReachableEntries(values: unknown[], nearestFirst: boolean): Act
     return nearestFirst ? reachable : reachable.reverse();
 }
 
+function readStoredProjectId(value: Record<string, unknown>): string | undefined {
+    const projectId = value.projectId;
+    return typeof projectId === 'string' && projectId.length > 0 ? projectId : undefined;
+}
+
 function readStoredStacks(): UndoSessionStacks {
     try {
         const raw = sessionStorage.getItem(UNDO_SESSION_KEY);
@@ -243,13 +252,16 @@ function readStoredStacks(): UndoSessionStacks {
                 return {
                     past: sanitizeReachableEntries(parsed.past, false),
                     future: sanitizeReachableEntries(parsed.future, true),
+                    // A mirror with no recorded identity predates identity tagging or
+                    // never had one; the caller treats it as belonging to no project.
+                    projectId: readStoredProjectId(parsed),
                 };
             }
         }
     } catch {
         /* unreadable or unparseable: there is nothing this build can trust */
     }
-    return { past: [], future: [] };
+    return { past: [], future: [], projectId: undefined };
 }
 
 /**
@@ -272,10 +284,12 @@ function serializeSessionStacks(stacks: PersistableUndoStacks, limit: number): s
     }
     // Trim from the end furthest from the present, so a truncated mirror keeps
     // the entries the next session reaches first: the newest of `past`, the
-    // nearest of `future`.
+    // nearest of `future`. `JSON.stringify` omits an `undefined` projectId, so
+    // an untagged write round-trips back to the same "no known owner" state.
     return JSON.stringify({
         past: persistable(stacks.past).slice(-limit),
         future: persistable(stacks.future).slice(0, limit),
+        projectId: stacks.projectId,
     });
 }
 
