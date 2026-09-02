@@ -57,7 +57,7 @@
             },
             {
                 "path": "package.json",
-                "sha256": "d1ad9670b5b03d19c5df0c2439e64ce3426a2450d83730ee119bc4218c3d39c3"
+                "sha256": "98597b0996857972ff796bd8794347faf1f72ced343dae7a701f5a3483c2b46f"
             },
             {
                 "path": "rust-toolchain.toml",
@@ -8562,14 +8562,14 @@
                 ]
             }
         },
-        "npm:onnxruntime-common@1.27.0": {
-            "source": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.27.0.tgz",
-            "revision": "sha512-3KxL5wIVqa8Ex08jxSzncm9CMgw8CjOFyOQ7SxvG9o0cVLlhTNKXyIQuTbtX4tGPJEf73OER2xrjt4HJSBL4ow==",
+        "npm:onnxruntime-common@1.29.0": {
+            "source": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.29.0.tgz",
+            "revision": "sha512-/F63/e2VJoaVXGGNu6S5QH7jivBThGO95OzAVXXQ8hTta/b1QxI8udHa6cI3+3mAb5WWIIaMMwfZw01oivjJ1g==",
             "assembled": {
                 "metadata": [
                     {
                         "sourcePath": "package.json",
-                        "sha256": "740784b70b19207529b9a08229aaa4bf7c211afcc30ab4594daa32891ccffb94"
+                        "sha256": "976083947171b96bb7e998fdc8137bc50d3efb44c786ff3dbafb7f1bc4684dc8"
                     }
                 ],
                 "licenses": [
@@ -8577,14 +8577,14 @@
                 ]
             }
         },
-        "npm:onnxruntime-web@1.27.0": {
-            "source": "https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.27.0.tgz",
-            "revision": "sha512-ogDLsqIozHZwifPuN37OproAo0byX6t43/bP8GzeZWBWD6MOGExswFAx3up4NS/vvWBOg2u2PXomDt3rMmdQSg==",
+        "npm:onnxruntime-web@1.29.0": {
+            "source": "https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.29.0.tgz",
+            "revision": "sha512-LuQlpX6MFLJZu756erwUeb1mNfoJGbs1kzDwJGNlf5RvfYMdqhcY3vNpDPK40CUV2HoWTkIj+uS0o36GFHjeYw==",
             "assembled": {
                 "metadata": [
                     {
                         "sourcePath": "package.json",
-                        "sha256": "8cdbce0a4f6205109083cc4675477632147ed48e13fa7f891827fd08ef3c818c"
+                        "sha256": "9c803baa1820e75a82907bbf29c0a4be84d4eaec33693b4ab3bd5051fde85ee9"
                     }
                 ],
                 "licenses": [

@@ -7,7 +7,7 @@ Generation fails when configured records are missing or inconsistent.
 
 Source graph digests:
 - Cargo.lock sha256:d72565a4570428b48a8a40bdc308fff00be3f2f430a83d3a9166f190ef7a9258
-- pnpm-lock.yaml sha256:7ac8f1246e6d8194f3ccf2d8dd241827ec4ccface6c161f745f3ec2d44a7242d
+- pnpm-lock.yaml sha256:08e8336164c1812afee62a59d5e8ffe3ad8b0eaca96ac12cb5dae2e929f1c89d
 - server/package-lock.json sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db
 
 Package inventory: 353 npm, 321 Cargo
@@ -603,8 +603,8 @@ npm:ms@2.0.0 | MIT | sha256:6652830c2607c722b66f1b57de15877ab8fc5dca406cc5b335af
 npm:ms@2.1.3 | MIT | sha256:1662fae9b5314d11cf51284e2dcd1f006a354f7343f08712a730fcff9a359801 | pnpm-lock.yaml
 npm:node-fetch@2.6.13 | MIT | sha256:84eaa985e1ef71b8c630e8aba73404c219ff425c6fdb45c62e998b58d4fbdc8e | pnpm-lock.yaml
 npm:node-getopt@0.3.2 | MIT | sha256:b58b31981b58bf97b72dbcf119867b75b0d372b750e9897be6a3002269898bc5 | pnpm-lock.yaml
-npm:onnxruntime-common@1.27.0 | MIT | sha256:81c89f225b3f902b3e08e3f3416c25bdc63aa399cd710c3d4d3aaaf48a844359 | pnpm-lock.yaml
-npm:onnxruntime-web@1.27.0 | MIT | sha256:bcce7d8bd300778baf8cee4e73127a46432261ee89d421b01844e61c69ec83eb | pnpm-lock.yaml
+npm:onnxruntime-common@1.29.0 | MIT | sha256:bf4dc32b418176b0dc5947fd3b09fa68c66e52a10901d2ba07b54025bd133afc | pnpm-lock.yaml
+npm:onnxruntime-web@1.29.0 | MIT | sha256:a0180364ffdf1d21d17fe33f0155cae1fa8ecaf239d2dc8916bb2e64f4bafbcb | pnpm-lock.yaml
 npm:p-limit@2.3.0 | MIT | sha256:48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0 | pnpm-lock.yaml
 npm:p-locate@4.1.0 | MIT | sha256:48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0 | pnpm-lock.yaml
 npm:p-try@2.2.0 | MIT | sha256:48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0 | pnpm-lock.yaml
@@ -616,7 +616,7 @@ npm:pitchy@4.1.0 | MIT | sha256:3dd8c40c5b5a0ee4c79be3ecd0499e8fefebf002ebcff417
 npm:platform@1.3.6 | MIT | sha256:4a161ebed4f1ef933e16ccfa00d86c718703f5d015a9987ea7ce1bb72a43cd22 | pnpm-lock.yaml
 npm:pngjs@5.0.0 | MIT | sha256:176b07a18c0bb3836aaeb61088fd0bf11a38f66e6f15e3fbda85faa225250d6e | pnpm-lock.yaml
 npm:property-information@7.2.0 | MIT | sha256:5d0698266086f217bb11ea0499d33453e401fe479fb9126ad04e625e63d3557b | pnpm-lock.yaml
-npm:protobufjs@7.6.5 | BSD-3-Clause | sha256:49d6a1c9a623784c61c6cb70f773f3457faceb1914a13c8560a9823b7631950c,sha256:4ab87e6e3c0c0b78e47c77d49ec10c048f8a519fb8062e6e3217e3e6e9b0c6e9 | pnpm-lock.yaml
+npm:protobufjs@7.6.6 | BSD-3-Clause | sha256:49d6a1c9a623784c61c6cb70f773f3457faceb1914a13c8560a9823b7631950c,sha256:4ab87e6e3c0c0b78e47c77d49ec10c048f8a519fb8062e6e3217e3e6e9b0c6e9 | pnpm-lock.yaml
 npm:qrcode@1.5.4 | MIT | sha256:8df47c6ad9ac2c41eb9b2a72def9908959da0ede8dadd56c7b249c1bdb0c5ce6 | pnpm-lock.yaml
 npm:radix-ui@1.6.7 | MIT | sha256:0e80a2d229d2fd4fc7e8636142ec5d0ff0bc031f14c15b682e2ac01dfd5b5138 | pnpm-lock.yaml
 npm:react@19.2.8 | MIT | sha256:da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93 | pnpm-lock.yaml
@@ -9105,7 +9105,7 @@ export { __iconNode, Copyright as default };
 ===== sha256:49d6a1c9a623784c61c6cb70f773f3457faceb1914a13c8560a9823b7631950c =====
 Evidence labels: LICENSE
 Packages:
-- npm:protobufjs@7.6.5
+- npm:protobufjs@7.6.6
 
 This license applies to all parts of protobuf.js except those files
 either explicitly including or referencing a different license or
@@ -9179,7 +9179,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ===== sha256:4ab87e6e3c0c0b78e47c77d49ec10c048f8a519fb8062e6e3217e3e6e9b0c6e9 =====
 Evidence labels: LICENSE
 Packages:
-- npm:protobufjs@7.6.5
+- npm:protobufjs@7.6.6
 
 Copyright 2014, Google Inc.  All rights reserved.
 
@@ -16583,85 +16583,6 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ===== end sha256:807a88522a850092aece49486207c17c313c4d5708ac276524840fe1caa0b0fa =====
-===== sha256:81c89f225b3f902b3e08e3f3416c25bdc63aa399cd710c3d4d3aaaf48a844359 =====
-Evidence labels: assembled license record from lock-resolved package metadata and SPDX 3.28.0
-Packages:
-- npm:onnxruntime-common@1.27.0
-
-Sourdaw assembled dependency license record
-
-Package: npm:onnxruntime-common@1.27.0
-Locked source: https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.27.0.tgz
-Locked revision: sha512-3KxL5wIVqa8Ex08jxSzncm9CMgw8CjOFyOQ7SxvG9o0cVLlhTNKXyIQuTbtX4tGPJEf73OER2xrjt4HJSBL4ow==
-Declared license: MIT
-Selected SPDX terms: MIT
-
-The resolved package omits a retained legal file. This record combines hash-pinned metadata from the lock-resolved install with canonical SPDX License List text. It does not authenticate an upstream copyright holder, package-specific notice, or package archive.
-
-===== installed package metadata package.json sha256:740784b70b19207529b9a08229aaa4bf7c211afcc30ab4594daa32891ccffb94 =====
-{
-  "license": "MIT",
-  "type": "module",
-  "name": "onnxruntime-common",
-  "version": "1.27.0",
-  "repository": {
-    "url": "https://github.com/Microsoft/onnxruntime.git",
-    "type": "git"
-  },
-  "author": "fs-eire",
-  "scripts": {
-    "build:cjs": "tsc --module commonjs --moduleResolution node10 --outDir ./dist/cjs",
-    "build:esm": "tsc",
-    "build:bundles": "webpack",
-    "build": "node ./build.js",
-    "prepare": "npm run build",
-    "pretest": "tsc --build ./test",
-    "test": "mocha \"./test/**/*.js\" --timeout 30000",
-    "test:f16": "mocha -n js-float16array \"./test/**/*.js\" --timeout 30000"
-  },
-  "devDependencies": {
-    "globby": "^15.0.0",
-    "typedoc": "^0.28.0",
-    "typescript": "^5.6.2"
-  },
-  "main": "dist/cjs/index.js",
-  "exports": {
-    "require": "./dist/cjs/index.js",
-    "import": "./dist/esm/index.js"
-  },
-  "keywords": [
-    "ONNX",
-    "ONNXRuntime",
-    "ONNX Runtime"
-  ],
-  "description": "ONNXRuntime JavaScript API library"
-}
-
-===== end installed package metadata package.json =====
-===== canonical SPDX MIT sha256:b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5 =====
-Source: https://github.com/spdx/license-list-data/blob/v3.28.0/text/MIT.txt
-MIT License
-
-Copyright (c) <year> <copyright holders>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
-associated documentation files (the "Software"), to deal in the Software without restriction, including
-without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the
-following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial
-portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
-LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO
-EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
-USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-===== end canonical SPDX MIT =====
-
-===== end sha256:81c89f225b3f902b3e08e3f3416c25bdc63aa399cd710c3d4d3aaaf48a844359 =====
 ===== sha256:82974dbf2639d13edab95c32ed9cb6c0867ede272cd2e07ce47ce8548fe55c05 =====
 Evidence labels: license
 Packages:
@@ -19908,6 +19829,181 @@ limitations under the License.
 ===== end canonical SPDX Apache-2.0 =====
 
 ===== end sha256:9f1885b85a2a2467a9692217037d344752e32c25cb99f7b5066c047e1ef96922 =====
+===== sha256:a0180364ffdf1d21d17fe33f0155cae1fa8ecaf239d2dc8916bb2e64f4bafbcb =====
+Evidence labels: assembled license record from lock-resolved package metadata and SPDX 3.28.0
+Packages:
+- npm:onnxruntime-web@1.29.0
+
+Sourdaw assembled dependency license record
+
+Package: npm:onnxruntime-web@1.29.0
+Locked source: https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.29.0.tgz
+Locked revision: sha512-LuQlpX6MFLJZu756erwUeb1mNfoJGbs1kzDwJGNlf5RvfYMdqhcY3vNpDPK40CUV2HoWTkIj+uS0o36GFHjeYw==
+Declared license: MIT
+Selected SPDX terms: MIT
+
+The resolved package omits a retained legal file. This record combines hash-pinned metadata from the lock-resolved install with canonical SPDX License List text. It does not authenticate an upstream copyright holder, package-specific notice, or package archive.
+
+===== installed package metadata package.json sha256:9c803baa1820e75a82907bbf29c0a4be84d4eaec33693b4ab3bd5051fde85ee9 =====
+{
+  "license": "MIT",
+  "unpkg": "dist/ort.min.js",
+  "name": "onnxruntime-web",
+  "repository": {
+    "url": "https://github.com/Microsoft/onnxruntime.git",
+    "type": "git"
+  },
+  "author": "fs-eire",
+  "version": "1.29.0",
+  "jsdelivr": "dist/ort.min.js",
+  "dependencies": {
+    "flatbuffers": "^25.1.24",
+    "guid-typescript": "^1.0.9",
+    "long": "^5.2.3",
+    "onnxruntime-common": "1.29.0",
+    "platform": "^1.3.6",
+    "protobufjs": "^7.2.4"
+  },
+  "scripts": {
+    "preprepare": "node -e \"require('node:fs').copyFileSync('./node_modules/long/index.d.ts', './node_modules/long/umd/index.d.ts')\"",
+    "prepare": "tsc --build ./script",
+    "build:doc": "node ./script/generate-webgl-operator-md && node ./script/generate-webgpu-operator-md",
+    "pull:wasm": "node ./script/pull-prebuilt-wasm-artifacts",
+    "test:e2e": "node ./test/e2e/run",
+    "prebuild": "tsc -p . --noEmit && tsc -p lib/wasm/proxy-worker --noEmit",
+    "build": "node ./script/build",
+    "test": "tsc --build ../scripts && node ../scripts/prepare-onnx-node-tests && node ./script/test-runner-cli",
+    "prepack": "node ./script/build && node ./script/prepack"
+  },
+  "keywords": [
+    "ONNX",
+    "ONNXRuntime",
+    "ONNX Runtime"
+  ],
+  "devDependencies": {
+    "@chiragrupani/karma-chromium-edge-launcher": "^2.2.2",
+    "@petamoriken/float16": "^3.8.7",
+    "@types/chai": "^4.3.4",
+    "@types/emscripten": "^1.39.6",
+    "@types/karma": "^6.1.0",
+    "@types/minimatch": "^5.1.2",
+    "@types/minimist": "^1.2.2",
+    "@types/platform": "^1.3.4",
+    "@webgpu/types": "^0.1.42",
+    "base64-js": "^1.5.1",
+    "chai": "^4.3.7",
+    "electron": "^39.8.5",
+    "globby": "^13.1.3",
+    "karma": "^6.4.1",
+    "karma-browserstack-launcher": "^1.6.0",
+    "karma-chai": "^0.1.0",
+    "karma-chrome-launcher": "^3.1.1",
+    "karma-edge-launcher": "^0.4.2",
+    "karma-electron": "^7.3.0",
+    "karma-firefox-launcher": "^2.1.2",
+    "karma-mocha": "^2.0.1",
+    "karma-mocha-reporter": "^2.2.5",
+    "karma-safari-applescript-launcher": "^0.1.1",
+    "karma-sourcemap-loader": "^0.4.0",
+    "minimatch": "^7.4.2",
+    "minimist": "^1.2.8",
+    "numpy-parser": "^1.2.3",
+    "source-map": "^0.7.4",
+    "strip-json-comments": "^5.0.0"
+  },
+  "overrides": {
+    "ws": "^8.20.1"
+  },
+  "main": "dist/ort.node.min.js",
+  "browser": "dist/ort.min.js",
+  "exports": {
+    ".": {
+      "types": "./types.d.ts",
+      "node": {
+        "import": "./dist/ort.node.min.mjs",
+        "require": "./dist/ort.node.min.js"
+      },
+      "import": {
+        "onnxruntime-web-use-extern-wasm": "./dist/ort.min.mjs",
+        "default": "./dist/ort.bundle.min.mjs"
+      },
+      "require": "./dist/ort.min.js"
+    },
+    "./all": {
+      "types": "./types.d.ts",
+      "import": {
+        "onnxruntime-web-use-extern-wasm": "./dist/ort.all.min.mjs",
+        "default": "./dist/ort.all.bundle.min.mjs"
+      },
+      "require": "./dist/ort.all.min.js"
+    },
+    "./wasm": {
+      "types": "./types.d.ts",
+      "import": {
+        "onnxruntime-web-use-extern-wasm": "./dist/ort.wasm.min.mjs",
+        "default": "./dist/ort.wasm.bundle.min.mjs"
+      },
+      "require": "./dist/ort.wasm.min.js"
+    },
+    "./webgl": {
+      "types": "./types.d.ts",
+      "import": "./dist/ort.webgl.min.mjs",
+      "require": "./dist/ort.webgl.min.js"
+    },
+    "./webgpu": {
+      "types": "./types.d.ts",
+      "import": {
+        "onnxruntime-web-use-extern-wasm": "./dist/ort.webgpu.min.mjs",
+        "default": "./dist/ort.webgpu.bundle.min.mjs"
+      },
+      "require": "./dist/ort.webgpu.min.js"
+    },
+    "./jspi": {
+      "types": "./types.d.ts",
+      "import": {
+        "onnxruntime-web-use-extern-wasm": "./dist/ort.jspi.min.mjs",
+        "default": "./dist/ort.jspi.bundle.min.mjs"
+      },
+      "require": "./dist/ort.jspi.min.js"
+    },
+    "./ort-wasm-simd-threaded.wasm": "./dist/ort-wasm-simd-threaded.wasm",
+    "./ort-wasm-simd-threaded.jsep.wasm": "./dist/ort-wasm-simd-threaded.jsep.wasm",
+    "./ort-wasm-simd-threaded.jspi.wasm": "./dist/ort-wasm-simd-threaded.jspi.wasm",
+    "./ort-wasm-simd-threaded.asyncify.wasm": "./dist/ort-wasm-simd-threaded.asyncify.wasm",
+    "./ort-wasm-simd-threaded.mjs": "./dist/ort-wasm-simd-threaded.mjs",
+    "./ort-wasm-simd-threaded.jsep.mjs": "./dist/ort-wasm-simd-threaded.jsep.mjs",
+    "./ort-wasm-simd-threaded.jspi.mjs": "./dist/ort-wasm-simd-threaded.jspi.mjs",
+    "./ort-wasm-simd-threaded.asyncify.mjs": "./dist/ort-wasm-simd-threaded.asyncify.mjs"
+  },
+  "types": "./types.d.ts",
+  "description": "A Javascript library for running ONNX models on browsers"
+}
+
+===== end installed package metadata package.json =====
+===== canonical SPDX MIT sha256:b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5 =====
+Source: https://github.com/spdx/license-list-data/blob/v3.28.0/text/MIT.txt
+MIT License
+
+Copyright (c) <year> <copyright holders>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the
+following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial
+portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
+LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO
+EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+===== end canonical SPDX MIT =====
+
+===== end sha256:a0180364ffdf1d21d17fe33f0155cae1fa8ecaf239d2dc8916bb2e64f4bafbcb =====
 ===== sha256:a1599b9e9d047238fcdc470689676c93158858bfb4398f1f70767445f4282b0b =====
 Evidence labels: assembled license record from lock-resolved package metadata and SPDX 3.28.0
 Packages:
@@ -22972,181 +23068,6 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ===== end sha256:bccaa8b6c09f94e81f06696e179dbe058464bbdfbc823b6d49cada1d71e84ac3 =====
-===== sha256:bcce7d8bd300778baf8cee4e73127a46432261ee89d421b01844e61c69ec83eb =====
-Evidence labels: assembled license record from lock-resolved package metadata and SPDX 3.28.0
-Packages:
-- npm:onnxruntime-web@1.27.0
-
-Sourdaw assembled dependency license record
-
-Package: npm:onnxruntime-web@1.27.0
-Locked source: https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.27.0.tgz
-Locked revision: sha512-ogDLsqIozHZwifPuN37OproAo0byX6t43/bP8GzeZWBWD6MOGExswFAx3up4NS/vvWBOg2u2PXomDt3rMmdQSg==
-Declared license: MIT
-Selected SPDX terms: MIT
-
-The resolved package omits a retained legal file. This record combines hash-pinned metadata from the lock-resolved install with canonical SPDX License List text. It does not authenticate an upstream copyright holder, package-specific notice, or package archive.
-
-===== installed package metadata package.json sha256:8cdbce0a4f6205109083cc4675477632147ed48e13fa7f891827fd08ef3c818c =====
-{
-  "license": "MIT",
-  "unpkg": "dist/ort.min.js",
-  "name": "onnxruntime-web",
-  "repository": {
-    "url": "https://github.com/Microsoft/onnxruntime.git",
-    "type": "git"
-  },
-  "author": "fs-eire",
-  "version": "1.27.0",
-  "jsdelivr": "dist/ort.min.js",
-  "dependencies": {
-    "flatbuffers": "^25.1.24",
-    "guid-typescript": "^1.0.9",
-    "long": "^5.2.3",
-    "onnxruntime-common": "1.27.0",
-    "platform": "^1.3.6",
-    "protobufjs": "^7.2.4"
-  },
-  "scripts": {
-    "preprepare": "node -e \"require('node:fs').copyFileSync('./node_modules/long/index.d.ts', './node_modules/long/umd/index.d.ts')\"",
-    "prepare": "tsc --build ./script",
-    "build:doc": "node ./script/generate-webgl-operator-md && node ./script/generate-webgpu-operator-md",
-    "pull:wasm": "node ./script/pull-prebuilt-wasm-artifacts",
-    "test:e2e": "node ./test/e2e/run",
-    "prebuild": "tsc -p . --noEmit && tsc -p lib/wasm/proxy-worker --noEmit",
-    "build": "node ./script/build",
-    "test": "tsc --build ../scripts && node ../scripts/prepare-onnx-node-tests && node ./script/test-runner-cli",
-    "prepack": "node ./script/build && node ./script/prepack"
-  },
-  "keywords": [
-    "ONNX",
-    "ONNXRuntime",
-    "ONNX Runtime"
-  ],
-  "devDependencies": {
-    "@chiragrupani/karma-chromium-edge-launcher": "^2.2.2",
-    "@petamoriken/float16": "^3.8.7",
-    "@types/chai": "^4.3.4",
-    "@types/emscripten": "^1.39.6",
-    "@types/karma": "^6.1.0",
-    "@types/minimatch": "^5.1.2",
-    "@types/minimist": "^1.2.2",
-    "@types/platform": "^1.3.4",
-    "@webgpu/types": "^0.1.42",
-    "base64-js": "^1.5.1",
-    "chai": "^4.3.7",
-    "electron": "^39.8.5",
-    "globby": "^13.1.3",
-    "karma": "^6.4.1",
-    "karma-browserstack-launcher": "^1.6.0",
-    "karma-chai": "^0.1.0",
-    "karma-chrome-launcher": "^3.1.1",
-    "karma-edge-launcher": "^0.4.2",
-    "karma-electron": "^7.3.0",
-    "karma-firefox-launcher": "^2.1.2",
-    "karma-mocha": "^2.0.1",
-    "karma-mocha-reporter": "^2.2.5",
-    "karma-safari-applescript-launcher": "^0.1.1",
-    "karma-sourcemap-loader": "^0.4.0",
-    "minimatch": "^7.4.2",
-    "minimist": "^1.2.8",
-    "numpy-parser": "^1.2.3",
-    "source-map": "^0.7.4",
-    "strip-json-comments": "^5.0.0"
-  },
-  "overrides": {
-    "ws": "^8.20.1"
-  },
-  "main": "dist/ort.node.min.js",
-  "browser": "dist/ort.min.js",
-  "exports": {
-    ".": {
-      "types": "./types.d.ts",
-      "node": {
-        "import": "./dist/ort.node.min.mjs",
-        "require": "./dist/ort.node.min.js"
-      },
-      "import": {
-        "onnxruntime-web-use-extern-wasm": "./dist/ort.min.mjs",
-        "default": "./dist/ort.bundle.min.mjs"
-      },
-      "require": "./dist/ort.min.js"
-    },
-    "./all": {
-      "types": "./types.d.ts",
-      "import": {
-        "onnxruntime-web-use-extern-wasm": "./dist/ort.all.min.mjs",
-        "default": "./dist/ort.all.bundle.min.mjs"
-      },
-      "require": "./dist/ort.all.min.js"
-    },
-    "./wasm": {
-      "types": "./types.d.ts",
-      "import": {
-        "onnxruntime-web-use-extern-wasm": "./dist/ort.wasm.min.mjs",
-        "default": "./dist/ort.wasm.bundle.min.mjs"
-      },
-      "require": "./dist/ort.wasm.min.js"
-    },
-    "./webgl": {
-      "types": "./types.d.ts",
-      "import": "./dist/ort.webgl.min.mjs",
-      "require": "./dist/ort.webgl.min.js"
-    },
-    "./webgpu": {
-      "types": "./types.d.ts",
-      "import": {
-        "onnxruntime-web-use-extern-wasm": "./dist/ort.webgpu.min.mjs",
-        "default": "./dist/ort.webgpu.bundle.min.mjs"
-      },
-      "require": "./dist/ort.webgpu.min.js"
-    },
-    "./jspi": {
-      "types": "./types.d.ts",
-      "import": {
-        "onnxruntime-web-use-extern-wasm": "./dist/ort.jspi.min.mjs",
-        "default": "./dist/ort.jspi.bundle.min.mjs"
-      },
-      "require": "./dist/ort.jspi.min.js"
-    },
-    "./ort-wasm-simd-threaded.wasm": "./dist/ort-wasm-simd-threaded.wasm",
-    "./ort-wasm-simd-threaded.jsep.wasm": "./dist/ort-wasm-simd-threaded.jsep.wasm",
-    "./ort-wasm-simd-threaded.jspi.wasm": "./dist/ort-wasm-simd-threaded.jspi.wasm",
-    "./ort-wasm-simd-threaded.asyncify.wasm": "./dist/ort-wasm-simd-threaded.asyncify.wasm",
-    "./ort-wasm-simd-threaded.mjs": "./dist/ort-wasm-simd-threaded.mjs",
-    "./ort-wasm-simd-threaded.jsep.mjs": "./dist/ort-wasm-simd-threaded.jsep.mjs",
-    "./ort-wasm-simd-threaded.jspi.mjs": "./dist/ort-wasm-simd-threaded.jspi.mjs",
-    "./ort-wasm-simd-threaded.asyncify.mjs": "./dist/ort-wasm-simd-threaded.asyncify.mjs"
-  },
-  "types": "./types.d.ts",
-  "description": "A Javascript library for running ONNX models on browsers"
-}
-
-===== end installed package metadata package.json =====
-===== canonical SPDX MIT sha256:b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5 =====
-Source: https://github.com/spdx/license-list-data/blob/v3.28.0/text/MIT.txt
-MIT License
-
-Copyright (c) <year> <copyright holders>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
-associated documentation files (the "Software"), to deal in the Software without restriction, including
-without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the
-following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial
-portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
-LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO
-EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
-USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-===== end canonical SPDX MIT =====
-
-===== end sha256:bcce7d8bd300778baf8cee4e73127a46432261ee89d421b01844e61c69ec83eb =====
 ===== sha256:bd0725685671d7dd00796fc18070f3807e33036517a640ee1b2d6a5c2126c2b8 =====
 Evidence labels: assembled license record from lock-resolved package metadata and SPDX 3.28.0
 Packages:
@@ -23342,6 +23263,85 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ===== end sha256:be46ce1e3b0479af9ce82d22b465a6d7d2ff084fca0aaf3d54172da2b5eb5781 =====
+===== sha256:bf4dc32b418176b0dc5947fd3b09fa68c66e52a10901d2ba07b54025bd133afc =====
+Evidence labels: assembled license record from lock-resolved package metadata and SPDX 3.28.0
+Packages:
+- npm:onnxruntime-common@1.29.0
+
+Sourdaw assembled dependency license record
+
+Package: npm:onnxruntime-common@1.29.0
+Locked source: https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.29.0.tgz
+Locked revision: sha512-/F63/e2VJoaVXGGNu6S5QH7jivBThGO95OzAVXXQ8hTta/b1QxI8udHa6cI3+3mAb5WWIIaMMwfZw01oivjJ1g==
+Declared license: MIT
+Selected SPDX terms: MIT
+
+The resolved package omits a retained legal file. This record combines hash-pinned metadata from the lock-resolved install with canonical SPDX License List text. It does not authenticate an upstream copyright holder, package-specific notice, or package archive.
+
+===== installed package metadata package.json sha256:976083947171b96bb7e998fdc8137bc50d3efb44c786ff3dbafb7f1bc4684dc8 =====
+{
+  "license": "MIT",
+  "type": "module",
+  "name": "onnxruntime-common",
+  "version": "1.29.0",
+  "repository": {
+    "url": "https://github.com/Microsoft/onnxruntime.git",
+    "type": "git"
+  },
+  "author": "fs-eire",
+  "scripts": {
+    "build:cjs": "tsc --module commonjs --moduleResolution node10 --outDir ./dist/cjs",
+    "build:esm": "tsc",
+    "build:bundles": "webpack",
+    "build": "node ./build.js",
+    "prepare": "npm run build",
+    "pretest": "tsc --build ./test",
+    "test": "mocha \"./test/**/*.js\" --timeout 30000",
+    "test:f16": "mocha -n js-float16array \"./test/**/*.js\" --timeout 30000"
+  },
+  "devDependencies": {
+    "globby": "^15.0.0",
+    "typedoc": "^0.28.0",
+    "typescript": "^5.6.2"
+  },
+  "main": "dist/cjs/index.js",
+  "exports": {
+    "require": "./dist/cjs/index.js",
+    "import": "./dist/esm/index.js"
+  },
+  "keywords": [
+    "ONNX",
+    "ONNXRuntime",
+    "ONNX Runtime"
+  ],
+  "description": "ONNXRuntime JavaScript API library"
+}
+
+===== end installed package metadata package.json =====
+===== canonical SPDX MIT sha256:b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5 =====
+Source: https://github.com/spdx/license-list-data/blob/v3.28.0/text/MIT.txt
+MIT License
+
+Copyright (c) <year> <copyright holders>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the
+following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial
+portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
+LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO
+EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+===== end canonical SPDX MIT =====
+
+===== end sha256:bf4dc32b418176b0dc5947fd3b09fa68c66e52a10901d2ba07b54025bd133afc =====
 ===== sha256:bf95b88111b6b9ee842d4440bcb7757f610c38ab94dde009640d75747ac018a1 =====
 Evidence labels: assembled license record from lock-resolved package metadata and SPDX 3.28.0
 Packages:
