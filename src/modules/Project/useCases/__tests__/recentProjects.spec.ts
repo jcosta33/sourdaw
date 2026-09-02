@@ -71,13 +71,6 @@ describe('recentProjects injectables', () => {
         storageMocks.mockGet.mockReturnValue(null);
         storageMocks.mockSet.mockClear();
         vi.mocked(readNamedProjectJson).mockReset();
-        loadMocks.runProjectLoadTransaction.mockReturnValue({
-            prepare: vi.fn().mockResolvedValue(true),
-            activate: vi.fn().mockReturnValue(true),
-            canActivate: vi.fn().mockReturnValue(true),
-            isCurrent: vi.fn().mockReturnValue(true),
-            signal: new AbortController().signal,
-        });
         vi.clearAllMocks();
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => undefined });
     });
