@@ -11,6 +11,20 @@
 //! default output, negotiate period and format, start the stream around
 //! the engine's render callback, stop on drop, and report device
 //! invalidation through the engine's stream-error vocabulary.
+//!
+//! The seam has an input half in the same shape, and a backend answers
+//! five obligations there too — open the default input, report the
+//! period, rate and channel count the device will actually run so a
+//! capture ring can be sized from facts rather than hopes, start the
+//! stream around the engine's capture callback, stop on drop, and report
+//! invalidation through that same vocabulary. Two things differ, and
+//! both are deliberate. Capture negotiates no period: it takes the
+//! device's own, because asking for one rewrites a setting shared with
+//! every other client of that device. And capture may refuse to open at
+//! all — a platform without a capture path, a machine with no input
+//! device, or a device running a rate the engine is not — which is why
+//! its refusals are named ([`InputOpenRefusal`]) rather than assumed
+//! away: an engine with no capture side still runs.
 
 // The cpal backend is what every non-Windows build runs; Windows builds
 // compile it only under test so the shared negotiation tests keep running
@@ -170,6 +184,13 @@ pub(crate) fn accept_input(
 /// The channel count travels per call for the reason it does on
 /// [`RenderFn`]. Runs on the capture thread: it must not allocate, lock, or
 /// block, and neither may the backend code around its invocation.
+///
+/// A block carries at most [`NegotiatedInput::period_frames`] frames. That
+/// is the contract a capture ring is sized against, so a backend owes a
+/// figure the device can actually deliver rather than one the engine would
+/// have preferred. A block above it is not corruption — the ring refuses
+/// what it cannot hold and counts the refusal — but it is lost audio, which
+/// makes the bound worth stating rather than discovering.
 pub(crate) type CaptureFn = Box<dyn FnMut(&[f32], usize) + Send + 'static>;
 
 /// A platform's way of opening the default input device.

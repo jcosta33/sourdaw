@@ -8,7 +8,7 @@ use super::{
     NegotiatedInput, NegotiatedOutput, OpenInput, OpenOutput, OutputBackend, RenderFn,
     StreamErrorFn,
 };
-use crate::audio_thread::{effective_buffer_size, PREFERRED_BUFFER_FRAMES};
+use crate::audio_thread::{effective_buffer_size, MAX_CALLBACK_FRAMES};
 use crate::engine_events::StreamErrorKind;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
@@ -121,17 +121,46 @@ pub(crate) struct CpalOpenInput {
     negotiated: NegotiatedInput,
 }
 
-/// Frames the device is expected to deliver per capture callback.
+/// The buffer size the engine asks an input device for: never a fixed one.
 ///
-/// cpal reports no period back, so the expectation is the request itself: the
-/// negotiated size where the engine asked for one, and the period the engine
-/// prefers where it left the device's own preference alone. The capture ring
-/// carries slack above the largest callback the engine accepts, so a device
-/// that answers with more than this still fits.
-fn expected_period_frames(buffer_size: cpal::BufferSize) -> usize {
-    match buffer_size {
-        cpal::BufferSize::Fixed(frames) => frames as usize,
-        cpal::BufferSize::Default => PREFERRED_BUFFER_FRAMES as usize,
+/// A `Fixed` request is not a per-stream preference. On CoreAudio it writes
+/// `kAudioDevicePropertyBufferFrameSize`, which is device-global — the same
+/// value the user set in Audio MIDI Setup, shared with every other client of
+/// that device. The output path pays that price deliberately, to keep a
+/// device's period within the bridge's reach for hosted plugins. Capture has
+/// no equivalent need: the ring is a sample FIFO that absorbs whatever block
+/// size arrives. So asking would buy nothing and cost a shared, user-facing
+/// setting — and on an interface that is both the default input and the
+/// default output, it would rewrite the period underneath the already-running
+/// output stream, including one that had itself fallen back to `Default`.
+const fn capture_buffer_size() -> cpal::BufferSize {
+    cpal::BufferSize::Default
+}
+
+/// Frames the device is expected to deliver per capture callback, at most.
+///
+/// cpal reports no period back, so this is derived from what the device
+/// advertises rather than from what the engine sent it. Under `Default`
+/// nothing is sent at all and the device runs its own period, so the figure
+/// that bounds it is the top of the advertised range; a device that advertises
+/// no range gets the largest callback the engine accepts, which is the limit
+/// the rest of the engine is built around. Only a `Fixed` request makes the
+/// number the engine chose the number to expect.
+///
+/// This is the figure the capture ring is sized from, so it has to be one the
+/// device can actually deliver: a period the engine merely prefers would leave
+/// the ring wrong from the first block.
+fn expected_period_frames(
+    supported: &cpal::SupportedBufferSize,
+    requested: cpal::BufferSize,
+) -> usize {
+    if let cpal::BufferSize::Fixed(frames) = requested {
+        return frames as usize;
+    }
+
+    match *supported {
+        cpal::SupportedBufferSize::Range { max, .. } => max as usize,
+        cpal::SupportedBufferSize::Unknown => MAX_CALLBACK_FRAMES,
     }
 }
 
@@ -148,17 +177,18 @@ impl InputBackend for CpalInputBackend {
             .default_input_config()
             .map_err(|error| InputOpenRefusal::Backend(StreamErrorKind::from(&error)))?;
 
-        // The engine never asks an input device for the device default as a
-        // fallback: there is no second attempt to protect, and the period the
-        // ring is sized from has to be the period actually requested.
+        // Capture takes the device's own period rather than negotiating one:
+        // see `capture_buffer_size`. There is no retry lever on this path
+        // because there is nothing to retry — the engine sends no period, so
+        // no period can be the reason a build fails.
         let mut stream_config: cpal::StreamConfig = config.into();
-        stream_config.buffer_size = effective_buffer_size(config.buffer_size(), false);
+        stream_config.buffer_size = capture_buffer_size();
 
         let negotiated = accept_input(
             NegotiatedInput {
                 sample_rate: config.sample_rate() as f32,
                 channels: config.channels() as usize,
-                period_frames: expected_period_frames(stream_config.buffer_size),
+                period_frames: expected_period_frames(config.buffer_size(), capture_buffer_size()),
             },
             request,
         )?;
@@ -217,15 +247,58 @@ impl OpenInput for CpalOpenInput {
 
 #[cfg(test)]
 mod tests {
-    use super::expected_period_frames;
-    use crate::audio_thread::PREFERRED_BUFFER_FRAMES;
+    use super::{capture_buffer_size, expected_period_frames};
+    use crate::audio_thread::{negotiated_buffer_size, MAX_CALLBACK_FRAMES};
 
     #[test]
-    fn a_device_left_on_its_own_period_is_sized_from_the_period_the_engine_prefers() {
+    fn a_device_left_on_its_own_period_is_sized_from_the_range_it_advertises() {
+        // `Default` sends the device nothing, so it runs its own period and
+        // the advertised maximum is what bounds a capture block. Sizing the
+        // ring from a period the engine merely prefers would be wrong from
+        // the first block the device delivered.
+        let range = cpal::SupportedBufferSize::Range { min: 64, max: 2048 };
         assert_eq!(
-            expected_period_frames(cpal::BufferSize::Default),
-            PREFERRED_BUFFER_FRAMES as usize
+            expected_period_frames(&range, cpal::BufferSize::Default),
+            2048
         );
-        assert_eq!(expected_period_frames(cpal::BufferSize::Fixed(256)), 256);
+
+        // A fixed request is the one case where what the engine sent is what
+        // it should expect back.
+        assert_eq!(
+            expected_period_frames(&range, cpal::BufferSize::Fixed(256)),
+            256
+        );
+
+        // No advertised range leaves nothing to derive from, so the bound is
+        // the largest callback the engine accepts anywhere.
+        assert_eq!(
+            expected_period_frames(
+                &cpal::SupportedBufferSize::Unknown,
+                cpal::BufferSize::Default
+            ),
+            MAX_CALLBACK_FRAMES
+        );
+    }
+
+    #[test]
+    fn the_engine_never_asks_an_input_device_to_change_its_period() {
+        // A range the output side does negotiate a fixed period out of: its
+        // maximum is above the callback limit and its minimum below it.
+        let range = cpal::SupportedBufferSize::Range { min: 64, max: 8192 };
+        assert!(matches!(
+            negotiated_buffer_size(&range),
+            cpal::BufferSize::Fixed(_)
+        ));
+
+        // Capture leaves that same device alone. A fixed request writes a
+        // device-global period on CoreAudio, and on an interface serving as
+        // both default input and default output that would rewrite the period
+        // under the running output stream.
+        assert!(matches!(capture_buffer_size(), cpal::BufferSize::Default));
+        assert_eq!(
+            expected_period_frames(&range, capture_buffer_size()),
+            8192,
+            "the reported period must be one the untouched device can deliver"
+        );
     }
 }
