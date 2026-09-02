@@ -27,12 +27,18 @@ describe('captureUndoHistory', () => {
             timestamp: 1,
             source: 'manual',
         };
-        undoStoreValue.mockReturnValue({ past: [entry], future: [] });
+        const storePast = [entry];
+        const storeFuture: typeof storePast = [];
+        undoStoreValue.mockReturnValue({ past: storePast, future: storeFuture });
 
         const snapshot = captureUndoHistory();
 
         expect(snapshot).toEqual({ past: [entry], future: [] });
-        expect(snapshot.past).not.toBe(undefined);
+        // Defensive copy: the returned arrays must not be the store's own array
+        // objects, or a later push onto the store's `past`/`future` would also
+        // mutate an already-captured snapshot.
+        expect(snapshot.past).not.toBe(storePast);
+        expect(snapshot.future).not.toBe(storeFuture);
     });
 
     it('preserves each entry object, including its action and inverse action', () => {

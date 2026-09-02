@@ -165,6 +165,26 @@ describe('switchBranch', () => {
         expect(docs.branch_feat).toEqual(FEATURE_SNAPSHOT);
     });
 
+    it('restores the undo history captured before the swap when the transition rejects', async () => {
+        const persistenceFailure = new Error('compaction failed');
+        mocks.compactProject.mockRejectedValueOnce(persistenceFailure);
+
+        await expect(switchBranch('other')).rejects.toBe(persistenceFailure);
+
+        // `apply()` clears undo history as a side effect of swapping the root
+        // document; a rejected transition must restore exactly what capture saw
+        // before the swap, not some other value.
+        const capturedSnapshot = mocks.captureUndoHistory.mock.results[0]?.value;
+        expect(capturedSnapshot).toBeDefined();
+        expect(mocks.restoreUndoHistory).toHaveBeenCalledOnce();
+        expect(mocks.restoreUndoHistory).toHaveBeenCalledWith(capturedSnapshot);
+    });
+
+    it('does not restore undo history when the switch succeeds', async () => {
+        await switchBranch('other');
+        expect(mocks.restoreUndoHistory).not.toHaveBeenCalled();
+    });
+
     it('clears undo history when the root document is swapped', async () => {
         await switchBranch('other');
 

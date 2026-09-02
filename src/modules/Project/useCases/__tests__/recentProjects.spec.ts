@@ -68,8 +68,6 @@ vi.mock('#/modules/Command/useCases', () => ({
     isAppActionCommittedError: vi.fn(() => false),
     pushUndoEntry: vi.fn(),
     syncActionReplayMetadata: vi.fn(),
-    captureUndoHistory: vi.fn(() => ({ past: [], future: [] })),
-    restoreUndoHistory: vi.fn(),
 }));
 
 vi.mock('../projectPersistence/helpers/verifyAudioBufferReferences', () => ({

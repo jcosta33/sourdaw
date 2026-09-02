@@ -124,8 +124,6 @@ vi.mock('#/modules/Command/useCases', () => ({
     resetActionReplayAuthority: vi.fn(),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
     isAppActionCommittedError: vi.fn(() => false),
-    captureUndoHistory: vi.fn(() => ({ past: [], future: [] })),
-    restoreUndoHistory: vi.fn(),
 }));
 
 vi.mock('#/modules/Project/useCases', () => ({

@@ -23,10 +23,6 @@ const { mockAutomergeRepo, mockCompactProject, mockLoadCrdtProject, mockProjectC
 
 vi.mock('@automerge/automerge', () => ({ clone: (doc: unknown) => doc }));
 vi.mock('#/infra/store/storage/createAutomergeStorage', () => ({ flushAutomergeStorageWrites: vi.fn() }));
-vi.mock('#/modules/Command/useCases', () => ({
-    captureUndoHistory: vi.fn(() => ({ past: [], future: [] })),
-    restoreUndoHistory: vi.fn(),
-}));
 vi.mock('../../../repositories/automergeRepository', () => ({ automergeRepository: mockAutomergeRepo }));
 vi.mock('../../compactProject', () => ({ compactProject: mockCompactProject }));
 vi.mock('../../loadCrdtProject', () => ({ loadCrdtProject: mockLoadCrdtProject }));

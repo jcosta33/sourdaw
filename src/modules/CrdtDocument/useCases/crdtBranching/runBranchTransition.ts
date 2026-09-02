@@ -3,7 +3,6 @@ import { clone as cloneDoc, type Doc } from '@automerge/automerge';
 import { isAppError } from '#/infra/errors/isAppError';
 import { logger } from '#/infra/logger/appLogger';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
-import { captureUndoHistory, restoreUndoHistory } from '#/modules/Command/useCases';
 
 import { createBranchError } from '../../errors/BranchError';
 import { type DocId } from '../../models/CrdtDocumentTypes';
@@ -65,21 +64,14 @@ async function recoverFailedTransition({
     error,
     previousState,
     snapshots,
-    undoSnapshot,
 }: {
     error: unknown;
     previousState: BranchStoreState;
     snapshots: DocumentSnapshot[];
-    undoSnapshot: ReturnType<typeof captureUndoHistory>;
 }): Promise<void> {
     for (const snapshot of snapshots) {
         restoreDocumentSnapshot(snapshot);
     }
-    // `apply()` may have cleared undo history (e.g. switchBranch, because the
-    // root document it swapped in is gone again once the documents above are
-    // rolled back). Restore what the user had before the attempt so a failed
-    // transition does not silently erase it.
-    restoreUndoHistory(undoSnapshot);
 
     let recoveredState = previousState;
     try {
@@ -112,7 +104,6 @@ export async function runBranchTransition<TResult>({
 
     flushAutomergeStorageWrites();
     const snapshots = [...new Set(affectedDocIds)].map(createDocumentSnapshot);
-    const undoSnapshot = captureUndoHistory();
     branchTransitionInProgress = true;
 
     try {
@@ -127,7 +118,7 @@ export async function runBranchTransition<TResult>({
         await compactProject();
         return result;
     } catch (error) {
-        await recoverFailedTransition({ error, previousState, snapshots, undoSnapshot });
+        await recoverFailedTransition({ error, previousState, snapshots });
         throw error;
     } finally {
         branchTransitionInProgress = false;

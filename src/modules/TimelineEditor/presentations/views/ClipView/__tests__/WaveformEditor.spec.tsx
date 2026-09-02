@@ -201,8 +201,6 @@ vi.mock('#/modules/Command/useCases', () => ({
     syncActionReplayMetadata: vi.fn(),
     clearUndoHistory: vi.fn(),
     createAppActionCommittedError: vi.fn(),
-    captureUndoHistory: vi.fn(() => ({ past: [], future: [] })),
-    restoreUndoHistory: vi.fn(),
 }));
 
 vi.mock('#/utils/Notification/notifyUser', () => ({

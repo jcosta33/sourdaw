@@ -85,8 +85,6 @@ vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: vi.fn(),
     resetActionReplayAuthority: vi.fn(),
     syncActionReplayMetadata: vi.fn(),
-    captureUndoHistory: vi.fn(() => ({ past: [], future: [] })),
-    restoreUndoHistory: vi.fn(),
 }));
 
 const mockEventBus = {
