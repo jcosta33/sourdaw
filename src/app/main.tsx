@@ -5,6 +5,15 @@ import { resolveAppComposition } from './resolveAppComposition';
 const root = document.getElementById('root')!;
 
 function paintAppShellMarker(container: HTMLElement): void {
+    document.documentElement.style.height = '100%';
+    document.documentElement.style.margin = '0';
+    document.documentElement.style.overflow = 'hidden';
+    document.documentElement.style.width = '100%';
+    document.body.style.height = '100%';
+    document.body.style.margin = '0';
+    document.body.style.overflow = 'hidden';
+    document.body.style.width = '100%';
+
     const shell = document.createElement('div');
     shell.setAttribute('data-testid', 'app-shell');
     shell.style.width = '100vw';
