@@ -1,0 +1,14 @@
+scripts/__tests__/recoverDeliveryLock3437.spec.ts
+  h_1228e573df1f42 2,82-133,187-213,247-272,354-372
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "ff2e4f0bd9e1c527dfa0f1a6977a095dea1de4d9",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
