@@ -150,8 +150,12 @@ describe('faustInstrumentPresets', () => {
             );
             expect(parameterIds).not.toContain('freq');
             expect(parameterIds).not.toContain('gate');
-            for (const operatorPrefix of ['op1_', 'op2_', 'op3_', 'op4_']) {
-                expect(parameterIds.some((parameterId) => parameterId.startsWith(operatorPrefix))).toBe(true);
+            for (const operatorPrefix of ['op1', 'op2', 'op3', 'op4']) {
+                const operatorSuffixes = parameterIds
+                    .filter((parameterId) => parameterId.startsWith(`${operatorPrefix}_`))
+                    .map((parameterId) => parameterId.slice(operatorPrefix.length + 1))
+                    .sort();
+                expect(operatorSuffixes).toEqual(['attack', 'decay', 'level', 'ratio', 'release', 'sustain']);
             }
 
             for (const [parameterId, value] of Object.entries(device.parameterValues)) {
