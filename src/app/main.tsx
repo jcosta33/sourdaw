@@ -34,14 +34,18 @@ async function renderApplication(): Promise<void> {
                 });
             });
     });
-    const [, { createRoot }, { App }, { registerNotificationEventBus }] = await Promise.all([
+    const [, { createRoot }, { ApplicationFirstPaint }, { registerNotificationEventBus }] = await Promise.all([
         import('#/styles/main.css'),
         import('react-dom/client'),
-        import('./App'),
+        import('./ApplicationFirstPaint'),
         import('./registerNotificationEventBus'),
     ]);
     registerNotificationEventBus();
-    createRoot(root).render(<App />);
+    const reactRoot = createRoot(root);
+    reactRoot.render(<ApplicationFirstPaint />);
+    void import('./App').then(({ App }) => {
+        reactRoot.render(<App />);
+    });
 }
 
 async function renderDesktopStartupError(): Promise<void> {

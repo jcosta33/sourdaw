@@ -1,3 +1,5 @@
+import { isValidElement } from 'react';
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { onNotification as OnNotification } from '#/infra/dialogService/onNotification';
@@ -30,6 +32,9 @@ const mocks = vi.hoisted(() => {
     identity.reset();
 
     return {
+        appImportPending: false,
+        appImportRelease: null as ((value: { App: () => null }) => void) | null,
+        appImportPromise: null as Promise<{ App: () => null }> | null,
         bootstrap: vi.fn(),
         bootstrapFailure: null as Error | null,
         failIdentityTransition: vi.fn(),
@@ -124,8 +129,17 @@ vi.mock('#/modules/Transport/useCases', () => ({
 }));
 
 vi.mock('../App', () => ({
-    App: function App() {
-        return null;
+    __esModule: true,
+    then(onFulfilled: (value: { App: () => null }) => unknown, onRejected?: (reason: unknown) => unknown) {
+        const appImport =
+            mocks.appImportPending && mocks.appImportPromise !== null
+                ? mocks.appImportPromise
+                : Promise.resolve({
+                      App: function App() {
+                          return null;
+                      },
+                  });
+        return appImport.then(onFulfilled, onRejected);
     },
 }));
 
@@ -143,6 +157,19 @@ vi.mock('react-dom/client', async (importOriginal) => {
         },
     };
 });
+
+function expectFirstPaintRendered(): void {
+    const firstRender = mocks.render.mock.calls[0]?.[0];
+    expect(isValidElement(firstRender)).toBe(true);
+    if (!isValidElement(firstRender)) {
+        throw new Error('Application first paint did not render a React element');
+    }
+    const componentType = firstRender.type;
+    if (typeof componentType !== 'function') {
+        throw new TypeError('Application first paint did not render a component');
+    }
+    expect(componentType.name).toBe('ApplicationFirstPaint');
+}
 
 function expectMountBusesBoundBeforeRender(): void {
     expect(mocks.setWorkspaceEventBus).toHaveBeenCalledOnce();
@@ -185,6 +212,9 @@ describe('app main first paint', () => {
         vi.clearAllMocks();
         vi.resetModules();
         mocks.bootstrapFailure = null;
+        mocks.appImportPending = false;
+        mocks.appImportRelease = null;
+        mocks.appImportPromise = null;
         mocks.identity.reset();
         mocks.onNotification = null;
         Reflect.deleteProperty(window, 'sourdaw');
@@ -214,11 +244,30 @@ describe('app main first paint', () => {
         await import('../main');
         await rendered;
 
-        expect(mocks.render).toHaveBeenCalledOnce();
+        expect(mocks.render).toHaveBeenCalled();
+        expectFirstPaintRendered();
         expect(mocks.resetBrowserDisplayScaleForChildStartup).toHaveBeenCalledOnce();
         expect(mocks.bootstrap).toHaveBeenCalledOnce();
         expect(mocks.failIdentityTransition).not.toHaveBeenCalled();
         expect(document.getElementById('root')).not.toBeNull();
+    });
+
+    it('mounts app-shell before the full application chunk resolves', async () => {
+        mocks.appImportPending = true;
+        mocks.appImportPromise = new Promise<{ App: () => null }>((resolve) => {
+            mocks.appImportRelease = resolve;
+        });
+        const rendered = new Promise<void>((resolve) => {
+            mocks.render.mockImplementationOnce(() => resolve());
+        });
+
+        const mainImport = import('../main');
+        await rendered;
+        await mainImport;
+
+        expectFirstPaintRendered();
+        expect(mocks.render).toHaveBeenCalledOnce();
+        expect(mocks.bootstrap).toHaveBeenCalledOnce();
     });
 
     it('fails identity-transition configuration closed when bootstrap import rejects', async () => {
@@ -235,7 +284,7 @@ describe('app main first paint', () => {
         });
         const [reason] = mocks.failIdentityTransition.mock.calls[0] as [Error];
         expect(reason.cause).toBe(failure);
-        expect(mocks.render).toHaveBeenCalledOnce();
+        expectFirstPaintRendered();
     });
 
     it('registers AppShell mount buses before first paint while bootstrap is pending', async () => {

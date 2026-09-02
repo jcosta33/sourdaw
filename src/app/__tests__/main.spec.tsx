@@ -1,7 +1,5 @@
 import { isValidElement } from 'react';
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
 const mocks = vi.hoisted(() => ({
     bootstrap: vi.fn(),
     desktopStartupError: vi.fn(() => null),
@@ -150,11 +148,29 @@ vi.mock('#/utils/Notification/notificationEventBus', () => ({
     setNotificationEventBus: mocks.setNotificationEventBus,
 }));
 
-vi.mock('../App', () => ({ App: () => null }));
+vi.mock('../App', () => ({
+    __esModule: true,
+    then(onFulfilled: (value: { App: () => null }) => unknown, onRejected?: (reason: unknown) => unknown) {
+        return Promise.resolve({ App: () => null }).then(onFulfilled, onRejected);
+    },
+}));
 
 vi.mock('react-dom/client', () => ({
     createRoot: () => ({ render: mocks.render }),
 }));
+
+function expectFirstPaintRendered(): void {
+    const firstRender = mocks.render.mock.calls[0]?.[0];
+    expect(isValidElement(firstRender)).toBe(true);
+    if (!isValidElement(firstRender)) {
+        throw new Error('Application first paint did not render a React element');
+    }
+    const componentType = firstRender.type;
+    if (typeof componentType !== 'function') {
+        throw new TypeError('Application first paint did not render a component');
+    }
+    expect(componentType.name).toBe('ApplicationFirstPaint');
+}
 
 describe('app main composition', () => {
     beforeEach(() => {
@@ -212,7 +228,8 @@ describe('app main composition', () => {
         await rendered;
 
         expect(mocks.bootstrap).toHaveBeenCalledOnce();
-        expect(mocks.render).toHaveBeenCalledOnce();
+        expect(mocks.render).toHaveBeenCalled();
+        expectFirstPaintRendered();
         const resetCallOrder = mocks.resetDisplayScaleForStartup.mock.invocationCallOrder[0];
         const renderCallOrder = mocks.render.mock.invocationCallOrder[0];
         expect(resetCallOrder).toBeDefined();
@@ -237,7 +254,8 @@ describe('app main composition', () => {
         await import('../main');
         await rendered;
 
-        expect(mocks.render).toHaveBeenCalledOnce();
+        expect(mocks.render).toHaveBeenCalled();
+        expectFirstPaintRendered();
         expect(mocks.resetBrowserDisplayScaleForChildStartup).toHaveBeenCalledOnce();
         expect(mocks.resetDisplayScaleForStartup).not.toHaveBeenCalled();
         expect(mocks.mountBrowserDisplayScaleHost).not.toHaveBeenCalled();
