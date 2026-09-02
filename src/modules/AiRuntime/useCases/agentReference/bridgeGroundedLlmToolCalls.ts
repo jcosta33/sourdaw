@@ -1746,7 +1746,33 @@ function sliceThroughLaterTrackControlIntent(
     return `${text.slice(0, startIndex)}${text.slice(end)}`.trim();
 }
 
-function stripTrackControlProtectionSpans(text: string): string {
+function endIndexAfterLeftmostNamedTrack(
+    text: string,
+    tracks: readonly { id: string; name: string }[]
+): number | undefined {
+    const namedIds = new Set(collectNamedProjectTracks(text, tracks));
+    let leftmost: ReferenceRange | undefined;
+    for (const track of tracks) {
+        if (!namedIds.has(track.id)) {
+            continue;
+        }
+        const references = [track.id, track.name].filter((reference) => reference.length > 0);
+        for (const reference of references) {
+            for (const range of getReferenceRanges(text, reference)) {
+                if (
+                    leftmost === undefined ||
+                    range.start < leftmost.start ||
+                    (range.start === leftmost.start && range.end > leftmost.end)
+                ) {
+                    leftmost = range;
+                }
+            }
+        }
+    }
+    return leftmost?.end;
+}
+
+function stripTrackControlProtectionSpans(text: string, tracks: readonly { id: string; name: string }[]): string {
     const laterTrackControlIntent = /\b(?:mute|unmute|solo|unsolo)\b/iu;
     const mutedComplement = /\b(?:muted|unmuted|soloed|unsoloed)\b/iu;
     const finiteLeave = /\b(?:leave|keep|preserve|retain)\b/iu;
@@ -1793,15 +1819,26 @@ function stripTrackControlProtectionSpans(text: string): string {
     if (bareLeave?.index === undefined) {
         return withoutUnchanged;
     }
-    const afterBare = withoutUnchanged.slice(bareLeave.index + bareLeave[0].length);
+    const afterBareStart = bareLeave.index + bareLeave[0].length;
+    const afterBare = withoutUnchanged.slice(afterBareStart);
     if (mutedComplement.test(afterBare)) {
         return withoutUnchanged;
+    }
+    const namedTrackEnd = endIndexAfterLeftmostNamedTrack(afterBare, tracks);
+    if (namedTrackEnd === undefined) {
+        return sliceThroughLaterTrackControlIntent(
+            withoutUnchanged,
+            bareLeave.index,
+            afterBareStart,
+            laterTrackControlIntent
+        );
     }
     return sliceThroughLaterTrackControlIntent(
         withoutUnchanged,
         bareLeave.index,
-        bareLeave.index + bareLeave[0].length,
-        laterTrackControlIntent
+        afterBareStart + namedTrackEnd,
+        laterTrackControlIntent,
+        true
     );
 }
 
@@ -1814,7 +1851,7 @@ function getTrackControlTargetPrompt(
     const clauses = getPromptClauses(prompt, prompt);
     const startIndex = clauses.findIndex((clause) => clause.text === actionScope.text);
     if (startIndex < 0) {
-        return stripTrackControlProtectionSpans(prompt);
+        return stripTrackControlProtectionSpans(prompt, tracks);
     }
     let endIndex = startIndex;
     for (let index = startIndex + 1; index < clauses.length; index += 1) {
@@ -1827,7 +1864,11 @@ function getTrackControlTargetPrompt(
             break;
         }
         if (isTrackControlProtectionQualifier(clause.text, tracks)) {
-            if (/\bunchanged\b/iu.test(normalizePromptText(clause.text))) {
+            const normalized = normalizePromptText(clause.text);
+            if (/\b(?:muted|unmuted|soloed|unsoloed)\b/u.test(normalized)) {
+                break;
+            }
+            if (/\bunchanged\b/u.test(normalized) || /^(?:leave|keep|preserve|retain)\b/u.test(normalized)) {
                 continue;
             }
             break;
@@ -1839,7 +1880,7 @@ function getTrackControlTargetPrompt(
     for (const clause of clauses) {
         const start = prompt.indexOf(clause.text, searchFrom);
         if (start < 0) {
-            return stripTrackControlProtectionSpans(actionScope.text);
+            return stripTrackControlProtectionSpans(actionScope.text, tracks);
         }
         ranges.push({ start, end: start + clause.text.length });
         searchFrom = start + clause.text.length;
@@ -1847,9 +1888,9 @@ function getTrackControlTargetPrompt(
     const start = ranges[startIndex]?.start;
     const end = ranges[endIndex]?.end;
     if (start === undefined || end === undefined || end < start) {
-        return stripTrackControlProtectionSpans(actionScope.text);
+        return stripTrackControlProtectionSpans(actionScope.text, tracks);
     }
-    return stripTrackControlProtectionSpans(prompt.slice(start, end));
+    return stripTrackControlProtectionSpans(prompt.slice(start, end), tracks);
 }
 
 function getTargetPromptScope(
