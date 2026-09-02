@@ -167,12 +167,17 @@ type CiAdmissionMode = 'advisory' | 'required';
 
 const ACTIVE_CI_ADMISSION_MODE: CiAdmissionMode = 'advisory';
 
+type DeliveryMergeRejectionCertainty = 'ambiguous' | 'definitive-no-merge';
+
 export type DeliveryReceiptAuthorityPhase = 'released' | 'prepared' | 'merge-authorized' | 'terminal';
 
 export class DeliveryMergeRejectedError extends Error {
-    constructor(message: string) {
+    readonly certainty: DeliveryMergeRejectionCertainty;
+
+    constructor(message: string, certainty: DeliveryMergeRejectionCertainty = 'ambiguous') {
         super(message);
         this.name = 'DeliveryMergeRejectedError';
+        this.certainty = certainty;
     }
 }
 
@@ -181,7 +186,10 @@ function classifyGithubMergeRejection(number: number, error: unknown): DeliveryM
     if (!/\bHTTP (403|404|405|409|422)\b/u.test(detail)) {
         return undefined;
     }
-    return new DeliveryMergeRejectedError(`PR #${number} was not merged: ${detail}`);
+    return new DeliveryMergeRejectedError(
+        `PR #${number} was not merged: ${detail}`,
+        /\bHTTP 422\b/u.test(detail) ? 'definitive-no-merge' : 'ambiguous'
+    );
 }
 
 export type PersistedPreparedPostMergeValidation = {
@@ -2160,7 +2168,9 @@ function deliverPullRequestWithCiAdmission(
         port.merge(number, finalSnapshot.headRefOid, finalDependents.length > 0, `${finalSnapshot.title} (#${number})`);
     } catch (error) {
         if (error instanceof DeliveryMergeRejectedError) {
-            markRemoteMutationKnownAbsent?.();
+            if (error.certainty === 'definitive-no-merge') {
+                markRemoteMutationKnownAbsent?.();
+            }
             tryRestorePreArmedDeliveryReceiptAuthorityAfterMergeFailure(
                 number,
                 authorityBeforeFinalFetchArming,
@@ -3069,7 +3079,10 @@ export function shellPort(
             }
             const result = parseJson<{ merged: boolean; message: string }>(response, 'merge request');
             if (!result.merged) {
-                throw new DeliveryMergeRejectedError(`PR #${number} was not merged: ${result.message}`);
+                throw new DeliveryMergeRejectedError(
+                    `PR #${number} was not merged: ${result.message}`,
+                    'definitive-no-merge'
+                );
             }
         },
         retarget: (number, baseBranch) => {

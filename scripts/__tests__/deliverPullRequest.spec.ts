@@ -17,6 +17,7 @@ import {
     readGateRequiredCheckNames,
     runDeliverCli,
     shellPort,
+    withPullRequestDeliveryLock,
     type DeliveryReceiptAuthorityExpectation,
     type DeliveryReceiptProof,
     type DeliveryPort,
@@ -866,7 +867,87 @@ function deliverPullRequestWithRequiredCi(
     deliverPullRequestWithRequiredCiAndTracker(number, port, tracker);
 }
 
+function initializeDeliveryLockRepository(root: string): void {
+    execFileSync('git', ['init', '--quiet'], { cwd: root });
+}
+
+function deliveryLockExists(root: string, number: number): boolean {
+    try {
+        execFileSync('git', ['rev-parse', '--verify', '--quiet', `refs/sourdaw/delivery/pr-${number}`], {
+            cwd: root,
+            stdio: 'ignore',
+        });
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function shellMergeRejection(status: '409' | '422'): DeliveryMergeRejectedError {
+    const shell: ShellRunner = {
+        capture: (_command, args) => {
+            if (args.join(' ') === 'api repos/jcosta33/sourdaw') {
+                return mergeSettings({
+                    allow_merge_commit: false,
+                    allow_rebase_merge: false,
+                    allow_squash_merge: true,
+                    delete_branch_on_merge: false,
+                });
+            }
+            if (args.includes('repos/jcosta33/sourdaw/pulls/42/merge')) {
+                throw new Error(`gh: HTTP ${status}: merge refused`);
+            }
+            throw new Error(`unexpected capture: ${args.join(' ')}`);
+        },
+        run: () => undefined,
+    };
+
+    try {
+        shellPort('jcosta33/sourdaw', shell).merge(42, 'head', false);
+    } catch (error) {
+        if (error instanceof DeliveryMergeRejectedError) {
+            return error;
+        }
+        throw error;
+    }
+    return expect.fail('expected merge rejection');
+}
+
 describe('pull-request delivery', () => {
+    it.each([
+        ['definitive HTTP 422', '422', false],
+        ['ambiguous HTTP 409', '409', true],
+    ] as const)('releases only $0 and retains $1 for reacquisition refusal', async (_label, status, retainsLock) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-rejection-lock-'));
+        initializeDeliveryLockRepository(root);
+        const { port, tracker } = fakePort({ dependentSets: [[], []] });
+        const rejection = shellMergeRejection(status);
+        port.merge = () => {
+            throw rejection;
+        };
+
+        try {
+            await expect(
+                withPullRequestDeliveryLock(
+                    root,
+                    42,
+                    async ({ markRemoteMutationAttempt, markRemoteMutationKnownAbsent }) => {
+                        markRemoteMutationAttempt();
+                        deliverPullRequest(42, port, tracker, markRemoteMutationKnownAbsent);
+                    }
+                )
+            ).rejects.toBe(rejection);
+            expect(deliveryLockExists(root, 42)).toBe(retainsLock);
+            if (retainsLock) {
+                await expect(withPullRequestDeliveryLock(root, 42, async () => undefined)).rejects.toThrow(
+                    /already being delivered/
+                );
+            }
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('queries bot review author IDs through a Bot fragment', () => {
         const source = readFileSync(join(import.meta.dirname, '../deliverPullRequest.ts'), 'utf8');
         expect(source).not.toMatch(/\bauthor\s*\{\s*id\b/);
@@ -2309,7 +2390,7 @@ describe('pull-request delivery', () => {
         expect(calls).toContain('receipt-authority:write:terminal:IC_delivery_42_1');
     });
 
-    it('disarms a failed open final-refresh validation so a later body-drift retry can deliver the current receipt', () => {
+    it('retains a failed open final-refresh validation until remote evidence proves its mutation absent', () => {
         const closesX = relationshipBody('Closes #2372');
         const closesY = relationshipBody('Closes #2373');
         const { port, calls, tracker, persistedReceiptAuthority, receipts } = fakePort({
@@ -2375,7 +2456,7 @@ describe('pull-request delivery', () => {
                 knownAbsent += 1;
             })
         ).toThrow(/was not merged: merge unavailable/i);
-        expect(knownAbsent).toBe(1);
+        expect(knownAbsent).toBe(0);
         expect(calls.filter((call) => call === 'merge:42:head')).toHaveLength(1);
         expect(persistedReceiptAuthority()).toEqual({
             phase: 'prepared',
