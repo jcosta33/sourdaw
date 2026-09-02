@@ -56,13 +56,13 @@ describe('getExecutableAppActionIntentCatalog', () => {
     });
 
     it('accepts a cursor reused with a normalization-equivalent intent', () => {
-        const firstPage = getExecutableAppActionIntentCatalog({ intent: 'Operation', page: { limit: 1 } });
+        const firstPage = getExecutableAppActionIntentCatalog({ intent: 'operation ﬀ', page: { limit: 1 } });
         const cursor = firstPage.nextCursor;
         if (cursor === null) {
             throw new Error('Expected an intent catalog cursor.');
         }
 
-        const nextPage = getExecutableAppActionIntentCatalog({ intent: 'operation', page: { cursor, limit: 1 } });
+        const nextPage = getExecutableAppActionIntentCatalog({ intent: 'operation ff', page: { cursor, limit: 1 } });
 
         expect(nextPage.page.offset).toBe(1);
     });

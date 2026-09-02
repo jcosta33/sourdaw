@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { getExecutableAppActionToolSchemas } from '#/modules/Command/useCases';
+
 import { type ToolSchema } from '../../models/ToolDefinitions';
 import { AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME } from '../agentToolCatalog';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
@@ -86,6 +88,21 @@ function encodeCursor(cursor: Record<string, unknown>): string {
     return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
 }
 
+function parseReceiptContext(receiptContext: string | null): unknown[] {
+    if (receiptContext === null) {
+        throw new Error('Expected a receipt context.');
+    }
+    const serializedReceipts = receiptContext.split('\n').at(-1);
+    if (serializedReceipts === undefined) {
+        throw new Error('Expected serialized receipts.');
+    }
+    const receiptEnvelope: unknown = JSON.parse(serializedReceipts);
+    if (!isRecord(receiptEnvelope) || !Array.isArray(receiptEnvelope.receipts)) {
+        throw new Error('Expected a receipt envelope.');
+    }
+    return receiptEnvelope.receipts;
+}
+
 describe('intent command catalog', () => {
     it('finds canonical command names from high-level intent before exact schema disclosure', async () => {
         const requestTurn = vi
@@ -164,6 +181,21 @@ describe('intent command catalog', () => {
         ]);
         expect(indexReceipt.toolName).toBe(AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME);
         expect(JSON.stringify(indexReceipt)).not.toContain('"parameters"');
+
+        const schemaReceipt = result.receipts[1];
+        if (!isRecord(schemaReceipt?.data) || !Array.isArray(schemaReceipt.data.items)) {
+            throw new Error('Expected exact command-schema receipt data.');
+        }
+        const disclosedSchema = schemaReceipt.data.items.find(
+            (item): item is ToolSchema => isToolSchema(item) && item.function.name === 'setTempo'
+        );
+        const canonicalSchema = getExecutableAppActionToolSchemas().find(
+            (schema) => schema.function.name === 'setTempo'
+        );
+        if (disclosedSchema === undefined || canonicalSchema === undefined) {
+            throw new Error('Expected the canonical setTempo schema.');
+        }
+        expect(disclosedSchema.function.parameters).toEqual(canonicalSchema.function.parameters);
     });
 
     it('does not disclose invented command names after intent search', async () => {
@@ -910,18 +942,7 @@ describe('intent command catalog', () => {
                 };
             }
             if (turn === 2) {
-                if (receiptContext === null) {
-                    throw new Error('Expected the first command-index receipt.');
-                }
-                const serializedReceipts = receiptContext.split('\n').at(-1);
-                if (serializedReceipts === undefined) {
-                    throw new Error('Expected serialized command-index receipts.');
-                }
-                const receiptEnvelope: unknown = JSON.parse(serializedReceipts);
-                if (!isRecord(receiptEnvelope) || !Array.isArray(receiptEnvelope.receipts)) {
-                    throw new Error('Expected a command-index receipt envelope.');
-                }
-                const firstReceipt = receiptEnvelope.receipts[0];
+                const [firstReceipt] = parseReceiptContext(receiptContext);
                 if (
                     !isRecord(firstReceipt) ||
                     !isRecord(firstReceipt.data) ||
@@ -942,6 +963,9 @@ describe('intent command catalog', () => {
                 };
             }
             if (turn === 3) {
+                expect(parseReceiptContext(receiptContext)).toEqual(
+                    expect.arrayContaining([expect.objectContaining({ callId: 'index-page-2', status: 'success' })])
+                );
                 return {
                     status: 'complete' as const,
                     toolCalls: [
@@ -953,6 +977,9 @@ describe('intent command catalog', () => {
                     ],
                 };
             }
+            expect(parseReceiptContext(receiptContext)).toEqual(
+                expect.arrayContaining([expect.objectContaining({ callId: 'tempo-schema', status: 'success' })])
+            );
             return {
                 status: 'complete' as const,
                 toolCalls: [
