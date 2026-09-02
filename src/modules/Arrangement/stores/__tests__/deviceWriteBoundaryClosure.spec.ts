@@ -1494,12 +1494,27 @@ function countDeviceDataAstWrites(file: SourceText): number {
     return writes.size;
 }
 
+// AST census walks only updateTrack and trackStore.set; property-syntax
+// devices:/parameterValues: hits are regex-owned and must not parse here.
+function codeMayContainDeviceDataAstWrites(code: string): boolean {
+    if (code.length === 0) {
+        return false;
+    }
+    if (code.includes('updateTrack')) {
+        return true;
+    }
+    return code.includes('trackStore') && code.includes('.set');
+}
+
 function countDeviceDataByPath(files: ReadonlyArray<ProductionSource>): CountByPath {
     const result = countByPath(files, {
         pattern: /\b(?:parameterValues|devices)\s*:/g,
         includes: includeAllPaths,
     });
     for (const file of files) {
+        if (!codeMayContainDeviceDataAstWrites(file.code)) {
+            continue;
+        }
         const astWrites = countDeviceDataAstWrites(file);
         if (astWrites > 0) {
             result[file.path] = (result[file.path] ?? 0) + astWrites;
