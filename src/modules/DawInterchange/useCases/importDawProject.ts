@@ -17,7 +17,7 @@ export async function importDawProject(input: ImportDawProjectInput): ImportDawP
     const transaction = runProjectLoadTransaction();
     let parsed;
     try {
-        parsed = parseDawProject(input.buffer);
+        parsed = await parseDawProject(input.buffer);
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
         notifyUser(`Failed to read DAWproject file: ${message}`, 'error');
