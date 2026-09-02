@@ -72,6 +72,10 @@ describe('requireMidiNoteGenerationToolCall', () => {
             arguments: { clipId: 'clip-1', notes: [{ pitch: 128, startBeat: 0, duration: 1 }] },
         },
         {
+            label: 'a fractional canonical MIDI field',
+            arguments: { clipId: 'clip-1', notes: [{ pitch: 60.5, startBeat: 0, duration: 1, velocity: 96.5 }] },
+        },
+        {
             label: 'an unexpected note field',
             arguments: {
                 clipId: 'clip-1',

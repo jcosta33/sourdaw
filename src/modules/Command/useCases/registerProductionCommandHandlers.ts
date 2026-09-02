@@ -19,6 +19,7 @@ export function registerProductionCommandHandlers(handlerMaps: readonly HandlerM
             actionType: registration.actionType,
             operationVersion: registration.operationVersion,
             validateArguments: registration.runtimeSchema.validate,
+            validateEntry: registration.sessionEntryValidator,
         })),
         ...getInternalUndoSessionReplayContracts(),
     ]);

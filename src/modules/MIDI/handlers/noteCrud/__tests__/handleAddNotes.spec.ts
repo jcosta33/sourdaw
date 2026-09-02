@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
+import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type MidiNote } from '../../../models/MidiNote';
@@ -8,6 +12,26 @@ import { handleRestoreMidiClipNotes } from '../../noteTransform/handleRestoreMid
 import { handleAddNotes } from '../handleAddNotes';
 
 const CLIP_ID = 'clip-1';
+const TRACK_ID = 'track-1';
+
+function resetMidiClipFixture(): void {
+    setTrackStoreState({
+        ...defaultTrackState,
+        tracks: [createTrack({ id: TRACK_ID, kind: 'midi', name: 'MIDI' })],
+    });
+    if (
+        addClip({
+            id: CLIP_ID,
+            trackId: TRACK_ID,
+            startBeat: 0,
+            endBeat: 4,
+            name: 'MIDI clip',
+            type: 'midi',
+        }) === null
+    ) {
+        throw new Error('Expected MIDI clip fixture');
+    }
+}
 
 function requireRestoreAction(
     action: AppAction | null | undefined
@@ -25,6 +49,9 @@ function currentNotes(): MidiNote[] {
 describe('handleAddNotes', () => {
     beforeEach(() => {
         vi.restoreAllMocks();
+        clearHandlerRegistry();
+        registerHandlerMap({ addNotes: handleAddNotes, restoreMidiClipNotes: handleRestoreMidiClipNotes });
+        resetMidiClipFixture();
         midiStore.set({
             notesByClipId: {
                 [CLIP_ID]: [{ id: 'existing', pitch: 48, startBeat: 0, duration: 1, velocity: 80 }],
@@ -63,6 +90,12 @@ describe('handleAddNotes', () => {
         ]);
         expect(redo.payload.notes).toEqual(inverse.payload.expectedNotes);
         expect(redo.payload.expectedNotes).toEqual(inverse.payload.notes);
+        expect(inverse.payload.noteTransformReplayGuard).toEqual({
+            trackId: TRACK_ID,
+            expectedTrackFrozen: false,
+            expectedClipLocked: false,
+        });
+        expect(redo.payload.noteTransformReplayGuard).toEqual(inverse.payload.noteTransformReplayGuard);
 
         await handleAddNotes.execute(action);
         expect(currentNotes()).toEqual(inverse.payload.expectedNotes);
@@ -110,5 +143,62 @@ describe('handleAddNotes', () => {
 
     it('keeps an internal empty note list as a no-op after provider admission has rejected it', () => {
         expect(handleAddNotes.isNoop?.({ type: 'addNotes', payload: { clipId: CLIP_ID, notes: [] } })).toBe(true);
+    });
+
+    it('executes a non-empty addNotes command through the registered Command handler path', async () => {
+        const action = {
+            type: 'addNotes' as const,
+            payload: { clipId: CLIP_ID, notes: [{ pitch: 60, startBeat: 0, duration: 1 }] },
+        };
+
+        expect(handleAddNotes.isNoop?.(action)).toBe(false);
+        await executeAppAction(action, { skipUndo: true });
+
+        expect(currentNotes()).toContainEqual(expect.objectContaining({ pitch: 60, startBeat: 0, duration: 1 }));
+    });
+
+    it('conflicts rather than writing an orphan note bucket when redo reaches a removed clip', async () => {
+        midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        const action = {
+            type: 'addNotes' as const,
+            payload: { clipId: CLIP_ID, notes: [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1 }] },
+        };
+        const description = handleAddNotes.describe(action);
+        const inverse = requireRestoreAction(description.inverseAction);
+        const redo = requireRestoreAction(description.redoAction);
+
+        await handleAddNotes.execute(action);
+        expect(handleRestoreMidiClipNotes.execute(inverse)).toEqual({ status: 'written' });
+        setTrackStoreState({ ...defaultTrackState, tracks: [] });
+
+        expect(handleRestoreMidiClipNotes.execute(redo)).toEqual({ status: 'conflict' });
+        expect(midiStore.value?.notesByClipId).not.toHaveProperty(CLIP_ID);
+    });
+
+    it.each([
+        [
+            'an audio replacement',
+            () => ({
+                ...trackStore.value!.tracks[0]!,
+                clips: [{ ...trackStore.value!.tracks[0]!.clips[0]!, type: 'audio' as const }],
+            }),
+        ],
+        [
+            'a locked replacement',
+            () => ({
+                ...trackStore.value!.tracks[0]!,
+                clips: [{ ...trackStore.value!.tracks[0]!.clips[0]!, locked: true }],
+            }),
+        ],
+        ['a frozen owner', () => ({ ...trackStore.value!.tracks[0]!, frozen: true })],
+    ])('conflicts when redo reaches %s', (_description, mutateTrack) => {
+        const action = {
+            type: 'addNotes' as const,
+            payload: { clipId: CLIP_ID, notes: [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1 }] },
+        };
+        const redo = requireRestoreAction(handleAddNotes.describe(action).redoAction);
+        setTrackStoreState({ ...defaultTrackState, tracks: [mutateTrack()] });
+
+        expect(handleRestoreMidiClipNotes.execute(redo)).toEqual({ status: 'conflict' });
     });
 });

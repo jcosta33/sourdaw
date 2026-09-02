@@ -36,6 +36,7 @@ export {
     getExecutableAppActionIntentCatalogUnicodeLength,
 } from './getExecutableAppActionIntentCatalogUnicodeLength';
 export { getExecutableAppActionToolSchemas } from './getExecutableAppActionToolSchemas';
+export { getExecutableAppActionProviderSchema } from './getExecutableAppActionProviderSchema';
 export { getExecutableAppActionGroundingCatalog } from './getExecutableAppActionGroundingCatalog';
 export { getExecutableAppActionGroundingRules } from './getExecutableAppActionGroundingRules';
 export { getExecutableCommandRegistrations } from './getExecutableCommandRegistrations';

@@ -15,7 +15,10 @@ export type SessionActionContract = {
     readonly actionType: string;
     readonly operationVersion: number;
     readonly validateArguments: (payload: unknown) => boolean;
+    readonly validateEntry?: (entry: SessionActionEntry) => boolean;
 };
+
+export type SessionActionEntry = Pick<ActionUndoEntry, 'action' | 'inverseAction' | 'redoAction'>;
 
 export type UndoSessionStacks = {
     past: UndoEntry[];
@@ -210,6 +213,11 @@ function sanitizeStoredEntry(value: unknown): ActionUndoEntry | null {
     }
     if (redoAction !== undefined) {
         entry.redoAction = redoAction;
+    }
+
+    const validateEntry = getActionContract(action)?.validateEntry;
+    if (validateEntry !== undefined && !validateEntry(entry)) {
+        return null;
     }
 
     return entry;

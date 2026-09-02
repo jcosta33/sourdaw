@@ -1,20 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
+import { DAW_TOOL_SCHEMAS } from '../../ToolDefinitions';
 import { generationTools, markerTools } from '../GenerationAndView';
 
 describe('GenerationAndView tools', () => {
-    it('generationTools is non-empty with valid schema', () => {
-        expect(generationTools.length).toBeGreaterThan(0);
-        for (const t of generationTools) {
-            expect(t.type).toBe('function');
-            expect(t.function.name).toBeTruthy();
-            expect(t.function.parameters.type).toBe('object');
-        }
-    });
-
-    it('generationTools includes addNotes from createAddNotesToolSchema', () => {
+    it('keeps the hidden addNotes command out of the general tool collection', () => {
         const names = generationTools.map((t) => t.function.name);
-        expect(names).toContain('addNotes');
+        expect(names).not.toContain('addNotes');
+        expect(DAW_TOOL_SCHEMAS.map((tool) => tool.function.name)).not.toContain('addNotes');
     });
 
     it('markerTools includes addMarker and addSection', () => {

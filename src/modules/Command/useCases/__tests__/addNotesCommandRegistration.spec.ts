@@ -10,6 +10,41 @@ import { getExecutableAppActionToolSchemas } from '../getExecutableAppActionTool
 import { getExecutableCommandRegistration } from '../getExecutableCommandRegistration';
 import { isExecutableAppActionType } from '../executableAppActionRegistry';
 import { getInternalUndoSessionReplayContracts } from '../getInternalUndoSessionReplayContracts';
+import { registerProductionCommandHandlers } from '../registerProductionCommandHandlers';
+
+function createPersistedAddNotesEntry() {
+    const noteTransformReplayGuard = {
+        trackId: 'track-midi',
+        expectedTrackFrozen: false,
+        expectedClipLocked: false,
+    };
+    const notes = [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100, probability: 100 }];
+    return {
+        id: 'undo-add-note',
+        kind: 'action',
+        label: 'Add MIDI note',
+        action: {
+            type: 'addNotes',
+            payload: { clipId: 'clip-midi', notes: [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1 }] },
+        },
+        inverseAction: {
+            type: 'restoreMidiClipNotes',
+            payload: { clipId: 'clip-midi', notes: [], expectedNotes: notes, noteTransformReplayGuard },
+        },
+        redoAction: {
+            type: 'restoreMidiClipNotes',
+            payload: {
+                clipId: 'clip-midi',
+                notes,
+                expectedNotes: [],
+                allowMissingExpectedEmpty: true,
+                noteTransformReplayGuard,
+            },
+        },
+        timestamp: 1,
+        source: 'ai',
+    };
+}
 
 describe('addNotes command registration', () => {
     beforeEach(() => {
@@ -60,6 +95,12 @@ describe('addNotes command registration', () => {
         expect(registration.noOpDetector?.({ type: 'addNotes', payload: { clipId: 'clip-midi', notes: [] } })).toBe(
             true
         );
+        expect(
+            registration.noOpDetector?.({
+                type: 'addNotes',
+                payload: { clipId: 'clip-midi', notes: [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1 }] },
+            })
+        ).toBe(false);
         expect(registration.providerSchema.required).toEqual(['clipId', 'notes']);
         expect(registration.providerSchema.properties).toEqual({
             clipId: { type: 'string' },
@@ -79,10 +120,12 @@ describe('addNotes command registration', () => {
                 },
             },
         });
-        expect(registration.runtimeSchema.validate({
-            clipId: 'clip-midi',
-            notes: [{ id: 'note-command-1', pitch: 60, startBeat: 0, duration: 1, velocity: 96 }],
-        })).toBe(true);
+        expect(
+            registration.runtimeSchema.validate({
+                clipId: 'clip-midi',
+                notes: [{ id: 'note-command-1', pitch: 60, startBeat: 0, duration: 1, velocity: 96 }],
+            })
+        ).toBe(true);
     });
 
     it('keeps the executable command out of general provider and planner discovery', () => {
@@ -95,30 +138,18 @@ describe('addNotes command registration', () => {
         ).not.toContain('addNotes');
     });
 
-    it('hydrates the guarded private inverse through an internal replay contract', () => {
+    it('hydrates only an exact addNotes restore pair through the private replay contract', () => {
         const registration = getExecutableCommandRegistration('addNotes');
-        const action = {
-            type: 'addNotes',
-            payload: { clipId: 'clip-midi', notes: [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1 }] },
-        } as const;
-        const inverseAction = {
-            type: 'restoreMidiClipNotes',
-            payload: { clipId: 'clip-midi', notes: [], expectedNotes: [] },
-        } as const;
+        const entry = createPersistedAddNotesEntry();
         sessionStorage.setItem(
             'sourdaw-undo-session',
             JSON.stringify({
                 past: [
                     {
-                        id: 'undo-add-note',
-                        kind: 'action',
-                        label: 'Add MIDI note',
-                        action,
+                        ...entry,
                         actionOperationVersion: registration.operationVersion,
-                        inverseAction,
                         inverseActionOperationVersion: 1,
-                        timestamp: 1,
-                        source: 'ai',
+                        redoActionOperationVersion: 1,
                     },
                 ],
                 future: [],
@@ -130,10 +161,145 @@ describe('addNotes command registration', () => {
                 actionType: registration.actionType,
                 operationVersion: registration.operationVersion,
                 validateArguments: registration.runtimeSchema.validate,
+                validateEntry: registration.sessionEntryValidator,
             },
             ...getInternalUndoSessionReplayContracts(),
         ]);
 
-        expect(undoStore.value?.past).toMatchObject([{ action, inverseAction }]);
+        expect(undoStore.value?.past).toMatchObject([entry]);
+    });
+
+    it.each([
+        [
+            'cross-clip inverse',
+            () => {
+                const entry = createPersistedAddNotesEntry();
+                return {
+                    ...entry,
+                    inverseAction: {
+                        ...entry.inverseAction,
+                        payload: { ...entry.inverseAction.payload, clipId: 'clip-other' },
+                    },
+                };
+            },
+        ],
+        [
+            'mismatched snapshots',
+            () => {
+                const entry = createPersistedAddNotesEntry();
+                const mismatchedNotes = [{ ...entry.inverseAction.payload.expectedNotes[0]!, pitch: 61 }];
+                return {
+                    ...entry,
+                    inverseAction: {
+                        ...entry.inverseAction,
+                        payload: {
+                            ...entry.inverseAction.payload,
+                            expectedNotes: mismatchedNotes,
+                        },
+                    },
+                    redoAction: {
+                        ...entry.redoAction,
+                        payload: { ...entry.redoAction.payload, notes: mismatchedNotes },
+                    },
+                };
+            },
+        ],
+        [
+            'duplicate materialized ids',
+            () => {
+                const entry = createPersistedAddNotesEntry();
+                const duplicatedNotes = [
+                    ...entry.inverseAction.payload.expectedNotes,
+                    entry.inverseAction.payload.expectedNotes[0]!,
+                ];
+                return {
+                    ...entry,
+                    action: {
+                        ...entry.action,
+                        payload: {
+                            ...entry.action.payload,
+                            notes: [...entry.action.payload.notes, { ...entry.action.payload.notes[0]! }],
+                        },
+                    },
+                    inverseAction: {
+                        ...entry.inverseAction,
+                        payload: { ...entry.inverseAction.payload, expectedNotes: duplicatedNotes },
+                    },
+                    redoAction: {
+                        ...entry.redoAction,
+                        payload: { ...entry.redoAction.payload, notes: duplicatedNotes },
+                    },
+                };
+            },
+        ],
+        [
+            'missing materialized ids',
+            () => {
+                const entry = createPersistedAddNotesEntry();
+                return {
+                    ...entry,
+                    action: {
+                        ...entry.action,
+                        payload: {
+                            ...entry.action.payload,
+                            notes: [{ pitch: 60, startBeat: 0, duration: 1 }],
+                        },
+                    },
+                };
+            },
+        ],
+    ])('truncates reachable history for %s', (_description, createInvalidEntry) => {
+        const registration = getExecutableCommandRegistration('addNotes');
+        const entry = createInvalidEntry();
+        sessionStorage.setItem(
+            'sourdaw-undo-session',
+            JSON.stringify({
+                past: [
+                    {
+                        ...entry,
+                        actionOperationVersion: registration.operationVersion,
+                        inverseActionOperationVersion: 1,
+                        redoActionOperationVersion: 1,
+                    },
+                ],
+                future: [],
+            })
+        );
+
+        hydrateUndoStoreFromSession([
+            {
+                actionType: registration.actionType,
+                operationVersion: registration.operationVersion,
+                validateArguments: registration.runtimeSchema.validate,
+                validateEntry: registration.sessionEntryValidator,
+            },
+            ...getInternalUndoSessionReplayContracts(),
+        ]);
+
+        expect(undoStore.value?.past).toEqual([]);
+    });
+
+    it('hydrates the private restore inverse through production handler registration', () => {
+        const registration = getExecutableCommandRegistration('addNotes');
+        const entry = createPersistedAddNotesEntry();
+        sessionStorage.setItem(
+            'sourdaw-undo-session',
+            JSON.stringify({
+                past: [
+                    {
+                        ...entry,
+                        actionOperationVersion: registration.operationVersion,
+                        inverseActionOperationVersion: 1,
+                        redoActionOperationVersion: 1,
+                    },
+                ],
+                future: [],
+            })
+        );
+        clearHandlerRegistry();
+
+        registerProductionCommandHandlers([getMidiNoteTransformHandlers()]);
+
+        expect(undoStore.value?.past).toMatchObject([{ action: entry.action, inverseAction: entry.inverseAction }]);
     });
 });

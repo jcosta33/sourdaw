@@ -1,3 +1,5 @@
+import { getExecutableAppActionProviderSchema } from '#/modules/Command/useCases';
+
 import { createAddNotesToolSchema } from '../models/Tools/CreateAddNotesToolSchema';
 import { type ToolSchema } from '../models/Tools/Types';
 
@@ -7,5 +9,10 @@ type GetMidiNoteGenerationToolSchemasInput = {
 };
 
 export function getMidiNoteGenerationToolSchemas(input: GetMidiNoteGenerationToolSchemasInput): readonly ToolSchema[] {
-    return [createAddNotesToolSchema(input)];
+    return [
+        createAddNotesToolSchema({
+            ...input,
+            providerSchema: getExecutableAppActionProviderSchema('addNotes'),
+        }),
+    ];
 }

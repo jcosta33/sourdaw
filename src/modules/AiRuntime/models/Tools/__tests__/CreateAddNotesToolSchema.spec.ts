@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { getExecutableAppActionProviderSchema } from '#/modules/Command/useCases';
+
 import { createAddNotesToolSchema } from '../CreateAddNotesToolSchema';
 import { type ToolSchema } from '../Types';
 
@@ -13,12 +15,18 @@ function noteItemProperties(schema: ToolSchema): Record<string, Record<string, u
 }
 
 describe('createAddNotesToolSchema', () => {
+    const createSchema = (input: { allowNegativeStartBeat?: boolean; expectedClipId?: string } = {}) =>
+        createAddNotesToolSchema({
+            ...input,
+            providerSchema: getExecutableAppActionProviderSchema('addNotes'),
+        });
+
     it('locks startBeat to non-negative by default and omits minimum when negative allowed', () => {
-        const locked = createAddNotesToolSchema();
+        const locked = createSchema();
         const lockedStartBeat = noteItemProperties(locked).startBeat!;
         expect(lockedStartBeat.minimum).toBe(0);
 
-        const open = createAddNotesToolSchema({ allowNegativeStartBeat: true });
+        const open = createSchema({ allowNegativeStartBeat: true });
         const openStartBeat = noteItemProperties(open).startBeat!;
         expect(openStartBeat.minimum).toBeUndefined();
         // Both branches keep the shared description and type.
@@ -26,13 +34,13 @@ describe('createAddNotesToolSchema', () => {
     });
 
     it('constrains clipId to an enum when expectedClipId is supplied, free-form otherwise', () => {
-        const free = createAddNotesToolSchema();
+        const free = createSchema();
         const clipIdFree = free.function.parameters.properties.clipId as Record<string, unknown>;
         expect(clipIdFree.enum).toBeUndefined();
         expect(clipIdFree.minLength).toBe(1);
         expect(clipIdFree.pattern).toBe('\\S');
 
-        const pinned = createAddNotesToolSchema({ expectedClipId: 'clip-abc' });
+        const pinned = createSchema({ expectedClipId: 'clip-abc' });
         const clipIdPinned = pinned.function.parameters.properties.clipId as Record<string, unknown>;
         expect(clipIdPinned.enum).toEqual(['clip-abc']);
         // The free-form constraints remain even when enum is added.
@@ -46,7 +54,7 @@ describe('createAddNotesToolSchema', () => {
             { expectedClipId: 'clip-x' },
             { allowNegativeStartBeat: true, expectedClipId: 'clip-y' },
         ]) {
-            const schema = createAddNotesToolSchema(input);
+            const schema = createSchema(input);
             expect(schema.type).toBe('function');
             expect(schema.function.name).toBe('addNotes');
             expect(schema.function.parameters.type).toBe('object');

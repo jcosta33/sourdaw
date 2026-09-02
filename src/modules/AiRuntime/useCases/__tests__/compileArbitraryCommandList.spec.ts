@@ -3751,6 +3751,94 @@ describe('compileArbitraryCommandList', () => {
         ]);
     });
 
+    it('rejects a createBus binding as an addNotes writable MIDI clip target in compilation and evidence replay', () => {
+        const calls = [
+            {
+                name: 'command.batch.propose',
+                arguments: {
+                    plan: plan([]),
+                    list: {
+                        schemaVersion: 1,
+                        items: [
+                            {
+                                id: 'create-drum-bus',
+                                name: 'createBus',
+                                arguments: { name: 'Drum Bus', binding: 'drum-bus' },
+                            },
+                            {
+                                id: 'add-bus-note',
+                                name: 'addNotes',
+                                arguments: {
+                                    clipId: '$drum-bus',
+                                    notes: [{ pitch: 60, startBeat: 0, duration: 1 }],
+                                },
+                                dependsOn: ['create-drum-bus'],
+                            },
+                        ],
+                    },
+                },
+            },
+        ];
+        expect(compileArbitraryCommandList({ context, revision: 'revision-1', calls })).toMatchObject({
+            status: 'rejected',
+            reason: expect.stringContaining('Batch-local target'),
+        });
+
+        const createBusCommand = { name: 'createBus', arguments: { name: 'Drum Bus', binding: 'drum-bus' } };
+        const addNotesCommand = {
+            name: 'addNotes',
+            arguments: { clipId: '$drum-bus', notes: [{ duration: 1, pitch: 60, startBeat: 0 }] },
+        };
+        const evidence = {
+            schemaVersion: 1 as const,
+            snapshotRevision: 'revision-1',
+            providerKnownTargetIds: [],
+            selectors: [],
+            commands: [createBusCommand, addNotesCommand],
+            items: [
+                {
+                    canonicalStableIds: [],
+                    declaredCommandIdentities: [
+                        '{"arguments":{"binding":"drum-bus","name":"Drum Bus"},"name":"createBus"}',
+                    ],
+                    itemId: 'create-drum-bus',
+                    commandName: 'createBus',
+                    dependsOn: [],
+                    declaredCommandCount: 1,
+                    omittedCommandCount: 0,
+                    representativeCommandIndexes: [0],
+                    stableIds: [],
+                    commandStart: 0,
+                    commandCount: 1,
+                },
+                {
+                    canonicalStableIds: [],
+                    declaredCommandIdentities: [
+                        '{"arguments":{"clipId":"$drum-bus","notes":[{"duration":1,"pitch":60,"startBeat":0}]},"name":"addNotes"}',
+                    ],
+                    itemId: 'add-bus-note',
+                    commandName: 'addNotes',
+                    dependsOn: ['create-drum-bus'],
+                    declaredCommandCount: 1,
+                    omittedCommandCount: 0,
+                    representativeCommandIndexes: [1],
+                    stableIds: [],
+                    commandStart: 1,
+                    commandCount: 1,
+                },
+            ],
+        };
+
+        expect(
+            validateArbitraryCommandListEvidence({
+                evidence,
+                calls: evidence.commands,
+                context,
+                revision: 'revision-1',
+            })
+        ).toMatchObject({ status: 'rejected', reason: expect.stringContaining('batch-local target') });
+    });
+
     it('carries transitive batch-local producers through serialized dependencies and partial acceptance', async () => {
         const result = compileArbitraryCommandList({
             context,

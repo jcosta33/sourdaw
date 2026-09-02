@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { getExecutableAppActionProviderSchema } from '#/modules/Command/useCases';
+
 import { getMidiNoteGenerationToolSchemas } from '../getMidiNoteGenerationToolSchemas';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -25,10 +27,10 @@ describe('getMidiNoteGenerationToolSchemas', () => {
                                     additionalProperties: false,
                                     required: ['pitch', 'startBeat', 'duration'],
                                     properties: {
-                                        pitch: { type: 'number', minimum: 0, maximum: 127 },
+                                        pitch: { type: 'integer', minimum: 0, maximum: 127 },
                                         startBeat: { type: 'number', minimum: 0 },
                                         duration: { type: 'number', exclusiveMinimum: 0 },
-                                        velocity: { type: 'number', minimum: 1, maximum: 127 },
+                                        velocity: { type: 'integer', minimum: 1, maximum: 127 },
                                     },
                                 },
                             },
@@ -73,5 +75,34 @@ describe('getMidiNoteGenerationToolSchemas', () => {
         }
 
         expect(Object.hasOwn(startBeat, 'minimum')).toBe(false);
+    });
+
+    it('derives every note constraint from the canonical hidden addNotes provider schema', () => {
+        const canonical = getExecutableAppActionProviderSchema('addNotes');
+        const canonicalNotes = canonical.properties.notes;
+        const generatedNotes = getMidiNoteGenerationToolSchemas({ expectedClipId: 'clip-1' })[0]?.function.parameters
+            .properties.notes;
+        if (
+            !isRecord(canonicalNotes) ||
+            !isRecord(canonicalNotes.items) ||
+            !isRecord(canonicalNotes.items.properties) ||
+            !isRecord(generatedNotes) ||
+            !isRecord(generatedNotes.items) ||
+            !isRecord(generatedNotes.items.properties)
+        ) {
+            throw new Error('Expected canonical and generated addNotes note schemas');
+        }
+
+        expect(generatedNotes.minItems).toBe(canonicalNotes.minItems);
+        expect(generatedNotes.items.additionalProperties).toBe(canonicalNotes.items.additionalProperties);
+        expect(generatedNotes.items.required).toEqual(canonicalNotes.items.required);
+        for (const key of ['pitch', 'startBeat', 'duration', 'velocity']) {
+            const canonicalProperty = canonicalNotes.items.properties[key];
+            const generatedProperty = generatedNotes.items.properties[key];
+            if (!isRecord(canonicalProperty) || !isRecord(generatedProperty)) {
+                throw new Error(`Expected ${key} note constraints`);
+            }
+            expect(generatedProperty).toMatchObject(canonicalProperty);
+        }
     });
 });

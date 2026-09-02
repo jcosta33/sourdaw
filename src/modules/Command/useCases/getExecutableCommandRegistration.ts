@@ -7,6 +7,7 @@ import {
     type ExecutableAppActionType,
 } from './executableAppActionRegistry';
 import { getExecutableAppActionOperationVersion } from './getExecutableAppActionOperationVersion';
+import { getCommandUndoSessionEntryValidator } from './getCommandUndoSessionEntryValidator';
 import { getExecutableCommandConfirmation } from './getExecutableCommandConfirmation';
 import { validateVersionedCommandArguments } from './versionedCommandArgumentKeys';
 
@@ -28,10 +29,11 @@ export function getExecutableCommandRegistration<ActionType extends ExecutableAp
         actionType,
         operationVersion: getExecutableAppActionOperationVersion(actionType),
         providerSchema: descriptor.parameters,
-        discoverability: 'discoverability' in descriptor ? descriptor.discoverability ?? 'visible' : 'visible',
+        discoverability: 'discoverability' in descriptor ? (descriptor.discoverability ?? 'visible') : 'visible',
         runtimeSchema: {
             validate: (value: unknown) => validateVersionedCommandArguments(actionType, value),
         },
+        sessionEntryValidator: getCommandUndoSessionEntryValidator(actionType),
         toolDescription: descriptor.description,
         intentPhrases: descriptor.intentPhrases,
         selectionPhrases: 'selectionPhrases' in descriptor ? descriptor.selectionPhrases : [],
