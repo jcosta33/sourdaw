@@ -2979,18 +2979,24 @@ type BranchRulesetRule = {
  * only true when the ruleset itself explicitly says so. A missing or malformed
  * `required_status_checks` rule has not said that; it is a failed read, and must land in the caller's
  * could-not-be-listed branch rather than being mistaken for an explicit, empty requirement.
+ *
+ * `rules/branches/main` aggregates every ruleset that applies to the branch, not one: more than one
+ * can carry its own `required_status_checks` rule, and the merge is blocked on the union of what any
+ * of them require. Keeping only the first, as `find` would, silently drops a second rule's contexts.
  */
 function readRequiredStatusCheckContexts(repository: string, shell: ShellRunner): string[] {
     const rules = parseJson<BranchRulesetRule[]>(
         shell.capture('gh', ['api', `repos/${repository}/rules/branches/main`]),
         `branch ruleset for ${repository}`
     );
-    const requiredStatusChecks = rules.find((rule) => rule.type === 'required_status_checks');
-    const contexts = requiredStatusChecks?.parameters?.required_status_checks;
-    if (contexts === undefined) {
+    const requiredStatusCheckArrays = rules
+        .filter((rule) => rule.type === 'required_status_checks')
+        .map((rule) => rule.parameters?.required_status_checks)
+        .filter((contexts): contexts is Array<{ context: string }> => contexts !== undefined);
+    if (requiredStatusCheckArrays.length === 0) {
         fail(`branch ruleset for ${repository} carries no required_status_checks rule with a parameters array`);
     }
-    return contexts.map((check) => check.context);
+    return [...new Set(requiredStatusCheckArrays.flat().map((check) => check.context))];
 }
 
 export function shellPort(

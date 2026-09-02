@@ -880,6 +880,15 @@ function initializeDeliveryLockRepository(root: string): void {
     execFileSync('git', ['init', '--quiet'], { cwd: root });
 }
 
+/**
+ * The lock module leaves file handles closing asynchronously on some platforms, so a bare `rmSync`
+ * on a lock-repository temp dir can race an in-flight close and throw `ENOTEMPTY`. Retrying, as the
+ * rest of the suite already does for its own temp-dir cleanups, absorbs that race instead of flaking.
+ */
+function removeDeliveryLockRepository(root: string): void {
+    rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+}
+
 function deliveryLockExists(root: string, number: number): boolean {
     try {
         execFileSync('git', ['rev-parse', '--verify', '--quiet', `refs/sourdaw/delivery/pr-${number}`], {
@@ -953,7 +962,7 @@ describe('pull-request delivery', () => {
                 );
             }
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeDeliveryLockRepository(root);
         }
     });
 
@@ -5885,7 +5894,7 @@ describe('pull-request delivery', () => {
             // absence here is what proves the refusal happened before any remote mutation.
             expect(deliveryLockExists(root, 42)).toBe(false);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeDeliveryLockRepository(root);
         }
     });
 
@@ -5912,7 +5921,7 @@ describe('pull-request delivery', () => {
             expect(calls).not.toContain('merge:42:head');
             expect(deliveryLockExists(root, 42)).toBe(false);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeDeliveryLockRepository(root);
         }
     });
 
@@ -10358,5 +10367,25 @@ describe('delivery shell boundary', () => {
         );
 
         expect(port.requiredStatusCheckContexts()).toEqual([]);
+    });
+
+    /**
+     * `rules/branches/main` aggregates every ruleset that applies to the branch, so two separate
+     * `required_status_checks` rules can each name their own contexts. Keeping only the first, as
+     * `find` would, silently drops the second rule's requirement.
+     */
+    it('unions required status check contexts across every required_status_checks rule', () => {
+        const port = rulesetPort(
+            JSON.stringify([
+                { type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'Gate' }] } },
+                { type: 'pull_request' },
+                {
+                    type: 'required_status_checks',
+                    parameters: { required_status_checks: [{ context: 'License' }] },
+                },
+            ])
+        );
+
+        expect(port.requiredStatusCheckContexts()).toEqual(['Gate', 'License']);
     });
 });
