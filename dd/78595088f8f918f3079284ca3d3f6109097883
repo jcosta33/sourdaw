@@ -1,0 +1,28 @@
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_ac03a4ebaa3f6e::t_93b4753892f3ad 2648-2651,2655-2658,2661-2662
+  s_ac03a4ebaa3f6e::t_9b4f07581bb30f 2647,2652-2654,2659-2660
+src/modules/AiRuntime/useCases/agentReference/batchLocalBindingProducers.ts
+  s_ac03a4ebaa3f6e::t_82cd59ca53fed9 54-58
+  s_ac03a4ebaa3f6e::t_1344afa1d6e936 59-71
+  s_ac03a4ebaa3f6e::t_d450481ee86ad3 72-73,76
+src/modules/AiRuntime/useCases/agentReference/__tests__/batchLocalBindingProducers.spec.ts
+  s_ac03a4ebaa3f6e::t_c0636943142772 1-54
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_ac03a4ebaa3f6e::t_e00da54b77f64f 481
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "dd78595088f8f918f3079284ca3d3f6109097883",
+  "prompts": {},
+  "sessions": {
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
