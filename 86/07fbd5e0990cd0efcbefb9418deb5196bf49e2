@@ -1,0 +1,45 @@
+tests/e2e/browserAndDeviceDeep.spec.ts
+  s_bbdfb911119c4f::t_1ff47734ade1a0 72
+  s_bbdfb911119c4f::t_98150afa15e311 68-71,73-74
+  s_09036450244792::t_e841688b318409 2
+tests/e2e/crustRemainingKnobsTestId.spec.ts
+  s_bbdfb911119c4f::t_0098b000d846c5 43-45
+  s_bbdfb911119c4f::t_a0b9d5d3a4c8b8 136
+  s_bbdfb911119c4f::t_ead618a9c63a4e 139,174
+tests/e2e/timelineNavigationTestId.spec.ts
+  s_bbdfb911119c4f::t_6cdbeb9e1bf4ce 31-34
+playwright.config.ts
+  s_bbdfb911119c4f::t_53235f90e4a732 21-22,27
+tests/e2e/modulationElastic.spec.ts
+  s_bbdfb911119c4f::t_c242f53778c5d2 3
+  s_bbdfb911119c4f::t_e9f8dfd5ab1d0a 30-33
+  s_bbdfb911119c4f::t_0ca7b69f9e68c4 35
+  s_bbdfb911119c4f::t_d0ff2ae3717606 2
+tests/e2e/clipEditorControls.spec.ts
+  s_bbdfb911119c4f::t_117c9d075fdce5 138-140
+  s_bbdfb911119c4f::t_391e5b5eee71df 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "8607fbd5e0990cd0efcbefb9418deb5196bf49e2",
+  "prompts": {},
+  "sessions": {
+    "s_09036450244792": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a5fa422085a7e0f6a",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bbdfb911119c4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fa21d5-2a8a-4f80-98ab-b72059373843",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
