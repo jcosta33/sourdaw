@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -26,11 +27,17 @@ export async function exportProjectFile(): Promise<void> {
         );
     }
 
-    const outcome = await downloadProjectFile({
-        data,
-        shouldWrite: () => agentProjectRepairStateStore.value === null,
-    });
-    if (outcome !== 'written') {
+    try {
+        const outcome = await downloadProjectFile({
+            data,
+            shouldWrite: () => agentProjectRepairStateStore.value === null,
+        });
+        if (outcome !== 'written') {
+            return;
+        }
+    } catch (error) {
+        logger.error(new Error('Project export failed', { cause: error }));
+        notifyUser('Failed to export project', 'error');
         return;
     }
     notifyUser('Project exported successfully', 'info');
