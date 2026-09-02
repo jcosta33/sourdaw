@@ -134,14 +134,21 @@ const MINIMAL_WASM_MODULE = new WebAssembly.Module(new Uint8Array([0x00, 0x61, 0
 const TRANSPORT_BEAT_F64 = 0;
 const TRANSPORT_TEMPO_F64 = 1;
 const TRANSPORT_IS_PLAYING_F64 = 5;
+const TRANSPORT_POSITION_SECONDS_F64 = 8;
 
-function makePlayingTransport(beat: number, tempo: number): SharedArrayBuffer {
+/**
+ * `positionSeconds` is the song position the tempo-map owner integrated for
+ * this beat. It defaults to the flat-tempo value so a case with no tempo change
+ * states one number rather than two that have to be kept consistent by hand.
+ */
+function makePlayingTransport(beat: number, tempo: number, positionSeconds = (beat / tempo) * 60): SharedArrayBuffer {
     // 16 f64 slots is comfortably past Int32 seq index 14 (bytes 56-60).
     const sab = new SharedArrayBuffer(16 * 8);
     const f64 = new Float64Array(sab);
     f64[TRANSPORT_BEAT_F64] = beat;
     f64[TRANSPORT_TEMPO_F64] = tempo;
     f64[TRANSPORT_IS_PLAYING_F64] = 1; // playing
+    f64[TRANSPORT_POSITION_SECONDS_F64] = positionSeconds;
     // Seq counter (Int32 index 14) is left at 0 (even, unchanged) so the
     // seqlock read succeeds on the first attempt.
     return sab;
@@ -203,6 +210,7 @@ describe('KneadProcessor pitch-shift computation', () => {
                 c1: {
                     startBeat: 0,
                     endBeat: 4,
+                    startSeconds: 0,
                     blobs: [
                         {
                             startTime: 0,
@@ -239,6 +247,7 @@ describe('KneadProcessor pitch-shift computation', () => {
                 c1: {
                     startBeat: 0,
                     endBeat: 4,
+                    startSeconds: 0,
                     retuneSpeedMs: 140,
                     formantPreserve: false,
                     blobs: [{ startTime: 0, endTime: 10, pitchCenterCents: 6200, originalPitchCenterCents: 6000 }],
@@ -272,6 +281,7 @@ describe('KneadProcessor pitch-shift computation', () => {
                 c1: {
                     startBeat: 0,
                     endBeat: 4,
+                    startSeconds: 0,
                     blobs: [{ startTime: 0, endTime: 10, pitchCenterCents: 6200, originalPitchCenterCents: 6000 }],
                 },
             },
@@ -301,6 +311,7 @@ describe('KneadProcessor pitch-shift computation', () => {
                 c1: {
                     startBeat: 0,
                     endBeat: 4,
+                    startSeconds: 0,
                     retuneSpeedMs: Number.NaN,
                     blobs: [{ startTime: 0, endTime: 10, pitchCenterCents: 6200, originalPitchCenterCents: 6000 }],
                 },
@@ -328,6 +339,7 @@ describe('KneadProcessor pitch-shift computation', () => {
                 c1: {
                     startBeat: 0,
                     endBeat: 4,
+                    startSeconds: 0,
                     blobs: [
                         {
                             startTime: 0,
@@ -360,6 +372,7 @@ describe('KneadProcessor pitch-shift computation', () => {
                 c1: {
                     startBeat: 0,
                     endBeat: 4,
+                    startSeconds: 0,
                     blobs: [{ startTime: 0, endTime: 10, pitchCenterCents: 6200, originalPitchCenterCents: 6000 }],
                 },
             },
@@ -428,6 +441,7 @@ describe('KneadProcessor pitch-shift computation', () => {
                 c1: {
                     startBeat: 0,
                     endBeat: 4,
+                    startSeconds: 0,
                     blobs: [{ startTime: 0, endTime: 10, pitchCenterCents: 6200, originalPitchCenterCents: 6000 }],
                 },
             },
@@ -520,6 +534,7 @@ describe('KneadProcessor message handling & process guards', () => {
                 c1: {
                     startBeat: 0,
                     endBeat: 4,
+                    startSeconds: 0,
                     blobs: [{ startTime: 0, endTime: 10, pitchCenterCents: 6200, originalPitchCenterCents: 6000 }],
                 },
             },
@@ -542,6 +557,7 @@ describe('KneadProcessor message handling & process guards', () => {
                 c1: {
                     startBeat: 0,
                     endBeat: 4,
+                    startSeconds: 0,
                     blobs: [{ startTime: 0, endTime: 10, pitchCenterCents: 6200, originalPitchCenterCents: 6000 }],
                 },
             },
@@ -564,6 +580,7 @@ describe('KneadProcessor message handling & process guards', () => {
                 c1: {
                     startBeat: 0,
                     endBeat: 4,
+                    startSeconds: 0,
                     blobs: [{ startTime: 1000, endTime: 2000, pitchCenterCents: 6200, originalPitchCenterCents: 6000 }],
                 },
             },
@@ -573,6 +590,86 @@ describe('KneadProcessor message handling & process guards', () => {
             [[new Float32Array(128), new Float32Array(128)]]
         );
         expect(shiftCalls.at(-1)).toBe(0);
+    });
+
+    /**
+     * The tempo-map scenario from the defect report.
+     *
+     * A 16-beat clip at 120 BPM with a change to 60 BPM at beat 8: the
+     * transport spends 4 s reaching beat 8 and another 4 s reaching beat 12,
+     * so beat 12 is 8.0 s into the clip's audio. Dividing the beat by the
+     * tempo in force instead — the flat conversion this processor used to do —
+     * reads 12.0 s and corrects a syllable four seconds further on.
+     *
+     * `startSeconds` and the SAB's song-seconds field are both integrated
+     * through the tempo map on the main thread, which is the only side that
+     * holds it; the processor subtracts them and never divides by a tempo.
+     */
+    const TEMPO_CHANGE_BLOBS = [
+        { startTime: 1.5, endTime: 2.5, pitchCenterCents: 6200, originalPitchCenterCents: 6000 },
+        { startTime: 5.5, endTime: 6.5, pitchCenterCents: 6400, originalPitchCenterCents: 6000 },
+        { startTime: 7.5, endTime: 8.5, pitchCenterCents: 6100, originalPitchCenterCents: 6000 },
+        { startTime: 11.5, endTime: 12.5, pitchCenterCents: 6300, originalPitchCenterCents: 6000 },
+    ];
+
+    function renderQuantum(proc: AudioWorkletProcessorLike): void {
+        proc.process([[new Float32Array(FRAMES)]], [[new Float32Array(FRAMES), new Float32Array(FRAMES)]]);
+    }
+
+    it('selects the blob at the tempo-map clip time after a tempo change, not the flat-tempo one', async () => {
+        const proc = await loadProcessor();
+        // Beat 12 under 120 -> 60 BPM at beat 8: 4 s + 4 s = 8.0 s of song time.
+        const transportSAB = makePlayingTransport(12, 60, 8);
+        sendMessage(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE, transportSAB });
+
+        sendMessage(proc, {
+            type: 'update-state',
+            clips: { c1: { startBeat: 0, endBeat: 16, startSeconds: 0, blobs: TEMPO_CHANGE_BLOBS } },
+        });
+
+        renderQuantum(proc);
+
+        // The blob covering 8.0 s is +1 semitone; the flat conversion's 12.0 s
+        // lands on the +3 one.
+        expect(shiftCalls.at(-1)).toBe(1);
+    });
+
+    it('keeps the blob selection it already had at a beat before the tempo change', async () => {
+        const proc = await loadProcessor();
+        // Beat 4 is still inside the 120 BPM stretch: 2.0 s either way.
+        const transportSAB = makePlayingTransport(4, 120, 2);
+        sendMessage(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE, transportSAB });
+
+        sendMessage(proc, {
+            type: 'update-state',
+            clips: { c1: { startBeat: 0, endBeat: 16, startSeconds: 0, blobs: TEMPO_CHANGE_BLOBS } },
+        });
+
+        renderQuantum(proc);
+
+        expect(shiftCalls.at(-1)).toBe(2);
+    });
+
+    /**
+     * A clip whose start beat sits on the other side of the tempo change from
+     * the playhead. Its anchor is integrated through the map as well, so the
+     * subtraction stays in clip time: beat 4 is 2.0 s in, beat 12 is 8.0 s in,
+     * and the clip is 6.0 s old. Dividing both endpoints by the 60 BPM in force
+     * reads 8.0 s and stretches the clip's own history along with the beat.
+     */
+    it('anchors clip time on the integrated clip start rather than the clip start beat', async () => {
+        const proc = await loadProcessor();
+        const transportSAB = makePlayingTransport(12, 60, 8);
+        sendMessage(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE, transportSAB });
+
+        sendMessage(proc, {
+            type: 'update-state',
+            clips: { c1: { startBeat: 4, endBeat: 20, startSeconds: 2, blobs: TEMPO_CHANGE_BLOBS } },
+        });
+
+        renderQuantum(proc);
+
+        expect(shiftCalls.at(-1)).toBe(4);
     });
 
     it('faults and passthrough-copies when the WASM instance throws mid-process', async () => {
