@@ -67,7 +67,7 @@ describe('refreshEngineRtDiagnostics', () => {
         // the poll runs every second, so the same cause must report once.
         const lastGoodReading = diagnostics({ unmappedSetParamCalls: 7 });
         vi.mocked(getEngineRtDiagnostics).mockResolvedValueOnce(
-            diagnostics({ ...lastGoodReading, events: [{ type: 'streamError', kind: 'xrun' }] })
+            diagnostics({ ...lastGoodReading, events: [{ type: 'streamError', side: 'output', kind: 'xrun' }] })
         );
         await refreshEngineRtDiagnostics();
 
@@ -77,7 +77,7 @@ describe('refreshEngineRtDiagnostics', () => {
         expect(await refreshEngineRtDiagnostics()).toBeNull();
 
         expect(engineRtDiagnosticsStore.value?.latest?.unmappedSetParamCalls).toBe(7);
-        expect(engineRtDiagnosticsStore.value?.events).toEqual([{ type: 'streamError', kind: 'xrun' }]);
+        expect(engineRtDiagnosticsStore.value?.events).toEqual([{ type: 'streamError', side: 'output', kind: 'xrun' }]);
         expect(logger.error).toHaveBeenCalledTimes(1);
         expect(logger.error).toHaveBeenCalledWith(
             expect.objectContaining({ message: expect.stringContaining('Failed to lock engine: poisoned') })
@@ -117,31 +117,33 @@ describe('refreshEngineRtDiagnostics', () => {
         // Replacing the list on every refresh would discard everything reported
         // before it.
         vi.mocked(getEngineRtDiagnostics).mockResolvedValueOnce(
-            diagnostics({ events: [{ type: 'streamError', kind: 'xrun' }] })
+            diagnostics({ events: [{ type: 'streamError', side: 'output', kind: 'xrun' }] })
         );
         await refreshEngineRtDiagnostics();
 
         vi.mocked(getEngineRtDiagnostics).mockResolvedValueOnce(
-            diagnostics({ events: [{ type: 'streamError', kind: 'deviceNotAvailable' }] })
+            diagnostics({ events: [{ type: 'streamError', side: 'output', kind: 'deviceNotAvailable' }] })
         );
         await refreshEngineRtDiagnostics();
 
         expect(engineRtDiagnosticsStore.value?.events).toEqual([
-            { type: 'streamError', kind: 'xrun' },
-            { type: 'streamError', kind: 'deviceNotAvailable' },
+            { type: 'streamError', side: 'output', kind: 'xrun' },
+            { type: 'streamError', side: 'output', kind: 'deviceNotAvailable' },
         ]);
     });
 
     it('keeps a refresh returning no events from clearing the history', async () => {
         vi.mocked(getEngineRtDiagnostics).mockResolvedValueOnce(
-            diagnostics({ events: [{ type: 'streamError', kind: 'deviceChanged' }] })
+            diagnostics({ events: [{ type: 'streamError', side: 'output', kind: 'deviceChanged' }] })
         );
         await refreshEngineRtDiagnostics();
 
         vi.mocked(getEngineRtDiagnostics).mockResolvedValueOnce(diagnostics());
         await refreshEngineRtDiagnostics();
 
-        expect(engineRtDiagnosticsStore.value?.events).toEqual([{ type: 'streamError', kind: 'deviceChanged' }]);
+        expect(engineRtDiagnosticsStore.value?.events).toEqual([
+            { type: 'streamError', side: 'output', kind: 'deviceChanged' },
+        ]);
     });
 
     it('logs every drained event once, so a report reaches the log without a diagnostics reader', async () => {
@@ -152,8 +154,8 @@ describe('refreshEngineRtDiagnostics', () => {
         vi.mocked(getEngineRtDiagnostics).mockResolvedValue(
             diagnostics({
                 events: [
-                    { type: 'streamError', kind: 'deviceNotAvailable' },
-                    { type: 'streamError', kind: 'xrun' },
+                    { type: 'streamError', side: 'output', kind: 'deviceNotAvailable' },
+                    { type: 'streamError', side: 'output', kind: 'xrun' },
                 ],
             })
         );
@@ -176,10 +178,11 @@ describe('refreshEngineRtDiagnostics', () => {
     it('bounds the event history so a stream failing every period cannot grow it forever', async () => {
         const flood = Array.from({ length: ENGINE_EVENT_HISTORY_LIMIT + 5 }, () => ({
             type: 'streamError' as const,
+            side: 'output' as const,
             kind: 'xrun' as const,
         }));
         vi.mocked(getEngineRtDiagnostics).mockResolvedValueOnce(
-            diagnostics({ events: [{ type: 'streamError', kind: 'deviceBusy' }, ...flood] })
+            diagnostics({ events: [{ type: 'streamError', side: 'output', kind: 'deviceBusy' }, ...flood] })
         );
 
         await refreshEngineRtDiagnostics();

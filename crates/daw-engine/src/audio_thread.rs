@@ -5,11 +5,13 @@
 //! seam's decision (`crate::device`): cpal on macOS and Linux, the
 //! IAudioClient3/WASAPI backend on Windows (ADR 0027).
 
+use crate::capture::{capture_ring, CaptureRingReader, CaptureShape};
 use crate::device::{
-    DeviceOpenRequest, OpenOutput, OutputBackend, PlatformOutputBackend, PlatformStream, RenderFn,
-    StreamErrorFn,
+    CaptureFn, DeviceOpenRequest, InputBackend, InputOpenRefusal, InputOpenRequest, OpenInput,
+    OpenOutput, OutputBackend, PlatformInputBackend, PlatformInputStream, PlatformOutputBackend,
+    PlatformStream, RenderFn, StreamErrorFn,
 };
-use crate::engine_events::{engine_event_channel, EngineEvent, StreamErrorKind};
+use crate::engine_events::{engine_event_channel, EngineEvent, StreamErrorKind, StreamSide};
 use crate::midi::diagnostics::{
     active_midi_rt_diagnostics_channel, ActiveMidiRtDiagnosticsSnapshot,
 };
@@ -218,9 +220,24 @@ pub fn spawn_audio_thread(command_rx: Consumer<GraphCommand>) -> Result<AudioThr
         graph_progress_tx,
         transport_position_tx,
         engine_event_tx,
+        None,
         false,
     )
-    .map(|(handle, _sample_rate, _bridge_round_trip_frames, _retired_adoption_tx)| handle)
+    .map(|spawned| spawned.handle)
+}
+
+/// What a successful spawn hands back to the control side.
+pub(crate) struct SpawnedAudioThread {
+    pub handle: AudioThreadHandle,
+    /// The rate the stream actually opened at.
+    pub sample_rate: f32,
+    /// What the render callback publishes the bridge's settled round trip
+    /// into.
+    pub bridge_round_trip_frames: Arc<AtomicUsize>,
+    /// What the capture side published as its settled latency, or zero when
+    /// no input stream was opened.
+    pub input_latency_frames: Arc<AtomicUsize>,
+    pub retired_adoption_tx: Sender<Consumer<RetiredGraphObjects>>,
 }
 
 /// Spawn the audio thread and report the sample rate the stream actually
@@ -239,22 +256,17 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
     graph_progress_tx: Input<GraphProgressSnapshot>,
     transport_position_tx: Input<TransportPositionSnapshot>,
     engine_event_tx: Producer<EngineEvent>,
+    capture_event_tx: Option<Producer<EngineEvent>>,
     force_default_buffer: bool,
-) -> Result<
-    (
-        AudioThreadHandle,
-        f32,
-        Arc<AtomicUsize>,
-        Sender<Consumer<RetiredGraphObjects>>,
-    ),
-    String,
-> {
+) -> Result<SpawnedAudioThread, String> {
     let (retired_tx, retired_rx) = RingBuffer::new(RETIREMENT_QUEUE_CAPACITY);
     let (reclaimer_shutdown_tx, retired_adoption_tx) = spawn_retirement_reclaimer(retired_rx)?;
     let sample_rate_cell = Arc::new(OnceLock::new());
     let sample_rate_slot = Arc::clone(&sample_rate_cell);
     let bridge_round_trip_frames = new_bridge_round_trip_slot();
     let bridge_round_trip_slot = Arc::clone(&bridge_round_trip_frames);
+    let input_latency_frames = new_input_latency_slot();
+    let input_latency_slot = Arc::clone(&input_latency_frames);
 
     let handle = spawn_owned_audio_stream(move || {
         match build_audio_stream(
@@ -265,12 +277,14 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
             graph_progress_tx,
             transport_position_tx,
             engine_event_tx,
+            capture_event_tx,
             force_default_buffer,
             &sample_rate_slot,
             Arc::clone(&bridge_round_trip_slot),
+            &input_latency_slot,
         ) {
-            Ok(stream) => Ok(StreamWithReclaimerShutdown(
-                Some(stream),
+            Ok(streams) => Ok(StreamWithReclaimerShutdown(
+                Some(streams),
                 reclaimer_shutdown_tx,
             )),
             Err(error) => {
@@ -286,12 +300,13 @@ pub(crate) fn spawn_audio_thread_with_diagnostics(
     let sample_rate = *sample_rate_cell
         .get()
         .ok_or_else(|| "Audio stream started without reporting its sample rate".to_string())?;
-    Ok((
+    Ok(SpawnedAudioThread {
         handle,
         sample_rate,
         bridge_round_trip_frames,
+        input_latency_frames,
         retired_adoption_tx,
-    ))
+    })
 }
 
 /// Write the engine's internal stereo pair (`left`/`right`, always rendered
@@ -425,6 +440,18 @@ pub(crate) fn new_bridge_round_trip_slot() -> Arc<AtomicUsize> {
     ))
 }
 
+/// The slot the capture side publishes its settled latency into.
+///
+/// Zero means no capture: the seam either opened an input stream and knows
+/// exactly what it costs, or it did not and there is no input to compensate.
+/// Unlike the bridge's slot there is nothing for the render callback to
+/// refine — the capture ring's depth follows from the two negotiated periods
+/// and nothing the callback measures — so the owner thread writes this once,
+/// at open, and it stays true for the life of the stream.
+pub(crate) fn new_input_latency_slot() -> Arc<AtomicUsize> {
+    Arc::new(AtomicUsize::new(0))
+}
+
 /// The render callback's state and body, as a value the device seam wraps.
 ///
 /// Named rather than written inline as a closure because it is the only place
@@ -536,6 +563,141 @@ impl DeviceRenderer {
     }
 }
 
+/// Open the capture side and build the ring it feeds.
+///
+/// Generic over the backend for the reason the output seam is: the decisions
+/// here — which shape the ring takes, which refusals are named, what the
+/// published latency is — have to be provable without a device attached.
+///
+/// The output period the ring is sized against is the one the engine asks
+/// every device for, not the one this device answered with: the answer only
+/// reaches the render callback, while the ring's capacity is fixed here.
+/// `CaptureShape` carries the ring past that gap itself, sizing above the
+/// largest callback the engine accepts whatever the two periods are.
+fn attach_capture<B: InputBackend>(
+    engine_sample_rate: f32,
+    on_error: StreamErrorFn,
+) -> Result<(<B::Open as OpenInput>::Stream, CaptureRingReader), InputOpenRefusal> {
+    let open = B::open_default_input(InputOpenRequest { engine_sample_rate })?;
+    let negotiated = open.negotiated();
+    let (mut writer, reader) = capture_ring(CaptureShape {
+        // The negotiated figure is a ceiling the device advertised, so the
+        // ring is sized for the largest block it can hand back rather than a
+        // typical one. A device that could not name that ceiling never
+        // reaches here: the seam refuses it at open.
+        input_period_frames: negotiated.period_frames,
+        output_period_frames: PREFERRED_BUFFER_FRAMES as usize,
+        channels: negotiated.channels,
+    });
+
+    // The capture thread's whole job: copy the device's block into the ring
+    // or count that it could not. No allocation, no lock, no logging.
+    let capture: CaptureFn = Box::new(move |data: &[f32], channels: usize| {
+        writer.write_block(data, channels);
+    });
+
+    open.start(capture, on_error).map(|stream| (stream, reader))
+}
+
+/// Accept a capture attempt, publish what it costs, and never fail the engine
+/// over it.
+///
+/// Capture is additive. An engine that refuses to start because the machine
+/// has no input device — or because its input device runs at another rate —
+/// leaves the musician with no playback either, which is strictly worse than
+/// starting without a record feed. So a refusal is named on the way past and
+/// the latency stays at zero, which is how the layer above reads "no
+/// capture".
+fn capture_side<Stream>(
+    attempt: Result<(Stream, CaptureRingReader), InputOpenRefusal>,
+    input_latency_slot: &AtomicUsize,
+) -> Option<(Stream, CaptureRingReader)> {
+    let attached = match attempt {
+        Ok(attached) => attached,
+        Err(refusal) => {
+            // The owner thread, not the audio thread: reporting costs a
+            // stderr lock here and would be forbidden inside the callback.
+            eprintln!("[Engine] Audio capture unavailable: {refusal:?}");
+            input_latency_slot.store(0, Ordering::Relaxed);
+            return None;
+        }
+    };
+
+    input_latency_slot.store(attached.1.latency_frames(), Ordering::Relaxed);
+    Some(attached)
+}
+
+/// Open the capture side beside an output stream that started, and only then.
+///
+/// The order is load-bearing rather than incidental. An output that cannot
+/// start is the engine failing, and opening an input device on the way to
+/// that failure asks the OS — and on macOS the musician — for microphone
+/// access a session that is about to die will never use. Taking the output's
+/// own `Result` by value is what makes the order unrepresentable rather than
+/// merely intended: there is no path to the input open that does not pass
+/// through a started output stream.
+///
+/// Capture is attempted at all only when the caller asked for it by handing
+/// over an event ring of its own. That ring is SPSC and the two backends run
+/// their error callbacks on different threads, so one producer cannot serve
+/// both sides.
+fn capture_beside<Output, B: InputBackend>(
+    output: Result<Output, String>,
+    capture_event_tx: Option<Producer<EngineEvent>>,
+    engine_sample_rate: f32,
+    input_latency_slot: &AtomicUsize,
+) -> Result<
+    (
+        Option<(<B::Open as OpenInput>::Stream, CaptureRingReader)>,
+        Output,
+    ),
+    String,
+> {
+    let output = output?;
+    let capture = capture_event_tx.and_then(|tx| {
+        capture_side(
+            attach_capture::<B>(engine_sample_rate, stream_error_sink(StreamSide::Input, tx)),
+            input_latency_slot,
+        )
+    });
+
+    Ok((capture, output))
+}
+
+/// The wait-free error sink a backend's error callback is handed.
+///
+/// The backend may call it from the real-time thread — ALSA reports from its
+/// xrun path and WASAPI from inside the output run loop — so it does the one
+/// wait-free thing open to it and nothing else: push a fixed-size `Copy`
+/// event into a preallocated ring. No formatting, no stderr lock, no
+/// allocation, no wait; a full ring drops the report rather than stalling the
+/// audio side. Reporting the error is the drain side's job
+/// (`drain_engine_events`).
+///
+/// The side is bound here, where the stream it belongs to is known, because
+/// nothing downstream can recover it: the event is drained long after the
+/// callback that pushed it.
+fn stream_error_sink(
+    side: StreamSide,
+    mut engine_event_tx: Producer<EngineEvent>,
+) -> StreamErrorFn {
+    Box::new(move |kind: StreamErrorKind| {
+        let _ = engine_event_tx.push(EngineEvent::StreamError { side, kind });
+    })
+}
+
+/// The device streams one engine owns for the life of its audio thread.
+///
+/// The capture side is declared first so it stops before the ring it writes
+/// into is dropped, and the whole value is what the owner thread holds and
+/// drops: teardown stays a single `drop`, whether or not capture was opened.
+/// The reader travels with it because a ring whose consumer is gone refuses
+/// every push the capture callback makes.
+type OwnedDeviceStreams = (
+    Option<(PlatformInputStream, CaptureRingReader)>,
+    PlatformStream,
+);
+
 #[allow(clippy::too_many_arguments)]
 fn build_audio_stream(
     command_rx: Consumer<GraphCommand>,
@@ -544,11 +706,13 @@ fn build_audio_stream(
     timeline_rt_diagnostics_tx: Input<TimelineRtDiagnosticsSnapshot>,
     graph_progress_tx: Input<GraphProgressSnapshot>,
     transport_position_tx: Input<TransportPositionSnapshot>,
-    mut engine_event_tx: Producer<EngineEvent>,
+    engine_event_tx: Producer<EngineEvent>,
+    capture_event_tx: Option<Producer<EngineEvent>>,
     force_default_buffer: bool,
     sample_rate_out: &OnceLock<f32>,
     bridge_round_trip_slot: Arc<AtomicUsize>,
-) -> Result<PlatformStream, String> {
+    input_latency_slot: &AtomicUsize,
+) -> Result<OwnedDeviceStreams, String> {
     let open = PlatformOutputBackend::open_default_output(DeviceOpenRequest {
         force_default_period: force_default_buffer,
         // WASAPI Exclusive is an explicit user opt-in (ADR 0027). No engine
@@ -580,18 +744,230 @@ fn build_audio_stream(
         renderer.render(data, channels);
     });
 
-    // The backend may call this from the real-time thread — ALSA reports from
-    // its xrun path and WASAPI from inside the output run loop — so it does
-    // the one wait-free thing open to it and nothing else: push a fixed-size
-    // `Copy` event into a preallocated ring. No formatting, no stderr lock, no
-    // allocation, no wait; a full ring drops the report rather than stalling
-    // the audio side. Reporting the error is the drain side's job
-    // (`drain_engine_events`).
-    let on_error: StreamErrorFn = Box::new(move |kind: StreamErrorKind| {
-        let _ = engine_event_tx.push(EngineEvent::StreamError { kind });
-    });
+    capture_beside::<_, PlatformInputBackend>(
+        open.start(
+            render,
+            stream_error_sink(StreamSide::Output, engine_event_tx),
+        ),
+        capture_event_tx,
+        sample_rate,
+        input_latency_slot,
+    )
+}
 
-    open.start(render, on_error)
+#[cfg(test)]
+mod capture_seam_tests {
+    use super::{
+        attach_capture, capture_beside, capture_side, new_input_latency_slot,
+        PREFERRED_BUFFER_FRAMES,
+    };
+    use crate::capture::CaptureShape;
+    use crate::device::{
+        CaptureFn, InputBackend, InputOpenRefusal, InputOpenRequest, NegotiatedInput, OpenInput,
+        StreamErrorFn,
+    };
+    use crate::engine_events::{engine_event_channel, EngineEvent, StreamErrorKind, StreamSide};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    const ENGINE_RATE: f32 = 48_000.0;
+    const DEVICE_PERIOD: usize = 128;
+    const DEVICE_CHANNELS: usize = 2;
+
+    /// A machine with no input device.
+    struct AbsentInput;
+
+    /// A machine with one, running the engine's own rate.
+    struct PresentInput;
+
+    /// One that counts every time it is asked to open, so a test can observe
+    /// an open that must never happen.
+    struct CountedInput;
+
+    static OPENS_ATTEMPTED: AtomicUsize = AtomicUsize::new(0);
+
+    struct OpenTestInput(NegotiatedInput);
+
+    impl InputBackend for AbsentInput {
+        type Open = OpenTestInput;
+
+        fn open_default_input(_request: InputOpenRequest) -> Result<Self::Open, InputOpenRefusal> {
+            Err(InputOpenRefusal::NoDefaultInputDevice)
+        }
+    }
+
+    impl InputBackend for PresentInput {
+        type Open = OpenTestInput;
+
+        fn open_default_input(request: InputOpenRequest) -> Result<Self::Open, InputOpenRefusal> {
+            Ok(OpenTestInput(NegotiatedInput {
+                sample_rate: request.engine_sample_rate,
+                channels: DEVICE_CHANNELS,
+                period_frames: DEVICE_PERIOD,
+            }))
+        }
+    }
+
+    impl InputBackend for CountedInput {
+        type Open = OpenTestInput;
+
+        fn open_default_input(request: InputOpenRequest) -> Result<Self::Open, InputOpenRefusal> {
+            OPENS_ATTEMPTED.fetch_add(1, Ordering::Relaxed);
+            PresentInput::open_default_input(request)
+        }
+    }
+
+    impl OpenInput for OpenTestInput {
+        type Stream = ();
+
+        fn negotiated(&self) -> NegotiatedInput {
+            self.0
+        }
+
+        fn start(
+            self,
+            _capture: CaptureFn,
+            _on_error: StreamErrorFn,
+        ) -> Result<Self::Stream, InputOpenRefusal> {
+            Ok(())
+        }
+    }
+
+    fn error_sink() -> StreamErrorFn {
+        let (tx, _rx) = engine_event_channel();
+        super::stream_error_sink(StreamSide::Input, tx)
+    }
+
+    /// A refusal costs the capture side and nothing else: it has no failure
+    /// channel back to the caller, so a stream build that reaches it cannot be
+    /// stopped by a machine with no microphone.
+    #[test]
+    fn a_refused_capture_open_yields_no_capture_side_and_no_latency() {
+        let slot = new_input_latency_slot();
+
+        let capture = capture_side(
+            attach_capture::<AbsentInput>(ENGINE_RATE, error_sink()),
+            &slot,
+        );
+
+        assert!(capture.is_none(), "no input device means no capture side");
+        assert_eq!(
+            slot.load(Ordering::Relaxed),
+            0,
+            "an absent capture publishes no latency to compensate"
+        );
+    }
+
+    #[test]
+    fn an_opened_capture_publishes_the_latency_its_ring_settles_at() {
+        let slot = new_input_latency_slot();
+
+        let capture = capture_side(
+            attach_capture::<PresentInput>(ENGINE_RATE, error_sink()),
+            &slot,
+        );
+
+        let expected = CaptureShape {
+            input_period_frames: DEVICE_PERIOD,
+            output_period_frames: PREFERRED_BUFFER_FRAMES as usize,
+            channels: DEVICE_CHANNELS,
+        }
+        .latency_frames();
+        assert!(capture.is_some());
+        assert_eq!(slot.load(Ordering::Relaxed), expected);
+    }
+
+    /// An engine whose output stream never started must not have asked for a
+    /// microphone on the way down. On macOS the first input open is what
+    /// raises the system permission prompt, so a failing engine that opened
+    /// one would prompt the musician for access to a session that is already
+    /// over.
+    #[test]
+    fn an_output_that_never_started_never_reaches_the_input_device() {
+        let slot = new_input_latency_slot();
+        let (tx, _rx) = engine_event_channel();
+        let before = OPENS_ATTEMPTED.load(Ordering::Relaxed);
+
+        let built = capture_beside::<(), CountedInput>(
+            Err("Audio output device reports zero channels".to_string()),
+            Some(tx),
+            ENGINE_RATE,
+            &slot,
+        );
+
+        assert!(built.is_err(), "a failed output build stays failed");
+        assert_eq!(
+            OPENS_ATTEMPTED.load(Ordering::Relaxed),
+            before,
+            "a failing engine must not open an input device"
+        );
+        assert_eq!(slot.load(Ordering::Relaxed), 0);
+    }
+
+    /// The same call with a started output does open one — without which the
+    /// test above would pass on a seam that never opens an input at all.
+    #[test]
+    fn a_started_output_is_what_lets_the_input_open() {
+        let slot = new_input_latency_slot();
+        let (tx, _rx) = engine_event_channel();
+        let before = OPENS_ATTEMPTED.load(Ordering::Relaxed);
+
+        let (capture, ()) =
+            capture_beside::<(), CountedInput>(Ok(()), Some(tx), ENGINE_RATE, &slot)
+                .expect("a started output build stays started");
+
+        assert!(capture.is_some());
+        assert_eq!(OPENS_ATTEMPTED.load(Ordering::Relaxed), before + 1);
+        assert!(slot.load(Ordering::Relaxed) > 0);
+    }
+
+    /// A caller that asked for no capture gets none, and no input device is
+    /// touched: handing over an event ring is the whole of asking.
+    #[test]
+    fn a_caller_that_asked_for_no_capture_opens_no_input_device() {
+        let slot = new_input_latency_slot();
+        let before = OPENS_ATTEMPTED.load(Ordering::Relaxed);
+
+        let (capture, ()) = capture_beside::<(), CountedInput>(Ok(()), None, ENGINE_RATE, &slot)
+            .expect("a started output build stays started");
+
+        assert!(capture.is_none());
+        assert_eq!(OPENS_ATTEMPTED.load(Ordering::Relaxed), before);
+        assert_eq!(slot.load(Ordering::Relaxed), 0);
+    }
+
+    /// A refused open is not a silent one: the seam names it, and the name
+    /// carries into the vocabulary every other device failure is reported in.
+    #[test]
+    fn a_refused_capture_open_names_what_refused() {
+        let refusal = attach_capture::<AbsentInput>(ENGINE_RATE, error_sink())
+            .err()
+            .expect("a machine with no input device cannot open one");
+
+        assert_eq!(refusal, InputOpenRefusal::NoDefaultInputDevice);
+        assert_eq!(
+            refusal.stream_error_kind(),
+            StreamErrorKind::DeviceNotAvailable
+        );
+    }
+
+    /// The capture stream's error sink reports as the input side. Reporting a
+    /// microphone that vanished as an output failure is the reading this
+    /// tagging exists to prevent.
+    #[test]
+    fn the_capture_error_sink_reports_on_the_input_side() {
+        let (tx, mut rx) = engine_event_channel();
+        let mut sink = super::stream_error_sink(StreamSide::Input, tx);
+
+        sink(StreamErrorKind::Xrun);
+
+        assert_eq!(
+            rx.pop(),
+            Ok(EngineEvent::StreamError {
+                side: StreamSide::Input,
+                kind: StreamErrorKind::Xrun
+            })
+        );
+    }
 }
 
 #[cfg(test)]
