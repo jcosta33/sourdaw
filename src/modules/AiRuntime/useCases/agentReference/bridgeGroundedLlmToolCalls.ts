@@ -1733,10 +1733,16 @@ function sliceThroughLaterTrackControlIntent(
     text: string,
     startIndex: number,
     searchFrom: number,
-    laterTrackControlIntent: RegExp
+    laterTrackControlIntent: RegExp,
+    keepRemainderWhenNoLaterIntent = false
 ): string {
     const laterIntent = laterTrackControlIntent.exec(text.slice(searchFrom));
-    const end = laterIntent?.index === undefined ? text.length : searchFrom + laterIntent.index;
+    let end = text.length;
+    if (laterIntent?.index !== undefined) {
+        end = searchFrom + laterIntent.index;
+    } else if (keepRemainderWhenNoLaterIntent) {
+        end = searchFrom;
+    }
     return `${text.slice(0, startIndex)}${text.slice(end)}`.trim();
 }
 
@@ -1749,12 +1755,23 @@ function stripTrackControlProtectionSpans(text: string): string {
     if (gerund?.index !== undefined) {
         const afterGerund = gerund.index + gerund[0].length;
         if (!mutedComplement.test(text.slice(afterGerund))) {
-            withoutGerund = sliceThroughLaterTrackControlIntent(
-                text,
-                gerund.index,
-                afterGerund,
-                laterTrackControlIntent
-            );
+            const unchanged = /\bunchanged\b/iu.exec(text.slice(afterGerund));
+            if (unchanged) {
+                withoutGerund = sliceThroughLaterTrackControlIntent(
+                    text,
+                    gerund.index,
+                    afterGerund + unchanged.index + unchanged[0].length,
+                    laterTrackControlIntent,
+                    true
+                );
+            } else {
+                withoutGerund = sliceThroughLaterTrackControlIntent(
+                    text,
+                    gerund.index,
+                    afterGerund,
+                    laterTrackControlIntent
+                );
+            }
         }
     }
     const unchangedLeave = finiteLeave.exec(withoutGerund);
@@ -1767,7 +1784,8 @@ function stripTrackControlProtectionSpans(text: string): string {
                 withoutGerund,
                 unchangedLeave.index,
                 afterLeave + unchanged.index + unchanged[0].length,
-                laterTrackControlIntent
+                laterTrackControlIntent,
+                true
             );
         }
     }
@@ -1804,9 +1822,14 @@ function getTrackControlTargetPrompt(
         if (
             !clause ||
             resolveClauseActionIntent(clause.masked, catalog) !== null ||
-            collectClearSolosRestrictionClauses(`clear all solos ${clause.text}`).length > 0 ||
-            isTrackControlProtectionQualifier(clause.text, tracks)
+            collectClearSolosRestrictionClauses(`clear all solos ${clause.text}`).length > 0
         ) {
+            break;
+        }
+        if (isTrackControlProtectionQualifier(clause.text, tracks)) {
+            if (/\bunchanged\b/iu.test(normalizePromptText(clause.text))) {
+                continue;
+            }
             break;
         }
         endIndex = index;
