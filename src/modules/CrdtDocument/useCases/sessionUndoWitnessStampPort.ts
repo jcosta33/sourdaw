@@ -4,8 +4,8 @@ let provider: SessionUndoWitnessStampProvider | null = null;
 
 /**
  * CRDT persistence calls this once it has force-flushed its own deferred
- * writes and before it serializes bytes for IndexedDB (#3331-repair-2, E1),
- * so Command's undo-session mirror gets re-witnessed against the document
+ * writes and before it serializes bytes for IndexedDB, so Command's
+ * undo-session mirror gets re-witnessed against the document
  * state that's actually about to become durable. A port rather than a direct
  * `#/modules/Command/useCases` import: that barrel pulls in `executeAppAction`
  * and its own `#/modules/CrdtDocument/stores` dependency, so importing it

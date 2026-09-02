@@ -511,7 +511,7 @@ describe('undoStore / pushUndo', () => {
     });
 });
 
-describe('undoStore / reconcileUndoStoreForProject (#3331, #3331-repair)', () => {
+describe('undoStore / reconcileUndoStoreForProject (#3331)', () => {
     beforeEach(() => {
         sessionStorage.removeItem(UNDO_SESSION_KEY);
     });
@@ -683,7 +683,7 @@ describe('undoStore / reconcileUndoStoreForProject (#3331, #3331-repair)', () =>
     });
 });
 
-describe('undoStore / session mirror write truncates at the first unserializable entry (#3331-repair-2, E2)', () => {
+describe('undoStore / session mirror write truncates at the first unserializable entry (#3331)', () => {
     beforeEach(() => {
         sessionStorage.removeItem(UNDO_SESSION_KEY);
     });

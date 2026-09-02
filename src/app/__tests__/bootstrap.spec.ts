@@ -761,7 +761,7 @@ describe('bootstrap', () => {
         );
     });
 
-    it('wires the undo session witness stamp port to the real production stamp (#3331-repair-3, G2)', () => {
+    it('wires the undo session witness stamp port to the real production stamp (#3331)', () => {
         expect(sessionUndoWitnessStampPortMock.setProvider).toHaveBeenCalledExactlyOnceWith(
             stampSessionUndoWitnessMock
         );

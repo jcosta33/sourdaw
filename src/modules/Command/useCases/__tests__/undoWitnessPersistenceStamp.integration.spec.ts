@@ -63,7 +63,7 @@ function flushPendingMicrotask(): Promise<void> {
     return new Promise((resolve) => queueMicrotask(resolve));
 }
 
-describe('Command undo witness persistence stamp integration (#3331-repair-2, E1 / #3331-repair-3, G2)', () => {
+describe('Command undo witness persistence stamp integration (#3331)', () => {
     let unsubscribeActionHistory: (() => void) | null = null;
 
     beforeEach(() => {
@@ -79,7 +79,7 @@ describe('Command undo witness persistence stamp integration (#3331-repair-2, E1
         });
         // Wires the real production stamp, exactly as `src/app/bootstrap.ts`
         // does, so this spec drives the actual port a deleted or unwired
-        // bootstrap line would leave unstamped (#3331-repair-3, G2).
+        // bootstrap line would leave unstamped.
         sessionUndoWitnessStampPort.setProvider(stampSessionUndoWitness);
         unsubscribeActionHistory = actionHistoryStore.subscribe(() => undefined);
         clearHandlerRegistry();

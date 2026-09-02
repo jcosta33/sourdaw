@@ -164,7 +164,7 @@ function runCrdtPersistenceBarrier(operation: CrdtPersistenceBarrierOperation): 
                     // The caller demands the root's exact heads survive this
                     // persist unmoved, so this call must not force this
                     // generation's own deferred writes to land: doing so could
-                    // move the root heads the assert below re-checks (#3331-repair-3, G1).
+                    // move the root heads the assert below re-checks.
                     await persistIncrementalCrdtProject(generation, false);
                     assertExpectedRootHeads(expectedRootHeads);
                 });
@@ -201,7 +201,7 @@ function runCrdtPersistenceOperation(
         assertExpectedRootHeads(expectedRootHeads);
         // An exact-heads caller (collaboration) must not have this generation's
         // own deferred writes forced to land here: that could move the root
-        // heads the assert below re-checks (#3331-repair-3, G1).
+        // heads the assert below re-checks.
         const settlePendingWrites = expectedRootHeads === undefined;
         if (operation === 'compact') {
             await compactCrdtProject(generation, settlePendingWrites);
@@ -559,8 +559,7 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
  * debounced save that happens to run before that animation frame would
  * persist stale bytes. An exact-heads caller (collaboration) passes `false`:
  * forcing a landing here could move the root heads it re-checks once this
- * call returns, so it accepts whatever is already settled instead
- * (#3331-repair-3, G1).
+ * call returns, so it accepts whatever is already settled instead.
  */
 async function persistIncrementalCrdtProject(generation: number, settlePendingWrites: boolean): Promise<void> {
     await flushPendingFullSnapshot(generation);
@@ -599,7 +598,7 @@ async function persistIncrementalCrdtProject(generation: number, settlePendingWr
     }
     // Re-mirrors the undo session witness against the document state this
     // generation is about to read below, whether or not a flush just settled
-    // it further (#3331-repair-2, E1).
+    // it further.
     sessionUndoWitnessStampPort.stamp();
 
     for (const id of activeDocIds) {
@@ -648,8 +647,7 @@ async function compactCrdtProject(generation: number, settlePendingWrites: boole
     // Stamped here, immediately before the bundle reads below, rather than at
     // the top: nothing between here and `saveAllOffThread()` in either branch
     // awaits, so a write landing during the chunk/snapshot flushes above
-    // cannot outrun what this witness records (#3331-repair-2 E1,
-    // #3331-repair-3 G1).
+    // cannot outrun what this witness records.
     sessionUndoWitnessStampPort.stamp();
 
     if (failedSnapshot) {

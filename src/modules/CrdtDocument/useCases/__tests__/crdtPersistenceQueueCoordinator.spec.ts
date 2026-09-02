@@ -128,7 +128,7 @@ describe('crdtPersistenceQueueCoordinator', () => {
     });
 });
 
-describe('crdtPersistenceQueueCoordinator / exact-heads collaboration persist does not force a pending write to land (#3331-repair-3, G1)', () => {
+describe('crdtPersistenceQueueCoordinator / exact-heads collaboration persist does not force a pending write to land (#3331)', () => {
     beforeEach(async () => {
         await crdtPersistenceQueueCoordinator.runOperation('reset');
         mockAutomergeRepo.getDocIds.mockReturnValue(['root']);
