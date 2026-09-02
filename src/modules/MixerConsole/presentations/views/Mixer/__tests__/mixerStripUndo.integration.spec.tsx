@@ -50,12 +50,14 @@ import { ExpandedChannelStrip } from '../ExpandedChannelStrip';
  * store — a guard that only read `trackStore` would pass even if the strip drew
  * stale state.
  *
- * Everything under the pointer is real: the Arrangement handler map,
- * `executeAppAction`, a real Automerge document, the real undo stack, the real
- * `Fader`. The audio-engine seam, confirm dialog, routing/event fan-out,
- * Metering, Arrangement, MIDI, Transport, Project, and other
- * use-case barrels the graph touches are stubbed or graph-cut; the
- * engine seam is stubbed so it can be *counted* —
+ * Under the pointer stays real: Arrangement handlers (via `importActual` of
+ * `getArrangementHandlers` / `setArrangementEventBus`), `executeAppAction`, a
+ * real Automerge document, the real undo stack, the real `Fader`, and live
+ * `setTrackGain` / `setTrackPan`. Graph-cut (non-spread listings, not fake
+ * handler maps): Metering views (`LevelMeter` only), Arrangement/useCases,
+ * MIDI/useCases, Transport/useCases, Project/useCases, and the other listed
+ * use-case barrels. The engine seam, confirm dialog, and routing/event
+ * fan-out remain stubbed so the engine can be *counted* —
  * it is what proves the audio followed the fader mid-drag.
  */
 
