@@ -1,0 +1,24 @@
+src/modules/Arrangement/stores/timelineViewStore.ts
+  s_bbdfb911119c4f::t_a4e2bce61959f0 49-51
+src/modules/Arrangement/presentations/views/__tests__/TimelineSurface.spec.tsx
+  s_bbdfb911119c4f::t_5842348b2c6b9a 575-607
+  s_bbdfb911119c4f::t_1556f605a3ade4 6
+  s_bbdfb911119c4f::t_3f1f896b4ad164 620,623-632,642
+  s_bbdfb911119c4f::t_0568f9e2ddad4d 130
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "7f53e8deb104e5b770062d968844363f78aaac15",
+  "prompts": {},
+  "sessions": {
+    "s_bbdfb911119c4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fa21d5-2a8a-4f80-98ab-b72059373843",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
