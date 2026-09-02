@@ -15,6 +15,7 @@ import {
     gateRequiredCheckNames,
     parseCliArgs,
     readGateRequiredCheckNames,
+    runDeliverCli,
     shellPort,
     type DeliveryReceiptAuthorityExpectation,
     type DeliveryReceiptProof,
@@ -6995,6 +6996,20 @@ describe('delivery CLI', () => {
                 help: false,
                 recoverLockArgs: ['3344', '--owner', '9f9c875746e69d6282e4233b32dfb1d07f418724'],
             }
+        );
+    });
+
+    it('prints both supported top-level delivery forms', async () => {
+        const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+        await expect(runDeliverCli(['--help'])).resolves.toBe(0);
+
+        expect(log).toHaveBeenCalledExactlyOnceWith(
+            [
+                'Usage:',
+                '  pnpm deliver <pr-number>',
+                '  pnpm deliver --recover-lock <pr-number> --owner <owner-oid>',
+            ].join('\n')
         );
     });
 

@@ -3131,6 +3131,12 @@ export function shellPort(
     };
 }
 
+const DELIVER_USAGE = [
+    'Usage:',
+    '  pnpm deliver <pr-number>',
+    '  pnpm deliver --recover-lock <pr-number> --owner <owner-oid>',
+].join('\n');
+
 export type DeliverCliArgs = { number?: number; recoverLockArgs?: string[]; help: boolean };
 
 export function parseCliArgs(args: string[]): DeliverCliArgs {
@@ -3835,7 +3841,7 @@ function recoveryDependencies(
 export async function runDeliverCli(args: string[], dependencies?: DeliverCliDependencies): Promise<number> {
     const parsed = parseCliArgs(args);
     if (parsed.help) {
-        console.log('Usage: pnpm deliver <pr-number>');
+        console.log(DELIVER_USAGE);
         return 0;
     }
     if (parsed.recoverLockArgs !== undefined) {
