@@ -45,6 +45,13 @@ vi.mock('#/modules/AiRuntime/stores', () => ({
 
 vi.mock('#/modules/AiRuntime/useCases', () => ({
     configureCloudProvider: mocks.configureCloudProvider,
+    getDefaultHostedAnthropicModel: () => 'claude-sonnet-5',
+    listHostedAnthropicModels: () => [
+        { value: 'claude-sonnet-5', label: 'Claude Sonnet 5 — Recommended' },
+        { value: 'claude-fable-5', label: 'Claude Fable 5 — Highest quality' },
+        { value: 'claude-opus-5', label: 'Claude Opus 5 — Agentic and enterprise' },
+        { value: 'claude-haiku-4-5', label: 'Claude Haiku 4.5 — Faster, lower cost' },
+    ],
     removeCloudProvider: mocks.removeCloudProvider,
     resolveBackend: mocks.resolveBackend,
     setAiBackendPreference: mocks.setAiBackendPreference,
@@ -81,6 +88,16 @@ describe('AiSection', () => {
 
         fireEvent.change(screen.getByLabelText('AI execution backend'), { target: { value: 'webllm' } });
         expect(mocks.setAiBackendPreference).toHaveBeenCalledWith('webllm');
+    });
+
+    it('lists the hosted Anthropic model catalog and defaults to its first entry', () => {
+        render(<AiSection />);
+
+        expect(screen.getByRole('option', { name: 'Claude Sonnet 5 — Recommended' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'Claude Fable 5 — Highest quality' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'Claude Opus 5 — Agentic and enterprise' })).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'Claude Haiku 4.5 — Faster, lower cost' })).toBeInTheDocument();
+        expect(screen.getByLabelText('Hosted AI model')).toHaveValue('claude-sonnet-5');
     });
 
     it('passes a desktop API-key draft only to hosted-provider configuration and clears it after connecting', async () => {

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { AiRuntimeConfigurationChangedError } from '../../../../errors/AiRuntimeConfigurationChangedError';
+import { DEFAULT_HOSTED_ANTHROPIC_MODEL } from '../../../../models/HostedAnthropicModels';
 import { streamCloudChatCompletion } from '../streamCloudChatCompletion';
 
 type CloudStreamInput = {
@@ -140,6 +141,23 @@ describe('streamCloudChatCompletion', () => {
         expect(args.messages).toHaveLength(2);
         expect(args.messages[0]).toEqual({ role: 'user', content: 'Hi there' });
         expect(args.messages[1]).toEqual({ role: 'assistant', content: 'Hello' });
+    });
+
+    it('falls back to the catalog default model when the configured runtime carries none', async () => {
+        mocks.getCloudProviderRuntime.mockReturnValue({
+            provider: 'anthropic',
+            authentication: 'api-key',
+            session_id: 'provider-session-00000000000000000000000000000000',
+            model: '',
+        });
+
+        await streamCloudChatCompletion([{ role: 'user', content: 'test' }], vi.fn());
+
+        const firstCall = mocks.stream.mock.calls[0];
+        if (!firstCall) {
+            throw new Error('Expected the cloud stream call to have been recorded');
+        }
+        expect(firstCall[0].model).toBe(DEFAULT_HOSTED_ANTHROPIC_MODEL);
     });
 
     it('yields tokens to the onToken callback', async () => {

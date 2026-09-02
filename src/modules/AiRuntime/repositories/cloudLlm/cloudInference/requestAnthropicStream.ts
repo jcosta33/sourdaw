@@ -27,7 +27,16 @@ export async function requestAnthropicStream({
     signal,
     onEvent,
 }: RequestAnthropicStreamInput): Promise<void> {
-    const body = JSON.stringify({ model, max_tokens: maxTokens, system, messages, stream: true });
+    // The system prompt is the stable prefix of every turn; marking it cacheable lets
+    // Anthropic reuse it (and the project context folded into it) across the
+    // conversation instead of re-billing full input cost on every message.
+    const body = JSON.stringify({
+        model,
+        max_tokens: maxTokens,
+        system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
+        messages,
+        stream: true,
+    });
     const decoder = new TextDecoder();
     let rawBytes = 0;
     let lineBuffer = '';

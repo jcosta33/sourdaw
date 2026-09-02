@@ -64,6 +64,68 @@ describe('generateAnthropicToolCalls', () => {
         );
     });
 
+    it('marks the system prompt and only the last tool as cacheable', async () => {
+        const multiToolSchemas = [
+            toolSchemas[0]!,
+            {
+                type: 'function' as const,
+                function: {
+                    name: 'setVolume',
+                    description: 'Set volume',
+                    parameters: {
+                        type: 'object' as const,
+                        properties: { db: { type: 'number' } },
+                        required: ['db'],
+                        additionalProperties: false,
+                    },
+                },
+            },
+        ];
+        returnPayload({
+            content: [{ type: 'tool_use', id: 'tool-1', name: 'setTempo', input: { bpm: 120 } }],
+            stop_reason: 'tool_use',
+        });
+
+        await generateAnthropicToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'faster',
+            toolSchemas: multiToolSchemas,
+            signal: new AbortController().signal,
+        });
+
+        const request = requestProvider.mock.calls[0]?.[0] as { body: string } | undefined;
+        if (!request) {
+            throw new Error('Expected a recorded provider request');
+        }
+        const body = JSON.parse(request.body) as {
+            max_tokens: number;
+            system: Array<{ type: string; text: string; cache_control?: { type: string } }>;
+            tools: Array<{ name: string; cache_control?: { type: string } }>;
+        };
+        expect(body.max_tokens).toBe(8192);
+        expect(body.system).toEqual([{ type: 'text', text: 'system', cache_control: { type: 'ephemeral' } }]);
+        expect(body.tools[0]?.cache_control).toBeUndefined();
+        expect(body.tools[1]?.cache_control).toEqual({ type: 'ephemeral' });
+    });
+
+    it('rejects a tool plan truncated at the token limit instead of returning it partial', async () => {
+        returnPayload({
+            content: [{ type: 'tool_use', id: 'tool-1', name: 'setTempo', input: { bpm: 120 } }],
+            stop_reason: 'max_tokens',
+        });
+
+        await expect(
+            generateAnthropicToolCalls({
+                runtime,
+                systemPrompt: 'system',
+                userMessage: 'faster',
+                toolSchemas,
+                signal: new AbortController().signal,
+            })
+        ).rejects.toThrow('Hosted AI tool plan was truncated at the token limit');
+    });
+
     it('accepts an explicit empty tool batch', async () => {
         returnPayload({ content: [], stop_reason: 'end_turn' });
         await expect(

@@ -40,6 +40,14 @@ describe('requestAnthropicStream', () => {
                 body: expect.stringContaining('"stream":true'),
             })
         );
+        const call = requestProvider.mock.calls[0]?.[0] as { body: string } | undefined;
+        if (!call) {
+            throw new Error('Expected a recorded provider request');
+        }
+        const body = JSON.parse(call.body) as {
+            system: Array<{ type: string; text: string; cache_control?: { type: string } }>;
+        };
+        expect(body.system).toEqual([{ type: 'text', text: 'Be helpful.', cache_control: { type: 'ephemeral' } }]);
     });
 
     it('rejects an oversized event before exposing it', async () => {

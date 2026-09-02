@@ -9,6 +9,14 @@ import { requestAnthropicProvider } from './requestAnthropicProvider';
 
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 
+// Multi-action DAW plans (several tool calls per turn) can outgrow a couple thousand
+// tokens; 8192 stays well under every current hosted model's documented output
+// ceiling (up to 128K on claude-sonnet-5, the catalog default) while giving the
+// planner enough room that a legitimate plan is never cut mid-call.
+const MAX_TOOL_PLAN_TOKENS = 8192;
+
+const CACHE_CONTROL = { type: 'ephemeral' } as const;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -23,14 +31,16 @@ export async function generateAnthropicToolCalls(input: {
     const chunks: Uint8Array[] = [];
     let responseBytes = 0;
     const codec = buildWireToolNameCodec(input.toolSchemas);
+    const lastToolIndex = input.toolSchemas.length - 1;
     const body = JSON.stringify({
         model: input.runtime.model,
-        max_tokens: 2048,
-        system: input.systemPrompt,
-        tools: input.toolSchemas.map((schema) => ({
+        max_tokens: MAX_TOOL_PLAN_TOKENS,
+        system: [{ type: 'text', text: input.systemPrompt, cache_control: CACHE_CONTROL }],
+        tools: input.toolSchemas.map((schema, index) => ({
             name: codec.encode(schema.function.name),
             description: schema.function.description,
             input_schema: schema.function.parameters,
+            ...(index === lastToolIndex ? { cache_control: CACHE_CONTROL } : {}),
         })),
         messages: [{ role: 'user', content: input.userMessage }],
     });
@@ -92,6 +102,9 @@ export async function generateAnthropicToolCalls(input: {
             name: codec.decode(block.name),
             arguments: block.input,
         });
+    }
+    if (payload.stop_reason === 'max_tokens') {
+        throw new ToolPlanningRejectedError('Hosted AI tool plan was truncated at the token limit');
     }
     const hasValidToolStop = payload.stop_reason === 'tool_use' && results.length > 0;
     const hasValidEmptyStop = payload.stop_reason === 'end_turn' && results.length === 0 && !hasNonToolText;
