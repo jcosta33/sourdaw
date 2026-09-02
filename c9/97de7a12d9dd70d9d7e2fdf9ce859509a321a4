@@ -1,0 +1,46 @@
+src/modules/SampleLibrary/repositories/libraryPersistence/requestPermission.ts
+  s_bbdfb911119c4f::t_8ffbfadad98a02 1-2,4,7-19,27-28,32-40,42-44
+  s_bbdfb911119c4f::t_861159700a10ab 45-51,54-55
+electron/__tests__/appIpc.spec.ts
+  s_bbdfb911119c4f::t_9e9e2b6e01d279 484-514
+crates/sourdaw-native/src/commands/filesystem/mod.rs
+  s_bbdfb911119c4f::t_cf739b72bcd66a 696-765
+  s_bbdfb911119c4f::t_0f37806f85f9df 502-518,522
+  s_bbdfb911119c4f::t_64f8625fe5fb67 680,682,684-690
+  s_bbdfb911119c4f::t_cd77f6a55b2e91 447-457,460
+  s_bbdfb911119c4f::t_550f4f20ffdd18 459
+  s_bbdfb911119c4f::t_c377fec14e88a7 29-38
+  s_bbdfb911119c4f::t_d8e02d50c16dfd 461-465,519-521,523,695,766-767
+src/modules/SampleLibrary/repositories/libraryPersistence/__tests__/libraryPersistence.spec.ts
+  s_bbdfb911119c4f::t_7ae7ff95e1bbd5 420-445
+  s_bbdfb911119c4f::t_eb35e1c5bf4271 48-51
+  s_bbdfb911119c4f::t_fcaf1043e544cb 9-16
+crates/sourdaw-native/src/commands/filesystem/grant_registry.rs
+  s_bbdfb911119c4f::t_df502cbdc7b54b 219-221
+  s_bbdfb911119c4f::t_cf704f0347a0f2 222
+  s_bbdfb911119c4f::t_fb248b2e87be44 39
+  s_bbdfb911119c4f::t_d46313930bb012 23-31
+  s_bbdfb911119c4f::t_5853faf37f8a91 291-297
+  s_bbdfb911119c4f::t_0799fc66145519 366-384,454,466,474,482,487
+  s_bbdfb911119c4f::t_0a3604cdffe0d3 385,410-453,455-465,467-473,475-481,483-486,488-500
+electron/appIpc.ts
+  s_bbdfb911119c4f::t_ab4d364c7bc24f 248,252,258-260
+  s_bbdfb911119c4f::t_a1c6a06ab0864f 257
+  s_bbdfb911119c4f::t_93c27683d44833 172-196
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "c997de7a12d9dd70d9d7e2fdf9ce859509a321a4",
+  "prompts": {},
+  "sessions": {
+    "s_bbdfb911119c4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fa21d5-2a8a-4f80-98ab-b72059373843",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
