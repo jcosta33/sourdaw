@@ -19,6 +19,7 @@ const OWNER = '{"version":1,"pid":1297320,"token":"bcf9e594-59ce-450e-a357-97a43
 type IncidentTestChange = {
     ownerOid?: string;
     owner?: { version: 1; pid: number; token: string };
+    expectedError?: RegExp;
     state?: ReturnType<typeof remoteState>;
     processIsDead?: () => boolean;
 };
@@ -95,7 +96,14 @@ describe('deliver:recover-lock', () => {
     });
 
     it.each<[string, () => IncidentTestChange]>([
-        ['owner OID', () => ({ ownerOid: 'd'.repeat(40) })],
+        [
+            'owner OID',
+            () => ({
+                ownerOid: 'd'.repeat(40),
+                owner: { version: 1 as const, pid: 1297320, token: 'bcf9e594-59ce-450e-a357-97a433899ce5' },
+                expectedError: /owner does not match this recovery incident/,
+            }),
+        ],
         [
             'owner payload',
             () => ({ owner: { version: 1 as const, pid: 7, token: '00000000-0000-4000-8000-000000000000' } }),
@@ -137,6 +145,7 @@ describe('deliver:recover-lock', () => {
         const current = remoteState();
         const ownerOid = changed.ownerOid;
         const owner = changed.owner;
+        const expectedError = changed.expectedError;
         const processIsDead = changed.processIsDead;
         const base = dependencies(root, [changed.state ?? current, changed.state ?? current]);
         const configured: DeliveryLockRecoveryDependencies = {
@@ -147,7 +156,9 @@ describe('deliver:recover-lock', () => {
         };
 
         try {
-            await expect(runRecoverDeliveryLockCli(['3344', '--owner', OWNER_OID], configured)).rejects.toThrow();
+            await expect(runRecoverDeliveryLockCli(['3344', '--owner', OWNER_OID], configured)).rejects.toThrow(
+                expectedError
+            );
             expect(git(root, ['rev-parse', '--verify', REF])).toBe(OWNER_OID);
         } finally {
             rmSync(root, { recursive: true, force: true });
