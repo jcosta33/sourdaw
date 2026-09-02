@@ -454,6 +454,55 @@ describe('resolveAgentReference', () => {
         });
     });
 
+    it('keeps an ASCII exact name ambiguous next to a hyphenated literal id when the prompt token is accented', () => {
+        const projectState = createProjectState();
+        const firstTrack = projectState.tracks[0];
+        if (!firstTrack) {
+            throw new Error('Expected a track fixture');
+        }
+        const asciiNameContext = {
+            ...projectState,
+            tracks: [
+                { ...firstTrack, id: 'track-cafe', name: 'Bass' },
+                { ...firstTrack, id: 'track-keys', name: 'Cafe' },
+            ],
+        };
+
+        expect(resolveTrack('delete Café and track-cafe', 'track-cafe', asciiNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('delete Café and track-cafe', 'track-keys', asciiNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('delete Cafe and track-cafe', 'track-cafe', asciiNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('delete Cafe and track-cafe', 'track-keys', asciiNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('mute Café', 'track-keys', asciiNameContext)).toEqual({
+            status: 'resolved',
+            id: 'track-keys',
+            evidence: 'exact-name',
+        });
+        expect(resolveTrack('mute Café and track-cafe', 'track-cafe', asciiNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('mute Café and track-cafe', 'track-keys', asciiNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+        expect(resolveTrack('solo Café and track-cafe', 'track-cafe', asciiNameContext)).toMatchObject({
+            status: 'rejected',
+            reason: 'ambiguous-target',
+        });
+    });
+
     it('keeps Guitar and a hyphenated track-lead-guitar id ambiguous when both are cited', () => {
         const projectState = createProjectState();
         const firstTrack = projectState.tracks[0];

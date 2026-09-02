@@ -57,11 +57,12 @@ const reservedClipReferenceWords: ReadonlySet<string> = new Set([
     'lufs',
 ]);
 
+function foldReferenceMarks(value: string): string {
+    return value.normalize('NFKD').toLocaleLowerCase().replaceAll(/\p{M}/gu, '');
+}
+
 function normalizeReferenceText(value: string): string {
-    return value
-        .normalize('NFKD')
-        .toLocaleLowerCase()
-        .replaceAll(/\p{M}/gu, '')
+    return foldReferenceMarks(value)
         .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
         .trim();
 }
@@ -100,24 +101,7 @@ function getContiguousReferenceRanges(prompt: string, reference: string): readon
 }
 
 function getExactNameOverlapRanges(prompt: string, reference: string): readonly { end: number; start: number }[] {
-    const foldedRanges = getTokenReferenceRanges(prompt, reference, '[^\\p{L}\\p{N}]+');
-    const surfaceTokens = reference.split(/[^\p{L}\p{N}]+/u).filter((token) => token.length > 0);
-    if (surfaceTokens.length === 0) {
-        return foldedRanges;
-    }
-    const needle = surfaceTokens.map((token) => escapeRegExp(token)).join('[^\\p{L}\\p{N}]+');
-    const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${needle}(?![\\p{L}\\p{N}])`, 'giu');
-    const surfaceRanges = [...prompt.matchAll(pattern)].flatMap((match) => {
-        if (match.index === undefined) {
-            return [];
-        }
-        return [{ start: match.index, end: match.index + match[0].length }];
-    });
-    const ranges = [...foldedRanges, ...surfaceRanges];
-    return ranges.filter(
-        (range, index) =>
-            ranges.findIndex((candidate) => candidate.start === range.start && candidate.end === range.end) === index
-    );
+    return getTokenReferenceRanges(foldReferenceMarks(prompt), reference, '[^\\p{L}\\p{N}]+');
 }
 
 function getExactPhraseRanges(prompt: string, reference: string): readonly { end: number; start: number }[] {
@@ -386,8 +370,11 @@ function removeExactNameEvidenceOverlappedByLiteralIds(
     candidates: readonly ReferenceCandidate[],
     evidenceById: Map<string, AgentReferenceEvidence>
 ): void {
+    const overlapPrompt = foldReferenceMarks(prompt);
     const literalIdRanges = candidates.flatMap((candidate) =>
-        evidenceById.get(candidate.id) === 'literal-id' ? [...getContiguousReferenceRanges(prompt, candidate.id)] : []
+        evidenceById.get(candidate.id) === 'literal-id'
+            ? [...getContiguousReferenceRanges(overlapPrompt, candidate.id)]
+            : []
     );
     if (literalIdRanges.length === 0) {
         return;
