@@ -1,0 +1,24 @@
+src/modules/AudioEngine/repositories/engineTransport/__tests__/setEngineTransportMaps.spec.ts
+  h_1228e573df1f42 56-69
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/createNativeLiveGraphBackend.spec.ts
+  h_1228e573df1f42 85-88,99
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeEnginePlayheadFeed.spec.ts
+  h_1228e573df1f42 11,13,24-26,48,77-103
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveAutomationWriter.spec.ts
+  h_1228e573df1f42 74-79,642-702
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  h_1228e573df1f42 23,28-29,160-174,264-270,400-442,663-695
+src/modules/AudioEngine/useCases/livePlayback/armNativeLiveAutomationWriter.ts
+  h_1228e573df1f42 25-31,104-108,111-112,118-126,140-145
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "6c1910955ee3f4082e1405fc39be249ef6324b20",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
