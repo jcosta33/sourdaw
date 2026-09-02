@@ -114,6 +114,18 @@ describe('deliver:recover-lock', () => {
                 }),
             }),
         ],
+        [
+            'receipt body pull request',
+            () => ({
+                state: remoteState({
+                    body: composeDeliveryReceipt({
+                        pullRequest: NUMBER + 1,
+                        head: REJECTED_HEAD,
+                        bodySha256: 'a'.repeat(64),
+                    }),
+                }),
+            }),
+        ],
         ['edited receipt', () => ({ state: remoteState({ edited: true }) })],
         ['closed PR', () => ({ state: remoteState({ state: 'closed' }) })],
         ['rejected head still current', () => ({ state: remoteState({ head: REJECTED_HEAD }) })],
