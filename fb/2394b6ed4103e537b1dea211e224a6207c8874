@@ -1,0 +1,28 @@
+src/modules/Arrangement/presentations/views/__tests__/TimelineSurface.spec.tsx
+  s_bbdfb911119c4f::t_f4c3a2ba437f20 127-131,136,139-140
+  s_bbdfb911119c4f::t_365ac61105c215 542-559,561-592,594-613
+src/modules/Arrangement/presentations/views/TimelineSurface.tsx
+  s_bbdfb911119c4f::t_b53e70c5e2cef7 179
+src/modules/Arrangement/stores/timelineViewStore.ts
+  s_bbdfb911119c4f::t_ce6f8a4fcaaf4c 69
+  s_bbdfb911119c4f::t_ed8278a237ea6a 49-58,60,65,68
+src/modules/Arrangement/stores/__tests__/timelineViewStore.spec.ts
+  s_bbdfb911119c4f::t_1e18346183c51f 91
+  s_bbdfb911119c4f::t_e184174be6937c 60-65,67-69,71,78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "fb2394b6ed4103e537b1dea211e224a6207c8874",
+  "prompts": {},
+  "sessions": {
+    "s_bbdfb911119c4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fa21d5-2a8a-4f80-98ab-b72059373843",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
