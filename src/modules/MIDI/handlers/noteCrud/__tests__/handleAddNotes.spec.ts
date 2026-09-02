@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
-import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     compileVersionedCommandBatchEnvelope,
@@ -13,7 +13,9 @@ import {
     executeVersionedCommandEnvelope,
     migrateLegacyAppActionToVersionedCommandEnvelope,
     parseVersionedCommandEnvelope,
+    redo,
     serializeVersionedCommandEnvelope,
+    undo,
 } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -179,9 +181,7 @@ describe('handleAddNotes', () => {
                 probability: 100,
             },
         ]);
-        expect(envelope.time).toEqual([
-            { argument: 'notes[0].startBeat', domain: 'musical', unit: 'beats', value: 0 },
-        ]);
+        expect(envelope.time).toEqual([{ argument: 'notes[0].startBeat', domain: 'musical', unit: 'beats', value: 0 }]);
         const serialized = serializeVersionedCommandEnvelope(envelope);
 
         expect(parseVersionedCommandEnvelope(serialized)).toEqual({ status: 'valid', envelope });
@@ -223,24 +223,23 @@ describe('handleAddNotes', () => {
         const receipt = await executeVersionedCommandEnvelope(serializeVersionedCommandEnvelope(envelope));
 
         expect(receipt.commandId).toBe(envelope.commandId);
-        expect(undoStore.value?.past.at(-1)).toMatchObject({
-            action: {
-                type: 'addNotes',
-                payload: {
-                    clipId: CLIP_ID,
-                    notes: [
-                        {
-                            id: 'note-envelope-1',
-                            pitch: 61,
-                            startBeat: 0,
-                            duration: 0.0625,
-                            velocity: 97,
-                            probability: 100,
-                        },
-                    ],
-                },
+        const expectedNotes = [
+            { id: 'existing', pitch: 48, startBeat: 0, duration: 1, velocity: 80 },
+            {
+                id: 'note-envelope-1',
+                pitch: 61,
+                startBeat: 0,
+                duration: 0.0625,
+                velocity: 97,
+                probability: 100,
             },
-        });
+        ];
+        expect(currentNotes()).toEqual(expectedNotes);
+
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(currentNotes()).toEqual([expectedNotes[0]!]);
+        await redo();
+        expect(currentNotes()).toEqual(expectedNotes);
     });
 
     it('canonicalizes a raw envelope-backed addNotes batch before recording its undo entry', async () => {
@@ -275,32 +274,23 @@ describe('handleAddNotes', () => {
             status: 'committed',
         });
 
-        expect(currentNotes()).toContainEqual({
-            id: 'note-batch-envelope-1',
-            pitch: 61,
-            startBeat: 0,
-            duration: 0.0625,
-            velocity: 97,
-            probability: 100,
-        });
-        expect(undoStore.value?.past.at(-1)).toMatchObject({
-            action: {
-                type: 'addNotes',
-                payload: {
-                    clipId: CLIP_ID,
-                    notes: [
-                        {
-                            id: 'note-batch-envelope-1',
-                            pitch: 61,
-                            startBeat: 0,
-                            duration: 0.0625,
-                            velocity: 97,
-                            probability: 100,
-                        },
-                    ],
-                },
+        const expectedNotes = [
+            { id: 'existing', pitch: 48, startBeat: 0, duration: 1, velocity: 80 },
+            {
+                id: 'note-batch-envelope-1',
+                pitch: 61,
+                startBeat: 0,
+                duration: 0.0625,
+                velocity: 97,
+                probability: 100,
             },
-        });
+        ];
+        expect(currentNotes()).toEqual(expectedNotes);
+
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(currentNotes()).toEqual([expectedNotes[0]!]);
+        await redo();
+        expect(currentNotes()).toEqual(expectedNotes);
     });
 
     it('compiles and executes two canonical notes alongside an independent tempo command', async () => {
@@ -387,24 +377,31 @@ describe('handleAddNotes', () => {
         ).resolves.toMatchObject({ status: 'committed' });
 
         expect(observedTempo).toEqual([128]);
-        expect(currentNotes()).toEqual(
-            expect.arrayContaining([
-                expect.objectContaining({ pitch: 61, startBeat: 0, duration: 0.0625, velocity: 97, probability: 100 }),
-                expect.objectContaining({ pitch: 63, startBeat: 1, duration: 0.5, velocity: 81, probability: 100 }),
-            ])
-        );
-        const addNotesUndoEntry = undoStore.value?.past.find((entry) => entry.action.type === 'addNotes');
-        expect(addNotesUndoEntry).toMatchObject({
-            action: {
-                type: 'addNotes',
-                payload: {
-                    notes: [
-                        expect.objectContaining({ pitch: 61, startBeat: 0, duration: 0.0625, velocity: 97 }),
-                        expect.objectContaining({ pitch: 63, startBeat: 1, duration: 0.5, velocity: 81 }),
-                    ],
-                },
+        const expectedNotes = [
+            { id: 'existing', pitch: 48, startBeat: 0, duration: 1, velocity: 80 },
+            {
+                id: 'note-batch-1',
+                pitch: 61,
+                startBeat: 0,
+                duration: 0.0625,
+                velocity: 97,
+                probability: 100,
             },
-        });
+            {
+                id: 'note-batch-2',
+                pitch: 63,
+                startBeat: 1,
+                duration: 0.5,
+                velocity: 81,
+                probability: 100,
+            },
+        ];
+        expect(currentNotes()).toEqual(expectedNotes);
+
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(currentNotes()).toEqual([expectedNotes[0]!]);
+        await redo();
+        expect(currentNotes()).toEqual(expectedNotes);
     });
 
     it('executes a non-empty addNotes command through the registered Command handler path', async () => {

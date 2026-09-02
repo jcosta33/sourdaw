@@ -11,8 +11,8 @@ import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelop
 import { parseVersionedCommandBatchEnvelope } from '../parseVersionedCommandBatchEnvelope';
 import { parseVersionedCommandEnvelope } from '../parseVersionedCommandEnvelope';
 import { resolveVersionedCommandBatchBindings } from '../resolveVersionedCommandBatchBindings';
-import { serializeVersionedCommandEnvelope } from '../serializeVersionedCommandEnvelope';
 import { serializeVersionedCommandBatchEnvelope } from '../serializeVersionedCommandBatchEnvelope';
+import { serializeVersionedCommandEnvelope } from '../serializeVersionedCommandEnvelope';
 
 import { executeApprovedVersionedCommandBatchEnvelope as executeVersionedCommandBatchEnvelope } from './commandApprovalTestFixture';
 
