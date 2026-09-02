@@ -115,8 +115,14 @@ describe('mountBrowserDisplayScaleHost', () => {
         const capability = readBrowserDisplayScaleHostCapability(window);
         expect(capability).toBeDefined();
 
+        frame.style.width = '100vw';
+        frame.style.height = '100vh';
+        frame.style.transform = 'scale(1)';
+
         capability?.resetForChildStartup(window);
-        expect(frame.style.transform).toBe('scale(2)');
+        expect(frame.style.width).toBe('100vw');
+        expect(frame.style.height).toBe('100vh');
+        expect(frame.style.transform).toBe('scale(1)');
 
         capability?.resetForChildStartup(frame.contentWindow!);
         expect(frame.style.width).toBe('50vw');
