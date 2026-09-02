@@ -20,17 +20,17 @@ import { sizeBaselineFiles } from '../../eslint.size-baseline.mjs';
 const repoRoot = resolve(import.meta.dirname, '../..');
 
 describe('eslint size-ceiling baseline', () => {
-    it('is not empty, so the checks below cannot pass vacuously', () => {
+    it('should not be empty, so the checks below cannot pass vacuously', () => {
         expect(sizeBaselineFiles.length).toBeGreaterThan(0);
     });
 
-    it('lists every path relative to the repo root, sorted and free of duplicates', () => {
+    it('should list every path relative to the repo root, sorted and free of duplicates', () => {
         const sorted = [...sizeBaselineFiles].sort();
         expect(sizeBaselineFiles).toEqual(sorted);
         expect(new Set(sizeBaselineFiles).size).toBe(sizeBaselineFiles.length);
     });
 
-    it('names only files that still exist on disk', () => {
+    it('should name only files that still exist on disk', () => {
         const missing = sizeBaselineFiles.filter((relativePath) => !existsSync(resolve(repoRoot, relativePath)));
         expect(missing).toEqual([]);
     });

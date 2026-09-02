@@ -2807,6 +2807,22 @@ export default defineConfig(
         },
     },
 
+    // ─── Root-level data config ──────────────────────────────────────────────
+    // eslint.size-baseline.mjs sits at the repo root (so eslint.config.mjs can
+    // import it), not under scripts/; tsconfig.eslint.json's project does not
+    // reach it, and without `allowJs` naming it in `include` would not help
+    // (same reasoning as the Node scripts block above). Same treatment: no
+    // type-aware parsing, so the file lints instead of failing to parse.
+    {
+        files: ['eslint.size-baseline.mjs'],
+        extends: [tseslint.configs.disableTypeChecked],
+        languageOptions: {
+            parserOptions: {
+                project: false,
+            },
+        },
+    },
+
     // ─── d.ts files ──────────────────────────────────────────────────────────
     {
         files: ['**/*.d.ts'],

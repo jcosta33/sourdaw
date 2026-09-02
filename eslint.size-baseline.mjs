@@ -12,6 +12,12 @@
 // deleted file must be removed here too, or scripts/__tests__/lintSizeBaseline.spec.ts
 // fails.
 export const sizeBaselineFiles = [
+    'electron/applicationMenu.ts',
+    'electron/bridge.ts',
+    'electron/main.ts',
+    'electron/pluginGui.ts',
+    'electron/rendererSessionQuiescer.ts',
+    'electron/windowCloseCoordinator.ts',
     'scripts/checkBarrelMockCoverage.ts',
     'scripts/checkElectronRuntimeProvenance.ts',
     'scripts/checkLevainProvenance.ts',
