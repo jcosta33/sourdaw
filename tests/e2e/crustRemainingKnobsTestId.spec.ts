@@ -38,15 +38,15 @@ test.describe('Crust remaining knobs — level-gated controls flip their a11y st
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
         await inspector.getByRole('button', { name: 'Add device' }).click();
         await page.getByRole('menuitem', { name: /^Crust$/ }).click();
-        await page.waitForTimeout(800);
         await expect(inspector.getByRole('button', { name: /^Bypass Crust$/i })).toBeVisible();
         await inspector.getByText('Crust', { exact: false }).first().click();
-        await page.waitForTimeout(800);
+        // The uiLevel chip row (L1..L5) is always mounted once CrustPanel
+        // expands, independent of the currently selected level.
+        await expect(page.getByRole('button', { name: 'L1', exact: true })).toBeVisible();
     });
 
     test('L1 style tiles — selecting PUNCHY flips aria-pressed', async ({ page }) => {
         await page.getByRole('button', { name: 'L1', exact: true }).click();
-        await page.waitForTimeout(300);
 
         // Default patch.style is 'transparent' (CrustPatch.ts).
         const transparent = page.getByRole('button', { name: /TRANSPARENT/ });
@@ -55,7 +55,6 @@ test.describe('Crust remaining knobs — level-gated controls flip their a11y st
         await expect(punchy).toHaveAttribute('aria-pressed', 'false');
 
         await punchy.dispatchEvent('click');
-        await page.waitForTimeout(300);
 
         await expect(punchy).toHaveAttribute('aria-pressed', 'true');
         await expect(transparent).toHaveAttribute('aria-pressed', 'false');
@@ -70,7 +69,6 @@ test.describe('Crust remaining knobs — level-gated controls flip their a11y st
         await expect(page.getByText('Clean ceiling, no color')).toBeVisible();
 
         await dynamic.dispatchEvent('click');
-        await page.waitForTimeout(300);
 
         await expect(dynamic).toHaveAttribute('aria-pressed', 'true');
         await expect(transparent).not.toHaveAttribute('aria-pressed', 'true');
@@ -79,7 +77,6 @@ test.describe('Crust remaining knobs — level-gated controls flip their a11y st
 
     test('L3 saturation — enable switch unblocks algorithm chips and updates the curve', async ({ page }) => {
         await page.getByRole('button', { name: 'L3', exact: true }).click();
-        await page.waitForTimeout(300);
 
         // Default satEnabled is false: the switch rests off and the sat
         // algorithm chips are natively disabled.
@@ -90,7 +87,6 @@ test.describe('Crust remaining knobs — level-gated controls flip their a11y st
         await expect(tape).toBeDisabled();
 
         await satSwitch.dispatchEvent('click');
-        await page.waitForTimeout(300);
         await expect(satSwitch).toHaveAttribute('aria-checked', 'true');
         await expect(tape).toBeEnabled();
 
@@ -103,7 +99,6 @@ test.describe('Crust remaining knobs — level-gated controls flip their a11y st
         );
 
         await tape.dispatchEvent('click');
-        await page.waitForTimeout(300);
 
         await expect(tape).toHaveAttribute('aria-pressed', 'true');
         await expect(page.getByRole('button', { name: 'soft', exact: true })).toHaveAttribute('aria-pressed', 'false');
@@ -117,17 +112,14 @@ test.describe('Crust remaining knobs — level-gated controls flip their a11y st
         const deltaSwitch = page.getByRole('switch', { name: 'DELTA', exact: true });
         await expect(deltaSwitch).toHaveAttribute('aria-checked', 'false');
         await deltaSwitch.dispatchEvent('click');
-        await page.waitForTimeout(300);
         await expect(deltaSwitch).toHaveAttribute('aria-checked', 'true');
     });
 
     test('L3 saturation knobs — ArrowUp moves Drive and Mix aria-valuenow', async ({ page }) => {
         await page.getByRole('button', { name: 'L3', exact: true }).click();
-        await page.waitForTimeout(300);
 
         const satSwitch = page.locator('#crust-sat-enabled');
         await satSwitch.dispatchEvent('click');
-        await page.waitForTimeout(300);
 
         // The RotaryKnobs expose no aria-label ("Parameter control" fallback),
         // so each is scoped through its uniquely-named caption span — the knob
@@ -141,26 +133,20 @@ test.describe('Crust remaining knobs — level-gated controls flip their a11y st
         await expect(mixSlider).toHaveAttribute('aria-valuenow', '0');
 
         await driveSlider.press('ArrowUp');
-        await page.waitForTimeout(300);
-        const driveAfter = await driveSlider.getAttribute('aria-valuenow');
-        expect(Number(driveAfter)).toBeGreaterThan(0);
+        await expect.poll(async () => Number(await driveSlider.getAttribute('aria-valuenow'))).toBeGreaterThan(0);
 
         await mixSlider.press('ArrowUp');
-        await page.waitForTimeout(300);
-        const mixAfter = await mixSlider.getAttribute('aria-valuenow');
-        expect(Number(mixAfter)).toBeGreaterThan(0);
+        await expect.poll(async () => Number(await mixSlider.getAttribute('aria-valuenow'))).toBeGreaterThan(0);
     });
 
     test('L4 route row — multiband, stereo, SC HPF, dither and bit depth', async ({ page }) => {
         await page.getByRole('button', { name: 'L4', exact: true }).click();
-        await page.waitForTimeout(300);
 
         // Multi-band: default 'wideband'.
         const wide = page.getByRole('button', { name: 'Wide', exact: true });
         const threeBand = page.getByRole('button', { name: '3band', exact: true });
         await expect(wide).toHaveAttribute('aria-pressed', 'true');
         await threeBand.dispatchEvent('click');
-        await page.waitForTimeout(300);
         await expect(threeBand).toHaveAttribute('aria-pressed', 'true');
         await expect(wide).not.toHaveAttribute('aria-pressed', 'true');
 
@@ -169,7 +155,6 @@ test.describe('Crust remaining knobs — level-gated controls flip their a11y st
         const ms = page.getByRole('button', { name: 'MS', exact: true });
         await expect(stereo).toHaveAttribute('aria-pressed', 'true');
         await ms.dispatchEvent('click');
-        await page.waitForTimeout(300);
         await expect(ms).toHaveAttribute('aria-pressed', 'true');
         await expect(stereo).not.toHaveAttribute('aria-pressed', 'true');
 
@@ -181,15 +166,12 @@ test.describe('Crust remaining knobs — level-gated controls flip their a11y st
         await expect(hpfSlider).toHaveCount(0);
 
         await scHpfSwitch.dispatchEvent('click');
-        await page.waitForTimeout(300);
         await expect(scHpfSwitch).toHaveAttribute('aria-checked', 'true');
 
         const hpfSliderAfter = page.getByText('HPF', { exact: true }).locator('xpath=..').getByRole('slider');
         await expect(hpfSliderAfter).toHaveAttribute('aria-valuenow', '60');
         await hpfSliderAfter.press('ArrowUp');
-        await page.waitForTimeout(300);
-        const hpfAfter = await hpfSliderAfter.getAttribute('aria-valuenow');
-        expect(Number(hpfAfter)).toBeGreaterThan(60);
+        await expect.poll(async () => Number(await hpfSliderAfter.getAttribute('aria-valuenow'))).toBeGreaterThan(60);
 
         // Dither: default 'off' hides the bit-depth chips; selecting a dither
         // mode reveals them and lets the depth be switched (default 24).
@@ -199,12 +181,10 @@ test.describe('Crust remaining knobs — level-gated controls flip their a11y st
         await expect(bitDepth32).toHaveCount(0);
 
         await ditherSelect.selectOption('tpdf24');
-        await page.waitForTimeout(300);
         await expect(ditherSelect).toHaveValue('tpdf24');
 
         await expect(page.getByRole('button', { name: '24-bit', exact: true })).toHaveAttribute('aria-pressed', 'true');
         await bitDepth32.dispatchEvent('click');
-        await page.waitForTimeout(300);
         await expect(bitDepth32).toHaveAttribute('aria-pressed', 'true');
         await expect(page.getByRole('button', { name: '24-bit', exact: true })).not.toHaveAttribute(
             'aria-pressed',
@@ -222,7 +202,6 @@ test.describe('Crust remaining knobs — level-gated controls flip their a11y st
         await expect(resetTp).toBeVisible();
 
         await resetTp.dispatchEvent('click');
-        await page.waitForTimeout(250);
 
         await expect(page.getByRole('button', { name: /^Bypass Crust$/i })).toBeVisible();
         await expect(page.getByText('Clear', { exact: true })).toBeVisible();

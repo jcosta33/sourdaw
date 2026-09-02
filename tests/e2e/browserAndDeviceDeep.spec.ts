@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+
 import { launch_from_template, launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -64,9 +65,13 @@ test.describe('Inspector notes and gain', () => {
     test('Track gain slider holds a numeric value', async ({ page }) => {
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
         const gain = inspector.getByRole('slider', { name: /gain/i });
-        const value = await gain.getAttribute('aria-valuenow');
-        expect(value).not.toBeNull();
-        expect(Number(value)).toBeGreaterThanOrEqual(0);
+        // A new track's gain defaults to 0.8 (TrackLevelSection.tsx `track.gain
+        // ?? 0.8`), rendered as percent-of-unity (activeGain * 100). The slider's
+        // range is [0, FADER_MAX_GAIN * 100] (src/utils/audioLevelLaw.ts):
+        // FADER_MAX_GAIN = dbToGain(FADER_HEADROOM_DB) = 10 ** (6 / 20).
+        await expect(gain).toHaveAttribute('aria-valuenow', '80');
+        await expect(gain).toHaveAttribute('aria-valuemin', '0');
+        await expect(gain).toHaveAttribute('aria-valuemax', String(10 ** (6 / 20) * 100));
     });
 });
 

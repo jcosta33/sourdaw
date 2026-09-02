@@ -18,12 +18,13 @@ export default defineConfig({
     timeout: 90_000,
     fullyParallel: true,
     forbidOnly: !!env.CI,
-    retries: env.CI ? 2 : 0,
+    // A result that needed a retry is a flaky result and creates the same duty as a failure.
+    retries: 0,
     workers: 1,
     reporter: 'html',
     use: {
         baseURL: 'http://localhost:5173',
-        trace: 'on-first-retry',
+        trace: 'retain-on-failure',
     },
     projects: [
         {
