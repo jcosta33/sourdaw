@@ -13,9 +13,9 @@ import { type ZipExtractionLimits } from '#/infra/archive/extractGuardedZip';
  */
 const DAW_PROJECT_ZIP_MAX_BYTES = 64 * 1024 * 1024;
 
-export const DAW_PROJECT_ZIP_LIMITS: Partial<ZipExtractionLimits> = {
+export const DAW_PROJECT_ZIP_LIMITS = {
     maxArchiveBytes: DAW_PROJECT_ZIP_MAX_BYTES,
     maxTotalUncompressedBytes: DAW_PROJECT_ZIP_MAX_BYTES,
     maxEntryUncompressedBytes: DAW_PROJECT_ZIP_MAX_BYTES,
     maxEntries: 512,
-};
+} satisfies Partial<ZipExtractionLimits>;

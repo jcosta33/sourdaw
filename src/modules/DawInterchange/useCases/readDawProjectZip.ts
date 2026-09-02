@@ -71,7 +71,7 @@ function copyArchiveBytes(buffer: ArrayBuffer): Uint8Array {
  */
 function rejectOversizedArchive(buffer: ArrayBuffer): void {
     const maxArchiveBytes = DAW_PROJECT_ZIP_LIMITS.maxArchiveBytes;
-    if (maxArchiveBytes !== undefined && buffer.byteLength > maxArchiveBytes) {
+    if (buffer.byteLength > maxArchiveBytes) {
         throw new ZipArchiveError(`ZIP archive byte limit exceeds ${String(maxArchiveBytes)}`);
     }
 }

@@ -159,8 +159,6 @@ describe('readDawProjectZip — through a transferring fake worker (regression f
         // worker (readDawProjectZip.ts's `copyArchiveBytes`); the caller's
         // original buffer must remain attached and unchanged afterward.
         expect(buffer.byteLength).toBe(8);
-        if ('detached' in buffer) {
-            expect((buffer as ArrayBuffer & { detached: boolean }).detached).toBe(false);
-        }
+        expect(buffer.detached).toBe(false);
     });
 });

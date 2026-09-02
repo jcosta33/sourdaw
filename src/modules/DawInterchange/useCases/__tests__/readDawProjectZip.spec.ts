@@ -76,9 +76,6 @@ describe('readDawProjectZip — routes extraction through the guarded-zip worker
 describe('readDawProjectZip — enforces the archive byte limit before copying', () => {
     it('rejects an oversized archive before creating a worker or copying the buffer', async () => {
         const maxArchiveBytes = DAW_PROJECT_ZIP_LIMITS.maxArchiveBytes;
-        if (maxArchiveBytes === undefined) {
-            throw new Error('DAW_PROJECT_ZIP_LIMITS.maxArchiveBytes must be set for this test to be meaningful');
-        }
         const oversized = new ArrayBuffer(maxArchiveBytes + 1);
         const callsBeforeCount = mocks.extractDawProjectZipEntries.mock.calls.length;
 
@@ -87,6 +84,16 @@ describe('readDawProjectZip — enforces the archive byte limit before copying',
         );
         expect(mocks.extractDawProjectZipEntries.mock.calls.length).toBe(callsBeforeCount);
         expect(mocks.extractGuardedZip).not.toHaveBeenCalled();
+    });
+
+    it('accepts an archive at exactly the byte limit and reaches the header phase', async () => {
+        mocks.extractDawProjectZipEntries.mockResolvedValue({ entries: { 'project.xml': utf8('<Project/>') } });
+        const maxArchiveBytes = DAW_PROJECT_ZIP_LIMITS.maxArchiveBytes;
+        const atLimit = new ArrayBuffer(maxArchiveBytes);
+
+        await readDawProjectZip(atLimit);
+
+        expect(mocks.extractDawProjectZipEntries).toHaveBeenCalledWith(expect.objectContaining({ phase: 'header' }));
     });
 });
 
