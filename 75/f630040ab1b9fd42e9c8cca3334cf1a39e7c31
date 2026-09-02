@@ -1,0 +1,58 @@
+electron/native.ts
+  s_bbdfb911119c4f::t_dc85f9fc1ce33a 33-35,39-47
+electron/commands.ts
+  s_bbdfb911119c4f::t_46544ef5e4e4cf 171
+  s_bbdfb911119c4f::t_44b93a73b3d20a 142-148
+src/modules/SampleLibrary/repositories/libraryPersistence/__tests__/libraryPersistence.spec.ts
+  s_bbdfb911119c4f::t_256550d3481c6b 511-526
+src/modules/SampleLibrary/repositories/libraryPersistence/restoreLibrary.ts
+  s_bbdfb911119c4f::t_2d09dd7348b718 229-240
+  s_bbdfb911119c4f::t_3fe1e3474712cf 244-246,256-258
+  s_bbdfb911119c4f::t_1ca0bd35e6f897 228
+crates/sourdaw-native/src/commands/filesystem/grant_registry.rs
+  s_bbdfb911119c4f::t_b38212363c0c0e 1-11,16-43,45-47,49-163,165-171,175-283,286-375
+  s_bbdfb911119c4f::t_f35212a1cc95aa 164,172-174
+  s_bbdfb911119c4f::t_73164258e90aaa 12-15
+  s_bbdfb911119c4f::t_142891732e5ca2 44,48
+  s_bbdfb911119c4f::t_513c50e4bc3474 284-285
+crates/sourdaw-native/src/addon/mod.rs
+  s_bbdfb911119c4f::t_74dbd3457b7f3f 453-463
+crates/sourdaw-native/src/commands/filesystem/mod.rs
+  s_bbdfb911119c4f::t_d168ad272af550 82,152,156-157,174-175,239-240,329,337,342,347,358,370-371,388-389,447-448,487,511-512,514,520,522,527,530-531,533,539,542-543,545,549,552-553,556,561,564-565,567-658,661,672,676-677,682-683,692,700,717,721,725-726,731,747,751-752,754,767,771,775-776,780,791,795,799-800,815,819,823,829,833-834
+  s_bbdfb911119c4f::t_a539f12003fc3d 479
+  s_bbdfb911119c4f::t_8ae80dd0aaf802 449-451
+  s_bbdfb911119c4f::t_d7cbf84e00a9f0 1-28
+  s_bbdfb911119c4f::t_f12bf1fc6d570a 83,246,267-268,359,372
+  s_bbdfb911119c4f::t_5cf95051ddc381 251-266,269-318
+  s_bbdfb911119c4f::t_fe76aca2946953 491-501
+  s_bbdfb911119c4f::t_072e518679ca05 40,48,53,59,62,67,76,84,91,94,103,158,161,176,182,206,209,219,249,320,331,351,360,364,373,387,391,396,398-444,446,453,455-478,480-481,835
+  s_bbdfb911119c4f::t_76ddd52a559986 482
+electron/main.ts
+  s_bbdfb911119c4f::t_f617ff83c9cc04 697-702
+electron/appIpc.ts
+  s_bbdfb911119c4f::t_4e0212b07086ac 185-190,196,202,209-214,228
+  s_bbdfb911119c4f::t_33600ee761b0fc 37
+  s_bbdfb911119c4f::t_09089119d7e4c5 107-142
+  s_bbdfb911119c4f::t_4d9405a3523849 229-232
+electron/__tests__/appIpc.spec.ts
+  s_bbdfb911119c4f::t_6098e876bf7fed 39
+  s_bbdfb911119c4f::t_386503e1394cb5 430-506
+  s_bbdfb911119c4f::t_84e4be12edcca5 61-81,83
+  s_bbdfb911119c4f::t_8d773c8c3245d9 507-511,565
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "75f630040ab1b9fd42e9c8cca3334cf1a39e7c31",
+  "prompts": {},
+  "sessions": {
+    "s_bbdfb911119c4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fa21d5-2a8a-4f80-98ab-b72059373843",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
