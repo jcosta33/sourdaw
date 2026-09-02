@@ -1,0 +1,24 @@
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/switchBranch.spec.ts
+  s_bbdfb911119c4f::t_03dd874ee0c7fa 4
+  s_bbdfb911119c4f::t_abce9ac49fb116 3,7-11,26
+  s_bbdfb911119c4f::t_6e86777ffec365 178-187,198-204
+src/modules/Command/useCases/__tests__/restoreUndoHistory.spec.ts
+  s_bbdfb911119c4f::t_e40f633ec9281c 5-6,23-25,29-30,34
+  s_bbdfb911119c4f::t_eb3667a9dcc602 3-4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "60e4cd6f9380cf095cb83b622af71ee73e4787d9",
+  "prompts": {},
+  "sessions": {
+    "s_bbdfb911119c4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fa21d5-2a8a-4f80-98ab-b72059373843",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
