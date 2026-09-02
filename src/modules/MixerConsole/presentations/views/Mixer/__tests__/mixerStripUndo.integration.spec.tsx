@@ -123,14 +123,16 @@ vi.mock('#/modules/Project/useCases', async () => {
         saveProject: actual.saveProject,
     };
 });
-// Non-spread listing of the Yeast name the strip graph imports.
+// Non-spread listing of the Yeast name projectSlotProjections imports —
+// MixerConsole never imports Yeast/useCases.
 vi.mock('#/modules/Yeast/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/Yeast/useCases')>('#/modules/Yeast/useCases');
     return {
         hydrateYeastCrdtProjection: actual.hydrateYeastCrdtProjection,
     };
 });
-// Non-spread listing of every Knead name the strip graph imports.
+// Non-spread listing of hydrateKneadFromTrackStore, which projectSlotProjections
+// imports — the strip graph imports no Knead/useCases names.
 vi.mock('#/modules/Knead/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/Knead/useCases')>('#/modules/Knead/useCases');
     return {
