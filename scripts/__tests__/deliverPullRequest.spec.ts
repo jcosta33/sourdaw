@@ -881,11 +881,12 @@ function initializeDeliveryLockRepository(root: string): void {
 }
 
 /**
- * The lock module leaves file handles closing asynchronously on some platforms, so a bare `rmSync`
- * on a lock-repository temp dir can race an in-flight close and throw `ENOTEMPTY`. Retrying, as the
- * rest of the suite already does for its own temp-dir cleanups, absorbs that race instead of flaking.
+ * A `git init`-backed temp repository can leave file handles closing asynchronously on some
+ * platforms, so a bare `rmSync` on its directory can race an in-flight close and throw `ENOTEMPTY`.
+ * Retrying, as the rest of the suite already does for its own temp-dir cleanups, absorbs that race
+ * instead of flaking.
  */
-function removeDeliveryLockRepository(root: string): void {
+function removeTemporaryGitRepository(root: string): void {
     rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
 }
 
@@ -962,7 +963,7 @@ describe('pull-request delivery', () => {
                 );
             }
         } finally {
-            removeDeliveryLockRepository(root);
+            removeTemporaryGitRepository(root);
         }
     });
 
@@ -5894,7 +5895,7 @@ describe('pull-request delivery', () => {
             // absence here is what proves the refusal happened before any remote mutation.
             expect(deliveryLockExists(root, 42)).toBe(false);
         } finally {
-            removeDeliveryLockRepository(root);
+            removeTemporaryGitRepository(root);
         }
     });
 
@@ -5921,7 +5922,7 @@ describe('pull-request delivery', () => {
             expect(calls).not.toContain('merge:42:head');
             expect(deliveryLockExists(root, 42)).toBe(false);
         } finally {
-            removeDeliveryLockRepository(root);
+            removeTemporaryGitRepository(root);
         }
     });
 
@@ -7816,7 +7817,7 @@ describe('delivery shell boundary', () => {
                 })
             ).toThrow(/delivery receipt authority cannot be proven|delivery receipt changed during recovery/i);
         } finally {
-            rmSync(primaryRoot, { recursive: true, force: true });
+            removeTemporaryGitRepository(primaryRoot);
         }
 
         expect(effects).toEqual([]);
