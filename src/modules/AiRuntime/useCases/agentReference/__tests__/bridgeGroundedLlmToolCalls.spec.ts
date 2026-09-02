@@ -3339,6 +3339,43 @@ describe('bridgeGroundedLlmToolCalls', () => {
         ]);
     });
 
+    it('rejects muteTrack as ambiguous when Guitar Left in the leave span does not cover Guitar', () => {
+        const roomMic = createTrack({ id: 'track-room-mic', name: 'Room Mic' });
+        const guitar = createTrack({ id: 'track-guitar', name: 'Guitar' });
+        const guitarLeft = createTrack({ id: 'track-guitar-left', name: 'Guitar Left' });
+        const overlapContext = {
+            ...projectContext,
+            tracks: [roomMic, guitar, guitarLeft, master],
+        };
+        const prompt = 'mute Room Mic and Guitar leaving Guitar Left unchanged';
+        const named = bridge(
+            [{ name: 'muteTrack', arguments: { trackId: roomMic.id, muted: true } }],
+            prompt,
+            overlapContext
+        );
+        const other = bridge(
+            [{ name: 'muteTrack', arguments: { trackId: guitar.id, muted: true } }],
+            prompt,
+            overlapContext
+        );
+        expect(named.actions).toEqual([]);
+        expect(other.actions).toEqual([]);
+        expect(named.rejections).toEqual([
+            {
+                index: 0,
+                name: 'muteTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+        expect(other.rejections).toEqual([
+            {
+                index: 0,
+                name: 'muteTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+    });
+
     it('rejects solo-safe writes to a bus created earlier in the same provider plan', () => {
         const result = bridge(
             [

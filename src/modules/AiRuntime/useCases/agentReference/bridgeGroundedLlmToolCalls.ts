@@ -1676,15 +1676,26 @@ function clauseNamesProjectTrack(clauseText: string, tracks: readonly { id: stri
 
 function collectNamedProjectTracks(text: string, tracks: readonly { id: string; name: string }[]): readonly string[] {
     const normalized = normalizePromptText(text);
-    return tracks.flatMap((track) => {
-        const references = [normalizePromptText(track.id), normalizePromptText(track.name)].filter(
-            (reference) => reference.length > 0
-        );
-        const named = references.some((reference) =>
+    const evidenced = tracks.flatMap((track) => {
+        const references = [normalizePromptText(track.id), normalizePromptText(track.name)]
+            .filter((reference) => reference.length > 0)
+            .sort((left, right) => right.length - left.length);
+        const matchedReference = references.find((reference) =>
             new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(reference)}(?![\\p{L}\\p{N}])`, 'u').test(normalized)
         );
-        return named ? [track.id] : [];
+        return matchedReference === undefined ? [] : [{ id: track.id, reference: matchedReference }];
     });
+    return evidenced
+        .filter(
+            ({ id, reference }) =>
+                !evidenced.some(
+                    (other) =>
+                        other.id !== id &&
+                        other.reference.length > reference.length &&
+                        ` ${other.reference} `.includes(` ${reference} `)
+                )
+        )
+        .map(({ id }) => id);
 }
 
 function followingClauseStillNamesTrackControlTarget(
