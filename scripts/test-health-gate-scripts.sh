@@ -332,6 +332,7 @@ const expectedGateNeeds = [
     'rust',
     'native-macos',
     'native-windows',
+    'native-parity',
 ];
 
 expect(workflow.name === 'Health gates', 'workflow name must stay Health gates');
@@ -529,6 +530,11 @@ expect(
     gitleaksConfig.includes(`'''${rfc4122ExampleUuid}'''`) &&
         gitleaksConfig.includes(`'''${rfc4122ExampleUuidSuccessor}'''`),
     'trusted Gitleaks config must allowlist RFC 4122 example UUID token fixtures'
+);
+const reviewPublicationLockOwnerUuid = ['2cd01237', 'cf63', '4579', '9e58', '85893794529d'].join('-');
+expect(
+    gitleaksConfig.includes(`'''${reviewPublicationLockOwnerUuid}'''`),
+    'trusted Gitleaks config must allowlist the review-publication mutation lock owner token fixture'
 );
 expect(gitleaksHelper.includes('--log-opts=--all'), 'secret scan must scan the full fetched git history, not only a PR diff');
 expect(gitleaksHelper.includes('--redact=100'), 'secret scan must redact secrets from logs and stdout');

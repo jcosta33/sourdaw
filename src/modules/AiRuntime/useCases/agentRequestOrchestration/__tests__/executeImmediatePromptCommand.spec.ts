@@ -31,6 +31,24 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: mocks.captureProjectRevision,
+    createCrdtDoc: vi.fn(),
+    DOC_BRANCHES: '__branches__',
+    DOC_PREFIX_ROOT: 'root',
+    getCrdtDoc: vi.fn(),
+    getCrdtDocIds: vi.fn(),
+    hasCrdtDoc: vi.fn(),
+    mutateCrdtDoc: vi.fn(),
+    persistCrdtProject: vi.fn(),
+    preserveBranchStateForSession: vi.fn(),
+    removeCrdtDoc: vi.fn(),
+    replaceBranchState: vi.fn(),
+    replaceCrdtDoc: vi.fn(),
+    restoreBranchStateAfterSession: vi.fn(),
+    runCrdtPersistenceBarrier: vi.fn(),
+    sanitizeIncomingCrdtDocument: vi.fn(),
+    setupProjectionBridge: vi.fn(),
+    subscribeToCrdtChanges: vi.fn(),
+    waitForCrdtDocumentTransition: vi.fn(),
 }));
 vi.mock('../../executePlannedActions', () => ({ executePlannedActions: mocks.executePlannedActions }));
 vi.mock('../../recordAgentRunReceiptSaga', () => ({ recordAgentRunReceiptSaga: mocks.recordReceiptSaga }));

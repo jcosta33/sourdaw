@@ -159,8 +159,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:03be9429f428e7f8f427a01a79317eef00dd6ab5dc2ffb130c4a6300f579fead:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:4012bbe87ea147a2ef92707f2b344b9ee6bce252569545720ef4dc0823000574:release/dependency-license-proofs.json"
+                "sha256:9fd45d0d51cea76dfa1b744f44823e7ad8ddc4d0b5aff264c1ce558a8d6995c0:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:852319e7629718cd46a38a2d4b9aa4f17ae9623677fd5237867dc1d6498c2a62:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -270,7 +270,7 @@
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:e1be22307c3110ef97fe8e5bb7e5c5738491b0006cfe5d33b14faf7690e49f7f",
+                "sha256:c51d5b5a63699da83761738e345f2efb2ffe9dbf9daf8c2441f18d8b4c4e444a",
                 "sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db"
             ],
             "licenses": [
@@ -393,7 +393,7 @@
                 "exact Cargo lock graph"
             ],
             "digests": [
-                "sha256:bfe1982d1cdc8225a5076e82d2dbb5e2d839c7092a0fc2536d014bc4230b8a10",
+                "sha256:d72565a4570428b48a8a40bdc308fff00be3f2f430a83d3a9166f190ef7a9258",
                 "sha256:57f5b3fc8207b24fad956e3a8a52cfd2d527420cb753257bbd5f698d0cfc3e1e:public/legal/PLUGIN-INTERFACE-NOTICES.txt"
             ],
             "licenses": [
@@ -777,7 +777,7 @@
             ],
             "digests": [
                 "sha256:f77d905d3e620445e1016fa0d8021f5490c9ae3a5daf681ee030464a9fbec5c0:.agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md",
-                "sha256:ac62cbd21fb5c4a5eb55de8bfbd1ea58d3f6bba3bba3c779dbe3174d2a0cfb2e:electron/protocol.ts",
+                "sha256:534ebb2d4919ea10c93745f7ca17039a9302e1f40b8389493128192e7b64ff5e:electron/protocol.ts",
                 "sha256:6f39f28c5ad181ce246a368bb4764d5faf5c48c433150482b4429832eb3424ec:src/modules/BrowserAi/models/DdspArtifactManifest.ts",
                 "sha256:61bf6ba1b489e37730605d318698ba64167301cc55cadfc73c8da5ae2b97f90c:public/legal/THIRD-PARTY-NOTICES.md",
                 "sha256:c05c0f10685919a7045fa160a6df7fbea08c7d71af7b5110ebbabdb09084c8c0:src/modules/BrowserAi/repositories/modelDownloadManager.ts",
@@ -1189,8 +1189,8 @@
                 "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
                 "tracked-set-sha256:e285a2588b0c9fa7b9c20c7b901d4570814bc9c43d1892e24fe10cdbe1aac6cc:grand-boule-discovery-catalog",
                 "tracked-set-sha256:a4b6f7d5b32d31ed0c0cf027344718219bd87dc3f6a345a2b9bebd90f1f45205:grand-boule-factory-admission",
-                "tracked-set-sha256:d477f7bf64335d9ddd510349a93c2b672571a39cf35f2f1b72acf53352fef2ef:grand-boule-live-runtime",
-                "tracked-set-sha256:a4a9c1cea8980b0f4a8e3afa828d69e74898d3c0781b4fc57508d9de1346e68d:grand-boule-project-state",
+                "tracked-set-sha256:50e391921ef973fc7ca6af8814ed67ae5395c9db9aa1719395f67d6edc5dac74:grand-boule-live-runtime",
+                "tracked-set-sha256:d7e98fc337d915e151fd75fd655378b10112e4d3736746914f796ce82eed694d:grand-boule-project-state",
                 "tracked-set-sha256:c24bb1c0672ac22d04c8d36c344bbf3c0efdc315ec8317af1d1674eaeb0cbd89:grand-boule-offline-composition",
                 "tracked-set-sha256:b4066fa5cb288de12cf3e98707bf0d200eb729f98797a3db8ea4abbb0bf06706:grand-boule-release-proof"
             ],
@@ -1325,11 +1325,11 @@
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
                 "daw-dsp sha256:12603973c6ecc95707d1c304117fdf640c569e1e789bf4e13b9e43a86c3f5e43",
                 "daw-wasm-decoder sha256:3cfe877aa4697636958db39a2cb8e05e9a16d64bf66296799980d6fc7d3689c1",
-                "proof-chamber sha256:a4436f7348cc10aa164109274b475ea95ebf7fc5bdd14f588aa3a400c2032f94",
+                "proof-chamber sha256:15018eb8d637970bd1955de374b528e6ae14e7a875f07150fa59dfa00f3098cd",
                 "scoring sha256:c9744d5471f096d22b5404f545749df815c32b77cb722c94f0f233f51a616639"
             ],
             "digests": [
-                "sha256:50b69e55e96881334b95a31e09b2ab04098084dbf7613b80cfa3726761b0330e:public/wasm/manifest.json"
+                "sha256:b0b1ca12bc2e4c8f30ab30dedf3679bf9cbead6b070eb8ee97f447b88c87f3cb:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1686,7 +1686,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "788966c3d89dc8d9fa388e1baaceab14996a563979f5bc35ca929411726e2eb0"
+            "sha256": "48398436363a1fa5bde02975a273e7f8ce1b5775f78699e7e3e6fecd60b93ae2"
         },
         {
             "path": "server/package.json",
@@ -1698,7 +1698,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "e1be22307c3110ef97fe8e5bb7e5c5738491b0006cfe5d33b14faf7690e49f7f"
+            "sha256": "c51d5b5a63699da83761738e345f2efb2ffe9dbf9daf8c2441f18d8b4c4e444a"
         },
         {
             "path": "Cargo.toml",
@@ -1706,7 +1706,7 @@
         },
         {
             "path": "Cargo.lock",
-            "sha256": "bfe1982d1cdc8225a5076e82d2dbb5e2d839c7092a0fc2536d014bc4230b8a10"
+            "sha256": "d72565a4570428b48a8a40bdc308fff00be3f2f430a83d3a9166f190ef7a9258"
         },
         {
             "path": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
@@ -1714,7 +1714,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "50b69e55e96881334b95a31e09b2ab04098084dbf7613b80cfa3726761b0330e"
+            "sha256": "b0b1ca12bc2e4c8f30ab30dedf3679bf9cbead6b070eb8ee97f447b88c87f3cb"
         }
     ],
     "externalReferences": [

@@ -1,11 +1,10 @@
 import { type ReactElement, type CSSProperties, useState, useRef, useEffect, useId, type KeyboardEvent } from 'react';
 
 import { X, Trash2, Bot, User, ChevronRight, ChevronDown, Zap, Check, RotateCw } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Row, Stack } from '#/components/layout';
+import { SafeMarkdown } from '#/components/SafeMarkdown';
 import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { agentSectionRenderArtifactStore } from '#/modules/AudioRendering/stores';
@@ -33,59 +32,6 @@ import {
     RetainedSectionRenderManualReview,
     type RetainedSectionRenderPreviewCoordinator,
 } from './RetainedSectionRenderManualReview';
-
-/**
- * Strict allow-list of markdown-derived HTML elements rendered from streamed,
- * model-produced (and thus untrusted) assistant content. Raw HTML is already
- * off by default (no rehype-raw), but constraining the element set removes the
- * remaining exfiltration vectors: `img` (referer / IP leak on render) and any
- * `svg` / embedded element are absent here, so they are dropped.
- */
-export const ALLOWED_MARKDOWN_ELEMENTS: ReadonlyArray<string> = [
-    'p',
-    'br',
-    'strong',
-    'em',
-    'del',
-    'a',
-    'code',
-    'pre',
-    'blockquote',
-    'ul',
-    'ol',
-    'li',
-    'h1',
-    'h2',
-    'h3',
-    'h4',
-    'h5',
-    'h6',
-    'hr',
-    'table',
-    'thead',
-    'tbody',
-    'tr',
-    'th',
-    'td',
-];
-
-/**
- * URL scheme allow-list for any surviving URL attribute (e.g. link `href`).
- * Blocks `javascript:`, `data:`, and other dangerous schemes regardless of
- * react-markdown's default; only http(s) and mailto links are kept.
- */
-const SAFE_URL_SCHEMES = ['http:', 'https:', 'mailto:'];
-
-export function safeUrlTransform(url: string): string {
-    try {
-        // Relative URLs (no scheme) resolve against this base and are allowed.
-        const parsed = new URL(url, 'https://sourdaw.invalid/');
-        return SAFE_URL_SCHEMES.includes(parsed.protocol) ? url : '';
-    } catch {
-        // Unparseable URL — drop it.
-        return '';
-    }
-}
 
 /** Collapsible reasoning block — shows model's internal thinking in a subdued, smaller style. */
 const ReasoningBlock = ({ reasoning, isStreaming }: { reasoning: string; isStreaming?: boolean }): ReactElement => {
@@ -195,14 +141,7 @@ const ChatMessageItem = ({
             >
                 {msg.role === 'assistant' ? (
                     <div className="prose prose-invert prose-xs max-w-none prose-p:my-1.5 prose-pre:my-2 prose-pre:bg-black/40 prose-pre:border prose-pre:border-white/5 prose-a:text-[var(--color-accent-lavender)] hover:prose-a:text-[var(--color-accent-lavender)] prose-ul:my-1.5 prose-ul:pl-4 prose-li:my-0.5 prose-strong:text-[var(--color-accent-lavender)] prose-code:text-[var(--color-accent-lavender)] prose-code:bg-[var(--color-accent-lavender)]/10 prose-code:px-1 prose-code:rounded-sm">
-                        <ReactMarkdown
-                            remarkPlugins={[remarkGfm]}
-                            allowedElements={ALLOWED_MARKDOWN_ELEMENTS}
-                            unwrapDisallowed
-                            urlTransform={safeUrlTransform}
-                        >
-                            {msg.content}
-                        </ReactMarkdown>
+                        <SafeMarkdown>{msg.content}</SafeMarkdown>
                         {msg.isStreaming && !!msg.content ? (
                             <span className="inline-block w-1.5 h-3.5 bg-[var(--color-accent-lavender)] ml-1 translate-y-[2px] animate-pulse" />
                         ) : null}

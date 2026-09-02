@@ -6,19 +6,20 @@ Assembled records use hash-pinned metadata from the lock-resolved install plus c
 Generation fails when configured records are missing or inconsistent.
 
 Source graph digests:
-- Cargo.lock sha256:bfe1982d1cdc8225a5076e82d2dbb5e2d839c7092a0fc2536d014bc4230b8a10
-- pnpm-lock.yaml sha256:e1be22307c3110ef97fe8e5bb7e5c5738491b0006cfe5d33b14faf7690e49f7f
+- Cargo.lock sha256:d72565a4570428b48a8a40bdc308fff00be3f2f430a83d3a9166f190ef7a9258
+- pnpm-lock.yaml sha256:c51d5b5a63699da83761738e345f2efb2ffe9dbf9daf8c2441f18d8b4c4e444a
 - server/package-lock.json sha256:1d1727a218c4eedf1f04173caa9d89e5200b30c821cb860951bf6100dd6273db
 
-Package inventory: 353 npm, 320 Cargo
+Package inventory: 353 npm, 321 Cargo
 
 cargo:adler2@2.0.1 | 0BSD OR MIT OR Apache-2.0 | sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:861399f8c21c042b110517e76dc6b63a2b334276c8cf17412fc3c8908ca8dc17,sha256:8ada45cd9f843acf64e4722ae262c622a2b3b3007c7310ef36ac1061a30f6adb | Cargo.lock
 cargo:alsa@0.11.0 | Apache-2.0/MIT | sha256:0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594,sha256:3cc33f8e76680b9cba2e2a5bc94de5a92420045863ab2fadbef290a55b4d8530 | Cargo.lock
 cargo:alsa-sys@0.4.0 | MIT | sha256:219766b3420f49f6204143c5f3ef750888fb6de29ce5f63e909f146e90b375a2 | Cargo.lock
 cargo:atomic-waker@1.1.2 | Apache-2.0 OR MIT | sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3,sha256:6226d0632e2e1a80c23597e964da9812ae193c535fe058154afb034e94167aa5,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
+cargo:audio-codec-algorithms@0.8.1 | 0BSD OR Apache-2.0 | sha256:39741fbd828e4f94222ddba0aa2133bffd41247713ff2fb41005b28001425a06,sha256:62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a | Cargo.lock
 cargo:audioadapter@5.0.0 | MIT OR Apache-2.0 | sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4,sha256:dcc4b6f1193e531c9158487bc5fef24ea6457ee17a436004c0ff70d23dd5ff6b,sha256:eea1d5a8dddb0f3f9a705b580296308cd34810daa1dd8c10bf93e5806fc1069c | Cargo.lock
-cargo:audioadapter-buffers@5.1.0 | MIT OR Apache-2.0 | sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4,sha256:dcc4b6f1193e531c9158487bc5fef24ea6457ee17a436004c0ff70d23dd5ff6b,sha256:eea1d5a8dddb0f3f9a705b580296308cd34810daa1dd8c10bf93e5806fc1069c | Cargo.lock
-cargo:audioadapter-sample@5.1.0 | MIT OR Apache-2.0 | sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4,sha256:dcc4b6f1193e531c9158487bc5fef24ea6457ee17a436004c0ff70d23dd5ff6b,sha256:eea1d5a8dddb0f3f9a705b580296308cd34810daa1dd8c10bf93e5806fc1069c | Cargo.lock
+cargo:audioadapter-buffers@5.2.0 | MIT OR Apache-2.0 | sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4,sha256:dcc4b6f1193e531c9158487bc5fef24ea6457ee17a436004c0ff70d23dd5ff6b,sha256:eea1d5a8dddb0f3f9a705b580296308cd34810daa1dd8c10bf93e5806fc1069c | Cargo.lock
+cargo:audioadapter-sample@5.2.0 | MIT OR Apache-2.0 | sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4,sha256:dcc4b6f1193e531c9158487bc5fef24ea6457ee17a436004c0ff70d23dd5ff6b,sha256:eea1d5a8dddb0f3f9a705b580296308cd34810daa1dd8c10bf93e5806fc1069c | Cargo.lock
 cargo:automerge@0.11.0 | MIT | sha256:8ca9672c083b8dea204f989671faf38c442d5a4a77d449200a85cd07f7e1527c,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
 cargo:aws-lc-rs@1.18.0 | ISC AND (Apache-2.0 OR ISC) | sha256:b50b376e7d24a0598488b730c3034ffcd0b58dd36c0913a24b9903a3cfd04bf7 | Cargo.lock
 cargo:aws-lc-sys@0.44.0 | ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0) | sha256:43e358d7b6eb109d0f51f7b3a090fd82607965767c25fadee39e922475de2061,sha256:728536b4160e051f86d7c9c388f704866b3d512cd7df97ac3516c65279523c4e,sha256:977c541bd25ffe36975dde25c028c0cd15ddf3d08243983b58e8a6a3d9447523 | Cargo.lock
@@ -133,7 +134,7 @@ cargo:midir@0.11.0 | MIT | sha256:f2cf650a4c639ea1e7d472b17d90309bd038bc8f405233
 cargo:mime@0.3.17 | MIT OR Apache-2.0 | sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2,sha256:df9cfd06d8a44d9a671eadd39ffd97f166481da015a30f45dfd27886209c5922 | Cargo.lock
 cargo:miniz_oxide@0.8.9 | MIT OR Zlib OR Apache-2.0 | sha256:0a54e647fe54104658b5e563c04c6f9edf251710e47bce692e0bd990a4ddaa39,sha256:0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594,sha256:4108245a1f2df9d4e94df8abed5b4ba0759bb2f9b40a6b939f1be141077ae50b,sha256:799e9ca9d179295ef372f25d3769cdda7d25bb2668add6a6a1e22d1e4c678b8d | Cargo.lock
 cargo:mio@1.2.2 | MIT | sha256:07919255c7e04793d8ea760d6c2ce32d19f9ff02bdbdde3ce90b1e1880929a9b | Cargo.lock
-cargo:napi@3.12.1 | MIT | sha256:a399b1cc6aed42a14348b2f572b4cad4888633e97cb2cfbfd6226da449a465b6 | Cargo.lock
+cargo:napi@3.12.2 | MIT | sha256:3a96af62ae0ad66e5932a688359880fd10437980255bf3dcd23a3a3d0ef587fa | Cargo.lock
 cargo:napi-derive@3.6.3 | MIT | sha256:c56277d13b483fbc4b9b094d8e5685cb06253e9ced52a8972170cd1602c27598 | Cargo.lock
 cargo:napi-derive-backend@6.1.2 | MIT | sha256:63c7fc23ad1e18147a892afeb9298634d94364080151adfc5f57e64d9868a92f | Cargo.lock
 cargo:napi-sys@3.3.0 | MIT | sha256:a1599b9e9d047238fcdc470689676c93158858bfb4398f1f70767445f4282b0b | Cargo.lock
@@ -268,7 +269,7 @@ cargo:unicode-segmentation@1.13.3 | MIT OR Apache-2.0 | sha256:23860c2a7b5d96b21
 cargo:untrusted@0.9.0 | ISC | sha256:7abd9b6960dcf7d4d0a48606a5b71bfe37d472db68d70637f3a58a56785f1621 | Cargo.lock
 cargo:url@2.5.8 | MIT OR Apache-2.0 | sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2,sha256:b38f11f6096706e6de553dabe2a7ed142d59b6fa8c97e290c67496154745cdd5 | Cargo.lock
 cargo:utf8_iter@1.0.4 | Apache-2.0 OR MIT | sha256:3fa4ca83dcc9237839b1bdeb2e6d16bdfb5ec0c5ce42b24694d8bbf0dcbef72c,sha256:c30152c94a6d75e021adbc52b3a52470366a46edb917e17deae3259251af244c,sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30 | Cargo.lock
-cargo:uuid@1.24.1 | Apache-2.0 OR MIT | sha256:436bc5a105d8e57dcd8778730f3754f7bf39c14d2f530e4cde4bd2d17a83ec3d,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
+cargo:uuid@1.26.0 | Apache-2.0 OR MIT | sha256:436bc5a105d8e57dcd8778730f3754f7bf39c14d2f530e4cde4bd2d17a83ec3d,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
 cargo:visibility@0.1.1 | Zlib OR MIT OR Apache-2.0 | sha256:23f99ac423f5950bbd814d05e77e5e7be5183903133f3938be2a313cb8070205,sha256:50d26cd90660ea5dfca5db399824028bca4eda4ee5be5d50a1b0be573936cabe,sha256:b405b5dbae5d4473f5f932af2b5d47df6114036a0b1382d9f6c411a62b71a547,sha256:b72b2d40a984de67680d4b874dea846f5e389599bbe495b22f63e87c6f1d5f0c | Cargo.lock
 cargo:vst3@0.3.0 | MIT OR Apache-2.0 | sha256:0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594,sha256:23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3 | Cargo.lock
 cargo:want@0.3.1 | MIT | sha256:a65f5d0a945d267751344c95665945b90c030ea107faf5c85d518929886187da | Cargo.lock
@@ -440,7 +441,7 @@ npm:@types/hast@3.0.5 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b27482
 npm:@types/long@4.0.2 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 | pnpm-lock.yaml
 npm:@types/mdast@4.0.4 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 | pnpm-lock.yaml
 npm:@types/ms@2.1.0 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 | pnpm-lock.yaml
-npm:@types/node@26.2.0 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 | pnpm-lock.yaml
+npm:@types/node@26.4.0 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 | pnpm-lock.yaml
 npm:@types/node-fetch@2.6.13 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 | pnpm-lock.yaml
 npm:@types/offscreencanvas@2019.3.0 | MIT | sha256:dea9265341829002e2c23a7372393eb2ed6e26085fb623f38a4ba0af833f30a6 | pnpm-lock.yaml
 npm:@types/offscreencanvas@2019.7.3 | MIT | sha256:c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383 | pnpm-lock.yaml
@@ -548,7 +549,7 @@ npm:loglevel@1.9.2 | MIT | sha256:18e8cf5f0dbaf13d9562e93b9bef79aff2acff18fab698
 npm:long@4.0.0 | Apache-2.0 | sha256:3ddf9be5c28fe27dad143a5dc76eea25222ad1dd68934a047064e56ed2fa40c5 | pnpm-lock.yaml
 npm:long@5.3.2 | Apache-2.0 | sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30 | pnpm-lock.yaml
 npm:longest-streak@3.1.0 | MIT | sha256:9f084fac69d8cf1e6ce983ba5a3499c7695ed74a26ec625c38f0fd19fddd5e10 | pnpm-lock.yaml
-npm:lucide-react@1.33.0 | ISC | sha256:276fbb649bda6b64528dedc0db040efc6ec73a3a1881a737f850ffdcef114501,sha256:9ec5f4ca93d062230039f1904445eabeddf6ad7f87dffbfa1780d261443cdad0,sha256:b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57 | pnpm-lock.yaml
+npm:lucide-react@1.37.0 | ISC | sha256:276fbb649bda6b64528dedc0db040efc6ec73a3a1881a737f850ffdcef114501,sha256:4945692d2706b9e73236e58d964ecdfa54566c1fb6f90665cd037d99ebdbf99d,sha256:b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57 | pnpm-lock.yaml
 npm:markdown-table@3.0.4 | MIT | sha256:dd1081884a92952802f4803110a6bb543acea9a814c786d58605b4c1219b5ebb | pnpm-lock.yaml
 npm:math-intrinsics@1.1.0 | MIT | sha256:2b770a704c15de238c3f622b01b0044ddd60b49ee30608ea6991ebf19db7a7a1 | pnpm-lock.yaml
 npm:mdast-util-find-and-replace@3.0.2 | MIT | sha256:dd1081884a92952802f4803110a6bb543acea9a814c786d58605b4c1219b5ebb | pnpm-lock.yaml
@@ -5148,7 +5149,7 @@ limitations under the License.
 ===== sha256:276fbb649bda6b64528dedc0db040efc6ec73a3a1881a737f850ffdcef114501 =====
 Evidence labels: copyright.mjs.map
 Packages:
-- npm:lucide-react@1.33.0
+- npm:lucide-react@1.37.0
 
 {"version":3,"file":"copyright.mjs","sources":["../../../src/icons/copyright.ts"],"sourcesContent":["import createLucideIcon from '../createLucideIcon';\nimport { IconNode } from '../types';\n\nexport const __iconNode: IconNode = [\n  ['circle', { cx: '12', cy: '12', r: '10', key: '1mglay' }],\n  ['path', { d: 'M14.83 14.83a4 4 0 1 1 0-5.66', key: '1i56pz' }],\n];\n\n/**\n * @component @name Copyright\n * @description Lucide SVG icon component, renders SVG Element with children.\n *\n * @preview ![img](data:image/svg+xml;base64,PHN2ZyAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIyNCIKICBoZWlnaHQ9IjI0IgogIHZpZXdCb3g9IjAgMCAyNCAyNCIKICBmaWxsPSJub25lIgogIHN0cm9rZT0iIzAwMCIgc3R5bGU9ImJhY2tncm91bmQtY29sb3I6ICNmZmY7IGJvcmRlci1yYWRpdXM6IDJweCIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCj4KICA8Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSIxMCIgLz4KICA8cGF0aCBkPSJNMTQuODMgMTQuODNhNCA0IDAgMSAxIDAtNS42NiIgLz4KPC9zdmc+Cg==) - https://lucide.dev/icons/copyright\n * @see https://lucide.dev/guide/packages/lucide-react - Documentation\n *\n * @param {Object} props - Lucide icons props and any valid SVG attribute\n * @returns {JSX.Element} JSX Element\n *\n */\nconst Copyright = createLucideIcon('copyright', __iconNode);\n\nexport default Copyright;\n"],"names":[],"mappings":";;;;;;;;;AAGO,CAAA,CAAA,CAAA,CAAA,CAAA,CAAM,UAAA,CAAA,CAAA,CAAuB;AAAA,CAAA,CAClC,CAAC,QAAA,CAAA,CAAU,CAAA,CAAE,EAAA,CAAA,CAAI,CAAA,CAAA,CAAA,CAAA,EAAM,CAAA,CAAA,CAAA,CAAI,IAAA,CAAA,CAAM,CAAA,EAAG,CAAA,CAAA,CAAA,CAAA,CAAA,CAAM,GAAA,CAAA,CAAK,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,EAAU,CAAA;AAAA,CAAA,CACzD,CAAC,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAQ,CAAA,CAAE,GAAG,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAiC,CAAA,CAAA,CAAA,CAAA,CAAK,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,GAAU;AAChE,CAAA;AAaA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAM,SAAA,CAAA,CAAA,CAAY,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAiB,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,EAAa,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAA,CAAU,CAAA;;"}
 
@@ -6954,6 +6955,27 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ===== end sha256:395c95f20598da653ff1eb1cb9d74947c7fac689697147f1d192fd0242a0e635 =====
+===== sha256:39741fbd828e4f94222ddba0aa2133bffd41247713ff2fb41005b28001425a06 =====
+Evidence labels: LICENSE-0BSD
+Packages:
+- cargo:audio-codec-algorithms@0.8.1
+
+BSD Zero Clause License
+
+Copyright (c) 2024-2025 The Contributors of Audio Codec Algorithms
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS SOFTWARE.
+
+===== end sha256:39741fbd828e4f94222ddba0aa2133bffd41247713ff2fb41005b28001425a06 =====
 ===== sha256:3990ddb78a5a2cfd64a5ffe5cebc3306f3298f6880c644afdf15043ef7d702d9 =====
 Evidence labels: LICENSE-MIT
 Packages:
@@ -7024,6 +7046,275 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 ===== end sha256:3a61c6c96caf5c1d9b623fb9b04c822b783dfcb78aa7e49c76a3f643e6ed7f95 =====
+===== sha256:3a96af62ae0ad66e5932a688359880fd10437980255bf3dcd23a3a3d0ef587fa =====
+Evidence labels: assembled license record from lock-resolved package metadata and SPDX 3.28.0
+Packages:
+- cargo:napi@3.12.2
+
+Sourdaw assembled dependency license record
+
+Package: cargo:napi@3.12.2
+Locked source: https://crates.io/api/v1/crates/napi/3.12.2/download
+Locked revision: sha256:58c5f4d5375213fdb7be2655e152386e82f026f9a5ba36a75556e11359aafe09
+Declared license: MIT
+Selected SPDX terms: MIT
+
+The resolved package omits a retained legal file. This record combines hash-pinned metadata from the lock-resolved install with canonical SPDX License List text. It does not authenticate an upstream copyright holder, package-specific notice, or package archive.
+
+===== installed package metadata Cargo.toml sha256:20281c5d37d06c18cb00c74c0e86e685a5a819e94603755332ef2c1846669fd2 =====
+# THIS FILE IS AUTOMATICALLY GENERATED BY CARGO
+#
+# When uploading crates to the registry Cargo will automatically
+# "normalize" Cargo.toml files for maximal compatibility
+# with all versions of Cargo and also rewrite `path` dependencies
+# to registry (e.g., crates.io) dependencies.
+#
+# If you are reading this file be aware that the original Cargo.toml
+# will likely look very different (and much more reasonable).
+# See Cargo.toml.orig for the original contents.
+
+[package]
+edition = "2021"
+rust-version = "1.88"
+name = "napi"
+version = "3.12.2"
+authors = [
+    "Nathan Sobo <nathan@github.com>",
+    "Yinan Long <lynweklm@gmail.com>",
+]
+build = "build.rs"
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+description = "N-API bindings"
+readme = "README.md"
+keywords = [
+    "NodeJS",
+    "Node",
+    "FFI",
+    "NAPI",
+    "n-api",
+]
+license = "MIT"
+repository = "https://github.com/napi-rs/napi-rs"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = [
+    "--cfg",
+    "docsrs",
+]
+
+[package.metadata.workspaces]
+independent = true
+
+[features]
+async = ["tokio_rt"]
+async-runtime = ["napi4"]
+chrono_date = [
+    "chrono",
+    "napi5",
+]
+compat-mode = []
+default = [
+    "napi4",
+    "dyn-symbols",
+]
+deferred_trace = ["napi4"]
+dyn-symbols = ["napi-sys/dyn-symbols"]
+error_anyhow = ["anyhow"]
+experimental = ["napi-sys/experimental"]
+full = [
+    "latin1",
+    "napi10",
+    "async",
+    "serde-json",
+    "experimental",
+    "chrono_date",
+]
+latin1 = ["encoding_rs"]
+napi1 = []
+napi10 = [
+    "napi9",
+    "napi-sys/napi10",
+]
+napi2 = [
+    "napi1",
+    "napi-sys/napi2",
+]
+napi3 = [
+    "napi2",
+    "napi-sys/napi3",
+]
+napi4 = [
+    "napi3",
+    "napi-sys/napi4",
+]
+napi5 = [
+    "napi4",
+    "napi-sys/napi5",
+]
+napi6 = [
+    "napi5",
+    "napi-sys/napi6",
+]
+napi7 = [
+    "napi6",
+    "napi-sys/napi7",
+]
+napi8 = [
+    "napi7",
+    "napi-sys/napi8",
+]
+napi9 = [
+    "napi8",
+    "napi-sys/napi9",
+]
+node_version_detect = []
+noop = []
+object_indexmap = ["indexmap"]
+serde-json = [
+    "serde",
+    "serde_json",
+]
+serde-json-ordered = [
+    "serde-json",
+    "serde_json/preserve_order",
+]
+tokio_fs = ["tokio/fs"]
+tokio_full = ["tokio/full"]
+tokio_io_std = ["tokio/io-std"]
+tokio_io_util = ["tokio/io-util"]
+tokio_macros = ["tokio/macros"]
+tokio_net = ["tokio/net"]
+tokio_process = ["tokio/process"]
+tokio_rt = [
+    "tokio",
+    "napi4",
+]
+tokio_signal = ["tokio/signal"]
+tokio_sync = ["tokio/sync"]
+tokio_test_util = ["tokio/test-util"]
+tokio_time = ["tokio/time"]
+tracing = ["dep:tracing"]
+web_stream = [
+    "futures-core",
+    "tokio-stream",
+    "napi4",
+    "tokio_rt",
+]
+
+[lib]
+name = "napi"
+path = "src/lib.rs"
+doctest = false
+
+[dependencies.anyhow]
+version = "1"
+optional = true
+
+[dependencies.bitflags]
+version = "2"
+
+[dependencies.chrono]
+version = "0.4"
+optional = true
+
+[dependencies.ctor]
+version = "1.0.0"
+default-features = false
+
+[dependencies.encoding_rs]
+version = "0.8"
+optional = true
+
+[dependencies.futures]
+version = "0.3"
+
+[dependencies.futures-core]
+version = "0.3"
+optional = true
+
+[dependencies.indexmap]
+version = "2"
+optional = true
+
+[dependencies.napi-sys]
+version = "3.3.0"
+default-features = false
+
+[dependencies.nohash-hasher]
+version = "0.2.0"
+
+[dependencies.rustc-hash]
+version = "2.1.1"
+
+[dependencies.serde]
+version = "1"
+optional = true
+
+[dependencies.serde_json]
+version = "1"
+optional = true
+
+[dependencies.tokio-stream]
+version = "0.1"
+optional = true
+
+[dependencies.tracing]
+version = "0.1"
+optional = true
+
+[build-dependencies.napi-build]
+version = "2.4.1"
+
+[target.'cfg(all(target_family = "wasm", not(tokio_unstable)))'.dependencies.tokio]
+version = "1"
+features = [
+    "rt",
+    "sync",
+]
+optional = true
+
+[target.'cfg(any(all(target_family = "wasm", tokio_unstable), not(target_family = "wasm")))'.dependencies.tokio]
+version = "1"
+features = [
+    "rt",
+    "rt-multi-thread",
+    "sync",
+]
+optional = true
+
+[target."cfg(unix)".dependencies.libc]
+version = "0.2"
+
+===== end installed package metadata Cargo.toml =====
+===== canonical SPDX MIT sha256:b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5 =====
+Source: https://github.com/spdx/license-list-data/blob/v3.28.0/text/MIT.txt
+MIT License
+
+Copyright (c) <year> <copyright holders>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the
+following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial
+portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
+LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO
+EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+===== end canonical SPDX MIT =====
+
+===== end sha256:3a96af62ae0ad66e5932a688359880fd10437980255bf3dcd23a3a3d0ef587fa =====
 ===== sha256:3cc33f8e76680b9cba2e2a5bc94de5a92420045863ab2fadbef290a55b4d8530 =====
 Evidence labels: LICENSE-MIT
 Packages:
@@ -7839,7 +8130,7 @@ DEALINGS IN THE SOFTWARE.
 ===== sha256:436bc5a105d8e57dcd8778730f3754f7bf39c14d2f530e4cde4bd2d17a83ec3d =====
 Evidence labels: LICENSE-MIT
 Packages:
-- cargo:uuid@1.24.1
+- cargo:uuid@1.26.0
 
 Copyright (c) 2014 The Rust Project Developers
 Copyright (c) 2018 Ashley Mannix, Christopher Armstrong, Dylan DPC, Hunar Roop Kahlon
@@ -8787,6 +9078,30 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ===== end sha256:48da2f39e100d4085767e94966b43f4fa95ff6a0698fba57ed460914e35f94a0 =====
+===== sha256:4945692d2706b9e73236e58d964ecdfa54566c1fb6f90665cd037d99ebdbf99d =====
+Evidence labels: copyright.mjs
+Packages:
+- npm:lucide-react@1.37.0
+
+/**
+ * @license lucide-react v1.37.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+
+import createLucideIcon from '../createLucideIcon.mjs';
+
+const __iconNode = [
+  ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
+  ["path", { d: "M14.83 14.83a4 4 0 1 1 0-5.66", key: "1i56pz" }]
+];
+const Copyright = createLucideIcon("copyright", __iconNode);
+
+export { __iconNode, Copyright as default };
+//# sourceMappingURL=copyright.mjs.map
+
+===== end sha256:4945692d2706b9e73236e58d964ecdfa54566c1fb6f90665cd037d99ebdbf99d =====
 ===== sha256:49d6a1c9a623784c61c6cb70f773f3457faceb1914a13c8560a9823b7631950c =====
 Evidence labels: LICENSE
 Packages:
@@ -12893,6 +13208,7 @@ IN THE SOFTWARE.
 ===== sha256:62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a =====
 Evidence labels: LICENSE-APACHE
 Packages:
+- cargo:audio-codec-algorithms@0.8.1
 - cargo:itoa@1.0.18
 - cargo:libc@0.2.189
 - cargo:mach2@0.6.0
@@ -19278,30 +19594,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ===== end sha256:9eacbcb81be660840c714a560a9d65ba07913db98dd4baf969f78dd499fdd60f =====
-===== sha256:9ec5f4ca93d062230039f1904445eabeddf6ad7f87dffbfa1780d261443cdad0 =====
-Evidence labels: copyright.mjs
-Packages:
-- npm:lucide-react@1.33.0
-
-/**
- * @license lucide-react v1.33.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-
-import createLucideIcon from '../createLucideIcon.mjs';
-
-const __iconNode = [
-  ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
-  ["path", { d: "M14.83 14.83a4 4 0 1 1 0-5.66", key: "1i56pz" }]
-];
-const Copyright = createLucideIcon("copyright", __iconNode);
-
-export { __iconNode, Copyright as default };
-//# sourceMappingURL=copyright.mjs.map
-
-===== end sha256:9ec5f4ca93d062230039f1904445eabeddf6ad7f87dffbfa1780d261443cdad0 =====
 ===== sha256:9ec821012cde87b7447430e242044069db6e51ece7e3fc7ec1a00c97403c875f =====
 Evidence labels: assembled license record from lock-resolved package metadata and SPDX 3.28.0
 Packages:
@@ -19720,275 +20012,6 @@ USE OR OTHER DEALINGS IN THE SOFTWARE.
 ===== end canonical SPDX MIT =====
 
 ===== end sha256:a1599b9e9d047238fcdc470689676c93158858bfb4398f1f70767445f4282b0b =====
-===== sha256:a399b1cc6aed42a14348b2f572b4cad4888633e97cb2cfbfd6226da449a465b6 =====
-Evidence labels: assembled license record from lock-resolved package metadata and SPDX 3.28.0
-Packages:
-- cargo:napi@3.12.1
-
-Sourdaw assembled dependency license record
-
-Package: cargo:napi@3.12.1
-Locked source: https://crates.io/api/v1/crates/napi/3.12.1/download
-Locked revision: sha256:459197f1592f4c3dbbf9c1b13f5a4599a343e4ef66b96bc340e2a518b36a6662
-Declared license: MIT
-Selected SPDX terms: MIT
-
-The resolved package omits a retained legal file. This record combines hash-pinned metadata from the lock-resolved install with canonical SPDX License List text. It does not authenticate an upstream copyright holder, package-specific notice, or package archive.
-
-===== installed package metadata Cargo.toml sha256:999e3553edb48e42f77ef2354b2be48f48143f3c9726a149d08ffcf24c9ac2c7 =====
-# THIS FILE IS AUTOMATICALLY GENERATED BY CARGO
-#
-# When uploading crates to the registry Cargo will automatically
-# "normalize" Cargo.toml files for maximal compatibility
-# with all versions of Cargo and also rewrite `path` dependencies
-# to registry (e.g., crates.io) dependencies.
-#
-# If you are reading this file be aware that the original Cargo.toml
-# will likely look very different (and much more reasonable).
-# See Cargo.toml.orig for the original contents.
-
-[package]
-edition = "2021"
-rust-version = "1.88"
-name = "napi"
-version = "3.12.1"
-authors = [
-    "Nathan Sobo <nathan@github.com>",
-    "Yinan Long <lynweklm@gmail.com>",
-]
-build = "build.rs"
-autolib = false
-autobins = false
-autoexamples = false
-autotests = false
-autobenches = false
-description = "N-API bindings"
-readme = "README.md"
-keywords = [
-    "NodeJS",
-    "Node",
-    "FFI",
-    "NAPI",
-    "n-api",
-]
-license = "MIT"
-repository = "https://github.com/napi-rs/napi-rs"
-
-[package.metadata.docs.rs]
-all-features = true
-rustdoc-args = [
-    "--cfg",
-    "docsrs",
-]
-
-[package.metadata.workspaces]
-independent = true
-
-[features]
-async = ["tokio_rt"]
-async-runtime = ["napi4"]
-chrono_date = [
-    "chrono",
-    "napi5",
-]
-compat-mode = []
-default = [
-    "napi4",
-    "dyn-symbols",
-]
-deferred_trace = ["napi4"]
-dyn-symbols = ["napi-sys/dyn-symbols"]
-error_anyhow = ["anyhow"]
-experimental = ["napi-sys/experimental"]
-full = [
-    "latin1",
-    "napi10",
-    "async",
-    "serde-json",
-    "experimental",
-    "chrono_date",
-]
-latin1 = ["encoding_rs"]
-napi1 = []
-napi10 = [
-    "napi9",
-    "napi-sys/napi10",
-]
-napi2 = [
-    "napi1",
-    "napi-sys/napi2",
-]
-napi3 = [
-    "napi2",
-    "napi-sys/napi3",
-]
-napi4 = [
-    "napi3",
-    "napi-sys/napi4",
-]
-napi5 = [
-    "napi4",
-    "napi-sys/napi5",
-]
-napi6 = [
-    "napi5",
-    "napi-sys/napi6",
-]
-napi7 = [
-    "napi6",
-    "napi-sys/napi7",
-]
-napi8 = [
-    "napi7",
-    "napi-sys/napi8",
-]
-napi9 = [
-    "napi8",
-    "napi-sys/napi9",
-]
-node_version_detect = []
-noop = []
-object_indexmap = ["indexmap"]
-serde-json = [
-    "serde",
-    "serde_json",
-]
-serde-json-ordered = [
-    "serde-json",
-    "serde_json/preserve_order",
-]
-tokio_fs = ["tokio/fs"]
-tokio_full = ["tokio/full"]
-tokio_io_std = ["tokio/io-std"]
-tokio_io_util = ["tokio/io-util"]
-tokio_macros = ["tokio/macros"]
-tokio_net = ["tokio/net"]
-tokio_process = ["tokio/process"]
-tokio_rt = [
-    "tokio",
-    "napi4",
-]
-tokio_signal = ["tokio/signal"]
-tokio_sync = ["tokio/sync"]
-tokio_test_util = ["tokio/test-util"]
-tokio_time = ["tokio/time"]
-tracing = ["dep:tracing"]
-web_stream = [
-    "futures-core",
-    "tokio-stream",
-    "napi4",
-    "tokio_rt",
-]
-
-[lib]
-name = "napi"
-path = "src/lib.rs"
-doctest = false
-
-[dependencies.anyhow]
-version = "1"
-optional = true
-
-[dependencies.bitflags]
-version = "2"
-
-[dependencies.chrono]
-version = "0.4"
-optional = true
-
-[dependencies.ctor]
-version = "1.0.0"
-default-features = false
-
-[dependencies.encoding_rs]
-version = "0.8"
-optional = true
-
-[dependencies.futures]
-version = "0.3"
-
-[dependencies.futures-core]
-version = "0.3"
-optional = true
-
-[dependencies.indexmap]
-version = "2"
-optional = true
-
-[dependencies.napi-sys]
-version = "3.3.0"
-default-features = false
-
-[dependencies.nohash-hasher]
-version = "0.2.0"
-
-[dependencies.rustc-hash]
-version = "2.1.1"
-
-[dependencies.serde]
-version = "1"
-optional = true
-
-[dependencies.serde_json]
-version = "1"
-optional = true
-
-[dependencies.tokio-stream]
-version = "0.1"
-optional = true
-
-[dependencies.tracing]
-version = "0.1"
-optional = true
-
-[build-dependencies.napi-build]
-version = "2.4.1"
-
-[target.'cfg(all(target_family = "wasm", not(tokio_unstable)))'.dependencies.tokio]
-version = "1"
-features = [
-    "rt",
-    "sync",
-]
-optional = true
-
-[target.'cfg(any(all(target_family = "wasm", tokio_unstable), not(target_family = "wasm")))'.dependencies.tokio]
-version = "1"
-features = [
-    "rt",
-    "rt-multi-thread",
-    "sync",
-]
-optional = true
-
-[target."cfg(unix)".dependencies.libc]
-version = "0.2"
-
-===== end installed package metadata Cargo.toml =====
-===== canonical SPDX MIT sha256:b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5 =====
-Source: https://github.com/spdx/license-list-data/blob/v3.28.0/text/MIT.txt
-MIT License
-
-Copyright (c) <year> <copyright holders>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
-associated documentation files (the "Software"), to deal in the Software without restriction, including
-without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the
-following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial
-portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
-LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO
-EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
-USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-===== end canonical SPDX MIT =====
-
-===== end sha256:a399b1cc6aed42a14348b2f572b4cad4888633e97cb2cfbfd6226da449a465b6 =====
 ===== sha256:a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7 =====
 Evidence labels: LICENSE
 Packages:
@@ -20201,7 +20224,7 @@ Packages:
 - cargo:system-configuration@0.7.0
 - cargo:unicode-segmentation@1.13.3
 - cargo:url@2.5.8
-- cargo:uuid@1.24.1
+- cargo:uuid@1.26.0
 - cargo:wasi@0.11.1+wasi-snapshot-preview1
 - cargo:wasm-bindgen-futures@0.4.77
 - cargo:wasm-bindgen-macro-support@0.2.127
@@ -22271,7 +22294,7 @@ Packages:
 ===== sha256:b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57 =====
 Evidence labels: LICENSE
 Packages:
-- npm:lucide-react@1.33.0
+- npm:lucide-react@1.37.0
 
 ISC License
 
@@ -23785,7 +23808,7 @@ Packages:
 - npm:@types/mdast@4.0.4
 - npm:@types/ms@2.1.0
 - npm:@types/node-fetch@2.6.13
-- npm:@types/node@26.2.0
+- npm:@types/node@26.4.0
 - npm:@types/offscreencanvas@2019.7.3
 - npm:@types/react-dom@19.2.4
 - npm:@types/react@19.2.18
@@ -24240,8 +24263,8 @@ Packages:
 ===== sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4 =====
 Evidence labels: LICENSE, LICENSE-APACHE
 Packages:
-- cargo:audioadapter-buffers@5.1.0
-- cargo:audioadapter-sample@5.1.0
+- cargo:audioadapter-buffers@5.2.0
+- cargo:audioadapter-sample@5.2.0
 - cargo:audioadapter@5.0.0
 - cargo:cpal@0.18.2
 - cargo:java-locator@0.1.9
@@ -28405,8 +28428,8 @@ DEALINGS IN THE SOFTWARE.
 ===== sha256:dcc4b6f1193e531c9158487bc5fef24ea6457ee17a436004c0ff70d23dd5ff6b =====
 Evidence labels: LICENSE.txt
 Packages:
-- cargo:audioadapter-buffers@5.1.0
-- cargo:audioadapter-sample@5.1.0
+- cargo:audioadapter-buffers@5.2.0
+- cargo:audioadapter-sample@5.2.0
 - cargo:audioadapter@5.0.0
 
 This crate is dual-licensed under either of:
@@ -29772,8 +29795,8 @@ The GNU General Public License does not permit incorporating your program into p
 ===== sha256:eea1d5a8dddb0f3f9a705b580296308cd34810daa1dd8c10bf93e5806fc1069c =====
 Evidence labels: LICENSE-MIT
 Packages:
-- cargo:audioadapter-buffers@5.1.0
-- cargo:audioadapter-sample@5.1.0
+- cargo:audioadapter-buffers@5.2.0
+- cargo:audioadapter-sample@5.2.0
 - cargo:audioadapter@5.0.0
 
 Copyright (c) 2026 Henrik Enquist

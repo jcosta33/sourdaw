@@ -172,9 +172,19 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     enableWarp: vi.fn(),
 }));
 
-vi.mock('#/modules/AiGeneration/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/AiGeneration/useCases')>()),
+vi.mock('#/modules/AiGeneration/useCases', () => ({
     handleAiDenoiseClip: vi.fn(),
+    handleGenerateMidiPrompt: vi.fn(),
+    removeTask: vi.fn(),
+    cancelProcessingTask: vi.fn(),
+    toggleAiPanel: vi.fn(),
+    getAiMidiHandlers: vi.fn(),
+    applyChordProgressionToTrack: vi.fn(),
+    applyDrumPatternToTrack: vi.fn(),
+    applyMelodyToTrack: vi.fn(),
+    generateMidiVariations: vi.fn(),
+    getGenerationHandlers: vi.fn(),
+    denoiseAudio: vi.fn(),
 }));
 
 vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
@@ -184,6 +194,13 @@ vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: vi.fn(),
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    isAppActionCommittedError: vi.fn(() => false),
+    pushUndoEntry: vi.fn(),
+    resetActionReplayAuthority: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
+    clearUndoHistory: vi.fn(),
+    createAppActionCommittedError: vi.fn(),
 }));
 
 vi.mock('#/utils/Notification/notifyUser', () => ({
