@@ -7,9 +7,10 @@
  * every open/import takes, and both the project store and the track store are
  * the real singletons. Only the audio graph, CRDT durability and transport
  * edges are stubbed, because they reach IndexedDB and an AudioContext.
- * Five AudioEngine bindings are wired through hoisted spies; the other listed
- * AudioEngine keys are unread graph-coverage stubs (`vi.fn()` and
- * `audioEngine: {}`), not live barrel exports.
+ * Five AudioEngine bindings are live: `getAudioContext`, `importCachedAudioBuffers`,
+ * `prepareCachedAudioBuffersFromIdb`, and `resetAudioGraph` through hoisted spies,
+ * plus `clearRuntimeCachedAudioBuffers` as an inline `vi.fn()`. The other listed
+ * AudioEngine keys are unread graph-coverage stubs (`vi.fn()` and `audioEngine: {}`).
  *
  * The defect is an ordering one: `replaceProjectData` hydrates the arrangement
  * and publishes `dirty: false` inside one `batchStoreUpdates`, but that helper
