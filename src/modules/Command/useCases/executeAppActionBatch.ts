@@ -19,11 +19,11 @@ import {
 
 import { AppActionConflictError } from '../errors/AppActionExecutionError';
 import { type VersionedCommandEnvelope, type VersionedCommandReceipt } from '../models/VersionedCommandEnvelope';
-import { registerActionReplayCapability, revokeActionReplayCapability } from '../stores/actionReplayCapabilities';
+import { registerActionReplayCapabilities, revokeActionReplayCapability } from '../stores/actionReplayCapabilities';
 
-import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
+import { actionHistoryMetadataPort, type ActionHistoryMetadata } from './actionHistoryMetadataPort';
 import { type CommandBatchValidationPreparation } from './commandBatchValidation';
-import { commitUndoEntry } from './commitUndoEntry';
+import { commitUndoEntries } from './commitUndoEntries';
 import { createExecutionCommandEnvelope } from './createExecutionCommandEnvelope';
 import { createUndoEntry } from './createUndoEntry';
 import { createVersionedCommandReceipt } from './createVersionedCommandReceipt';
@@ -475,6 +475,11 @@ function recordCommittedBatch(
     preparedActions: readonly PreparedBatchAction[],
     options: ExecuteOptions | undefined
 ): void {
+    if (!options?.skipMacroRecording) {
+        for (const { action } of preparedActions) {
+            recordAction(action);
+        }
+    }
     const historyActions = preparedActions.filter(
         ({ description, handler }) => !options?.skipUndo && handler.undoable && description !== null
     );
@@ -514,13 +519,15 @@ function recordCommittedBatch(
             });
         }
     }
-    for (const prepared of preparedActions) {
+    const historyUnit: Array<{
+        metadata: ActionHistoryMetadata;
+        inverseAction: AppAction | null;
+        undoEntry: ReturnType<typeof createUndoEntry>;
+    }> = [];
+    for (const prepared of historyActions) {
         const { action, description, envelope, handler, label } = prepared;
-        if (!options?.skipMacroRecording) {
-            recordAction(action);
-        }
-        if (options?.skipUndo || !handler.undoable || !description) {
-            continue;
+        if (!description) {
+            throw new Error(`Missing history description for ${action.type}`);
         }
 
         const entryId = envelope.commandId;
@@ -555,7 +562,7 @@ function recordCommittedBatch(
             }
         }
         const historyGroupLabel = historyGroupId ? options?.groupLabel : undefined;
-        const metadata = {
+        const metadata: ActionHistoryMetadata = {
             id: entryId,
             label,
             actionKind: action.type,
@@ -565,18 +572,6 @@ function recordCommittedBatch(
             groupLabel: historyGroupLabel,
             reverted: false,
         };
-        const evictedEntryIds = actionHistoryMetadataPort.record(metadata);
-        for (const evictedEntryId of evictedEntryIds) {
-            revokeActionReplayCapability(evictedEntryId);
-        }
-        if (inverseAction) {
-            registerActionReplayCapability({
-                entryId,
-                inverseAction,
-                metadata,
-            });
-        }
-
         const undoEntry = createUndoEntry(
             description.label,
             action,
@@ -588,7 +583,21 @@ function recordCommittedBatch(
             undoEntry.groupId = historyGroupId;
             undoEntry.groupLabel = historyGroupLabel;
         }
-        commitUndoEntry(undoEntry);
+        historyUnit.push({ metadata, inverseAction, undoEntry });
+    }
+    if (historyUnit.length === 0) {
+        return;
+    }
+
+    const evictedEntryIds = actionHistoryMetadataPort.recordBatch(historyUnit.map(({ metadata }) => metadata));
+    registerActionReplayCapabilities(
+        historyUnit.flatMap(({ metadata, inverseAction }) =>
+            inverseAction ? [{ entryId: metadata.id, inverseAction, metadata }] : []
+        )
+    );
+    commitUndoEntries(historyUnit.map(({ undoEntry }) => undoEntry));
+    for (const evictedEntryId of evictedEntryIds) {
+        revokeActionReplayCapability(evictedEntryId);
     }
 }
 
@@ -742,7 +751,11 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     if (
                         !inverseHandler?.validate ||
                         inverseHandler.batchRestriction === 'missing-validation' ||
-                        inverseHandler.canReapplyAfterDivergence?.(description.inverseAction) !== true
+                        inverseHandler.canReapplyAfterDivergence?.(description.inverseAction, {
+                            actions: canonicalActions,
+                            actionIndex: index,
+                            signal: options?.signal,
+                        }) !== true
                     ) {
                         return {
                             status: 'rejected',

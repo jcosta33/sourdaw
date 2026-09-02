@@ -55,6 +55,9 @@ export function getExecutableCommandRegistration<ActionType extends ExecutableAp
         get materializeCommandArguments() {
             return getRegisteredHandler().materializeCommandArguments;
         },
+        get materializedArgumentsValidator() {
+            return getHandlerByType(actionType)?.validateMaterializedCommandArguments;
+        },
         get inverseOrCompensation() {
             const handler = getRegisteredHandler();
             return {

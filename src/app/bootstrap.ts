@@ -100,6 +100,7 @@ import {
     createCommandPreviewWorkspace,
     createCommandRecoveryWorkspace,
     markActionHistoryEntryReverted,
+    recordActionHistoryEntries,
     recordActionHistoryEntry,
     clearActionHistory as clearCrdtActionHistory,
     registerCrdtStorageRuntime,
@@ -196,6 +197,7 @@ registerCrdtStorageRuntime();
 configureCommandBatchIdempotency({ canExecute: canExecuteCommandBatch });
 setActionHistoryMetadataPort({
     record: recordActionHistoryEntry,
+    recordBatch: recordActionHistoryEntries,
     markReverted: markActionHistoryEntryReverted,
     clear: clearCrdtActionHistory,
 });

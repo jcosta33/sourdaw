@@ -104,7 +104,11 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
         divergence = commandProjectDivergencePort.classify({
             baseRevision: envelope.baseRevision,
             commandsCompatible: preparedActions.every(
-                ({ action, handler }) => handler.canReapplyAfterDivergence?.(action) === true
+                ({ action, handler }, actionIndex) =>
+                    handler.canReapplyAfterDivergence?.(action, {
+                        actions: preparedActions.map((prepared) => prepared.action),
+                        actionIndex,
+                    }) === true
             ),
             targetIds: divergenceTargetIds,
         });

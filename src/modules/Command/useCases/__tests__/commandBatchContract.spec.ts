@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type CommandBatchAuthority } from '../../models/VersionedCommandBatchEnvelope';
@@ -522,6 +523,7 @@ describe('command batch contract', () => {
             { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100, probability: 99 },
         ],
     ])('rejects a serialized addNotes command with %s', (_description, note) => {
+        registerHandlerMap(getMidiNoteTransformHandlers());
         const rawAddNotes = actionCommand({
             action: { type: 'addNotes', payload: { clipId: 'clip-midi', notes: [note] } },
             commandId: '66666666-6666-4666-8666-666666666666',
@@ -547,6 +549,7 @@ describe('command batch contract', () => {
     });
 
     it('rejects canonical addNotes arguments changed after their digest was issued', () => {
+        registerHandlerMap(getMidiNoteTransformHandlers());
         const action: Extract<AppAction, { type: 'addNotes' }> = {
             type: 'addNotes',
             payload: {
@@ -573,6 +576,7 @@ describe('command batch contract', () => {
     });
 
     it('rejects duplicate application-assigned note IDs at the serialized boundary', () => {
+        registerHandlerMap(getMidiNoteTransformHandlers());
         const duplicateIdAction: Extract<AppAction, { type: 'addNotes' }> = {
             type: 'addNotes',
             payload: {

@@ -51,6 +51,7 @@ function getCanonicalAddNotesSchema(providerSchema: CreateAddNotesToolSchemaInpu
         throw new Error('Canonical addNotes note schema is invalid.');
     }
     return {
+        properties,
         clipId,
         notes,
         noteItems,
@@ -64,7 +65,7 @@ function getCanonicalAddNotesSchema(providerSchema: CreateAddNotesToolSchemaInpu
 }
 
 export function createAddNotesToolSchema(input: CreateAddNotesToolSchemaInput): ToolSchema {
-    const { clipId, notes, noteItems, noteProperties, pitch, startBeat, duration, velocity, required } =
+    const { properties, clipId, notes, noteItems, noteProperties, pitch, startBeat, duration, velocity, required } =
         getCanonicalAddNotesSchema(input.providerSchema);
     const startBeatSchema: Record<string, unknown> = {
         ...startBeat,
@@ -94,6 +95,7 @@ export function createAddNotesToolSchema(input: CreateAddNotesToolSchemaInput): 
                 additionalProperties: false,
                 required: [...input.providerSchema.required],
                 properties: {
+                    ...properties,
                     clipId: clipIdSchema,
                     notes: {
                         ...notes,

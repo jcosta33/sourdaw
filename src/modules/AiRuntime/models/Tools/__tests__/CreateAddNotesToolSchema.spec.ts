@@ -79,6 +79,7 @@ describe('createAddNotesToolSchema', () => {
         const providerSchema = {
             properties: {
                 clipId: { type: 'string', title: 'Canonical clip' },
+                humanization: { type: 'number', minimum: 0, maximum: 1 },
                 notes: {
                     type: 'array',
                     minItems: 2,
@@ -96,7 +97,7 @@ describe('createAddNotesToolSchema', () => {
                     },
                 },
             },
-            required: ['notes'],
+            required: ['notes', 'humanization'],
         };
 
         const schema = createAddNotesToolSchema({
@@ -109,7 +110,8 @@ describe('createAddNotesToolSchema', () => {
         const items = notes.items as Record<string, unknown>;
         const noteProperties = items.properties as Record<string, Record<string, unknown>>;
 
-        expect(schema.function.parameters.required).toEqual(['notes']);
+        expect(schema.function.parameters.required).toEqual(['notes', 'humanization']);
+        expect(properties.humanization).toEqual({ type: 'number', minimum: 0, maximum: 1 });
         expect(properties.clipId).toEqual({
             type: 'string',
             title: 'Canonical clip',

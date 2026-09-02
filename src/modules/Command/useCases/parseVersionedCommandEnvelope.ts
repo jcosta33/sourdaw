@@ -11,7 +11,6 @@ import { compileCommandArgumentMetadata } from './commandArgumentMetadata';
 import { isExecutableAppActionType } from './executableAppActionRegistry';
 import { getExecutableCommandRegistration } from './getExecutableCommandRegistration';
 import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumentsDigest';
-import { isCanonicalSerializedAddNotesArguments } from './isCanonicalSerializedAddNotesArguments';
 import { COMMAND_APPLICATION_ID_RULES } from './materializeCommandApplicationIds';
 import { validateVersionedCommandArguments } from './versionedCommandArgumentKeys';
 
@@ -142,6 +141,11 @@ function isDeterministicSerializedOperation(operation: string, value: unknown): 
     if (!isRecord(value)) {
         return false;
     }
+    const registration = getExecutableCommandRegistration(operation);
+    const materializedArgumentsValidator = registration.materializedArgumentsValidator;
+    if (materializedArgumentsValidator !== undefined) {
+        return materializedArgumentsValidator(value);
+    }
     if (operation === 'addTrack') {
         return (
             isNonEmptyString(value.id) &&
@@ -156,9 +160,6 @@ function isDeterministicSerializedOperation(operation: string, value: unknown): 
             isNonEmptyString(value.initialAlternativeId) &&
             isNonEmptyString(value.color)
         );
-    }
-    if (operation === 'addNotes') {
-        return isCanonicalSerializedAddNotesArguments(value);
     }
     if (operation === 'duplicateClip' || operation === 'duplicateClipToNextBar' || operation === 'duplicateTrack') {
         return false;

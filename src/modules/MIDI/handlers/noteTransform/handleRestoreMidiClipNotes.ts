@@ -8,12 +8,6 @@ import { restoreMidiClipNotes } from '../../useCases/midiNoteTransforms/restoreM
 
 type RestoreMidiClipNotesAction = Extract<AppAction, { type: 'restoreMidiClipNotes' }>;
 
-function canReapplyRestoreMidiClipNotesAfterDivergence(action: RestoreMidiClipNotesAction): boolean {
-    return (
-        action.payload.articulationReplayGuard !== undefined || action.payload.noteTransformReplayGuard !== undefined
-    );
-}
-
 function getEarlierRestoreProjection(action: RestoreMidiClipNotesAction, context: HandlerValidationContext) {
     const notesByClipId = projectMidiNotesByClipIdThroughRestores(context.actions.slice(0, context.actionIndex));
     return {
@@ -66,15 +60,20 @@ function getProjectedNoteTransformReplayTarget(action: RestoreMidiClipNotesActio
     };
 }
 
+function getRestoreStatus(action: RestoreMidiClipNotesAction, context?: HandlerValidationContext) {
+    return getRestoreMidiClipNotesStatus({
+        ...action.payload,
+        ...(context ? getEarlierRestoreProjection(action, context) : {}),
+        ...(context
+            ? { projectedNoteTransformReplayTarget: getProjectedNoteTransformReplayTarget(action, context) }
+            : {}),
+    });
+}
+
 export const handleRestoreMidiClipNotes = createHandler<'restoreMidiClipNotes'>({
     execute: (action) => ({ status: restoreMidiClipNotes(action.payload) }),
-    validate: (action, context) =>
-        getRestoreMidiClipNotesStatus({
-            ...action.payload,
-            ...getEarlierRestoreProjection(action, context),
-            projectedNoteTransformReplayTarget: getProjectedNoteTransformReplayTarget(action, context),
-        }) !== 'conflict',
-    canReapplyAfterDivergence: canReapplyRestoreMidiClipNotesAfterDivergence,
+    validate: (action, context) => getRestoreStatus(action, context) !== 'conflict',
+    canReapplyAfterDivergence: (action, context) => getRestoreStatus(action, context) !== 'conflict',
     describe: () => ({ label: 'Restore MIDI clip notes' }),
     previewExecution: 'isolated-project',
     requiresAbortCompensation: false,

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { defaultTrackState } from '#/modules/Arrangement/stores';
 import {
@@ -18,6 +18,7 @@ import { getTransportHandlers } from '#/modules/Transport/useCases';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { hydrateUndoStoreFromSession, undoStore } from '../../stores/undoStore';
+import { setActionHistoryMetadataPort } from '../actionHistoryMetadataPort';
 import { isExecutableAppActionType } from '../executableAppActionRegistry';
 import { executeAppAction } from '../executeAppAction';
 import { executeAppActionBatch } from '../executeAppActionBatch';
@@ -121,15 +122,25 @@ function reloadUndoHistoryThroughProductionRegistration(): void {
     registerAllProductionHandlers();
 }
 
+function resetActionHistoryMetadataPort(): void {
+    setActionHistoryMetadataPort({
+        record: () => [],
+        markReverted: () => ({ status: 'unavailable' }),
+        clear: () => undefined,
+    });
+}
+
 describe('addNotes command registration', () => {
     beforeEach(() => {
         clearHandlerRegistry();
         registerHandlerMap(getMidiNoteTransformHandlers());
+        resetActionHistoryMetadataPort();
     });
 
     afterEach(() => {
         clearHandlerRegistry();
         sessionStorage.removeItem('sourdaw-undo-session');
+        resetActionHistoryMetadataPort();
     });
 
     it('registers addNotes as an executable, hidden, application-materialized MIDI mutation', () => {
@@ -168,6 +179,31 @@ describe('addNotes command registration', () => {
         });
         expect(registration.confirmation.required).toBe(false);
         expect(registration.sessionEntryValidator).toBe(registration.handler.validateSessionEntry);
+        const materializedArgumentsValidator: unknown = Reflect.get(registration, 'materializedArgumentsValidator');
+        expect(materializedArgumentsValidator).toBeTypeOf('function');
+        expect(
+            typeof materializedArgumentsValidator === 'function' &&
+                materializedArgumentsValidator({
+                    clipId: 'clip-midi',
+                    notes: [
+                        {
+                            id: 'note-materialized',
+                            pitch: 60,
+                            startBeat: 0,
+                            duration: 1,
+                            velocity: 96,
+                            probability: 100,
+                        },
+                    ],
+                })
+        ).toBe(true);
+        expect(
+            typeof materializedArgumentsValidator === 'function' &&
+                materializedArgumentsValidator({
+                    clipId: 'clip-midi',
+                    notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 96 }],
+                })
+        ).toBe(false);
         expect(registration.noOpDetector?.({ type: 'addNotes', payload: { clipId: 'clip-midi', notes: [] } })).toBe(
             true
         );
@@ -429,6 +465,78 @@ describe('addNotes command registration', () => {
         ]);
     });
 
+    it('publishes no partial grouped history when metadata recording fails after project commit', async () => {
+        const legacyRecord = vi
+            .fn(() => [] as string[])
+            .mockImplementationOnce(() => [])
+            .mockImplementationOnce(() => {
+                throw new Error('metadata record failed on member 2');
+            });
+        const recordBatch = vi.fn(() => {
+            throw new Error('metadata batch record failed');
+        });
+        const historyPort = {
+            record: legacyRecord,
+            recordBatch,
+            markReverted: () => ({ status: 'unavailable' as const }),
+            clear: () => undefined,
+        };
+        setActionHistoryMetadataPort(historyPort);
+        setTrackStoreState(defaultTrackState);
+        setArrangementEventBus({ emit: async () => undefined });
+        midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        undoStore.set({ past: [], future: [] });
+        clearHandlerRegistry();
+        registerAllProductionHandlers();
+
+        const result = await executeAppActionBatch(
+            [
+                {
+                    type: 'addTrack',
+                    payload: {
+                        id: 'track-atomic-midi',
+                        name: 'Atomic MIDI',
+                        kind: 'midi',
+                        withoutDefaultDevice: true,
+                    },
+                },
+                {
+                    type: 'addClip',
+                    payload: {
+                        id: 'clip-atomic-midi',
+                        trackId: 'track-atomic-midi',
+                        startBeat: 0,
+                        endBeat: 4,
+                        name: 'Atomic MIDI clip',
+                        type: 'midi',
+                    },
+                },
+                {
+                    type: 'addNotes',
+                    payload: {
+                        clipId: 'clip-atomic-midi',
+                        notes: [{ id: 'note-atomic-midi', pitch: 60, startBeat: 0, duration: 1, velocity: 96 }],
+                    },
+                },
+            ],
+            { groupId: 'atomic-history-group', groupLabel: 'Create atomic MIDI phrase', source: 'ai' }
+        );
+
+        expect(result).toMatchObject({
+            status: 'committed-with-warning',
+            warningDetails: [{ kind: 'history', message: 'metadata batch record failed' }],
+        });
+        expect(getTrackStoreState()?.tracks[0]?.clips.map((clip) => clip.id)).toEqual(['clip-atomic-midi']);
+        expect(midiStore.value?.notesByClipId['clip-atomic-midi']).toHaveLength(1);
+        expect(recordBatch).toHaveBeenCalledOnce();
+        expect(legacyRecord).not.toHaveBeenCalled();
+        expect(undoStore.value).toEqual({ past: [], future: [] });
+
+        await flushUndoSessionWrite();
+        reloadUndoHistoryThroughProductionRegistration();
+        expect(undoStore.value).toEqual({ past: [], future: [] });
+    });
+
     it('truncates reachable history when restore pairs omit every notes-bucket presence field', () => {
         const registration = getExecutableCommandRegistration('addNotes');
         const entry = createPersistedAddNotesEntry();
@@ -465,6 +573,181 @@ describe('addNotes command registration', () => {
             },
             ...getInternalUndoSessionReplayContracts(),
         ]);
+
+        expect(undoStore.value?.past).toEqual([]);
+    });
+
+    it('rejects a forged addNotes replay pair through production registration', () => {
+        const registration = getExecutableCommandRegistration('addNotes');
+        const entry = createPersistedAddNotesEntry();
+        const forgedNotes = entry.action.payload.notes.map(({ id: _id, ...note }) => note);
+        const expectedNotes = [...entry.inverseAction.payload.notes, ...forgedNotes];
+        sessionStorage.setItem(
+            'sourdaw-undo-session',
+            JSON.stringify({
+                past: [
+                    {
+                        ...entry,
+                        action: { ...entry.action, payload: { ...entry.action.payload, notes: forgedNotes } },
+                        inverseAction: {
+                            ...entry.inverseAction,
+                            payload: { ...entry.inverseAction.payload, expectedNotes },
+                        },
+                        redoAction: {
+                            ...entry.redoAction,
+                            payload: { ...entry.redoAction.payload, notes: expectedNotes },
+                        },
+                        actionOperationVersion: registration.operationVersion,
+                        inverseActionOperationVersion: 1,
+                        redoActionOperationVersion: 1,
+                    },
+                ],
+                future: [],
+            })
+        );
+        clearHandlerRegistry();
+
+        registerAllProductionHandlers();
+
+        expect(undoStore.value?.past).toEqual([]);
+    });
+
+    it.each([
+        [
+            'an action/inverse track ID mismatch',
+            () => ({
+                action: {
+                    type: 'addTrack' as const,
+                    payload: { id: 'track-session', name: 'Session track', kind: 'midi' as const },
+                },
+                inverseAction: {
+                    type: 'discardCreatedTrack' as const,
+                    payload: {
+                        trackId: 'track-other',
+                        generatedMidiStateGuard: {
+                            entityJson: JSON.stringify({ id: 'track-other' }),
+                            midiByClipIdJson: JSON.stringify({}),
+                        },
+                    },
+                },
+            }),
+        ],
+        [
+            'an invalid generated MIDI track guard',
+            () => ({
+                action: {
+                    type: 'addTrack' as const,
+                    payload: { id: 'track-session', name: 'Session track', kind: 'midi' as const },
+                },
+                inverseAction: {
+                    type: 'discardCreatedTrack' as const,
+                    payload: {
+                        trackId: 'track-session',
+                        generatedMidiStateGuard: {
+                            entityJson: JSON.stringify({ id: 'track-other' }),
+                            midiByClipIdJson: JSON.stringify({}),
+                        },
+                    },
+                },
+            }),
+        ],
+    ])('rejects a persisted addTrack entry with %s through production registration', (_description, createActions) => {
+        clearHandlerRegistry();
+        registerAllProductionHandlers();
+        const registration = getExecutableCommandRegistration('addTrack');
+        const actions = createActions();
+        sessionStorage.setItem(
+            'sourdaw-undo-session',
+            JSON.stringify({
+                past: [
+                    {
+                        id: 'undo-add-track-malformed',
+                        kind: 'action',
+                        label: 'Add track',
+                        ...actions,
+                        timestamp: 1,
+                        source: 'ai',
+                        actionOperationVersion: registration.operationVersion,
+                        inverseActionOperationVersion: 1,
+                    },
+                ],
+                future: [],
+            })
+        );
+        clearHandlerRegistry();
+
+        registerAllProductionHandlers();
+
+        expect(undoStore.value?.past).toEqual([]);
+    });
+
+    it.each([
+        [
+            'a mismatched redo payload',
+            () => ({
+                name: 'Changed clip name',
+                generatedMidiStateGuard: {
+                    entityJson: JSON.stringify({ id: 'clip-session' }),
+                    midiByClipIdJson: JSON.stringify({}),
+                },
+            }),
+        ],
+        [
+            'an invalid generated MIDI clip guard',
+            () => ({
+                name: 'Session clip',
+                generatedMidiStateGuard: {
+                    entityJson: JSON.stringify({ id: 'clip-other' }),
+                    midiByClipIdJson: JSON.stringify({}),
+                },
+            }),
+        ],
+    ])('rejects a persisted addClip entry with %s through production registration', (_description, invalid) => {
+        clearHandlerRegistry();
+        registerAllProductionHandlers();
+        const registration = getExecutableCommandRegistration('addClip');
+        const actionPayload = {
+            id: 'clip-session',
+            trackId: 'track-session',
+            startBeat: 0,
+            endBeat: 4,
+            name: 'Session clip',
+            type: 'midi' as const,
+        };
+        const invalidValues = invalid();
+        sessionStorage.setItem(
+            'sourdaw-undo-session',
+            JSON.stringify({
+                past: [
+                    {
+                        id: 'undo-add-clip-malformed',
+                        kind: 'action',
+                        label: 'Add clip',
+                        action: { type: 'addClip', payload: actionPayload },
+                        inverseAction: {
+                            type: 'discardDuplicatedClip',
+                            payload: {
+                                clipId: 'clip-session',
+                                generatedMidiStateGuard: invalidValues.generatedMidiStateGuard,
+                            },
+                        },
+                        redoAction: {
+                            type: 'addClip',
+                            payload: { ...actionPayload, name: invalidValues.name },
+                        },
+                        timestamp: 1,
+                        source: 'ai',
+                        actionOperationVersion: registration.operationVersion,
+                        inverseActionOperationVersion: 1,
+                        redoActionOperationVersion: registration.operationVersion,
+                    },
+                ],
+                future: [],
+            })
+        );
+        clearHandlerRegistry();
+
+        registerAllProductionHandlers();
 
         expect(undoStore.value?.past).toEqual([]);
     });

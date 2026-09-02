@@ -19,8 +19,12 @@ type HandlerConfig<ActionType extends AppAction['type']> = {
         context?: HandlerValidationContext
     ) => HandlerDescribeResult;
     validate?: (action: Extract<AppAction, { type: ActionType }>, context: HandlerValidationContext) => boolean;
-    canReapplyAfterDivergence?: (action: Extract<AppAction, { type: ActionType }>) => boolean;
+    canReapplyAfterDivergence?: (
+        action: Extract<AppAction, { type: ActionType }>,
+        context?: HandlerValidationContext
+    ) => boolean;
     materializeCommandArguments?: (action: Extract<AppAction, { type: ActionType }>) => void;
+    validateMaterializedCommandArguments?: (payload: unknown) => boolean;
     prepareAbort?: (action: Extract<AppAction, { type: ActionType }>) => () => void | Promise<void>;
     isNoop?: (action: Extract<AppAction, { type: ActionType }>) => boolean;
     validateSessionEntry?: (entry: HandlerSessionActionEntry) => boolean;
@@ -69,6 +73,7 @@ export function createHandler<ActionType extends AppAction['type']>(
         validate: config.validate ?? (() => true),
         canReapplyAfterDivergence: config.canReapplyAfterDivergence,
         materializeCommandArguments: config.materializeCommandArguments,
+        validateMaterializedCommandArguments: config.validateMaterializedCommandArguments,
         prepareAbort: config.prepareAbort,
         isNoop: config.isNoop,
         validateSessionEntry: config.validateSessionEntry,

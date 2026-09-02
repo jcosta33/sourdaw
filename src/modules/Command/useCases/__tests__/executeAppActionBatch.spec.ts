@@ -57,9 +57,17 @@ vi.mock('#/modules/CrdtDocument/stores', () => ({
 vi.mock('../actionHistoryMetadataPort', () => ({
     actionHistoryMetadataPort: {
         record: mocks.recordActionHistoryMetadata,
+        recordBatch: (entries: readonly unknown[]) =>
+            entries.flatMap((entry) => mocks.recordActionHistoryMetadata(entry)),
     },
 }));
-vi.mock('../commitUndoEntry', () => ({ commitUndoEntry: mocks.commitUndoEntry }));
+vi.mock('../commitUndoEntries', () => ({
+    commitUndoEntries: (entries: readonly unknown[]) => {
+        for (const entry of entries) {
+            mocks.commitUndoEntry(entry);
+        }
+    },
+}));
 vi.mock('../macro/recording/recordAction', () => ({ recordAction: mocks.recordAction }));
 
 function createHandler<Action extends AppAction>(input: {
@@ -1457,8 +1465,12 @@ describe('executeAppActionBatch', () => {
         productionBriefAdmissionPort.setGuard((actions) => {
             const candidate = actions[0];
             const tool = candidate?.type === 'setEditingTool' ? candidate.payload.tool : 'missing';
-            capturedTools.push(tool);
-            return { allowsCurrent: () => tool === 'marquee' };
+            return {
+                allowsCurrent: () => {
+                    capturedTools.push(tool);
+                    return tool === 'marquee';
+                },
+            };
         });
 
         await expect(executeAppActionBatch([action])).resolves.toMatchObject({ status: 'committed' });

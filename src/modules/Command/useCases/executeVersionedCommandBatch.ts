@@ -96,9 +96,9 @@ export async function executeVersionedCommandBatch(input: ExecuteVersionedComman
             input.divergenceTargetIds ??
             envelopes.flatMap((envelope) => envelope.objectReferences.map((reference) => reference.id)),
     });
-    const commandsCompatible = actions.every((action) => {
+    const commandsCompatible = actions.every((action, actionIndex) => {
         const handler = getCommandHandler(action);
-        return handler?.canReapplyAfterDivergence?.(action) === true;
+        return handler?.canReapplyAfterDivergence?.(action, { actions, actionIndex }) === true;
     });
     const divergenceState: {
         current: ReturnType<typeof commandProjectDivergencePort.classify>;

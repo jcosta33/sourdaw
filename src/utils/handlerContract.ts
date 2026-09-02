@@ -2364,9 +2364,11 @@ type ActionHandlerCommon<Action extends AppAction> = {
     /** Side-effect-free authoritative domain validation run for the whole batch before its first effect. */
     validate?: (action: Action, context: HandlerValidationContext) => boolean;
     /** Explicit action-specific proof that authoritative validation can safely reapply this action after target divergence. */
-    canReapplyAfterDivergence?: (action: Action) => boolean;
+    canReapplyAfterDivergence?: (action: Action, context?: HandlerValidationContext) => boolean;
     /** Resolve deterministic application-owned payload fields, without project/runtime writes, before hashing. */
     materializeCommandArguments?: (action: Action) => void;
+    /** Owner-provided strict validation for a payload after application-owned materialization. */
+    validateMaterializedCommandArguments?: (payload: unknown) => boolean;
     /** Capture an owner-provided rollback for non-CRDT pre-commit state before dispatch begins. */
     prepareAbort?: (action: Action) => HandlerAfterCommit;
     /** True when the canonical action is already reflected in project truth. */

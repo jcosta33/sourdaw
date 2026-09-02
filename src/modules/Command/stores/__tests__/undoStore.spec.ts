@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+
 const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 // Large enough to hold a halved mirror, far too small for the whole stack the
 // oversized case pushes, so a refusal has to shrink the mirror to land at all.
@@ -195,7 +197,6 @@ describe('undoStore / pushUndo', () => {
 
     it('omits a malformed addNotes replay pair from the session mirror before reload', async () => {
         const undoStoreModule = await import('../undoStore');
-        const { getMidiNoteTransformHandlers } = await import('#/modules/MIDI/useCases');
         const { registerHandlerMap } = await import('../handlerRegistry');
         const { getExecutableCommandRegistration } = await import('../../useCases/getExecutableCommandRegistration');
         const { getInternalUndoSessionReplayContracts } =
@@ -293,6 +294,48 @@ describe('undoStore / pushUndo', () => {
 
         const persisted = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
         expect(persisted.past).toEqual([]);
+    });
+
+    it('omits an entire past group when the group crosses the remaining session limit', async () => {
+        const { createUndoEntry, undoStore } = await loadSubject();
+        const createEntry = (label: string) =>
+            createUndoEntry(
+                label,
+                { type: 'setTempo', payload: { bpm: 120 } },
+                { type: 'setTempo', payload: { bpm: 110 } }
+            );
+        const group = [createEntry('past-group-first'), createEntry('past-group-second')];
+        for (const entry of group) {
+            entry.groupId = 'past-limit-group';
+        }
+        const nearestEntries = Array.from({ length: 99 }, (_, index) => createEntry(`past-nearest-${index}`));
+
+        undoStore.set({ past: [...group, ...nearestEntries], future: [] });
+        await flushPersistence();
+
+        const persisted = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        expect(persistedEntryLabels(persisted.past)).toEqual(nearestEntries.map((entry) => entry.label));
+    });
+
+    it('omits an entire future group when the group exceeds the remaining session limit', async () => {
+        const { createUndoEntry, undoStore } = await loadSubject();
+        const createEntry = (label: string) =>
+            createUndoEntry(
+                label,
+                { type: 'setTempo', payload: { bpm: 120 } },
+                { type: 'setTempo', payload: { bpm: 110 } }
+            );
+        const nearestEntries = Array.from({ length: 99 }, (_, index) => createEntry(`future-nearest-${index}`));
+        const group = [createEntry('future-group-first'), createEntry('future-group-second')];
+        for (const entry of group) {
+            entry.groupId = 'future-limit-group';
+        }
+
+        undoStore.set({ past: [], future: [...nearestEntries, ...group] });
+        await flushPersistence();
+
+        const persisted = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+        expect(persistedEntryLabels(persisted.future)).toEqual(nearestEntries.map((entry) => entry.label));
     });
 
     it('rejects an entire reachable stored group when one member cannot hydrate', async () => {
