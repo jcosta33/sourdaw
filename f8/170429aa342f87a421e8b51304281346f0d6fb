@@ -1,0 +1,40 @@
+src/modules/MIDI/handlers/noteCrud/__tests__/handleAddNotes.spec.ts
+  s_a40848e8f8cca9::t_b0ab5ed4588f74 6-13,204,206,227-274,283-284
+  s_a40848e8f8cca9::t_e1dda1b09fc708 275-277,280-282
+  s_a40848e8f8cca9::t_8ea4dd5fba6a09 285-286
+  s_8f938fa34cc428::t_ad6b9fadef0843 278-279
+src/modules/Command/useCases/getCommandUndoSessionEntryValidator.ts
+  s_a40848e8f8cca9::t_e62ef607f5ae60 97-98
+src/modules/Command/useCases/__tests__/addNotesCommandRegistration.spec.ts
+  s_a40848e8f8cca9::t_b0ab5ed4588f74 275-283
+  s_a40848e8f8cca9::t_c2ca9f0de6e6d5 284-286
+  s_8f938fa34cc428::t_946da2ce953b88 287
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_a40848e8f8cca9::t_e62ef607f5ae60 665-681
+release/open-source-inventory.json
+  s_a40848e8f8cca9::t_296f73fcdc7043 1193
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "f8170429aa342f87a421e8b51304281346f0d6fb",
+  "prompts": {},
+  "sessions": {
+    "s_8f938fa34cc428": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a06044-f30f-77b3-aae4-caa5752201a1",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
