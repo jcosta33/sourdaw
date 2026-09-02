@@ -12,6 +12,9 @@
  * clamp. RT-safe: pure, allocation-free.
  */
 
+/** The anti-click fade floor every scheduling leg shares. */
+export const MICRO_FADE_SECONDS = 0.003;
+
 /**
  * Cap a scheduled fade-in so it is never shorter than the anti-click floor
  * and never longer than half the audible play duration.
@@ -19,7 +22,7 @@
 export function clampClipFadeInDurationSeconds(
     requestedFadeInSeconds: number,
     playDurationSeconds: number,
-    microFadeSeconds: number
+    microFadeSeconds: number = MICRO_FADE_SECONDS
 ): number {
     return Math.min(Math.max(microFadeSeconds, requestedFadeInSeconds), playDurationSeconds * 0.5);
 }
@@ -32,7 +35,8 @@ export function clampClipFadeInDurationSeconds(
 export function clampClipFadeOutStartSeconds(
     requestedFadeOutStartSeconds: number,
     playbackStartSeconds: number,
-    playDurationSeconds: number
+    playDurationSeconds: number,
+    _microFadeSeconds: number = MICRO_FADE_SECONDS
 ): number {
     const endSeconds = playbackStartSeconds + playDurationSeconds;
     return Math.max(
