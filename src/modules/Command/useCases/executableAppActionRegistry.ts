@@ -290,6 +290,12 @@ export const executableAppActionDescriptors = [
             properties: {
                 name: { type: 'string', description: 'Display name (e.g. "Kick", "Vocals", "Synth Pad")' },
                 kind: { type: 'string', enum: ['audio', 'midi', 'folder'], description: 'Track type' },
+                binding: {
+                    type: 'string',
+                    pattern: '^[a-z][a-z0-9-]{0,63}$',
+                    description:
+                        'Optional plan-local name. Later calls may target this newly created track as $<binding>.',
+                },
             },
             required: ['name', 'kind'],
         },
@@ -357,6 +363,12 @@ export const executableAppActionDescriptors = [
                 startBeat: { type: 'number', minimum: 0, description: 'Non-negative absolute start beat' },
                 endBeat: { type: 'number', minimum: 0, description: 'Absolute end beat, strictly after startBeat' },
                 name: { type: 'string', description: 'Explicit clip name' },
+                binding: {
+                    type: 'string',
+                    pattern: '^[a-z][a-z0-9-]{0,63}$',
+                    description:
+                        'Optional plan-local name. Later calls may target this newly created clip as $<binding>.',
+                },
             },
             required: ['trackId', 'startBeat', 'endBeat', 'name'],
         },

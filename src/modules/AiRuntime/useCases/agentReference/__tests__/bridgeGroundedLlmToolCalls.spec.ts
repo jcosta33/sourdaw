@@ -2442,9 +2442,9 @@ describe('bridgeGroundedLlmToolCalls', () => {
         );
 
         expect(malformed.rejections[0]?.reason).toContain('binding must start with a lowercase letter');
-        expect(duplicate.rejections[0]?.reason).toContain('Duplicate batch-local bus binding');
-        expect(missing.rejections[0]?.reason).toContain('Unknown batch-local bus reference');
-        expect(forward.rejections[0]?.reason).toContain('Forward batch-local bus reference');
+        expect(duplicate.rejections[0]?.reason).toContain('Duplicate batch-local binding');
+        expect(missing.rejections[0]?.reason).toContain('Unknown batch-local reference');
+        expect(forward.rejections[0]?.reason).toContain('Forward batch-local reference');
         expect(colliding.rejections[0]?.reason).toContain('collides with an existing');
         expect(incompatible.rejections[0]?.reason).toContain('cannot satisfy target capability device');
         expect(
@@ -2452,6 +2452,83 @@ describe('bridgeGroundedLlmToolCalls', () => {
                 (result) => result.actions.length === 0
             )
         ).toBe(true);
+    });
+
+    it('mints typed track and clip identities and grounds the clip against the track the plan will create', () => {
+        const result = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Piano', kind: 'midi', binding: 'piano' } },
+                {
+                    name: 'addClip',
+                    arguments: {
+                        trackId: '$piano',
+                        startBeat: 0,
+                        endBeat: 4,
+                        name: 'Melody',
+                        binding: 'melody',
+                    },
+                },
+            ],
+            'add a midi track named Piano and add a midi clip named Melody on the Piano track from beat 0 to beat 4'
+        );
+
+        expect(result.rejections).toEqual([]);
+        const identities = result.batchLocalActionIdentities ?? [];
+        const trackIdentity = identities.find((identity) => identity.actionType === 'addTrack');
+        const clipIdentity = identities.find((identity) => identity.actionType === 'addClip');
+        if (trackIdentity?.actionType !== 'addTrack' || clipIdentity?.actionType !== 'addClip') {
+            throw new Error('Expected one minted track identity and one minted clip identity');
+        }
+        expect(trackIdentity.trackId).toMatch(/^track-ai-/u);
+        expect(clipIdentity.clipId).toMatch(/^clip-ai-/u);
+        expect(result.actions).toEqual([
+            { type: 'addTrack', payload: { name: 'Piano', kind: 'midi', select: false } },
+            {
+                type: 'addClip',
+                payload: {
+                    trackId: trackIdentity.trackId,
+                    startBeat: 0,
+                    endBeat: 4,
+                    name: 'Melody',
+                    /** Derived from the projected MIDI track, which exists only in the plan. */
+                    type: 'midi',
+                },
+            },
+        ]);
+    });
+
+    it('rejects forward and capability-incompatible references to plan-created tracks and clips', () => {
+        const forwardTrack = bridge(
+            [
+                {
+                    name: 'addClip',
+                    arguments: { trackId: '$piano', startBeat: 0, endBeat: 4, name: 'Melody' },
+                },
+                { name: 'addTrack', arguments: { name: 'Piano', kind: 'midi', binding: 'piano' } },
+            ],
+            'add a midi clip named Melody on the Piano track from beat 0 to beat 4 and add a midi track named Piano'
+        );
+        const clipAsDevice = bridge(
+            [
+                { name: 'addTrack', arguments: { name: 'Piano', kind: 'midi', binding: 'piano' } },
+                {
+                    name: 'addClip',
+                    arguments: {
+                        trackId: '$piano',
+                        startBeat: 0,
+                        endBeat: 4,
+                        name: 'Melody',
+                        binding: 'melody',
+                    },
+                },
+                { name: 'removeDevice', arguments: { deviceId: '$melody' } },
+            ],
+            'add a midi track named Piano, add a midi clip named Melody on the Piano track from beat 0 to beat 4, and remove a device from it'
+        );
+
+        expect(forwardTrack.rejections[0]?.reason).toContain('Forward batch-local reference');
+        expect(clipAsDevice.rejections[0]?.reason).toContain('cannot satisfy target capability device');
+        expect([forwardTrack, clipAsDevice].every((result) => result.actions.length === 0)).toBe(true);
     });
 
     it('rejects an anaphoric bus target when multiple earlier created buses are compatible', () => {
