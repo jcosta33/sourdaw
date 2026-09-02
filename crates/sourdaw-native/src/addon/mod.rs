@@ -136,6 +136,14 @@ impl SourdawNative {
     /// have somewhere to push.
     #[napi(constructor)]
     pub fn new(on_event: EventEmitter) -> Self {
+        // Before any command can be dispatched. `ensure_allowed_root` answers
+        // an application-data path from the built-in roots without touching
+        // the grant registry, so a private directory created lazily by the
+        // registry is still missing during the first file command a fresh
+        // profile guards — and a missing directory is a name the filesystem
+        // has nothing to correct the caller's spelling against.
+        commands::filesystem::ensure_private_state_directory();
+
         let events: Arc<dyn EventSink> = Arc::new(TsfnEventSink { emit: on_event });
         let singletons = Arc::new(NativeSingletons::new(Arc::clone(&events)));
 

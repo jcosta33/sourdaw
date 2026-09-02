@@ -326,7 +326,13 @@ pub fn resolve_writable_file_path(path: &str) -> Result<PathBuf, String> {
     }
     let destination = canonicalize_through_missing_tail(&resolved)?;
     ensure_allowed_root(&destination, GrantMode::ReadWrite)?;
-    Ok(resolved)
+    // The checked path is the one returned, never the caller's spelling of it.
+    // Windows normalises a path on the way to the filesystem — a trailing
+    // period or space on a segment is trimmed — so returning the untouched
+    // input lets the write land somewhere the guard never saw. The resolved
+    // form has already been through canonicalisation, which is where that
+    // normalisation happens.
+    Ok(destination)
 }
 
 pub fn require_extension(path: PathBuf, extension: &str, label: &str) -> Result<PathBuf, String> {
@@ -508,8 +514,8 @@ fn built_in_roots() -> Vec<PathBuf> {
 /// spelling, so before the first launch creates the directory, `PRIVATE`
 /// resolves to `PRIVATE` and misses a prefix test that says `private` — while a
 /// case-insensitive volume, which is the default on macOS and on Windows, reads
-/// the file straight back out of `private` at the next launch. Refusing every
-/// spelling costs a case-sensitive volume a directory name nothing else uses.
+/// the file straight back out of `private` at the next launch. Which names the
+/// filesystem may deliver there is [`names_private_directory`]'s question.
 ///
 /// A missing private directory still refuses: the path a renderer would write
 /// the grant document to does not exist yet either, and a check that only
@@ -525,26 +531,48 @@ fn is_private_state_path(resolved_path: &Path) -> bool {
     let Ok(below_root) = resolved_path.strip_prefix(&resolved_root) else {
         return false;
     };
-    below_root.components().next().is_some_and(|component| {
-        component
-            .as_os_str()
-            .to_string_lossy()
-            .eq_ignore_ascii_case(PRIVATE_DIR_NAME)
-    })
+    below_root
+        .components()
+        .next()
+        .is_some_and(|component| names_private_directory(&component.as_os_str().to_string_lossy()))
+}
+
+/// Whether `component` is a name the filesystem may deliver to the private
+/// directory.
+///
+/// Windows trims trailing periods and spaces from every segment on the way to
+/// the filesystem, so `private.` and `private ` both open `private`; its
+/// volumes are case-insensitive by default, as macOS volumes are, so `PRIVATE`
+/// does too. The refusal has to cover every name that lands there, and it
+/// covers them on every platform: over-refusing three unusable directory names
+/// on a case-sensitive volume costs nothing, and a check that varies by host is
+/// one nobody can test where they build.
+fn names_private_directory(component: &str) -> bool {
+    component
+        .trim_end_matches(['.', ' '])
+        .eq_ignore_ascii_case(PRIVATE_DIR_NAME)
 }
 
 /// Create the private directory before anything can resolve a path into it.
 ///
 /// Once it exists, canonicalisation corrects the spelling of the component a
 /// caller supplied, so every later resolution lands on the one path the
-/// refusal was written against instead of on a variant of it.
+/// refusal was written against instead of on a variant of it. Called at addon
+/// construction rather than lazily from the registry: `ensure_allowed_root`
+/// answers an application-data path from the built-in roots without ever
+/// consulting the registry, so a lazy creation would still be pending during
+/// the first renderer command a fresh profile guards.
 pub(crate) fn ensure_private_state_directory() {
     let Some(directory) = private_state_directory() else {
         return;
     };
-    if let Err(error) = std::fs::create_dir_all(&directory) {
+    if let Err(error) = create_private_state_directory(&directory) {
         eprintln!("[Filesystem] Failed to create the private native state directory: {error}");
     }
+}
+
+fn create_private_state_directory(directory: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(directory)
 }
 
 fn application_data_directory() -> Option<PathBuf> {
@@ -814,7 +842,15 @@ mod tests {
     /// handed the planted document back as `private` at the next launch.
     #[tokio::test]
     async fn a_case_variant_spelling_does_not_reach_the_private_directory() {
-        for spelling in ["PRIVATE", "Private", "pRiVaTe"] {
+        for spelling in [
+            "PRIVATE",
+            "Private",
+            "pRiVaTe",
+            "private.",
+            "private..",
+            "private ",
+            "PRIVATE. ",
+        ] {
             let destination = spelled_private_state_path(spelling, &grant_document_name());
 
             assert_eq!(
@@ -833,6 +869,54 @@ mod tests {
                 "{spelling} must be refused for writing"
             );
         }
+    }
+
+    /// The guard checks the canonical form of a destination but used to hand
+    /// back the caller's own spelling of it. Windows trims a trailing period
+    /// or space from every segment on the way to the filesystem, so the two
+    /// were not the same path and the write landed somewhere unchecked.
+    #[tokio::test]
+    async fn a_writable_resolution_answers_with_the_path_it_checked() {
+        let dir = TempExportDir::create("checked-path");
+        let destination = dir.path("new-folder").join("render.wav");
+
+        let resolved = resolve_writable_file_path(&destination.to_string_lossy()).unwrap();
+
+        let canonical_temp = std::env::temp_dir()
+            .canonicalize()
+            .expect("the temp directory should resolve");
+        assert!(
+            resolved.starts_with(&canonical_temp),
+            "{resolved:?} must be the canonical form, below {canonical_temp:?}"
+        );
+        assert_eq!(
+            resolved,
+            canonicalize_through_missing_tail(&destination).unwrap()
+        );
+
+        write_file_bytes(destination.to_string_lossy().into_owned(), b"render")
+            .await
+            .unwrap();
+        assert_eq!(
+            std::fs::read(&resolved).unwrap(),
+            b"render",
+            "the command must still create the file the caller named"
+        );
+    }
+
+    /// The eager creation is what stops a caller's spelling from surviving
+    /// canonicalisation, so it is worth more than a call nothing compiles.
+    #[test]
+    fn creating_the_private_directory_succeeds_and_is_repeatable() {
+        let dir = TempExportDir::create("private-create");
+        let directory = dir.path("app-data").join(PRIVATE_DIR_NAME);
+
+        create_private_state_directory(&directory).expect("the directory should be created");
+        assert!(directory.is_dir());
+
+        create_private_state_directory(&directory)
+            .expect("creating an existing directory must not fail");
+        assert!(directory.is_dir());
     }
 
     /// The private directory sits inside the application data root, and a user
