@@ -13,7 +13,7 @@ export async function processPitchEditWasm(
     contour: PitchContour,
     outputAudioBufferId: string
 ): Promise<void> {
-    const { commit_pitch_edit_wasm, default: initDawDsp } = await import('../../wasm/daw_dsp.js');
+    const { commit_pitch_edit_wasm, default: initDawDsp } = await import('#/modules/AudioEngine/wasm/daw_dsp.js');
     await initDawDsp();
     const channelData = originalBuffer.getChannelData(0);
     // The regenerated .d.ts types the return as generic Float32Array

@@ -14,6 +14,11 @@ vi.mock('../../../wasm/daw_dsp.js', () => {
     throw new Error('daw_dsp.js evaluated');
 });
 
+vi.mock('../../wasm/daw_dsp.js', () => {
+    mocks.dawDspEvaluated();
+    throw new Error('daw_dsp.js evaluated');
+});
+
 describe('pitch WASM load graph', () => {
     it('evaluates analyzePitchForClip without loading daw_dsp.js', async () => {
         await import('../analyzePitchForClip');
