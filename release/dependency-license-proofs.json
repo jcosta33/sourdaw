@@ -1,7 +1,7 @@
 {
     "schemaVersion": 4,
     "cargoRuntimeInventory": {
-        "cargoLockSha256": "9b2ab84f93dbc9eb71b43c628508dbd2a9a74ffbeeff934a44ad32e45886195b",
+        "cargoLockSha256": "2bc80ac4f299e0a323eb959bebf3ec4b59af3d35017110231f0ecc256d52a79f",
         "sourceInputs": [
             {
                 "path": ".cargo/config.toml",
@@ -6250,7 +6250,7 @@
             },
             {
                 "name": "uuid",
-                "version": "1.24.1",
+                "version": "1.26.0",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "Apache-2.0 OR MIT",
                 "legalFiles": [
