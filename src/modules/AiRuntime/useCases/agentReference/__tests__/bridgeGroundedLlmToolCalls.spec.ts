@@ -3488,6 +3488,42 @@ describe('bridgeGroundedLlmToolCalls', () => {
         ]);
     });
 
+    it('rejects muteTrack as ambiguous when Guitar Left muted in the leave span overlaps Guitar', () => {
+        const guitar = createTrack({ id: 'track-guitar', name: 'Guitar' });
+        const guitarLeft = createTrack({ id: 'track-guitar-left', name: 'Guitar Left' });
+        const overlapContext = {
+            ...projectContext,
+            tracks: [guitar, guitarLeft, master],
+        };
+        const prompt = 'mute Guitar leaving Guitar Left muted';
+        const named = bridge(
+            [{ name: 'muteTrack', arguments: { trackId: guitar.id, muted: true } }],
+            prompt,
+            overlapContext
+        );
+        const other = bridge(
+            [{ name: 'muteTrack', arguments: { trackId: guitarLeft.id, muted: true } }],
+            prompt,
+            overlapContext
+        );
+        expect(named.actions).toEqual([]);
+        expect(other.actions).toEqual([]);
+        expect(named.rejections).toEqual([
+            {
+                index: 0,
+                name: 'muteTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+        expect(other.rejections).toEqual([
+            {
+                index: 0,
+                name: 'muteTrack',
+                reason: 'Target trackId is ambiguous in the user request',
+            },
+        ]);
+    });
+
     it.each(['mute Guitar leaving Vocals muted', 'mute Guitar leave Vocals muted'] as const)(
         'keeps both names when %s uses a muted complement',
         (prompt) => {
