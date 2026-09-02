@@ -1,0 +1,60 @@
+import { describe, expect, it, vi } from 'vitest';
+
+import { captureUndoHistory } from '../captureUndoHistory';
+
+const { undoStoreValue } = vi.hoisted(() => ({
+    undoStoreValue: vi.fn(),
+}));
+
+vi.mock('../../stores/undoStore', () => ({
+    get undoStore() {
+        return {
+            get value() {
+                return undoStoreValue();
+            },
+        };
+    },
+}));
+
+describe('captureUndoHistory', () => {
+    it('returns a defensive copy of the current past and future stacks', () => {
+        const entry = {
+            id: 'undo-1',
+            kind: 'action',
+            label: 'Move clip',
+            action: {},
+            inverseAction: {},
+            timestamp: 1,
+            source: 'manual',
+        };
+        undoStoreValue.mockReturnValue({ past: [entry], future: [] });
+
+        const snapshot = captureUndoHistory();
+
+        expect(snapshot).toEqual({ past: [entry], future: [] });
+        expect(snapshot.past).not.toBe(undefined);
+    });
+
+    it('preserves each entry object, including its action and inverse action', () => {
+        const entry = {
+            id: 'undo-2',
+            kind: 'action',
+            label: 'Delete track',
+            action: { type: 'x' },
+            inverseAction: { type: 'y' },
+            timestamp: 2,
+            source: 'manual',
+        };
+        undoStoreValue.mockReturnValue({ past: [entry], future: [] });
+
+        const snapshot = captureUndoHistory();
+
+        expect(snapshot.past[0]).toBe(entry);
+    });
+
+    it('falls back to empty stacks when the store has no value', () => {
+        undoStoreValue.mockReturnValue(null);
+
+        expect(captureUndoHistory()).toEqual({ past: [], future: [] });
+    });
+});

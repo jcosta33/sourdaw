@@ -72,6 +72,8 @@ vi.mock('#/modules/Command/useCases', () => ({
     isAppActionCommittedError: vi.fn(() => false),
     resetActionReplayAuthority: vi.fn(),
     syncActionReplayMetadata: vi.fn(),
+    captureUndoHistory: vi.fn(() => ({ past: [], future: [] })),
+    restoreUndoHistory: vi.fn(),
 }));
 
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({

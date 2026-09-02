@@ -11,6 +11,8 @@ const {
     mockLoadCrdtProject,
     mockProjectCrdtToStores,
     mockRunPersistenceOp,
+    mockCaptureUndoHistory,
+    mockRestoreUndoHistory,
 } = vi.hoisted(() => ({
     mockCloneDoc: vi.fn((doc: unknown) => doc),
     mockIsAppError: vi.fn(() => false),
@@ -34,6 +36,8 @@ const {
     mockLoadCrdtProject: vi.fn(() => Promise.resolve(true)),
     mockProjectCrdtToStores: vi.fn(),
     mockRunPersistenceOp: vi.fn(() => Promise.resolve()),
+    mockCaptureUndoHistory: vi.fn(() => ({ past: [], future: [] })),
+    mockRestoreUndoHistory: vi.fn(),
 }));
 
 vi.mock('@automerge/automerge', () => ({ clone: mockCloneDoc }));
@@ -41,6 +45,10 @@ vi.mock('#/infra/errors/isAppError', () => ({ isAppError: mockIsAppError }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
 vi.mock('#/infra/store/storage/createAutomergeStorage', () => ({
     flushAutomergeStorageWrites: mockFlushStorage,
+}));
+vi.mock('#/modules/Command/useCases', () => ({
+    captureUndoHistory: mockCaptureUndoHistory,
+    restoreUndoHistory: mockRestoreUndoHistory,
 }));
 vi.mock('../../../repositories/automergeRepository', () => ({ automergeRepository: mockAutomergeRepo }));
 vi.mock('../../../stores/branchStore', () => ({ branchStore: mockBranchStore }));

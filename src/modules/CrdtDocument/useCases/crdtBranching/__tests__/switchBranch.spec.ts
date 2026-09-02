@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
     replaceDoc: vi.fn(),
     removeDoc: vi.fn(),
     clearUndoHistory: vi.fn(),
+    captureUndoHistory: vi.fn(() => ({ past: [], future: [] })),
+    restoreUndoHistory: vi.fn(),
     storeValue: {
         branches: [
             { branchId: 'main', rootDocId: 'root' },
@@ -62,7 +64,11 @@ vi.mock('../../loadCrdtProject', () => ({ loadCrdtProject: mocks.loadCrdtProject
 vi.mock('../../runCrdtPersistenceOperation', () => ({
     runCrdtPersistenceOperation: mocks.runCrdtPersistenceOperation,
 }));
-vi.mock('#/modules/Command/useCases', () => ({ clearUndoHistory: mocks.clearUndoHistory }));
+vi.mock('#/modules/Command/useCases', () => ({
+    clearUndoHistory: mocks.clearUndoHistory,
+    captureUndoHistory: mocks.captureUndoHistory,
+    restoreUndoHistory: mocks.restoreUndoHistory,
+}));
 
 describe('switchBranch', () => {
     beforeEach(() => {
@@ -174,6 +180,7 @@ describe('switchBranch', () => {
         await switchBranch('feat');
         expect(mocks.replaceDoc).not.toHaveBeenCalled();
         expect(mocks.storeSet).not.toHaveBeenCalled();
+        expect(mocks.clearUndoHistory).not.toHaveBeenCalled();
     });
 
     it('rejects when the target branch does not exist', async () => {
