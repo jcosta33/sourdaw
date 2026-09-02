@@ -52,32 +52,40 @@
 //! pass — processed nowhere, counted here — so capture latency settles at the
 //! target instead of ratcheting up to the ring's capacity and staying there.
 //!
-//! The target belongs to one cadence, so a cadence that moves re-settles the
-//! ring: the reader fills to the new target before it serves again. Serving
-//! straight on would take from whatever depth the old cadence happened to
-//! leave, which is a depth nothing filled toward and which the shed only ever
-//! shortens.
+//! The depth is sized from the largest block seen since the last stall, not
+//! from the last block, so a device alternating block sizes settles once at
+//! the depth its largest needs and is served on every callback in between —
+//! the jitter the ring exists to absorb. Only a block bigger than any seen
+//! before, or a bigger read, deepens the target, and that refills the ring
+//! before it serves again: nothing else ever fills toward a deeper target,
+//! because the shed only enforces the target downward. A smaller target — a
+//! read that shrank — needs no refill, and the shed walks the surplus off.
 //!
 //! **After a stall.** An underrun drops the reader back to unsettled, so it
 //! refills to the target before serving again, and the published latency goes
 //! back to zero until it does. A reader that kept taking whatever happened to
 //! be there would run at the ring's floor for the rest of the session while
-//! still publishing the settled figure.
+//! still publishing the settled figure. The block ceiling is dropped with it,
+//! so the refill re-learns the cadence from the blocks that follow.
 //!
-//! **What the latency figure means.** The observed block plus the depth that
-//! block and the current read settle at: the frames between a sample arriving
-//! at the device and the same sample leaving
+//! **What the latency figure means.** The largest block seen plus the depth
+//! that block and the current read settle at: the frames between a sample
+//! arriving at the device and the same sample leaving
 //! [`CaptureRingReader::read_into`]. It is published at the settle, where the
-//! depth check has just proved the ring holds it, and only there — a figure
-//! published on every take would claim the target as soon as the target moved,
-//! and the target is a ceiling the shed enforces downward, not a depth
-//! anything fills toward. It is republished on every later settle, because a
-//! cadence can change under a running stream: CoreAudio's buffer frame size is
-//! device-global, so another application can walk a device from 512-frame
-//! callbacks to 4096-frame ones mid-session, and the ring refills to the new
-//! target and publishes the new figure. Zero means the ring is not serving —
-//! it has not settled yet, a stall dropped it back to filling, or a cadence
-//! change did — and a control thread must read it as "no figure", never as
+//! depth check has just proved the ring holds at least that much, and only
+//! there — a figure published on every take would claim the target as soon as
+//! the target moved, and nothing fills toward a deeper target. It is
+//! republished on each later settle, because a cadence can grow under a
+//! running stream: CoreAudio's buffer frame size is device-global, so another
+//! application can walk a device from 512-frame callbacks to 4096-frame ones
+//! mid-session, and the ring refills to the new target and publishes the new
+//! figure. A device that permanently *shrinks* its block without a stall keeps
+//! the larger figure until the next stall or stream restart. That figure stays
+//! true — the ring really does hold that depth, and the shed only converges it
+//! down when the target itself shrinks — it is merely conservative, which is
+//! the right direction for a take offset. Zero means the ring is not serving —
+//! it has not settled yet, a stall dropped it back to filling, or a growing
+//! cadence did — and a control thread must read it as "no figure", never as
 //! "no latency".
 //!
 //! **What is counted.** Input blocks the writer refused, whether because the
@@ -127,7 +135,7 @@ impl CaptureShape {
     /// Capacity is the one decision that cannot be revised once the stream is
     /// open, so it is bounded rather than fitted: it has to hold the worst
     /// settled depth plus one worst read for *every* cadence the two ceilings
-    /// admit. For an observed block `b <= B` and read `r <= R` the settle law
+    /// admit. For a largest observed block `b <= B` and read `r <= R` the law
     /// asks for `(ceil(r/b) * 2 + 2) * b` frames, and `ceil(r/b) * b < r + b`,
     /// so that depth stays under `2r + 4b` and therefore under `2R + 4B`.
     /// Adding the read the reader takes whole gives `3R + 4B`, which is what
@@ -269,11 +277,18 @@ pub struct CaptureRingReader {
     capacity_samples: usize,
     channels: usize,
     settled: bool,
-    /// The cadence this reader last settled at. Everything the settle law
-    /// derives — the target depth, the shed quantum, the published figure —
-    /// is a function of these two, so a move in either is exactly the moment
-    /// the ring owes a re-settle.
-    settled_block_frames: usize,
+    /// The largest block the writer has been seen to deliver since the last
+    /// stall. The target follows this rather than the last block, so a device
+    /// that alternates block sizes settles once at the depth its largest block
+    /// needs and is served on every callback in between. Audio-thread private:
+    /// the writer publishes each block it accepts, and the running maximum is
+    /// the reader's own.
+    block_ceiling_frames: usize,
+    /// The cadence this reader last settled at — the running block ceiling
+    /// above, and the read it was given. Everything the settle law derives is
+    /// a function of those two, so a move in either is exactly when the ring
+    /// owes a re-settle.
+    settled_ceiling_frames: usize,
     settled_read_frames: usize,
 }
 
@@ -284,10 +299,11 @@ impl CaptureRingReader {
     /// callback's cadence settles at, so the very first blocks a device
     /// delivers become the slack the rest of the session runs on rather than
     /// audio that immediately underruns. The cadence is taken from the last
-    /// block the writer accepted and from the length of `out`, not from the
-    /// ceilings the ring was sized against — and when that cadence moves the
-    /// ring fills to the new depth before it serves again, exactly as it does
-    /// from a cold open.
+    /// largest block the writer has been seen to deliver and from the length
+    /// of `out`, not from the ceilings the ring was sized against. A block
+    /// bigger than any seen before, or a bigger read, deepens the target and
+    /// the ring fills to it before serving again, exactly as from a cold open;
+    /// a smaller block changes nothing, because the depth already covers it.
     #[inline]
     pub fn read_into(&mut self, out: &mut [f32]) -> bool {
         let block_frames = self.observed_block_frames.load(Ordering::Relaxed);
@@ -314,18 +330,27 @@ impl CaptureRingReader {
         }
 
         let read_frames = out.len() / self.channels;
-        let target_frames = target_depth_frames(block_frames, read_frames);
+        // The depth follows the worst block seen, not the last one. A device
+        // that jitters between block sizes would otherwise deepen its target
+        // on every large block and shed back down on every small one, refusing
+        // half its callbacks forever while counting no shortfall — and the
+        // ring exists to absorb exactly that jitter.
+        self.block_ceiling_frames = self.block_ceiling_frames.max(block_frames);
+        let ceiling_frames = self.block_ceiling_frames;
+        let target_frames = target_depth_frames(ceiling_frames, read_frames);
         let target_depth_samples = target_frames * self.channels;
 
         if self.settled
-            && (block_frames != self.settled_block_frames
+            && (ceiling_frames != self.settled_ceiling_frames
                 || read_frames != self.settled_read_frames)
         {
-            // The cadence moved under a settled ring. Not a stall, so nothing
-            // is counted: the depth this reader filled to is simply no longer
-            // the depth this cadence settles at, and serving on would hand out
-            // audio from a depth nothing ever filled to while publishing a
-            // delay the take does not suffer.
+            // The cadence outgrew the depth this reader filled to. Not a
+            // stall, so nothing is counted: serving on would hand out audio
+            // from a depth nothing ever filled to, while publishing a delay
+            // the take does not suffer. Only a growth reaches here from the
+            // input side, because the ceiling never falls; a read that shrank
+            // re-settles on this same pass, since the ring is already deeper
+            // than the smaller target, and the shed walks the surplus off.
             self.settled = false;
         }
 
@@ -339,12 +364,12 @@ impl CaptureRingReader {
             }
 
             self.settled = true;
-            self.settled_block_frames = block_frames;
+            self.settled_ceiling_frames = ceiling_frames;
             self.settled_read_frames = read_frames;
             // The one place the figure is published: the depth check above is
-            // what backs it, so the frames claimed are frames the ring was
-            // observed to hold.
-            self.publish_latency(block_frames + target_frames);
+            // what backs it, so the ring was observed to hold at least the
+            // frames the figure claims.
+            self.publish_latency(ceiling_frames + target_frames);
         }
 
         if self.consumer.pop_entire_slice(out).is_err() {
@@ -352,8 +377,12 @@ impl CaptureRingReader {
             // Rebuild the slack before serving again, and stop publishing a
             // figure that no longer describes anything. Carrying on from
             // whatever survived the stall would leave the reader running at
-            // the ring's floor while still reporting the settled latency.
+            // the ring's floor while still reporting the settled latency. The
+            // ceiling goes with it, so the refill re-learns the cadence from
+            // the blocks that follow rather than from one the device may have
+            // long stopped delivering.
             self.settled = false;
+            self.block_ceiling_frames = 0;
             self.publish_latency(0);
             return false;
         }
@@ -446,7 +475,8 @@ pub fn capture_ring(
         capacity_samples: capacity,
         channels: shape.lanes(),
         settled: false,
-        settled_block_frames: 0,
+        block_ceiling_frames: 0,
+        settled_ceiling_frames: 0,
         settled_read_frames: 0,
     };
 
@@ -695,11 +725,104 @@ mod tests {
     }
 
     #[test]
-    fn a_device_that_shrinks_its_block_size_resettles_and_sheds_down_to_it() {
-        // The mirror of the grow case, and the reason a cadence change is not
-        // an underrun: the ring is already deeper than the smaller cadence
-        // needs, so the re-settle passes on the very next read and the shed
-        // walks the surplus off one block at a time.
+    fn a_device_that_shrinks_its_block_size_keeps_the_depth_it_settled_at() {
+        // The ceiling does not fall without a stall, so a smaller block asks
+        // nothing of the ring: it already holds what the larger block needed.
+        // The reader goes on serving every callback, and the figure stays at
+        // the depth it settled on — conservative for a take offset, and still
+        // true, because the ring really is holding it.
+        let (mut writer, mut reader, latency) = ring(SHAPE);
+        let mut destination = out(READ);
+        let large = 512;
+        let large_target = target_depth_frames(large, READ);
+
+        for _ in 0..large_target.div_ceil(large) + 1 {
+            writer.write_block(&block(large), CHANNELS);
+        }
+        assert!(reader.read_into(&mut destination));
+        assert_eq!(latency.load(Ordering::Relaxed), large + large_target);
+
+        // Fed at the smaller block size, in balance with the reads, so the
+        // only thing that could stop a read being served is the depth rule.
+        for _ in 0..8 {
+            for _ in 0..large / BLOCK {
+                writer.write_block(&block(BLOCK), CHANNELS);
+            }
+            assert!(
+                reader.read_into(&mut destination),
+                "a block the settled depth already covers must not stop the ring serving"
+            );
+            assert_eq!(
+                latency.load(Ordering::Relaxed),
+                large + large_target,
+                "a shrinking block does not shorten a delay the ring is still holding"
+            );
+        }
+
+        assert_eq!(reader.counters().underruns(), 0);
+    }
+
+    #[test]
+    fn a_device_that_jitters_its_block_size_is_served_on_every_read() {
+        // Alternating block sizes is ordinary, and absorbing it is what the
+        // ring is for. A target taken from the last block rather than the
+        // largest would deepen on every big block and be shed back down on
+        // every small one, leaving half the callbacks unserved for the life of
+        // the stream with nothing counted anywhere.
+        let (mut writer, mut reader, latency) = ring(SHAPE);
+        let mut destination = out(READ);
+        let large = 512;
+        let large_target = target_depth_frames(large, READ);
+        let small_target = target_depth_frames(BLOCK, READ);
+        assert!(small_target < large_target, "the two cadences must differ");
+
+        for _ in 0..small_target.div_ceil(BLOCK) + 1 {
+            writer.write_block(&block(BLOCK), CHANNELS);
+        }
+        assert!(reader.read_into(&mut destination));
+
+        // One refill, and only one: the first block bigger than any seen so
+        // far is the only thing here that deepens the target.
+        writer.write_block(&block(large), CHANNELS);
+        let mut refills = 0;
+        while !reader.read_into(&mut destination) {
+            writer.write_block(&block(large), CHANNELS);
+            refills += 1;
+            assert!(refills < 16, "the ring never reached the deeper target");
+        }
+        assert_eq!(latency.load(Ordering::Relaxed), large + large_target);
+
+        // The device now alternates, delivering the same frames between reads
+        // either way: one 512-frame block, then four 128-frame ones.
+        for round in 0..32 {
+            if round % 2 == 0 {
+                writer.write_block(&block(large), CHANNELS);
+            } else {
+                for _ in 0..large / BLOCK {
+                    writer.write_block(&block(BLOCK), CHANNELS);
+                }
+            }
+
+            assert!(
+                reader.read_into(&mut destination),
+                "round {round} went unserved on a cadence the ring already covers"
+            );
+            assert_eq!(
+                latency.load(Ordering::Relaxed),
+                large + large_target,
+                "the figure has to hold across the jitter, not follow the last block"
+            );
+        }
+
+        assert_eq!(reader.counters().underruns(), 0);
+    }
+
+    #[test]
+    fn a_stall_forgets_the_block_ceiling_so_the_refill_relearns_the_cadence() {
+        // The ceiling is what the device was last seen to be capable of, and a
+        // stall is the one place that evidence expires. Kept across one, a
+        // device that dropped to a smaller block would leave the ring holding
+        // out for a depth nothing is going to fill again.
         let (mut writer, mut reader, latency) = ring(SHAPE);
         let mut destination = out(READ);
         let large = 512;
@@ -712,37 +835,19 @@ mod tests {
         assert!(reader.read_into(&mut destination));
         assert_eq!(latency.load(Ordering::Relaxed), large + large_target);
 
-        writer.write_block(&block(BLOCK), CHANNELS);
+        while reader.read_into(&mut destination) {}
+        assert_eq!(reader.counters().underruns(), 1);
+        assert_eq!(latency.load(Ordering::Relaxed), 0);
+
+        for _ in 0..small_target.div_ceil(BLOCK) {
+            writer.write_block(&block(BLOCK), CHANNELS);
+        }
         assert!(
             reader.read_into(&mut destination),
-            "a ring already above the new target resettles without refilling"
+            "the refill has to settle on the cadence the device is running now"
         );
-        assert_eq!(
-            latency.load(Ordering::Relaxed),
-            BLOCK + small_target,
-            "the figure has to follow the cadence down as well as up"
-        );
-
-        // Fed at the new cadence, exactly balancing the reads, so the only
-        // thing that can move the depth is the shed.
-        for _ in 0..3 {
-            for _ in 0..READ / BLOCK {
-                writer.write_block(&block(BLOCK), CHANNELS);
-            }
-            assert!(reader.read_into(&mut destination));
-        }
-
-        assert_eq!(
-            reader.consumer.slots() / CHANNELS,
-            small_target,
-            "the shed has to bring the surplus down to the new target"
-        );
-        assert!(reader.counters().samples_shed() > 0);
-        assert_eq!(
-            reader.counters().underruns(),
-            0,
-            "a device changing its block size is not a stall"
-        );
+        assert_eq!(latency.load(Ordering::Relaxed), BLOCK + small_target);
+        assert_eq!(reader.counters().underruns(), 1);
     }
 
     #[test]
@@ -1053,7 +1158,7 @@ mod tests {
                 // for a partial frame and the one refused for exceeding the
                 // ceiling, the read below the settle depth, the read that
                 // fills, the read that underruns, the republish when the
-                // cadence moves, and the shed that holds the depth.
+                // cadence grows, and the shed that holds the depth.
                 reader.read_into(&mut destination);
                 writer.write_block(&input, CHANNELS);
                 writer.write_block(&oversized_block, CHANNELS);
