@@ -195,10 +195,18 @@ describe('handleAddNotes', () => {
             availableDeviceVersions: {},
             expectedEffect: 'Add one MIDI note.',
             normalizedProjectRevision: 'revision-envelope',
-            objectReferences: [{ argument: 'clipId', id: CLIP_ID, scope: 'stable' }],
-            parameterUnits: [],
+            objectReferences: [
+                { argument: 'clipId', id: CLIP_ID, scope: 'stable' },
+                { argument: 'notes[0].id', id: 'note-envelope-1', scope: 'stable' },
+            ],
+            parameterUnits: [
+                { argument: 'notes[0].pitch', unit: 'unitless' },
+                { argument: 'notes[0].startBeat', unit: 'beats' },
+                { argument: 'notes[0].duration', unit: 'unitless' },
+                { argument: 'notes[0].velocity', unit: 'unitless' },
+            ],
             reason: 'Add one MIDI note.',
-            time: [],
+            time: [{ argument: 'notes[0].startBeat', domain: 'musical', unit: 'beats', value: -2 }],
         });
 
         const receipt = await executeVersionedCommandEnvelope(serializeVersionedCommandEnvelope(envelope));
