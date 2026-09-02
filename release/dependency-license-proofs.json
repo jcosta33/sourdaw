@@ -1,7 +1,7 @@
 {
     "schemaVersion": 4,
     "cargoRuntimeInventory": {
-        "cargoLockSha256": "2bc80ac4f299e0a323eb959bebf3ec4b59af3d35017110231f0ecc256d52a79f",
+        "cargoLockSha256": "d72565a4570428b48a8a40bdc308fff00be3f2f430a83d3a9166f190ef7a9258",
         "sourceInputs": [
             {
                 "path": ".cargo/config.toml",
@@ -3046,20 +3046,20 @@
             },
             {
                 "name": "napi",
-                "version": "3.12.1",
+                "version": "3.12.2",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "MIT",
                 "legalFiles": [],
                 "metadataFiles": [
                     {
                         "label": "Cargo.toml",
-                        "sha256": "999e3553edb48e42f77ef2354b2be48f48143f3c9726a149d08ffcf24c9ac2c7"
+                        "sha256": "20281c5d37d06c18cb00c74c0e86e685a5a819e94603755332ef2c1846669fd2"
                     }
                 ],
                 "reportedLegalFiles": [
                     {
                         "label": "assembled license record from lock-resolved package metadata and SPDX 3.28.0",
-                        "sha256": "a399b1cc6aed42a14348b2f572b4cad4888633e97cb2cfbfd6226da449a465b6"
+                        "sha256": "3a96af62ae0ad66e5932a688359880fd10437980255bf3dcd23a3a3d0ef587fa"
                     }
                 ]
             },
@@ -7807,14 +7807,14 @@
         ]
     },
     "packages": {
-        "cargo:napi@3.12.1": {
-            "source": "https://crates.io/api/v1/crates/napi/3.12.1/download",
-            "revision": "sha256:459197f1592f4c3dbbf9c1b13f5a4599a343e4ef66b96bc340e2a518b36a6662",
+        "cargo:napi@3.12.2": {
+            "source": "https://crates.io/api/v1/crates/napi/3.12.2/download",
+            "revision": "sha256:58c5f4d5375213fdb7be2655e152386e82f026f9a5ba36a75556e11359aafe09",
             "assembled": {
                 "metadata": [
                     {
                         "sourcePath": "Cargo.toml",
-                        "sha256": "999e3553edb48e42f77ef2354b2be48f48143f3c9726a149d08ffcf24c9ac2c7"
+                        "sha256": "20281c5d37d06c18cb00c74c0e86e685a5a819e94603755332ef2c1846669fd2"
                     }
                 ],
                 "licenses": [
