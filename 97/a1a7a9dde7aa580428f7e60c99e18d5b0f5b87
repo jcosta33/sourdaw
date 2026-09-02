@@ -1,0 +1,31 @@
+crates/sourdaw-native/src/host/native_bridge.rs
+  s_9b530f08172a54::t_8e1930678d96db 2043-2046
+  s_9b530f08172a54::t_69e5b44e7552f5 1882-1972
+  s_9b530f08172a54::t_9c053dfda9f284 1998-2006
+  s_9b530f08172a54::t_e0bf6a01c2df42 1973,2007,2047
+crates/sourdaw-native/src/commands/crumbs.rs
+  s_9b530f08172a54::t_5883f43544d087 1168-1170,1172
+  s_9b530f08172a54::t_451272832080ed 302-325
+  s_9b530f08172a54::t_c5c6a5bf9f845a 1597-1601,1603,1615,1619,1625,1630
+  s_9b530f08172a54::t_4f3160db2ce958 289-290
+  s_9b530f08172a54::t_0c0235c84bb440 20-21
+  s_9b530f08172a54::t_44cc8c92329a48 1646-1648,1650
+  s_9b530f08172a54::t_b147e5b629fa46 1683,1685,1690
+  s_9b530f08172a54::t_74e28a2b66cc98 1028-1039,1041-1042,1046,1052
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "97a1a7a9dde7aa580428f7e60c99e18d5b0f5b87",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
