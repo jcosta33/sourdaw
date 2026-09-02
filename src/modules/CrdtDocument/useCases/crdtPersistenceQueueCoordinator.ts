@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { createHmrPersistentState } from '#/utils/HMR/createHmrPersistentState';
 
@@ -553,6 +554,22 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
 }
 
 /**
+ * `flushAutomergeStorageWrites()` can throw `AutomergeStorageFlushError` when
+ * a matched write group rolls back. The rAF-scheduled flush the same write
+ * would otherwise land under already tolerates that failure (it warns and
+ * leaves in-memory state as-is), so this call site tolerates it too rather
+ * than aborting the persist before it stamps and serializes whatever is
+ * already settled.
+ */
+function settlePendingWritesBestEffort(): void {
+    try {
+        flushAutomergeStorageWrites();
+    } catch (error) {
+        logger.warn('[CrdtPersistence] Failed to settle pending Automerge storage writes before persisting:', error);
+    }
+}
+
+/**
  * @param settlePendingWrites Force this generation's rAF-deferred, unscoped
  * CRDT writes (e.g. the action-history entry `executeAppAction` just
  * recorded) to land before anything below reads document bytes — otherwise a
@@ -594,7 +611,7 @@ async function persistIncrementalCrdtProject(generation: number, settlePendingWr
     }
 
     if (settlePendingWrites) {
-        flushAutomergeStorageWrites();
+        settlePendingWritesBestEffort();
     }
     // Re-mirrors the undo session witness against the document state this
     // generation is about to read below, whether or not a flush just settled
@@ -628,7 +645,7 @@ async function persistIncrementalCrdtProject(generation: number, settlePendingWr
 /** See `persistIncrementalCrdtProject`'s `settlePendingWrites` doc. */
 async function compactCrdtProject(generation: number, settlePendingWrites: boolean): Promise<void> {
     if (settlePendingWrites) {
-        flushAutomergeStorageWrites();
+        settlePendingWritesBestEffort();
     }
     await flushPendingChunks(generation);
     if (generation !== persistenceState.persistenceGeneration) {
