@@ -52,24 +52,24 @@
 //! pass — processed nowhere, counted here — so capture latency settles at the
 //! target instead of ratcheting up to the ring's capacity and staying there.
 //!
-//! The depth is sized from the largest block seen since the last stall, not
-//! from the last block, so a device alternating block sizes settles once at
-//! the depth its largest needs and is served on every callback in between —
-//! the jitter the ring exists to absorb. Only a block bigger than any seen
-//! before, or a bigger read, deepens the target, and that refills the ring
-//! before it serves again: nothing else ever fills toward a deeper target,
-//! because the shed only enforces the target downward. A smaller target — a
-//! read that shrank — needs no refill, and the shed walks the surplus off.
+//! The depth is sized from the largest block and the largest read seen since
+//! the last stall, not from the ones in hand, so a device alternating block
+//! sizes and a callback alternating slice sizes both settle once at the depth
+//! their largest needs and are served on every callback in between — the
+//! jitter the ring exists to absorb. Only a block or a read bigger than any
+//! seen before deepens the target, and that refills the ring before it serves
+//! again: nothing else ever fills toward a deeper target, because the shed
+//! only enforces the target downward.
 //!
 //! **After a stall.** An underrun drops the reader back to unsettled, so it
 //! refills to the target before serving again, and the published latency goes
 //! back to zero until it does. A reader that kept taking whatever happened to
 //! be there would run at the ring's floor for the rest of the session while
-//! still publishing the settled figure. The block ceiling is dropped with it,
-//! so the refill re-learns the cadence from the blocks that follow.
+//! still publishing the settled figure. Both ceilings are dropped with it, so
+//! the refill re-learns the cadence from the blocks and reads that follow.
 //!
 //! **What the latency figure means.** The largest block seen plus the depth
-//! that block and the current read settle at: the frames between a sample
+//! that block and the largest read settle at: the frames between a sample
 //! arriving at the device and the same sample leaving
 //! [`CaptureRingReader::read_into`]. It is published at the settle, where the
 //! depth check has just proved the ring holds at least that much, and only
@@ -79,11 +79,10 @@
 //! running stream: CoreAudio's buffer frame size is device-global, so another
 //! application can walk a device from 512-frame callbacks to 4096-frame ones
 //! mid-session, and the ring refills to the new target and publishes the new
-//! figure. A device that permanently *shrinks* its block without a stall keeps
+//! figure. A block or a read that permanently *shrinks* without a stall keeps
 //! the larger figure until the next stall or stream restart. That figure stays
-//! true — the ring really does hold that depth, and the shed only converges it
-//! down when the target itself shrinks — it is merely conservative, which is
-//! the right direction for a take offset. Zero means the ring is not serving —
+//! true — the ring really does hold that depth — it is merely conservative,
+//! which is the right direction for a take offset. Zero means the ring is not serving —
 //! it has not settled yet, a stall dropped it back to filling, or a growing
 //! cadence did — and a control thread must read it as "no figure", never as
 //! "no latency".
@@ -277,19 +276,20 @@ pub struct CaptureRingReader {
     capacity_samples: usize,
     channels: usize,
     settled: bool,
-    /// The largest block the writer has been seen to deliver since the last
-    /// stall. The target follows this rather than the last block, so a device
-    /// that alternates block sizes settles once at the depth its largest block
-    /// needs and is served on every callback in between. Audio-thread private:
-    /// the writer publishes each block it accepts, and the running maximum is
-    /// the reader's own.
+    /// The largest block the writer has been seen to deliver, and the largest
+    /// slice this reader has been asked for, since the last stall. The target
+    /// follows this pair rather than the block and read of the moment, so a
+    /// device or a render callback that alternates sizes settles once at the
+    /// depth its largest needs and is served on every callback in between.
+    /// Audio-thread private: the writer publishes each block it accepts, and
+    /// the running maxima are the reader's own.
     block_ceiling_frames: usize,
-    /// The cadence this reader last settled at — the running block ceiling
-    /// above, and the read it was given. Everything the settle law derives is
-    /// a function of those two, so a move in either is exactly when the ring
-    /// owes a re-settle.
-    settled_ceiling_frames: usize,
-    settled_read_frames: usize,
+    read_ceiling_frames: usize,
+    /// The pair this reader last settled at. Everything the settle law derives
+    /// is a function of the two ceilings, so a rise in either is exactly when
+    /// the ring owes a re-settle — and neither ever falls without a stall.
+    settled_block_ceiling_frames: usize,
+    settled_read_ceiling_frames: usize,
 }
 
 impl CaptureRingReader {
@@ -299,11 +299,12 @@ impl CaptureRingReader {
     /// callback's cadence settles at, so the very first blocks a device
     /// delivers become the slack the rest of the session runs on rather than
     /// audio that immediately underruns. The cadence is taken from the last
-    /// largest block the writer has been seen to deliver and from the length
-    /// of `out`, not from the ceilings the ring was sized against. A block
-    /// bigger than any seen before, or a bigger read, deepens the target and
-    /// the ring fills to it before serving again, exactly as from a cold open;
-    /// a smaller block changes nothing, because the depth already covers it.
+    /// largest block the writer has been seen to deliver and the largest `out`
+    /// this reader has been given, not from the ceilings the ring was sized
+    /// against. Either one bigger than anything seen before deepens the target,
+    /// and the ring fills to it before serving again, exactly as from a cold
+    /// open; a smaller one changes nothing, because the depth already covers
+    /// it.
     #[inline]
     pub fn read_into(&mut self, out: &mut [f32]) -> bool {
         let block_frames = self.observed_block_frames.load(Ordering::Relaxed);
@@ -330,27 +331,29 @@ impl CaptureRingReader {
         }
 
         let read_frames = out.len() / self.channels;
-        // The depth follows the worst block seen, not the last one. A device
-        // that jitters between block sizes would otherwise deepen its target
-        // on every large block and shed back down on every small one, refusing
-        // half its callbacks forever while counting no shortfall — and the
-        // ring exists to absorb exactly that jitter.
+        // The depth follows the worst block and the worst read seen, not the
+        // ones in hand. Either axis sized from the value of the moment would
+        // deepen the target on every large one and shed back down on every
+        // small one, refusing a share of the callbacks forever while counting
+        // no shortfall — and both jitter in practice: a device alternates its
+        // block size, and a render callback is handed whatever slice the
+        // output stream has for it.
         self.block_ceiling_frames = self.block_ceiling_frames.max(block_frames);
-        let ceiling_frames = self.block_ceiling_frames;
-        let target_frames = target_depth_frames(ceiling_frames, read_frames);
+        self.read_ceiling_frames = self.read_ceiling_frames.max(read_frames);
+        let block_ceiling = self.block_ceiling_frames;
+        let read_ceiling = self.read_ceiling_frames;
+        let target_frames = target_depth_frames(block_ceiling, read_ceiling);
         let target_depth_samples = target_frames * self.channels;
 
         if self.settled
-            && (ceiling_frames != self.settled_ceiling_frames
-                || read_frames != self.settled_read_frames)
+            && (block_ceiling != self.settled_block_ceiling_frames
+                || read_ceiling != self.settled_read_ceiling_frames)
         {
             // The cadence outgrew the depth this reader filled to. Not a
             // stall, so nothing is counted: serving on would hand out audio
             // from a depth nothing ever filled to, while publishing a delay
-            // the take does not suffer. Only a growth reaches here from the
-            // input side, because the ceiling never falls; a read that shrank
-            // re-settles on this same pass, since the ring is already deeper
-            // than the smaller target, and the shed walks the surplus off.
+            // the take does not suffer. Only a rise ever reaches here, because
+            // neither ceiling falls without a stall.
             self.settled = false;
         }
 
@@ -364,12 +367,12 @@ impl CaptureRingReader {
             }
 
             self.settled = true;
-            self.settled_ceiling_frames = ceiling_frames;
-            self.settled_read_frames = read_frames;
+            self.settled_block_ceiling_frames = block_ceiling;
+            self.settled_read_ceiling_frames = read_ceiling;
             // The one place the figure is published: the depth check above is
             // what backs it, so the ring was observed to hold at least the
             // frames the figure claims.
-            self.publish_latency(ceiling_frames + target_frames);
+            self.publish_latency(block_ceiling + target_frames);
         }
 
         if self.consumer.pop_entire_slice(out).is_err() {
@@ -378,11 +381,12 @@ impl CaptureRingReader {
             // figure that no longer describes anything. Carrying on from
             // whatever survived the stall would leave the reader running at
             // the ring's floor while still reporting the settled latency. The
-            // ceiling goes with it, so the refill re-learns the cadence from
-            // the blocks that follow rather than from one the device may have
-            // long stopped delivering.
+            // ceilings go with it, so the refill re-learns the cadence from
+            // the blocks and reads that follow rather than from sizes neither
+            // side may still be running.
             self.settled = false;
             self.block_ceiling_frames = 0;
+            self.read_ceiling_frames = 0;
             self.publish_latency(0);
             return false;
         }
@@ -476,8 +480,9 @@ pub fn capture_ring(
         channels: shape.lanes(),
         settled: false,
         block_ceiling_frames: 0,
-        settled_ceiling_frames: 0,
-        settled_read_frames: 0,
+        read_ceiling_frames: 0,
+        settled_block_ceiling_frames: 0,
+        settled_read_ceiling_frames: 0,
     };
 
     (writer, reader)
@@ -759,6 +764,16 @@ mod tests {
             );
         }
 
+        assert_eq!(
+            reader.consumer.slots() / CHANNELS,
+            large_target,
+            "the figure has to name the depth the ring is actually holding"
+        );
+        assert_eq!(
+            reader.counters().samples_shed(),
+            0,
+            "a target that never moved leaves the shed nothing to do"
+        );
         assert_eq!(reader.counters().underruns(), 0);
     }
 
@@ -818,16 +833,67 @@ mod tests {
     }
 
     #[test]
-    fn a_stall_forgets_the_block_ceiling_so_the_refill_relearns_the_cadence() {
-        // The ceiling is what the device was last seen to be capable of, and a
-        // stall is the one place that evidence expires. Kept across one, a
-        // device that dropped to a smaller block would leave the ring holding
-        // out for a depth nothing is going to fill again.
+    fn a_render_callback_that_jitters_its_slice_is_served_on_every_read() {
+        // The output side jitters too: CoreAudio sizes each render callback's
+        // buffer, and the engine's own renderer already treats the frame count
+        // it is handed as variable. A target taken from the slice in hand
+        // would settle shallow on a small callback, shed down to it, and then
+        // refuse the next large one — one read in three unserved, with nothing
+        // counted anywhere.
+        let (mut writer, mut reader, latency) = ring(SHAPE);
+        let mut whole = out(READ);
+        let mut half = out(READ / 2);
+        let target = target_depth_frames(BLOCK, READ);
+        assert!(
+            target_depth_frames(BLOCK, READ / 2) < target,
+            "the two slice sizes must settle at different depths"
+        );
+
+        for _ in 0..target.div_ceil(BLOCK) + 1 {
+            writer.write_block(&block(BLOCK), CHANNELS);
+        }
+        assert!(reader.read_into(&mut whole));
+        assert_eq!(latency.load(Ordering::Relaxed), BLOCK + target);
+
+        // The writer supplies exactly what each read takes, so the only thing
+        // that could stop one being served is the depth rule.
+        for round in 0..32 {
+            let destination = if round % 2 == 0 {
+                &mut whole
+            } else {
+                &mut half
+            };
+            for _ in 0..destination.len() / CHANNELS / BLOCK {
+                writer.write_block(&block(BLOCK), CHANNELS);
+            }
+
+            assert!(
+                reader.read_into(destination),
+                "round {round} went unserved on a slice the ring already covers"
+            );
+            assert_eq!(
+                latency.load(Ordering::Relaxed),
+                BLOCK + target,
+                "the figure has to hold across the jitter, not follow the last slice"
+            );
+        }
+
+        assert_eq!(reader.counters().underruns(), 0);
+    }
+
+    #[test]
+    fn a_stall_forgets_both_ceilings_so_the_refill_relearns_the_cadence() {
+        // The ceilings are what the device and the callback were last seen to
+        // be capable of, and a stall is the one place that evidence expires.
+        // Kept across one, a stream that dropped to a smaller block or a
+        // smaller slice would leave the ring holding out for a depth nothing
+        // is going to fill again.
         let (mut writer, mut reader, latency) = ring(SHAPE);
         let mut destination = out(READ);
         let large = 512;
         let large_target = target_depth_frames(large, READ);
-        let small_target = target_depth_frames(BLOCK, READ);
+        // Smaller on both axes than anything this ring has settled at.
+        let relearned_target = target_depth_frames(BLOCK, READ / 2);
 
         for _ in 0..large_target.div_ceil(large) + 1 {
             writer.write_block(&block(large), CHANNELS);
@@ -839,14 +905,18 @@ mod tests {
         assert_eq!(reader.counters().underruns(), 1);
         assert_eq!(latency.load(Ordering::Relaxed), 0);
 
-        for _ in 0..small_target.div_ceil(BLOCK) {
+        // Both axes come back smaller. Either ceiling kept across the stall
+        // would demand a depth these blocks never reach, and the ring would
+        // fill forever.
+        let mut smaller = out(READ / 2);
+        for _ in 0..relearned_target.div_ceil(BLOCK) {
             writer.write_block(&block(BLOCK), CHANNELS);
         }
         assert!(
-            reader.read_into(&mut destination),
-            "the refill has to settle on the cadence the device is running now"
+            reader.read_into(&mut smaller),
+            "the refill has to settle on the cadence both sides are running now"
         );
-        assert_eq!(latency.load(Ordering::Relaxed), BLOCK + small_target);
+        assert_eq!(latency.load(Ordering::Relaxed), BLOCK + relearned_target);
         assert_eq!(reader.counters().underruns(), 1);
     }
 
