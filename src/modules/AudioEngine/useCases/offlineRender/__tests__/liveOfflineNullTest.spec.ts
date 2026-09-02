@@ -93,6 +93,13 @@
  *     its own specs (`automationScheduling`, `offlineVcaGainParity`) — the one
  *     exception is a clip's fade envelope, which is walked because a fade is a
  *     shape rather than a resting value.
+ *   - **How live automation reaches the native engine.** Every write in this
+ *     file is placed by an offline render, which bakes the whole pass into one
+ *     batch. The live session instead feeds the engine's eight-slot queue a
+ *     window at a time off the transport clock, and that delivery — the
+ *     window, the cursor, the loop seam, a refused batch — is measured in
+ *     `livePlayback/__tests__/nativeLiveAutomationWriter.spec.ts` and against
+ *     this same export in `renderOfflineNativeParity.spec.ts`.
  *   - **VCA multipliers, `honorMuted` and `contributesAudio`.** Every fixture
  *     here is built with the mixdown's settings.
  *   - **Live mute parity.** `renderLive` calls `setMute`, but every

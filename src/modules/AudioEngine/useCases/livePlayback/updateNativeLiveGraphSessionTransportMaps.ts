@@ -38,9 +38,12 @@
  * resolve.
  */
 
-import { type EngineTransportMaps } from '../../models/EngineTransportPosition';
+import { type EngineLoopRegion, type EngineTransportMaps } from '../../models/EngineTransportPosition';
 import { setEngineTransportMaps } from '../../repositories/engineTransport/setEngineTransportMaps';
 
+import { armNativeLiveAutomationWriter } from './armNativeLiveAutomationWriter';
+import { nativeEnginePlayheadFeed } from './nativeEnginePlayheadFeedState';
+import { nativeLiveAutomationWriter } from './nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 
 export type UpdateNativeLiveGraphSessionTransportMapsInput = Readonly<{
@@ -56,6 +59,17 @@ export type UpdateNativeLiveGraphSessionTransportMapsInput = Readonly<{
 export type UpdateNativeLiveGraphSessionTransportMapsResult =
     Readonly<{ outcome: 'updated' }> | Readonly<{ outcome: 'declined'; reason: string }>;
 
+function sameLoopRegion(left: EngineLoopRegion | null, right: EngineLoopRegion | null): boolean {
+    if (!left || !right) {
+        return left === right;
+    }
+    return (
+        left.enabled === right.enabled &&
+        left.startSeconds === right.startSeconds &&
+        left.endSeconds === right.endSeconds
+    );
+}
+
 export function updateNativeLiveGraphSessionTransportMaps(
     input: UpdateNativeLiveGraphSessionTransportMapsInput
 ): Promise<UpdateNativeLiveGraphSessionTransportMapsResult> {
@@ -70,6 +84,29 @@ export function updateNativeLiveGraphSessionTransportMaps(
             // untouched: a refused maps write says nothing about the
             // topology or the handle it was sent through.
             return { outcome: 'declined', reason: maps.reason };
+        }
+        const region = input.transportMaps.loopRegion;
+        const regionChanged =
+            maps.applied.loopEnabled !== nativeLiveGraphSession.loopEnabled ||
+            !sameLoopRegion(region, nativeLiveGraphSession.loopRegion);
+        nativeLiveGraphSession.loopRegion = region;
+        nativeLiveGraphSession.loopEnabled = maps.applied.loopEnabled;
+
+        const pass = nativeLiveAutomationWriter.pass;
+        if (pass && regionChanged) {
+            // The pass was written for the region that just went away — its
+            // seam re-arm would return the playhead to a loop start the engine
+            // no longer has. Re-armed from where the engine actually stands,
+            // falling back to the old region's start when no snapshot has
+            // landed yet: a position behind the playhead only re-sends writes
+            // the engine resolves to their end state, while one ahead of it
+            // would skip the curve the musician is listening to.
+            armNativeLiveAutomationWriter({
+                stripTracks: pass.stripTracks,
+                sampleRate: pass.sampleRate,
+                programmeEndSeconds: pass.programmeEndSeconds,
+                positionSeconds: nativeEnginePlayheadFeed.reading?.positionSeconds ?? pass.regionStartSeconds,
+            });
         }
         return { outcome: 'updated' };
     });

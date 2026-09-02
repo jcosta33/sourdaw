@@ -51,7 +51,10 @@ import { createNativeLiveGraphBackend } from '../../repositories/nativeGraph/cre
 import { registerNativeTimelineSamples } from '../../repositories/nativeGraph/nativeTimelineSamplePool';
 import { probeNativeGraphTransport } from '../../repositories/nativeGraph/probeNativeGraphTransport';
 
+import { armNativeLiveAutomationWriter } from './armNativeLiveAutomationWriter';
+import { disarmNativeLiveAutomationWriter } from './disarmNativeLiveAutomationWriter';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
+import { type LiveGraphProgramme } from './projectLiveGraphProgramme';
 import { projectLiveGraphTopology, type LiveGraphMonitorMode } from './projectLiveGraphTopology';
 import { readLiveGraphProgramme } from './readLiveGraphProgramme';
 import { readLiveStripTracks } from './readLiveStripTracks';
@@ -145,6 +148,23 @@ function readSessionTopology(): Readonly<{
             ])
         ),
     };
+}
+
+/**
+ * Where this session's programme ends, on the engine clock.
+ *
+ * The bound a non-looping automation pass is written into. The session is the
+ * only thing that knows it: automation past the last thing this engine plays
+ * reaches nobody, and the programme is the record of what that is.
+ */
+function programmeEndSeconds(programme: LiveGraphProgramme): number {
+    let end = 0;
+    for (const playbacks of programme.playbacksByStripId.values()) {
+        for (const playback of playbacks) {
+            end = Math.max(end, playback.startTime + playback.durationSeconds);
+        }
+    }
+    return end;
 }
 
 /**
@@ -272,6 +292,9 @@ export function startNativeLiveGraphSession(
         // The topology went out parked (see the batch above), so this session
         // has not rolled yet whatever the one it replaced was doing.
         nativeLiveGraphSession.rolling = false;
+        // Whatever the previous session left armed addresses a topology this
+        // batch has just replaced, and a region this session may not share.
+        disarmNativeLiveAutomationWriter();
 
         // After the topology, never with it: the maps have their own owner and
         // their own command (the transport ownership law in `graph.rs`). Before
@@ -292,8 +315,26 @@ export function startNativeLiveGraphSession(
             // `!is_playing`), which is what makes the stale pair unreachable
             // rather than merely unlikely.
             logger.warn(`[AudioEngine] native transport left parked: maps declined: ${maps.reason}`);
+            nativeLiveGraphSession.loopRegion = null;
+            nativeLiveGraphSession.loopEnabled = false;
         } else {
+            // The requested region beside the engine's own answer about it: a
+            // region too short for the engine's floor is held and not wrapped,
+            // and only the engine can say which this one is.
+            nativeLiveGraphSession.loopRegion = input.transportMaps.loopRegion;
+            nativeLiveGraphSession.loopEnabled = maps.applied.loopEnabled;
             nativeLiveGraphSession.rolling = await rollNativeTransport(backend, input.positionSeconds);
+        }
+        if (nativeLiveGraphSession.rolling) {
+            // After the roll, never before it: the region the pass is written
+            // into is the one the engine just confirmed it will wrap, and a
+            // parked engine plays no automation because it plays nothing.
+            armNativeLiveAutomationWriter({
+                stripTracks: topology.stripTracks,
+                sampleRate: input.sampleRate,
+                programmeEndSeconds: programmeEndSeconds(programme),
+                positionSeconds: input.positionSeconds,
+            });
         }
         startNativeEnginePlayheadFeed();
         return { outcome: 'started', runtimeRevision: result.runtimeRevision, reports: result.reports };
