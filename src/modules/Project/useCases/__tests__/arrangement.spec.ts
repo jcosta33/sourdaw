@@ -32,7 +32,7 @@ vi.mock('#/modules/Transport/useCases', async () => {
     };
 });
 vi.mock('../projectPersistence/saveProject/markDirty', () => ({ markDirty: vi.fn() }));
-// switchArrangement imports clearUndoHistory; runProjectLoadTransaction.prepare imports resetActionReplayAuthority.
+// switchArrangement imports clearUndoHistory; runProjectLoadTransaction.prepare imports resetActionReplayAuthority; executeAppAction is listed for live Transport/Arrangement barrel load, not switchArrangement.
 vi.mock('#/modules/Command/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
     return {
