@@ -105,7 +105,7 @@ export function updateNativeLiveGraphSessionTransportMaps(
                 stripTracks: pass.stripTracks,
                 sampleRate: pass.sampleRate,
                 programmeEndSeconds: pass.programmeEndSeconds,
-                positionSeconds: nativeEnginePlayheadFeed.reading?.positionSeconds ?? pass.regionStartSeconds,
+                positionSeconds: nativeEnginePlayheadFeed.reading?.positionSeconds ?? pass.entrySeconds,
             });
         }
         return { outcome: 'updated' };

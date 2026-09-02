@@ -17,4 +17,7 @@ import { nativeLiveAutomationWriter } from './nativeLiveAutomationWriterState';
 export function disarmNativeLiveAutomationWriter(): void {
     nativeLiveAutomationWriter.epoch += 1;
     nativeLiveAutomationWriter.pass = null;
+    // The next session's first arm gets to say what it excluded, whatever this
+    // one already reported.
+    nativeLiveAutomationWriter.reportedExclusions = null;
 }

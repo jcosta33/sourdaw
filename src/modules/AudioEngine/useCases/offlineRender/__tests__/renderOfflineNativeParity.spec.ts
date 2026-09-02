@@ -101,7 +101,10 @@ import { type NativeGraphWireBatch } from '../../../repositories/nativeGraph/ser
 import { offlinePpqEndpointProjectorState } from '../../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { armNativeLiveAutomationWriter } from '../../livePlayback/armNativeLiveAutomationWriter';
 import { disarmNativeLiveAutomationWriter } from '../../livePlayback/disarmNativeLiveAutomationWriter';
-import { AUTOMATION_WINDOW_SECONDS } from '../../livePlayback/nativeLiveAutomationWriterState';
+import {
+    AUTOMATION_WINDOW_SECONDS,
+    nativeLiveAutomationWriter,
+} from '../../livePlayback/nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession } from '../../livePlayback/nativeLiveGraphSessionState';
 import { pumpNativeLiveAutomationWriter } from '../../livePlayback/pumpNativeLiveAutomationWriter';
 import { renderOffline } from '../../renderOffline';
@@ -604,7 +607,11 @@ async function runLiveAutomationPass(input: { endSeconds: number }): Promise<Aud
         let before = -1;
         while (before !== sent.length) {
             before = sent.length;
-            await pumpNativeLiveAutomationWriter({ positionSeconds: at, loopWraps: 0 });
+            await pumpNativeLiveAutomationWriter({
+                positionSeconds: at,
+                loopWraps: 0,
+                writerEpoch: nativeLiveAutomationWriter.epoch,
+            });
             await new Promise((resolve) => setTimeout(resolve, 0));
         }
     }
