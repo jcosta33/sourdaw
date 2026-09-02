@@ -223,6 +223,8 @@ describe('undoStore / pushUndo', () => {
                             clipId: 'clip-midi',
                             notes: baseNotes,
                             expectedNotes,
+                            notesBucketPresent: true,
+                            expectedNotesBucketPresent: true,
                             noteTransformReplayGuard: {
                                 trackId: 'track-midi',
                                 expectedTrackFrozen: false,
@@ -236,6 +238,8 @@ describe('undoStore / pushUndo', () => {
                             clipId: 'clip-midi',
                             notes: expectedNotes,
                             expectedNotes: baseNotes,
+                            notesBucketPresent: true,
+                            expectedNotesBucketPresent: true,
                             noteTransformReplayGuard: {
                                 trackId: 'track-midi',
                                 expectedTrackFrozen: false,

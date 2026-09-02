@@ -2468,6 +2468,8 @@ const schemaDefinitions = [
             clipId: 0,
             notes: 179,
             expectedNotes: 179,
+            notesBucketPresent: 33,
+            expectedNotesBucketPresent: 33,
             allowMissingExpectedEmpty: 33,
             articulationReplayGuard: 294,
             noteTransformReplayGuard: 295,

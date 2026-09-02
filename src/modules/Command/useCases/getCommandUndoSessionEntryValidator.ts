@@ -62,6 +62,10 @@ function hasExactAddNotesRestorePair(entry: SessionActionEntry): boolean {
         !Array.isArray(inversePayload.expectedNotes) ||
         !Array.isArray(redoPayload.notes) ||
         !Array.isArray(redoPayload.expectedNotes) ||
+        typeof inversePayload.notesBucketPresent !== 'boolean' ||
+        typeof inversePayload.expectedNotesBucketPresent !== 'boolean' ||
+        typeof redoPayload.notesBucketPresent !== 'boolean' ||
+        typeof redoPayload.expectedNotesBucketPresent !== 'boolean' ||
         Object.hasOwn(inversePayload, 'allowMissingExpectedEmpty') ||
         Object.hasOwn(redoPayload, 'allowMissingExpectedEmpty') ||
         !isWritableMidiClipReplayGuard(inversePayload.noteTransformReplayGuard) ||
@@ -87,6 +91,8 @@ function hasExactAddNotesRestorePair(entry: SessionActionEntry): boolean {
         !valuesEqual(inversePayload.expectedNotes.slice(0, inversePayload.notes.length), inversePayload.notes) ||
         !valuesEqual(redoPayload.notes, inversePayload.expectedNotes) ||
         !valuesEqual(redoPayload.expectedNotes, inversePayload.notes) ||
+        inversePayload.notesBucketPresent !== redoPayload.expectedNotesBucketPresent ||
+        inversePayload.expectedNotesBucketPresent !== redoPayload.notesBucketPresent ||
         !valuesEqual(redoPayload.noteTransformReplayGuard, inversePayload.noteTransformReplayGuard)
     ) {
         return false;

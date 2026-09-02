@@ -54,6 +54,7 @@ type CreateMockHandlerInput<Action extends AppAction> = {
     describe?: (action: Action) => HandlerDescribeResult;
     executionKind?: ActionHandler<Action>['executionKind'];
     isNoop?: (action: Action) => boolean;
+    materializeCommandArguments?: ActionHandler<Action>['materializeCommandArguments'];
     undoable?: boolean;
 };
 
@@ -66,6 +67,7 @@ function create_mock_handler<Action extends AppAction>({
     describe = () => ({ label }),
     executionKind,
     isNoop,
+    materializeCommandArguments,
     undoable = true,
 }: CreateMockHandlerInput<Action> = {}): CreateMockHandlerOutput<Action> {
     return {
@@ -76,6 +78,7 @@ function create_mock_handler<Action extends AppAction>({
         executionKind,
         undoable,
         isNoop,
+        materializeCommandArguments,
     };
 }
 
@@ -165,6 +168,35 @@ describe('executeAppAction', () => {
         await expect(executeAppAction(action)).rejects.toBeInstanceOf(AppActionConflictError);
         expect(handler.execute).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+    });
+
+    it('captures and rechecks the handler-materialized single-action production-lock footprint', async () => {
+        const capturedTools: string[] = [];
+        const checkedTools: string[] = [];
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'select' } };
+        const handler = create_mock_handler<SetEditingToolAction>({
+            materializeCommandArguments: (candidate) => {
+                candidate.payload.tool = 'marquee';
+            },
+        });
+        registerHandlerMap({ [action.type]: handler });
+        productionBriefAdmissionPort.setGuard((actions) => {
+            const candidate = actions[0];
+            const tool = candidate?.type === 'setEditingTool' ? candidate.payload.tool : 'missing';
+            capturedTools.push(tool);
+            return {
+                allowsCurrent: () => {
+                    checkedTools.push(tool);
+                    return tool === 'marquee';
+                },
+            };
+        });
+
+        await expect(executeAppAction(action)).resolves.toBeUndefined();
+
+        expect(action.payload.tool).toBe('select');
+        expect(capturedTools).toEqual(['marquee']);
+        expect(checkedTools).toEqual(['marquee', 'marquee']);
     });
 
     it('aborts with a replayable conflict when a collaborator locks a removed device parent before commit', async () => {

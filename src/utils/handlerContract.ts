@@ -1481,6 +1481,10 @@ export type AppAction =
               clipId: string;
               notes: readonly MidiClipNoteSnapshot[];
               expectedNotes: readonly MidiClipNoteSnapshot[];
+              /** Whether the replacement snapshot owns a MIDI notes bucket, preserving absence versus present-empty. */
+              notesBucketPresent?: boolean;
+              /** Whether the expected snapshot owns a MIDI notes bucket, preserving absence versus present-empty. */
+              expectedNotesBucketPresent?: boolean;
               /** Internal redo allowance for a newly recreated clip whose MIDI bucket does not exist yet. */
               allowMissingExpectedEmpty?: boolean;
               /** MF-03 replay eligibility captured from the approved source and clip topology. */

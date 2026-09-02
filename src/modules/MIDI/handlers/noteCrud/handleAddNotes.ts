@@ -2,6 +2,7 @@ import { trackStore } from '#/modules/Arrangement/stores';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
+import { midiStore } from '../../stores/midiStore';
 import { normalizeMidiNoteInput } from '../../transformers/normalizeMidiNoteInput';
 import { batchAddMidiNotes } from '../../useCases/midiNoteCrud/batchAddMidiNotes';
 import { getMidiClipNotesSnapshot } from '../../useCases/midiNoteTransforms/getMidiClipNotesSnapshot';
@@ -14,6 +15,11 @@ type AddNotesAction = {
 };
 
 type MaterializedNote = ReturnType<typeof normalizeMidiNoteInput>;
+
+type MidiNotesBucketSnapshot = {
+    notes: MaterializedNote[];
+    present: boolean;
+};
 
 const notesByAction = new WeakMap<object, MaterializedNote[]>();
 
@@ -91,6 +97,14 @@ function getWritableMidiClipReplayGuardForBatch(clipId: string, context: Handler
     return getWritableMidiClipReplayGuard(clipId) ?? getBatchLocalWritableMidiClipReplayGuard(clipId, context);
 }
 
+function getMidiNotesBucketSnapshot(clipId: string): MidiNotesBucketSnapshot {
+    const state = midiStore.value;
+    return {
+        notes: (getMidiClipNotesSnapshot(clipId) ?? []).map((note) => ({ ...note })),
+        present: Object.hasOwn(state?.notesByClipId ?? {}, clipId),
+    };
+}
+
 function getMaterializedNotes(action: AddNotesAction): MaterializedNote[] {
     const existingNotes = notesByAction.get(action);
     if (existingNotes) {
@@ -107,13 +121,33 @@ function getMaterializedNotes(action: AddNotesAction): MaterializedNote[] {
     return notes;
 }
 
-function hasDistinctMaterializedNoteIds(action: AddNotesAction): boolean {
+function getBatchMidiNotesBucketSnapshot(
+    clipId: string,
+    context: HandlerValidationContext | undefined
+): MidiNotesBucketSnapshot {
+    const snapshot = getMidiNotesBucketSnapshot(clipId);
+    if (!context) {
+        return snapshot;
+    }
+    for (const action of context.actions.slice(0, context.actionIndex)) {
+        if (action.type !== 'addNotes' || action.payload.clipId !== clipId) {
+            continue;
+        }
+        snapshot.notes.push(...getMaterializedNotes(action));
+        snapshot.present = true;
+    }
+    return snapshot;
+}
+
+function hasDistinctMaterializedNoteIds(action: AddNotesAction, context?: HandlerValidationContext): boolean {
     const materializedNotes = getMaterializedNotes(action);
     const materializedIds = materializedNotes.map((note) => note.id);
     if (new Set(materializedIds).size !== materializedIds.length) {
         return false;
     }
-    const existingNoteIds = new Set((getMidiClipNotesSnapshot(action.payload.clipId) ?? []).map((note) => note.id));
+    const existingNoteIds = new Set(
+        getBatchMidiNotesBucketSnapshot(action.payload.clipId, context).notes.map((note) => note.id)
+    );
     return materializedIds.every((id) => !existingNoteIds.has(id));
 }
 
@@ -131,11 +165,11 @@ export const handleAddNotes = createHandler<'addNotes'>({
     },
     validate: (action, context) =>
         getWritableMidiClipReplayGuardForBatch(action.payload.clipId, context) !== null &&
-        hasDistinctMaterializedNoteIds(action),
+        hasDistinctMaterializedNoteIds(action, context),
     describe: (action, context) => {
         const label = `Add ${action.payload.notes.length} MIDI note${action.payload.notes.length === 1 ? '' : 's'}`;
-        const noteSnapshot = getMidiClipNotesSnapshot(action.payload.clipId);
-        const notes = noteSnapshot ?? [];
+        const noteSnapshot = getBatchMidiNotesBucketSnapshot(action.payload.clipId, context);
+        const notes = noteSnapshot.notes;
         if (action.payload.notes.length === 0) {
             return { label, inverseAction: null };
         }
@@ -151,7 +185,14 @@ export const handleAddNotes = createHandler<'addNotes'>({
             label,
             inverseAction: {
                 type: 'restoreMidiClipNotes',
-                payload: { clipId: action.payload.clipId, notes, expectedNotes, noteTransformReplayGuard },
+                payload: {
+                    clipId: action.payload.clipId,
+                    notes,
+                    expectedNotes,
+                    notesBucketPresent: noteSnapshot.present,
+                    expectedNotesBucketPresent: true,
+                    noteTransformReplayGuard,
+                },
             },
             redoAction: {
                 type: 'restoreMidiClipNotes',
@@ -159,6 +200,8 @@ export const handleAddNotes = createHandler<'addNotes'>({
                     clipId: action.payload.clipId,
                     notes: expectedNotes,
                     expectedNotes: notes,
+                    notesBucketPresent: true,
+                    expectedNotesBucketPresent: noteSnapshot.present,
                     noteTransformReplayGuard,
                 },
             },

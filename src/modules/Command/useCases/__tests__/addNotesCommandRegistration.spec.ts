@@ -12,13 +12,13 @@ import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { hydrateUndoStoreFromSession, undoStore } from '../../stores/undoStore';
 import { isExecutableAppActionType } from '../executableAppActionRegistry';
+import { executeAppAction } from '../executeAppAction';
+import { executeAppActionBatch } from '../executeAppActionBatch';
 import { getExecutableAppActionGroundingCatalog } from '../getExecutableAppActionGroundingCatalog';
 import { getExecutableAppActionIntentCatalog } from '../getExecutableAppActionIntentCatalog';
 import { getExecutableAppActionToolSchemas } from '../getExecutableAppActionToolSchemas';
 import { getExecutableCommandRegistration } from '../getExecutableCommandRegistration';
 import { getInternalUndoSessionReplayContracts } from '../getInternalUndoSessionReplayContracts';
-import { executeAppAction } from '../executeAppAction';
-import { executeAppActionBatch } from '../executeAppActionBatch';
 import { redo } from '../redo';
 import { registerProductionCommandHandlers } from '../registerProductionCommandHandlers';
 import { undo } from '../undo';
@@ -48,7 +48,14 @@ function createPersistedAddNotesEntry() {
         },
         inverseAction: {
             type: 'restoreMidiClipNotes',
-            payload: { clipId: 'clip-midi', notes: baseNotes, expectedNotes, noteTransformReplayGuard },
+            payload: {
+                clipId: 'clip-midi',
+                notes: baseNotes,
+                expectedNotes,
+                notesBucketPresent: true,
+                expectedNotesBucketPresent: true,
+                noteTransformReplayGuard,
+            },
         },
         redoAction: {
             type: 'restoreMidiClipNotes',
@@ -56,6 +63,8 @@ function createPersistedAddNotesEntry() {
                 clipId: 'clip-midi',
                 notes: expectedNotes,
                 expectedNotes: baseNotes,
+                notesBucketPresent: true,
+                expectedNotesBucketPresent: true,
                 noteTransformReplayGuard,
             },
         },
@@ -96,6 +105,13 @@ function createMidiClipFixture(): void {
 
 function flushUndoSessionWrite(): Promise<void> {
     return new Promise((resolve) => queueMicrotask(resolve));
+}
+
+function reloadUndoHistoryThroughProductionRegistration(): void {
+    clearHandlerRegistry();
+    undoStore.set({ past: [], future: [] });
+    expect(undoStore.value).toEqual({ past: [], future: [] });
+    registerAllProductionHandlers();
 }
 
 describe('addNotes command registration', () => {
@@ -242,7 +258,7 @@ describe('addNotes command registration', () => {
             },
         });
         await flushUndoSessionWrite();
-        registerAllProductionHandlers();
+        reloadUndoHistoryThroughProductionRegistration();
 
         const expectedNotes = [
             { id: 'base', pitch: 48, startBeat: 0, duration: 1, velocity: 80 },
@@ -273,14 +289,57 @@ describe('addNotes command registration', () => {
             ])
         ).resolves.toMatchObject({ status: 'committed' });
         await flushUndoSessionWrite();
-        registerAllProductionHandlers();
+        reloadUndoHistoryThroughProductionRegistration();
 
         const expectedNotes = [
             { id: 'note-batch', pitch: 61, startBeat: 0, duration: 0.0625, velocity: 97, probability: 100 },
         ];
         expect(midiStore.value?.notesByClipId['clip-midi']).toEqual(expectedNotes);
         expect(await undo()).toEqual({ headConsumed: true });
-        expect(midiStore.value?.notesByClipId['clip-midi']).toEqual([]);
+        expect(midiStore.value?.notesByClipId).not.toHaveProperty('clip-midi');
+        await redo();
+        expect(midiStore.value?.notesByClipId['clip-midi']).toEqual(expectedNotes);
+    });
+
+    it('persists and rehydrates ordered same-clip addNotes group snapshots', async () => {
+        createMidiClipFixture();
+        const baseNotes = [{ id: 'base', pitch: 48, startBeat: 0, duration: 1, velocity: 80 }];
+        midiStore.set({ notesByClipId: { 'clip-midi': baseNotes }, ccByClipId: {}, pitchBendByClipId: {} });
+        clearHandlerRegistry();
+        registerAllProductionHandlers();
+
+        await expect(
+            executeAppActionBatch(
+                [
+                    {
+                        type: 'addNotes',
+                        payload: {
+                            clipId: 'clip-midi',
+                            notes: [{ id: 'note-first', pitch: 60, startBeat: 1, duration: 1, velocity: 100 }],
+                        },
+                    },
+                    {
+                        type: 'addNotes',
+                        payload: {
+                            clipId: 'clip-midi',
+                            notes: [{ id: 'note-second', pitch: 64, startBeat: 2, duration: 1, velocity: 96 }],
+                        },
+                    },
+                ],
+                { groupId: 'same-clip-persisted' }
+            )
+        ).resolves.toMatchObject({ status: 'committed' });
+        await flushUndoSessionWrite();
+        reloadUndoHistoryThroughProductionRegistration();
+
+        const expectedNotes = [
+            ...baseNotes,
+            { id: 'note-first', pitch: 60, startBeat: 1, duration: 1, velocity: 100, probability: 100 },
+            { id: 'note-second', pitch: 64, startBeat: 2, duration: 1, velocity: 96, probability: 100 },
+        ];
+        expect(midiStore.value?.notesByClipId['clip-midi']).toEqual(expectedNotes);
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(midiStore.value?.notesByClipId['clip-midi']).toEqual(baseNotes);
         await redo();
         expect(midiStore.value?.notesByClipId['clip-midi']).toEqual(expectedNotes);
     });
@@ -430,6 +489,19 @@ describe('addNotes command registration', () => {
                     redoAction: {
                         ...entry.redoAction,
                         payload: { ...entry.redoAction.payload, allowMissingExpectedEmpty: true },
+                    },
+                };
+            },
+        ],
+        [
+            'mismatched MIDI notes bucket presence',
+            () => {
+                const entry = createPersistedAddNotesEntry();
+                return {
+                    ...entry,
+                    redoAction: {
+                        ...entry.redoAction,
+                        payload: { ...entry.redoAction.payload, expectedNotesBucketPresent: false },
                     },
                 };
             },

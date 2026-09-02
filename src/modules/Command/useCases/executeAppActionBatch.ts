@@ -728,7 +728,6 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 if (
                     options?.requireCompensation &&
                     handler.executionKind !== 'runtime' &&
-                    handler.requiresAbortCompensation !== false &&
                     !description?.inverseAction &&
                     !handler.isNoop?.(action)
                 ) {
@@ -738,11 +737,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                         actions: [],
                     };
                 }
-                if (
-                    options?.requireCompensation &&
-                    handler.requiresAbortCompensation !== false &&
-                    description?.inverseAction
-                ) {
+                if (options?.requireCompensation && description?.inverseAction) {
                     const inverseHandler = getCommandHandler(description.inverseAction);
                     if (
                         !inverseHandler?.validate ||
