@@ -663,9 +663,9 @@ async function compactCrdtProject(generation: number, settlePendingWrites: boole
         return;
     }
 
-    // Captures the heads this compaction is about to encode. `saveAllOffThread()`
-    // re-encodes asynchronously in the worker; if it fails, compaction clears
-    // rather than persisting stale bytes, so no stale witness outlives it.
+    // Captures the heads this compaction is about to encode, ahead of the
+    // encode and persist below. A persist failure past this point leaves the
+    // witness ahead of durable state; `reconcileSessionUndoForProject` clears it on the next boot.
     sessionUndoWitnessStampPort.stamp();
 
     if (failedSnapshot) {

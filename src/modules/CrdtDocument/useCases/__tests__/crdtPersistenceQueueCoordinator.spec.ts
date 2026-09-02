@@ -252,10 +252,29 @@ describe('crdtPersistenceQueueCoordinator / compaction paths stamp the undo witn
         stampSpy.mockRestore();
     });
 
-    it("stamps the undo witness with the heads this generation's forced flush just landed on a direct compact operation", async () => {
+    it('stamps the undo witness with the heads a chunk flush this compaction awaited just landed on a direct compact operation', async () => {
+        // Leaves a chunk pending from a failed prior incremental attempt, so
+        // `compactCrdtProject`'s own `await flushPendingChunks(generation)`
+        // has real work to do rather than the no-op an empty queue gives it.
+        mockAutomergeRepo.saveDocIncremental.mockReturnValueOnce(new Uint8Array([1, 2, 3]));
+        mockSaveIncrementals.mockClear();
+        mockSaveIncrementals.mockImplementationOnce(() =>
+            Promise.reject(new Error('simulated transient chunk failure'))
+        );
         mockAutomergeRepo.getHeads.mockReturnValue(['pre-flush-head']);
-        vi.mocked(flushAutomergeStorageWrites).mockImplementation(() => {
-            mockAutomergeRepo.getHeads.mockReturnValue(['post-flush-head']);
+
+        await expect(crdtPersistenceQueueCoordinator.runOperation('incremental')).rejects.toThrow(
+            'simulated transient chunk failure'
+        );
+
+        // The retried chunk flush lands the write; only a stamp placed after
+        // that awaited flush should observe its heads.
+        mockSaveIncrementals.mockImplementationOnce(() => {
+            mockAutomergeRepo.getHeads.mockReturnValue(['post-chunk-flush-head']);
+            return Promise.resolve({
+                status: 'committed',
+                authority: { epoch: 'test-epoch', revision: 2, rootLineage: 'main' },
+            });
         });
         let observedHeads: string[] | undefined;
         const stampSpy = vi.spyOn(sessionUndoWitnessStampPort, 'stamp').mockImplementation(() => {
@@ -264,7 +283,7 @@ describe('crdtPersistenceQueueCoordinator / compaction paths stamp the undo witn
 
         await crdtPersistenceQueueCoordinator.runOperation('compact');
 
-        expect(observedHeads).toEqual(['post-flush-head']);
+        expect(observedHeads).toEqual(['post-chunk-flush-head']);
         stampSpy.mockRestore();
     });
 });
