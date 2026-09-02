@@ -1,0 +1,23 @@
+crates/daw-engine/src/scheduler.rs
+  s_bbdfb911119c4f::t_54a7e90590626c 111-122,1496,6934-6972
+crates/sourdaw-native/src/commands/engine_transport.rs
+  s_bbdfb911119c4f::t_545ead176165ae 31-34,38,121-123,138,149,312-314,317,444-448,450,455,461,466,492-534
+crates/sourdaw-native/src/commands/graph.rs
+  s_bbdfb911119c4f::t_d9a1aa6c1202a8 4476-4558
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "60e3c4b5b1adb777fb031f61c412cd36036c3d36",
+  "prompts": {},
+  "sessions": {
+    "s_bbdfb911119c4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fa21d5-2a8a-4f80-98ab-b72059373843",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
