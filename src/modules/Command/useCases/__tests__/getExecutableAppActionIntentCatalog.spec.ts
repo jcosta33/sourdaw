@@ -76,10 +76,18 @@ describe('getExecutableAppActionIntentCatalog', () => {
         ]);
     });
 
-    it('requires removeMarker for a deleted marker intent', () => {
-        const catalog = getExecutableAppActionIntentCatalog({ intent: 'deleted marker', page: { limit: 1 } });
+    it.each([
+        ['copies', 'copyMidiArticulations'],
+        ['moving clip', 'moveClip'],
+        ['deleted marker', 'removeMarker'],
+        ['removes marker', 'removeMarker'],
+        ['stops playback', 'stopPlayback'],
+        ['stopping playback', 'stopPlayback'],
+        ['stopped playback', 'stopPlayback'],
+    ] as const)('ranks inflected intent %s to %s', (intent, actionType) => {
+        const catalog = getExecutableAppActionIntentCatalog({ intent, page: { limit: 1 } });
 
-        expect(catalog.items).toEqual([expect.objectContaining({ name: 'removeMarker' })]);
+        expect(catalog.items[0]?.name).toBe(actionType);
     });
 
     it('ranks name and category matches ahead of purpose-only matches for mixed queries', () => {
