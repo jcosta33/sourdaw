@@ -11,9 +11,11 @@ import { useTimelineInteractions } from '../useTimelineInteractions';
 
 /**
  * Gesture-cancellation specs (Escape / window blur / visibility change /
- * pointer leaving the canvas). Real stores and real clip use cases; only
- * geometry and side-effect sinks are mocked. The Escape key path itself
- * (cancel before marquee / clip selection / transport stop) is covered in
+ * pointer leaving the canvas). Real Arrangement stores and real
+ * cancelActiveTimelineGesture; geometry (hit testing, snapping, render
+ * model), useTimelineFileDrop, removeClipSatelliteData, and other
+ * side-effect sinks are mocked. The Escape key path itself (cancel before
+ * marquee / clip selection / transport stop) is covered in
  * `handleKeydown.spec.ts`.
  */
 
