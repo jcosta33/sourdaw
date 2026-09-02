@@ -105,9 +105,10 @@ describe('faustInstrumentPresets', () => {
                 }
                 for (const paramId of Object.keys(device.parameterValues)) {
                     if (device.type === 'faust-additive-synth' && ADDITIVE_SYNTH_RETIRED_PRESET_KEYS.has(paramId)) {
-                        // Same shape as the fm-synth guard above: excluded by
-                        // name, not by skipping the device, so a new additive
-                        // key that misses the DSP still goes red here.
+                        // Additive Synth has no registered ADSR controls: its
+                        // DSP hardcodes the envelope, so only those
+                        // additive-only legacy keys stay excluded until that
+                        // migration lands.
                         continue;
                     }
                     if (!realIds.has(paramId)) {
@@ -120,6 +121,20 @@ describe('faustInstrumentPresets', () => {
     });
 
     it('FM synth factory presets author current four-operator controls inside real bounds', () => {
+        const fmPresetIds = FAUST_INSTRUMENT_PRESETS.filter((preset) =>
+            preset.devices.some((device) => device.type === 'faust-fm-synth')
+        )
+            .map((preset) => preset.id)
+            .sort();
+        expect(fmPresetIds).toEqual([
+            'factory-faust-fm-crystal-keys',
+            'factory-faust-fm-dx-bells',
+            'factory-faust-fm-epiano',
+            'factory-faust-fm-metallic-bass',
+            'factory-faust-fm-organ',
+            'factory-faust-fm-pad',
+        ]);
+
         const registeredParams = scanRealFaustDeviceParams().get('faust-fm-synth');
         if (!registeredParams) {
             throw new Error('Expected a registerFaustDSP registration for faust-fm-synth');
