@@ -1,0 +1,34 @@
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_ac03a4ebaa3f6e::t_c7cde89de0a201 2500-2520
+.agents/decisions/0041-llm-batch-local-track-and-clip-bindings.md
+  s_ac03a4ebaa3f6e::t_cc22ffe612a543 54-58
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_ac03a4ebaa3f6e::t_c43e76f0d7be86 29,31,33
+  s_ac03a4ebaa3f6e::t_f11c6bfb29d5e9 127
+  s_ac03a4ebaa3f6e::t_a3d211dcb93dcb 384
+  s_ac03a4ebaa3f6e::t_cd6acc298760cd 213,219
+  s_ac03a4ebaa3f6e::t_92b7479b9a5407 464
+  s_ac03a4ebaa3f6e::t_bf02bb0b1d46da 220
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_ac03a4ebaa3f6e::t_7e7b82b4344b11 4933-4937
+  s_ac03a4ebaa3f6e::t_f0774a9528cabf 4860-4887,4890
+src/modules/AiRuntime/useCases/agentReference/batchLocalBindingProducers.ts
+  s_ac03a4ebaa3f6e::t_669a9e6c5c649e 82-85,87-90,107,110-114
+  s_ac03a4ebaa3f6e::t_d6c7676a53a17b 8-11,13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "86802fc6a160cd6222aa2e1f4ce5447c7297eed7",
+  "prompts": {},
+  "sessions": {
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
