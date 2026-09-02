@@ -25,6 +25,7 @@ const NATIVE_APPLIED = {
     tempoSegments: 1,
     timeSignatureSegments: 1,
     loopEnabled: true,
+    admittedBatch: 4,
 };
 
 describe('setEngineTransportMaps', () => {
