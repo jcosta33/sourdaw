@@ -39,7 +39,7 @@ import {
     isVariableDeclaration,
     isVariableDeclarationList,
 } from 'typescript';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 type CountByPath = Readonly<Record<string, number>>;
 type SourceText = { path: string; source: string };
@@ -1494,12 +1494,24 @@ function countDeviceDataAstWrites(file: SourceText): number {
     return writes.size;
 }
 
+// AST census walks updateTrack and trackStore.set; property-syntax
+// devices:/parameterValues: hits are regex-owned and must not parse here.
+function codeMayContainDeviceDataAstWrites(code: string): boolean {
+    if (code.length === 0) {
+        return false;
+    }
+    return code.includes('updateTrack') || code.includes('trackStore');
+}
+
 function countDeviceDataByPath(files: ReadonlyArray<ProductionSource>): CountByPath {
     const result = countByPath(files, {
         pattern: /\b(?:parameterValues|devices)\s*:/g,
         includes: includeAllPaths,
     });
     for (const file of files) {
+        if (!codeMayContainDeviceDataAstWrites(file.code)) {
+            continue;
+        }
         const astWrites = countDeviceDataAstWrites(file);
         if (astWrites > 0) {
             result[file.path] = (result[file.path] ?? 0) + astWrites;
@@ -1560,9 +1572,14 @@ function assertProductionClosure(files: ReadonlyArray<ProductionSource>): void {
 }
 
 describe('device write boundary closure', () => {
+    let productionFiles: ProductionSource[];
+
+    beforeAll(() => {
+        productionFiles = readProductionSources(process.cwd());
+    });
+
     it('classifies every production sink by family, path, and exact count', () => {
-        const files = readProductionSources(process.cwd());
-        expect(() => assertProductionClosure(files)).not.toThrow();
+        expect(() => assertProductionClosure(productionFiles)).not.toThrow();
     });
 
     it('skips comment stripping when raw source has no census tokens', () => {
@@ -1781,6 +1798,14 @@ describe('device write boundary closure', () => {
                 source: 'trackStore.set({ ...state, tracks: state.tracks.map((track) => { const devices = track.devices; const parameterValues = devices[0]?.parameterValues; const snapshot = { devices, parameterValues }; void snapshot; return track; }) });',
             })
         ).toBe(0);
+    });
+
+    it('counts shorthand devices in trackStore.set when .set is split across a line break', () => {
+        const source = 'const state = {}; const devices = []; trackStore.\nset({ ...state, devices });';
+        const parsed = productionSource('src/modules/Arrangement/splitTrackStoreSet.ts', source);
+        expect(countDeviceDataAstWrites({ path: parsed.path, source: parsed.source })).toBe(1);
+        const counts = countDeviceDataByPath([parsed]);
+        expect(counts['src/modules/Arrangement/splitTrackStoreSet.ts']).toBe(1);
     });
 
     it('resolves only the nearest local updater declaration', () => {
