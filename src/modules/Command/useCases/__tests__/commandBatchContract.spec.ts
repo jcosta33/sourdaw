@@ -551,9 +551,7 @@ describe('command batch contract', () => {
             type: 'addNotes',
             payload: {
                 clipId: 'clip-midi',
-                notes: [
-                    { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100, probability: 100 },
-                ],
+                notes: [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100, probability: 100 }],
             },
         };
         const envelope = actionCommand({
