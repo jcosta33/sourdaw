@@ -35,6 +35,12 @@ type KneadClipBlob = {
 type KneadClip = {
     startBeat: number;
     endBeat: number;
+    /**
+     * Song time, in seconds, at which this clip starts — integrated through the
+     * tempo map by the publisher, because the map lives on the main thread and
+     * only a beat is meaningful without it.
+     */
+    startSeconds: number;
     blobs: KneadClipBlob[];
     /**
      * Per-clip pitch-correction settings. `syncKneadState` already ships the
@@ -62,12 +68,12 @@ type KneadMsg =
 
 // Transport SAB layout — kept in lockstep with the writer in
 // repositories/createWebAudioEngine.ts (TRANSPORT_F64 / TRANSPORT_SEQ_I32).
-// The seven f64 data fields are guarded by a seqlock counter in the Int32 view;
+// The eight f64 data fields are guarded by a seqlock counter in the Int32 view;
 // the reader retries while the counter is odd (write in progress) or changes
 // across the read, so it never consumes a snapshot torn across the field writes.
 const TRANSPORT_BEAT_F64 = 0;
-const TRANSPORT_TEMPO_F64 = 1;
 const TRANSPORT_IS_PLAYING_F64 = 5;
+const TRANSPORT_POSITION_SECONDS_F64 = 8;
 const TRANSPORT_SEQ_I32 = 14;
 // Bound the seqlock retry so a misbehaving writer can never hang the RT thread;
 // on exhaustion the reader falls back to the (possibly torn, but bounded) last
@@ -206,13 +212,18 @@ class KneadProcessor extends AudioWorkletProcessor {
             // the sequence counter. If the counter was odd (a write was mid-flight)
             // or moved between the two reads, the snapshot is torn — retry. A bound
             // keeps the RT thread from spinning if the writer misbehaves.
+            //
+            // The beat locates the playhead among the clips, which are placed in
+            // beats; the song seconds beside it are what the blob windows are
+            // measured in. Both come from the same snapshot, so they can never
+            // describe different instants.
             let currentBeat = 0;
-            let tempo = 120;
+            let songTimeSeconds = 0;
             let isPlaying = false;
             for (let attempt = 0; attempt <= TRANSPORT_SEQ_MAX_RETRIES; attempt++) {
                 const before = Atomics.load(seq, TRANSPORT_SEQ_I32);
                 currentBeat = view[TRANSPORT_BEAT_F64] ?? 0;
-                tempo = view[TRANSPORT_TEMPO_F64] ?? 120;
+                songTimeSeconds = view[TRANSPORT_POSITION_SECONDS_F64] ?? 0;
                 isPlaying = (view[TRANSPORT_IS_PLAYING_F64] ?? 0) > 0.5;
                 const after = Atomics.load(seq, TRANSPORT_SEQ_I32);
                 if (before === after && (before & 1) === 0) {
@@ -243,9 +254,17 @@ class KneadProcessor extends AudioWorkletProcessor {
                         currentFormantPreserve = activeClip.formantPreserve;
                     }
 
-                    const songTimeSeconds = (currentBeat / tempo) * 60;
-                    const clipStartTimeSeconds = (activeClip.startBeat / tempo) * 60;
-                    const clipTimeSeconds = songTimeSeconds - clipStartTimeSeconds;
+                    // A subtraction, not a conversion: both endpoints were
+                    // integrated through the tempo map by the main thread.
+                    // Dividing the beat by the tempo in force is right only
+                    // while the span holds no tempo change, and re-integrating
+                    // the map here would put a second implementation of the
+                    // scheduler's clock on the audio thread, free to drift from
+                    // it. A record arriving without `startSeconds` yields NaN,
+                    // which fails every blob comparison below and shifts
+                    // nothing — the flat conversion is not a fallback, it is
+                    // the defect.
+                    const clipTimeSeconds = songTimeSeconds - activeClip.startSeconds;
 
                     // Explicit loop rather than Array.prototype.find: the arrow
                     // passed to find() is a fresh closure allocation per render

@@ -150,6 +150,23 @@ describe('MixHealthDialog', () => {
         expect(onOpenChange).toHaveBeenCalledWith(false);
     });
 
+    it('renders the report without image elements and with safe links only', async () => {
+        mocks.mixHealthAnalysis.mockImplementation(({ onToken }) => {
+            onToken(
+                '![tracker](https://example.invalid/leak)\n\n[unsafe](javascript:alert(1))\n\n[docs](https://example.com/guide)'
+            );
+            return Promise.resolve();
+        });
+
+        render(<MixHealthDialog open onOpenChange={vi.fn()} />);
+        await screen.findByText('docs');
+
+        expect(document.body.querySelector('img')).toBeNull();
+        const unsafeLink = screen.getByText('unsafe').closest('a');
+        expect(unsafeLink?.getAttribute('href') ?? '').not.toContain('javascript:');
+        expect(screen.getByText('docs').closest('a')?.getAttribute('href')).toBe('https://example.com/guide');
+    });
+
     it('aborts the active analysis when the dialog closes', () => {
         let analysisSignal: AbortSignal | undefined;
         mocks.mixHealthAnalysis.mockImplementation(

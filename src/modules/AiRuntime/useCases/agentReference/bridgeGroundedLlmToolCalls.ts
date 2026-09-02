@@ -54,6 +54,8 @@ import {
     collectClearSolosRestrictionClauses,
     type ClearSolosRestrictionActionSpan,
 } from './groundingStrategies/collectClearSolosRestrictionClauses';
+import { getUniversalTrackControlIntentPhrases } from './groundingStrategies/getUniversalTrackControlIntentPhrases';
+import { hasRestrictedTrackControlScope } from './groundingStrategies/hasRestrictedTrackControlScope';
 import { groundPostTargetScopeAdmission } from './groundingStrategies/postTargetScopeAdmissionStrategy';
 import { resolveAgentReference } from './resolveAgentReference';
 
@@ -1241,6 +1243,15 @@ function hasUnsafeControlCue(
     for (const match of commandSource.matchAll(
         /\b(?:do\s+not|don(?:['’]t|t)|don\s+t|if|unless|maybe|never|not|perhaps)\b/giu
     )) {
+        const isClearSolosNotIncludingRestriction =
+            /^not$/iu.test(match[0]) &&
+            /^\s+including\b/iu.test(commandSource.slice(match.index + match[0].length)) &&
+            carrierPhrases.some((phrase) =>
+                ['clear all solos', 'unsolo all tracks', 'unsolo everything'].includes(normalizePromptText(phrase))
+            );
+        if (isClearSolosNotIncludingRestriction) {
+            continue;
+        }
         if (
             carrierEnd === null ||
             !isCueWithinDirectionalTargetReference(commandSource, match.index, carrierEnd, targetReferences)
@@ -1647,6 +1658,282 @@ function resolveActionPromptScope({
         return null;
     }
     return selectedScope;
+}
+
+function isTrackControlProtectionVerb(normalized: string): boolean {
+    return /^(?:leav(?:e|ing)|keep(?:ing)?|preserv(?:e|ing)|retain(?:ing)?)\b/u.test(normalized);
+}
+
+function clauseNamesProjectTrack(clauseText: string, tracks: readonly { id: string; name: string }[]): boolean {
+    const normalized = normalizePromptText(clauseText);
+    return tracks.some((track) => {
+        const references = [normalizePromptText(track.id), normalizePromptText(track.name)].filter(
+            (reference) => reference.length > 0
+        );
+        return references.some((reference) => normalized.includes(reference));
+    });
+}
+
+function collectNamedProjectTracks(text: string, tracks: readonly { id: string; name: string }[]): readonly string[] {
+    const normalized = normalizePromptText(text);
+    const evidenced = tracks.flatMap((track) => {
+        const references = [normalizePromptText(track.id), normalizePromptText(track.name)]
+            .filter((reference) => reference.length > 0)
+            .sort((left, right) => right.length - left.length);
+        const matchedReference = references.find((reference) =>
+            new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(reference)}(?![\\p{L}\\p{N}])`, 'u').test(normalized)
+        );
+        return matchedReference === undefined ? [] : [{ id: track.id, reference: matchedReference }];
+    });
+    return evidenced
+        .filter(
+            ({ id, reference }) =>
+                !evidenced.some(
+                    (other) =>
+                        other.id !== id &&
+                        other.reference.length > reference.length &&
+                        ` ${other.reference} `.includes(` ${reference} `)
+                )
+        )
+        .map(({ id }) => id);
+}
+
+function followingClauseStillNamesTrackControlTarget(
+    clauseText: string,
+    tracks: readonly { id: string; name: string }[]
+): boolean {
+    const normalized = normalizePromptText(clauseText);
+    const protection =
+        /(?:leav(?:e|ing)|keep(?:ing)?|preserv(?:e|ing)|retain(?:ing)?|\bstays\b|\bremains\b|\bunchanged\b)/u.exec(
+            normalized
+        );
+    if (protection?.index === undefined) {
+        return false;
+    }
+    if (protection.index > 0) {
+        const prefixTrackIds = collectNamedProjectTracks(normalized.slice(0, protection.index), tracks);
+        const spanTrackIds = new Set(collectNamedProjectTracks(normalized.slice(protection.index), tracks));
+        if (prefixTrackIds.some((trackId) => !spanTrackIds.has(trackId))) {
+            return true;
+        }
+    }
+    const afterVerb = normalized.slice(protection.index + protection[0].length);
+    const unchanged = /\bunchanged\b/iu.exec(afterVerb);
+    const remainder =
+        unchanged === null
+            ? afterVerb.slice(endIndexAfterLeaveObject(afterVerb, tracks) ?? afterVerb.length)
+            : afterVerb.slice(unchanged.index + unchanged[0].length);
+    return collectNamedProjectTracks(remainder, tracks).length > 0;
+}
+
+function isTrackControlProtectionQualifier(
+    clauseText: string,
+    tracks: readonly { id: string; name: string }[]
+): boolean {
+    if (followingClauseStillNamesTrackControlTarget(clauseText, tracks)) {
+        return false;
+    }
+    const normalized = normalizePromptText(clauseText);
+    if (/\b(?:stays|remains)\b/u.test(normalized) || /\bunchanged\b/u.test(normalized)) {
+        return true;
+    }
+    return isTrackControlProtectionVerb(normalized) && clauseNamesProjectTrack(clauseText, tracks);
+}
+
+function sliceThroughLaterTrackControlIntent(
+    text: string,
+    startIndex: number,
+    searchFrom: number,
+    laterTrackControlIntent: RegExp,
+    keepRemainderWhenNoLaterIntent = false
+): string {
+    const laterIntent = laterTrackControlIntent.exec(text.slice(searchFrom));
+    let end = text.length;
+    if (laterIntent?.index !== undefined) {
+        end = searchFrom + laterIntent.index;
+    } else if (keepRemainderWhenNoLaterIntent) {
+        end = searchFrom;
+    }
+    return `${text.slice(0, startIndex)}${text.slice(end)}`.trim();
+}
+
+function leftmostNamedTrackRange(
+    text: string,
+    tracks: readonly { id: string; name: string }[]
+): ReferenceRange | undefined {
+    const namedIds = new Set(collectNamedProjectTracks(text, tracks));
+    let leftmost: ReferenceRange | undefined;
+    for (const track of tracks) {
+        if (!namedIds.has(track.id)) {
+            continue;
+        }
+        const references = [track.id, track.name].filter((reference) => reference.length > 0);
+        for (const reference of references) {
+            for (const range of getReferenceRanges(text, reference)) {
+                if (
+                    leftmost === undefined ||
+                    range.start < leftmost.start ||
+                    (range.start === leftmost.start && range.end > leftmost.end)
+                ) {
+                    leftmost = range;
+                }
+            }
+        }
+    }
+    return leftmost;
+}
+
+function endIndexAfterStandalonePronoun(text: string, named: ReferenceRange | undefined): number | undefined {
+    const pronoun = /\b(?:it|that|this)\b/iu.exec(text);
+    if (pronoun === null) {
+        return undefined;
+    }
+    const pronounEnd = pronoun.index + pronoun[0].length;
+    if (named !== undefined && named.start < pronoun.index) {
+        return undefined;
+    }
+    const introducesNamedTrack = named !== undefined && /^\s*$/u.test(text.slice(pronounEnd, named.start));
+    if (introducesNamedTrack && !/^it$/iu.test(pronoun[0])) {
+        return undefined;
+    }
+    return pronounEnd;
+}
+
+function endIndexAfterLeaveObject(text: string, tracks: readonly { id: string; name: string }[]): number | undefined {
+    const named = leftmostNamedTrackRange(text, tracks);
+    return endIndexAfterStandalonePronoun(text, named) ?? named?.end;
+}
+
+function stripTrackControlProtectionSpans(text: string, tracks: readonly { id: string; name: string }[]): string {
+    const laterTrackControlIntent = /\b(?:mute|unmute|solo|unsolo)\b/iu;
+    const mutedComplement = /\b(?:muted|unmuted|soloed|unsoloed)\b/iu;
+    const finiteLeave = /\b(?:leave|keep|preserve|retain)\b/iu;
+    const gerund = /\b(?:leaving|keeping|preserving|retaining)\b/iu.exec(text);
+    let withoutGerund = text;
+    if (gerund?.index !== undefined) {
+        const afterGerund = gerund.index + gerund[0].length;
+        if (!mutedComplement.test(text.slice(afterGerund))) {
+            const unchanged = /\bunchanged\b/iu.exec(text.slice(afterGerund));
+            if (unchanged) {
+                withoutGerund = sliceThroughLaterTrackControlIntent(
+                    text,
+                    gerund.index,
+                    afterGerund + unchanged.index + unchanged[0].length,
+                    laterTrackControlIntent,
+                    true
+                );
+            } else {
+                const leaveObjectEnd = endIndexAfterLeaveObject(text.slice(afterGerund), tracks);
+                if (leaveObjectEnd === undefined) {
+                    withoutGerund = sliceThroughLaterTrackControlIntent(
+                        text,
+                        gerund.index,
+                        afterGerund,
+                        laterTrackControlIntent
+                    );
+                } else {
+                    withoutGerund = sliceThroughLaterTrackControlIntent(
+                        text,
+                        gerund.index,
+                        afterGerund + leaveObjectEnd,
+                        laterTrackControlIntent,
+                        true
+                    );
+                }
+            }
+        }
+    }
+    const unchangedLeave = finiteLeave.exec(withoutGerund);
+    let withoutUnchanged = withoutGerund;
+    if (unchangedLeave?.index !== undefined) {
+        const afterLeave = unchangedLeave.index + unchangedLeave[0].length;
+        const unchanged = /\bunchanged\b/iu.exec(withoutGerund.slice(afterLeave));
+        if (unchanged) {
+            withoutUnchanged = sliceThroughLaterTrackControlIntent(
+                withoutGerund,
+                unchangedLeave.index,
+                afterLeave + unchanged.index + unchanged[0].length,
+                laterTrackControlIntent,
+                true
+            );
+        }
+    }
+    const bareLeave = finiteLeave.exec(withoutUnchanged);
+    if (bareLeave?.index === undefined) {
+        return withoutUnchanged;
+    }
+    const afterBareStart = bareLeave.index + bareLeave[0].length;
+    const afterBare = withoutUnchanged.slice(afterBareStart);
+    if (mutedComplement.test(afterBare)) {
+        return withoutUnchanged;
+    }
+    const leaveObjectEnd = endIndexAfterLeaveObject(afterBare, tracks);
+    if (leaveObjectEnd === undefined) {
+        return sliceThroughLaterTrackControlIntent(
+            withoutUnchanged,
+            bareLeave.index,
+            afterBareStart,
+            laterTrackControlIntent
+        );
+    }
+    return sliceThroughLaterTrackControlIntent(
+        withoutUnchanged,
+        bareLeave.index,
+        afterBareStart + leaveObjectEnd,
+        laterTrackControlIntent,
+        true
+    );
+}
+
+function getTrackControlTargetPrompt(
+    prompt: string,
+    actionScope: ActionPromptScope,
+    catalog: GroundingCatalog,
+    tracks: readonly { id: string; name: string }[]
+): string {
+    const clauses = getPromptClauses(prompt, prompt);
+    const startIndex = clauses.findIndex((clause) => clause.text === actionScope.text);
+    if (startIndex < 0) {
+        return stripTrackControlProtectionSpans(prompt, tracks);
+    }
+    let endIndex = startIndex;
+    for (let index = startIndex + 1; index < clauses.length; index += 1) {
+        const clause = clauses[index];
+        if (
+            !clause ||
+            resolveClauseActionIntent(clause.masked, catalog) !== null ||
+            collectClearSolosRestrictionClauses(`clear all solos ${clause.text}`).length > 0
+        ) {
+            break;
+        }
+        if (isTrackControlProtectionQualifier(clause.text, tracks)) {
+            const normalized = normalizePromptText(clause.text);
+            if (/\b(?:muted|unmuted|soloed|unsoloed)\b/u.test(normalized)) {
+                break;
+            }
+            if (/\bunchanged\b/u.test(normalized) || isTrackControlProtectionVerb(normalized)) {
+                continue;
+            }
+            break;
+        }
+        endIndex = index;
+    }
+    let searchFrom = 0;
+    const ranges: { start: number; end: number }[] = [];
+    for (const clause of clauses) {
+        const start = prompt.indexOf(clause.text, searchFrom);
+        if (start < 0) {
+            return stripTrackControlProtectionSpans(actionScope.text, tracks);
+        }
+        ranges.push({ start, end: start + clause.text.length });
+        searchFrom = start + clause.text.length;
+    }
+    const start = ranges[startIndex]?.start;
+    const end = ranges[endIndex]?.end;
+    if (start === undefined || end === undefined || end < start) {
+        return stripTrackControlProtectionSpans(actionScope.text, tracks);
+    }
+    return stripTrackControlProtectionSpans(prompt.slice(start, end), tracks);
 }
 
 function getTargetPromptScope(
@@ -3360,6 +3647,13 @@ function resolveAgentReferenceArray({
     return { status: 'resolved', ids: [...assertedIds] };
 }
 
+function admitsCompilerResolvedTrackControlTarget(actionName: string, prompt: string): boolean {
+    return (
+        (actionName !== 'muteTrack' && actionName !== 'soloTrack') ||
+        getUniversalTrackControlIntentPhrases(prompt).length > 0
+    );
+}
+
 function groundToolCall({
     actionOrdinal,
     batchLocalBusBindings,
@@ -3377,6 +3671,12 @@ function groundToolCall({
     visiblePlannedTrackCreations,
     workflowCapabilityId,
 }: GroundToolCallInput): ToolCallResult | LlmActionRejection {
+    if (call.name === 'muteTrack' && hasRestrictedTrackControlScope(prompt, context)) {
+        return rejection(index, call.name, 'Provider mute scope is not explicitly universal');
+    }
+    if (call.name === 'soloTrack' && hasRestrictedTrackControlScope(prompt, context)) {
+        return rejection(index, call.name, 'Provider solo scope is not explicitly universal');
+    }
     if (call.name === 'stopPlayback' && !isExplicitStopPlaybackPrompt(prompt)) {
         return rejection(index, call.name, 'Provider action is not grounded in an explicit transport-stop request');
     }
@@ -3468,7 +3768,12 @@ function groundToolCall({
         if (targetRule.optional && assertedValue === undefined) {
             continue;
         }
-        const targetPrompt = getTargetPromptScope(actionScope, targetRule.promptRole);
+        let targetPrompt = getTargetPromptScope(actionScope, targetRule.promptRole);
+        if (call.name === 'removeTrack' || targetRule.capability === 'removable-track') {
+            targetPrompt = prompt;
+        } else if (call.name === 'muteTrack' || call.name === 'soloTrack') {
+            targetPrompt = getTrackControlTargetPrompt(prompt, actionScope, catalog, context.tracks);
+        }
         if (
             articulationTransferScope?.status === 'request' &&
             call.name === 'copyMidiArticulations' &&
@@ -3666,7 +3971,11 @@ function groundToolCall({
             groundedArguments[targetRule.argument] = batchLocalReference.binding.busId;
             continue;
         }
-        if (compilerTargetOverride !== undefined && 'stableIds' in compilerTargetOverride) {
+        if (
+            compilerTargetOverride !== undefined &&
+            'stableIds' in compilerTargetOverride &&
+            admitsCompilerResolvedTrackControlTarget(call.name, prompt)
+        ) {
             if (
                 compilerTargetOverride.cardinality !== 'one' ||
                 compilerTargetOverride.stableIds.length !== 1 ||
