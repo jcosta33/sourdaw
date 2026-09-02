@@ -500,8 +500,12 @@ both validation points, the pull request is non-draft and structurally mergeable
 thread is resolved at both points. Head, head branch, base branch, body, canonical closing target,
 and stacked dependents must remain stable between those reads. CI admission is snapshot-backed and
 currently advisory: successful, failed, pending, absent, cancelled, malformed, and unavailable CI
-evidence do not block an otherwise valid delivery. The dormant required-CI path retains the pinned
-workflow-derived gate and complete-rollup rules the trusted launcher reads from the pinned
+evidence do not block an otherwise valid delivery. The live `main` ruleset's required `Gate` check is
+enforced by GitHub itself regardless of this script's own CI admission mode, so `deliver` reads a
+`BLOCKED` merge state and refuses before any remote write — never posting the receipt or attempting
+the merge — rather than discovering that refusal from the merge endpoint after mutating. The dormant
+required-CI path retains the pinned workflow-derived gate and complete-rollup rules the trusted
+launcher reads from the pinned
 `origin/main` workflow copy for a future authority change; a lane cannot select it or reshape it.
 Delivery merges into `main` and nothing else: `lane:publish` opens every pull request there, so any
 other base is a retarget the delivery scripts did not make, and `deliver` refuses it rather than

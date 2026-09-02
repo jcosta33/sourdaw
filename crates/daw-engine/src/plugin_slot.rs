@@ -49,6 +49,37 @@ impl Default for TransportState {
     }
 }
 
+/// One render chunk of the engine's native input tap, deinterleaved from the
+/// device's own capture stream.
+///
+/// Borrowed and `Copy`: it names scratch the render callback owns for the
+/// length of one call, so a consumer that keeps the audio copies it out. There
+/// is no owned form, because materialising one would be an allocation on the
+/// audio thread.
+#[derive(Clone, Copy)]
+pub struct CaptureInputBlock<'a> {
+    /// The device's first captured channel. Zeros when `served` is false.
+    pub left: &'a [f32],
+    /// The device's second captured channel, or a copy of the first when the
+    /// device is mono. Zeros when `served` is false.
+    pub right: &'a [f32],
+    /// Frames in `left` and `right`, which are the same length.
+    pub frames: usize,
+    /// Whether the capture ring had this chunk's audio. False means the ring
+    /// is filling or stalled, the counted shortfall is already recorded, and
+    /// the two slices are silence rather than stale samples.
+    pub served: bool,
+    /// Frames of delay the capture path is currently adding, or zero while it
+    /// publishes no figure. A recorder offsets its take by this.
+    pub latency_frames: usize,
+    /// Frames delivered on this stream before this block, counted whether or
+    /// not they were served. It is a capture timeline, not the transport's:
+    /// a re-settle after a device cadence change shows as a run of unserved
+    /// blocks and then a changed `latency_frames`, which a recorder can splice
+    /// on rather than concatenate across.
+    pub position_frames: u64,
+}
+
 /// Trait for a plugin that can process audio on the real-time thread.
 pub trait NativePlugin: Any + Send {
     /// Process a block of stereo audio in-place.
@@ -88,6 +119,18 @@ pub trait NativePlugin: Any + Send {
     ) {
         self.process_with_events(left, right, num_samples, midi_events, transport);
     }
+
+    /// Receive one chunk of the engine's native input tap — real audio from
+    /// the input device, deinterleaved, delivered only to a plugin that
+    /// registered for it.
+    ///
+    /// Distinct from [`Self::process_bridged_audio`], which carries app-side
+    /// audio over a bridge: this is the device's own capture stream, and it is
+    /// an input rather than an in-place process, so nothing a plugin does here
+    /// reaches the output. A plugin that records overrides it; the default
+    /// ignores the block, so a plugin registered by mistake is inert rather
+    /// than wrong.
+    fn process_capture_input(&mut self, _block: CaptureInputBlock<'_>) {}
 
     /// Get the plugin's name (for logging).
     fn name(&self) -> &str;

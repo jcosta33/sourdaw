@@ -539,6 +539,7 @@ type FakeInput = {
     headCheckRuns?: HeadCheckRun[] | Error;
     headCheckRunReads?: Array<HeadCheckRun[] | Error>;
     gateRequiredCheckNames?: ReadonlySet<string> | Error;
+    requiredStatusCheckContexts?: string[] | Error;
     deletesMergedBranches?: boolean;
     failAddReceiptOnce?: boolean;
     failRetargetOnce?: number;
@@ -708,6 +709,14 @@ function fakePort(input: FakeInput = {}) {
             }
             return required;
         },
+        requiredStatusCheckContexts: () => {
+            calls.push('required-status-check-contexts');
+            const required = input.requiredStatusCheckContexts ?? ['Gate'];
+            if (required instanceof Error) {
+                throw required;
+            }
+            return required;
+        },
         /**
          * The primary head defaults to one successful Gate run so advisory delivery cases that do not
          * care about CI observation still exercise a complete snapshot. Cases that need an unreadable
@@ -871,6 +880,16 @@ function initializeDeliveryLockRepository(root: string): void {
     execFileSync('git', ['init', '--quiet'], { cwd: root });
 }
 
+/**
+ * A `git init`-backed temp repository can leave file handles closing asynchronously on some
+ * platforms, so a bare `rmSync` on its directory can race an in-flight close and throw `ENOTEMPTY`.
+ * Retrying, as the rest of the suite already does for its own temp-dir cleanups, absorbs that race
+ * instead of flaking.
+ */
+function removeTemporaryGitRepository(root: string): void {
+    rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+}
+
 function deliveryLockExists(root: string, number: number): boolean {
     try {
         execFileSync('git', ['rev-parse', '--verify', '--quiet', `refs/sourdaw/delivery/pr-${number}`], {
@@ -944,7 +963,7 @@ describe('pull-request delivery', () => {
                 );
             }
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryGitRepository(root);
         }
     });
 
@@ -5361,8 +5380,8 @@ describe('pull-request delivery', () => {
         const receiptBody = visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful');
         const { port, calls, tracker } = fakePort({
             primary: [
-                pullRequest({ body: closes, mergeStateStatus: 'BLOCKED' }),
-                pullRequest({ body: closes, mergeStateStatus: 'BLOCKED' }),
+                pullRequest({ body: closes, mergeStateStatus: 'UNSTABLE' }),
+                pullRequest({ body: closes, mergeStateStatus: 'UNSTABLE' }),
             ],
             dependentSets: [[]],
             persistedReceiptAuthority: {
@@ -5814,14 +5833,14 @@ describe('pull-request delivery', () => {
     });
 
     it.each([
-        { ciState: 'successful', mergeStateStatus: 'BLOCKED', headCheckRuns: [checkRun()] },
+        { ciState: 'successful', mergeStateStatus: 'UNSTABLE', headCheckRuns: [checkRun()] },
         { ciState: 'failed', mergeStateStatus: 'CLEAN', headCheckRuns: [checkRun({ conclusion: 'FAILURE' })] },
         {
             ciState: 'pending',
             mergeStateStatus: 'CLEAN',
             headCheckRuns: [checkRun({ status: 'IN_PROGRESS', conclusion: null })],
         },
-        { ciState: 'absent', mergeStateStatus: 'BLOCKED', headCheckRuns: [] as HeadCheckRun[] },
+        { ciState: 'absent', mergeStateStatus: 'UNSTABLE', headCheckRuns: [] as HeadCheckRun[] },
         {
             ciState: 'skipped',
             mergeStateStatus: 'CLEAN',
@@ -5854,15 +5873,93 @@ describe('pull-request delivery', () => {
         expect(calls.filter((call) => call.startsWith('checks:'))).not.toEqual([]);
     });
 
+    it('refuses a BLOCKED head before any remote write, naming the pending required check, and releases the lock', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-lock-'));
+        initializeDeliveryLockRepository(root);
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
+            headCheckRuns: [checkRun({ status: 'IN_PROGRESS', conclusion: null })],
+            requiredStatusCheckContexts: ['Gate'],
+        });
+
+        try {
+            await expect(
+                withPullRequestDeliveryLock(root, 42, async ({ markRemoteMutationKnownAbsent }) => {
+                    deliverPullRequest(42, port, tracker, markRemoteMutationKnownAbsent);
+                })
+            ).rejects.toThrow('PR #42 merge state is BLOCKED on required check(s): Gate');
+
+            expect(calls).not.toContain('add-receipt:42');
+            expect(calls).not.toContain('merge:42:head');
+            // The lock module only retains the ref once `markRemoteMutationAttempt` has fired; its
+            // absence here is what proves the refusal happened before any remote mutation.
+            expect(deliveryLockExists(root, 42)).toBe(false);
+        } finally {
+            removeTemporaryGitRepository(root);
+        }
+    });
+
+    it('refuses a BLOCKED head whose required checks are all green, blaming a review thread or another ruleset rule rather than a check', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-green-lock-'));
+        initializeDeliveryLockRepository(root);
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
+            headCheckRuns: [checkRun({ status: 'COMPLETED', conclusion: 'SUCCESS' })],
+            requiredStatusCheckContexts: ['Gate'],
+        });
+
+        try {
+            await expect(
+                withPullRequestDeliveryLock(root, 42, async ({ markRemoteMutationKnownAbsent }) => {
+                    deliverPullRequest(42, port, tracker, markRemoteMutationKnownAbsent);
+                })
+            ).rejects.toThrow(
+                'PR #42 merge state is BLOCKED although every required check succeeded; the block is an ' +
+                    'unresolved review thread, the review decision, or another ruleset rule'
+            );
+
+            expect(calls).not.toContain('add-receipt:42');
+            expect(calls).not.toContain('merge:42:head');
+            expect(deliveryLockExists(root, 42)).toBe(false);
+        } finally {
+            removeTemporaryGitRepository(root);
+        }
+    });
+
+    it('refuses a BLOCKED head even when the live ruleset cannot be read, naming the check(s) as unlistable', () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
+            requiredStatusCheckContexts: new Error('ruleset endpoint offline'),
+        });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(
+            'PR #42 merge state is BLOCKED and the required checks could not be listed'
+        );
+        expect(calls).not.toContain('add-receipt:42');
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('merges an UNSTABLE head with a failed advisory Gate check, because CI admission stays advisory outside BLOCKED', () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' }), pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [checkRun({ conclusion: 'FAILURE' })],
+        });
+
+        deliverPullRequest(42, port);
+
+        expect(calls).toContain('add-receipt:42');
+        expect(calls).toContain('merge:42:head');
+    });
+
     it.each([
-        { ciState: 'successful', mergeStateStatus: 'BLOCKED', headCheckRuns: [checkRun()] },
+        { ciState: 'successful', mergeStateStatus: 'UNSTABLE', headCheckRuns: [checkRun()] },
         { ciState: 'failed', mergeStateStatus: 'CLEAN', headCheckRuns: [checkRun({ conclusion: 'FAILURE' })] },
         {
             ciState: 'pending',
             mergeStateStatus: 'CLEAN',
             headCheckRuns: [checkRun({ status: 'IN_PROGRESS', conclusion: null })],
         },
-        { ciState: 'absent', mergeStateStatus: 'BLOCKED', headCheckRuns: [] as HeadCheckRun[] },
+        { ciState: 'absent', mergeStateStatus: 'UNSTABLE', headCheckRuns: [] as HeadCheckRun[] },
         {
             ciState: 'skipped',
             mergeStateStatus: 'CLEAN',
@@ -6025,9 +6122,9 @@ describe('pull-request delivery', () => {
 
     it.each([
         { finalMergeStateStatus: 'UNSTABLE', observedCiState: 'unstable' },
-        { finalMergeStateStatus: 'BLOCKED', observedCiState: 'failed' },
+        { finalMergeStateStatus: 'DIRTY', observedCiState: 'failed' },
     ] satisfies Array<{
-        finalMergeStateStatus: 'UNSTABLE' | 'BLOCKED';
+        finalMergeStateStatus: 'UNSTABLE' | 'DIRTY';
         observedCiState: 'unstable' | 'failed';
     }>)(
         'replaces the staged advisory receipt when the final same-head snapshot drifts to $finalMergeStateStatus',
@@ -7720,7 +7817,7 @@ describe('delivery shell boundary', () => {
                 })
             ).toThrow(/delivery receipt authority cannot be proven|delivery receipt changed during recovery/i);
         } finally {
-            rmSync(primaryRoot, { recursive: true, force: true });
+            removeTemporaryGitRepository(primaryRoot);
         }
 
         expect(effects).toEqual([]);
@@ -10237,5 +10334,77 @@ describe('delivery shell boundary', () => {
             latestReviewerStateOnHead: null,
             unresolvedThreads: 0,
         });
+    });
+
+    function rulesetPort(response: string) {
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (command, args) => {
+                if (args.join(' ') === 'api repos/jcosta33/sourdaw/rules/branches/main') {
+                    return response;
+                }
+                throw new Error(`unexpected capture: ${command} ${args.join(' ')}`);
+            },
+            run: () => undefined,
+        });
+        return port;
+    }
+
+    /**
+     * The caller reads an empty list as "every required check the ruleset names already succeeded",
+     * which is only true when the ruleset itself explicitly names zero required checks. A rule that
+     * never parsed has said nothing, so it must not be mistaken for that explicit, empty requirement.
+     */
+    it('refuses to read required status check contexts from a ruleset with no required_status_checks rule', () => {
+        const port = rulesetPort(JSON.stringify([{ type: 'pull_request' }]));
+
+        expect(() => port.requiredStatusCheckContexts()).toThrow(
+            'branch ruleset for jcosta33/sourdaw carries no required_status_checks rule with a parameters array'
+        );
+    });
+
+    it('reads an explicit, empty required_status_checks rule as no required contexts', () => {
+        const port = rulesetPort(
+            JSON.stringify([{ type: 'required_status_checks', parameters: { required_status_checks: [] } }])
+        );
+
+        expect(port.requiredStatusCheckContexts()).toEqual([]);
+    });
+
+    /**
+     * `rules/branches/main` aggregates every ruleset that applies to the branch, so two separate
+     * `required_status_checks` rules can each name their own contexts. Keeping only the first, as
+     * `find` would, silently drops the second rule's requirement.
+     */
+    it('unions required status check contexts across every required_status_checks rule', () => {
+        const port = rulesetPort(
+            JSON.stringify([
+                { type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'Gate' }] } },
+                { type: 'pull_request' },
+                {
+                    type: 'required_status_checks',
+                    parameters: { required_status_checks: [{ context: 'License' }] },
+                },
+            ])
+        );
+
+        expect(port.requiredStatusCheckContexts()).toEqual(['Gate', 'License']);
+    });
+
+    /**
+     * A rule that parsed sitting beside one that did not must not let the parsed rule's contexts
+     * stand in for the whole read: the union would come back short of the unparsed rule's own
+     * contexts while reading as complete, hiding the real reason a BLOCKED head is still waiting.
+     */
+    it('refuses a union across required_status_checks rules when any one of them has no parameters array', () => {
+        const port = rulesetPort(
+            JSON.stringify([
+                { type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'Gate' }] } },
+                { type: 'required_status_checks' },
+            ])
+        );
+
+        expect(() => port.requiredStatusCheckContexts()).toThrow(
+            'branch ruleset for jcosta33/sourdaw carries a required_status_checks rule with no parameters array'
+        );
     });
 });

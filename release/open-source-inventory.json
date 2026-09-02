@@ -56,6 +56,8 @@
                 "ZCODE.md",
                 "components.json",
                 "eslint.config.mjs",
+                "eslint.size-baseline.d.mts",
+                "eslint.size-baseline.mjs",
                 "index.html",
                 "knip.json",
                 "package.json",
@@ -160,7 +162,7 @@
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
                 "sha256:e1cc72dfb4f888d6526071afa799585bd5f410255be3fdfd1ef04f835ff4ca25:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:e8935c4d4b2225e71643dca1151ca88699af0c1808f50752e9f777db16cbe96f:release/dependency-license-proofs.json"
+                "sha256:bdc2b08834ce48c1f6ec146c91dc329abbb42d6bc2849a929c28bf5d8bed2d2d:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1686,7 +1688,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "13c910af79434ca551bdd4dc3d67b899aceed458ac5e6b9ae85b8028225743a4"
+            "sha256": "514cb6cba9cde24800bd6506ab83693277f6f45e79f1717f65e70c790da1c897"
         },
         {
             "path": "server/package.json",
