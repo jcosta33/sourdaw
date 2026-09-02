@@ -22,7 +22,6 @@ export type ThreadReply = {
     id: string;
     body: string;
     authorNodeId: string | null;
-    commitOid: string | null;
 };
 
 export type ThreadState = {
@@ -99,18 +98,11 @@ export function resolveClientMutationId(number: number, threadId: string, head: 
 }
 
 /**
- * A `Done` the author App wrote against this exact head. The actor match is on the immutable bot
- * node id, because a login is mutable and a foreign actor posting the same word is not this reply.
- * The commit match is what makes a rerun safe on a thread a reviewer reopened: the earlier `Done`
- * answers the head it was pinned to, and the reopened thread is owed a new one.
+ * A `Done` the author App itself wrote. The match is on the immutable bot actor node id: a login is
+ * mutable and a bot can be renamed, so a foreign actor posting the same word is not this reply.
  */
-function authorDoneReply(state: ThreadState, expectedHead: string): ThreadReply | undefined {
-    return state.replies.find(
-        (reply) =>
-            reply.body === RESOLUTION_REPLY_BODY &&
-            isAuthorBotNodeId(reply.authorNodeId) &&
-            reply.commitOid === expectedHead
-    );
+function authorDoneReply(state: ThreadState): ThreadReply | undefined {
+    return state.replies.find((reply) => reply.body === RESOLUTION_REPLY_BODY && isAuthorBotNodeId(reply.authorNodeId));
 }
 
 function assertThreadPrecondition(state: ThreadState, number: number, threadId: string, expectedHead: string): void {
@@ -129,10 +121,16 @@ function assertThreadPrecondition(state: ThreadState, number: number, threadId: 
 }
 
 /**
- * Reply, then resolve, then read the thread back. Both mutations are idempotent against state that
- * is readable before and after them, so a rerun after a partial failure needs nothing persisted: the
- * reply is skipped when the author's `Done` for this head is already there, and an already-resolved
- * thread that carries that reply is the finished state rather than a conflict.
+ * An unresolved thread always gets a fresh `Done` before it is resolved, so a rerun after a partial
+ * failure posts a second one. That duplicate is the accepted cost of the only honest reading of the
+ * thread: nothing GitHub persists on a comment records the head it was written against. A review
+ * comment's `commit` moves to the pull request's current head whenever a later push touches the
+ * commented file, and a reply inherits the root comment's `originalCommit` — so an existing `Done`
+ * cannot be told apart from one left on a thread a reviewer has since reopened, and skipping the
+ * reply on its account would resolve a reopened finding that was never answered.
+ *
+ * An already-resolved thread is different: it is the finished state rather than a conflict, and the
+ * author's `Done` anywhere on it is what proves this command, not a reviewer's hand, resolved it.
  */
 export function resolveReviewThread(
     number: number,
@@ -142,22 +140,17 @@ export function resolveReviewThread(
 ): string {
     const before = port.read(threadId);
     assertThreadPrecondition(before, number, threadId, expectedHead);
-    const existingReply = authorDoneReply(before, expectedHead);
-    if (before.isResolved && existingReply === undefined) {
-        fail(
-            `thread ${threadId} is already resolved without a Done reply from ${AUTHOR_BOT_NODE_ID} at ${expectedHead}`
-        );
-    }
     if (before.isResolved) {
+        if (authorDoneReply(before) === undefined) {
+            fail(`thread ${threadId} is already resolved without a Done reply from ${AUTHOR_BOT_NODE_ID}`);
+        }
         return logResolved(number, threadId, port);
     }
-    if (existingReply === undefined) {
-        port.reply(threadId, replyClientMutationId(number, threadId, expectedHead));
-    }
+    port.reply(threadId, replyClientMutationId(number, threadId, expectedHead));
     port.resolve(threadId, resolveClientMutationId(number, threadId, expectedHead));
     const after = port.read(threadId);
-    if (authorDoneReply(after, expectedHead) === undefined) {
-        fail(`thread ${threadId} carries no Done reply from ${AUTHOR_BOT_NODE_ID} at ${expectedHead} after replying`);
+    if (authorDoneReply(after) === undefined) {
+        fail(`thread ${threadId} carries no Done reply from ${AUTHOR_BOT_NODE_ID} after replying`);
     }
     if (!after.isResolved) {
         fail(`thread ${threadId} is still unresolved after resolveReviewThread`);
@@ -184,28 +177,21 @@ type ThreadNode = {
     comments?: { nodes?: unknown; pageInfo?: { hasNextPage?: unknown; endCursor?: unknown } };
 };
 
-const THREAD_COMMENT_FIELDS =
-    'nodes{id body commit{oid} author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}';
+const THREAD_COMMENT_FIELDS = 'nodes{id body author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}';
 
 function threadQuery(paged: boolean): string {
     const connection = paged ? 'comments(first:100,after:$cursor)' : 'comments(first:100)';
     return `query($threadId:ID!${paged ? ',$cursor:String!' : ''}){node(id:$threadId){... on PullRequestReviewThread{id isResolved pullRequest{number state headRefOid} ${connection}{${THREAD_COMMENT_FIELDS}}}}}`;
 }
 
-type ThreadCommentNode = { id?: unknown; body?: unknown; author?: unknown; commit?: unknown };
+type ThreadCommentNode = { id?: unknown; body?: unknown; author?: unknown };
 
 function readThreadReply(node: ThreadCommentNode, threadId: string): ThreadReply {
     const author = node.author as { id?: unknown } | null | undefined;
-    const commit = node.commit as { oid?: unknown } | null | undefined;
     if (typeof node.id !== 'string' || typeof node.body !== 'string') {
         fail(`review thread ${threadId} returned an unreadable comment`);
     }
-    return {
-        id: node.id,
-        body: node.body,
-        authorNodeId: typeof author?.id === 'string' ? author.id : null,
-        commitOid: typeof commit?.oid === 'string' ? commit.oid : null,
-    };
+    return { id: node.id, body: node.body, authorNodeId: typeof author?.id === 'string' ? author.id : null };
 }
 
 export function readReviewThread(threadId: string, gh: Gh): ThreadState {

@@ -30,8 +30,8 @@ const OTHER_HEAD = 'b'.repeat(40);
 const THREAD = 'PRRT_kwDOabc';
 const NUMBER = 42;
 
-function doneReply(authorNodeId: string | null = AUTHOR_BOT_NODE_ID, commitOid: string | null = HEAD): ThreadReply {
-    return { id: 'PRRC_done', body: RESOLUTION_REPLY_BODY, authorNodeId, commitOid };
+function doneReply(authorNodeId: string | null = AUTHOR_BOT_NODE_ID): ThreadReply {
+    return { id: 'PRRC_done', body: RESOLUTION_REPLY_BODY, authorNodeId };
 }
 
 function threadState(overrides: Partial<ThreadState> = {}): ThreadState {
@@ -41,21 +41,9 @@ function threadState(overrides: Partial<ThreadState> = {}): ThreadState {
         pullRequestNumber: NUMBER,
         pullRequestState: 'OPEN',
         head: HEAD,
-        replies: [
-            {
-                id: 'PRRC_root',
-                body: 'Defect. Consequence. Done.',
-                authorNodeId: REVIEWER_BOT_NODE_ID,
-                commitOid: HEAD,
-            },
-        ],
+        replies: [{ id: 'PRRC_root', body: 'Defect. Consequence. Done.', authorNodeId: REVIEWER_BOT_NODE_ID }],
         ...overrides,
     };
-}
-
-/** GitHub pins a reply to the commit it answers, and the deterministic id carries that head. */
-function repliedHead(clientMutationId: string): string {
-    return clientMutationId.slice(clientMutationId.lastIndexOf(':') + 1);
 }
 
 /**
@@ -75,8 +63,7 @@ function fakePort(initial: ThreadState = threadState()) {
         },
         reply: (threadId, clientMutationId) => {
             calls.push(`reply:${threadId}:${clientMutationId}`);
-            const posted = doneReply(AUTHOR_BOT_NODE_ID, repliedHead(clientMutationId));
-            current = { ...current, replies: [...current.replies, posted] };
+            current = { ...current, replies: [...current.replies, doneReply()] };
         },
         resolve: (threadId, clientMutationId) => {
             calls.push(`resolve:${threadId}:${clientMutationId}`);
@@ -143,36 +130,18 @@ describe('resolveReviewThread', () => {
         expect(logs).toEqual(['review-thread-resolved:7:PRRT_seven']);
     });
 
-    it('should post no second reply when a rerun finds the author Done for this head already there', () => {
+    it('should post a fresh Done on an unresolved thread that already carries an author Done', () => {
         const { port, calls } = fakePort(threadState({ replies: [threadState().replies[0]!, doneReply()] }));
         expect(resolveReviewThread(NUMBER, THREAD, HEAD, port)).toBe(`review-thread-resolved:${NUMBER}:${THREAD}`);
-        expect(calls.filter((call) => call.startsWith('reply:'))).toEqual([]);
+        expect(calls.filter((call) => call.startsWith('reply:'))).toEqual([
+            `reply:${THREAD}:${replyClientMutationId(NUMBER, THREAD, HEAD)}`,
+        ]);
         expect(calls.filter((call) => call.startsWith('resolve:'))).toEqual([
             `resolve:${THREAD}:${resolveClientMutationId(NUMBER, THREAD, HEAD)}`,
         ]);
     });
 
-    it('should post a fresh reply on a reopened thread whose only author Done answers an older commit', () => {
-        const { port, calls } = fakePort(
-            threadState({ replies: [threadState().replies[0]!, doneReply(AUTHOR_BOT_NODE_ID, OTHER_HEAD)] })
-        );
-        expect(resolveReviewThread(NUMBER, THREAD, HEAD, port)).toBe(`review-thread-resolved:${NUMBER}:${THREAD}`);
-        expect(calls.filter((call) => call.startsWith('reply:'))).toEqual([
-            `reply:${THREAD}:${replyClientMutationId(NUMBER, THREAD, HEAD)}`,
-        ]);
-    });
-
-    it('should post a fresh reply when the author Done carries no commit at all', () => {
-        const { port, calls } = fakePort(
-            threadState({ replies: [threadState().replies[0]!, doneReply(AUTHOR_BOT_NODE_ID, null)] })
-        );
-        expect(resolveReviewThread(NUMBER, THREAD, HEAD, port)).toBe(`review-thread-resolved:${NUMBER}:${THREAD}`);
-        expect(calls.filter((call) => call.startsWith('reply:'))).toEqual([
-            `reply:${THREAD}:${replyClientMutationId(NUMBER, THREAD, HEAD)}`,
-        ]);
-    });
-
-    it('should be a no-op success when the thread is already resolved and carries the author Done for this head', () => {
+    it('should be a no-op success when the thread is already resolved and carries the author Done', () => {
         const { port, calls, logs } = fakePort(
             threadState({ isResolved: true, replies: [threadState().replies[0]!, doneReply()] })
         );
@@ -184,16 +153,8 @@ describe('resolveReviewThread', () => {
     it('should refuse a resolved thread that carries no Done from the author actor', () => {
         const { port, calls } = fakePort(threadState({ isResolved: true }));
         expect(() => resolveReviewThread(NUMBER, THREAD, HEAD, port)).toThrow(
-            `thread ${THREAD} is already resolved without a Done reply from ${AUTHOR_BOT_NODE_ID} at ${HEAD}`
+            `thread ${THREAD} is already resolved without a Done reply from ${AUTHOR_BOT_NODE_ID}`
         );
-        expect(calls).toEqual([`read:${THREAD}`]);
-    });
-
-    it('should refuse a resolved thread whose author Done answers an older commit', () => {
-        const { port, calls } = fakePort(
-            threadState({ isResolved: true, replies: [doneReply(AUTHOR_BOT_NODE_ID, OTHER_HEAD)] })
-        );
-        expect(() => resolveReviewThread(NUMBER, THREAD, HEAD, port)).toThrow('is already resolved without a Done');
         expect(calls).toEqual([`read:${THREAD}`]);
     });
 
@@ -207,7 +168,7 @@ describe('resolveReviewThread', () => {
 
     it('should not read a near-miss author body as the Done reply', () => {
         for (const body of ['done', 'Done.', 'Done ', ' Done']) {
-            const nearMiss: ThreadReply = { id: 'PRRC_near', body, authorNodeId: AUTHOR_BOT_NODE_ID, commitOid: HEAD };
+            const nearMiss: ThreadReply = { id: 'PRRC_near', body, authorNodeId: AUTHOR_BOT_NODE_ID };
             const { port } = fakePort(threadState({ isResolved: true, replies: [nearMiss] }));
             expect(() => resolveReviewThread(NUMBER, THREAD, HEAD, port), body).toThrow(
                 'is already resolved without a Done'
@@ -257,7 +218,7 @@ describe('resolveReviewThread', () => {
         const { port, logs } = fakePort();
         const silentReply: ResolveReviewThreadPort = { ...port, reply: () => undefined };
         expect(() => resolveReviewThread(NUMBER, THREAD, HEAD, silentReply)).toThrow(
-            `thread ${THREAD} carries no Done reply from ${AUTHOR_BOT_NODE_ID} at ${HEAD} after replying`
+            `thread ${THREAD} carries no Done reply from ${AUTHOR_BOT_NODE_ID} after replying`
         );
         expect(logs).toEqual([]);
     });
@@ -289,12 +250,7 @@ function threadNode(overrides: Record<string, unknown> = {}) {
                 pullRequest: { number: NUMBER, state: 'OPEN', headRefOid: HEAD },
                 comments: {
                     nodes: [
-                        {
-                            id: 'PRRC_root',
-                            body: 'Defect.',
-                            commit: { oid: HEAD },
-                            author: { __typename: 'Bot', login: 'r', id: 'BOT_r' },
-                        },
+                        { id: 'PRRC_root', body: 'Defect.', author: { __typename: 'Bot', login: 'r', id: 'BOT_r' } },
                     ],
                     pageInfo: { hasNextPage: false, endCursor: null },
                 },
@@ -313,11 +269,10 @@ describe('readReviewThread', () => {
             pullRequestNumber: NUMBER,
             pullRequestState: 'OPEN',
             head: HEAD,
-            replies: [{ id: 'PRRC_root', body: 'Defect.', authorNodeId: 'BOT_r', commitOid: HEAD }],
+            replies: [{ id: 'PRRC_root', body: 'Defect.', authorNodeId: 'BOT_r' }],
         });
         expect(calls).toHaveLength(1);
         expect(calls[0]?.query).toContain('PullRequestReviewThread');
-        expect(calls[0]?.query).toContain('commit{oid}');
         expect(calls[0]?.fields.threadId).toBe(THREAD);
     });
 
@@ -340,28 +295,12 @@ describe('readReviewThread', () => {
         const { gh } = recordingGh(() =>
             threadNode({
                 comments: {
-                    nodes: [{ id: 'PRRC_root', body: 'Done', commit: { oid: HEAD }, author: { __typename: 'User' } }],
+                    nodes: [{ id: 'PRRC_root', body: 'Done', author: { __typename: 'User' } }],
                     pageInfo: { hasNextPage: false, endCursor: null },
                 },
             })
         );
-        expect(readReviewThread(THREAD, gh).replies).toEqual([
-            { id: 'PRRC_root', body: 'Done', authorNodeId: null, commitOid: HEAD },
-        ]);
-    });
-
-    it('should carry a comment with no commit through as no commit oid', () => {
-        const { gh } = recordingGh(() =>
-            threadNode({
-                comments: {
-                    nodes: [{ id: 'PRRC_root', body: 'Done', commit: null, author: { __typename: 'User' } }],
-                    pageInfo: { hasNextPage: false, endCursor: null },
-                },
-            })
-        );
-        expect(readReviewThread(THREAD, gh).replies).toEqual([
-            { id: 'PRRC_root', body: 'Done', authorNodeId: null, commitOid: null },
-        ]);
+        expect(readReviewThread(THREAD, gh).replies).toEqual([{ id: 'PRRC_root', body: 'Done', authorNodeId: null }]);
     });
 
     it('should follow comment pagination so a late Done is still seen', () => {
@@ -369,19 +308,14 @@ describe('readReviewThread', () => {
             call.fields.cursor === undefined
                 ? threadNode({
                       comments: {
-                          nodes: [{ id: 'PRRC_root', body: 'Defect.', commit: { oid: HEAD }, author: null }],
+                          nodes: [{ id: 'PRRC_root', body: 'Defect.', author: null }],
                           pageInfo: { hasNextPage: true, endCursor: 'CURSOR' },
                       },
                   })
                 : threadNode({
                       comments: {
                           nodes: [
-                              {
-                                  id: 'PRRC_done',
-                                  body: 'Done',
-                                  commit: { oid: HEAD },
-                                  author: { __typename: 'Bot', id: AUTHOR_BOT_NODE_ID },
-                              },
+                              { id: 'PRRC_done', body: 'Done', author: { __typename: 'Bot', id: AUTHOR_BOT_NODE_ID } },
                           ],
                           pageInfo: { hasNextPage: false, endCursor: null },
                       },
