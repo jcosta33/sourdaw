@@ -181,6 +181,50 @@ describe('deliver:recover-lock', () => {
         }
     });
 
+    it('refuses receipt-body drift between the two required state reads', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-recovery-'));
+        initialize(root);
+        try {
+            await expect(
+                runRecoverDeliveryLockCli(
+                    ['3344', '--owner', OWNER_OID],
+                    dependencies(root, [
+                        remoteState(),
+                        remoteState({
+                            body: composeDeliveryReceipt({
+                                pullRequest: NUMBER,
+                                head: REJECTED_HEAD,
+                                bodySha256: 'b'.repeat(64),
+                            }),
+                        }),
+                    ])
+                )
+            ).rejects.toThrow(/remote state changed/);
+            expect(git(root, ['rev-parse', '--verify', REF])).toBe(OWNER_OID);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses a symbolic incident ref without deleting its target lock', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-recovery-'));
+        initialize(root);
+        const targetRef = `refs/sourdaw/delivery/pr-${NUMBER + 1}`;
+        git(root, ['update-ref', targetRef, OWNER_OID]);
+        git(root, ['symbolic-ref', REF, targetRef]);
+        const state = remoteState();
+
+        try {
+            await expect(
+                runRecoverDeliveryLockCli(['3344', '--owner', OWNER_OID], dependencies(root, [state, state]))
+            ).rejects.toThrow(/ownership changed before release/);
+            expect(git(root, ['symbolic-ref', '-q', REF])).toBe(targetRef);
+            expect(git(root, ['rev-parse', '--verify', targetRef])).toBe(OWNER_OID);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('refuses a CAS race and leaves the new owner in place', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-recovery-'));
         initialize(root);

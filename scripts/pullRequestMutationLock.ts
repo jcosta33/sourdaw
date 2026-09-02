@@ -307,7 +307,34 @@ export function releasePullRequestMutationLockExact(
 ): void {
     const ref = pullRequestMutationLockRef(number);
     const oid = mutationLockObjectId(ownerOid, number);
-    const result = mutationLockGit(primaryRoot, ['update-ref', '-d', ref, oid], undefined, gitPath);
+    const directOwner = mutationLockGit(
+        primaryRoot,
+        ['for-each-ref', '--format=%(refname)%00%(objectname)%00%(symref)', ref],
+        undefined,
+        gitPath
+    );
+    if (directOwner.error !== undefined) {
+        throw directOwner.error;
+    }
+    if (directOwner.status !== 0) {
+        fail(`PR #${number} delivery lock ownership cannot be verified`);
+    }
+    const directEntries = directOwner.stdout
+        .split('\n')
+        .filter((entry) => entry !== '')
+        .map((entry) => entry.split('\0'))
+        .filter(([name]) => name === ref);
+    const directEntry = directEntries[0];
+    if (
+        directEntries.length !== 1 ||
+        directEntry === undefined ||
+        directEntry.length !== 3 ||
+        directEntry[1] !== oid ||
+        directEntry[2] !== ''
+    ) {
+        fail(`PR #${number} delivery lock ownership changed before release`);
+    }
+    const result = mutationLockGit(primaryRoot, ['update-ref', '--no-deref', '-d', ref, oid], undefined, gitPath);
     if (result.error !== undefined) {
         throw result.error;
     }
