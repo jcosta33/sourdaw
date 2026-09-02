@@ -96,9 +96,47 @@ describe('handleSetAutomationMode', () => {
             payload: { trackId: 't1', mode: 'read' as const, expectedMode: 'write' as const },
         };
 
+        expect(
+            handleSetAutomationMode.validate?.(staleInverse, {
+                actions: [staleInverse],
+                actionIndex: 0,
+            })
+        ).toBe(false);
         expect(handleSetAutomationMode.isNoop?.(staleInverse)).toBe(false);
         expect(handleSetAutomationMode.execute(staleInverse)).toEqual({ status: 'conflict' });
         expect(mocks.setAutomationMode).not.toHaveBeenCalled();
+    });
+
+    it('validates an ordinary forward action against the current track state', () => {
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', automationMode: 'read' }],
+        });
+        const action = {
+            type: 'setAutomationMode' as const,
+            payload: { trackId: 't1', mode: 'write' as const },
+        };
+
+        expect(
+            handleSetAutomationMode.validate?.(action, {
+                actions: [action],
+                actionIndex: 0,
+            })
+        ).toBe(true);
+    });
+
+    it('declares only expected-state-guarded actions safe to reapply after divergence', () => {
+        expect(
+            handleSetAutomationMode.canReapplyAfterDivergence?.({
+                type: 'setAutomationMode',
+                payload: { trackId: 't1', mode: 'read', expectedMode: 'write' },
+            })
+        ).toBe(true);
+        expect(
+            handleSetAutomationMode.canReapplyAfterDivergence?.({
+                type: 'setAutomationMode',
+                payload: { trackId: 't1', mode: 'write' },
+            })
+        ).toBe(false);
     });
 
     it('is undoable and relies on transaction rollback for aborted batches', () => {
