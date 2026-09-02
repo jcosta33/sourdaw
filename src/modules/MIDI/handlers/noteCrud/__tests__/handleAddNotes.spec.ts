@@ -570,8 +570,9 @@ describe('handleAddNotes', () => {
             },
         ];
 
-        await expect(executeAppActionBatch(actions, { groupId: 'batch-local-midi', requireCompensation: true })).resolves
-            .toMatchObject({ status: 'committed' });
+        await expect(
+            executeAppActionBatch(actions, { groupId: 'batch-local-midi', requireCompensation: true })
+        ).resolves.toMatchObject({ status: 'committed' });
         expect(midiStore.value?.notesByClipId['clip-batch-midi']).toEqual([
             { id: 'note-batch-local', pitch: 60, startBeat: 0, duration: 1, velocity: 100, probability: 100 },
         ]);
