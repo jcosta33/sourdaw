@@ -57,10 +57,6 @@ describe('timelineViewStore view helpers', () => {
         expect(timelineViewStore.value?.autoScrollEnabled).toBe(true);
     });
 
-    // Regression (#3321): scrollX must be derived from the CLAMPED
-    // pixelsPerBeat, not the raw requested value, or a caller whose zoom gets
-    // clamped ends up with a scroll position computed at a different scale
-    // than the zoom the store actually applied.
     it('should clamp setTimelineZoom pixelsPerBeat and derive scrollX from the clamped value', () => {
         setTimelineZoom(1667, 99.95);
         expect(timelineViewStore.value?.pixelsPerBeat).toBe(80);
