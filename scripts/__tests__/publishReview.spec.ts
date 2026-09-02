@@ -24,6 +24,7 @@ import {
     type PublishReviewPort,
 } from '../publishReview.ts';
 import {
+    type PullRequestMutationLockOwner,
     pullRequestMutationLockRef,
     reviewPublicationRecoveryReceiptRef,
     readPullRequestMutationLockOwner,
@@ -154,6 +155,31 @@ function createJournaledRecoveryFixture() {
     );
     runGit(root, ['update-ref', pullRequestMutationLockRef(number), ownerOid]);
     return { root, number, head, ownerOid };
+}
+
+function publicationLivenessOwner(
+    ownerFence: Extract<Parameters<typeof reviewPublicationOwnerFenceIsLive>[0]['ownerFence'], { kind: string }>
+) {
+    let pid: number;
+    if (ownerFence.kind === 'pgid') {
+        pid = ownerFence.pgid;
+    } else if (ownerFence.kind === 'pid') {
+        pid = ownerFence.pid;
+    } else {
+        pid = ownerFence.rootPid;
+    }
+    return {
+        version: 3 as const,
+        pid,
+        token: '55555555-5555-4555-8555-555555555555',
+        operation: 'review-publication' as const,
+        number: 42,
+        expectedHead: 'a'.repeat(40),
+        payloadDigest: 'b'.repeat(64),
+        reviewerActorNodeId: REVIEWER_BOT_NODE_ID,
+        ownerFence,
+        mutation: { phase: 'prepared' as const, epoch: 1 },
+    };
 }
 
 function createLegacyRecoveryFixture() {
@@ -1629,33 +1655,227 @@ describe('shellPort postReview state verification', () => {
         }
     });
 
-    it('treats a reused PID with a different start-time identity as stale', () => {
+    it.each([
+        [
+            'payload digest',
+            (owner: Extract<PullRequestMutationLockOwner, { version: 3 }>) => ({
+                ...owner,
+                payloadDigest: 'c'.repeat(64),
+            }),
+        ],
+        [
+            'expected head',
+            (owner: Extract<PullRequestMutationLockOwner, { version: 3 }>) => ({
+                ...owner,
+                expectedHead: 'd'.repeat(40),
+            }),
+        ],
+        [
+            'reviewer actor',
+            (owner: Extract<PullRequestMutationLockOwner, { version: 3 }>) => ({
+                ...owner,
+                reviewerActorNodeId: 'other-actor',
+            }),
+        ],
+    ])('retains a v3 lock when its stored %s drifts', async (_label, mutate) => {
+        const fixture = createJournaledRecoveryFixture();
+        try {
+            const owner = readPullRequestMutationLockOwner(fixture.root, fixture.ownerOid, fixture.number);
+            if (owner.version !== 3) {
+                throw new Error('test fixture is not a journaled publication owner');
+            }
+            const driftedOid = writePullRequestMutationLockOwner(fixture.root, mutate(owner), fixture.number);
+            runGit(fixture.root, [
+                'update-ref',
+                pullRequestMutationLockRef(fixture.number),
+                driftedOid,
+                fixture.ownerOid,
+            ]);
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.number), '--owner', driftedOid],
+                    recoveryDependencies(fixture.root, (expectedHead) => ({
+                        state: 'OPEN',
+                        head: expectedHead,
+                        reviews: [],
+                    }))
+                )
+            ).rejects.toThrow();
+            expect(
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
+            ).toBe(driftedOid);
+            expect(
+                readPullRequestMutationLockOid(
+                    fixture.root,
+                    reviewPublicationRecoveryReceiptRef(fixture.number, driftedOid),
+                    fixture.number
+                )
+            ).toBeUndefined();
+        } finally {
+            rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
+    it.each([
+        [
+            'mutation phase',
+            (owner: Extract<PullRequestMutationLockOwner, { version: 3 }>) => ({
+                ...owner,
+                mutation: { ...owner.mutation, phase: 'remote-mutation-attempted' as const },
+            }),
+        ],
+        [
+            'incident receipt binding',
+            (owner: Extract<PullRequestMutationLockOwner, { version: 3 }>) => ({
+                ...owner,
+                recovery: { legacyOwnerOid: 'f'.repeat(40), definitiveNoMutationHttpStatus: 422 as const },
+            }),
+        ],
+    ])('retains an adopted v3 owner when its %s drifts', async (_label, mutate) => {
+        const fixture = createTrustedIncidentRecoveryFixture();
+        try {
+            const payloadDigest = reviewPublicationPayloadDigest(
+                reviewPublicationPayload({
+                    commitId: fixture.incident.expectedHead,
+                    event: fixture.incident.preparedPayload.event,
+                    body: fixture.incident.preparedPayload.body,
+                    comments: fixture.incident.preparedPayload.comments,
+                })
+            );
+            const owner = {
+                version: 3 as const,
+                pid: fixture.incident.owner.pid,
+                token: fixture.incident.owner.token,
+                operation: 'review-publication' as const,
+                number: fixture.incident.number,
+                expectedHead: fixture.incident.expectedHead,
+                payloadDigest,
+                reviewerActorNodeId: fixture.incident.reviewerActorNodeId,
+                ownerFence: { kind: 'pid' as const, pid: fixture.incident.owner.pid, startedAt: 'test-process' },
+                mutation: { phase: 'prepared' as const, epoch: 1 },
+                recovery: {
+                    legacyOwnerOid: fixture.incident.ownerOid,
+                    definitiveNoMutationHttpStatus: 422 as const,
+                },
+            };
+            const driftedOid = writePullRequestMutationLockOwner(fixture.root, mutate(owner), fixture.incident.number);
+            runGit(fixture.root, [
+                'update-ref',
+                pullRequestMutationLockRef(fixture.incident.number),
+                driftedOid,
+                fixture.ownerOid,
+            ]);
+            await expect(
+                runRecoverPublishReviewLockCli([String(fixture.incident.number), '--owner', driftedOid], {
+                    ...recoveryDependencies(fixture.root, (expectedHead) => ({
+                        state: 'OPEN',
+                        head: expectedHead,
+                        reviews: [],
+                    })),
+                    isOwnerLive: () => false,
+                })
+            ).rejects.toThrow(/exact journaled incident binding/);
+            expect(
+                readPullRequestMutationLockOid(
+                    fixture.root,
+                    pullRequestMutationLockRef(fixture.incident.number),
+                    fixture.incident.number
+                )
+            ).toBe(driftedOid);
+            expect(
+                readPullRequestMutationLockOid(
+                    fixture.root,
+                    reviewPublicationRecoveryReceiptRef(fixture.incident.number, driftedOid),
+                    fixture.incident.number
+                )
+            ).toBeUndefined();
+        } finally {
+            rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
+    it('uses trusted POSIX process identities and fails closed on unreadable output', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-publication-ps-'));
         const executable = join(root, 'ps');
         const previous = process.env.SOURDAW_TRUSTED_PS_PATH;
         try {
-            writeFileSync(executable, '#!/bin/sh\nprintf "%s\\n" "reused-pid-start"\n');
-            chmodSync(executable, 0o700);
             process.env.SOURDAW_TRUSTED_PS_PATH = executable;
-            expect(
-                reviewPublicationOwnerFenceIsLive({
-                    version: 3,
-                    pid: 999_999,
-                    token: '55555555-5555-4555-8555-555555555555',
-                    operation: 'review-publication',
-                    number: 42,
-                    expectedHead: 'a'.repeat(40),
-                    payloadDigest: 'b'.repeat(64),
-                    reviewerActorNodeId: REVIEWER_BOT_NODE_ID,
-                    ownerFence: { kind: 'pid', pid: 999_999, startedAt: 'original-pid-start' },
-                    mutation: { phase: 'prepared', epoch: 1 },
-                })
-            ).toBe(false);
+            const writePsOutput = (output: string, status: number = 0) => {
+                writeFileSync(executable, `#!/bin/sh\nprintf '%s' '${output}'\nexit ${status}\n`);
+                chmodSync(executable, 0o700);
+            };
+            const groupOwner = publicationLivenessOwner({ kind: 'pgid', pgid: 42, leaderStartedAt: 'leader-start' });
+            writePsOutput('42 42 leader-start\n99 42 child-start\n1 1 unrelated-start\n');
+            expect(reviewPublicationOwnerFenceIsLive(groupOwner)).toBe(true);
+            writePsOutput('99 42 child-start\n1 1 unrelated-start\n');
+            expect(reviewPublicationOwnerFenceIsLive(groupOwner)).toBe(true);
+            writePsOutput('42 42 reused-leader-start\n99 42 child-start\n');
+            expect(reviewPublicationOwnerFenceIsLive(groupOwner)).toBe(false);
+            writePsOutput('1 1 unrelated-start\n');
+            expect(reviewPublicationOwnerFenceIsLive(groupOwner)).toBe(false);
+            writePsOutput('not a ps row\n');
+            expect(() => reviewPublicationOwnerFenceIsLive(groupOwner)).toThrow(/process-group liveness is unreadable/);
+
+            const pidOwner = publicationLivenessOwner({ kind: 'pid', pid: 999_999, startedAt: 'original-pid-start' });
+            writePsOutput('original-pid-start\n');
+            expect(reviewPublicationOwnerFenceIsLive(pidOwner)).toBe(true);
+            writePsOutput('reused-pid-start\n');
+            expect(reviewPublicationOwnerFenceIsLive(pidOwner)).toBe(false);
+            writePsOutput('', 2);
+            expect(() => reviewPublicationOwnerFenceIsLive(pidOwner)).toThrow(/process liveness is unreadable/);
         } finally {
             if (previous === undefined) {
                 delete process.env.SOURDAW_TRUSTED_PS_PATH;
             } else {
                 process.env.SOURDAW_TRUSTED_PS_PATH = previous;
+            }
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('uses the trusted Windows process tree when the publication root exits', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-publication-powershell-'));
+        const executable = join(root, 'powershell');
+        const previous = process.env.SOURDAW_TRUSTED_POWERSHELL_PATH;
+        const startedAt = '2026-09-02T10:00:00.0000000Z';
+        try {
+            process.env.SOURDAW_TRUSTED_POWERSHELL_PATH = executable;
+            const writePowerShellOutput = (output: string, status: number = 0) => {
+                writeFileSync(executable, `#!/bin/sh\nprintf '%s' '${output}'\nexit ${status}\n`);
+                chmodSync(executable, 0o700);
+            };
+            const owner = publicationLivenessOwner({
+                kind: 'win32-process-tree',
+                version: 1,
+                rootPid: 42,
+                rootStartedAt: startedAt,
+            });
+            writePowerShellOutput(JSON.stringify({ ProcessId: 42, ParentProcessId: 1, CreationDate: startedAt }));
+            expect(reviewPublicationOwnerFenceIsLive(owner, 'win32')).toBe(true);
+            writePowerShellOutput(
+                JSON.stringify({ ProcessId: 99, ParentProcessId: 42, CreationDate: '2026-09-02T10:00:01.0000000Z' })
+            );
+            expect(reviewPublicationOwnerFenceIsLive(owner, 'win32')).toBe(true);
+            writePowerShellOutput(
+                JSON.stringify([
+                    { ProcessId: 42, ParentProcessId: 1, CreationDate: '2026-09-02T11:00:00.0000000Z' },
+                    { ProcessId: 99, ParentProcessId: 42, CreationDate: '2026-09-02T11:00:01.0000000Z' },
+                ])
+            );
+            expect(reviewPublicationOwnerFenceIsLive(owner, 'win32')).toBe(false);
+            writePowerShellOutput(
+                JSON.stringify({ ProcessId: 99, ParentProcessId: 1, CreationDate: '2026-09-02T10:00:01.0000000Z' })
+            );
+            expect(reviewPublicationOwnerFenceIsLive(owner, 'win32')).toBe(false);
+            writePowerShellOutput('{');
+            expect(() => reviewPublicationOwnerFenceIsLive(owner, 'win32')).toThrow(
+                /Windows process liveness is unreadable/
+            );
+        } finally {
+            if (previous === undefined) {
+                delete process.env.SOURDAW_TRUSTED_POWERSHELL_PATH;
+            } else {
+                process.env.SOURDAW_TRUSTED_POWERSHELL_PATH = previous;
             }
             rmSync(root, { recursive: true, force: true });
         }

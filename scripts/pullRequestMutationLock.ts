@@ -419,7 +419,8 @@ export function recordReviewPublicationRecoveryReceipt(
 }
 
 export function reviewPublicationOwnerFenceIsLive(
-    owner: Extract<PullRequestMutationLockOwner, { version: 3 }>
+    owner: Extract<PullRequestMutationLockOwner, { version: 3 }>,
+    platform: NodeJS.Platform = process.platform
 ): boolean {
     const fence = owner.ownerFence;
     if (fence.kind === 'pid') {
@@ -429,8 +430,10 @@ export function reviewPublicationOwnerFenceIsLive(
     if (fence.kind === 'pgid') {
         return processGroupIsLive(fence.pgid, fence.leaderStartedAt);
     }
-    const observed = windowsProcessStartedAt(fence.rootPid);
-    return observed !== undefined && observed === fence.rootStartedAt;
+    if (platform !== 'win32') {
+        fail('review-publication lock Windows process-tree fence is unreadable on this platform');
+    }
+    return windowsProcessTreeIsLive(fence);
 }
 
 export function currentReviewPublicationOwnerFence(): PullRequestMutationLockOwnerFence {
@@ -491,7 +494,7 @@ function processGroupIsLive(pgid: number, leaderStartedAt: string | undefined): 
     if (typeof executable !== 'string' || executable === '') {
         fail('review-publication lock requires the trusted ps executable');
     }
-    const result = spawnSync(executable, ['-o', 'pid=,lstart=', '-g', String(pgid)], {
+    const result = spawnSync(executable, ['-e', '-o', 'pid=,pgid=,lstart='], {
         encoding: 'utf8',
         shell: false,
         env: { LC_ALL: 'C', LANG: 'C', TZ: 'UTC' },
@@ -499,18 +502,50 @@ function processGroupIsLive(pgid: number, leaderStartedAt: string | undefined): 
     if (result.error !== undefined || (result.status !== 0 && result.status !== 1)) {
         fail('review-publication lock process-group liveness is unreadable');
     }
-    const rows = result.stdout.trim();
-    if (rows === '') {
+    const rows = parsePosixProcessGroupRows(result.stdout);
+    if (rows.length === 0) {
+        fail('review-publication lock process-group liveness is unreadable');
+    }
+    const members = rows.filter((row) => row.pgid === pgid);
+    if (members.length === 0) {
         return false;
     }
-    const leader = rows.split('\n').find((row) => row.trim().startsWith(`${pgid} `));
+    const leader = members.find((row) => row.pid === pgid);
     if (leader === undefined) {
         return true;
     }
-    return leader.trim().slice(String(pgid).length).trim() === leaderStartedAt;
+    return leader.startedAt === leaderStartedAt;
 }
 
-function windowsProcessStartedAt(pid: number): string | undefined {
+type PosixProcessGroupRow = { pid: number; pgid: number; startedAt: string };
+
+function parsePosixProcessGroupRows(output: string): PosixProcessGroupRow[] {
+    const lines = output.split('\n').filter((line) => line.trim() !== '');
+    const rows: PosixProcessGroupRow[] = [];
+    const seen = new Set<number>();
+    for (const line of lines) {
+        const match = /^\s*([1-9][0-9]*)\s+([1-9][0-9]*)\s+(.+?)\s*$/u.exec(line);
+        if (match?.[1] === undefined || match[2] === undefined || match[3] === undefined) {
+            fail('review-publication lock process-group liveness is unreadable');
+        }
+        const pid = Number(match[1]);
+        const pgid = Number(match[2]);
+        const startedAt = match[3].trim();
+        if (!Number.isSafeInteger(pid) || !Number.isSafeInteger(pgid) || startedAt === '' || seen.has(pid)) {
+            fail('review-publication lock process-group liveness is unreadable');
+        }
+        seen.add(pid);
+        rows.push({ pid, pgid, startedAt });
+    }
+    return rows;
+}
+
+type WindowsProcessRow = { pid: number; parentPid: number; startedAt: string };
+
+const windowsProcessCreationIdentityProperty =
+    "@{Name='CreationDate';Expression={$_.CreationDate.ToUniversalTime().ToString('O',[System.Globalization.CultureInfo]::InvariantCulture)}}";
+
+function readTrustedWindowsProcessRows(): WindowsProcessRow[] {
     const executable = process.env.SOURDAW_TRUSTED_POWERSHELL_PATH;
     if (typeof executable !== 'string' || executable === '') {
         fail('review-publication lock requires the trusted PowerShell executable');
@@ -521,15 +556,167 @@ function windowsProcessStartedAt(pid: number): string | undefined {
             '-NoProfile',
             '-NonInteractive',
             '-Command',
-            `Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}" | ForEach-Object { $_.CreationDate.ToUniversalTime().ToString('O',[System.Globalization.CultureInfo]::InvariantCulture) }`,
+            `@(Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,${windowsProcessCreationIdentityProperty}) | ConvertTo-Json -Compress`,
         ],
-        { encoding: 'utf8', shell: false, env: { LC_ALL: 'C', LANG: 'C', TZ: 'UTC' } }
+        { encoding: 'utf8', shell: false, env: { LC_ALL: 'C', LANG: 'C', TZ: 'UTC' }, maxBuffer: 8 * 1024 * 1024 }
     );
-    if (result.error !== undefined || result.status !== 0) {
+    if (result.error !== undefined || result.status !== 0 || result.stdout.trim() === '') {
         fail('review-publication lock Windows process liveness is unreadable');
     }
-    const startedAt = result.stdout.trim();
-    return startedAt === '' ? undefined : startedAt;
+    return parseWindowsProcessRows(result.stdout);
+}
+
+function windowsProcessStartedAt(pid: number): string | undefined {
+    return readTrustedWindowsProcessRows().find((row) => row.pid === pid)?.startedAt;
+}
+
+function parseWindowsProcessRows(output: string): WindowsProcessRow[] {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(output) as unknown;
+    } catch {
+        fail('review-publication lock Windows process liveness is unreadable');
+    }
+    const rows = Array.isArray(parsed) ? parsed : [parsed];
+    const normalized: WindowsProcessRow[] = [];
+    const seen = new Set<number>();
+    for (const row of rows) {
+        const candidate = typeof row === 'object' && row !== null ? (row as Record<string, unknown>) : undefined;
+        if (candidate?.ProcessId === 0) {
+            continue;
+        }
+        if (
+            candidate === undefined ||
+            !isPositiveSafeInteger(candidate.ProcessId) ||
+            !Number.isSafeInteger(candidate.ParentProcessId) ||
+            candidate.ParentProcessId < 0 ||
+            typeof candidate.CreationDate !== 'string' ||
+            parseWindowsProcessStartedAt(candidate.CreationDate) === undefined ||
+            seen.has(candidate.ProcessId)
+        ) {
+            fail('review-publication lock Windows process liveness is unreadable');
+        }
+        seen.add(candidate.ProcessId);
+        normalized.push({
+            pid: candidate.ProcessId,
+            parentPid: candidate.ParentProcessId,
+            startedAt: candidate.CreationDate,
+        });
+    }
+    return normalized;
+}
+
+function isPositiveSafeInteger(value: unknown): value is number {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+}
+
+function parseWindowsProcessStartedAt(value: string): bigint | undefined {
+    const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.(\d{6,7})(Z|[+-]\d{2}:\d{2}|[+-]\d{3})$/.exec(
+        value
+    );
+    if (match === null) {
+        return undefined;
+    }
+    const [, year, month, day, hour, minute, second, microseconds, offsetIdentity] = match;
+    if (
+        year === undefined ||
+        month === undefined ||
+        day === undefined ||
+        hour === undefined ||
+        minute === undefined ||
+        second === undefined ||
+        microseconds === undefined ||
+        offsetIdentity === undefined
+    ) {
+        return undefined;
+    }
+    const milliseconds = Date.UTC(
+        Number(year),
+        Number(month) - 1,
+        Number(day),
+        Number(hour),
+        Number(minute),
+        Number(second),
+        0
+    );
+    if (!Number.isSafeInteger(milliseconds)) {
+        return undefined;
+    }
+    const normalized = new Date(milliseconds);
+    if (
+        normalized.getUTCFullYear() !== Number(year) ||
+        normalized.getUTCMonth() !== Number(month) - 1 ||
+        normalized.getUTCDate() !== Number(day) ||
+        normalized.getUTCHours() !== Number(hour) ||
+        normalized.getUTCMinutes() !== Number(minute) ||
+        normalized.getUTCSeconds() !== Number(second)
+    ) {
+        return undefined;
+    }
+    const ticks = BigInt(milliseconds) * 10_000n + BigInt(microseconds.padEnd(7, '0'));
+    if (offsetIdentity === 'Z') {
+        return ticks;
+    }
+    const offset = /^([+-])(\d{2}):(\d{2})$/.exec(offsetIdentity);
+    const compactOffset = /^([+-])(\d{3})$/.exec(offsetIdentity);
+    const selectedOffset = offset ?? compactOffset;
+    if (selectedOffset === null) {
+        return undefined;
+    }
+    const offsetSign = selectedOffset[1];
+    const offsetMinutes =
+        offset === null ? Number(selectedOffset[2]) : Number(selectedOffset[2]) * 60 + Number(selectedOffset[3]);
+    if (offsetMinutes > 23 * 60 + 59) {
+        return undefined;
+    }
+    const offsetTicks = BigInt(offsetMinutes) * 60_000n * 10_000n;
+    return offsetSign === '+' ? ticks - offsetTicks : ticks + offsetTicks;
+}
+
+function windowsProcessTreeIsLive(
+    ownerFence: Extract<PullRequestMutationLockOwnerFence, { kind: 'win32-process-tree' }>
+): boolean {
+    const ownerStartedAt = parseWindowsProcessStartedAt(ownerFence.rootStartedAt);
+    if (ownerStartedAt === undefined) {
+        fail('review-publication lock Windows process liveness is unreadable');
+    }
+    const rows = readTrustedWindowsProcessRows();
+    const root = rows.find((row) => row.pid === ownerFence.rootPid);
+    if (root !== undefined) {
+        const rootStartedAt = parseWindowsProcessStartedAt(root.startedAt);
+        if (rootStartedAt === undefined) {
+            fail('review-publication lock Windows process liveness is unreadable');
+        }
+        return rootStartedAt === ownerStartedAt;
+    }
+    const rowsByPid = new Map(rows.map((row) => [row.pid, row]));
+    for (const candidate of rows) {
+        const visited = new Set<number>();
+        let current: WindowsProcessRow | undefined = candidate;
+        while (current !== undefined) {
+            if (visited.has(current.pid)) {
+                fail('review-publication lock Windows process liveness is unreadable');
+            }
+            visited.add(current.pid);
+            const currentStartedAt = parseWindowsProcessStartedAt(current.startedAt);
+            if (currentStartedAt === undefined) {
+                fail('review-publication lock Windows process liveness is unreadable');
+            }
+            if (current.parentPid === ownerFence.rootPid) {
+                return true;
+            }
+            const parent = rowsByPid.get(current.parentPid);
+            if (parent === undefined) {
+                break;
+            }
+            const parentStartedAt = parseWindowsProcessStartedAt(parent.startedAt);
+            if (parentStartedAt === undefined || currentStartedAt < parentStartedAt) {
+                fail('review-publication lock Windows process liveness is unreadable');
+            }
+            current = parent;
+        }
+    }
+    return false;
 }
 
 function acquireMutationLock(

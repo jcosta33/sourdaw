@@ -794,6 +794,33 @@ export async function runRecoverPublishReviewLockCli(
     ) {
         fail('legacy review-publication recovery requires the exact trusted incident receipt');
     }
+    const recoveryIncident =
+        !legacy && originalOwner.recovery !== undefined
+            ? legacyReviewPublicationIncidents.find(
+                  (candidate) =>
+                      candidate.number === number && candidate.ownerOid === originalOwner.recovery?.legacyOwnerOid
+              )
+            : undefined;
+    if (
+        !legacy &&
+        originalOwner.recovery !== undefined &&
+        (recoveryIncident === undefined ||
+            originalOwner.expectedHead !== recoveryIncident.expectedHead ||
+            originalOwner.reviewerActorNodeId !== recoveryIncident.reviewerActorNodeId ||
+            originalOwner.payloadDigest !==
+                reviewPublicationPayloadDigest(
+                    reviewPublicationPayload({
+                        commitId: recoveryIncident.expectedHead,
+                        event: recoveryIncident.preparedPayload.event,
+                        body: recoveryIncident.preparedPayload.body,
+                        comments: recoveryIncident.preparedPayload.comments,
+                    })
+                ) ||
+            originalOwner.mutation.phase !== 'prepared' ||
+            originalOwner.mutation.epoch !== 1)
+    ) {
+        fail('review-publication recovery requires an exact journaled incident binding');
+    }
     if (!legacy && (dependencies.isOwnerLive ?? reviewPublicationOwnerFenceIsLive)(originalOwner)) {
         fail(`PR #${number} review-publication lock is still held by a live process`);
     }
@@ -818,6 +845,9 @@ export async function runRecoverPublishReviewLockCli(
     try {
         if (!isReviewerBotNodeId(auth.minted.actorNodeId)) {
             fail(`minted actor ${auth.minted.actorNodeId} is not ${REVIEWER_BOT_NODE_ID}`);
+        }
+        if (auth.minted.actorNodeId !== expectedActorNodeId) {
+            fail('review-publication recovery retained reviewer actor does not match the authenticated reviewer');
         }
         assertRequiredRepository(dependencies.repositoryName(auth.session, primaryRoot));
         const bundle = reviewBundlePath(primaryRoot, number, expectedHead);
