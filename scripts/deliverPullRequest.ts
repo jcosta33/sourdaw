@@ -2982,19 +2982,25 @@ type BranchRulesetRule = {
  *
  * `rules/branches/main` aggregates every ruleset that applies to the branch, not one: more than one
  * can carry its own `required_status_checks` rule, and the merge is blocked on the union of what any
- * of them require. Keeping only the first, as `find` would, silently drops a second rule's contexts.
+ * of them require. Keeping only the first, as `find` would, silently drops a second rule's contexts —
+ * and dropping only the rules that failed to parse, keeping the rest, has the same failure shape:
+ * the union comes back short of one rule's contexts and reads as complete. The union is trustworthy
+ * only when every matching rule parsed, so one unparsed rule fails the whole read.
  */
 function readRequiredStatusCheckContexts(repository: string, shell: ShellRunner): string[] {
     const rules = parseJson<BranchRulesetRule[]>(
         shell.capture('gh', ['api', `repos/${repository}/rules/branches/main`]),
         `branch ruleset for ${repository}`
     );
-    const requiredStatusCheckArrays = rules
-        .filter((rule) => rule.type === 'required_status_checks')
+    const requiredStatusCheckRules = rules.filter((rule) => rule.type === 'required_status_checks');
+    if (requiredStatusCheckRules.length === 0) {
+        fail(`branch ruleset for ${repository} carries no required_status_checks rule with a parameters array`);
+    }
+    const requiredStatusCheckArrays = requiredStatusCheckRules
         .map((rule) => rule.parameters?.required_status_checks)
         .filter((contexts): contexts is Array<{ context: string }> => contexts !== undefined);
-    if (requiredStatusCheckArrays.length === 0) {
-        fail(`branch ruleset for ${repository} carries no required_status_checks rule with a parameters array`);
+    if (requiredStatusCheckArrays.length !== requiredStatusCheckRules.length) {
+        fail(`branch ruleset for ${repository} carries a required_status_checks rule with no parameters array`);
     }
     return [...new Set(requiredStatusCheckArrays.flat().map((check) => check.context))];
 }

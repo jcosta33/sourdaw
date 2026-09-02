@@ -10389,4 +10389,22 @@ describe('delivery shell boundary', () => {
 
         expect(port.requiredStatusCheckContexts()).toEqual(['Gate', 'License']);
     });
+
+    /**
+     * A rule that parsed sitting beside one that did not must not let the parsed rule's contexts
+     * stand in for the whole read: the union would come back short of the unparsed rule's own
+     * contexts while reading as complete, hiding the real reason a BLOCKED head is still waiting.
+     */
+    it('refuses a union across required_status_checks rules when any one of them has no parameters array', () => {
+        const port = rulesetPort(
+            JSON.stringify([
+                { type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'Gate' }] } },
+                { type: 'required_status_checks' },
+            ])
+        );
+
+        expect(() => port.requiredStatusCheckContexts()).toThrow(
+            'branch ruleset for jcosta33/sourdaw carries a required_status_checks rule with no parameters array'
+        );
+    });
 });
