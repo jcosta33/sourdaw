@@ -1,0 +1,22 @@
+src/modules/Arrangement/repositories/presets/faustInstrumentPresets.ts
+  s_c9dfe76a613250::t_13e5ee70576d49 535-559,578-602,621-645,664-688,707-731,750-774
+src/modules/Arrangement/repositories/presets/__tests__/faustInstrumentPresets.spec.ts
+  s_c9dfe76a613250::t_a2888b27862f32 122-163
+  s_c9dfe76a613250::t_3f91f9efb1c27d 164-165
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "9fa7545e7caef2bb7808270476b137b3ebc9cc13",
+  "prompts": {},
+  "sessions": {
+    "s_c9dfe76a613250": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a063a6-ce16-7052-9c0c-a6ec6522efdd",
+        "model": "gpt-5.5"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
