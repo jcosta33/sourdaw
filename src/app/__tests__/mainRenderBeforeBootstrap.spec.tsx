@@ -1,4 +1,4 @@
-import { isValidElement } from 'react';
+import { act, isValidElement } from 'react';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -151,7 +151,9 @@ vi.mock('react-dom/client', async (importOriginal) => {
             return {
                 render: (element: Parameters<typeof root.render>[0]) => {
                     mocks.render(element);
-                    root.render(element);
+                    act(() => {
+                        root.render(element);
+                    });
                 },
             };
         },
@@ -169,6 +171,7 @@ function expectFirstPaintRendered(): void {
         throw new TypeError('Application first paint did not render a component');
     }
     expect(componentType.name).toBe('ApplicationFirstPaint');
+    expect(document.querySelector('[data-testid="app-shell"]')).not.toBeNull();
 }
 
 function expectMountBusesBoundBeforeRender(): void {
@@ -279,12 +282,12 @@ describe('app main first paint', () => {
 
         await import('../main');
         await rendered;
+        expectFirstPaintRendered();
         await vi.waitFor(() => {
             expect(mocks.failIdentityTransition).toHaveBeenCalledOnce();
         });
         const [reason] = mocks.failIdentityTransition.mock.calls[0] as [Error];
         expect(reason.cause).toBe(failure);
-        expectFirstPaintRendered();
     });
 
     it('registers AppShell mount buses before first paint while bootstrap is pending', async () => {

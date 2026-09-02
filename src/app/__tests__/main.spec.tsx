@@ -1,5 +1,7 @@
 import { isValidElement } from 'react';
 
+import { render } from '@testing-library/react';
+
 const mocks = vi.hoisted(() => ({
     bootstrap: vi.fn(),
     desktopStartupError: vi.fn(() => null),
@@ -170,6 +172,9 @@ function expectFirstPaintRendered(): void {
         throw new TypeError('Application first paint did not render a component');
     }
     expect(componentType.name).toBe('ApplicationFirstPaint');
+    const probe = document.createElement('div');
+    render(firstRender, { container: probe });
+    expect(probe.querySelector('[data-testid="app-shell"]')).not.toBeNull();
 }
 
 describe('app main composition', () => {
