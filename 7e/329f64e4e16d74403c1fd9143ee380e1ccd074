@@ -1,0 +1,19 @@
+src/modules/Collaboration/useCases/__tests__/automergeSync.spec.ts
+  s_c9dfe76a613250::t_57a42914853c66 1375-1378
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "7e329f64e4e16d74403c1fd9143ee380e1ccd074",
+  "prompts": {},
+  "sessions": {
+    "s_c9dfe76a613250": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a063a6-ce16-7052-9c0c-a6ec6522efdd",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
