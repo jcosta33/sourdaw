@@ -9,5 +9,8 @@ describe('ApplicationFirstPaint', () => {
 
         const shell = screen.getByTestId('app-shell');
         expect(shell).toHaveClass('h-screen', 'w-screen', 'overflow-hidden', 'bg-surface-app');
+        expect(shell.style.width).toBe('100vw');
+        expect(shell.style.height).toBe('100vh');
+        expect(shell.style.overflow).toBe('hidden');
     });
 });

@@ -6,5 +6,11 @@ import { type ReactElement } from 'react';
  * the App import graph must not occupy that window.
  */
 export function ApplicationFirstPaint(): ReactElement {
-    return <div className="h-screen w-screen overflow-hidden bg-surface-app" data-testid="app-shell" />;
+    return (
+        <div
+            className="h-screen w-screen overflow-hidden bg-surface-app"
+            data-testid="app-shell"
+            style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}
+        />
+    );
 }
