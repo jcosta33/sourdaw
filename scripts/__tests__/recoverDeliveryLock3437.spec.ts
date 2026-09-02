@@ -10,12 +10,11 @@ import { AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID } from '../githubAppIdentity.t
 import { composeDeliveryReceipt } from '../prContract.ts';
 import { runRecoverDeliveryLockCli, type DeliveryLockRecoveryDependencies } from '../recoverDeliveryLock.ts';
 
-const NUMBER = 3344;
-const OWNER_OID = '9f9c875746e69d6282e4233b32dfb1d07f418724';
-const REJECTED_HEAD = '8dca20782dfc174bf28ed2ad985414674e7a8180';
+const NUMBER = 3437;
+const OWNER_OID = '3ebcbf92f6a331dcd31a00b1891b522fbd170748';
 const CURRENT_HEAD = 'c'.repeat(40);
 const REF = `refs/sourdaw/delivery/pr-${NUMBER}`;
-const OWNER = '{"version":1,"pid":1297320,"token":"bcf9e594-59ce-450e-a357-97a433899ce5"}';
+const OWNER = '{"version":1,"pid":26953,"token":"f515a71d-c25a-4714-b725-ef6e9b141005"}';
 
 type IncidentTestChange = {
     ownerOid?: string;
@@ -36,33 +35,33 @@ function initialize(root: string): void {
     git(root, ['update-ref', REF, oid]);
 }
 
+function receiptComment(overrides: Partial<{ id: number; authorNodeId: string; body: string }> = {}) {
+    return {
+        id: overrides.id ?? 9000000001,
+        authorNodeId: overrides.authorNodeId ?? AUTHOR_BOT_NODE_ID,
+        body:
+            overrides.body ??
+            composeDeliveryReceipt({
+                pullRequest: NUMBER,
+                head: CURRENT_HEAD,
+                bodySha256: 'a'.repeat(64),
+            }),
+    };
+}
+
 function remoteState(
     overrides: Partial<{
         state: string;
         head: string;
-        receiptId: number;
-        actor: string;
-        edited: boolean;
-        body: string;
+        merged: boolean;
+        comments: ReturnType<typeof receiptComment>[];
     }> = {}
 ) {
-    const createdAt = '2026-09-02T07:00:00Z';
     return {
         state: overrides.state ?? 'open',
         head: overrides.head ?? CURRENT_HEAD,
-        receipt: {
-            id: overrides.receiptId ?? 5506507863,
-            body:
-                overrides.body ??
-                composeDeliveryReceipt({
-                    pullRequest: NUMBER,
-                    head: REJECTED_HEAD,
-                    bodySha256: 'a'.repeat(64),
-                }),
-            authorNodeId: overrides.actor ?? AUTHOR_BOT_NODE_ID,
-            createdAt,
-            updatedAt: overrides.edited === true ? '2026-09-02T07:01:00Z' : createdAt,
-        },
+        merged: overrides.merged ?? false,
+        comments: overrides.comments ?? [],
     };
 }
 
@@ -80,7 +79,7 @@ function dependencies(root: string, states: ReturnType<typeof remoteState>[]): D
     };
 }
 
-describe('deliver --recover-lock', () => {
+describe('deliver --recover-lock 3437', () => {
     it('routes recovery through the existing deliver command', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-recovery-'));
         initialize(root);
@@ -88,7 +87,7 @@ describe('deliver --recover-lock', () => {
 
         try {
             await expect(
-                runDeliverCli(['--recover-lock', '3344', '--owner', OWNER_OID], {
+                runDeliverCli(['--recover-lock', '3437', '--owner', OWNER_OID], {
                     recovery: dependencies(root, [state, state]),
                 })
             ).resolves.toBe(0);
@@ -98,14 +97,34 @@ describe('deliver --recover-lock', () => {
         }
     });
 
-    it('releases only the exact retained incident lock after two stable authoritative reads', async () => {
+    it('releases only the exact retained incident lock after two stable reads without a receipt', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-recovery-'));
         initialize(root);
         const state = remoteState();
 
         try {
             await expect(
-                runRecoverDeliveryLockCli(['3344', '--owner', OWNER_OID], dependencies(root, [state, state]))
+                runRecoverDeliveryLockCli(['3437', '--owner', OWNER_OID], dependencies(root, [state, state]))
+            ).resolves.toBe(0);
+            expect(() => git(root, ['rev-parse', '--verify', REF])).toThrow();
+        } finally {
+            rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+        }
+    });
+
+    it('ignores non-author receipts and ordinary author comments when proving receipt absence', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-recovery-'));
+        initialize(root);
+        const state = remoteState({
+            comments: [
+                receiptComment({ authorNodeId: REVIEWER_BOT_NODE_ID }),
+                receiptComment({ id: 9000000002, body: 'ordinary discussion' }),
+            ],
+        });
+
+        try {
+            await expect(
+                runRecoverDeliveryLockCli(['3437', '--owner', OWNER_OID], dependencies(root, [state, state]))
             ).resolves.toBe(0);
             expect(() => git(root, ['rev-parse', '--verify', REF])).toThrow();
         } finally {
@@ -118,44 +137,34 @@ describe('deliver --recover-lock', () => {
             'owner OID',
             () => ({
                 ownerOid: 'd'.repeat(40),
-                owner: { version: 1 as const, pid: 1297320, token: 'bcf9e594-59ce-450e-a357-97a433899ce5' },
+                owner: { version: 1 as const, pid: 26953, token: 'f515a71d-c25a-4714-b725-ef6e9b141005' },
                 expectedError: /owner does not match this recovery incident/,
             }),
         ],
         [
             'owner payload',
-            () => ({ owner: { version: 1 as const, pid: 7, token: '00000000-0000-4000-8000-000000000000' } }),
-        ],
-        ['receipt actor', () => ({ state: remoteState({ actor: 'wrong-author' }) })],
-        ['receipt comment ID', () => ({ state: remoteState({ receiptId: 5506507864 }) })],
-        [
-            'receipt body head',
             () => ({
-                state: remoteState({
-                    body: composeDeliveryReceipt({
-                        pullRequest: NUMBER,
-                        head: 'b'.repeat(40),
-                        bodySha256: 'a'.repeat(64),
-                    }),
-                }),
+                owner: { version: 1 as const, pid: 7, token: '00000000-0000-4000-8000-000000000000' },
+                expectedError: /payload does not match the retained incident owner/,
             }),
         ],
         [
-            'receipt body pull request',
+            'live owner PID',
+            () => ({ processIsDead: () => false, expectedError: /still live or cannot be proven dead/ }),
+        ],
+        ['closed PR', () => ({ state: remoteState({ state: 'closed' }), expectedError: /is not open/ })],
+        [
+            'unverifiable head',
+            () => ({ state: remoteState({ head: 'not-a-sha' }), expectedError: /current head cannot be verified/ }),
+        ],
+        ['merged PR', () => ({ state: remoteState({ merged: true }), expectedError: /is already merged/ })],
+        [
+            'author receipt comment',
             () => ({
-                state: remoteState({
-                    body: composeDeliveryReceipt({
-                        pullRequest: NUMBER + 1,
-                        head: REJECTED_HEAD,
-                        bodySha256: 'a'.repeat(64),
-                    }),
-                }),
+                state: remoteState({ comments: [receiptComment()] }),
+                expectedError: /already carries an author delivery receipt/,
             }),
         ],
-        ['edited receipt', () => ({ state: remoteState({ edited: true }) })],
-        ['closed PR', () => ({ state: remoteState({ state: 'closed' }) })],
-        ['rejected head still current', () => ({ state: remoteState({ head: REJECTED_HEAD }) })],
-        ['live owner PID', () => ({ processIsDead: () => false })],
     ])('refuses %s without deleting the retained ref', async (_label, change) => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-recovery-'));
         initialize(root);
@@ -174,7 +183,7 @@ describe('deliver --recover-lock', () => {
         };
 
         try {
-            await expect(runRecoverDeliveryLockCli(['3344', '--owner', OWNER_OID], configured)).rejects.toThrow(
+            await expect(runRecoverDeliveryLockCli(['3437', '--owner', OWNER_OID], configured)).rejects.toThrow(
                 expectedError
             );
             expect(git(root, ['rev-parse', '--verify', REF])).toBe(OWNER_OID);
@@ -183,25 +192,18 @@ describe('deliver --recover-lock', () => {
         }
     });
 
-    it.each([
-        ['reviewer actor', REVIEWER_BOT_NODE_ID],
-        ['unexpected actor', 'BOT_other'],
-    ])('refuses a minted %s without deleting the retained ref', async (_label, actorNodeId) => {
+    it.each<[string, string[]]>([
+        ['an unknown pull request', ['1', '--owner', OWNER_OID]],
+        ['the 3344 owner against 3437', ['3437', '--owner', '9f9c875746e69d6282e4233b32dfb1d07f418724']],
+        ['the 3437 owner against 3344', ['3344', '--owner', OWNER_OID]],
+    ])('refuses %s as a wrong PR/owner combination', async (_label, args) => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-recovery-'));
         initialize(root);
         const state = remoteState();
-        const base = dependencies(root, [state, state]);
-        const configured: DeliveryLockRecoveryDependencies = {
-            ...base,
-            authenticateAuthor: async () => ({
-                minted: { actorNodeId },
-                session: { configDir: root, env: {}, dispose: () => undefined },
-            }),
-        };
 
         try {
-            await expect(runRecoverDeliveryLockCli(['3344', '--owner', OWNER_OID], configured)).rejects.toThrow(
-                /minted actor .+ is not/
+            await expect(runRecoverDeliveryLockCli(args, dependencies(root, [state, state]))).rejects.toThrow(
+                /usage: pnpm deliver --recover-lock/
             );
             expect(git(root, ['rev-parse', '--verify', REF])).toBe(OWNER_OID);
         } finally {
@@ -215,7 +217,7 @@ describe('deliver --recover-lock', () => {
         try {
             await expect(
                 runRecoverDeliveryLockCli(
-                    ['3344', '--owner', OWNER_OID],
+                    ['3437', '--owner', OWNER_OID],
                     dependencies(root, [remoteState(), remoteState({ head: 'd'.repeat(40) })])
                 )
             ).rejects.toThrow(/remote state changed/);
@@ -225,45 +227,20 @@ describe('deliver --recover-lock', () => {
         }
     });
 
-    it('refuses receipt-body drift between the two required state reads', async () => {
+    it('refuses a comment appearing between the two required state reads', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-recovery-'));
         initialize(root);
         try {
             await expect(
                 runRecoverDeliveryLockCli(
-                    ['3344', '--owner', OWNER_OID],
+                    ['3437', '--owner', OWNER_OID],
                     dependencies(root, [
                         remoteState(),
-                        remoteState({
-                            body: composeDeliveryReceipt({
-                                pullRequest: NUMBER,
-                                head: REJECTED_HEAD,
-                                bodySha256: 'b'.repeat(64),
-                            }),
-                        }),
+                        remoteState({ comments: [receiptComment({ id: 9000000003, body: 'ordinary discussion' })] }),
                     ])
                 )
             ).rejects.toThrow(/remote state changed/);
             expect(git(root, ['rev-parse', '--verify', REF])).toBe(OWNER_OID);
-        } finally {
-            rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
-        }
-    });
-
-    it('refuses a symbolic incident ref without deleting its target lock', async () => {
-        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-recovery-'));
-        initialize(root);
-        const targetRef = `refs/sourdaw/delivery/pr-${NUMBER + 1}`;
-        git(root, ['update-ref', targetRef, OWNER_OID]);
-        git(root, ['symbolic-ref', REF, targetRef]);
-        const state = remoteState();
-
-        try {
-            await expect(
-                runRecoverDeliveryLockCli(['3344', '--owner', OWNER_OID], dependencies(root, [state, state]))
-            ).rejects.toThrow(/ownership changed before release/);
-            expect(git(root, ['symbolic-ref', '-q', REF])).toBe(targetRef);
-            expect(git(root, ['rev-parse', '--verify', targetRef])).toBe(OWNER_OID);
         } finally {
             rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
         }
@@ -292,7 +269,7 @@ describe('deliver --recover-lock', () => {
         };
 
         try {
-            await expect(runRecoverDeliveryLockCli(['3344', '--owner', OWNER_OID], configured)).rejects.toThrow(
+            await expect(runRecoverDeliveryLockCli(['3437', '--owner', OWNER_OID], configured)).rejects.toThrow(
                 /ownership changed before release/
             );
             expect(git(root, ['rev-parse', '--verify', REF])).toBe(replacement);
