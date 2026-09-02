@@ -1,6 +1,6 @@
 import { type ConsoleWriterMode, type LogSeverity, type LogWriter } from './types';
 
-const SEVERITY_LEVELS: LogSeverity[] = ['debug', 'info', 'warn', 'error'];
+const SEVERITY_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
 
 const MIN_SEVERITY_BY_MODE: Record<ConsoleWriterMode, LogSeverity> = {
     development: 'debug',
@@ -18,12 +18,8 @@ const shouldWrite = (severity: LogSeverity, mode: ConsoleWriterMode): boolean =>
     return currentSeverityIndex >= minSeverityIndex;
 };
 
-const formatPrefix = (severity: LogSeverity, mode: ConsoleWriterMode): string => {
-    if (mode === 'development') {
-        return `${PREFIX_BY_MODE[mode]}[${severity.toUpperCase()}]`;
-    }
-    return `${PREFIX_BY_MODE[mode]}[${severity.toUpperCase()}]`;
-};
+const formatPrefix = (severity: LogSeverity, mode: ConsoleWriterMode): string =>
+    `${PREFIX_BY_MODE[mode]}[${severity.toUpperCase()}]`;
 
 export const createConsoleWriter = ({ mode }: { mode: ConsoleWriterMode }): LogWriter => {
     const write = (severity: LogSeverity, ...args: unknown[]): void => {
