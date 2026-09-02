@@ -1,0 +1,21 @@
+scripts/__tests__/resolveReviewThread.spec.ts
+  s_bbdfb911119c4f::t_90283a1f1eacb8 33-34,44,66,133,139-140,144,156,171,221,253,272,298,303,311,318
+scripts/resolveReviewThread.ts
+  s_bbdfb911119c4f::t_6b285f1a104b20 101-102,104-105,124-133,144-146,149,152-153,180,187,194
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "e7f33b7f60661b0b48b32c35a26472c1d3b5c98d",
+  "prompts": {},
+  "sessions": {
+    "s_bbdfb911119c4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fa21d5-2a8a-4f80-98ab-b72059373843",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
