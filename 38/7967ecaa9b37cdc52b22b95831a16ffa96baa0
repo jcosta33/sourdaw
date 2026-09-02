@@ -1,0 +1,35 @@
+src/modules/AiRuntime/useCases/__tests__/mixHealthAnalysis.spec.ts
+  s_bbdfb911119c4f::t_542e21f2d2096c 124
+  s_bbdfb911119c4f::t_3ba710f4043e07 149-150
+  s_bbdfb911119c4f::t_cb9764cae0e483 157-159
+  s_bbdfb911119c4f::t_fd075ec6bbeed8 156,183-189
+  s_bbdfb911119c4f::t_057d6318f98088 61-75
+  s_bbdfb911119c4f::t_034adc4b1e00c5 190-197
+  s_8284f18d24b62d::t_96f6da795028a7 164
+src/modules/AiRuntime/useCases/mixHealthAnalysis.ts
+  s_bbdfb911119c4f::t_081aaeafa27e64 25-29,31-43,45-48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "387967ecaa9b37cdc52b22b95831a16ffa96baa0",
+  "prompts": {},
+  "sessions": {
+    "s_8284f18d24b62d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a03bd607b5b8f1888",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bbdfb911119c4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fa21d5-2a8a-4f80-98ab-b72059373843",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
