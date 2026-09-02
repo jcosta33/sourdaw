@@ -27,6 +27,8 @@ import eslintPluginQuery from '@tanstack/eslint-plugin-query';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
+import { sizeBaselineFiles } from './eslint.size-baseline.mjs';
+
 /**
  * Small recursive AST walker for local custom rules.
  * @param {any} node
@@ -2576,6 +2578,41 @@ export default defineConfig(
         },
     },
 
+    // ─── Size and nesting ceilings ───────────────────────────────────────────
+    // docs/07-conventions.md — Lint-aligned conventions. oxlint 1.74 implements
+    // none of these four rules.
+    {
+        files: ['**/*.{ts,tsx,mts,cts}'],
+        rules: {
+            'max-lines': ['error', { max: 600, skipBlankLines: true, skipComments: true }],
+            'max-lines-per-function': ['error', { max: 100, skipBlankLines: true, skipComments: true, IIFEs: true }],
+            'max-depth': ['error', 4],
+            complexity: ['error', 20],
+        },
+    },
+
+    // ─── Size and nesting ceilings: burn-down baseline ──────────────────────
+    // Paths in eslint.size-baseline.mjs already violate one or more of the four
+    // rules above; this override downgrades them to `warn` for exactly those
+    // files so today's offenders keep reporting without failing the build,
+    // while every other file is held to `error`. A file leaves the baseline
+    // only once it complies with all four rules — no file is ever added
+    // (docs/07-conventions.md). ESLint's flat config rejects an empty `files`
+    // array, so the override is omitted entirely once the baseline is empty.
+    ...(sizeBaselineFiles.length > 0
+        ? [
+              {
+                  files: sizeBaselineFiles,
+                  rules: {
+                      'max-lines': 'warn',
+                      'max-lines-per-function': 'warn',
+                      'max-depth': 'warn',
+                      complexity: 'warn',
+                  },
+              },
+          ]
+        : []),
+
     // ─── React components (JSX) ──────────────────────────────────────────────
     {
         files: ['**/*.{tsx,jsx}'],
@@ -2723,6 +2760,26 @@ export default defineConfig(
             '@typescript-eslint/naming-convention': 'off',
             // `as any` in tests is sometimes necessary to construct partial mocks of complex types.
             'sourdaw/no-type-assertion-escape': 'off',
+            // Long `describe`/`it` bodies and large fixture files are normal test
+            // shape, not a code-craft violation (docs/07-conventions.md).
+            'max-lines': 'off',
+            'max-lines-per-function': 'off',
+            'max-depth': 'off',
+            complexity: 'off',
+        },
+    },
+
+    // ─── Playwright E2E: size and nesting ceilings off ──────────────────────
+    // tests/e2e/** also holds non-.spec helpers (e.g. fixture/analysis scripts)
+    // alongside its spec files; the whole directory follows test-file shape,
+    // not production-file shape (docs/07-conventions.md).
+    {
+        files: ['tests/e2e/**/*.ts'],
+        rules: {
+            'max-lines': 'off',
+            'max-lines-per-function': 'off',
+            'max-depth': 'off',
+            complexity: 'off',
         },
     },
 
@@ -2744,6 +2801,22 @@ export default defineConfig(
             globals: {
                 ...globals.node,
             },
+            parserOptions: {
+                project: false,
+            },
+        },
+    },
+
+    // ─── Root-level data config ──────────────────────────────────────────────
+    // eslint.size-baseline.mjs sits at the repo root (so eslint.config.mjs can
+    // import it), not under scripts/; tsconfig.eslint.json's project does not
+    // reach it, and without `allowJs` naming it in `include` would not help
+    // (same reasoning as the Node scripts block above). Same treatment: no
+    // type-aware parsing, so the file lints instead of failing to parse.
+    {
+        files: ['eslint.size-baseline.mjs'],
+        extends: [tseslint.configs.disableTypeChecked],
+        languageOptions: {
             parserOptions: {
                 project: false,
             },
