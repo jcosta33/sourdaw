@@ -10,7 +10,7 @@ Automerge CRDT document repository, reactive store projections, multi-branch sta
     - **Action History**: `recordActionHistoryEntry`, `clearActionHistory`, `markActionHistoryEntryReverted`.
     - **Branching**: `initBranchState`, `preserveBranchStateForSession`, `replaceBranchState`, `restoreBranchStateAfterSession`, `captureActiveBranchReference`, `getDrumPreviewBranchHandlers`.
     - **Projections**: `projectCrdtToStores`, `projectActionHistoryToStore`, `setupProjectionBridge`.
-    - **Inspection & Repair**: `captureProjectRevision`, `captureProjectMutationAuthorization`, `captureUnownedProjectMutations`, `agentProjectInspectionPort`, `inspectAgentProjectDivergence`, `findAutomergeProjectConflicts`, `inspectCurrentAgentProjectRepairState`, `createCommandPreviewWorkspace`, `createCommandRecoveryWorkspace`, `sanitizeIncomingCrdtDocument`.
+    - **Inspection & Repair**: `captureProjectRevision`, `captureDurableDocumentWitness`, `captureProjectMutationAuthorization`, `captureUnownedProjectMutations`, `agentProjectInspectionPort`, `inspectAgentProjectDivergence`, `findAutomergeProjectConflicts`, `inspectCurrentAgentProjectRepairState`, `createCommandPreviewWorkspace`, `createCommandRecoveryWorkspace`, `sanitizeIncomingCrdtDocument`.
 - `presentations/views`: `BranchManagerDialog`, `MergeResultDialog`.
 - Handlers: `getDrumPreviewBranchHandlers` (`createDrumPreviewBranches`, `deleteDrumPreviewBranches`).
 

@@ -26,6 +26,7 @@ Unified command execution dispatch kernel, undo/redo history and branching undo 
 - All state-mutating user and agent operations MUST flow through `executeAppAction` or `executeVersionedCommandBatchEnvelope` — direct store mutations bypass undo stacks, macro recording, and collaborative change tracking.
 - Every module handling AppActions must register its handler map in bootstrap via `registerHandlerMap` before any actions are executed.
 - Inverse operations in undo entries must be exact and idempotent; incomplete undo definitions cause project state corruption when stepping backward in history.
+- `clearUndoHistory` drops the live stacks' project/document tag along with the stacks themselves, so an in-session project switch (new project, template, arrangement switch, branch switch) always forfeits session-undo history across the next reload — including back to the project it left — because only `reconcileSessionUndoForProject` re-tags, and nothing re-tags after a plain clear.
 
 ## Verification
 

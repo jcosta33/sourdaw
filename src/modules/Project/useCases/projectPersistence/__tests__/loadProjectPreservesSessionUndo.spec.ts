@@ -7,6 +7,14 @@
  * unconditional clear with an identity check against the project
  * `projectCrdtToStores` just hydrated.
  *
+ * A matching project id alone is not proof the restored document is the one
+ * the stacks invert: the mirror flushes a microtask after every push, while
+ * document autosave is debounced and best-effort on unload, so a reload can
+ * restore a stale document under the same project id. `reconcileSessionUndoForProject`
+ * therefore also compares a durable document witness (see `CrdtDocument`'s
+ * `captureDurableDocumentWitness`), injected here as `captureWitness` because
+ * Command must not import CrdtDocument.
+ *
  * `#/modules/Command/useCases` is deliberately left unmocked here (unlike the
  * sibling `loadProject.spec.ts`): the behaviour under test is the real
  * identity comparison living in Command's own undo store, and a hand-rolled
@@ -15,12 +23,12 @@
  * `hydrateUndoStoreFromSession` is Command-private and unreachable across the
  * module boundary even from a test, so "as bootstrap hydration would" is
  * reproduced through the same public seam `loadProject` itself uses:
- * `reconcileSessionUndoForProject('project-x')` first tags the live stacks to
- * project X exactly as a boot hydration reading a mirror written for project
- * X would, then `pushUndoEntry` deposits the entry that hydration would have
- * restored. What matters for this spec is the state that results, not the
- * mechanism that produced it — the sessionStorage wire format and the
- * hydrate-time identity parsing are covered directly in
+ * `reconcileSessionUndoForProject({ projectId, captureWitness })` first tags
+ * the live stacks to project X and witness W exactly as a boot hydration
+ * reading a mirror written for X/W would, then `pushUndoEntry` deposits the
+ * entry that hydration would have restored. What matters for this spec is the
+ * state that results, not the mechanism that produced it — the sessionStorage
+ * wire format and the hydrate-time identity parsing are covered directly in
  * `Command/stores/__tests__/undoStore.spec.ts`.
  */
 
@@ -34,6 +42,7 @@ const mocks = vi.hoisted(() => ({
     loadCrdtProject: vi.fn(() => Promise.resolve(true)),
     persistCrdtProject: vi.fn(() => Promise.resolve()),
     projectCrdtToStores: vi.fn(),
+    captureDurableDocumentWitness: vi.fn(() => ''),
     createCrdtProject: vi.fn(() => Promise.resolve()),
     startCrdtAutoSave: vi.fn(() => vi.fn()),
     prepareCachedAudioBuffersFromIdb: vi.fn(() => Promise.resolve({ cancel: vi.fn(), publish: vi.fn() })),
@@ -94,6 +103,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     wireSidechainRoute: vi.fn(),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureDurableDocumentWitness: mocks.captureDurableDocumentWitness,
     captureProjectRevision: vi.fn(),
     createCrdtDoc: vi.fn(),
     createCrdtProject: mocks.createCrdtProject,
@@ -165,11 +175,14 @@ import { setProjectIdentityTransitionDependencies } from '../projectIdentityTran
 const RESTORED_PROJECT_ID = 'project-x';
 const OTHER_PROJECT_ID = 'project-y';
 const SEEDED_ENTRY_LABEL = 'Seeded tempo change';
+const HYDRATED_WITNESS = 'witness-hydrated';
+const DIVERGED_WITNESS = 'witness-diverged';
 
-function seedHydratedUndoEntryFor(projectId: string): void {
+function seedHydratedUndoEntryFor(projectId: string, witness: string): void {
     // See the file header: this reaches the same live state a boot hydration
-    // for `projectId` would, through the same public seam `loadProject` calls.
-    reconcileSessionUndoForProject(projectId);
+    // for `projectId`/`witness` would, through the same public seam
+    // `loadProject` calls.
+    reconcileSessionUndoForProject({ projectId, captureWitness: () => witness });
     pushUndoEntry(
         SEEDED_ENTRY_LABEL,
         () => {},
@@ -188,8 +201,10 @@ describe('loadProject preserves session undo history for the same project (#3331
         // header), so its undo store is a real singleton that otherwise
         // carries state across `it()` blocks in this file. `undefined` never
         // matches a real project id, so this both empties the stacks and
-        // resets the tracked "hydrated from" identity to unknown.
-        reconcileSessionUndoForProject(undefined);
+        // resets the tracked owner to unknown; the witness function is never
+        // invoked in that path.
+        reconcileSessionUndoForProject({ projectId: undefined, captureWitness: () => '' });
+        mocks.captureDurableDocumentWitness.mockReturnValue(HYDRATED_WITNESS);
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
         projectStore.set({
             ...structuredClone(defaultProjectStoreState),
@@ -201,14 +216,16 @@ describe('loadProject preserves session undo history for the same project (#3331
         mocks.getCrdtDoc.mockReturnValue({ chordTrack: undefined, tracks: { tracks: [] } });
     });
 
-    it('keeps the hydrated undo history when the reload restores the same project', async () => {
-        seedHydratedUndoEntryFor(RESTORED_PROJECT_ID);
+    it('keeps the hydrated undo history when the reload restores the same project and document', async () => {
+        seedHydratedUndoEntryFor(RESTORED_PROJECT_ID, HYDRATED_WITNESS);
         expect(undoStore.value?.past.map((entry) => entry.label)).toEqual([SEEDED_ENTRY_LABEL]);
 
         restoreProjectVia(() => {
             const current = projectStore.value ?? defaultProjectStoreState;
             projectStore.set({ ...current, projectId: RESTORED_PROJECT_ID });
         });
+        // `captureDurableDocumentWitness` already reports HYDRATED_WITNESS via
+        // the `beforeEach` default, matching what was seeded above.
 
         await expect(loadProject()).resolves.toBe(true);
 
@@ -217,13 +234,31 @@ describe('loadProject preserves session undo history for the same project (#3331
     });
 
     it('clears the hydrated undo history when the reload restores a different project', async () => {
-        seedHydratedUndoEntryFor(RESTORED_PROJECT_ID);
+        seedHydratedUndoEntryFor(RESTORED_PROJECT_ID, HYDRATED_WITNESS);
         expect(undoStore.value?.past.map((entry) => entry.label)).toEqual([SEEDED_ENTRY_LABEL]);
 
         restoreProjectVia(() => {
             const current = projectStore.value ?? defaultProjectStoreState;
             projectStore.set({ ...current, projectId: OTHER_PROJECT_ID });
         });
+
+        await expect(loadProject()).resolves.toBe(true);
+
+        expect(undoStore.value?.past).toEqual([]);
+        expect(undoStore.value?.future).toEqual([]);
+    });
+
+    it('clears the hydrated undo history when the reload restores the same project but a divergent document', async () => {
+        seedHydratedUndoEntryFor(RESTORED_PROJECT_ID, HYDRATED_WITNESS);
+        expect(undoStore.value?.past.map((entry) => entry.label)).toEqual([SEEDED_ENTRY_LABEL]);
+
+        restoreProjectVia(() => {
+            const current = projectStore.value ?? defaultProjectStoreState;
+            projectStore.set({ ...current, projectId: RESTORED_PROJECT_ID });
+        });
+        // Same project id as the mirror, but the reloaded document's witness
+        // no longer matches — a stale restore, or edits the mirror never saw.
+        mocks.captureDurableDocumentWitness.mockReturnValue(DIVERGED_WITNESS);
 
         await expect(loadProject()).resolves.toBe(true);
 

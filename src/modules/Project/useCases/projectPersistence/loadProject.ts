@@ -3,6 +3,7 @@ import { batchStoreUpdates } from '#/infra/store/createStore';
 import { getAudioContext, prepareCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
 import { executeAppAction, reconcileSessionUndoForProject } from '#/modules/Command/useCases';
 import {
+    captureDurableDocumentWitness,
     DOC_PREFIX_ROOT,
     getCrdtDoc,
     loadCrdtProject,
@@ -96,13 +97,18 @@ export async function loadProject(): Promise<boolean> {
             verifyAudioBufferReferences();
 
             // `getDurableProjectOwnerId()` is not usable here: it demands
-            // `initialized`, which this batch has not flipped true yet (see
-            // below), so it would read undefined for every restore. The raw
-            // projectId that `projectCrdtToStores` just hydrated is the same
-            // value `reconcileSessionUndoForProject` tags future mirror writes
-            // with, so comparing it here stays self-consistent session to
-            // session even though it precedes canonical identity migration.
-            reconcileSessionUndoForProject(projectStore.value?.projectId);
+            // `initialized`, which this batch has not flipped true yet, so it
+            // would read undefined for every restore. The raw projectId
+            // `projectCrdtToStores` just hydrated is compared instead. A
+            // legacy project without a canonical id tags `undefined` here,
+            // so its first post-migration reload clears the mirror once;
+            // `migrateActiveProjectIdentity` below then persists the
+            // canonical id, and every later session tags and compares that
+            // migrated id, so matching resumes from that reload on.
+            reconcileSessionUndoForProject({
+                projectId: projectStore.value?.projectId,
+                captureWitness: captureDurableDocumentWitness,
+            });
         });
     } finally {
         preparedBuffers.cancel();

@@ -34,10 +34,12 @@ const mocks = vi.hoisted(() => ({
     loadCrdtProject: vi.fn<(input?: { shouldCommit?: () => boolean }) => Promise<boolean>>(),
     projectCrdtToStores: vi.fn<() => void>(),
     startCrdtAutoSave: vi.fn<() => () => void>(() => vi.fn<() => void>()),
-    reconcileSessionUndoForProject: vi.fn<(projectId: string | undefined) => void>(),
+    reconcileSessionUndoForProject:
+        vi.fn<(target: { projectId: string | undefined; captureWitness: () => string }) => void>(),
     resetActionReplayAuthority: vi.fn<() => void>(),
     executeAppAction: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     captureProjectRevision: vi.fn<() => string>(() => 'saved-revision'),
+    captureDurableDocumentWitness: vi.fn<() => string>(() => 'document-witness'),
     persistCrdtProject: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     addToRecentProjects: vi.fn<(...args: unknown[]) => void>(),
     prepareCachedAudioBuffersFromIdb: vi.fn(),
@@ -65,6 +67,7 @@ vi.mock('../../stores/projectStore', () => ({
 // Vitest mocks should use the same path as the import in the source file.
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureDurableDocumentWitness: mocks.captureDurableDocumentWitness,
     captureProjectRevision: mocks.captureProjectRevision,
     createCrdtDoc: vi.fn(),
     createCrdtProject: mocks.createCrdtProject,
@@ -249,7 +252,10 @@ describe('Project Persistence Use Cases', () => {
                 mocks.projectCrdtToStores.mock.invocationCallOrder[0]!
             );
             expect(mocks.projectCrdtToStores).toHaveBeenCalled();
-            expect(mocks.reconcileSessionUndoForProject).toHaveBeenCalledWith(mocks.projectStoreValue.value.projectId);
+            expect(mocks.reconcileSessionUndoForProject).toHaveBeenCalledWith({
+                projectId: mocks.projectStoreValue.value.projectId,
+                captureWitness: mocks.captureDurableDocumentWitness,
+            });
             expect(mocks.startCrdtAutoSave).toHaveBeenCalled();
         });
 

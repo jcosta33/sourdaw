@@ -85,6 +85,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     wireSidechainRoute: vi.fn(),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureDurableDocumentWitness: vi.fn(),
     captureProjectRevision: vi.fn(),
     createCrdtDoc: vi.fn(),
     createCrdtProject: mocks.createCrdtProject,

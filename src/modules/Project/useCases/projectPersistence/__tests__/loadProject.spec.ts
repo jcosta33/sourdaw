@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
     projectStoreSet: vi.fn(),
     createCrdtProject: vi.fn(),
     reconcileSessionUndoForProject: vi.fn(),
+    captureDurableDocumentWitness: vi.fn(() => 'document-witness'),
     executeAppAction: vi.fn<
         (
             action: unknown,
@@ -111,6 +112,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     wireSidechainRoute: vi.fn(),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureDurableDocumentWitness: mocks.captureDurableDocumentWitness,
     captureProjectRevision: vi.fn(),
     createCrdtDoc: vi.fn(),
     createCrdtProject: mocks.createCrdtProject,
@@ -219,7 +221,10 @@ describe('loadProject', () => {
         });
         expect(projectCrdtToStores).toHaveBeenCalledTimes(1);
         expect(mocks.reconcileSessionUndoForProject).toHaveBeenCalledTimes(1);
-        expect(mocks.reconcileSessionUndoForProject).toHaveBeenCalledWith(CANONICAL_PROJECT_ID);
+        expect(mocks.reconcileSessionUndoForProject).toHaveBeenCalledWith({
+            projectId: CANONICAL_PROJECT_ID,
+            captureWitness: mocks.captureDurableDocumentWitness,
+        });
         expect(mocks.projectCrdtToStores.mock.invocationCallOrder[0]).toBeLessThan(
             mocks.reconcileSessionUndoForProject.mock.invocationCallOrder[0]!
         );
