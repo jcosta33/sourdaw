@@ -532,6 +532,11 @@ export type RecoverPublishReviewDependencies = {
         owner: Extract<import('./pullRequestMutationLock.ts').PullRequestMutationLockOwner, { version: 3 }>
     ) => boolean;
     currentOwnerFence?: () => import('./pullRequestMutationLock.ts').PullRequestMutationLockOwnerFence;
+    isLegacyOwnerLive?: (pid: number) => boolean;
+    legacyIncident?: (
+        number: number,
+        ownerOid: string
+    ) => (typeof legacyReviewPublicationIncidents)[number] | undefined;
 };
 
 const recoverPublishReviewUsage = 'usage: pnpm review:publish:recover <pr-number> --owner <lock-object-id>';
@@ -768,14 +773,21 @@ export async function runRecoverPublishReviewLockCli(
     if (!legacy && !isReviewPublicationPullRequestMutationLockOwner(originalOwner)) {
         fail(`PR #${number} recovery requires a review-publication lock owner`);
     }
-    const incident = legacy
+    const trustedIncident = legacy
         ? legacyReviewPublicationIncidents.find(
               (candidate) => candidate.number === number && candidate.ownerOid === ownerOid
           )
         : undefined;
+    const findLegacyIncident = (incidentNumber: number, incidentOwnerOid: string) =>
+        legacyReviewPublicationIncidents.find(
+            (candidate) => candidate.number === incidentNumber && candidate.ownerOid === incidentOwnerOid
+        );
+    const incident = legacy ? (dependencies.legacyIncident ?? findLegacyIncident)(number, ownerOid) : undefined;
     if (
         legacy &&
-        (incident === undefined ||
+        (trustedIncident === undefined ||
+            incident === undefined ||
+            JSON.stringify(incident) !== JSON.stringify(trustedIncident) ||
             originalOwner.pid !== incident.owner.pid ||
             originalOwner.token !== incident.owner.token ||
             incident.definitiveNoMutationHttpStatus !== 422)
@@ -786,12 +798,17 @@ export async function runRecoverPublishReviewLockCli(
         fail(`PR #${number} review-publication lock is still held by a live process`);
     }
     if (legacy) {
-        try {
-            process.kill(originalOwner.pid, 0);
+        if (dependencies.isLegacyOwnerLive?.(originalOwner.pid) === true) {
             fail(`PR #${number} legacy review-publication lock is still held by a live process`);
-        } catch (error) {
-            if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) {
-                throw error;
+        }
+        if (dependencies.isLegacyOwnerLive === undefined) {
+            try {
+                process.kill(originalOwner.pid, 0);
+                fail(`PR #${number} legacy review-publication lock is still held by a live process`);
+            } catch (error) {
+                if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) {
+                    throw error;
+                }
             }
         }
     }

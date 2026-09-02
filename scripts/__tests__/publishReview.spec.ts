@@ -33,6 +33,7 @@ import {
     writePullRequestMutationLockOwner,
     writePullRequestMutationLockReceipt,
 } from '../pullRequestMutationLock.ts';
+import { legacyReviewPublicationIncidents } from '../reviewPublicationLegacyIncidents.ts';
 
 const validComment = {
     path: 'scripts/deliverPullRequest.ts',
@@ -164,6 +165,33 @@ function createLegacyRecoveryFixture() {
     );
     runGit(fixture.root, ['update-ref', pullRequestMutationLockRef(fixture.number), legacyOwnerOid]);
     return { ...fixture, ownerOid: legacyOwnerOid };
+}
+
+function createTrustedIncidentRecoveryFixture() {
+    const incident = legacyReviewPublicationIncidents[0];
+    const root = mkdtempSync(join(tmpdir(), 'sourdaw-trusted-legacy-review-publication-'));
+    runGit(root, ['init']);
+    const bundle = join(root, '.agents', 'review-bundles', `${incident.number}-${incident.expectedHead}`);
+    mkdirSync(bundle, { recursive: true });
+    writeFileSync(join(bundle, 'review.json'), JSON.stringify(incident.preparedPayload));
+    writeFileSync(
+        join(bundle, 'diff.patch'),
+        [
+            'diff --git a/scripts/resolveReviewThread.ts b/scripts/resolveReviewThread.ts',
+            '--- a/scripts/resolveReviewThread.ts',
+            '+++ b/scripts/resolveReviewThread.ts',
+            '@@ -5297 +5297 @@',
+            '+review',
+            'diff --git a/scripts/__tests__/resolveReviewThread.spec.ts b/scripts/__tests__/resolveReviewThread.spec.ts',
+            '--- a/scripts/__tests__/resolveReviewThread.spec.ts',
+            '+++ b/scripts/__tests__/resolveReviewThread.spec.ts',
+            '@@ -5810 +5810 @@',
+            '+review',
+        ].join('\n')
+    );
+    const ownerOid = writePullRequestMutationLockOwner(root, incident.owner, incident.number);
+    runGit(root, ['update-ref', pullRequestMutationLockRef(incident.number), ownerOid]);
+    return { root, incident, ownerOid };
 }
 
 function recoveryDependencies(
@@ -1207,6 +1235,72 @@ describe('shellPort postReview state verification', () => {
             expect(
                 readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
             ).toBe(fixture.ownerOid);
+        } finally {
+            rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
+    it.each([
+        ['PID', (value: any) => ({ ...value, owner: { ...value.owner, pid: value.owner.pid + 1 } })],
+        [
+            'token',
+            (value: any) => ({ ...value, owner: { ...value.owner, token: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' } }),
+        ],
+        ['HTTP status', (value: any) => ({ ...value, definitiveNoMutationHttpStatus: 400 })],
+        ['failed payload', (value: any) => ({ ...value, failedPayload: { ...value.failedPayload, body: 'drift' } })],
+        [
+            'prepared payload',
+            (value: any) => ({ ...value, preparedPayload: { ...value.preparedPayload, body: 'drift' } }),
+        ],
+        ['prepared head', (value: any) => ({ ...value, expectedHead: 'a'.repeat(40) })],
+        ['reviewer actor', (value: any) => ({ ...value, reviewerActorNodeId: 'other-actor' })],
+    ])('retains the exact PR 3342 owner when trusted incident %s drifts', async (_label, mutate) => {
+        const fixture = createTrustedIncidentRecoveryFixture();
+        try {
+            expect(fixture.ownerOid).toBe(fixture.incident.ownerOid);
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.incident.number), '--owner', fixture.incident.ownerOid],
+                    {
+                        ...recoveryDependencies(fixture.root, (expectedHead) => ({
+                            state: 'OPEN',
+                            head: expectedHead,
+                            reviews: [],
+                        })),
+                        isLegacyOwnerLive: () => false,
+                        legacyIncident: () => mutate(fixture.incident),
+                    }
+                )
+            ).rejects.toThrow(/exact trusted incident receipt/);
+            expect(
+                readPullRequestMutationLockOid(
+                    fixture.root,
+                    pullRequestMutationLockRef(fixture.incident.number),
+                    fixture.incident.number
+                )
+            ).toBe(fixture.incident.ownerOid);
+        } finally {
+            rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
+    it('recovers only the exact trusted PR 3342 receipt and owner', async () => {
+        const fixture = createTrustedIncidentRecoveryFixture();
+        try {
+            expect(fixture.ownerOid).toBe(fixture.incident.ownerOid);
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.incident.number), '--owner', fixture.incident.ownerOid],
+                    {
+                        ...recoveryDependencies(fixture.root, (expectedHead) => ({
+                            state: 'OPEN',
+                            head: expectedHead,
+                            reviews: [],
+                        })),
+                        isLegacyOwnerLive: () => false,
+                    }
+                )
+            ).resolves.toBe(0);
         } finally {
             rmSync(fixture.root, { recursive: true, force: true });
         }
