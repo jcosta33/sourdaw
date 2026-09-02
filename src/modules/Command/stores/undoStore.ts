@@ -93,8 +93,9 @@ export function clearUndoStoreOwner(): void {
 // `stampSessionUndoWitness` re-captures and re-writes the mirror once CRDT
 // persistence has forced that write to land, which supersedes whatever this
 // flush recorded. A witness this flush leaves stale with no later persist to
-// supersede it is harmless: nothing durable changed, so the next boot's
-// witness comparison still matches.
+// supersede it mismatches the next boot's capture and clears the stacks,
+// which is correct: the document never durably received the edit those
+// stacks would invert.
 let flushScheduled = false;
 undoStore.subscribe((value) => {
     if (!value || flushScheduled) {
