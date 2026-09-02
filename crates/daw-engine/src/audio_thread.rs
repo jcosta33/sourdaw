@@ -706,10 +706,23 @@ impl DeviceRenderer {
 /// costs capacity and nothing else — no depth, no latency, no shed quantum.
 fn attach_capture<B: InputBackend>(
     engine_sample_rate: f32,
-    on_error: StreamErrorFn,
+    mut on_error: StreamErrorFn,
     input_latency_slot: Arc<AtomicUsize>,
 ) -> Result<(<B::Open as OpenInput>::Stream, CaptureFeed), InputOpenRefusal> {
-    let open = B::open_default_input(InputOpenRequest { engine_sample_rate })?;
+    let open =
+        B::open_default_input(InputOpenRequest { engine_sample_rate }).map_err(|refusal| {
+            // The only report a refusal here gets otherwise: `capture_side` just
+            // logs it and zeroes the latency slot, and it holds no producer of
+            // its own to publish through. This is the one point that still holds
+            // `on_error` un-consumed — `open.start` below is what hands it to the
+            // running stream — so it is the one place a refused open can still
+            // cross the same ring a later mid-stream error would use. Calling
+            // the sink directly, rather than waiting for a backend to invoke it,
+            // is what makes that possible: `on_error` is `FnMut(StreamErrorKind)`
+            // and does not care who calls it.
+            on_error(refusal.stream_error_kind());
+            refusal
+        })?;
     let negotiated = open.negotiated();
     let (mut writer, reader) = capture_ring(
         CaptureShape {
@@ -740,7 +753,10 @@ fn attach_capture<B: InputBackend>(
 /// leaves the musician with no playback either, which is strictly worse than
 /// starting without a record feed. So a refusal is named on the way past and
 /// the latency slot is left at zero, which is how the layer above reads "no
-/// capture".
+/// capture". The stderr line here is not the refusal's only report:
+/// [`attach_capture`] has already pushed the matching `EngineEvent` onto the
+/// caller's ring — see its doc for why that has to happen there rather than
+/// here.
 ///
 /// Nothing is published for an accepted open either. What the ring costs
 /// depends on the block the device turns out to deliver and the slice the
@@ -774,6 +790,15 @@ fn capture_side<Stream>(
         // Reported rather than asserted because the failure is otherwise
         // silent — a running input stream feeding a renderer that never
         // reads it.
+        //
+        // No `EngineEvent` crosses here, unlike the refusal above: by this
+        // point `open.start` has already handed `on_error` — and the
+        // producer it closed over — to the stream this branch is about to
+        // drop. Nothing gives that producer back, so the stderr line is the
+        // only report this branch can still make. Restoring an event here
+        // would mean deferring `open.start` until after this push instead,
+        // which is a real device-open reordering for a branch this crate has
+        // never observed fire.
         eprintln!("[Engine] Audio capture unavailable: the render feed slot was already taken");
         input_latency_slot.store(0, Ordering::Relaxed);
         return None;
@@ -1207,6 +1232,37 @@ mod capture_seam_tests {
         assert_eq!(
             refusal.stream_error_kind(),
             StreamErrorKind::DeviceNotAvailable
+        );
+    }
+
+    /// A refused open is not only named to the caller's `Result` — it also
+    /// crosses the caller's own ring as an `EngineEvent`, the same route a
+    /// mid-stream error takes, so a host watching diagnostics sees "no
+    /// capture" without having to poll for a latency figure that stays zero
+    /// for any number of unrelated reasons. Mutation: delete the
+    /// `on_error(refusal.stream_error_kind())` call inside `attach_capture`'s
+    /// refusal branch — the consumer then yields nothing and this goes red.
+    #[test]
+    fn a_refused_capture_open_reports_one_input_side_event() {
+        let slot = new_input_latency_slot();
+        let (tx, mut rx) = engine_event_channel();
+        let sink = super::stream_error_sink(StreamSide::Input, tx);
+
+        let refusal = attach_capture::<AbsentInput>(ENGINE_RATE, sink, slot)
+            .err()
+            .expect("a machine with no input device cannot open one");
+        assert_eq!(refusal, InputOpenRefusal::NoDefaultInputDevice);
+
+        assert_eq!(
+            rx.pop(),
+            Ok(EngineEvent::StreamError {
+                side: StreamSide::Input,
+                kind: StreamErrorKind::DeviceNotAvailable,
+            })
+        );
+        assert!(
+            rx.pop().is_err(),
+            "exactly one event must cross the ring for one refusal"
         );
     }
 

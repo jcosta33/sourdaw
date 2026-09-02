@@ -1065,6 +1065,49 @@ fn capture_consumer_registered_error(plugin_id: usize) -> String {
     )
 }
 
+/// Assemble a fixture `EngineHandle` around channel ends a caller already
+/// built.
+///
+/// The three test constructors below — this module's and `mod tests`'s two —
+/// differ only in which ends of which channels they keep live and which they
+/// let drop; the sixteen-field literal itself never varies, so it is written
+/// once here rather than once per caller. Every reader and consumer is
+/// required rather than defaulted, so a caller wanting one dropped still has
+/// to build the pair and drop its other half explicitly — the same
+/// `let (_tx, rx) = channel();` pattern every call site already used before
+/// this was extracted.
+#[cfg(any(test, feature = "command-capture-fixture"))]
+fn engine_handle_fixture(
+    command_tx: Producer<GraphCommand>,
+    retired_adoption_tx: Sender<Consumer<RetiredGraphObjects>>,
+    midi_rt_diagnostics: ActiveMidiRtDiagnosticsReader,
+    timeline_rt_diagnostics: TimelineRtDiagnosticsReader,
+    graph_progress: GraphProgressReader,
+    transport_position: TransportPositionReader,
+    engine_events: Consumer<EngineEvent>,
+    capture_events: Consumer<EngineEvent>,
+) -> EngineHandle {
+    EngineHandle {
+        command_tx,
+        retired_adoption_tx,
+        _audio_thread: audio_thread::detached_audio_thread_handle(),
+        next_plugin_id: 1000,
+        effect_registrations: 0,
+        reconciled_effect_id_collisions: 0,
+        capture_consumers: Vec::with_capacity(CRUMBS_CAPTURE_RESERVE),
+        midi_rt_diagnostics,
+        timeline_rt_diagnostics,
+        graph_progress,
+        transport_position,
+        engine_events,
+        capture_events,
+        sample_rate: 48_000.0,
+        // Seeded exactly as a real stream is before its first callback.
+        bridge_round_trip_frames: audio_thread::new_bridge_round_trip_slot(),
+        input_latency_frames: audio_thread::new_input_latency_slot(),
+    }
+}
+
 /// Build a handle whose commands land in the returned consumer.
 ///
 /// The audio thread is the only thing an `EngineHandle` cannot have in a test —
@@ -1089,25 +1132,16 @@ pub fn engine_handle_for_command_capture(
     let (retired_adoption_tx, retired_adoption_rx) = std::sync::mpsc::channel();
 
     (
-        EngineHandle {
+        engine_handle_fixture(
             command_tx,
             retired_adoption_tx,
-            _audio_thread: audio_thread::detached_audio_thread_handle(),
-            next_plugin_id: 1000,
-            effect_registrations: 0,
-            reconciled_effect_id_collisions: 0,
-            capture_consumers: Vec::with_capacity(CRUMBS_CAPTURE_RESERVE),
-            midi_rt_diagnostics: diagnostics_reader,
-            timeline_rt_diagnostics: timeline_diagnostics_reader,
-            graph_progress: graph_progress_reader,
-            transport_position: transport_position_reader,
-            engine_events: engine_event_rx,
-            capture_events: capture_event_rx,
-            sample_rate: 48_000.0,
-            // Seeded exactly as a real stream is before its first callback.
-            bridge_round_trip_frames: audio_thread::new_bridge_round_trip_slot(),
-            input_latency_frames: audio_thread::new_input_latency_slot(),
-        },
+            diagnostics_reader,
+            timeline_diagnostics_reader,
+            graph_progress_reader,
+            transport_position_reader,
+            engine_event_rx,
+            capture_event_rx,
+        ),
         command_rx,
         retired_adoption_rx,
     )
@@ -1116,8 +1150,8 @@ pub fn engine_handle_for_command_capture(
 #[cfg(test)]
 mod tests {
     use super::{
-        engine_handle_for_command_capture, spawn_with_fallback, GraphBatchError,
-        CRUMBS_CAPTURE_RESERVE, EFFECT_TABLE_CAPACITY,
+        engine_handle_fixture, engine_handle_for_command_capture, spawn_with_fallback,
+        GraphBatchError, CRUMBS_CAPTURE_RESERVE, EFFECT_TABLE_CAPACITY,
     };
     use crate::audio_bridge::create_audio_bridge;
     use crate::engine_events::{engine_event_channel, EngineEvent, StreamErrorKind, StreamSide};
@@ -2155,24 +2189,16 @@ mod tests {
         let (retired_adoption_tx, _retired_adoption_rx) = std::sync::mpsc::channel();
 
         (
-            EngineHandle {
+            engine_handle_fixture(
                 command_tx,
                 retired_adoption_tx,
-                _audio_thread: crate::audio_thread::detached_audio_thread_handle(),
-                next_plugin_id: 1000,
-                effect_registrations: 0,
-                reconciled_effect_id_collisions: 0,
-                capture_consumers: Vec::with_capacity(CRUMBS_CAPTURE_RESERVE),
-                midi_rt_diagnostics: diagnostics_reader,
-                timeline_rt_diagnostics: timeline_diagnostics_reader,
-                graph_progress: graph_progress_reader,
-                transport_position: transport_position_reader,
-                engine_events: engine_event_rx,
-                capture_events: capture_event_rx,
-                sample_rate: 48_000.0,
-                bridge_round_trip_frames: crate::audio_thread::new_bridge_round_trip_slot(),
-                input_latency_frames: crate::audio_thread::new_input_latency_slot(),
-            },
+                diagnostics_reader,
+                timeline_diagnostics_reader,
+                graph_progress_reader,
+                transport_position_reader,
+                engine_event_rx,
+                capture_event_rx,
+            ),
             command_rx,
             diagnostics_tx,
         )
@@ -2344,24 +2370,16 @@ mod tests {
         let (retired_adoption_tx, _retired_adoption_rx) = std::sync::mpsc::channel();
 
         (
-            EngineHandle {
+            engine_handle_fixture(
                 command_tx,
                 retired_adoption_tx,
-                _audio_thread: crate::audio_thread::detached_audio_thread_handle(),
-                next_plugin_id: 1000,
-                effect_registrations: 0,
-                reconciled_effect_id_collisions: 0,
-                capture_consumers: Vec::with_capacity(CRUMBS_CAPTURE_RESERVE),
-                midi_rt_diagnostics: diagnostics_reader,
-                timeline_rt_diagnostics: timeline_diagnostics_reader,
-                graph_progress: graph_progress_reader,
-                transport_position: transport_position_reader,
-                engine_events: engine_event_rx,
-                capture_events: capture_event_rx,
-                sample_rate: 48_000.0,
-                bridge_round_trip_frames: crate::audio_thread::new_bridge_round_trip_slot(),
-                input_latency_frames: crate::audio_thread::new_input_latency_slot(),
-            },
+                diagnostics_reader,
+                timeline_diagnostics_reader,
+                graph_progress_reader,
+                transport_position_reader,
+                engine_event_rx,
+                capture_event_rx,
+            ),
             engine_event_tx,
             capture_event_tx,
         )
