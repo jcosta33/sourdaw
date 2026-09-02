@@ -22,16 +22,30 @@ const MIX_DATA_TAG = 'mix_data';
  * Track names and kinds are user- and peer-supplied (DAWproject import,
  * collaboration) and reach the model verbatim. Escaping the angle brackets and
  * ampersands stops such a string forging the envelope's closing tag; escaping
- * the line breaks stops it forging further rows inside the envelope, since the
- * payload is line-structured and one row per fact.
+ * every Unicode mandatory break stops it forging further rows, since the
+ * payload is line-structured and carries one fact per row.
+ *
+ * No replacement emits a character that another entry matches, so the order
+ * below is presentational rather than load-bearing.
  */
+const PROJECT_STRING_ESCAPES: ReadonlyArray<readonly [string, string]> = [
+    ['&', '\\u0026'],
+    ['<', '\\u003c'],
+    ['>', '\\u003e'],
+    [String.fromCodePoint(0x0a), '\\n'],
+    [String.fromCodePoint(0x0d), '\\r'],
+    [String.fromCodePoint(0x0b), '\\u000b'],
+    [String.fromCodePoint(0x0c), '\\u000c'],
+    [String.fromCodePoint(0x85), '\\u0085'],
+    [String.fromCodePoint(0x2028), '\\u2028'],
+    [String.fromCodePoint(0x2029), '\\u2029'],
+];
+
 function escapeProjectString(value: string): string {
-    return value
-        .replaceAll('&', '\\u0026')
-        .replaceAll('<', '\\u003c')
-        .replaceAll('>', '\\u003e')
-        .replaceAll('\n', '\\n')
-        .replaceAll('\r', '\\r');
+    return PROJECT_STRING_ESCAPES.reduce(
+        (escaped, [character, replacement]) => escaped.replaceAll(character, replacement),
+        value
+    );
 }
 
 function describeTrackSource(track: Track): string[] {
