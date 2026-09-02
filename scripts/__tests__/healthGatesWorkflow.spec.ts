@@ -172,6 +172,7 @@ const DEPLOY_CREDENTIAL_GATED_STEPS = [DEPLOY_WEB_FRESHNESS_STEP] as const;
 const DEPLOY_FRESH_GATED_STEPS = [
     'Checkout the validated revision',
     'Enable Corepack',
+    'Set up pnpm',
     'Set up Node',
     'Resolve the current production revision',
 ] as const;

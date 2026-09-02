@@ -797,6 +797,7 @@ const freshCondition = "env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshne
 for (const stepName of [
     'Checkout the validated revision',
     'Enable Corepack',
+    'Set up pnpm',
     'Set up Node',
     'Resolve the current production revision',
 ]) {
