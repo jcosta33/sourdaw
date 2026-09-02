@@ -1556,6 +1556,7 @@ describe('shellPort postReview state verification', () => {
                         })),
                         afterRecoveryReceiptPersisted: (receipt) => {
                             persistedReceipt = receipt;
+                            expect(receipt.adoptedOwnerOid).not.toBe(fixture.ownerOid);
                             expect(readPullRequestMutationLockReceipt(fixture.root, fixture.number, fixture.ownerOid)).toEqual(
                                 receipt
                             );
@@ -1572,6 +1573,7 @@ describe('shellPort postReview state verification', () => {
                 )
             ).rejects.toThrow(/injected crash after exact receipt persistence/);
             expect(persistedReceipt).toBeDefined();
+            expect(persistedReceipt!.adoptedOwnerOid).not.toBe(fixture.ownerOid);
             expect(readPullRequestMutationLockReceipt(fixture.root, fixture.number, fixture.ownerOid)).toEqual(
                 persistedReceipt
             );
@@ -1582,6 +1584,42 @@ describe('shellPort postReview state verification', () => {
                     fixture.number
                 )
             ).toBe(persistedReceipt!.adoptedOwnerOid);
+            let authenticated = false;
+            const replayDependencies = {
+                ...recoveryDependencies(fixture.root, (expectedHead) => ({
+                    state: 'OPEN',
+                    head: expectedHead,
+                    reviews: [],
+                })),
+                authenticateReviewer: async () => {
+                    authenticated = true;
+                    throw new Error('replay must not authenticate');
+                },
+            };
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.number), '--owner', fixture.ownerOid],
+                    replayDependencies
+                )
+            ).resolves.toBe(0);
+            expect(authenticated).toBe(false);
+            expect(
+                readPullRequestMutationLockOid(
+                    fixture.root,
+                    pullRequestMutationLockRef(fixture.number),
+                    fixture.number
+                )
+            ).toBeUndefined();
+            expect(readPullRequestMutationLockReceipt(fixture.root, fixture.number, fixture.ownerOid)).toEqual(
+                persistedReceipt
+            );
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.number), '--owner', fixture.ownerOid],
+                    replayDependencies
+                )
+            ).resolves.toBe(0);
+            expect(authenticated).toBe(false);
         } finally {
             rmSync(fixture.root, { recursive: true, force: true });
         }
