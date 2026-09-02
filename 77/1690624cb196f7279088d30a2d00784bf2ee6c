@@ -1,0 +1,22 @@
+src/modules/CrdtDocument/useCases/__tests__/crdtPersistenceQueueCoordinator.spec.ts
+  s_bbdfb911119c4f::t_0238373223a25e 255-263,265-275
+  s_bbdfb911119c4f::t_d3b635792f87db 276-277,286
+src/modules/CrdtDocument/useCases/crdtPersistenceQueueCoordinator.ts
+  s_bbdfb911119c4f::t_89b916e49aef00 666-668
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "771690624cb196f7279088d30a2d00784bf2ee6c",
+  "prompts": {},
+  "sessions": {
+    "s_bbdfb911119c4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fa21d5-2a8a-4f80-98ab-b72059373843",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
