@@ -13,6 +13,13 @@ import {
 import { normalizeAgentPlanProposal } from '../transformers/normalizeAgentPlanProposal';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
+import {
+    BATCH_LOCAL_BINDING_PATTERN,
+    type BatchLocalBindingProducer,
+    CAPABILITIES_REQUIRING_CONCRETE_DEPENDENCY,
+    BATCH_LOCAL_BINDING_PRODUCER_NAMES,
+    resolveBatchLocalBindingProducer,
+} from './agentReference/batchLocalBindingProducers';
 import { isAgentReferenceCapabilityCandidate } from './agentReference/isAgentReferenceCapabilityCandidate';
 
 type Candidate = {
@@ -79,6 +86,8 @@ type AcceptedCompilation = {
 };
 
 type RejectedCompilation = { status: 'rejected'; reason: string };
+
+type DeclaredBatchLocalProducer = BatchLocalBindingProducer & { itemId: string };
 
 export type ArbitraryCommandListCompilation = AcceptedCompilation | RejectedCompilation;
 
@@ -373,11 +382,31 @@ function getTargetRuleValues(
     return isSafeId(value) ? [value] : null;
 }
 
+/**
+ * A batch-local target has no snapshot row yet, so its owning track is read from the plan: a
+ * created track or bus owns itself, and a created clip is owned by whatever its producing
+ * `addClip` targeted — which may itself still be a `$binding` literal.
+ */
+function resolveBatchLocalParentTrackId(
+    capability: AppDerivedParentTrackTargetCapability,
+    binding: string,
+    producersByBinding: ReadonlyMap<string, DeclaredBatchLocalProducer>
+): string | null {
+    if (capability === 'track' || capability === 'routable-source' || capability === 'bus') {
+        return `$${binding}`;
+    }
+    return producersByBinding.get(binding)?.parentTrackReference ?? null;
+}
+
 function resolveParentTrackId(
     capability: AppDerivedParentTrackTargetCapability,
     targetId: string,
-    context: ProjectContext
+    context: ProjectContext,
+    producersByBinding: ReadonlyMap<string, DeclaredBatchLocalProducer>
 ): string | null {
+    if (targetId.startsWith('$')) {
+        return resolveBatchLocalParentTrackId(capability, targetId.slice(1), producersByBinding);
+    }
     switch (capability) {
         case 'track':
         case 'routable-source':
@@ -410,6 +439,7 @@ type AppDerivedMutationIdentityMaterializer = (input: {
     argumentRule: AppDerivedMutationIdentityArgument;
     arguments_: Readonly<Record<string, unknown>>;
     context: ProjectContext;
+    producersByBinding: ReadonlyMap<string, DeclaredBatchLocalProducer>;
     targetRules: ExecutableAppActionGroundingRules['targetRules'];
 }) => readonly string[] | null;
 
@@ -417,6 +447,7 @@ const materializeParentTrackIds: AppDerivedMutationIdentityMaterializer = ({
     argumentRule,
     arguments_,
     context,
+    producersByBinding,
     targetRules,
 }) => {
     const parentTrackIds = new Set<string>();
@@ -431,7 +462,7 @@ const materializeParentTrackIds: AppDerivedMutationIdentityMaterializer = ({
             return null;
         }
         for (const targetId of targetIds) {
-            const parentTrackId = resolveParentTrackId(targetRule.capability, targetId, context);
+            const parentTrackId = resolveParentTrackId(targetRule.capability, targetId, context, producersByBinding);
             if (parentTrackId === null) {
                 return null;
             }
@@ -453,6 +484,7 @@ function materializeMutationIdentityArguments(input: {
     command: ToolCallResult;
     context: ProjectContext;
     mutationIdentityRules: readonly MutationIdentityRule[];
+    producersByBinding: ReadonlyMap<string, DeclaredBatchLocalProducer>;
     targetRules: ExecutableAppActionGroundingRules['targetRules'];
 }): { status: 'accepted'; arguments: Readonly<Record<string, unknown>> } | RejectedCompilation {
     const materializedArguments = materializeSidechainRouteIdentityArguments(input.command, input.context);
@@ -478,6 +510,7 @@ function materializeMutationIdentityArguments(input: {
                 argumentRule,
                 arguments_: materializedArguments,
                 context: input.context,
+                producersByBinding: input.producersByBinding,
                 targetRules: input.targetRules,
             });
             if (value === null) {
@@ -515,6 +548,7 @@ function checkCommandWriteConflict(input: {
     context: ProjectContext;
     mutationIdempotent: boolean;
     mutationIdentityRules: readonly MutationIdentityRule[];
+    producersByBinding: ReadonlyMap<string, DeclaredBatchLocalProducer>;
     targetRules: ExecutableAppActionGroundingRules['targetRules'];
     mutationResourceWrites: Map<string, { destructive: boolean }>;
     targetCommandArguments: Map<string, string>;
@@ -525,6 +559,7 @@ function checkCommandWriteConflict(input: {
         command: input.command,
         context: input.context,
         mutationIdentityRules: input.mutationIdentityRules,
+        producersByBinding: input.producersByBinding,
         targetRules: input.targetRules,
     });
     if (materialization.status === 'rejected') {
@@ -616,28 +651,6 @@ function stableTopologicalSort(
     return { status: 'accepted', items: sorted };
 }
 
-const BATCH_LOCAL_BINDING_PATTERN = /^[a-z][a-z0-9-]{0,63}$/u;
-
-function capabilityRequiresConcreteDependency(capability: string): boolean {
-    return capability === 'device' || capability === 'device-parameter';
-}
-
-type BatchLocalBindingProducer = {
-    capabilities: readonly string[];
-    itemId: string;
-};
-
-const BATCH_LOCAL_BUS_TARGET_CAPABILITIES: ReadonlySet<string> = new Set([
-    'track',
-    'armable-track',
-    'duplicable-track',
-    'removable-track',
-    'routable-source',
-    'bus',
-    'output',
-    'device-host-track',
-]);
-
 function dependsTransitivelyOn(
     item: SemanticCommandListItem,
     dependencyId: string,
@@ -663,7 +676,7 @@ function validateTargetArgumentsWithoutSelectors(input: {
     context: ProjectContext;
     item: SemanticCommandListItem;
     itemsById: ReadonlyMap<string, SemanticCommandListItem>;
-    producersByBinding: ReadonlyMap<string, BatchLocalBindingProducer>;
+    producersByBinding: ReadonlyMap<string, DeclaredBatchLocalProducer>;
     selectorArgument?: string;
     selectorStableIds?: readonly string[];
     targetRules: readonly {
@@ -750,7 +763,7 @@ function validateTargetArgumentsWithoutSelectors(input: {
         if (
             targetRule.dependsOn !== undefined &&
             dependencyIds.length === 0 &&
-            capabilityRequiresConcreteDependency(targetRule.capability)
+            CAPABILITIES_REQUIRING_CONCRETE_DEPENDENCY.has(targetRule.capability)
         ) {
             return {
                 status: 'rejected',
@@ -806,13 +819,13 @@ function getDeclaredBatchLocalBinding(
         return null;
     }
     if (
-        item.name !== 'createBus' ||
+        !BATCH_LOCAL_BINDING_PRODUCER_NAMES.has(item.name) ||
         typeof binding !== 'string' ||
         !BATCH_LOCAL_BINDING_PATTERN.test(binding) ||
         item.selector !== undefined ||
         repeat !== 1
     ) {
-        return { status: 'rejected', reason: 'Batch-local binding producer is not one bounded createBus item.' };
+        return { status: 'rejected', reason: 'Batch-local binding producer is not one bounded creation item.' };
     }
     return binding;
 }
@@ -866,7 +879,7 @@ export function compileArbitraryCommandList(input: {
     const mutationResourceWrites = new Map<string, { destructive: boolean }>();
     const canonicalCommandIndexByKey = new Map<string, number>();
     const itemsById = new Map(items.map((item) => [item.id, item]));
-    const producersByBinding = new Map<string, BatchLocalBindingProducer>();
+    const producersByBinding = new Map<string, DeclaredBatchLocalProducer>();
 
     for (const item of items) {
         const commandStart = commands.length;
@@ -917,6 +930,7 @@ export function compileArbitraryCommandList(input: {
                     context: input.context,
                     mutationIdempotent: rules.mutationIdempotent,
                     mutationIdentityRules: rules.mutationIdentityRules,
+                    producersByBinding,
                     targetRules: rules.targetRules,
                     mutationResourceWrites,
                     targetCommandArguments,
@@ -958,10 +972,19 @@ export function compileArbitraryCommandList(input: {
                 commandCount: commands.length - commandStart,
             });
             if (typeof declaredBinding === 'string') {
-                producersByBinding.set(declaredBinding, {
-                    capabilities: [...BATCH_LOCAL_BUS_TARGET_CAPABILITIES],
-                    itemId: item.id,
+                const producer = resolveBatchLocalBindingProducer({
+                    arguments: item.arguments,
+                    context: input.context,
+                    name: item.name,
+                    producersByBinding,
                 });
+                if (producer === null) {
+                    return {
+                        status: 'rejected',
+                        reason: `Batch-local binding producer does not create a typed object: ${declaredBinding}`,
+                    };
+                }
+                producersByBinding.set(declaredBinding, { ...producer, itemId: item.id });
             }
             continue;
         }
@@ -1000,7 +1023,7 @@ export function compileArbitraryCommandList(input: {
         if (
             (targetRule.dependsOn !== undefined &&
                 selectorDependencyIds.length === 0 &&
-                capabilityRequiresConcreteDependency(targetRule.capability)) ||
+                CAPABILITIES_REQUIRING_CONCRETE_DEPENDENCY.has(targetRule.capability)) ||
             !resolved.stableIds.every((stableId) =>
                 (selectorDependencyIds.length === 0 ? [undefined] : selectorDependencyIds).every((dependencyId) =>
                     isAgentReferenceCapabilityCandidate({
@@ -1056,6 +1079,7 @@ export function compileArbitraryCommandList(input: {
                     context: input.context,
                     mutationIdempotent: rules.mutationIdempotent,
                     mutationIdentityRules: rules.mutationIdentityRules,
+                    producersByBinding,
                     targetRules: rules.targetRules,
                     mutationResourceWrites,
                     targetCommandArguments,

@@ -6,6 +6,13 @@ import { type ProjectContext } from '../models/ProjectContext';
 import { type SemanticCommandListEntity } from '../models/SemanticCommandList';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
+import {
+    BATCH_LOCAL_BINDING_PATTERN,
+    type BatchLocalBindingProducer,
+    CAPABILITIES_REQUIRING_CONCRETE_DEPENDENCY,
+    BATCH_LOCAL_BINDING_PRODUCER_NAMES,
+    resolveBatchLocalBindingProducer,
+} from './agentReference/batchLocalBindingProducers';
 import { isAgentReferenceCapabilityCandidate } from './agentReference/isAgentReferenceCapabilityCandidate';
 import {
     type ArbitraryCommandListEvidence,
@@ -121,11 +128,7 @@ function hasExactStableIdSet(left: readonly string[], right: readonly string[]):
     return leftIds.size === right.length && right.every((id) => leftIds.has(id));
 }
 
-function capabilityRequiresConcreteDependency(capability: string): boolean {
-    return capability === 'device' || capability === 'device-parameter';
-}
-
-const BATCH_LOCAL_BINDING_PATTERN = /^[a-z][a-z0-9-]{0,63}$/u;
+type ReplayedBatchLocalProducer = BatchLocalBindingProducer & { commandIndex: number; itemId: string };
 
 function evidenceDependsTransitivelyOn(
     itemId: string,
@@ -207,20 +210,7 @@ export function validateArbitraryCommandListEvidence(input: {
     const itemsById = new Map(evidence.items.map((item) => [item.itemId, item]));
     const resolvedTargetIds: string[] = [];
     const targetOverridesByCallIndex = new Map<number, readonly CompilerResolvedTargetOverride[]>();
-    const producerByBinding = new Map<
-        string,
-        { capabilities: readonly string[]; commandIndex: number; itemId: string }
-    >();
-    const batchLocalBusTargetCapabilities: ReadonlySet<string> = new Set([
-        'track',
-        'armable-track',
-        'duplicable-track',
-        'removable-track',
-        'routable-source',
-        'bus',
-        'output',
-        'device-host-track',
-    ]);
+    const producerByBinding = new Map<string, ReplayedBatchLocalProducer>();
     let commandCursor = 0;
     for (const item of evidence.items) {
         if (
@@ -328,7 +318,7 @@ export function validateArbitraryCommandListEvidence(input: {
                     : item.commandCount !== item.canonicalStableIds.length) ||
                 (targetRule.dependsOn !== undefined &&
                     selectorDependencyIds.length === 0 &&
-                    capabilityRequiresConcreteDependency(targetRule.capability)) ||
+                    CAPABILITIES_REQUIRING_CONCRETE_DEPENDENCY.has(targetRule.capability)) ||
                 !item.stableIds.every((stableId) =>
                     (selectorDependencyIds.length === 0 ? [undefined] : selectorDependencyIds).every((dependencyId) =>
                         isAgentReferenceCapabilityCandidate({
@@ -433,7 +423,7 @@ export function validateArbitraryCommandListEvidence(input: {
                     new Set(directTarget.stableIds).size !== directTarget.stableIds.length ||
                     (directRule.dependsOn !== undefined &&
                         dependencyIds.length === 0 &&
-                        capabilityRequiresConcreteDependency(directRule.capability)) ||
+                        CAPABILITIES_REQUIRING_CONCRETE_DEPENDENCY.has(directRule.capability)) ||
                     !directTarget.stableIds.every((stableId) =>
                         (dependencyIds.length === 0 ? [undefined] : dependencyIds).every((dependencyId) =>
                             isAgentReferenceCapabilityCandidate({
@@ -535,26 +525,31 @@ export function validateArbitraryCommandListEvidence(input: {
                 ]);
             }
         }
-        if (item.commandName === 'createBus') {
-            const binding = itemCommands[0]?.arguments.binding;
-            if (binding !== undefined) {
-                if (
-                    itemCommands.length !== 1 ||
-                    typeof binding !== 'string' ||
-                    !BATCH_LOCAL_BINDING_PATTERN.test(binding) ||
-                    producerByBinding.has(binding)
-                ) {
-                    return {
-                        status: 'rejected',
-                        reason: 'Structured command compiler evidence batch-local producer is invalid.',
-                    };
-                }
-                producerByBinding.set(binding, {
-                    capabilities: [...batchLocalBusTargetCapabilities],
-                    commandIndex: item.commandStart,
-                    itemId: item.itemId,
-                });
+        const producerCommand = itemCommands[0];
+        if (producerCommand?.arguments.binding !== undefined) {
+            const binding = producerCommand.arguments.binding;
+            const producer =
+                typeof binding === 'string' && BATCH_LOCAL_BINDING_PRODUCER_NAMES.has(item.commandName)
+                    ? resolveBatchLocalBindingProducer({
+                          arguments: producerCommand.arguments,
+                          context: input.context,
+                          name: item.commandName,
+                          producersByBinding: producerByBinding,
+                      })
+                    : null;
+            if (
+                itemCommands.length !== 1 ||
+                typeof binding !== 'string' ||
+                !BATCH_LOCAL_BINDING_PATTERN.test(binding) ||
+                producerByBinding.has(binding) ||
+                producer === null
+            ) {
+                return {
+                    status: 'rejected',
+                    reason: 'Structured command compiler evidence batch-local producer is invalid.',
+                };
             }
+            producerByBinding.set(binding, { ...producer, commandIndex: item.commandStart, itemId: item.itemId });
         }
         itemIds.add(item.itemId);
         commandCursor += item.commandCount;
@@ -611,7 +606,7 @@ export function validateArbitraryCommandListEvidence(input: {
             batchLocalBindings: [...producerByBinding.entries()].map(([binding, producer]) => ({
                 bindingId: `$${binding}`,
                 producerActionIndex: producer.commandIndex,
-                producerArgument: 'busId',
+                producerArgument: producer.producerArgument,
             })),
         },
         targetOverridesByCallIndex,
