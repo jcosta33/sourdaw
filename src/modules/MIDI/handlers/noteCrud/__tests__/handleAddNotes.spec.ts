@@ -3,7 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
-import { clearUndoHistory, createVersionedCommandEnvelope, executeAppAction } from '#/modules/Command/useCases';
+import {
+    clearUndoHistory,
+    createVersionedCommandEnvelope,
+    executeAppAction,
+    executeAppActionBatch,
+    executeVersionedCommandEnvelope,
+    serializeVersionedCommandEnvelope,
+} from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type MidiNote } from '../../../models/MidiNote';
@@ -132,11 +139,8 @@ describe('handleAddNotes', () => {
                 probability: 100,
             },
         ]);
-        expect(redo.payload.allowMissingExpectedEmpty).toBe(true);
-
         await handleAddNotes.execute(action);
         expect(handleRestoreMidiClipNotes.execute(inverse)).toEqual({ status: 'written' });
-        midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         expect(handleRestoreMidiClipNotes.execute(redo)).toEqual({ status: 'written' });
         expect(currentNotes()).toEqual(redo.payload.notes);
         expect(handleAddNotes.requiresAbortCompensation).toBe(false);
@@ -197,8 +201,9 @@ describe('handleAddNotes', () => {
             time: [],
         });
 
-        await executeAppAction(action, { commandEnvelope: envelope });
+        const receipt = await executeVersionedCommandEnvelope(serializeVersionedCommandEnvelope(envelope));
 
+        expect(receipt.commandId).toBe(envelope.commandId);
         expect(undoStore.value?.past.at(-1)).toMatchObject({
             action: {
                 type: 'addNotes',
@@ -207,6 +212,66 @@ describe('handleAddNotes', () => {
                     notes: [
                         {
                             id: 'note-envelope-1',
+                            pitch: 61,
+                            startBeat: 0,
+                            duration: 0.0625,
+                            velocity: 97,
+                            probability: 100,
+                        },
+                    ],
+                },
+            },
+        });
+    });
+
+    it('canonicalizes a raw envelope-backed addNotes batch before recording its undo entry', async () => {
+        const action = {
+            type: 'addNotes' as const,
+            payload: {
+                clipId: CLIP_ID,
+                notes: [
+                    {
+                        id: 'note-batch-envelope-1',
+                        pitch: 60.6,
+                        startBeat: -2,
+                        duration: 0.01,
+                        velocity: 96.7,
+                    },
+                ],
+            },
+        };
+        const envelope = createVersionedCommandEnvelope({
+            action,
+            applicationAssignedIds: [{ argument: 'notes[0].id', value: 'note-batch-envelope-1' }],
+            availableDeviceVersions: {},
+            expectedEffect: 'Add one MIDI note.',
+            normalizedProjectRevision: 'revision-envelope',
+            objectReferences: [{ argument: 'clipId', id: CLIP_ID, scope: 'stable' }],
+            parameterUnits: [],
+            reason: 'Add one MIDI note.',
+            time: [],
+        });
+
+        await expect(executeAppActionBatch([action], { commandEnvelopes: [envelope] })).resolves.toMatchObject({
+            status: 'committed',
+        });
+
+        expect(currentNotes()).toContainEqual({
+            id: 'note-batch-envelope-1',
+            pitch: 61,
+            startBeat: 0,
+            duration: 0.0625,
+            velocity: 97,
+            probability: 100,
+        });
+        expect(undoStore.value?.past.at(-1)).toMatchObject({
+            action: {
+                type: 'addNotes',
+                payload: {
+                    clipId: CLIP_ID,
+                    notes: [
+                        {
+                            id: 'note-batch-envelope-1',
                             pitch: 61,
                             startBeat: 0,
                             duration: 0.0625,

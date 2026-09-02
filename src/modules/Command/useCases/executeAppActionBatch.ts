@@ -662,6 +662,23 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                         actions: [],
                     };
                 }
+                if (
+                    suppliedEnvelope &&
+                    (suppliedEnvelope.operation !== action.type ||
+                        suppliedEnvelope.groupId !== options.groupId ||
+                        suppliedEnvelope.argumentsDigest !==
+                            getVersionedCommandArgumentsDigest({
+                                operation: action.type,
+                                arguments: action.payload ?? {},
+                            }))
+                ) {
+                    return {
+                        status: 'rejected',
+                        reason: `Command envelope does not match action ${action.type}`,
+                        actions: [],
+                    };
+                }
+                handler.materializeCommandArguments?.(action);
                 let description: HandlerDescribeResult | null;
                 try {
                     description = null;
@@ -700,22 +717,6 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                             actions: [],
                         };
                     }
-                }
-                if (
-                    suppliedEnvelope &&
-                    (suppliedEnvelope.operation !== action.type ||
-                        suppliedEnvelope.groupId !== options.groupId ||
-                        suppliedEnvelope.argumentsDigest !==
-                            getVersionedCommandArgumentsDigest({
-                                operation: action.type,
-                                arguments: action.payload ?? {},
-                            }))
-                ) {
-                    return {
-                        status: 'rejected',
-                        reason: `Command envelope does not match action ${action.type}`,
-                        actions: [],
-                    };
                 }
                 const command = suppliedEnvelope
                     ? { action, envelope: suppliedEnvelope }

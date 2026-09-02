@@ -42,7 +42,6 @@ function createPersistedAddNotesEntry() {
                 clipId: 'clip-midi',
                 notes,
                 expectedNotes: [],
-                allowMissingExpectedEmpty: true,
                 noteTransformReplayGuard,
             },
         },
@@ -269,6 +268,19 @@ describe('addNotes command registration', () => {
                             ...entry.action.payload,
                             notes: [{ pitch: 60, startBeat: 0, duration: 1 }],
                         },
+                    },
+                };
+            },
+        ],
+        [
+            'a widened missing-empty replay flag',
+            () => {
+                const entry = createPersistedAddNotesEntry();
+                return {
+                    ...entry,
+                    redoAction: {
+                        ...entry.redoAction,
+                        payload: { ...entry.redoAction.payload, allowMissingExpectedEmpty: true },
                     },
                 };
             },

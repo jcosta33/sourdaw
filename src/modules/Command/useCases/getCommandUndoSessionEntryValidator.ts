@@ -94,6 +94,8 @@ function hasExactAddNotesRestorePair(entry: SessionActionEntry): boolean {
         !Array.isArray(inversePayload.expectedNotes) ||
         !Array.isArray(redoPayload.notes) ||
         !Array.isArray(redoPayload.expectedNotes) ||
+        Object.hasOwn(inversePayload, 'allowMissingExpectedEmpty') ||
+        Object.hasOwn(redoPayload, 'allowMissingExpectedEmpty') ||
         !isWritableMidiClipReplayGuard(inversePayload.noteTransformReplayGuard) ||
         !isWritableMidiClipReplayGuard(redoPayload.noteTransformReplayGuard)
     ) {

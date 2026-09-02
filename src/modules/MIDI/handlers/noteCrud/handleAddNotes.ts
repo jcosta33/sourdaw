@@ -83,7 +83,6 @@ export const handleAddNotes = createHandler<'addNotes'>({
                     clipId: action.payload.clipId,
                     notes: expectedNotes,
                     expectedNotes: notes,
-                    allowMissingExpectedEmpty: noteSnapshot === null,
                     noteTransformReplayGuard,
                 },
             },
