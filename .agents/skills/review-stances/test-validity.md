@@ -19,6 +19,14 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-09-02 — a rejected review stranded its mutation lock (escaped via PR #3342)
+
+Review publication treated a definitive GitHub validation rejection as an ordinary failed write and retained a generic lock owner with no immutable publication intent. A later operator could not prove whether the review landed, so neither release nor replay was safe.
+
+Blind spot: tests asserted request validation but not the lock's recovery evidence after a remote mutation boundary.
+
+Probe that would have caught it: force a definitive 422 after the journaled pre-write transition, then prove recovery releases only when the prepared bundle digest, head, reviewer actor, and remote review enumeration all match; mutate each field and require the exact owner to remain retained.
+
 ### 2026-08-29 — a refactor that rewrites its own witnesses (escaped via PR #2988)
 
 PR #2988 extracted render-retry execution, claimed in its body that it kept exact revision, budget,

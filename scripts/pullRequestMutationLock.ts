@@ -34,6 +34,19 @@ export type PullRequestMutationLockOwner =
           threadId: string;
           head: string;
           ownerFence: PullRequestMutationLockOwnerFence;
+      }
+    | {
+          version: 3;
+          pid: number;
+          token: string;
+          operation: 'review-publication';
+          number: number;
+          expectedHead: string;
+          payloadDigest: string;
+          reviewerActorNodeId: string;
+          ownerFence: PullRequestMutationLockOwnerFence;
+          mutation: { phase: 'prepared' | 'remote-mutation-attempted'; epoch: number };
+          recovery?: { legacyOwnerOid: string; definitiveNoMutationHttpStatus: 422 };
       };
 export type PullRequestMutationLockOptions = {
     reviewResolution?: {
@@ -53,6 +66,11 @@ export type PullRequestMutationSerialization = <Value>(
 export type PullRequestRemoteMutationBoundary = {
     markRemoteMutationAttempt: () => void;
     ownerOid: string;
+    journalReviewPublication: (publication: {
+        expectedHead: string;
+        payloadDigest: string;
+        reviewerActorNodeId: string;
+    }) => void;
     registerSuccessfulCompletion: (cleanup: () => void) => void;
 };
 
@@ -64,6 +82,11 @@ export function pullRequestMutationLockRef(number: number): string {
         fail('delivery lock requires a positive pull-request number');
     }
     return `refs/sourdaw/delivery/pr-${number}`;
+}
+
+export function reviewPublicationRecoveryReceiptRef(number: number, ownerOid: string): string {
+    const oid = mutationLockObjectId(ownerOid, number);
+    return `refs/sourdaw/delivery/review-publication-recovered/pr-${number}/${oid}`;
 }
 
 function mutationLockGit(primaryRoot: string, args: string[], input?: string, gitPath: string = 'git') {
@@ -170,6 +193,62 @@ function parseMutationLockOwner(contents: string, number: number): PullRequestMu
             ownerFence: owner.ownerFence,
         };
     }
+    if (
+        owner.version === 3 &&
+        (Object.keys(owner).length === 10 || Object.keys(owner).length === 11) &&
+        hasOwnerIdentity(owner) &&
+        owner.operation === 'review-publication' &&
+        owner.number === number &&
+        typeof owner.expectedHead === 'string' &&
+        /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/iu.test(owner.expectedHead) &&
+        typeof owner.payloadDigest === 'string' &&
+        /^[0-9a-f]{64}$/iu.test(owner.payloadDigest) &&
+        typeof owner.reviewerActorNodeId === 'string' &&
+        owner.reviewerActorNodeId !== '' &&
+        isExecutionFence(owner.ownerFence) &&
+        isExecutionFenceBoundToOwnerPid(owner.ownerFence, owner.pid) &&
+        typeof owner.mutation === 'object' &&
+        owner.mutation !== null &&
+        Object.keys(owner.mutation).length === 2 &&
+        ((owner.mutation as { phase?: unknown }).phase === 'prepared' ||
+            (owner.mutation as { phase?: unknown }).phase === 'remote-mutation-attempted') &&
+        typeof (owner.mutation as { epoch?: unknown }).epoch === 'number' &&
+        Number.isSafeInteger((owner.mutation as { epoch: number }).epoch) &&
+        (owner.mutation as { epoch: number }).epoch >= 0 &&
+        (owner.recovery === undefined ||
+            (typeof owner.recovery === 'object' &&
+                owner.recovery !== null &&
+                Object.keys(owner.recovery).length === 2 &&
+                typeof (owner.recovery as { legacyOwnerOid?: unknown }).legacyOwnerOid === 'string' &&
+                /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/iu.test(
+                    (owner.recovery as { legacyOwnerOid: string }).legacyOwnerOid
+                ) &&
+                (owner.recovery as { definitiveNoMutationHttpStatus?: unknown }).definitiveNoMutationHttpStatus === 422))
+    ) {
+        return {
+            version: 3,
+            pid: owner.pid,
+            token: owner.token,
+            operation: 'review-publication',
+            number: owner.number,
+            expectedHead: owner.expectedHead.toLowerCase(),
+            payloadDigest: owner.payloadDigest.toLowerCase(),
+            reviewerActorNodeId: owner.reviewerActorNodeId,
+            ownerFence: owner.ownerFence,
+            mutation: {
+                phase: (owner.mutation as { phase: 'prepared' | 'remote-mutation-attempted' }).phase,
+                epoch: (owner.mutation as { epoch: number }).epoch,
+            },
+            ...(owner.recovery === undefined
+                ? {}
+                : {
+                      recovery: {
+                          legacyOwnerOid: (owner.recovery as { legacyOwnerOid: string }).legacyOwnerOid.toLowerCase(),
+                          definitiveNoMutationHttpStatus: 422 as const,
+                      },
+                  }),
+        };
+    }
     return fail(`PR #${number} delivery lock ownership is malformed`);
 }
 
@@ -177,6 +256,12 @@ export function isReviewResolutionPullRequestMutationLockOwner(
     owner: PullRequestMutationLockOwner
 ): owner is Extract<PullRequestMutationLockOwner, { version: 2 }> {
     return owner.version === 2 && owner.operation === 'review-resolution';
+}
+
+export function isReviewPublicationPullRequestMutationLockOwner(
+    owner: PullRequestMutationLockOwner
+): owner is Extract<PullRequestMutationLockOwner, { version: 3 }> {
+    return owner.version === 3 && owner.operation === 'review-publication';
 }
 
 function mutationLockObjectId(value: string, number: number): string {
@@ -246,6 +331,98 @@ function updateMutationLockRef(primaryRoot: string, args: string[]): boolean {
     return result.status === 0;
 }
 
+export function replacePullRequestMutationLockOwner(
+    primaryRoot: string,
+    number: number,
+    expectedOwnerOid: string,
+    owner: PullRequestMutationLockOwner
+): string {
+    const ref = pullRequestMutationLockRef(number);
+    const nextOwnerOid = writePullRequestMutationLockOwner(primaryRoot, owner, number);
+    if (!updateMutationLockRef(primaryRoot, [ref, nextOwnerOid, expectedOwnerOid])) {
+        fail(`PR #${number} delivery lock ownership changed before recovery`);
+    }
+    return nextOwnerOid;
+}
+
+export function releasePullRequestMutationLockOwner(
+    primaryRoot: string,
+    number: number,
+    expectedOwnerOid: string
+): void {
+    releaseMutationLock(primaryRoot, pullRequestMutationLockRef(number), expectedOwnerOid, number);
+}
+
+export function writePullRequestMutationLockReceipt(primaryRoot: string, receipt: unknown, number: number): string {
+    const result = mutationLockGit(primaryRoot, ['hash-object', '-w', '--stdin'], JSON.stringify(receipt));
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status !== 0) {
+        fail(`PR #${number} review-publication recovery receipt could not be stored`);
+    }
+    return mutationLockObjectId(result.stdout, number);
+}
+
+export function readPullRequestMutationLockReceipt(
+    primaryRoot: string,
+    number: number,
+    ownerOid: string
+): unknown | undefined {
+    const receiptOid = readPullRequestMutationLockOid(
+        primaryRoot,
+        reviewPublicationRecoveryReceiptRef(number, ownerOid),
+        number
+    );
+    if (receiptOid === undefined) {
+        return undefined;
+    }
+    const result = mutationLockGit(primaryRoot, ['cat-file', 'blob', receiptOid]);
+    if (result.error !== undefined) {
+        throw result.error;
+    }
+    if (result.status !== 0) {
+        fail(`PR #${number} review-publication recovery receipt cannot be verified`);
+    }
+    try {
+        return JSON.parse(result.stdout) as unknown;
+    } catch {
+        fail(`PR #${number} review-publication recovery receipt is malformed`);
+    }
+}
+
+export function recordReviewPublicationRecoveryReceipt(
+    primaryRoot: string,
+    number: number,
+    ownerOid: string,
+    receipt: unknown
+): void {
+    const ref = reviewPublicationRecoveryReceiptRef(number, ownerOid);
+    const receiptOid = writePullRequestMutationLockReceipt(primaryRoot, receipt, number);
+    if (!updateMutationLockRef(primaryRoot, [ref, receiptOid, '0'.repeat(receiptOid.length)])) {
+        const existing = readPullRequestMutationLockReceipt(primaryRoot, number, ownerOid);
+        if (JSON.stringify(existing) !== JSON.stringify(receipt)) {
+            fail(`PR #${number} review-publication recovery receipt ownership changed`);
+        }
+    }
+}
+
+export function reviewPublicationOwnerFenceIsLive(owner: Extract<PullRequestMutationLockOwner, { version: 3 }>): boolean {
+    try {
+        const target = owner.ownerFence.kind === 'pgid' ? -owner.ownerFence.pgid : owner.pid;
+        process.kill(target, 0);
+        return true;
+    } catch (error) {
+        if (error instanceof Error && 'code' in error && error.code === 'ESRCH') {
+            return false;
+        }
+        if (error instanceof Error && 'code' in error && error.code === 'EPERM') {
+            return true;
+        }
+        throw error;
+    }
+}
+
 function acquireMutationLock(
     primaryRoot: string,
     number: number,
@@ -300,14 +477,53 @@ export async function withPullRequestMutationLock<Value>(
     options?: PullRequestMutationLockOptions
 ): Promise<Value> {
     const lock = acquireMutationLock(primaryRoot, number, options);
+    let ownerOid = lock.oid;
     let remoteMutationAttempted = false;
     let succeeded = false;
     let successfulCompletion: (() => void) | undefined;
     try {
         const result = await operation({
-            ownerOid: lock.oid,
+            get ownerOid() {
+                return ownerOid;
+            },
             markRemoteMutationAttempt: () => {
+                const currentOwner = readPullRequestMutationLockOwner(primaryRoot, ownerOid, number);
+                if (isReviewPublicationPullRequestMutationLockOwner(currentOwner)) {
+                    if (currentOwner.mutation.phase !== 'prepared') {
+                        fail(`PR #${number} review-publication lock already records a remote mutation attempt`);
+                    }
+                    ownerOid = replacePullRequestMutationLockOwner(primaryRoot, number, ownerOid, {
+                        ...currentOwner,
+                        mutation: { phase: 'remote-mutation-attempted', epoch: currentOwner.mutation.epoch + 1 },
+                    });
+                }
                 remoteMutationAttempted = true;
+            },
+            journalReviewPublication: ({ expectedHead, payloadDigest, reviewerActorNodeId }) => {
+                const currentOwner = readPullRequestMutationLockOwner(primaryRoot, ownerOid, number);
+                if (currentOwner.version !== 1 || currentOwner.pid !== process.pid) {
+                    fail(`PR #${number} delivery lock cannot be journaled for review publication`);
+                }
+                if (
+                    !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/iu.test(expectedHead) ||
+                    !/^[0-9a-f]{64}$/iu.test(payloadDigest) ||
+                    reviewerActorNodeId.trim() === ''
+                ) {
+                    fail(`PR #${number} review-publication lock intent is malformed`);
+                }
+                const nextOwner: PullRequestMutationLockOwner = {
+                    version: 3,
+                    pid: currentOwner.pid,
+                    token: currentOwner.token,
+                    operation: 'review-publication',
+                    number,
+                    expectedHead: expectedHead.toLowerCase(),
+                    payloadDigest: payloadDigest.toLowerCase(),
+                    reviewerActorNodeId,
+                    ownerFence: { kind: 'pid', pid: currentOwner.pid },
+                    mutation: { phase: 'prepared', epoch: 0 },
+                };
+                ownerOid = replacePullRequestMutationLockOwner(primaryRoot, number, ownerOid, nextOwner);
             },
             registerSuccessfulCompletion: (cleanup) => {
                 if (successfulCompletion !== undefined) {
@@ -322,7 +538,7 @@ export async function withPullRequestMutationLock<Value>(
         if (succeeded && successfulCompletion !== undefined) {
             successfulCompletion();
         } else if (succeeded || (!remoteMutationAttempted && successfulCompletion === undefined)) {
-            releaseMutationLock(primaryRoot, lock.ref, lock.oid, number);
+            releaseMutationLock(primaryRoot, lock.ref, ownerOid, number);
         }
     }
 }

@@ -696,6 +696,9 @@ describe('package scripts and gitignore', () => {
         expect(pkg.scripts['lane:publish']).toBe('node scripts/trustedGithubWriteBootstrap.ts lane:publish');
         expect(pkg.scripts['review:prepare']).toBe('node scripts/prepareReview.ts');
         expect(pkg.scripts['review:publish']).toBe('node scripts/trustedGithubWriteBootstrap.ts review:publish');
+        expect(pkg.scripts['review:publish:recover']).toBe(
+            'node scripts/trustedGithubWriteBootstrap.ts review:publish:recover'
+        );
         expect(pkg.scripts['review:resolve']).toBe('node scripts/trustedGithubWriteBootstrap.ts review:resolve');
         expect(pkg.scripts['review:resolve:recover']).toBe(
             'node scripts/trustedGithubWriteBootstrap.ts review:resolve:recover'
@@ -833,6 +836,14 @@ describe('package scripts and gitignore', () => {
             'scripts/githubAppIdentity.ts',
             'scripts/prContract.ts',
         ]);
+        expect(trustedDependencyPaths('review:publish:recover')).toEqual([
+            'scripts/trustedGithubWriteBootstrap.ts',
+            'scripts/publishReview.ts',
+            'scripts/prepareReview.ts',
+            'scripts/pullRequestMutationLock.ts',
+            'scripts/githubAppIdentity.ts',
+            'scripts/prContract.ts',
+        ]);
         // A lane holding a different copy of any executed script — mutated, or
         // simply older than main — still delivers, and still runs main's code.
         // Every source handed to the snapshot comes from the pinned origin
@@ -875,6 +886,19 @@ describe('package scripts and gitignore', () => {
         const cases = [
             {
                 command: 'review:publish' as const,
+                entry: 'scripts/publishReview.ts',
+                lock: 'scripts/pullRequestMutationLock.ts',
+                expected: [
+                    'scripts/trustedGithubWriteBootstrap.ts',
+                    'scripts/publishReview.ts',
+                    'scripts/prepareReview.ts',
+                    'scripts/pullRequestMutationLock.ts',
+                    'scripts/githubAppIdentity.ts',
+                    'scripts/prContract.ts',
+                ],
+            },
+            {
+                command: 'review:publish:recover' as const,
                 entry: 'scripts/publishReview.ts',
                 lock: 'scripts/pullRequestMutationLock.ts',
                 expected: [
@@ -1563,7 +1587,14 @@ describe('package scripts and gitignore', () => {
      * Only `deliver` decides a merge, so no other command reads a workflow. A launcher that read one
      * for every command would make them fail over a file and a parser they never use.
      */
-    it.each(['lane:publish', 'issue:reconcile', 'review:publish', 'review:resolve', 'review:resolve:recover'] as const)(
+    it.each([
+        'lane:publish',
+        'issue:reconcile',
+        'review:publish',
+        'review:publish:recover',
+        'review:resolve',
+        'review:resolve:recover',
+    ] as const)(
         'reads no gating workflow for %s',
         async (command) => {
             const originReads: string[] = [];
@@ -1607,6 +1638,7 @@ describe('package scripts and gitignore', () => {
             'issue:reconcile',
             'lane:publish',
             'review:publish',
+            'review:publish:recover',
             'review:resolve',
             'review:resolve:recover',
         ] as const) {

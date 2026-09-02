@@ -15,7 +15,13 @@ import { delimiter, dirname, isAbsolute, join, posix, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url';
 
 export type TrustedGithubWriteCommand =
-    'deliver' | 'issue:reconcile' | 'lane:publish' | 'review:publish' | 'review:resolve' | 'review:resolve:recover';
+    | 'deliver'
+    | 'issue:reconcile'
+    | 'lane:publish'
+    | 'review:publish'
+    | 'review:publish:recover'
+    | 'review:resolve'
+    | 'review:resolve:recover';
 
 export const BOOTSTRAP_PATH = 'scripts/trustedGithubWriteBootstrap.ts';
 export const HEALTH_GATES_WORKFLOW_PATH = '.github/workflows/health-gates.yml';
@@ -104,6 +110,14 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
         'scripts/githubAppIdentity.ts',
         'scripts/prContract.ts',
     ],
+    'review:publish:recover': [
+        'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/publishReview.ts',
+        'scripts/prepareReview.ts',
+        'scripts/pullRequestMutationLock.ts',
+        'scripts/githubAppIdentity.ts',
+        'scripts/prContract.ts',
+    ],
     'review:resolve': [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/resolveReviewThread.ts',
@@ -126,6 +140,7 @@ const commandEntries: Record<TrustedGithubWriteCommand, { path: string; runner: 
     'issue:reconcile': { path: 'scripts/reconcileTrackerIssue.ts', runner: 'runReconcileTrackerIssueCli' },
     'lane:publish': { path: 'scripts/publishLane.ts', runner: 'runPublishLaneCli' },
     'review:publish': { path: 'scripts/publishReview.ts', runner: 'runPublishReviewCli' },
+    'review:publish:recover': { path: 'scripts/publishReview.ts', runner: 'runRecoverPublishReviewLockCli' },
     'review:resolve': { path: 'scripts/resolveReviewThread.ts', runner: 'runResolveReviewThreadCli' },
     'review:resolve:recover': {
         path: 'scripts/recoverReviewResolutionLock.ts',
@@ -961,13 +976,14 @@ function parseCommand(value: string | undefined): TrustedGithubWriteCommand {
         value === 'issue:reconcile' ||
         value === 'lane:publish' ||
         value === 'review:publish' ||
+        value === 'review:publish:recover' ||
         value === 'review:resolve' ||
         value === 'review:resolve:recover'
     ) {
         return value;
     }
     throw new Error(
-        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:reconcile|lane:publish|review:publish|review:resolve|review:resolve:recover> [args...]'
+        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:reconcile|lane:publish|review:publish|review:publish:recover|review:resolve|review:resolve:recover> [args...]'
     );
 }
 

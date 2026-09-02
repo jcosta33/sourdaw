@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -12,12 +12,20 @@ import {
     parsePublishReviewArgs,
     parseReviewDocument,
     publishReview,
+    reviewPublicationPayload,
+    reviewPublicationPayloadDigest,
+    runRecoverPublishReviewLockCli,
     runPublishReviewCli,
     shellPort,
     type PublishReviewCoordinatorDependencies,
     type PublishReviewPort,
 } from '../publishReview.ts';
-import { withPullRequestMutationLock } from '../pullRequestMutationLock.ts';
+import {
+    pullRequestMutationLockRef,
+    readPullRequestMutationLockOid,
+    withPullRequestMutationLock,
+    writePullRequestMutationLockOwner,
+} from '../pullRequestMutationLock.ts';
 
 const validComment = {
     path: 'scripts/deliverPullRequest.ts',
@@ -116,6 +124,7 @@ describe('review publish', () => {
                     return await operation({
                         ownerOid: 'f'.repeat(40),
                         markRemoteMutationAttempt: () => calls.push('attempt'),
+                        journalReviewPublication: () => calls.push('journal'),
                         registerSuccessfulCompletion: () => undefined,
                     });
                 } finally {
@@ -154,6 +163,7 @@ describe('review publish', () => {
             'authenticate',
             'repository',
             'head',
+            'journal',
             'head',
             'attempt',
             'post',
@@ -171,6 +181,7 @@ describe('review publish', () => {
                 operation({
                     ownerOid: 'f'.repeat(40),
                     markRemoteMutationAttempt: () => undefined,
+                    journalReviewPublication: () => undefined,
                     registerSuccessfulCompletion: () => undefined,
                 }),
             authenticateReviewer: async () => ({
@@ -576,5 +587,58 @@ describe('shellPort postReview state verification', () => {
                 body: 'COMMENT still authorizes merge. A stale COMMENT could ship. Require reviewer APPROVED on this head.',
             },
         ]);
+    });
+
+    it('releases a dead journaled publication owner only after two definitive no-review reads', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-publication-recovery-'));
+        const number = 42;
+        const head = 'a'.repeat(40);
+        try {
+            runGit(root, ['init']);
+            const bundle = join(root, '.agents', 'review-bundles', `${number}-${head}`);
+            mkdirSync(bundle, { recursive: true });
+            writeFileSync(join(bundle, 'review.json'), JSON.stringify({ event: 'APPROVE', body: 'Attacked; held.', comments: [] }));
+            writeFileSync(join(bundle, 'diff.patch'), '');
+            const digest = reviewPublicationPayloadDigest(
+                reviewPublicationPayload({ commitId: head, event: 'APPROVE', body: 'Attacked; held.', comments: [] })
+            );
+            const ownerOid = writePullRequestMutationLockOwner(
+                root,
+                {
+                    version: 3,
+                    pid: 999_999,
+                    token: '2cd01237-cf63-4579-9e58-85893794529d',
+                    operation: 'review-publication',
+                    number,
+                    expectedHead: head,
+                    payloadDigest: digest,
+                    reviewerActorNodeId: REVIEWER_BOT_NODE_ID,
+                    ownerFence: { kind: 'pid', pid: 999_999 },
+                    mutation: { phase: 'remote-mutation-attempted', epoch: 1 },
+                },
+                number
+            );
+            runGit(root, ['update-ref', pullRequestMutationLockRef(number), ownerOid]);
+            let inspections = 0;
+            await expect(
+                runRecoverPublishReviewLockCli([String(number), '--owner', ownerOid], {
+                    primaryRoot: () => root,
+                    authenticateReviewer: async () => ({
+                        minted: { actorNodeId: REVIEWER_BOT_NODE_ID },
+                        session: { configDir: '/tmp/reviewer', env: {}, dispose: () => undefined },
+                    }),
+                    repositoryName: () => 'jcosta33/sourdaw',
+                    inspect: () => {
+                        inspections += 1;
+                        return { state: 'OPEN', head, reviews: [] };
+                    },
+                    isOwnerLive: () => false,
+                })
+            ).resolves.toBe(0);
+            expect(inspections).toBe(2);
+            expect(readPullRequestMutationLockOid(root, pullRequestMutationLockRef(number), number)).toBeUndefined();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
     });
 });
