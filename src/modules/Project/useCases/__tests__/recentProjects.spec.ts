@@ -19,6 +19,21 @@ const storageMocks = vi.hoisted(() => {
     return { mockGet, mockSet };
 });
 
+const loadMocks = vi.hoisted(() => ({
+    replaceProjectData: vi.fn(),
+    runProjectLoadTransaction: vi.fn(),
+}));
+
+// replaceProjectData and runProjectLoadTransaction are mocked so loadRecentProject's
+// not-found test does not walk the full project-replacement graph (AudioEngine, etc.).
+vi.mock('../projectPersistence/helpers/replaceProjectData', () => ({
+    replaceProjectData: loadMocks.replaceProjectData,
+}));
+
+vi.mock('../projectPersistence/helpers/runProjectLoadTransaction', () => ({
+    runProjectLoadTransaction: loadMocks.runProjectLoadTransaction,
+}));
+
 vi.mock('#/modules/Project/repositories/project/readNamedProjectJson', () => ({
     readNamedProjectJson: vi.fn(),
 }));
@@ -51,38 +66,18 @@ vi.mock('#/modules/Transport/useCases', () => ({
     restoreTimelineMapSnapshot: vi.fn(),
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    resetAudioGraph: vi.fn(),
-    getAudioContext: vi.fn(),
-}));
-
-vi.mock('../projectPersistence/helpers/hydrateModuleStoresFromProjectData', () => ({
-    hydrateModuleStoresFromProjectData: vi.fn(),
-}));
-
-vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: vi.fn(),
-    clearUndoHistory: vi.fn(),
-    resetActionReplayAuthority: vi.fn(),
-    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
-    isAppActionCommittedError: vi.fn(() => false),
-    pushUndoEntry: vi.fn(),
-    syncActionReplayMetadata: vi.fn(),
-}));
-
-vi.mock('../projectPersistence/helpers/verifyAudioBufferReferences', () => ({
-    verifyAudioBufferReferences: vi.fn(),
-}));
-
-vi.mock('#/modules/AudioEngine/stores', () => ({
-    audioBufferCache: { restoreFromIdb: vi.fn().mockResolvedValue(undefined) },
-}));
-
 describe('recentProjects injectables', () => {
     beforeEach(() => {
         storageMocks.mockGet.mockReturnValue(null);
         storageMocks.mockSet.mockClear();
         vi.mocked(readNamedProjectJson).mockReset();
+        loadMocks.runProjectLoadTransaction.mockReturnValue({
+            prepare: vi.fn().mockResolvedValue(true),
+            activate: vi.fn().mockReturnValue(true),
+            canActivate: vi.fn().mockReturnValue(true),
+            isCurrent: vi.fn().mockReturnValue(true),
+            signal: new AbortController().signal,
+        });
         vi.clearAllMocks();
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: async () => undefined });
     });
@@ -141,5 +136,6 @@ describe('recentProjects injectables', () => {
         expect(ok).toBe('not-found');
         expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('No project data found'));
         expect(stopPlayback).not.toHaveBeenCalled();
+        expect(loadMocks.replaceProjectData).not.toHaveBeenCalled();
     });
 });
