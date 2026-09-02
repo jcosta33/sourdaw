@@ -1,0 +1,54 @@
+src/modules/Preferences/presentations/views/preferences/__tests__/AiSection.spec.tsx
+  s_bbdfb911119c4f::t_a1a3feefe65304 93-102
+  s_bbdfb911119c4f::t_7334df51b32aa8 48-54
+src/modules/AiRuntime/useCases/index.ts
+  s_bbdfb911119c4f::t_dd893dbf8d190a 17-18
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/streamCloudChatCompletion.spec.ts
+  s_bbdfb911119c4f::t_3f245ac755ee72 146-162
+  s_bbdfb911119c4f::t_567705621f7def 4
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateAnthropicToolCalls.ts
+  s_bbdfb911119c4f::t_3651c99e17b295 34,37-39,43
+  s_bbdfb911119c4f::t_284b9ed88d9921 106-108
+  s_bbdfb911119c4f::t_a9f7679da21f1e 12-19
+src/modules/AiRuntime/useCases/aiRuntimeQueries/__tests__/listHostedAnthropicModels.spec.ts
+  s_bbdfb911119c4f::t_9688b5692c4708 1-21
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/streamCloudChatCompletion.ts
+  s_bbdfb911119c4f::t_9756476f55594b 4
+  s_bbdfb911119c4f::t_d1ca21e47999b0 75
+src/modules/AiRuntime/models/HostedAnthropicModels.ts
+  s_bbdfb911119c4f::t_525f64829ce723 1-19
+src/modules/AiRuntime/useCases/aiRuntimeQueries/getDefaultHostedAnthropicModel.ts
+  s_bbdfb911119c4f::t_c2b93e40543cf7 1-5
+src/modules/Preferences/presentations/views/preferences/AiSection.tsx
+  s_bbdfb911119c4f::t_098cc07086f089 16-17
+  s_bbdfb911119c4f::t_918a396a242cd7 44
+  s_bbdfb911119c4f::t_e6406374795dd7 56
+src/modules/AiRuntime/AGENTS.md
+  s_bbdfb911119c4f::t_ca0bae52947813 8
+src/modules/AiRuntime/useCases/aiRuntimeQueries/listHostedAnthropicModels.ts
+  s_bbdfb911119c4f::t_e8f26f9025b3b7 1-5
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateAnthropicToolCalls.spec.ts
+  s_bbdfb911119c4f::t_55db2793880b4e 67-128
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/requestAnthropicStream.ts
+  s_bbdfb911119c4f::t_d144b8374b2331 30-39
+src/modules/AiRuntime/models/__tests__/HostedAnthropicModels.spec.ts
+  s_bbdfb911119c4f::t_abf663065c4b09 1-15
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/requestAnthropicStream.spec.ts
+  s_bbdfb911119c4f::t_29b36ebcebcbd2 43-50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "1b23feeb0e0659d8169da41000191c384c28b2c2",
+  "prompts": {},
+  "sessions": {
+    "s_bbdfb911119c4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fa21d5-2a8a-4f80-98ab-b72059373843",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
