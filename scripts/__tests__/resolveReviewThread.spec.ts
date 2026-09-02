@@ -30,8 +30,8 @@ const OTHER_HEAD = 'b'.repeat(40);
 const THREAD = 'PRRT_kwDOabc';
 const NUMBER = 42;
 
-function doneReply(authorNodeId: string | null = AUTHOR_BOT_NODE_ID): ThreadReply {
-    return { id: 'PRRC_done', body: RESOLUTION_REPLY_BODY, authorNodeId };
+function doneReply(authorNodeId: string | null = AUTHOR_BOT_NODE_ID, commitOid: string | null = HEAD): ThreadReply {
+    return { id: 'PRRC_done', body: RESOLUTION_REPLY_BODY, authorNodeId, commitOid };
 }
 
 function threadState(overrides: Partial<ThreadState> = {}): ThreadState {
@@ -41,16 +41,28 @@ function threadState(overrides: Partial<ThreadState> = {}): ThreadState {
         pullRequestNumber: NUMBER,
         pullRequestState: 'OPEN',
         head: HEAD,
-        replies: [{ id: 'PRRC_root', body: 'Defect. Consequence. Done.', authorNodeId: REVIEWER_BOT_NODE_ID }],
+        replies: [
+            {
+                id: 'PRRC_root',
+                body: 'Defect. Consequence. Done.',
+                authorNodeId: REVIEWER_BOT_NODE_ID,
+                commitOid: HEAD,
+            },
+        ],
         ...overrides,
     };
 }
 
+/** GitHub pins a reply to the commit it answers, and the deterministic id carries that head. */
+function repliedHead(clientMutationId: string): string {
+    return clientMutationId.slice(clientMutationId.lastIndexOf(':') + 1);
+}
+
 /**
- * The thread as GitHub would answer it across the whole command: the first read returns `states[0]`,
- * the read after the mutations returns whatever the recorded mutations produced. The fake applies
- * them itself rather than being handed a scripted "after" state, so a test that claims the re-read
- * confirms the mutations is observing the mutations and not a fixture.
+ * The thread as GitHub would answer it across the whole command: the first read returns the initial
+ * state, the read after the mutations returns whatever the recorded mutations produced. The fake
+ * applies them itself rather than being handed a scripted "after" state, so a test that claims the
+ * re-read confirms the mutations is observing the mutations and not a fixture.
  */
 function fakePort(initial: ThreadState = threadState()) {
     const calls: string[] = [];
@@ -63,7 +75,8 @@ function fakePort(initial: ThreadState = threadState()) {
         },
         reply: (threadId, clientMutationId) => {
             calls.push(`reply:${threadId}:${clientMutationId}`);
-            current = { ...current, replies: [...current.replies, doneReply()] };
+            const posted = doneReply(AUTHOR_BOT_NODE_ID, repliedHead(clientMutationId));
+            current = { ...current, replies: [...current.replies, posted] };
         },
         resolve: (threadId, clientMutationId) => {
             calls.push(`resolve:${threadId}:${clientMutationId}`);
@@ -77,7 +90,7 @@ function fakePort(initial: ThreadState = threadState()) {
 }
 
 describe('parseResolveReviewThreadArgs', () => {
-    it('reads the pull request, thread and head', () => {
+    it('should read the pull request, thread and head', () => {
         expect(parseResolveReviewThreadArgs([String(NUMBER), '--thread', THREAD, '--head', HEAD])).toEqual({
             number: NUMBER,
             threadId: THREAD,
@@ -86,33 +99,33 @@ describe('parseResolveReviewThreadArgs', () => {
         });
     });
 
-    it('refuses an abbreviated head', () => {
+    it('should refuse an abbreviated head', () => {
         expect(() => parseResolveReviewThreadArgs(['42', '--thread', THREAD, '--head', 'a'.repeat(7)])).toThrow(USAGE);
     });
 
-    it('refuses a missing thread flag', () => {
+    it('should refuse a missing thread flag', () => {
         expect(() => parseResolveReviewThreadArgs(['42', THREAD, '--head', HEAD])).toThrow(USAGE);
     });
 
-    it('accepts --help alone', () => {
+    it('should accept --help alone', () => {
         expect(parseResolveReviewThreadArgs(['--help'])).toEqual({ help: true });
         expect(() => parseResolveReviewThreadArgs(['--help', '42'])).toThrow('--help takes no other arguments');
     });
 });
 
 describe('clientMutationId', () => {
-    it('derives both ids from the pull request, thread and head', () => {
+    it('should derive both ids from the pull request, thread and head', () => {
         expect(replyClientMutationId(NUMBER, THREAD, HEAD)).toBe(`review-resolve-reply:${NUMBER}:${THREAD}:${HEAD}`);
         expect(resolveClientMutationId(NUMBER, THREAD, HEAD)).toBe(`review-resolve:${NUMBER}:${THREAD}:${HEAD}`);
     });
 
-    it('changes when the head changes, so a rerun on a new head is a new request', () => {
+    it('should change when the head changes, so a rerun on a new head is a new request', () => {
         expect(replyClientMutationId(NUMBER, THREAD, HEAD)).not.toBe(replyClientMutationId(NUMBER, THREAD, OTHER_HEAD));
     });
 });
 
 describe('resolveReviewThread', () => {
-    it('posts one reply, resolves, and confirms both by reading the thread back', () => {
+    it('should post one reply, resolve, and confirm both by reading the thread back', () => {
         const { port, calls, logs } = fakePort();
         expect(resolveReviewThread(NUMBER, THREAD, HEAD, port)).toBe(`review-thread-resolved:${NUMBER}:${THREAD}`);
         expect(calls).toEqual([
@@ -124,13 +137,13 @@ describe('resolveReviewThread', () => {
         expect(logs).toEqual([`review-thread-resolved:${NUMBER}:${THREAD}`]);
     });
 
-    it('prints the line the delivery tooling parses', () => {
+    it('should print the line the delivery tooling parses', () => {
         const { port, logs } = fakePort(threadState({ threadId: 'PRRT_seven', pullRequestNumber: 7 }));
         resolveReviewThread(7, 'PRRT_seven', HEAD, port);
         expect(logs).toEqual(['review-thread-resolved:7:PRRT_seven']);
     });
 
-    it('posts no second reply when a rerun finds the author Done already there', () => {
+    it('should post no second reply when a rerun finds the author Done for this head already there', () => {
         const { port, calls } = fakePort(threadState({ replies: [threadState().replies[0]!, doneReply()] }));
         expect(resolveReviewThread(NUMBER, THREAD, HEAD, port)).toBe(`review-thread-resolved:${NUMBER}:${THREAD}`);
         expect(calls.filter((call) => call.startsWith('reply:'))).toEqual([]);
@@ -139,7 +152,27 @@ describe('resolveReviewThread', () => {
         ]);
     });
 
-    it('is a no-op success when the thread is already resolved and carries the author Done', () => {
+    it('should post a fresh reply on a reopened thread whose only author Done answers an older commit', () => {
+        const { port, calls } = fakePort(
+            threadState({ replies: [threadState().replies[0]!, doneReply(AUTHOR_BOT_NODE_ID, OTHER_HEAD)] })
+        );
+        expect(resolveReviewThread(NUMBER, THREAD, HEAD, port)).toBe(`review-thread-resolved:${NUMBER}:${THREAD}`);
+        expect(calls.filter((call) => call.startsWith('reply:'))).toEqual([
+            `reply:${THREAD}:${replyClientMutationId(NUMBER, THREAD, HEAD)}`,
+        ]);
+    });
+
+    it('should post a fresh reply when the author Done carries no commit at all', () => {
+        const { port, calls } = fakePort(
+            threadState({ replies: [threadState().replies[0]!, doneReply(AUTHOR_BOT_NODE_ID, null)] })
+        );
+        expect(resolveReviewThread(NUMBER, THREAD, HEAD, port)).toBe(`review-thread-resolved:${NUMBER}:${THREAD}`);
+        expect(calls.filter((call) => call.startsWith('reply:'))).toEqual([
+            `reply:${THREAD}:${replyClientMutationId(NUMBER, THREAD, HEAD)}`,
+        ]);
+    });
+
+    it('should be a no-op success when the thread is already resolved and carries the author Done for this head', () => {
         const { port, calls, logs } = fakePort(
             threadState({ isResolved: true, replies: [threadState().replies[0]!, doneReply()] })
         );
@@ -148,15 +181,23 @@ describe('resolveReviewThread', () => {
         expect(logs).toEqual([`review-thread-resolved:${NUMBER}:${THREAD}`]);
     });
 
-    it('refuses a resolved thread that carries no Done from the author actor', () => {
+    it('should refuse a resolved thread that carries no Done from the author actor', () => {
         const { port, calls } = fakePort(threadState({ isResolved: true }));
         expect(() => resolveReviewThread(NUMBER, THREAD, HEAD, port)).toThrow(
-            `thread ${THREAD} is already resolved without a Done reply from ${AUTHOR_BOT_NODE_ID}`
+            `thread ${THREAD} is already resolved without a Done reply from ${AUTHOR_BOT_NODE_ID} at ${HEAD}`
         );
         expect(calls).toEqual([`read:${THREAD}`]);
     });
 
-    it('does not read a foreign actor Done as the author Done', () => {
+    it('should refuse a resolved thread whose author Done answers an older commit', () => {
+        const { port, calls } = fakePort(
+            threadState({ isResolved: true, replies: [doneReply(AUTHOR_BOT_NODE_ID, OTHER_HEAD)] })
+        );
+        expect(() => resolveReviewThread(NUMBER, THREAD, HEAD, port)).toThrow('is already resolved without a Done');
+        expect(calls).toEqual([`read:${THREAD}`]);
+    });
+
+    it('should not read a foreign actor Done as the author Done', () => {
         const { port, calls } = fakePort(
             threadState({ isResolved: true, replies: [doneReply(REVIEWER_BOT_NODE_ID), doneReply(null)] })
         );
@@ -164,7 +205,17 @@ describe('resolveReviewThread', () => {
         expect(calls).toEqual([`read:${THREAD}`]);
     });
 
-    it('refuses a head mismatch before mutating anything', () => {
+    it('should not read a near-miss author body as the Done reply', () => {
+        for (const body of ['done', 'Done.', 'Done ', ' Done']) {
+            const nearMiss: ThreadReply = { id: 'PRRC_near', body, authorNodeId: AUTHOR_BOT_NODE_ID, commitOid: HEAD };
+            const { port } = fakePort(threadState({ isResolved: true, replies: [nearMiss] }));
+            expect(() => resolveReviewThread(NUMBER, THREAD, HEAD, port), body).toThrow(
+                'is already resolved without a Done'
+            );
+        }
+    });
+
+    it('should refuse a head mismatch before mutating anything', () => {
         const { port, calls } = fakePort(threadState({ head: OTHER_HEAD }));
         expect(() => resolveReviewThread(NUMBER, THREAD, HEAD, port)).toThrow(
             `PR #${NUMBER} head is ${OTHER_HEAD}, not ${HEAD}`
@@ -172,7 +223,7 @@ describe('resolveReviewThread', () => {
         expect(calls).toEqual([`read:${THREAD}`]);
     });
 
-    it('refuses a thread that hangs off another pull request', () => {
+    it('should refuse a thread that hangs off another pull request', () => {
         const { port, calls } = fakePort(threadState({ pullRequestNumber: 99 }));
         expect(() => resolveReviewThread(NUMBER, THREAD, HEAD, port)).toThrow(
             `thread ${THREAD} belongs to PR #99, not PR #${NUMBER}`
@@ -180,37 +231,39 @@ describe('resolveReviewThread', () => {
         expect(calls).toEqual([`read:${THREAD}`]);
     });
 
-    it('refuses a closed pull request', () => {
+    it('should refuse a closed pull request', () => {
         const { port, calls } = fakePort(threadState({ pullRequestState: 'MERGED' }));
         expect(() => resolveReviewThread(NUMBER, THREAD, HEAD, port)).toThrow(`PR #${NUMBER} is MERGED`);
         expect(calls).toEqual([`read:${THREAD}`]);
     });
 
-    it('refuses a thread GitHub answered with another thread id', () => {
+    it('should refuse a thread GitHub answered with another thread id', () => {
         const { port } = fakePort(threadState({ threadId: 'PRRT_other' }));
         expect(() => resolveReviewThread(NUMBER, THREAD, HEAD, port)).toThrow(
             `GitHub returned thread PRRT_other for requested thread ${THREAD}`
         );
     });
 
-    it('fails when the confirming read shows the thread still unresolved', () => {
-        const { port } = fakePort();
+    it('should fail without logging success when the confirming read shows the thread still unresolved', () => {
+        const { port, logs } = fakePort();
         const silentResolve: ResolveReviewThreadPort = { ...port, resolve: () => undefined };
         expect(() => resolveReviewThread(NUMBER, THREAD, HEAD, silentResolve)).toThrow(
             `thread ${THREAD} is still unresolved after resolveReviewThread`
         );
+        expect(logs).toEqual([]);
     });
 
-    it('fails when the confirming read shows no author Done', () => {
-        const { port } = fakePort();
+    it('should fail without logging success when the confirming read shows no author Done', () => {
+        const { port, logs } = fakePort();
         const silentReply: ResolveReviewThreadPort = { ...port, reply: () => undefined };
         expect(() => resolveReviewThread(NUMBER, THREAD, HEAD, silentReply)).toThrow(
-            `thread ${THREAD} carries no Done reply from ${AUTHOR_BOT_NODE_ID} after replying`
+            `thread ${THREAD} carries no Done reply from ${AUTHOR_BOT_NODE_ID} at ${HEAD} after replying`
         );
+        expect(logs).toEqual([]);
     });
 });
 
-type GraphqlCall = { query: string; fields: Record<string, string> };
+type GraphqlCall = { query: string; fields: Record<string, string>; args: string[] };
 
 function recordingGh(respond: (call: GraphqlCall) => unknown) {
     const calls: GraphqlCall[] = [];
@@ -220,7 +273,7 @@ function recordingGh(respond: (call: GraphqlCall) => unknown) {
             const [key, ...rest] = (args[index + 1] ?? '').split('=');
             fields[key ?? ''] = rest.join('=');
         }
-        const call = { query: (args[3] ?? '').slice('query='.length), fields };
+        const call = { query: (args[3] ?? '').slice('query='.length), fields, args };
         calls.push(call);
         return JSON.stringify(respond(call));
     };
@@ -236,7 +289,12 @@ function threadNode(overrides: Record<string, unknown> = {}) {
                 pullRequest: { number: NUMBER, state: 'OPEN', headRefOid: HEAD },
                 comments: {
                     nodes: [
-                        { id: 'PRRC_root', body: 'Defect.', author: { __typename: 'Bot', login: 'r', id: 'BOT_r' } },
+                        {
+                            id: 'PRRC_root',
+                            body: 'Defect.',
+                            commit: { oid: HEAD },
+                            author: { __typename: 'Bot', login: 'r', id: 'BOT_r' },
+                        },
                     ],
                     pageInfo: { hasNextPage: false, endCursor: null },
                 },
@@ -247,7 +305,7 @@ function threadNode(overrides: Record<string, unknown> = {}) {
 }
 
 describe('readReviewThread', () => {
-    it('reads the thread, its pull request and its comment authors in one query', () => {
+    it('should read the thread, its pull request and its comment authors in one query', () => {
         const { gh, calls } = recordingGh(() => threadNode());
         expect(readReviewThread(THREAD, gh)).toEqual({
             threadId: THREAD,
@@ -255,38 +313,75 @@ describe('readReviewThread', () => {
             pullRequestNumber: NUMBER,
             pullRequestState: 'OPEN',
             head: HEAD,
-            replies: [{ id: 'PRRC_root', body: 'Defect.', authorNodeId: 'BOT_r' }],
+            replies: [{ id: 'PRRC_root', body: 'Defect.', authorNodeId: 'BOT_r', commitOid: HEAD }],
         });
         expect(calls).toHaveLength(1);
         expect(calls[0]?.query).toContain('PullRequestReviewThread');
+        expect(calls[0]?.query).toContain('commit{oid}');
         expect(calls[0]?.fields.threadId).toBe(THREAD);
     });
 
-    it('carries a non-Bot author through as no node id', () => {
+    it('should pass every string field as an untyped -f value', () => {
+        const { gh, calls } = recordingGh((call) =>
+            call.fields.cursor === undefined
+                ? threadNode({
+                      comments: { nodes: [], pageInfo: { hasNextPage: true, endCursor: 'CURSOR' } },
+                  })
+                : threadNode()
+        );
+        readReviewThread(THREAD, gh);
+        expect(calls).toHaveLength(2);
+        expect(calls.flatMap((call) => call.args)).not.toContain('-F');
+        expect(calls[1]?.args).toContain('-f');
+        expect(calls[1]?.args).toContain('cursor=CURSOR');
+    });
+
+    it('should carry a non-Bot author through as no node id', () => {
         const { gh } = recordingGh(() =>
             threadNode({
                 comments: {
-                    nodes: [{ id: 'PRRC_root', body: 'Done', author: { __typename: 'User', login: 'human' } }],
+                    nodes: [{ id: 'PRRC_root', body: 'Done', commit: { oid: HEAD }, author: { __typename: 'User' } }],
                     pageInfo: { hasNextPage: false, endCursor: null },
                 },
             })
         );
-        expect(readReviewThread(THREAD, gh).replies).toEqual([{ id: 'PRRC_root', body: 'Done', authorNodeId: null }]);
+        expect(readReviewThread(THREAD, gh).replies).toEqual([
+            { id: 'PRRC_root', body: 'Done', authorNodeId: null, commitOid: HEAD },
+        ]);
     });
 
-    it('follows comment pagination so a late Done is still seen', () => {
+    it('should carry a comment with no commit through as no commit oid', () => {
+        const { gh } = recordingGh(() =>
+            threadNode({
+                comments: {
+                    nodes: [{ id: 'PRRC_root', body: 'Done', commit: null, author: { __typename: 'User' } }],
+                    pageInfo: { hasNextPage: false, endCursor: null },
+                },
+            })
+        );
+        expect(readReviewThread(THREAD, gh).replies).toEqual([
+            { id: 'PRRC_root', body: 'Done', authorNodeId: null, commitOid: null },
+        ]);
+    });
+
+    it('should follow comment pagination so a late Done is still seen', () => {
         const { gh, calls } = recordingGh((call) =>
             call.fields.cursor === undefined
                 ? threadNode({
                       comments: {
-                          nodes: [{ id: 'PRRC_root', body: 'Defect.', author: { __typename: 'User', login: 'r' } }],
+                          nodes: [{ id: 'PRRC_root', body: 'Defect.', commit: { oid: HEAD }, author: null }],
                           pageInfo: { hasNextPage: true, endCursor: 'CURSOR' },
                       },
                   })
                 : threadNode({
                       comments: {
                           nodes: [
-                              { id: 'PRRC_done', body: 'Done', author: { __typename: 'Bot', id: AUTHOR_BOT_NODE_ID } },
+                              {
+                                  id: 'PRRC_done',
+                                  body: 'Done',
+                                  commit: { oid: HEAD },
+                                  author: { __typename: 'Bot', id: AUTHOR_BOT_NODE_ID },
+                              },
                           ],
                           pageInfo: { hasNextPage: false, endCursor: null },
                       },
@@ -296,7 +391,7 @@ describe('readReviewThread', () => {
         expect(calls[1]?.fields.cursor).toBe('CURSOR');
     });
 
-    it('refuses a repeated pagination cursor', () => {
+    it('should refuse a repeated pagination cursor', () => {
         const { gh } = recordingGh(() =>
             threadNode({
                 comments: { nodes: [], pageInfo: { hasNextPage: true, endCursor: 'CURSOR' } },
@@ -307,7 +402,7 @@ describe('readReviewThread', () => {
         );
     });
 
-    it('refuses a node that is not a review thread', () => {
+    it('should refuse a node that is not a review thread', () => {
         const { gh } = recordingGh(() => ({ data: { node: null } }));
         expect(() => readReviewThread(THREAD, gh)).toThrow(
             `review thread ${THREAD} is not a readable pull-request review thread`
@@ -316,7 +411,7 @@ describe('readReviewThread', () => {
 });
 
 describe('replyDone', () => {
-    it('replies through addPullRequestReviewThreadReply with the fixed body', () => {
+    it('should reply through addPullRequestReviewThreadReply with the fixed body', () => {
         const { gh, calls } = recordingGh((call) => ({
             data: {
                 addPullRequestReviewThreadReply: {
@@ -329,10 +424,11 @@ describe('replyDone', () => {
         expect(calls[0]?.query).toContain('addPullRequestReviewThreadReply');
         expect(calls[0]?.query).toContain('pullRequestReviewThreadId:$threadId');
         expect(calls[0]?.query).not.toContain('inReplyTo');
+        expect(calls[0]?.args).not.toContain('-F');
         expect(calls[0]?.fields).toMatchObject({ threadId: THREAD, body: 'Done', clientMutationId: 'mutation-id' });
     });
 
-    it('refuses a receipt for another clientMutationId', () => {
+    it('should refuse a receipt for another clientMutationId', () => {
         const { gh } = recordingGh(() => ({
             data: {
                 addPullRequestReviewThreadReply: {
@@ -346,7 +442,7 @@ describe('replyDone', () => {
         );
     });
 
-    it('refuses a receipt whose comment body is not Done', () => {
+    it('should refuse a receipt whose comment body is not Done', () => {
         const { gh } = recordingGh((call) => ({
             data: {
                 addPullRequestReviewThreadReply: {
@@ -360,7 +456,7 @@ describe('replyDone', () => {
 });
 
 describe('resolveThread', () => {
-    it('resolves the thread and checks the receipt', () => {
+    it('should resolve the thread and check the receipt', () => {
         const { gh, calls } = recordingGh((call) => ({
             data: {
                 resolveReviewThread: {
@@ -371,10 +467,11 @@ describe('resolveThread', () => {
         }));
         resolveThread(THREAD, 'mutation-id', gh);
         expect(calls[0]?.query).toContain('resolveReviewThread');
+        expect(calls[0]?.args).not.toContain('-F');
         expect(calls[0]?.fields).toMatchObject({ threadId: THREAD, clientMutationId: 'mutation-id' });
     });
 
-    it('refuses a receipt naming another thread', () => {
+    it('should refuse a receipt naming another thread', () => {
         const { gh } = recordingGh((call) => ({
             data: {
                 resolveReviewThread: {
@@ -387,10 +484,24 @@ describe('resolveThread', () => {
             `resolveReviewThread returned an invalid result for ${THREAD}`
         );
     });
+
+    it('should refuse a receipt for another clientMutationId even when it names this thread', () => {
+        const { gh } = recordingGh(() => ({
+            data: {
+                resolveReviewThread: {
+                    clientMutationId: 'someone-else',
+                    thread: { id: THREAD, isResolved: true },
+                },
+            },
+        }));
+        expect(() => resolveThread(THREAD, 'mutation-id', gh)).toThrow(
+            `resolveReviewThread returned an invalid result for ${THREAD}`
+        );
+    });
 });
 
 describe('shellPort', () => {
-    it('runs gh from the primary root with the session environment', () => {
+    it('should run gh from the primary root with the session environment', () => {
         const root = realpathSync(mkdtempSync(join(tmpdir(), 'resolve-thread-')));
         mkdirSync(join(root, '.git'));
         const commands: { command: string; cwd?: string; env?: NodeJS.ProcessEnv }[] = [];
@@ -445,13 +556,13 @@ function fakeDependencies(
 }
 
 describe('coordinateResolveReviewThread', () => {
-    it('authenticates the author App and resolves the thread', async () => {
+    it('should authenticate the author App and resolve the thread', async () => {
         const { dependencies, events } = fakeDependencies();
         await coordinateResolveReviewThread(NUMBER, THREAD, HEAD, dependencies);
         expect(events).toEqual(['auth:/repo', `resolve:${NUMBER}:${THREAD}:${HEAD}`, 'dispose']);
     });
 
-    it('refuses an actor that is not the author bot, and still disposes the session', async () => {
+    it('should refuse an actor that is not the author bot, and still dispose the session', async () => {
         const { dependencies, events } = fakeDependencies({}, REVIEWER_BOT_NODE_ID);
         await expect(coordinateResolveReviewThread(NUMBER, THREAD, HEAD, dependencies)).rejects.toThrow(
             `minted actor ${REVIEWER_BOT_NODE_ID} is not ${AUTHOR_BOT_NODE_ID}`
@@ -459,7 +570,7 @@ describe('coordinateResolveReviewThread', () => {
         expect(events).toEqual(['auth:/repo', 'dispose']);
     });
 
-    it('refuses a foreign repository', async () => {
+    it('should refuse a foreign repository', async () => {
         const { dependencies } = fakeDependencies({ repositoryName: () => 'someone/else' });
         await expect(coordinateResolveReviewThread(NUMBER, THREAD, HEAD, dependencies)).rejects.toThrow(
             'refusing to operate on someone/else'
@@ -468,7 +579,7 @@ describe('coordinateResolveReviewThread', () => {
 });
 
 describe('runResolveReviewThreadCli', () => {
-    it('resolves the thread named by the arguments', async () => {
+    it('should resolve the thread named by the arguments', async () => {
         const { dependencies, events } = fakeDependencies();
         await expect(
             runResolveReviewThreadCli([String(NUMBER), '--thread', THREAD, '--head', HEAD], dependencies)
@@ -476,7 +587,7 @@ describe('runResolveReviewThreadCli', () => {
         expect(events).toContain(`resolve:${NUMBER}:${THREAD}:${HEAD}`);
     });
 
-    it('prints usage for --help without authenticating', async () => {
+    it('should print usage for --help without authenticating', async () => {
         const { dependencies, events } = fakeDependencies();
         await expect(runResolveReviewThreadCli(['--help'], dependencies)).resolves.toBe(0);
         expect(events).toEqual([]);
@@ -484,7 +595,7 @@ describe('runResolveReviewThreadCli', () => {
 });
 
 describe('defaultResolveReviewThreadCoordinatorDependencies', () => {
-    it('binds the author role and the module resolve function', () => {
+    it('should bind the author role and the module resolve function', () => {
         const dependencies = defaultResolveReviewThreadCoordinatorDependencies();
         expect(dependencies.resolve).toBe(resolveReviewThread);
     });

@@ -22,6 +22,7 @@ export type ThreadReply = {
     id: string;
     body: string;
     authorNodeId: string | null;
+    commitOid: string | null;
 };
 
 export type ThreadState = {
@@ -98,11 +99,18 @@ export function resolveClientMutationId(number: number, threadId: string, head: 
 }
 
 /**
- * A `Done` the author App itself wrote. The match is on the immutable bot actor node id: a login is
- * mutable and a bot can be renamed, so a foreign actor posting the same word is not this reply.
+ * A `Done` the author App wrote against this exact head. The actor match is on the immutable bot
+ * node id, because a login is mutable and a foreign actor posting the same word is not this reply.
+ * The commit match is what makes a rerun safe on a thread a reviewer reopened: the earlier `Done`
+ * answers the head it was pinned to, and the reopened thread is owed a new one.
  */
-function authorDoneReply(state: ThreadState): ThreadReply | undefined {
-    return state.replies.find((reply) => reply.body === RESOLUTION_REPLY_BODY && isAuthorBotNodeId(reply.authorNodeId));
+function authorDoneReply(state: ThreadState, expectedHead: string): ThreadReply | undefined {
+    return state.replies.find(
+        (reply) =>
+            reply.body === RESOLUTION_REPLY_BODY &&
+            isAuthorBotNodeId(reply.authorNodeId) &&
+            reply.commitOid === expectedHead
+    );
 }
 
 function assertThreadPrecondition(state: ThreadState, number: number, threadId: string, expectedHead: string): void {
@@ -123,8 +131,8 @@ function assertThreadPrecondition(state: ThreadState, number: number, threadId: 
 /**
  * Reply, then resolve, then read the thread back. Both mutations are idempotent against state that
  * is readable before and after them, so a rerun after a partial failure needs nothing persisted: the
- * reply is skipped when the author's `Done` is already there, and an already-resolved thread that
- * carries that reply is the finished state rather than a conflict.
+ * reply is skipped when the author's `Done` for this head is already there, and an already-resolved
+ * thread that carries that reply is the finished state rather than a conflict.
  */
 export function resolveReviewThread(
     number: number,
@@ -134,9 +142,11 @@ export function resolveReviewThread(
 ): string {
     const before = port.read(threadId);
     assertThreadPrecondition(before, number, threadId, expectedHead);
-    const existingReply = authorDoneReply(before);
+    const existingReply = authorDoneReply(before, expectedHead);
     if (before.isResolved && existingReply === undefined) {
-        fail(`thread ${threadId} is already resolved without a Done reply from ${AUTHOR_BOT_NODE_ID}`);
+        fail(
+            `thread ${threadId} is already resolved without a Done reply from ${AUTHOR_BOT_NODE_ID} at ${expectedHead}`
+        );
     }
     if (before.isResolved) {
         return logResolved(number, threadId, port);
@@ -146,8 +156,8 @@ export function resolveReviewThread(
     }
     port.resolve(threadId, resolveClientMutationId(number, threadId, expectedHead));
     const after = port.read(threadId);
-    if (authorDoneReply(after) === undefined) {
-        fail(`thread ${threadId} carries no Done reply from ${AUTHOR_BOT_NODE_ID} after replying`);
+    if (authorDoneReply(after, expectedHead) === undefined) {
+        fail(`thread ${threadId} carries no Done reply from ${AUTHOR_BOT_NODE_ID} at ${expectedHead} after replying`);
     }
     if (!after.isResolved) {
         fail(`thread ${threadId} is still unresolved after resolveReviewThread`);
@@ -174,19 +184,28 @@ type ThreadNode = {
     comments?: { nodes?: unknown; pageInfo?: { hasNextPage?: unknown; endCursor?: unknown } };
 };
 
-const THREAD_COMMENT_FIELDS = 'nodes{id body author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}';
+const THREAD_COMMENT_FIELDS =
+    'nodes{id body commit{oid} author{__typename login ... on Bot{id}}} pageInfo{hasNextPage endCursor}';
 
 function threadQuery(paged: boolean): string {
     const connection = paged ? 'comments(first:100,after:$cursor)' : 'comments(first:100)';
     return `query($threadId:ID!${paged ? ',$cursor:String!' : ''}){node(id:$threadId){... on PullRequestReviewThread{id isResolved pullRequest{number state headRefOid} ${connection}{${THREAD_COMMENT_FIELDS}}}}}`;
 }
 
-function readThreadReplies(node: { id?: unknown; body?: unknown; author?: unknown }, threadId: string): ThreadReply {
+type ThreadCommentNode = { id?: unknown; body?: unknown; author?: unknown; commit?: unknown };
+
+function readThreadReply(node: ThreadCommentNode, threadId: string): ThreadReply {
     const author = node.author as { id?: unknown } | null | undefined;
+    const commit = node.commit as { oid?: unknown } | null | undefined;
     if (typeof node.id !== 'string' || typeof node.body !== 'string') {
         fail(`review thread ${threadId} returned an unreadable comment`);
     }
-    return { id: node.id, body: node.body, authorNodeId: typeof author?.id === 'string' ? author.id : null };
+    return {
+        id: node.id,
+        body: node.body,
+        authorNodeId: typeof author?.id === 'string' ? author.id : null,
+        commitOid: typeof commit?.oid === 'string' ? commit.oid : null,
+    };
 }
 
 export function readReviewThread(threadId: string, gh: Gh): ThreadState {
@@ -195,7 +214,7 @@ export function readReviewThread(threadId: string, gh: Gh): ThreadState {
     const seen = new Set<string>();
     const replies: ThreadReply[] = [];
     for (;;) {
-        const fields = ['-F', `threadId=${threadId}`, ...(cursor === undefined ? [] : ['-F', `cursor=${cursor}`])];
+        const fields = ['-f', `threadId=${threadId}`, ...(cursor === undefined ? [] : ['-f', `cursor=${cursor}`])];
         const response = graphql(gh, threadQuery(cursor !== undefined), fields, label) as {
             data?: { node?: ThreadNode | null };
         };
@@ -212,7 +231,7 @@ export function readReviewThread(threadId: string, gh: Gh): ThreadState {
             fail(`${label} is not a readable pull-request review thread`);
         }
         for (const comment of node.comments.nodes) {
-            replies.push(readThreadReplies(comment as { id?: unknown; body?: unknown; author?: unknown }, threadId));
+            replies.push(readThreadReply(comment as ThreadCommentNode, threadId));
         }
         if (!node.comments.pageInfo.hasNextPage) {
             return {
@@ -245,7 +264,7 @@ export function replyDone(threadId: string, clientMutationId: string, gh: Gh): v
         gh,
         query,
         [
-            '-F',
+            '-f',
             `threadId=${threadId}`,
             '-f',
             `body=${RESOLUTION_REPLY_BODY}`,
@@ -266,7 +285,7 @@ export function resolveThread(threadId: string, clientMutationId: string, gh: Gh
     const response = graphql(
         gh,
         query,
-        ['-F', `threadId=${threadId}`, '-f', `clientMutationId=${clientMutationId}`],
+        ['-f', `threadId=${threadId}`, '-f', `clientMutationId=${clientMutationId}`],
         `resolve review thread ${threadId}`
     ) as { data?: { resolveReviewThread?: { clientMutationId?: unknown; thread?: { id?: unknown } } } };
     const receipt = response.data?.resolveReviewThread;

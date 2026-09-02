@@ -822,21 +822,19 @@ export function trustedGitReadEnv(parent: NodeJS.ProcessEnv = process.env): Node
 }
 
 export function resolveTrustedExecutable(
-    name: 'git' | 'gh' | 'ps',
+    name: 'git' | 'gh',
     parent: NodeJS.ProcessEnv = process.env,
     platform: NodeJS.Platform = process.platform
 ): string {
-    const extensions = platform === 'win32' ? ['.exe'] : [''];
+    const extension = platform === 'win32' ? '.exe' : '';
     for (const directory of (parent.PATH ?? '').split(platform === 'win32' ? ';' : delimiter)) {
-        for (const extension of extensions) {
-            const candidate = resolve(directory || process.cwd(), `${name}${extension.toLowerCase()}`);
-            try {
-                accessSync(candidate, constants.X_OK);
-                return realpathSync(candidate);
-            } catch {
-                // Try the next operator-provided PATH entry. The protected launcher freezes the
-                // first executable it finds before any lane-selected child starts.
-            }
+        const candidate = resolve(directory || process.cwd(), `${name}${extension}`);
+        try {
+            accessSync(candidate, constants.X_OK);
+            return realpathSync(candidate);
+        } catch {
+            // Try the next operator-provided PATH entry. The protected launcher freezes the
+            // first executable it finds before any lane-selected child starts.
         }
     }
     throw new Error(`cannot resolve trusted ${name} executable from the launcher PATH`);
