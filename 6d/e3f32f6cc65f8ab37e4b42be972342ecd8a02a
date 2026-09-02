@@ -1,0 +1,51 @@
+src/modules/Command/stores/__tests__/undoStore.spec.ts
+  s_a40848e8f8cca9::t_033f92a25014fe 266-331
+  s_a40848e8f8cca9::t_49e489fba72e29 193-194,198
+src/utils/createHandler.ts
+  s_a40848e8f8cca9::t_4363f77cc5c511 6,26,74
+src/modules/Command/useCases/getExecutableCommandRegistration.ts
+  s_a40848e8f8cca9::t_4363f77cc5c511 35-37
+src/modules/MIDI/handlers/noteCrud/isAddNotesSessionEntry.ts
+  s_a40848e8f8cca9::t_cc1b4b195519ca 1,5-7,12-17,36-75,90,147
+src/modules/Arrangement/handlers/track/handleAddTrack.ts
+  s_a40848e8f8cca9::t_6734b5c05416be 6,72
+src/modules/MIDI/handlers/noteCrud/handleAddNotes.ts
+  s_a40848e8f8cca9::t_cc1b4b195519ca 10-11,157
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_4363f77cc5c511 2346-2353,2374-2375
+src/modules/AiRuntime/models/Tools/__tests__/CreateAddNotesToolSchema.spec.ts
+  s_a40848e8f8cca9::t_0480fbd6124538 99,112
+src/modules/Arrangement/handlers/clip/handleAddClip.ts
+  s_a40848e8f8cca9::t_6734b5c05416be 8,33
+src/modules/Command/useCases/getInternalUndoSessionReplayContracts.ts
+  s_a40848e8f8cca9::t_4363f77cc5c511 6-7
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_a40848e8f8cca9::t_0480fbd6124538 733-791
+src/modules/Arrangement/handlers/validateCreationSessionEntries.ts
+  s_a40848e8f8cca9::t_6734b5c05416be 1-79
+release/open-source-inventory.json
+  s_a40848e8f8cca9::t_681d238ae05819 1193
+src/modules/Command/stores/undoSessionMirror.ts
+  s_a40848e8f8cca9::t_cecee25919059b 157-172,287-314,317-326,363-364,366-367
+src/modules/Command/useCases/__tests__/addNotesCommandRegistration.spec.ts
+  s_a40848e8f8cca9::t_29ffa3b88d3fb9 9,357
+  s_a40848e8f8cca9::t_0480fbd6124538 4-8,10-11,355-356,358-470
+  s_a40848e8f8cca9::t_b3c5518d2bafae 170
+  s_a40848e8f8cca9::t_485c68504ee27f 471
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "6de3f32f6cc65f8ab37e4b42be972342ecd8a02a",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
