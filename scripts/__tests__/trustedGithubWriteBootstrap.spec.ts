@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { bareModuleSpecifiers, snapshotImportSpecifiers } from '../trustedGithubWriteBootstrap.ts';
+import {
+    bareModuleSpecifiers,
+    forwardTrustedSnapshotSignal,
+    snapshotImportSpecifiers,
+    trustedSnapshotRunsDetached,
+} from '../trustedGithubWriteBootstrap.ts';
 
 describe('snapshotImportSpecifiers', () => {
     it('ignores from, import, and dynamic-import shapes inside comments', () => {
@@ -128,5 +133,43 @@ describe('snapshotImportSpecifiers', () => {
 
         expect(snapshotImportSpecifiers(source).sort()).toEqual(['./foo.ts', 'node:path']);
         expect(bareModuleSpecifiers(source)).toEqual([]);
+    });
+});
+
+describe('trusted GitHub write snapshot launcher', () => {
+    it.each([
+        ['deliver', false],
+        ['issue:reconcile', false],
+        ['lane:publish', false],
+        ['review:publish', true],
+        ['review:publish:recover', true],
+        ['review:resolve', false],
+        ['review:resolve:recover', false],
+    ] as const)('uses a detached POSIX process group only for %s: %s', (command, expected) => {
+        expect(trustedSnapshotRunsDetached(command, 'linux')).toBe(expected);
+        expect(trustedSnapshotRunsDetached(command, 'win32')).toBe(false);
+    });
+
+    it('forwards cancellation to the exact detached POSIX child group', () => {
+        const forwarded: Array<{ target: number; signal: NodeJS.Signals }> = [];
+
+        forwardTrustedSnapshotSignal(42, true, 'linux', 'SIGTERM', (target, signal) => {
+            forwarded.push({ target, signal });
+        });
+
+        expect(forwarded).toEqual([{ target: -42, signal: 'SIGTERM' }]);
+    });
+
+    it('forwards non-detached and Windows cancellation to the child PID', () => {
+        const forwarded: Array<{ target: number; signal: NodeJS.Signals }> = [];
+        const send = (target: number, signal: NodeJS.Signals) => forwarded.push({ target, signal });
+
+        forwardTrustedSnapshotSignal(42, false, 'linux', 'SIGINT', send);
+        forwardTrustedSnapshotSignal(42, true, 'win32', 'SIGHUP', send);
+
+        expect(forwarded).toEqual([
+            { target: 42, signal: 'SIGINT' },
+            { target: 42, signal: 'SIGHUP' },
+        ]);
     });
 });

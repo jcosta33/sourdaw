@@ -58,6 +58,22 @@ function runGit(root: string, args: string[]): string {
     return result.stdout.trim();
 }
 
+function actualGitDiffForPath(path: string): string {
+    const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-publication-diff-path-'));
+    try {
+        runGit(root, ['init']);
+        runGit(root, ['config', 'user.email', 'reviewer@example.test']);
+        runGit(root, ['config', 'user.name', 'Reviewer']);
+        writeFileSync(join(root, path), 'before\n');
+        runGit(root, ['add', '--', path]);
+        runGit(root, ['commit', '-m', 'fixture']);
+        writeFileSync(join(root, path), 'after\n');
+        return runGit(root, ['diff', '--', path]);
+    } finally {
+        rmSync(root, { recursive: true, force: true });
+    }
+}
+
 function writeRawLockOwner(root: string, contents: string): string {
     const result = spawnSync('git', ['hash-object', '-w', '--stdin'], {
         cwd: root,
@@ -613,6 +629,62 @@ describe('review publish', () => {
         publishReview(42, port);
 
         expect(calls.some((call) => call.startsWith('post:'))).toBe(true);
+    });
+
+    it.each(['space name.ts', 'tab\tname.ts', 'control\u0001name.ts', 'café.ts', 'quote"name.ts', 'back\\slash.ts'])(
+        'accepts a real Git diff path containing %j',
+        (path) => {
+            const { port, calls } = fakePort({
+                diff: actualGitDiffForPath(path),
+                json: {
+                    event: 'REQUEST_CHANGES',
+                    body: 'Fix the changed line.',
+                    comments: [{ ...validComment, path, side: 'RIGHT', line: 1 }],
+                },
+            });
+
+            publishReview(42, port);
+
+            expect(calls.some((call) => call.startsWith('post:'))).toBe(true);
+        }
+    );
+
+    it('strips unquoted Git diff header metadata after a tab', () => {
+        const { port, calls } = fakePort({
+            diff: [
+                '--- a/old name.ts\t2026-09-02 00:00:00 +0000',
+                '+++ b/new name.ts\t2026-09-02 00:00:00 +0000',
+                '@@ -1 +1 @@',
+                '-before',
+                '+after',
+            ].join('\n'),
+            json: {
+                event: 'REQUEST_CHANGES',
+                body: 'Fix the changed line.',
+                comments: [{ ...validComment, path: 'new name.ts', side: 'RIGHT', line: 1 }],
+            },
+        });
+
+        publishReview(42, port);
+
+        expect(calls.some((call) => call.startsWith('post:'))).toBe(true);
+    });
+
+    it.each([
+        ['unterminated quoted path', ['--- a/old.ts', '+++ "b/new.ts', '@@ -1 +1 @@', '+after'].join('\n')],
+        ['malformed quoted escape', ['--- a/old.ts', '+++ "b/\\999"', '@@ -1 +1 @@', '+after'].join('\n')],
+        ['unsafe traversal', ['--- a/old.ts', '+++ "b/../new.ts"', '@@ -1 +1 @@', '+after'].join('\n')],
+    ])('rejects a %s in a Git diff header', (_label, diff) => {
+        const { port } = fakePort({
+            diff,
+            json: {
+                event: 'REQUEST_CHANGES',
+                body: 'Fix the changed line.',
+                comments: [{ ...validComment, path: 'new.ts', side: 'RIGHT', line: 1 }],
+            },
+        });
+
+        expect(() => publishReview(42, port)).toThrow(/not a changed line/i);
     });
 
     it.each([
@@ -2110,4 +2182,120 @@ describe('shellPort postReview state verification', () => {
             }
         }
     );
+
+    it.each([
+        ['empty object', {}],
+        ['array', []],
+        [
+            'extra key',
+            {
+                version: 1,
+                operation: 'review-publication-recovery',
+                number: 42,
+                ownerOid: 'a'.repeat(40),
+                head: 'b'.repeat(40),
+                payloadDigest: 'c'.repeat(64),
+                outcome: 'absent',
+                extra: true,
+            },
+        ],
+        [
+            'uppercase head',
+            {
+                version: 1,
+                operation: 'review-publication-recovery',
+                number: 42,
+                ownerOid: 'a'.repeat(40),
+                head: 'B'.repeat(40),
+                payloadDigest: 'c'.repeat(64),
+                outcome: 'absent',
+            },
+        ],
+        [
+            'short head',
+            {
+                version: 1,
+                operation: 'review-publication-recovery',
+                number: 42,
+                ownerOid: 'a'.repeat(40),
+                head: 'b'.repeat(39),
+                payloadDigest: 'c'.repeat(64),
+                outcome: 'absent',
+            },
+        ],
+        [
+            'uppercase digest',
+            {
+                version: 1,
+                operation: 'review-publication-recovery',
+                number: 42,
+                ownerOid: 'a'.repeat(40),
+                head: 'b'.repeat(40),
+                payloadDigest: 'C'.repeat(64),
+                outcome: 'absent',
+            },
+        ],
+        [
+            'short digest',
+            {
+                version: 1,
+                operation: 'review-publication-recovery',
+                number: 42,
+                ownerOid: 'a'.repeat(40),
+                head: 'b'.repeat(40),
+                payloadDigest: 'c'.repeat(63),
+                outcome: 'absent',
+            },
+        ],
+        [
+            'mismatched owner',
+            {
+                version: 1,
+                operation: 'review-publication-recovery',
+                number: 42,
+                ownerOid: 'd'.repeat(40),
+                head: 'b'.repeat(40),
+                payloadDigest: 'c'.repeat(64),
+                outcome: 'absent',
+            },
+        ],
+        [
+            'unknown outcome',
+            {
+                version: 1,
+                operation: 'review-publication-recovery',
+                number: 42,
+                ownerOid: 'a'.repeat(40),
+                head: 'b'.repeat(40),
+                payloadDigest: 'c'.repeat(64),
+                outcome: 'other',
+            },
+        ],
+    ])('refuses an absent lock with a malformed recovery receipt: %s', async (_label, receipt) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-malformed-review-publication-receipt-'));
+        const number = 42;
+        const ownerOid = 'a'.repeat(40);
+        let authenticated = false;
+        try {
+            runGit(root, ['init']);
+            const receiptOid = writePullRequestMutationLockReceipt(root, receipt, number);
+            runGit(root, ['update-ref', reviewPublicationRecoveryReceiptRef(number, ownerOid), receiptOid]);
+            await expect(
+                runRecoverPublishReviewLockCli([String(number), '--owner', ownerOid], {
+                    ...recoveryDependencies(root, (expectedHead) => ({
+                        state: 'OPEN',
+                        head: expectedHead,
+                        reviews: [],
+                    })),
+                    authenticateReviewer: async () => {
+                        authenticated = true;
+                        throw new Error('must not authenticate');
+                    },
+                })
+            ).rejects.toThrow(`PR #${number} review-publication lock is absent without an exact recovery receipt`);
+            expect(authenticated).toBe(false);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
 });

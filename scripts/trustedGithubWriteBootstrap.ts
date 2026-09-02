@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
     accessSync,
     constants,
@@ -76,8 +76,42 @@ type SnapshotRunner = (
     entryPath: string,
     runner: string,
     args: string[],
-    snapshot: TrustedSourceSnapshot
+    snapshot: TrustedSourceSnapshot,
+    command: TrustedGithubWriteCommand
 ) => Promise<number>;
+
+export function trustedSnapshotRunsDetached(
+    command: TrustedGithubWriteCommand,
+    platform: NodeJS.Platform = process.platform
+): boolean {
+    return platform !== 'win32' && (command === 'review:publish' || command === 'review:publish:recover');
+}
+
+export function trustedSnapshotSignalTarget(
+    pid: number,
+    detached: boolean,
+    platform: NodeJS.Platform = process.platform
+): number {
+    return detached && platform !== 'win32' ? -pid : pid;
+}
+
+export function forwardTrustedSnapshotSignal(
+    pid: number,
+    detached: boolean,
+    platform: NodeJS.Platform,
+    signal: NodeJS.Signals,
+    send: (target: number, signal: NodeJS.Signals) => void = (target, forwardedSignal) =>
+        process.kill(target, forwardedSignal)
+): void {
+    try {
+        send(trustedSnapshotSignalTarget(pid, detached, platform), signal);
+    } catch (error) {
+        if (error instanceof Error && 'code' in error && error.code === 'ESRCH') {
+            return;
+        }
+        throw error;
+    }
+}
 
 const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string[]> = {
     deliver: [
@@ -738,7 +772,7 @@ export async function executeTrustedSnapshot(
             writeFileSync(target, source, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
         }
         const entry = commandEntries[command];
-        const result = await runSnapshot(resolve(snapshotRoot, entry.path), entry.runner, args, snapshot);
+        const result = await runSnapshot(resolve(snapshotRoot, entry.path), entry.runner, args, snapshot, command);
         if (!Number.isSafeInteger(result)) {
             throw new TypeError(`trusted ${command} snapshot returned an invalid exit code`);
         }
@@ -752,7 +786,8 @@ async function runSnapshotModule(
     entryPath: string,
     runner: string,
     args: string[],
-    snapshot: TrustedSourceSnapshot
+    snapshot: TrustedSourceSnapshot,
+    command: TrustedGithubWriteCommand
 ): Promise<number> {
     const source = [
         "import { pathToFileURL } from 'node:url';",
@@ -766,7 +801,8 @@ async function runSnapshotModule(
         "if (!Number.isSafeInteger(result)) throw new Error('trusted snapshot returned an invalid exit code');",
         'process.exitCode = result;',
     ].join('\n');
-    const result = spawnSync(
+    const detached = trustedSnapshotRunsDetached(command);
+    const child = spawn(
         process.execPath,
         ['--input-type=module', '--eval', source, 'trusted-snapshot-runner', entryPath, runner, ...args],
         {
@@ -774,19 +810,43 @@ async function runSnapshotModule(
             env: trustedSnapshotEnv(snapshot),
             stdio: 'inherit',
             shell: false,
-            detached: process.platform !== 'win32',
+            detached,
         }
     );
-    if (result.error !== undefined) {
-        throw result.error;
+    if (child.pid === undefined) {
+        throw new Error('trusted snapshot launcher could not determine the child process');
     }
-    if (result.status === null) {
-        throw new Error(`trusted snapshot terminated by ${result.signal ?? 'unknown signal'}`);
+    const restoreSignalHandlers = detached ? forwardSnapshotSignals(child.pid, process.platform) : () => undefined;
+    try {
+        const result = await new Promise<{ status: number | null; signal: NodeJS.Signals | null }>(
+            (resolve, reject) => {
+                child.once('error', reject);
+                child.once('close', (status, signal) => resolve({ status, signal }));
+            }
+        );
+        if (result.status === null) {
+            throw new Error(`trusted snapshot terminated by ${result.signal ?? 'unknown signal'}`);
+        }
+        if (result.status !== 0) {
+            throw new Error(`trusted snapshot failed with exit ${result.status}`);
+        }
+        return result.status;
+    } finally {
+        restoreSignalHandlers();
     }
-    if (result.status !== 0) {
-        throw new Error(`trusted snapshot failed with exit ${result.status}`);
+}
+
+function forwardSnapshotSignals(pid: number, platform: NodeJS.Platform): () => void {
+    const forward = (signal: NodeJS.Signals) => forwardTrustedSnapshotSignal(pid, true, platform, signal);
+    const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+    for (const signal of signals) {
+        process.on(signal, forward);
     }
-    return result.status;
+    return () => {
+        for (const signal of signals) {
+            process.off(signal, forward);
+        }
+    };
 }
 
 export function trustedSnapshotEnv(

@@ -384,7 +384,85 @@ function diffPath(value: string, prefix: 'a/' | 'b/'): string | undefined {
     if (value === '/dev/null') {
         return undefined;
     }
-    return value.startsWith(prefix) ? value.slice(prefix.length) : undefined;
+    const path = decodeGitDiffPath(value);
+    if (path === undefined || !path.startsWith(prefix)) {
+        return undefined;
+    }
+    const repositoryPath = path.slice(prefix.length);
+    return isSafeRepositoryPath(repositoryPath) ? repositoryPath : undefined;
+}
+
+function decodeGitDiffPath(value: string): string | undefined {
+    if (!value.startsWith('"')) {
+        const metadata = value.indexOf('\t');
+        return metadata === -1 ? value : value.slice(0, metadata);
+    }
+    const bytes: number[] = [];
+    let cursor = 1;
+    while (cursor < value.length) {
+        const character = value[cursor];
+        if (character === '"') {
+            const metadata = value.slice(cursor + 1);
+            if (metadata !== '' && !metadata.startsWith('\t')) {
+                return undefined;
+            }
+            try {
+                return new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array(bytes));
+            } catch {
+                return undefined;
+            }
+        }
+        if (character !== '\\') {
+            const codePoint = value.codePointAt(cursor);
+            if (codePoint === undefined || codePoint < 0x20 || codePoint === 0x7f) {
+                return undefined;
+            }
+            bytes.push(...new TextEncoder().encode(String.fromCodePoint(codePoint)));
+            cursor += codePoint > 0xffff ? 2 : 1;
+            continue;
+        }
+        const escaped = value[cursor + 1];
+        if (escaped === undefined) {
+            return undefined;
+        }
+        const escapedByte = gitQuotedEscapeByte(escaped);
+        if (escapedByte !== undefined) {
+            bytes.push(escapedByte);
+            cursor += 2;
+            continue;
+        }
+        const octal = /^([0-7]{3})/.exec(value.slice(cursor + 1))?.[1];
+        if (octal === undefined) {
+            return undefined;
+        }
+        bytes.push(Number.parseInt(octal, 8));
+        cursor += 4;
+    }
+    return undefined;
+}
+
+function gitQuotedEscapeByte(value: string): number | undefined {
+    const escaped: Record<string, number> = {
+        '"': 0x22,
+        '\\': 0x5c,
+        a: 0x07,
+        b: 0x08,
+        f: 0x0c,
+        n: 0x0a,
+        r: 0x0d,
+        t: 0x09,
+        v: 0x0b,
+    };
+    return escaped[value];
+}
+
+function isSafeRepositoryPath(path: string): boolean {
+    return (
+        path !== '' &&
+        !path.startsWith('/') &&
+        !path.includes('\0') &&
+        path.split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..')
+    );
 }
 
 /**
@@ -772,12 +850,18 @@ function isMatchingRecoveryReceipt(value: unknown, number: number, ownerOid: str
     }
     const receipt = value as Record<string, unknown>;
     return (
+        Object.keys(receipt).length === 7 &&
+        Object.keys(receipt).every((key) =>
+            ['version', 'operation', 'number', 'ownerOid', 'head', 'payloadDigest', 'outcome'].includes(key)
+        ) &&
         receipt.version === 1 &&
         receipt.operation === 'review-publication-recovery' &&
         receipt.number === number &&
         receipt.ownerOid === ownerOid &&
         typeof receipt.head === 'string' &&
+        /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(receipt.head) &&
         typeof receipt.payloadDigest === 'string' &&
+        /^[0-9a-f]{64}$/u.test(receipt.payloadDigest) &&
         (receipt.outcome === 'absent' || receipt.outcome === 'landed')
     );
 }
