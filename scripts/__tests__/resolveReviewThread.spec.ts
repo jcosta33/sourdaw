@@ -5743,6 +5743,169 @@ describe('review thread resolution', () => {
         }
     });
 
+    it('terminally reconciles a markerless v6 immutable H1 review when the owner and pull request are at H2', () => {
+        const repository = createTemporaryGitRepository();
+        const { port: basePort, calls } = fakePort({
+            heads: [movedHead, movedHead, movedHead],
+            expectedAttachedReviewThreadInspectionHead: movedHead,
+            expectedPullRequestReviewInspectionPullRequestId: pullRequestId,
+            expectedPullRequestReviewInspectionHead: movedHead,
+            isResolved: true,
+            initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+            initialResolvedByType: 'User',
+            existingReplyCount: 1,
+            existingReplyReviewState: 'COMMENTED',
+            existingReplyReviewBody: '',
+            existingReplyReviewCommitOid: head,
+        });
+        let attemptedUpdate = false;
+        const port: ResolveReviewThreadPort = {
+            ...basePort,
+            updateReviewBody: () => {
+                attemptedUpdate = true;
+                throw new Error('historical immutable submitted review must not be updated');
+            },
+        };
+        const mutation = {
+            phase: 'updateReviewBody' as const,
+            epoch: 1,
+            reviewId,
+            reviewDatabaseId: '9223372036854775808',
+            reviewCommitOid: head,
+            body: resolutionReviewSummary(pullRequestId, threadId, head),
+        };
+        try {
+            const sharedOwnerOid = writeSharedMutationLockOwnerBlob(repository, 999999);
+            updateSharedMutationLock(repository, 42, sharedOwnerOid);
+            const ownerOid = writeLockOwnerBlob(
+                repository,
+                999999,
+                movedHead,
+                mutation,
+                undefined,
+                undefined,
+                sharedOwnerOid
+            );
+            updateLock(repository, 42, ownerOid);
+            expect(requireLockOwner(repository, 42)).toMatchObject({ version: 6, mutation: { ...mutation } });
+
+            const inspection = recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) =>
+                recoverReviewResolutionLockOwnerState(42, owner, port)
+            );
+
+            expect(inspection.head).toBe(movedHead);
+            expect(attemptedUpdate).toBe(false);
+            expect(
+                calls.filter((call) =>
+                    /^(createReview|reply:|updateReview|delete:|deleteReview|submit|resolve|log:)/.test(call)
+                )
+            ).toEqual([]);
+            expect(readLockOid(repository, 42)).toBeUndefined();
+            expect(readSharedMutationLockOid(repository, 42)).toBeUndefined();
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
+    it.each([
+        [
+            'the thread is unresolved',
+            {
+                isResolved: false,
+                initialResolvedByNodeId: null,
+                initialResolvedByType: null,
+            },
+            /unreconciled in-flight updateReviewBody mutation/i,
+        ],
+        [
+            'the immutable review commit changes',
+            { existingReplyReviewCommitOid: movedHead },
+            /could not prove an unlanded historical review/i,
+        ],
+        [
+            'a second Done marker is attached',
+            {
+                existingReplyCount: 2,
+                secondaryReplyReviewBody: '',
+                secondaryReplyReviewCommitOid: head,
+            },
+            /unreconciled in-flight updateReviewBody mutation/i,
+        ],
+        [
+            'the immutable review is attached to another thread',
+            { attachedReviewThreadIdsByReviewId: { [reviewId]: [otherThreadId] } },
+            /attached review-thread comments/i,
+        ],
+    ] as const)(
+        'retains a markerless v6 immutable H1 recovery with owner and pull request at H2 when %s',
+        (_label, override, expectedError) => {
+            const repository = createTemporaryGitRepository();
+            const { port: basePort, calls } = fakePort({
+                heads: [movedHead, movedHead, movedHead],
+                expectedAttachedReviewThreadInspectionHead: movedHead,
+                expectedPullRequestReviewInspectionPullRequestId: pullRequestId,
+                expectedPullRequestReviewInspectionHead: movedHead,
+                isResolved: true,
+                initialResolvedByNodeId: AUTHOR_BOT_NODE_ID,
+                initialResolvedByType: 'User',
+                existingReplyCount: 1,
+                existingReplyReviewState: 'COMMENTED',
+                existingReplyReviewBody: '',
+                existingReplyReviewCommitOid: head,
+                ...override,
+            });
+            let attemptedUpdate = false;
+            const port: ResolveReviewThreadPort = {
+                ...basePort,
+                updateReviewBody: () => {
+                    attemptedUpdate = true;
+                    throw new Error('historical immutable submitted review must not be updated');
+                },
+            };
+            const mutation = {
+                phase: 'updateReviewBody' as const,
+                epoch: 1,
+                reviewId,
+                reviewDatabaseId: '9223372036854775808',
+                reviewCommitOid: head,
+                body: resolutionReviewSummary(pullRequestId, threadId, head),
+            };
+            try {
+                const sharedOwnerOid = writeSharedMutationLockOwnerBlob(repository, 999999);
+                updateSharedMutationLock(repository, 42, sharedOwnerOid);
+                const ownerOid = writeLockOwnerBlob(
+                    repository,
+                    999999,
+                    movedHead,
+                    mutation,
+                    undefined,
+                    undefined,
+                    sharedOwnerOid
+                );
+                updateLock(repository, 42, ownerOid);
+                let retainedOwnerOid: string | undefined;
+
+                expect(() =>
+                    recoverPullRequestReviewResolutionLock(repository, 42, ownerOid, (owner) => {
+                        retainedOwnerOid = readLockOid(repository, 42);
+                        return recoverReviewResolutionLockOwnerState(42, owner, port);
+                    })
+                ).toThrow(expectedError);
+                expect(attemptedUpdate).toBe(false);
+                expect(
+                    calls.filter((call) =>
+                        /^(createReview|reply:|updateReview|delete:|deleteReview|submit|resolve|log:)/.test(call)
+                    )
+                ).toEqual([]);
+                expect(retainedOwnerOid).toEqual(expect.any(String));
+                expect(readLockOid(repository, 42)).toBe(retainedOwnerOid);
+                expect(readSharedMutationLockOid(repository, 42)).toEqual(expect.any(String));
+            } finally {
+                rmSync(repository, { recursive: true, force: true });
+            }
+        }
+    );
+
     it.each(['a duplicate Done marker', 'a blocking author pending review'])(
         'retains an immutable H1 update recovery at H2 when %s remains',
         (remainingState) => {

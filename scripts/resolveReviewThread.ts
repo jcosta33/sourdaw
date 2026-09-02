@@ -5279,6 +5279,7 @@ function hasExactPreMarkerImmutableEmptySubmittedReviewRecovery(
     mutation: Extract<ReviewResolutionLockMutation, { phase: 'updateReviewBody' }>,
     port: ResolveReviewThreadPort
 ): boolean {
+    const historicalReviewCommit = mutation.reviewCommitOid !== owner.head;
     if (mutation.reviewDatabaseId === undefined || inspection.head !== owner.head) {
         return false;
     }
@@ -5293,7 +5294,7 @@ function hasExactPreMarkerImmutableEmptySubmittedReviewRecovery(
         marker === undefined ||
         marker.review.id !== mutation.reviewId ||
         marker.review.fullDatabaseId !== mutation.reviewDatabaseId ||
-        !marker.currentHead ||
+        (!marker.currentHead && !historicalReviewCommit) ||
         !isImmutableEmptySubmittedReview(marker.review) ||
         hasBlockingAuthorPendingReview(inspection.pendingReviews, thread, context)
     ) {
@@ -6040,7 +6041,10 @@ export function recoverReviewResolutionLockOwnerState(
                     ) {
                         fail(unreconciledReviewResolutionMutationMessage(number, mutation));
                     }
-                    if (inspection.head !== owner.head) {
+                    if (
+                        inspection.head !== owner.head ||
+                        (mutation.marker === undefined && mutation.reviewCommitOid !== owner.head)
+                    ) {
                         if (
                             !hasExactImmutableEmptySubmittedReviewTerminal(
                                 number,

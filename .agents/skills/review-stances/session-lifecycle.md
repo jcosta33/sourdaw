@@ -63,3 +63,20 @@ Probe that would have caught it: for any change that puts a network/IPC wait bet
 session and installing it, walk Connect, then leave-the-section-and-return, then Connect-again
 before the first wait settles. Name which runtime is installed. If it is the first, that is the
 finding.
+
+### 2026-09-02 — recovery must distinguish terminal history from unresolved replay (escaped via PR #3116)
+
+PR #3116 retained a markerless v6 review-resolution owner after its immutable empty review stayed
+on H1 while the owner and pull request were at H2. Review exercised current-head owners but not
+the historical terminal owner, so recovery rejected the already resolved receipt and left its
+shared lock unreleasable.
+
+Blind spot: a recovery owner is a lifecycle record. The review commit can trail the live pull-request
+head only when the exact terminal receipt proves it settled; accepting that same state while
+unresolved would weaken replay fencing.
+
+Probe that would have caught it: attack historical recovery owners with mutation review commit H1
+and live head H2 twice: once resolved with one exact author-owned immutable reply and no pending
+review, which must reconcile without mutation; once unresolved, which must retain the owner. Also
+drift the review identity, actor, commit, attachment, pending set, and marker multiplicity; each
+must retain the owner.
