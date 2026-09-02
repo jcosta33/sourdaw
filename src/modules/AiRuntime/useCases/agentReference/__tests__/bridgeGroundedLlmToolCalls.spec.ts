@@ -3284,6 +3284,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
         'mute Room Mic. leaving the Drum Bus unchanged.',
         'mute Room Mic leaving the Drum Bus unchanged.',
         'mute Room Mic, leave the Drum Bus',
+        'mute Room Mic, keeping the Drum Bus',
     ] as const)('grounds muteTrack to Room Mic without borrowing %s', (prompt) => {
         const roomMic = createTrack({ id: 'track-room-mic', name: 'Room Mic' });
         const drumBus = createTrack({ id: 'track-drum-bus', name: 'Drum Bus' });
