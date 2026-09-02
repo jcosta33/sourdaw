@@ -47,7 +47,10 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
     ({ logger }) =>
         async function executeAppAction(action: AppAction, options?: ExecuteAppActionOptions): Promise<void> {
             const materialized = options?.commandEnvelope
-                ? { action: structuredClone(action), applicationAssignedIds: options.commandEnvelope.applicationAssignedIds }
+                ? {
+                      action: structuredClone(action),
+                      applicationAssignedIds: options.commandEnvelope.applicationAssignedIds,
+                  }
                 : materializeCommandApplicationIds(action);
             action = materialized.action;
 
