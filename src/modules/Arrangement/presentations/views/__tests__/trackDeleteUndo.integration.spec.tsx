@@ -39,25 +39,21 @@ import { TrackListView } from '../TrackListView';
  * The observable is the project itself: delete, press undo, and the track is
  * back with its clip still on it. Everything under the click is real — the
  * Arrangement handler map, `executeAppAction`, a real Automerge document, the
- * real undo stack. Only the audio-engine seam, the confirm dialog and the
- * routing/event fan-out are stubbed, none of which this assertion reads.
+ * real undo stack. Stubbed seams this assertion does not read: `confirmUser`,
+ * `useContextMenuDismiss`, AiRuntime `injectPromptDraft`, WorkspaceShell
+ * preference setters, the MIDI/useCases graph-cut listing, Yeast
+ * `hydrateYeastCrdtProjection`, Knead pitch-analysis hydration, the
+ * AudioEngine use-case surface, Routing sidechain/send fan-out, and
+ * `projectTrackToLiveStrip`.
  *
- * Graph-cut (non-spread listings, not fake handler maps): Metering views
- * (`LevelMeter` only), AiRuntime/useCases, WorkspaceShell/useCases,
- * Arrangement/useCases, MIDI/useCases, Project/useCases, Yeast/useCases, and
- * Knead/useCases. `getArrangementHandlers` / `setArrangementEventBus` stay live
- * via relative imports.
+ * Graph-cut (non-spread listings, not fake handler maps): AiRuntime/useCases,
+ * WorkspaceShell/useCases, MIDI/useCases, Yeast/useCases, and Knead/useCases.
+ * `getArrangementHandlers` / `setArrangementEventBus` stay live via relative
+ * imports.
  */
 
 vi.mock('#/utils/Notification/confirmUser', () => ({ confirmUser: vi.fn() }));
 vi.mock('#/utils/UI/useContextMenuDismiss', () => ({ useContextMenuDismiss: vi.fn() }));
-// Non-spread listing of only LevelMeter — TrackListView never imports this
-// barrel, but WorkspaceShell handlers that remain in the graph can.
-vi.mock('#/modules/Metering/presentations/views', () => ({
-    LevelMeter: ({ trackId }: { trackId: string | null }) => (
-        <div data-testid="level-meter" data-track-id={trackId ?? ''} />
-    ),
-}));
 // Non-spread listing of injectPromptDraft — TrackListView is the only
 // delete/undo-graph importer of AiRuntime/useCases.
 vi.mock('#/modules/AiRuntime/useCases', () => ({
@@ -74,25 +70,10 @@ vi.mock('#/modules/WorkspaceShell/useCases', async () => {
         setWorkspaceMode: actual.setWorkspaceMode,
     };
 });
-// Non-spread cut of freeze/bounce AudioEngine walks — WorkspaceShell's
-// handleSetMarqueeSelection imports setMarqueeSelection; other listed names
-// cover handler-map wiring and WorkspaceShell imports of importAudioFile,
-// importMidiFile, and captureArrangementToScratchPad on the remaining graph.
-vi.mock('#/modules/Arrangement/useCases', async () => {
-    const actual = await vi.importActual<typeof import('#/modules/Arrangement/useCases')>(
-        '#/modules/Arrangement/useCases'
-    );
-    return {
-        captureArrangementToScratchPad: actual.captureArrangementToScratchPad,
-        getArrangementHandlers: actual.getArrangementHandlers,
-        importAudioFile: actual.importAudioFile,
-        importMidiFile: actual.importMidiFile,
-        setArrangementEventBus: actual.setArrangementEventBus,
-        setMarqueeSelection: actual.setMarqueeSelection,
-    };
-});
-// Non-spread listing of MIDI names the live handler map imports through the
-// barrel plus removeMidiClipData / restoreMidiClipData on the delete/undo path.
+// Non-spread listing of MIDI names the remaining graph imports through the
+// barrel — Arrangement handler/use-case wiring (removeTrack, armTrack, clip
+// glue/split, freeze bounce, …) and CrdtDocument `prepareDrumPreviewBranches`
+// for `projectDrumPreviewCandidateNotes`.
 vi.mock('#/modules/MIDI/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
     return {
@@ -121,17 +102,6 @@ vi.mock('#/modules/MIDI/useCases', async () => {
         setMidiInputTrack: actual.setMidiInputTrack,
         setNotesForClip: actual.setNotesForClip,
         splitMidiNotesAtBeat: actual.splitMidiNotesAtBeat,
-    };
-});
-// Non-spread listing of Project names WorkspaceShell handlers import — cuts
-// persistence helpers that reset modules and pull AudioEngine cache APIs.
-vi.mock('#/modules/Project/useCases', async () => {
-    const actual = await vi.importActual<typeof import('#/modules/Project/useCases')>('#/modules/Project/useCases');
-    return {
-        exportProjectFile: actual.exportProjectFile,
-        newProject: actual.newProject,
-        pickFiles: actual.pickFiles,
-        saveProject: actual.saveProject,
     };
 });
 // Non-spread listing of hydrateYeastCrdtProjection, which projectSlotProjections
