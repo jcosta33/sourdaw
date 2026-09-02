@@ -14,6 +14,10 @@ export function registerProductionCommandHandlers(handlerMaps: readonly HandlerM
         void registration.handler;
     }
     hydrateUndoStoreFromSession(
-        registrations.map((registration) => [registration.actionType, registration.operationVersion] as const)
+        registrations.map((registration) => ({
+            actionType: registration.actionType,
+            operationVersion: registration.operationVersion,
+            validateArguments: registration.runtimeSchema.validate,
+        }))
     );
 }

@@ -1,8 +1,10 @@
+import { coreAutomationActionNames } from '../transformers/llmActionStrategies/coreAutomationStrategy';
 import { markerSectionActionNames } from '../transformers/llmActionStrategies/markerSectionStrategy';
 import { masterVcaActionNames } from '../transformers/llmActionStrategies/masterVcaStrategy';
 import { transportTimelineActionNames } from '../transformers/llmActionStrategies/transportTimelineStrategy';
 
 const llmActionStrategyNames = [
+    ...coreAutomationActionNames,
     ...markerSectionActionNames,
     ...masterVcaActionNames,
     ...transportTimelineActionNames,

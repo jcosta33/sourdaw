@@ -33,23 +33,16 @@ describe('getProductionCommandHandlerMaps', () => {
         sessionStorage.setItem(
             UNDO_SESSION_KEY,
             JSON.stringify({
+                // Oldest first, and the current action is newest: a rejected
+                // entry strands every entry older than it.
                 past: [
-                    {
-                        id: 'current-action',
-                        kind: 'action',
-                        label: 'Current action',
-                        action: { type: 'setTempo', payload: { bpm: 128 } },
-                        inverseAction: { type: 'setTempo', payload: { bpm: 120 } },
-                        timestamp: 1,
-                        source: 'manual',
-                    },
                     {
                         id: 'retired-action',
                         kind: 'action',
                         label: 'Retired action',
                         action: { type: 'retiredFutureAction' },
                         inverseAction: { type: 'retiredFutureAction' },
-                        timestamp: 2,
+                        timestamp: 1,
                         source: 'ai',
                     },
                     {
@@ -60,8 +53,17 @@ describe('getProductionCommandHandlerMaps', () => {
                         actionOperationVersion: 2,
                         inverseAction: { type: 'setTempo', payload: { bpm: 128 } },
                         inverseActionOperationVersion: 2,
-                        timestamp: 3,
+                        timestamp: 2,
                         source: 'ai',
+                    },
+                    {
+                        id: 'current-action',
+                        kind: 'action',
+                        label: 'Current action',
+                        action: { type: 'setTempo', payload: { bpm: 128 } },
+                        inverseAction: { type: 'setTempo', payload: { bpm: 120 } },
+                        timestamp: 3,
+                        source: 'manual',
                     },
                 ],
                 future: [],

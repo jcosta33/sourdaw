@@ -28,6 +28,7 @@ export const generateCloudToolCalls = inject({ logger })(
             systemPrompt: string,
             userMessage: string,
             toolSchemas: readonly ToolSchema[],
+            maxOutputTokens: number,
             signal?: AbortSignal
         ): Promise<ToolCallResult[]> {
             const runtime = getCloudProviderRuntime();
@@ -56,6 +57,7 @@ export const generateCloudToolCalls = inject({ logger })(
                     systemPrompt: `${CLOUD_SYSTEM_PROMPT}\n\n${systemPrompt}`,
                     userMessage,
                     toolSchemas,
+                    maxOutputTokens,
                     signal: controller.signal,
                 });
                 controller.signal.throwIfAborted();

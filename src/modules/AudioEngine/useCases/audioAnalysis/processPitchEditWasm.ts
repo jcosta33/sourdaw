@@ -1,20 +1,20 @@
 import { audioBufferCache } from '../../stores/audioBufferCache';
-import { commit_pitch_edit_wasm } from '../../wasm/daw_dsp.js';
 
 import type { PitchContour, PitchSegment } from './analyzePitchForClip';
 
 // `commit_pitch_edit_wasm` shares the same wasm-bindgen glue as
-// `analyze_pitch_wasm`. This function is synchronous, so it cannot await the
-// main-thread init itself; it relies on `analyzePitchForClip` having run first
-// in the same realm (analysis always precedes an edit) to have initialized the
-// glue singleton via `ensureMainThreadWasmInit`. Reordering the two so an edit
-// can precede analysis would need this call to become async and await that init.
-export function processPitchEditWasm(
+// `analyze_pitch_wasm`. Load `daw_dsp.js` only at call time so the AudioEngine
+// useCases barrel can evaluate after a failed WASM graph. Analysis still
+// precedes an edit in the product flow; this path also inits the glue if an
+// edit reaches here first.
+export async function processPitchEditWasm(
     originalBuffer: AudioBuffer,
     segments: PitchSegment[],
     contour: PitchContour,
     outputAudioBufferId: string
-): void {
+): Promise<void> {
+    const { commit_pitch_edit_wasm, default: initDawDsp } = await import('#/modules/AudioEngine/wasm/daw_dsp.js');
+    await initDawDsp();
     const channelData = originalBuffer.getChannelData(0);
     // The regenerated .d.ts types the return as generic Float32Array
     // (Float32Array<ArrayBufferLike>), but AudioBuffer.copyToChannel requires
