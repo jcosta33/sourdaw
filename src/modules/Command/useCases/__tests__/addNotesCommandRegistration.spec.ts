@@ -296,6 +296,60 @@ describe('addNotes command registration', () => {
         expect(midiStore.value?.notesByClipId['clip-midi']).toEqual(entry.redoAction.payload.notes);
     });
 
+    it('hydrates and replays expressive base-note snapshots through production registration', async () => {
+        const registration = getExecutableCommandRegistration('addNotes');
+        const entry = createPersistedAddNotesEntry();
+        const baseNotes = [
+            {
+                ...entry.inverseAction.payload.notes[0]!,
+                probability: 75,
+                pressure: 0.4,
+                slide: 0.3,
+                pitchBend: -2_048,
+                pitchBendRangeSemitones: 12,
+                channel: 3,
+                articulation: 'accent',
+            },
+            ...entry.inverseAction.payload.notes.slice(1),
+        ];
+        const expectedNotes = [...baseNotes, ...entry.action.payload.notes];
+        const persistedEntry = {
+            ...entry,
+            inverseAction: {
+                ...entry.inverseAction,
+                payload: { ...entry.inverseAction.payload, notes: baseNotes, expectedNotes },
+            },
+            redoAction: {
+                ...entry.redoAction,
+                payload: { ...entry.redoAction.payload, notes: expectedNotes, expectedNotes: baseNotes },
+            },
+            actionOperationVersion: registration.operationVersion,
+            inverseActionOperationVersion: 1,
+            redoActionOperationVersion: 1,
+        };
+        createMidiClipFixture();
+        midiStore.set({
+            notesByClipId: { 'clip-midi': expectedNotes },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        sessionStorage.setItem('sourdaw-undo-session', JSON.stringify({ past: [persistedEntry], future: [] }));
+        clearHandlerRegistry();
+
+        registerAllProductionHandlers();
+
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(undoStore.value?.past[0]).toMatchObject({
+            action: persistedEntry.action,
+            inverseAction: persistedEntry.inverseAction,
+            redoAction: persistedEntry.redoAction,
+        });
+        expect(await undo()).toEqual({ headConsumed: true });
+        expect(midiStore.value?.notesByClipId['clip-midi']).toEqual(baseNotes);
+        await redo();
+        expect(midiStore.value?.notesByClipId['clip-midi']).toEqual(expectedNotes);
+    });
+
     it('persists and rehydrates a canonical undo entry from an envelope-less addNotes action', async () => {
         createMidiClipFixture();
         midiStore.set({

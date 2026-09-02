@@ -1,6 +1,7 @@
 import { type HandlerSessionActionEntry } from '#/utils/handlerContract';
 
 import { isMaterializedAddNotesArguments } from '../../transformers/isMaterializedAddNotesArguments';
+import { isMidiNoteSnapshot } from '../../transformers/isMidiNoteSnapshot';
 import { isRestoreMidiClipNotesReplayArguments } from '../../transformers/isRestoreMidiClipNotesReplayArguments';
 
 type JsonRecord = Record<string, unknown>;
@@ -79,20 +80,20 @@ export function isAddNotesSessionEntry(entry: HandlerSessionActionEntry): boolea
     if (!isMaterializedAddNotesArguments(actionPayload)) {
         return false;
     }
-    const inverseNotes = { clipId: actionPayload.clipId, notes: inversePayload.notes };
-    const inverseExpectedNotes = { clipId: actionPayload.clipId, notes: inversePayload.expectedNotes };
-    const redoNotes = { clipId: actionPayload.clipId, notes: redoPayload.notes };
-    const redoExpectedNotes = { clipId: actionPayload.clipId, notes: redoPayload.expectedNotes };
+    const inverseNotes = inversePayload.notes;
+    const inverseExpectedNotes = inversePayload.expectedNotes;
+    const redoNotes = redoPayload.notes;
+    const redoExpectedNotes = redoPayload.expectedNotes;
     if (
-        !isMaterializedAddNotesArguments(inverseNotes, 'snapshot') ||
-        !isMaterializedAddNotesArguments(inverseExpectedNotes, 'snapshot') ||
-        !isMaterializedAddNotesArguments(redoNotes, 'snapshot') ||
-        !isMaterializedAddNotesArguments(redoExpectedNotes, 'snapshot')
+        !isMidiNoteSnapshot(inverseNotes) ||
+        !isMidiNoteSnapshot(inverseExpectedNotes) ||
+        !isMidiNoteSnapshot(redoNotes) ||
+        !isMidiNoteSnapshot(redoExpectedNotes)
     ) {
         return false;
     }
     const noteIds = actionPayload.notes.map((note) => note.id);
-    const baseNoteIdSet = new Set(inverseNotes.notes.map((note) => note.id));
+    const baseNoteIdSet = new Set(inverseNotes.map((note) => note.id));
     if (new Set(noteIds).size !== noteIds.length || noteIds.some((id) => baseNoteIdSet.has(id))) {
         return false;
     }
