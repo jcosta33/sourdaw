@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type captureUndoHistory } from '#/modules/Command/useCases';
+
 import { switchBranch } from '../switchBranch';
+
+// Derived from the public callable's own return type rather than importing
+// Command's private UndoEntry model across the module boundary.
+type UndoSnapshot = ReturnType<typeof captureUndoHistory>;
+type UndoSnapshotEntry = UndoSnapshot['past'][number];
 
 const ROOT_LIVE_DOC = { tag: 'root-live' };
 const FEATURE_SNAPSHOT = { tag: 'feature-snap' };
@@ -16,7 +23,7 @@ const mocks = vi.hoisted(() => ({
     replaceDoc: vi.fn(),
     removeDoc: vi.fn(),
     clearUndoHistory: vi.fn(),
-    captureUndoHistory: vi.fn(() => ({ past: [], future: [] })),
+    captureUndoHistory: vi.fn<() => UndoSnapshot>(() => ({ past: [], future: [] })),
     restoreUndoHistory: vi.fn(),
     storeValue: {
         branches: [
@@ -168,7 +175,16 @@ describe('switchBranch', () => {
     it('restores the undo history captured before the swap when the transition rejects', async () => {
         const persistenceFailure = new Error('compaction failed');
         mocks.compactProject.mockRejectedValueOnce(persistenceFailure);
-        const preSwitchSnapshot = { past: [{ id: 'undo-1', label: 'Move clip' }], future: [] };
+        const preSwitchEntry: UndoSnapshotEntry = {
+            id: 'undo-1',
+            kind: 'callback',
+            label: 'Move clip',
+            timestamp: 1,
+            source: 'manual',
+            undo: () => {},
+            redo: () => undefined,
+        };
+        const preSwitchSnapshot: UndoSnapshot = { past: [preSwitchEntry], future: [] };
         mocks.captureUndoHistory.mockReturnValueOnce(preSwitchSnapshot);
 
         await expect(switchBranch('other')).rejects.toBe(persistenceFailure);
@@ -179,9 +195,13 @@ describe('switchBranch', () => {
         // a snapshot taken after clearUndoHistory() has already run.
         expect(mocks.captureUndoHistory).toHaveBeenCalledOnce();
         expect(mocks.restoreUndoHistory.mock.calls[0]?.[0]).toBe(preSwitchSnapshot);
-        expect(mocks.captureUndoHistory.mock.invocationCallOrder[0]).toBeLessThan(
-            mocks.clearUndoHistory.mock.invocationCallOrder[0]
-        );
+
+        const captureOrder = mocks.captureUndoHistory.mock.invocationCallOrder[0];
+        const clearOrder = mocks.clearUndoHistory.mock.invocationCallOrder[0];
+        if (captureOrder === undefined || clearOrder === undefined) {
+            throw new Error('Expected both captureUndoHistory and clearUndoHistory to have been invoked');
+        }
+        expect(captureOrder).toBeLessThan(clearOrder);
     });
 
     it('does not restore undo history when the switch succeeds', async () => {
