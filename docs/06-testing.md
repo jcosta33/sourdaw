@@ -96,11 +96,11 @@ Nested UI folders follow the same pattern (e.g. `presentations/views/Mixer/__tes
 
 ## 4. Naming convention
 
-Every `it` block starts with `should` or `should not`, followed by a concise description of the behaviour under test:
+Every `it` block describes the behaviour under test concisely, using direct verb phrases or `should`/`should not`:
 
-- `it('should add the track and emit TrackAddedEvent')`
+- `it('adds the track and emits TrackAddedEvent')`
 - `it('should not emit when the store is empty')`
-- `it('should throw InvalidTempoError when bpm is below 20')`
+- `it('throws InvalidTempoError when bpm is below 20')`
 
 ---
 
