@@ -44,26 +44,23 @@ describe('requestAnthropicStream', () => {
         if (!call) {
             throw new Error('Expected a recorded provider request');
         }
-        const body = JSON.parse(call.body) as {
-            system: Array<{ type: string; text: string; cache_control?: { type: string } }>;
-        };
-        expect(body.system).toEqual([{ type: 'text', text: 'Be helpful.', cache_control: { type: 'ephemeral' } }]);
+        const body = JSON.parse(call.body) as { system: Array<{ type: string; text: string }> };
+        expect(body.system).toEqual([{ type: 'text', text: 'Be helpful.' }]);
     });
 
-    it('omits cache_control when the caller opts out of caching a per-turn-varying system prompt', async () => {
+    it('never marks the system block cacheable — this path always carries per-turn content', async () => {
         requestProvider.mockImplementation(async ({ onBodyChunk }) => {
             onBodyChunk(new TextEncoder().encode('data: {"type":"message_stop"}\n\n'));
             return { status: 200, contentType: 'text/event-stream' };
         });
 
-        await requestAnthropicStream({ ...input(), cacheSystem: false });
+        await requestAnthropicStream(input());
 
         const call = requestProvider.mock.calls[0]?.[0] as { body: string } | undefined;
         if (!call) {
             throw new Error('Expected a recorded provider request');
         }
-        const body = JSON.parse(call.body) as { system: Array<{ type: string; text: string }> };
-        expect(body.system).toEqual([{ type: 'text', text: 'Be helpful.' }]);
+        expect(call.body).not.toContain('cache_control');
     });
 
     it('rejects an oversized event before exposing it', async () => {

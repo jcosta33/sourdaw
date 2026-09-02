@@ -8,7 +8,6 @@ type CloudStreamInput = {
     sessionId: string;
     model: string;
     system: string;
-    cacheSystem?: boolean;
     maxTokens: number;
     messages: Array<{ role: 'user' | 'assistant'; content: string }>;
     signal: AbortSignal;
@@ -142,22 +141,6 @@ describe('streamCloudChatCompletion', () => {
         expect(args.messages).toHaveLength(2);
         expect(args.messages[0]).toEqual({ role: 'user', content: 'Hi there' });
         expect(args.messages[1]).toEqual({ role: 'assistant', content: 'Hello' });
-        expect(args.cacheSystem).toBe(true);
-    });
-
-    it('forwards cacheSystemPrompt: false so a per-turn-varying system message is not marked cacheable', async () => {
-        const messages = [
-            { role: 'system', content: 'fixed_policy:\nsomething that changes every turn' },
-            { role: 'user', content: 'Hi there' },
-        ];
-
-        await streamCloudChatCompletion(messages, vi.fn(), { cacheSystemPrompt: false });
-
-        const firstCall = mocks.stream.mock.calls[0];
-        if (!firstCall) {
-            throw new Error('Expected the cloud stream call to have been recorded');
-        }
-        expect(firstCall[0].cacheSystem).toBe(false);
     });
 
     it('falls back to the catalog default model when the configured runtime carries none', async () => {

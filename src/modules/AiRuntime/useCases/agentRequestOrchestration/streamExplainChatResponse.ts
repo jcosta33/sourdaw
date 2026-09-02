@@ -273,14 +273,6 @@ export async function streamExplainChatResponse(input: StreamExplainChatResponse
                     onUsage: (event) => activeProviderStreamWriter.push(event),
                     onUnknownEvent: (providerEventType) =>
                         activeProviderStreamWriter.push({ type: 'unknown', providerEventType }),
-                    // The system message here is agentContext.message: `fixed_policy:\n${CHAT_SYSTEM_PROMPT}`
-                    // followed by run_authority, user_request, revision_and_selection, and other per-turn
-                    // content, so the whole block differs every turn. Even the byte-stable `fixed_policy`
-                    // prefix alone measures ~3.5KB / ~900-1000 estimated tokens — under Anthropic's ~1024
-                    // token minimum cacheable-prefix breakpoint, with too little headroom for a prompt edit
-                    // to keep clearing it. Marking any of this cacheable would pay a cache write every turn
-                    // for a read that may never land, so the chat path opts out entirely.
-                    cacheSystemPrompt: false,
                 }
             );
         } else {
