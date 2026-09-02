@@ -58,9 +58,6 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 logger.error(error);
                 throw error;
             }
-            if (!options?.commandEnvelope) {
-                handler.materializeCommandArguments?.(action);
-            }
             const historyGroupId = handler.batchExecution === 'singleton' ? undefined : options?.groupId;
             const historyGroupLabel = historyGroupId ? options?.groupLabel : undefined;
             if (
@@ -74,6 +71,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             ) {
                 throw new Error(`Command envelope does not match action ${action.type}`);
             }
+            handler.materializeCommandArguments?.(action);
 
             if (handler.executionKind === 'runtime') {
                 if (options?.shouldExecute && !options.shouldExecute()) {
