@@ -120,6 +120,37 @@ impl SpringReverb {
         }
     }
 
+    /// Return to the state `new` leaves behind, reusing the tank delay line and
+    /// the allpass cascade rather than allocating a fresh pair.
+    ///
+    /// Selecting an algorithm is audio-thread work, so the engine that becomes
+    /// active is reset here instead of being rebuilt. Every value below is the
+    /// constructor's, and `tests/engine_reset_is_factory_fresh.rs` renders the
+    /// two against each other so they cannot drift apart.
+    pub fn reset(&mut self) {
+        let dispersion_coeff = 0.6;
+        for stage in self.allpass_cascade.iter_mut() {
+            *stage = Allpass1::new(dispersion_coeff);
+        }
+        self.dispersion_coeff = dispersion_coeff;
+        self.delay_buf.fill(0.0);
+        self.delay_write = 0;
+        self.delay_len = (self.sample_rate * 0.15) as usize;
+        self.feedback = 0.7;
+        self.damp_state = 0.0;
+        self.damping = 0.3;
+        // Arrays and scalars only, so rebuilding the stage frees nothing and
+        // allocates nothing.
+        self.decay_eq = DecayRateEq::new(self.sample_rate, 0.7);
+        self.mod_phase = 0.0;
+        self.mod_rate = 4.5;
+        self.mod_depth = 0.3;
+        self.mix = 0.3;
+        self.output.reset();
+        self.drip_envelope = 0.0;
+        self.drip_decay = (-1.0 / (0.05 * self.sample_rate)).exp();
+    }
+
     pub fn set_param(&mut self, name: &str, value: f32) {
         if self.output.set_param(name, value) {
             return;

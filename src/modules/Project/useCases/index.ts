@@ -13,9 +13,12 @@ export { initPluginStateDirtyTracking } from './projectPersistence/saveProject/i
 export { loadProject } from './projectPersistence/loadProject';
 export { migrateLegacyProjectSnapshots } from './projectPersistence/migrateLegacyProjectSnapshots';
 export { setProjectIdentityTransitionDependencies } from './projectPersistence/projectIdentityTransitionDependencies';
+export { whenProjectIdentityTransitionDependenciesConfigured } from './projectPersistence/whenProjectIdentityTransitionDependenciesConfigured';
+export { failProjectIdentityTransitionDependencies } from './projectPersistence/failProjectIdentityTransitionDependencies';
 export { renameProject } from './projectPersistence/saveProject/renameProject';
 export { importSclFile } from './importSclFile';
 export { finishProjectLoading } from './finishProjectLoading';
+export { reportProjectLoadFailure } from './reportProjectLoadFailure';
 export { setProjectKeyRoot } from './setProjectKeyRoot';
 export { setProjectScaleName } from './setProjectScaleName';
 export { pickFiles } from './fileDialog';

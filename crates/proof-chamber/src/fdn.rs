@@ -335,6 +335,26 @@ fn delay_buffer_len(sample_rate: f32) -> usize {
     delay_ceiling(sample_rate) + MODULATION_HEADROOM + 1
 }
 
+/// Incommensurate LFO frequencies (Costello-inspired), and the phases spread
+/// across `lines` of them.
+///
+/// A function rather than a block inside the constructor because `reset` seeds
+/// the same two arrays without allocating a new engine, and two copies of a
+/// modulation seed is two chances for the lines to end up in lockstep on one
+/// path and not the other.
+fn seed_modulation(lines: usize) -> ([f32; MAX_FDN_CHANNELS], [f32; MAX_FDN_CHANNELS]) {
+    const BASE_FREQS: [f32; 16] = [
+        0.7, 1.1, 1.7, 2.3, 0.5, 1.3, 1.9, 2.9, 0.6, 1.4, 2.1, 0.8, 1.6, 2.7, 0.9, 1.2,
+    ];
+    let mut freqs = [0.0_f32; MAX_FDN_CHANNELS];
+    let mut phases = [0.0_f32; MAX_FDN_CHANNELS];
+    for i in 0..lines {
+        freqs[i] = BASE_FREQS[i % BASE_FREQS.len()];
+        phases[i] = (i as f32) / (lines as f32);
+    }
+    (freqs, phases)
+}
+
 fn normalized_hf_rt60_ratio(damping: f32) -> f32 {
     2.0_f32.powf(-damping.clamp(0.0, 0.999) / SHIPPED_DAMPING)
 }
@@ -444,16 +464,7 @@ impl FdnReverb {
             .map(|_| DecayRateEq::new(sample_rate, 1.0))
             .collect();
 
-        // Incommensurate LFO frequencies (Costello-inspired)
-        let base_freqs = [
-            0.7, 1.1, 1.7, 2.3, 0.5, 1.3, 1.9, 2.9, 0.6, 1.4, 2.1, 0.8, 1.6, 2.7, 0.9, 1.2,
-        ];
-        let mut lfo_freqs = [0.0_f32; MAX_FDN_CHANNELS];
-        let mut lfo_phases = [0.0_f32; MAX_FDN_CHANNELS];
-        for i in 0..n {
-            lfo_freqs[i] = base_freqs[i % base_freqs.len()];
-            lfo_phases[i] = (i as f32) / (n as f32); // spread initial phases
-        }
+        let (lfo_freqs, lfo_phases) = seed_modulation(n);
 
         let predelay_max = (sample_rate * 0.5) as usize;
 
@@ -494,6 +505,71 @@ impl FdnReverb {
         // Make the seeding above true before anyone can render through it.
         reverb.update_absorptive_filters();
         reverb
+    }
+
+    /// Return to the state `new` leaves behind, reusing the delay lines, the
+    /// pre-delay buffer and the early-reflection buffers already allocated.
+    ///
+    /// Selecting an algorithm is audio-thread work, so the engine that becomes
+    /// active is reset here instead of being rebuilt: the tank is the largest
+    /// allocation in the crate after the reverse engine's capture pair, and
+    /// `FdnReverb::new(sr, 16)` inside a 2.67 ms quantum is what #3307 is
+    /// about. Every value below is the constructor's, and
+    /// `tests/engine_reset_is_factory_fresh.rs` renders the two against each
+    /// other so they cannot drift apart.
+    ///
+    /// `num_channels` is not restored: it is the identity of the engine, not
+    /// its state, and a reset FDN-16 must stay an FDN-16.
+    pub fn reset(&mut self) {
+        let sample_rate = self.sample_rate;
+
+        fill_delay_lengths(&mut self.delay_lengths, DEFAULT_SIZE, sample_rate);
+        for buffer in self.buffers.iter_mut() {
+            buffer.fill(0.0);
+        }
+        self.write_positions.fill(0);
+        for (filter, &len) in self
+            .absorptive_filters
+            .iter_mut()
+            .zip(self.delay_lengths.iter())
+        {
+            *filter = AbsorptiveFilter::new(len, sample_rate, 2.0, 0.8);
+        }
+        // Seeded flat here exactly as in the constructor, and corrected by the
+        // `update_absorptive_filters` call at the foot of this function.
+        for eq in self.decay_eqs.iter_mut() {
+            *eq = DecayRateEq::new(sample_rate, 1.0);
+        }
+
+        self.mix_buf = [0.0; MAX_FDN_CHANNELS];
+        let (lfo_freqs, lfo_phases) = seed_modulation(self.num_channels);
+        self.lfo_freqs = lfo_freqs;
+        self.lfo_phases = lfo_phases;
+        self.mod_depth = 0.3;
+
+        self.early_reflections_l.reset(sample_rate, DEFAULT_SIZE);
+        self.early_reflections_r.reset(sample_rate, DEFAULT_SIZE);
+
+        self.rt60 = 2.0;
+        self.rt60_hf = 0.8;
+        self.damping = 0.2;
+        self.normalized_damping = false;
+        self.size = DEFAULT_SIZE;
+        self.mix = 0.3;
+        self.early_late_balance = 0.4;
+        self.use_hadamard = true;
+
+        self.predelay_buf.fill(0.0);
+        self.predelay_pos = 0;
+        self.predelay_len = ((15.0 / 1000.0) * sample_rate) as usize;
+
+        self.saturation_enabled = false;
+        self.output.reset();
+
+        self.smooth_mix = 0.3;
+        self.smooth_coeff = 1.0 - (-1.0 / (0.030 * sample_rate)).exp();
+
+        self.update_absorptive_filters();
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {

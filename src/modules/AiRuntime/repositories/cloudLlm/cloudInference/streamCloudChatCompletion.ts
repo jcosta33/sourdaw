@@ -1,13 +1,13 @@
 import { logger } from '#/infra/logger/appLogger';
 
 import { isAiRuntimeConfigurationChangedError } from '../../../errors/AiRuntimeConfigurationChangedError';
+import { DEFAULT_HOSTED_ANTHROPIC_MODEL } from '../../../models/HostedAnthropicModels';
 import { type ModelProviderEvent } from '../../../models/ModelProviderProtocol';
 import { getCloudProviderRuntime } from '../getCloudProviderRuntime';
 import { linkCloudRequestAbort } from '../linkCloudRequestAbort';
 import { registerCloudStreamController } from '../registerCloudStreamController';
 import { unregisterCloudStreamController } from '../unregisterCloudStreamController';
 
-import { CLOUD_MODEL } from './helpers';
 import { requestAnthropicStream } from './requestAnthropicStream';
 import { streamOpenAiCompatibleChatCompletion } from './streamOpenAiCompatibleChatCompletion';
 
@@ -72,7 +72,7 @@ export async function streamCloudChatCompletion(
         let streamedBytes = 0;
         await requestAnthropicStream({
             sessionId: runtime.session_id,
-            model: runtime.model || CLOUD_MODEL,
+            model: runtime.model || DEFAULT_HOSTED_ANTHROPIC_MODEL,
             maxTokens: options?.maxTokens ?? 2048,
             system: systemMessage?.content ?? 'You are a helpful music production assistant embedded in a DAW.',
             messages: chatMessages,

@@ -40,6 +40,27 @@ describe('requestAnthropicStream', () => {
                 body: expect.stringContaining('"stream":true'),
             })
         );
+        const call = requestProvider.mock.calls[0]?.[0] as { body: string } | undefined;
+        if (!call) {
+            throw new Error('Expected a recorded provider request');
+        }
+        const body = JSON.parse(call.body) as { system: Array<{ type: string; text: string }> };
+        expect(body.system).toEqual([{ type: 'text', text: 'Be helpful.' }]);
+    });
+
+    it('never marks the system block cacheable — this path always carries per-turn content', async () => {
+        requestProvider.mockImplementation(async ({ onBodyChunk }) => {
+            onBodyChunk(new TextEncoder().encode('data: {"type":"message_stop"}\n\n'));
+            return { status: 200, contentType: 'text/event-stream' };
+        });
+
+        await requestAnthropicStream(input());
+
+        const call = requestProvider.mock.calls[0]?.[0] as { body: string } | undefined;
+        if (!call) {
+            throw new Error('Expected a recorded provider request');
+        }
+        expect(call.body).not.toContain('cache_control');
     });
 
     it('rejects an oversized event before exposing it', async () => {

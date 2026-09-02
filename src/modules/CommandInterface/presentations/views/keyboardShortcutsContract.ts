@@ -1,10 +1,24 @@
 import { useEffect } from 'react';
 
-import { projectLoadFailureStore } from '#/modules/Project/stores';
+import { getHandlerMap } from '#/modules/Command/stores';
+import { projectLoadFailureStore, projectStore } from '#/modules/Project/stores';
 
 import { isKeyboardEditableTarget } from '../../useCases/isKeyboardEditableTarget';
 import { handleKeydown } from '../../useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown';
 import { handleKeyup } from '../../useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeyup';
+
+function shouldDispatchShortcutAppActions(): boolean {
+    if (projectLoadFailureStore.value !== null) {
+        return false;
+    }
+    // First paint and iframe remount mount AppShell while bootstrap is still
+    // importing WASM and the command-handler map is empty. Space would then
+    // call executeAppAction and throw AppActionNotDispatchedError.
+    if (projectStore.value?.loading !== false) {
+        return false;
+    }
+    return Object.keys(getHandlerMap()).length > 0;
+}
 
 /**
  * View-layer keyboard shortcut contract exposed to other modules.
@@ -25,7 +39,7 @@ export const useGlobalKeyboardShortcuts = (): void => {
             // Deliberately no `preventDefault` — the browser's own handling is
             // harmless here, and swallowing the event would also take the reload
             // that the failure surface tells the user to perform.
-            if (projectLoadFailureStore.value !== null) {
+            if (!shouldDispatchShortcutAppActions()) {
                 return;
             }
 

@@ -43,10 +43,13 @@
 //! whose material was decoded at a different rate than the engine runs at is
 //! rate-converted through `ClipPlayback::playback_rate`
 //! (`material_rate / engine_rate` — a sample-rate conversion, which preserves
-//! pitch-at-speed semantics). The contract's own `playbackRate` must be `1`
-//! in this slice: `TimelineClip` has nowhere to carry a stretch, so a
-//! stretched clip is refused rather than played at unity behind the user's
-//! back. Native varispeed is tracked in jcosta33/sourdaw#2219.
+//! pitch-at-speed semantics). The contract's own `playbackRate` is varispeed —
+//! rate and pitch move together, exactly what `ClipPlayback::playback_rate`
+//! already documents and what an `AudioBufferSourceNode` does on the Web
+//! Audio legs — so the user's rate is folded into the same conversion:
+//! `effective_rate = playbackRate * (material_rate / engine_rate)`. Only a
+//! non-positive or non-finite rate is refused; nothing here claims
+//! pitch-preserving stretch, which does not exist on any clip-playback leg.
 //!
 //! ## Engine bootstrap (#1984)
 //!
@@ -2064,22 +2067,21 @@ fn map_schedule_clip(
     })?;
 
     let rate = finite(playback.playback_rate, "playbackRate")?;
-    if rate != 1.0 {
-        // This backend does not implement stretch: `TimelineClip` has nowhere
-        // to carry a rate, and a clip played at unity instead would bounce at
-        // the wrong pitch and the wrong length without saying so. Refuse until
-        // the engine can play one.
+    if rate <= 0.0 {
         return Err(format!(
-            "schedule-clip: stretched-clip-unsupported — playbackRate {rate} refused because this \
-             backend cannot stretch a clip yet"
+            "schedule-clip: playbackRate {rate} refused — a clip rate must be positive"
         ));
     }
-    // Rate *conversion* is not a stretch: material decoded at another rate is
-    // read at material_rate / engine_rate source frames per rendered frame,
-    // which preserves its pitch and its duration on this engine's clock.
-    let effective_rate = sample.sample_rate / sample_rate;
+    // `ClipPlayback::playback_rate` is varispeed, not pitch-preserving stretch
+    // (crates/daw-engine/src/timeline.rs, `ClipPlayback` doc): rate and pitch
+    // move together, exactly what an `AudioBufferSourceNode` does on the Web
+    // Audio legs (`scheduleAudioClips.ts`, `scheduleOfflineClipSource.ts`).
+    // The user's rate and the material's own sample-rate conversion both read
+    // as "source frames per rendered frame", so they compose by
+    // multiplication into one field the engine already knows how to play.
+    let effective_rate = rate * f64::from(sample.sample_rate / sample_rate);
     if !effective_rate.is_finite() || effective_rate <= 0.0 {
-        return Err("schedule-clip: the sample's rate conversion is not renderable".to_string());
+        return Err("schedule-clip: the clip's effective rate is not renderable".to_string());
     }
 
     let gain = finite(playback.gain, "clip gain")?;
@@ -2169,7 +2171,7 @@ fn map_schedule_clip(
                     fade_out_frames,
                     micro_fade_frames,
                 },
-                playback_rate: effective_rate,
+                playback_rate: effective_rate as f32,
             },
         ),
     ));
@@ -3309,7 +3311,10 @@ mod tests {
     }
 
     #[test]
-    fn a_stretched_clip_refuses_as_unsupported_and_a_missing_sample_refuses_by_name() {
+    fn a_stretched_clip_maps_to_its_playback_rate() {
+        // 48 kHz material on a 48 kHz engine: the rate conversion factor is 1,
+        // so the mapped `playback_rate` is exactly the user's varispeed rate —
+        // the same thing an `AudioBufferSourceNode` does on the Web Audio legs.
         let stretched = batch(json!([
             { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
               "devices": [], "honorMuted": true, "contributesAudio": true },
@@ -3318,16 +3323,21 @@ mod tests {
                 "startTime": 0, "sourceOffsetSeconds": 0, "durationSeconds": 1,
                 "playbackRate": 1.5, "gain": 1, "fade": { "microFadeSeconds": 0 } } }
         ]));
-        let refusal = map_batch(
+        let mapped = map_batch(
             &stretched,
             &mut GraphRegistry::default(),
             &sample_pool(),
             48_000.0,
         )
-        .expect_err("a stretched clip must refuse");
-        assert!(refusal.contains("stretched-clip-unsupported"));
-        assert!(refusal.contains("1.5"));
+        .expect("a varispeed clip must map, not refuse");
+        assert!(mapped.ops.iter().any(|op| matches!(
+            op,
+            GraphCommand::AddClip(_, clip) if clip.playback().playback_rate == 1.5
+        )));
+    }
 
+    #[test]
+    fn an_unregistered_sample_refuses_by_name() {
         let unknown = batch(json!([
             { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
               "devices": [], "honorMuted": true, "contributesAudio": true },
@@ -3344,6 +3354,56 @@ mod tests {
         )
         .expect_err("an unregistered sample must refuse");
         assert!(refusal.contains("unknown sample 'nowhere'"));
+    }
+
+    #[test]
+    fn a_non_positive_playback_rate_refuses_by_name() {
+        for rate in [0.0, -1.0] {
+            let batch = batch(json!([
+                { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
+                  "devices": [], "honorMuted": true, "contributesAudio": true },
+                { "kind": "schedule-clip", "playback": {
+                    "trackId": "t1", "source": { "sourceId": "source-a" },
+                    "startTime": 0, "sourceOffsetSeconds": 0, "durationSeconds": 1,
+                    "playbackRate": rate, "gain": 1, "fade": { "microFadeSeconds": 0 } } }
+            ]));
+            let refusal = map_batch(
+                &batch,
+                &mut GraphRegistry::default(),
+                &sample_pool(),
+                48_000.0,
+            )
+            .expect_err(&format!("playbackRate {rate} must refuse"));
+            assert!(refusal.contains("playbackRate"));
+            assert!(refusal.contains(&rate.to_string()));
+        }
+    }
+
+    #[test]
+    fn a_stretched_clips_length_frames_stays_timeline_measured() {
+        // The placement's `length_frames` is how long the clip sounds on the
+        // timeline, not how much material it reads — `ClipPlayback::playback_rate`
+        // decides that separately. A 2x clip that lasts one timeline second
+        // still occupies exactly one second of frames at the engine's rate.
+        let stretched = batch(json!([
+            { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
+              "devices": [], "honorMuted": true, "contributesAudio": true },
+            { "kind": "schedule-clip", "playback": {
+                "trackId": "t1", "source": { "sourceId": "source-a" },
+                "startTime": 0, "sourceOffsetSeconds": 0, "durationSeconds": 1,
+                "playbackRate": 2.0, "gain": 1, "fade": { "microFadeSeconds": 0 } } }
+        ]));
+        let mapped = map_batch(
+            &stretched,
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .expect("a varispeed clip must map");
+        assert!(mapped.ops.iter().any(|op| matches!(
+            op,
+            GraphCommand::AddClip(_, clip) if clip.placement().length_frames == 48_000
+        )));
     }
 
     /// A clip whose start and length each round *down* by 0.4 of a frame, so
@@ -3453,10 +3513,42 @@ mod tests {
             .expect("a rate-converted clip should map");
 
         // Half-rate material on a 48k engine reads 0.5 source frames per
-        // rendered frame — conversion, with a contract stretch still refused.
+        // rendered frame at the user's unity rate — pure conversion.
         assert!(mapped.ops.iter().any(|op| matches!(
             op,
             GraphCommand::AddClip(_, clip) if clip.playback().playback_rate == 0.5
+        )));
+    }
+
+    #[test]
+    fn a_user_rate_composes_with_the_materials_own_rate_conversion() {
+        // 24 kHz material on a 48 kHz engine converts by 0.5; a user rate of
+        // 2.0 on top of that composes by multiplication back to unity — the
+        // arithmetic itself is observed here, not just that the field is set.
+        let mut samples = HashMap::new();
+        samples.insert(
+            "half-rate".to_string(),
+            TimelineSample {
+                left: vec![0.5; 24_000].into(),
+                right: [].into(),
+                sample_rate: 24_000.0,
+            },
+        );
+        let batch = batch(json!([
+            { "kind": "create-track-strip", "trackId": "t1", "name": "T", "state": strip_state(1.0),
+              "devices": [], "honorMuted": true, "contributesAudio": true },
+            { "kind": "schedule-clip", "playback": {
+                "trackId": "t1", "source": { "sourceId": "half-rate" },
+                "startTime": 0, "sourceOffsetSeconds": 0, "durationSeconds": 0.5,
+                "playbackRate": 2.0, "gain": 1, "fade": { "microFadeSeconds": 0 } } }
+        ]));
+
+        let mapped = map_batch(&batch, &mut GraphRegistry::default(), &samples, 48_000.0)
+            .expect("a composed rate should map");
+
+        assert!(mapped.ops.iter().any(|op| matches!(
+            op,
+            GraphCommand::AddClip(_, clip) if clip.playback().playback_rate == 1.0
         )));
     }
 

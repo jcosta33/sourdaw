@@ -1,32 +1,21 @@
 import { render } from '@testing-library/react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { describe, it, expect } from 'vitest';
 
-import { ALLOWED_MARKDOWN_ELEMENTS, safeUrlTransform } from '../ChatPanel';
+import { SafeMarkdown, safeUrlTransform } from '../SafeMarkdown';
 
 /**
- * Streamed assistant content is untrusted (model-produced). ChatPanel renders it
- * through react-markdown with a strict element allow-list and URL-scheme guard.
- * These tests pin that the config neutralizes the known exfiltration / injection
- * vectors while leaving benign formatting intact — rendering through the exact
- * exported config so the test tracks the real component, not a copy.
+ * Model-produced content is untrusted. Every view that displays it renders
+ * through SafeMarkdown, which applies a strict element allow-list and a
+ * URL-scheme guard. These tests pin that the component neutralizes the known
+ * exfiltration / injection vectors while leaving benign formatting intact —
+ * rendering the real component rather than a copy of its config.
  */
 function renderAssistantMarkdown(content: string): HTMLDivElement {
-    const { container } = render(
-        <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            allowedElements={ALLOWED_MARKDOWN_ELEMENTS}
-            unwrapDisallowed
-            urlTransform={safeUrlTransform}
-        >
-            {content}
-        </ReactMarkdown>
-    );
+    const { container } = render(<SafeMarkdown>{content}</SafeMarkdown>);
     return container as HTMLDivElement;
 }
 
-describe('ChatPanel markdown sanitization', () => {
+describe('SafeMarkdown', () => {
     it('drops remote images (no referer/IP exfiltration on render)', () => {
         const container = renderAssistantMarkdown('![tracker](https://attacker.example/pixel.gif)');
         expect(container.querySelector('img')).toBeNull();

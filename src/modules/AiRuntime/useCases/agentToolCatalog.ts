@@ -8,13 +8,35 @@ export const PROJECT_QUERY_TOOL_NAME = 'project.query';
 export const PROJECT_RESOLVE_TOOL_NAME = 'project.resolve';
 export const AGENT_CAPABILITIES_TOOL_NAME = 'agent.capabilities';
 export const AGENT_CATALOG_DISCOVERY_TOOL_NAME = 'agent.catalog.discover';
+export const AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME = 'agent.command-index.search';
 export const AGENT_DEVICE_MANIFEST_TOOL_NAME = 'device.factory-manifest.read';
 export const COMMAND_BATCH_PROPOSAL_TOOL_NAME = 'command.batch.propose';
 export const COMMAND_HISTORY_TOOL_NAME = 'command.history';
 export const RENDER_REQUEST_TOOL_NAME = 'render.request';
 export const ANALYSIS_REQUEST_TOOL_NAME = 'analysis.request';
+export const AGENT_CATALOG_CURSOR_MAX_LENGTH = 2048;
+export const AGENT_CATALOG_CURSOR_PATTERN = '^[A-Za-z0-9_-]+$';
+export const AGENT_CATALOG_CURSOR_JSON_SCHEMA = {
+    type: 'string',
+    minLength: 1,
+    maxLength: AGENT_CATALOG_CURSOR_MAX_LENGTH,
+    pattern: AGENT_CATALOG_CURSOR_PATTERN,
+} as const;
 
 const MAX_DISCOVERED_SCHEMAS = 8;
+const EXACT_CATALOG_CATEGORIES = [
+    'query',
+    'resolve',
+    'capability',
+    'catalog',
+    'preview',
+    'command',
+    'commit',
+    'history',
+    'render',
+    'analysis',
+    'approval',
+] as const;
 
 function tool(
     name: string,
@@ -54,6 +76,51 @@ function getProjectQuerySchema(): ToolSchema {
     );
 }
 
+function getCatalogDiscoverySchema(): ToolSchema {
+    const page = {
+        type: 'object',
+        properties: {
+            limit: { type: 'integer', minimum: 1, maximum: MAX_DISCOVERED_SCHEMAS },
+            cursor: { ...AGENT_CATALOG_CURSOR_JSON_SCHEMA },
+        },
+        additionalProperties: false,
+    };
+    return tool(
+        AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+        'Request exact schemas by canonical catalog names. Primitive schemas are returned only for explicitly requested operation names.',
+        {
+            category: { type: 'string', enum: EXACT_CATALOG_CATEGORIES },
+            names: {
+                type: 'array',
+                minItems: 1,
+                maxItems: MAX_DISCOVERED_SCHEMAS,
+                items: { type: 'string', minLength: 1, maxLength: 128 },
+            },
+            page,
+        },
+        ['category', 'names']
+    );
+}
+
+function getCommandIndexSearchSchema(): ToolSchema {
+    return tool(
+        AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+        'Search the compact command index by high-level intent before requesting exact command schemas by canonical names.',
+        {
+            intent: { type: 'string', minLength: 1, maxLength: 512 },
+            page: {
+                type: 'object',
+                properties: {
+                    limit: { type: 'integer', minimum: 1, maximum: MAX_DISCOVERED_SCHEMAS },
+                    cursor: { ...AGENT_CATALOG_CURSOR_JSON_SCHEMA },
+                },
+                additionalProperties: false,
+            },
+        },
+        ['intent']
+    );
+}
+
 export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
     return [
         getProjectQuerySchema(),
@@ -70,43 +137,8 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
             'Read application-owned capability availability and lifecycle authority.',
             {}
         ),
-        tool(
-            AGENT_CATALOG_DISCOVERY_TOOL_NAME,
-            'Discover current high-level tool or command schemas. Command schemas are returned only for explicitly requested operation names.',
-            {
-                category: {
-                    type: 'string',
-                    enum: [
-                        'query',
-                        'resolve',
-                        'capability',
-                        'catalog',
-                        'preview',
-                        'command',
-                        'commit',
-                        'history',
-                        'render',
-                        'analysis',
-                        'approval',
-                    ],
-                },
-                names: {
-                    type: 'array',
-                    minItems: 1,
-                    maxItems: MAX_DISCOVERED_SCHEMAS,
-                    items: { type: 'string', maxLength: 128 },
-                },
-                page: {
-                    type: 'object',
-                    properties: {
-                        limit: { type: 'integer', minimum: 1, maximum: MAX_DISCOVERED_SCHEMAS },
-                        cursor: { type: 'string', maxLength: 2048 },
-                    },
-                    additionalProperties: false,
-                },
-            },
-            ['category', 'names']
-        ),
+        getCatalogDiscoverySchema(),
+        getCommandIndexSearchSchema(),
         tool(
             AGENT_DEVICE_MANIFEST_TOOL_NAME,
             'Read the bounded versioned factory manifest for built-in and scanned external devices. This is application-grounded read evidence, not plugin-state authority.',
