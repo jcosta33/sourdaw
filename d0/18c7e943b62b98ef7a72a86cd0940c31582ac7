@@ -1,0 +1,30 @@
+src/modules/Arrangement/handlers/__tests__/projectTrackThroughPriorBatchActions.spec.ts
+  s_c9dfe76a613250::t_7bca70872e1ba3 94,98,101
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_c9dfe76a613250::t_7bca70872e1ba3 1281,1297-1300,1303,1311,1332-1337
+  s_ac03a4ebaa3f6e::t_c34d2d7d986fc1 1338-1339
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d018c7e943b62b98ef7a72a86cd0940c31582ac7",
+  "prompts": {},
+  "sessions": {
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_c9dfe76a613250": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a063a6-ce16-7052-9c0c-a6ec6522efdd",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
