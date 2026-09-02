@@ -427,8 +427,7 @@ export function reviewPublicationOwnerFenceIsLive(
         return observed !== undefined && observed === fence.startedAt;
     }
     if (fence.kind === 'pgid') {
-        const observed = processGroupLeaderStartedAt(fence.pgid);
-        return observed !== undefined && observed === fence.leaderStartedAt;
+        return processGroupIsLive(fence.pgid, fence.leaderStartedAt);
     }
     const observed = windowsProcessStartedAt(fence.rootPid);
     return observed !== undefined && observed === fence.rootStartedAt;
@@ -442,11 +441,29 @@ export function currentReviewPublicationOwnerFence(): PullRequestMutationLockOwn
         }
         return { kind: 'win32-process-tree', version: 1, rootPid: process.pid, rootStartedAt: startedAt };
     }
-    const startedAt = processStartedAt(process.pid);
+    const pgid = currentProcessGroupId(process.pid);
+    const startedAt = processStartedAt(pgid);
     if (startedAt === undefined) {
         fail('review-publication lock could not determine the current process identity');
     }
-    return { kind: 'pid', pid: process.pid, startedAt };
+    return { kind: 'pgid', pgid, leaderStartedAt: startedAt };
+}
+
+function currentProcessGroupId(pid: number): number {
+    const executable = process.env.SOURDAW_TRUSTED_PS_PATH;
+    if (typeof executable !== 'string' || executable === '') {
+        fail('review-publication lock requires the trusted ps executable');
+    }
+    const result = spawnSync(executable, ['-o', 'pgid=', '-p', String(pid)], {
+        encoding: 'utf8',
+        shell: false,
+        env: { LC_ALL: 'C', LANG: 'C', TZ: 'UTC' },
+    });
+    const value = result.stdout.trim();
+    if (result.error !== undefined || result.status !== 0 || !/^[1-9][0-9]*$/u.test(value)) {
+        fail('review-publication lock process group is unreadable');
+    }
+    return Number(value);
 }
 
 function processStartedAt(pid: number): string | undefined {
@@ -466,12 +483,15 @@ function processStartedAt(pid: number): string | undefined {
     return startedAt === '' ? undefined : startedAt;
 }
 
-function processGroupLeaderStartedAt(pgid: number): string | undefined {
+function processGroupIsLive(pgid: number, leaderStartedAt: string | undefined): boolean {
+    if (leaderStartedAt === undefined) {
+        fail('review-publication lock process-group identity is unreadable');
+    }
     const executable = process.env.SOURDAW_TRUSTED_PS_PATH;
     if (typeof executable !== 'string' || executable === '') {
         fail('review-publication lock requires the trusted ps executable');
     }
-    const result = spawnSync(executable, ['-o', 'lstart=', '-p', String(pgid)], {
+    const result = spawnSync(executable, ['-o', 'pid=,lstart=', '-g', String(pgid)], {
         encoding: 'utf8',
         shell: false,
         env: { LC_ALL: 'C', LANG: 'C', TZ: 'UTC' },
@@ -479,8 +499,15 @@ function processGroupLeaderStartedAt(pgid: number): string | undefined {
     if (result.error !== undefined || (result.status !== 0 && result.status !== 1)) {
         fail('review-publication lock process-group liveness is unreadable');
     }
-    const startedAt = result.stdout.trim();
-    return startedAt === '' ? undefined : startedAt;
+    const rows = result.stdout.trim();
+    if (rows === '') {
+        return false;
+    }
+    const leader = rows.split('\n').find((row) => row.trim().startsWith(`${pgid} `));
+    if (leader === undefined) {
+        return true;
+    }
+    return leader.trim().slice(String(pgid).length).trim() === leaderStartedAt;
 }
 
 function windowsProcessStartedAt(pid: number): string | undefined {

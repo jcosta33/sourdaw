@@ -510,6 +510,13 @@ export type RemotePublishedReview = {
     comments: Array<{ path: string; line: number; side: 'LEFT' | 'RIGHT'; body: string }>;
 };
 
+type RecoveryInspection = {
+    state: string;
+    head: string;
+    reviews: RemotePublishedReview[];
+    otherActorReviews?: RemotePublishedReview[];
+};
+
 export type RecoverPublishReviewDependencies = {
     primaryRoot: () => string;
     authenticateReviewer: (primaryRoot: string) => Promise<PublishReviewAuthentication>;
@@ -520,11 +527,7 @@ export type RecoverPublishReviewDependencies = {
         expectedHead: string,
         session: GhSession,
         primaryRoot: string
-    ) => {
-        state: string;
-        head: string;
-        reviews: RemotePublishedReview[];
-    };
+    ) => RecoveryInspection;
     isOwnerLive?: (
         owner: Extract<import('./pullRequestMutationLock.ts').PullRequestMutationLockOwner, { version: 3 }>
     ) => boolean;
@@ -593,6 +596,7 @@ export function inspectReviewPublicationRemote(
         'review-publication recovery pull-request comments'
     );
     const reviews: RemotePublishedReview[] = [];
+    const otherActorReviews: RemotePublishedReview[] = [];
     for (const entry of remote) {
         if (entry === null || typeof entry !== 'object') {
             fail('review-publication recovery reviews are unreadable');
@@ -602,7 +606,7 @@ export function inspectReviewPublicationRemote(
         if (typeof user !== 'object' || user === null || typeof (user as { node_id?: unknown }).node_id !== 'string') {
             fail('review-publication recovery reviews are unreadable');
         }
-        if ((user as { node_id: string }).node_id !== expectedActorNodeId || record.commit_id !== expectedHead) {
+        if (record.commit_id !== expectedHead) {
             continue;
         }
         if (
@@ -613,7 +617,7 @@ export function inspectReviewPublicationRemote(
         ) {
             fail('review-publication recovery review candidate is unreadable');
         }
-        reviews.push({
+        const candidate: RemotePublishedReview = {
             id: record.id,
             state: record.state,
             body: record.body,
@@ -636,8 +640,8 @@ export function inspectReviewPublicationRemote(
                         typeof comment !== 'object' ||
                         typeof (comment as { path?: unknown }).path !== 'string' ||
                         !Number.isSafeInteger((comment as { original_line?: unknown }).original_line) ||
-                        ((comment as { original_side?: unknown }).original_side !== 'LEFT' &&
-                            (comment as { original_side?: unknown }).original_side !== 'RIGHT') ||
+                        ((comment as { side?: unknown }).side !== 'LEFT' &&
+                            (comment as { side?: unknown }).side !== 'RIGHT') ||
                         typeof (comment as { body?: unknown }).body !== 'string'
                     ) {
                         fail('review-publication recovery pull-request comment is unreadable');
@@ -645,13 +649,23 @@ export function inspectReviewPublicationRemote(
                     return {
                         path: (comment as { path: string }).path,
                         line: (comment as { original_line: number }).original_line,
-                        side: (comment as { original_side: 'LEFT' | 'RIGHT' }).original_side,
+                        side: (comment as { side: 'LEFT' | 'RIGHT' }).side,
                         body: (comment as { body: string }).body,
                     };
                 }),
-        });
+        };
+        if ((user as { node_id: string }).node_id === expectedActorNodeId) {
+            reviews.push(candidate);
+        } else {
+            otherActorReviews.push(candidate);
+        }
     }
-    return { state: pullRequest.state, head: pullRequest.headRefOid.toLowerCase(), reviews };
+    return {
+        state: pullRequest.state,
+        head: pullRequest.headRefOid.toLowerCase(),
+        reviews,
+        ...(otherActorReviews.length === 0 ? {} : { otherActorReviews }),
+    };
 }
 
 function flattenedGhPages(value: unknown, label: string): unknown[] {
@@ -818,6 +832,13 @@ export async function runRecoverPublishReviewLockCli(
         }
         const first = dependencies.inspect(number, expectedActorNodeId, expectedHead, auth.session, primaryRoot);
         if (
+            (first.otherActorReviews ?? []).some((review) =>
+                exactPublishedReview(review, document, expectedHead, review.actorNodeId)
+            )
+        ) {
+            fail('review-publication recovery found unauthorized landed review evidence');
+        }
+        if (
             first.reviews.length > 1 ||
             (first.reviews.length === 1 &&
                 !exactPublishedReview(first.reviews[0]!, document, expectedHead, expectedActorNodeId))
@@ -850,6 +871,9 @@ export async function runRecoverPublishReviewLockCli(
             if (
                 second.state !== first.state ||
                 second.head !== first.head ||
+                (second.otherActorReviews ?? []).some((review) =>
+                    exactPublishedReview(review, document, expectedHead, review.actorNodeId)
+                ) ||
                 second.reviews.length !== first.reviews.length ||
                 (second.reviews.length === 1 &&
                     !exactPublishedReview(second.reviews[0]!, document, expectedHead, expectedActorNodeId))

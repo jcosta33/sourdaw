@@ -774,6 +774,7 @@ async function runSnapshotModule(
             env: trustedSnapshotEnv(snapshot),
             stdio: 'inherit',
             shell: false,
+            detached: process.platform !== 'win32',
         }
     );
     if (result.error !== undefined) {

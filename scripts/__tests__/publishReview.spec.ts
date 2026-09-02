@@ -172,6 +172,7 @@ function recoveryDependencies(
         state: string;
         head: string;
         reviews: Parameters<typeof exactPublishedReview>[0][];
+        otherActorReviews?: Parameters<typeof exactPublishedReview>[0][];
     }
 ) {
     return {
@@ -266,7 +267,10 @@ describe('review publish', () => {
         const previous = process.env.SOURDAW_TRUSTED_PS_PATH;
         try {
             runGit(root, ['init']);
-            writeFileSync(executable, '#!/bin/sh\nprintf "%s\\n" "publication-process-start"\n');
+            writeFileSync(
+                executable,
+                '#!/bin/sh\nif [ "$2" = "pgid=" ]; then printf "%s\\n" "$4"; else printf "%s\\n" "publication-process-start"; fi\n'
+            );
             chmodSync(executable, 0o700);
             process.env.SOURDAW_TRUSTED_PS_PATH = executable;
             const dependencies: PublishReviewCoordinatorDependencies = {
@@ -587,7 +591,7 @@ describe('review publish', () => {
                             pull_request_review_id: 3,
                             path: 'one.ts',
                             original_line: 1,
-                            original_side: 'RIGHT',
+                            side: 'RIGHT',
                             body: 'first',
                         },
                     ],
@@ -596,7 +600,7 @@ describe('review publish', () => {
                             pull_request_review_id: 3,
                             path: 'two.ts',
                             original_line: 2,
-                            original_side: 'RIGHT',
+                            side: 'RIGHT',
                             body: 'second',
                         },
                     ],
@@ -608,6 +612,16 @@ describe('review publish', () => {
         expect(inspectReviewPublicationRemote(42, REVIEWER_BOT_NODE_ID, head, gh)).toEqual({
             state: 'OPEN',
             head,
+            otherActorReviews: [
+                {
+                    id: 2,
+                    state: 'APPROVED',
+                    body: 'human',
+                    commitId: head,
+                    actorNodeId: 'human',
+                    comments: [],
+                },
+            ],
             reviews: [
                 {
                     id: 3,
@@ -673,7 +687,7 @@ describe('review publish', () => {
                         line: null,
                         side: null,
                         original_line: 12,
-                        original_side: 'RIGHT',
+                        side: 'RIGHT',
                         body: 'immutable comment',
                     },
                 ],
@@ -1277,6 +1291,37 @@ describe('shellPort postReview state verification', () => {
                     }))
                 )
             ).rejects.toThrow(/ambiguous or non-exact remote review evidence/);
+            expect(
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
+            ).toBe(fixture.ownerOid);
+        } finally {
+            rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
+    it('retains an expected-head review that exactly landed under another actor', async () => {
+        const fixture = createJournaledRecoveryFixture();
+        try {
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.number), '--owner', fixture.ownerOid],
+                    recoveryDependencies(fixture.root, (expectedHead) => ({
+                        state: 'OPEN',
+                        head: expectedHead,
+                        reviews: [],
+                        otherActorReviews: [
+                            {
+                                id: 3,
+                                state: 'APPROVED',
+                                body: 'Attacked; held.',
+                                commitId: expectedHead,
+                                actorNodeId: 'human-actor',
+                                comments: [],
+                            },
+                        ],
+                    }))
+                )
+            ).rejects.toThrow(/unauthorized landed review evidence/);
             expect(
                 readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
             ).toBe(fixture.ownerOid);
