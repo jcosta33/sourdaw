@@ -1142,16 +1142,14 @@ describe('AutomergeSync', () => {
         }
 
         /**
-         * `queueDocSyncToPeer` schedules generation behind one promise turn,
-         * then `sendDocSyncToPeer` resumes once after the transport call.
-         * These two microtask barriers therefore run after that bounded
-         * generation turn whether it sends or its quarantine guard returns.
+         * The generation job is enqueued before this marker. Once its promise
+         * reaction starts, both quarantine guards and transport entry run
+         * synchronously, before `sendDocSyncToPeer` reaches an await. Call
+         * this only after a fixture delivery has settled every prior reply.
          */
-        function waitForQueuedGenerationTurn(): Promise<void> {
+        function waitForQueuedGenerationStart(): Promise<void> {
             return new Promise((resolve) => {
-                queueMicrotask(() => {
-                    queueMicrotask(resolve);
-                });
+                queueMicrotask(resolve);
             });
         }
 
@@ -1188,6 +1186,29 @@ describe('AutomergeSync', () => {
         const onSyncQuarantineLifted = vi.fn();
         const sync = new AutomergeSync(peerManager, { onSyncQuarantine, onSyncQuarantineLifted });
         sync.start();
+
+        type SyncWithSendQueues = AutomergeSync & { sendQueues: Map<string, Promise<void>> };
+
+        /** Wait for the actual serialized queue tail for this fixture channel. */
+        async function drainChannelQueue(): Promise<void> {
+            const send_queues = (sync as SyncWithSendQueues).sendQueues;
+            const key = `editor ${doc_id}`;
+            for (;;) {
+                const tail = send_queues.get(key);
+                if (tail === undefined) {
+                    return;
+                }
+                await tail;
+                await Promise.resolve();
+                const next = send_queues.get(key);
+                if (next === undefined) {
+                    return;
+                }
+                if (next === tail) {
+                    throw new Error('the settled sync queue tail was not released');
+                }
+            }
+        }
 
         /** Deliver the bidirectional handshake before either side makes an edit. */
         async function completeHandshake(): Promise<void> {
@@ -1235,7 +1256,6 @@ describe('AutomergeSync', () => {
             // A live session keeps editing while it syncs, and it is the
             // repository's change notification that generates the reply.
             change_cb?.(doc_id);
-            await waitForQueuedGenerationTurn();
             return true;
         }
 
@@ -1266,10 +1286,24 @@ describe('AutomergeSync', () => {
             sync.receiveSync({ peerId: 'editor', docId: doc_id, syncMessageBase64: resendFromPeer() });
         }
 
+        async function deliverOneAndWaitForReply(): Promise<void> {
+            const reply = waitForOutbound();
+            if (!(await deliverOne())) {
+                throw new Error('the peer produced no sync message');
+            }
+            await reply;
+        }
+
+        async function deliverResendAndWaitForReply(): Promise<void> {
+            const reply = waitForOutbound();
+            deliverResend();
+            await reply;
+        }
+
         /** The repository announcing a local edit, and the sends it triggers. */
         async function notifyLocalChange(): Promise<void> {
             change_cb?.(doc_id);
-            await waitForQueuedGenerationTurn();
+            await waitForQueuedGenerationStart();
         }
 
         return {
@@ -1289,8 +1323,11 @@ describe('AutomergeSync', () => {
             deliverPeerEdit,
             resendFromPeer,
             deliverResend,
+            deliverOneAndWaitForReply,
+            deliverResendAndWaitForReply,
             waitForOutbound,
-            waitForQueuedGenerationTurn,
+            waitForQueuedGenerationStart,
+            drainChannelQueue,
             notifyLocalChange,
             protocolSequence: (): readonly string[] => protocol_sequence,
             currentDoc: (): Doc<unknown> | undefined => live,
@@ -1356,9 +1393,10 @@ describe('AutomergeSync', () => {
      * own send is in flight and would otherwise decide when this stops.
      */
     async function driveToQuarantine(exchange: ReturnType<typeof setupLiveExchange>): Promise<void> {
-        await exchange.deliverOne();
+        await exchange.deliverOneAndWaitForReply();
+        await exchange.deliverResendAndWaitForReply();
         exchange.deliverResend();
-        exchange.deliverResend();
+        await exchange.drainChannelQueue();
     }
 
     /**
@@ -1544,7 +1582,7 @@ describe('AutomergeSync', () => {
      * so this asserts the outcome, not which guard produced it. The test below
      * separates them.
      */
-    it('generates no further sync for a quarantined channel', async () => {
+    it('does not retain a local edit queued while the channel is quarantined', async () => {
         const exchange = setupLiveExchange();
         await exchange.connect();
         vi.mocked(sanitizeIncomingCrdtDocument).mockImplementation(() => {
@@ -1556,6 +1594,7 @@ describe('AutomergeSync', () => {
         exchange.applyLocalEdit('work continues');
         exchange.peerManager.sendCrdtSync.mockClear();
         await exchange.notifyLocalChange();
+        exchange.sync.forgetPeer('editor');
 
         expect(exchange.peerManager.sendCrdtSync).not.toHaveBeenCalled();
     });
@@ -1602,9 +1641,9 @@ describe('AutomergeSync', () => {
         // An ICE flap reconnects the peer while the channel is still closed.
         exchange.sync.addPeer('editor');
         // ...and the peer then really goes away, which lifts the quarantine,
-        // before the turn a queued generation would have run on.
+        // before the queued generation reaches transport.
         exchange.sync.forgetPeer('editor');
-        await exchange.waitForQueuedGenerationTurn();
+        await exchange.waitForQueuedGenerationStart();
 
         expect(exchange.onSyncQuarantineLifted).toHaveBeenCalledWith({ peerId: 'editor' });
         expect(exchange.peerManager.sendCrdtSync).not.toHaveBeenCalled();
