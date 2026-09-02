@@ -1,4 +1,4 @@
-import { trackStore } from '#/modules/Arrangement/stores';
+import { trackStore, type Track } from '#/modules/Arrangement/stores';
 import { summarizeFeatures } from '#/modules/AudioAnalysis/useCases';
 
 import { streamHostedModelText } from './streamHostedModelText';
@@ -16,21 +16,25 @@ type MixHealthAnalysisInput = {
     signal?: AbortSignal;
 };
 
-type MixTrack = NonNullable<typeof trackStore.value>['tracks'][number];
-
 const MIX_DATA_TAG = 'mix_data';
 
 /**
  * Track names and kinds are user- and peer-supplied (DAWproject import,
  * collaboration) and reach the model verbatim. Escaping the angle brackets and
- * ampersands stops such a string forging the envelope's closing tag and having
- * the rest of it read as prompt rather than as data.
+ * ampersands stops such a string forging the envelope's closing tag; escaping
+ * the line breaks stops it forging further rows inside the envelope, since the
+ * payload is line-structured and one row per fact.
  */
 function escapeProjectString(value: string): string {
-    return value.replaceAll('&', '\\u0026').replaceAll('<', '\\u003c').replaceAll('>', '\\u003e');
+    return value
+        .replaceAll('&', '\\u0026')
+        .replaceAll('<', '\\u003c')
+        .replaceAll('>', '\\u003e')
+        .replaceAll('\n', '\\n')
+        .replaceAll('\r', '\\r');
 }
 
-function describeTrackSource(track: MixTrack): string[] {
+function describeTrackSource(track: Track): string[] {
     const audioBufferId = track.clips.find((clip) => clip.type === 'audio' && clip.audioBufferId)?.audioBufferId;
     const features = audioBufferId ? summarizeFeatures(audioBufferId) : null;
     if (!features) {
@@ -44,7 +48,7 @@ function describeTrackSource(track: MixTrack): string[] {
     ];
 }
 
-function describeTrack(track: MixTrack): string[] {
+function describeTrack(track: Track): string[] {
     return [
         `Track: ${escapeProjectString(track.name)} (${escapeProjectString(track.kind)})`,
         `  - Gain: ${(track.gain * 100).toFixed(0)}%, Pan: ${track.pan}`,
@@ -52,7 +56,7 @@ function describeTrack(track: MixTrack): string[] {
     ];
 }
 
-function buildMixDataEnvelope(tracks: ReadonlyArray<MixTrack>): string {
+function buildMixDataEnvelope(tracks: ReadonlyArray<Track>): string {
     const trackLines = tracks.filter((track) => track.kind !== 'folder').flatMap(describeTrack);
 
     return [
