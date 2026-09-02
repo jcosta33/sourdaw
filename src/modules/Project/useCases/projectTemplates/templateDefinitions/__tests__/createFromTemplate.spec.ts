@@ -29,59 +29,25 @@ const mocks = vi.hoisted(() => ({
     runProjectLoadTransaction: vi.fn(),
 }));
 
-// resetAudioGraph stays the live binding; newly listed names are unread graph-coverage stubs.
+// ../helpers is mocked so this spec does not load the template catalog / Nebula Drift demo.
+vi.mock('../helpers', () => ({
+    templates: [
+        {
+            id: 'empty',
+            executionBoundary: 'project-replacement',
+            create: () => mocks.newProject('Untitled'),
+        },
+        {
+            id: 'pop-song',
+            name: 'Pop Song',
+            executionBoundary: 'app-action',
+            create: vi.fn(),
+        },
+    ],
+}));
+
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     resetAudioGraph: mocks.resetAudioGraph,
-    addMidiFxToStrip: vi.fn(),
-    analyzePitchForClip: vi.fn(),
-    applyNoteExpression: vi.fn(),
-    applyRuntimeGraphDelta: vi.fn(),
-    audioEngine: {},
-    cacheAudioBuffer: vi.fn(),
-    clearReportedLatency: vi.fn(),
-    createRuntimeGraphTopologyFingerprint: vi.fn(),
-    decodeAudioFile: vi.fn(),
-    ensureBusStrip: vi.fn(),
-    garbageCollectCachedAudioBuffersByAge: vi.fn(),
-    garbageCollectCachedAudioBuffersBySize: vi.fn(),
-    garbageCollectFreezeAudioBuffers: vi.fn(),
-    getAudioContext: vi.fn(),
-    getCachedAudioBuffer: vi.fn(),
-    getCompensationDelay: vi.fn(),
-    getDefaultBendRangeSemitones: vi.fn(),
-    getDeviceChainTailSeconds: vi.fn(),
-    getEngineState: vi.fn(),
-    getFactoryDrumKitByIndex: vi.fn(),
-    getLiveEngineSampleRate: vi.fn(),
-    getRuntimeGraphRevision: vi.fn(),
-    getToasterDeviceControls: vi.fn(),
-    getTrackStrip: vi.fn(),
-    initializeTrackStripFromSnapshot: vi.fn(),
-    matchesRuntimeDeviceChainTopology: vi.fn(),
-    removeBusStrip: vi.fn(),
-    removeMidiFxFromStrip: vi.fn(),
-    removeSend: vi.fn(),
-    removeTrackStrip: vi.fn(),
-    renderTrackSubgraphOffline: vi.fn(),
-    reportBridgeRoundTripFrames: vi.fn(),
-    reportLatency: vi.fn(),
-    resolveToasterPadBinding: vi.fn(),
-    setBusGain: vi.fn(),
-    setSend: vi.fn(),
-    setTrackGain: vi.fn(),
-    setTrackMute: vi.fn(),
-    setTrackOutput: vi.fn(),
-    setTrackPan: vi.fn(),
-    setTrackSoloGate: vi.fn(),
-    startInputMonitoring: vi.fn(),
-    stopInputMonitoring: vi.fn(),
-    unwireSidechainRoute: vi.fn(),
-    updateDeviceBypass: vi.fn(),
-    updateDeviceParam: vi.fn(),
-    updateMidiFxBypass: vi.fn(),
-    updateMidiFxParam: vi.fn(),
-    waitForDevices: vi.fn(),
-    wireSidechainRoute: vi.fn(),
 }));
 
 vi.mock('#/modules/PluginHost/useCases', () => ({
