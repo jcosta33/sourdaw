@@ -1,0 +1,40 @@
+src/modules/MIDI/handlers/noteCrud/__tests__/handleAddNotes.spec.ts
+  s_a40848e8f8cca9::t_90c407da1cdf55 4,525-581
+  s_a40848e8f8cca9::t_119870840f0f91 582
+src/modules/Command/useCases/isCanonicalSerializedAddNotesArguments.ts
+  s_a40848e8f8cca9::t_d3c590ead9e2d5 62-63
+src/modules/Command/useCases/__tests__/commandBatchContract.spec.ts
+  s_a40848e8f8cca9::t_90c407da1cdf55 575-596
+src/modules/Command/useCases/__tests__/addNotesCommandRegistration.spec.ts
+  s_a40848e8f8cca9::t_8e6c6497f98116 20-21,67-100,196,217,227-287,656
+src/modules/MIDI/handlers/noteCrud/handleAddNotes.ts
+  s_a40848e8f8cca9::t_d3c590ead9e2d5 3,32-79,96-105,112,118-121,128
+src/utils/createHandler.ts
+  s_a40848e8f8cca9::t_79714f67ad7e69 16-19
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_a40848e8f8cca9::t_37ae01ebf4e4c6 1446-1469
+src/modules/Arrangement/handlers/clip/handleAddClip.ts
+  s_a40848e8f8cca9::t_79714f67ad7e69 6,32-42
+src/utils/handlerContract.ts
+  s_a40848e8f8cca9::t_d3c590ead9e2d5 2351
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_a40848e8f8cca9::t_8426fea017c731 125-131,649,682-712,715-719,731,741-745,763
+src/modules/Command/stores/__tests__/undoStore.spec.ts
+  s_a40848e8f8cca9::t_4b587995bd62af 191-258
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "93ede504cc9d0cb95e29c5a08e2a0fa5216c6e21",
+  "prompts": {},
+  "sessions": {
+    "s_a40848e8f8cca9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe7e9-cd81-7c41-9fcc-62b1e4032e78",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
