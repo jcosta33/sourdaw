@@ -1,0 +1,25 @@
+crates/daw-engine/src/device/cpal_backend.rs
+  s_9b530f08172a54::t_302c8c2092a16f 7-9,11,114-231
+crates/daw-engine/src/device/mod.rs
+  s_9b530f08172a54::t_a606772b99203e 86-200,208-216,220-296
+crates/daw-engine/src/device/wasapi/policy.rs
+  s_9b530f08172a54::t_649a677569955b 13-16,455-494,506,510-526
+crates/daw-engine/src/lib.rs
+  s_9b530f08172a54::t_cf81c9630b683c 4-6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "28ae2e2286ffd247f9cfc3673f38ff63c62aeacb",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
