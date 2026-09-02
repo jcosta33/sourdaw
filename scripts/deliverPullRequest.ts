@@ -89,6 +89,8 @@ export type StackedPullRequest = Pick<
 export type CheckEvidencePort = {
     gateRequiredCheckNames: () => ReadonlySet<string>;
     headCheckRuns: (number: number, headRefOid: string) => HeadCheckRun[];
+    /** The `required_status_checks` contexts on the live `main` ruleset, read fresh from GitHub. */
+    requiredStatusCheckContexts: () => string[];
 };
 
 export type DeliveryPort = CheckEvidencePort & {
@@ -161,6 +163,14 @@ const NON_BLOCKING_CONCLUSIONS = new Set([PASSING_CONCLUSION, SKIPPED_CONCLUSION
  */
 const NON_VERDICT_CONCLUSIONS = new Set([SUPERSEDED_CONCLUSION, SKIPPED_CONCLUSION]);
 const CHECKS_PENDING_MERGE_STATE = 'UNSTABLE';
+/**
+ * The one merge state GitHub's own ruleset enforcement refuses to merge under, whatever CI admission
+ * mode this delivery is running in. Every other `mergeStateStatus` value is a report, not a refusal:
+ * advisory admission tolerates it and lets the merge attempt stand or fail on its own. `BLOCKED`
+ * alone means the merge endpoint would answer 405 no matter what this script does next, so admitting
+ * it here would only spend a receipt comment and a merge attempt on a result already decided.
+ */
+const BLOCKED_MERGE_STATE = 'BLOCKED';
 const STRUCTURAL_MERGEABILITY_REFRESH_LIMIT = 1;
 
 type CiAdmissionMode = 'advisory' | 'required';
@@ -316,9 +326,56 @@ function validatePullRequest(
 
 function validateCiAdmission(pullRequest: PullRequestSnapshot, checks: CheckEvidencePort, mode: CiAdmissionMode): void {
     if (mode === 'advisory') {
+        validateAdvisoryMergeGate(pullRequest, checks);
         return;
     }
     validateRequiredCiAdmission(pullRequest, checks);
+}
+
+/**
+ * Advisory admission otherwise ignores `mergeStateStatus` entirely, but `BLOCKED` is GitHub's own
+ * ruleset refusing the merge before this script ever calls it: attempting it anyway spends a receipt
+ * comment and a merge call on a 405 the ruleset already decided, and both of those calls mark the
+ * remote mutation boundary, which is what strands the per-PR lock. Refusing here, before either call,
+ * lets the lock release normally. The named checks are read best-effort, purely to make the refusal
+ * legible; a read that fails still refuses on the `BLOCKED` state alone.
+ */
+function validateAdvisoryMergeGate(pullRequest: PullRequestSnapshot, checks: CheckEvidencePort): void {
+    if (pullRequest.mergeStateStatus !== BLOCKED_MERGE_STATE) {
+        return;
+    }
+    const unsatisfied = unsatisfiedAdvisoryRequiredContexts(pullRequest, checks);
+    if (unsatisfied === undefined || unsatisfied.length === 0) {
+        fail(`PR #${pullRequest.number} merge state is BLOCKED and the required checks could not be listed`);
+    }
+    fail(`PR #${pullRequest.number} merge state is BLOCKED on required check(s): ${unsatisfied.join(', ')}`);
+}
+
+/**
+ * The names GitHub's live ruleset requires, filtered to the ones the head's own check runs do not yet
+ * show as a settled success. Both the ruleset read and the check-run read are network calls that can
+ * fail independently of the `BLOCKED` verdict itself, and either failure leaves this undefined rather
+ * than losing the refusal to an unrelated exception.
+ */
+function unsatisfiedAdvisoryRequiredContexts(
+    pullRequest: Pick<PullRequestSnapshot, 'number' | 'headRefOid'>,
+    checks: CheckEvidencePort
+): string[] | undefined {
+    try {
+        const requiredContexts = checks.requiredStatusCheckContexts();
+        const checkRuns = checks.headCheckRuns(pullRequest.number, pullRequest.headRefOid);
+        return requiredContexts.filter(
+            (context) =>
+                !checkRuns.some(
+                    (run) =>
+                        run.name === context &&
+                        run.status === SETTLED_CHECK_STATUS &&
+                        run.conclusion === PASSING_CONCLUSION
+                )
+        );
+    } catch {
+        return undefined;
+    }
 }
 
 /**
@@ -2897,6 +2954,29 @@ function readCompleteReviewState(
     };
 }
 
+type BranchRulesetRule = {
+    type: string;
+    parameters?: {
+        required_status_checks?: Array<{ context: string }>;
+    };
+};
+
+/**
+ * A live read of the rule GitHub itself merges against, as opposed to `readGateRequiredCheckNames`,
+ * which derives a name from the pinned workflow for the required-CI path's own, unrelated purpose.
+ * This one exists only to name what a `BLOCKED` head is waiting on, so a malformed or missing rule
+ * yields an empty list rather than refusing the read outright: the caller treats "found nothing" the
+ * same as a failed read.
+ */
+function readRequiredStatusCheckContexts(repository: string, shell: ShellRunner): string[] {
+    const rules = parseJson<BranchRulesetRule[]>(
+        shell.capture('gh', ['api', `repos/${repository}/rules/branches/main`]),
+        `branch ruleset for ${repository}`
+    );
+    const requiredStatusChecks = rules.find((rule) => rule.type === 'required_status_checks');
+    return (requiredStatusChecks?.parameters?.required_status_checks ?? []).map((check) => check.context);
+}
+
 export function shellPort(
     repository: string,
     shell: ShellRunner = { capture, run },
@@ -2982,6 +3062,7 @@ export function shellPort(
         headCheckRuns: (number, headRefOid) =>
             readHeadCheckRuns(number, (cursor) => readRollupPage(number, headRefOid, cursor)),
         gateRequiredCheckNames: () => readGateRequiredCheckNames(),
+        requiredStatusCheckContexts: () => readRequiredStatusCheckContexts(repository, shell),
         reviewState: (number, expectedHead) => {
             const readPage = (reviewsBefore: string | null, threadsAfter: string | null) =>
                 parseReviewStatePage(

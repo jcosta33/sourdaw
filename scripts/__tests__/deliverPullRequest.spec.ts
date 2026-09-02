@@ -539,6 +539,7 @@ type FakeInput = {
     headCheckRuns?: HeadCheckRun[] | Error;
     headCheckRunReads?: Array<HeadCheckRun[] | Error>;
     gateRequiredCheckNames?: ReadonlySet<string> | Error;
+    requiredStatusCheckContexts?: string[] | Error;
     deletesMergedBranches?: boolean;
     failAddReceiptOnce?: boolean;
     failRetargetOnce?: number;
@@ -703,6 +704,14 @@ function fakePort(input: FakeInput = {}) {
         gateRequiredCheckNames: () => {
             calls.push('gate-required-check-names');
             const required = input.gateRequiredCheckNames ?? gatingCheckNames;
+            if (required instanceof Error) {
+                throw required;
+            }
+            return required;
+        },
+        requiredStatusCheckContexts: () => {
+            calls.push('required-status-check-contexts');
+            const required = input.requiredStatusCheckContexts ?? ['Gate'];
             if (required instanceof Error) {
                 throw required;
             }
@@ -5361,8 +5370,8 @@ describe('pull-request delivery', () => {
         const receiptBody = visibleDeliveryReceiptBody(42, 'head', closes, 2372, 'successful');
         const { port, calls, tracker } = fakePort({
             primary: [
-                pullRequest({ body: closes, mergeStateStatus: 'BLOCKED' }),
-                pullRequest({ body: closes, mergeStateStatus: 'BLOCKED' }),
+                pullRequest({ body: closes, mergeStateStatus: 'UNSTABLE' }),
+                pullRequest({ body: closes, mergeStateStatus: 'UNSTABLE' }),
             ],
             dependentSets: [[]],
             persistedReceiptAuthority: {
@@ -5814,14 +5823,14 @@ describe('pull-request delivery', () => {
     });
 
     it.each([
-        { ciState: 'successful', mergeStateStatus: 'BLOCKED', headCheckRuns: [checkRun()] },
+        { ciState: 'successful', mergeStateStatus: 'UNSTABLE', headCheckRuns: [checkRun()] },
         { ciState: 'failed', mergeStateStatus: 'CLEAN', headCheckRuns: [checkRun({ conclusion: 'FAILURE' })] },
         {
             ciState: 'pending',
             mergeStateStatus: 'CLEAN',
             headCheckRuns: [checkRun({ status: 'IN_PROGRESS', conclusion: null })],
         },
-        { ciState: 'absent', mergeStateStatus: 'BLOCKED', headCheckRuns: [] as HeadCheckRun[] },
+        { ciState: 'absent', mergeStateStatus: 'UNSTABLE', headCheckRuns: [] as HeadCheckRun[] },
         {
             ciState: 'skipped',
             mergeStateStatus: 'CLEAN',
@@ -5854,15 +5863,66 @@ describe('pull-request delivery', () => {
         expect(calls.filter((call) => call.startsWith('checks:'))).not.toEqual([]);
     });
 
+    it('refuses a BLOCKED head before any remote write, naming the pending required check, and releases the lock', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-lock-'));
+        initializeDeliveryLockRepository(root);
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
+            headCheckRuns: [checkRun({ status: 'IN_PROGRESS', conclusion: null })],
+            requiredStatusCheckContexts: ['Gate'],
+        });
+
+        try {
+            await expect(
+                withPullRequestDeliveryLock(root, 42, async ({ markRemoteMutationKnownAbsent }) => {
+                    deliverPullRequest(42, port, tracker, markRemoteMutationKnownAbsent);
+                })
+            ).rejects.toThrow('PR #42 merge state is BLOCKED on required check(s): Gate');
+
+            expect(calls).not.toContain('add-receipt:42');
+            expect(calls).not.toContain('merge:42:head');
+            // The lock module only retains the ref once `markRemoteMutationAttempt` has fired; its
+            // absence here is what proves the refusal happened before any remote mutation.
+            expect(deliveryLockExists(root, 42)).toBe(false);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses a BLOCKED head even when the live ruleset cannot be read, naming the check(s) as unlistable', () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
+            requiredStatusCheckContexts: new Error('ruleset endpoint offline'),
+        });
+
+        expect(() => deliverPullRequest(42, port)).toThrow(
+            'PR #42 merge state is BLOCKED and the required checks could not be listed'
+        );
+        expect(calls).not.toContain('add-receipt:42');
+        expect(calls).not.toContain('merge:42:head');
+    });
+
+    it('merges an UNSTABLE head with a failed advisory Gate check, because CI admission stays advisory outside BLOCKED', () => {
+        const { port, calls } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'UNSTABLE' }), pullRequest({ mergeStateStatus: 'UNSTABLE' })],
+            headCheckRuns: [checkRun({ conclusion: 'FAILURE' })],
+        });
+
+        deliverPullRequest(42, port);
+
+        expect(calls).toContain('add-receipt:42');
+        expect(calls).toContain('merge:42:head');
+    });
+
     it.each([
-        { ciState: 'successful', mergeStateStatus: 'BLOCKED', headCheckRuns: [checkRun()] },
+        { ciState: 'successful', mergeStateStatus: 'UNSTABLE', headCheckRuns: [checkRun()] },
         { ciState: 'failed', mergeStateStatus: 'CLEAN', headCheckRuns: [checkRun({ conclusion: 'FAILURE' })] },
         {
             ciState: 'pending',
             mergeStateStatus: 'CLEAN',
             headCheckRuns: [checkRun({ status: 'IN_PROGRESS', conclusion: null })],
         },
-        { ciState: 'absent', mergeStateStatus: 'BLOCKED', headCheckRuns: [] as HeadCheckRun[] },
+        { ciState: 'absent', mergeStateStatus: 'UNSTABLE', headCheckRuns: [] as HeadCheckRun[] },
         {
             ciState: 'skipped',
             mergeStateStatus: 'CLEAN',
@@ -6025,9 +6085,9 @@ describe('pull-request delivery', () => {
 
     it.each([
         { finalMergeStateStatus: 'UNSTABLE', observedCiState: 'unstable' },
-        { finalMergeStateStatus: 'BLOCKED', observedCiState: 'failed' },
+        { finalMergeStateStatus: 'DIRTY', observedCiState: 'failed' },
     ] satisfies Array<{
-        finalMergeStateStatus: 'UNSTABLE' | 'BLOCKED';
+        finalMergeStateStatus: 'UNSTABLE' | 'DIRTY';
         observedCiState: 'unstable' | 'failed';
     }>)(
         'replaces the staged advisory receipt when the final same-head snapshot drifts to $finalMergeStateStatus',
