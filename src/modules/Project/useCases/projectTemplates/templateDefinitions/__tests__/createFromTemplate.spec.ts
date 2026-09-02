@@ -41,7 +41,7 @@ vi.mock('../helpers', () => ({
             id: 'pop-song',
             name: 'Pop Song',
             executionBoundary: 'app-action',
-            create: vi.fn(),
+            create: mocks.createPopSongTemplate,
         },
     ],
 }));
@@ -126,10 +126,6 @@ vi.mock('../../../projectPersistence/helpers/runProjectLoadTransaction', () => (
 
 vi.mock('../../../projectPersistence/helpers/stopActiveAutoSave', () => ({
     stopActiveAutoSave: mocks.stopActiveAutoSave,
-}));
-
-vi.mock('../../templateFiles/popSong', () => ({
-    createPopSongTemplate: mocks.createPopSongTemplate,
 }));
 
 vi.mock('#/modules/Project/stores/projectStore', () => ({
