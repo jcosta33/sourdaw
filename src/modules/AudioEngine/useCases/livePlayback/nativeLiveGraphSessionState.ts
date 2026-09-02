@@ -14,6 +14,7 @@
  */
 
 import { type AudioGraphBackend } from '../../models/AudioGraphBackend';
+import { type EngineLoopRegion } from '../../models/EngineTransportPosition';
 
 export type NativeLiveGraphSession = {
     backend: AudioGraphBackend | null;
@@ -54,6 +55,24 @@ export type NativeLiveGraphSession = {
      * side effect of doing so.
      */
     rolling: boolean;
+    /**
+     * The loop region this session installed on the engine, as it asked for it,
+     * or `null` when it installed none.
+     *
+     * Held because the graph batch cannot address it: the region travels with
+     * the transport maps (`engine_transport_set_maps`), so the only record of
+     * what the engine is wrapping is the one this session keeps.
+     */
+    loopRegion: EngineLoopRegion | null;
+    /**
+     * Whether the engine reported it will actually wrap that region.
+     *
+     * Not an echo of the request: a region shorter than the engine's floor is
+     * held and not honoured (`EngineTransportMapsApplied.loopEnabled`), and an
+     * automation writer that treated it as a loop would keep waiting to re-arm
+     * at a seam the engine never closes.
+     */
+    loopEnabled: boolean;
     /** The tail of this session's serialised command chain. */
     pending: Promise<unknown>;
 };
@@ -66,6 +85,8 @@ export const nativeLiveGraphSession: NativeLiveGraphSession = {
     // the native engine is audible.
     monitorShadowed: true,
     rolling: false,
+    loopRegion: null,
+    loopEnabled: false,
     pending: Promise.resolve(),
 };
 

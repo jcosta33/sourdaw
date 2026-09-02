@@ -68,7 +68,11 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
         }
         let description: ReturnType<PreviewActionHandler['describe']>;
         try {
-            description = handler.describe(action);
+            description = handler.describe(action, {
+                actions,
+                actionIndex,
+                executionMode: 'isolated-preview',
+            });
         } catch (error) {
             return {
                 status: 'rejected' as const,
@@ -104,7 +108,11 @@ export function previewVersionedCommandBatchEnvelope(envelope: VersionedCommandB
         divergence = commandProjectDivergencePort.classify({
             baseRevision: envelope.baseRevision,
             commandsCompatible: preparedActions.every(
-                ({ action, handler }) => handler.canReapplyAfterDivergence?.(action) === true
+                ({ action, handler }, actionIndex) =>
+                    handler.canReapplyAfterDivergence?.(action, {
+                        actions: preparedActions.map((prepared) => prepared.action),
+                        actionIndex,
+                    }) === true
             ),
             targetIds: divergenceTargetIds,
         });

@@ -1,3 +1,4 @@
+import { projectMidiNotesByClipIdThroughRestores } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 
 import { removeClip } from '../../useCases/clip/removeClip';
@@ -5,7 +6,7 @@ import { isGeneratedMidiStateCurrent } from '../isGeneratedMidiStateCurrent';
 
 export const handleDiscardDuplicatedClip = createHandler<'discardDuplicatedClip'>({
     canReapplyAfterDivergence: (action) => action.payload.generatedMidiStateGuard !== undefined,
-    validate: (action) => {
+    validate: (action, context) => {
         const guard = action.payload.generatedMidiStateGuard;
         if (!guard) {
             return true;
@@ -14,6 +15,9 @@ export const handleDiscardDuplicatedClip = createHandler<'discardDuplicatedClip'
             entityId: action.payload.clipId,
             entityType: 'clip',
             guard,
+            projectedMidiNotesByClipId: projectMidiNotesByClipIdThroughRestores(
+                context.actions.slice(0, context.actionIndex)
+            ),
         });
     },
     execute: (alpha) => {

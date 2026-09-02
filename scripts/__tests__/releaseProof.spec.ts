@@ -25,7 +25,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
 
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const zipPayloadExpansionProbe = vi.hoisted(() => ({
     archive: undefined as Buffer | undefined,
@@ -2702,246 +2702,267 @@ with open(early, "r+b", buffering=0) as file:
         }
     });
 
-    it('rejects and invalidates a publisher that reports success without moving the validated directory', () => {
-        const fixture = createFixture();
-        let gated = false;
-        let invalidated = false;
-        const publisherPreparer: ReleaseProofPublisherPreparer = () => {
-            expect(gated).toBe(true);
-            return {
-                publish: () => undefined,
+    describe('published tree hashing and publication seams', () => {
+        let fixture: Fixture;
+
+        beforeEach(() => {
+            fixture = createFixture();
+        });
+
+        it('rejects and invalidates a publisher that reports success without moving the validated directory', () => {
+            let gated = false;
+            let invalidated = false;
+            const publisherPreparer: ReleaseProofPublisherPreparer = () => {
+                expect(gated).toBe(true);
+                return {
+                    publish: () => undefined,
+                    invalidate() {
+                        invalidated = true;
+                    },
+                    dispose: () => undefined,
+                };
+            };
+
+            expect(() =>
+                assemble(
+                    fixture,
+                    fixtureBuildRunner(fixture),
+                    () => {
+                        gated = true;
+                    },
+                    readReleaseInventory,
+                    undefined,
+                    undefined,
+                    publisherPreparer
+                )
+            ).toThrow('reported success without moving the validated directory');
+            expect(invalidated).toBe(true);
+            expect(existsSync(fixture.candidate)).toBe(false);
+        });
+
+        it('does not expose a mutable helper artifact to the publisher process seam', () => {
+            const existingHelperRoots = readdirSync(tmpdir())
+                .filter((entry) => entry.startsWith('sourdaw-exclusive-rename-'))
+                .sort();
+            let executionArguments: unknown[] | undefined;
+            let helperRootsDuringPreparation: string[] | undefined;
+            const publisherPreparer: ReleaseProofPublisherPreparer = () => {
+                const publisher = prepareAtomicDirectoryPublisher((...args) => {
+                    executionArguments = args;
+                    return { status: 1, stderr: 'publisher blocked for inspection' };
+                });
+                helperRootsDuringPreparation = readdirSync(tmpdir())
+                    .filter((entry) => entry.startsWith('sourdaw-exclusive-rename-'))
+                    .sort();
+                return publisher;
+            };
+
+            expect(() =>
+                assemble(
+                    fixture,
+                    fixtureBuildRunner(fixture),
+                    () => undefined,
+                    readReleaseInventory,
+                    undefined,
+                    undefined,
+                    publisherPreparer
+                )
+            ).toThrow('atomic release proof publication failed');
+            expect(executionArguments).toHaveLength(2);
+            expect(helperRootsDuringPreparation).toEqual(existingHelperRoots);
+            expect(existsSync(fixture.candidate)).toBe(false);
+        });
+
+        it('bounds the aggregate bytes read while revalidating the published tree', () => {
+            let budgetRequests = 0;
+            const fileReader: ReleaseProofFileReader = {
+                get snapshotByteLimit() {
+                    budgetRequests += 1;
+                    return budgetRequests < 8 ? RELEASE_PROOF_ARCHIVE_LIMITS.expandedBytes : 0;
+                },
+                open: (path, flags) => openSync(path, flags),
+                noFollowFlag: () => constants.O_NOFOLLOW,
+                read: (descriptor, buffer, offset, length, position) =>
+                    readSync(descriptor, buffer, offset, length, position),
+            };
+
+            expect(() =>
+                assemble(
+                    fixture,
+                    fixtureBuildRunner(fixture),
+                    () => undefined,
+                    readReleaseInventory,
+                    undefined,
+                    fileReader
+                )
+            ).toThrow('published release proof: cumulative byte limit exceeded');
+            expect(budgetRequests).toBe(8);
+            expect(existsSync(fixture.candidate)).toBe(false);
+        });
+
+        it('rejects a published file that grows past its descriptor limit while hashing', () => {
+            const path = join(fixture.candidate, 'web/contents/assets/app.js');
+            let targetDescriptor: number | undefined;
+            let mutated = false;
+            const fileReader: ReleaseProofFileReader = {
+                open(openPath, flags) {
+                    const descriptor = openSync(openPath, flags);
+                    if (openPath === path) {
+                        targetDescriptor = descriptor;
+                    }
+                    return descriptor;
+                },
+                noFollowFlag: () => constants.O_NOFOLLOW,
+                read(descriptor, buffer, offset, length, position) {
+                    if (descriptor === targetDescriptor && !mutated) {
+                        mutated = true;
+                        truncateSync(path, RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes + 1);
+                    }
+                    return readSync(descriptor, buffer, offset, length, position);
+                },
+            };
+
+            expect(() =>
+                assemble(
+                    fixture,
+                    fixtureBuildRunner(fixture),
+                    () => undefined,
+                    readReleaseInventory,
+                    undefined,
+                    fileReader
+                )
+            ).toThrow('published release proof: file exceeds the candidate file-size limit');
+            expect(mutated).toBe(true);
+            expect(existsSync(fixture.candidate)).toBe(false);
+        });
+
+        it('rejects a published file mutated after its bytes were hashed', () => {
+            const victim = join(fixture.candidate, 'desktop/ELECTRON-SOURCES.json');
+            const trigger = join(fixture.candidate, 'web/contents/web-artifact-manifest.json');
+            const descriptorPaths = new Map<number, string>();
+            let mutated = false;
+            const fileReader: ReleaseProofFileReader = {
+                open(path, flags) {
+                    const descriptor = openSync(path, flags);
+                    descriptorPaths.set(descriptor, path);
+                    return descriptor;
+                },
+                noFollowFlag: () => constants.O_NOFOLLOW,
+                read(descriptor, buffer, offset, length, position) {
+                    if (descriptorPaths.get(descriptor) === trigger && !mutated) {
+                        const bytes = readFileSync(victim);
+                        bytes[0] = bytes[0] === 0x7b ? 0x5b : 0x7b;
+                        writeFileSync(victim, bytes);
+                        mutated = true;
+                    }
+                    return readSync(descriptor, buffer, offset, length, position);
+                },
+            };
+
+            expect(() =>
+                assemble(
+                    fixture,
+                    fixtureBuildRunner(fixture),
+                    () => undefined,
+                    readReleaseInventory,
+                    undefined,
+                    fileReader
+                )
+            ).toThrow('published release proof tree changed while hashing');
+            expect(mutated).toBe(true);
+            expect(existsSync(fixture.candidate)).toBe(false);
+        });
+
+        it('rejects and identity-safely cleans a published directory whose child bytes changed', () => {
+            let invalidated = false;
+            const publisherPreparer: ReleaseProofPublisherPreparer = () => ({
+                publish(source, destination) {
+                    renameSync(source, destination);
+                    write(join(destination, 'release-proof.json'), '{}');
+                },
                 invalidate() {
                     invalidated = true;
                 },
                 dispose: () => undefined,
-            };
-        };
-
-        expect(() =>
-            assemble(
-                fixture,
-                fixtureBuildRunner(fixture),
-                () => {
-                    gated = true;
-                },
-                readReleaseInventory,
-                undefined,
-                undefined,
-                publisherPreparer
-            )
-        ).toThrow('reported success without moving the validated directory');
-        expect(invalidated).toBe(true);
-        expect(existsSync(fixture.candidate)).toBe(false);
-    });
-
-    it('does not expose a mutable helper artifact to the publisher process seam', () => {
-        const fixture = createFixture();
-        const existingHelperRoots = readdirSync(tmpdir())
-            .filter((entry) => entry.startsWith('sourdaw-exclusive-rename-'))
-            .sort();
-        let executionArguments: unknown[] | undefined;
-        let helperRootsDuringPreparation: string[] | undefined;
-        const publisherPreparer: ReleaseProofPublisherPreparer = () => {
-            const publisher = prepareAtomicDirectoryPublisher((...args) => {
-                executionArguments = args;
-                return { status: 1, stderr: 'publisher blocked for inspection' };
             });
-            helperRootsDuringPreparation = readdirSync(tmpdir())
-                .filter((entry) => entry.startsWith('sourdaw-exclusive-rename-'))
-                .sort();
-            return publisher;
-        };
 
-        expect(() =>
-            assemble(
-                fixture,
-                fixtureBuildRunner(fixture),
-                () => undefined,
-                readReleaseInventory,
-                undefined,
-                undefined,
-                publisherPreparer
-            )
-        ).toThrow('atomic release proof publication failed');
-        expect(executionArguments).toHaveLength(2);
-        expect(helperRootsDuringPreparation).toEqual(existingHelperRoots);
-        expect(existsSync(fixture.candidate)).toBe(false);
-    });
-
-    it('bounds the aggregate bytes read while revalidating the published tree', () => {
-        const fixture = createFixture();
-        let budgetRequests = 0;
-        const fileReader: ReleaseProofFileReader = {
-            get snapshotByteLimit() {
-                budgetRequests += 1;
-                return budgetRequests < 8 ? RELEASE_PROOF_ARCHIVE_LIMITS.expandedBytes : 0;
-            },
-            open: (path, flags) => openSync(path, flags),
-            noFollowFlag: () => constants.O_NOFOLLOW,
-            read: (descriptor, buffer, offset, length, position) =>
-                readSync(descriptor, buffer, offset, length, position),
-        };
-
-        expect(() =>
-            assemble(fixture, fixtureBuildRunner(fixture), () => undefined, readReleaseInventory, undefined, fileReader)
-        ).toThrow('published release proof: cumulative byte limit exceeded');
-        expect(budgetRequests).toBe(8);
-        expect(existsSync(fixture.candidate)).toBe(false);
-    });
-
-    it('rejects a published file that grows past its descriptor limit while hashing', () => {
-        const fixture = createFixture();
-        const path = join(fixture.candidate, 'web/contents/assets/app.js');
-        let targetDescriptor: number | undefined;
-        let mutated = false;
-        const fileReader: ReleaseProofFileReader = {
-            open(openPath, flags) {
-                const descriptor = openSync(openPath, flags);
-                if (openPath === path) {
-                    targetDescriptor = descriptor;
-                }
-                return descriptor;
-            },
-            noFollowFlag: () => constants.O_NOFOLLOW,
-            read(descriptor, buffer, offset, length, position) {
-                if (descriptor === targetDescriptor && !mutated) {
-                    mutated = true;
-                    truncateSync(path, RELEASE_PROOF_ARCHIVE_LIMITS.candidateFileBytes + 1);
-                }
-                return readSync(descriptor, buffer, offset, length, position);
-            },
-        };
-
-        expect(() =>
-            assemble(fixture, fixtureBuildRunner(fixture), () => undefined, readReleaseInventory, undefined, fileReader)
-        ).toThrow('published release proof: file exceeds the candidate file-size limit');
-        expect(mutated).toBe(true);
-        expect(existsSync(fixture.candidate)).toBe(false);
-    });
-
-    it('rejects a published file mutated after its bytes were hashed', () => {
-        const fixture = createFixture();
-        const victim = join(fixture.candidate, 'desktop/ELECTRON-SOURCES.json');
-        const trigger = join(fixture.candidate, 'web/contents/web-artifact-manifest.json');
-        const descriptorPaths = new Map<number, string>();
-        let mutated = false;
-        const fileReader: ReleaseProofFileReader = {
-            open(path, flags) {
-                const descriptor = openSync(path, flags);
-                descriptorPaths.set(descriptor, path);
-                return descriptor;
-            },
-            noFollowFlag: () => constants.O_NOFOLLOW,
-            read(descriptor, buffer, offset, length, position) {
-                if (descriptorPaths.get(descriptor) === trigger && !mutated) {
-                    const bytes = readFileSync(victim);
-                    bytes[0] = bytes[0] === 0x7b ? 0x5b : 0x7b;
-                    writeFileSync(victim, bytes);
-                    mutated = true;
-                }
-                return readSync(descriptor, buffer, offset, length, position);
-            },
-        };
-
-        expect(() =>
-            assemble(fixture, fixtureBuildRunner(fixture), () => undefined, readReleaseInventory, undefined, fileReader)
-        ).toThrow('published release proof tree changed while hashing');
-        expect(mutated).toBe(true);
-        expect(existsSync(fixture.candidate)).toBe(false);
-    });
-
-    it('rejects and identity-safely cleans a published directory whose child bytes changed', () => {
-        const fixture = createFixture();
-        let invalidated = false;
-        const publisherPreparer: ReleaseProofPublisherPreparer = () => ({
-            publish(source, destination) {
-                renameSync(source, destination);
-                write(join(destination, 'release-proof.json'), '{}');
-            },
-            invalidate() {
-                invalidated = true;
-            },
-            dispose: () => undefined,
+            expect(() =>
+                assemble(
+                    fixture,
+                    fixtureBuildRunner(fixture),
+                    () => undefined,
+                    readReleaseInventory,
+                    undefined,
+                    undefined,
+                    publisherPreparer
+                )
+            ).toThrow('published directory bytes changed during publication');
+            expect(invalidated).toBe(true);
+            expect(existsSync(fixture.candidate)).toBe(false);
         });
 
-        expect(() =>
-            assemble(
-                fixture,
-                fixtureBuildRunner(fixture),
-                () => undefined,
-                readReleaseInventory,
-                undefined,
-                undefined,
-                publisherPreparer
-            )
-        ).toThrow('published directory bytes changed during publication');
-        expect(invalidated).toBe(true);
-        expect(existsSync(fixture.candidate)).toBe(false);
-    });
+        it('preserves a published quarantine when an independently added child is not in its owned manifest', () => {
+            const marker = 'independent child';
+            const publisherPreparer: ReleaseProofPublisherPreparer = () => ({
+                publish(source, destination) {
+                    renameSync(source, destination);
+                    write(join(destination, 'independent-child'), marker);
+                },
+                invalidate: () => undefined,
+                dispose: () => undefined,
+            });
+            let message = '';
 
-    it('preserves a published quarantine when an independently added child is not in its owned manifest', () => {
-        const fixture = createFixture();
-        const marker = 'independent child';
-        const publisherPreparer: ReleaseProofPublisherPreparer = () => ({
-            publish(source, destination) {
-                renameSync(source, destination);
-                write(join(destination, 'independent-child'), marker);
-            },
-            invalidate: () => undefined,
-            dispose: () => undefined,
-        });
-        let message = '';
+            try {
+                assemble(
+                    fixture,
+                    fixtureBuildRunner(fixture),
+                    () => undefined,
+                    readReleaseInventory,
+                    undefined,
+                    undefined,
+                    publisherPreparer
+                );
+            } catch (error) {
+                message = error instanceof Error ? error.message : String(error);
+            }
 
-        try {
-            assemble(
-                fixture,
-                fixtureBuildRunner(fixture),
-                () => undefined,
-                readReleaseInventory,
-                undefined,
-                undefined,
-                publisherPreparer
-            );
-        } catch (error) {
-            message = error instanceof Error ? error.message : String(error);
-        }
-
-        const cleanupRoot = readdirSync(fixture.base).find((entry) => entry.startsWith('.candidate.cleanup-'));
-        expect(cleanupRoot).toBeDefined();
-        const preserved = join(fixture.base, cleanupRoot ?? '', 'tree');
-        expect(message).toContain(`unexpected output preserved at ${preserved}`);
-        expect(readFileSync(join(preserved, 'independent-child'), 'utf8')).toBe(marker);
-    });
-
-    it('rejects a replaced publisher without deleting the unowned output it moved', () => {
-        const fixture = createFixture();
-        let invalidated = false;
-        const publisherPreparer: ReleaseProofPublisherPreparer = () => ({
-            publish(source, destination) {
-                const replacement = mkdtempSync(join(dirname(source), '.replacement-publisher-'));
-                renameSync(source, `${source}.captured`);
-                renameSync(replacement, destination);
-            },
-            invalidate() {
-                invalidated = true;
-            },
-            dispose: () => undefined,
+            const cleanupRoot = readdirSync(fixture.base).find((entry) => entry.startsWith('.candidate.cleanup-'));
+            expect(cleanupRoot).toBeDefined();
+            const preserved = join(fixture.base, cleanupRoot ?? '', 'tree');
+            expect(message).toContain(`unexpected output preserved at ${preserved}`);
+            expect(readFileSync(join(preserved, 'independent-child'), 'utf8')).toBe(marker);
         });
 
-        expect(() =>
-            assemble(
-                fixture,
-                fixtureBuildRunner(fixture),
-                () => undefined,
-                readReleaseInventory,
-                undefined,
-                undefined,
-                publisherPreparer
-            )
-        ).toThrow('did not publish the validated directory identity');
-        expect(invalidated).toBe(true);
-        expect(readdirSync(fixture.candidate)).toEqual([]);
-        expect(readdirSync(fixture.base).some((name) => name.includes('.cleanup-'))).toBe(false);
+        it('rejects a replaced publisher without deleting the unowned output it moved', () => {
+            let invalidated = false;
+            const publisherPreparer: ReleaseProofPublisherPreparer = () => ({
+                publish(source, destination) {
+                    const replacement = mkdtempSync(join(dirname(source), '.replacement-publisher-'));
+                    renameSync(source, `${source}.captured`);
+                    renameSync(replacement, destination);
+                },
+                invalidate() {
+                    invalidated = true;
+                },
+                dispose: () => undefined,
+            });
+
+            expect(() =>
+                assemble(
+                    fixture,
+                    fixtureBuildRunner(fixture),
+                    () => undefined,
+                    readReleaseInventory,
+                    undefined,
+                    undefined,
+                    publisherPreparer
+                )
+            ).toThrow('did not publish the validated directory identity');
+            expect(invalidated).toBe(true);
+            expect(readdirSync(fixture.candidate)).toEqual([]);
+            expect(readdirSync(fixture.base).some((name) => name.includes('.cleanup-'))).toBe(false);
+        });
     });
 
     it('rejects unreferenced files outside the closed candidate census', () => {

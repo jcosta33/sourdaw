@@ -1,5 +1,3 @@
-export const MICRO_FADE_SECONDS = 0.003;
-
 /**
  * Total wall-clock floor for the **unsegmented fallback only**.
  *

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('#/infra/store/storage/createAutomergeStorage', () => ({
     flushAutomergeStorageWrites: vi.fn(),
@@ -18,15 +18,25 @@ const { mockAutomergeRepo, mockSaveAllToIdb, mockSaveIncrementals, mockLoadSnaps
             saveAll: vi.fn(),
             saveAllOffThread: vi.fn(),
             saveDocIncremental: vi.fn(),
-            getHeads: vi.fn(() => []),
+            getHeads: vi.fn<(id: string) => string[]>(() => []),
             reserveSnapshotTransactionDocuments: vi.fn(),
             transactSnapshot: vi.fn(async (operation: (transaction: object) => Promise<void>) => {
                 await operation({});
                 return { before: new Map(), after: new Map() };
             }),
         },
-        mockSaveAllToIdb: vi.fn(() => Promise.resolve()),
-        mockSaveIncrementals: vi.fn(() => Promise.resolve({ savedChunks: 0 })),
+        mockSaveAllToIdb: vi.fn<() => Promise<SaveAllToIdbResult>>(() =>
+            Promise.resolve({
+                status: 'committed',
+                authority: { epoch: 'default-epoch', revision: 0, rootLineage: 'main' },
+            })
+        ),
+        mockSaveIncrementals: vi.fn<() => Promise<SaveIncrementalsToIdbResult>>(() =>
+            Promise.resolve({
+                status: 'committed',
+                authority: { epoch: 'default-epoch', revision: 0, rootLineage: 'main' },
+            })
+        ),
         mockLoadSnapshot: vi.fn(() => Promise.resolve(null)),
         mockCompactionState: { incrementalSaveCount: 0 },
     })
@@ -45,7 +55,13 @@ vi.mock('../crdtProjectCompactionState', () => ({
     crdtProjectCompactionState: mockCompactionState,
 }));
 
+import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
+
 import { crdtPersistenceQueueCoordinator } from '../crdtPersistenceQueueCoordinator';
+import { sessionUndoWitnessStampPort } from '../sessionUndoWitnessStampPort';
+
+import type { SaveAllToIdbResult } from '../../repositories/crdtPersistence/saveAllToIdb';
+import type { SaveIncrementalsToIdbResult } from '../../repositories/crdtPersistence/saveIncrementalsToIdb';
 
 describe('crdtPersistenceQueueCoordinator', () => {
     it('exposes runOperation and runLoad methods', () => {
@@ -122,5 +138,216 @@ describe('crdtPersistenceQueueCoordinator', () => {
             },
         }));
         expect(result).toBe(true);
+    });
+});
+
+describe('crdtPersistenceQueueCoordinator / exact-heads collaboration persist does not force a pending write to land (#3331)', () => {
+    beforeEach(async () => {
+        await crdtPersistenceQueueCoordinator.runOperation('reset');
+        mockAutomergeRepo.getDocIds.mockReturnValue(['root']);
+        mockAutomergeRepo.saveDocIncremental.mockClear();
+        mockAutomergeRepo.saveDocIncremental.mockReturnValue(undefined);
+        mockAutomergeRepo.getHeads.mockClear();
+        mockAutomergeRepo.getHeads.mockReturnValue(['head-1']);
+        vi.mocked(flushAutomergeStorageWrites).mockClear();
+        vi.mocked(flushAutomergeStorageWrites).mockImplementation(() => undefined);
+    });
+
+    it('neither throws nor moves the root heads when a pending unscoped write would otherwise land inside the assertion window', async () => {
+        // Simulates the hazard directly: if the coordinator forced this
+        // generation's deferred writes to land here, this flush would move the
+        // root heads the second assertExpectedRootHeads below re-checks.
+        vi.mocked(flushAutomergeStorageWrites).mockImplementation(() => {
+            mockAutomergeRepo.getHeads.mockReturnValue(['head-2']);
+        });
+
+        await expect(crdtPersistenceQueueCoordinator.runOperation('incremental', ['head-1'])).resolves.toBeUndefined();
+
+        expect(flushAutomergeStorageWrites).not.toHaveBeenCalled();
+        expect(mockAutomergeRepo.getHeads('root')).toEqual(['head-1']);
+    });
+
+    it('still stamps the undo witness when settling pending writes is skipped', async () => {
+        const stampSpy = vi.spyOn(sessionUndoWitnessStampPort, 'stamp');
+
+        await crdtPersistenceQueueCoordinator.runOperation('incremental', ['head-1']);
+
+        expect(stampSpy).toHaveBeenCalled();
+        stampSpy.mockRestore();
+    });
+
+    it("forces this generation's deferred writes to land before reading document bytes when no exact heads are expected", async () => {
+        await crdtPersistenceQueueCoordinator.runOperation('incremental');
+
+        expect(flushAutomergeStorageWrites).toHaveBeenCalled();
+        const flushOrder = vi.mocked(flushAutomergeStorageWrites).mock.invocationCallOrder[0];
+        const saveOrder = mockAutomergeRepo.saveDocIncremental.mock.invocationCallOrder[0];
+        expect(flushOrder).toBeDefined();
+        expect(saveOrder).toBeDefined();
+        expect(flushOrder as number).toBeLessThan(saveOrder as number);
+    });
+
+    it("stamps the undo witness with the heads this generation's forced flush just landed", async () => {
+        mockAutomergeRepo.getHeads.mockReturnValue(['pre-flush-head']);
+        vi.mocked(flushAutomergeStorageWrites).mockImplementation(() => {
+            mockAutomergeRepo.getHeads.mockReturnValue(['post-flush-head']);
+        });
+        let observedHeads: string[] | undefined;
+        const stampSpy = vi.spyOn(sessionUndoWitnessStampPort, 'stamp').mockImplementation(() => {
+            observedHeads = mockAutomergeRepo.getHeads('root');
+        });
+
+        await crdtPersistenceQueueCoordinator.runOperation('incremental');
+
+        expect(observedHeads).toEqual(['post-flush-head']);
+        stampSpy.mockRestore();
+    });
+});
+
+describe('crdtPersistenceQueueCoordinator / compaction paths stamp the undo witness before the bundle read (#3331)', () => {
+    beforeEach(async () => {
+        await crdtPersistenceQueueCoordinator.runOperation('reset');
+        mockAutomergeRepo.getDocIds.mockReturnValue(['root']);
+        mockAutomergeRepo.saveDocIncremental.mockClear();
+        mockAutomergeRepo.saveDocIncremental.mockReturnValue(undefined);
+        mockAutomergeRepo.saveAllOffThread.mockClear();
+        mockAutomergeRepo.saveAllOffThread.mockResolvedValue(new Map());
+        mockSaveAllToIdb.mockClear();
+        mockSaveAllToIdb.mockResolvedValue({
+            status: 'committed',
+            authority: { epoch: 'test-epoch', revision: 1, rootLineage: 'main' },
+        });
+        vi.mocked(flushAutomergeStorageWrites).mockClear();
+        vi.mocked(flushAutomergeStorageWrites).mockImplementation(() => undefined);
+    });
+
+    it('stamps before the bundle read when a doc-shape change routes an incremental persist into compaction', async () => {
+        // `persistedBaseDocIds` only holds 'root' after reset; a second active
+        // document changes the persisted shape and routes into compactCrdtProject.
+        mockAutomergeRepo.getDocIds.mockReturnValue(['arrangement', 'root']);
+        const stampSpy = vi.spyOn(sessionUndoWitnessStampPort, 'stamp');
+
+        await crdtPersistenceQueueCoordinator.runOperation('incremental');
+
+        expect(stampSpy).toHaveBeenCalled();
+        const stampOrder = stampSpy.mock.invocationCallOrder[0];
+        const saveOrder = mockAutomergeRepo.saveAllOffThread.mock.invocationCallOrder[0];
+        expect(stampOrder).toBeDefined();
+        expect(saveOrder).toBeDefined();
+        expect(stampOrder as number).toBeLessThan(saveOrder as number);
+        stampSpy.mockRestore();
+    });
+
+    it('stamps before the bundle read on a direct compact operation', async () => {
+        const stampSpy = vi.spyOn(sessionUndoWitnessStampPort, 'stamp');
+
+        await crdtPersistenceQueueCoordinator.runOperation('compact');
+
+        expect(stampSpy).toHaveBeenCalled();
+        const stampOrder = stampSpy.mock.invocationCallOrder[0];
+        const saveOrder = mockAutomergeRepo.saveAllOffThread.mock.invocationCallOrder[0];
+        expect(stampOrder).toBeDefined();
+        expect(saveOrder).toBeDefined();
+        expect(stampOrder as number).toBeLessThan(saveOrder as number);
+        stampSpy.mockRestore();
+    });
+
+    it('stamps the undo witness with the heads a chunk flush this compaction awaited just landed on a direct compact operation', async () => {
+        // Leaves a chunk pending from a failed prior incremental attempt, so
+        // `compactCrdtProject`'s own `await flushPendingChunks(generation)`
+        // has real work to do rather than the no-op an empty queue gives it.
+        mockAutomergeRepo.saveDocIncremental.mockReturnValueOnce(new Uint8Array([1, 2, 3]));
+        mockSaveIncrementals.mockClear();
+        mockSaveIncrementals.mockImplementationOnce(() =>
+            Promise.reject(new Error('simulated transient chunk failure'))
+        );
+        mockAutomergeRepo.getHeads.mockReturnValue(['pre-flush-head']);
+
+        await expect(crdtPersistenceQueueCoordinator.runOperation('incremental')).rejects.toThrow(
+            'simulated transient chunk failure'
+        );
+
+        // The retried chunk flush lands the write; only a stamp placed after
+        // that awaited flush should observe its heads.
+        mockSaveIncrementals.mockImplementationOnce(() => {
+            mockAutomergeRepo.getHeads.mockReturnValue(['post-chunk-flush-head']);
+            return Promise.resolve({
+                status: 'committed',
+                authority: { epoch: 'test-epoch', revision: 2, rootLineage: 'main' },
+            });
+        });
+        let observedHeads: string[] | undefined;
+        const stampSpy = vi.spyOn(sessionUndoWitnessStampPort, 'stamp').mockImplementation(() => {
+            observedHeads = mockAutomergeRepo.getHeads('root');
+        });
+
+        await crdtPersistenceQueueCoordinator.runOperation('compact');
+
+        expect(observedHeads).toEqual(['post-chunk-flush-head']);
+        stampSpy.mockRestore();
+    });
+
+    it('stamps the undo witness with the heads a full-snapshot retry this compaction awaited just landed on a direct compact operation', async () => {
+        // Leaves a failed full snapshot pending from a prior compact attempt, so
+        // `compactCrdtProject`'s own `await flushPendingFullSnapshot(generation)`
+        // has a real retry to await rather than the no-op an empty queue gives it.
+        const pendingBundle = new Map([['root', new Uint8Array([9])]]);
+        mockAutomergeRepo.saveAllOffThread.mockResolvedValue(pendingBundle);
+        mockSaveAllToIdb.mockClear();
+        mockSaveAllToIdb.mockImplementationOnce(() =>
+            Promise.reject(new Error('simulated transient full-save failure'))
+        );
+
+        await expect(crdtPersistenceQueueCoordinator.runOperation('compact')).rejects.toThrow(
+            'simulated transient full-save failure'
+        );
+
+        // The retried full snapshot save lands the write; only a stamp placed
+        // after that awaited flush should observe its heads.
+        mockAutomergeRepo.getHeads.mockReturnValue(['pre-retry-head']);
+        mockSaveAllToIdb.mockImplementationOnce(() => {
+            mockAutomergeRepo.getHeads.mockReturnValue(['post-full-snapshot-retry-head']);
+            return Promise.resolve({
+                status: 'committed',
+                authority: { epoch: 'test-epoch', revision: 2, rootLineage: 'main' },
+            });
+        });
+        let observedHeads: string[] | undefined;
+        const stampSpy = vi.spyOn(sessionUndoWitnessStampPort, 'stamp').mockImplementation(() => {
+            observedHeads = mockAutomergeRepo.getHeads('root');
+        });
+
+        await crdtPersistenceQueueCoordinator.runOperation('compact');
+
+        expect(observedHeads).toEqual(['post-full-snapshot-retry-head']);
+        stampSpy.mockRestore();
+    });
+});
+
+describe('crdtPersistenceQueueCoordinator / a failed pending-write settle still stamps and persists (#3331)', () => {
+    beforeEach(async () => {
+        await crdtPersistenceQueueCoordinator.runOperation('reset');
+        mockAutomergeRepo.getDocIds.mockReturnValue(['root']);
+        mockAutomergeRepo.saveDocIncremental.mockClear();
+        mockAutomergeRepo.saveDocIncremental.mockReturnValue(new Uint8Array([1, 2, 3]));
+        mockSaveIncrementals.mockClear();
+        mockSaveIncrementals.mockResolvedValue({
+            status: 'committed',
+            authority: { epoch: 'test-epoch', revision: 1, rootLineage: 'main' },
+        });
+        vi.mocked(flushAutomergeStorageWrites).mockClear();
+        vi.mocked(flushAutomergeStorageWrites).mockImplementation(() => {
+            throw new Error('simulated matched-write-group rollback');
+        });
+    });
+
+    it('still stamps the undo witness and still writes chunks when settling pending writes throws', async () => {
+        const stampSpy = vi.spyOn(sessionUndoWitnessStampPort, 'stamp');
+
+        await expect(crdtPersistenceQueueCoordinator.runOperation('incremental')).resolves.toBeUndefined();
+
+        expect(stampSpy).toHaveBeenCalled();
+        expect(mockSaveIncrementals).toHaveBeenCalled();
+        stampSpy.mockRestore();
     });
 });

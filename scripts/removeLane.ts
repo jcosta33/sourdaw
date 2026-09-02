@@ -97,6 +97,17 @@ function matchingWorktrees(target: string, worktrees: Worktree[]): Worktree[] {
 }
 
 /**
+ * Regenerable output rooted at a specific worktree path rather than named anywhere in the tree —
+ * `release/` itself, and files like `release/desktop-runtime-material.json`, are tracked and must
+ * not match on a bare prefix of `release/desktop`.
+ */
+const DISPOSABLE_ROOT_PATHS = ['electron/out', 'release/desktop'];
+
+function underDisposableRootPath(normalized: string): boolean {
+    return DISPOSABLE_ROOT_PATHS.some((root) => normalized === root || normalized.startsWith(`${root}/`));
+}
+
+/**
  * The one shared definition of ignored output that is safe to discard: regenerable build and test
  * products, nothing else. Removal refuses a lane carrying ignored data that is not this, and
  * pruning (`lane:prune`) deletes exactly what this admits — the same contract read from both ends.
@@ -107,7 +118,9 @@ export function disposableIgnored(path: string): boolean {
         normalized === '.DS_Store' ||
         normalized.endsWith('/.DS_Store') ||
         /(?:^|\/)(?:node_modules|dist|coverage|target|playwright-report|test-results)(?:\/|$)/.test(normalized) ||
-        /^\.agents\/ui-scripts\/[^/]+\.png$/.test(normalized)
+        /^\.agents\/ui-scripts\/[^/]+\.png$/.test(normalized) ||
+        /^crates\/sourdaw-native\/[^/]+\.node$/.test(normalized) ||
+        underDisposableRootPath(normalized)
     );
 }
 

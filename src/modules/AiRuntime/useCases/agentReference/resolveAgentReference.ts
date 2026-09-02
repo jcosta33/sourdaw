@@ -170,7 +170,8 @@ function isClipCapability(capability: AgentReferenceCapability): boolean {
         capability === 'clip' ||
         capability === 'editable-clip' ||
         capability === 'editable-audio-clip' ||
-        capability === 'editable-midi-clip'
+        capability === 'editable-midi-clip' ||
+        capability === 'writable-midi-clip'
     );
 }
 
@@ -503,21 +504,27 @@ export function resolveAgentReference(input: ResolveAgentReferenceInput): Resolv
         }
     }
     if (isClipCapability(input.capability)) {
-        const clip = input.context.tracks
-            .flatMap((track) => track.clips)
-            .find((candidate) => candidate.id === input.assertedId);
+        const owningTrack = input.context.tracks.find((track) =>
+            track.clips.some((clip) => clip.id === input.assertedId)
+        );
+        const clip = owningTrack?.clips.find((candidate) => candidate.id === input.assertedId);
         const requiresEditableClip =
             input.capability === 'editable-clip' ||
             input.capability === 'editable-audio-clip' ||
-            input.capability === 'editable-midi-clip';
+            input.capability === 'editable-midi-clip' ||
+            input.capability === 'writable-midi-clip';
         const hasEligibleAudioContent = input.capability !== 'editable-audio-clip' || clip?.type === 'audio';
         const hasEligibleMidiContent =
             input.capability !== 'editable-midi-clip' || (clip?.type === 'midi' && clip.noteCount > 0);
+        const hasWritableMidiTarget =
+            input.capability !== 'writable-midi-clip' ||
+            (clip?.type === 'midi' && owningTrack !== undefined && owningTrack.frozen !== true);
         if (
             !clip ||
             (requiresEditableClip && clip.locked === true) ||
             !hasEligibleAudioContent ||
-            !hasEligibleMidiContent
+            !hasEligibleMidiContent ||
+            !hasWritableMidiTarget
         ) {
             return { status: 'rejected', reason: 'ungrounded-target' };
         }

@@ -136,6 +136,14 @@ impl SourdawNative {
     /// have somewhere to push.
     #[napi(constructor)]
     pub fn new(on_event: EventEmitter) -> Self {
+        // Before any command can be dispatched. `ensure_allowed_root` answers
+        // an application-data path from the built-in roots without touching
+        // the grant registry, so a private directory created lazily by the
+        // registry is still missing during the first file command a fresh
+        // profile guards — and a missing directory is a name the filesystem
+        // has nothing to correct the caller's spelling against.
+        commands::filesystem::ensure_private_state_directory();
+
         let events: Arc<dyn EventSink> = Arc::new(TsfnEventSink { emit: on_event });
         let singletons = Arc::new(NativeSingletons::new(Arc::clone(&events)));
 
@@ -448,6 +456,17 @@ impl SourdawNative {
     #[napi]
     pub async fn list_directory(&self, path: String) -> Result<Value> {
         json(reason(commands::filesystem::list_directory(path).await)?)
+    }
+
+    /// Grant access to one path the user picked. Main process only.
+    ///
+    /// The shell withholds this from the renderer's command surface, and that
+    /// is the whole point of it: a page that could mint its own grant would be
+    /// back to the blanket directory access this replaced. The shell calls it
+    /// for the path a native dialog is about to return.
+    #[napi]
+    pub async fn grant_path(&self, path: String, mode: String, recursive: bool) -> Result<()> {
+        reason(commands::filesystem::grant_path(path, mode, recursive).await)
     }
 
     // ── Plugin hosting ─────────────────────────────────────────────────

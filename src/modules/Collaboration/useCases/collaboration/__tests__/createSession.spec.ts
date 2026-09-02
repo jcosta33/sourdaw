@@ -10,12 +10,14 @@ import { createSession } from '../createSession';
  * store write without opening a real peer connection.
  */
 const mockRuntime = vi.hoisted(() => ({
+    state: { sessionSecret: null as string | null },
     cleanup: vi.fn<() => void>(),
     initialize: vi.fn<(assetOwnerId: string) => void>(),
     startPlayheadBroadcast: vi.fn<() => void>(),
     startBranchSync: vi.fn<(isHost: boolean) => void>(),
     generatePeerId: vi.fn<() => string>(),
     generateSessionId: vi.fn<() => string>(),
+    generateSessionSecret: vi.fn<() => string>(),
     pickPeerColor: vi.fn<(excludeColors: string[]) => string>(),
 }));
 
@@ -28,9 +30,18 @@ describe('createSession', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         collaborationStore.set(null);
+        mockRuntime.state.sessionSecret = null;
         mockRuntime.generatePeerId.mockReturnValue('peer-1');
         mockRuntime.generateSessionId.mockReturnValue('sess-1');
+        mockRuntime.generateSessionSecret.mockReturnValue('secret-1');
         mockRuntime.pickPeerColor.mockReturnValue('#3b82f6');
+    });
+
+    it('mints a fresh room secret onto the session runtime', () => {
+        createSession('Host');
+
+        expect(mockRuntime.generateSessionSecret).toHaveBeenCalledTimes(1);
+        expect(mockRuntime.state.sessionSecret).toBe('secret-1');
     });
 
     it('returns the generated session id', () => {

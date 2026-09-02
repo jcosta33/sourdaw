@@ -91,7 +91,8 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     parseVersionedCommandBatchEnvelope: mocks.parseVersionedCommandBatchEnvelope,
 }));
 
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     captureProjectRevision: mocks.captureProjectRevision,
     settlePendingProjectWritesAndCaptureRevision: mocks.settlePendingProjectWritesAndCaptureRevision,
     DOC_BRANCHES: '__branches__',

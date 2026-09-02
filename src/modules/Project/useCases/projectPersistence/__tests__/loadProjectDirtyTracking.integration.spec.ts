@@ -85,6 +85,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     wireSidechainRoute: vi.fn(),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureDurableDocumentWitness: vi.fn(),
     captureProjectRevision: vi.fn(),
     createCrdtDoc: vi.fn(),
     createCrdtProject: mocks.createCrdtProject,
@@ -110,7 +111,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     waitForCrdtDocumentTransition: vi.fn(),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
-    clearUndoHistory: vi.fn(),
+    reconcileSessionUndoForProject: vi.fn(),
     executeAppAction: mocks.executeAppAction,
     resetActionReplayAuthority: vi.fn(),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
@@ -136,6 +137,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     midiClipSplitStateMatches: vi.fn(),
     prepareMidiClipGlueState: vi.fn(),
     prepareMidiClipSplit: vi.fn(),
+    projectMidiNotesByClipIdThroughRestores: vi.fn(() => ({})),
     readLegacyChordTrackMigration: mocks.readLegacyChordTrackMigration,
     readMidiFile: vi.fn(),
     removeMidiClipData: vi.fn(),

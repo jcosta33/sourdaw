@@ -192,15 +192,9 @@ vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
     verifyAudioBufferReferences: vi.fn(),
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeAppAction: vi.fn(),
-    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
-    isAppActionCommittedError: vi.fn(() => false),
-    pushUndoEntry: vi.fn(),
-    resetActionReplayAuthority: vi.fn(),
-    syncActionReplayMetadata: vi.fn(),
-    clearUndoHistory: vi.fn(),
-    createAppActionCommittedError: vi.fn(),
 }));
 
 vi.mock('#/utils/Notification/notifyUser', () => ({

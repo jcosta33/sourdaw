@@ -36,6 +36,11 @@ import {
     withPullRequestMutationLock,
 } from './pullRequestMutationLock.ts';
 import { shellPort as trackerIssueShellPort } from './reconcileTrackerIssue.ts';
+import {
+    runRecoverDeliveryLockCli,
+    type DeliveryLockRecoveryDependencies,
+    type DeliveryLockRecoveryTrustedLauncher,
+} from './recoverDeliveryLock.ts';
 import { completeTrackerIssue, type ReconcileTrackerIssuePort } from './trackerIssueReconciliation.ts';
 
 export type HeadCheckRun = {
@@ -162,12 +167,17 @@ type CiAdmissionMode = 'advisory' | 'required';
 
 const ACTIVE_CI_ADMISSION_MODE: CiAdmissionMode = 'advisory';
 
+type DeliveryMergeRejectionCertainty = 'ambiguous' | 'definitive-no-merge';
+
 export type DeliveryReceiptAuthorityPhase = 'released' | 'prepared' | 'merge-authorized' | 'terminal';
 
 export class DeliveryMergeRejectedError extends Error {
-    constructor(message: string) {
+    readonly certainty: DeliveryMergeRejectionCertainty;
+
+    constructor(message: string, certainty: DeliveryMergeRejectionCertainty = 'ambiguous') {
         super(message);
         this.name = 'DeliveryMergeRejectedError';
+        this.certainty = certainty;
     }
 }
 
@@ -176,7 +186,10 @@ function classifyGithubMergeRejection(number: number, error: unknown): DeliveryM
     if (!/\bHTTP (403|404|405|409|422)\b/u.test(detail)) {
         return undefined;
     }
-    return new DeliveryMergeRejectedError(`PR #${number} was not merged: ${detail}`);
+    return new DeliveryMergeRejectedError(
+        `PR #${number} was not merged: ${detail}`,
+        /\bHTTP 422\b/u.test(detail) ? 'definitive-no-merge' : 'ambiguous'
+    );
 }
 
 export type PersistedPreparedPostMergeValidation = {
@@ -2012,7 +2025,8 @@ function deliverPullRequestWithCiAdmission(
     number: number,
     port: DeliveryPort,
     tracker: TrackerCompletionPort,
-    ciAdmissionMode: CiAdmissionMode
+    ciAdmissionMode: CiAdmissionMode,
+    markRemoteMutationKnownAbsent?: () => void
 ): void {
     port.fetch();
     const rawInitial = port.pullRequest(number);
@@ -2154,6 +2168,9 @@ function deliverPullRequestWithCiAdmission(
         port.merge(number, finalSnapshot.headRefOid, finalDependents.length > 0, `${finalSnapshot.title} (#${number})`);
     } catch (error) {
         if (error instanceof DeliveryMergeRejectedError) {
+            if (error.certainty === 'definitive-no-merge') {
+                markRemoteMutationKnownAbsent?.();
+            }
             tryRestorePreArmedDeliveryReceiptAuthorityAfterMergeFailure(
                 number,
                 authorityBeforeFinalFetchArming,
@@ -2185,17 +2202,23 @@ function deliverPullRequestWithCiAdmission(
     );
 }
 
-export function deliverPullRequest(number: number, port: DeliveryPort, tracker: TrackerCompletionPort): void {
-    deliverPullRequestWithCiAdmission(number, port, tracker, ACTIVE_CI_ADMISSION_MODE);
+export function deliverPullRequest(
+    number: number,
+    port: DeliveryPort,
+    tracker: TrackerCompletionPort,
+    markRemoteMutationKnownAbsent?: () => void
+): void {
+    deliverPullRequestWithCiAdmission(number, port, tracker, ACTIVE_CI_ADMISSION_MODE, markRemoteMutationKnownAbsent);
 }
 
 /** Retained as the snapshot-backed cutover path if CI becomes merge-authoritative again. */
 export function deliverPullRequestWithRequiredCi(
     number: number,
     port: DeliveryPort,
-    tracker: TrackerCompletionPort
+    tracker: TrackerCompletionPort,
+    markRemoteMutationKnownAbsent?: () => void
 ): void {
-    deliverPullRequestWithCiAdmission(number, port, tracker, 'required');
+    deliverPullRequestWithCiAdmission(number, port, tracker, 'required', markRemoteMutationKnownAbsent);
 }
 
 function capture(command: string, args: string[]): string {
@@ -3056,7 +3079,10 @@ export function shellPort(
             }
             const result = parseJson<{ merged: boolean; message: string }>(response, 'merge request');
             if (!result.merged) {
-                throw new DeliveryMergeRejectedError(`PR #${number} was not merged: ${result.message}`);
+                throw new DeliveryMergeRejectedError(
+                    `PR #${number} was not merged: ${result.message}`,
+                    'definitive-no-merge'
+                );
             }
         },
         retarget: (number, baseBranch) => {
@@ -3118,12 +3144,23 @@ export function shellPort(
     };
 }
 
-export function parseCliArgs(args: string[]): { number?: number; help: boolean } {
+const DELIVER_USAGE = [
+    'Usage:',
+    '  pnpm deliver <pr-number>',
+    '  pnpm deliver --recover-lock <pr-number> --owner <owner-oid>',
+].join('\n');
+
+export type DeliverCliArgs = { number?: number; recoverLockArgs?: string[]; help: boolean };
+
+export function parseCliArgs(args: string[]): DeliverCliArgs {
     if (args[0] === '--help') {
         if (args.length !== 1) {
             fail('--help takes no other arguments');
         }
         return { help: true };
+    }
+    if (args[0] === '--recover-lock') {
+        return { help: false, recoverLockArgs: args.slice(1) };
     }
     const number = Number(args[0]);
     if (!Number.isSafeInteger(number) || number <= 0) {
@@ -3680,7 +3717,12 @@ export type DeliveryCoordinatorDependencies = {
     ) => DeliveryPort;
     trackerPort: (session: DeliveryAuthentication['session']) => ReconcileTrackerIssuePort;
     completeIssue: (issueNumber: number, actorNodeId: string, port: ReconcileTrackerIssuePort) => void;
-    deliver: (number: number, port: DeliveryPort, tracker: TrackerCompletionPort) => void;
+    deliver: (
+        number: number,
+        port: DeliveryPort,
+        tracker: TrackerCompletionPort,
+        markRemoteMutationKnownAbsent?: () => void
+    ) => void;
 };
 
 function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinatorDependencies {
@@ -3748,45 +3790,79 @@ export async function coordinateDelivery(
     dependencies: DeliveryCoordinatorDependencies = defaultDeliveryCoordinatorDependencies(process.cwd())
 ): Promise<void> {
     const primaryRoot = dependencies.primaryRoot();
-    await dependencies.serializeDelivery(primaryRoot, number, async ({ markRemoteMutationAttempt }) => {
-        const authorAuth = await dependencies.authenticateAuthor(primaryRoot);
-        let trackerAuth: DeliveryAuthentication | undefined;
-        try {
-            if (!isAuthorBotNodeId(authorAuth.minted.actorNodeId)) {
-                fail(`minted actor ${authorAuth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
-            }
-            const repository = dependencies.repositoryName(authorAuth.session, primaryRoot);
-            assertRequiredRepository(repository);
-            const authenticatedTracker = await dependencies.authenticateTracker(primaryRoot);
-            trackerAuth = authenticatedTracker;
-            const trackerPort = markTrackerMutationAttempts(
-                dependencies.trackerPort(authenticatedTracker.session),
-                markRemoteMutationAttempt
-            );
-            dependencies.deliver(
-                number,
-                dependencies.deliveryPort(repository, authorAuth, primaryRoot, markRemoteMutationAttempt),
-                {
-                    complete: (issueNumber) =>
-                        dependencies.completeIssue(issueNumber, authenticatedTracker.minted.actorNodeId, trackerPort),
+    await dependencies.serializeDelivery(
+        primaryRoot,
+        number,
+        async ({ markRemoteMutationAttempt, markRemoteMutationKnownAbsent }) => {
+            const authorAuth = await dependencies.authenticateAuthor(primaryRoot);
+            let trackerAuth: DeliveryAuthentication | undefined;
+            try {
+                if (!isAuthorBotNodeId(authorAuth.minted.actorNodeId)) {
+                    fail(`minted actor ${authorAuth.minted.actorNodeId} is not ${AUTHOR_BOT_NODE_ID}`);
                 }
-            );
-        } finally {
-            trackerAuth?.session.dispose();
-            authorAuth.session.dispose();
+                const repository = dependencies.repositoryName(authorAuth.session, primaryRoot);
+                assertRequiredRepository(repository);
+                const authenticatedTracker = await dependencies.authenticateTracker(primaryRoot);
+                trackerAuth = authenticatedTracker;
+                const trackerPort = markTrackerMutationAttempts(
+                    dependencies.trackerPort(authenticatedTracker.session),
+                    markRemoteMutationAttempt
+                );
+                dependencies.deliver(
+                    number,
+                    dependencies.deliveryPort(repository, authorAuth, primaryRoot, markRemoteMutationAttempt),
+                    {
+                        complete: (issueNumber) =>
+                            dependencies.completeIssue(
+                                issueNumber,
+                                authenticatedTracker.minted.actorNodeId,
+                                trackerPort
+                            ),
+                    },
+                    markRemoteMutationKnownAbsent
+                );
+            } finally {
+                trackerAuth?.session.dispose();
+                authorAuth.session.dispose();
+            }
         }
-    });
+    );
 }
 
-export async function runDeliverCli(args: string[], dependencies?: DeliveryCoordinatorDependencies): Promise<number> {
+export type DeliverCliTrustedDependencies = {
+    trustedLauncher?: DeliveryLockRecoveryTrustedLauncher;
+    recovery?: DeliveryLockRecoveryDependencies;
+};
+
+export type DeliverCliDependencies = DeliveryCoordinatorDependencies | DeliverCliTrustedDependencies;
+
+function isDeliveryCoordinatorDependencies(
+    dependencies: DeliverCliDependencies | undefined
+): dependencies is DeliveryCoordinatorDependencies {
+    return dependencies !== undefined && 'primaryRoot' in dependencies;
+}
+
+function recoveryDependencies(
+    dependencies: DeliverCliDependencies | undefined
+): DeliveryLockRecoveryDependencies | undefined {
+    if (dependencies === undefined || isDeliveryCoordinatorDependencies(dependencies)) {
+        return undefined;
+    }
+    return dependencies.recovery ?? { trustedLauncher: dependencies.trustedLauncher };
+}
+
+export async function runDeliverCli(args: string[], dependencies?: DeliverCliDependencies): Promise<number> {
     const parsed = parseCliArgs(args);
     if (parsed.help) {
-        console.log('Usage: pnpm deliver <pr-number>');
+        console.log(DELIVER_USAGE);
         return 0;
+    }
+    if (parsed.recoverLockArgs !== undefined) {
+        return runRecoverDeliveryLockCli(parsed.recoverLockArgs, recoveryDependencies(dependencies));
     }
     if (parsed.number === undefined) {
         fail('usage: pnpm deliver <pr-number>');
     }
-    await coordinateDelivery(parsed.number, dependencies);
+    await coordinateDelivery(parsed.number, isDeliveryCoordinatorDependencies(dependencies) ? dependencies : undefined);
     return 0;
 }

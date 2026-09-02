@@ -3,6 +3,7 @@ import { createHandler } from '#/utils/createHandler';
 import { addTrack } from '../../useCases/addTrack';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { publishTrackAdded } from '../../useCases/publishTrackAdded';
+import { isAddTrackSessionEntry } from '../validateCreationSessionEntries';
 
 type AddTrackAction = {
     payload: {
@@ -68,6 +69,7 @@ function executeAddTrackAction(action: AddTrackAction) {
 }
 
 export const handleAddTrack = createHandler<'addTrack'>({
+    validateSessionEntry: isAddTrackSessionEntry,
     validate: (action) => {
         const trackId = ensureTrackId(action);
         const state = getTrackStoreState();

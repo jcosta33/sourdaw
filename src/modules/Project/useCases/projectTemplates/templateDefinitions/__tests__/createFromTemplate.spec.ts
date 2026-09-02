@@ -29,6 +29,23 @@ const mocks = vi.hoisted(() => ({
     runProjectLoadTransaction: vi.fn(),
 }));
 
+// ../helpers is mocked so this spec does not load the template catalog / Nebula Drift demo.
+vi.mock('../helpers', () => ({
+    templates: [
+        {
+            id: 'empty',
+            executionBoundary: 'project-replacement',
+            create: () => mocks.newProject('Untitled'),
+        },
+        {
+            id: 'pop-song',
+            name: 'Pop Song',
+            executionBoundary: 'app-action',
+            create: mocks.createPopSongTemplate,
+        },
+    ],
+}));
+
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     resetAudioGraph: mocks.resetAudioGraph,
 }));
@@ -109,10 +126,6 @@ vi.mock('../../../projectPersistence/helpers/runProjectLoadTransaction', () => (
 
 vi.mock('../../../projectPersistence/helpers/stopActiveAutoSave', () => ({
     stopActiveAutoSave: mocks.stopActiveAutoSave,
-}));
-
-vi.mock('../../templateFiles/popSong', () => ({
-    createPopSongTemplate: mocks.createPopSongTemplate,
 }));
 
 vi.mock('#/modules/Project/stores/projectStore', () => ({

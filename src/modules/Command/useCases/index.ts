@@ -36,6 +36,7 @@ export {
     getExecutableAppActionIntentCatalogUnicodeLength,
 } from './getExecutableAppActionIntentCatalogUnicodeLength';
 export { getExecutableAppActionToolSchemas } from './getExecutableAppActionToolSchemas';
+export { getExecutableAppActionProviderSchema } from './getExecutableAppActionProviderSchema';
 export { getExecutableAppActionGroundingCatalog } from './getExecutableAppActionGroundingCatalog';
 export { getExecutableAppActionGroundingRules } from './getExecutableAppActionGroundingRules';
 export { getExecutableCommandRegistrations } from './getExecutableCommandRegistrations';
@@ -93,6 +94,8 @@ export { clearActionHistory } from './clearActionHistory';
 export { resetActionReplayAuthority } from './resetActionReplayAuthority';
 export { syncActionReplayMetadata } from './syncActionReplayMetadata';
 export { clearUndoHistory } from './clearUndoHistory';
+export { reconcileSessionUndoForProject } from './reconcileSessionUndoForProject';
+export { stampSessionUndoWitness } from './stampSessionUndoWitness';
 export { captureUndoHistory } from './captureUndoHistory';
 export { restoreUndoHistory } from './restoreUndoHistory';
 export { pushUndoEntry } from './pushUndoEntry';

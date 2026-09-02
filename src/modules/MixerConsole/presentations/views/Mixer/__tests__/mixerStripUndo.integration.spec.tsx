@@ -50,15 +50,96 @@ import { ExpandedChannelStrip } from '../ExpandedChannelStrip';
  * store — a guard that only read `trackStore` would pass even if the strip drew
  * stale state.
  *
- * Everything under the pointer is real: the Arrangement handler map,
- * `executeAppAction`, a real Automerge document, the real undo stack, the real
- * `Fader`. Only the audio-engine seam, the confirm dialog and the routing/event
- * fan-out are stubbed, and the engine seam is stubbed so it can be *counted* —
- * it is what proves the audio followed the fader mid-drag.
+ * Under the pointer stays real: Arrangement handlers (via `importActual` of
+ * `getArrangementHandlers` / `setArrangementEventBus`), `executeAppAction`, a
+ * real Automerge document, the real undo stack, the real `Fader`, and live
+ * `setTrackGain` / `setTrackPan`. Graph-cut (non-spread listings, not fake handler maps): Metering views
+ * (`LevelMeter` only), Arrangement/useCases, MIDI/useCases, Project/useCases,
+ * Yeast/useCases, and Knead/useCases. The engine seam, confirm dialog, and
+ * routing/event fan-out remain stubbed so the engine can be *counted* — it is
+ * what proves the audio followed the fader mid-drag.
  */
 
 vi.mock('#/utils/Notification/confirmUser', () => ({ confirmUser: vi.fn() }));
 vi.mock('#/utils/UI/useContextMenuDismiss', () => ({ useContextMenuDismiss: vi.fn() }));
+// Non-spread listing of only LevelMeter — the barrel re-exports LUFS/goniometer/
+// views that pull dozens of unread AudioEngine names into the graph.
+vi.mock('#/modules/Metering/presentations/views', () => ({
+    LevelMeter: ({ trackId }: { trackId: string | null }) => (
+        <div data-testid="level-meter" data-track-id={trackId ?? ''} />
+    ),
+}));
+// Non-spread cut of freeze/bounce AudioEngine walks — Arrangement names the
+// strip graph and handler-map wiring import, plus captureArrangementToScratchPad,
+// importAudioFile, importMidiFile, and setMarqueeSelection from WorkspaceShell
+// handlers and related remaining-graph walkers.
+vi.mock('#/modules/Arrangement/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/Arrangement/useCases')>(
+        '#/modules/Arrangement/useCases'
+    );
+    return {
+        addMidiFx: actual.addMidiFx,
+        captureArrangementToScratchPad: actual.captureArrangementToScratchPad,
+        compileReorderDevicesAction: actual.compileReorderDevicesAction,
+        createAndAssignVcaGroup: actual.createAndAssignVcaGroup,
+        executeAddDeviceAction: actual.executeAddDeviceAction,
+        getArrangementHandlers: actual.getArrangementHandlers,
+        getPlatformPlugins: actual.getPlatformPlugins,
+        getVcaGroups: actual.getVcaGroups,
+        importAudioFile: actual.importAudioFile,
+        importMidiFile: actual.importMidiFile,
+        removeFromVca: actual.removeFromVca,
+        selectTrack: actual.selectTrack,
+        setArrangementEventBus: actual.setArrangementEventBus,
+        setMarqueeSelection: actual.setMarqueeSelection,
+        setSend: actual.setSend,
+        setTrackGain: actual.setTrackGain,
+        setTrackOutput: actual.setTrackOutput,
+        setTrackPan: actual.setTrackPan,
+        soloTrackExclusive: actual.soloTrackExclusive,
+        toggleInputMonitoring: actual.toggleInputMonitoring,
+        toggleSendPreFader: actual.toggleSendPreFader,
+        toggleVcaMembership: actual.toggleVcaMembership,
+    };
+});
+// Non-spread listing of the MIDI names the checker graph imports plus the names
+// live importActual Arrangement handlers call on this spec's delete/undo/fader
+// path — not every MIDI barrel export.
+vi.mock('#/modules/MIDI/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
+    return {
+        MIDI_EFFECT_FACTORIES: actual.MIDI_EFFECT_FACTORIES,
+        projectDrumPreviewCandidateNotes: actual.projectDrumPreviewCandidateNotes,
+        removeMidiClipData: actual.removeMidiClipData,
+    };
+});
+// Non-spread listing of Project names WorkspaceShell handlers import — cuts
+// persistence helpers that reset modules and pull AudioEngine cache APIs.
+vi.mock('#/modules/Project/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/Project/useCases')>('#/modules/Project/useCases');
+    return {
+        exportProjectFile: actual.exportProjectFile,
+        newProject: actual.newProject,
+        pickFiles: actual.pickFiles,
+        saveProject: actual.saveProject,
+    };
+});
+// Non-spread listing of the Yeast name projectSlotProjections imports —
+// MixerConsole never imports Yeast/useCases.
+vi.mock('#/modules/Yeast/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/Yeast/useCases')>('#/modules/Yeast/useCases');
+    return {
+        hydrateYeastCrdtProjection: actual.hydrateYeastCrdtProjection,
+    };
+});
+// Non-spread listing of hydrateKneadFromTrackStore, which projectSlotProjections
+// imports — the strip graph imports no Knead/useCases names.
+vi.mock('#/modules/Knead/useCases', async () => {
+    const actual = await vi.importActual<typeof import('#/modules/Knead/useCases')>('#/modules/Knead/useCases');
+    return {
+        hydrateKneadFromTrackStore: actual.hydrateKneadFromTrackStore,
+    };
+});
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     updateDeviceParam: vi.fn(),
     getAudioContext: vi.fn(() => ({ currentTime: 0, sampleRate: 48000 })),
@@ -75,8 +156,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
         runtimeRevision: 1,
     })),
     getAudioDevices: vi.fn(() => Promise.resolve([])),
-    getTrackAnalyser: vi.fn(() => null),
-    getMasterAnalyser: vi.fn(() => null),
     getTrackPeakLevel: vi.fn(() => 0),
     getMasterPeakLevel: vi.fn(() => 0),
     removeTrackStrip: vi.fn(),
@@ -91,17 +170,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     setTrackMute: vi.fn(),
     setTrackSolo: vi.fn(),
     setTrackSoloGate: vi.fn(),
-    // `LevelMeter` constructs one per strip on first render; it is never read by
-    // any assertion here, it only has to be constructible.
-    VUMeter: class {
-        update(): number {
-            return 0;
-        }
-        getPeakHold(): number {
-            return 0;
-        }
-        reset(): void {}
-    },
 }));
 vi.mock('#/modules/Routing/useCases', () => ({
     addSidechainRoute: vi.fn(),

@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 
-// Reclaims disk from agent lanes by deleting their regenerable build artifacts — the
-// `target/` (1.6–2.0 GB) and `node_modules/` (~1.1 GB) measured per lane — without
-// touching anything of record. The deletion set is exactly the ignored output that
-// lane removal tolerates discarding (`disposableIgnored`, one shared contract):
-// node_modules, dist, coverage, target, playwright-report, test-results, .DS_Store,
-// and generated UI screenshots. Every other ignored path — credentials (`.env*`),
-// editor state, review bundles, packaged desktop output — is left alone, as are
-// tracked files, `.git`, and the lane's lock: pruning never touches git state, and
-// the next cargo/pnpm run rebuilds what it deleted.
+// Reclaims disk from agent lanes by deleting their regenerable build and test products —
+// dependency installs, compiled and bundled output, test and coverage reports, packaged
+// desktop builds, and generated screenshots — the `target/` (1.6–2.0 GB) and
+// `node_modules/` (~1.1 GB) measured per lane chief among them — without touching anything
+// of record. The deletion set is exactly what `disposableIgnored` (`removeLane.ts`, one
+// shared contract) admits: lane removal refuses a lane carrying ignored data that contract
+// does not cover, and pruning deletes exactly what it does. Every other ignored path —
+// credentials (`.env*`), editor state, review bundles — is left alone, as are tracked
+// files, `.git`, and the lane's lock: pruning never touches git state, and the next
+// cargo/pnpm/desktop build rebuilds what it deleted.
 //
 // Rules, with reasons:
 // - Only registered worktrees under `.agents/worktrees` are prunable; the primary
@@ -51,11 +52,12 @@ export const PRUNE_HELP = `Usage: pnpm lane:prune <worktree-path>
        pnpm lane:prune --all
        pnpm lane:prune --stale-days <days>
 
-Deletes regenerable build artifacts (node_modules/, target/, dist/, coverage/,
-playwright-report/, test-results/, .DS_Store, generated UI screenshots) from agent
-lanes and nothing else. Tracked files, .git, the lane's lock, and every other
-ignored path (.env credentials, editor state, review bundles, packaged desktop
-output) are never touched; the next cargo/pnpm run rebuilds what was deleted.
+Deletes regenerable build and test products (dependency installs, compiled and
+bundled output, test and coverage reports, packaged desktop builds, generated
+screenshots) from agent lanes and nothing else, per the shared disposableIgnored
+contract (removeLane.ts). Tracked files, .git, the lane's lock, and every other
+ignored path (.env credentials, editor state, review bundles) are never touched;
+the next cargo/pnpm/desktop build rebuilds what was deleted.
 
 Safety rules:
 - refuses the primary checkout; only registered worktrees under .agents/worktrees

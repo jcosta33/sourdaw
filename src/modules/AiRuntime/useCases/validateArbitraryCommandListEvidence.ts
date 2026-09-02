@@ -207,7 +207,20 @@ export function validateArbitraryCommandListEvidence(input: {
     const itemsById = new Map(evidence.items.map((item) => [item.itemId, item]));
     const resolvedTargetIds: string[] = [];
     const targetOverridesByCallIndex = new Map<number, readonly CompilerResolvedTargetOverride[]>();
-    const producerByBinding = new Map<string, { commandIndex: number; itemId: string }>();
+    const producerByBinding = new Map<
+        string,
+        { capabilities: readonly string[]; commandIndex: number; itemId: string }
+    >();
+    const batchLocalBusTargetCapabilities: ReadonlySet<string> = new Set([
+        'track',
+        'armable-track',
+        'duplicable-track',
+        'removable-track',
+        'routable-source',
+        'bus',
+        'output',
+        'device-host-track',
+    ]);
     let commandCursor = 0;
     for (const item of evidence.items) {
         if (
@@ -501,6 +514,7 @@ export function validateArbitraryCommandListEvidence(input: {
                     targetRule.allowBatchLocal === false ||
                     !BATCH_LOCAL_BINDING_PATTERN.test(binding) ||
                     producer === undefined ||
+                    !producer.capabilities.includes(targetRule.capability) ||
                     !evidenceDependsTransitivelyOn(item.itemId, producer.itemId, itemsById)
                 ) {
                     return {
@@ -535,7 +549,11 @@ export function validateArbitraryCommandListEvidence(input: {
                         reason: 'Structured command compiler evidence batch-local producer is invalid.',
                     };
                 }
-                producerByBinding.set(binding, { commandIndex: item.commandStart, itemId: item.itemId });
+                producerByBinding.set(binding, {
+                    capabilities: [...batchLocalBusTargetCapabilities],
+                    commandIndex: item.commandStart,
+                    itemId: item.itemId,
+                });
             }
         }
         itemIds.add(item.itemId);

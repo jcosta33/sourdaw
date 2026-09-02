@@ -38,30 +38,11 @@ vi.mock('#/infra/store/useStore', () => ({
     }),
 }));
 
-// Spread `importOriginal` first, then override only the views this file stubs.
-// This mock had already drifted: it still supplied a `MINIMAP_HEIGHT` the barrel
-// no longer exports, and it omitted `TakeLanesView`, which the barrel gained. The
-// omission is only harmless while ArrangeView does not render that view — mount
-// it and every render in this file reds on `undefined` (#1393).
-//
-// The spread is not free here, and the alternatives were measured rather than
-// assumed. `TimelineSurface` and `TrackListView` are stubbed three lines below, but
-// `importOriginal()` evaluates their real modules first, which costs this file
-// 4.15s → 7.25s (+75%) when run alone. Cutting the contract barrels they enter
-// through (`AiRuntime/useCases`, `Command/useCases`) recovers 0.55s of the 3.10s —
-// the weight is inside Arrangement's own private modules and no published contract
-// reaches it. Mocking those two private modules directly does recover it (4.79s),
-// and `deps:validate` rejects it: two NEW `cross-module-index-only` edges on the
-// tests cruise. Baselining those would be buying 2.4s with the boundary rule, so
-// the cost stands. Do not re-derive this; the numbers are in PR #1572.
-//
-// The height constants are deliberately *not* overridden: the spread supplies the
-// real 22 / 20 / 18, and re-stating those numbers here would change nothing today
-// while pinning the layout assertions to a stale value the day production moves
-// one. `getAdjustmentLayerStripHeight` stays overridden — that one does not match
-// production, so it is a real stub rather than a copy.
-vi.mock('#/modules/Arrangement/presentations/views', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Arrangement/presentations/views')>()),
+// Non-spread listing of only the names ArrangeView imports — avoids loading real
+// TimelineSurface / TrackListView and the incidental Arrangement / AudioEngine
+// useCases barrel walk their modules pull in. A listing factory must still include
+// every name ArrangeView actually imports, or render hits `undefined` (#1393).
+vi.mock('#/modules/Arrangement/presentations/views', () => ({
     AdjustmentLayerStrip: () => <div data-testid="adjustment-layer-strip">Adjustment Layer Strip</div>,
     getAdjustmentLayerStripHeight: (layerCount: number) => (layerCount > 0 ? 28 + layerCount * 18 : 0),
     TimelineSurface: () => <div data-testid="timeline-surface">Timeline Surface</div>,
@@ -79,6 +60,16 @@ vi.mock('#/modules/Arrangement/presentations/views', async (importOriginal) => (
     TrackListView: ({ style, extraHeaderHeight }: { style?: React.CSSProperties; extraHeaderHeight?: number }) => (
         <div data-testid="track-list-view" style={style} data-extra-height={extraHeaderHeight} />
     ),
+    ARRANGEMENT_BAR_HEIGHT: 22,
+    BEAT_RULER_HEIGHT: 18,
+    MARKER_LANE_HEIGHT: 20,
+}));
+
+// Non-spread listing of only SessionView — avoids loading LoopStationPanel from
+// the SessionLauncher views barrel and its incidental Transport/Arrangement/
+// AudioEngine useCases barrel walk.
+vi.mock('#/modules/SessionLauncher/presentations/views', () => ({
+    SessionView: () => <div data-testid="session-view">Session</div>,
 }));
 
 vi.mock('#/modules/Preferences/stores', () => ({

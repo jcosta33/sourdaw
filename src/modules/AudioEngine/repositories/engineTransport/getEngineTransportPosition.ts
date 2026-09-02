@@ -19,6 +19,7 @@ function toEngineTransportPosition(response: unknown): EngineTransportPosition {
         positionSeconds: readNumber(payload, 'positionSeconds'),
         playheadFrame: readNumber(payload, 'playheadFrame'),
         loopWraps: readNumber(payload, 'loopWraps'),
+        batchesApplied: readNumber(payload, 'batchesApplied'),
         tempo: readNumber(payload, 'tempo'),
         timeSigNum: readNumber(payload, 'timeSigNum'),
         timeSigDenom: readNumber(payload, 'timeSigDenom'),
