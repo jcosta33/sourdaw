@@ -1,0 +1,81 @@
+server/collab-server.ts
+  s_bbdfb911119c4f::t_f3da69b79f6866 375,380-387
+  s_bbdfb911119c4f::t_e714e7c6192877 556-558
+  s_bbdfb911119c4f::t_6ee34a2719485f 60-66
+  s_bbdfb911119c4f::t_6b4c7df0158202 23-27
+  s_bbdfb911119c4f::t_9c919d8d5a3bc8 193-198,209
+  s_bbdfb911119c4f::t_92e246e92f238d 308-320,324,329,563
+  s_bbdfb911119c4f::t_090665078773ab 2-4,21-22,28-29,33
+  s_bbdfb911119c4f::t_9a7c30b487dabd 427
+  s_bbdfb911119c4f::t_11115fc575c595 763-780,784
+  s_bbdfb911119c4f::t_93621d2f60957b 858-859,872-873
+  s_bbdfb911119c4f::t_c221f44091d2a3 583
+  s_bbdfb911119c4f::t_dfc2670bceec1a 99-147,150-151,562
+  s_bbdfb911119c4f::t_efb29e3d1e37e2 870
+  s_bbdfb911119c4f::t_50932af8b38c1f 559-561
+  s_bbdfb911119c4f::t_c77f20bef2ddf0 564
+src/modules/Collaboration/useCases/collaboration/generateInvite.ts
+  s_bbdfb911119c4f::t_18a6544e366af0 26-29
+  s_bbdfb911119c4f::t_1aab679aeb9878 59
+  s_bbdfb911119c4f::t_23d6f6ebeddaa6 35-36
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionManagement.spec.ts
+  s_bbdfb911119c4f::t_598739b8d6b005 351,353-366
+src/modules/Collaboration/useCases/collaboration/sessionManagement.ts
+  s_bbdfb911119c4f::t_4186d62666545f 109
+  s_bbdfb911119c4f::t_62a18e117a1a53 486
+  s_bbdfb911119c4f::t_d147606a776adf 66-72
+  s_bbdfb911119c4f::t_f52f92c3b6df09 628
+  s_bbdfb911119c4f::t_f7aab3a7da40fe 472-476,478-485
+  s_bbdfb911119c4f::t_19b85cadeb3853 1108
+src/modules/Collaboration/useCases/collaboration/__tests__/joinSession.spec.ts
+  s_bbdfb911119c4f::t_b5186ea29477be 257-274
+  s_bbdfb911119c4f::t_f6837d8ca29c14 73
+  s_bbdfb911119c4f::t_9ee9d65f64a594 31
+  s_bbdfb911119c4f::t_da12d84aa49029 49
+src/modules/Collaboration/useCases/collaboration/createSession.ts
+  s_bbdfb911119c4f::t_78c9fef7e03bd6 14-16
+src/modules/Collaboration/useCases/collaboration/joinSession.ts
+  s_bbdfb911119c4f::t_5213825a3e803a 60-63
+src/modules/Collaboration/models/CollaborationTypes.ts
+  s_bbdfb911119c4f::t_77ffb60bf48612 67-80
+server/__tests__/collab-server.spec.ts
+  s_bbdfb911119c4f::t_0b5d87ff44562b 155-160,162
+  s_bbdfb911119c4f::t_e2d811b076bd56 20
+  s_bbdfb911119c4f::t_02ddce327ae5de 197-240
+src/modules/Collaboration/useCases/collaboration/__tests__/createSession.spec.ts
+  s_bbdfb911119c4f::t_73613c4602b063 13,20
+  s_bbdfb911119c4f::t_32bde1aa22b857 33,36,40-44
+  s_bbdfb911119c4f::t_412d5ea9249c23 45-46
+src/modules/Collaboration/useCases/collaboration/__tests__/generateInvite.spec.ts
+  s_bbdfb911119c4f::t_af1e7b926900e5 128,132-136
+  s_bbdfb911119c4f::t_f95ec1ab6b7af4 12
+  s_bbdfb911119c4f::t_eabc4a8b5d7f8d 28
+  s_bbdfb911119c4f::t_78995d3d576651 137
+docs/architecture/06-crdt-collaboration.md
+  s_bbdfb911119c4f::t_721f5625b4acce 75
+  s_009d2a127d2733::t_cb128858be1647 39,46-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "319a11e6508d3510ba89b27a5331d646bdabd67f",
+  "prompts": {},
+  "sessions": {
+    "s_009d2a127d2733": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ab64b5ecc13d48de7",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_bbdfb911119c4f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "84fa21d5-2a8a-4f80-98ab-b72059373843",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
