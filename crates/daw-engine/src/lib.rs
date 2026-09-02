@@ -126,13 +126,21 @@ pub struct EngineHandle {
     /// to the caller who asked, so the ceiling is enforced where an `Err`
     /// reaches that caller and the callback's refusal stays the last line.
     ///
-    /// An id leaves this ledger on an unregistration and on every
-    /// plugin-removal command this handle sends, mirroring the callback, which
-    /// prunes the bus wherever an effect is finally dropped. Both rules are
-    /// needed: without the second one a plugin removed without being
-    /// unregistered first would hold a ledger slot for the life of the
-    /// session, and the handle would refuse a later registration the callback
-    /// would have taken.
+    /// Maintained in [`Self::push`] alone, for every command that reaches the
+    /// ring by any route, because the typed methods are not the only door: a
+    /// public [`GraphCommand`] batch registers consumers too. An id joins on a
+    /// registration, and leaves on an unregistration or on any command that
+    /// finally drops its effect — exactly the set [`final_dropped_effect_id`]
+    /// names, which is `RemovePluginWithBridge` together with the retired
+    /// track- and bus-device variants, not plugin removals alone. That mirrors
+    /// the callback, which prunes the bus inside its own final drop.
+    ///
+    /// The same sender precondition the effect ledger rests on holds here: a
+    /// retirement is only ever sent for a target already resolved against the
+    /// project the sender holds. A mis-targeted one drifts this ledger exactly
+    /// as it drifts [`Self::effect_registrations`] — freeing a slot the
+    /// callback still holds, so the next registration is admitted here and
+    /// then refused where nobody can hear it.
     capture_consumers: Vec<usize>,
     midi_rt_diagnostics: ActiveMidiRtDiagnosticsReader,
     timeline_rt_diagnostics: TimelineRtDiagnosticsReader,
@@ -289,6 +297,8 @@ impl EngineHandle {
         // batch that cannot fit the shared table never reallocates a channel
         // to carry commands that will be refused one at a time on the way in.
         self.admit_effect_registrations(&ops)
+            .map_err(GraphBatchError::Refused)?;
+        self.admit_capture_registrations(&ops)
             .map_err(GraphBatchError::Refused)?;
 
         // The fence occupies a slot of its own alongside the body.
@@ -565,36 +575,37 @@ impl EngineHandle {
         // answer, and a caller told the bus is full looks for a consumer to
         // evict rather than for the registration it already made.
         if self.capture_consumers.contains(&plugin_id) {
-            return Err(format!(
-                "capture-consumer-registered: plugin {plugin_id} already receives the engine's \
-                 captured input"
-            ));
+            return Err(capture_consumer_registered_error(plugin_id));
         }
         if self.capture_consumers.len() >= CRUMBS_CAPTURE_RESERVE {
             return Err(capture_bus_full_error());
         }
-        self.push(GraphCommand::RegisterCaptureConsumer(plugin_id))?;
-        self.capture_consumers.push(plugin_id);
-        Ok(())
+        // The ledger itself is written by `push`, for every route onto the
+        // ring rather than this one.
+        self.push(GraphCommand::RegisterCaptureConsumer(plugin_id))
     }
 
     /// Stop feeding a native plugin the captured input.
     ///
-    /// The ledger slot goes back before the push and stays back however the
-    /// push ends: an id held here after a failed push would refuse the next
-    /// registration on behalf of a consumer the callback is not feeding, while
-    /// the callback treats an unregistration for an id it does not hold as the
-    /// no-op it is.
+    /// The ledger slot comes back only if the command reaches the ring: a
+    /// failed push leaves the callback still feeding that consumer, and a
+    /// ledger that freed the slot anyway would admit a registration the
+    /// callback then refuses where nobody can hear it.
     pub fn unregister_capture_consumer(&mut self, plugin_id: usize) -> Result<(), String> {
-        self.prune_capture_consumer(plugin_id);
         self.push(GraphCommand::UnregisterCaptureConsumer(plugin_id))
     }
 
+    /// Put an id on the capture ledger, ignoring one it already holds — the
+    /// callback's bus is a set, and a second registration for the same id is
+    /// what it refuses rather than a second slot it takes.
+    fn admit_capture_consumer(&mut self, plugin_id: usize) {
+        if self.capture_consumers.contains(&plugin_id) {
+            return;
+        }
+        self.capture_consumers.push(plugin_id);
+    }
+
     /// Take an id off the capture ledger, wherever it leaves the bus from.
-    ///
-    /// Two routes reach here: an explicit unregistration, and every command
-    /// that final-drops the plugin holding the slot, which [`Self::push`]
-    /// recognises as it goes onto the ring.
     fn prune_capture_consumer(&mut self, plugin_id: usize) {
         if let Some(slot) = self
             .capture_consumers
@@ -873,8 +884,46 @@ impl EngineHandle {
         Ok(())
     }
 
+    /// Walk `ops` the same way and refuse the batch if it would put the input
+    /// bus past its reserve, or register an id the bus already carries.
+    ///
+    /// `GraphCommand` and [`EngineHandle::send_graph_batch`] are both public,
+    /// so a batch is a second door onto the bus beside
+    /// [`EngineHandle::register_capture_consumer`]. Without this the batch
+    /// would fill the callback's bus while the ledger stayed empty, and the
+    /// next typed registration would answer `Ok` to a caller the callback then
+    /// refuses in silence.
+    ///
+    /// Order matters and netting does not, for the reason given on
+    /// [`EngineHandle::admit_effect_registrations`]; the walk carries the
+    /// batch's own unregistrations and removals so a batch that frees a slot
+    /// before reusing it is admitted, exactly as the callback will apply it.
+    fn admit_capture_registrations(&self, ops: &[GraphCommand]) -> Result<(), String> {
+        let mut held = self.capture_consumers.clone();
+        for op in ops {
+            match capture_ledger_effect(op) {
+                Some(CaptureLedgerEffect::Register(id)) => {
+                    if held.contains(&id) {
+                        return Err(capture_consumer_registered_error(id));
+                    }
+                    if held.len() >= CRUMBS_CAPTURE_RESERVE {
+                        return Err(capture_bus_full_error());
+                    }
+                    held.push(id);
+                }
+                Some(CaptureLedgerEffect::Release(id)) => {
+                    if let Some(slot) = held.iter().position(|current| *current == id) {
+                        held.swap_remove(slot);
+                    }
+                }
+                None => {}
+            }
+        }
+        Ok(())
+    }
+
     /// The one route onto the command ring, and with it the one place the
-    /// effect-table ledger is kept.
+    /// effect-table ledger and the capture ledger are kept.
     ///
     /// A registration past the ceiling is refused here rather than pushed: the
     /// audio thread's own refusal is a counter it cannot return to anyone, so
@@ -886,14 +935,17 @@ impl EngineHandle {
             return Err(effect_table_full_error());
         }
         // Read before the command is moved onto the ring, applied only once it
-        // is: the capture ledger follows what actually crossed, exactly as the
-        // effect ledger below does.
-        let final_dropped = final_dropped_effect_id(&command);
+        // is: both ledgers follow what actually crossed. Every route onto the
+        // ring passes here, including `send_graph_batch`, so a batch cannot
+        // move the callback's bus without the ledger seeing it.
+        let capture_effect = capture_ledger_effect(&command);
         self.command_tx
             .push(command)
             .map_err(|_| "Audio command queue full".to_string())?;
-        if let Some(id) = final_dropped {
-            self.prune_capture_consumer(id);
+        match capture_effect {
+            Some(CaptureLedgerEffect::Register(id)) => self.admit_capture_consumer(id),
+            Some(CaptureLedgerEffect::Release(id)) => self.prune_capture_consumer(id),
+            None => {}
         }
         if delta >= 0 {
             self.effect_registrations += delta as usize;
@@ -944,12 +996,42 @@ fn final_dropped_effect_id(command: &GraphCommand) -> Option<usize> {
     }
 }
 
+/// What a command does to the capture ledger once it reaches the ring.
+enum CaptureLedgerEffect {
+    Register(usize),
+    Release(usize),
+}
+
+/// Classify a command for the capture ledger.
+///
+/// One classifier, read twice: [`EngineHandle::push`] applies it to what
+/// crossed, and [`EngineHandle::admit_capture_registrations`] replays it over a
+/// batch before any of it does. A command that moves the callback's bus and is
+/// missing here moves it behind the ledger's back, which is the whole failure
+/// this classification exists to prevent.
+fn capture_ledger_effect(command: &GraphCommand) -> Option<CaptureLedgerEffect> {
+    match command {
+        GraphCommand::RegisterCaptureConsumer(id) => Some(CaptureLedgerEffect::Register(*id)),
+        GraphCommand::UnregisterCaptureConsumer(id) => Some(CaptureLedgerEffect::Release(*id)),
+        other => final_dropped_effect_id(other).map(CaptureLedgerEffect::Release),
+    }
+}
+
 /// The one wording for a refusal against the engine's input tap, so the control
 /// ledger and any later producer report the same ceiling.
 fn capture_bus_full_error() -> String {
     format!(
         "capture-bus-full: the engine's captured input already feeds its maximum of \
          {CRUMBS_CAPTURE_RESERVE} consumers"
+    )
+}
+
+/// The one wording for an id the input tap already carries, so the typed path
+/// and the batch path report a duplicate the same way.
+fn capture_consumer_registered_error(plugin_id: usize) -> String {
+    format!(
+        "capture-consumer-registered: plugin {plugin_id} already receives the engine's captured \
+         input"
     )
 }
 
@@ -1311,6 +1393,93 @@ mod tests {
                 .remove_plugin(id)
                 .unwrap_or_else(|error| panic!("plugin {id} should be removable: {error}"));
         }
+    }
+
+    /// A batch is the second door onto the bus. Consumers that entered through
+    /// it must occupy ledger slots, or the typed path hands out a third
+    /// registration the callback silently refuses.
+    #[test]
+    fn consumers_registered_by_a_batch_fill_the_capture_ledger_the_typed_path_reads() {
+        let (mut engine, mut command_rx, _retired_adoption_rx) =
+            engine_handle_for_command_capture(64);
+
+        engine
+            .send_graph_batch(
+                (0..CRUMBS_CAPTURE_RESERVE)
+                    .map(GraphCommand::RegisterCaptureConsumer)
+                    .collect(),
+            )
+            .expect("a batch that exactly fills the reserve is admitted");
+        while command_rx.pop().is_ok() {}
+
+        let refusal = engine
+            .register_capture_consumer(CRUMBS_CAPTURE_RESERVE)
+            .expect_err("the batch took every slot, so the typed path has none");
+
+        assert!(refusal.starts_with("capture-bus-full:"), "{refusal}");
+        assert_eq!(
+            command_rx.slots(),
+            0,
+            "a refused registration must not cross the ring"
+        );
+    }
+
+    /// The batch is refused whole, before the ring is provisioned: a batch
+    /// applied halfway would leave the callback holding consumers the ledger
+    /// never counted.
+    #[test]
+    fn a_batch_that_overruns_the_capture_reserve_is_refused_before_the_ring() {
+        let (mut engine, command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(64);
+        let untouched = command_rx.slots();
+
+        let overrun = engine
+            .send_graph_batch(
+                (0..=CRUMBS_CAPTURE_RESERVE)
+                    .map(GraphCommand::RegisterCaptureConsumer)
+                    .collect(),
+            )
+            .expect_err("one registration past the reserve refuses the batch");
+        assert!(
+            matches!(&overrun, GraphBatchError::Refused(error) if error.starts_with("capture-bus-full:")),
+            "{overrun:?}"
+        );
+
+        let duplicate = engine
+            .send_graph_batch(vec![
+                GraphCommand::RegisterCaptureConsumer(4),
+                GraphCommand::RegisterCaptureConsumer(4),
+            ])
+            .expect_err("a batch may not register one id twice");
+        assert!(
+            matches!(&duplicate, GraphBatchError::Refused(error) if error.starts_with("capture-consumer-registered:")),
+            "{duplicate:?}"
+        );
+
+        assert_eq!(
+            command_rx.slots(),
+            untouched,
+            "a refused batch puts nothing on the ring, not even its fence"
+        );
+    }
+
+    #[test]
+    fn a_batch_unregistration_frees_the_capture_ledger_slot_it_held() {
+        let (mut engine, _command_rx, _retired_adoption_rx) = engine_handle_for_command_capture(64);
+
+        engine
+            .send_graph_batch(
+                (0..CRUMBS_CAPTURE_RESERVE)
+                    .map(GraphCommand::RegisterCaptureConsumer)
+                    .collect(),
+            )
+            .expect("a batch that exactly fills the reserve is admitted");
+        engine
+            .send_graph_batch(vec![GraphCommand::UnregisterCaptureConsumer(0)])
+            .expect("an unregistration is always admitted");
+
+        engine
+            .register_capture_consumer(CRUMBS_CAPTURE_RESERVE)
+            .expect("the freed slot takes the next consumer");
     }
 
     #[test]

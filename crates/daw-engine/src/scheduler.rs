@@ -5110,6 +5110,28 @@ mod tests {
         );
     }
 
+    /// The bus admits an id before the graph holds it, so a registration whose
+    /// `AddPlugin` never arrived is an ordinary state — and the removal that
+    /// abandons it is the only thing that will ever clear it. Pruning behind
+    /// the table lookup would strand that id, dropping a block per callback
+    /// for the rest of the session.
+    #[test]
+    fn removing_an_id_the_effect_table_never_held_still_clears_the_capture_bus() {
+        let (mut command_tx, mut scheduler, _retired_rx) = create_scheduler();
+        command_tx
+            .push(GraphCommand::RegisterCaptureConsumer(TAP_CONSUMER_ID))
+            .unwrap();
+        scheduler.update_graph();
+        assert!(scheduler.capture_consumers.contains(&TAP_CONSUMER_ID));
+
+        command_tx
+            .push(GraphCommand::RemovePluginWithBridge(TAP_CONSUMER_ID))
+            .unwrap();
+        scheduler.update_graph();
+
+        assert!(scheduler.capture_consumers.is_empty());
+    }
+
     /// A consumer spliced onto a track chain leaves through the retired
     /// variant, not through a plugin removal — the same final drop, so the
     /// same prune has to cover it.
