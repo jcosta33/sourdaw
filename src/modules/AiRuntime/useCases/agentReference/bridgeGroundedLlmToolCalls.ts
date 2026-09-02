@@ -1707,12 +1707,23 @@ function followingClauseStillNamesTrackControlTarget(
         /(?:leav(?:e|ing)|keep(?:ing)?|preserv(?:e|ing)|retain(?:ing)?|\bstays\b|\bremains\b|\bunchanged\b)/u.exec(
             normalized
         );
-    if (protection?.index === undefined || protection.index === 0) {
+    if (protection?.index === undefined) {
         return false;
     }
-    const prefixTrackIds = collectNamedProjectTracks(normalized.slice(0, protection.index), tracks);
-    const spanTrackIds = new Set(collectNamedProjectTracks(normalized.slice(protection.index), tracks));
-    return prefixTrackIds.some((trackId) => !spanTrackIds.has(trackId));
+    if (protection.index > 0) {
+        const prefixTrackIds = collectNamedProjectTracks(normalized.slice(0, protection.index), tracks);
+        const spanTrackIds = new Set(collectNamedProjectTracks(normalized.slice(protection.index), tracks));
+        if (prefixTrackIds.some((trackId) => !spanTrackIds.has(trackId))) {
+            return true;
+        }
+    }
+    const afterVerb = normalized.slice(protection.index + protection[0].length);
+    const unchanged = /\bunchanged\b/iu.exec(afterVerb);
+    const remainder =
+        unchanged === null
+            ? afterVerb.slice(endIndexAfterLeaveObject(afterVerb, tracks) ?? afterVerb.length)
+            : afterVerb.slice(unchanged.index + unchanged[0].length);
+    return collectNamedProjectTracks(remainder, tracks).length > 0;
 }
 
 function isTrackControlProtectionQualifier(

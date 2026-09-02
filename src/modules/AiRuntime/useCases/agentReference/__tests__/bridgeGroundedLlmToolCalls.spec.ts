@@ -3314,6 +3314,9 @@ describe('bridgeGroundedLlmToolCalls', () => {
         'mute Room Mic leaving the Drum Bus and Guitar',
         'mute Room Mic, leaving it, and Guitar',
         'mute Room Mic, leave it, and Guitar',
+        'mute Room Mic, leaving the Drum Bus unchanged Guitar',
+        'mute Room Mic, leaving it unchanged Guitar',
+        'mute Room Mic, leave the Drum Bus Guitar',
     ] as const)('rejects muteTrack as ambiguous when %s still names Guitar', (prompt) => {
         const roomMic = createTrack({ id: 'track-room-mic', name: 'Room Mic' });
         const guitar = createTrack({ id: 'track-guitar', name: 'Guitar' });
