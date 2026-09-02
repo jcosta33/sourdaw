@@ -1024,9 +1024,48 @@ function rawSourceContainsCommentIntroducer(source: string): boolean {
 
 // Scanner comment removal, not a parse+print and not a regex stripper: censused
 // sources carry comment-like text inside string literals (`'audio/*,.wav'`
-// accept filters). The TypeScript scanner keeps those literals intact while
-// skipping comment trivia.
+// accept filters) and regex bodies (`/a\/*b/`). The TypeScript scanner keeps
+// those intact while skipping comment trivia, provided a `/` in regex position
+// is re-scanned as one token — otherwise `/*` or `//` inside the body is trivia.
 const commentScanner = createScanner(ScriptTarget.Latest, false);
+
+function isIgnorableTrivia(kind: SyntaxKind): boolean {
+    return (
+        kind === SyntaxKind.WhitespaceTrivia ||
+        kind === SyntaxKind.NewLineTrivia ||
+        kind === SyntaxKind.ShebangTrivia ||
+        kind === SyntaxKind.ConflictMarkerTrivia ||
+        kind === SyntaxKind.NonTextFileMarkerTrivia
+    );
+}
+
+function slashStartsRegularExpression(previousKind: SyntaxKind | undefined): boolean {
+    if (previousKind === undefined) {
+        return true;
+    }
+    switch (previousKind) {
+        case SyntaxKind.Identifier:
+        case SyntaxKind.PrivateIdentifier:
+        case SyntaxKind.StringLiteral:
+        case SyntaxKind.NumericLiteral:
+        case SyntaxKind.BigIntLiteral:
+        case SyntaxKind.RegularExpressionLiteral:
+        case SyntaxKind.ThisKeyword:
+        case SyntaxKind.TrueKeyword:
+        case SyntaxKind.FalseKeyword:
+        case SyntaxKind.NullKeyword:
+        case SyntaxKind.SuperKeyword:
+        case SyntaxKind.CloseParenToken:
+        case SyntaxKind.CloseBracketToken:
+        case SyntaxKind.PlusPlusToken:
+        case SyntaxKind.MinusMinusToken:
+        case SyntaxKind.NoSubstitutionTemplateLiteral:
+        case SyntaxKind.TemplateTail:
+            return false;
+        default:
+            return true;
+    }
+}
 
 function stripComments(path: string, source: string): string {
     if (path.endsWith('.tsx')) {
@@ -1041,6 +1080,7 @@ function stripComments(path: string, source: string): string {
     const parts: string[] = [];
     const templates: Array<{ braceDepth: number }> = [];
     let copyFrom = 0;
+    let previousKind: SyntaxKind | undefined;
 
     try {
         while (true) {
@@ -1050,10 +1090,21 @@ function stripComments(path: string, source: string): string {
                 break;
             }
 
+            if (
+                (kind === SyntaxKind.SlashToken || kind === SyntaxKind.SlashEqualsToken) &&
+                slashStartsRegularExpression(previousKind)
+            ) {
+                kind = commentScanner.reScanSlashToken();
+            }
+
             if (kind === SyntaxKind.SingleLineCommentTrivia || kind === SyntaxKind.MultiLineCommentTrivia) {
                 parts.push(source.slice(copyFrom, commentScanner.getTokenStart()));
                 copyFrom = commentScanner.getTokenEnd();
                 continue;
+            }
+
+            if (!isIgnorableTrivia(kind)) {
+                previousKind = kind;
             }
 
             if (kind === SyntaxKind.TemplateHead) {
@@ -1079,6 +1130,7 @@ function stripComments(path: string, source: string): string {
             }
 
             kind = commentScanner.reScanTemplateToken(false);
+            previousKind = kind;
             if (kind === SyntaxKind.TemplateTail) {
                 templates.pop();
             }
@@ -1530,17 +1582,53 @@ describe('device write boundary closure', () => {
     });
 
     it('does not treat comment-like text inside string literals as comments', () => {
-        const counts = countDeviceDataByPath([
-            productionSource(
-                'src/modules/Arrangement/stringLiteralCommentText.ts',
-                [
-                    'const accept = "audio/*,.wav,.flac";',
-                    'const docs = "https://sourdaw.dev/panels";',
-                    'const devices: string[] = [];',
-                ].join('\n')
-            ),
-        ]);
+        const parsed = productionSource(
+            'src/modules/Arrangement/stringLiteralCommentText.ts',
+            [
+                'const accept = "audio/*,.wav,.flac";',
+                'const docs = "https://sourdaw.dev/panels";',
+                'const devices: string[] = [];',
+            ].join('\n')
+        );
+        expect(parsed.code).toContain('"audio/*,.wav,.flac"');
+        expect(parsed.code).toContain('"https://sourdaw.dev/panels"');
+        const counts = countDeviceDataByPath([parsed]);
         expect(counts['src/modules/Arrangement/stringLiteralCommentText.ts']).toBe(1);
+    });
+
+    it('does not treat regex-literal bodies as comments', () => {
+        const nestedBlock = productionSource(
+            'src/modules/Arrangement/regexComment.ts',
+            'const re = /a\\/*b/;\nexport const x = persistDeviceParam;\n'
+        );
+        expect(nestedBlock.code).toContain('persistDeviceParam');
+        expect(
+            countByPath([nestedBlock], SINK_DEFINITIONS['persistence-runtime'])[
+                'src/modules/Arrangement/regexComment.ts'
+            ]
+        ).toBe(1);
+
+        const escapedSlashes = productionSource(
+            'src/modules/Arrangement/regexLineComment.ts',
+            'const re = /\\/\\//; const x = persistDeviceParam;'
+        );
+        expect(escapedSlashes.code).toContain('persistDeviceParam');
+        expect(
+            countByPath([escapedSlashes], SINK_DEFINITIONS['persistence-runtime'])[
+                'src/modules/Arrangement/regexLineComment.ts'
+            ]
+        ).toBe(1);
+
+        const afterDivision = productionSource(
+            'src/modules/Arrangement/divisionLineComment.ts',
+            'const x = a / b; // persistDeviceParam'
+        );
+        expect(afterDivision.code).not.toContain('persistDeviceParam');
+        expect(
+            countByPath([afterDivision], SINK_DEFINITIONS['persistence-runtime'])[
+                'src/modules/Arrangement/divisionLineComment.ts'
+            ]
+        ).toBeUndefined();
     });
 
     it('does not treat http:// in JSX text as a line comment', () => {
