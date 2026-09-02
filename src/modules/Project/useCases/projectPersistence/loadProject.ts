@@ -24,8 +24,10 @@ import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
 import { verifyAudioBufferReferences } from './helpers/verifyAudioBufferReferences';
 import { migrateActiveProjectIdentity } from './migrateActiveProjectIdentity';
 import { projectIdentityTransitionDependencies } from './projectIdentityTransitionDependencies';
+import { whenProjectIdentityTransitionDependenciesConfigured } from './whenProjectIdentityTransitionDependenciesConfigured';
 
 export async function loadProject(): Promise<boolean> {
+    await whenProjectIdentityTransitionDependenciesConfigured();
     // Boot restore is subordinate: if the user picked a project on the
     // LaunchScreen while `initializeAudioEngine()` was resolving, that
     // transition is already preparing and must win. Yield to any mid-flight

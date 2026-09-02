@@ -16,7 +16,7 @@
  * law and VCA fold already applied) back into the seam's project units via
  * `valueToSeam`, because the contract's targets state project truth and the
  * backend applies the law itself. The caller owns that inversion — see the
- * seam-value helpers in `renderOfflineWithNativeEngine`.
+ * seam-value helpers in `projectStripAutomationWrites`.
  */
 
 import { type AudioGraphParameterWrite } from '../../models/AudioGraphBackend';

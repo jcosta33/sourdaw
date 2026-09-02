@@ -1,13 +1,13 @@
 import { type ReactElement, useState, useEffect, useRef } from 'react';
 
 import { Loader2, Sparkles, GraduationCap } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
 
 import { DawDialogBody } from '#/components/daw/DawDialogBody';
 import { DawDialogFooter } from '#/components/daw/DawDialogFooter';
 import { DawDialogSection } from '#/components/daw/DawDialogSection';
 import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { Row } from '#/components/layout';
+import { SafeMarkdown } from '#/components/SafeMarkdown';
 import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '#/components/ui/dialog';
 import { logger } from '#/infra/logger/appLogger';
@@ -142,7 +142,7 @@ const MixHealthDialogContent = ({ onOpenChange }: MixHealthDialogContentProps): 
                 >
                     {report ? (
                         <div className="prose prose-invert prose-sm max-w-none">
-                            <ReactMarkdown>{report}</ReactMarkdown>
+                            <SafeMarkdown>{report}</SafeMarkdown>
                         </div>
                     ) : null}
 

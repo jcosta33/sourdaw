@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 
 import { getExecutableAppActionGroundingCatalog } from '#/modules/Command/useCases';
 
+import { coreAutomationActionNames } from '../../transformers/llmActionStrategies/coreAutomationStrategy';
 import { markerSectionActionNames } from '../../transformers/llmActionStrategies/markerSectionStrategy';
 import { masterVcaActionNames } from '../../transformers/llmActionStrategies/masterVcaStrategy';
 import { transportTimelineActionNames } from '../../transformers/llmActionStrategies/transportTimelineStrategy';
 import { assertCanonicalLlmActionStrategies } from '../assertCanonicalLlmActionStrategies';
 
 const llmActionStrategyNames = [
+    ...coreAutomationActionNames,
     ...markerSectionActionNames,
     ...masterVcaActionNames,
     ...transportTimelineActionNames,
