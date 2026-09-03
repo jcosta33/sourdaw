@@ -63,6 +63,10 @@ import type {
 import type { ReconcileTrackerIssuePort } from '../trackerIssueReconciliation.ts';
 import type { Readable, Writable } from 'node:stream';
 
+function removeTemporaryDirectory(root: string): void {
+    rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+}
+
 function runGit(repository: string, args: string[]): string {
     const env = { ...process.env };
     delete env.GIT_DIR;
@@ -164,7 +168,7 @@ async function expectAmbiguousDeliveryMutationRetainsOwner(
         expect(reacquired).toBe(false);
         expect(readDeliveryLockOid(root, number)).toBe(retainedOwnerOid);
     } finally {
-        rmSync(root, { recursive: true, force: true });
+        removeTemporaryDirectory(root);
     }
 }
 
@@ -1190,7 +1194,7 @@ describe('package scripts and gitignore', () => {
             runGit(checkout, ['worktree', 'add', '-b', 'agent/test/current-route', lane]);
             expect(() => runPackageRoute(lane, ['lane:publish', policyLog])).toThrow(/protected primary checkout/);
         } finally {
-            rmSync(fixtureRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+            removeTemporaryDirectory(fixtureRoot);
         }
     }, 15_000);
 
@@ -1225,7 +1229,7 @@ describe('package scripts and gitignore', () => {
             expect(readFileSync(policyLog, 'utf8')).toBe('primary:ordinary\n');
             expect(existsSync(poisonLog)).toBe(false);
         } finally {
-            rmSync(fixtureRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+            removeTemporaryDirectory(fixtureRoot);
         }
     });
 
@@ -1325,7 +1329,7 @@ describe('package scripts and gitignore', () => {
                 process.env.NODE_OPTIONS = previousNodeOptions;
             }
             process.env.PATH = previousPath;
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -1347,7 +1351,7 @@ describe('package scripts and gitignore', () => {
                 resolveTrustedExecutable('git', { PATH: commandBin, PATHEXT: '.EXE;.CMD;.BAT' }, 'win32')
             ).toThrow(/cannot resolve trusted git executable/i);
         } finally {
-            rmSync(fixtureRoot, { recursive: true, force: true });
+            removeTemporaryDirectory(fixtureRoot);
         }
     });
 
@@ -1358,12 +1362,7 @@ describe('package scripts and gitignore', () => {
 
         afterAll(() => {
             if (trustedPublishPrimaryTemplateRoot !== undefined) {
-                rmSync(trustedPublishPrimaryTemplateRoot, {
-                    recursive: true,
-                    force: true,
-                    maxRetries: 3,
-                    retryDelay: 20,
-                });
+                removeTemporaryDirectory(trustedPublishPrimaryTemplateRoot);
                 trustedPublishPrimaryTemplateRoot = undefined;
             }
         });
@@ -1421,7 +1420,7 @@ describe('package scripts and gitignore', () => {
                     ].join(delimiter)
                 );
             } finally {
-                rmSync(fixtureRoot, { recursive: true, force: true });
+                removeTemporaryDirectory(fixtureRoot);
             }
         });
 
@@ -1486,7 +1485,7 @@ describe('package scripts and gitignore', () => {
                     ].join(delimiter)
                 );
             } finally {
-                rmSync(fixtureRoot, { recursive: true, force: true });
+                removeTemporaryDirectory(fixtureRoot);
             }
         });
 
@@ -1542,7 +1541,7 @@ describe('package scripts and gitignore', () => {
                 expect(spawnSync(binding.gitPath, ['--version'], { shell: false }).status).toBe(0);
                 expect(spawnSync(powershellPath, [], { shell: false }).status).toBe(0);
             } finally {
-                rmSync(fixtureRoot, { recursive: true, force: true });
+                removeTemporaryDirectory(fixtureRoot);
             }
         });
 
@@ -1625,7 +1624,7 @@ describe('package scripts and gitignore', () => {
                 expect(result.stderr).toMatch(/usage: trustedGithubWriteBootstrap\.ts/i);
                 expect(result.stderr).not.toMatch(/trusted ps executable|protected primary checkout/i);
             } finally {
-                rmSync(fixtureRoot, { recursive: true, force: true });
+                removeTemporaryDirectory(fixtureRoot);
             }
         });
 
@@ -1638,7 +1637,7 @@ describe('package scripts and gitignore', () => {
                 expect(resolveTrustedLauncherBinding(primary).primaryRoot).toBe(realpathSync(primary));
                 expect(() => resolveTrustedLauncherBinding(lane)).toThrow(/protected primary checkout/);
             } finally {
-                rmSync(fixtureRoot, { recursive: true, force: true });
+                removeTemporaryDirectory(fixtureRoot);
             }
         });
     });
@@ -1718,7 +1717,7 @@ describe('package scripts and gitignore', () => {
             expect(result.stderr).toBe('');
             expect(readFileSync(outputPath, 'utf8')).toBe('literal:ordinary\n');
         } finally {
-            rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -1788,7 +1787,7 @@ describe('package scripts and gitignore', () => {
 
             expect(readFileSync(recordPath, 'utf8')).toBe(`${JSON.stringify({ kind: 'runner', args: callerArgs })}\n`);
         } finally {
-            rmSync(fixtureRoot, { recursive: true, force: true });
+            removeTemporaryDirectory(fixtureRoot);
         }
     });
 
@@ -1897,7 +1896,7 @@ describe('package scripts and gitignore', () => {
             } as const;
             expect(importedRunners[command]).toBeTypeOf('function');
         } finally {
-            rmSync(fixtureRoot, { recursive: true, force: true });
+            removeTemporaryDirectory(fixtureRoot);
         }
     });
 
@@ -1942,7 +1941,7 @@ describe('package scripts and gitignore', () => {
             );
             expect(readFileSync(mutationLog, 'utf8')).toBe(beforeLaneAttempts);
         } finally {
-            rmSync(fixtureRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+            removeTemporaryDirectory(fixtureRoot);
         }
     }, 15_000);
 
@@ -1973,7 +1972,7 @@ describe('package scripts and gitignore', () => {
             });
             expect(entered).toEqual([]);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2039,7 +2038,7 @@ describe('package scripts and gitignore', () => {
             } else {
                 process.env.SOURDAW_TRUSTED_PS_PATH = previousPs;
             }
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2072,7 +2071,7 @@ describe('package scripts and gitignore', () => {
             expect(readDeliveryLockOid(root, 2495)).toBe(originalOid);
             expect(runGit(root, ['cat-file', 'blob', originalOid])).toBe(malformed);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2101,7 +2100,7 @@ describe('package scripts and gitignore', () => {
                 expect(readDeliveryLockOid(root, 2495)).toBe(originalOid);
                 expect(runGit(root, ['cat-file', 'blob', originalOid])).toBe(contents);
             } finally {
-                rmSync(root, { recursive: true, force: true });
+                removeTemporaryDirectory(root);
             }
         }
     });
@@ -2136,7 +2135,7 @@ describe('package scripts and gitignore', () => {
                 expect(readDeliveryLockOid(root, 2495), label).toBe(originalOid);
                 expect(runGit(root, ['cat-file', 'blob', originalOid]), label).toBe(contents);
             } finally {
-                rmSync(root, { recursive: true, force: true });
+                removeTemporaryDirectory(root);
             }
         }
     });
@@ -2165,7 +2164,7 @@ describe('package scripts and gitignore', () => {
             expect(readDeliveryLockOid(root, 2495)).toBe(originalOid);
             expect(runGit(root, ['cat-file', 'blob', originalOid])).toBe(contents);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2190,7 +2189,7 @@ describe('package scripts and gitignore', () => {
             ).rejects.toThrow('delivery failed');
             expect(deliveryLockExists(root, 2495)).toBe(false);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2217,7 +2216,7 @@ describe('package scripts and gitignore', () => {
             expect(reacquired).toBe(false);
             expect(readDeliveryLockOid(root, 2495)).toBe(retainedOwnerOid);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2235,7 +2234,7 @@ describe('package scripts and gitignore', () => {
             ).rejects.toThrow(/was not merged/);
             expect(deliveryLockExists(root, 2495)).toBe(false);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2440,7 +2439,7 @@ describe('package scripts and gitignore', () => {
             expect(forwardedKnownAbsent).toBeInstanceOf(Function);
             expect(deliveryLockExists(root, 2495)).toBe(false);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2465,7 +2464,7 @@ describe('package scripts and gitignore', () => {
             ).rejects.toThrow(/ownership changed before release/);
             expect(readDeliveryLockOid(root, 2495)).toBe(replacementOid);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2485,7 +2484,7 @@ describe('package scripts and gitignore', () => {
             });
             expect(deliveryLockExists(root, 2495)).toBe(false);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2501,7 +2500,7 @@ describe('package scripts and gitignore', () => {
             ).toHaveLength(1);
             expect(deliveryLockExists(root, 2495)).toBe(false);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     }, 10_000);
 
@@ -2636,7 +2635,7 @@ describe('package scripts and gitignore', () => {
                 ).readDeliveryReceiptAuthority(2495)
             ).toBeUndefined();
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2661,7 +2660,7 @@ describe('package scripts and gitignore', () => {
             writeDeliveryReceiptAuthority(root, 2495, JSON.stringify({ version: 1, receiptId: '' }));
             expect(() => port.readDeliveryReceiptAuthority(2495)).toThrow(/delivery receipt authority is malformed/i);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2682,7 +2681,7 @@ describe('package scripts and gitignore', () => {
 
             expect(() => port.readDeliveryReceiptAuthority(2495)).toThrow(/cannot be verified/i);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2708,7 +2707,7 @@ describe('package scripts and gitignore', () => {
 
             expect(() => port.readDeliveryReceiptAuthority(2495)).toThrow(/cannot be verified/i);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2739,7 +2738,7 @@ describe('package scripts and gitignore', () => {
 
             expect(() => port.readDeliveryReceiptAuthority(2495)).toThrow(/cannot be verified/i);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2774,7 +2773,7 @@ describe('package scripts and gitignore', () => {
                 receiptId: 'IC_original',
             });
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -2835,8 +2834,8 @@ describe('package scripts and gitignore', () => {
 
             expect(readDeliveryReceiptAuthorityOid(root, 2495)).toBe(replacementOid);
         } finally {
-            rmSync(root, { recursive: true, force: true });
-            rmSync(wrapperRoot, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
+            removeTemporaryDirectory(wrapperRoot);
         }
     });
 
