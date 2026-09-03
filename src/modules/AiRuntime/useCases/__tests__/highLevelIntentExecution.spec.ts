@@ -74,6 +74,7 @@ import {
     GENERATED_TRACK_ID,
     scriptHighLevelIntentProvider,
 } from './highLevelIntentWorkflowFixture';
+import { landProjectEdit } from './landProjectEdit';
 
 const runtimeMocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
@@ -370,7 +371,9 @@ describe('high-level intent execution', () => {
 
         // An edit with no relationship to the blues plan's targets: a brand new track, not one of
         // the ids the plan creates or touches.
-        executeAppAction({ type: 'addTrack', payload: { name: 'Unrelated Track', kind: 'audio' } });
+        landProjectEdit(() => {
+            executeAppAction({ type: 'addTrack', payload: { name: 'Unrelated Track', kind: 'audio' } });
+        });
 
         const firstConfirm = await confirmPendingChatActions({ confirmationId: confirmation.id });
         expect(firstConfirm).toMatchObject({

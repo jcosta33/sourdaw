@@ -50,6 +50,7 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { landProjectEdit } from './landProjectEdit';
 
 const PROMPT =
     'Make the second chorus hit harder without changing any lead-vocal state, the tempo map, or the master chain.';
@@ -515,27 +516,29 @@ describe('whole-project vibe-mix planning', () => {
                 parameterValues: { ceiling: -1 },
             },
         ];
-        trackStore.set({
-            tracks: [drumBus, bassBus, leadVocal, backingVocal, master],
-            selectedTrackId: null,
-            ghostClips: [],
-        });
-        markerStore.set({
-            markers: [],
-            sections: [
-                { id: 'section-verse-two', name: 'Verse Two', startBeat: 16, endBeat: 32, color: '#ffffff' },
-                { id: 'section-chorus-one', name: 'Chorus One', startBeat: 32, endBeat: 48, color: '#ffffff' },
-                { id: 'section-bridge', name: 'Bridge', startBeat: 48, endBeat: 56, color: '#ffffff' },
-                { id: 'section-chorus-two', name: 'Chorus Two', startBeat: 56, endBeat: 72, color: '#ffffff' },
-                { id: 'section-outro', name: 'Outro', startBeat: 72, endBeat: 80, color: '#ffffff' },
-            ],
-        });
-        automationStore.set({ lanes: [] });
-        transportStore.set({
-            ...defaultTransportState,
-            tempo: 124,
-            timeSignatureNumerator: 4,
-            timeSignatureDenominator: 4,
+        landProjectEdit(() => {
+            trackStore.set({
+                tracks: [drumBus, bassBus, leadVocal, backingVocal, master],
+                selectedTrackId: null,
+                ghostClips: [],
+            });
+            markerStore.set({
+                markers: [],
+                sections: [
+                    { id: 'section-verse-two', name: 'Verse Two', startBeat: 16, endBeat: 32, color: '#ffffff' },
+                    { id: 'section-chorus-one', name: 'Chorus One', startBeat: 32, endBeat: 48, color: '#ffffff' },
+                    { id: 'section-bridge', name: 'Bridge', startBeat: 48, endBeat: 56, color: '#ffffff' },
+                    { id: 'section-chorus-two', name: 'Chorus Two', startBeat: 56, endBeat: 72, color: '#ffffff' },
+                    { id: 'section-outro', name: 'Outro', startBeat: 72, endBeat: 80, color: '#ffffff' },
+                ],
+            });
+            automationStore.set({ lanes: [] });
+            transportStore.set({
+                ...defaultTransportState,
+                tempo: 124,
+                timeSignatureNumerator: 4,
+                timeSignatureDenominator: 4,
+            });
         });
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
     });
@@ -608,12 +611,14 @@ describe('whole-project vibe-mix planning', () => {
     });
 
     it('selects the actual second chorus without counting a pre-chorus substring impostor', async () => {
-        markerStore.set({
-            ...markerStore.value!,
-            sections: [
-                ...markerStore.value!.sections,
-                { id: 'section-pre-chorus', name: 'Pre-Chorus', startBeat: 28, endBeat: 32, color: '#ffffff' },
-            ],
+        landProjectEdit(() => {
+            markerStore.set({
+                ...markerStore.value!,
+                sections: [
+                    ...markerStore.value!.sections,
+                    { id: 'section-pre-chorus', name: 'Pre-Chorus', startBeat: 28, endBeat: 32, color: '#ffffff' },
+                ],
+            });
         });
 
         const { result } = await planPromptActions({ prompt: PROMPT, onProviderAttempt: admitProviderAttempt });
@@ -897,13 +902,14 @@ describe('whole-project vibe-mix planning', () => {
     it('leaves no partial lanes or receipt when the project changes before confirmation', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
-        trackStore.set({
-            ...trackStore.value!,
-            tracks: trackStore.value!.tracks.map((track) =>
-                track.id === 'bus-bass' ? { ...track, automationMode: 'off' } : track
-            ),
+        landProjectEdit(() => {
+            trackStore.set({
+                ...trackStore.value!,
+                tracks: trackStore.value!.tracks.map((track) =>
+                    track.id === 'bus-bass' ? { ...track, automationMode: 'off' } : track
+                ),
+            });
         });
-        flushAutomergeStorageWrites();
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
 

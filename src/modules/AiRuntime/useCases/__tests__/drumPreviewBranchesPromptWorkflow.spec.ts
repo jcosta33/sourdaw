@@ -1,9 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-    configureAutomergeStoragePort,
-    flushAutomergeStorageWrites,
-} from '#/infra/store/storage/createAutomergeStorage';
+import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { markerStore, trackStore, type Clip, type Track } from '#/modules/Arrangement/stores';
 import { runtimeGraphTopology } from '#/modules/Arrangement/useCases';
 import {
@@ -58,6 +55,7 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { landProjectEdit } from './landProjectEdit';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
 
 const PROMPT =
@@ -571,63 +569,64 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
             (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
         );
         configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
-        trackStore.set({
-            tracks: [
-                createTrack('track-kick', 'Kick', 'clip-kick'),
-                createTrack('track-snare', 'Snare', 'clip-snare'),
-                createTrack('track-hats', 'Hi-Hat', 'clip-hats'),
-                createTrack('track-bass', 'Bass', 'clip-bass'),
-            ],
-            selectedTrackId: null,
-            ghostClips: [],
-        });
-        markerStore.set({
-            markers: [],
-            sections: [
-                {
-                    id: 'section-eight-bars',
-                    name: 'Verse One',
-                    startBeat: 0,
-                    endBeat: 32,
-                    color: '#ffffff',
+        landProjectEdit(() => {
+            trackStore.set({
+                tracks: [
+                    createTrack('track-kick', 'Kick', 'clip-kick'),
+                    createTrack('track-snare', 'Snare', 'clip-snare'),
+                    createTrack('track-hats', 'Hi-Hat', 'clip-hats'),
+                    createTrack('track-bass', 'Bass', 'clip-bass'),
+                ],
+                selectedTrackId: null,
+                ghostClips: [],
+            });
+            markerStore.set({
+                markers: [],
+                sections: [
+                    {
+                        id: 'section-eight-bars',
+                        name: 'Verse One',
+                        startBeat: 0,
+                        endBeat: 32,
+                        color: '#ffffff',
+                    },
+                ],
+            });
+            transportStore.set({
+                ...defaultTransportState,
+                tempo: 120,
+                timeSignatureNumerator: 4,
+                timeSignatureDenominator: 4,
+            });
+            midiStore.set({
+                notesByClipId: {
+                    'clip-kick': Array.from({ length: 8 }, (_, index) => ({
+                        id: `kick-${String(index + 1)}`,
+                        pitch: 36,
+                        startBeat: index * 4,
+                        duration: 0.25,
+                        velocity: 112,
+                    })),
+                    'clip-snare': Array.from({ length: 8 }, (_, index) => ({
+                        id: `snare-${String(index + 1)}`,
+                        pitch: 38,
+                        startBeat: index * 4 + 2,
+                        duration: 0.25,
+                        velocity: 104,
+                    })),
+                    'clip-hats': Array.from({ length: 32 }, (_, index) => ({
+                        id: `hat-${String(index + 1)}`,
+                        pitch: 42,
+                        startBeat: index,
+                        duration: 0.125,
+                        velocity: 84,
+                    })),
+                    'clip-bass': [{ id: 'bass-1', pitch: 36, startBeat: 0, duration: 4, velocity: 96 }],
                 },
-            ],
+                ccByClipId: {},
+                pitchBendByClipId: {},
+            });
         });
-        transportStore.set({
-            ...defaultTransportState,
-            tempo: 120,
-            timeSignatureNumerator: 4,
-            timeSignatureDenominator: 4,
-        });
-        midiStore.set({
-            notesByClipId: {
-                'clip-kick': Array.from({ length: 8 }, (_, index) => ({
-                    id: `kick-${String(index + 1)}`,
-                    pitch: 36,
-                    startBeat: index * 4,
-                    duration: 0.25,
-                    velocity: 112,
-                })),
-                'clip-snare': Array.from({ length: 8 }, (_, index) => ({
-                    id: `snare-${String(index + 1)}`,
-                    pitch: 38,
-                    startBeat: index * 4 + 2,
-                    duration: 0.25,
-                    velocity: 104,
-                })),
-                'clip-hats': Array.from({ length: 32 }, (_, index) => ({
-                    id: `hat-${String(index + 1)}`,
-                    pitch: 42,
-                    startBeat: index,
-                    duration: 0.125,
-                    velocity: 84,
-                })),
-                'clip-bass': [{ id: 'bass-1', pitch: 36, startBeat: 0, duration: 4, velocity: 96 }],
-            },
-            ccByClipId: {},
-            pitchBendByClipId: {},
-        });
-        flushAutomergeStorageWrites();
         setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
     });
@@ -824,15 +823,20 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
         const sourceDocIdsBefore = getCrdtDocIds().toSorted();
         await sendChatMessage(PROMPT);
         const confirmationId = getConfirmationId();
-        trackStore.set({
-            ...trackStore.value!,
-            tracks: trackStore.value!.tracks.map((track) =>
-                track.id === 'track-snare'
-                    ? { ...track, frozen: true, freezeState: { status: 'frozen', renderId: 'collaborator-render' } }
-                    : track
-            ),
+        landProjectEdit(() => {
+            trackStore.set({
+                ...trackStore.value!,
+                tracks: trackStore.value!.tracks.map((track) =>
+                    track.id === 'track-snare'
+                        ? {
+                              ...track,
+                              frozen: true,
+                              freezeState: { status: 'frozen', renderId: 'collaborator-render' },
+                          }
+                        : track
+                ),
+            });
         });
-        flushAutomergeStorageWrites();
 
         expect(await confirmPendingChatActions({ confirmationId })).toEqual({
             status: 'invalidated',
