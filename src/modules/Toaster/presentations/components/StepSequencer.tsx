@@ -4,7 +4,7 @@ import { DawContextMenuSurface } from '#/components/daw/DawContextMenuSurface';
 import { DawMenuButton, DawMenuSectionLabel, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { Row } from '#/components/layout';
 
-import { type DrumEngineType, type PadState, type Pattern } from '../../models/ToasterKit';
+import { type DrumEngineType, type PadState, type Pattern, type StepCondition } from '../../models/ToasterKit';
 
 type StepSequencerProps = {
     pattern: Pattern;
@@ -14,9 +14,21 @@ type StepSequencerProps = {
     onToggleStep: (padIndex: number, stepIndex: number) => void;
     onSetVelocity: (padIndex: number, stepIndex: number, velocity: number) => void;
     onSetSoundLock?: (padIndex: number, stepIndex: number, engineType: DrumEngineType | null) => void;
+    onSetRetrigger?: (padIndex: number, stepIndex: number, count: number) => void;
+    onSetCondition?: (padIndex: number, stepIndex: number, condition: StepCondition) => void;
 };
 
 const STEP_HEIGHT = 28;
+
+const RATCHET_OPTIONS: Array<{ count: number; label: string }> = [
+    { count: 0, label: 'None' },
+    { count: 1, label: '2×' },
+    { count: 2, label: '3×' },
+    { count: 3, label: '4×' },
+    { count: 7, label: '8×' },
+];
+
+const CONDITION_OPTIONS: StepCondition[] = ['always', 'fill', 'not-fill', 'first', 'not-first'];
 
 const SOUND_LOCK_ENGINES: DrumEngineType[] = [
     'kick-808',
@@ -42,6 +54,8 @@ export const StepSequencer = ({
     onToggleStep,
     onSetVelocity,
     onSetSoundLock,
+    onSetRetrigger,
+    onSetCondition,
 }: StepSequencerProps): ReactElement => {
     const dragRef = useRef<{ padIndex: number; stepIndex: number; startY: number } | null>(null);
     const [menuState, setMenuState] = useState<{
@@ -51,6 +65,7 @@ export const StepSequencer = ({
         y: number;
     } | null>(null);
     const stepCount = pattern.stepsPerBar * pattern.bars;
+    const hasContextMenu = Boolean(onSetSoundLock || onSetRetrigger || onSetCondition);
 
     const targetTrack = menuState ? pattern.tracks.find((track) => track.padIndex === menuState.padIndex) : undefined;
     const targetStep = menuState ? targetTrack?.steps[menuState.stepIndex] : undefined;
@@ -130,7 +145,13 @@ export const StepSequencer = ({
                                         data-testid={`toaster-step-${track.padIndex}-${stepIndex}`}
                                         aria-label={`${pad.name} step ${stepIndex + 1}${
                                             step.active ? `, on, velocity ${Math.round(step.velocity * 100)}%` : ', off'
-                                        }${step.soundLock ? `, sound lock ${step.soundLock}` : ''}`}
+                                        }${step.soundLock ? `, sound lock ${step.soundLock}` : ''}${
+                                            step.retriggerCount > 0 ? `, ratchet ${step.retriggerCount + 1}x` : ''
+                                        }${
+                                            step.condition && step.condition !== 'always'
+                                                ? `, condition ${step.condition}`
+                                                : ''
+                                        }`}
                                         title="Click to toggle · Alt-drag up/down to set velocity · Right-click or press L to sound-lock"
                                         className={`relative min-w-[19px] flex-1 cursor-pointer rounded-[10px] transition-all ${isBarStart ? 'ml-1' : ''}`}
                                         style={{
@@ -145,7 +166,7 @@ export const StepSequencer = ({
                                         }
                                         onContextMenu={(event) => {
                                             event.preventDefault();
-                                            if (onSetSoundLock) {
+                                            if (hasContextMenu) {
                                                 setMenuState({
                                                     padIndex: track.padIndex,
                                                     stepIndex,
@@ -164,7 +185,7 @@ export const StepSequencer = ({
                                                 event.key === 'ContextMenu'
                                             ) {
                                                 event.preventDefault();
-                                                if (onSetSoundLock) {
+                                                if (hasContextMenu) {
                                                     const rect = event.currentTarget.getBoundingClientRect();
                                                     setMenuState({
                                                         padIndex: track.padIndex,
@@ -201,6 +222,15 @@ export const StepSequencer = ({
                                             </span>
                                         ) : null}
 
+                                        {step.active && step.condition && step.condition !== 'always' ? (
+                                            <span
+                                                data-testid={`toaster-step-condition-${track.padIndex}-${stepIndex}`}
+                                                className="absolute top-0.5 right-1 pointer-events-none max-w-[26px] truncate text-[6px] font-bold uppercase leading-none text-white/75 drop-shadow"
+                                            >
+                                                {step.condition}
+                                            </span>
+                                        ) : null}
+
                                         {step.active && step.probability < 1 ? (
                                             <div
                                                 className="absolute right-1 top-1 size-1.5 rounded-full"
@@ -212,7 +242,7 @@ export const StepSequencer = ({
 
                                         {step.active && step.retriggerCount > 0 ? (
                                             <div className="absolute left-1 top-1 text-[5px] font-bold text-white/45">
-                                                {step.retriggerCount}×
+                                                {step.retriggerCount + 1}×
                                             </div>
                                         ) : null}
 
@@ -227,7 +257,7 @@ export const StepSequencer = ({
                 );
             })}
 
-            {menuState && onSetSoundLock ? (
+            {menuState && hasContextMenu ? (
                 <DawContextMenuSurface
                     backdrop
                     onClose={() => setMenuState(null)}
@@ -235,37 +265,81 @@ export const StepSequencer = ({
                     y={menuState.y}
                     className="min-w-[160px]"
                     role="menu"
-                    aria-label="Sound Lock Engine"
+                    aria-label="Step Settings"
                 >
-                    <DawMenuSectionLabel>Sound Lock Engine</DawMenuSectionLabel>
-                    {targetStep?.soundLock ? (
+                    {onSetRetrigger ? (
                         <>
-                            <DawMenuButton
-                                role="menuitem"
-                                tone="danger"
-                                onClick={() => {
-                                    onSetSoundLock(menuState.padIndex, menuState.stepIndex, null);
-                                    setMenuState(null);
-                                }}
-                            >
-                                Clear Sound Lock
-                            </DawMenuButton>
-                            <DawMenuSeparator />
+                            <DawMenuSectionLabel>Ratchets</DawMenuSectionLabel>
+                            {RATCHET_OPTIONS.map(({ count, label }) => (
+                                <DawMenuButton
+                                    key={count}
+                                    role="menuitem"
+                                    active={targetStep?.retriggerCount === count}
+                                    onClick={() => {
+                                        onSetRetrigger(menuState.padIndex, menuState.stepIndex, count);
+                                        setMenuState(null);
+                                    }}
+                                >
+                                    {label}
+                                </DawMenuButton>
+                            ))}
+                            {onSetCondition || onSetSoundLock ? <DawMenuSeparator /> : null}
                         </>
                     ) : null}
-                    {SOUND_LOCK_ENGINES.map((engine) => (
-                        <DawMenuButton
-                            key={engine}
-                            role="menuitem"
-                            active={targetStep?.soundLock === engine}
-                            onClick={() => {
-                                onSetSoundLock(menuState.padIndex, menuState.stepIndex, engine);
-                                setMenuState(null);
-                            }}
-                        >
-                            {engine}
-                        </DawMenuButton>
-                    ))}
+
+                    {onSetCondition ? (
+                        <>
+                            <DawMenuSectionLabel>Condition</DawMenuSectionLabel>
+                            {CONDITION_OPTIONS.map((cond) => (
+                                <DawMenuButton
+                                    key={cond}
+                                    role="menuitem"
+                                    active={targetStep?.condition === cond}
+                                    onClick={() => {
+                                        onSetCondition(menuState.padIndex, menuState.stepIndex, cond);
+                                        setMenuState(null);
+                                    }}
+                                >
+                                    {cond}
+                                </DawMenuButton>
+                            ))}
+                            {onSetSoundLock ? <DawMenuSeparator /> : null}
+                        </>
+                    ) : null}
+
+                    {onSetSoundLock ? (
+                        <>
+                            <DawMenuSectionLabel>Sound Lock Engine</DawMenuSectionLabel>
+                            {targetStep?.soundLock ? (
+                                <>
+                                    <DawMenuButton
+                                        role="menuitem"
+                                        tone="danger"
+                                        onClick={() => {
+                                            onSetSoundLock(menuState.padIndex, menuState.stepIndex, null);
+                                            setMenuState(null);
+                                        }}
+                                    >
+                                        Clear Sound Lock
+                                    </DawMenuButton>
+                                    <DawMenuSeparator />
+                                </>
+                            ) : null}
+                            {SOUND_LOCK_ENGINES.map((engine) => (
+                                <DawMenuButton
+                                    key={engine}
+                                    role="menuitem"
+                                    active={targetStep?.soundLock === engine}
+                                    onClick={() => {
+                                        onSetSoundLock(menuState.padIndex, menuState.stepIndex, engine);
+                                        setMenuState(null);
+                                    }}
+                                >
+                                    {engine}
+                                </DawMenuButton>
+                            ))}
+                        </>
+                    ) : null}
                 </DawContextMenuSurface>
             ) : null}
         </div>
