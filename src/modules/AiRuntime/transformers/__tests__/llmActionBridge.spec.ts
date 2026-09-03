@@ -4301,4 +4301,46 @@ describe('bridgeLlmToolCalls', () => {
             expect(rejected.rejections).toHaveLength(1);
         }
     });
+
+    describe('addNotes bounds every note to the span of the clip it writes into', () => {
+        // Notes are clip-relative, so a start beat past the end of the clip is otherwise a
+        // well-formed note: finite, non-negative, in pitch range, and long enough to hear.
+        const sixteenBeatClipContext = (): ProjectContext => {
+            const context = createMidiClipContext();
+            const track = context.tracks[0]!;
+            const clip = { ...track.clips[0]!, startBeat: 0, endBeat: 16 };
+            return { ...context, tracks: [{ ...track, clips: [clip] }, ...context.tracks.slice(1)] };
+        };
+        const addNotes = (note: Record<string, unknown>) =>
+            bridge({
+                context: sixteenBeatClipContext(),
+                calls: [{ name: 'addNotes', arguments: { clipId: 'clip-midi', notes: [note] } }],
+            });
+
+        it('refuses a note parked past any musical timeline', () => {
+            const result = addNotes({ pitch: 60, startBeat: 1e15, duration: 1, velocity: 96 });
+
+            expect(result.actions).toEqual([]);
+            expect(result.rejections[0]?.reason).toBe('Note 0 of a clip spanning 16 beats ends past the clip');
+        });
+
+        it('refuses a note that runs past the end of the clip', () => {
+            const result = addNotes({ pitch: 60, startBeat: 15, duration: 2, velocity: 96 });
+
+            expect(result.actions).toEqual([]);
+            expect(result.rejections[0]?.reason).toBe('Note 0 of a clip spanning 16 beats ends past the clip');
+        });
+
+        it('admits a note that ends exactly on the clip boundary', () => {
+            const result = addNotes({ pitch: 60, startBeat: 15, duration: 1, velocity: 96 });
+
+            expect(result.rejections).toEqual([]);
+            expect(result.actions).toEqual([
+                {
+                    type: 'addNotes',
+                    payload: { clipId: 'clip-midi', notes: [{ pitch: 60, startBeat: 15, duration: 1, velocity: 96 }] },
+                },
+            ]);
+        });
+    });
 });

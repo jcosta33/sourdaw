@@ -593,8 +593,10 @@ describe('high-level intent adversarial planning', () => {
         });
     });
 
-    it('(t) counts a split against the creation budget, because it leaves one more clip behind', async () => {
-        const clips = Array.from({ length: SEMANTIC_COMMAND_LIST_MAX_CREATIONS }, (_unused, index) => ({
+    describe('(t) counts a split against the creation budget, because it leaves one more clip behind', () => {
+        // One track plus eleven clips is exactly the budget. The split is the thirteenth object, so
+        // the pair differs only in whether a split counts as a creation.
+        const clipsUnderBudget = Array.from({ length: SEMANTIC_COMMAND_LIST_MAX_CREATIONS - 1 }, (_unused, index) => ({
             id: `make-clip-${String(index)}`,
             name: 'addClip',
             arguments: {
@@ -607,27 +609,39 @@ describe('high-level intent adversarial planning', () => {
             dependsOn: ['make-track'],
         }));
 
-        const result = await planWith(
-            proposalRunFor(
-                ['addTrack', 'addClip', 'splitClip'],
-                [
-                    makeTrack,
-                    ...clips,
-                    {
-                        id: 'split',
-                        name: 'splitClip',
-                        arguments: { clipId: '$bar0', beat: 2 },
-                        dependsOn: ['make-clip-0'],
-                    },
-                ]
-            ),
-            CREATIVE_PROMPT
-        );
+        it('accepts the same batch without the split', async () => {
+            const result = await planWith(
+                proposalRunFor(['addTrack', 'addClip'], [makeTrack, ...clipsUnderBudget]),
+                CREATIVE_PROMPT
+            );
 
-        expect(result.actions).toEqual([]);
-        expect(result.rejectionReason).toBe(
-            `Provider action rejected: Semantic command list creates more than ${String(SEMANTIC_COMMAND_LIST_MAX_CREATIONS)} project objects`
-        );
+            expect(result.rejectionReason).toBeUndefined();
+            expect(result.actions).toHaveLength(SEMANTIC_COMMAND_LIST_MAX_CREATIONS);
+        });
+
+        it('refuses that batch once a split is added to it', async () => {
+            const result = await planWith(
+                proposalRunFor(
+                    ['addTrack', 'addClip', 'splitClip'],
+                    [
+                        makeTrack,
+                        ...clipsUnderBudget,
+                        {
+                            id: 'split',
+                            name: 'splitClip',
+                            arguments: { clipId: '$bar0', beat: 2 },
+                            dependsOn: ['make-clip-0'],
+                        },
+                    ]
+                ),
+                CREATIVE_PROMPT
+            );
+
+            expect(result.actions).toEqual([]);
+            expect(result.rejectionReason).toBe(
+                `Provider action rejected: Semantic command list creates more than ${String(SEMANTIC_COMMAND_LIST_MAX_CREATIONS)} project objects`
+            );
+        });
     });
 
     it('admits a decline only after the command-index search that justifies it', async () => {

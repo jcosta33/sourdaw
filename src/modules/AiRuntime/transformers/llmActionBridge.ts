@@ -46,6 +46,7 @@ import { bridgeMarkerSectionToolCall } from './llmActionStrategies/markerSection
 import { bridgeMasterVcaToolCall, normalizeVcaGroupName } from './llmActionStrategies/masterVcaStrategy';
 import { bridgeTransportTimelineToolCall } from './llmActionStrategies/transportTimelineStrategy';
 import { type ToolCallResult } from './toolCallParser';
+import { validateNotesWithinClipSpan } from './validateNotesWithinClipSpan';
 
 type ExecutableTrackKind = 'audio' | 'midi' | 'folder';
 type NormalizationMode = 'peak' | 'rms' | 'lufs';
@@ -568,6 +569,14 @@ function bridgeToolCall({
                 call.name,
                 `Expected one existing unlocked MIDI clip on an unfrozen track and 1 to ${String(ADD_NOTES_MAX_NOTES_PER_COMMAND)} well-formed notes`
             );
+        }
+        const noteSpanRejection = validateNotesWithinClipSpan(
+            notes,
+            target.clip.endBeat - target.clip.startBeat,
+            'Note'
+        );
+        if (noteSpanRejection !== null) {
+            return rejection(index, call.name, noteSpanRejection);
         }
         return {
             type: 'addNotes',

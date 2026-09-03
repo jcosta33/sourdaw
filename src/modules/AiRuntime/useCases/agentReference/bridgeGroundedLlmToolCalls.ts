@@ -3,7 +3,6 @@ import {
     getExecutableAppActionGroundingRules,
 } from '#/modules/Command/useCases';
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
-import { MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
 
 import { type ActionCommandGraph } from '../../models/ActionCommandGraph';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../../models/LlmActionLimits';
@@ -19,6 +18,7 @@ import {
 } from '../../transformers/llmActionBridge';
 import { hasHighLevelCreationEvidence } from '../../transformers/promptParser/hasHighLevelCreationEvidence';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
+import { validateNotesWithinClipSpan } from '../../transformers/validateNotesWithinClipSpan';
 import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
 import { type ArbitraryCommandListEvidence } from '../compileArbitraryCommandList';
 import {
@@ -3731,15 +3731,11 @@ function validatePlanCreatedClipSpan(argumentsRecord: Readonly<Record<string, un
     return null;
 }
 
-function isNoteRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 /**
  * Every note an admitted `addNotes` writes must land inside the clip the same batch declared. The
- * ordinary route would have read those beats out of the request; on this route nothing did, so a
- * plan is otherwise free to park a note past any timeline or make one too short to hear, inside a
- * clip whose only stated dimension is the span its producing item declared.
+ * ordinary route would have read those beats out of the request; on this route nothing did, and the
+ * clip does not exist in any snapshot yet, so the span its producing item declared is the only
+ * dimension available to bound them against.
  */
 function validatePlanCreatedNotes(
     argumentsRecord: Readonly<Record<string, unknown>>,
@@ -3749,27 +3745,10 @@ function validatePlanCreatedNotes(
     if (!Array.isArray(notes)) {
         return null;
     }
-    const span = clipSpanBeats;
-    if (span === undefined) {
+    if (clipSpanBeats === undefined) {
         return 'Plan-created notes require a clip whose batch item declares its span';
     }
-    for (const [noteIndex, note] of notes.entries()) {
-        if (!isNoteRecord(note)) {
-            continue;
-        }
-        const { startBeat, duration } = note;
-        const position = `note ${String(noteIndex)} of a plan-created clip spanning ${String(span)} beats`;
-        if (typeof startBeat !== 'number' || !Number.isFinite(startBeat) || startBeat < 0) {
-            return `Plan-created ${position} starts outside the clip`;
-        }
-        if (typeof duration !== 'number' || !Number.isFinite(duration) || duration < MIDI_NOTE_MIN_DURATION_BEATS) {
-            return `Plan-created ${position} is shorter than ${String(MIDI_NOTE_MIN_DURATION_BEATS)} beats`;
-        }
-        if (startBeat + duration > span) {
-            return `Plan-created ${position} ends past the clip`;
-        }
-    }
-    return null;
+    return validateNotesWithinClipSpan(notes, clipSpanBeats, 'Plan-created note');
 }
 
 /**

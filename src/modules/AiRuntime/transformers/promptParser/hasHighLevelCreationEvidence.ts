@@ -3,24 +3,27 @@ import { MUSICAL_GENRE_PATTERN } from './musicalGenreVocabulary';
 const CREATION_VERB_PATTERN = /\b(?:create|add|build|make|start|compose|write|produce|set\s?up|lay\s+down)\b/giu;
 
 /**
- * Words that cannot name something the project already holds, so asking for one is asking for it to
- * exist. A bare `track` or `melody` is deliberately absent: those name edit targets just as often as
- * creations, and "make the drums louder" must not read as a request to create drums.
+ * Words that name a whole work rather than anything inside one. A project holds tracks, clips and
+ * parts; it is not itself something a request can point at as an edit target, so asking for one of
+ * these is always asking for it to exist. Anything a project can already contain belongs in
+ * `INTRODUCED_OBJECT_PATTERN` instead, where a determiner has to do the work.
  */
-const SONG_LEVEL_NOUN_PATTERN =
-    /\b(?:song|session|project|arrangement|progression|beat|groove|loop|riff|bassline|comp)\b/iu;
+const SONG_LEVEL_NOUN_PATTERN = /\b(?:song|session|project|arrangement|composition|piece|demo|jingle)\b/iu;
 
 /**
  * An object introduced rather than referred to. The determiner is what carries the meaning: "a bass
- * track" asks for one to exist, "the bass track" points at one that already does.
+ * track" asks for one to exist, "the bass track" points at one that already does. Every noun a
+ * project can already hold lives here, because "add a delay to the loop" edits the loop it names
+ * and only "add another loop" asks for one.
  */
 const INTRODUCED_OBJECT_PATTERN =
-    /\b(?:a|an|new|some|another|\d+)\s+(?:\w+\s+){0,2}(?:tracks?|clips?|melody|bass|drums|chords)\b/iu;
+    /\b(?:a|an|new|some|another|\d+)\s+(?:\w+\s+){0,2}(?:tracks?|clips?|melody|beat|groove|loop|riff|comp|progression|bass\s?lines?|drum\s+parts?)\b/iu;
 
 /** Separators a request writes between one instruction and the next. */
 const CLAUSE_SEPARATOR_PATTERN = /[,;.!?]|\bthen\b|\band\b/iu;
 
-const NEGATION_PATTERN = /\b(?:not|never|no|without|cannot|don'?t|doesn'?t|won'?t)\b/iu;
+const NEGATION_PATTERN =
+    /\b(?:not|never|no|without|cannot|avoid|stop|refrain|don'?t|doesn'?t|won'?t|can'?t|shouldn'?t|mustn'?t|isn'?t)\b/iu;
 
 /**
  * A creation verb the clause does not take back before it reaches it. The last verb in the clause
