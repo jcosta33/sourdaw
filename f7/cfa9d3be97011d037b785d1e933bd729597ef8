@@ -1,0 +1,19 @@
+src/modules/Arrangement/presentations/views/__tests__/ClipContextMenu.spec.tsx
+  s_08cf34426e27c5::t_b1b4790e48ecfe 628-645
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "f7cfa9d3be97011d037b785d1e933bd729597ef8",
+  "prompts": {},
+  "sessions": {
+    "s_08cf34426e27c5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-af29b6572ea492f1f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
