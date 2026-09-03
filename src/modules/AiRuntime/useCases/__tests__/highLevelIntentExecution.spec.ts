@@ -564,7 +564,8 @@ describe('high-level intent execution', () => {
         });
 
         it('recovers a partially committed plan only through the durable receipt, the run lifecycle and the same Command authority', async () => {
-            const { confirmation, runId, batchId, emit, commandBatch } = await commitBluesSongWithOfflineEventBus();
+            const { confirmation, runId, batchId, emit, commandBatch, addTrackCommandId } =
+                await commitBluesSongWithOfflineEventBus();
             await confirmPendingChatActions({ confirmationId: confirmation.id });
 
             const revisionAfterCommit = captureProjectRevision();
@@ -579,21 +580,32 @@ describe('high-level intent execution', () => {
             }
 
             // Leg A: run-level recovery reuses the durable receipt and the AgentRun lifecycle. It
-            // refuses to fabricate an exact post-commit checkpoint revision it was never given.
-            // The refusal reason is pinned once the prepared continuation binds to its receipt;
-            // see the issue linked in the PR.
-            await expect(recoverAgentRunPendingEffects({ runId, batchId })).resolves.toMatchObject({
+            // refuses to fabricate an exact post-commit checkpoint revision it was never given: the
+            // prepared continuation promotes without a sourceRevision for this generic (non-render)
+            // effect, so recovery is manual-repair.
+            await expect(recoverAgentRunPendingEffects({ runId, batchId })).resolves.toEqual({
                 status: 'failed',
+                reason: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
             });
-            expect(agentRunLifecycle.get(runId)).toMatchObject({
-                phase: 'partially-completed',
-                pendingEffectContinuations: [
-                    expect.objectContaining({
-                        batchId,
-                        receiptIdentity: `${priorReceipt.schemaVersion}:${runId}:${batchId}:partially-committed`,
-                    }),
+            const lifecycleAfterRecovery = agentRunLifecycle.get(runId);
+            expect(lifecycleAfterRecovery).toMatchObject({ phase: 'partially-completed' });
+            const continuationAfterRecovery = lifecycleAfterRecovery?.pendingEffectContinuations[0];
+            expect(continuationAfterRecovery).toMatchObject({
+                batchId,
+                receiptIdentity: `${priorReceipt.schemaVersion}:${runId}:${batchId}:partially-committed`,
+                recovery: 'manual-repair',
+                effects: [
+                    {
+                        commandId: addTrackCommandId,
+                        kind: 'external-effect',
+                        operation: 'addTrack',
+                        reason: OFFLINE_EVENT_BUS_REASON,
+                        remediation: 'reconcile',
+                        state: 'pending',
+                    },
                 ],
             });
+            expect(continuationAfterRecovery).not.toHaveProperty('sourceRevision');
 
             // No-alternate-path (Leg A on its own): recovery neither replayed the project mutation
             // nor re-ran the offline effect.
