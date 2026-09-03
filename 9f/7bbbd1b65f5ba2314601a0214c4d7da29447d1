@@ -1,0 +1,31 @@
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_28abfd94826e36::t_376cea2354a7a0 189,1160-1171,2217-2225
+scripts/deliverPullRequest.ts
+  s_9b530f08172a54::t_0ca9f6dc831fe1 729-734
+scripts/test-health-gate-scripts.sh
+  s_28abfd94826e36::t_1769de044fd765 976,1000-1013
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "9f7bbbd1b65f5ba2314601a0214c4d7da29447d1",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
