@@ -1,4 +1,4 @@
-// @wasm-bindgen-dts crate-source: sha256:8d9c43025945afe19ad304549ab551e0b5fc3d5ca2e029f5b03da711244484f4
+// @wasm-bindgen-dts crate-source: sha256:be54773e1b2d3530d43093c444d7375032d978d24aa8cdb03e1cdb73b15e84be
 /* tslint:disable */
 /* eslint-disable */
 
@@ -1042,7 +1042,6 @@ export interface InitOutput {
     readonly kneadinstance_get_input_left_ptr: (a: number) => number;
     readonly kneadinstance_get_input_right_ptr: (a: number) => number;
     readonly kneadinstance_get_latency_samples: (a: number) => number;
-    readonly kneadinstance_get_nan_flush_count: (a: number) => number;
     readonly kneadinstance_get_periodicity: (a: number) => number;
     readonly kneadinstance_get_right_ptr: (a: number) => number;
     readonly kneadinstance_is_voiced: (a: number) => number;
@@ -1051,6 +1050,7 @@ export interface InitOutput {
     readonly kneadinstance_set_formant_preserve: (a: number, b: number) => void;
     readonly kneadinstance_set_retune_speed_ms: (a: number, b: number) => void;
     readonly kneadinstance_set_shift_semitones: (a: number, b: number) => void;
+    readonly kneadinstance_get_nan_flush_count: (a: number) => number;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
