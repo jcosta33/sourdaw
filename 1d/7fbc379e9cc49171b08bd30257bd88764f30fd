@@ -1,0 +1,81 @@
+crates/sourdaw-harness-tone/src/plugin.rs
+  s_9b530f08172a54::t_c0541f877d0cbd 159
+  s_9b530f08172a54::t_f3ed6a83da10fb 227-231
+  s_9b530f08172a54::t_aa0aed74f2b104 72-97
+  s_9b530f08172a54::t_1c94dcb1a594b6 156
+  s_9b530f08172a54::t_c304014fb620be 193-226,232-287
+  s_9b530f08172a54::t_ae275fae819f1a 8-10,18
+  s_9b530f08172a54::t_777afc70744815 153-155,157-158,160-161
+  s_9b530f08172a54::t_a74d5214d0c9c3 288-291
+crates/sourdaw-harness-tone/src/params.rs
+  s_9b530f08172a54::t_a49a88c25b6264 37
+  s_9b530f08172a54::t_a99b46e8131078 14-17
+crates/sourdaw-harness-tone/src/factory.rs
+  s_9b530f08172a54::t_e17ee9d6f31835 57-60,63
+  s_9b530f08172a54::t_d61fc8204c996e 5-8
+scripts/installHarnessPlugin.ts
+  s_9b530f08172a54::t_97371c8a4898c3 34-37,48
+  s_9b530f08172a54::t_c710ea845837b8 75-83
+scripts/__tests__/installHarnessPlugin.spec.ts
+  s_9b530f08172a54::t_90dc3def0560c0 15,22-29
+crates/sourdaw-harness-tone/tests/renders_through_the_host.rs
+  s_9b530f08172a54::t_31776f727520f4 126-150
+  s_9b530f08172a54::t_7012f47201788b 9,11-13
+  s_9b530f08172a54::t_4bcaac77fb9c07 151-158
+crates/sourdaw-harness-tone/src/tone.rs
+  s_9b530f08172a54::t_651a221cf6d93d 38-44
+  s_9b530f08172a54::t_27dcc63fe0f6a5 94-107
+  s_9b530f08172a54::t_56dea6f082a717 108-115
+crates/sourdaw-harness-tone/src/audio_ports.rs
+  s_9b530f08172a54::t_ee54e2c3a9e8de 36
+  s_9b530f08172a54::t_e89fac81251a63 14-17
+docs/architecture/02-rust-backend.md
+  s_9b530f08172a54::t_4c5384c63252bb 124
+release/open-source-inventory.json
+  s_9b530f08172a54::t_3d6c66a74a87c8 1328-1331,1334
+  s_9b530f08172a54::t_d9a063bb901a24 1706,1710
+  s_9b530f08172a54::t_03982b1cffed3b 398
+  s_9b530f08172a54::t_c7ab251df2c3b8 164-165
+  s_9b530f08172a54::t_5dcece5ae66dc1 1690
+  s_9b530f08172a54::t_57637c1d4b814c 1718
+public/legal/DEPENDENCY-LICENSES.txt
+  s_9b530f08172a54::t_2219cc002c678d 9
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_9b530f08172a54::t_c5349d07b55fd7 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_9b530f08172a54::t_8f0e86cd740d53 1
+public/wasm/manifest.json
+  s_9b530f08172a54::t_a6e6413b4551d4 12,17-18,21,26,31-32,35,40,45-46,49,54
+public/wasm/proof-chamber/proof_chamber.d.ts
+  s_9b530f08172a54::t_0dbd9aea18cd77 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  s_9b530f08172a54::t_b6c40497fdec99 1
+public/wasm/scoring/scoring.d.ts
+  s_9b530f08172a54::t_cf9dc6e6d1898a 1
+public/wasm/scoring/scoring_bg.wasm.d.ts
+  s_9b530f08172a54::t_16c301812d4fce 1
+release/dependency-license-proofs.json
+  s_9b530f08172a54::t_45c20141f769c2 4,12,50-53,64
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_9b530f08172a54::t_2cb37411b41338 1
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  s_9b530f08172a54::t_65c7806e45670b 1
+src/modules/AudioEngine/wasm/scoring.d.ts
+  s_9b530f08172a54::t_179714d328ae10 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "1d7fbc379e9cc49171b08bd30257bd88764f30fd",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
