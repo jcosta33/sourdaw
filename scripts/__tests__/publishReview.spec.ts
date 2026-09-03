@@ -47,6 +47,10 @@ const validComment = {
     done: 'Require reviewer APPROVED on this head',
 };
 
+function removeTemporaryDirectory(root: string): void {
+    rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+}
+
 function runGit(root: string, args: string[]): string {
     const result = spawnSync('git', args, { cwd: root, encoding: 'utf8', shell: false });
     if (result.error !== undefined) {
@@ -70,7 +74,7 @@ function actualGitDiffForPath(path: string): string {
         writeFileSync(join(root, path), 'after\n');
         return runGit(root, ['diff', '--', path]);
     } finally {
-        rmSync(root, { recursive: true, force: true });
+        removeTemporaryDirectory(root);
     }
 }
 
@@ -579,7 +583,7 @@ describe('review publish', () => {
             } else {
                 process.env.SOURDAW_TRUSTED_PS_PATH = previous;
             }
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -645,7 +649,7 @@ describe('review publish', () => {
             } else {
                 process.env.SOURDAW_TRUSTED_PS_PATH = previous;
             }
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -1576,7 +1580,7 @@ describe('shellPort postReview state verification', () => {
             expect(reacquired).toBe(false);
             expect(runGit(primaryRoot, ['show-ref', '--verify', '--hash', ref])).toBe(retainedOwnerOid);
         } finally {
-            rmSync(primaryRoot, { recursive: true, force: true });
+            removeTemporaryDirectory(primaryRoot);
         }
     });
 
@@ -1799,7 +1803,7 @@ describe('shellPort postReview state verification', () => {
             expect(readPullRequestMutationLockReceipt(root, number, ownerOid)).toBeUndefined();
             expect(readPullRequestMutationLockReceipt(root, number, retainedOid!)).toBeUndefined();
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -1821,7 +1825,7 @@ describe('shellPort postReview state verification', () => {
                 readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
             ).toBeUndefined();
         } finally {
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -1875,7 +1879,7 @@ describe('shellPort postReview state verification', () => {
             expect(authenticated).toBe(false);
         } finally {
             restorePs();
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -1913,7 +1917,7 @@ describe('shellPort postReview state verification', () => {
                 );
             } finally {
                 restorePs();
-                rmSync(root, { recursive: true, force: true });
+                removeTemporaryDirectory(root);
             }
         }
     );
@@ -1962,7 +1966,7 @@ describe('shellPort postReview state verification', () => {
                 readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
             ).toBeUndefined();
         } finally {
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -2015,7 +2019,7 @@ describe('shellPort postReview state verification', () => {
                 )
             ).toBeUndefined();
         } finally {
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -2098,7 +2102,7 @@ describe('shellPort postReview state verification', () => {
             ).resolves.toBe(0);
             expect(authenticated).toBe(false);
         } finally {
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -2146,7 +2150,7 @@ describe('shellPort postReview state verification', () => {
                 runRecoverPublishReviewLockCli([String(fixture.number), '--owner', fixture.ownerOid], dependencies)
             ).resolves.toBe(0);
         } finally {
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -2313,7 +2317,7 @@ describe('shellPort postReview state verification', () => {
             ).resolves.toBe(0);
             expect(authenticated).toBe(false);
         } finally {
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -2347,7 +2351,7 @@ describe('shellPort postReview state verification', () => {
                 readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
             ).not.toBe(fixture.ownerOid);
         } finally {
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -2375,7 +2379,7 @@ describe('shellPort postReview state verification', () => {
                 readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
             ).toBeUndefined();
         } finally {
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -2396,7 +2400,7 @@ describe('shellPort postReview state verification', () => {
                 readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
             ).toBe(fixture.ownerOid);
         } finally {
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -2440,7 +2444,7 @@ describe('shellPort postReview state verification', () => {
                 )
             ).toBe(fixture.incident.ownerOid);
         } finally {
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -2470,7 +2474,7 @@ describe('shellPort postReview state verification', () => {
                 )
             ).toBeUndefined();
         } finally {
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -2491,7 +2495,7 @@ describe('shellPort postReview state verification', () => {
                 readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
             ).toBe(fixture.ownerOid);
         } finally {
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -2517,7 +2521,7 @@ describe('shellPort postReview state verification', () => {
                 )
             ).toBe(fixture.ownerOid);
         } finally {
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -2553,7 +2557,7 @@ describe('shellPort postReview state verification', () => {
             ).toBeUndefined();
         } finally {
             kill.mockRestore();
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -2585,7 +2589,7 @@ describe('shellPort postReview state verification', () => {
             ).toBe(fixture.ownerOid);
         } finally {
             kill.mockRestore();
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -2614,7 +2618,7 @@ describe('shellPort postReview state verification', () => {
             ).toBe(fixture.ownerOid);
         } finally {
             kill.mockRestore();
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -2651,7 +2655,7 @@ describe('shellPort postReview state verification', () => {
                 readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
             ).toBe(replacementOid);
         } finally {
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -2680,7 +2684,7 @@ describe('shellPort postReview state verification', () => {
                 readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
             ).toBe(fixture.ownerOid);
         } finally {
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -2709,7 +2713,7 @@ describe('shellPort postReview state verification', () => {
                 readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
             ).toBe(fixture.ownerOid);
         } finally {
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -2740,7 +2744,7 @@ describe('shellPort postReview state verification', () => {
                 readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
             ).toBe(fixture.ownerOid);
         } finally {
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -2791,7 +2795,7 @@ describe('shellPort postReview state verification', () => {
                 )
             ).toBeUndefined();
         } finally {
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -2819,7 +2823,7 @@ describe('shellPort postReview state verification', () => {
             expect(retainedOid).toMatch(/^[0-9a-f]{40}$/);
             expect(retainedOid).not.toBe(fixture.ownerOid);
         } finally {
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -2847,7 +2851,7 @@ describe('shellPort postReview state verification', () => {
             expect(retainedOid).toMatch(/^[0-9a-f]{40}$/);
             expect(retainedOid).not.toBe(fixture.ownerOid);
         } finally {
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -2877,7 +2881,7 @@ describe('shellPort postReview state verification', () => {
             expect(retainedOid).toMatch(/^[0-9a-f]{40}$/);
             expect(retainedOid).not.toBe(fixture.ownerOid);
         } finally {
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -2917,7 +2921,7 @@ describe('shellPort postReview state verification', () => {
                 readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
             ).toBe(oid);
         } finally {
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -2942,7 +2946,7 @@ describe('shellPort postReview state verification', () => {
                 readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
             ).toBe(oid);
         } finally {
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -2994,7 +2998,7 @@ describe('shellPort postReview state verification', () => {
                 )
             ).toBe(oid);
         } finally {
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -3027,7 +3031,7 @@ describe('shellPort postReview state verification', () => {
                 readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
             ).toBe(fixture.ownerOid);
         } finally {
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -3051,7 +3055,7 @@ describe('shellPort postReview state verification', () => {
                 readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
             ).toBe(fixture.ownerOid);
         } finally {
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -3127,7 +3131,7 @@ describe('shellPort postReview state verification', () => {
                 )
             ).toBeUndefined();
         } finally {
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -3205,7 +3209,7 @@ describe('shellPort postReview state verification', () => {
                 )
             ).toBeUndefined();
         } finally {
-            rmSync(fixture.root, { recursive: true, force: true });
+            removeTemporaryDirectory(fixture.root);
         }
     });
 
@@ -3244,7 +3248,7 @@ describe('shellPort postReview state verification', () => {
             } else {
                 process.env.SOURDAW_TRUSTED_PS_PATH = previous;
             }
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3307,7 +3311,7 @@ describe('shellPort postReview state verification', () => {
             } else {
                 process.env.SOURDAW_TRUSTED_POWERSHELL_PATH = previous;
             }
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3339,7 +3343,7 @@ describe('shellPort postReview state verification', () => {
                 ).rejects.toThrow(`PR #${number} review-publication lock is absent without an exact recovery receipt`);
                 expect(authenticated).toBe(false);
             } finally {
-                rmSync(root, { recursive: true, force: true });
+                removeTemporaryDirectory(root);
             }
         }
     );
@@ -3381,7 +3385,7 @@ describe('shellPort postReview state verification', () => {
             ).rejects.toThrow(`PR #${number} review-publication lock is absent without an exact recovery receipt`);
             expect(authenticated).toBe(false);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 
@@ -3497,7 +3501,7 @@ describe('shellPort postReview state verification', () => {
             ).rejects.toThrow(`PR #${number} review-publication lock is absent without an exact recovery receipt`);
             expect(authenticated).toBe(false);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            removeTemporaryDirectory(root);
         }
     });
 });
