@@ -300,6 +300,7 @@ describe('high-level intent execution', () => {
         const clipId = requireCreatedClip().id;
         const notesAfterCommit = getMusicalNotes(clipId);
         const pastAfterCommit = structuredClone(undoStore.value?.past ?? []);
+        const revisionAfterCommit = captureProjectRevision();
         const executed = getPendingActionConfirmation(confirmation.id);
         if (!executed?.approvalSnapshot.commandBatch) {
             throw new TypeError('Expected the executed confirmation to retain its command batch');
@@ -325,11 +326,19 @@ describe('high-level intent execution', () => {
             projectRevision: captureProjectRevision(),
         });
 
-        await confirmPendingChatActions({ confirmationId: 'confirmation-replay' });
+        // The durable receipt settles the replay: it reports the commit that already happened
+        // instead of writing a second one, so the document revision never moves.
+        await expect(confirmPendingChatActions({ confirmationId: 'confirmation-replay' })).resolves.toEqual({
+            status: 'executed',
+        });
 
+        expect(captureProjectRevision()).toBe(revisionAfterCommit);
         expect(getCreatedTracks()).toEqual(tracksAfterCommit);
+        expect(getCreatedTracks()).toHaveLength(tracksAfterCommit.length);
         expect(getMusicalNotes(clipId)).toEqual(notesAfterCommit);
         expect(undoStore.value?.past ?? []).toEqual(pastAfterCommit);
+        expect(undoStore.value?.past ?? []).toHaveLength(pastAfterCommit.length);
+        expect(aiActionHistoryStore.value?.groups ?? []).toHaveLength(1);
     });
 
     it('reverts the committed group back to the empty project it started from', async () => {

@@ -397,15 +397,18 @@ describe('high-level intent conformance', () => {
         expect(getTracks()).toEqual([]);
     });
 
-    it('refuses every attempt to reach an existing project object the request never named', async () => {
+    // A creation batch stays away from existing project objects by structure, not by lookup: the
+    // compiler refuses a literal target carrying no bounded selector before it reads the project.
+    it.each([
+        { label: 'an id the project holds', trackId: EXISTING_TRACK_ID },
+        { label: 'an id the project does not hold', trackId: 'track-absent-from-project' },
+    ])('refuses a literal target carrying no bounded selector: $label', async ({ trackId }) => {
         seedPartiallyBuiltProject();
         const projectBefore = structuredClone(getTracks());
         const [makeTrack, makeClip, writeChords] = bluesProposalItems();
         const ungroundedItems = [
             makeTrack ?? {},
-            // The clip lands on a track the project already holds, and the request named no track at
-            // all: the creation waiver covers only objects this same batch creates.
-            { ...makeClip, arguments: { ...(makeClip?.arguments as object), trackId: EXISTING_TRACK_ID } },
+            { ...makeClip, arguments: { ...(makeClip?.arguments ?? {}), trackId } },
             writeChords ?? {},
         ];
         cycleProviderAttempt(runtimeMocks.generateWebLlmCompletion, [

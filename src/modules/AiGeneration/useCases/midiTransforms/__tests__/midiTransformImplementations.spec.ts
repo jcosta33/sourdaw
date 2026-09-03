@@ -82,6 +82,34 @@ function numericBounds(parameter: Parameter): { minimum: number; maximum: number
         : { minimum: parameter.minimum, maximum: parameter.maximum };
 }
 
+type ContentPin = { count: number; first: { pitch: number; startBeat: number; duration: number; velocity: number }[] };
+
+const SEEDED_CONTENT_PINS: Record<string, ContentPin> = {
+    chordProgression: {
+        count: 6,
+        first: [
+            { pitch: 36, startBeat: 0, duration: 4, velocity: 85 },
+            { pitch: 40, startBeat: 0, duration: 4, velocity: 85 },
+            { pitch: 43, startBeat: 0, duration: 4, velocity: 85 },
+        ],
+    },
+    drumPattern: {
+        count: 30,
+        first: [
+            { pitch: 36, startBeat: 0, duration: 0.25, velocity: 105 },
+            { pitch: 42, startBeat: 0, duration: 0.25, velocity: 87 },
+            { pitch: 42, startBeat: 0.5, duration: 0.25, velocity: 77 },
+        ],
+    },
+    melody: {
+        count: 2,
+        first: [
+            { pitch: 55, startBeat: 0, duration: 2, velocity: 95 },
+            { pitch: 52, startBeat: 4, duration: 0.5, velocity: 94 },
+        ],
+    },
+};
+
 describe('MIDI transform implementations', () => {
     beforeEach(() => {
         clearMidiTransformRegistry();
@@ -141,6 +169,22 @@ describe('MIDI transform implementations', () => {
                 }
             }
         }
+    });
+
+    /**
+     * The bounds cases above hold for any generator that stays inside its bars, so none of them
+     * would notice a changed interval, velocity or step. These literals do: they were read from a
+     * real run and pin what each generator actually writes for its published defaults at seed 1.
+     */
+    it.each(getMidiTransformNames())('writes the same notes it always has for %s at seed 1', (name) => {
+        const descriptor = getMidiTransformDescriptors().find((candidate) => candidate.name === name);
+        if (descriptor === undefined) {
+            throw new Error(`no descriptor published for ${name}`);
+        }
+
+        const notes = run(descriptor, { ...publishedArguments(descriptor), seed: 1 });
+
+        expect({ count: notes.length, first: notes.slice(0, 3) }).toEqual(SEEDED_CONTENT_PINS[name]);
     });
 
     describe.each(getMidiTransformNames())('%s', (name) => {

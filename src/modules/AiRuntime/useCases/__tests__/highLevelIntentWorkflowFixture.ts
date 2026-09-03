@@ -202,8 +202,9 @@ export function declineCall(args: Record<string, unknown>): ProviderCall {
 
 /**
  * The notes the run must end up with, taken from the one route production uses to turn a requested
- * transform into `addNotes`. Deriving them rather than restating a table keeps the assertion honest:
- * a generator change fails the spec instead of silently agreeing with a copied literal.
+ * transform into `addNotes`. The oracle comes from the same generator the run does, so it proves the
+ * wiring — request reaches `expandMidiTransform`, its output reaches the clip — and not the content
+ * that generator produces. Generator content is pinned where the generator lives.
  */
 export function deriveBluesTransformCommands(): Array<{ clipId: string; notes: readonly MaterializedNote[] }> {
     const expansion = expandMidiTransform({
