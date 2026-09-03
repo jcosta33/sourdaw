@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
     triggerToasterPad: vi.fn(),
     setPadParamImmediate: vi.fn(),
     setSoundLock: vi.fn(),
+    setStepRetrigger: vi.fn(),
+    setStepCondition: vi.fn(),
 }));
 
 import { ToasterPanel } from '../ToasterPanel';
@@ -32,6 +34,12 @@ vi.mock('../../../useCases/setPadParamImmediate', () => ({
 }));
 vi.mock('../../../useCases/soundLocks/setSoundLock', () => ({
     setSoundLock: mocks.setSoundLock,
+}));
+vi.mock('../../../useCases/stepModifications/setStepRetrigger', () => ({
+    setStepRetrigger: mocks.setStepRetrigger,
+}));
+vi.mock('../../../useCases/stepModifications/setStepCondition', () => ({
+    setStepCondition: mocks.setStepCondition,
 }));
 vi.mock('../../../useCases/trigger16Level', () => ({
     trigger16Level: mocks.trigger16Level,
@@ -265,5 +273,31 @@ describe('ToasterPanel', () => {
 
         expect(mocks.setSoundLock).toHaveBeenCalledTimes(1);
         expect(mocks.setSoundLock).toHaveBeenCalledWith('toaster-test', 0, 0, 'snare-808');
+    });
+
+    it('passes onSetRetrigger to StepSequencer and invokes setStepRetrigger', () => {
+        render(<ToasterPanel deviceId="toaster-test" />);
+
+        const stepCell = screen.getByTestId('toaster-step-0-0');
+        fireEvent.contextMenu(stepCell, { clientX: 50, clientY: 50 });
+
+        const ratchetOption = screen.getByRole('menuitem', { name: '2×' });
+        fireEvent.click(ratchetOption);
+
+        expect(mocks.setStepRetrigger).toHaveBeenCalledTimes(1);
+        expect(mocks.setStepRetrigger).toHaveBeenCalledWith('toaster-test', 0, 0, 1);
+    });
+
+    it('passes onSetCondition to StepSequencer and invokes setStepCondition', () => {
+        render(<ToasterPanel deviceId="toaster-test" />);
+
+        const stepCell = screen.getByTestId('toaster-step-0-0');
+        fireEvent.contextMenu(stepCell, { clientX: 50, clientY: 50 });
+
+        const conditionOption = screen.getByRole('menuitem', { name: 'fill' });
+        fireEvent.click(conditionOption);
+
+        expect(mocks.setStepCondition).toHaveBeenCalledTimes(1);
+        expect(mocks.setStepCondition).toHaveBeenCalledWith('toaster-test', 0, 0, 'fill');
     });
 });
