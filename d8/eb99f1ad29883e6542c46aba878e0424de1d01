@@ -1,0 +1,29 @@
+src/modules/Toaster/presentations/components/StepSequencer.tsx
+  s_9b530f08172a54::t_4e7ab66f06f19c 19,34-41,68,78,164-167,300,320-339
+src/modules/Toaster/presentations/components/__tests__/StepSequencer.spec.tsx
+  s_9b530f08172a54::t_aee3f72c3e88a1 486-541,543
+src/modules/Toaster/presentations/views/ToasterPanel.tsx
+  s_9b530f08172a54::t_4a842c767b1f8e 47,676-678
+src/modules/Toaster/presentations/views/__tests__/ToasterPanel.spec.tsx
+  s_9b530f08172a54::t_a7657f2a12c9ca 16,45-47,307-319
+src/modules/Toaster/useCases/stepModifications/__tests__/setStepProbability.spec.ts
+  s_9b530f08172a54::t_e9987e2bbd84c3 1-82
+src/modules/Toaster/useCases/stepModifications/setStepProbability.ts
+  s_9b530f08172a54::t_c42010cfc66c12 1-45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d8eb99f1ad29883e6542c46aba878e0424de1d01",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
