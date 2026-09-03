@@ -1,12 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { getExecutableAppActionToolSchemas } from '#/modules/Command/useCases';
-
 import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
 import { isModelProviderFailureError } from '../../../errors/ModelProviderFailureError';
 import { TOOL_PLAN_MAX_OUTPUT_TOKENS } from '../../../models/HostedToolPlanLimits';
-import { DAW_TOOL_SCHEMAS, type ToolSchema } from '../../../models/ToolDefinitions';
+import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { WORKFLOW_ACTION_TOOL_NAMES } from '../../../models/WorkflowCapability';
+import { getPlanningProviderToolSchemas } from '../../getPlanningProviderToolSchemas';
 import { getPlanningProviderSchemaContract } from '../../planningProviderSchema';
 import { generateToolPlanningOutcome, type ProviderAttemptAdmission } from '../inference';
 
@@ -257,26 +256,13 @@ describe('generateToolPlanningOutcome', () => {
         mocks.backendChain.value = ['webllm'];
         mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
 
-        // Build the exact schema list parsePromptToActions.ts assembles: the planning provider
-        // contract (12 schemas: 11 agent-catalog tools + selectWorkflowCapability) plus the
-        // deduplicated workflow action tool schemas (23), for 35 total.
+        // This is the exact list parsePromptToActions.ts sends: the planning provider contract
+        // (12 schemas: 11 agent-catalog tools + selectWorkflowCapability) plus the deduplicated
+        // workflow action tool schemas (23), for 35 total.
         const planningContract = getPlanningProviderSchemaContract().schemas;
-        const executableSchemas = getExecutableAppActionToolSchemas();
-        const specializedWorkflowToolSchemas: readonly ToolSchema[] = [
-            toolSchema('automateTrackGainRange', 'Automate track gain over a named section range'),
-            toolSchema('automateSendRange', 'Automate send reduction over a named section range'),
-        ];
-        const workflowToolSchemas = [
-            ...DAW_TOOL_SCHEMAS.filter((tool) => WORKFLOW_ACTION_TOOL_NAMES.has(tool.function.name)),
-            ...executableSchemas.filter((tool) => WORKFLOW_ACTION_TOOL_NAMES.has(tool.function.name)),
-            ...specializedWorkflowToolSchemas,
-        ];
-        const uniqueWorkflowToolSchemas = Array.from(
-            new Map(workflowToolSchemas.map((tool) => [tool.function.name, tool])).values()
-        );
-        const schemas = [...planningContract, ...uniqueWorkflowToolSchemas];
+        const schemas = getPlanningProviderToolSchemas();
 
-        // The built list must carry exactly what parsePromptToActions.ts sends — the planning contract plus every workflow action tool — and this holds across catalog growth.
+        // The list production sends must carry exactly the planning contract plus every workflow action tool, and this holds across catalog growth.
         expect(new Set(schemas.map((tool) => tool.function.name))).toEqual(
             new Set([...planningContract.map((tool) => tool.function.name), ...WORKFLOW_ACTION_TOOL_NAMES])
         );
