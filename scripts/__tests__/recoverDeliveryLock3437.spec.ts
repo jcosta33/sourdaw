@@ -195,9 +195,7 @@ describe('deliver --recover-lock 3437', () => {
         const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
 
         try {
-            await expect(runRecoverDeliveryLockCli(['3437', '--owner', SECOND_OWNER_OID], configured)).resolves.toBe(
-                0
-            );
+            await expect(runRecoverDeliveryLockCli(['3437', '--owner', SECOND_OWNER_OID], configured)).resolves.toBe(0);
             expect(log).toHaveBeenCalledWith(`delivery-lock-recovered:3437:${SECOND_OWNER_OID}:${CURRENT_HEAD}`);
             expect(() => git(root, ['rev-parse', '--verify', REF])).toThrow();
         } finally {
