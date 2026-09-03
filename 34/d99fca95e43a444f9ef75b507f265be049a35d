@@ -1,0 +1,19 @@
+.agents/skills/review-stances/correctness.md
+  s_55916eec834fd4::t_5e69e79cab1977 1-46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "34d99fca95e43a444f9ef75b507f265be049a35d",
+  "prompts": {},
+  "sessions": {
+    "s_55916eec834fd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a82b0370a0cde5723",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
