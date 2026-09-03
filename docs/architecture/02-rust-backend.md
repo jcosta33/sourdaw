@@ -121,7 +121,7 @@ For a professional DAW backend, the sweet spot is usually **4–6 crates**.
 Not one monolith.
 Not 20 tiny crates.
 
-> **Sourdaw today:** the five below plus `sourdaw-native` (the shell-facing command bodies and the Node addon that exposes them), `daw-collab` (Automerge CRDT + LAN sync), `daw-wasm-decoder` (browser codec decode), `proof-chamber` (reverb), and `scoring` (tuner). The extra crates exist to isolate WASM-only build targets, the collaboration stack, and the shell-facing surface. See `crates/sourdaw-native/AGENTS.md` for its boundary rules.
+> **Sourdaw today:** the five below plus a small set of extra crates. Each extra crate exists to isolate one concern the core five don't own — a WASM-only build target, the collaboration stack, the shell-facing surface, or a test fixture — never as a place for business rules or project truth to leak into. See `crates/sourdaw-native/AGENTS.md` for its boundary rules.
 
 A practical default is:
 
