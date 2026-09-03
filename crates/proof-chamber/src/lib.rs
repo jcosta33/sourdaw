@@ -18,7 +18,7 @@ pub mod vintage;
 
 use convolution::ConvolutionEngine;
 use fdn::FdnReverb;
-use hybrid::{HybridMode, HybridReverb};
+use hybrid::HybridReverb;
 use proof_chamber::ProofChamber;
 use reverse::ReverseReverb;
 use spring::SpringReverb;

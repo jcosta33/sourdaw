@@ -16,9 +16,9 @@ use daw_dsp::crumbs::analysis::peaks::{flatten_level, generate_mipmap, generate_
 use daw_dsp::crumbs::analysis::pitch::detect_pitch;
 use daw_dsp::crumbs::engine::{CrumbsEngine, CrumbsMetering};
 use daw_dsp::crumbs::sample::SampleData;
-use daw_dsp::crumbs::types::{CrumbsCommand, CrumbsParam, SampleId};
+use daw_dsp::crumbs::types::{CrumbsCommand, CrumbsMode, CrumbsParam, SampleId};
 use daw_engine::scheduler::{GraphCommand, CRUMBS_CAPTURE_RESERVE};
-use daw_engine::GraphBatchError;
+use daw_engine::{EngineHandle, GraphBatchError};
 use rtrb::Producer;
 use serde::{Deserialize, Serialize};
 
@@ -26,22 +26,142 @@ use super::filesystem;
 
 // ── Crumbs State ──────────────────────────────────────────────────────
 
-pub struct CrumbsInstanceData {
-    pub command_tx: Producer<CrumbsCommand>,
-    pub samples: HashMap<SampleId, Arc<SampleData>>,
-    pub metering: Arc<CrumbsMetering>,
-    pub engine_plugin_id: usize,
-    pub next_sample_id: SampleId,
+/// Where one instance's audio side lives.
+///
+/// The engine starts lazily, on the first graph batch, and the panel can be
+/// opened long before the first play. An instance created then is dormant
+/// rather than refused: it parks the panel's writes command-side and takes
+/// its rings on the engine [`attach_dormant_crumbs`] finds.
+pub enum CrumbsEngineSlot {
+    /// Registered on the engine's master chain and capture bus under this
+    /// plugin id, and holding the command side of the rings that reach it.
+    Attached {
+        plugin_id: usize,
+        ends: CrumbsInstanceEnds,
+    },
+    /// Created before the engine ran; holds the writes the slot will read on
+    /// its first pass.
+    Dormant(DormantCrumbsWrites),
+}
+
+/// What the panel set before an engine existed to hear it.
+///
+/// State, not a queue: a knob drag sends a value every animation frame, and a
+/// buffer of gestures would either overflow or replay a drag the engine has no
+/// reason to hear. Only the value the panel settled on matters, so each write
+/// overwrites the one it supersedes and nothing here can grow with time.
+#[derive(Default)]
+pub struct DormantCrumbsWrites {
+    /// Last write per parameter. `CrumbsParam` is `Copy` and `Eq` but not
+    /// `Hash`, so the table is a vector searched in place; it is bounded by
+    /// the parameter count.
+    params: Vec<(CrumbsParam, f32)>,
+    mode: Option<CrumbsMode>,
+    active_sample: Option<SampleId>,
+}
+
+/// The command-side ends of one instance's rings.
+pub struct CrumbsInstanceEnds {
+    command_tx: Producer<CrumbsCommand>,
     /// Receives committed takes from the audio thread (O(1) engine handoff,
     /// ledger #568); drained by drain_pending_recording_commits off-thread.
-    pub commit_rx: rtrb::Consumer<PendingRecordingCommit>,
+    commit_rx: rtrb::Consumer<PendingRecordingCommit>,
     /// Returns emptied record-buffer pairs to the audio thread for reuse.
-    pub recycle_tx: Producer<RecordBufferPair>,
-    /// Engine-mirror entries (AddSample + SetActiveSample) whose push hit a
-    /// full command ring; retried at the top of every drain (PR #579
-    /// review). Retries are idempotent: AddSample uses set() with the same
-    /// id and data.
+    recycle_tx: Producer<RecordBufferPair>,
+}
+
+/// The slot-side ends of the same rings, handed to the audio thread with the
+/// slot they belong to.
+pub struct CrumbsSlotEnds {
+    command_rx: rtrb::Consumer<CrumbsCommand>,
+    commit_tx: rtrb::Producer<PendingRecordingCommit>,
+    recycle_rx: rtrb::Consumer<RecordBufferPair>,
+}
+
+/// One instance's rings: the command feed the slot drains, and the
+/// commit-handoff pair (ledger #568) that returns takes and recycles their
+/// buffers. Allocated at registration, never before — a dormant instance has
+/// no reader for a ring, and a ring nobody drains is a ring that overflows.
+fn new_crumbs_rings() -> (CrumbsInstanceEnds, CrumbsSlotEnds) {
+    let (command_tx, command_rx) = rtrb::RingBuffer::new(128);
+    let (commit_tx, commit_rx) = rtrb::RingBuffer::new(2);
+    let (recycle_tx, recycle_rx) = rtrb::RingBuffer::new(2);
+    (
+        CrumbsInstanceEnds {
+            command_tx,
+            commit_rx,
+            recycle_tx,
+        },
+        CrumbsSlotEnds {
+            command_rx,
+            commit_tx,
+            recycle_rx,
+        },
+    )
+}
+
+pub struct CrumbsInstanceData {
+    pub samples: HashMap<SampleId, Arc<SampleData>>,
+    pub metering: Arc<CrumbsMetering>,
+    pub engine_slot: CrumbsEngineSlot,
+    pub next_sample_id: SampleId,
+    /// Engine-mirror entries (AddSample + SetActiveSample) a full command
+    /// ring refused; retried at the top of every drain (PR #579 review). An
+    /// entry leaves only once both halves land, so a selection the ring
+    /// refuses is retried rather than lost. Retries are idempotent:
+    /// AddSample uses set() with the same id and data.
     pub pending_mirror: Vec<(SampleId, Arc<SampleData>)>,
+}
+
+impl CrumbsInstanceData {
+    /// The one route from a command handler to the engine.
+    ///
+    /// Attached, that is the command ring. Dormant, it is the parked-write
+    /// table: the engine reads this state on the slot's first pass, so a
+    /// write made before play lands exactly as one made after it.
+    fn send(&mut self, command: CrumbsCommand) -> Result<(), String> {
+        match &mut self.engine_slot {
+            CrumbsEngineSlot::Attached { ends, .. } => ends
+                .command_tx
+                .push(command)
+                .map_err(|_| "Command queue full".to_string()),
+            CrumbsEngineSlot::Dormant(writes) => writes.record(command),
+        }
+    }
+}
+
+impl DormantCrumbsWrites {
+    /// Park a write, or refuse a gesture only a running audio thread can
+    /// answer.
+    ///
+    /// A note would sound nothing and an armed take would capture nothing,
+    /// both silently and both while the panel reports the gesture as taken,
+    /// so those refuse where the panel can report them. Anything not parked
+    /// here is refused for that reason.
+    fn record(&mut self, command: CrumbsCommand) -> Result<(), String> {
+        match command {
+            CrumbsCommand::SetParam { param, value } => {
+                match self.params.iter_mut().find(|(held, _)| *held == param) {
+                    Some(held) => held.1 = value,
+                    None => self.params.push((param, value)),
+                }
+                Ok(())
+            }
+            CrumbsCommand::SetMode(mode) => {
+                self.mode = Some(mode);
+                Ok(())
+            }
+            CrumbsCommand::SetActiveSample(id) => {
+                self.active_sample = Some(id);
+                Ok(())
+            }
+            // The command-side sample map is the authority on what the
+            // instance holds and already carries the data; the engine's pool
+            // is filled from it at attach.
+            CrumbsCommand::AddSample { .. } => Ok(()),
+            _ => Err("Native engine not running".to_string()),
+        }
+    }
 }
 
 /// Complete any recording commits the audio thread handed off (ledger
@@ -51,25 +171,47 @@ pub struct CrumbsInstanceData {
 /// the command-side sample map, and recycle the emptied buffers. Called
 /// from the recording and polling command handlers; a pending commit at
 /// destroy time is simply dropped with the instance.
+///
+/// A dormant instance has no slot handing takes back and no ring to mirror
+/// through, so there is nothing here to do until it attaches.
 pub fn drain_pending_recording_commits(instance: &mut CrumbsInstanceData) {
+    let CrumbsInstanceData {
+        samples,
+        engine_slot,
+        next_sample_id,
+        pending_mirror,
+        ..
+    } = instance;
+    let CrumbsEngineSlot::Attached { ends, .. } = engine_slot else {
+        return;
+    };
+
     // Retry mirror pushes that previously hit a full command ring (oldest
     // first). Stop at the first still-full ring; later entries retry on the
     // next drain call.
-    while let Some((id, sample)) = instance.pending_mirror.first() {
-        let pushed = instance.command_tx.push(CrumbsCommand::AddSample {
+    while let Some((id, sample)) = pending_mirror.first() {
+        let pushed = ends.command_tx.push(CrumbsCommand::AddSample {
             id: *id,
             data: Arc::clone(sample),
         });
         if pushed.is_err() {
             return;
         }
-        let _ = instance
+        // Both halves or neither. The selection is the half the session ends
+        // on, so an entry whose AddSample landed but whose SetActiveSample
+        // the ring refused stays parked; the next drain re-pushes the pair,
+        // and the repeated AddSample costs a ring slot and nothing else.
+        if ends
             .command_tx
-            .push(CrumbsCommand::SetActiveSample(*id));
-        instance.pending_mirror.remove(0);
+            .push(CrumbsCommand::SetActiveSample(*id))
+            .is_err()
+        {
+            return;
+        }
+        pending_mirror.remove(0);
     }
 
-    while let Ok(commit) = instance.commit_rx.pop() {
+    while let Ok(commit) = ends.commit_rx.pop() {
         let PendingRecordingCommit {
             mut left,
             mut right,
@@ -80,27 +222,36 @@ pub fn drain_pending_recording_commits(instance: &mut CrumbsInstanceData) {
             right.clone(),
             sample_rate,
         ));
-        let id = instance.next_sample_id;
-        instance.next_sample_id += 1;
-        instance.samples.insert(id, Arc::clone(&sample));
+        let id = *next_sample_id;
+        *next_sample_id += 1;
+        samples.insert(id, Arc::clone(&sample));
         // Mirror into the engine. A full command ring must not lose the
         // mirror (the sample map above already holds the take): queue it in
         // pending_mirror, retried at the top of this drain.
-        let pushed = instance.command_tx.push(CrumbsCommand::AddSample {
+        let pushed = ends.command_tx.push(CrumbsCommand::AddSample {
             id,
             data: Arc::clone(&sample),
         });
         match pushed {
             Ok(()) => {
-                let _ = instance.command_tx.push(CrumbsCommand::SetActiveSample(id));
+                // A landed AddSample whose selection the ring refused parks
+                // too, on the same both-halves-or-neither rule as the retry
+                // above.
+                if ends
+                    .command_tx
+                    .push(CrumbsCommand::SetActiveSample(id))
+                    .is_err()
+                {
+                    pending_mirror.push((id, sample));
+                }
             }
             Err(_) => {
-                instance.pending_mirror.push((id, sample));
+                pending_mirror.push((id, sample));
             }
         }
         left.clear();
         right.clear();
-        let _ = instance.recycle_tx.push((left, right));
+        let _ = ends.recycle_tx.push((left, right));
     }
 }
 
@@ -200,10 +351,13 @@ pub struct LoopPointDetectionResult {
 /// instances.
 ///
 /// Each live instance holds one slot of the shared effect table and one seat
-/// on the engine's captured-input bus. The app renders exactly one Crumbs panel,
-/// and re-pointing it tears the old instance down asynchronously while the new
-/// one is already being created, so two can be live at once. The gate this
-/// enforces is the instance map itself: a destroy removes its map entry
+/// on the engine's captured-input bus — a dormant one takes both the moment it
+/// attaches, so it is counted here exactly like an attached one and attaching
+/// every instance the map holds cannot overrun the reserve. The app renders
+/// exactly one Crumbs panel, and re-pointing it tears the old instance down
+/// asynchronously while the new one is already being created, so two can be
+/// live at once. The gate this enforces is the instance map itself: a destroy
+/// removes its map entry
 /// before the engine slot's retirement has drained, so re-points inside that
 /// teardown window can admit a third engine slot past this check — at that
 /// extreme the engine's own callback-time capacity check is the last line.
@@ -226,6 +380,170 @@ fn ensure_crumbs_capture_headroom(
     Ok(())
 }
 
+/// Build the audio-thread slot from ring ends the command side already holds
+/// and publish it, returning the engine plugin id both commands name.
+///
+/// The slot and its record feed cross as one fenced batch. Admission checks
+/// the effect table and the capture ledger for the whole batch and provisions
+/// the ring to fit before the first push, so a refusal leaves nothing queued
+/// and nothing to unwind. Registering the two separately could strand a slot
+/// on the graph — audible, unrecordable, and owned by no instance — whenever
+/// the second command was refused.
+///
+/// A refused batch is dropped whole by the engine, `slot_ends` with it, so
+/// the ends are allocated for this call and adopted command-side only once it
+/// returns.
+fn register_crumbs_slot(
+    engine_handle: &mut EngineHandle,
+    metering: &Arc<CrumbsMetering>,
+    slot_ends: CrumbsSlotEnds,
+) -> Result<usize, String> {
+    // A reserved id is an opaque handle, never a dense index, so a refused
+    // batch below simply leaves this one unused.
+    let id = engine_handle.reserve_plugin_id();
+    // The device's rate, not the caller's: this engine renders on the
+    // master chain and records the tap the same device feeds.
+    let mut engine = CrumbsEngine::with_metering(engine_handle.sample_rate(), Arc::clone(metering));
+    engine.enable_commit_handoff();
+    let CrumbsSlotEnds {
+        command_rx,
+        commit_tx,
+        recycle_rx,
+    } = slot_ends;
+    let slot = CrumbsPluginSlot {
+        engine,
+        command_rx,
+        commit_tx,
+        recycle_rx,
+    };
+
+    engine_handle
+        .send_graph_batch(vec![
+            GraphCommand::AddPlugin(id, Box::new(slot)),
+            GraphCommand::RegisterCaptureConsumer(id),
+        ])
+        .map_err(|error| match error {
+            GraphBatchError::Refused(reason) => reason,
+            // Unreachable by construction, and deliberately not unwound:
+            // the only route to the audio thread is the ring that just
+            // failed, so a removal command would have nowhere to go.
+            GraphBatchError::Partial {
+                pushed,
+                total,
+                error,
+            } => format!(
+                "the crumbs slot was published in part ({pushed} of {total} commands): {error}"
+            ),
+        })?;
+
+    Ok(id)
+}
+
+/// Put everything parked while dormant onto the ring the slot now drains.
+///
+/// Order is the engine's own dependency order: parameters and mode first,
+/// then the pool, then the selection, so the active sample names one the pool
+/// already holds. The pool is replayed from the command-side sample map,
+/// which is the authority on what the instance holds — a take recorded before
+/// the engine ran cannot exist, but a loaded sample can.
+fn replay_parked_writes(instance: &mut CrumbsInstanceData, parked: DormantCrumbsWrites) {
+    for (param, value) in parked.params {
+        let _ = instance.send(CrumbsCommand::SetParam { param, value });
+    }
+    if let Some(mode) = parked.mode {
+        let _ = instance.send(CrumbsCommand::SetMode(mode));
+    }
+
+    let mut sample_ids: Vec<SampleId> = instance.samples.keys().copied().collect();
+    sample_ids.sort_unstable();
+    let mut mirror_deferred = false;
+    for id in sample_ids {
+        let Some(data) = instance.samples.get(&id).map(Arc::clone) else {
+            continue;
+        };
+        // A push the ring refuses parks in pending_mirror, which the next
+        // drain retries — the same route a mirror from a commit takes.
+        if instance
+            .send(CrumbsCommand::AddSample {
+                id,
+                data: Arc::clone(&data),
+            })
+            .is_err()
+        {
+            instance.pending_mirror.push((id, data));
+            mirror_deferred = true;
+        }
+    }
+
+    let Some(active) = parked.active_sample else {
+        return;
+    };
+    let selection_refused = instance
+        .send(CrumbsCommand::SetActiveSample(active))
+        .is_err();
+    // The drain replays each parked entry as AddSample + SetActiveSample in
+    // order, so the last entry is the one the engine ends on: whenever any of
+    // the replay went to pending_mirror, the active sample has to be that
+    // entry. AddSample is idempotent, as pending_mirror's own contract states.
+    if mirror_deferred || selection_refused {
+        if let Some(data) = instance.samples.get(&active).map(Arc::clone) {
+            instance.pending_mirror.push((active, data));
+        }
+    }
+}
+
+/// Register every instance that was created before the engine ran.
+///
+/// Called from `commands::graph` on a batch that has just found or started an
+/// engine, before that batch claims the engine for its own commands. Locks
+/// instances then engine, the order every path holding both takes them in.
+///
+/// A lock this cannot take is the `Err`: an empty list of refusals means
+/// every dormant instance attached, and a caller cannot be left reading a
+/// failure as that. Otherwise returns one `(instance_id, reason)` per
+/// instance the engine refused — not the graph batch's business, because the
+/// instance keeps its parked writes and the next batch tries again.
+pub fn attach_dormant_crumbs(
+    state: &CrumbsState,
+    engine: &Mutex<Option<EngineHandle>>,
+) -> Result<Vec<(String, String)>, String> {
+    let mut instances = state
+        .instances
+        .lock()
+        .map_err(|err| format!("Failed to lock crumbs state: {err}"))?;
+    let mut engine_guard = engine
+        .lock()
+        .map_err(|e| format!("Failed to lock engine: {e}"))?;
+    let Some(engine_handle) = engine_guard.as_mut() else {
+        return Ok(Vec::new());
+    };
+
+    let mut refusals = Vec::new();
+    for (instance_id, instance) in instances.iter_mut() {
+        let CrumbsEngineSlot::Dormant(parked) = &mut instance.engine_slot else {
+            continue;
+        };
+
+        // The engine drops a refused batch whole, ring ends included, so the
+        // ends are allocated here and adopted only once the batch is admitted.
+        let (ends, slot_ends) = new_crumbs_rings();
+        let plugin_id = match register_crumbs_slot(engine_handle, &instance.metering, slot_ends) {
+            Ok(plugin_id) => plugin_id,
+            Err(reason) => {
+                // The parked writes are untouched: still dormant, still
+                // holding what the panel set, still attachable next batch.
+                refusals.push((instance_id.clone(), reason));
+                continue;
+            }
+        };
+
+        let parked = std::mem::take(parked);
+        instance.engine_slot = CrumbsEngineSlot::Attached { plugin_id, ends };
+        replay_parked_writes(instance, parked);
+    }
+    Ok(refusals)
+}
+
 /// Create a new crumbs engine instance.
 ///
 /// Takes no sample rate: the sampler records the engine's own input tap and
@@ -233,6 +551,13 @@ fn ensure_crumbs_capture_headroom(
 /// device's, read from the engine handle. A rate supplied by a caller would
 /// stamp every committed take — and clamp `record_max_samples` — against a
 /// number the device never ran at.
+///
+/// A missing engine degrades rather than refuses (#2265). The engine starts
+/// lazily on the first graph batch, which the app sends on play, so refusing
+/// here left every panel opened before the first play dead. The instance is
+/// created dormant instead: parameters, mode and the active sample are parked
+/// command-side, and [`attach_dormant_crumbs`] registers it — and replays
+/// them — on that first batch.
 pub async fn create_crumbs(
     instance_id: String,
     state: &CrumbsState,
@@ -261,12 +586,6 @@ pub async fn create_crumbs(
 
     ensure_crumbs_capture_headroom(&instances)?;
 
-    let (tx, rx) = rtrb::RingBuffer::new(128);
-    // Commit-handoff rings (ledger #568): the engine hands committed takes
-    // out in O(1); drain_pending_recording_commits completes them off the
-    // audio thread and recycles the buffers.
-    let (commit_tx, commit_rx) = rtrb::RingBuffer::new(2);
-    let (recycle_tx, recycle_rx) = rtrb::RingBuffer::new(2);
     let metering = Arc::new(CrumbsMetering::default());
 
     #[cfg(test)]
@@ -275,67 +594,29 @@ pub async fn create_crumbs(
     // The engine guard is scoped to the registration alone — it is the
     // engine-wide mutex, not this instance's — while the instances guard
     // above spans the whole create, per the ordering law stated there.
-    let engine_plugin_id = {
+    let engine_slot = {
         let mut engine_guard = app_state
             .engine
             .lock()
             .map_err(|e| format!("Failed to lock engine: {e}"))?;
 
-        let Some(engine_handle) = engine_guard.as_mut() else {
-            return Err("Native engine not running".to_string());
-        };
-
-        // A reserved id is an opaque handle, never a dense index, so a refused
-        // batch below simply leaves this one unused.
-        let id = engine_handle.reserve_plugin_id();
-        // The device's rate, not the caller's: this engine renders on the
-        // master chain and records the tap the same device feeds.
-        let mut engine = CrumbsEngine::with_metering(engine_handle.sample_rate(), metering.clone());
-        engine.enable_commit_handoff();
-        let slot = CrumbsPluginSlot {
-            engine,
-            command_rx: rx,
-            commit_tx,
-            recycle_rx,
-        };
-        // The slot and its record feed cross as one fenced batch. Admission
-        // checks the effect table and the capture ledger for the whole batch
-        // and provisions the ring to fit before the first push, so a refusal
-        // leaves nothing queued and nothing to unwind. Registering the two
-        // separately could strand a slot on the graph — audible, unrecordable,
-        // and owned by no instance — whenever the second command was refused.
-        engine_handle
-            .send_graph_batch(vec![
-                GraphCommand::AddPlugin(id, Box::new(slot)),
-                GraphCommand::RegisterCaptureConsumer(id),
-            ])
-            .map_err(|error| match error {
-                GraphBatchError::Refused(reason) => reason,
-                // Unreachable by construction, and deliberately not unwound:
-                // the only route to the audio thread is the ring that just
-                // failed, so a removal command would have nowhere to go.
-                GraphBatchError::Partial {
-                    pushed,
-                    total,
-                    error,
-                } => format!(
-                    "the crumbs slot was published in part ({pushed} of {total} commands): {error}"
-                ),
-            })?;
-
-        id
+        match engine_guard.as_mut() {
+            Some(engine_handle) => {
+                let (ends, slot_ends) = new_crumbs_rings();
+                let plugin_id = register_crumbs_slot(engine_handle, &metering, slot_ends)?;
+                CrumbsEngineSlot::Attached { plugin_id, ends }
+            }
+            None => CrumbsEngineSlot::Dormant(DormantCrumbsWrites::default()),
+        }
     };
 
     instances.insert(
         instance_id,
         CrumbsInstanceData {
-            command_tx: tx,
             samples: HashMap::new(),
             metering,
-            engine_plugin_id,
+            engine_slot,
             next_sample_id: 1,
-            commit_rx,
-            recycle_tx,
             pending_mirror: Vec::new(),
         },
     );
@@ -353,10 +634,14 @@ pub async fn destroy_crumbs(
         .lock()
         .map_err(|err| format!("Failed to lock crumbs state: {err}"))?;
 
-    let Some(engine_plugin_id) = instances
-        .get(&instance_id)
-        .map(|instance| instance.engine_plugin_id)
-    else {
+    let Some(instance) = instances.get(&instance_id) else {
+        return Ok(());
+    };
+
+    // A dormant instance owns nothing engine-side — its slot was never
+    // published — so the map entry is the whole of it.
+    let CrumbsEngineSlot::Attached { plugin_id, .. } = instance.engine_slot else {
+        instances.remove(&instance_id);
         return Ok(());
     };
 
@@ -374,7 +659,7 @@ pub async fn destroy_crumbs(
         // and off the callback's input bus with the slot it belongs to, so an
         // unregister here would be a second release of a consumer that is
         // already gone.
-        engine_handle.remove_plugin(engine_plugin_id)?;
+        engine_handle.remove_plugin(plugin_id)?;
     }
 
     // Once queued, scheduler retirement is inevitable. No fallible work may
@@ -443,19 +728,13 @@ pub async fn load_sample(
     // Store in app state for analysis commands.
     instance.samples.insert(sample_id, shared_data.clone());
 
-    // Send to engine via command queue.
-    instance
-        .command_tx
-        .push(CrumbsCommand::AddSample {
-            id: sample_id,
-            data: shared_data,
-        })
-        .map_err(|_| "Command queue full")?;
-
-    instance
-        .command_tx
-        .push(CrumbsCommand::SetActiveSample(sample_id))
-        .map_err(|_| "Command queue full")?;
+    // Send to the engine. A dormant instance records the selection instead;
+    // the pool itself is replayed from the map above when it attaches.
+    instance.send(CrumbsCommand::AddSample {
+        id: sample_id,
+        data: shared_data,
+    })?;
+    instance.send(CrumbsCommand::SetActiveSample(sample_id))?;
 
     Ok(SampleLoadResult {
         sample_id,
@@ -486,10 +765,7 @@ pub async fn crumbs_note_on(
         .get_mut(&instance_id)
         .ok_or_else(|| format!("Crumbs instance '{instance_id}' not found"))?;
 
-    instance
-        .command_tx
-        .push(CrumbsCommand::NoteOn { note, velocity })
-        .map_err(|_| "Command queue full")?;
+    instance.send(CrumbsCommand::NoteOn { note, velocity })?;
     Ok(())
 }
 
@@ -507,10 +783,7 @@ pub async fn crumbs_note_off(
         .get_mut(&instance_id)
         .ok_or_else(|| format!("Crumbs instance '{instance_id}' not found"))?;
 
-    instance
-        .command_tx
-        .push(CrumbsCommand::NoteOff { note })
-        .map_err(|_| "Command queue full")?;
+    instance.send(CrumbsCommand::NoteOff { note })?;
     Ok(())
 }
 
@@ -531,13 +804,10 @@ pub async fn set_crumbs_param(
         .get_mut(&instance_id)
         .ok_or_else(|| format!("Crumbs instance '{instance_id}' not found"))?;
 
-    instance
-        .command_tx
-        .push(CrumbsCommand::SetParam {
-            param: param_enum,
-            value,
-        })
-        .map_err(|_| "Command queue full")?;
+    instance.send(CrumbsCommand::SetParam {
+        param: param_enum,
+        value,
+    })?;
     Ok(())
 }
 
@@ -559,10 +829,7 @@ pub async fn set_crumbs_mode(
         .get_mut(&instance_id)
         .ok_or_else(|| format!("Crumbs instance '{instance_id}' not found"))?;
 
-    instance
-        .command_tx
-        .push(CrumbsCommand::SetMode(mode_enum))
-        .map_err(|_| "Command queue full")?;
+    instance.send(CrumbsCommand::SetMode(mode_enum))?;
     Ok(())
 }
 
@@ -720,10 +987,7 @@ pub async fn crumbs_all_sound_off(instance_id: String, state: &CrumbsState) -> R
         .get_mut(&instance_id)
         .ok_or_else(|| format!("Crumbs instance '{instance_id}' not found"))?;
 
-    instance
-        .command_tx
-        .push(CrumbsCommand::AllSoundOff)
-        .map_err(|_| "Command queue full")?;
+    instance.send(CrumbsCommand::AllSoundOff)?;
     Ok(())
 }
 
@@ -793,14 +1057,11 @@ pub async fn arm_recording(
     // mirrors it into the engine, and recycles the record buffers so this
     // arm finds capacity.
     drain_pending_recording_commits(instance);
-    instance
-        .command_tx
-        .push(CrumbsCommand::ArmRecording {
-            threshold,
-            target_pad,
-            max_duration_secs,
-        })
-        .map_err(|_| "Command queue full")?;
+    instance.send(CrumbsCommand::ArmRecording {
+        threshold,
+        target_pad,
+        max_duration_secs,
+    })?;
     Ok(())
 }
 
@@ -815,10 +1076,7 @@ pub async fn stop_recording(instance_id: String, state: &CrumbsState) -> Result<
         .ok_or_else(|| format!("Crumbs instance '{instance_id}' not found"))?;
 
     drain_pending_recording_commits(instance);
-    instance
-        .command_tx
-        .push(CrumbsCommand::StopRecording)
-        .map_err(|_| "Command queue full")?;
+    instance.send(CrumbsCommand::StopRecording)?;
     Ok(())
 }
 
@@ -865,20 +1123,81 @@ mod tests {
         rtrb::Consumer<RecordBufferPair>,
         rtrb::Consumer<CrumbsCommand>,
     ) {
-        let (tx, cmd_rx) = rtrb::RingBuffer::new(8);
+        let (command_tx, cmd_rx) = rtrb::RingBuffer::new(8);
         let (commit_tx, commit_rx) = rtrb::RingBuffer::new(2);
         let (recycle_tx, recycle_rx) = rtrb::RingBuffer::new(2);
         let instance = CrumbsInstanceData {
-            command_tx: tx,
             samples: HashMap::new(),
             metering: Arc::new(CrumbsMetering::default()),
-            engine_plugin_id: 0,
+            engine_slot: CrumbsEngineSlot::Attached {
+                plugin_id: 0,
+                ends: CrumbsInstanceEnds {
+                    command_tx,
+                    commit_rx,
+                    recycle_tx,
+                },
+            },
             next_sample_id: 1,
-            commit_rx,
-            recycle_tx,
             pending_mirror: Vec::new(),
         };
         (instance, commit_tx, recycle_rx, cmd_rx)
+    }
+
+    /// Saturate an attached instance's command ring, as a test that needs a
+    /// refused push does.
+    fn fill_command_ring(instance: &mut CrumbsInstanceData) {
+        while instance.send(CrumbsCommand::AllNotesOff).is_ok() {}
+    }
+
+    /// Whether the instance is still waiting for an engine to attach to.
+    fn slot_is_dormant(state: &CrumbsState, instance_id: &str) -> bool {
+        let instances = state
+            .instances
+            .lock()
+            .expect("crumbs state lock should be available");
+        let instance = instances
+            .get(instance_id)
+            .unwrap_or_else(|| panic!("instance '{instance_id}' should own a map entry"));
+        matches!(instance.engine_slot, CrumbsEngineSlot::Dormant(_))
+    }
+
+    /// The engine id an attached instance owns. A dormant one owns none, so
+    /// asking is the assertion.
+    fn attached_plugin_id(state: &CrumbsState, instance_id: &str) -> usize {
+        let instances = state
+            .instances
+            .lock()
+            .expect("crumbs state lock should be available");
+        let instance = instances
+            .get(instance_id)
+            .unwrap_or_else(|| panic!("instance '{instance_id}' should own a map entry"));
+        match instance.engine_slot {
+            CrumbsEngineSlot::Attached { plugin_id, .. } => plugin_id,
+            CrumbsEngineSlot::Dormant(_) => {
+                panic!("instance '{instance_id}' should be attached to the engine")
+            }
+        }
+    }
+
+    /// The writes an instance has parked, or a panic if it is not dormant.
+    fn parked_writes<T>(
+        state: &CrumbsState,
+        instance_id: &str,
+        read: impl FnOnce(&DormantCrumbsWrites) -> T,
+    ) -> T {
+        let instances = state
+            .instances
+            .lock()
+            .expect("crumbs state lock should be available");
+        let instance = instances
+            .get(instance_id)
+            .unwrap_or_else(|| panic!("instance '{instance_id}' should own a map entry"));
+        match &instance.engine_slot {
+            CrumbsEngineSlot::Dormant(writes) => read(writes),
+            CrumbsEngineSlot::Attached { .. } => {
+                panic!("instance '{instance_id}' should still be dormant")
+            }
+        }
     }
 
     #[test]
@@ -970,8 +1289,9 @@ mod tests {
     /// itself enforces, before any engine dependency — the check runs ahead
     /// of the engine lock. A state at the ceiling must refuse with the
     /// ceiling message; with the call unwired, this same state has no engine
-    /// and would fail later as "Native engine not running", so the exact
-    /// message pins the call site.
+    /// and the create would succeed as a dormant instance, so the refusal
+    /// itself pins the call site. The ceiling counts dormant instances too:
+    /// each one takes a seat on the capture bus the moment it attaches.
     #[test]
     fn create_crumbs_refuses_at_the_capture_ceiling_before_touching_the_engine() {
         let state = CrumbsState::default();
@@ -1063,13 +1383,7 @@ mod tests {
         crate::block_on_test(create_crumbs(instance_id.to_string(), &state, &app_state))
             .expect("the first create should register its runtime");
 
-        let original_engine_plugin_id = state
-            .instances
-            .lock()
-            .expect("crumbs state lock should be available")
-            .get(instance_id)
-            .expect("first create should retain its map entry")
-            .engine_plugin_id;
+        let original_engine_plugin_id = attached_plugin_id(&state, instance_id);
         let registered_engine_plugin_id = pop_create_commands(&mut command_rx);
         assert_eq!(
             registered_engine_plugin_id, original_engine_plugin_id,
@@ -1088,20 +1402,20 @@ mod tests {
             format!("Crumbs instance '{instance_id}' already exists")
         );
 
-        let instances = state
-            .instances
-            .lock()
-            .expect("crumbs state lock should be available");
-        assert_eq!(instances.len(), 1, "the duplicate must not grow the map");
         assert_eq!(
-            instances
-                .get(instance_id)
-                .expect("the first entry must survive the refusal")
-                .engine_plugin_id,
+            state
+                .instances
+                .lock()
+                .expect("crumbs state lock should be available")
+                .len(),
+            1,
+            "the duplicate must not grow the map"
+        );
+        assert_eq!(
+            attached_plugin_id(&state, instance_id),
             original_engine_plugin_id,
             "the duplicate must not overwrite the first runtime entry"
         );
-        drop(instances);
 
         assert!(
             command_rx.pop().is_err(),
@@ -1155,27 +1469,16 @@ mod tests {
         crate::block_on_test(create_crumbs(INSTANCE_ID.to_string(), &state, &app_state))
             .expect("create should fill the scheduler ring");
 
-        let original_engine_plugin_id = state
-            .instances
-            .lock()
-            .expect("crumbs state lock should be available")
-            .get(INSTANCE_ID)
-            .expect("create should publish the ownership entry")
-            .engine_plugin_id;
+        let original_engine_plugin_id = attached_plugin_id(&state, INSTANCE_ID);
 
         let refusal =
             crate::block_on_test(destroy_crumbs(INSTANCE_ID.to_string(), &state, &app_state))
                 .expect_err("destroy must refuse while scheduler-removal admission is full");
         assert_eq!(refusal, "Audio command queue full");
         assert_eq!(
-            state
-                .instances
-                .lock()
-                .expect("crumbs state lock should be available")
-                .get(INSTANCE_ID)
-                .expect("failed admission must preserve the ownership entry")
-                .engine_plugin_id,
-            original_engine_plugin_id
+            attached_plugin_id(&state, INSTANCE_ID),
+            original_engine_plugin_id,
+            "failed admission must preserve the ownership entry"
         );
 
         let registered_engine_plugin_id = pop_create_commands(&mut command_rx);
@@ -1294,17 +1597,18 @@ mod tests {
             command_rx.pop().is_err(),
             "the concurrent creates must queue exactly one create's engine commands"
         );
-        let instances = state
-            .instances
-            .lock()
-            .expect("crumbs state lock should be available");
-        assert_eq!(instances.len(), 1);
         assert_eq!(
-            instances
-                .get(INSTANCE_ID)
-                .expect("the successful create must own one map entry")
-                .engine_plugin_id,
-            registered_engine_plugin_id
+            state
+                .instances
+                .lock()
+                .expect("crumbs state lock should be available")
+                .len(),
+            1
+        );
+        assert_eq!(
+            attached_plugin_id(&state, INSTANCE_ID),
+            registered_engine_plugin_id,
+            "the successful create must own one map entry"
         );
     }
 
@@ -1361,12 +1665,7 @@ mod tests {
         let (mut instance, mut commit_tx, _recycle_rx, mut cmd_rx) = instance_with_rings();
 
         // Saturate the command ring (capacity 8 in the helper).
-        for _ in 0..8 {
-            instance
-                .command_tx
-                .push(CrumbsCommand::AllNotesOff)
-                .unwrap();
-        }
+        fill_command_ring(&mut instance);
         commit_tx
             .push(PendingRecordingCommit {
                 left: vec![0.5f32; 64],
@@ -1410,6 +1709,59 @@ mod tests {
         assert!(saw_add && saw_active);
     }
 
+    /// A mirror is a pair. One free slot takes the AddSample and leaves the
+    /// selection refused, so the entry that carries it must survive to be
+    /// retried — dropping it strands the engine on the wrong active sample.
+    #[test]
+    fn a_deferred_mirror_keeps_its_entry_until_its_selection_lands() {
+        let (mut instance, _commit_tx, _recycle_rx, mut cmd_rx) = instance_with_rings();
+        let sample = Arc::new(SampleData::from_stereo(
+            vec![0.25f32; 32],
+            vec![0.25f32; 32],
+            48_000,
+        ));
+        instance.pending_mirror.push((7, Arc::clone(&sample)));
+
+        // One free slot: the AddSample lands and the selection is refused.
+        fill_command_ring(&mut instance);
+        cmd_rx
+            .pop()
+            .expect("the filled ring holds commands to free");
+
+        drain_pending_recording_commits(&mut instance);
+        assert_eq!(
+            instance.pending_mirror.len(),
+            1,
+            "an entry whose selection the ring refused must stay parked"
+        );
+
+        // Two free slots: the pair lands whole and the entry retires.
+        while cmd_rx.pop().is_ok() {}
+        drain_pending_recording_commits(&mut instance);
+        assert!(
+            instance.pending_mirror.is_empty(),
+            "a mirror whose pair landed retires"
+        );
+        let mut delivered = Vec::new();
+        while let Ok(command) = cmd_rx.pop() {
+            match command {
+                CrumbsCommand::AddSample { id, .. } => delivered.push(format!("add {id}")),
+                CrumbsCommand::SetActiveSample(id) => delivered.push(format!("select {id}")),
+                _ => {}
+            }
+        }
+        assert_eq!(
+            delivered.last().map(String::as_str),
+            Some("select 7"),
+            "the mirror ends on the selection it carried"
+        );
+        assert_eq!(
+            delivered[delivered.len() - 2].as_str(),
+            "add 7",
+            "the selection follows the sample it selects"
+        );
+    }
+
     /// A commit still in flight when the instance is destroyed is dropped
     /// with the rings — no panic, no use-after-free surface.
     #[test]
@@ -1434,9 +1786,10 @@ mod tests {
     /// This drives the whole path the napi surface owns against a real
     /// `CrumbsPluginSlot`: mode, arm and stop through the real commands, the
     /// master-chain pass as the per-period clock, and the tap as the feed.
-    /// (`create_crumbs` itself cannot run here — it needs a live engine
-    /// handle — so the test wires its seam by hand.) Sever the tap and the
-    /// committed take holds silence instead of the input.
+    /// (`create_crumbs` publishes its slot to an engine rather than returning
+    /// it, so the test wires that seam by hand and drives the slot directly.)
+    /// Sever the tap and the committed take holds silence instead of the
+    /// input.
     #[test]
     fn the_capture_tap_fills_the_armed_take_across_the_command_surface() {
         use daw_engine::plugin_slot::{CaptureInputBlock, NativePlugin, TransportState};
@@ -1457,13 +1810,17 @@ mod tests {
             recycle_rx,
         };
         let instance = CrumbsInstanceData {
-            command_tx,
             samples: HashMap::new(),
             metering: Arc::new(CrumbsMetering::default()),
-            engine_plugin_id: 1000,
+            engine_slot: CrumbsEngineSlot::Attached {
+                plugin_id: 1000,
+                ends: CrumbsInstanceEnds {
+                    command_tx,
+                    commit_rx,
+                    recycle_tx,
+                },
+            },
             next_sample_id: 1,
-            commit_rx,
-            recycle_tx,
             pending_mirror: Vec::new(),
         };
         state
@@ -1595,14 +1952,9 @@ mod tests {
             "a create must queue its fence, the slot and its capture registration, nothing else"
         );
         assert_eq!(
-            state
-                .instances
-                .lock()
-                .expect("crumbs state lock should be available")
-                .get("tap-sampler")
-                .expect("the create must publish its ownership entry")
-                .engine_plugin_id,
-            registered_engine_plugin_id
+            attached_plugin_id(&state, "tap-sampler"),
+            registered_engine_plugin_id,
+            "the create must publish its ownership entry"
         );
     }
 
@@ -1660,6 +2012,364 @@ mod tests {
                 .expect("crumbs state lock should be available")
                 .is_empty(),
             "a refused create must leave no instance behind"
+        );
+    }
+
+    /// Issue #2265 (live defect): the engine starts lazily on the first graph
+    /// batch, which the app sends on play, so a create before then refused and
+    /// left the panel with a sampler that stayed dead for the session. The
+    /// create degrades instead — the instance exists and takes the state its
+    /// slot will read — and only the gestures the audio thread has to answer
+    /// are refused, where the panel can report them.
+    #[test]
+    fn create_crumbs_without_an_engine_holds_a_dormant_instance() {
+        const INSTANCE_ID: &str = "before-first-play";
+
+        let state = CrumbsState::default();
+        let app_state = AppState::default();
+        assert!(
+            app_state
+                .engine
+                .lock()
+                .expect("engine lock should be available")
+                .is_none(),
+            "this fixture is a session that has not sent its first graph batch"
+        );
+
+        crate::block_on_test(create_crumbs(INSTANCE_ID.to_string(), &state, &app_state))
+            .expect("a create before the engine runs must degrade, not refuse");
+        assert!(
+            slot_is_dormant(&state, INSTANCE_ID),
+            "the instance parks the panel's writes until an engine exists"
+        );
+
+        crate::block_on_test(set_crumbs_param(
+            INSTANCE_ID.to_string(),
+            "filterCutoff".to_string(),
+            0.25,
+            &state,
+        ))
+        .expect("state the slot reads on its first pass queues while dormant");
+
+        assert_eq!(
+            crate::block_on_test(arm_recording(
+                INSTANCE_ID.to_string(),
+                0.01,
+                0,
+                10.0,
+                &state
+            )),
+            Err("Native engine not running".to_string()),
+            "an arm with no slot rendering it would capture silence and say nothing"
+        );
+        assert_eq!(
+            crate::block_on_test(crumbs_note_on(INSTANCE_ID.to_string(), 60, 100, &state)),
+            Err("Native engine not running".to_string()),
+            "a note with no slot rendering it would sound nothing and say nothing"
+        );
+
+        crate::block_on_test(destroy_crumbs(INSTANCE_ID.to_string(), &state, &app_state))
+            .expect("a dormant instance destroys without an engine to remove it from");
+        assert!(
+            state
+                .instances
+                .lock()
+                .expect("crumbs state lock should be available")
+                .is_empty(),
+            "destroy erases the whole of a dormant instance: its map entry"
+        );
+    }
+
+    /// The first graph batch is where a dormant instance becomes a sampler: it
+    /// publishes exactly the batch a create with an engine publishes, and the
+    /// commands the panel queued while dormant reach the ring the slot drains,
+    /// so the engine state after its first pass is the one the panel set
+    /// before play.
+    #[test]
+    fn a_dormant_instance_attaches_on_the_engine_it_finds() {
+        const INSTANCE_ID: &str = "before-first-play";
+
+        let state = CrumbsState::default();
+        let app_state = AppState::default();
+        crate::block_on_test(create_crumbs(INSTANCE_ID.to_string(), &state, &app_state))
+            .expect("a create before the engine runs must degrade, not refuse");
+        crate::block_on_test(set_crumbs_param(
+            INSTANCE_ID.to_string(),
+            "filterCutoff".to_string(),
+            0.25,
+            &state,
+        ))
+        .expect("state the slot reads on its first pass queues while dormant");
+
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(8);
+        *app_state
+            .engine
+            .lock()
+            .expect("engine lock should be available") = Some(engine);
+
+        let refusals = attach_dormant_crumbs(&state, &app_state.engine)
+            .expect("both locks are free, so the attach reports refusals rather than an error");
+        assert!(
+            refusals.is_empty(),
+            "the engine had room for this slot: {refusals:?}"
+        );
+
+        match command_rx.pop() {
+            Ok(GraphCommand::BeginBatch { commands }) => assert_eq!(
+                commands, 2,
+                "the attach's fence must announce the slot and its capture registration"
+            ),
+            Ok(_) => panic!("an attach must publish its registration behind a batch fence"),
+            Err(_) => panic!("an attach must queue its batch fence"),
+        }
+        let registered_engine_plugin_id = match command_rx.pop() {
+            Ok(GraphCommand::AddPlugin(id, mut plugin)) => {
+                let slot = plugin
+                    .as_any_mut()
+                    .downcast_mut::<CrumbsPluginSlot>()
+                    .expect("the registered plugin must be the crumbs slot");
+                assert_eq!(
+                    slot.engine.sample_rate(),
+                    48_000.0,
+                    "the slot must be built at the rate of the engine it attaches to"
+                );
+                assert!(
+                    matches!(slot.command_rx.pop(), Ok(CrumbsCommand::SetParam { .. })),
+                    "what the panel set while dormant must reach the ring the slot drains"
+                );
+                id
+            }
+            Ok(_) => panic!("the batch's first command must register the crumbs slot"),
+            Err(_) => panic!("an attach must queue the slot registration"),
+        };
+        match command_rx.pop() {
+            Ok(GraphCommand::RegisterCaptureConsumer(registered)) => assert_eq!(
+                registered, registered_engine_plugin_id,
+                "the capture registration must name the slot it feeds"
+            ),
+            Ok(_) => panic!("the batch's second command must register the capture consumer"),
+            Err(_) => panic!("an attach must queue the capture registration"),
+        }
+        assert!(
+            command_rx.pop().is_err(),
+            "an attach must queue its fence, the slot and its capture registration, nothing else"
+        );
+
+        assert_eq!(
+            attached_plugin_id(&state, INSTANCE_ID),
+            registered_engine_plugin_id,
+            "the map entry must own the engine id carried by the registration command"
+        );
+    }
+
+    /// An engine that refuses the attach leaves the instance exactly as it
+    /// was: still dormant, still holding what the panel set, and attachable on
+    /// the next batch. Attaching against an already-full capture bus is what a
+    /// session that re-points its panel meets.
+    #[test]
+    fn a_refused_attach_stays_dormant() {
+        const INSTANCE_ID: &str = "before-first-play";
+
+        let state = CrumbsState::default();
+        let app_state = AppState::default();
+        crate::block_on_test(create_crumbs(INSTANCE_ID.to_string(), &state, &app_state))
+            .expect("a create before the engine runs must degrade, not refuse");
+        crate::block_on_test(set_crumbs_param(
+            INSTANCE_ID.to_string(),
+            "filterCutoff".to_string(),
+            0.25,
+            &state,
+        ))
+        .expect("state the slot reads on its first pass parks while dormant");
+
+        let (mut engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(8);
+        // Fill the input bus's reserve through the ledger the handle owns, so
+        // the attach's own registration is the one that overruns it.
+        for offset in 0..CRUMBS_CAPTURE_RESERVE {
+            engine
+                .register_capture_consumer(900 + offset)
+                .expect("the reserve must admit its own consumers");
+        }
+        *app_state
+            .engine
+            .lock()
+            .expect("engine lock should be available") = Some(engine);
+        for _ in 0..CRUMBS_CAPTURE_RESERVE {
+            assert!(
+                matches!(
+                    command_rx.pop(),
+                    Ok(GraphCommand::RegisterCaptureConsumer(_))
+                ),
+                "the reserve's own registrations are all the ring holds going in"
+            );
+        }
+
+        let refusals = attach_dormant_crumbs(&state, &app_state.engine)
+            .expect("both locks are free, so the attach reports refusals rather than an error");
+        assert_eq!(refusals.len(), 1, "one dormant instance, one refusal");
+        let (refused_instance_id, reason) = &refusals[0];
+        assert_eq!(refused_instance_id, INSTANCE_ID);
+        assert!(
+            reason.starts_with("capture-bus-full:"),
+            "the reason must be the capture ledger's own: {reason}"
+        );
+
+        assert!(
+            slot_is_dormant(&state, INSTANCE_ID),
+            "a refused attach must leave the instance where the next batch can retry it"
+        );
+        assert_eq!(
+            parked_writes(&state, INSTANCE_ID, |writes| writes.params.clone()),
+            vec![(CrumbsParam::FilterCutoff, 0.25)],
+            "a refused attach must leave the parked writes for the next one to replay"
+        );
+        assert!(
+            command_rx.pop().is_err(),
+            "a refused batch must leave nothing at all on the ring — no fence, no slot"
+        );
+    }
+
+    /// The panel's knobs are rAF-throttled, so one drag sends a value about
+    /// sixty times a second: a dormant instance that queued them would fill a
+    /// ring in seconds and then refuse every later write, leaving the engine
+    /// on a mid-drag value and the store on the final one. Dormant state is
+    /// state — one entry per parameter, whatever the gesture's length — and
+    /// the attach replays it with the pool the selection names.
+    #[test]
+    fn dormant_writes_survive_a_drag_longer_than_the_ring() {
+        const INSTANCE_ID: &str = "before-first-play";
+        // One past the command ring's depth: the write that a queue would have
+        // had to refuse is the one whose value has to reach the engine.
+        const DRAG_WRITES: usize = 129;
+        const SAMPLE_ID: SampleId = 7;
+
+        let state = CrumbsState::default();
+        let app_state = AppState::default();
+        crate::block_on_test(create_crumbs(INSTANCE_ID.to_string(), &state, &app_state))
+            .expect("a create before the engine runs must degrade, not refuse");
+
+        for write in 0..DRAG_WRITES {
+            crate::block_on_test(set_crumbs_param(
+                INSTANCE_ID.to_string(),
+                "filterCutoff".to_string(),
+                write as f32,
+                &state,
+            ))
+            .unwrap_or_else(|error| panic!("write {write} of a drag must be taken: {error}"));
+        }
+        crate::block_on_test(set_crumbs_mode(
+            INSTANCE_ID.to_string(),
+            "slice".to_string(),
+            &state,
+        ))
+        .expect("a mode set before play must be taken");
+
+        // A sample loaded while dormant: `load_sample` decodes a file, so the
+        // map is filled the way it fills it and the selection sent as it
+        // sends it.
+        {
+            let mut instances = state
+                .instances
+                .lock()
+                .expect("crumbs state lock should be available");
+            let instance = instances
+                .get_mut(INSTANCE_ID)
+                .expect("the dormant instance owns a map entry");
+            let sample = Arc::new(SampleData::from_mono(vec![0.5f32; 64], 48_000));
+            instance.samples.insert(SAMPLE_ID, Arc::clone(&sample));
+            instance
+                .send(CrumbsCommand::AddSample {
+                    id: SAMPLE_ID,
+                    data: sample,
+                })
+                .expect("the map already holds the data, so the mirror parks");
+            instance
+                .send(CrumbsCommand::SetActiveSample(SAMPLE_ID))
+                .expect("the selection parks");
+        }
+
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(8);
+        *app_state
+            .engine
+            .lock()
+            .expect("engine lock should be available") = Some(engine);
+        let refusals = attach_dormant_crumbs(&state, &app_state.engine)
+            .expect("both locks are free, so the attach reports refusals rather than an error");
+        assert!(refusals.is_empty(), "the engine had room: {refusals:?}");
+
+        assert!(
+            matches!(command_rx.pop(), Ok(GraphCommand::BeginBatch { .. })),
+            "an attach must publish its registration behind a batch fence"
+        );
+        let mut plugin = match command_rx.pop() {
+            Ok(GraphCommand::AddPlugin(_, plugin)) => plugin,
+            Ok(_) => panic!("the batch's first command must register the crumbs slot"),
+            Err(_) => panic!("an attach must queue the slot registration"),
+        };
+        let slot = plugin
+            .as_any_mut()
+            .downcast_mut::<CrumbsPluginSlot>()
+            .expect("the registered plugin must be the crumbs slot");
+
+        let mut params = Vec::new();
+        let mut modes = 0;
+        let mut added_samples = Vec::new();
+        let mut last_selection = None;
+        while let Ok(command) = slot.command_rx.pop() {
+            match command {
+                CrumbsCommand::SetParam { param, value } => params.push((param, value)),
+                CrumbsCommand::SetMode(_) => modes += 1,
+                CrumbsCommand::AddSample { id, .. } => added_samples.push(id),
+                CrumbsCommand::SetActiveSample(id) => last_selection = Some(id),
+                _ => panic!("the replay must queue nothing else"),
+            }
+        }
+
+        assert_eq!(
+            params,
+            vec![(CrumbsParam::FilterCutoff, (DRAG_WRITES - 1) as f32)],
+            "one entry per parameter, holding the value the drag settled on"
+        );
+        assert_eq!(modes, 1, "the mode set before play reaches the engine once");
+        assert_eq!(
+            added_samples,
+            vec![SAMPLE_ID],
+            "the engine's pool is filled from the command-side map"
+        );
+        assert_eq!(
+            last_selection,
+            Some(SAMPLE_ID),
+            "the replay ends on the sample the panel selected"
+        );
+    }
+
+    /// A lock this cannot take is reported. Swallowing it as an empty refusal
+    /// list would read to the caller as "every dormant instance attached",
+    /// which is the one thing it does not know.
+    #[test]
+    fn a_poisoned_lock_is_reported_not_swallowed() {
+        let state = Arc::new(CrumbsState::default());
+        let app_state = AppState::default();
+
+        let poisoner = Arc::clone(&state);
+        let poisoned = std::thread::spawn(move || {
+            let _guard = poisoner
+                .instances
+                .lock()
+                .expect("crumbs state lock should be available");
+            panic!("poison the instances lock");
+        })
+        .join();
+        assert!(poisoned.is_err(), "the poisoning thread must have panicked");
+
+        let error = attach_dormant_crumbs(&state, &app_state.engine)
+            .expect_err("a lock the attach cannot take is an error, not an empty result");
+        assert!(
+            error.starts_with("Failed to lock crumbs state"),
+            "the message must be the one every sibling uses: {error}"
         );
     }
 }

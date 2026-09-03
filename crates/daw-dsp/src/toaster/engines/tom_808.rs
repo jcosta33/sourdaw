@@ -30,7 +30,6 @@ struct TomParams {
     c1_nom: f32,
     c2_nom: f32,
     decay_s: f32,
-    freq_base: f32,
 }
 
 impl TomParams {
@@ -42,7 +41,6 @@ impl TomParams {
                 c1_nom: 10e-9, // F
                 c2_nom: 10e-9,
                 decay_s: 0.2,
-                freq_base: 90.0,
             },
             TomVariant::Mid => TomParams {
                 r_eff_nom: 22_000.0, // Ω — tuned for ~140 Hz
@@ -50,7 +48,6 @@ impl TomParams {
                 c1_nom: 6.8e-9,
                 c2_nom: 6.8e-9,
                 decay_s: 0.13,
-                freq_base: 140.0,
             },
             TomVariant::High => TomParams {
                 r_eff_nom: 15_000.0, // Ω — tuned for ~190 Hz
@@ -58,7 +55,6 @@ impl TomParams {
                 c1_nom: 4.7e-9,
                 c2_nom: 4.7e-9,
                 decay_s: 0.1,
-                freq_base: 190.0,
             },
         }
     }

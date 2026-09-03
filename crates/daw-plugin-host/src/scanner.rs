@@ -327,6 +327,21 @@ pub struct ScanResult {
     /// quarantined binary is named on every scan response, not just the one
     /// that caught the crash (#2911).
     pub quarantined: Vec<QuarantinedPlugin>,
+    /// Whether the walk reached every candidate under every authorized root.
+    ///
+    /// `false` narrows what the rest of this result claims: `plugins` is then
+    /// the plugins under `scanned_paths` and says nothing about the roots the
+    /// walk never got to.
+    pub complete: bool,
+    /// The candidate paths this walk reached, whether or not each yielded a
+    /// plugin.
+    ///
+    /// The result is authoritative for exactly these paths, which is the rule
+    /// the registry applies to its own rows on an incomplete walk: a row under
+    /// a path the walk never reached survives. A caller holding an older list
+    /// needs the same rule, and cannot derive it from `plugins` alone — a
+    /// candidate that was reached and failed is absent from `plugins` too.
+    pub scanned_paths: Vec<String>,
 }
 
 /// A plugin binary quarantined after its scan helper crashed or timed out.

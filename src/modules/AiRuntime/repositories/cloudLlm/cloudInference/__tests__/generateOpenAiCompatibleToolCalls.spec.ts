@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { isHostedAiHttpStatusError } from '../../../../errors/HostedAiHttpStatusError';
+import { ToolPlanningRejectedError } from '../../../../errors/ToolPlanningRejectedError';
 import { type OpenAiCompatibleCloudRuntime } from '../../cloudSession';
 import { generateOpenAiCompatibleToolCalls } from '../generateOpenAiCompatibleToolCalls';
 
@@ -34,6 +35,7 @@ function generateToolCalls() {
         systemPrompt: 'system',
         userMessage: 'mute drums',
         toolSchemas: tools,
+        maxOutputTokens: 8192,
     });
 }
 
@@ -60,6 +62,7 @@ async function requestBodyFor(targetRuntime: OpenAiCompatibleCloudRuntime): Prom
         systemPrompt: 'system',
         userMessage: 'mute drums',
         toolSchemas: tools,
+        maxOutputTokens: 8192,
     });
     const request = fetchMock.mock.calls[0]?.[1];
     if (!request || typeof request.body !== 'string') {
@@ -131,6 +134,7 @@ describe('generateOpenAiCompatibleToolCalls', () => {
             systemPrompt: 'system',
             userMessage: 'mute drums',
             toolSchemas: tools,
+            maxOutputTokens: 8192,
         });
 
         expect(result).toEqual([{ name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }]);
@@ -152,6 +156,18 @@ describe('generateOpenAiCompatibleToolCalls', () => {
         expect(body.tool_choice).toBe('auto');
         expect(body.n).toBe(1);
         expect(body).not.toHaveProperty('reasoning_effort');
+    });
+
+    it('sends max_completion_tokens for first-party OpenAI provider', async () => {
+        const body = await requestBodyFor(openaiRuntime('gpt-5.2'));
+        expect(body.max_completion_tokens).toBe(8192);
+        expect(body).not.toHaveProperty('max_tokens');
+    });
+
+    it('sends max_tokens for openai-compatible provider', async () => {
+        const body = await requestBodyFor(runtime);
+        expect(body.max_tokens).toBe(8192);
+        expect(body).not.toHaveProperty('max_completion_tokens');
     });
 
     it.each(['gpt-5.6', 'gpt-5.6-luna', 'gpt-5.6-luna-2026-04-01', 'gpt-5.6-unlisted-variant'])(
@@ -228,6 +244,7 @@ describe('generateOpenAiCompatibleToolCalls', () => {
                 systemPrompt: 'system',
                 userMessage: 'mute drums',
                 toolSchemas: tools,
+                maxOutputTokens: 8192,
             })
         ).rejects.toThrow('Hosted AI returned an invalid tool-call batch');
     });
@@ -240,6 +257,7 @@ describe('generateOpenAiCompatibleToolCalls', () => {
             systemPrompt: 'system',
             userMessage: 'mute drums',
             toolSchemas: tools,
+            maxOutputTokens: 8192,
         }).catch((error: unknown) => error);
 
         expect(isHostedAiHttpStatusError(error)).toBe(true);
@@ -285,8 +303,9 @@ describe('generateOpenAiCompatibleToolCalls', () => {
                 systemPrompt: 'system',
                 userMessage: 'mute drums',
                 toolSchemas: tools,
+                maxOutputTokens: 8192,
             })
-        ).rejects.toThrow('Hosted AI returned an incomplete tool-call batch');
+        ).rejects.toThrow('Hosted AI tool plan was truncated at the token limit');
     });
 
     it('rejects tool calls paired with a non-tool finish reason', async () => {
@@ -322,6 +341,7 @@ describe('generateOpenAiCompatibleToolCalls', () => {
                 systemPrompt: 'system',
                 userMessage: 'mute drums',
                 toolSchemas: tools,
+                maxOutputTokens: 8192,
             })
         ).rejects.toThrow('Hosted AI returned an inconsistent tool-call batch');
     });
@@ -345,8 +365,33 @@ describe('generateOpenAiCompatibleToolCalls', () => {
                 systemPrompt: 'system',
                 userMessage: 'mute drums',
                 toolSchemas: tools,
+                maxOutputTokens: 8192,
             })
-        ).rejects.toThrow('Hosted AI returned an incomplete tool-call batch');
+        ).rejects.toThrow('Hosted AI tool plan was truncated at the token limit');
+    });
+
+    it('verifies finish_reason length throws ToolPlanningRejectedError with truncation message', async () => {
+        respondWith({
+            choices: [
+                {
+                    finish_reason: 'length',
+                    message: {
+                        tool_calls: [
+                            {
+                                function: {
+                                    name: 'muteTrack',
+                                    arguments: '{"trackId":"track-1","muted":true}',
+                                },
+                            },
+                        ],
+                    },
+                },
+            ],
+        });
+
+        await expect(generateToolCalls()).rejects.toThrow(
+            new ToolPlanningRejectedError('Hosted AI tool plan was truncated at the token limit')
+        );
     });
 
     it('rejects provider refusals and malformed success envelopes', async () => {
@@ -367,6 +412,7 @@ describe('generateOpenAiCompatibleToolCalls', () => {
                 systemPrompt: 'system',
                 userMessage: 'mute drums',
                 toolSchemas: tools,
+                maxOutputTokens: 8192,
             })
         ).rejects.toThrow('Hosted AI refused tool planning');
 
@@ -457,6 +503,7 @@ describe('generateOpenAiCompatibleToolCalls', () => {
             systemPrompt: 'system',
             userMessage: 'mute drums',
             toolSchemas: tools,
+            maxOutputTokens: 8192,
         });
 
         expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual({
@@ -509,6 +556,7 @@ describe('generateOpenAiCompatibleToolCalls', () => {
             systemPrompt: 'system',
             userMessage: 'what tracks exist',
             toolSchemas: dottedTools,
+            maxOutputTokens: 8192,
         });
 
         const request = fetchMock.mock.calls[0]?.[1];

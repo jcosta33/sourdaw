@@ -64,6 +64,7 @@ describe('drum bus provider plan conformance', () => {
             systemPrompt: 'system',
             userMessage: 'request',
             toolSchemas: tools,
+            maxOutputTokens: 8192,
         });
 
         expect(webLlm).toEqual({ status: 'complete', toolCalls: normalizedPlan, proposal: null });

@@ -183,6 +183,25 @@ describe('StepSequencer — pointer interaction', () => {
         expect(onToggleStep).toHaveBeenCalledWith(0, 0);
     });
 
+    it('ignores non-primary pointerdown events (e.g. right-click) so steps are not toggled', () => {
+        const onToggleStep = vi.fn();
+        const pads = [makePad(0)];
+        const pattern = makePattern(1, 2);
+        render(
+            <StepSequencer
+                pattern={pattern}
+                pads={pads}
+                currentStep={0}
+                isPlaying={false}
+                onToggleStep={onToggleStep}
+                onSetVelocity={vi.fn()}
+            />
+        );
+        const cell = screen.getAllByRole('checkbox')[0]!;
+        fireEvent.pointerDown(cell, { button: 2 });
+        expect(onToggleStep).not.toHaveBeenCalled();
+    });
+
     it('fires onSetVelocity on alt-drag pointer move', () => {
         const onSetVelocity = vi.fn();
         const pads = [makePad(0)];
@@ -205,5 +224,263 @@ describe('StepSequencer — pointer interaction', () => {
         expect(padIdx).toBe(0);
         expect(stepIdx).toBe(1);
         expect(velocity).toBeGreaterThan(0.5);
+    });
+});
+
+describe('StepSequencer — sound locks', () => {
+    it('renders sound lock badge and accessible name with ", sound lock kick-808" when step has soundLock', () => {
+        const pads = [makePad(0)];
+        const pattern = makePattern(1, 4);
+        pattern.tracks[0]!.steps[0] = { ...baseStep, active: true, soundLock: 'kick-808' };
+
+        render(
+            <StepSequencer
+                pattern={pattern}
+                pads={pads}
+                currentStep={0}
+                isPlaying={false}
+                onToggleStep={vi.fn()}
+                onSetVelocity={vi.fn()}
+            />
+        );
+
+        const cell = screen.getAllByRole('checkbox')[0]!;
+        expect(cell).toHaveAccessibleName(/sound lock kick-808/i);
+        const badge = screen.getByTestId('toaster-step-soundlock-0-0');
+        expect(badge).toHaveTextContent('kick');
+    });
+
+    it('opens sound lock menu on contextmenu / right-click and calls onSetSoundLock when an engine is selected', () => {
+        const onSetSoundLock = vi.fn();
+        const onToggleStep = vi.fn();
+        const pads = [makePad(0)];
+        const pattern = makePattern(1, 4);
+
+        render(
+            <StepSequencer
+                pattern={pattern}
+                pads={pads}
+                currentStep={0}
+                isPlaying={false}
+                onToggleStep={onToggleStep}
+                onSetVelocity={vi.fn()}
+                onSetSoundLock={onSetSoundLock}
+            />
+        );
+
+        const cell = screen.getAllByRole('checkbox')[1]!;
+        fireEvent.pointerDown(cell, { button: 2 });
+        fireEvent.contextMenu(cell, { clientX: 120, clientY: 240 });
+
+        expect(onToggleStep).not.toHaveBeenCalled();
+        expect(screen.getByText('Sound Lock Engine')).toBeInTheDocument();
+        const engineButton = screen.getByRole('menuitem', { name: 'hihat-closed' });
+        fireEvent.click(engineButton);
+
+        expect(onSetSoundLock).toHaveBeenCalledWith(0, 1, 'hihat-closed');
+        expect(screen.queryByText('Sound Lock Engine')).not.toBeInTheDocument();
+    });
+
+    it('calls onSetSoundLock(padIndex, stepIndex, null) when clearing an active sound lock', () => {
+        const onSetSoundLock = vi.fn();
+        const pads = [makePad(0)];
+        const pattern = makePattern(1, 4);
+        pattern.tracks[0]!.steps[2] = { ...baseStep, active: true, soundLock: 'snare-808' };
+
+        render(
+            <StepSequencer
+                pattern={pattern}
+                pads={pads}
+                currentStep={0}
+                isPlaying={false}
+                onToggleStep={vi.fn()}
+                onSetVelocity={vi.fn()}
+                onSetSoundLock={onSetSoundLock}
+            />
+        );
+
+        const cell = screen.getAllByRole('checkbox')[2]!;
+        fireEvent.contextMenu(cell, { clientX: 100, clientY: 200 });
+
+        const clearButton = screen.getByRole('menuitem', { name: 'Clear Sound Lock' });
+        fireEvent.click(clearButton);
+
+        expect(onSetSoundLock).toHaveBeenCalledWith(0, 2, null);
+        expect(screen.queryByText('Sound Lock Engine')).not.toBeInTheDocument();
+    });
+
+    it('opens sound lock menu via keyboard ("l" or "L")', () => {
+        const onSetSoundLock = vi.fn();
+        const pads = [makePad(0)];
+        const pattern = makePattern(1, 4);
+
+        render(
+            <StepSequencer
+                pattern={pattern}
+                pads={pads}
+                currentStep={0}
+                isPlaying={false}
+                onToggleStep={vi.fn()}
+                onSetVelocity={vi.fn()}
+                onSetSoundLock={onSetSoundLock}
+            />
+        );
+
+        const cell = screen.getAllByRole('checkbox')[0]!;
+        fireEvent.keyDown(cell, { key: 'l' });
+
+        expect(screen.getByText('Sound Lock Engine')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('menuitem', { name: 'cowbell' }));
+        expect(onSetSoundLock).toHaveBeenCalledWith(0, 0, 'cowbell');
+
+        onSetSoundLock.mockClear();
+        fireEvent.keyDown(cell, { key: 'L' });
+        expect(screen.getByText('Sound Lock Engine')).toBeInTheDocument();
+    });
+
+    it('renders condition badge and accessible name with ratchet and condition', () => {
+        const pads = [makePad(0)];
+        const pattern = makePattern(1, 4);
+        pattern.tracks[0]!.steps[1] = {
+            ...baseStep,
+            active: true,
+            velocity: 0.75,
+            retriggerCount: 2,
+            condition: 'fill',
+        };
+        pattern.tracks[0]!.steps[2] = {
+            ...baseStep,
+            active: true,
+            velocity: 0.8,
+            retriggerCount: 0,
+            condition: 'always',
+        };
+
+        render(
+            <StepSequencer
+                pattern={pattern}
+                pads={pads}
+                currentStep={0}
+                isPlaying={false}
+                onToggleStep={vi.fn()}
+                onSetVelocity={vi.fn()}
+            />
+        );
+
+        const cellWithCondition = screen.getAllByRole('checkbox')[1]!;
+        expect(cellWithCondition).toHaveAccessibleName(/ratchet 3x, condition fill/i);
+        expect(cellWithCondition).toHaveTextContent('3×');
+
+        const conditionBadge = screen.getByTestId('toaster-step-condition-0-1');
+        expect(conditionBadge).toBeInTheDocument();
+        expect(conditionBadge).toHaveTextContent('fill');
+
+        const normalCell = screen.getAllByRole('checkbox')[2]!;
+        expect(normalCell).not.toHaveAccessibleName(/ratchet/i);
+        expect(normalCell).not.toHaveAccessibleName(/condition/i);
+        expect(screen.queryByTestId('toaster-step-condition-0-2')).not.toBeInTheDocument();
+    });
+
+    it('renders both soundLock and condition badges in their respective positions when both are present', () => {
+        const pads = [makePad(0)];
+        const pattern = makePattern(1, 4);
+        pattern.tracks[0]!.steps[1] = {
+            ...baseStep,
+            active: true,
+            velocity: 0.8,
+            soundLock: 'snare-808',
+            condition: 'fill',
+        };
+
+        render(
+            <StepSequencer
+                pattern={pattern}
+                pads={pads}
+                currentStep={0}
+                isPlaying={false}
+                onToggleStep={vi.fn()}
+                onSetVelocity={vi.fn()}
+            />
+        );
+
+        const soundLockBadge = screen.getByTestId('toaster-step-soundlock-0-1');
+        const conditionBadge = screen.getByTestId('toaster-step-condition-0-1');
+
+        expect(soundLockBadge).toBeInTheDocument();
+        expect(soundLockBadge).toHaveTextContent('snare');
+        expect(soundLockBadge.className).toContain('bottom-0.5');
+
+        expect(conditionBadge).toBeInTheDocument();
+        expect(conditionBadge).toHaveTextContent('fill');
+        expect(conditionBadge.className).toContain('top-0.5');
+        expect(conditionBadge.className).toContain('right-1');
+    });
+
+    it('opens context menu and invokes onSetRetrigger when a ratchet option is selected', () => {
+        const onSetRetrigger = vi.fn();
+        const pads = [makePad(0)];
+        const pattern = makePattern(1, 4);
+        pattern.tracks[0]!.steps[1] = {
+            ...baseStep,
+            active: true,
+            retriggerCount: 0,
+        };
+
+        render(
+            <StepSequencer
+                pattern={pattern}
+                pads={pads}
+                currentStep={0}
+                isPlaying={false}
+                onToggleStep={vi.fn()}
+                onSetVelocity={vi.fn()}
+                onSetRetrigger={onSetRetrigger}
+            />
+        );
+
+        const cell = screen.getAllByRole('checkbox')[1]!;
+        fireEvent.contextMenu(cell, { clientX: 100, clientY: 200 });
+
+        expect(screen.getByText('Ratchets')).toBeInTheDocument();
+        const ratchetButton = screen.getByRole('menuitem', { name: '2×' });
+        fireEvent.click(ratchetButton);
+
+        expect(onSetRetrigger).toHaveBeenCalledTimes(1);
+        expect(onSetRetrigger).toHaveBeenCalledWith(0, 1, 1);
+        expect(screen.queryByText('Ratchets')).not.toBeInTheDocument();
+    });
+
+    it('opens context menu and invokes onSetCondition when a condition option is selected', () => {
+        const onSetCondition = vi.fn();
+        const pads = [makePad(0)];
+        const pattern = makePattern(1, 4);
+        pattern.tracks[0]!.steps[1] = {
+            ...baseStep,
+            active: true,
+            condition: 'always',
+        };
+
+        render(
+            <StepSequencer
+                pattern={pattern}
+                pads={pads}
+                currentStep={0}
+                isPlaying={false}
+                onToggleStep={vi.fn()}
+                onSetVelocity={vi.fn()}
+                onSetCondition={onSetCondition}
+            />
+        );
+
+        const cell = screen.getAllByRole('checkbox')[1]!;
+        fireEvent.contextMenu(cell, { clientX: 100, clientY: 200 });
+
+        expect(screen.getByText('Condition')).toBeInTheDocument();
+        const conditionButton = screen.getByRole('menuitem', { name: 'fill' });
+        fireEvent.click(conditionButton);
+
+        expect(onSetCondition).toHaveBeenCalledTimes(1);
+        expect(onSetCondition).toHaveBeenCalledWith(0, 1, 'fill');
+        expect(screen.queryByText('Condition')).not.toBeInTheDocument();
     });
 });

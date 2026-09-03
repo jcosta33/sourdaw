@@ -12,7 +12,7 @@ import {
     resetActionReplayAuthority,
 } from '#/modules/Command/useCases';
 import {
-    captureProjectRevision,
+    captureProjectIdentity,
     createCrdtDoc,
     getCrdtDoc,
     registerCrdtStorageRuntime,
@@ -47,12 +47,13 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../getProjectContext', () => ({ getProjectContext: mocks.getProjectContext }));
 vi.mock('../planPromptActions', () => ({ planPromptActions: mocks.planPromptActions }));
 vi.mock('../describePlannedAction', () => ({ describePlannedAction: mocks.describePlannedAction }));
-// This spec imports captureProjectRevision, createCrdtDoc, getCrdtDoc, registerCrdtStorageRuntime, removeCrdtDoc, and resetCrdtProjectAuthority; submitAdmittedPromptRequest imports settlePendingProjectWritesAndCaptureRevision.
+// This spec imports captureProjectRevision, createCrdtDoc, getCrdtDoc, registerCrdtStorageRuntime, removeCrdtDoc, and resetCrdtProjectAuthority; submitAdmittedPromptRequest imports settlePendingProjectWritesAndCaptureRevision; compilePlannedActionCommandBatch imports captureProjectIdentity.
 vi.mock('#/modules/CrdtDocument/useCases', async () => {
     const original = await vi.importActual<typeof import('#/modules/CrdtDocument/useCases')>(
         '#/modules/CrdtDocument/useCases'
     );
     return {
+        captureProjectIdentity: original.captureProjectIdentity,
         captureProjectRevision: original.captureProjectRevision,
         createCrdtDoc: original.createCrdtDoc,
         getCrdtDoc: original.getCrdtDoc,
@@ -283,7 +284,7 @@ describe('prompt stem import recovery', () => {
                 reference.audioBufferId ? [reference.audioBufferId] : []
             ),
             lockedRanges: [],
-            projectId: captureProjectRevision(),
+            projectId: captureProjectIdentity(),
             projectInvariantsValid: true,
             targetFingerprints: targetsCreated
                 ? Object.fromEntries(targetIds.map((targetId) => [targetId, targetId]))

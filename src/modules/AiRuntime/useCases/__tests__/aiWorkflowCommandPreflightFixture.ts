@@ -12,6 +12,7 @@ import {
 } from '#/modules/Command/useCases';
 import {
     agentProjectInspectionPort,
+    captureProjectIdentity,
     captureProjectRevision,
     createCommandPreviewWorkspace,
     getCrdtDoc,
@@ -46,7 +47,7 @@ export function configureAiWorkflowCommandPreflightFixture(projectId?: string): 
             availableAssetHashes: [],
             availableAudioBufferIds: [],
             lockedRanges: [],
-            projectId: projectId ?? captureProjectRevision(),
+            projectId: projectId ?? captureProjectIdentity(),
             projectInvariantsValid: true,
             targetFingerprints,
         };

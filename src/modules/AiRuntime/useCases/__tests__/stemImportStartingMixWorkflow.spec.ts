@@ -1,3 +1,4 @@
+import { change } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -20,10 +21,15 @@ import {
     undo,
 } from '#/modules/Command/useCases';
 import {
+    captureProjectIdentity,
     captureProjectRevision,
     createCrdtDoc,
+    DOC_PREFIX_ROOT,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
+    replaceCrdtDoc,
+    replaceCrdtDocInLineage,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
@@ -621,7 +627,7 @@ describe('stem import and starting mix workflow', () => {
                 reference.audioBufferId ? [reference.audioBufferId] : []
             ),
             lockedRanges: [],
-            projectId: captureProjectRevision(),
+            projectId: captureProjectIdentity(),
             projectInvariantsValid: true,
             targetFingerprints: Object.fromEntries(
                 targetIds
@@ -917,7 +923,8 @@ describe('stem import and starting mix workflow', () => {
         expect(undoStore.value?.past).toHaveLength(0);
     });
 
-    it('invalidates a stale proposal and cleans resources without touching the collaborator edit', async () => {
+    it('asks for reapproval instead of discarding a stale proposal, keeping prepared resources and the locally added track intact until the second confirm commits', async () => {
+        const originalTracks = structuredClone(trackStore.value?.tracks ?? []);
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(confirmationId());
         await executeAppAction(
@@ -925,12 +932,87 @@ describe('stem import and starting mix workflow', () => {
             { skipUndo: true }
         );
 
-        const result = await confirmPendingChatActions({ confirmationId: confirmation!.id });
-
-        expect(result.status).toBe('invalidated');
+        // The stem-import plan targets no existing object (getStemImportPlanScope reports
+        // targetIds: []), so a brand new, locally added track is a non-overlapping edit: the
+        // proposal is revalidated and rebound rather than discarded, and its prepared resources
+        // stay held.
+        const firstConfirm = await confirmPendingChatActions({ confirmationId: confirmation!.id });
+        expect(firstConfirm).toMatchObject({
+            status: 'reapproval_required',
+            divergence: { kind: 'non-overlapping' },
+        });
         expect(trackStore.value?.tracks.map((track) => track.id)).toEqual(['track-guide', 'track-collaborator']);
-        expectPreparedStemResourcesReleased(1);
+        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+        expect(getPendingActionConfirmation(confirmation!.id)?.status).toBe('proposed');
         expect(undoStore.value?.past).toHaveLength(0);
+
+        const secondConfirm = await confirmPendingChatActions({ confirmationId: confirmation!.id });
+        expect(secondConfirm).toEqual({ status: 'executed' });
+
+        expect(mocks.promoteDurableStagedAsset).toHaveBeenCalledTimes(6);
+        expect(mocks.completeDurablePromotionRecovery).toHaveBeenCalledOnce();
+        const committedTracks = trackStore.value?.tracks ?? [];
+        expect(committedTracks.find((track) => track.id === 'track-collaborator')).toMatchObject({
+            name: 'Collaborator',
+        });
+        expect(committedTracks.find((track) => track.id === 'track-guide')).toEqual(originalTracks[0]);
+        expect(committedTracks.some((track) => track.name === 'Kick')).toBe(true);
+        expect(undoStore.value?.past).toHaveLength(1);
+    });
+
+    it('asks for reapproval when an unrelated collaborator edit lands through a sync', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmation = getPendingActionConfirmation(confirmationId());
+
+        flushAutomergeStorageWrites();
+        const currentDoc = getCrdtDoc<{ tracks: { tracks: Track[] } }>(DOC_PREFIX_ROOT);
+        if (!currentDoc) {
+            throw new TypeError('Expected a loaded root document');
+        }
+        const syncedDoc = change(currentDoc, (draft) => {
+            draft.tracks.tracks.push(createTrack('track-collaborator', 'Collaborator'));
+        });
+        replaceCrdtDocInLineage({ id: DOC_PREFIX_ROOT, doc: syncedDoc });
+        trackStore.hydrate();
+
+        const confirmResult = await confirmPendingChatActions({ confirmationId: confirmation!.id });
+
+        expect(confirmResult).toMatchObject({
+            status: 'reapproval_required',
+            divergence: { kind: 'non-overlapping' },
+        });
+        expect(trackStore.value?.tracks.map((track) => track.id)).toContain('track-collaborator');
+        expect(undoStore.value?.past).toHaveLength(0);
+        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+    });
+
+    // replaceCrdtDoc moves the identity epoch the way the branch routes do, pinned in
+    // branchSwitchProjectIdentity.integration.spec.ts; this case observes the epoch gate at
+    // inspectAgentProjectDivergence.ts:103.
+    it('still hard-invalidates when the document identity moves under a pending proposal', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmation = getPendingActionConfirmation(confirmationId());
+
+        flushAutomergeStorageWrites();
+        const currentDoc = getCrdtDoc<{ tracks: { tracks: Track[] } }>(DOC_PREFIX_ROOT);
+        if (!currentDoc) {
+            throw new TypeError('Expected a loaded root document');
+        }
+        const syncedDoc = change(currentDoc, (draft) => {
+            draft.tracks.tracks.push(createTrack('track-collaborator', 'Collaborator'));
+        });
+        replaceCrdtDoc({ id: DOC_PREFIX_ROOT, doc: syncedDoc });
+        trackStore.hydrate();
+
+        const confirmResult = await confirmPendingChatActions({ confirmationId: confirmation!.id });
+
+        expect(confirmResult).toMatchObject({
+            status: 'invalidated',
+            divergence: { kind: 'ambiguous-same-object' },
+        });
+        expect(trackStore.value?.tracks.map((track) => track.id)).toContain('track-collaborator');
+        expect(undoStore.value?.past).toHaveLength(0);
+        expectPreparedStemResourcesReleased(1);
     });
 
     it('keeps grouped undo retryable when a collaborator changes an imported track', async () => {

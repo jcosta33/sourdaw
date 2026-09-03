@@ -334,7 +334,9 @@ operator's own account rather than to a mint, and so reads as the operator actin
 is why the exception stops at issue metadata one later command puts back: identity for a
 script-covered write is the App that script mints, never a persona. `git push` has no exception at
 all: lane tooling owns every push, because a push from anywhere else destroys the review anchor and
-can strand a lane. Read-only `gh` stays unrestricted and is how you check live tracker state.
+can strand a lane. Remote branch deletion is likewise script-covered: `branch:prune` removes only
+branches whose every pull request is merged or closed, and a dry run is its default. Read-only `gh`
+stays unrestricted and is how you check live tracker state.
 
 | Need                        | Command                                                                                                          |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------- |
@@ -345,6 +347,7 @@ can strand a lane. Read-only `gh` stays unrestricted and is how you check live t
 | Reply `Done` and resolve    | `pnpm review:resolve <pr> --thread <id> --head <sha>`                                                            |
 | Squash-merge                | `pnpm deliver <pr>`                                                                                              |
 | Close a superseded PR       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged>`                                                |
+| Prune spent remote branches | `pnpm branch:prune [--apply] [--limit <n>]`                                                                      |
 | Remove a spent lane         | `pnpm lane:remove <path>`                                                                                        |
 | Strand an abandoned lane    | `pnpm lane:strand <path> --reason "<text>"`                                                                      |
 | Prune lane artifacts        | `pnpm lane:prune <path> \| --all \| --stale-days <days>`                                                         |

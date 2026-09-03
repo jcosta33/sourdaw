@@ -46,6 +46,7 @@ export const generateCloudToolCalls = inject({ logger })(
                         systemPrompt,
                         userMessage,
                         toolSchemas,
+                        maxOutputTokens,
                         signal: controller.signal,
                     });
                     controller.signal.throwIfAborted();

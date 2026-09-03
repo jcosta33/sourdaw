@@ -27,10 +27,15 @@ import { defaultWorkspaceState, type WorkspaceState } from '../../../models/Work
 import { alphaNoticeStore } from '../../../stores/alphaNoticeStore';
 import { workspaceStore } from '../../../stores/workspaceStore';
 import { setWorkspaceEventBus } from '../../../useCases/workspaceEventBus';
+import { type ActiveDevicePanel } from '../../hooks/useActiveDevicePanel';
 import { useProjectState } from '../../hooks/useProjectState';
 import { useWorkspaceState } from '../../hooks/useWorkspaceState';
 import { AppShell } from '../AppShell';
 
+const activeDevicePanelStateMock = vi.hoisted(() => ({
+    activePanel: null as ActiveDevicePanel | null,
+    closeActivePanel: vi.fn(),
+}));
 const elasticEditorPanelMock = vi.hoisted(() => vi.fn());
 const dismissAlphaNoticeMock = vi.hoisted(() => vi.fn());
 
@@ -49,6 +54,10 @@ vi.mock('../../hooks/useProjectState', () => ({
 
 vi.mock('../../hooks/useAppEventHandlers', () => ({
     useAppEventHandlers: vi.fn(),
+}));
+
+vi.mock('../../hooks/useActiveDevicePanel', () => ({
+    useActiveDevicePanel: () => activeDevicePanelStateMock,
 }));
 
 // Mock child components
@@ -145,6 +154,26 @@ vi.mock('#/modules/Collaboration/presentations/views', async (importOriginal) =>
 
 vi.mock('#/modules/CrdtDocument/presentations/views', () => ({
     BranchManagerDialog: () => <div data-testid="branch-manager">Branch Manager</div>,
+}));
+
+vi.mock('#/modules/Levain/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Levain/presentations/views')>()),
+    LevainPanel: () => <div data-testid="levain-panel" />,
+}));
+
+vi.mock('#/modules/Bacteria/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Bacteria/presentations/views')>()),
+    BacteriaPanel: () => <div data-testid="bacteria-panel" />,
+}));
+
+vi.mock('#/modules/Grinder/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Grinder/presentations/views')>()),
+    GrinderPanel: () => <div data-testid="grinder-panel" />,
+}));
+
+vi.mock('#/modules/GrandBoule/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/GrandBoule/presentations/views')>()),
+    GrandBoulePanel: () => <div data-testid="grand-boule-panel" />,
 }));
 
 vi.mock('../LaunchScreen', () => ({
@@ -308,6 +337,8 @@ describe('AppShell', () => {
         setNotificationEventBus(mockNotificationEventBus);
         setWebMidiRuntimeEventBus({ eventBus: mockWebMidiEventBus });
         vi.clearAllMocks();
+        activeDevicePanelStateMock.activePanel = null;
+        activeDevicePanelStateMock.closeActivePanel.mockClear();
         workspaceStore.set({ ...defaultWorkspaceState });
         elasticEditorPanelMock.mockImplementation(() => <div data-testid="elastic-panel">Elastic</div>);
         projectState = createProjectState();
@@ -995,5 +1026,73 @@ describe('AppShell', () => {
             fireEvent.click(screen.getByRole('tab', { name: 'Routing' }));
             expect(screen.getByTestId('routing-matrix')).toBeInTheDocument();
         });
+    });
+
+    // ── Bottom-dock drawer accent color tokens ────────────────────────────────────
+    describe('bottom drawer accent color tokens', () => {
+        const drawerTokenCases: Array<{
+            label: string;
+            kind: ActiveDevicePanel['kind'];
+            expectedLabelColor: string;
+            expectedBorderColor: string;
+            deprecatedLabelColor: string;
+            deprecatedBorderColor: string;
+        }> = [
+            {
+                label: 'Levain',
+                kind: 'levain',
+                expectedLabelColor: 'text-[var(--color-accent-amber)]',
+                expectedBorderColor: 'border-[var(--color-accent-amber)]/20',
+                deprecatedLabelColor: 'text-amber-400',
+                deprecatedBorderColor: 'border-amber-500/20',
+            },
+            {
+                label: 'Bacteria',
+                kind: 'bacteria',
+                expectedLabelColor: 'text-[var(--color-accent-rose)]',
+                expectedBorderColor: 'border-[var(--color-accent-rose)]/20',
+                deprecatedLabelColor: 'text-rose-400',
+                deprecatedBorderColor: 'border-rose-500/20',
+            },
+            {
+                label: 'Grinder',
+                kind: 'grinder',
+                expectedLabelColor: 'text-[var(--color-accent-copper)]',
+                expectedBorderColor: 'border-[var(--color-accent-copper)]/20',
+                deprecatedLabelColor: 'text-amber-500',
+                deprecatedBorderColor: 'border-amber-600/20',
+            },
+            {
+                label: 'Grand Boule',
+                kind: 'grandBoule',
+                expectedLabelColor: 'text-[var(--color-accent-amber)]',
+                expectedBorderColor: 'border-[var(--color-accent-amber)]/20',
+                deprecatedLabelColor: 'text-amber-400',
+                deprecatedBorderColor: 'border-amber-500/20',
+            },
+        ];
+
+        it.each(drawerTokenCases)(
+            'passes tokenized accent classes to $label drawer and omits legacy Tailwind color classes',
+            ({ label, kind, expectedLabelColor, expectedBorderColor, deprecatedLabelColor, deprecatedBorderColor }) => {
+                activeDevicePanelStateMock.activePanel = { kind, deviceId: `device-${kind}`, trackId: null };
+
+                render(<AppShell>Content</AppShell>);
+
+                const closeButton = screen.getByRole('button', { name: `Close ${label}` });
+                const headerRow = closeButton.parentElement;
+                const labelElement = headerRow?.querySelector('span');
+
+                expect(labelElement).not.toBeNull();
+                expect(labelElement).toHaveTextContent(label);
+                expect(labelElement).toHaveClass(expectedLabelColor);
+                expect(labelElement).not.toHaveClass(deprecatedLabelColor);
+
+                const panelContainer = labelElement?.closest('div[class*="border-t"]');
+                expect(panelContainer).not.toBeNull();
+                expect(panelContainer).toHaveClass(expectedBorderColor);
+                expect(panelContainer).not.toHaveClass(deprecatedBorderColor);
+            }
+        );
     });
 });

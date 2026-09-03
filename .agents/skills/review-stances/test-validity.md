@@ -104,3 +104,20 @@ Probe that would have caught it: when a diff adds type or name strings to regist
 plugin descriptors, preset ids), run `pnpm test:release-inventory` in the lane (cheap, ~10s) or at
 minimum grep the added strings against `release/open-source-inventory.json`'s marks values; classify
 any hit in the same change.
+
+### 2026-09-03 — a native method read off its host and called unbound (escaped via PR #2097)
+
+`electron/scanWorker.ts`'s `nativeCommand` read a napi class method off the addon host and returned
+the bare function; `main` then invoked it unbound, so every packaged scan failed with `Illegal
+invocation`. The same PR added the identical read in `router.ts` and bound it correctly through
+`Reflect.apply(implementation, host, callArguments)` a few files away — one surface handled two ways
+in one diff, and nothing raised the divergence.
+
+Blind spot: the spec's fake host used an arrow function for `scanPlugins`, which ignores `this`
+entirely, so a bare reference and a properly bound call produced the same passing assertion; the
+fake could not distinguish the defect from the fix.
+
+Probe that would have caught it: when a diff reads a method off a native or class host and calls it
+later, fake that host receiver-sensitively — a plain function or class method that throws unless
+`this` is the host — so an unbound call fails the spec; then diff every call site reading the same
+kind of host for consistent receiver handling, and flag one that binds where another does not.

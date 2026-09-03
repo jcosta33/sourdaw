@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 
@@ -12,6 +12,7 @@ import {
     requireBrowserWebGpuHardware,
 } from '../../tests/e2e/browserAiHardware';
 import browserAiWebGpuAdmissionConfig from '../../tests/e2e/browserAiWebGpuAdmission.playwright.config';
+import { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } from '../deployWebWorkflowContract';
 
 type UnknownRecord = Record<string, unknown>;
 type JobResult = 'cancelled' | 'failure' | 'skipped' | 'success';
@@ -169,8 +170,9 @@ const DEPLOY_WEB_CONDITION =
     "github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')";
 const DEPLOY_WEB_CONCURRENCY_GROUP = 'deploy-web-production';
 const DEPLOY_WEB_GUARD_STEP = 'Require a validated revision of main';
-const DEPLOY_WEB_FRESHNESS_STEP = 'Refuse a stale candidate revision';
+const DEPLOY_WEB_RESOLVE_STEP = 'Resolve the current production revision';
 const DEPLOY_WEB_CREDENTIAL_REPORT_STEP = 'Report the missing deployment credential';
+const DEPLOY_WEB_SKIP_REPORT_STEP = 'Report why nothing was deployed';
 // Arming the leg takes all four, and the fourth is the one a reader forgets.
 const DEPLOY_ARMING_PRECONDITIONS = [
     'VERCEL_TOKEN',
@@ -180,14 +182,32 @@ const DEPLOY_ARMING_PRECONDITIONS = [
 ] as const;
 const DEPLOYMENT_URL_REFERENCE = '${{ steps.deployment.outputs.url }}';
 const VERCEL_TOKEN_REFERENCE = '${{ secrets.VERCEL_TOKEN }}';
-const VERCEL_CLI_STEPS = [
-    'Pull the production environment',
-    'Build the validated revision',
-    'Deploy the prebuilt revision',
-] as const;
-// Every leg a scheduled run performs. The train promotes a revision only once
-// each of them has reported success on that same revision.
+const VERCEL_ORG_ID_REFERENCE = '${{ secrets.VERCEL_ORG_ID }}';
+const VERCEL_PROJECT_ID_REFERENCE = '${{ secrets.VERCEL_PROJECT_ID }}';
+const VERCEL_CLI_STEPS = ['Deploy the prebuilt revision'] as const;
+const VERCEL_PULL_STEP = 'Pull the production environment';
+// Every leg that validates the web artifact. The Rust workspace leg is one
+// of them: it is the only test of daw-dsp, daw-wasm-decoder, proof-chamber
+// and scoring, which ship in the web bundle as the committed
+// `public/wasm/*` packages. The native macOS and Windows legs validate the
+// desktop shell instead, which this deployment does not ship, so their
+// failures must not freeze it.
 const DEPLOY_WEB_NEEDS = [
+    'static',
+    'lint',
+    'boundaries',
+    'unit',
+    'build',
+    'rust',
+    'e2e',
+    'browser-ai-webgpu',
+    'codeql',
+    'secrets',
+] as const;
+// Every leg a scheduled run performs, in the workflow's own order. The deploy
+// deliberately does not wait for the native legs (DEPLOY_WEB_NEEDS), but the
+// reporter observes the whole train: a native failure must still file the issue.
+const NIGHTLY_REPORT_NEEDS = [
     'static',
     'lint',
     'boundaries',
@@ -200,29 +220,29 @@ const DEPLOY_WEB_NEEDS = [
     'browser-ai-webgpu',
     'codeql',
     'secrets',
+    DEPLOY_WEB_JOB,
 ] as const;
-const NIGHTLY_REPORT_NEEDS = [...DEPLOY_WEB_NEEDS, DEPLOY_WEB_JOB] as const;
 const DEPLOY_CREDENTIAL_REFERENCE = "${{ secrets.VERCEL_TOKEN != '' }}";
 const DEPLOY_CREDENTIAL_CONDITION = "env.DEPLOY_CREDENTIAL_PRESENT == 'true'";
-const DEPLOY_FRESH_REVISION_CONDITION = `${DEPLOY_CREDENTIAL_CONDITION} && steps.freshness.outputs.fresh == 'true'`;
-const DEPLOY_CHANGED_REVISION_CONDITION = `${DEPLOY_FRESH_REVISION_CONDITION} && steps.production.outputs.deploy == 'true'`;
-// Only the freshness check itself runs on credential presence alone; it decides
-// for everything after it, and its output is empty when it never ran.
-const DEPLOY_CREDENTIAL_GATED_STEPS = [DEPLOY_WEB_FRESHNESS_STEP] as const;
-const DEPLOY_FRESH_GATED_STEPS = [
+const DEPLOY_CHANGED_REVISION_CONDITION = `${DEPLOY_CREDENTIAL_CONDITION} && steps.production.outputs.deploy == 'true'`;
+// Everything that reads or spends the deployment credential runs on its
+// presence alone; the production-revision step decides for everything after
+// it, and its `deploy` output is empty when it never ran.
+const DEPLOY_CREDENTIAL_GATED_STEPS = [
     'Checkout the validated revision',
     'Enable Corepack',
-    'Set up Node',
-    'Resolve the current production revision',
+    PNPM_SETUP_STEP,
+    NODE_SETUP_STEP,
+    DEPLOY_WEB_RESOLVE_STEP,
 ] as const;
 const DEPLOY_REVISION_GATED_STEPS = [
     'Install dependencies',
-    'Pull the production environment',
+    'Link the Vercel CLI to the production project',
     'Build the validated revision',
     'Deploy the prebuilt revision',
     'Assert cross-origin isolation on the deployment',
 ] as const;
-const DEPLOY_ENVIRONMENT = 'Production';
+const DEPLOY_ENVIRONMENT = { name: 'Production', url: DEPLOYMENT_URL_REFERENCE } as const;
 const VERCEL_CLI_PIN = /^vercel@\d+\.\d+\.\d+$/u;
 // A daily web deployment carries no release identity: nothing here may write a
 // version, a tag, a GitHub Release or a changelog entry.
@@ -1056,9 +1076,7 @@ function assertCrossOriginIsolationHeaders(config: UnknownRecord): void {
     }
 }
 
-type DeployTrainScripts = { readonly validation: string; readonly freshness: string };
-
-function assertDailyDeployTrain(candidate: UnknownRecord): DeployTrainScripts {
+function assertDailyDeployTrain(candidate: UnknownRecord): string {
     const job = jobAt(candidate, DEPLOY_WEB_JOB);
     if (job.name !== DEPLOY_WEB_JOB_NAME) {
         throw new Error('the daily deploy train must retain its stable name');
@@ -1082,7 +1100,8 @@ function assertDailyDeployTrain(candidate: UnknownRecord): DeployTrainScripts {
     if (needs.length !== DEPLOY_WEB_NEEDS.length) {
         throw new Error('the daily deploy train must depend on exactly the scheduled validation legs');
     }
-    if (job.environment !== DEPLOY_ENVIRONMENT) {
+    const environment = job.environment === undefined ? {} : recordAt(job, 'environment');
+    if (environment.name !== DEPLOY_ENVIRONMENT.name || environment.url !== DEPLOY_ENVIRONMENT.url) {
         throw new Error('the daily deploy train must draw its credential from the Production environment');
     }
     const jobEnvironment = recordAt(job, 'env');
@@ -1095,11 +1114,6 @@ function assertDailyDeployTrain(candidate: UnknownRecord): DeployTrainScripts {
     for (const name of DEPLOY_CREDENTIAL_GATED_STEPS) {
         if (stepNamed(job, name).if !== DEPLOY_CREDENTIAL_CONDITION) {
             throw new Error(`${name} must not run without the deployment credential`);
-        }
-    }
-    for (const name of DEPLOY_FRESH_GATED_STEPS) {
-        if (stepNamed(job, name).if !== DEPLOY_FRESH_REVISION_CONDITION) {
-            throw new Error(`${name} must not run for a revision that is no longer the tip of main`);
         }
     }
     for (const name of DEPLOY_REVISION_GATED_STEPS) {
@@ -1117,9 +1131,29 @@ function assertDailyDeployTrain(candidate: UnknownRecord): DeployTrainScripts {
     if (!deployment.includes('--meta githubCommitSha="$GITHUB_SHA"')) {
         throw new Error('the daily deploy train must record the deployed revision on the deployment');
     }
+    const buildStep = stepNamed(job, 'Build the validated revision');
+    assertDeployWebBuildRun(stringAt(buildStep, 'run'));
+    assertDeployWebJobNoVercelPull(arrayAt(job, 'steps'));
+    if (buildStep.env !== undefined) {
+        const buildEnv = recordAt(buildStep, 'env');
+        if (
+            buildEnv.VERCEL_TOKEN !== undefined ||
+            buildEnv.VERCEL_ORG_ID !== undefined ||
+            buildEnv.VERCEL_PROJECT_ID !== undefined
+        ) {
+            throw new Error('Build the validated revision must not set Vercel CLI credentials');
+        }
+    }
     for (const name of VERCEL_CLI_STEPS) {
-        if (recordAt(stepNamed(job, name), 'env').VERCEL_TOKEN !== VERCEL_TOKEN_REFERENCE) {
+        const env = recordAt(stepNamed(job, name), 'env');
+        if (env.VERCEL_TOKEN !== VERCEL_TOKEN_REFERENCE) {
             throw new Error(`${name} must authenticate from the environment rather than an echoed argument`);
+        }
+        if (env.VERCEL_ORG_ID !== undefined) {
+            throw new Error(`${name} must not pass VERCEL_ORG_ID to the CLI`);
+        }
+        if (env.VERCEL_PROJECT_ID !== undefined) {
+            throw new Error(`${name} must not pass VERCEL_PROJECT_ID to the CLI`);
         }
     }
     const isolationStep = stepNamed(job, 'Assert cross-origin isolation on the deployment');
@@ -1149,21 +1183,38 @@ function assertDailyDeployTrain(candidate: UnknownRecord): DeployTrainScripts {
     if (recordAt(guardStep, 'env').TRAIN_REF !== '${{ github.ref }}') {
         throw new Error('the daily deploy train must read the ref it is about to deploy');
     }
-    const freshnessStep = stepNamed(job, DEPLOY_WEB_FRESHNESS_STEP);
-    if (freshnessStep.id !== 'freshness') {
-        throw new Error('the daily deploy train must publish its freshness decision under a stable step id');
+    const resolveStep = stepNamed(job, DEPLOY_WEB_RESOLVE_STEP);
+    if (resolveStep.id !== 'production') {
+        throw new Error('the daily deploy train must publish its production-revision decision under a stable step id');
     }
-    if (recordAt(freshnessStep, 'env').CANDIDATE_REVISION !== '${{ github.sha }}') {
-        throw new Error('the freshness check must read the revision this run is about to deploy');
+    const resolveEnv = recordAt(resolveStep, 'env');
+    if (resolveEnv.CANDIDATE_REVISION !== '${{ github.sha }}') {
+        throw new Error('the production-revision step must read the revision this run is about to deploy');
     }
-    const freshness = stringAt(freshnessStep, 'run');
-    if (!freshness.includes('git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" refs/heads/main')) {
-        throw new Error('the freshness check must read the current tip of main from the remote');
+    if (resolveEnv.GITHUB_TOKEN !== '${{ github.token }}') {
+        throw new Error('the production-revision step must authenticate its ancestry comparison with a GitHub token');
     }
-    if (!freshness.includes('"$tip" != "$CANDIDATE_REVISION"')) {
-        throw new Error('the freshness check must compare the candidate against that tip');
+    if (
+        resolveEnv.VERCEL_TOKEN !== VERCEL_TOKEN_REFERENCE ||
+        resolveEnv.VERCEL_ORG_ID !== VERCEL_ORG_ID_REFERENCE ||
+        resolveEnv.VERCEL_PROJECT_ID !== VERCEL_PROJECT_ID_REFERENCE
+    ) {
+        throw new Error('the production-revision step must authenticate its Vercel query from the environment');
     }
-    return { validation: stringAt(guardStep, 'run'), freshness };
+    if (stringAt(resolveStep, 'run') !== 'node scripts/resolveVercelProductionDeployment.ts') {
+        throw new Error('the daily deploy train must decide through scripts/resolveVercelProductionDeployment.ts');
+    }
+    const skipReportStep = stepNamed(job, DEPLOY_WEB_SKIP_REPORT_STEP);
+    if (skipReportStep.if !== `${DEPLOY_CREDENTIAL_CONDITION} && steps.production.outputs.deploy != 'true'`) {
+        throw new Error(
+            'the daily deploy train must report why nothing was deployed only when credentialed but not deploying'
+        );
+    }
+    const skipReportEnv = skipReportStep.env === undefined ? {} : recordAt(skipReportStep, 'env');
+    if (skipReportEnv.REASON !== '${{ steps.production.outputs.reason }}') {
+        throw new Error('the skip report must read the decision reason the production-revision step published');
+    }
+    return stringAt(guardStep, 'run');
 }
 
 // Promotion is not validation. It must not be able to fail either summary, and
@@ -1203,55 +1254,6 @@ function runResultsGuard(
         env: { ...process.env, RESULTS: results, ...extraEnvironment },
         shell: false,
     }).status;
-}
-
-type FreshnessRun = {
-    readonly status: number | null;
-    readonly stdout: string;
-    readonly outputs: string;
-    readonly summary: string;
-};
-
-/**
- * Runs the freshness step's own script against a stubbed `git ls-remote`. The
- * stub answering with no ref at all is the case that decides whether an
- * unreadable tip fails the job or deploys blind.
- */
-function runFreshnessGuard(script: string, candidateRevision: string, remoteTip: string): FreshnessRun {
-    const directory = mkdtempSync(join(tmpdir(), 'sourdaw-health-freshness-'));
-    const binaries = join(directory, 'bin');
-    const outputPath = join(directory, 'github-output');
-    const summaryPath = join(directory, 'step-summary');
-    try {
-        mkdirSync(binaries);
-        writeFileSync(
-            join(binaries, 'git'),
-            `#!/bin/sh\nif [ -n "${remoteTip}" ]; then printf '%s\\trefs/heads/main\\n' "${remoteTip}"; fi\n`
-        );
-        chmodSync(join(binaries, 'git'), 0o755);
-        writeFileSync(outputPath, '');
-        writeFileSync(summaryPath, '');
-        const result = spawnSync('bash', ['-c', script], {
-            encoding: 'utf8',
-            env: {
-                ...process.env,
-                PATH: `${binaries}:${process.env.PATH ?? ''}`,
-                GITHUB_REPOSITORY: 'jcosta33/sourdaw',
-                CANDIDATE_REVISION: candidateRevision,
-                GITHUB_OUTPUT: outputPath,
-                GITHUB_STEP_SUMMARY: summaryPath,
-            },
-            shell: false,
-        });
-        return {
-            status: result.status,
-            stdout: result.stdout,
-            outputs: readFileSync(outputPath, 'utf8'),
-            summary: readFileSync(summaryPath, 'utf8'),
-        };
-    } finally {
-        rmSync(directory, { recursive: true, force: true });
-    }
 }
 
 function assertCredentiallessScanner(candidate: UnknownRecord): void {
@@ -2001,28 +2003,8 @@ describe('health gates workflow contract', () => {
     it('promotes the validated revision daily, only with a credential and only when it changed', () => {
         expect(() => assertGitDeploymentsDisabled(vercelConfig)).not.toThrow();
         expect(() => assertCrossOriginIsolationHeaders(vercelConfig)).not.toThrow();
-        const { validation: validationGuard, freshness: freshnessGuard } = assertDailyDeployTrain(nightly);
+        const validationGuard = assertDailyDeployTrain(nightly);
         expect(() => assertDeployOutsideSummaries(workflowSet())).not.toThrow();
-
-        const candidate = '1'.repeat(40);
-        const newerTip = '2'.repeat(40);
-        const fresh = runFreshnessGuard(freshnessGuard, candidate, candidate);
-        expect(fresh.status).toBe(0);
-        expect(fresh.outputs).toContain('fresh=true');
-        expect(fresh.stdout).toContain('the candidate is the current tip of main');
-
-        // A queue reordered by needs-completion, or a re-run replaying an older
-        // run's SHA, both arrive here as a candidate that main has moved past.
-        // Benign refusal, not an incident: green job, loud notice, no deploy.
-        const stale = runFreshnessGuard(freshnessGuard, candidate, newerTip);
-        expect(stale.status).toBe(0);
-        expect(stale.outputs).toContain('fresh=false');
-        expect(stale.outputs).not.toContain('fresh=true');
-        expect(stale.stdout).toContain(`stale candidate ${candidate}, main is now ${newerTip}, deploying nothing`);
-        expect(stale.summary).toContain(`stale candidate \`${candidate}\`, main is now \`${newerTip}\``);
-
-        // An unreadable tip is the one case that must not resolve to a deploy.
-        expect(runFreshnessGuard(freshnessGuard, candidate, '').status).not.toBe(0);
 
         const onMain = { TRAIN_REF: 'refs/heads/main' };
         expect(runResultsGuard(validationGuard, needsResults(nightly, DEPLOY_WEB_JOB, 'success'), onMain)).toBe(0);
@@ -2098,11 +2080,53 @@ describe('health gates workflow contract', () => {
             'the daily deploy train must queue behind a running deploy rather than cancel it'
         );
 
-        const unauthenticatedBuild = asRecord(structuredClone(nightly), 'unauthenticated deploy train');
-        delete recordAt(stepNamed(jobAt(unauthenticatedBuild, DEPLOY_WEB_JOB), 'Build the validated revision'), 'env')
+        const unauthenticatedDeploy = asRecord(structuredClone(nightly), 'unauthenticated deploy train');
+        delete recordAt(stepNamed(jobAt(unauthenticatedDeploy, DEPLOY_WEB_JOB), 'Deploy the prebuilt revision'), 'env')
             .VERCEL_TOKEN;
-        expect(() => assertDailyDeployTrain(unauthenticatedBuild)).toThrow(
-            'Build the validated revision must authenticate from the environment rather than an echoed argument'
+        expect(() => assertDailyDeployTrain(unauthenticatedDeploy)).toThrow(
+            'Deploy the prebuilt revision must authenticate from the environment rather than an echoed argument'
+        );
+
+        const envLinkedDeploy = asRecord(structuredClone(nightly), 'env-linked deploy train');
+        recordAt(
+            stepNamed(jobAt(envLinkedDeploy, DEPLOY_WEB_JOB), 'Deploy the prebuilt revision'),
+            'env'
+        ).VERCEL_ORG_ID = '${{ secrets.VERCEL_ORG_ID }}';
+        expect(() => assertDailyDeployTrain(envLinkedDeploy)).toThrow(
+            'Deploy the prebuilt revision must not pass VERCEL_ORG_ID to the CLI'
+        );
+
+        const vercelCliBuild = asRecord(structuredClone(nightly), 'vercel-cli build deploy train');
+        const vercelCliBuildStep = stepNamed(jobAt(vercelCliBuild, DEPLOY_WEB_JOB), 'Build the validated revision');
+        vercelCliBuildStep.run = `${stringAt(vercelCliBuildStep, 'run')}\npnpm dlx "$VERCEL_CLI" build`;
+        expect(() => assertDailyDeployTrain(vercelCliBuild)).toThrow(
+            'Build the validated revision must not invoke the Vercel CLI'
+        );
+
+        const vercelCliPull = asRecord(structuredClone(nightly), 'vercel-cli pull deploy train');
+        arrayAt(jobAt(vercelCliPull, DEPLOY_WEB_JOB), 'steps').unshift({
+            name: VERCEL_PULL_STEP,
+            run: 'pnpm dlx "$VERCEL_CLI" pull --environment=production',
+        });
+        expect(() => assertDailyDeployTrain(vercelCliPull)).toThrow(
+            'the daily deploy train must not pull the production environment through the Vercel CLI'
+        );
+
+        const echoOnlyBuild = asRecord(structuredClone(nightly), 'echo-only build deploy train');
+        stepNamed(jobAt(echoOnlyBuild, DEPLOY_WEB_JOB), 'Build the validated revision').run =
+            'set -euo pipefail\necho "pnpm build"\necho "node scripts/writeVercelPrebuiltOutput.ts"';
+        expect(() => assertDailyDeployTrain(echoOnlyBuild)).toThrow(
+            'Build the validated revision must execute pnpm build'
+        );
+
+        const pullOnLinkStep = asRecord(structuredClone(nightly), 'link-step pull deploy train');
+        const linkStep = stepNamed(
+            jobAt(pullOnLinkStep, DEPLOY_WEB_JOB),
+            'Link the Vercel CLI to the production project'
+        );
+        linkStep.run = `${stringAt(linkStep, 'run')}\npnpm dlx "$VERCEL_CLI" pull --environment=production`;
+        expect(() => assertDailyDeployTrain(pullOnLinkStep)).toThrow(
+            'the daily deploy train must not pull the production environment through the Vercel CLI'
         );
 
         const reboundIsolation = asRecord(structuredClone(nightly), 'rebound-isolation deploy train');
@@ -2125,9 +2149,32 @@ describe('health gates workflow contract', () => {
             'the daily deploy train must depend on exactly the scheduled validation legs'
         );
 
+        // The desktop shell ships nothing this deployment carries; adding its
+        // native leg back must not freeze the web again behind a red native
+        // build. (The Rust workspace leg belongs in `needs` — it is the only
+        // test of the committed `public/wasm/*` packages this bundle ships —
+        // so it stays in DEPLOY_WEB_NEEDS rather than being the mutation here.)
+        const nativeWindowsReintroducedTrain = asRecord(
+            structuredClone(nightly),
+            'native-windows-reintroduced deploy train'
+        );
+        arrayAt(jobAt(nativeWindowsReintroducedTrain, DEPLOY_WEB_JOB), 'needs').push('native-windows');
+        expect(() => assertDailyDeployTrain(nativeWindowsReintroducedTrain)).toThrow(
+            'the daily deploy train must depend on exactly the scheduled validation legs'
+        );
+
         const unscopedTrain = asRecord(structuredClone(nightly), 'unscoped deploy train');
         delete jobAt(unscopedTrain, DEPLOY_WEB_JOB).environment;
         expect(() => assertDailyDeployTrain(unscopedTrain)).toThrow(
+            'the daily deploy train must draw its credential from the Production environment'
+        );
+
+        // The environment URL is what tells a real deployment apart from a
+        // no-op on the GitHub deployments record; a fixed URL would report a
+        // deployment even on a run that skipped every deploying step.
+        const fixedUrlTrain = asRecord(structuredClone(nightly), 'fixed-url deploy train');
+        recordAt(jobAt(fixedUrlTrain, DEPLOY_WEB_JOB), 'environment').url = 'https://sourdaw.vercel.app';
+        expect(() => assertDailyDeployTrain(fixedUrlTrain)).toThrow(
             'the daily deploy train must draw its credential from the Production environment'
         );
 
@@ -2138,40 +2185,67 @@ describe('health gates workflow contract', () => {
         );
 
         const credentiallessDeploy = asRecord(structuredClone(nightly), 'credentialless deploy train');
-        stepNamed(jobAt(credentiallessDeploy, DEPLOY_WEB_JOB), DEPLOY_WEB_FRESHNESS_STEP).if =
+        stepNamed(jobAt(credentiallessDeploy, DEPLOY_WEB_JOB), DEPLOY_WEB_RESOLVE_STEP).if =
             "github.event_name == 'schedule'";
         expect(() => assertDailyDeployTrain(credentiallessDeploy)).toThrow(
-            `${DEPLOY_WEB_FRESHNESS_STEP} must not run without the deployment credential`
+            `${DEPLOY_WEB_RESOLVE_STEP} must not run without the deployment credential`
         );
 
-        const unfreshResolver = asRecord(structuredClone(nightly), 'stale-tolerant deploy train');
-        stepNamed(jobAt(unfreshResolver, DEPLOY_WEB_JOB), 'Resolve the current production revision').if =
+        // Mutation-kill: dropping the token the ancestry comparison
+        // authenticates with must fail this spec, not just leave the resolve
+        // script unable to reach GitHub at runtime.
+        const tokenlessResolver = asRecord(structuredClone(nightly), 'tokenless resolver deploy train');
+        delete recordAt(stepNamed(jobAt(tokenlessResolver, DEPLOY_WEB_JOB), DEPLOY_WEB_RESOLVE_STEP), 'env')
+            .GITHUB_TOKEN;
+        expect(() => assertDailyDeployTrain(tokenlessResolver)).toThrow(
+            'the production-revision step must authenticate its ancestry comparison with a GitHub token'
+        );
+
+        const unidentifiedResolver = asRecord(structuredClone(nightly), 'unidentified resolver deploy train');
+        stepNamed(jobAt(unidentifiedResolver, DEPLOY_WEB_JOB), DEPLOY_WEB_RESOLVE_STEP).id = 'resolve';
+        expect(() => assertDailyDeployTrain(unidentifiedResolver)).toThrow(
+            'the daily deploy train must publish its production-revision decision under a stable step id'
+        );
+
+        const uncandidatedResolver = asRecord(structuredClone(nightly), 'uncandidated resolver deploy train');
+        delete recordAt(stepNamed(jobAt(uncandidatedResolver, DEPLOY_WEB_JOB), DEPLOY_WEB_RESOLVE_STEP), 'env')
+            .CANDIDATE_REVISION;
+        expect(() => assertDailyDeployTrain(uncandidatedResolver)).toThrow(
+            'the production-revision step must read the revision this run is about to deploy'
+        );
+
+        const misauthenticatedResolver = asRecord(structuredClone(nightly), 'misauthenticated resolver deploy train');
+        recordAt(
+            stepNamed(jobAt(misauthenticatedResolver, DEPLOY_WEB_JOB), DEPLOY_WEB_RESOLVE_STEP),
+            'env'
+        ).VERCEL_ORG_ID = 'org_fixture';
+        expect(() => assertDailyDeployTrain(misauthenticatedResolver)).toThrow(
+            'the production-revision step must authenticate its Vercel query from the environment'
+        );
+
+        // Mutation-kill: a resolve step that writes its own outputs inline,
+        // bypassing the ancestry decision the script makes, must fail this
+        // spec rather than only being caught by reading the script's source.
+        const inlinedResolver = asRecord(structuredClone(nightly), 'inlined resolver deploy train');
+        stepNamed(jobAt(inlinedResolver, DEPLOY_WEB_JOB), DEPLOY_WEB_RESOLVE_STEP).run =
+            'printf \'deploy=true\\nreason=deploy\\n\' >> "$GITHUB_OUTPUT"';
+        expect(() => assertDailyDeployTrain(inlinedResolver)).toThrow(
+            'the daily deploy train must decide through scripts/resolveVercelProductionDeployment.ts'
+        );
+
+        const unconditionalSkipReport = asRecord(structuredClone(nightly), 'unconditional skip-report deploy train');
+        stepNamed(jobAt(unconditionalSkipReport, DEPLOY_WEB_JOB), DEPLOY_WEB_SKIP_REPORT_STEP).if =
             DEPLOY_CREDENTIAL_CONDITION;
-        expect(() => assertDailyDeployTrain(unfreshResolver)).toThrow(
-            'Resolve the current production revision must not run for a revision that is no longer the tip of main'
+        expect(() => assertDailyDeployTrain(unconditionalSkipReport)).toThrow(
+            'the daily deploy train must report why nothing was deployed only when credentialed but not deploying'
         );
 
-        const untippedTrain = asRecord(structuredClone(nightly), 'untipped deploy train');
-        const untippedStep = stepNamed(jobAt(untippedTrain, DEPLOY_WEB_JOB), DEPLOY_WEB_FRESHNESS_STEP);
-        untippedStep.run = stringAt(untippedStep, 'run').replace(
-            'git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" refs/heads/main',
-            'git rev-parse HEAD'
+        const unreasonedSkipReport = asRecord(structuredClone(nightly), 'unreasoned skip-report deploy train');
+        delete recordAt(stepNamed(jobAt(unreasonedSkipReport, DEPLOY_WEB_JOB), DEPLOY_WEB_SKIP_REPORT_STEP), 'env')
+            .REASON;
+        expect(() => assertDailyDeployTrain(unreasonedSkipReport)).toThrow(
+            'the skip report must read the decision reason the production-revision step published'
         );
-        expect(() => assertDailyDeployTrain(untippedTrain)).toThrow(
-            'the freshness check must read the current tip of main from the remote'
-        );
-
-        const uncomparedTip = asRecord(structuredClone(nightly), 'uncompared-tip deploy train');
-        const uncomparedStep = stepNamed(jobAt(uncomparedTip, DEPLOY_WEB_JOB), DEPLOY_WEB_FRESHNESS_STEP);
-        uncomparedStep.run = stringAt(uncomparedStep, 'run').replace('"$tip" != "$CANDIDATE_REVISION"', '1 -eq 2');
-        expect(() => assertDailyDeployTrain(uncomparedTip)).toThrow(
-            'the freshness check must compare the candidate against that tip'
-        );
-
-        // The structural pins above cannot see a stale path that still writes
-        // `fresh=true`; running the script is what does.
-        const alwaysFresh = stringAt(uncomparedStep, 'run');
-        expect(runFreshnessGuard(alwaysFresh, candidate, newerTip).outputs).toContain('fresh=true');
 
         const halfArmedReport = asRecord(structuredClone(nightly), 'half-armed deploy train');
         const reportStep = stepNamed(jobAt(halfArmedReport, DEPLOY_WEB_JOB), DEPLOY_WEB_CREDENTIAL_REPORT_STEP);

@@ -6,7 +6,11 @@
 /// the command queue (SPSC ring buffer from `rtrb`).
 ///
 /// Metering values (peak level, active voice count) are written to atomics
-/// for lock-free reading by the management/UI thread.
+/// for lock-free reading by the management/UI thread. The peak is the
+/// sampler's own output for the last processed block — the voice mix after
+/// master gain — not the level of the caller's buffer, which on the native
+/// master chain already carries the rest of the mix before Crumbs adds to
+/// it.
 use core::sync::atomic::{AtomicU16, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -1035,11 +1039,14 @@ impl CrumbsEngine {
             // runs out, and a fade that is not rendered is a jump-cut.
             self.render_steal_tails(&mut mix_l, &mut mix_r);
 
-            left[sample_idx] += mix_l * master;
-            right[sample_idx] += mix_r * master;
+            let out_l = mix_l * master;
+            let out_r = mix_r * master;
 
-            peak_l = peak_l.max(left[sample_idx].abs());
-            peak_r = peak_r.max(right[sample_idx].abs());
+            peak_l = peak_l.max(out_l.abs());
+            peak_r = peak_r.max(out_r.abs());
+
+            left[sample_idx] += out_l;
+            right[sample_idx] += out_r;
         }
 
         // Count active voices (after processing, some may have finished).
@@ -1258,6 +1265,79 @@ mod tests {
         engine.set_param(CrumbsParam::Tune, f32::INFINITY);
 
         assert_eq!(engine.tune_cents, 1_200.0);
+    }
+
+    /// A block with no active voices leaves the caller's buffers untouched
+    /// (nothing to add) and must report zero peak — the metering path does
+    /// not read level back out of whatever the buffer already held.
+    #[test]
+    fn an_idle_engine_reports_no_peak_over_a_prefilled_mix() {
+        let mut engine = CrumbsEngine::new(44_100.0);
+        let mut left = [0.25f32; 64];
+        let mut right = [0.25f32; 64];
+
+        engine.process_block(&mut left, &mut right);
+
+        assert_eq!(
+            left, [0.25f32; 64],
+            "an idle engine must not alter the caller's mix"
+        );
+        assert_eq!(
+            right, [0.25f32; 64],
+            "an idle engine must not alter the caller's mix"
+        );
+        assert_eq!(engine.read_peak_left(), 0.0);
+        assert_eq!(engine.read_peak_right(), 0.0);
+    }
+
+    /// Build an engine with one triggered voice and process one block into
+    /// buffers pre-filled with `fill`, identically driven regardless of
+    /// `fill`.
+    fn triggered_voice_engine(fill: f32) -> CrumbsEngine {
+        let mut engine = CrumbsEngine::new(44_100.0);
+        let pcm: Vec<f32> = (0..4_800)
+            .map(|frame| (frame as f32 / 44_100.0 * 440.0 * std::f32::consts::TAU).sin() * 0.8)
+            .collect();
+        let sample_id = engine.add_sample(std::sync::Arc::new(
+            super::super::sample::SampleData::from_mono(pcm, 44_100),
+        ));
+        engine.set_active_sample(sample_id);
+        engine.handle_command(CrumbsCommand::NoteOn {
+            note: 60,
+            velocity: 100,
+        });
+
+        let mut left = [fill; 64];
+        let mut right = [fill; 64];
+        engine.process_block(&mut left, &mut right);
+        engine
+    }
+
+    /// The reported peak is the sampler's own contribution for the block,
+    /// not the level of whatever the caller's buffer already carried. On
+    /// the native master chain that buffer holds the rest of the mix, so
+    /// summing before taking the peak would report mix-plus-voice instead
+    /// of the voice alone — two identically driven engines differing only
+    /// in the buffer's starting content must report the same peak.
+    #[test]
+    fn the_peak_is_the_voice_not_the_mix() {
+        let zeroed_engine = triggered_voice_engine(0.0);
+        let half_filled_engine = triggered_voice_engine(0.5);
+
+        assert!(
+            zeroed_engine.read_peak_left() > 0.0,
+            "the triggered voice must produce audible output for this test to be meaningful"
+        );
+        assert_eq!(
+            zeroed_engine.read_peak_left(),
+            half_filled_engine.read_peak_left(),
+            "the reported peak must not depend on the caller's buffer contents"
+        );
+        assert_eq!(
+            zeroed_engine.read_peak_right(),
+            half_filled_engine.read_peak_right(),
+            "the reported peak must not depend on the caller's buffer contents"
+        );
     }
 }
 
