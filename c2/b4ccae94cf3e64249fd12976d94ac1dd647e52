@@ -1,0 +1,26 @@
+src/modules/AiRuntime/transformers/promptParser/__tests__/hasHighLevelCreationEvidence.spec.ts
+  s_ac03a4ebaa3f6e::t_e42bbe552954d2 105-111
+  s_ac03a4ebaa3f6e::t_cfbcecf56993db 47-52
+src/modules/AiRuntime/transformers/promptParser/hasHighLevelCreationEvidence.ts
+  s_ac03a4ebaa3f6e::t_97d8d4cd536300 15
+  s_ac03a4ebaa3f6e::t_0634873ce35089 69-72
+  s_ac03a4ebaa3f6e::t_b3f4a1ae06adf1 30-48
+  s_ac03a4ebaa3f6e::t_04dfb998153cd6 90-94
+  s_ac03a4ebaa3f6e::t_a3963afe68a860 49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "c2b4ccae94cf3e64249fd12976d94ac1dd647e52",
+  "prompts": {},
+  "sessions": {
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": null
+    }
+  }
+}
