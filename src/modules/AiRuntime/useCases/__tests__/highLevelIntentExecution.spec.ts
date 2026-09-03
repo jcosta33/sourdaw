@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { Container } from '#/infra/di/Container';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -20,6 +21,8 @@ import {
     clearUndoHistory,
     commandTrackDefaultsPort,
     executeAppAction,
+    getVersionedCommandBatchIdempotentReplay,
+    parseVersionedCommandBatchEnvelope,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -37,6 +40,7 @@ import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
+import { MISSING_EXACT_CHECKPOINT_RECOVERY_REASON } from '../../models/GetPendingEffectRecoveryPolicy';
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { readAgentRunState } from '../../stores/agentRunStore';
 import { aiActionHistoryStore, clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -47,10 +51,12 @@ import {
     proposePendingActionConfirmation,
     type PendingAppActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
+import { type CommittedEffectFailureResult } from '../agentRequestOrchestration/confirmedBatchOutcomeSupport';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { revertAiActionGroup } from '../aiHistoryActions';
 import { cancelPendingChatActions } from '../cancelPendingChatActions';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { recoverAgentRunPendingEffects } from '../recoverAgentRunPendingEffects';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
 
 import {
@@ -170,8 +176,94 @@ async function commitBluesSong(): Promise<PendingAppActionConfirmation> {
     return confirmation;
 }
 
+const OFFLINE_EVENT_BUS_REASON = 'Arrangement event bus is offline';
+
+/**
+ * Rejects only 'track.added': addTrack's real afterCommit and afterAmbiguousCommit
+ * (src/modules/Arrangement/handlers/track/handleAddTrack.ts) both publish on this event, and no
+ * other handler in the blues plan emits on the arrangement bus.
+ */
+function installOfflineTrackAddedEventBus() {
+    const emit = vi.fn((event: string, _payload: unknown) =>
+        event === 'track.added' ? Promise.reject(new Error(OFFLINE_EVENT_BUS_REASON)) : Promise.resolve()
+    );
+    setArrangementEventBus({ emit });
+    return emit;
+}
+
+function requireCommandBatch(
+    confirmation: PendingAppActionConfirmation
+): NonNullable<PendingAppActionConfirmation['approvalSnapshot']['commandBatch']> {
+    const commandBatch = confirmation.approvalSnapshot.commandBatch;
+    if (!commandBatch) {
+        throw new TypeError('Expected the confirmation to retain its command batch');
+    }
+    return commandBatch;
+}
+
+function requireParsedBatchEnvelope(commandBatch: ReturnType<typeof requireCommandBatch>) {
+    const parsed = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+    if (parsed.status === 'invalid') {
+        throw new TypeError(`Expected a valid command batch envelope, refused: ${parsed.reason}`);
+    }
+    return parsed.envelope;
+}
+
+function requireAddTrackCommandId(envelope: ReturnType<typeof requireParsedBatchEnvelope>): string {
+    const addTrackCommand = envelope.commands.find((command) => command.operation === 'addTrack');
+    if (!addTrackCommand) {
+        throw new TypeError('Expected the blues plan to include an addTrack command');
+    }
+    return addTrackCommand.commandId;
+}
+
+function expectedOfflineTrackAddedEffect(addTrackCommandId: string) {
+    return {
+        commandId: addTrackCommandId,
+        kind: 'external-effect' as const,
+        operation: 'addTrack',
+        reason: OFFLINE_EVENT_BUS_REASON,
+        remediation: 'reconcile' as const,
+        state: 'pending' as const,
+    };
+}
+
+function requireCommittedEffectFailure(
+    result: Awaited<ReturnType<typeof confirmPendingChatActions>>
+): CommittedEffectFailureResult {
+    if (result.status === 'failed' && 'effects' in result) {
+        return result;
+    }
+    throw new TypeError(`Expected a committed effect failure result, received status: ${result.status}`);
+}
+
+function countTrackAddedEmits(emit: ReturnType<typeof installOfflineTrackAddedEventBus>): number {
+    return emit.mock.calls.filter(([event]) => event === 'track.added').length;
+}
+
+async function commitBluesSongWithOfflineEventBus(): Promise<{
+    confirmation: PendingAppActionConfirmation;
+    runId: string;
+    batchId: string;
+    addTrackCommandId: string;
+    emit: ReturnType<typeof installOfflineTrackAddedEventBus>;
+    commandBatch: ReturnType<typeof requireCommandBatch>;
+}> {
+    const emit = installOfflineTrackAddedEventBus();
+    await sendChatMessage(BLUES_PROMPT);
+    const confirmation = requireConfirmation();
+    const commandBatch = requireCommandBatch(confirmation);
+    const envelope = requireParsedBatchEnvelope(commandBatch);
+    const addTrackCommandId = requireAddTrackCommandId(envelope);
+    return { confirmation, runId: envelope.runId, batchId: envelope.batchId, addTrackCommandId, emit, commandBatch };
+}
+
 describe('high-level intent execution', () => {
     beforeEach(async () => {
+        // Dependency resolutions are cached per invoker for the process lifetime (src/infra/di/
+        // inject.ts); without a clear, an earlier test's arrangement event bus registration stays
+        // resolved and this suite's per-test setArrangementEventBus calls below are silently ignored.
+        Container.clear();
         configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
@@ -420,5 +512,142 @@ describe('high-level intent execution', () => {
         await redo();
 
         expectCommittedBluesSong();
+    });
+
+    describe('partially committed recovery through the real event bus seam', () => {
+        it('commits the song durably and reports the track-added effect as pending when the event bus is offline', async () => {
+            const { confirmation, runId, batchId, addTrackCommandId, emit, commandBatch } =
+                await commitBluesSongWithOfflineEventBus();
+
+            const result = requireCommittedEffectFailure(
+                await confirmPendingChatActions({ confirmationId: confirmation.id })
+            );
+            expect(result).toMatchObject({
+                status: 'failed',
+                durableCommit: true,
+                continuation: {
+                    authority: 'authoritative-collaboration-host',
+                    idempotency: 'project-checkpoint',
+                    kind: 'manual-repair',
+                },
+            });
+            expect(result.effects).toEqual([expectedOfflineTrackAddedEffect(addTrackCommandId)]);
+
+            // The atomic project commit is durable even though the post-commit effect failed.
+            // Undo entries are recorded per committed command before post-commit effects run
+            // (executeAppActionBatch.ts's recordCommittedBatch precedes the afterCommit/
+            // afterAmbiguousCommit loop), so the pending track.added effect does not shrink the
+            // undo group: it still holds one entry per command in the plan.
+            expectCommittedBluesSong();
+            expect(undoStore.value?.past).toHaveLength(2 + deriveBluesTransformCommands().length);
+            expect(aiActionHistoryStore.value?.groups).toHaveLength(1);
+            expect(getPendingActionConfirmation(confirmation.id)?.status).toBe('failed');
+
+            // Both the real afterCommit and the real afterAmbiguousCommit ran on 'track.added',
+            // and no other handler in the blues plan emits on this bus.
+            expect(countTrackAddedEmits(emit)).toBe(2);
+
+            const priorReceipt = await getVersionedCommandBatchIdempotentReplay({
+                authority: commandBatch.authority,
+                serialized: commandBatch.serialized,
+            });
+            if (!priorReceipt) {
+                throw new TypeError('Expected an idempotent replay receipt for the committed batch');
+            }
+            expect(priorReceipt).toMatchObject({
+                outcome: 'partially-committed',
+                atomicity: 'durable-atomic-with-non-atomic-effects',
+                runId,
+                batchId,
+            });
+            expect(priorReceipt.pendingEffects).toEqual([expectedOfflineTrackAddedEffect(addTrackCommandId)]);
+        });
+
+        it('recovers a partially committed plan only through the durable receipt, the run lifecycle and the same Command authority', async () => {
+            const { confirmation, runId, batchId, emit, commandBatch } = await commitBluesSongWithOfflineEventBus();
+            await confirmPendingChatActions({ confirmationId: confirmation.id });
+
+            const revisionAfterCommit = captureProjectRevision();
+            const tracksAfterCommit = structuredClone(getCreatedTracks());
+            const pastAfterCommit = structuredClone(undoStore.value?.past ?? []);
+            const priorReceipt = await getVersionedCommandBatchIdempotentReplay({
+                authority: commandBatch.authority,
+                serialized: commandBatch.serialized,
+            });
+            if (!priorReceipt) {
+                throw new TypeError('Expected an idempotent replay receipt for the committed batch');
+            }
+
+            // Leg A: run-level recovery reuses the durable receipt and the AgentRun lifecycle. It
+            // refuses to fabricate an exact post-commit checkpoint revision it was never given.
+            // The refusal reason is pinned once the prepared continuation binds to its receipt;
+            // see the issue linked in the PR.
+            await expect(recoverAgentRunPendingEffects({ runId, batchId })).resolves.toMatchObject({
+                status: 'failed',
+            });
+            expect(agentRunLifecycle.get(runId)).toMatchObject({
+                phase: 'partially-completed',
+                pendingEffectContinuations: [
+                    expect.objectContaining({
+                        batchId,
+                        receiptIdentity: `${priorReceipt.schemaVersion}:${runId}:${batchId}:partially-committed`,
+                    }),
+                ],
+            });
+
+            // No-alternate-path (Leg A on its own): recovery neither replayed the project mutation
+            // nor re-ran the offline effect.
+            expect(captureProjectRevision()).toBe(revisionAfterCommit);
+            expect(undoStore.value?.past ?? []).toEqual(pastAfterCommit);
+            expect(countTrackAddedEmits(emit)).toBe(2);
+
+            // Leg B: re-confirmation through the same Command authority. It refuses to replay the
+            // project mutation and instead surfaces the same durable pending effect.
+            proposePendingActionConfirmation({
+                id: 'confirmation-recovery',
+                runId: confirmation.runId,
+                prompt: confirmation.prompt,
+                assistantMessageId: confirmation.assistantMessageId,
+                actions: structuredClone(confirmation.approvalSnapshot.actions),
+                actionLabels: structuredClone(confirmation.approvalSnapshot.actionLabels),
+                commandEnvelopes: confirmation.approvalSnapshot.commandEnvelopes
+                    ? [...confirmation.approvalSnapshot.commandEnvelopes]
+                    : undefined,
+                commandBatch: structuredClone(confirmation.approvalSnapshot.commandBatch),
+                agentApproval: confirmation.approvalSnapshot.agentApproval
+                    ? structuredClone(confirmation.approvalSnapshot.agentApproval)
+                    : undefined,
+                executionMode: 'atomic',
+                groupId: confirmation.groupId,
+                groupLabel: confirmation.groupLabel,
+                projectRevision: captureProjectRevision(),
+            });
+
+            await expect(confirmPendingChatActions({ confirmationId: 'confirmation-recovery' })).resolves.toEqual({
+                status: 'failed',
+                durableCommit: true,
+                reason: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+                effects: priorReceipt.pendingEffects,
+                continuation: {
+                    authority: 'authoritative-collaboration-host',
+                    idempotency: 'project-checkpoint',
+                    kind: 'manual-repair',
+                },
+            });
+
+            const recoveryMessage = chatStore.value?.messages.find(
+                (message) => message.id === confirmation.assistantMessageId
+            );
+            expect(recoveryMessage?.content).toContain(
+                'The project change remains durably committed, but pending-effect reconciliation is still incomplete:'
+            );
+
+            // No-alternate-path: neither leg replayed the committed mutation or re-ran the effect.
+            expect(captureProjectRevision()).toBe(revisionAfterCommit);
+            expect(getCreatedTracks()).toEqual(tracksAfterCommit);
+            expect(undoStore.value?.past ?? []).toEqual(pastAfterCommit);
+            expect(aiActionHistoryStore.value?.groups).toHaveLength(1);
+            expect(countTrackAddedEmits(emit)).toBe(2);
+        });
     });
 });
