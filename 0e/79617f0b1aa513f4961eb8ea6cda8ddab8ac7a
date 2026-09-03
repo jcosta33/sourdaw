@@ -1,0 +1,19 @@
+scripts/__tests__/recoverDeliveryLock3437.spec.ts
+  s_e4748c6d719c3e::t_4b88471c913660 198
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "0e79617f0b1aa513f4961eb8ea6cda8ddab8ac7a",
+  "prompts": {},
+  "sessions": {
+    "s_e4748c6d719c3e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-acc29b4e0e2361d83",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
