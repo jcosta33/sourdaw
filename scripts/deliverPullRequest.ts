@@ -574,8 +574,16 @@ const EXPRESSION_OPENER = '${{';
 const GATE_WORKFLOW_ENV = 'SOURDAW_TRUSTED_GATE_WORKFLOW';
 
 /** One job as the workflow declares it. Every value is unresolved, because resolving one is a rule. */
-type WorkflowJob = { name?: unknown; needs?: unknown; uses?: unknown };
+type WorkflowJob = { name?: unknown; needs?: unknown; uses?: unknown; strategy?: unknown };
 type WorkflowJobs = Record<string, WorkflowJob>;
+
+/**
+ * A workflow a gated job calls, carried by the launcher read at the pinned commit. GitHub reports
+ * its jobs as one check per inner job named `<caller job name> / <inner job name>`, which is what
+ * makes the validation lane's legs derivable at all.
+ */
+type CalledWorkflow = { name?: unknown; jobs: WorkflowJobs } | { unreadable: string };
+type CalledWorkflows = Record<string, CalledWorkflow>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -596,7 +604,7 @@ function failUnreadableWorkflow(reason: string): never {
  * The snapshot holds nothing but `scripts/`, so `JSON.parse` is the only parser reachable here.
  */
 export function gateRequiredCheckNames(serialized: string): ReadonlySet<string> {
-    const jobs = workflowJobs(serialized);
+    const { jobs, called } = workflowSummary(serialized);
     const gate = jobs[GATE_JOB_ID];
     if (gate === undefined) {
         fail(
@@ -604,10 +612,16 @@ export function gateRequiredCheckNames(serialized: string): ReadonlySet<string> 
                 `so no check can be proven to gate the merge`
         );
     }
-    return new Set(gateNeeds(gate.needs).map((jobId) => requiredCheckName(jobId, jobs)));
+    const names = new Set<string>();
+    for (const jobId of gateNeeds(gate.needs)) {
+        for (const name of requiredCheckNames(jobId, jobs, called)) {
+            names.add(name);
+        }
+    }
+    return names;
 }
 
-function workflowJobs(serialized: string): WorkflowJobs {
+function workflowSummary(serialized: string): { jobs: WorkflowJobs; called: CalledWorkflows } {
     let summary: unknown;
     try {
         summary = JSON.parse(serialized);
@@ -620,10 +634,13 @@ function workflowJobs(serialized: string): WorkflowJobs {
     if (typeof summary.unreadable === 'string') {
         failUnreadableWorkflow(summary.unreadable);
     }
-    const jobs = summary.jobs;
-    if (!isRecord(jobs)) {
+    if (!isRecord(summary.jobs)) {
         failUnreadableWorkflow(`${GATE_WORKFLOW_ENV} carries no jobs mapping`);
     }
+    return { jobs: declaredJobs(summary.jobs, ''), called: calledWorkflows(summary.called) };
+}
+
+function declaredJobs(jobs: Record<string, unknown>, ownerSuffix: string): WorkflowJobs {
     // Every job id here is workflow-controlled text, so a plain object literal would let one resolve
     // against `Object.prototype`: `__proto__` moves the prototype rather than becoming an own key,
     // and `toString` or `constructor` answers a lookup no job declares. A prototype-free map is the
@@ -631,11 +648,40 @@ function workflowJobs(serialized: string): WorkflowJobs {
     const declared: WorkflowJobs = Object.create(null) as WorkflowJobs;
     for (const [jobId, job] of Object.entries(jobs)) {
         if (!isRecord(job)) {
-            failUnreadableWorkflow(`the ${jobId} job is not a mapping`);
+            failUnreadableWorkflow(`the ${jobId} job${ownerSuffix} is not a mapping`);
         }
         declared[jobId] = job;
     }
     return declared;
+}
+
+/**
+ * The called workflows the launcher carried, keyed by the literal `uses` path. A summary written
+ * before the lane split carries none, which reads as an empty mapping: every reusable call then
+ * refuses for want of the called file rather than for a malformed summary.
+ */
+function calledWorkflows(carried: unknown): CalledWorkflows {
+    const called: CalledWorkflows = Object.create(null) as CalledWorkflows;
+    if (carried === undefined) {
+        return called;
+    }
+    if (!isRecord(carried)) {
+        failUnreadableWorkflow(`${GATE_WORKFLOW_ENV} carries a called mapping that is not a mapping`);
+    }
+    for (const [usesPath, entry] of Object.entries(carried)) {
+        if (!isRecord(entry)) {
+            failUnreadableWorkflow(`the called workflow ${usesPath} is not a mapping`);
+        }
+        if (typeof entry.unreadable === 'string') {
+            called[usesPath] = { unreadable: entry.unreadable };
+            continue;
+        }
+        if (!isRecord(entry.jobs)) {
+            failUnreadableWorkflow(`the called workflow ${usesPath} carries no jobs mapping`);
+        }
+        called[usesPath] = { name: entry.name, jobs: declaredJobs(entry.jobs, ` in the called workflow ${usesPath}`) };
+    }
+    return called;
 }
 
 /**
@@ -661,13 +707,15 @@ function gateNeeds(declared: unknown): string[] {
 }
 
 /**
- * The name GitHub labels a job's check with, or a refusal where this gate cannot produce it. A
- * matrix name is a template GitHub substitutes per shard, and a reusable workflow reports one check
- * per inner job as `<job name> / <inner job name>` — in both cases the declared name matches no
- * check on the head, so it would silently match nothing and tolerate every real cancellation. Both
- * refuse instead. The matrix refusal is recorded as issue #2924.
+ * The names GitHub labels a job's checks with, or a refusal where this gate cannot produce them. A
+ * matrix name on a job the gate needs directly is a template GitHub substitutes per shard, and the
+ * summary carries no strategy for it, so the declared name matches no check on the head — it would
+ * silently match nothing and tolerate every real cancellation, and refuses instead. That refusal is
+ * recorded as issue #2924. A job that calls a reusable workflow resolves through the called file the
+ * launcher carried, where the same substitution becomes derivable because the called file declares
+ * its own matrix values.
  */
-function requiredCheckName(jobId: string, jobs: WorkflowJobs): string {
+function requiredCheckNames(jobId: string, jobs: WorkflowJobs, called: CalledWorkflows): string[] {
     const job = jobs[jobId];
     if (job === undefined) {
         fail(
@@ -676,29 +724,137 @@ function requiredCheckName(jobId: string, jobs: WorkflowJobs): string {
         );
     }
     if (job.uses !== undefined && job.uses !== null) {
-        fail(
-            `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} calls a reusable workflow, ` +
-                `whose checks GitHub reports as one name per inner job rather than the one name this gate derives`
-        );
+        return reusableCheckNames(jobId, job, called);
     }
-    const name = declaredCheckName(jobId, job.name);
+    const name = declaredCheckName(jobId, job.name, HEALTH_GATES_WORKFLOW_PATH);
     if (name.includes(EXPRESSION_OPENER)) {
         fail(
             `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} names its check ${name}, ` +
                 `which GitHub substitutes per matrix job before reporting it`
         );
     }
-    return name;
+    return [name];
+}
+
+/**
+ * The checks of a called reusable workflow, one per inner job, named `<caller name> / <inner name>`.
+ * Every arm that cannot derive those names refuses rather than deriving a set that matches nothing:
+ * a call the launcher did not carry, a called file it could not read, a caller name GitHub would
+ * substitute, a nested call, and a called workflow with no jobs all leave the merge with no verdict.
+ */
+function reusableCheckNames(jobId: string, job: WorkflowJob, called: CalledWorkflows): string[] {
+    if (typeof job.uses !== 'string' || job.uses === '') {
+        fail(
+            `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} declares a reusable call that is not a workflow path, ` +
+                `so no check can be proven to gate the merge`
+        );
+    }
+    const target = called[job.uses];
+    if (target === undefined) {
+        fail(
+            `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} calls ${job.uses}, ` +
+                `which the launcher did not carry, so no check can be proven to gate the merge`
+        );
+    }
+    if ('unreadable' in target) {
+        fail(`cannot read ${job.uses} to determine which checks gate the merge: ${target.unreadable}`);
+    }
+    const callerName = declaredCheckName(jobId, job.name, HEALTH_GATES_WORKFLOW_PATH);
+    if (callerName.includes(EXPRESSION_OPENER)) {
+        fail(
+            `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} names its check ${callerName}, ` +
+                `which GitHub substitutes before reporting it`
+        );
+    }
+    const innerIds = Object.keys(target.jobs);
+    if (innerIds.length === 0) {
+        fail(
+            `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} calls ${job.uses}, ` +
+                `which declares no jobs, so no check can be proven to gate the merge`
+        );
+    }
+    const names: string[] = [];
+    for (const innerId of innerIds) {
+        const inner = target.jobs[innerId];
+        if (inner === undefined) {
+            failUnreadableWorkflow(`the ${innerId} job in the called workflow ${job.uses} read back as absent`);
+        }
+        if (inner.uses !== undefined && inner.uses !== null) {
+            fail(
+                `the ${innerId} job in ${job.uses} calls a nested reusable workflow, ` +
+                    `whose check names this gate does not derive`
+            );
+        }
+        const innerName = declaredCheckName(innerId, inner.name, job.uses);
+        for (const resolved of resolveMatrixName(innerId, innerName, inner.strategy, job.uses)) {
+            names.push(`${callerName} / ${resolved}`);
+        }
+    }
+    return names;
+}
+
+const MATRIX_REFERENCE = /\$\{\{\s*matrix\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g;
+
+/**
+ * The one expression a check name may carry and stay derivable: `matrix.<dimension>` references
+ * substituted from the statically declared matrix, which is how `Unit suite ${{ matrix.shard }}/4`
+ * becomes the four names GitHub reports. Anything else — a matrix the file does not declare, an
+ * `include`/`exclude` that rewrites the combination set, a dimension that is not a list of text or
+ * numbers, or a non-matrix expression — names checks this gate cannot know, and refuses.
+ */
+function resolveMatrixName(jobId: string, name: string, strategy: unknown, workflowPath: string): string[] {
+    if (!name.includes(EXPRESSION_OPENER)) {
+        return [name];
+    }
+    const dimensions = [
+        ...new Set([...name.matchAll(MATRIX_REFERENCE)].flatMap((match) => (match[1] === undefined ? [] : [match[1]]))),
+    ];
+    if (dimensions.length === 0) {
+        fail(
+            `the ${jobId} job in ${workflowPath} names its check ${name}, ` +
+                `which references something other than its matrix dimensions`
+        );
+    }
+    const matrix = isRecord(strategy) && isRecord(strategy.matrix) ? strategy.matrix : undefined;
+    if (matrix === undefined) {
+        fail(
+            `the ${jobId} job in ${workflowPath} names its check ${name}, ` +
+                `which GitHub substitutes per matrix job before reporting it`
+        );
+    }
+    if ('include' in matrix || 'exclude' in matrix) {
+        fail(
+            `the ${jobId} job in ${workflowPath} names its check ${name}, ` +
+                `whose matrix include or exclude rewrites the combination set this gate derives`
+        );
+    }
+    let resolved = [name];
+    for (const dimension of dimensions) {
+        const values = matrix[dimension];
+        if (
+            !Array.isArray(values) ||
+            values.length === 0 ||
+            !values.every((value) => typeof value === 'string' || typeof value === 'number')
+        ) {
+            fail(
+                `the ${jobId} job in ${workflowPath} names its check ${name}, ` +
+                    `whose matrix dimension ${dimension} is not a list of text or numbers this gate can substitute`
+            );
+        }
+        const reference = new RegExp(`\\$\\{\\{\\s*matrix\\.${dimension}\\s*\\}\\}`, 'g');
+        resolved = resolved.flatMap((template) => values.map((value) => template.replace(reference, String(value))));
+    }
+    return resolved;
 }
 
 /** A job that declares no name is labelled with its job id, which is what GitHub reports for it. */
-function declaredCheckName(jobId: string, name: unknown): string {
+function declaredCheckName(jobId: string, name: unknown, workflowPath: string): string {
     if (name === undefined || name === null || name === '') {
         return jobId;
     }
     if (typeof name !== 'string') {
         fail(
-            `the ${jobId} job in ${HEALTH_GATES_WORKFLOW_PATH} declares a name that is not text, ` +
+            `the ${jobId} job in ${workflowPath} declares a name that is not text, ` +
                 `which cannot be the name GitHub reports`
         );
     }

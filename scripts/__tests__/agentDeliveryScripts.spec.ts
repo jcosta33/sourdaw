@@ -585,6 +585,16 @@ function healthGateWorkflow(): { document: ReturnType<typeof parseDocument>; wor
     return { document, workflow: asWorkflowRecord(document.toJS(), 'workflow') };
 }
 
+/** The reusable lane health-gates calls, where the validation legs — including `decide` — live. */
+function validationWorkflow(): WorkflowRecord {
+    const source = readFileSync(join(import.meta.dirname, '../../.github/workflows/validation.yml'), 'utf8');
+    const document = parseDocument(source);
+    if (document.errors.length > 0) {
+        throw new Error(`validation.yml is invalid YAML: ${document.errors.map((error) => error.message).join('; ')}`);
+    }
+    return asWorkflowRecord(document.toJS(), 'validation workflow');
+}
+
 function stableInformationalGateSummary(workflow: WorkflowRecord): WorkflowRecord {
     for (const [jobId, value] of Object.entries(workflowRecordAt(workflow, 'jobs'))) {
         const name = asWorkflowRecord(value, jobId).name;
@@ -814,7 +824,14 @@ describe('package scripts and gitignore', () => {
         const concurrency = workflowRecordAt(workflow, 'concurrency');
         expect(concurrency.group).toBe(PULL_REQUEST_CONCURRENCY_GROUP);
         expect(concurrency['cancel-in-progress']).toBe(true);
-        expect(workflowJob(workflow, 'decide').if).toBeUndefined();
+        // Scope classification lives in the called validation lane now, and on the pull_request
+        // event — the only event that can reach `Gate` — it must still run unconditionally. The
+        // one clause it carries is the review-lane guard: heavy-gates calls the same lane on
+        // review events, where only an approved review may run it.
+        const validation = validationWorkflow();
+        expect(workflowJob(validation, 'decide').if).toBe(
+            "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'"
+        );
 
         const gate = stableInformationalGateSummary(workflow);
         const eventDependentGate = structuredClone(workflow);
@@ -829,7 +846,7 @@ describe('package scripts and gitignore', () => {
             'the gate job must emit the stable Gate summary check name'
         );
         const duplicateGate = structuredClone(workflow);
-        workflowJob(duplicateGate, 'lint').name = GATE_SUMMARY_NAME;
+        workflowJob(duplicateGate, 'validation').name = GATE_SUMMARY_NAME;
         expect(() => stableInformationalGateSummary(duplicateGate)).toThrow(
             'only the gate job may emit the stable Gate summary check name'
         );

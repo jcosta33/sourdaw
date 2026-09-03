@@ -42,10 +42,22 @@ export type TrustedLauncherBinding = {
  * What the health-gates workflow says about one job, carried to the gate unresolved. A `name` is
  * whatever the workflow declares — absent, null, a string, or something that is not a name at all —
  * because deciding what a declaration means is the gate's rule to apply, not the launcher's.
+ * `strategy` crosses for the same reason: a matrix name inside a called workflow is only derivable
+ * from the matrix values the workflow declares, and substituting them is the gate's rule too.
  */
-export type TrustedWorkflowJob = { name?: unknown; needs?: unknown; uses?: unknown };
+export type TrustedWorkflowJob = { name?: unknown; needs?: unknown; uses?: unknown; strategy?: unknown };
 
-export type TrustedGateWorkflow = { jobs: Record<string, TrustedWorkflowJob> } | { unreadable: string };
+/**
+ * A workflow a gated job calls, read at the same pinned commit and carried the same way: its declared
+ * `name` and its jobs, unresolved. GitHub reports a called workflow's jobs as one check per inner job
+ * named `<caller job name> / <inner job name>`, so the gate cannot derive the gating set without it.
+ */
+export type TrustedCalledWorkflow =
+    { name?: unknown; jobs: Record<string, TrustedWorkflowJob> } | { unreadable: string };
+
+export type TrustedGateWorkflow =
+    | { jobs: Record<string, TrustedWorkflowJob>; called: Record<string, TrustedCalledWorkflow> }
+    | { unreadable: string };
 
 export type TrustedSourceSnapshot = {
     commit: string;
@@ -686,7 +698,7 @@ async function readGateWorkflow(port: TrustedSourcePort, commit: string): Promis
     } catch (error) {
         return { unreadable: `it cannot be read at ${commit}: ${errorDetail(error)}` };
     }
-    return summarizeGateWorkflow(source);
+    return summarizeGateWorkflow(source, (usesPath) => port.readOriginSource(commit, usesPath));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -699,7 +711,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * aliases, tags and field indentation, and each divergence silently yields a check name GitHub never
  * reports — which matches nothing, and tolerates the cancellation it was meant to catch.
  */
-export async function summarizeGateWorkflow(source: string): Promise<TrustedGateWorkflow> {
+export async function summarizeGateWorkflow(
+    source: string,
+    readCalled?: (usesPath: string) => string
+): Promise<TrustedGateWorkflow> {
     let workflow: unknown;
     try {
         workflow = await parseYaml(source);
@@ -710,15 +725,60 @@ export async function summarizeGateWorkflow(source: string): Promise<TrustedGate
     if (!isRecord(jobs)) {
         return { unreadable: 'it declares no jobs mapping' };
     }
+    const summary = summarizeJobs(jobs);
+    const called: Record<string, TrustedCalledWorkflow> = Object.create(null) as Record<string, TrustedCalledWorkflow>;
+    if (readCalled !== undefined) {
+        for (const job of Object.values(summary)) {
+            // Only a local call can be read at the pinned commit. Anything else stays uncarried, and
+            // deriving what that means stays the gate's rule exactly as an unreadable file does.
+            if (typeof job.uses !== 'string' || !job.uses.startsWith('./') || job.uses in called) {
+                continue;
+            }
+            called[job.uses] = await summarizeCalledWorkflow(job.uses, readCalled);
+        }
+    }
+    return { jobs: summary, called };
+}
+
+/**
+ * A called workflow crosses with the same fidelity as the caller: nothing resolved, nothing
+ * filtered. A file that cannot be read or parsed crosses as the reason, so the refusal is worded
+ * and owned by the gate rather than thrown here.
+ */
+async function summarizeCalledWorkflow(
+    usesPath: string,
+    readCalled: (usesPath: string) => string
+): Promise<TrustedCalledWorkflow> {
+    let source: string;
+    try {
+        source = readCalled(usesPath);
+    } catch (error) {
+        return { unreadable: `it cannot be read at the pinned commit: ${errorDetail(error)}` };
+    }
+    let workflow: unknown;
+    try {
+        workflow = await parseYaml(source);
+    } catch (error) {
+        return { unreadable: `it is not valid YAML: ${errorDetail(error)}` };
+    }
+    if (!isRecord(workflow) || !isRecord(workflow.jobs)) {
+        return { unreadable: 'it declares no jobs mapping' };
+    }
+    return { name: carriedName(workflow.name), jobs: summarizeJobs(workflow.jobs) };
+}
+
+function summarizeJobs(jobs: Record<string, unknown>): Record<string, TrustedWorkflowJob> {
     // A job id is workflow-controlled text, and GitHub accepts `__proto__` as one. Assigning that
     // key on an object literal moves the prototype instead of creating an own property, and
     // `JSON.stringify` then drops the job from the summary entirely — so the gate never sees a job
     // the workflow declares. A prototype-free map has no such key to hit.
     const summary: Record<string, TrustedWorkflowJob> = Object.create(null) as Record<string, TrustedWorkflowJob>;
     for (const [jobId, job] of Object.entries(jobs)) {
-        summary[jobId] = isRecord(job) ? { name: carriedName(job.name), needs: job.needs, uses: job.uses } : {};
+        summary[jobId] = isRecord(job)
+            ? { name: carriedName(job.name), needs: job.needs, uses: job.uses, strategy: job.strategy }
+            : {};
     }
-    return { jobs: summary };
+    return summary;
 }
 
 /** What a name that is not text crosses as, chosen so no `JSON.stringify` can turn it back into text. */
