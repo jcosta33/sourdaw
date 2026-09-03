@@ -380,6 +380,14 @@ describe('pull-request contract', () => {
         ).not.toThrow();
     });
 
+    it('refuses closing keywords in the summary naming the offending phrase and rule', () => {
+        expect(() => composePublishBody(2164, TITLE, 'Addresses defect (closes #2174)', TEST_INSTRUCTIONS)).toThrow(
+            'pull-request body contains unexpected issue-closing references ("closes #2174"). ' +
+                'GitHub closing keywords (close, fix, resolve #<issue>) in pull-request descriptions auto-close issues on merge; ' +
+                'remove the keyword from prose or rephrase.'
+        );
+    });
+
     it('composes a nonempty Related tickets section when no issue is given', () => {
         const body = composePublishBody(undefined, TITLE, SUMMARY, TEST_INSTRUCTIONS);
         expect(body).not.toContain('Closes #');
