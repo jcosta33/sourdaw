@@ -35,6 +35,13 @@ impl Tone {
     /// plugin's own contract: phase starts at 0 on `activate`.
     pub(crate) fn activate(&mut self, sample_rate: f64) {
         self.sample_rate = sample_rate;
+        self.reset();
+    }
+
+    /// Restart the phase without touching the recorded sample rate or level,
+    /// per CLAP's `reset`: the host may call it any number of times between
+    /// `activate` and `deactivate` to force silence without reactivating.
+    pub(crate) fn reset(&mut self) {
         self.phase = 0.0;
     }
 
@@ -83,5 +90,27 @@ mod tests {
         let sample = tone.next_sample();
         assert_eq!(sample, 0.0);
         assert!(!sample.is_nan());
+    }
+
+    #[test]
+    fn reset_restarts_the_phase_without_reactivating() {
+        let mut tone = Tone::new();
+        tone.activate(48_000.0);
+        for _ in 0..10 {
+            tone.next_sample();
+        }
+        assert_ne!(
+            tone.next_sample(),
+            0.0,
+            "phase should have moved off zero by now"
+        );
+
+        tone.reset();
+
+        assert_eq!(
+            tone.next_sample(),
+            0.0,
+            "reset should restart the phase at zero"
+        );
     }
 }

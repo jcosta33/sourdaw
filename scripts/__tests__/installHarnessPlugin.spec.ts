@@ -12,15 +12,21 @@ describe('harness plugin install', () => {
     it('should install into the per-user CLAP root the scanner already trusts', () => {
         // Matches `default_plugin_scan_roots` in
         // `crates/sourdaw-native/src/host/plugin_scan_policy.rs`: darwin and
-        // linux root under the user's home, win32 under the machine-wide
-        // Common Files folder.
+        // linux root under the user's home.
         expect(harnessPluginDestination('darwin', '/Users/musician')).toBe(
             '/Users/musician/Library/Audio/Plug-Ins/CLAP/Sourdaw Harness/Sourdaw Harness Tone.clap'
         );
         expect(harnessPluginDestination('linux', '/home/musician')).toBe(
             '/home/musician/.clap/Sourdaw Harness/Sourdaw Harness Tone.clap'
         );
-        expect(harnessPluginDestination('win32', 'C:\\Program Files\\Common Files')).toBe(
+    });
+
+    it('should install win32 at the literal machine-wide root the policy reads no env var for', () => {
+        // `plugin_scan_policy.rs:156` roots win32 at the literal
+        // `C:\Program Files\Common Files\CLAP`, not a `home`/env-derived
+        // path — so a `home` argument the policy would never see must not
+        // change the destination.
+        expect(harnessPluginDestination('win32', 'Z:\\not-the-real-home')).toBe(
             'C:\\Program Files\\Common Files\\CLAP\\Sourdaw Harness\\Sourdaw Harness Tone.clap'
         );
     });

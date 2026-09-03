@@ -11,6 +11,10 @@ use clap_sys::string_sizes::CLAP_NAME_SIZE;
 use std::ffi::c_char;
 
 const MAIN_PORT_ID: clap_id = 0;
+/// This bundle declares exactly one port per direction, at list index 0. An
+/// index is a position in that list, not the port's own id — they only
+/// share a value here because there is one port to enumerate.
+const MAIN_PORT_INDEX: u32 = 0;
 const STEREO_CHANNEL_COUNT: u32 = 2;
 
 pub(crate) static AUDIO_PORTS: clap_plugin_audio_ports = clap_plugin_audio_ports {
@@ -29,7 +33,7 @@ unsafe extern "C" fn get(
     is_input: bool,
     info: *mut clap_audio_port_info,
 ) -> bool {
-    if info.is_null() || index != MAIN_PORT_ID {
+    if info.is_null() || index != MAIN_PORT_INDEX {
         return false;
     }
     let label: &[u8] = if is_input { b"Input\0" } else { b"Output\0" };

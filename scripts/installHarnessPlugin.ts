@@ -31,10 +31,10 @@ export function cdylibFileName(platform: NodeJS.Platform): string {
 /**
  * The per-user CLAP root's `Sourdaw Harness Tone.clap` destination for
  * `platform`, matching `crates/sourdaw-native/src/host/plugin_scan_policy.rs`'s
- * `default_plugin_scan_roots`: darwin and linux root under `home`; win32
- * roots under the machine-wide Common Files CLAP folder, so `home` there is
- * that folder's path (typically `%COMMONPROGRAMFILES%\CLAP`) rather than a
- * user's home directory.
+ * `default_plugin_scan_roots`: darwin and linux root under `home`. win32 is
+ * not per-user there — `plugin_scan_policy.rs:156` roots it at the literal
+ * `C:\Program Files\Common Files\CLAP`, reading no environment variable, so
+ * this returns that same literal and `home` goes unused on that branch.
  *
  * The win32 branch joins with `path.win32` rather than the platform-default
  * `join`, so the backslash-separated result this function returns is correct
@@ -45,16 +45,9 @@ export function harnessPluginDestination(platform: NodeJS.Platform, home: string
         return join(home, 'Library', 'Audio', 'Plug-Ins', 'CLAP', 'Sourdaw Harness', 'Sourdaw Harness Tone.clap');
     }
     if (platform === 'win32') {
-        return win32.join(home, 'CLAP', 'Sourdaw Harness', 'Sourdaw Harness Tone.clap');
+        return win32.join('C:\\Program Files\\Common Files\\CLAP', 'Sourdaw Harness', 'Sourdaw Harness Tone.clap');
     }
     return join(home, '.clap', 'Sourdaw Harness', 'Sourdaw Harness Tone.clap');
-}
-
-function platformHome(platform: NodeJS.Platform): string {
-    if (platform === 'win32') {
-        return process.env.COMMONPROGRAMFILES ?? 'C:\\Program Files\\Common Files';
-    }
-    return homedir();
 }
 
 function main(): number {
@@ -79,9 +72,15 @@ function main(): number {
         return 1;
     }
 
-    const destination = harnessPluginDestination(process.platform, platformHome(process.platform));
-    mkdirSync(resolve(destination, '..'), { recursive: true });
-    copyFileSync(artifact, destination);
+    const destination = harnessPluginDestination(process.platform, homedir());
+    try {
+        mkdirSync(resolve(destination, '..'), { recursive: true });
+        copyFileSync(artifact, destination);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`failed to install the harness plugin at ${destination}: ${message}`);
+        return 1;
+    }
     console.log(`harness plugin installed at ${destination}`);
     return 0;
 }

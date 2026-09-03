@@ -11,6 +11,10 @@ use std::ffi::{c_char, CStr};
 use std::ptr;
 
 pub(crate) const LEVEL_PARAM_ID: clap_id = 0;
+/// This plugin declares exactly one parameter, at list index 0. An index is
+/// a position in that list, not the parameter's own id — they only share a
+/// value here because there is one parameter to enumerate.
+const LEVEL_PARAM_INDEX: u32 = 0;
 
 pub(crate) static PARAMS: clap_plugin_params = clap_plugin_params {
     count: Some(count),
@@ -30,7 +34,7 @@ unsafe extern "C" fn get_info(
     index: u32,
     info: *mut clap_param_info,
 ) -> bool {
-    if info.is_null() || index != LEVEL_PARAM_ID {
+    if info.is_null() || index != LEVEL_PARAM_INDEX {
         return false;
     }
     let mut name = [0 as c_char; CLAP_NAME_SIZE];

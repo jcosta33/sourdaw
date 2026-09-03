@@ -2,7 +2,10 @@
 //! harness tone itself.
 
 use crate::descriptor::{DESCRIPTOR, PLUGIN_ID};
-use crate::plugin::{activate, destroy, get_extension, init, process};
+use crate::plugin::{
+    activate, deactivate, destroy, get_extension, init, on_main_thread, process, reset,
+    start_processing, stop_processing,
+};
 use crate::tone::Tone;
 use clap_sys::factory::plugin_factory::clap_plugin_factory;
 use clap_sys::host::clap_host;
@@ -51,12 +54,12 @@ unsafe extern "C" fn create_plugin(
         init: Some(init),
         destroy: Some(destroy),
         activate: Some(activate),
-        deactivate: None,
-        start_processing: None,
-        stop_processing: None,
-        reset: None,
+        deactivate: Some(deactivate),
+        start_processing: Some(start_processing),
+        stop_processing: Some(stop_processing),
+        reset: Some(reset),
         process: Some(process),
         get_extension: Some(get_extension),
-        on_main_thread: None,
+        on_main_thread: Some(on_main_thread),
     }))
 }

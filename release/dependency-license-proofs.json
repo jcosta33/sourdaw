@@ -1,7 +1,7 @@
 {
     "schemaVersion": 4,
     "cargoRuntimeInventory": {
-        "cargoLockSha256": "d72565a4570428b48a8a40bdc308fff00be3f2f430a83d3a9166f190ef7a9258",
+        "cargoLockSha256": "a88ccc73408bb82bab88511476987345c001f47ac729284fcaa9acd173fbb7e5",
         "sourceInputs": [
             {
                 "path": ".cargo/config.toml",
@@ -9,7 +9,7 @@
             },
             {
                 "path": "Cargo.toml",
-                "sha256": "284744213beac0c5c28b8f44860127c44a66c36b90915d6b049f160e50c6f85d"
+                "sha256": "cbcef1d177ea9d9452c8ad8597290fc1f5ab2c1d0f5d41f7df4b43486e4a59a3"
             },
             {
                 "path": "crates/daw-collab/Cargo.toml",
@@ -48,6 +48,10 @@
                 "sha256": "c97271ac7945ef4965a798a93d8c75cdfd5308cbcd39d68b32f0d88d8ee95454"
             },
             {
+                "path": "crates/sourdaw-harness-tone/Cargo.toml",
+                "sha256": "7a441d870a3d9d6d03fd1dc0a276cf807d3afffd160ed7c20f44584a3f1e26d7"
+            },
+            {
                 "path": "crates/sourdaw-native/Cargo.toml",
                 "sha256": "4fd533f37449bc6dc51aff27c2e5b657cf412e9cdf093ff910c6306d435e2086"
             },
@@ -57,7 +61,7 @@
             },
             {
                 "path": "package.json",
-                "sha256": "63638406055ca56a189636b8dd48db6cbe86b14c6aa7c7dfc096da82ceb76785"
+                "sha256": "e3b3e88dde663ab1cee4cd45dce17c19ce31b3adb6baf5317e3c754b3bc07cb9"
             },
             {
                 "path": "rust-toolchain.toml",

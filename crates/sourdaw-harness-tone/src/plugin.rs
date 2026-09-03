@@ -5,7 +5,9 @@
 use crate::audio_ports::AUDIO_PORTS;
 use crate::params::{LEVEL_PARAM_ID, PARAMS};
 use crate::tone::{Tone, LEVEL_MAX, LEVEL_MIN};
-use clap_sys::events::{clap_event_param_value, clap_input_events, CLAP_EVENT_PARAM_VALUE};
+use clap_sys::events::{
+    clap_event_param_value, clap_input_events, CLAP_CORE_EVENT_SPACE_ID, CLAP_EVENT_PARAM_VALUE,
+};
 use clap_sys::ext::audio_ports::CLAP_EXT_AUDIO_PORTS;
 use clap_sys::ext::params::CLAP_EXT_PARAMS;
 use clap_sys::plugin::clap_plugin;
@@ -13,6 +15,7 @@ use clap_sys::process::{
     clap_process, clap_process_status, CLAP_PROCESS_CONTINUE, CLAP_PROCESS_ERROR,
 };
 use std::ffi::{c_char, c_void, CStr};
+use std::mem::size_of;
 use std::ptr;
 
 /// The `Tone` behind a `clap_plugin`'s `plugin_data`, or `None` for a null
@@ -65,6 +68,32 @@ pub(crate) unsafe extern "C" fn activate(
         None => false,
     }
 }
+
+/// No teardown needed: `activate` re-records the sample rate and `reset`
+/// re-zeros the phase, so there is nothing this instance holds only while
+/// active.
+pub(crate) unsafe extern "C" fn deactivate(_plugin: *const clap_plugin) {}
+
+/// Nothing to prepare: `process` allocates nothing and reads no per-block
+/// setup state, so there is no processing-session resource to acquire here.
+pub(crate) unsafe extern "C" fn start_processing(_plugin: *const clap_plugin) -> bool {
+    true
+}
+
+/// Mirrors `start_processing`: nothing was acquired, so nothing is released.
+pub(crate) unsafe extern "C" fn stop_processing(_plugin: *const clap_plugin) {}
+
+/// Force silence without a full `activate`: restart the phase, per CLAP's
+/// `reset` contract, leaving the recorded sample rate and `Level` alone.
+pub(crate) unsafe extern "C" fn reset(plugin: *const clap_plugin) {
+    if let Some(tone) = tone_from_plugin(plugin) {
+        tone.reset();
+    }
+}
+
+/// No main-thread work queued by this plugin, so there is nothing to react
+/// to when the host invites it to run some.
+pub(crate) unsafe extern "C" fn on_main_thread(_plugin: *const clap_plugin) {}
 
 pub(crate) unsafe extern "C" fn get_extension(
     _plugin: *const clap_plugin,
@@ -121,6 +150,15 @@ pub(crate) unsafe fn apply_parameter_events(tone: &mut Tone, in_events: *const c
         if header.is_null() || (*header).type_ != CLAP_EVENT_PARAM_VALUE {
             continue;
         }
+        // A foreign event space may reuse this event type with a payload
+        // this plugin does not understand; only the core space's own
+        // `clap_event_param_value` layout is safe to cast the header to.
+        if (*header).space_id != CLAP_CORE_EVENT_SPACE_ID {
+            continue;
+        }
+        if ((*header).size as usize) < size_of::<clap_event_param_value>() {
+            continue;
+        }
         let event = &*(header as *const clap_event_param_value);
         if event.param_id == LEVEL_PARAM_ID {
             tone.level = event.value.clamp(LEVEL_MIN, LEVEL_MAX);
@@ -150,5 +188,104 @@ unsafe fn render_block(tone: &mut Tone, process: &clap_process) {
             }
             *channel_ptr.add(frame) = sample;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A `clap_input_events` list backed by a plain `Vec`, cheap enough to
+    /// build in a unit test: `get` hands back the address of each event's
+    /// own `header` field, which is exactly what a real host's event list
+    /// does for a `clap_event_param_value` stored inline.
+    struct EventListFixture {
+        events: Vec<clap_event_param_value>,
+    }
+
+    unsafe extern "C" fn fixture_size(list: *const clap_input_events) -> u32 {
+        let fixture = &*((*list).ctx as *const EventListFixture);
+        fixture.events.len() as u32
+    }
+
+    unsafe extern "C" fn fixture_get(
+        list: *const clap_input_events,
+        index: u32,
+    ) -> *const clap_sys::events::clap_event_header {
+        let fixture = &*((*list).ctx as *const EventListFixture);
+        &fixture.events[index as usize].header
+    }
+
+    fn input_events(fixture: &mut EventListFixture) -> clap_input_events {
+        clap_input_events {
+            ctx: fixture as *mut EventListFixture as *mut c_void,
+            size: Some(fixture_size),
+            get: Some(fixture_get),
+        }
+    }
+
+    fn param_value_event(
+        space_id: u16,
+        param_id: clap_sys::id::clap_id,
+        value: f64,
+    ) -> clap_event_param_value {
+        clap_event_param_value {
+            header: clap_sys::events::clap_event_header {
+                size: size_of::<clap_event_param_value>() as u32,
+                time: 0,
+                space_id,
+                type_: CLAP_EVENT_PARAM_VALUE,
+                flags: 0,
+            },
+            param_id,
+            cookie: ptr::null_mut(),
+            note_id: -1,
+            port_index: -1,
+            channel: -1,
+            key: -1,
+            value,
+        }
+    }
+
+    #[test]
+    fn a_core_space_param_value_event_updates_level() {
+        let starting_level = 0.25;
+        let mut fixture = EventListFixture {
+            events: vec![param_value_event(
+                CLAP_CORE_EVENT_SPACE_ID,
+                LEVEL_PARAM_ID,
+                0.9,
+            )],
+        };
+        let events = input_events(&mut fixture);
+        let mut tone = Tone::new();
+        tone.level = starting_level;
+
+        unsafe {
+            apply_parameter_events(&mut tone, &events);
+        }
+
+        assert_eq!(tone.level, 0.9);
+    }
+
+    #[test]
+    fn a_foreign_space_param_value_event_leaves_level_unchanged() {
+        let starting_level = 0.25;
+        let foreign_space_id = CLAP_CORE_EVENT_SPACE_ID + 1;
+        let mut fixture = EventListFixture {
+            events: vec![param_value_event(foreign_space_id, LEVEL_PARAM_ID, 0.9)],
+        };
+        let events = input_events(&mut fixture);
+        let mut tone = Tone::new();
+        tone.level = starting_level;
+
+        unsafe {
+            apply_parameter_events(&mut tone, &events);
+        }
+
+        assert_eq!(
+            tone.level, starting_level,
+            "an event outside the core event space must not be read as a clap_event_param_value"
+        );
     }
 }

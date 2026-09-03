@@ -6,8 +6,11 @@
 use std::env;
 use std::fs;
 use std::path::PathBuf;
+use std::time::Instant;
 
-use daw_plugin_host::scanner::{category_from_clap_features, extract_clap_metadata};
+use daw_plugin_host::scanner::{
+    category_from_clap_features, extract_clap_metadata, scan_directory_bounded, PluginFormat,
+};
 use daw_plugin_host::{AudioPlugin, ClapWrapper, HostParameterUpdate};
 
 const PLUGIN_ID: &str = "com.sourdaw.harness-tone";
@@ -118,6 +121,39 @@ fn the_scanner_lists_one_effect_descriptor() {
     let row = &rows[0];
     assert_eq!(row.id, PLUGIN_ID);
     assert_eq!(category_from_clap_features(&row.features), "effect");
+}
+
+#[test]
+fn the_scanner_walk_lists_the_flat_clap_as_a_candidate() {
+    let plugin = InstalledPlugin::create("scanner-walk-lists-the-flat-clap");
+
+    let mut candidates = Vec::new();
+    let mut errors = Vec::new();
+    let mut notices = Vec::new();
+    let budget = (
+        usize::MAX,
+        Instant::now() + std::time::Duration::from_secs(5),
+    );
+    scan_directory_bounded(
+        &plugin.root,
+        &mut candidates,
+        &mut errors,
+        &mut notices,
+        budget,
+    );
+
+    assert_eq!(
+        errors,
+        Vec::<String>::new(),
+        "the walk should not report errors over a plain temp directory"
+    );
+    assert_eq!(
+        candidates.len(),
+        1,
+        "the walk should list exactly the one flat .clap file: {candidates:?}"
+    );
+    assert_eq!(candidates[0].path, plugin.bundle_path);
+    assert_eq!(candidates[0].format, PluginFormat::Clap);
 }
 
 #[test]
