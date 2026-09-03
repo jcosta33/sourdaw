@@ -300,6 +300,7 @@ describe('high-level intent compilation', () => {
         expect(result.planningOutcome).toEqual({
             kind: 'unsupported',
             reason: 'No command in this project masters for vinyl.',
+            searchedIntents: ['master the song for vinyl'],
         });
     });
 });

@@ -1,4 +1,4 @@
-import { ADD_NOTES_MAX_NOTES_PER_COMMAND } from '#/utils/midiNoteBatchLimits';
+import { ADD_NOTES_MAX_NOTES_PER_COMMAND, MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -46,7 +46,7 @@ function isMaterializedAddNote(value: unknown): value is MaterializedAddNote {
         value.startBeat >= 0 &&
         typeof value.duration === 'number' &&
         Number.isFinite(value.duration) &&
-        value.duration >= 0.0625 &&
+        value.duration >= MIDI_NOTE_MIN_DURATION_BEATS &&
         typeof value.velocity === 'number' &&
         Number.isInteger(value.velocity) &&
         value.velocity >= 1 &&

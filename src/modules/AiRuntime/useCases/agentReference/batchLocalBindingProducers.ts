@@ -12,6 +12,34 @@ export type BatchLocalBindingProducerName = (typeof BATCH_LOCAL_BINDING_PRODUCER
 /** The catalog commands whose plan item may mint a batch-local `$binding`. */
 export const BATCH_LOCAL_BINDING_PRODUCER_NAMES: ReadonlySet<string> = new Set(BATCH_LOCAL_BINDING_PRODUCER_NAME_LIST);
 
+/**
+ * The only commands the plan-created object route may admit. Membership is about what a command
+ * changes, not what it targets: every effect of these lands inside the object being created.
+ * A command that merely accepts a batch-local target can still reach the rest of the project
+ * through it — soloing a created track silences every other track, live and on export — so target
+ * identity is not a safe admission test, and this set is stated explicitly rather than derived.
+ */
+export const PLAN_CREATED_OBJECT_COMMANDS: ReadonlySet<string> = new Set([
+    'addTrack',
+    'addClip',
+    'createBus',
+    'addNotes',
+] as const);
+
+/**
+ * Every command that leaves a new track, clip or bus in the project, whether it mints one outright
+ * or copies an existing one. The creation budget counts these: what it bounds is how much a single
+ * accepted proposal can put in front of a musician to review and undo, and a duplicate costs a
+ * reviewer exactly what a fresh creation costs.
+ */
+export const PROJECT_OBJECT_CREATING_COMMANDS: ReadonlySet<string> = new Set([
+    ...BATCH_LOCAL_BINDING_PRODUCER_NAME_LIST,
+    'duplicateTrack',
+    'duplicateClip',
+    'duplicateClipToNextBar',
+    'createDrumPreviewBranches',
+]);
+
 export type BatchLocalCreatedTrackKind = 'audio' | 'midi' | 'folder' | 'bus';
 
 export type BatchLocalBindingProducer = {

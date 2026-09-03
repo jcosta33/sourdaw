@@ -63,6 +63,8 @@ export type ApplicationOwnedToolLoopOutcome =
           toolCalls: ToolCallResult[];
           /** The parsed decline when the run refused, so no caller parses the arguments again. */
           decline: CommandBatchDecline | null;
+          /** The intents this run looked up in the command index, in the order it looked them up. */
+          searchedIntents: string[];
           proposal: AgentPlanProposal | null;
           receipts: ApplicationToolReceipt[];
           turns: number;
@@ -792,6 +794,28 @@ function recordDisclosedCommandSchemas(
     }
 }
 
+/**
+ * The intents this run actually looked up. An `unsupported` decline is a claim about the catalog,
+ * and the user is owed what was searched before believing it; the intent lives only on the call, so
+ * it is recorded here rather than re-derived from a receipt that never carried it.
+ */
+function recordSearchedIntents(
+    calls: readonly { call: ToolCallResult }[],
+    receipts: readonly ApplicationToolReceipt[],
+    searchedIntents: string[]
+): void {
+    for (const [index, receipt] of receipts.entries()) {
+        const call = calls[index]?.call;
+        if (call?.name !== AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME || receipt.status !== 'success') {
+            continue;
+        }
+        const intent = call.arguments.intent;
+        if (typeof intent === 'string' && intent.length > 0 && !searchedIntents.includes(intent)) {
+            searchedIntents.push(intent);
+        }
+    }
+}
+
 function validateCommandBatchProposal(
     call: ToolCallResult,
     disclosedCommandSchemas: ReadonlyMap<string, string>
@@ -934,6 +958,7 @@ export async function runApplicationOwnedToolLoop(
     const receipts: ApplicationToolReceipt[] = [];
     const seenCallIds = new Set<string>();
     const disclosedCommandSchemas = new Map<string, string>();
+    const searchedIntents: string[] = [];
     let totalCalls = 0;
     let totalReceiptBytes = 0;
     let receiptContext: string | null = null;
@@ -1043,6 +1068,7 @@ export async function runApplicationOwnedToolLoop(
                 status: 'complete',
                 toolCalls: terminalCalls.map(({ call }) => call),
                 decline: terminalValidation.decline,
+                searchedIntents: [...searchedIntents],
                 proposal: outcome.proposal ?? extractAgentPlanProposal(outcome.toolCalls),
                 receipts,
                 turns: turn,
@@ -1063,6 +1089,7 @@ export async function runApplicationOwnedToolLoop(
             )
         );
         recordDisclosedCommandSchemas(safeReadCalls, turnReceipts, disclosedCommandSchemas);
+        recordSearchedIntents(safeReadCalls, turnReceipts, searchedIntents);
         const serializedTurn = serializeReceiptContext(turnReceipts, turn);
         const turnBytes = byteLength(serializedTurn);
         if (turnBytes > limits.maxReceiptBytesPerTurn || totalReceiptBytes + turnBytes > limits.maxTotalReceiptBytes) {

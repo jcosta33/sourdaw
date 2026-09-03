@@ -1,6 +1,7 @@
 import { captureProjectRevision, settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
+import { type PlannedIntentResult } from '../models/IntentResult';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
 
@@ -26,7 +27,18 @@ type PlanPromptActionsInput = {
     onLocalWorkAttempt?: (input: { analysisCount: number; downloadBytes: number; storageBytes: number }) => boolean;
 };
 
-export async function planPromptActions(input: PlanPromptActionsInput) {
+/**
+ * Every route out of the planner, the early ones included, owes a classified outcome. Stating that
+ * here makes a producer that forgets it a compile error, instead of a caller reading an absent
+ * outcome as "nothing matched" and phrasing a refusal it was never told about.
+ */
+export type PlannedPromptActions = {
+    context: ReturnType<typeof getProjectContext>;
+    projectRevision: ReturnType<typeof captureProjectRevision>;
+    result: PlannedIntentResult;
+};
+
+export async function planPromptActions(input: PlanPromptActionsInput): Promise<PlannedPromptActions> {
     const projectRevision = settlePendingProjectWritesAndCaptureRevision();
     const context = getProjectContext();
     const streamIdentity = (() => {

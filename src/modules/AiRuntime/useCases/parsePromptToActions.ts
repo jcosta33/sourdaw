@@ -169,7 +169,8 @@ function expandCatalogProposals(calls: readonly ToolCallResult[]) {
  */
 function classifyProviderDecline(
     decline: CommandBatchDecline,
-    receipts: readonly ApplicationToolReceipt[]
+    receipts: readonly ApplicationToolReceipt[],
+    searchedIntents: readonly string[]
 ): PlanningOutcome {
     const { kind, reason, questions } = decline;
     if (kind === 'clarify') {
@@ -181,7 +182,7 @@ function classifyProviderDecline(
         (receipt) => receipt.toolName === AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME && receipt.status === 'success'
     );
     return searchedCommandIndex
-        ? { kind: 'unsupported', reason }
+        ? { kind: 'unsupported', reason, searchedIntents: [...searchedIntents] }
         : { kind: 'denied', reason: 'Provider declined as unsupported without searching the command index.' };
 }
 
@@ -500,7 +501,11 @@ const planPromptIntent = inject({ logger })(
                     };
                 }
                 if (planningOutcome.decline) {
-                    const outcome = classifyProviderDecline(planningOutcome.decline, planningOutcome.receipts);
+                    const outcome = classifyProviderDecline(
+                        planningOutcome.decline,
+                        planningOutcome.receipts,
+                        planningOutcome.searchedIntents
+                    );
                     return {
                         actions: [],
                         rawText: prompt,

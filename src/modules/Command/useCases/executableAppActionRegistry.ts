@@ -1,7 +1,7 @@
 import { FADER_GAIN_RANGE_DESCRIPTION, FADER_MAX_GAIN_LABEL } from '#/utils/audioLevelLaw';
 import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 import { getMarkerColorNames } from '#/utils/markerColorPalette';
-import { ADD_NOTES_MAX_NOTES_PER_COMMAND } from '#/utils/midiNoteBatchLimits';
+import { ADD_NOTES_MAX_NOTES_PER_COMMAND, MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
 
 export type ExecutableAppActionRisk =
     'bounded-reversible' | 'broad-reversible' | 'destructive-reversible' | 'authority-sensitive' | 'external-effect';
@@ -937,7 +937,7 @@ export const executableAppActionDescriptors = [
                         properties: {
                             pitch: { type: 'number', minimum: 0, maximum: 127 },
                             startBeat: { type: 'number', minimum: 0 },
-                            duration: { type: 'number', exclusiveMinimum: 0 },
+                            duration: { type: 'number', minimum: MIDI_NOTE_MIN_DURATION_BEATS },
                             velocity: { type: 'number', minimum: 1, maximum: 127 },
                         },
                         required: ['pitch', 'startBeat', 'duration'],

@@ -23,7 +23,7 @@ import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
-import { ADD_NOTES_MAX_NOTES_PER_COMMAND } from '#/utils/midiNoteBatchLimits';
+import { ADD_NOTES_MAX_NOTES_PER_COMMAND, MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { hydrateUndoStoreFromSession, undoStore } from '../../stores/undoStore';
@@ -261,7 +261,7 @@ describe('addNotes command registration', () => {
                     properties: {
                         pitch: { type: 'number', minimum: 0, maximum: 127 },
                         startBeat: { type: 'number', minimum: 0 },
-                        duration: { type: 'number', exclusiveMinimum: 0 },
+                        duration: { type: 'number', minimum: MIDI_NOTE_MIN_DURATION_BEATS },
                         velocity: { type: 'number', minimum: 1, maximum: 127 },
                     },
                     required: ['pitch', 'startBeat', 'duration'],

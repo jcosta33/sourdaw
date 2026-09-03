@@ -21,7 +21,7 @@ import { describePlannedAction } from './describePlannedAction';
 import { executePromptActionGroup } from './executePromptActionGroup';
 import { getProjectContext } from './getProjectContext';
 import { notifyAiChange } from './notifyAiChange';
-import { planPromptActions } from './planPromptActions';
+import { type PlannedPromptActions, planPromptActions } from './planPromptActions';
 import { recordAgentProviderUsage } from './recordAgentProviderUsage';
 
 export type PromptRequestSource = 'prompt-bar' | 'preset';
@@ -225,7 +225,7 @@ export async function submitAdmittedPromptRequest(
             return { status: 'rejected', runId };
         }
 
-        const planned =
+        const planned: PlannedPromptActions =
             input.actions === undefined
                 ? await planPromptActions({
                       prompt,

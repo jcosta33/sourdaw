@@ -308,7 +308,11 @@ describe('submitAdmittedPromptRequest', () => {
                 actions: [],
                 rawText: 'Master this for vinyl',
                 requiresConfirmation: false,
-                planningOutcome: { kind: 'unsupported', reason: 'No command in this project masters for vinyl.' },
+                planningOutcome: {
+                    kind: 'unsupported',
+                    reason: 'No command in this project masters for vinyl.',
+                    searchedIntents: ['master for vinyl'],
+                },
             },
             projectRevision: 'revision-1',
         });
@@ -318,7 +322,7 @@ describe('submitAdmittedPromptRequest', () => {
         ).resolves.toEqual({ status: 'no-op', runId: RUN_ID });
 
         expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(
-            'Not supported: No command in this project masters for vinyl.',
+            'Not supported: No command in this project masters for vinyl. Searched: master for vinyl',
             []
         );
     });

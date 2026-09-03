@@ -3,7 +3,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ADD_NOTES_MAX_NOTES_PER_COMMAND } from '#/utils/midiNoteBatchLimits';
 
 import { type ProjectContext, type ProjectContextTrack } from '../../models/ProjectContext';
-import { SEMANTIC_CLIP_MAX_BEATS, SEMANTIC_COMMAND_LIST_MAX_CREATIONS } from '../../models/SemanticCommandList';
+import {
+    SEMANTIC_CLIP_MAX_BEATS,
+    SEMANTIC_CLIP_MAX_END_BEAT,
+    SEMANTIC_COMMAND_LIST_MAX_CREATIONS,
+} from '../../models/SemanticCommandList';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 
@@ -177,7 +181,7 @@ describe('high-level intent adversarial planning', () => {
         );
     });
 
-    it('(b) refuses an addNotes command aimed at a clip id the project does not hold', async () => {
+    it('(b) refuses a raw project clip id where the semantic list requires a selector', async () => {
         const result = await planWith(
             proposalRun([
                 {
@@ -400,26 +404,23 @@ describe('high-level intent adversarial planning', () => {
 
         vi.clearAllMocks();
 
-        // The waiver drops the ordinary name value rule, so the route owes its own check: a rename of
-        // a plan-created track is where an unsafe name would otherwise reach the project unexamined.
-        const renamed = await planWith(
-            proposalRunFor(
-                ['addTrack', 'renameTrack'],
-                [
-                    makeTrack,
-                    {
-                        id: 'rename',
-                        name: 'renameTrack',
-                        arguments: { trackId: '$comp', name: 'Blues <Comp>' },
-                        dependsOn: ['make-track'],
-                    },
-                ]
-            ),
+        // The waiver drops the ordinary name value rule, so the route owes its own check. An unbound
+        // clip on a created track is where an unsafe name would otherwise reach the project unexamined.
+        const clipped = await planWith(
+            proposalRun([
+                makeTrack,
+                {
+                    id: 'make-clip',
+                    name: 'addClip',
+                    arguments: { trackId: '$comp', startBeat: 0, endBeat: 12, name: 'Twelve <Bar>' },
+                    dependsOn: ['make-track'],
+                },
+            ]),
             CREATIVE_PROMPT
         );
 
-        expect(renamed.actions).toEqual([]);
-        expect(renamed.rejectionReason).toContain('Plan-created object name is not a safe project name');
+        expect(clipped.actions).toEqual([]);
+        expect(clipped.rejectionReason).toContain('Plan-created object name is not a safe project name');
     });
 
     it('(n) reads creation evidence from the request alone, never from a track named like one', async () => {
@@ -458,6 +459,85 @@ describe('high-level intent adversarial planning', () => {
         );
     });
 
+    /**
+     * Each of these accepts a batch-local target and reaches the rest of the project through it:
+     * soloing the created track silences every other one, live and on export; arming it changes what
+     * the next take records; duplicating and reordering rewrite the track list the user is looking
+     * at. Creating an object never buys authority over what surrounds it.
+     */
+    it.each([
+        ['soloTrack', { trackId: '$lead', soloed: true }],
+        ['armTrack', { trackId: '$lead', armed: true }],
+        ['duplicateTrack', { trackId: '$lead' }],
+        ['reorderTrack', { trackId: '$lead', newIndex: 0 }],
+    ])('(p) refuses %s on a plan-created track the request never asked to change', async (name, args) => {
+        const result = await planWith(
+            proposalRunFor(
+                ['addTrack', name],
+                [
+                    { id: 'make-lead', name: 'addTrack', arguments: { name: 'Lead', kind: 'midi', binding: 'lead' } },
+                    { id: 'reach-out', name, arguments: args, dependsOn: ['make-lead'] },
+                ]
+            ),
+            CREATIVE_PROMPT
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toContain('Provider action is not grounded in the user request');
+    });
+
+    it('(q) refuses a plan-created clip parked past the batch timeline budget', async () => {
+        const result = await planWith(
+            proposalRun([
+                makeTrack,
+                {
+                    id: 'make-clip',
+                    name: 'addClip',
+                    arguments: {
+                        trackId: '$comp',
+                        startBeat: 4.5e15,
+                        endBeat: 4.5e15 + 4,
+                        name: 'Twelve Bar',
+                        binding: 'chorus',
+                    },
+                    dependsOn: ['make-track'],
+                },
+            ]),
+            CREATIVE_PROMPT
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toContain(
+            `Plan-created clip ends past the batch timeline budget of ${String(SEMANTIC_CLIP_MAX_END_BEAT)} beats`
+        );
+    });
+
+    it('(r) counts a duplicated track against the creation budget like a fresh one', async () => {
+        // Half the budget as fresh tracks, the rest as copies of them: neither half overruns it alone,
+        // and only counting the copies as creations refuses the batch.
+        const originals = Array.from({ length: SEMANTIC_COMMAND_LIST_MAX_CREATIONS / 2 + 1 }, (_unused, index) => ({
+            id: `make-lead-${String(index)}`,
+            name: 'addTrack',
+            arguments: { name: `Lead ${String(index)}`, kind: 'midi', binding: `lead${String(index)}` },
+        }));
+        const copies = originals.slice(0, SEMANTIC_COMMAND_LIST_MAX_CREATIONS / 2).map((original, index) => ({
+            id: `copy-${String(index)}`,
+            name: 'duplicateTrack',
+            arguments: { trackId: `$lead${String(index)}` },
+            dependsOn: [original.id],
+        }));
+
+        const result = await planWith(
+            proposalRunFor(['addTrack', 'duplicateTrack'], [...originals, ...copies]),
+            CREATIVE_PROMPT
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toBe(
+            `Provider action rejected: Semantic command list creates more than ${String(SEMANTIC_COMMAND_LIST_MAX_CREATIONS)} project objects`
+        );
+    });
+
     it('admits a decline only after the command-index search that justifies it', async () => {
         const result = await planWith([
             searchTurn,
@@ -473,6 +553,7 @@ describe('high-level intent adversarial planning', () => {
         expect(result.planningOutcome).toEqual({
             kind: 'unsupported',
             reason: 'Sourdaw cannot master for vinyl.',
+            searchedIntents: ['create a midi track'],
         });
     });
 });

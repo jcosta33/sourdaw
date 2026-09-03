@@ -19,6 +19,7 @@ import {
     type BatchLocalBindingProducer,
     CAPABILITIES_REQUIRING_CONCRETE_DEPENDENCY,
     BATCH_LOCAL_BINDING_PRODUCER_NAMES,
+    PROJECT_OBJECT_CREATING_COMMANDS,
     resolveBatchLocalBindingProducer,
 } from './agentReference/batchLocalBindingProducers';
 import { isAgentReferenceCapabilityCandidate } from './agentReference/isAgentReferenceCapabilityCandidate';
@@ -836,6 +837,24 @@ function getDeclaredBatchLocalBinding(
  * The provider never receives generated IDs, state guards, approval authority, or
  * a per-target execution turn; the snapshot is resolved exactly once here.
  */
+function isToolCallResult(value: unknown): value is ToolCallResult {
+    return isRecord(value) && typeof value.name === 'string';
+}
+
+/**
+ * The creation budget, applied wherever a proposal reaches commands. Both proposal forms answer to
+ * it: a budget one form does not check is a budget a provider can choose its way past.
+ */
+function rejectOverCreationBudget(commands: readonly ToolCallResult[]): RejectedCompilation | null {
+    const creationCount = commands.filter((command) => PROJECT_OBJECT_CREATING_COMMANDS.has(command.name)).length;
+    return creationCount > SEMANTIC_COMMAND_LIST_MAX_CREATIONS
+        ? {
+              status: 'rejected',
+              reason: `Semantic command list creates more than ${String(SEMANTIC_COMMAND_LIST_MAX_CREATIONS)} project objects`,
+          }
+        : null;
+}
+
 export function compileArbitraryCommandList(input: {
     calls: readonly ToolCallResult[];
     context: ProjectContext;
@@ -847,6 +866,13 @@ export function compileArbitraryCommandList(input: {
     }
     const proposal = proposalCalls[0]!;
     if (!isRecord(proposal.arguments) || proposal.arguments.list === undefined) {
+        const directCommands = isRecord(proposal.arguments) ? proposal.arguments.commands : undefined;
+        const directRejection = Array.isArray(directCommands)
+            ? rejectOverCreationBudget(directCommands.filter(isToolCallResult))
+            : null;
+        if (directRejection) {
+            return directRejection;
+        }
         return { status: 'accepted', calls: [...input.calls], evidence: [], snapshotRevision: input.revision };
     }
     if (input.revision.length === 0) {
@@ -1129,12 +1155,9 @@ export function compileArbitraryCommandList(input: {
             ...(targetValidation.directTargets.length === 0 ? {} : { directTargets: targetValidation.directTargets }),
         });
     }
-    const creationCount = commands.filter((command) => BATCH_LOCAL_BINDING_PRODUCER_NAMES.has(command.name)).length;
-    if (creationCount > SEMANTIC_COMMAND_LIST_MAX_CREATIONS) {
-        return {
-            status: 'rejected',
-            reason: `Semantic command list creates more than ${String(SEMANTIC_COMMAND_LIST_MAX_CREATIONS)} project objects`,
-        };
+    const creationRejection = rejectOverCreationBudget(commands);
+    if (creationRejection) {
+        return creationRejection;
     }
     return {
         status: 'accepted',

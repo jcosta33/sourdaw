@@ -15,6 +15,11 @@ export const SEMANTIC_COMMAND_LIST_MAX_CREATIONS = 12;
  * is a whole arrangement; past it a creative request is writing an object no musician asked for.
  */
 export const SEMANTIC_CLIP_MAX_BEATS = 256;
+/**
+ * The furthest a plan may place a clip the user never positioned. A short clip parked past any
+ * musical timeline is as unreviewable as an endless one, so position is bounded beside span.
+ */
+export const SEMANTIC_CLIP_MAX_END_BEAT = 4096;
 export const SEMANTIC_COMMAND_LIST_MAX_JSON_DEPTH = 16;
 export const SEMANTIC_COMMAND_LIST_MAX_JSON_NODES = SEMANTIC_COMMAND_LIST_MAX_ITEMS * 256;
 

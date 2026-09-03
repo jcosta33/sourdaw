@@ -557,7 +557,11 @@ describe('orchestratePromptChatRequest', () => {
             context: {},
             result: {
                 actions: [],
-                planningOutcome: { kind: 'unsupported', reason: 'No command in this project masters for vinyl.' },
+                planningOutcome: {
+                    kind: 'unsupported',
+                    reason: 'No command in this project masters for vinyl.',
+                    searchedIntents: ['master for vinyl'],
+                },
             },
             projectRevision: 'revision-planned',
         });
@@ -574,8 +578,8 @@ describe('orchestratePromptChatRequest', () => {
             2,
             expect.objectContaining({
                 role: 'assistant',
-                content: 'Not supported: No command in this project masters for vinyl.',
-                error: 'Not supported: No command in this project masters for vinyl.',
+                content: 'Not supported: No command in this project masters for vinyl. Searched: master for vinyl',
+                error: 'Not supported: No command in this project masters for vinyl. Searched: master for vinyl',
             })
         );
     });

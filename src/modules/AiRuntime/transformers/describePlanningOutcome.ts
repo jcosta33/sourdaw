@@ -7,7 +7,9 @@ import { type PlanningOutcome } from '../models/PlanningOutcome';
  */
 export function describePlanningOutcome(outcome: PlanningOutcome | undefined): string | null {
     if (outcome?.kind === 'unsupported') {
-        return `Not supported: ${outcome.reason}`;
+        const searched =
+            outcome.searchedIntents.length === 0 ? [] : [`Searched: ${outcome.searchedIntents.join(', ')}`];
+        return [`Not supported: ${outcome.reason}`, ...searched].join(' ');
     }
     if (outcome?.kind !== 'clarify') {
         return null;

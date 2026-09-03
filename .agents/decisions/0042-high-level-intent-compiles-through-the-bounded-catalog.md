@@ -56,6 +56,14 @@ searched the command index, because a provider that declines over vocabulary it 
 guessing about the product's capabilities. A decline may not ride alongside a call that produces a
 batch: the outcome of a turn is either a proposal or a refusal, never both.
 
+What that gate enforces is a prior successful search, and nothing more. Nothing checks that the
+intents searched were related to the request, and nothing could: relatedness is the judgement the
+provider was asked to make, so testing it here would only re-run the provider's own reasoning. The
+`unsupported` outcome therefore carries the intents the run actually searched, and the sentence the
+user reads names them. A refusal a user cannot audit is a refusal a user has to take on trust, and
+seeing the words the request was looked up under is what turns "it cannot be done" into something
+they can contradict.
+
 Every planner result therefore classifies itself. `PlanningOutcome` is that classification, and one
 transformer turns it into the sentence a user reads, so the prompt bar and the chat panel can never
 phrase the same decline two different ways.
@@ -81,12 +89,19 @@ names the track, the clip or the beats a plan invents, so that evidence cannot e
 object, and requiring it would refuse every high-level request by construction.
 
 The authority per-action evidence protects is authority over things that already exist. A command
-that touches only objects the same batch creates therefore takes a separate route, admitted when the
-request carries creation evidence, the batch arrived as a normalized plan, and every target the
-command names resolves to a batch-local binding this batch produced. On that route the per-action
-intent phrase, the literal name and the explicit beat range are replaced by structural bounds: a
-provider-chosen name must be a safe project name, and a clip span may not exceed the batch clip span
-budget.
+whose whole effect lands inside an object the same batch creates therefore takes a separate route,
+admitted when the request carries creation evidence, the batch arrived as a normalized plan, and
+every target the command names resolves to a batch-local binding this batch produced. On that route
+the per-action intent phrase, the literal name and the explicit beat range are replaced by
+structural bounds: a provider-chosen name must be a safe project name, and a clip may exceed neither
+the batch clip span budget nor the batch timeline budget that bounds where it is placed.
+
+Which commands the route admits is decided by what a command changes, never by what it targets.
+Accepting a batch-local target is not confinement: soloing a created track silences every other
+track, live and on export; arming it changes what the next take records; duplicating or reordering
+it rewrites the track list the user is looking at. The admitted set is therefore stated explicitly
+rather than derived from target shape, and a command outside it keeps the ordinary rules even when
+every argument it names is batch-local.
 
 The route never admits authority over the project itself. A command naming any existing object keeps
 the ordinary rules, and so does every value that reaches beyond the created objects — tempo, time

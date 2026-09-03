@@ -8,4 +8,8 @@ export type PlanningOutcome =
     | { kind: 'no-match' }
     | { kind: 'denied'; reason: string }
     | { kind: 'clarify'; reason: string; questions: string[] }
-    | { kind: 'unsupported'; reason: string };
+    /**
+     * `searchedIntents` names what the run looked up before claiming the catalog cannot do this, so
+     * a user reading the refusal can see whether it was looked for under the words they would use.
+     */
+    | { kind: 'unsupported'; reason: string; searchedIntents: string[] };

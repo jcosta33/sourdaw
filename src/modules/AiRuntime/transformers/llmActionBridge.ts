@@ -1,6 +1,6 @@
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 import { getSidechainTargetCapability } from '#/utils/getSidechainTargetCapability';
-import { ADD_NOTES_MAX_NOTES_PER_COMMAND } from '#/utils/midiNoteBatchLimits';
+import { ADD_NOTES_MAX_NOTES_PER_COMMAND, MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
 import { wouldCreateRoutingCycle } from '#/utils/routingCycle';
 
 import {
@@ -193,7 +193,7 @@ function isBridgedMidiNote(value: unknown): value is BridgedMidiNote {
         isFiniteNumber(note.startBeat) &&
         note.startBeat >= 0 &&
         isFiniteNumber(note.duration) &&
-        note.duration > 0 &&
+        note.duration >= MIDI_NOTE_MIN_DURATION_BEATS &&
         (!hasVelocity || isIntegerInRange(note.velocity, 1, 127))
     );
 }
