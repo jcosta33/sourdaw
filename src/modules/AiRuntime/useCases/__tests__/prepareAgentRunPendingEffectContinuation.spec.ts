@@ -45,22 +45,20 @@ function buildCommandBatch(input: { runId: string; batchId: string }) {
     });
 }
 
+/**
+ * Production only ever records `operation: prepared.action.type` (`executeAppActionBatch.ts`), so
+ * a pending effect's operation is always a real `AppAction['type']`. Fixtures here use the two the
+ * suite needs: a section render, and `addTrack` standing in for any other committed action.
+ */
 type FixturePendingEffect = {
     commandId: string;
     kind: 'external-effect';
-    operation: string;
+    operation: 'renderProjectSections' | 'addTrack';
     reason: string;
     remediation: 'reconcile' | 'manual-repair';
     state: 'pending';
 };
 
-/**
- * `createVerifiedBatchReceipt`'s inferred type narrows `pendingEffects[].operation` to
- * `AppAction['type']`, but a receipt replayed from storage is validated and cast the same
- * way in `parseStoredVerifiedBatchReceipt` — a pending effect can name any operation string,
- * including one (like an event-bus publish) that is not itself a dispatchable command. The
- * cast below mirrors that production precedent for an otherwise fully-shaped fixture receipt.
- */
 function buildReceipt(input: {
     runId: string;
     batchId: string;
@@ -86,12 +84,12 @@ function buildReceipt(input: {
         createdBindings: [],
         warnings: [],
         errors: [],
-        pendingEffects: input.pendingEffects,
+        pendingEffects: [...input.pendingEffects],
         links: { render: [], analysis: [] },
         compensation: { available: false, commandIds: [] },
         semanticDiff: null,
         modelSummary: 'Fixture receipt for prepareAgentRunPendingEffectContinuation.spec.ts.',
-    } as unknown as VerifiedBatchReceipt;
+    };
 }
 
 describe('prepareAgentRunPendingEffectContinuation', () => {
@@ -105,18 +103,81 @@ describe('prepareAgentRunPendingEffectContinuation', () => {
         const runId = 'run-generic-continuation-promotion';
         const batchId = 'batch-generic-continuation-promotion';
         const commandBatch = buildCommandBatch({ runId, batchId });
-        const genericEffect: FixturePendingEffect = {
+        const preparedGenericEffect: FixturePendingEffect = {
             commandId: 'command-generic-continuation-promotion',
             kind: 'external-effect',
-            operation: 'publishTrackAdded',
+            operation: 'addTrack',
+            reason: 'Post-commit effect has not completed',
+            remediation: 'reconcile',
+            state: 'pending',
+        };
+        const promotedGenericEffect: FixturePendingEffect = {
+            ...preparedGenericEffect,
+            reason: 'Arrangement event bus is offline',
+        };
+        const prepareReceipt = buildReceipt({ runId, batchId, pendingEffects: [preparedGenericEffect] });
+        const promoteReceipt = buildReceipt({ runId, batchId, pendingEffects: [promotedGenericEffect] });
+        createAgentRun({
+            runId,
+            request: 'Add a track through a batch whose bus publication is interrupted.',
+            mode: 'apply',
+            createdRevision: 'revision-continuation-base',
+            createdAt: 1,
+        });
+
+        const { promote } = prepareAgentRunPendingEffectContinuation({
+            runId,
+            receipt: prepareReceipt,
+            commandBatch,
+            getFinalizedRevision: () => 'revision-finalized',
+        });
+
+        expect(() => promote({ receipt: promoteReceipt })).not.toThrow();
+
+        const ledger = readAgentRunState().pendingEffectRecoveryLedger ?? [];
+        expect(ledger).toHaveLength(1);
+        const [ledgerEntry] = ledger;
+        expect(ledgerEntry?.checkpoint).toBe('durable');
+        expect(ledgerEntry?.effects).toEqual(promoteReceipt.pendingEffects);
+        expect(ledgerEntry?.effects[0]?.reason).toBe('Arrangement event bus is offline');
+        expect(ledgerEntry?.recovery).toBe('manual-repair');
+        expect(ledgerEntry?.lastError).toBe(MISSING_EXACT_CHECKPOINT_RECOVERY_REASON);
+        expect(ledgerEntry ? 'sourceRevision' in ledgerEntry : true).toBe(false);
+
+        const continuations = getAgentRun(runId)?.pendingEffectContinuations ?? [];
+        expect(continuations).toHaveLength(1);
+        const [continuation] = continuations;
+        expect(continuation?.batchId).toBe(batchId);
+        expect(continuation?.effects).toEqual(promoteReceipt.pendingEffects);
+        expect(continuation?.effects[0]?.reason).toBe('Arrangement event bus is offline');
+        expect(continuation?.recovery).toBe('manual-repair');
+        expect(continuation ? 'sourceRevision' in continuation : true).toBe(false);
+    });
+
+    it('promotes a mixed section-render and generic pending effect without a source revision', () => {
+        const runId = 'run-mixed-continuation-promotion';
+        const batchId = 'batch-mixed-continuation-promotion';
+        const commandBatch = buildCommandBatch({ runId, batchId });
+        const renderEffect: FixturePendingEffect = {
+            commandId: 'command-mixed-render-continuation-promotion',
+            kind: 'external-effect',
+            operation: 'renderProjectSections',
+            reason: 'Renderer stopped before completion.',
+            remediation: 'reconcile',
+            state: 'pending',
+        };
+        const genericEffect: FixturePendingEffect = {
+            commandId: 'command-mixed-generic-continuation-promotion',
+            kind: 'external-effect',
+            operation: 'addTrack',
             reason: 'Arrangement event bus is offline',
             remediation: 'reconcile',
             state: 'pending',
         };
-        const receipt = buildReceipt({ runId, batchId, pendingEffects: [genericEffect] });
+        const receipt = buildReceipt({ runId, batchId, pendingEffects: [renderEffect, genericEffect] });
         createAgentRun({
             runId,
-            request: 'Add a track through a batch whose bus publication is interrupted.',
+            request: 'Render a section and add a track through one interrupted batch.',
             mode: 'apply',
             createdRevision: 'revision-continuation-base',
             createdAt: 1,
@@ -137,15 +198,12 @@ describe('prepareAgentRunPendingEffectContinuation', () => {
         expect(ledgerEntry?.checkpoint).toBe('durable');
         expect(ledgerEntry?.effects).toEqual(receipt.pendingEffects);
         expect(ledgerEntry?.recovery).toBe('manual-repair');
-        expect(ledgerEntry?.lastError).toBe(MISSING_EXACT_CHECKPOINT_RECOVERY_REASON);
         expect(ledgerEntry ? 'sourceRevision' in ledgerEntry : true).toBe(false);
 
         const continuations = getAgentRun(runId)?.pendingEffectContinuations ?? [];
         expect(continuations).toHaveLength(1);
         const [continuation] = continuations;
-        expect(continuation?.batchId).toBe(batchId);
         expect(continuation?.effects).toEqual(receipt.pendingEffects);
-        expect(continuation?.recovery).toBe('manual-repair');
         expect(continuation ? 'sourceRevision' in continuation : true).toBe(false);
     });
 
@@ -157,7 +215,7 @@ describe('prepareAgentRunPendingEffectContinuation', () => {
             commandId: 'command-render-continuation-promotion',
             kind: 'external-effect',
             operation: 'renderProjectSections',
-            reason: 'Arrangement event bus is offline',
+            reason: 'Renderer stopped before completion.',
             remediation: 'reconcile',
             state: 'pending',
         };
@@ -195,7 +253,7 @@ describe('prepareAgentRunPendingEffectContinuation', () => {
             commandId: 'command-unfinalized-continuation-promotion',
             kind: 'external-effect',
             operation: 'renderProjectSections',
-            reason: 'Arrangement event bus is offline',
+            reason: 'Renderer stopped before completion.',
             remediation: 'reconcile',
             state: 'pending',
         };
