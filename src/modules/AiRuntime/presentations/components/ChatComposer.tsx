@@ -2,6 +2,7 @@ import { type KeyboardEvent, type ReactElement, type RefObject } from 'react';
 
 import { Brain, Send, Square, Zap } from 'lucide-react';
 
+import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { cn } from '#/utils/Styles/cn';
@@ -64,26 +65,23 @@ export const ChatComposer = ({
             }}
         >
             <Row justify="between" className="mb-2 px-1">
-                <Row
-                    as="label"
-                    gap={1.5}
-                    className="rounded border border-border/50 bg-surface-inset px-2 py-1 text-[10px] font-medium text-muted-foreground"
-                >
+                <Row as="label" gap={1.5} className="text-[10px] font-medium text-muted-foreground">
                     <Zap className="size-3" />
                     <span>Mode</span>
-                    <select
+                    <DawCompactSelect
                         aria-label="Agent execution mode"
+                        size="micro"
+                        tone="inset"
                         value={executionMode}
                         onChange={(event) => onExecutionModeChange(event.target.value as AgentExecutionMode)}
                         disabled={isGenerating}
-                        className="bg-transparent text-foreground outline-none"
                     >
                         {executionModes.map((mode) => (
                             <option key={mode} value={mode}>
                                 {mode.charAt(0).toUpperCase() + mode.slice(1)}
                             </option>
                         ))}
-                    </select>
+                    </DawCompactSelect>
                 </Row>
 
                 <Button
