@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 
 import { runZeroTestGuard } from '../runVitestZeroTestGuard.ts';
+import { DEVICE_WRITE_BOUNDARY_CENSUS_EXCLUDE_GLOB } from '../vitestUnitShardExclusions.ts';
 import {
     executedAssertionCount,
     formatSilentZeroCollectionFailure,
@@ -386,6 +387,26 @@ describe('runZeroTestGuard', () => {
             expect(message).toContain('assertionResults[0]');
         } finally {
             errorSpy.mockRestore();
+            rmSync(fake.root, { recursive: true, force: true });
+        }
+    });
+
+    it('excludes the device write boundary census from unit shard invocations', () => {
+        const fake = fakeVitest('unit-shard-exclusion');
+        try {
+            runZeroTestGuard({
+                vitestBin: fake.bin,
+                args: ['--shard=2/4'],
+                cwd: repoRoot,
+                stdio: 'pipe',
+                env: { FAKE_VITEST_JSON: passingJson, FAKE_VITEST_EXIT: '0' },
+            });
+
+            const argv = JSON.parse(readFileSync(fake.argvPath, 'utf8')) as string[];
+            expect(argv).toContain('--shard=2/4');
+            expect(argv).toContain('--exclude');
+            expect(argv).toContain(DEVICE_WRITE_BOUNDARY_CENSUS_EXCLUDE_GLOB);
+        } finally {
             rmSync(fake.root, { recursive: true, force: true });
         }
     });
