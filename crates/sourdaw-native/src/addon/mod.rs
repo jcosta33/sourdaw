@@ -589,7 +589,14 @@ impl SourdawNative {
     /// transport error.
     #[napi]
     pub async fn apply_graph_commands(&self, batch: Value) -> Result<Value> {
-        reason(commands::graph::apply_graph_commands(batch, &self.singletons.app_state).await)
+        reason(
+            commands::graph::apply_graph_commands(
+                batch,
+                &self.singletons.app_state,
+                &self.singletons.crumbs,
+            )
+            .await,
+        )
     }
 
     /// Register decoded timeline material for `schedule-clip` to reference by
