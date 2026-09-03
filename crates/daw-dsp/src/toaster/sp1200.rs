@@ -69,8 +69,7 @@ pub struct Sp1200Effect {
     cheby_pole_a1: f32,
 
     // Parameters
-    semitones: f32,   // pitch shift in semitones
-    output_rate: f32, // host sample rate (for ZOH period calculation)
+    semitones: f32, // pitch shift in semitones
 }
 
 impl Sp1200Effect {
@@ -113,7 +112,6 @@ impl Sp1200Effect {
             cheby_pole_b0: 1.0 - pole_coeff,
             cheby_pole_a1: -pole_coeff,
             semitones: 0.0,
-            output_rate: sample_rate,
         }
     }
 
