@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
     setStepRetrigger: vi.fn(),
     setStepCondition: vi.fn(),
     setStepProbability: vi.fn(),
+    setStepMicroTiming: vi.fn(),
 }));
 
 import { ToasterPanel } from '../ToasterPanel';
@@ -44,6 +45,9 @@ vi.mock('../../../useCases/stepModifications/setStepCondition', () => ({
 }));
 vi.mock('../../../useCases/stepModifications/setStepProbability', () => ({
     setStepProbability: mocks.setStepProbability,
+}));
+vi.mock('../../../useCases/stepModifications/setStepMicroTiming', () => ({
+    setStepMicroTiming: mocks.setStepMicroTiming,
 }));
 vi.mock('../../../useCases/trigger16Level', () => ({
     trigger16Level: mocks.trigger16Level,
@@ -316,5 +320,18 @@ describe('ToasterPanel', () => {
 
         expect(mocks.setStepProbability).toHaveBeenCalledTimes(1);
         expect(mocks.setStepProbability).toHaveBeenCalledWith('toaster-test', 0, 0, 0.5);
+    });
+
+    it('passes onSetMicroTiming to StepSequencer and invokes setStepMicroTiming', () => {
+        render(<ToasterPanel deviceId="toaster-test" />);
+
+        const stepCell = screen.getByTestId('toaster-step-0-0');
+        fireEvent.contextMenu(stepCell, { clientX: 50, clientY: 50 });
+
+        const microTimingOption = screen.getByRole('menuitem', { name: '+25%' });
+        fireEvent.click(microTimingOption);
+
+        expect(mocks.setStepMicroTiming).toHaveBeenCalledTimes(1);
+        expect(mocks.setStepMicroTiming).toHaveBeenCalledWith('toaster-test', 0, 0, 0.25);
     });
 });

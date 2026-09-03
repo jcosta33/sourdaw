@@ -539,4 +539,62 @@ describe('StepSequencer — sound locks', () => {
         expect(onSetProbability).toHaveBeenCalledWith(0, 1, 0.5);
         expect(screen.queryByText('Probability')).not.toBeInTheDocument();
     });
+
+    it('includes micro-timing nudge in aria-label when step has microTiming !== 0 and omits it when microTiming === 0', () => {
+        const pads = [makePad(0)];
+        const pattern = makePattern(1, 3);
+        pattern.tracks[0]!.steps[0] = { ...baseStep, active: true, velocity: 0.8, microTiming: 0.1 };
+        pattern.tracks[0]!.steps[1] = { ...baseStep, active: true, velocity: 0.8, microTiming: -0.25 };
+        pattern.tracks[0]!.steps[2] = { ...baseStep, active: true, velocity: 0.8, microTiming: 0 };
+
+        render(
+            <StepSequencer
+                pattern={pattern}
+                pads={pads}
+                currentStep={0}
+                isPlaying={false}
+                onToggleStep={vi.fn()}
+                onSetVelocity={vi.fn()}
+            />
+        );
+
+        const cells = screen.getAllByRole('checkbox');
+        expect(cells[0]).toHaveAccessibleName(/nudge 10%/i);
+        expect(cells[1]).toHaveAccessibleName(/nudge -25%/i);
+        expect(cells[2]).not.toHaveAccessibleName(/nudge/i);
+    });
+
+    it('opens context menu, renders Micro-timing section, and invokes onSetMicroTiming when an option is selected', () => {
+        const onSetMicroTiming = vi.fn();
+        const pads = [makePad(0)];
+        const pattern = makePattern(1, 4);
+        pattern.tracks[0]!.steps[1] = {
+            ...baseStep,
+            active: true,
+            microTiming: 0,
+        };
+
+        render(
+            <StepSequencer
+                pattern={pattern}
+                pads={pads}
+                currentStep={0}
+                isPlaying={false}
+                onToggleStep={vi.fn()}
+                onSetVelocity={vi.fn()}
+                onSetMicroTiming={onSetMicroTiming}
+            />
+        );
+
+        const cell = screen.getAllByRole('checkbox')[1]!;
+        fireEvent.contextMenu(cell, { clientX: 100, clientY: 200 });
+
+        expect(screen.getByText('Micro-timing')).toBeInTheDocument();
+        const optionButton = screen.getByRole('menuitem', { name: '+25%' });
+        fireEvent.click(optionButton);
+
+        expect(onSetMicroTiming).toHaveBeenCalledTimes(1);
+        expect(onSetMicroTiming).toHaveBeenCalledWith(0, 1, 0.25);
+        expect(screen.queryByText('Micro-timing')).not.toBeInTheDocument();
+    });
 });
