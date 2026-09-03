@@ -47,6 +47,9 @@ import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
 
 import {
+    AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+    ambiguousSameObjectDivergence,
+    ambiguousSameObjectDivergenceMessage,
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
@@ -805,6 +808,7 @@ describe('EX-04 selected MIDI overlap prompt workflow', () => {
                     })),
                 });
             },
+            ['clip-strings', 'track-strings'],
         ],
         [
             'freezes the later selected track',
@@ -817,31 +821,35 @@ describe('EX-04 selected MIDI overlap prompt workflow', () => {
                     ),
                 });
             },
+            ['track-strings'],
         ],
-    ])('invalidates the entire confirmed batch when current scope %s', async (_label, mutateScope) => {
-        await sendChatMessage(PROMPT);
-        const confirmationId = getConfirmationId();
-        mutateScope();
-        flushAutomergeStorageWrites();
+    ] as const)(
+        'invalidates the entire confirmed batch when current scope %s',
+        async (_label, mutateScope, divergedTargetIds) => {
+            await sendChatMessage(PROMPT);
+            const confirmationId = getConfirmationId();
+            mutateScope();
+            flushAutomergeStorageWrites();
 
-        expect(await confirmPendingChatActions({ confirmationId })).toEqual({
-            status: 'invalidated',
-            reason: 'The project changed after this proposal was created. Review and submit the command again.',
-        });
+            expect(await confirmPendingChatActions({ confirmationId })).toEqual({
+                status: 'invalidated',
+                reason: AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+                divergence: ambiguousSameObjectDivergence(divergedTargetIds),
+            });
 
-        expect(getNoteDuration('clip-piano', 'piano-short-a')).toBe(1.04);
-        expect(getNoteDuration('clip-strings', 'strings-short-a')).toBe(1.02);
-        expect(getPendingActionConfirmation(confirmationId)).toMatchObject({
-            status: 'invalidated',
-            executedActions: [],
-        });
-        expect(undoStore.value?.past).toEqual([]);
-        expect(
-            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmationId)?.content
-        ).toBe(
-            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
-        );
-    });
+            expect(getNoteDuration('clip-piano', 'piano-short-a')).toBe(1.04);
+            expect(getNoteDuration('clip-strings', 'strings-short-a')).toBe(1.02);
+            expect(getPendingActionConfirmation(confirmationId)).toMatchObject({
+                status: 'invalidated',
+                executedActions: [],
+            });
+            expect(undoStore.value?.past).toEqual([]);
+            expect(
+                chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmationId)
+                    ?.content
+            ).toBe(ambiguousSameObjectDivergenceMessage(divergedTargetIds));
+        }
+    );
 
     it('converts the 30 ms threshold against the current project tempo', async () => {
         transportStore.set({ ...defaultTransportState, tempo: 60 });
@@ -880,7 +888,13 @@ describe('EX-04 selected MIDI overlap prompt workflow', () => {
 
         expect(await confirmPendingChatActions({ confirmationId })).toEqual({
             status: 'invalidated',
-            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+            reason: AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+            divergence: {
+                kind: 'ambiguous-same-object',
+                mayReapply: false,
+                repairCandidates: [{ kind: 'review-ambiguous-target', targetIds: ['strings-short-a'] }],
+                targetIds: ['strings-short-a'],
+            },
         });
 
         expect(getNoteDuration('clip-piano', 'piano-short-a')).toBe(1.04);
@@ -893,9 +907,7 @@ describe('EX-04 selected MIDI overlap prompt workflow', () => {
         const receipt = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmationId
         );
-        expect(receipt?.content).toBe(
-            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
-        );
+        expect(receipt?.content).toBe(ambiguousSameObjectDivergenceMessage(['strings-short-a']));
     });
 
     it('keeps grouped undo and tempo-sensitive redo atomic and retryable on collaborator conflicts', async () => {

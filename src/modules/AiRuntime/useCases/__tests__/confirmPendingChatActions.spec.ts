@@ -4709,7 +4709,10 @@ describe('confirmPendingChatActions transaction admission', () => {
         expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ transport: { bpm: 128 } });
     });
 
-    it('invalidates a confirmed batch when an outside writer changed the project before confirmation', async () => {
+    // An outside writer moved the revision without touching anything this batch targets. Discarding
+    // the plan there would cost the user their work for an edit that cannot conflict with it, so the
+    // route revalidates and rebinds the same commands and asks for approval against the new revision.
+    it('requires reapproval when an outside writer changed the project before confirmation', async () => {
         configureAiWorkflowCommandPreflightFixture('project-1');
         configureCommandBatchIdempotency({ canExecute: () => true });
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
@@ -4772,12 +4775,19 @@ describe('confirmPendingChatActions transaction admission', () => {
 
         await expect(
             confirmPendingChatActions({ confirmationId: 'confirmation-outside-writer' })
-        ).resolves.toMatchObject({ status: 'invalidated' });
+        ).resolves.toMatchObject({
+            status: 'reapproval_required',
+            divergence: { kind: 'non-overlapping', mayReapply: true, targetIds: [] },
+        });
         expect(execute).not.toHaveBeenCalled();
         expect(getCrdtDoc<Record<string, unknown>>('owned')).not.toHaveProperty('transport');
+        expect(getPendingActionConfirmation('confirmation-outside-writer')).toMatchObject({
+            projectRevision: captureProjectRevision(),
+            status: 'proposed',
+        });
         expect(chatStore.value?.messages[0]).toMatchObject({
-            pendingActionConfirmationStatus: 'invalidated',
-            content: expect.stringContaining('project changed'),
+            pendingActionConfirmationStatus: 'proposed',
+            content: expect.stringContaining('The project changed after the prior approval.'),
         });
     });
 });

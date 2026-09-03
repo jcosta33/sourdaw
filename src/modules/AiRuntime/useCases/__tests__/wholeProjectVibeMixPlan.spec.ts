@@ -44,6 +44,9 @@ import { planPromptActions } from '../planPromptActions';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
 
 import {
+    AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+    ambiguousSameObjectDivergence,
+    ambiguousSameObjectDivergenceMessage,
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
@@ -889,13 +892,8 @@ describe('whole-project vibe-mix planning', () => {
         expect(undoStore.value?.past).toEqual([]);
     });
 
-    // The edit below changes automation mode for a target this plan names, but
-    // the status, reason and receipt asserted here are what *any* project
-    // change after the proposal produces — a collaborator edit elsewhere
-    // reaches the same terminal state through the same code path. This test
-    // therefore pins the project-changed disposition, not target-conflict
-    // detection; that the two are indistinguishable is the production defect
-    // filed as #2894.
+    // The edit below changes automation mode for a target this plan names, and the refusal names
+    // that target: the divergence port classifies the conflict rather than reporting a bare move.
     it('leaves no partial lanes or receipt when the project changes before confirmation', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
@@ -911,7 +909,8 @@ describe('whole-project vibe-mix planning', () => {
 
         expect(result).toEqual({
             status: 'invalidated',
-            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+            reason: AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+            divergence: ambiguousSameObjectDivergence(['bus-bass']),
         });
         expect(getGainLanes()).toEqual([]);
         expect(undoStore.value?.past).toEqual([]);
@@ -922,9 +921,7 @@ describe('whole-project vibe-mix planning', () => {
         const terminalMessage = chatStore.value?.messages.find(
             (message) => message.pendingActionConfirmationId === confirmation?.id
         );
-        expect(terminalMessage?.content).toBe(
-            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
-        );
+        expect(terminalMessage?.content).toBe(ambiguousSameObjectDivergenceMessage(['bus-bass']));
     });
 
     it('aborts a failed atomic store write without lane, receipt, or undo residue', async () => {
