@@ -381,22 +381,26 @@ function unsatisfiedAdvisoryRequiredContexts(
 }
 
 /**
- * GitHub evaluates the newest run of a required name, so any settled success under the name cannot
- * satisfy the context: an older green attempt must not cover a newer red one. The context is
- * satisfied only when some settled success provably started after every other attempt of the name —
- * a newer failure then leaves it unsatisfied, an attempt still in flight leaves it pending, and an
+ * GitHub evaluates the newest run of a required name, so any satisfying attempt under the name
+ * cannot satisfy the context: an older one must not cover a newer red one. The context is satisfied
+ * only when some settled success or skip provably started after every other attempt of the name — a
+ * newer failure then leaves it unsatisfied, an attempt still in flight leaves it pending, and an
  * attempt GitHub reports no start for supersedes nothing, the same conservatism as `startedAfter`.
+ * A `skipped` conclusion satisfies a required check by GitHub's own rule; this repository's
+ * topology no longer mints a skipped `Gate`, so the skip arm is latent but faithful.
  */
 function isSatisfiedRequiredContext(context: string, checkRuns: HeadCheckRun[]): boolean {
     const attempts = checkRuns.filter((run) => run.name === context);
-    const successes = attempts.filter(
-        (run) => run.status === SETTLED_CHECK_STATUS && run.conclusion === PASSING_CONCLUSION
+    const satisfying = attempts.filter(
+        (run) =>
+            run.status === SETTLED_CHECK_STATUS &&
+            (run.conclusion === PASSING_CONCLUSION || run.conclusion === SKIPPED_CONCLUSION)
     );
-    if (successes.length === 0) {
+    if (satisfying.length === 0) {
         return false;
     }
     return attempts.every(
-        (attempt) => successes.includes(attempt) || successes.some((success) => startedAfter(success, attempt))
+        (attempt) => satisfying.includes(attempt) || satisfying.some((satisfied) => startedAfter(satisfied, attempt))
     );
 }
 

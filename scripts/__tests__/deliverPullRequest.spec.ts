@@ -504,6 +504,7 @@ function checkRun(overrides: Partial<HeadCheckRun> = {}): HeadCheckRun {
  */
 const PUSH_RUN_START = '2026-08-29T10:00:00Z';
 const REVIEW_RUN_START = '2026-08-29T10:05:00Z';
+const LATER_RUN_START = '2026-08-29T10:10:00Z';
 
 const LIVE_WORKFLOW_SOURCE = readFileSync(join(import.meta.dirname, '../..', WORKFLOW_PATH), 'utf8');
 
@@ -6084,7 +6085,7 @@ describe('pull-request delivery', () => {
         }
     });
 
-    it('refuses a BLOCKED head whose required check has a newer attempt still in flight, naming the check as pending', async () => {
+    it('refuses a BLOCKED head whose required check has a newer attempt still in flight, naming the check whether the newest attempt is pending or failed', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-inflight-lock-'));
         initializeDeliveryLockRepository(root);
         const { port, calls, tracker } = fakePort({
@@ -6102,6 +6103,95 @@ describe('pull-request delivery', () => {
                     deliverPullRequest(42, port, tracker, markRemoteMutationKnownAbsent);
                 })
             ).rejects.toThrow('PR #42 merge state is BLOCKED on required check(s): Gate');
+
+            expect(calls).not.toContain('add-receipt:42');
+            expect(calls).not.toContain('merge:42:head');
+            expect(deliveryLockExists(root, 42)).toBe(false);
+        } finally {
+            removeTemporaryGitRepository(root);
+        }
+    });
+
+    it('reads a BLOCKED head whose required check failed between two green attempts as green, blaming a review thread or another ruleset rule', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-retired-mid-lock-'));
+        initializeDeliveryLockRepository(root);
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
+            headCheckRuns: [
+                checkRun({ startedAt: PUSH_RUN_START }),
+                checkRun({ conclusion: 'FAILURE', startedAt: REVIEW_RUN_START }),
+                checkRun({ startedAt: LATER_RUN_START }),
+            ],
+            requiredStatusCheckContexts: ['Gate'],
+        });
+
+        try {
+            await expect(
+                withPullRequestDeliveryLock(root, 42, async ({ markRemoteMutationKnownAbsent }) => {
+                    deliverPullRequest(42, port, tracker, markRemoteMutationKnownAbsent);
+                })
+            ).rejects.toThrow(
+                'PR #42 merge state is BLOCKED although every required check succeeded; the block is an ' +
+                    'unresolved review thread, the review decision, or another ruleset rule'
+            );
+
+            expect(calls).not.toContain('add-receipt:42');
+            expect(calls).not.toContain('merge:42:head');
+            expect(deliveryLockExists(root, 42)).toBe(false);
+        } finally {
+            removeTemporaryGitRepository(root);
+        }
+    });
+
+    it('refuses a BLOCKED head whose required check has a failure and a success sharing one start, naming the check', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-tied-start-lock-'));
+        initializeDeliveryLockRepository(root);
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
+            headCheckRuns: [
+                checkRun({ conclusion: 'FAILURE', startedAt: PUSH_RUN_START }),
+                checkRun({ startedAt: PUSH_RUN_START }),
+            ],
+            requiredStatusCheckContexts: ['Gate'],
+        });
+
+        try {
+            await expect(
+                withPullRequestDeliveryLock(root, 42, async ({ markRemoteMutationKnownAbsent }) => {
+                    deliverPullRequest(42, port, tracker, markRemoteMutationKnownAbsent);
+                })
+            ).rejects.toThrow('PR #42 merge state is BLOCKED on required check(s): Gate');
+
+            expect(calls).not.toContain('add-receipt:42');
+            expect(calls).not.toContain('merge:42:head');
+            expect(deliveryLockExists(root, 42)).toBe(false);
+        } finally {
+            removeTemporaryGitRepository(root);
+        }
+    });
+
+    it('reads a BLOCKED head whose required check ended skipped after an older failure as green, blaming a review thread or another ruleset rule', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-skipped-lock-'));
+        initializeDeliveryLockRepository(root);
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
+            headCheckRuns: [
+                checkRun({ startedAt: PUSH_RUN_START }),
+                checkRun({ conclusion: 'FAILURE', startedAt: REVIEW_RUN_START }),
+                checkRun({ conclusion: 'SKIPPED', startedAt: LATER_RUN_START }),
+            ],
+            requiredStatusCheckContexts: ['Gate'],
+        });
+
+        try {
+            await expect(
+                withPullRequestDeliveryLock(root, 42, async ({ markRemoteMutationKnownAbsent }) => {
+                    deliverPullRequest(42, port, tracker, markRemoteMutationKnownAbsent);
+                })
+            ).rejects.toThrow(
+                'PR #42 merge state is BLOCKED although every required check succeeded; the block is an ' +
+                    'unresolved review thread, the review decision, or another ruleset rule'
+            );
 
             expect(calls).not.toContain('add-receipt:42');
             expect(calls).not.toContain('merge:42:head');

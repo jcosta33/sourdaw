@@ -480,6 +480,11 @@ expect(
     'pull-request validation must group by pull request'
 );
 expect(
+    heavyWorkflow.concurrency?.group ===
+        "heavy-gates-${{ (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') && github.event.pull_request.number || github.run_id }}",
+    'the heavy lane must group approving reviews by pull request and everything else by run id'
+);
+expect(
     heavyWorkflow.concurrency?.['cancel-in-progress'] === false,
     'the heavy lane must never cancel: an approving review run is the only run that observes those legs on that head'
 );

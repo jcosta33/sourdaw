@@ -69,6 +69,8 @@ const REQUIRED_CHECK_NAME = 'Gate';
 const HEAVY_SUMMARY_NAME = 'HeavyGate';
 const NIGHTLY_CRON = '0 3 * * *';
 const NIGHTLY_CONCURRENCY_GROUP = 'nightly-${{ github.run_id }}';
+const HEAVY_CONCURRENCY_GROUP =
+    "heavy-gates-${{ (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') && github.event.pull_request.number || github.run_id }}";
 const NIGHTLY_HEAVY_CONDITION = "needs.decide.outputs.heavy == 'true'";
 const NIGHTLY_E2E_WIRING = {
     needs: 'decide',
@@ -566,6 +568,16 @@ function assertNightlyConcurrencyContract(candidate: UnknownRecord): void {
     }
     if (concurrency['cancel-in-progress'] !== false) {
         throw new Error('nightly must not cancel an in-progress train');
+    }
+}
+
+function assertHeavyConcurrencyContract(candidate: UnknownRecord): void {
+    const concurrency = recordAt(candidate, 'concurrency');
+    if (concurrency.group !== HEAVY_CONCURRENCY_GROUP) {
+        throw new Error('the heavy lane must group approving reviews by pull request and everything else by run id');
+    }
+    if (concurrency['cancel-in-progress'] !== false) {
+        throw new Error('the heavy lane must not cancel an in-progress run');
     }
 }
 
@@ -1370,6 +1382,7 @@ describe('health gates workflow contract', () => {
         expect(() => assertWorkflowPermissions(validationWorkflow)).not.toThrow();
         expect(() => assertWorkflowPermissions(heavyWorkflow)).not.toThrow();
         expect(() => assertConcurrencyContract(workflow)).not.toThrow();
+        expect(() => assertHeavyConcurrencyContract(heavyWorkflow)).not.toThrow();
 
         const missingPullRequestAccess = asRecord(structuredClone(workflow), 'missing pull-request permission');
         delete recordAt(missingPullRequestAccess, 'permissions')['pull-requests'];
@@ -1405,6 +1418,14 @@ describe('health gates workflow contract', () => {
         recordAt(cancellingNightly, 'concurrency')['cancel-in-progress'] = true;
         expect(() => assertNightlyConcurrencyContract(cancellingNightly)).toThrow(
             'nightly must not cancel an in-progress train'
+        );
+        // Flattening the group to a bare run id isolates every approving
+        // review onto its own group, so two approvals on one pull request run
+        // the heavy lane concurrently instead of serially.
+        const flattenedHeavy = asRecord(structuredClone(heavyWorkflow), 'flattened heavy group heavyWorkflow');
+        recordAt(flattenedHeavy, 'concurrency').group = 'heavy-gates-${{ github.run_id }}';
+        expect(() => assertHeavyConcurrencyContract(flattenedHeavy)).toThrow(
+            'the heavy lane must group approving reviews by pull request and everything else by run id'
         );
     });
 
