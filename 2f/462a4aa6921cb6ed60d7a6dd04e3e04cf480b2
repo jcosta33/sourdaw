@@ -1,0 +1,18 @@
+src/modules/Project/presentations/views/RecentProjectsMenu.tsx
+  h_1228e573df1f42 144-146,155-158
+src/modules/Project/presentations/views/__tests__/RecentProjectsMenu.spec.tsx
+  h_1228e573df1f42 74,76
+src/modules/WorkspaceShell/presentations/views/Prompt/LlmStatusBadge.tsx
+  h_1228e573df1f42 149-150,255-256
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "2f462a4aa6921cb6ed60d7a6dd04e3e04cf480b2",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
