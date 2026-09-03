@@ -104,4 +104,3 @@ Probe that would have caught it: when a diff adds type or name strings to regist
 plugin descriptors, preset ids), run `pnpm test:release-inventory` in the lane (cheap, ~10s) or at
 minimum grep the added strings against `release/open-source-inventory.json`'s marks values; classify
 any hit in the same change.
-
