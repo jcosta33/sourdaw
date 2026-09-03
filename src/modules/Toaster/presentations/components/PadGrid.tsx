@@ -45,6 +45,7 @@ export const PadGrid = ({
     const [flashingPads, setFlashingPads] = useState<Set<number>>(new Set());
     const flashTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
     const pressedPadRef = useRef<number | null>(null);
+    const handledActivationRef = useRef(false);
 
     function triggerFlash(index: number): void {
         setFlashingPads((previous) => new Set(previous).add(index));
@@ -127,6 +128,13 @@ export const PadGrid = ({
                             transform: isFlashing ? 'scale(0.97)' : 'scale(1)',
                         }}
                         onClick={() => {
+                            if (handledActivationRef.current) {
+                                handledActivationRef.current = false;
+                                if (!sixteenLevelsTarget) {
+                                    onSelectPad(index);
+                                }
+                                return;
+                            }
                             if (sixteenLevelsTarget) {
                                 onTriggerPad(index);
                                 triggerFlash(index);
@@ -136,6 +144,7 @@ export const PadGrid = ({
                         }}
                         onMouseDown={(event) => {
                             if (event.button === 0) {
+                                handledActivationRef.current = true;
                                 pressedPadRef.current = index;
                                 onTriggerPad(index);
                                 triggerFlash(index);
@@ -161,6 +170,7 @@ export const PadGrid = ({
                                 if (event.repeat) {
                                     return;
                                 }
+                                handledActivationRef.current = true;
                                 onTriggerPad(index);
                                 triggerFlash(index);
                             }

@@ -97,6 +97,19 @@ describe('PadGrid — selection and aria', () => {
         expect(onSelectPad).toHaveBeenCalledWith(2);
     });
 
+    it('fires onSelectPad and onTriggerPad during full mouse cycle in normal mode', () => {
+        const onSelectPad = vi.fn();
+        const onTriggerPad = vi.fn();
+        const pads = Array.from({ length: 4 }, (_, index) => makePad(index));
+        render(<PadGrid pads={pads} selectedIndex={0} onSelectPad={onSelectPad} onTriggerPad={onTriggerPad} />);
+        const pad2 = screen.getByRole('button', { name: /trigger p2/i });
+        fireEvent.mouseDown(pad2, { button: 0 });
+        fireEvent.mouseUp(pad2);
+        fireEvent.click(pad2);
+        expect(onTriggerPad).toHaveBeenCalledWith(2);
+        expect(onSelectPad).toHaveBeenCalledWith(2);
+    });
+
     it('shows aria-pressed true on the selected pad', () => {
         const pads = Array.from({ length: 4 }, (_, index) => makePad(index));
         render(<PadGrid pads={pads} selectedIndex={1} onSelectPad={vi.fn()} onTriggerPad={vi.fn()} />);
@@ -177,7 +190,7 @@ describe('PadGrid — 16 Levels mode', () => {
         expect(screen.getByText(level15)).toBeTruthy();
     });
 
-    it('triggers pad and does not fire onSelectPad on pad click when sixteenLevelsTarget is set', () => {
+    it('triggers exactly once on a pure synthetic click in 16-levels mode', () => {
         const onSelectPad = vi.fn();
         const onTriggerPad = vi.fn();
         const pads = Array.from({ length: 16 }, (_, index) => makePad(index));
@@ -195,7 +208,60 @@ describe('PadGrid — 16 Levels mode', () => {
         fireEvent.click(pad2);
 
         expect(onSelectPad).not.toHaveBeenCalled();
+        expect(onTriggerPad).toHaveBeenCalledTimes(1);
         expect(onTriggerPad).toHaveBeenCalledWith(2);
+    });
+
+    it('triggers exactly once during a full mouse click cycle in 16-levels mode', () => {
+        const onTriggerPad = vi.fn();
+        const onReleasePad = vi.fn();
+        const pads = Array.from({ length: 4 }, (_, index) => makePad(index));
+        render(
+            <PadGrid
+                pads={pads}
+                selectedIndex={0}
+                onSelectPad={vi.fn()}
+                onTriggerPad={onTriggerPad}
+                onReleasePad={onReleasePad}
+                sixteenLevelsTarget="tune"
+            />
+        );
+
+        const pad1 = screen.getByRole('button', { name: /trigger level 2/i });
+        fireEvent.mouseDown(pad1, { button: 0 });
+        fireEvent.mouseUp(pad1);
+        fireEvent.click(pad1);
+
+        expect(onTriggerPad).toHaveBeenCalledTimes(1);
+        expect(onTriggerPad).toHaveBeenCalledWith(1);
+        expect(onReleasePad).toHaveBeenCalledTimes(1);
+        expect(onReleasePad).toHaveBeenCalledWith(1);
+    });
+
+    it('triggers exactly once during a Space key cycle in 16-levels mode', () => {
+        const onTriggerPad = vi.fn();
+        const onReleasePad = vi.fn();
+        const pads = Array.from({ length: 4 }, (_, index) => makePad(index));
+        render(
+            <PadGrid
+                pads={pads}
+                selectedIndex={0}
+                onSelectPad={vi.fn()}
+                onTriggerPad={onTriggerPad}
+                onReleasePad={onReleasePad}
+                sixteenLevelsTarget="tune"
+            />
+        );
+
+        const pad2 = screen.getByRole('button', { name: /trigger level 3/i });
+        fireEvent.keyDown(pad2, { key: ' ' });
+        fireEvent.keyUp(pad2, { key: ' ' });
+        fireEvent.click(pad2);
+
+        expect(onTriggerPad).toHaveBeenCalledTimes(1);
+        expect(onTriggerPad).toHaveBeenCalledWith(2);
+        expect(onReleasePad).toHaveBeenCalledTimes(1);
+        expect(onReleasePad).toHaveBeenCalledWith(2);
     });
 
     it('omits aria-pressed in 16-levels mode', () => {
