@@ -10,11 +10,10 @@ export type ReplaceCrdtDocInput = {
 };
 
 /**
- * Replace the CRDT document stored under `id` with a new Automerge doc.
- *
- * Used during sync reconciliation when the local doc has been merged with
- * an incoming remote doc and the merged result needs to become the new
- * canonical snapshot.
+ * Replace the CRDT document stored under `id` with a new Automerge doc, moving the document
+ * identity epoch — a membership or lineage change: branch fork/switch/transition, snapshot
+ * restore, or project load. A sync merge or rollback that stays on the stored doc's own lineage
+ * uses `replaceCrdtDocInLineage` instead, which leaves the identity epoch unchanged.
  */
 export function replaceCrdtDoc(input: ReplaceCrdtDocInput): void {
     automergeRepository.replaceDoc(input.id, input.doc);

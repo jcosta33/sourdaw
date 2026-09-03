@@ -136,6 +136,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     removeCrdtDoc: vi.fn(),
     replaceBranchState: vi.fn(),
     replaceCrdtDoc: vi.fn(),
+    replaceCrdtDocInLineage: vi.fn(),
     resetCrdtProjectAuthority: mockResetCrdtProjectAuthority,
     restoreBranchStateAfterSession: vi.fn(),
     runCrdtPersistenceBarrier: vi.fn(),

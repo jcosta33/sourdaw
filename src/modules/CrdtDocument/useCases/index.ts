@@ -41,6 +41,7 @@ export { setupProjectionBridge } from './projection/setupProjectionBridge';
 export { removeCrdtDoc } from './removeCrdtDoc';
 export { resetCrdtProjectAuthority } from './resetCrdtProjectAuthority';
 export { replaceCrdtDoc } from './replaceCrdtDoc';
+export { replaceCrdtDocInLineage } from './replaceCrdtDocInLineage';
 export { sanitizeIncomingCrdtDocument } from './sanitizeIncomingCrdtDocument';
 export { initBranchState } from './initBranchState';
 export { preserveBranchStateForSession } from './preserveBranchStateForSession';
