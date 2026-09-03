@@ -11,7 +11,10 @@ import {
 } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
-import { MISSING_EXACT_CHECKPOINT_RECOVERY_REASON } from '../../models/GetPendingEffectRecoveryPolicy';
+import {
+    GENERIC_SECTION_RENDER_RECOVERY_REASON,
+    MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+} from '../../models/GetPendingEffectRecoveryPolicy';
 import { agentRunStore, readAgentRunState } from '../../stores/agentRunStore';
 import { selectAgentRunPendingEffectRecoveries } from '../../stores/selectAgentRunPendingEffectRecoveries';
 import { normalizeAgentFailure } from '../agentErrorAndSaga';
@@ -305,13 +308,13 @@ describe('recordAgentRunReceiptSaga', () => {
     });
 
     it('binds the committed revision into a render-only continuation and clears its generic reason', async () => {
-        const renderEffect = {
+        const renderEffect: PendingEffect = {
             commandId: STEM_COMMAND.commandId,
-            kind: 'external-effect' as const,
+            kind: 'external-effect',
             operation: 'renderProjectSections',
             reason: 'renderer unavailable',
-            remediation: 'reconcile' as const,
-            state: 'pending' as const,
+            remediation: 'reconcile',
+            state: 'pending',
         };
 
         recordAgentRunReceiptSaga({
@@ -343,13 +346,13 @@ describe('recordAgentRunReceiptSaga', () => {
     });
 
     it('keeps a generic continuation on manual repair without binding a committed revision', async () => {
-        const deviceEffect = {
+        const deviceEffect: PendingEffect = {
             commandId: DEVICE_COMMAND.commandId,
-            kind: 'external-effect' as const,
+            kind: 'external-effect',
             operation: DEVICE_COMMAND.operation,
             reason: 'arrangement event bus is offline',
-            remediation: 'reconcile' as const,
-            state: 'pending' as const,
+            remediation: 'reconcile',
+            state: 'pending',
         };
 
         recordAgentRunReceiptSaga({
@@ -367,6 +370,49 @@ describe('recordAgentRunReceiptSaga', () => {
             effects: [deviceEffect],
             recovery: 'manual-repair',
             lastError: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+        });
+        expect(continuation).not.toHaveProperty('sourceRevision');
+    });
+
+    it('withholds the bound revision from a mixed render and non-render batch', async () => {
+        const renderEffect: PendingEffect = {
+            commandId: STEM_COMMAND.commandId,
+            kind: 'external-effect',
+            operation: 'renderProjectSections',
+            reason: 'renderer unavailable',
+            remediation: 'reconcile',
+            state: 'pending',
+        };
+        const deviceEffect: PendingEffect = {
+            commandId: DEVICE_COMMAND.commandId,
+            kind: 'external-effect',
+            operation: DEVICE_COMMAND.operation,
+            reason: 'arrangement event bus is offline',
+            remediation: 'reconcile',
+            state: 'pending',
+        };
+        const receipt = await createReceipt([renderEffect, deviceEffect]);
+
+        expect(() =>
+            recordAgentRunReceiptSaga({
+                runId: 'run-agent-effects',
+                receipt,
+                actions: ACTIONS,
+                committedRevision: BASE_REVISION,
+                completesRun: true,
+                commandBatch: COMMAND_BATCH,
+            })
+        ).not.toThrow();
+
+        const continuation = agentRunLifecycle.get('run-agent-effects')?.pendingEffectContinuations[0];
+        expect(continuation).toMatchObject({
+            batchId: 'batch-agent-effects',
+            effects: [renderEffect, deviceEffect],
+            recovery: 'manual-repair',
+            // The batch is not render-only, so the revision stays unbound; the effect list still
+            // contains a section-render effect, which is what earns the generic reason here
+            // rather than the missing-checkpoint one a render-free mixed batch would get.
+            lastError: GENERIC_SECTION_RENDER_RECOVERY_REASON,
         });
         expect(continuation).not.toHaveProperty('sourceRevision');
     });

@@ -285,6 +285,124 @@ describe('agentRunLifecycle', () => {
         ]);
     });
 
+    it('withdraws the bound source revision from a preserved-effects escalation', () => {
+        const runId = 'run-preserve-effects';
+        const batchId = 'batch-preserve-effects';
+        const committedRevision = 'revision-preserve-effects-committed';
+        const receiptIdentity = `2:${runId}:${batchId}:partially-committed`;
+        const authority = {
+            projectId: 'project-preserve-effects',
+            baseRevision: 'revision-preserve-effects-created',
+            scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+            grants: {
+                allowedOperationPrefixes: ['renderProjectSections'],
+                create: false,
+                delete: false,
+                routing: false,
+                tempo: false,
+                master: false,
+                file: true,
+                audioUpload: false,
+                remoteGeneration: false,
+                autoCommit: true,
+            },
+            budgets: {
+                maxCommands: 1,
+                maxCreatedTracks: 0,
+                maxDeletedObjects: 0,
+                maxAffectedTracks: 0,
+                maxAffectedClips: 0,
+                maxAutomationPoints: 0,
+                maxImportedAssets: 0,
+                maxRenderJobs: 1,
+            },
+        };
+        const renderEffect: AgentRunPendingEffect = {
+            commandId: 'command-preserve-effects',
+            kind: 'external-effect',
+            operation: 'renderProjectSections',
+            reason: 'renderer unavailable',
+            remediation: 'reconcile',
+            state: 'pending',
+        };
+
+        agentRunLifecycle.create({
+            runId,
+            request: 'Render the retained section.',
+            mode: 'macro',
+            createdRevision: 'revision-preserve-effects-created',
+            createdAt: 1,
+        });
+        agentRunLifecycle.recordCommittedWork({
+            runId,
+            workId: batchId,
+            receiptIdentity,
+            committedRevision,
+            completesRun: false,
+            committedAt: 2,
+        });
+        agentRunLifecycle.recordPendingEffectContinuation({
+            runId,
+            continuation: {
+                authority,
+                batchId,
+                effects: [renderEffect],
+                lastError: null,
+                receiptIdentity,
+                recovery: 'reconcile-batch',
+                serializedBatch: '{"batch":"preserve-effects"}',
+                sourceRevision: committedRevision,
+            },
+            recordedAt: 3,
+        });
+
+        expect(agentRunLifecycle.get(runId)?.pendingEffectContinuations).toEqual([
+            {
+                authority,
+                batchId,
+                effects: [renderEffect],
+                lastError: null,
+                receiptIdentity,
+                recovery: 'reconcile-batch',
+                serializedBatch: '{"batch":"preserve-effects"}',
+                sourceRevision: committedRevision,
+            },
+        ]);
+
+        agentRunLifecycle.requirePendingEffectManualRepair({
+            runId,
+            batchId,
+            reason: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+            preserveEffects: true,
+            requiredAt: 4,
+        });
+
+        const expectedContinuation = {
+            authority,
+            batchId,
+            effects: [renderEffect],
+            lastError: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+            receiptIdentity,
+            recovery: 'manual-repair' as const,
+            serializedBatch: '{"batch":"preserve-effects"}',
+        };
+
+        expect(agentRunLifecycle.get(runId)?.pendingEffectContinuations).toEqual([expectedContinuation]);
+        expect(agentRunLifecycle.getPendingEffectRecovery({ runId, batchId })).toEqual({
+            ...expectedContinuation,
+            runId,
+            checkpoint: 'durable',
+        });
+        expect(selectAgentRunPendingEffectRecoveries(readAgentRunState())).toEqual([
+            expect.objectContaining({
+                runId,
+                batchId,
+                recovery: 'manual-repair',
+                lastError: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
+            }),
+        ]);
+    });
+
     it('accepts a late manual-repair request only after the exact batch review is settled', () => {
         createRenderReviewRun();
         const continuation = agentRunLifecycle.get('run-render-review')?.pendingEffectContinuations[0];
