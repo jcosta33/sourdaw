@@ -318,6 +318,7 @@ const prMergeControl = stepNamed(prSecrets, 'Validate PR merge diff secret scann
 const prMergeControlRun = prMergeControl?.run ?? '';
 const TOKEN_PATTERN = /GITHUB_TOKEN|GH_TOKEN|github\.token|\$\{\{\s*secrets\./iu;
 const secrets = heavyWorkflow.jobs?.secrets;
+const heavyCodeql = heavyWorkflow.jobs?.codeql;
 const unit = validationWorkflow.jobs?.unit;
 const e2e = heavyWorkflow.jobs?.e2e;
 const nightlyUnit = nightly.jobs?.unit;
@@ -350,6 +351,7 @@ const nightlyReportCheckout = stepNamed(nightlyReport, 'Checkout');
 const nightlyReportStep = stepNamed(nightlyReport, 'Open or update the nightly failure issue');
 const nightlyReportRun = nightlyReportStep?.run ?? '';
 const gateRun = stepNamed(gate, 'Require every job to have succeeded or been skipped')?.run ?? '';
+const heavyGateRun = stepNamed(heavyGate, 'Require every job to have succeeded or been skipped')?.run ?? '';
 const gateNeeds = gate?.needs ?? [];
 // One entry, because the validation lane is one reusable workflow now. A
 // `uses:` job reports failure when any job inside it failed, so the summary is
@@ -452,7 +454,7 @@ for (const [file, parsed] of [['health-gates.yml', workflow], ['heavy-gates.yml'
 }
 expect(
     heavyWorkflow.jobs?.validation?.if === "github.event.review.state == 'approved'",
-    'the heavy validation lane must refuse non-approved reviews, which mint nothing on the head'
+    'the heavy validation lane must refuse non-approved reviews, which may mint no green verdict on the head'
 );
 expect(
     workflow.jobs?.validation?.if === undefined,
@@ -620,6 +622,11 @@ expect(
     prMergeControl?.['working-directory'] === '${{ github.workspace }}',
     'merge-diff positive control must run outside the untrusted checkout'
 );
+expect(
+    heavyCodeql?.if ===
+        "needs.validation.outputs.heavy == 'true' && github.event.pull_request.head.repo.full_name == github.repository",
+    'CodeQL must refuse fork pull requests, whose read-only token cannot write the SARIF result'
+);
 expect(secrets?.if === "needs.validation.outputs.heavy == 'true'", 'secrets job must remain on the heavy path');
 expect(nightlySecrets?.if === "needs.decide.outputs.heavy == 'true'", 'nightly secrets job must remain on the heavy path');
 expect(/^actions\/checkout@[0-9a-f]{40}$/u.test(trustedCheckout?.uses ?? ''), 'trusted scanner checkout action must be pinned to a full commit SHA');
@@ -777,6 +784,18 @@ expect(
     unitRun === 'pnpm run test:run --shard=${{ matrix.shard }}/4',
     'unit shard must use explicit pnpm run so the wrapper receives only the Vitest shard argument'
 );
+expect(
+    e2eRunStep?.run === 'pnpm test:e2e --shard=${{ matrix.shard }}/12 --reporter=blob',
+    'end-to-end shard must keep its twelve-way split and blob reporter so the merged report observes every shard'
+);
+expect(
+    stepNamed(nightlyUnit, 'Run shard')?.run === 'pnpm run test:run --shard=${{ matrix.shard }}/4',
+    'nightly unit shard must use explicit pnpm run so the wrapper receives only the Vitest shard argument'
+);
+expect(
+    stepNamed(nightlyE2e, 'Run shard')?.run === 'pnpm test:e2e --shard=${{ matrix.shard }}/12 --reporter=blob',
+    'nightly end-to-end shard must keep its twelve-way split and blob reporter so the merged report observes every shard'
+);
 const shardFailureCondition = "${{ !cancelled() && steps.run_shard.outcome == 'failure' }}";
 expect(
     unit?.['continue-on-error'] === undefined,
@@ -877,6 +896,13 @@ expect(
         gateRun.includes('exit 1') &&
         gateRun.includes("printf 'every job succeeded or was skipped\\n'"),
     'Gate must keep rejecting failed dependencies while accepting successful or skipped dependencies'
+);
+expect(
+    heavyGateRun.includes('select(.value.result != "success" and .value.result != "skipped")') &&
+        heavyGateRun.includes('if [ -n "$failed" ]; then') &&
+        heavyGateRun.includes('exit 1') &&
+        heavyGateRun.includes("printf 'every job succeeded or was skipped\\n'"),
+    'HeavyGate must keep rejecting failed dependencies while accepting successful or skipped dependencies'
 );
 // The daily web train. It is the only route to production now that the Vercel
 // Git integration is off, so what it refuses to deploy from matters as much as

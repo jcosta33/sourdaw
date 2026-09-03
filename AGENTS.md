@@ -508,10 +508,14 @@ current head actually addresses it. A new head needs a new review.
 
 Before merge the orchestrator does its own final check on the current head: read the diff, confirm
 the change does what it was specified to do, that a test observes what its name claims, and that
-every accepted finding is actually addressed there rather than silenced. No leg is softened any
-more, so a red suite reports as a red `Gate` rather than as a warning annotation, and `Gate` is
-required — a failure now blocks the merge instead of merely informing it. That raises rather than
-lowers what the orchestrator owes: a green `Gate` says the gates passed, not that the change does
+every accepted finding is actually addressed there rather than silenced. On the push lane no leg
+is softened any more, so a red suite there reports as a red `Gate` rather than as a warning
+annotation, and `Gate` is required — a failure in that lane now blocks the merge instead of
+merely informing it. The heavy-lane suites — the end-to-end matrix, the Browser AI admission,
+CodeQL, and the secret scan — report into `HeavyGate`, which is deliberately not
+ruleset-required: they inform the merge rather than block it until `deliver`'s required-CI
+admission arms. That raises rather than lowers what the orchestrator owes: a green `Gate` says
+the gates passed, not that the change does
 what it was specified to do, that a test observes what its name claims, or that a finding was
 addressed rather than silenced. Read the diff for those. An unexplained failure is still attributed
 to the change, or to a named pre-existing defect and filed. The checks are the pipeline's job, not a

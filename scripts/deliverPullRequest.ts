@@ -506,8 +506,9 @@ function unretiredFailedCheckRun(checkRuns: HeadCheckRun[]): HeadCheckRun | unde
  * conclusion and a still-running rerun decide nothing, so reading either as the newer word would
  * drop a real failure out of the evidence — the one direction this rule must never move.
  * health-gates.yml no longer subscribes to `pull_request_review`, and the heavy workflow's
- * validation lane runs only on approved reviews, so a non-approved review event mints no checks
- * on the head; a skipped later attempt from any other path would still be the same shape. Were a
+ * validation lane runs only on approved reviews, so a non-approved review event mints only
+ * skipped check runs on the head — no green verdict, and a skip never retires a failure here;
+ * a skipped later attempt from any other path would still be the same shape. Were a
  * skip allowed to retire, it would stamp a fresh non-verdict over a genuine failing execution and
  * the head would merge.
  *

@@ -20,6 +20,12 @@ const REVIEW_CONDITION = "github.event_name != 'pull_request_review' || github.e
 const APPROVED_REVIEW_CONDITION = "github.event.review.state == 'approved'";
 const HEAVY_OUTPUT_REFERENCE = '${{ steps.scope.outputs.heavy }}';
 const HEAVY_CONDITION = "needs.validation.outputs.heavy == 'true'";
+// An approved review of a fork pull request runs with a read-only
+// GITHUB_TOKEN, and the code-scanning upload carve-out covers only the
+// `pull_request` event, so the SARIF upload would be refused and fail the run
+// on the head. The fork's code is scanned by the nightly once it merges.
+const HEAVY_SARIF_CONDITION =
+    "needs.validation.outputs.heavy == 'true' && github.event.pull_request.head.repo.full_name == github.repository";
 const FORCED_SCOPE_OUTPUTS = {
     heavy: 'true',
     rust: 'true',
@@ -787,8 +793,13 @@ function assertJobGraph(set: WorkflowSet): void {
     if (stepNamed(dependencyReview, 'Review dependency changes').uses !== DEPENDENCY_REVIEW_ACTION) {
         throw new Error('dependency review action must remain pinned');
     }
-    if (jobAt(set.heavy, 'codeql').if !== HEAVY_CONDITION || jobAt(set.heavy, 'secrets').if !== HEAVY_CONDITION) {
-        throw new Error('security scans must consume the heavy scope output');
+    if (jobAt(set.heavy, 'codeql').if !== HEAVY_SARIF_CONDITION) {
+        throw new Error(
+            'the CodeQL upload must refuse fork pull requests, whose read-only token cannot write the SARIF result'
+        );
+    }
+    if (jobAt(set.heavy, 'secrets').if !== HEAVY_CONDITION) {
+        throw new Error('the secret scan must consume the heavy scope output');
     }
     if (jobAt(set.heavy, 'codeql').needs !== 'validation' || jobAt(set.heavy, 'secrets').needs !== 'validation') {
         throw new Error('security scans must depend on the validation call that publishes the scope');
@@ -807,7 +818,7 @@ function assertJobGraph(set: WorkflowSet): void {
     // `Validation / …` check run beside the push lane's. The push lane's own
     // caller stays unconditional — it is the run that mints `Gate`.
     if (jobAt(set.heavy, 'validation').if !== APPROVED_REVIEW_CONDITION) {
-        throw new Error('the heavy validation lane must refuse non-approved reviews, which mint nothing');
+        throw new Error('the heavy validation lane must refuse non-approved reviews, which may mint no green verdict');
     }
     if (jobAt(set.health, 'validation').if !== undefined) {
         throw new Error('the health validation lane must run on every pull request');
@@ -1120,18 +1131,18 @@ function assertDeployOutsideSummaries(set: WorkflowSet): void {
     }
 }
 
-function assertGateContract(candidate: UnknownRecord): string {
-    const gate = jobAt(candidate, 'gate');
-    if (gate.name !== 'Gate' || gate.if !== GATE_CONDITION) {
-        throw new Error('the Gate job must always report under its stable name');
+function assertGateContract(candidate: UnknownRecord, jobId: string, expectedName: string, expectedIf: string): string {
+    const gate = jobAt(candidate, jobId);
+    if (gate.name !== expectedName || gate.if !== expectedIf) {
+        throw new Error(`the ${expectedName} job must always report under its stable name`);
     }
     const step = stepNamed(gate, 'Require every job to have succeeded or been skipped');
     if (recordAt(step, 'env').RESULTS !== '${{ toJSON(needs) }}') {
-        throw new Error('gate must receive all dependency results through its environment');
+        throw new Error(`${jobId} must receive all dependency results through its environment`);
     }
     const script = stringAt(step, 'run');
     if (!script.includes('.value.result != "success" and .value.result != "skipped"')) {
-        throw new Error('gate must reject every result other than success or skipped');
+        throw new Error(`${jobId} must reject every result other than success or skipped`);
     }
     return script;
 }
@@ -1564,13 +1575,21 @@ describe('health gates workflow contract', () => {
         ungatedNeeds.splice(ungatedNeeds.indexOf('validation'), 1);
         expect(() => assertJobGraph(ungatedValidation)).toThrow('gate must depend on validation');
 
-        // A review that does not approve must mint nothing: drop the predicate
-        // and the reusable lane runs on every submission, landing its skipped
-        // legs on the head as `Validation / …` check runs.
+        // A review that does not approve may mint no green verdict: drop the
+        // predicate and the reusable lane runs on every submission, landing
+        // its skipped legs on the head as `Validation / …` check runs.
         const ungatedReviewLane = cloneWorkflows('ungated review lane');
         delete jobAt(ungatedReviewLane.heavy, 'validation').if;
         expect(() => assertJobGraph(ungatedReviewLane)).toThrow(
-            'the heavy validation lane must refuse non-approved reviews, which mint nothing'
+            'the heavy validation lane must refuse non-approved reviews, which may mint no green verdict'
+        );
+
+        // A fork's approved review runs with a read-only token, so a CodeQL
+        // job gated only on scope would fail its SARIF upload on the head.
+        const forkBlindCodeql = cloneWorkflows('fork-blind codeql');
+        jobAt(forkBlindCodeql.heavy, 'codeql').if = HEAVY_CONDITION;
+        expect(() => assertJobGraph(forkBlindCodeql)).toThrow(
+            'the CodeQL upload must refuse fork pull requests, whose read-only token cannot write the SARIF result'
         );
 
         const gatedPushLane = cloneWorkflows('gated push lane');
@@ -1846,14 +1865,37 @@ describe('health gates workflow contract', () => {
     });
 
     it('requires every gate dependency to have succeeded or been skipped', () => {
-        const gateScript = assertGateContract(workflow);
+        const gateScript = assertGateContract(workflow, 'gate', 'Gate', GATE_CONDITION);
         expect(runResultsGuard(gateScript, needsResults(workflow, 'gate', 'success'))).toBe(0);
         expect(runResultsGuard(gateScript, needsResults(workflow, 'gate', 'skipped'))).toBe(0);
         expect(runResultsGuard(gateScript, needsResults(workflow, 'gate', 'failure'))).not.toBe(0);
         expect(runResultsGuard(gateScript, needsResults(workflow, 'gate', 'cancelled'))).not.toBe(0);
         const renamedGate = asRecord(structuredClone(workflow), 'renamed gate workflow');
         jobAt(renamedGate, 'gate').name = 'Health summary';
-        expect(() => assertGateContract(renamedGate)).toThrow('the Gate job must always report under its stable name');
+        expect(() => assertGateContract(renamedGate, 'gate', 'Gate', GATE_CONDITION)).toThrow(
+            'the Gate job must always report under its stable name'
+        );
+
+        const heavyGateScript = assertGateContract(heavyWorkflow, 'heavy-gate', 'HeavyGate', HEAVY_GATE_CONDITION);
+        expect(runResultsGuard(heavyGateScript, needsResults(heavyWorkflow, 'heavy-gate', 'success'))).toBe(0);
+        expect(runResultsGuard(heavyGateScript, needsResults(heavyWorkflow, 'heavy-gate', 'skipped'))).toBe(0);
+        expect(runResultsGuard(heavyGateScript, needsResults(heavyWorkflow, 'heavy-gate', 'failure'))).not.toBe(0);
+        expect(runResultsGuard(heavyGateScript, needsResults(heavyWorkflow, 'heavy-gate', 'cancelled'))).not.toBe(0);
+        // The required Gate never sees the heavy jobs, so this filter is the
+        // only thing that refuses their failures: a weakened one would report
+        // a red heavy leg as a passing summary.
+        const weakenedHeavyFilter = asRecord(structuredClone(heavyWorkflow), 'weakened heavy filter heavyWorkflow');
+        const weakenedStep = stepNamed(
+            jobAt(weakenedHeavyFilter, 'heavy-gate'),
+            'Require every job to have succeeded or been skipped'
+        );
+        weakenedStep.run = stringAt(weakenedStep, 'run').replace(
+            '.value.result != "success" and .value.result != "skipped"',
+            '.value.result == "cancelled"'
+        );
+        expect(() => assertGateContract(weakenedHeavyFilter, 'heavy-gate', 'HeavyGate', HEAVY_GATE_CONDITION)).toThrow(
+            'heavy-gate must reject every result other than success or skipped'
+        );
     });
 
     it('runs a trusted, credentialless scanner over the untrusted target history', () => {
