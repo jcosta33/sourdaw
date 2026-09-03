@@ -32,8 +32,8 @@ own release mirror implements only the playhead half of the engine's `proven_pop
 half — carried stamps released two wraps post-echo when the start frame precedes the span end
 frame — is missing, so a step one poll interval below the loop end is never mirrored as released.
 Reproduced by simulation (30 of 60 passes frozen with a step 1 ms below the loop end) and by a
-lane-run probe of the starvation spec with its last step set one poll interval below the loop end,
-frozen by pass 8. The open #3437 repairs the clip, and its outstanding review round covers the
+lane-run probe of the starvation spec with its last step at 3.9999 (0.1 ms below the 4.0 s loop
+end), frozen by pass 8. The open #3437 repairs the clip, and its outstanding review round covers the
 mirror gap.
 
 Blind spot: the mirror was checked against the half of the law the failing test exercised, not the
