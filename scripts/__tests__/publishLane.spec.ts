@@ -1094,6 +1094,18 @@ describe('lane publish', () => {
         expect(calls.some((call) => call.startsWith('edit:'))).toBe(false);
     });
 
+    it('refuses a summary containing an unexpected closing reference naming the offending phrase and rule', () => {
+        const { port, calls } = fakePort();
+
+        expect(() => publishLane(12, port, undefined, TEST_INSTRUCTIONS, 'Addresses defect (closes #2174)')).toThrow(
+            'pull-request body contains unexpected issue-closing references ("closes #2174"). ' +
+                'GitHub closing keywords (close, fix, resolve #<issue>) in pull-request descriptions auto-close issues on merge; ' +
+                'remove the keyword from prose or rephrase.'
+        );
+        expect(calls.some((call) => call.startsWith('push:'))).toBe(false);
+        expect(calls.some((call) => call.startsWith('create:'))).toBe(false);
+    });
+
     it.each(REFUSED_PUBLISH_CASES)('refuses %s', (_case, input, message) => {
         const { port, calls } = fakePort(input);
 
