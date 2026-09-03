@@ -392,7 +392,7 @@ function fetchBranchTip(name: string, gh: Gh): string | undefined {
     return ref.target.oid;
 }
 
-function deleteRemoteBranch(name: string, gh: Gh): DeleteOutcome {
+export function deleteRemoteBranch(name: string, gh: Gh): DeleteOutcome {
     const path = `repos/${REQUIRED_REPOSITORY}/git/refs/heads/${encodeBranchRefPath(name)}`;
     try {
         gh(['api', '-X', 'DELETE', path]);

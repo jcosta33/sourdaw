@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
+import { REQUIRED_REPOSITORY } from '../githubAppIdentity.ts';
 import {
     classifyRemoteBranch,
+    deleteRemoteBranch,
     encodeBranchRefPath,
     parsePruneRemoteBranchesArgs,
     pruneRemoteBranches,
@@ -294,5 +296,71 @@ describe('pruneRemoteBranches', () => {
         expect(deleteCalls).toEqual(['alpha', 'gamma']);
         expect(lines).toContain('already gone beta');
         expect(lines).toContain('deleted 2, already gone 1, kept at re-check 0, remaining spent 0');
+    });
+
+    it('should keep a branch whose re-check pull requests already match its moved tip, since classifyRemoteBranch alone cannot see the plan-time tip', () => {
+        // The plan classifies this branch as spent at tip-a. By delete time the branch has moved to
+        // tip-b, and (unlike the "still say spent for the old tip" case above) the fresh pull-request
+        // data has also caught up: it now reports a PR head at tip-b, so classifyRemoteBranch({ tip:
+        // tip-b }, freshPullRequests) alone answers 'spent' too. Only comparing freshTip against the
+        // plan-time branch.tip catches that the ref moved after the plan was taken, which is exactly
+        // what the `|| tipMoved` guard exists to do; deleting `|| tipMoved` makes this test fail.
+        const target = branch('rebased', 'tip-a');
+        const planPullRequests = [mergedPr(42, 'tip-a')];
+        const recheckPullRequests = [mergedPr(42, 'tip-b')];
+        let pullRequestCalls = 0;
+        const { port, deleteCalls } = fakePort({
+            branches: [target],
+            pullRequestsFor: (names) => {
+                pullRequestCalls += 1;
+                return new Map(
+                    names.map((name) => [name, pullRequestCalls === 1 ? planPullRequests : recheckPullRequests])
+                );
+            },
+            branchTip: () => 'tip-b',
+        });
+        const { log, lines } = collectingLog();
+        const code = pruneRemoteBranches(applyArgs(), port, log);
+        expect(code).toBe(0);
+        expect(deleteCalls).toEqual([]);
+        expect(lines).toContain('kept rebased: moved at re-check');
+    });
+});
+
+describe('deleteRemoteBranch', () => {
+    it('should resolve already-gone when the runner throws an HTTP 422 Reference-does-not-exist error', () => {
+        const runner = (): string => {
+            throw new Error('gh: Reference does not exist (HTTP 422)');
+        };
+        expect(deleteRemoteBranch('gone-branch', runner)).toBe('already-gone');
+    });
+
+    it('should reject with an error naming the branch and carrying the original error as cause on any other failure', () => {
+        const original = new Error('gh: some other failure (HTTP 404)');
+        const runner = (): string => {
+            throw original;
+        };
+        let caught: unknown;
+        try {
+            deleteRemoteBranch('missing-branch', runner);
+        } catch (error) {
+            caught = error;
+        }
+        expect(caught).toBeInstanceOf(Error);
+        expect((caught as Error).message).toContain('missing-branch');
+        expect((caught as Error).cause).toBe(original);
+    });
+
+    it('should delete via gh api -X DELETE at the percent-encoded ref path and return deleted', () => {
+        const calls: string[][] = [];
+        const runner = (args: string[]): string => {
+            calls.push(args);
+            return '';
+        };
+        const outcome = deleteRemoteBranch('feature/my branch', runner);
+        expect(outcome).toBe('deleted');
+        expect(calls).toEqual([
+            ['api', '-X', 'DELETE', `repos/${REQUIRED_REPOSITORY}/git/refs/heads/feature/my%20branch`],
+        ]);
     });
 });
