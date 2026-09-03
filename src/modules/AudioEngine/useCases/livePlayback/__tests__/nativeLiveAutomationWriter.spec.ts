@@ -36,7 +36,11 @@ import { type EngineTransportPosition } from '../../../models/EngineTransportPos
 import { armNativeLiveAutomationWriter } from '../armNativeLiveAutomationWriter';
 import { disarmNativeLiveAutomationWriter } from '../disarmNativeLiveAutomationWriter';
 import { nativeEnginePlayheadFeed, pollNativeEnginePlayheadOnce } from '../nativeEnginePlayheadFeedState';
-import { AUTOMATION_QUEUE_CAPACITY, nativeLiveAutomationWriter } from '../nativeLiveAutomationWriterState';
+import {
+    AUTOMATION_QUEUE_CAPACITY,
+    SEAMS_PROVING_A_WHOLE_PASS,
+    nativeLiveAutomationWriter,
+} from '../nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
 import { pumpNativeLiveAutomationWriter } from '../pumpNativeLiveAutomationWriter';
 import { repositionNativeLiveGraphSession } from '../repositionNativeLiveGraphSession';
@@ -71,7 +75,12 @@ vi.mock('../readLiveAutomationWrites', () => ({
             .map((entry) => {
                 const inside = (entry.writes as AudioGraphParameterWrite[]).filter((write) => {
                     const at = write.shape === 'ramp-to' ? write.startTime : write.time;
-                    return at >= input.regionStartSeconds && at < input.regionEndSeconds;
+                    // The producer's own clip is end-inclusive: a step landing
+                    // exactly on the window end is emitted
+                    // (`compileAutomationEvents`), so the double must hand one
+                    // through too — which is exactly the write the seam clip
+                    // answers for.
+                    return at >= input.regionStartSeconds && at <= input.regionEndSeconds;
                 });
                 // The compiler's leading `set`: whatever else a span carries, it
                 // opens by establishing the value the lane holds where it starts.
@@ -186,14 +195,16 @@ function deferApply(): { settle: (result: AudioGraphApplyResult) => void } {
     return { settle: (result) => settle(result) };
 }
 
-type QueuedStamp = { startFrame: number; landFrame: number };
+type QueuedStamp = { startFrame: number; landFrame: number; seamAnchor: number | null };
 
 /**
  * The engine's ledger, on this side of the wire: `QueueBudgets` from
- * `graph.rs`. A stamp releases when the echoed playhead has passed its start
- * frame (`proven_popped`), a write that is not a step first drops every stamp
- * landing at or after its own start (`RampedParam::cancel_stale`), and a batch
- * that would take a parameter past the capacity refuses whole.
+ * `graph.rs`. A stamp releases on either half of `proven_popped` — the echoed
+ * playhead passing its start frame, or `SEAMS_PROVING_A_WHOLE_PASS` seams
+ * closing since the wrap count the stamp anchored at with its start frame
+ * below the last wrap frame — a write that is not a step first drops every
+ * stamp landing at or after its own start (`RampedParam::cancel_stale`), and a
+ * batch that would take a parameter past the capacity refuses whole.
  */
 function engineQueueBackend(): { apply: (batch: AudioGraphCommandBatch) => Promise<AudioGraphApplyResult> } {
     const queues = new Map<string, QueuedStamp[]>();
@@ -203,7 +214,16 @@ function engineQueueBackend(): { apply: (batch: AudioGraphCommandBatch) => Promi
             for (const [key, stamps] of queues) {
                 queues.set(
                     key,
-                    stamps.filter((stamp) => stamp.startFrame >= echoFrame)
+                    stamps.filter((stamp) => {
+                        if (stamp.startFrame < echoFrame) {
+                            return false;
+                        }
+                        stamp.seamAnchor ??= engineEchoWraps;
+                        return !(
+                            engineEchoWraps - stamp.seamAnchor >= SEAMS_PROVING_A_WHOLE_PASS &&
+                            stamp.startFrame < engineEchoLastWrapFrame
+                        );
+                    })
                 );
             }
             const charged = new Map([...queues].map(([key, stamps]): [string, QueuedStamp[]] => [key, [...stamps]]));
@@ -223,18 +243,31 @@ function engineQueueBackend(): { apply: (batch: AudioGraphCommandBatch) => Promi
                 if (surviving.length === AUTOMATION_QUEUE_CAPACITY) {
                     return Promise.resolve(QUEUE_FULL);
                 }
-                charged.set(key, [...surviving, { startFrame, landFrame }]);
+                charged.set(key, [...surviving, { startFrame, landFrame, seamAnchor: null }]);
             }
             for (const [key, stamps] of charged) {
                 queues.set(key, stamps);
             }
-            return Promise.resolve(APPLIED);
+            // An applied batch is fenced, and this world drains at once: the
+            // fence number the result carries is the count the next snapshot
+            // reports. A refused batch returns above unfenced, the way the
+            // wire omits `admittedBatch` for an outcome the engine never
+            // drains.
+            engineBatches += 1;
+            return Promise.resolve({ ...APPLIED, admittedBatch: engineBatches });
         },
     };
 }
 
 /** What the engine's progress echo would report to the ledger fake. */
 let engineEchoSeconds = 0;
+let engineEchoWraps = 0;
+let engineEchoLastWrapFrame = 0;
+/**
+ * Fenced batches the fake's world has drained — the `batchesApplied` a
+ * snapshot would report, bumped by the ledger fake on every batch it applies.
+ */
+let engineBatches = 0;
 
 beforeEach(() => {
     mocks.apply.mockReset();
@@ -245,6 +278,9 @@ beforeEach(() => {
     mocks.curve = [];
     mocks.exclusions = [];
     engineEchoSeconds = 0;
+    engineEchoWraps = 0;
+    engineEchoLastWrapFrame = 0;
+    engineBatches = 0;
     nativeLiveAutomationWriter.epoch += 1;
     nativeLiveAutomationWriter.inFlightEpoch = null;
     nativeLiveAutomationWriter.pass = null;
@@ -619,19 +655,262 @@ describe('the live automation writer', () => {
         await flush();
 
         engineEchoSeconds = 1.05;
-        await pump(1.05, 0, 1);
+        await pump(1.05, 0, engineBatches);
 
         // The seam. The engine is walking the region again from its start, and
         // everything the pass sent for the stretch it just left is still
         // charged against the parameter's queue.
         engineEchoSeconds = 1.005;
-        await pump(1.005, 1, 1);
+        await pump(1.005, 1, engineBatches);
 
         const refusals = mocks.warn.mock.calls.filter(([message]) => String(message).includes('refused'));
         expect(refusals).toEqual([]);
         // What fits beside what is still queued, and no more: the reopened
         // region establishes its value and steps forward from there.
         expect(writesOf(2)).toEqual([step(1, 0.5), step(1.01, 0.9), step(1.02, 0.8)]);
+    });
+
+    it('drops a step stamped at the loop end rather than starving the lane one dead copy per pass', async () => {
+        // The engine renders frames strictly below the loop end while it wraps
+        // (`render_timeline_spans`), and the wrap is not a locate, so a stamp
+        // on the end frame is never walked past: it sits in the queue
+        // unreleased, every pass resends it, and seven passes later the lane's
+        // whole queue is dead copies of a write that never sounded.
+        const engine = engineQueueBackend();
+        mocks.apply.mockImplementation((batch) => engine.apply(batch));
+        nativeLiveGraphSession.loopRegion = { enabled: true, startSeconds: 2, endSeconds: 4 };
+        nativeLiveGraphSession.loopEnabled = true;
+        mocks.curve = [
+            {
+                target: FADER,
+                opensAt: 0.5,
+                writes: [step(2.5, 0.9), step(2.95, 0.8), step(3.45, 0.7), step(3.95, 0.6), step(4, 0.1)],
+            },
+        ];
+
+        arm(2, 1);
+        await flush();
+
+        // Nine passes — two past the queue's seven usable slots. Each tick's
+        // window holds one write, so the ledger fake's apply-time echo proves
+        // every stamp popped as the playhead passes it, and the last tick
+        // stands past the final interior step so its stamp releases before
+        // the wrap.
+        let wraps = 0;
+        for (let pass = 0; pass < 9; pass++) {
+            for (const at of [2.45, 2.9, 3.4, 3.99]) {
+                engineEchoSeconds = at;
+                await pump(at, wraps, engineBatches);
+            }
+            wraps += 1;
+            engineEchoSeconds = 2.05;
+            await pump(2.05, wraps, engineBatches);
+        }
+
+        const refusals = mocks.warn.mock.calls.filter(([message]) => String(message).includes('refused'));
+        expect(refusals).toEqual([]);
+        const sent = writeBatches().flatMap((commands) => commands.map((command) => command.write));
+        // The end-stamped step never left this side…
+        expect(sent).not.toContainEqual(step(4, 0.1));
+        // …and the lane it would have silenced sounds on every pass: the
+        // opening set once per pass plus the arm's own, each interior step
+        // once per pass walked.
+        expect(sent.filter((write) => write.shape === 'step' && write.time === 2 && write.value === 0.5)).toHaveLength(
+            10
+        );
+        for (const at of [2.5, 2.95, 3.45, 3.95]) {
+            expect(sent.filter((write) => write.shape === 'step' && write.time === at)).toHaveLength(9);
+        }
+        // Nine passes in, the mirror holds only what this pass still owes the
+        // engine: the opening set it just sent, and the last interior step
+        // carried across the seam — anchored at that seam's wrap count until
+        // the playhead passes it again or two further seams prove it. Nothing
+        // stamped at or past the end frame survives a single wrap.
+        expect(nativeLiveAutomationWriter.pass?.targets[0]?.queued).toEqual([
+            {
+                startFrame: Math.round(3.95 * SAMPLE_RATE),
+                landFrame: Math.round(3.95 * SAMPLE_RATE),
+                admittedBatch: 45,
+                seamAnchor: 9,
+            },
+            {
+                startFrame: Math.round(2 * SAMPLE_RATE),
+                landFrame: Math.round(2 * SAMPLE_RATE),
+                admittedBatch: 46,
+                seamAnchor: null,
+            },
+        ]);
+    });
+
+    it('releases a step stamped just below the loop end on the seam proof, so it cannot starve the lane', async () => {
+        // The polled playhead tops out one block below the loop end — the
+        // block that straddles the seam publishes the wrapped position instead
+        // — so a stamp in that last stretch is never behind an echo, and only
+        // the seam half of `proven_popped` can release it: two seams after the
+        // wrap count it anchored at, against the frame the last wrap walked
+        // to. Without that half the mirror charges every pass's copy of the
+        // stamp forever, and seven passes later the lane's whole queue is dead
+        // copies of a write the engine already consumed.
+        const engine = engineQueueBackend();
+        mocks.apply.mockImplementation((batch) => engine.apply(batch));
+        nativeLiveGraphSession.loopRegion = { enabled: true, startSeconds: 2, endSeconds: 4 };
+        nativeLiveGraphSession.loopEnabled = true;
+        mocks.curve = [
+            {
+                target: FADER,
+                opensAt: 0.5,
+                writes: [step(2.5, 0.9), step(2.95, 0.8), step(3.45, 0.7), step(3.95, 0.6), step(3.9999, 0.1)],
+            },
+        ];
+
+        arm(2, 1);
+        await flush();
+
+        // Nine passes, as in the end-stamped starvation spec — but the last
+        // step now sits one window inside the end, so it goes out on every
+        // pass. The ledger fake's echo carries the wrap count and the frame
+        // the wrap walked to, which its seam half releases the stamp on.
+        engineEchoLastWrapFrame = Math.round(4 * SAMPLE_RATE);
+        let wraps = 0;
+        for (let pass = 0; pass < 9; pass++) {
+            for (const at of [2.45, 2.9, 3.4, 3.99]) {
+                engineEchoSeconds = at;
+                engineEchoWraps = wraps;
+                await pump(at, wraps, engineBatches);
+            }
+            wraps += 1;
+            engineEchoSeconds = 2.05;
+            engineEchoWraps = wraps;
+            await pump(2.05, wraps, engineBatches);
+        }
+
+        // The mirror and the ledger release the boundary step on the same
+        // seam, so the engine is never asked for more than it holds.
+        const refusals = mocks.warn.mock.calls.filter(([message]) => String(message).includes('refused'));
+        expect(refusals).toEqual([]);
+        const sent = writeBatches().flatMap((commands) => commands.map((command) => command.write));
+        // The lane sounds on every pass: the opening set once per pass plus
+        // the arm's own, and each interior step — the one inside the boundary
+        // included — once per pass walked.
+        expect(sent.filter((write) => write.shape === 'step' && write.time === 2 && write.value === 0.5)).toHaveLength(
+            10
+        );
+        for (const at of [2.5, 2.95, 3.45, 3.95, 3.9999]) {
+            expect(sent.filter((write) => write.shape === 'step' && write.time === at)).toHaveLength(9);
+        }
+    });
+
+    it('anchors a boundary stamp only at a batch admission, and releases it exactly two seams later', async () => {
+        // The engine's ledger anchors a stamp only from `release_landed`, which
+        // runs only as a batch is admitted, and only once the stamp's own batch
+        // has drained (`proven_popped` returns unproven before the anchor is
+        // read). Between a lane's last admission and the seam the pump runs
+        // release-only ticks — the window is exhausted, nothing is owed — and
+        // an anchor taken there dates the stamp one seam earlier than the
+        // engine can, so the release fires one pass early: the mirror believes
+        // a slot the ledger still charges, admits up to the ceiling, and the
+        // engine refuses the whole batch. This drives that regime: steps in
+        // the open of the region, two stamps one block inside the loop end,
+        // and two ticks of admission silence before every seam.
+        const engine = engineQueueBackend();
+        mocks.apply.mockImplementation((batch) => engine.apply(batch));
+        nativeLiveGraphSession.loopRegion = { enabled: true, startSeconds: 2, endSeconds: 4 };
+        nativeLiveGraphSession.loopEnabled = true;
+        mocks.curve = [
+            {
+                target: FADER,
+                opensAt: 0.5,
+                writes: [step(2.2, 0.9), step(2.6, 0.8), step(3, 0.7), step(3.97, 0.3), step(3.99, 0.2)],
+            },
+        ];
+
+        const frame = (seconds: number): number => Math.round(seconds * SAMPLE_RATE);
+        const queued = (): unknown => nativeLiveAutomationWriter.pass?.targets[0]?.queued;
+
+        /** One pass's worth of ticks: four that send, then the silence that must not anchor. */
+        async function drivePass(wraps: number): Promise<void> {
+            for (const at of [2.15, 2.55, 2.95, 3.9]) {
+                engineEchoSeconds = at;
+                engineEchoWraps = wraps;
+                await pump(at, wraps, engineBatches);
+            }
+            for (const at of [3.93, 3.95]) {
+                engineEchoSeconds = at;
+                engineEchoWraps = wraps;
+                await pump(at, wraps, engineBatches);
+            }
+        }
+
+        /** The seam, whose tick sends the reopened region's opening set. */
+        async function driveSeam(wraps: number): Promise<void> {
+            engineEchoSeconds = 2.05;
+            engineEchoWraps = wraps;
+            engineEchoLastWrapFrame = frame(4);
+            await pump(2.05, wraps, engineBatches);
+        }
+
+        arm(2, 1);
+        await flush();
+
+        await drivePass(0);
+        // The 3.97 and 3.99 stamps went out on the 3.9 tick (fence 5), and two
+        // release-only ticks followed. However close the seam is, neither
+        // stamp is anchored yet: the engine cannot have run its proof, because
+        // no batch has been admitted since theirs drained.
+        expect(queued()).toEqual([
+            { startFrame: frame(3.97), landFrame: frame(3.97), admittedBatch: 5, seamAnchor: null },
+            { startFrame: frame(3.99), landFrame: frame(3.99), admittedBatch: 5, seamAnchor: null },
+        ]);
+
+        await driveSeam(1);
+        // The seam's tick sends the opening set, and that admission is the
+        // first echo that can postdate the drained fence: both stamps anchor
+        // at its wrap count.
+        expect(queued()).toEqual([
+            { startFrame: frame(3.97), landFrame: frame(3.97), admittedBatch: 5, seamAnchor: 1 },
+            { startFrame: frame(3.99), landFrame: frame(3.99), admittedBatch: 5, seamAnchor: 1 },
+            { startFrame: frame(2), landFrame: frame(2), admittedBatch: 6, seamAnchor: null },
+        ]);
+
+        await drivePass(1);
+        await driveSeam(2);
+        // One seam post-anchor: the first pass's stamps are still charged —
+        // one seam proves nothing, because the pass it closed may already have
+        // been past the stamps when they landed.
+        expect(queued()).toEqual([
+            { startFrame: frame(3.97), landFrame: frame(3.97), admittedBatch: 5, seamAnchor: 1 },
+            { startFrame: frame(3.99), landFrame: frame(3.99), admittedBatch: 5, seamAnchor: 1 },
+            { startFrame: frame(3.97), landFrame: frame(3.97), admittedBatch: 10, seamAnchor: 2 },
+            { startFrame: frame(3.99), landFrame: frame(3.99), admittedBatch: 10, seamAnchor: 2 },
+            { startFrame: frame(2), landFrame: frame(2), admittedBatch: 11, seamAnchor: null },
+        ]);
+
+        await drivePass(2);
+        await driveSeam(3);
+        // Exactly the second seam post-anchor: the first pass's stamps are
+        // gone — the pass between the two seams ran the whole region with
+        // them queued, which is the earliest consumption the echo can prove.
+        // One seam more or fewer here and the mirror parts from the ledger.
+        expect(queued()).toEqual([
+            { startFrame: frame(3.97), landFrame: frame(3.97), admittedBatch: 10, seamAnchor: 2 },
+            { startFrame: frame(3.99), landFrame: frame(3.99), admittedBatch: 10, seamAnchor: 2 },
+            { startFrame: frame(3.97), landFrame: frame(3.97), admittedBatch: 15, seamAnchor: 3 },
+            { startFrame: frame(3.99), landFrame: frame(3.99), admittedBatch: 15, seamAnchor: 3 },
+            { startFrame: frame(2), landFrame: frame(2), admittedBatch: 16, seamAnchor: null },
+        ]);
+
+        // Anchored on the same cadence, the mirror and the ledger count the
+        // same stamps: no batch is refused, and every step sounds on every
+        // pass — the boundary pair included.
+        const refusals = mocks.warn.mock.calls.filter(([message]) => String(message).includes('refused'));
+        expect(refusals).toEqual([]);
+        const sent = writeBatches().flatMap((commands) => commands.map((command) => command.write));
+        expect(sent.filter((write) => write.shape === 'step' && write.time === 2 && write.value === 0.5)).toHaveLength(
+            4
+        );
+        for (const at of [2.2, 2.6, 3, 3.97, 3.99]) {
+            expect(sent.filter((write) => write.shape === 'step' && write.time === at)).toHaveLength(3);
+        }
     });
 
     it('counts a step as an append, so the writes it does not cancel keep their slots', async () => {

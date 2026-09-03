@@ -58,6 +58,20 @@ describe('setEngineTransportMaps', () => {
         });
     });
 
+    it('declines a response that omits only the admitted batch fence', async () => {
+        // A stale desktop build answering the shape from before the fence
+        // existed passes every other field. Read as a success, its missing
+        // `admittedBatch` would be stored as the pass's provenAfterBatch, and
+        // the snapshot-dating gate would never engage for maps re-arms.
+        const { admittedBatch: _omitted, ...staleAnswer } = NATIVE_APPLIED;
+        vi.mocked(desktopInvoke).mockResolvedValue(staleAnswer);
+
+        await expect(setEngineTransportMaps(MAPS)).resolves.toEqual({
+            outcome: 'declined',
+            reason: 'the engine did not report what it applied',
+        });
+    });
+
     it('declines with the bridge’s own reason rather than throwing into the caller', async () => {
         // The caller is a play gesture. A rejected install is an engine
         // without maps, not a play button that fails.
