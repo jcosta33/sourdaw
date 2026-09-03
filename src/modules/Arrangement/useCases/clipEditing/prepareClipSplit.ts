@@ -68,11 +68,16 @@ export function prepareClipSplit({
     if (!midiPlan) {
         return null;
     }
+    const timelineSplitDelta = adjustedSplitBeat - clip.startBeat;
+    const stretchRatio = clip.stretchRatio ?? 1;
+    const contentSplitDelta = timelineSplitDelta * stretchRatio;
+    const contentSplitBeats = (clip.audioOffsetBeats ?? 0) + contentSplitDelta;
+
     const satellites = prepareClipSplitSatellites({
         clipId,
         rightClipId: effectiveRightClipId,
-        clipRelativeSplitBeats: adjustedSplitBeat - clip.startBeat,
-        contentSplitBeats: adjustedSplitBeat - clip.startBeat + (clip.audioOffsetBeats ?? 0),
+        clipRelativeSplitBeats: timelineSplitDelta,
+        contentSplitBeats,
     });
 
     const leftClip: Clip = {
@@ -87,7 +92,7 @@ export function prepareClipSplit({
         name: `${clip.name} (R)`,
         startBeat: adjustedSplitBeat,
         fadeInBeats: 0,
-        audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (adjustedSplitBeat - clip.startBeat),
+        audioOffsetBeats: contentSplitBeats,
         midiOffsetBeats: 0,
     };
     const previous: ClipSplitActionSnapshot = {
