@@ -1,0 +1,16 @@
+crates/daw-plugin-host/src/clap_wrapper.rs
+  h_1228e573df1f42 41,85,632-633,636
+crates/daw-plugin-host/src/scanner.rs
+  h_1228e573df1f42 482,1080-1101,1181-1224,1238,1240-1241,1286,1288-1289
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "c610aaf49910787ce946e989cb6498ebeb04e328",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
