@@ -235,13 +235,6 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
         missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
         reason: "Reachable via this spec's graph but never read by its tests (verified passing).",
     },
-
-    {
-        spec: 'src/modules/AudioEngine/handlers/finalFeature/__tests__/transientHandlers.spec.ts',
-        barrel: '#/modules/ElasticAudio/useCases',
-        missingKeys: ['* (namespace import)'],
-        reason: 'Pre-existing graph-reachable-but-unread debt; keep exact keys until the mock is repaired.',
-    },
 ];
 
 export type MockedBarrel = {
