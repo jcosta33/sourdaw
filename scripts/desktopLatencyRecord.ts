@@ -9,7 +9,8 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { arch, cpus, loadavg, platform, release } from 'node:os';
 import { dirname, resolve } from 'node:path';
 
@@ -41,12 +42,23 @@ export type LegRecord = {
     load: string;
     samples: SampleRecord[];
     counterDeltas: Record<string, number>;
+    /** A gauge's first and last reading — see `computeGaugeReadings` for why it is not differenced like `counterDeltas`. */
+    gaugeReadings: Record<string, { first: number; last: number }>;
     streamErrors: { drained: EngineEventRecord[]; console: string[] };
     masterLevelDbMax: number | null;
 };
 
 export type MachineRecord = {
-    gitSha: string;
+    /**
+     * The checkout's own HEAD at run time — not the sha the measured
+     * artefact was built from. Nothing on this machine ties a packaged
+     * `.app` back to the commit that produced it, so a checkout that has
+     * since moved on (or a binary copied in from elsewhere) makes this
+     * value describe the wrong thing if read as the build's sha. `app.
+     * asarSha256` on the record is the artefact's own identity; this field
+     * is the operator checkout's.
+     */
+    checkoutGitSha: string;
     workingTree: 'clean' | 'dirty';
     host: { platform: string; release: string; arch: string; cores: number };
     loadAverage1m: number;
@@ -85,6 +97,10 @@ export type DesktopLatencyRecord = {
     app: {
         path: string;
         bundleVersion: string;
+        /** SHA-256 of `<path>/Contents/Resources/app.asar` — the measured artefact's own identity, not the checkout's. */
+        asarSha256: string;
+        /** `app.asar`'s own mtime, ISO 8601 — read alongside `asarSha256` so a rebuilt-but-identical asar is still visible as a different file. */
+        asarMtime: string;
         browser: string;
         userAgent: string;
         startedAt: AppStartedAt;
@@ -107,7 +123,7 @@ export function machineProvenance(): MachineRecord {
         }
     };
     return {
-        gitSha: git(['rev-parse', 'HEAD']),
+        checkoutGitSha: git(['rev-parse', 'HEAD']),
         workingTree: git(['status', '--porcelain']) === '' ? 'clean' : 'dirty',
         host: { platform: platform(), release: release(), arch: arch(), cores: cpus().length },
         loadAverage1m: Number((loadavg()[0] ?? 0).toFixed(2)),
@@ -123,6 +139,65 @@ export function readBundleVersion(appPath: string): string {
         readFileSync(plist, 'utf8')
     );
     return match?.[1] ?? 'unavailable';
+}
+
+export type AsarIdentity = { sha256: string; mtime: string };
+
+/**
+ * `<app>/Contents/Resources/app.asar` — the packaged renderer bundle
+ * `electron-builder` produces. Its own hash and mtime are the measured
+ * artefact's identity; `MachineRecord.checkoutGitSha` cannot serve that
+ * purpose because nothing ties a checkout's HEAD to whatever binary
+ * actually sits at `--app` — a stale or hand-copied `.app` would silently
+ * borrow the checkout's sha as if it described the build that produced it.
+ */
+export function readAsarIdentity(appPath: string): AsarIdentity {
+    const asarPath = resolve(appPath, 'Contents/Resources/app.asar');
+    if (!existsSync(asarPath)) {
+        throw new Error(`there is no app.asar at ${asarPath}. Run \`pnpm desktop:build\`.`);
+    }
+    return {
+        sha256: createHash('sha256').update(readFileSync(asarPath)).digest('hex'),
+        mtime: statSync(asarPath).mtime.toISOString(),
+    };
+}
+
+export type BuildRecordInput = {
+    machine: MachineRecord;
+    appPath: string;
+    asar: AsarIdentity;
+    browser: string;
+    userAgent: string;
+    startedAt: AppStartedAt;
+    pluginPath: string;
+    legs: LegRecord[];
+    diagnostics: DiagnosticsRecord;
+    verdict: Verdict;
+    reason: string;
+};
+
+/** Assembles the record `writeRecord` writes out. Pure — takes every reading as an argument rather than gathering any of its own. */
+export function buildRecord(input: BuildRecordInput): DesktopLatencyRecord {
+    return {
+        schemaVersion: 1,
+        measuredAt: new Date().toISOString(),
+        machine: input.machine,
+        app: {
+            path: input.appPath,
+            bundleVersion: readBundleVersion(input.appPath),
+            asarSha256: input.asar.sha256,
+            asarMtime: input.asar.mtime,
+            browser: input.browser,
+            userAgent: input.userAgent,
+            startedAt: input.startedAt,
+            profile: 'isolated',
+        },
+        plugin: { path: input.pluginPath },
+        legs: input.legs,
+        diagnostics: input.diagnostics,
+        verdict: input.verdict,
+        reason: input.reason,
+    };
 }
 
 function formatDb(value: number | null): string {
@@ -146,6 +221,13 @@ function describeCounterDeltas(deltas: Record<string, number>): string {
         : moved.map(([name, delta]) => `${name} ${delta > 0 ? '+' : ''}${String(delta)}`).join(', ');
 }
 
+function describeGaugeReadings(readings: Record<string, { first: number; last: number }>): string {
+    const entries = Object.entries(readings);
+    return entries.length === 0
+        ? 'none'
+        : entries.map(([name, { first, last }]) => `${name} ${String(first)} → ${String(last)}`).join(', ');
+}
+
 export function reportLeg(leg: LegRecord): void {
     const last = leg.samples[leg.samples.length - 1];
     const latencies = leg.samples.map((entry) => entry.latencyMs);
@@ -162,6 +244,7 @@ export function reportLeg(leg: LegRecord): void {
         ['master level', `max ${formatDb(leg.masterLevelDbMax)}, last ${formatDb(last?.masterLevelDb ?? null)}`],
         ['native engine running', last?.diagnostics.running === true ? 'yes' : 'no'],
         ['native counter deltas', describeCounterDeltas(leg.counterDeltas)],
+        ['native gauge readings (first → last)', describeGaugeReadings(leg.gaugeReadings)],
         [
             'stream errors',
             `${String(leg.streamErrors.drained.length)} drained here, ${String(leg.streamErrors.console.length)} on the console`,

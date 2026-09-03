@@ -179,13 +179,53 @@ export function hasLivePluginOnTrack(engineTitle: string): boolean {
 
 export type EngineCounters = Readonly<Record<string, number>>;
 
-/** A counter absent from one reading started or ended at zero — it is never dropped from the delta. */
+/**
+ * `engine_rt_diagnostics`'s cumulative-since-engine-start counters this
+ * harness differences across a leg. Confirmed against
+ * `EngineRtDiagnostics` in
+ * `crates/sourdaw-native/src/commands/engine_diagnostics.rs` at this head —
+ * the six fields whose bridge/scheduler backlog this pre-cutover baseline
+ * exists to see move. `inputLatencyFrames` is deliberately excluded: it is a
+ * gauge (the capture path's current added latency, or zero while capture is
+ * not serving), not a running total, and differencing it would read like a
+ * counter increment when it is really two unrelated snapshots.
+ */
+export const MONOTONIC_COUNTER_NAMES = [
+    'schedulerEventBufferOverflows',
+    'bridgeOutputBlocksDropped',
+    'unmatchedBridgeBlocks',
+    'bridgeBacklogBlocksShed',
+    'callbackFramesOverBridgeReach',
+    'bridgeInputBlocksRefused',
+] as const;
+
+/** `engine_rt_diagnostics`'s one gauge — see `MONOTONIC_COUNTER_NAMES`. */
+export const GAUGE_NAMES = ['inputLatencyFrames'] as const;
+
+/**
+ * Only the named monotonic counters are differenced, never every numeric key
+ * the payload happens to carry: a counter absent from one reading started or
+ * ended at zero and is never dropped from the delta, but a gauge among the
+ * payload's other keys must never be read as one.
+ */
 export function computeCounterDeltas(first: EngineCounters, last: EngineCounters): Record<string, number> {
     const deltas: Record<string, number> = {};
-    for (const name of new Set([...Object.keys(first), ...Object.keys(last)])) {
+    for (const name of MONOTONIC_COUNTER_NAMES) {
         deltas[name] = (last[name] ?? 0) - (first[name] ?? 0);
     }
     return deltas;
+}
+
+/** A gauge's first and last reading, recorded rather than differenced — see `GAUGE_NAMES`. */
+export function computeGaugeReadings(
+    first: EngineCounters,
+    last: EngineCounters
+): Record<string, { first: number; last: number }> {
+    const readings: Record<string, { first: number; last: number }> = {};
+    for (const name of GAUGE_NAMES) {
+        readings[name] = { first: first[name] ?? 0, last: last[name] ?? 0 };
+    }
+    return readings;
 }
 
 export type VerdictLeg = {

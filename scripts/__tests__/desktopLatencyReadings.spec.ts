@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
     computeCounterDeltas,
+    computeGaugeReadings,
     decideVerdict,
+    describeAudibleFloor,
     findAppPageTarget,
     findQuarantineReason,
     hasLivePluginOnTrack,
@@ -161,27 +163,67 @@ describe('hasLivePluginOnTrack', () => {
         );
     });
 
+    it('does not read ten audio track strips as a match for one', () => {
+        expect(hasLivePluginOnTrack('Engine: running · audio track strips: 10 · ready device instances: 1')).toBe(
+            false
+        );
+    });
+
     it('returns false for an empty title', () => {
         expect(hasLivePluginOnTrack('')).toBe(false);
     });
 });
 
+const zeroedCounterDeltas = {
+    schedulerEventBufferOverflows: 0,
+    bridgeOutputBlocksDropped: 0,
+    unmatchedBridgeBlocks: 0,
+    bridgeBacklogBlocksShed: 0,
+    callbackFramesOverBridgeReach: 0,
+    bridgeInputBlocksRefused: 0,
+};
+
 describe('computeCounterDeltas', () => {
-    it('subtracts the first reading from the last', () => {
+    it('subtracts the first reading from the last for every named monotonic counter', () => {
         expect(
-            computeCounterDeltas({ bridgeOutputBlocksDropped: 3, xruns: 1 }, { bridgeOutputBlocksDropped: 9, xruns: 1 })
-        ).toEqual({
-            bridgeOutputBlocksDropped: 6,
-            xruns: 0,
+            computeCounterDeltas(
+                { bridgeOutputBlocksDropped: 3, unmatchedBridgeBlocks: 1 },
+                { bridgeOutputBlocksDropped: 9, unmatchedBridgeBlocks: 1 }
+            )
+        ).toEqual({ ...zeroedCounterDeltas, bridgeOutputBlocksDropped: 6, unmatchedBridgeBlocks: 0 });
+    });
+
+    it('treats a named counter absent from a reading as having started or ended at zero', () => {
+        expect(computeCounterDeltas({}, { bridgeBacklogBlocksShed: 5 })).toEqual({
+            ...zeroedCounterDeltas,
+            bridgeBacklogBlocksShed: 5,
         });
     });
 
-    it('treats a counter the engine only started reporting as having started at zero', () => {
-        expect(computeCounterDeltas({}, { newCounter: 5 })).toEqual({ newCounter: 5 });
+    it('ignores a key outside the named monotonic set, such as the inputLatencyFrames gauge', () => {
+        expect(computeCounterDeltas({ inputLatencyFrames: 128 }, { inputLatencyFrames: 256 })).toEqual(
+            zeroedCounterDeltas
+        );
+    });
+});
+
+describe('computeGaugeReadings', () => {
+    it('records a gauge as its first and last reading rather than a difference', () => {
+        expect(computeGaugeReadings({ inputLatencyFrames: 128 }, { inputLatencyFrames: 256 })).toEqual({
+            inputLatencyFrames: { first: 128, last: 256 },
+        });
     });
 
-    it('keeps a counter the engine stopped reporting rather than dropping it silently', () => {
-        expect(computeCounterDeltas({ retired: 5 }, {})).toEqual({ retired: -5 });
+    it('treats a gauge absent from a reading as zero at that end', () => {
+        expect(computeGaugeReadings({}, { inputLatencyFrames: 64 })).toEqual({
+            inputLatencyFrames: { first: 0, last: 64 },
+        });
+    });
+});
+
+describe('describeAudibleFloor', () => {
+    it('names the floor decideVerdict judges against', () => {
+        expect(describeAudibleFloor()).toBe('-40 dBFS');
     });
 });
 

@@ -19,6 +19,7 @@
 import { type Page } from 'playwright';
 
 import { findQuarantineReason, type QuarantinedEntry } from './desktopLatencyReadings.ts';
+import { sleep } from './desktopLatencySleep.ts';
 
 /** `PanelToggles.tsx` — the toolbar button that opens the Preferences dialog at its normal width. */
 const OPEN_PREFERENCES_SELECTOR = '[aria-label="Open Preferences"]';
@@ -35,10 +36,6 @@ const COMPACT_PREFERENCES_BUTTON_NAME = 'Preferences';
 /** `PluginScanSettings.tsx` — its "Retry Quarantined" button and its scan-trigger button's "scanning" text. */
 const RETRY_QUARANTINED_BUTTON_NAME = 'Retry Quarantined';
 const PREFERENCES_SCANNING_BUTTON_NAME = 'Scanning...';
-
-async function sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 /**
  * Opens Preferences from whichever toolbar shape is showing. A narrow

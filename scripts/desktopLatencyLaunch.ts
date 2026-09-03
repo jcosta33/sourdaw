@@ -14,6 +14,7 @@ import { type Page } from 'playwright';
 
 import { describeElementAtCentre } from './desktopLatencyDiagnostics.ts';
 import { type AppStartedAt } from './desktopLatencyRecord.ts';
+import { sleep } from './desktopLatencySleep.ts';
 
 /** `LaunchScreen.tsx` — the button that starts a new, empty project. */
 const LAUNCH_NEW_PROJECT_SELECTOR = '#launch-new-project';
@@ -35,10 +36,6 @@ const ALPHA_NOTICE_DISMISS_NAME = 'Let me cook';
 const ALPHA_NOTICE_GRACE_MS = 3_000;
 /** Faster than the overlay-absence checks above: these two first-run screens are traced to appear within a couple of seconds, not the launch overlay's slower exit transition. */
 const TOUR_POLL_MS = 250;
-
-async function sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 /**
  * The workspace renders beneath the launch overlay, so the status bar can

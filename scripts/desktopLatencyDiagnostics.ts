@@ -13,13 +13,10 @@ import { type Page } from 'playwright';
 
 import { hasLivePluginOnTrack } from './desktopLatencyReadings.ts';
 import { type DiagnosticsEntry, type DiagnosticsRecord } from './desktopLatencyRecord.ts';
+import { sleep } from './desktopLatencySleep.ts';
 
 /** `AppShell.tsx` — the status bar footer, which carries the engine dot this module reads on its own. */
 const STATUS_BAR_SELECTOR = 'footer[aria-label="Application status"]';
-
-async function sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 export type Diagnostics = DiagnosticsRecord;
 
