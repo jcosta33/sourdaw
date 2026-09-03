@@ -29,6 +29,7 @@ import {
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     replaceCrdtDoc,
+    replaceCrdtDocInLineage,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
@@ -959,15 +960,36 @@ describe('stem import and starting mix workflow', () => {
         expect(undoStore.value?.past).toHaveLength(1);
     });
 
-    // Pins today's behaviour rather than the fix: an applied remote sync lands through
-    // replaceCrdtDoc (automergeSync.ts:636), and automergeRepository.replaceDoc unconditionally
-    // moves the document identity epoch (markDocumentIdentityMutation). The base revision captured
-    // at proposal time then carries a stale identity epoch, so inspectAgentProjectDivergence
-    // (inspectAgentProjectDivergence.ts:100-104) cannot read the base document at all and reports
-    // 'ambiguous-same-object' instead of classifying the sync-landed track against the plan's
-    // targets — the confirm still hard-invalidates even though the edit is unrelated. Tracked as
-    // #3456; this head fixes only the local-edit case above.
-    it('still hard-invalidates a stale proposal when the unrelated edit lands via a project-identity-moving sync (#3456)', async () => {
+    it('asks for reapproval when an unrelated collaborator edit lands through a sync', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmation = getPendingActionConfirmation(confirmationId());
+
+        flushAutomergeStorageWrites();
+        const currentDoc = getCrdtDoc<{ tracks: { tracks: Track[] } }>(DOC_PREFIX_ROOT);
+        if (!currentDoc) {
+            throw new TypeError('Expected a loaded root document');
+        }
+        const syncedDoc = change(currentDoc, (draft) => {
+            draft.tracks.tracks.push(createTrack('track-collaborator', 'Collaborator'));
+        });
+        replaceCrdtDocInLineage({ id: DOC_PREFIX_ROOT, doc: syncedDoc });
+        trackStore.hydrate();
+
+        const confirmResult = await confirmPendingChatActions({ confirmationId: confirmation!.id });
+
+        expect(confirmResult).toMatchObject({
+            status: 'reapproval_required',
+            divergence: { kind: 'non-overlapping' },
+        });
+        expect(trackStore.value?.tracks.map((track) => track.id)).toContain('track-collaborator');
+        expect(undoStore.value?.past).toHaveLength(0);
+        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+    });
+
+    // replaceCrdtDoc moves the identity epoch the way the branch routes do, pinned in
+    // branchSwitchProjectIdentity.integration.spec.ts; this case observes the epoch gate at
+    // inspectAgentProjectDivergence.ts:103.
+    it('still hard-invalidates when the document identity moves under a pending proposal', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(confirmationId());
 

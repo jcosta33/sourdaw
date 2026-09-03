@@ -121,6 +121,7 @@ const crdtMock = vi.hoisted(() => {
         preserveBranchStateForSession: vi.fn(),
         replaceBranchState: vi.fn(),
         restoreBranchStateAfterSession: vi.fn(),
+        replaceCrdtDocInLineage: vi.fn(),
     };
 });
 
@@ -271,6 +272,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     preserveBranchStateForSession: crdtMock.preserveBranchStateForSession,
     replaceBranchState: crdtMock.replaceBranchState,
     restoreBranchStateAfterSession: crdtMock.restoreBranchStateAfterSession,
+    replaceCrdtDocInLineage: crdtMock.replaceCrdtDocInLineage,
 }));
 
 vi.mock('#/modules/CrdtDocument/stores', () => ({

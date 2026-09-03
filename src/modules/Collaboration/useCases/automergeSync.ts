@@ -20,7 +20,7 @@ import {
     subscribeToCrdtChanges,
     getCrdtDoc,
     createCrdtDoc,
-    replaceCrdtDoc,
+    replaceCrdtDocInLineage,
     removeCrdtDoc,
     hasCrdtDoc,
     getCrdtDocIds,
@@ -633,7 +633,7 @@ export class AutomergeSync {
             this.syncStates.set(peerId, peerStates);
             this.isApplyingRemoteSync = true;
             try {
-                replaceCrdtDoc({ id: docId, doc: sanitized_doc });
+                replaceCrdtDocInLineage({ id: docId, doc: sanitized_doc });
             } finally {
                 this.isApplyingRemoteSync = false;
             }
@@ -827,7 +827,7 @@ export class AutomergeSync {
                 if (restored_doc === null) {
                     removeCrdtDoc(docId);
                 } else {
-                    replaceCrdtDoc({ id: docId, doc: restored_doc });
+                    replaceCrdtDocInLineage({ id: docId, doc: restored_doc });
                 }
             } finally {
                 this.isApplyingRemoteSync = false;
