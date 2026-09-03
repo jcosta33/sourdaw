@@ -322,6 +322,7 @@ describe('PadGrid — release events', () => {
         fireEvent.mouseDown(pad, { button: 0 });
         fireEvent.mouseUp(pad);
 
+        expect(onReleasePad).toHaveBeenCalledTimes(1);
         expect(onReleasePad).toHaveBeenCalledWith(1);
     });
 
@@ -344,6 +345,7 @@ describe('PadGrid — release events', () => {
 
         fireEvent.mouseDown(pad, { button: 0 });
         fireEvent.mouseLeave(pad);
+        expect(onReleasePad).toHaveBeenCalledTimes(1);
         expect(onReleasePad).toHaveBeenCalledWith(2);
     });
 
@@ -361,14 +363,19 @@ describe('PadGrid — release events', () => {
         );
 
         const pad = screen.getByRole('button', { name: /trigger p3/i });
+        fireEvent.keyDown(pad, { key: 'Enter' });
         fireEvent.keyUp(pad, { key: 'Enter' });
+        expect(onReleasePad).toHaveBeenCalledTimes(1);
         expect(onReleasePad).toHaveBeenCalledWith(3);
 
         onReleasePad.mockClear();
+        fireEvent.keyDown(pad, { key: ' ' });
         fireEvent.keyUp(pad, { key: ' ' });
+        expect(onReleasePad).toHaveBeenCalledTimes(1);
         expect(onReleasePad).toHaveBeenCalledWith(3);
 
         onReleasePad.mockClear();
+        fireEvent.keyDown(pad, { key: 'Tab' });
         fireEvent.keyUp(pad, { key: 'Tab' });
         expect(onReleasePad).not.toHaveBeenCalled();
     });
