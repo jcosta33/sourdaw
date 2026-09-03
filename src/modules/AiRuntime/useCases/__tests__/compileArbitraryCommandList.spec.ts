@@ -10,6 +10,7 @@ import {
     executeVersionedCommandBatchEnvelope,
     parseVersionedCommandBatchEnvelope,
 } from '#/modules/Command/useCases';
+import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 
 import { SEMANTIC_COMMAND_LIST_MAX_CREATIONS } from '../../models/SemanticCommandList';
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
@@ -2201,7 +2202,7 @@ describe('compileArbitraryCommandList', () => {
             availableAssetHashes: [],
             availableAudioBufferIds: [],
             lockedRanges: [],
-            projectId: 'revision-duplicate-closure',
+            projectId: captureProjectIdentity(),
             projectInvariantsValid: true,
             targetFingerprints: {},
         }));
@@ -4107,7 +4108,7 @@ describe('compileArbitraryCommandList', () => {
             availableAssetHashes: [],
             availableAudioBufferIds: [],
             lockedRanges: [],
-            projectId: 'revision-graph',
+            projectId: captureProjectIdentity(),
             projectInvariantsValid: true,
             targetFingerprints: projectDocument === undefined ? {} : { [busId]: 'created-drum-bus' },
         }));
@@ -5112,7 +5113,7 @@ describe('compileArbitraryCommandList', () => {
             availableAssetHashes: [],
             availableAudioBufferIds: [],
             lockedRanges: [],
-            projectId: 'revision-typed-creation',
+            projectId: captureProjectIdentity(),
             projectInvariantsValid: true,
             targetFingerprints:
                 projectDocument === undefined ? {} : { [trackId]: 'created-track', [clipId]: 'created-clip' },

@@ -3161,6 +3161,9 @@ describe('sendChatMessage retained-provider selection', () => {
         );
         const { parseVersionedCommandBatchEnvelope } =
             await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
+        const { captureProjectIdentity } = await vi.importActual<typeof import('#/modules/CrdtDocument/useCases')>(
+            '#/modules/CrdtDocument/useCases'
+        );
         mocks.compileAgentActionExecution.mockImplementation(compileAgentActionExecution);
         mocks.parseVersionedCommandBatchEnvelope.mockImplementation(parseVersionedCommandBatchEnvelope);
         commandBatchPreflightPort.setProvider(() => ({
@@ -3168,7 +3171,7 @@ describe('sendChatMessage retained-provider selection', () => {
             availableAssetHashes: [],
             availableAudioBufferIds: [],
             lockedRanges: [],
-            projectId: 'revision-fixture',
+            projectId: captureProjectIdentity(),
             projectInvariantsValid: true,
             targetFingerprints: { 'track-kick': 'track-kick:fixture' },
         }));

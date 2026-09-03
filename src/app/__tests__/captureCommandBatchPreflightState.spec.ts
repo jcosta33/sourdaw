@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => {
     const agentProjectRepairStateStore: { value: unknown } = { value: null };
     return {
         agentProjectRepairStateStore,
+        captureProjectIdentity: vi.fn(() => 'document-identity-a'),
         captureProjectRevision: vi.fn(() => 'document-identity-a'),
         getAssetTransfer: vi.fn(),
         getCrdtDoc: vi.fn<(id: string) => unknown>(),
@@ -63,6 +64,7 @@ vi.mock('#/modules/CrdtDocument/stores', () => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectIdentity: mocks.captureProjectIdentity,
     captureProjectRevision: mocks.captureProjectRevision,
     DOC_PREFIX_ROOT: 'root',
     getCrdtDoc: mocks.getCrdtDoc,
@@ -154,6 +156,7 @@ describe('captureCommandBatchPreflightState', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.agentProjectRepairStateStore.value = null;
+        mocks.captureProjectIdentity.mockReturnValue('document-identity-a');
         mocks.captureProjectRevision.mockReturnValue('document-identity-a');
         mocks.getProjectContext.mockReturnValue(projectContext());
         mocks.getCrdtDoc.mockReturnValue({
@@ -465,14 +468,21 @@ describe('captureCommandBatchPreflightState', () => {
         expect(state.audioGraphValid).toBe(false);
     });
 
-    it('binds copied project metadata to the active document identity', () => {
+    it('binds projectId to the document identity, independently of the revision it commits against', () => {
         const first = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+        // projectId answers "same project"; it must stay put across an ordinary revision move so an
+        // unrelated edit between an AI proposal and its confirm does not read as a different project.
         mocks.captureProjectRevision.mockReturnValue('document-identity-b');
 
-        const second = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+        const stableAcrossRevision = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
 
         expect(first.projectId).toBe('document-identity-a');
-        expect(second.projectId).toBe('document-identity-b');
+        expect(stableAcrossRevision.projectId).toBe('document-identity-a');
+
+        mocks.captureProjectIdentity.mockReturnValue('document-identity-c');
+        const afterProjectReplacement = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+        expect(afterProjectReplacement.projectId).toBe('document-identity-c');
     });
 
     it('captures targets and routing from the staged root document when supplied', () => {
@@ -662,6 +672,10 @@ describe('captureCommandBatchPreflightState', () => {
 
     it('fails closed when there is no project document at all', () => {
         mocks.getCrdtDoc.mockReturnValue(undefined);
+        // Bind projectId to the identity mock alone: both mocks return 'document-identity-a' by
+        // default, so that value alone would not distinguish this from a captureProjectRevision()
+        // regression on the same branch.
+        mocks.captureProjectIdentity.mockReturnValue('document-identity-c');
 
         const state = captureCommandBatchPreflightState({
             assetReferences: [{ assetHash: 'sha256:vocal', audioBufferId: 'buffer-vocal' }],
@@ -673,7 +687,7 @@ describe('captureCommandBatchPreflightState', () => {
             availableAssetHashes: [],
             availableAudioBufferIds: [],
             lockedRanges: [],
-            projectId: 'document-identity-a',
+            projectId: 'document-identity-c',
             projectInvariantsValid: false,
             targetFingerprints: { master: 'system-output:master' },
         });

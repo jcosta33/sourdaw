@@ -938,6 +938,48 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         ]);
     });
 
+    // The local marker edit below lands on a new marker section, not on the plan's track or either
+    // of its clips: the divergence port classifies it as non-overlapping, so the unchanged plan is
+    // revalidated and rebound rather than discarded outright.
+    it('asks for reapproval instead of discarding the proposal after an unrelated marker edit, then commits the unchanged plan on the second confirm', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmationId = getConfirmationId();
+
+        const markers = markerStore.value;
+        if (!markers) {
+            throw new TypeError('Expected marker state');
+        }
+        markerStore.set({
+            ...markers,
+            sections: [
+                ...markers.sections,
+                { id: 'section-bridge', name: 'Bridge', startBeat: 32, endBeat: 40, color: '#ffffff' },
+            ],
+        });
+        landCollaboratorEditInProjectDocument();
+
+        const firstConfirm = await confirmPendingChatActions({ confirmationId });
+        expect(firstConfirm).toMatchObject({
+            status: 'reapproval_required',
+            divergence: { kind: 'non-overlapping' },
+        });
+        expect(getPendingActionConfirmation(confirmationId)?.status).toBe('proposed');
+        expect(
+            chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmationId)?.content
+        ).toContain(
+            'The project changed after the prior approval. Divergence was classified as non-overlapping; the unchanged command plan was revalidated and rebound to the current project revision. Review and confirm again:'
+        );
+
+        const secondConfirm = await confirmPendingChatActions({ confirmationId });
+        expect(secondConfirm).toEqual({ status: 'executed' });
+
+        expect(midiStore.value?.notesByClipId['clip-chorus-two']?.map((note) => note.articulation)).toEqual([
+            'staccato',
+            'marcato',
+        ]);
+        expect(markerStore.value?.sections.map((section) => section.id)).toContain('section-bridge');
+    });
+
     it('fails closed before confirmation when the target track has no per-note articulation instrument', async () => {
         const state = trackStore.value!;
         trackStore.set({

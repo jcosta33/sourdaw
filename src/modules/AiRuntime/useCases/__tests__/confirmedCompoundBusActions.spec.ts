@@ -27,6 +27,7 @@ import {
     redo,
 } from '#/modules/Command/useCases';
 import {
+    captureProjectIdentity,
     captureProjectRevision,
     createCrdtDoc,
     mutateCrdtDoc,
@@ -428,7 +429,7 @@ function propose(actions: ExecutableRuntimeAction[], id: string): void {
     const commandBatch = compileVersionedCommandBatchEnvelope({
         runId: id,
         batchId: id,
-        projectId: projectRevision,
+        projectId: captureProjectIdentity(),
         baseRevision: projectRevision,
         intent: 'create a Vocal Plate bus, add Reverb, and route Vocals to it',
         dynamicEffects: {
