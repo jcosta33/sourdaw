@@ -1,0 +1,25 @@
+.agents/skills/review-stances/test-validity.md
+  s_28abfd94826e36::t_41fd75c5249b35 122-136
+scripts/__tests__/resolveVercelProductionDeployment.spec.ts
+  s_28abfd94826e36::t_0c1deec032f05f 314
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_28abfd94826e36::t_2167317572405c 3230-3233
+.agents/skills/review-stances/correctness.md
+  s_28abfd94826e36::t_8c4d33193dff18 65-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "4c4f77c2f06e3076c0ef8da00821caf143e6021f",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
