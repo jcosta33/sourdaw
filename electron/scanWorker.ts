@@ -89,13 +89,23 @@ export const asScanWorkerRequest = (message: unknown): ScanWorkerRequest | undef
     return { paths: message.paths };
 };
 
-/** Read one addon method, failing by name rather than as `undefined is not a function`. */
+/**
+ * Read one addon method, failing by name rather than as `undefined is not a
+ * function`.
+ *
+ * The returned function is bound to `host`: `implementation` is a napi class
+ * method, and napi throws `Illegal invocation` when it is called with any
+ * receiver other than the instance it was read off. A bare `host[method]`
+ * reference loses that receiver the moment it is called on its own, so the
+ * call goes through `Reflect.apply` with `host` fixed as `this` — the same
+ * binding `router.ts` uses for the same class of addon call.
+ */
 export const nativeCommand = (host: NativeHost, method: string): NativeCommand => {
     const implementation = host[method];
     if (typeof implementation !== 'function') {
         throw new TypeError(`The native addon does not implement ${method}`);
     }
-    return implementation;
+    return (...args) => Reflect.apply(implementation, host, args);
 };
 
 export type ScanWorkerResponse =

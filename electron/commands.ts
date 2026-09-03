@@ -173,7 +173,6 @@ export const DENIED_COMMANDS = [
     'link_start_playing',
     'link_stop_playing',
     'load_whisper_model',
-    'post_process_audio',
     'read_audio_file',
     'send_plugin_midi',
     'set_link_tempo',

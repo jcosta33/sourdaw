@@ -49,6 +49,7 @@
         "review:publish:recover": "node scripts/trustedGithubWriteBootstrap.ts review:publish:recover",
         "review:resolve": "node scripts/trustedGithubWriteBootstrap.ts review:resolve",
         "pr:supersede": "node scripts/supersedePullRequest.ts",
+        "branch:prune": "node scripts/pruneRemoteBranches.ts",
         "issue:reconcile": "node scripts/trustedGithubWriteBootstrap.ts issue:reconcile",
         "issue:file": "node scripts/fileTrackerIssue.ts",
         "audio:deadline": "node scripts/measureRenderDeadline.ts",

@@ -150,41 +150,23 @@ describe('MissingMediaPanel', () => {
         consoleError.mockRestore();
     });
 
-    it('clamps its portaled panel to the trailing viewport gap near the right edge', () => {
+    it('portals its panel to document body outside the trigger container', () => {
         missingMediaStore.set({ items: [clipItem()] });
-        render(<MissingMediaPanel />);
+        const { container } = render(<MissingMediaPanel />);
         const trigger = screen.getByRole('button');
-        const triggerContainer = trigger.parentElement;
-        if (!triggerContainer) {
-            throw new Error('expected a missing-media trigger container');
-        }
-
-        const triggerRect = DOMRect.fromRect({
-            x: window.innerWidth - 10,
-            y: 40,
-            width: 100,
-            height: 30,
-        });
-        const panelRect = DOMRect.fromRect({ width: 320, height: 200 });
-        Object.defineProperty(triggerContainer, 'getBoundingClientRect', {
-            configurable: true,
-            value: () => triggerRect,
-        });
-        const rectSpy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(panelRect);
 
         fireEvent.click(trigger);
-        rectSpy.mockRestore();
 
         const panel = screen.getByRole('dialog', { name: 'Missing media' });
-        expect(Number.parseFloat(panel.style.left)).toBe(window.innerWidth - panelRect.width - 12);
+        expect(panel).toBeInTheDocument();
+        expect(container.contains(panel)).toBe(false);
+        expect(document.body.contains(panel)).toBe(true);
     });
 
     it('closes the detail list and consumes Escape', () => {
         missingMediaStore.set({ items: [clipItem()] });
 
         render(<MissingMediaPanel />);
-        const parentDismiss = vi.fn();
-        document.addEventListener('keydown', parentDismiss, true);
         fireEvent.click(screen.getByRole('button'));
         const dialog = screen.getByRole('dialog');
         const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
@@ -195,8 +177,6 @@ describe('MissingMediaPanel', () => {
 
         expect(screen.queryByRole('dialog')).toBeNull();
         expect(escape.defaultPrevented).toBe(true);
-        expect(parentDismiss).not.toHaveBeenCalled();
-        document.removeEventListener('keydown', parentDismiss, true);
     });
 
     it('drops the surface when a later clean load clears the record', () => {

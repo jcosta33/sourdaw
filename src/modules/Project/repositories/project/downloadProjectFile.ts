@@ -1,5 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
 import { desktopSaveDialog, isDesktopRuntime } from '#/utils/desktopBridge';
+import { downloadBlob } from '#/utils/downloadFile';
 
 import { type ProjectData } from '../../models/ProjectData';
 import { saveProjectToFile } from '../nativeProjectFiles/saveProjectToFile';
@@ -87,21 +88,9 @@ export async function downloadProjectFile({
     }
 
     // Fallback: anchor download
-    const url = URL.createObjectURL(blob);
-    const alpha = document.createElement('a');
-    alpha.href = url;
-    alpha.download = filename;
-    alpha.style.display = 'none';
-    document.body.appendChild(alpha);
     if (!shouldWrite()) {
-        document.body.removeChild(alpha);
-        URL.revokeObjectURL(url);
         return 'rejected-stale';
     }
-    alpha.click();
-    setTimeout(() => {
-        document.body.removeChild(alpha);
-        URL.revokeObjectURL(url);
-    }, 1000);
+    downloadBlob(blob, filename);
     return 'written';
 }
