@@ -1,6 +1,6 @@
 import {
+    countPendingAutomergeStorageWrites,
     flushAutomergeStorageWrites,
-    hasPendingAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 
 /**
@@ -13,13 +13,16 @@ import {
  * write only: an `executeAppAction` call already lands its write in the
  * document before it resolves, so it must be awaited on its own instead of
  * passed here, where a flush racing its still-pending write would land
- * nothing. The check below observes the pending write itself rather than the
- * callback's return value, because a block-bodied wrap around an action call
- * discards the promise a thenable check would have to see.
+ * nothing. The check below compares the pending-write count before and after
+ * the call, because a block-bodied wrap around an action call discards the
+ * promise a thenable check would have to see, and an unrelated write already
+ * pending from earlier in the same case would satisfy a bare presence check
+ * without this write having added anything.
  */
 export function landProjectEdit(write: () => void): void {
+    const countBefore = countPendingAutomergeStorageWrites();
     write();
-    if (!hasPendingAutomergeStorageWrites()) {
+    if (countPendingAutomergeStorageWrites() <= countBefore) {
         throw new TypeError(
             'landProjectEdit landed nothing in the project document: it takes a synchronous CRDT-backed store write, and an action must be awaited on its own instead of passed here.'
         );

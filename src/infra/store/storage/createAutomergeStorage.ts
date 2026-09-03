@@ -930,9 +930,9 @@ export function flushAutomergeStorageWrites(snapshotTransaction?: object): void 
     );
 }
 
-/** Exists so a test helper can prove a write is pending before it flushes. */
-export function hasPendingAutomergeStorageWrites(): boolean {
-    return pendingAutomergeStorageWrites.size > 0;
+/** Exists so a test helper can prove a write it made added a pending write, not just that one already exists. */
+export function countPendingAutomergeStorageWrites(): number {
+    return pendingAutomergeStorageWrites.size;
 }
 
 export function configureAutomergeStoragePort(port: AutomergeStoragePort | null): void {
