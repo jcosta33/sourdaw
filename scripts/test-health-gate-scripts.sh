@@ -570,8 +570,16 @@ expect(
     'static must run the device write boundary census outside unit shards'
 );
 expect(
+    stepNamed(staticJob, 'Device write boundary census')?.['continue-on-error'] === undefined,
+    'static device write boundary census must not continue on error'
+);
+expect(
     stepNamed(nightly.jobs?.static, 'Device write boundary census')?.run === deviceWriteBoundaryCensusRun,
     'nightly static must run the device write boundary census outside unit shards'
+);
+expect(
+    stepNamed(nightly.jobs?.static, 'Device write boundary census')?.['continue-on-error'] === undefined,
+    'nightly static device write boundary census must not continue on error'
 );
 expect(
     smoke?.if === "github.event.pull_request != null && needs.decide.outputs.e2e == 'true'",

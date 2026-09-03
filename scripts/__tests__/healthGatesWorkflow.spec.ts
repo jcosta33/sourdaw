@@ -271,6 +271,12 @@ const SUITE_JOB_WIRING = {
 } satisfies Record<string, Readonly<{ workflow: 'validation' | 'heavy'; needs: string; if: string }>>;
 // A softened shard step reports a failing suite as a passing required check.
 const SUITE_SHARD_STEP = 'Run shard';
+// The census walks production sources once per train, outside the unit shards,
+// so it never inherits their accumulated jsdom/module load debt. A softened
+// census step reports green while the device-write-boundary proof decides nothing.
+const DEVICE_WRITE_BOUNDARY_CENSUS_STEP = 'Device write boundary census';
+const DEVICE_WRITE_BOUNDARY_CENSUS_RUN =
+    'pnpm test:run src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts';
 
 const repositoryRoot = resolve(import.meta.dirname, '../..');
 const parsedPackageManifest: unknown = JSON.parse(readFileSync(join(repositoryRoot, 'package.json'), 'utf8'));
@@ -896,7 +902,27 @@ function assertJobGraph(set: WorkflowSet): void {
     assertBlockingSuites(set);
     assertNightlySecurityGraph(set.nightly);
     assertNightlyReportCoverage(set);
+    assertDeviceWriteBoundaryCensus(set);
     assertSummaryMembership(set);
+}
+
+// Both trains run the census once, in their static contract job, and a
+// `continue-on-error` on either step would report a failing census as a green
+// step while the device-write-boundary proof stops deciding the merge.
+function assertDeviceWriteBoundaryCensus(set: WorkflowSet): void {
+    const censusJobs: ReadonlyArray<readonly [string, UnknownRecord]> = [
+        ['validation.yml static', jobAt(set.validation, 'static')],
+        ['nightly.yml static', jobAt(set.nightly, 'static')],
+    ];
+    for (const [label, job] of censusJobs) {
+        const step = stepNamed(job, DEVICE_WRITE_BOUNDARY_CENSUS_STEP);
+        if (stringAt(step, 'run') !== DEVICE_WRITE_BOUNDARY_CENSUS_RUN) {
+            throw new Error(`${label} must run the device write boundary census outside unit shards`);
+        }
+        if (step['continue-on-error'] !== undefined) {
+            throw new Error(`${label} device write boundary census must not continue on error`);
+        }
+    }
 }
 
 // The nightly reporter is the only thing that observes what path filters and
@@ -1660,6 +1686,15 @@ describe('health gates workflow contract', () => {
         stepNamed(jobAt(permissiveNightlyUnit.nightly, 'unit'), SUITE_SHARD_STEP)['continue-on-error'] = true;
         expect(() => assertJobGraph(permissiveNightlyUnit)).toThrow(
             'nightly unit Run shard must not continue on error'
+        );
+
+        // Mutation-kill: a census that may fail softly still reports a green
+        // step while the device-write-boundary proof decides nothing.
+        const softenedCensus = cloneWorkflows('softened device census');
+        stepNamed(jobAt(softenedCensus.validation, 'static'), DEVICE_WRITE_BOUNDARY_CENSUS_STEP)['continue-on-error'] =
+            true;
+        expect(() => assertJobGraph(softenedCensus)).toThrow(
+            'validation.yml static device write boundary census must not continue on error'
         );
 
         const widenedSummary = cloneWorkflows('widened summary');
