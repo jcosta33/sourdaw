@@ -1,0 +1,19 @@
+crates/sourdaw-native/src/commands/pitch_edit.rs
+  s_7dab9af76ff572::t_89b53751854b14 243
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d46848453729172363f913a55f858c29886f8985",
+  "prompts": {},
+  "sessions": {
+    "s_7dab9af76ff572": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a306c9e6a5a59f806",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
