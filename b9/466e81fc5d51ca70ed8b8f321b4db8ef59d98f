@@ -1,0 +1,29 @@
+src/modules/Toaster/presentations/components/__tests__/PadGrid.spec.tsx
+  s_ac03a4ebaa3f6e::t_cfeba741d642fc 218,226,238,246,254,266
+src/modules/Toaster/presentations/views/__tests__/ToasterPanel.spec.tsx
+  s_30ab1869eedd96::t_f9420651b702fe 142,149,151,168-169,198
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b9466e81fc5d51ca70ed8b8f321b4db8ef59d98f",
+  "prompts": {},
+  "sessions": {
+    "s_30ab1869eedd96": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a1fb9dfd11e81952f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
