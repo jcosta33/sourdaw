@@ -16,6 +16,7 @@ type StepSequencerProps = {
     onSetSoundLock?: (padIndex: number, stepIndex: number, engineType: DrumEngineType | null) => void;
     onSetRetrigger?: (padIndex: number, stepIndex: number, count: number) => void;
     onSetCondition?: (padIndex: number, stepIndex: number, condition: StepCondition) => void;
+    onSetProbability?: (padIndex: number, stepIndex: number, probability: number) => void;
 };
 
 const STEP_HEIGHT = 28;
@@ -29,6 +30,14 @@ const RATCHET_OPTIONS: Array<{ count: number; label: string }> = [
 ];
 
 const CONDITION_OPTIONS: StepCondition[] = ['always', 'fill', 'not-fill', 'first', 'not-first'];
+
+const PROBABILITY_OPTIONS: Array<{ value: number; label: string }> = [
+    { value: 1, label: '100%' },
+    { value: 0.75, label: '75%' },
+    { value: 0.5, label: '50%' },
+    { value: 0.25, label: '25%' },
+    { value: 0.1, label: '10%' },
+];
 
 const SOUND_LOCK_ENGINES: DrumEngineType[] = [
     'kick-808',
@@ -56,6 +65,7 @@ export const StepSequencer = ({
     onSetSoundLock,
     onSetRetrigger,
     onSetCondition,
+    onSetProbability,
 }: StepSequencerProps): ReactElement => {
     const dragRef = useRef<{ padIndex: number; stepIndex: number; startY: number } | null>(null);
     const [menuState, setMenuState] = useState<{
@@ -65,7 +75,7 @@ export const StepSequencer = ({
         y: number;
     } | null>(null);
     const stepCount = pattern.stepsPerBar * pattern.bars;
-    const hasContextMenu = Boolean(onSetSoundLock || onSetRetrigger || onSetCondition);
+    const hasContextMenu = Boolean(onSetSoundLock || onSetRetrigger || onSetCondition || onSetProbability);
 
     const targetTrack = menuState ? pattern.tracks.find((track) => track.padIndex === menuState.padIndex) : undefined;
     const targetStep = menuState ? targetTrack?.steps[menuState.stepIndex] : undefined;
@@ -150,6 +160,10 @@ export const StepSequencer = ({
                                         }${
                                             step.condition && step.condition !== 'always'
                                                 ? `, condition ${step.condition}`
+                                                : ''
+                                        }${
+                                            step.probability < 1
+                                                ? `, probability ${Math.round(step.probability * 100)}%`
                                                 : ''
                                         }`}
                                         title="Click to toggle · Alt-drag up/down to set velocity · Right-click or press L to sound-lock"
@@ -283,7 +297,7 @@ export const StepSequencer = ({
                                     {label}
                                 </DawMenuButton>
                             ))}
-                            {onSetCondition || onSetSoundLock ? <DawMenuSeparator /> : null}
+                            {onSetCondition || onSetProbability || onSetSoundLock ? <DawMenuSeparator /> : null}
                         </>
                     ) : null}
 
@@ -301,6 +315,26 @@ export const StepSequencer = ({
                                     }}
                                 >
                                     {cond}
+                                </DawMenuButton>
+                            ))}
+                            {onSetProbability || onSetSoundLock ? <DawMenuSeparator /> : null}
+                        </>
+                    ) : null}
+
+                    {onSetProbability ? (
+                        <>
+                            <DawMenuSectionLabel>Probability</DawMenuSectionLabel>
+                            {PROBABILITY_OPTIONS.map(({ value, label }) => (
+                                <DawMenuButton
+                                    key={value}
+                                    role="menuitem"
+                                    active={targetStep?.probability === value}
+                                    onClick={() => {
+                                        onSetProbability(menuState.padIndex, menuState.stepIndex, value);
+                                        setMenuState(null);
+                                    }}
+                                >
+                                    {label}
                                 </DawMenuButton>
                             ))}
                             {onSetSoundLock ? <DawMenuSeparator /> : null}

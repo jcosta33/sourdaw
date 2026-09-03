@@ -44,6 +44,7 @@ import { setSoundLock } from '../../useCases/soundLocks/setSoundLock';
 import { startNoteRepeat } from '../../useCases/startNoteRepeat';
 import { startSequencer } from '../../useCases/startSequencer';
 import { setStepCondition } from '../../useCases/stepModifications/setStepCondition';
+import { setStepProbability } from '../../useCases/stepModifications/setStepProbability';
 import { setStepRetrigger } from '../../useCases/stepModifications/setStepRetrigger';
 import { stopNoteRepeat } from '../../useCases/stopNoteRepeat';
 import { stopSequencer } from '../../useCases/stopSequencer';
@@ -671,6 +672,9 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 }
                                 onSetCondition={(trackId, stepIndex, condition) =>
                                     setStepCondition(deviceId, trackId, stepIndex, condition)
+                                }
+                                onSetProbability={(trackId, stepIndex, prob) =>
+                                    setStepProbability(deviceId, trackId, stepIndex, prob)
                                 }
                             />
                         ) : null}

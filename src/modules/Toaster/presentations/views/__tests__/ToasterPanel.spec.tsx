@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
     setSoundLock: vi.fn(),
     setStepRetrigger: vi.fn(),
     setStepCondition: vi.fn(),
+    setStepProbability: vi.fn(),
 }));
 
 import { ToasterPanel } from '../ToasterPanel';
@@ -40,6 +41,9 @@ vi.mock('../../../useCases/stepModifications/setStepRetrigger', () => ({
 }));
 vi.mock('../../../useCases/stepModifications/setStepCondition', () => ({
     setStepCondition: mocks.setStepCondition,
+}));
+vi.mock('../../../useCases/stepModifications/setStepProbability', () => ({
+    setStepProbability: mocks.setStepProbability,
 }));
 vi.mock('../../../useCases/trigger16Level', () => ({
     trigger16Level: mocks.trigger16Level,
@@ -299,5 +303,18 @@ describe('ToasterPanel', () => {
 
         expect(mocks.setStepCondition).toHaveBeenCalledTimes(1);
         expect(mocks.setStepCondition).toHaveBeenCalledWith('toaster-test', 0, 0, 'fill');
+    });
+
+    it('passes onSetProbability to StepSequencer and invokes setStepProbability', () => {
+        render(<ToasterPanel deviceId="toaster-test" />);
+
+        const stepCell = screen.getByTestId('toaster-step-0-0');
+        fireEvent.contextMenu(stepCell, { clientX: 50, clientY: 50 });
+
+        const probabilityOption = screen.getByRole('menuitem', { name: '50%' });
+        fireEvent.click(probabilityOption);
+
+        expect(mocks.setStepProbability).toHaveBeenCalledTimes(1);
+        expect(mocks.setStepProbability).toHaveBeenCalledWith('toaster-test', 0, 0, 0.5);
     });
 });

@@ -483,4 +483,60 @@ describe('StepSequencer — sound locks', () => {
         expect(onSetCondition).toHaveBeenCalledWith(0, 1, 'fill');
         expect(screen.queryByText('Condition')).not.toBeInTheDocument();
     });
+
+    it('includes probability in aria-label when step has probability < 1', () => {
+        const pads = [makePad(0)];
+        const pattern = makePattern(1, 2);
+        pattern.tracks[0]!.steps[0] = { ...baseStep, active: true, velocity: 0.8, probability: 0.75 };
+        pattern.tracks[0]!.steps[1] = { ...baseStep, active: true, velocity: 0.8, probability: 1 };
+
+        render(
+            <StepSequencer
+                pattern={pattern}
+                pads={pads}
+                currentStep={0}
+                isPlaying={false}
+                onToggleStep={vi.fn()}
+                onSetVelocity={vi.fn()}
+            />
+        );
+
+        const cells = screen.getAllByRole('checkbox');
+        expect(cells[0]).toHaveAccessibleName(/probability 75%/i);
+        expect(cells[1]).not.toHaveAccessibleName(/probability/i);
+    });
+
+    it('opens context menu and invokes onSetProbability when a probability option is selected', () => {
+        const onSetProbability = vi.fn();
+        const pads = [makePad(0)];
+        const pattern = makePattern(1, 4);
+        pattern.tracks[0]!.steps[1] = {
+            ...baseStep,
+            active: true,
+            probability: 1,
+        };
+
+        render(
+            <StepSequencer
+                pattern={pattern}
+                pads={pads}
+                currentStep={0}
+                isPlaying={false}
+                onToggleStep={vi.fn()}
+                onSetVelocity={vi.fn()}
+                onSetProbability={onSetProbability}
+            />
+        );
+
+        const cell = screen.getAllByRole('checkbox')[1]!;
+        fireEvent.contextMenu(cell, { clientX: 100, clientY: 200 });
+
+        expect(screen.getByText('Probability')).toBeInTheDocument();
+        const probButton = screen.getByRole('menuitem', { name: '50%' });
+        fireEvent.click(probButton);
+
+        expect(onSetProbability).toHaveBeenCalledTimes(1);
+        expect(onSetProbability).toHaveBeenCalledWith(0, 1, 0.5);
+        expect(screen.queryByText('Probability')).not.toBeInTheDocument();
+    });
 });
