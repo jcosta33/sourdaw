@@ -369,8 +369,9 @@ describe('high-level intent execution', () => {
         const confirmation = requireConfirmation();
 
         // An edit with no relationship to the blues plan's targets: a brand new track, not one of
-        // the ids the plan creates or touches.
-        executeAppAction({ type: 'addTrack', payload: { name: 'Unrelated Track', kind: 'audio' } });
+        // the ids the plan creates or touches. executeAppAction lands the write in the project
+        // document itself before it resolves, so awaiting it is the landing; no flush follows.
+        await executeAppAction({ type: 'addTrack', payload: { name: 'Unrelated Track', kind: 'audio' } });
 
         const firstConfirm = await confirmPendingChatActions({ confirmationId: confirmation.id });
         expect(firstConfirm).toMatchObject({
