@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     stopNoteRepeat: vi.fn(),
     triggerToasterPad: vi.fn(),
     setPadParamImmediate: vi.fn(),
+    setSoundLock: vi.fn(),
 }));
 
 import { ToasterPanel } from '../ToasterPanel';
@@ -28,6 +29,9 @@ vi.mock('../../../useCases/exit16Levels', () => ({
 }));
 vi.mock('../../../useCases/setPadParamImmediate', () => ({
     setPadParamImmediate: mocks.setPadParamImmediate,
+}));
+vi.mock('../../../useCases/soundLocks/setSoundLock', () => ({
+    setSoundLock: mocks.setSoundLock,
 }));
 vi.mock('../../../useCases/trigger16Level', () => ({
     trigger16Level: mocks.trigger16Level,
@@ -248,5 +252,18 @@ describe('ToasterPanel', () => {
         expect(mocks.setPadParamImmediate).not.toHaveBeenCalled();
         expect(mocks.trigger16Level).not.toHaveBeenCalled();
         expect(mocks.triggerToasterPad).not.toHaveBeenCalled();
+    });
+
+    it('passes onSetSoundLock to StepSequencer and invokes setSoundLock', () => {
+        render(<ToasterPanel deviceId="toaster-test" />);
+
+        const stepCell = screen.getByTestId('toaster-step-0-0');
+        fireEvent.contextMenu(stepCell, { clientX: 50, clientY: 50 });
+
+        const menuOption = screen.getByRole('menuitem', { name: 'snare-808' });
+        fireEvent.click(menuOption);
+
+        expect(mocks.setSoundLock).toHaveBeenCalledTimes(1);
+        expect(mocks.setSoundLock).toHaveBeenCalledWith('toaster-test', 0, 0, 'snare-808');
     });
 });
