@@ -174,10 +174,23 @@ const unroutableStubs = {
 } satisfies Pick<NativeHost, 'startDictation' | 'stopDictation' | 'cancelDictation' | 'grantPath'>;
 
 describe('reading a method off the addon', () => {
-    it('returns the implementation the host publishes', () => {
-        const host: NativeHost = { shutdown: () => undefined, ...unroutableStubs, scanPlugins: () => ['a'] };
+    it('calls the implementation with the host as its receiver, forwarding the arguments', () => {
+        // A plain function, like a napi class method, throws when called with
+        // any receiver other than the host it was read off. An implementation
+        // that ignored `this` could not distinguish a bound call from a bare
+        // reference, so this is what actually observes the binding.
+        const host: NativeHost = {
+            shutdown: () => undefined,
+            ...unroutableStubs,
+            scanPlugins(this: unknown, ...args: readonly unknown[]) {
+                if (this !== host) {
+                    throw new TypeError('Illegal invocation');
+                }
+                return args;
+            },
+        };
 
-        expect(nativeCommand(host, 'scanPlugins')([])).toEqual(['a']);
+        expect(nativeCommand(host, 'scanPlugins')(['/CLAP'], true)).toEqual([['/CLAP'], true]);
     });
 
     it('fails by name when an addon build does not publish it', () => {
