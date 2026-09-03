@@ -65,6 +65,8 @@ const mocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
     return {
         backend,
+        analyzeMixFromTrackLayout: vi.fn(),
+        summarizeFeatures: vi.fn(),
         stageDurableAsset:
             vi.fn<(file: File, name: string, leaseId: string) => Promise<{ hash: string; leaseId: string }>>(),
         commitDurablePromotionRecovery: vi.fn().mockResolvedValue({ status: 'committed' }),
@@ -141,7 +143,14 @@ vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
     isWebLlmLoaded: () => true,
 }));
 
-vi.mock('#/modules/AudioAnalysis/useCases', () => ({ detectTempo: mocks.detectTempo }));
+// An exhaustive factory has to cover every name this spec's module graph reads from the barrel, not
+// only the ones the spec drives. The mentor lesson generator binds `analyzeMixFromTrackLayout` while
+// its module evaluates, so omitting it fails the whole file at import rather than at a call.
+vi.mock('#/modules/AudioAnalysis/useCases', () => ({
+    analyzeMixFromTrackLayout: mocks.analyzeMixFromTrackLayout,
+    detectTempo: mocks.detectTempo,
+    summarizeFeatures: mocks.summarizeFeatures,
+}));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
