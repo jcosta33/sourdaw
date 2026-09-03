@@ -3,7 +3,7 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { runDeliverCli } from '../deliverPullRequest.ts';
 import { AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID } from '../githubAppIdentity.ts';
@@ -12,9 +12,11 @@ import { runRecoverDeliveryLockCli, type DeliveryLockRecoveryDependencies } from
 
 const NUMBER = 3437;
 const OWNER_OID = '3ebcbf92f6a331dcd31a00b1891b522fbd170748';
+const SECOND_OWNER_OID = '4d5a9fed9640e4b074b79c8a9fa3f6708ad3538e';
 const CURRENT_HEAD = 'c'.repeat(40);
 const REF = `refs/sourdaw/delivery/pr-${NUMBER}`;
 const OWNER = '{"version":1,"pid":26953,"token":"f515a71d-c25a-4714-b725-ef6e9b141005"}';
+const SECOND_OWNER = '{"version":1,"pid":45432,"token":"8cd2556c-c162-45d7-bc73-17a019c581b1"}';
 
 type IncidentTestChange = {
     ownerOid?: string;
@@ -28,10 +30,10 @@ function git(root: string, args: string[], input?: string): string {
     return execFileSync('git', args, { cwd: root, encoding: 'utf8', input }).trim();
 }
 
-function initialize(root: string): void {
+function initialize(root: string, ownerOid = OWNER_OID, owner = OWNER): void {
     git(root, ['init', '--quiet']);
-    const oid = git(root, ['hash-object', '-w', '--stdin'], OWNER);
-    expect(oid).toBe(OWNER_OID);
+    const oid = git(root, ['hash-object', '-w', '--stdin'], owner);
+    expect(oid).toBe(ownerOid);
     git(root, ['update-ref', REF, oid]);
 }
 
@@ -149,6 +151,23 @@ describe('deliver --recover-lock 3437', () => {
         }
     });
 
+    it('routes the second retained incident through the existing deliver command', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-recovery-'));
+        initialize(root, SECOND_OWNER_OID, SECOND_OWNER);
+        const state = remoteState();
+
+        try {
+            await expect(
+                runDeliverCli(['--recover-lock', '3437', '--owner', SECOND_OWNER_OID], {
+                    recovery: dependencies(root, [state, state]),
+                })
+            ).resolves.toBe(0);
+            expect(() => git(root, ['rev-parse', '--verify', REF])).toThrow();
+        } finally {
+            rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+        }
+    });
+
     it('releases only the exact retained incident lock after two stable reads without a receipt', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-recovery-'));
         initialize(root);
@@ -160,6 +179,29 @@ describe('deliver --recover-lock 3437', () => {
             ).resolves.toBe(0);
             expect(() => git(root, ['rev-parse', '--verify', REF])).toThrow();
         } finally {
+            rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+        }
+    });
+
+    it('recovers the second retained lock selected by its PR/owner pair with owner pid 45432 dead', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-recovery-'));
+        initialize(root, SECOND_OWNER_OID, SECOND_OWNER);
+        const state = remoteState();
+        const base = dependencies(root, [state, state]);
+        const configured: DeliveryLockRecoveryDependencies = {
+            ...base,
+            processIsDead: (pid) => pid === 45432,
+        };
+        const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+        try {
+            await expect(runRecoverDeliveryLockCli(['3437', '--owner', SECOND_OWNER_OID], configured)).resolves.toBe(
+                0
+            );
+            expect(log).toHaveBeenCalledWith(`delivery-lock-recovered:3437:${SECOND_OWNER_OID}:${CURRENT_HEAD}`);
+            expect(() => git(root, ['rev-parse', '--verify', REF])).toThrow();
+        } finally {
+            log.mockRestore();
             rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
         }
     });
@@ -292,6 +334,51 @@ describe('deliver --recover-lock 3437', () => {
                 expectedError
             );
             expect(git(root, ['rev-parse', '--verify', REF])).toBe(OWNER_OID);
+        } finally {
+            rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+        }
+    });
+
+    it('refuses a 3437 owner matching no incident and lists both retained 3437 commands', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-recovery-'));
+        initialize(root);
+        const state = remoteState();
+        const usageListing = new RegExp(
+            [
+                'usage: pnpm deliver --recover-lock 3344 --owner 9f9c875746e69d6282e4233b32dfb1d07f418724',
+                `pnpm deliver --recover-lock 3437 --owner ${OWNER_OID}`,
+                `pnpm deliver --recover-lock 3437 --owner ${SECOND_OWNER_OID}`,
+            ].join('\\s+')
+        );
+
+        try {
+            await expect(
+                runRecoverDeliveryLockCli(['3437', '--owner', 'e'.repeat(40)], dependencies(root, [state, state]))
+            ).rejects.toThrow(usageListing);
+            expect(git(root, ['rev-parse', '--verify', REF])).toBe(OWNER_OID);
+        } finally {
+            rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+        }
+    });
+
+    it.each<[string, string[], string, string]>([
+        ['the second pair against the first retained lock', ['3437', '--owner', SECOND_OWNER_OID], OWNER_OID, OWNER],
+        [
+            'the first pair against the second retained lock',
+            ['3437', '--owner', OWNER_OID],
+            SECOND_OWNER_OID,
+            SECOND_OWNER,
+        ],
+    ])('refuses %s without deleting the retained ref', async (_label, args, retainedOid, retainedOwner) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-recovery-'));
+        initialize(root, retainedOid, retainedOwner);
+        const state = remoteState();
+
+        try {
+            await expect(runRecoverDeliveryLockCli(args, dependencies(root, [state, state]))).rejects.toThrow(
+                /owner does not match this recovery incident/
+            );
+            expect(git(root, ['rev-parse', '--verify', REF])).toBe(retainedOid);
         } finally {
             rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
         }
