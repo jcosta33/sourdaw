@@ -1,0 +1,24 @@
+src/modules/AiRuntime/transformers/promptParser/hasHighLevelCreationEvidence.ts
+  s_ac03a4ebaa3f6e::t_e004dda1dfe5ab 77
+  s_ac03a4ebaa3f6e::t_86e00f8a3cc0df 53-57,62-64,67,71-75
+src/modules/AiRuntime/transformers/promptParser/__tests__/hasHighLevelCreationEvidence.spec.ts
+  s_ac03a4ebaa3f6e::t_c13d08cdb2c0fc 127,142-146
+  s_ac03a4ebaa3f6e::t_f505fa22948ab3 56-61
+  s_ac03a4ebaa3f6e::t_eb81c5b3b9ba67 80-86
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "05fd1bbcf4c70a544596a678298407e1df2e9c4d",
+  "prompts": {},
+  "sessions": {
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
