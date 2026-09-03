@@ -9,13 +9,29 @@ const scanHelper: PayloadComponent = {
     bytes: Buffer.from('scan helper'),
 };
 
-describe('digestPayloadComponents', () => {
-    it('changes when one component keeps its path but changes its bytes', () => {
-        const before = digestPayloadComponents([asar, addon, scanHelper]);
-        const rebuiltAddon: PayloadComponent = { ...addon, bytes: Buffer.from('native addon, rebuilt') };
-        const after = digestPayloadComponents([asar, rebuiltAddon, scanHelper]);
+/** The real three-component array `readPayloadIdentity` hashes, in the order it was declared here — not necessarily the sorted order `digestPayloadComponents` hashes internally. */
+const threeComponents: readonly PayloadComponent[] = [asar, addon, scanHelper];
 
-        expect(after).not.toBe(before);
+describe('digestPayloadComponents', () => {
+    // A digest that only iterated a prefix of the sorted list (for example
+    // `sorted.slice(0, 2)`) would stay green against a test that only ever
+    // changed one particular component's bytes, if that component happened to
+    // sort into the covered prefix. Asserting all three individually, inside
+    // the real three-component array, is what makes a dropped component show
+    // up regardless of where it sorts.
+    it.each([
+        ['app.asar', asar.path],
+        ['the native addon', addon.path],
+        ['the scan helper', scanHelper.path],
+    ])('changes when %s changes its bytes inside the real three-component array', (_label, changedPath) => {
+        const before = digestPayloadComponents(threeComponents);
+        const changed = threeComponents.map((component) =>
+            component.path === changedPath
+                ? { ...component, bytes: Buffer.concat([component.bytes, Buffer.from('!')]) }
+                : component
+        );
+
+        expect(digestPayloadComponents(changed)).not.toBe(before);
     });
 
     it('does not change when the same components are given in a different order', () => {
