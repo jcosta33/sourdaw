@@ -1,0 +1,58 @@
+scripts/desktopLatencySleep.ts
+  s_9b530f08172a54::t_f780b016ffab8e 1-9
+scripts/desktopLatencyDiagnostics.ts
+  s_9b530f08172a54::t_8b1348048f1a44 16
+scripts/desktopLatencyLaunch.ts
+  s_9b530f08172a54::t_5da469c3b54f0f 17
+scripts/desktopLatencyRecord.ts
+  s_9b530f08172a54::t_a357282c1a5283 100-103
+  s_9b530f08172a54::t_ef680de2cd693e 45-46,52-61
+  s_9b530f08172a54::t_185c50ce123a82 12-13
+  s_9b530f08172a54::t_7ae1a4656e1c39 126
+  s_9b530f08172a54::t_bd975ae3a4e72d 144-202
+  s_9b530f08172a54::t_213e62b6c4742b 224-230
+  s_9b530f08172a54::t_cad064c0cd651e 247
+scripts/desktopLatencyPreferencesRecovery.ts
+  s_9b530f08172a54::t_a37320e7a2ef59 22
+scripts/__tests__/desktopLatencyReadings.spec.ts
+  s_9b530f08172a54::t_6d63f9069020ca 177-185,187,189-213,217-220,222,224-226
+  s_9b530f08172a54::t_918f835fdfe56a 5,7
+  s_9b530f08172a54::t_aed33cf913a2ed 166-171
+scripts/desktopLatencyReadings.ts
+  s_9b530f08172a54::t_ff05ee34e0a599 182-210,213,219-228
+  s_28abfd94826e36::t_11666daa815931 229-230
+scripts/desktopLatencyProcess.ts
+  s_9b530f08172a54::t_aee8a92df7cc1a 1-128
+scripts/measureDesktopLatency.ts
+  s_9b530f08172a54::t_dc5b011df2640a 24-29,36-39,59-60,75-80,84-85,89,94-97,99,101,104,154,174,213,215-220,225,240-242,256
+  s_9b530f08172a54::t_e2aa35bc41aaef 198-202,205-212,214,221-224,226-237
+  s_9b530f08172a54::t_ee29bdfd471742 142,155-160
+  s_9b530f08172a54::t_0db22ee1ab971a 246-255,257-258
+scripts/desktopLatencyConnect.ts
+  s_9b530f08172a54::t_e35159c10bca85 1-588
+  s_9b530f08172a54::t_41ea47720899a4 589-594
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "9dc6fea5b096d90b8bfbc76f0d509465054855a1",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
