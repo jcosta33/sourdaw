@@ -1,0 +1,23 @@
+src/modules/AiRuntime/models/Tools/__tests__/CreateAddNotesToolSchema.spec.ts
+  s_ac03a4ebaa3f6e::t_30cd2a3f2e1d20 4,68,74-75
+src/modules/AiRuntime/models/Tools/__tests__/GenerationAndView.spec.ts
+  s_ac03a4ebaa3f6e::t_8025cfd55a8fc5 7
+src/modules/AiRuntime/useCases/__tests__/getMidiNoteGenerationToolSchemas.spec.ts
+  s_ac03a4ebaa3f6e::t_12448f7603e760 4,12-26,41,49,59-63,102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "3ac26d39872fe8cc42218e3bf655dd2595464a65",
+  "prompts": {},
+  "sessions": {
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
