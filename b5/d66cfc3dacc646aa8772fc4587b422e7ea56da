@@ -1,0 +1,19 @@
+scripts/test-health-gate-scripts.sh
+  s_ac03a4ebaa3f6e::t_2db59ea78bb412 548,574
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b5d66cfc3dacc646aa8772fc4587b422e7ea56da",
+  "prompts": {},
+  "sessions": {
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
