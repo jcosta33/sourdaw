@@ -82,32 +82,53 @@ function numericBounds(parameter: Parameter): { minimum: number; maximum: number
         : { minimum: parameter.minimum, maximum: parameter.maximum };
 }
 
-type ContentPin = { count: number; first: { pitch: number; startBeat: number; duration: number; velocity: number }[] };
+type PinnedNote = { pitch: number; startBeat: number; duration: number; velocity: number };
 
-const SEEDED_CONTENT_PINS: Record<string, ContentPin> = {
-    chordProgression: {
-        count: 6,
-        first: [
-            { pitch: 36, startBeat: 0, duration: 4, velocity: 85 },
-            { pitch: 40, startBeat: 0, duration: 4, velocity: 85 },
-            { pitch: 43, startBeat: 0, duration: 4, velocity: 85 },
-        ],
-    },
-    drumPattern: {
-        count: 30,
-        first: [
-            { pitch: 36, startBeat: 0, duration: 0.25, velocity: 105 },
-            { pitch: 42, startBeat: 0, duration: 0.25, velocity: 87 },
-            { pitch: 42, startBeat: 0.5, duration: 0.25, velocity: 77 },
-        ],
-    },
-    melody: {
-        count: 2,
-        first: [
-            { pitch: 55, startBeat: 0, duration: 2, velocity: 95 },
-            { pitch: 52, startBeat: 4, duration: 0.5, velocity: 94 },
-        ],
-    },
+const SEEDED_CONTENT_PINS: Record<string, PinnedNote[]> = {
+    chordProgression: [
+        { pitch: 36, startBeat: 0, duration: 4, velocity: 85 },
+        { pitch: 40, startBeat: 0, duration: 4, velocity: 85 },
+        { pitch: 43, startBeat: 0, duration: 4, velocity: 85 },
+        { pitch: 41, startBeat: 4, duration: 4, velocity: 90 },
+        { pitch: 45, startBeat: 4, duration: 4, velocity: 90 },
+        { pitch: 48, startBeat: 4, duration: 4, velocity: 90 },
+    ],
+    drumPattern: [
+        { pitch: 36, startBeat: 0, duration: 0.25, velocity: 105 },
+        { pitch: 42, startBeat: 0, duration: 0.25, velocity: 87 },
+        { pitch: 42, startBeat: 0.5, duration: 0.25, velocity: 77 },
+        { pitch: 36, startBeat: 1, duration: 0.25, velocity: 112 },
+        { pitch: 38, startBeat: 1, duration: 0.25, velocity: 105 },
+        { pitch: 42, startBeat: 1, duration: 0.25, velocity: 80 },
+        { pitch: 42, startBeat: 1.5, duration: 0.25, velocity: 79 },
+        { pitch: 46, startBeat: 1.75, duration: 0.25, velocity: 72 },
+        { pitch: 36, startBeat: 2, duration: 0.25, velocity: 106 },
+        { pitch: 42, startBeat: 2, duration: 0.25, velocity: 84 },
+        { pitch: 42, startBeat: 2.5, duration: 0.25, velocity: 75 },
+        { pitch: 36, startBeat: 3, duration: 0.25, velocity: 109 },
+        { pitch: 38, startBeat: 3, duration: 0.25, velocity: 103 },
+        { pitch: 42, startBeat: 3, duration: 0.25, velocity: 76 },
+        { pitch: 42, startBeat: 3.5, duration: 0.25, velocity: 81 },
+        { pitch: 36, startBeat: 4, duration: 0.25, velocity: 112 },
+        { pitch: 42, startBeat: 4, duration: 0.25, velocity: 84 },
+        { pitch: 42, startBeat: 4.5, duration: 0.25, velocity: 76 },
+        { pitch: 36, startBeat: 5, duration: 0.25, velocity: 107 },
+        { pitch: 38, startBeat: 5, duration: 0.25, velocity: 99 },
+        { pitch: 42, startBeat: 5, duration: 0.25, velocity: 75 },
+        { pitch: 42, startBeat: 5.5, duration: 0.25, velocity: 81 },
+        { pitch: 46, startBeat: 5.75, duration: 0.25, velocity: 73 },
+        { pitch: 36, startBeat: 6, duration: 0.25, velocity: 111 },
+        { pitch: 42, startBeat: 6, duration: 0.25, velocity: 76 },
+        { pitch: 42, startBeat: 6.5, duration: 0.25, velocity: 83 },
+        { pitch: 36, startBeat: 7, duration: 0.25, velocity: 108 },
+        { pitch: 38, startBeat: 7, duration: 0.25, velocity: 105 },
+        { pitch: 42, startBeat: 7, duration: 0.25, velocity: 83 },
+        { pitch: 42, startBeat: 7.5, duration: 0.25, velocity: 85 },
+    ],
+    melody: [
+        { pitch: 55, startBeat: 0, duration: 2, velocity: 95 },
+        { pitch: 52, startBeat: 4, duration: 0.5, velocity: 94 },
+    ],
 };
 
 describe('MIDI transform implementations', () => {
@@ -184,7 +205,12 @@ describe('MIDI transform implementations', () => {
 
         const notes = run(descriptor, { ...publishedArguments(descriptor), seed: 1 });
 
-        expect({ count: notes.length, first: notes.slice(0, 3) }).toEqual(SEEDED_CONTENT_PINS[name]);
+        const pinned = SEEDED_CONTENT_PINS[name];
+        if (pinned === undefined) {
+            throw new Error(`no seeded content pinned for ${name}`);
+        }
+
+        expect(notes).toEqual(pinned);
     });
 
     describe.each(getMidiTransformNames())('%s', (name) => {

@@ -334,10 +334,8 @@ describe('high-level intent execution', () => {
 
         expect(captureProjectRevision()).toBe(revisionAfterCommit);
         expect(getCreatedTracks()).toEqual(tracksAfterCommit);
-        expect(getCreatedTracks()).toHaveLength(tracksAfterCommit.length);
         expect(getMusicalNotes(clipId)).toEqual(notesAfterCommit);
         expect(undoStore.value?.past ?? []).toEqual(pastAfterCommit);
-        expect(undoStore.value?.past ?? []).toHaveLength(pastAfterCommit.length);
         expect(aiActionHistoryStore.value?.groups ?? []).toHaveLength(1);
     });
 
