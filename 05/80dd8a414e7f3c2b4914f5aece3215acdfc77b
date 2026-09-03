@@ -1,0 +1,23 @@
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_ac03a4ebaa3f6e::t_e616face56f44c 990
+src/modules/CrdtDocument/useCases/__tests__/replaceCrdtDocInLineage.spec.ts
+  s_ac03a4ebaa3f6e::t_6f807e0f3fa531 29,35
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchSwitchProjectIdentity.integration.spec.ts
+  s_ac03a4ebaa3f6e::t_8af0e9aca90f3f 1,37,42-53,57-59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "0580dd8a414e7f3c2b4914f5aece3215acdfc77b",
+  "prompts": {},
+  "sessions": {
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
