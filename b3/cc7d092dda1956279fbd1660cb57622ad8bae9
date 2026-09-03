@@ -1,0 +1,21 @@
+src/modules/Toaster/presentations/components/__tests__/PadGrid.spec.tsx
+  s_132d8b8d15acc8::t_8ac7dee99a9410 325,348,366,368,372,374,378
+src/modules/Toaster/presentations/views/__tests__/ToasterPanel.spec.tsx
+  s_132d8b8d15acc8::t_53bf8c6eaeaaa9 182,186-187,189,206-213,220-221,228-229,231-232,236-239,241-242,244
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b3cc7d092dda1956279fbd1660cb57622ad8bae9",
+  "prompts": {},
+  "sessions": {
+    "s_132d8b8d15acc8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ab9e72e336290f111",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
