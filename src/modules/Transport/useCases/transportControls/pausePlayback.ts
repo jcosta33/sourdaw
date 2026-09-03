@@ -1,7 +1,8 @@
 import { logger } from '#/infra/logger/appLogger';
-import { stopAllScheduled, stopNativeLiveGraphSession } from '#/modules/AudioEngine/useCases';
+import { audioEngine, stopAllScheduled, stopNativeLiveGraphSession } from '#/modules/AudioEngine/useCases';
 import { resetMidiState } from '#/modules/MIDI/useCases';
 
+import { getTempoAtBeat } from '../../models/TempoMap';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
@@ -46,9 +47,11 @@ export function pausePlayback(): void {
     // Fired rather than awaited, exactly as the stop gesture fires it: Web Audio
     // is the audible path, so nothing about pausing waits on the engine, and a
     // session that never started declines — the ordinary browser-build answer.
+    const changes = tempoMapStore.value?.changes ?? [];
+    const positionSeconds = secondsBetweenBeats(changes, 0, pausedBeat, state.tempo);
     Promise.resolve(
         stopNativeLiveGraphSession({
-            positionSeconds: secondsBetweenBeats(tempoMapStore.value?.changes ?? [], 0, pausedBeat, state.tempo),
+            positionSeconds,
         })
     ).catch((error: unknown) => {
         logger.warn(new Error('Native live graph session failed to park on pause', { cause: error }));
@@ -67,6 +70,17 @@ export function pausePlayback(): void {
     // discrete events: start, stop, seek), so without this the store still
     // holds the position where playback *started* and the next
     // `startPlayback` resumes from there instead of the pause point.
+    const tempo = getTempoAtBeat(changes, pausedBeat, state.tempo);
+    audioEngine.setTransportInfo(
+        pausedBeat,
+        positionSeconds,
+        tempo,
+        false,
+        state.loopStart,
+        state.loopEnd,
+        state.isLooping
+    );
+
     updateTransportState({ isPlaying: false, isRecording: false, playheadPosition: pausedBeat });
 
     // Cancel any pending count-in. During count-in `isRecording` is still
