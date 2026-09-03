@@ -23,21 +23,22 @@ the probe that would have caught it. Keep each lesson short enough to paste into
 
 ## Lessons from escapes
 
-### 2026-09-02 — a mirror that implements half of the engine's release law (escaped via PR #3363, repair tracked in #3437)
+### 2026-09-02 — a mirror that implements half of the engine's release law (escaped via PR #3363; clip repair in flight in #3437)
 
-PR #3363 fixed loop-end automation starvation by teaching the native live writer to drop writes
-stamped at the loop end, and merged green. The post-merge correctness round found the writer's own
-release mirror implements only the playhead half of the engine's `proven_popped` law: the seam half
-— carried stamps released two wraps post-echo when the start frame precedes the span end frame — is
-missing, so a step one poll interval below the loop end, which the drop rule keeps, is never
-released. Starvation returned one quantum inside the boundary the fix claimed, reproduced by
-simulation: 30 of 60 passes frozen with a step 1 ms below the loop end, and an in-repo probe
-(starvation spec with last step 3.9999) freezing by pass 8.
+PR #3363 shipped fader, pan and send automation on the native live engine with the loop-end
+starvation live: its clip keeps writes stamped at the loop end (`orderedWrites`,
+`writeLandSeconds(write) <= span.endSeconds`). The post-merge correctness round found the writer's
+own release mirror implements only the playhead half of the engine's `proven_popped` law: the seam
+half — carried stamps released two wraps post-echo when the start frame precedes the span end
+frame — is missing, so a step one poll interval below the loop end is never mirrored as released.
+Reproduced by simulation (30 of 60 passes frozen with a step 1 ms below the loop end) and by a
+lane-run probe of the starvation spec with its last step set one poll interval below the loop end,
+frozen by pass 8. The open #3437 repairs the clip, and its outstanding review round covers the
+mirror gap.
 
-Blind spot: no correctness stance ran before merge — a parallel session delivered while the round
-was still in flight — and the mirror was checked against the half of the law the failing test
-exercised, not the whole law. The specs pinned the drop rule at the boundary the bug report named
-and never one poll interval inside it.
+Blind spot: the mirror was checked against the half of the law the failing test exercised, not the
+whole law — stances ran across five attacked heads and still enumerated only part of it. The specs
+pinned the behavior at the boundary the bug report named and never one poll interval inside it.
 
 Probe that would have caught it: when a fix maintains a mirror of another component's state,
 enumerate every clause of the owning component's invariant from its source (the engine's
