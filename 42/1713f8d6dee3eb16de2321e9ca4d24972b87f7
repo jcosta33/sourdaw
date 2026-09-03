@@ -1,0 +1,63 @@
+src/modules/AiRuntime/models/HostedToolPlanLimits.ts
+  s_dfb65312e8705b::t_0c71627c836e1a 9-12
+src/modules/AiRuntime/repositories/__tests__/providerAdapterConformance.spec.ts
+  s_9b530f08172a54::t_d312ae246c47da 495
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateCloudToolCalls.spec.ts
+  s_9b530f08172a54::t_e72e5aeec5637c 83-88
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateOpenAiCompatibleToolCalls.spec.ts
+  s_9b530f08172a54::t_7fe10880577b6b 4,38,65,137,161-172,247,260,306,308,344,368,370-394,415,506,559
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls.ts
+  s_dfb65312e8705b::t_6d6b1e31b86c74 17,85-87,141,161-163
+src/modules/AiRuntime/repositories/webLlm/toolCalling.ts
+  s_dfb65312e8705b::t_623e273fa2e570 21,24-25,46-47
+src/modules/AiRuntime/repositories/__tests__/drumBusProviderPlanConformance.spec.ts
+  s_88d02ce44764cb::t_33dc3489a75de0 67
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateCloudToolCalls.ts
+  s_892747dc38b0c9::t_6703fc9bccad42 49
+src/modules/AiRuntime/repositories/webLlm/__tests__/toolCalling.spec.ts
+  s_88d02ce44764cb::t_9e04fb09575664 75-104
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_892747dc38b0c9::t_b115f96f8f08f0 213-219,227-244
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_892747dc38b0c9::t_e9f50a552de4c5 507
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "421713f8d6dee3eb16de2321e9ca4d24972b87f7",
+  "prompts": {},
+  "sessions": {
+    "s_88d02ce44764cb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a45533e8a190b9515",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_892747dc38b0c9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-af6550683230fcb5f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_dfb65312e8705b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "293bb5fa-b660-405b-a86a-ce1ae9d0d147",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
