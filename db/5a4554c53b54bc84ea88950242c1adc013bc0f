@@ -1,0 +1,19 @@
+.gitleaks.toml
+  s_f70d3713ebe89a::t_eb688cee8d3952 57-61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "db5a4554c53b54bc84ea88950242c1adc013bc0f",
+  "prompts": {},
+  "sessions": {
+    "s_f70d3713ebe89a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a7a5acbea933d858d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
