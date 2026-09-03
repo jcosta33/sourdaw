@@ -50,6 +50,9 @@ describe('hasHighLevelCreationEvidence', () => {
         'create a few grooves',
         'make some riffs',
         'lay down some progressions',
+        // A non-numeric determiner on "beats" still introduces a plural object; only a numeric
+        // determiner naming a beat count reads as a duration instead.
+        'add some beats',
     ])('reads a request for something new as creation evidence: %s', (request) => {
         expect(hasHighLevelCreationEvidence(request)).toBe(true);
     });
@@ -102,13 +105,29 @@ describe('hasHighLevelCreationEvidence', () => {
         'add reverb to the song',
         'make the session louder',
         'build out the arrangement',
-        // A partitive gap ending in "of" paired with a numbered tail names an existing object by
+        // A partitive gap ending in "of" paired with an identifier tail names an existing object by
         // kind and identifier: these duplicate or bounce it rather than create something new.
         'make a copy of track 3',
         'make a duplicate of clip 4',
         'produce a bounce of track 2',
         'make a stem of track 5',
+        // The identifier tail also reads a hash-prefixed number, a single capital letter, or a
+        // spelled-out number one through ten.
+        'make a copy of track #3',
+        'make a copy of clip A',
+        'make a copy of track three',
+        // False for an unrelated reason: the gap "copy of the " is three words, past the two-word
+        // cap INTRODUCED_OBJECT_PATTERN allows, so the pattern never matches here at all.
         'make a copy of the drums',
+        // A numeric determiner immediately before "beat(s)" names a duration, not an object: the
+        // whole match reads as a measure rather than something to create.
+        'make the intro 8 beats longer',
+        'make the loop 4 beats long',
+        'start the fill 2 beats early',
+        'make it 4 beats longer',
+        'make each note 2 beats long',
+        'make the drums 2 beats later',
+        'make it 1 beat longer',
     ])('refuses a mixing or editing request that names an object the project already holds: %s', (request) => {
         expect(hasHighLevelCreationEvidence(request)).toBe(false);
     });
