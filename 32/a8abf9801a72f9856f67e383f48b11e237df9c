@@ -1,0 +1,33 @@
+src/modules/WorkspaceShell/presentations/components/__tests__/InstrumentBottomPanel.spec.tsx
+  s_9b530f08172a54::t_53c6c66b0f4d00 95-113
+src/components/daw/DawPluginMetricTile.tsx
+  s_8962e655b20bbc::t_559705cf5be490 10,20,27-38,41-49,51-59
+src/modules/Fermenter/presentations/views/FermenterPanel.tsx
+  s_9b530f08172a54::t_ef90f88ae6920b 8-9,129-131,133-134,136,534,627-638,640-674,678,714,729-730
+src/modules/WorkspaceShell/presentations/components/InstrumentBottomPanel.tsx
+  s_9b530f08172a54::t_e3f6e90b775d47 36-40,46-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "32a8abf9801a72f9856f67e383f48b11e237df9c",
+  "prompts": {},
+  "sessions": {
+    "s_8962e655b20bbc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a3499d495347c2e4b",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
