@@ -368,7 +368,8 @@ describe('StepSequencer — sound locks', () => {
         );
 
         const cellWithCondition = screen.getAllByRole('checkbox')[1]!;
-        expect(cellWithCondition).toHaveAccessibleName(/ratchet 2x, condition fill/i);
+        expect(cellWithCondition).toHaveAccessibleName(/ratchet 3x, condition fill/i);
+        expect(cellWithCondition).toHaveTextContent('3×');
 
         const conditionBadge = screen.getByTestId('toaster-step-condition-0-1');
         expect(conditionBadge).toBeInTheDocument();
@@ -378,6 +379,41 @@ describe('StepSequencer — sound locks', () => {
         expect(normalCell).not.toHaveAccessibleName(/ratchet/i);
         expect(normalCell).not.toHaveAccessibleName(/condition/i);
         expect(screen.queryByTestId('toaster-step-condition-0-2')).not.toBeInTheDocument();
+    });
+
+    it('renders both soundLock and condition badges in their respective positions when both are present', () => {
+        const pads = [makePad(0)];
+        const pattern = makePattern(1, 4);
+        pattern.tracks[0]!.steps[1] = {
+            ...baseStep,
+            active: true,
+            velocity: 0.8,
+            soundLock: 'snare-808',
+            condition: 'fill',
+        };
+
+        render(
+            <StepSequencer
+                pattern={pattern}
+                pads={pads}
+                currentStep={0}
+                isPlaying={false}
+                onToggleStep={vi.fn()}
+                onSetVelocity={vi.fn()}
+            />
+        );
+
+        const soundLockBadge = screen.getByTestId('toaster-step-soundlock-0-1');
+        const conditionBadge = screen.getByTestId('toaster-step-condition-0-1');
+
+        expect(soundLockBadge).toBeInTheDocument();
+        expect(soundLockBadge).toHaveTextContent('snare');
+        expect(soundLockBadge.className).toContain('bottom-0.5');
+
+        expect(conditionBadge).toBeInTheDocument();
+        expect(conditionBadge).toHaveTextContent('fill');
+        expect(conditionBadge.className).toContain('top-0.5');
+        expect(conditionBadge.className).toContain('right-1');
     });
 
     it('opens context menu and invokes onSetRetrigger when a ratchet option is selected', () => {

@@ -146,7 +146,7 @@ export const StepSequencer = ({
                                         aria-label={`${pad.name} step ${stepIndex + 1}${
                                             step.active ? `, on, velocity ${Math.round(step.velocity * 100)}%` : ', off'
                                         }${step.soundLock ? `, sound lock ${step.soundLock}` : ''}${
-                                            step.retriggerCount > 0 ? `, ratchet ${step.retriggerCount}x` : ''
+                                            step.retriggerCount > 0 ? `, ratchet ${step.retriggerCount + 1}x` : ''
                                         }${
                                             step.condition && step.condition !== 'always'
                                                 ? `, condition ${step.condition}`
@@ -225,7 +225,7 @@ export const StepSequencer = ({
                                         {step.active && step.condition && step.condition !== 'always' ? (
                                             <span
                                                 data-testid={`toaster-step-condition-${track.padIndex}-${stepIndex}`}
-                                                className="absolute bottom-0.5 right-1 pointer-events-none text-[6px] font-bold uppercase leading-none text-white/75 drop-shadow"
+                                                className="absolute top-0.5 right-1 pointer-events-none max-w-[26px] truncate text-[6px] font-bold uppercase leading-none text-white/75 drop-shadow"
                                             >
                                                 {step.condition}
                                             </span>
@@ -242,7 +242,7 @@ export const StepSequencer = ({
 
                                         {step.active && step.retriggerCount > 0 ? (
                                             <div className="absolute left-1 top-1 text-[5px] font-bold text-white/45">
-                                                {step.retriggerCount}×
+                                                {step.retriggerCount + 1}×
                                             </div>
                                         ) : null}
 
