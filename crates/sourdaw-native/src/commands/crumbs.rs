@@ -17,8 +17,8 @@ use daw_dsp::crumbs::analysis::pitch::detect_pitch;
 use daw_dsp::crumbs::engine::{CrumbsEngine, CrumbsMetering};
 use daw_dsp::crumbs::sample::SampleData;
 use daw_dsp::crumbs::types::{CrumbsCommand, CrumbsParam, SampleId};
-use daw_engine::audio_bridge::MAX_BLOCK_FRAMES;
-use daw_engine::scheduler::CRUMBS_CAPTURE_RESERVE;
+use daw_engine::scheduler::{GraphCommand, CRUMBS_CAPTURE_RESERVE};
+use daw_engine::GraphBatchError;
 use rtrb::Producer;
 use serde::{Deserialize, Serialize};
 
@@ -199,8 +199,8 @@ pub struct LoopPointDetectionResult {
 /// Refuse when the session already holds its ceiling of live crumbs
 /// instances.
 ///
-/// Each live instance holds one capture slot of the shared effect table and
-/// one bridge for its record feed. The app renders exactly one Crumbs panel,
+/// Each live instance holds one slot of the shared effect table and one seat
+/// on the engine's captured-input bus. The app renders exactly one Crumbs panel,
 /// and re-pointing it tears the old instance down asynchronously while the new
 /// one is already being created, so two can be live at once. The gate this
 /// enforces is the instance map itself: a destroy removes its map entry
@@ -227,9 +227,15 @@ fn ensure_crumbs_capture_headroom(
 }
 
 /// Create a new crumbs engine instance.
+///
+/// `sample_rate` is ignored: the sampler records the engine's own input tap
+/// and renders on the engine's master chain, so its only correct rate is the
+/// device's, read from the engine handle. A rate supplied here would stamp
+/// every committed take — and clamp `record_max_samples` — against a number
+/// the device never ran at.
 pub async fn create_crumbs(
     instance_id: String,
-    sample_rate: f32,
+    _sample_rate: f32,
     state: &CrumbsState,
     app_state: &AppState,
 ) -> Result<(), String> {
@@ -238,10 +244,9 @@ pub async fn create_crumbs(
     // the insert are one critical section — a count-then-act split here is
     // what let two concurrent creates both observe the same live count and
     // both register against a ceiling with one slot left. Every path holding
-    // two of these locks takes them instances -> engine -> audio_bridges;
-    // `destroy_crumbs` already held exactly that order, so this hold cannot
-    // invert against it — including across the re-point's concurrent
-    // create/destroy pair.
+    // both of these locks takes them instances -> engine; `destroy_crumbs`
+    // already held exactly that order, so this hold cannot invert against it
+    // — including across the re-point's concurrent create/destroy pair.
     let mut instances = state
         .instances
         .lock()
@@ -264,7 +269,6 @@ pub async fn create_crumbs(
     let (commit_tx, commit_rx) = rtrb::RingBuffer::new(2);
     let (recycle_tx, recycle_rx) = rtrb::RingBuffer::new(2);
     let metering = Arc::new(CrumbsMetering::default());
-    let engine = CrumbsEngine::with_metering(sample_rate, metering.clone());
 
     #[cfg(test)]
     state.notify_create_before_engine_lock();
@@ -278,43 +282,49 @@ pub async fn create_crumbs(
             .lock()
             .map_err(|e| format!("Failed to lock engine: {e}"))?;
 
-        if let Some(ref mut engine_handle) = *engine_guard {
-            // Reserve the id up front and register an audio bridge alongside the
-            // slot (mirrors the CLAP path in plugins.rs): the bridge is the only
-            // channel that carries real audio from the app into the native
-            // engine — the slot feeds incoming bridge blocks to the engine's
-            // record input before rendering, so without it armed recording can
-            // only ever capture silence.
-            //
-            // The capture slot takes a slot of the same shared effect table the
-            // project's devices and its plugins fill, so refuse before the id is
-            // reserved and the bridge is published. The audio thread's refusal is
-            // a counter nothing here can read, and a capture slot refused there
-            // leaves armed recording capturing silence with nothing saying why.
-            engine_handle.ensure_effect_table_headroom(1)?;
-
-            let id = engine_handle.reserve_plugin_id();
-            let (bridge, bridge_handle) = daw_engine::audio_bridge::create_audio_bridge(id);
-            let mut engine = engine;
-            engine.enable_commit_handoff();
-            let slot = CrumbsPluginSlot {
-                engine,
-                command_rx: rx,
-                commit_tx,
-                recycle_rx,
-            };
-            engine_handle.add_plugin_with_bridge(id, Box::new(slot), bridge)?;
-
-            let mut feed = app_state
-                .audio_bridges
-                .lock()
-                .map_err(|e| format!("Failed to lock audio_bridges: {e}"))?;
-            feed.bridges.insert(id, bridge_handle);
-
-            id
-        } else {
+        let Some(engine_handle) = engine_guard.as_mut() else {
             return Err("Native engine not running".to_string());
-        }
+        };
+
+        // A reserved id is an opaque handle, never a dense index, so a refused
+        // batch below simply leaves this one unused.
+        let id = engine_handle.reserve_plugin_id();
+        // The device's rate, not the caller's: this engine renders on the
+        // master chain and records the tap the same device feeds.
+        let mut engine = CrumbsEngine::with_metering(engine_handle.sample_rate(), metering.clone());
+        engine.enable_commit_handoff();
+        let slot = CrumbsPluginSlot {
+            engine,
+            command_rx: rx,
+            commit_tx,
+            recycle_rx,
+        };
+        // The slot and its record feed cross as one fenced batch. Admission
+        // checks the effect table and the capture ledger for the whole batch
+        // and provisions the ring to fit before the first push, so a refusal
+        // leaves nothing queued and nothing to unwind. Registering the two
+        // separately could strand a slot on the graph — audible, unrecordable,
+        // and owned by no instance — whenever the second command was refused.
+        engine_handle
+            .send_graph_batch(vec![
+                GraphCommand::AddPlugin(id, Box::new(slot)),
+                GraphCommand::RegisterCaptureConsumer(id),
+            ])
+            .map_err(|error| match error {
+                GraphBatchError::Refused(reason) => reason,
+                // Unreachable by construction, and deliberately not unwound:
+                // the only route to the audio thread is the ring that just
+                // failed, so a removal command would have nowhere to go.
+                GraphBatchError::Partial {
+                    pushed,
+                    total,
+                    error,
+                } => format!(
+                    "the crumbs slot was published in part ({pushed} of {total} commands): {error}"
+                ),
+            })?;
+
+        id
     };
 
     instances.insert(
@@ -351,26 +361,25 @@ pub async fn destroy_crumbs(
         return Ok(());
     };
 
-    // Keep both ownership ledgers intact until every fallible lock and the
+    // Keep the ownership ledger intact until every fallible lock and the
     // scheduler-removal admission succeed. A full command ring means the
-    // runtime is still live, so its map entry and bridge must remain reachable
-    // for retry. Lock order stays instances -> engine -> audio_bridges.
+    // runtime is still live, so its map entry must remain reachable for
+    // retry. Lock order stays instances -> engine.
     let mut engine_guard = app_state
         .engine
         .lock()
         .map_err(|e| format!("Failed to lock engine: {e}"))?;
-    let mut feed = app_state
-        .audio_bridges
-        .lock()
-        .map_err(|e| format!("Failed to lock audio_bridges: {e}"))?;
 
     if let Some(ref mut engine_handle) = *engine_guard {
+        // No matching unregister: removal takes the id off the capture ledger
+        // and off the callback's input bus with the slot it belongs to, so an
+        // unregister here would be a second release of a consumer that is
+        // already gone.
         engine_handle.remove_plugin(engine_plugin_id)?;
     }
 
     // Once queued, scheduler retirement is inevitable. No fallible work may
     // follow before command-side ownership is erased.
-    feed.bridges.remove(&engine_plugin_id);
     instances.remove(&instance_id);
     Ok(())
 }
@@ -814,81 +823,6 @@ pub async fn stop_recording(instance_id: String, state: &CrumbsState) -> Result<
     Ok(())
 }
 
-/// Push one block of monitored input audio into every registered crumbs
-/// record bridge — the record feed's producer, the counterpart of the CLAP
-/// worklet relay (`process_plugin_audio`).
-///
-/// The feed carries the app's monitored input bus: the stereo stream input
-/// monitoring plays, handed in once per render quantum as interleaved
-/// little-endian f32 bytes (L0,R0,L1,R1,...) by the caller that owns that
-/// bus. Every registered sampler hears the same block, because an armed pad
-/// records exactly what the musician hears on the monitored input, and the
-/// map holds only crumbs bridges. The audio thread pops the far end of each
-/// ring through the scheduler and feeds the blocks to the engine's record
-/// input before rendering, so without this push an armed capture records
-/// silence end-to-end.
-///
-/// Real-time discipline mirrors the CLAP relay: the command runs on the
-/// command side, takes exactly one lock (map and scratch live under it), and
-/// touches each bridge only through its lock-free SPSC ring — the native
-/// render callback never takes this lock. The scratch is preallocated and
-/// refilled in place, so the path allocates nothing per block, and a block
-/// larger than `MAX_BLOCK_FRAMES` is refused before the de-interleave.
-///
-/// A refused push means the input ring was full — a hole in the take, not a
-/// dropped frame of monitoring — so it is counted in
-/// `bridge_input_blocks_refused` rather than failing the caller, which is
-/// already running behind when this happens.
-///
-/// The crumbs bridge is one-way by design: the sampler's audible output
-/// travels the wasm device graph, not this ring. Processed blocks are popped
-/// and dropped so the return ring cannot wedge at capacity and inflate the
-/// drop counters for the whole session.
-pub async fn feed_record_input(audio_bytes: Vec<u8>, app_state: &AppState) -> Result<(), String> {
-    let mut feed = app_state
-        .audio_bridges
-        .lock()
-        .map_err(|e| format!("Failed to lock audio_bridges: {e}"))?;
-
-    // Interleaved stereo f32: two samples, four bytes each, per frame.
-    const BYTES_PER_FRAME: usize = 2 * std::mem::size_of::<f32>();
-    let frames = audio_bytes.len() / BYTES_PER_FRAME;
-
-    if frames > MAX_BLOCK_FRAMES {
-        state_refused_block(app_state);
-        return Ok(());
-    }
-
-    // Split borrows so the scratch feeds every bridge without cloning: the
-    // map and the scratch live under one lock but bind to distinct fields.
-    let crate::state::CrumbsRecordFeed { bridges, scratch } = &mut *feed;
-    scratch.left.clear();
-    scratch.right.clear();
-    for frame in audio_bytes.chunks_exact(BYTES_PER_FRAME) {
-        scratch
-            .left
-            .push(f32::from_le_bytes([frame[0], frame[1], frame[2], frame[3]]));
-        scratch
-            .right
-            .push(f32::from_le_bytes([frame[4], frame[5], frame[6], frame[7]]));
-    }
-
-    for bridge in bridges.values_mut() {
-        if !bridge.push_input(&scratch.left, &scratch.right) {
-            state_refused_block(app_state);
-        }
-        while bridge.pop_output().is_some() {}
-    }
-    Ok(())
-}
-
-/// Count one input block the record feed could not hand to a bridge.
-fn state_refused_block(app_state: &AppState) {
-    app_state
-        .bridge_input_blocks_refused
-        .fetch_add(1, Ordering::Relaxed);
-}
-
 // ── Helpers ────────────────────────────────────────────────────────────
 
 /// The name table lives in `daw_dsp::crumbs::types` so this command and the
@@ -1079,11 +1013,41 @@ mod tests {
         assert!(!instances.contains_key("instance-overflow"));
     }
 
+    /// Pop the fenced batch one successful create queues — the two-command
+    /// fence, the master-chain slot, then its registration on the engine's
+    /// input bus — and return the engine plugin id both commands name.
+    fn pop_create_commands(command_rx: &mut rtrb::Consumer<GraphCommand>) -> usize {
+        match command_rx.pop() {
+            Ok(GraphCommand::BeginBatch { commands }) => assert_eq!(
+                commands, 2,
+                "the create's fence must announce the slot and its capture registration"
+            ),
+            Ok(_) => panic!("a create must publish its registration behind a batch fence"),
+            Err(_) => panic!("a create must queue its batch fence"),
+        }
+        let id = match command_rx.pop() {
+            Ok(GraphCommand::AddPlugin(id, _)) => id,
+            Ok(_) => panic!("the batch's first command must register the crumbs slot"),
+            Err(_) => panic!("a create must queue the slot registration"),
+        };
+        match command_rx.pop() {
+            Ok(GraphCommand::RegisterCaptureConsumer(registered)) => {
+                assert_eq!(
+                    registered, id,
+                    "the capture registration must name the slot it feeds"
+                );
+            }
+            Ok(_) => panic!("the batch's second command must register the capture consumer"),
+            Err(_) => panic!("a create must queue the capture registration"),
+        }
+        id
+    }
+
     /// A second create for the same UI/runtime id is refused while the
     /// instances guard still owns the first entry. The original registration
-    /// survives unchanged, so the engine slot, effect-table ledger, bridge map,
-    /// and command-side map cannot grow or leak a runtime that destroy no
-    /// longer reaches.
+    /// survives unchanged, so the engine slot, effect-table ledger, capture
+    /// ledger, and command-side map cannot grow or leak a runtime that
+    /// destroy no longer reaches.
     #[test]
     fn create_crumbs_refuses_a_duplicate_id_without_registering_another_runtime() {
         let state = CrumbsState::default();
@@ -1113,28 +1077,14 @@ mod tests {
             .get(instance_id)
             .expect("first create should retain its map entry")
             .engine_plugin_id;
-        let registered_engine_plugin_id = match command_rx.pop() {
-            Ok(daw_engine::scheduler::GraphCommand::AddPluginWithBridge(id, _, _)) => id,
-            Ok(_) => panic!("the first engine command must register the crumbs slot and bridge"),
-            Err(_) => panic!("the first create must queue one engine registration command"),
-        };
+        let registered_engine_plugin_id = pop_create_commands(&mut command_rx);
         assert_eq!(
             registered_engine_plugin_id, original_engine_plugin_id,
             "the map entry must own the engine id carried by the registration command"
         );
         assert!(
             command_rx.pop().is_err(),
-            "one successful create must queue exactly one engine registration command"
-        );
-        let bridge_count_after_first_create = app_state
-            .audio_bridges
-            .lock()
-            .expect("audio bridge lock should be available")
-            .bridges
-            .len();
-        assert_eq!(
-            bridge_count_after_first_create, 1,
-            "the first create must publish exactly one record bridge"
+            "one successful create must queue exactly the slot and its capture registration"
         );
 
         let refusal = crate::block_on_test(create_crumbs(
@@ -1168,26 +1118,12 @@ mod tests {
             command_rx.pop().is_err(),
             "the duplicate must not queue another engine/effect registration"
         );
-        let feed = app_state
-            .audio_bridges
-            .lock()
-            .expect("audio bridge lock should be available");
-        assert_eq!(
-            feed.bridges.len(),
-            bridge_count_after_first_create,
-            "the duplicate must not publish another record bridge"
-        );
-        assert!(
-            feed.bridges.contains_key(&original_engine_plugin_id),
-            "the first record bridge must survive the refusal"
-        );
-        drop(feed);
 
         crate::block_on_test(destroy_crumbs(instance_id.to_string(), &state, &app_state))
             .expect("the original runtime must remain destroyable after the refusal");
         let removed_engine_plugin_id = match command_rx.pop() {
             Ok(daw_engine::scheduler::GraphCommand::RemovePluginWithBridge(id)) => id,
-            Ok(_) => panic!("destroy must queue the bridged-plugin removal command"),
+            Ok(_) => panic!("destroy must queue the plugin removal command"),
             Err(_) => panic!("destroy must queue one engine removal command"),
         };
         assert_eq!(
@@ -1206,18 +1142,9 @@ mod tests {
                 .contains_key(instance_id),
             "destroy must remove the original map entry"
         );
-        assert!(
-            app_state
-                .audio_bridges
-                .lock()
-                .expect("audio bridge lock should be available")
-                .bridges
-                .is_empty(),
-            "destroy must remove the original record bridge"
-        );
     }
 
-    /// A full scheduler command ring refuses destruction before either runtime
+    /// A full scheduler command ring refuses destruction before the runtime
     /// ownership ledger is changed. Once capacity is available, the retry must
     /// queue the exact original retirement once and only then erase ownership.
     #[test]
@@ -1226,8 +1153,11 @@ mod tests {
 
         let state = CrumbsState::default();
         let app_state = AppState::default();
+        // Exactly the create's batch — fence plus two commands — so the ring is
+        // full when destroy asks for its removal, and admission finds the room
+        // it needs without reallocating the channel out from under this test.
         let (engine, mut command_rx, _retired_adoption_rx) =
-            daw_engine::engine_handle_for_command_capture(1);
+            daw_engine::engine_handle_for_command_capture(3);
         *app_state
             .engine
             .lock()
@@ -1239,7 +1169,7 @@ mod tests {
             &state,
             &app_state,
         ))
-        .expect("create should fill the one-command scheduler ring");
+        .expect("create should fill the scheduler ring");
 
         let original_engine_plugin_id = state
             .instances
@@ -1263,21 +1193,8 @@ mod tests {
                 .engine_plugin_id,
             original_engine_plugin_id
         );
-        assert!(
-            app_state
-                .audio_bridges
-                .lock()
-                .expect("audio bridge lock should be available")
-                .bridges
-                .contains_key(&original_engine_plugin_id),
-            "failed admission must preserve the live runtime bridge"
-        );
 
-        let registered_engine_plugin_id = match command_rx.pop() {
-            Ok(daw_engine::scheduler::GraphCommand::AddPluginWithBridge(id, _, _)) => id,
-            Ok(_) => panic!("the retained command must be the original registration"),
-            Err(_) => panic!("create must have filled the one-command scheduler ring"),
-        };
+        let registered_engine_plugin_id = pop_create_commands(&mut command_rx);
         assert_eq!(registered_engine_plugin_id, original_engine_plugin_id);
         assert!(
             command_rx.pop().is_err(),
@@ -1289,7 +1206,7 @@ mod tests {
 
         let removed_engine_plugin_id = match command_rx.pop() {
             Ok(daw_engine::scheduler::GraphCommand::RemovePluginWithBridge(id)) => id,
-            Ok(_) => panic!("retry must queue the bridged-plugin removal command"),
+            Ok(_) => panic!("retry must queue the plugin removal command"),
             Err(_) => panic!("retry must queue one engine removal command"),
         };
         assert_eq!(
@@ -1307,15 +1224,6 @@ mod tests {
                 .expect("crumbs state lock should be available")
                 .contains_key(INSTANCE_ID),
             "ownership entry may disappear only after removal admission succeeds"
-        );
-        assert!(
-            !app_state
-                .audio_bridges
-                .lock()
-                .expect("audio bridge lock should be available")
-                .bridges
-                .contains_key(&original_engine_plugin_id),
-            "bridge may disappear only after removal admission succeeds"
         );
     }
 
@@ -1399,14 +1307,10 @@ mod tests {
             format!("Crumbs instance '{INSTANCE_ID}' already exists")
         );
 
-        let registered_engine_plugin_id = match command_rx.pop() {
-            Ok(daw_engine::scheduler::GraphCommand::AddPluginWithBridge(id, _, _)) => id,
-            Ok(_) => panic!("the successful create must queue a bridged-plugin registration"),
-            Err(_) => panic!("the successful create must queue one engine registration command"),
-        };
+        let registered_engine_plugin_id = pop_create_commands(&mut command_rx);
         assert!(
             command_rx.pop().is_err(),
-            "the concurrent creates must queue exactly one engine registration command"
+            "the concurrent creates must queue exactly one create's engine commands"
         );
         let instances = state
             .instances
@@ -1419,17 +1323,6 @@ mod tests {
                 .expect("the successful create must own one map entry")
                 .engine_plugin_id,
             registered_engine_plugin_id
-        );
-        drop(instances);
-        assert_eq!(
-            app_state
-                .audio_bridges
-                .lock()
-                .expect("audio bridge lock should be available")
-                .bridges
-                .len(),
-            1,
-            "the concurrent duplicate must not publish a second bridge"
         );
     }
 
@@ -1554,26 +1447,22 @@ mod tests {
     }
 
     /// Issue #2231 (live defect): the crumbs record feed had a consumer — the
-    /// audio thread's bridge drain feeding the slot's record input — but no
-    /// producer, so an armed capture recorded silence end-to-end. This drives
-    /// the producer end to end: the `audio_bridges` registration
-    /// `create_crumbs` performs, the real `feed_record_input` command, and
-    /// the same `drain_process` pass the render callback runs per device
-    /// period, joined to a real `CrumbsPluginSlot`. (`create_crumbs` itself
-    /// cannot run here — it boots a real output device — so the test wires
-    /// its seam by hand.) Remove the producer and the committed take holds
-    /// silence instead of the input.
+    /// slot's record input — but no producer, so an armed capture recorded
+    /// silence end-to-end. The producer is now the engine's own input tap.
+    /// This drives the whole path the napi surface owns against a real
+    /// `CrumbsPluginSlot`: mode, arm and stop through the real commands, the
+    /// master-chain pass as the per-period clock, and the tap as the feed.
+    /// (`create_crumbs` itself cannot run here — it needs a live engine
+    /// handle — so the test wires its seam by hand.) Sever the tap and the
+    /// committed take holds silence instead of the input.
     #[test]
-    fn record_feed_command_pushes_monitored_input_into_the_armed_take() {
-        use daw_engine::audio_bridge::create_audio_bridge;
-        use daw_engine::plugin_slot::NativePlugin;
+    fn the_capture_tap_fills_the_armed_take_across_the_command_surface() {
+        use daw_engine::plugin_slot::{CaptureInputBlock, NativePlugin, TransportState};
 
-        let app_state = AppState::default();
         let state = CrumbsState::default();
 
-        // The seam create_crumbs wires in production: a scheduler slot
-        // paired with a bridge, the handle registered in the shared record
-        // feed under the reserved engine plugin id.
+        // The seam create_crumbs wires in production: a scheduler slot on the
+        // master chain, its command and handoff rings held command-side.
         let (command_tx, command_rx) = rtrb::RingBuffer::new(8);
         let (commit_tx, commit_rx) = rtrb::RingBuffer::new(2);
         let (recycle_tx, recycle_rx) = rtrb::RingBuffer::new(2);
@@ -1595,20 +1484,13 @@ mod tests {
             recycle_tx,
             pending_mirror: Vec::new(),
         };
-        let (mut bridge, bridge_handle) = create_audio_bridge(1000);
-        app_state
-            .audio_bridges
-            .lock()
-            .unwrap()
-            .bridges
-            .insert(1000, bridge_handle);
         state
             .instances
             .lock()
             .unwrap()
             .insert("sampler".to_string(), instance);
 
-        // The napi command surface: mode, arm, feed, stop.
+        // The napi command surface: mode, arm, stop.
         crate::block_on_test(set_crumbs_mode(
             "sampler".to_string(),
             "record".to_string(),
@@ -1617,58 +1499,191 @@ mod tests {
         .unwrap();
         crate::block_on_test(arm_recording("sampler".to_string(), 0.01, 0, 10.0, &state)).unwrap();
 
-        let interleaved = |left: f32, right: f32, frames: usize| {
-            let mut bytes = Vec::with_capacity(frames * 8);
-            for _ in 0..frames {
-                bytes.extend_from_slice(&left.to_le_bytes());
-                bytes.extend_from_slice(&right.to_le_bytes());
-            }
-            bytes
+        const PERIOD_FRAMES: usize = 512;
+        const CAPTURE_FRAMES: usize = 128;
+        let render_period = |slot: &mut CrumbsPluginSlot| {
+            let mut left = vec![0.0f32; PERIOD_FRAMES];
+            let mut right = vec![0.0f32; PERIOD_FRAMES];
+            slot.process_with_events(
+                &mut left,
+                &mut right,
+                PERIOD_FRAMES,
+                &[],
+                &TransportState::default(),
+            );
         };
 
-        // Four quanta of monitored input (L=0.5, R=0.25 — the channels are
-        // distinct so a swap cannot pass), each followed by the render
-        // callback's per-period pass: budget = a 512-frame period plus one
-        // quantum of catch-up, target depth two periods plus slack, exactly
-        // as the scheduler computes them.
+        // The queued commands reach the engine on the next master-chain pass.
+        render_period(&mut slot);
+
+        // Four chunks of captured input (L=0.5, R=0.25 — distinct, so a
+        // swapped feed cannot pass), each delivered ahead of the block it was
+        // captured for, exactly as the render callback delivers it.
+        let left = vec![0.5f32; CAPTURE_FRAMES];
+        let right = vec![0.25f32; CAPTURE_FRAMES];
+        let mut position_frames = 0u64;
         for _ in 0..4 {
-            crate::block_on_test(feed_record_input(interleaved(0.5, 0.25, 128), &app_state))
-                .unwrap();
-            bridge.drain_process(512 + 128, 10, |left, right, frames| {
-                slot.process_bridged_audio(left, right, frames)
+            slot.process_capture_input(CaptureInputBlock {
+                left: &left,
+                right: &right,
+                frames: CAPTURE_FRAMES,
+                served: true,
+                latency_frames: 0,
+                position_frames,
             });
+            position_frames += CAPTURE_FRAMES as u64;
+            render_period(&mut slot);
         }
 
         crate::block_on_test(stop_recording("sampler".to_string(), &state)).unwrap();
-        // One more fed (silent) block so a drain pass consumes the stop and
-        // the engine hands the commit to the ring — the flush the slot
-        // tests perform with a bare process call.
-        crate::block_on_test(feed_record_input(interleaved(0.0, 0.0, 128), &app_state)).unwrap();
-        bridge.drain_process(512 + 128, 10, |left, right, frames| {
-            slot.process_bridged_audio(left, right, frames)
-        });
+        // One more period so the pass consumes the stop and the engine hands
+        // the commit to the ring.
+        render_period(&mut slot);
 
         let mut instances = state.instances.lock().unwrap();
         let instance = instances.get_mut("sampler").unwrap();
         drain_pending_recording_commits(instance);
         let sample = instance.samples.get(&1).expect("armed take registered");
-        assert_eq!(sample.meta.frame_count as usize, 512);
+        assert_eq!(sample.meta.frame_count as usize, 4 * CAPTURE_FRAMES);
         assert!(
             sample.left.iter().all(|&s| (s - 0.5).abs() < 1.0e-6),
-            "the take must hold the fed monitored input, not silence"
+            "the take must hold the captured input, not silence"
         );
         assert!(
             sample.right.iter().all(|&s| (s - 0.25).abs() < 1.0e-6),
-            "the take must hold the fed monitored input on the right channel too"
+            "the take must hold the captured input on the right channel too"
         );
-        drop(instances);
+    }
 
-        // The happy path refuses nothing: every block found ring capacity.
+    /// A create publishes the sampler twice: once on the master chain, once on
+    /// the engine's input tap. Both name the same reserved id, and the slot
+    /// goes first — a registration for an id the graph has not been told about
+    /// is admitted, but the pair is what makes the sampler both audible and
+    /// able to record.
+    #[test]
+    fn create_crumbs_registers_the_slot_and_its_capture_feed() {
+        let state = CrumbsState::default();
+        let app_state = AppState::default();
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(8);
+        *app_state
+            .engine
+            .lock()
+            .expect("engine lock should be available") = Some(engine);
+
+        // A caller rate the device never runs at: the engine handle's rate is
+        // the one the slot must be built at, or the take is stamped — and its
+        // length clamped — against a number nothing else in the path uses.
+        crate::block_on_test(create_crumbs(
+            "tap-sampler".to_string(),
+            44_100.0,
+            &state,
+            &app_state,
+        ))
+        .expect("a create with capture headroom should register its runtime");
+
+        match command_rx.pop() {
+            Ok(GraphCommand::BeginBatch { commands }) => assert_eq!(commands, 2),
+            Ok(_) => panic!("a create must publish its registration behind a batch fence"),
+            Err(_) => panic!("a create must queue its batch fence"),
+        }
+        let registered_engine_plugin_id = match command_rx.pop() {
+            Ok(GraphCommand::AddPlugin(id, plugin)) => {
+                let slot = plugin
+                    .as_any()
+                    .downcast_ref::<CrumbsPluginSlot>()
+                    .expect("the registered plugin must be the crumbs slot");
+                assert_eq!(
+                    slot.engine.sample_rate(),
+                    48_000.0,
+                    "the slot must be built at the engine handle's rate, not the caller's"
+                );
+                id
+            }
+            Ok(_) => panic!("the batch's first command must register the crumbs slot"),
+            Err(_) => panic!("a create must queue the slot registration"),
+        };
+        match command_rx.pop() {
+            Ok(GraphCommand::RegisterCaptureConsumer(registered)) => {
+                assert_eq!(
+                    registered, registered_engine_plugin_id,
+                    "the capture registration must name the slot it feeds"
+                );
+            }
+            Ok(_) => panic!("the batch's second command must register the capture consumer"),
+            Err(_) => panic!("a create must queue the capture registration"),
+        }
+        assert!(
+            command_rx.pop().is_err(),
+            "a create must queue its fence, the slot and its capture registration, nothing else"
+        );
         assert_eq!(
-            app_state
-                .bridge_input_blocks_refused
-                .load(Ordering::Relaxed),
-            0
+            state
+                .instances
+                .lock()
+                .expect("crumbs state lock should be available")
+                .get("tap-sampler")
+                .expect("the create must publish its ownership entry")
+                .engine_plugin_id,
+            registered_engine_plugin_id
+        );
+    }
+
+    /// The capture ledger is the authority on the input bus, and it refuses
+    /// independently of the instance ceiling. A sampler that cannot record is
+    /// not a sampler, so the batch is refused whole: nothing reaches the ring,
+    /// there is no slot to unwind, and no instance the panel would show as
+    /// live. Two separate pushes would leave the `AddPlugin` on the ring.
+    #[test]
+    fn create_crumbs_pushes_nothing_when_the_capture_bus_refuses_it() {
+        let state = CrumbsState::default();
+        let app_state = AppState::default();
+        let (mut engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(8);
+        // Fill the input bus's reserve through the ledger the handle owns, so
+        // the create's own registration is the one that overruns it.
+        for offset in 0..CRUMBS_CAPTURE_RESERVE {
+            engine
+                .register_capture_consumer(900 + offset)
+                .expect("the reserve must admit its own consumers");
+        }
+        *app_state
+            .engine
+            .lock()
+            .expect("engine lock should be available") = Some(engine);
+
+        let refusal = crate::block_on_test(create_crumbs(
+            "refused-sampler".to_string(),
+            48_000.0,
+            &state,
+            &app_state,
+        ))
+        .expect_err("a create whose capture registration is refused must fail");
+        assert!(
+            refusal.starts_with("capture-bus-full:"),
+            "the refusal must be the capture ledger's own: {refusal}"
+        );
+
+        for _ in 0..CRUMBS_CAPTURE_RESERVE {
+            assert!(
+                matches!(
+                    command_rx.pop(),
+                    Ok(GraphCommand::RegisterCaptureConsumer(_))
+                ),
+                "the reserve's own registrations must be all the ring holds"
+            );
+        }
+        assert!(
+            command_rx.pop().is_err(),
+            "a refused batch must leave nothing at all on the ring — no fence, no slot"
+        );
+        assert!(
+            state
+                .instances
+                .lock()
+                .expect("crumbs state lock should be available")
+                .is_empty(),
+            "a refused create must leave no instance behind"
         );
     }
 }

@@ -45,7 +45,6 @@ export const SOURDAW_COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> =
     ['engine_rt_diagnostics', []],
     ['engine_transport_position', []],
     ['engine_transport_set_maps', ['maps']],
-    ['feed_crumbs_record_input', ['audio_bytes']],
     ['get_crumbs_position', ['instance_id']],
     ['get_default_plugin_paths', []],
     ['get_plugin_parameters', ['instance_id']],

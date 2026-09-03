@@ -60,7 +60,6 @@ export const EXPOSED_COMMANDS = [
     'engine_rt_diagnostics',
     'engine_transport_position',
     'engine_transport_set_maps',
-    'feed_crumbs_record_input',
     'get_crumbs_position',
     'get_default_plugin_paths',
     'get_plugin_parameters',
