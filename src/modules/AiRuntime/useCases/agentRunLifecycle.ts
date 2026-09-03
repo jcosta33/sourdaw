@@ -1162,9 +1162,8 @@ function failAgentRunPendingEffectContinuation(input: {
  */
 function withoutSourceRevision<TContinuation extends AgentRunPendingEffectContinuation>(
     continuation: TContinuation
-): TContinuation {
-    const next = { ...continuation };
-    delete next.sourceRevision;
+): Omit<TContinuation, 'sourceRevision'> {
+    const { sourceRevision: _sourceRevision, ...next } = continuation;
     return next;
 }
 
