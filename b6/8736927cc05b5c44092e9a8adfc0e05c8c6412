@@ -1,0 +1,24 @@
+.agents/skills/review-stances/correctness.md
+  s_28abfd94826e36::t_8c4d33193dff18 65-80
+.agents/skills/review-stances/test-validity.md
+  s_28abfd94826e36::t_2c6f9bb0bbeafd 127-129
+  s_28abfd94826e36::t_41fd75c5249b35 122-126,130-138
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_28abfd94826e36::t_2167317572405c 3230-3233
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b68736927cc05b5c44092e9a8adfc0e05c8c6412",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": null
+    }
+  }
+}
