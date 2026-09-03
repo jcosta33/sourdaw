@@ -13,6 +13,7 @@ import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
+import { Dialog, DialogContent } from '#/components/ui/dialog';
 import { Slider } from '#/components/ui/slider';
 import { useStore } from '#/infra/store/useStore';
 import { executeAppAction } from '#/modules/Command/useCases';
@@ -773,12 +774,19 @@ const AdjustmentLayerParamEditor = ({
     const paramByName = new Map(layer.parameters.map((p) => [p.name, p]));
 
     return (
-        <Row justify="center" className="fixed inset-0 z-50 bg-black/40" onClick={onClose}>
-            <div
-                className="daw-floating-surface w-[380px] rounded-md p-4"
-                onClick={(e) => e.stopPropagation()}
-                role="dialog"
+        <Dialog
+            open
+            onOpenChange={(open) => {
+                if (!open) {
+                    onClose();
+                }
+            }}
+        >
+            <DialogContent
+                showCloseButton={false}
+                aria-modal="true"
                 aria-label={`Adjustment Layer: ${layer.name}`}
+                className="gap-0 w-[380px] sm:max-w-[380px] p-4 rounded-md daw-floating-surface border border-border"
             >
                 <Row justify="between" className="mb-3">
                     <div>
@@ -845,8 +853,8 @@ const AdjustmentLayerParamEditor = ({
                         );
                     })}
                 </Stack>
-            </div>
-        </Row>
+            </DialogContent>
+        </Dialog>
     );
 };
 
@@ -959,12 +967,19 @@ const AffectedTracksPicker = ({ layer, tracks, onClose, onChange }: AffectedTrac
     const clearAll = () => onChange([]);
 
     return (
-        <Row justify="center" className="fixed inset-0 z-50 bg-black/40" onClick={onClose}>
-            <div
-                className="daw-floating-surface w-[320px] rounded-md p-4"
-                onClick={(e) => e.stopPropagation()}
-                role="dialog"
+        <Dialog
+            open
+            onOpenChange={(open) => {
+                if (!open) {
+                    onClose();
+                }
+            }}
+        >
+            <DialogContent
+                showCloseButton={false}
+                aria-modal="true"
                 aria-label={`Affected tracks for ${layer.name}`}
+                className="gap-0 w-[320px] sm:max-w-[320px] p-4 rounded-md daw-floating-surface border border-border"
             >
                 <Row justify="between" className="mb-3">
                     <div>
@@ -1037,7 +1052,7 @@ const AffectedTracksPicker = ({ layer, tracks, onClose, onChange }: AffectedTrac
                         Done
                     </Button>
                 </Row>
-            </div>
-        </Row>
+            </DialogContent>
+        </Dialog>
     );
 };
