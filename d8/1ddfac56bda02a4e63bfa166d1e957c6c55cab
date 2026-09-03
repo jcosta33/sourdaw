@@ -1,0 +1,23 @@
+scripts/measureDesktopLatency.ts
+  s_9b530f08172a54::t_c1970d7c6e6a1a 104
+  s_9b530f08172a54::t_c266ff5ca9b1f4 529-536,545-547
+scripts/desktopLatencyLaunch.ts
+  s_9b530f08172a54::t_a0c697c15cd38b 32-36
+  s_9b530f08172a54::t_720158762cea79 116-166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d81ddfac56bda02a4e63bfa166d1e957c6c55cab",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
