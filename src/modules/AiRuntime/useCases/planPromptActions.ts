@@ -187,7 +187,12 @@ export async function planPromptActions(input: PlanPromptActionsInput) {
                 input.signal?.removeEventListener('abort', onAbort);
                 return {
                     context,
-                    result: { actions: [], rawText: input.prompt, requiresConfirmation: false },
+                    result: {
+                        actions: [],
+                        rawText: input.prompt,
+                        requiresConfirmation: false,
+                        planningOutcome: { kind: 'no-match' as const },
+                    },
                     projectRevision,
                 };
             }

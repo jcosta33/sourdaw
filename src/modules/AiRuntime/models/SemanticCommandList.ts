@@ -4,6 +4,17 @@ export const SEMANTIC_COMMAND_LIST_SCHEMA_VERSION = 1 as const;
 export const SEMANTIC_COMMAND_LIST_MAX_ITEMS = 16;
 export const SEMANTIC_COMMAND_LIST_MAX_COMMANDS = MAX_LLM_ACTIONS_PER_BATCH;
 export const SEMANTIC_COMMAND_LIST_MAX_REPEAT = 8;
+/**
+ * A creative request compiles into new tracks and clips, and every creation is an object the user
+ * must inspect and undo. The bound is on expanded commands, so a `repeat` cannot smuggle a wider
+ * creation batch past the item budget.
+ */
+export const SEMANTIC_COMMAND_LIST_MAX_CREATIONS = 12;
+/**
+ * The longest span a plan may give a clip the user never dimensioned. Sixty-four bars of common time
+ * is a whole arrangement; past it a creative request is writing an object no musician asked for.
+ */
+export const SEMANTIC_CLIP_MAX_BEATS = 256;
 export const SEMANTIC_COMMAND_LIST_MAX_JSON_DEPTH = 16;
 export const SEMANTIC_COMMAND_LIST_MAX_JSON_NODES = SEMANTIC_COMMAND_LIST_MAX_ITEMS * 256;
 

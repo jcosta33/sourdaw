@@ -1,3 +1,5 @@
+import { ADD_NOTES_MAX_NOTES_PER_COMMAND } from '#/utils/midiNoteBatchLimits';
+
 type JsonRecord = Record<string, unknown>;
 
 type MaterializedAddNote = {
@@ -61,6 +63,7 @@ export function isMaterializedAddNotesArguments(value: unknown): value is Materi
         value.clipId.trim().length > 0 &&
         Array.isArray(value.notes) &&
         value.notes.length > 0 &&
+        value.notes.length <= ADD_NOTES_MAX_NOTES_PER_COMMAND &&
         value.notes.every(isMaterializedAddNote) &&
         new Set(value.notes.map((note) => note.id)).size === value.notes.length
     );

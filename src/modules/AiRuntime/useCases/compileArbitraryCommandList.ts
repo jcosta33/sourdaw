@@ -5,6 +5,7 @@ import { type ProjectContext } from '../models/ProjectContext';
 import {
     parseSemanticCommandList,
     SEMANTIC_COMMAND_LIST_MAX_COMMANDS,
+    SEMANTIC_COMMAND_LIST_MAX_CREATIONS,
     SEMANTIC_COMMAND_LIST_MAX_REPEAT,
     type SemanticCommandListEntity,
     type SemanticCommandListItem,
@@ -1127,6 +1128,13 @@ export function compileArbitraryCommandList(input: {
             ...(targetRule.cardinality === 'many' ? { targetCardinality: 'many' as const } : {}),
             ...(targetValidation.directTargets.length === 0 ? {} : { directTargets: targetValidation.directTargets }),
         });
+    }
+    const creationCount = commands.filter((command) => BATCH_LOCAL_BINDING_PRODUCER_NAMES.has(command.name)).length;
+    if (creationCount > SEMANTIC_COMMAND_LIST_MAX_CREATIONS) {
+        return {
+            status: 'rejected',
+            reason: `Semantic command list creates more than ${String(SEMANTIC_COMMAND_LIST_MAX_CREATIONS)} project objects`,
+        };
     }
     return {
         status: 'accepted',

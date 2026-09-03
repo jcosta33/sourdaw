@@ -5,9 +5,12 @@ import { getExecutableAppActionToolSchemas, requiresAppActionConfirmation } from
 import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases';
 
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
-import { type IntentResult } from '../models/IntentResult';
+import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
+import { type CommandBatchDecline } from '../models/CommandBatchDecline';
+import { type IntentResult, type PlannedIntentResult } from '../models/IntentResult';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
+import { type PlanningOutcome } from '../models/PlanningOutcome';
 import { type RuntimeAction } from '../models/RuntimeAction';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
 import { DAW_TOOL_SCHEMAS, type ToolSchema } from '../models/ToolDefinitions';
@@ -45,7 +48,9 @@ import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVib
 import { materializeBatchLocalActionIdentities } from './agentReference/materializeBatchLocalActionIdentities';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import {
+    AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
     ANALYSIS_REQUEST_TOOL_NAME,
+    COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
     RENDER_REQUEST_TOOL_NAME,
 } from './agentToolCatalog';
@@ -157,6 +162,45 @@ function expandCatalogProposals(calls: readonly ToolCallResult[]) {
     };
 }
 
+/**
+ * Turns a provider decline into an outcome, or refuses it. `unsupported` is a claim about the whole
+ * catalog, so it only stands when this run actually searched the command index; without that
+ * receipt the provider is guessing from vocabulary rather than from evidence.
+ */
+function classifyProviderDecline(
+    decline: CommandBatchDecline,
+    receipts: readonly ApplicationToolReceipt[]
+): PlanningOutcome {
+    const { kind, reason, questions } = decline;
+    if (kind === 'clarify') {
+        return questions.length === 0
+            ? { kind: 'denied', reason: 'Provider asked for clarification without a question.' }
+            : { kind: 'clarify', reason, questions };
+    }
+    const searchedCommandIndex = receipts.some(
+        (receipt) => receipt.toolName === AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME && receipt.status === 'success'
+    );
+    return searchedCommandIndex
+        ? { kind: 'unsupported', reason }
+        : { kind: 'denied', reason: 'Provider declined as unsupported without searching the command index.' };
+}
+
+/**
+ * Every other return in the planner already says what happened through `actions` and
+ * `rejectionReason`; this names it once so no caller has to re-derive it.
+ */
+function classifyPlannedIntentResult(result: IntentResult): PlanningOutcome {
+    if (result.planningOutcome !== undefined) {
+        return result.planningOutcome;
+    }
+    if (result.actions.length > 0) {
+        return { kind: 'proposal' };
+    }
+    return result.rejectionReason === undefined
+        ? { kind: 'no-match' }
+        : { kind: 'denied', reason: result.rejectionReason };
+}
+
 function createFastPathResult(input: CreateFastPathResultInput): IntentResult {
     const validated = validateActions(input.actions);
     if (validated.length !== input.actions.length) {
@@ -205,9 +249,9 @@ function createFastPathResult(input: CreateFastPathResultInput): IntentResult {
  * 4. Compound fast-path: multi-track creation etc.
  * 5. Provider-neutral LLM tool path: tool calls cross a strict app-owned action bridge
  */
-export const parsePromptToActions = inject({ logger })(
+const planPromptIntent = inject({ logger })(
     ({ logger }) =>
-        async function parsePromptToActions(
+        async function planPromptIntent(
             prompt: string,
             context: ProjectContext,
             signal?: AbortSignal,
@@ -343,6 +387,7 @@ export const parsePromptToActions = inject({ logger })(
                 const terminalToolNames = new Set([
                     WORKFLOW_CAPABILITY_TOOL_NAME,
                     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
+                    COMMAND_BATCH_DECLINE_TOOL_NAME,
                     RENDER_REQUEST_TOOL_NAME,
                     ANALYSIS_REQUEST_TOOL_NAME,
                     ...WORKFLOW_ACTION_TOOL_NAMES,
@@ -452,6 +497,17 @@ export const parsePromptToActions = inject({ logger })(
                         requiresConfirmation: false,
                         ...applicationToolReceiptFields,
                         rejectionReason: `Provider planning rejected: ${planningOutcome.reason}`,
+                    };
+                }
+                if (planningOutcome.decline) {
+                    const outcome = classifyProviderDecline(planningOutcome.decline, planningOutcome.receipts);
+                    return {
+                        actions: [],
+                        rawText: prompt,
+                        requiresConfirmation: false,
+                        ...applicationToolReceiptFields,
+                        ...(outcome.kind === 'denied' ? { rejectionReason: outcome.reason } : {}),
+                        planningOutcome: outcome,
                     };
                 }
                 const providerProposal =
@@ -771,3 +827,30 @@ export const parsePromptToActions = inject({ logger })(
             return { actions: [], rawText: prompt, requiresConfirmation: false, ...applicationToolReceiptFields };
         }
 );
+
+/**
+ * The planner's public entry point. It classifies every result, so a caller never has to infer from
+ * an empty action list whether the run refused, asked a question, or simply matched nothing.
+ */
+export async function parsePromptToActions(
+    prompt: string,
+    context: ProjectContext,
+    signal?: AbortSignal,
+    projectRevision?: string,
+    stemImportScope?: StemImportPromptScope,
+    onProviderResult?: (result: ModelProviderResult) => void,
+    streamIdentity?: Pick<ModelProviderStreamIdentity, 'runId' | 'requestId' | 'cancellationGeneration'>,
+    onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult
+): Promise<PlannedIntentResult> {
+    const result = await planPromptIntent(
+        prompt,
+        context,
+        signal,
+        projectRevision,
+        stemImportScope,
+        onProviderResult,
+        streamIdentity,
+        onProviderAttempt
+    );
+    return { ...result, planningOutcome: classifyPlannedIntentResult(result) };
+}

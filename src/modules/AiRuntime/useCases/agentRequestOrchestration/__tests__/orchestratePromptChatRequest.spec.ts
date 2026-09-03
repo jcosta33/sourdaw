@@ -521,6 +521,65 @@ describe('orchestratePromptChatRequest', () => {
         expect(releaseProviderCancellation).toHaveBeenCalledOnce();
     });
 
+    it('writes the provider clarify questions into the chat instead of the generic no-match message', async () => {
+        mocks.planPromptActions.mockResolvedValue({
+            context: {},
+            result: {
+                actions: [],
+                planningOutcome: {
+                    kind: 'clarify',
+                    reason: 'The request does not say which part of the mix to change.',
+                    questions: ['Which tracks should change?'],
+                },
+            },
+            projectRevision: 'revision-planned',
+        });
+
+        await orchestratePromptChatRequest({
+            userText: 'make it sound better',
+            requestedRoute: 'auto',
+            backend: 'webllm',
+            interactionMode: 'apply',
+            options: undefined,
+        });
+
+        expect(mocks.appendChatMessage).toHaveBeenNthCalledWith(
+            2,
+            expect.objectContaining({
+                role: 'assistant',
+                content: 'The request does not say which part of the mix to change. 1. Which tracks should change?',
+            })
+        );
+    });
+
+    it('writes an unsupported outcome into the chat instead of the generic no-match message', async () => {
+        mocks.planPromptActions.mockResolvedValue({
+            context: {},
+            result: {
+                actions: [],
+                planningOutcome: { kind: 'unsupported', reason: 'No command in this project masters for vinyl.' },
+            },
+            projectRevision: 'revision-planned',
+        });
+
+        await orchestratePromptChatRequest({
+            userText: 'master this for vinyl',
+            requestedRoute: 'auto',
+            backend: 'webllm',
+            interactionMode: 'apply',
+            options: undefined,
+        });
+
+        expect(mocks.appendChatMessage).toHaveBeenNthCalledWith(
+            2,
+            expect.objectContaining({
+                role: 'assistant',
+                content: 'Not supported: No command in this project masters for vinyl.',
+                error: 'Not supported: No command in this project masters for vinyl.',
+            })
+        );
+    });
+
     it('rejects a non-claimed provider lease before planning or cancellation registration', async () => {
         mocks.claim.mockReturnValue({ status: 'already-settled' });
 

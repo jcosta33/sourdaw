@@ -350,6 +350,7 @@ describe('application-owned tool loop', () => {
             'agent.catalog.discover',
             'agent.command-index.search',
             'analysis.request',
+            'command.batch.decline',
             'command.batch.propose',
             'command.history',
             'device.factory-manifest.read',
@@ -374,6 +375,94 @@ describe('application-owned tool loop', () => {
             reason: 'Provider requested an unavailable application tool.',
         });
         expect(querySemanticProject).not.toHaveBeenCalled();
+    });
+
+    it('refuses a turn that declines and proposes at once, so the outcome of a turn is never ambiguous', async () => {
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-decline-mixed',
+            terminalToolNames: new Set(['command.batch.propose', 'command.batch.decline']),
+            requestTurn: vi.fn().mockResolvedValue({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'decline-1',
+                        name: 'command.batch.decline',
+                        arguments: { kind: 'clarify', reason: 'Which key?', questions: ['Which key?'] },
+                    },
+                    {
+                        id: 'propose-1',
+                        name: 'command.batch.propose',
+                        arguments: { commands: [{ name: 'setTempo', arguments: { bpm: 128 } }] },
+                    },
+                ],
+            }),
+        });
+
+        expect(result).toMatchObject({
+            status: 'rejected',
+            reason: 'Provider combined a decline with another terminal call.',
+        });
+    });
+
+    it('refuses a malformed decline before the turn is allowed to end the loop', async () => {
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-decline-malformed',
+            terminalToolNames: new Set(['command.batch.propose', 'command.batch.decline']),
+            requestTurn: vi.fn().mockResolvedValue({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'decline-1',
+                        name: 'command.batch.decline',
+                        arguments: { kind: 'clarify', reason: 'Which key?', questions: ['Which key?'], commands: [] },
+                    },
+                ],
+            }),
+        });
+
+        expect(result).toMatchObject({
+            status: 'rejected',
+            reason: 'Provider decline carries an argument outside the catalog contract.',
+        });
+    });
+
+    it('lets a well-formed decline end the loop as the terminal call of its turn', async () => {
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-decline-alone',
+            terminalToolNames: new Set(['command.batch.propose', 'command.batch.decline']),
+            requestTurn: vi.fn().mockResolvedValue({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'decline-1',
+                        name: 'command.batch.decline',
+                        arguments: { kind: 'unsupported', reason: 'No such command.', questions: [] },
+                    },
+                ],
+            }),
+        });
+
+        expect(result).toMatchObject({ status: 'complete' });
+        expect(result.status === 'complete' && result.toolCalls.map((call) => call.name)).toEqual([
+            'command.batch.decline',
+        ]);
+        // The loop parsed it, so the outcome carries the value and no caller parses the arguments again.
+        expect(result.status === 'complete' && result.decline).toEqual({
+            kind: 'unsupported',
+            reason: 'No such command.',
+            questions: [],
+        });
+    });
+
+    it('carries no decline when the run ended without one', async () => {
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-no-decline',
+            terminalToolNames: new Set(['command.batch.propose', 'command.batch.decline']),
+            requestTurn: vi.fn().mockResolvedValue({ status: 'complete', toolCalls: [] }),
+        });
+
+        expect(result).toMatchObject({ status: 'complete' });
+        expect(result.status === 'complete' && result.decline).toBeNull();
     });
 
     it('returns strict-argument failures as correlated bounded receipts before allowing a retry turn', async () => {

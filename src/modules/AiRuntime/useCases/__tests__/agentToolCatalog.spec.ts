@@ -8,6 +8,7 @@ import { type ToolSchema } from '../../models/ToolDefinitions';
 import {
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+    COMMAND_BATCH_DECLINE_TOOL_NAME,
     getAgentToolCatalogSchemas,
 } from '../agentToolCatalog';
 import { APPLICATION_OWNED_TOOL_SCHEMAS, runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
@@ -143,6 +144,29 @@ describe('agent tool catalog', () => {
         expect(indexSchema?.function.parameters.properties).not.toHaveProperty('names');
     });
 
+    it('publishes a bounded decline contract that cannot smuggle a batch past the proposal tool', () => {
+        const declineSchema = getAgentToolCatalogSchemas().find(
+            (schema) => schema.function.name === COMMAND_BATCH_DECLINE_TOOL_NAME
+        );
+
+        expect(declineSchema?.function.parameters).toEqual({
+            type: 'object',
+            properties: {
+                kind: { type: 'string', enum: ['clarify', 'unsupported'] },
+                reason: { type: 'string', minLength: 1, maxLength: 512 },
+                questions: {
+                    type: 'array',
+                    maxItems: 4,
+                    items: { type: 'string', minLength: 1, maxLength: 256 },
+                },
+            },
+            required: ['kind', 'reason', 'questions'],
+            additionalProperties: false,
+        });
+        expect(declineSchema?.function.parameters.properties).not.toHaveProperty('commands');
+        expect(declineSchema?.function.parameters.properties).not.toHaveProperty('list');
+    });
+
     it('publishes the complete semantic-list grammar from the public versioned contract', () => {
         const proposalSchema = APPLICATION_OWNED_TOOL_SCHEMAS.find(
             (schema: ToolSchema) => schema.function.name === 'command.batch.propose'
@@ -187,6 +211,7 @@ describe('agent tool catalog', () => {
             'agent.command-index.search',
             'device.factory-manifest.read',
             'command.batch.propose',
+            'command.batch.decline',
             'command.history',
             'render.request',
             'analysis.request',

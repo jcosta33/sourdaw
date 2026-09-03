@@ -5,6 +5,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { type AgentExecutionMode } from '../models/AgentExecutionMode';
 import { type ModelProviderResult } from '../models/ModelProviderProtocol';
+import { describePlanningOutcome } from '../transformers/describePlanningOutcome';
 
 import { preparedStemImportResources } from './agentReference/registerPreparedStemImportResources';
 import {
@@ -258,6 +259,7 @@ export async function submitAdmittedPromptRequest(
                           actions: [...input.actions],
                           rawText: prompt,
                           requiresConfirmation: false,
+                          planningOutcome: { kind: 'proposal' as const },
                       },
                       projectRevision: createdRevision,
                   };
@@ -293,7 +295,11 @@ export async function submitAdmittedPromptRequest(
         if (planned.result.actions.length === 0) {
             transitionTerminalRun(runId, 'completed');
             await releasePlanOwnedStemResources();
-            notifyAiChange('No actions matched. Try rephrasing, or use the AI Chat panel for open-ended help.', []);
+            notifyAiChange(
+                describePlanningOutcome(planned.result.planningOutcome) ??
+                    'No actions matched. Try rephrasing, or use the AI Chat panel for open-ended help.',
+                []
+            );
             return { status: 'no-op', runId };
         }
 

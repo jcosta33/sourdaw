@@ -1,6 +1,7 @@
 import { FADER_GAIN_RANGE_DESCRIPTION, FADER_MAX_GAIN_LABEL } from '#/utils/audioLevelLaw';
 import { type AppAction, type AppActionType } from '#/utils/handlerContract';
 import { getMarkerColorNames } from '#/utils/markerColorPalette';
+import { ADD_NOTES_MAX_NOTES_PER_COMMAND } from '#/utils/midiNoteBatchLimits';
 
 export type ExecutableAppActionRisk =
     'bounded-reversible' | 'broad-reversible' | 'destructive-reversible' | 'authority-sensitive' | 'external-effect';
@@ -919,7 +920,6 @@ export const executableAppActionDescriptors = [
     {
         actionType: 'addNotes',
         risk: 'bounded-reversible',
-        discoverability: 'hidden',
         description: 'Add one or more MIDI notes to one unlocked MIDI clip.',
         intentPhrases: ['add notes', 'add midi notes'],
         targetRules: writableMidiClipTargetRules,
@@ -930,6 +930,7 @@ export const executableAppActionDescriptors = [
                 notes: {
                     type: 'array',
                     minItems: 1,
+                    maxItems: ADD_NOTES_MAX_NOTES_PER_COMMAND,
                     items: {
                         type: 'object',
                         additionalProperties: false,

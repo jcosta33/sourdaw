@@ -9,10 +9,12 @@ import { getProjectProtocolContracts, querySemanticProject } from '#/modules/Pro
 
 import { type AgentPlanProposal } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
+import { type CommandBatchDecline } from '../models/CommandBatchDecline';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { SEMANTIC_COMMAND_LIST_MAX_ITEMS } from '../models/SemanticCommandList';
 import { type ToolSchema } from '../models/ToolDefinitions';
 import { extractAgentPlanProposal, normalizeAgentPlanProposal } from '../transformers/normalizeAgentPlanProposal';
+import { parseCommandBatchDecline } from '../transformers/parseCommandBatchDecline';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
 import {
@@ -23,6 +25,7 @@ import {
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
     ANALYSIS_REQUEST_TOOL_NAME,
+    COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
     COMMAND_HISTORY_TOOL_NAME,
     getAgentToolCatalogSchemas,
@@ -58,6 +61,8 @@ export type ApplicationOwnedToolLoopOutcome =
     | {
           status: 'complete';
           toolCalls: ToolCallResult[];
+          /** The parsed decline when the run refused, so no caller parses the arguments again. */
+          decline: CommandBatchDecline | null;
           proposal: AgentPlanProposal | null;
           receipts: ApplicationToolReceipt[];
           turns: number;
@@ -845,20 +850,49 @@ function validateCommandBatchProposal(
     return null;
 }
 
+/**
+ * A decline says the run produced no batch, so it may not ride alongside a call that produces one:
+ * admitting both would leave the outcome of the turn ambiguous between refusal and proposal.
+ */
+function validateDeclineIsAlone(calls: readonly { call: ToolCallResult }[]): ValidatedTerminalCalls {
+    const declineCalls = calls.filter(({ call }) => call.name === COMMAND_BATCH_DECLINE_TOOL_NAME);
+    if (declineCalls.length === 0) {
+        return { status: 'accepted', decline: null };
+    }
+    if (calls.length > 1) {
+        return { status: 'rejected', reason: 'Provider combined a decline with another terminal call.' };
+    }
+    const parsed = parseCommandBatchDecline(declineCalls[0]!.call.arguments);
+    return parsed.status === 'rejected'
+        ? { status: 'rejected', reason: parsed.reason }
+        : { status: 'accepted', decline: parsed.decline };
+}
+
+/**
+ * The decline is parsed here and nowhere else. A caller that re-parsed it would own a rejection
+ * branch this validation has already made unreachable, and would have to guess what to do in it.
+ */
+type ValidatedTerminalCalls =
+    { status: 'accepted'; decline: CommandBatchDecline | null } | { status: 'rejected'; reason: string };
+
 function validateCatalogTerminalCalls(
     calls: readonly { call: ToolCallResult }[],
     disclosedCommandSchemas: ReadonlyMap<string, string>
-): string | null {
+): ValidatedTerminalCalls {
+    const declineValidation = validateDeclineIsAlone(calls);
+    if (declineValidation.status === 'rejected') {
+        return declineValidation;
+    }
     for (const { call } of calls) {
         if (call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME) {
             continue;
         }
         const rejection = validateCommandBatchProposal(call, disclosedCommandSchemas);
         if (rejection !== null) {
-            return rejection;
+            return { status: 'rejected', reason: rejection };
         }
     }
-    return null;
+    return declineValidation;
 }
 
 function resolveCallId(call: ToolCallResult, loopId: string, turn: number, index: number): string | null {
@@ -995,11 +1029,11 @@ export async function runApplicationOwnedToolLoop(
                 turns: turn,
             };
         }
-        const terminalRejection = validateCatalogTerminalCalls(terminalCalls, disclosedCommandSchemas);
-        if (terminalRejection !== null) {
+        const terminalValidation = validateCatalogTerminalCalls(terminalCalls, disclosedCommandSchemas);
+        if (terminalValidation.status === 'rejected') {
             return {
                 status: 'rejected',
-                reason: terminalRejection,
+                reason: terminalValidation.reason,
                 receipts,
                 turns: turn,
             };
@@ -1008,6 +1042,7 @@ export async function runApplicationOwnedToolLoop(
             return {
                 status: 'complete',
                 toolCalls: terminalCalls.map(({ call }) => call),
+                decline: terminalValidation.decline,
                 proposal: outcome.proposal ?? extractAgentPlanProposal(outcome.toolCalls),
                 receipts,
                 turns: turn,

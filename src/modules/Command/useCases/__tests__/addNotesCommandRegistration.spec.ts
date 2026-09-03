@@ -23,6 +23,7 @@ import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
+import { ADD_NOTES_MAX_NOTES_PER_COMMAND } from '#/utils/midiNoteBatchLimits';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { hydrateUndoStoreFromSession, undoStore } from '../../stores/undoStore';
@@ -164,7 +165,7 @@ describe('addNotes command registration', () => {
         resetActionHistoryMetadataPort();
     });
 
-    it('registers addNotes as an executable, hidden, application-materialized MIDI mutation', () => {
+    it('registers addNotes as an executable, discoverable, application-materialized MIDI mutation', () => {
         expect(isExecutableAppActionType('addNotes')).toBe(true);
 
         const registration = getExecutableCommandRegistration('addNotes');
@@ -172,7 +173,7 @@ describe('addNotes command registration', () => {
         expect(registration).toMatchObject({
             actionType: 'addNotes',
             risk: 'bounded-reversible',
-            discoverability: 'hidden',
+            discoverability: 'visible',
             mutationIdempotent: false,
             targetChecks: [
                 {
@@ -233,12 +234,27 @@ describe('addNotes command registration', () => {
                 payload: { clipId: 'clip-midi', notes: [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1 }] },
             })
         ).toBe(false);
+        expect(
+            typeof materializedArgumentsValidator === 'function' &&
+                materializedArgumentsValidator({
+                    clipId: 'clip-midi',
+                    notes: Array.from({ length: ADD_NOTES_MAX_NOTES_PER_COMMAND + 1 }, (_unused, index) => ({
+                        id: `note-materialized-${String(index)}`,
+                        pitch: 60,
+                        startBeat: index,
+                        duration: 1,
+                        velocity: 96,
+                        probability: 100,
+                    })),
+                })
+        ).toBe(false);
         expect(registration.providerSchema.required).toEqual(['clipId', 'notes']);
         expect(registration.providerSchema.properties).toEqual({
             clipId: { type: 'string' },
             notes: {
                 type: 'array',
                 minItems: 1,
+                maxItems: ADD_NOTES_MAX_NOTES_PER_COMMAND,
                 items: {
                     type: 'object',
                     additionalProperties: false,
@@ -260,14 +276,14 @@ describe('addNotes command registration', () => {
         ).toBe(true);
     });
 
-    it('keeps the executable command out of general provider and planner discovery', () => {
-        expect(getExecutableAppActionToolSchemas().map((schema) => schema.function.name)).not.toContain('addNotes');
-        expect(getExecutableAppActionGroundingCatalog().map((entry) => entry.actionType)).not.toContain('addNotes');
+    it('offers the executable command to provider and planner discovery', () => {
+        expect(getExecutableAppActionToolSchemas().map((schema) => schema.function.name)).toContain('addNotes');
+        expect(getExecutableAppActionGroundingCatalog().map((entry) => entry.actionType)).toContain('addNotes');
         expect(
             getExecutableAppActionIntentCatalog({ intent: 'add notes', page: { limit: 8 } }).items.map(
                 (entry) => entry.name
             )
-        ).not.toContain('addNotes');
+        ).toContain('addNotes');
     });
 
     it('hydrates and replays an exact addNotes restore pair through production registration', async () => {

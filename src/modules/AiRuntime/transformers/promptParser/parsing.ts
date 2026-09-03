@@ -11,6 +11,8 @@ import { type ProjectContext } from '../../models/ProjectContext';
 import { type RuntimeAction } from '../../models/RuntimeAction';
 import { findBestMatch } from '../../services/fuzzySearch';
 
+import { MUSICAL_GENRE_PATTERN } from './musicalGenreVocabulary';
+
 // ── Complexity detection ────────────────────────────────────────────────
 
 /**
@@ -51,11 +53,7 @@ export function isComplexPrompt(normalized: string): boolean {
         return true;
     }
     // Genre/style references that need creative interpretation
-    if (
-        /\b(blues|jazz|rock|pop|hip.?hop|trap|edm|classical|folk|country|r&b|rnb|funk|reggae|metal|punk|ambient|lo.?fi)\b/i.test(
-            normalized
-        )
-    ) {
+    if (MUSICAL_GENRE_PATTERN.test(normalized)) {
         return true;
     }
     // "add tracks" without a number — needs LLM to decide how many and what kind
