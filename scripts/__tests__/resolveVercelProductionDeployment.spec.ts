@@ -310,8 +310,13 @@ describe('the resolved train', () => {
 
     it('refuses to decide without the GitHub credentials a comparison needs', async () => {
         stubCredentials();
+        vi.stubEnv('GITHUB_REPOSITORY', '');
         vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(deploymentPayload(DEPLOYED))));
         await expect(resolveProductionTrain(CANDIDATE)).rejects.toThrow('GITHUB_REPOSITORY must be set');
+
+        vi.stubEnv('GITHUB_REPOSITORY', REPOSITORY);
+        vi.stubEnv('GITHUB_TOKEN', '');
+        await expect(resolveProductionTrain(CANDIDATE)).rejects.toThrow('GITHUB_TOKEN must be set');
     });
 
     it('refuses a candidate that is not a commit revision before it reaches a URL', async () => {

@@ -458,8 +458,8 @@ export const YeastPanel = ({ deviceId = null }: { deviceId?: string | null }): R
     const previewBinding = resolvePreviewBinding(trackState, effectiveDeviceId);
 
     return (
-        <div className="yeast-faceplate h-full min-h-0 overflow-hidden rounded-[26px] p-3">
-            <Grid gap={3} className="h-full min-h-0 grid-cols-[15rem_minmax(0,1fr)_16rem]">
+        <div className="yeast-faceplate h-full min-h-[440px] rounded-[26px] p-3">
+            <Grid gap={3} className="h-full min-h-[440px] grid-cols-[15rem_minmax(0,1fr)_16rem]">
                 <aside className="min-h-0 overflow-y-auto pr-1">
                     <Stack gap={3}>
                         <SideCard
