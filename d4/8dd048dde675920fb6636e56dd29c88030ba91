@@ -1,0 +1,33 @@
+.github/workflows/heavy-gates.yml
+  s_9b530f08172a54::t_e98b543b5a51c2 20-23,39-46,211-215
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_9b530f08172a54::t_6ef06d9a7f325c 381-395,1441-1448
+AGENTS.md
+  s_7dab9af76ff572::t_f235be3f5bf711 411-414,425-428
+scripts/deliverPullRequest.ts
+  s_9b530f08172a54::t_ef44557c597bed 342-345,365-366,377,383-402
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d48dd048dde675920fb6636e56dd29c88030ba91",
+  "prompts": {},
+  "sessions": {
+    "s_7dab9af76ff572": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a306c9e6a5a59f806",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
