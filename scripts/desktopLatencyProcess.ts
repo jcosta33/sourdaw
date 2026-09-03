@@ -6,8 +6,9 @@
  * Split out of `measureDesktopLatency.ts` to keep that driver under the
  * repository's per-file line budget; this file still spawns a real process
  * and drives a live `Page` through `connectAndMeasure`, so — like the
- * driver, and unlike `desktopLatencyReadings.ts` — it is not unit-testable
- * without Playwright.
+ * driver, and unlike `desktopLatencyReadings.ts` — most of it is not
+ * unit-testable without Playwright. `stripPayloadOverrides` is the one pure
+ * exception and carries its own spec.
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -18,6 +19,46 @@ import { connectAndMeasure, type MeasuredLegs } from './desktopLatencyConnect.ts
 import { printDiagnostics, type Diagnostics } from './desktopLatencyDiagnostics.ts';
 
 const QUIT_GRACE_MS = 10_000;
+
+/**
+ * The env vars that redirect the packaged app to files
+ * `readPayloadIdentity` (`desktopLatencyRecord.ts`) never hashed:
+ * `electron/native.ts`'s `NATIVE_ADDON_PATH_ENV` and
+ * `NATIVE_SCAN_HELPER_PATH_ENV` override where the native addon and the
+ * plugin-scan helper are loaded from, and `electron/scanWorker.ts`'s
+ * `SCAN_WORKER_COMMAND_ENV` carries a leaf-launch command that can itself
+ * name a different scan helper binary. A run that inherited any of these
+ * from the operator's own shell would measure a binary the record's payload
+ * identity says nothing about.
+ */
+const PAYLOAD_OVERRIDE_ENV_KEYS = [
+    'SOURDAW_NATIVE_ADDON',
+    'SOURDAW_PLUGIN_SCAN_HELPER',
+    'SOURDAW_PLUGIN_SCAN_WORKER_COMMAND',
+] as const;
+
+export type StrippedEnv = { env: NodeJS.ProcessEnv; dropped: string[] };
+
+/**
+ * Copies `env` with the payload-override keys removed, naming which of them
+ * were actually set so a bisecting operator sees what was dropped rather
+ * than silently measuring a different binary than the one it printed.
+ *
+ * Pure — takes the environment as an argument and returns a copy rather than
+ * mutating `process.env` in place, which is what lets a spec exercise it
+ * without touching the real process environment.
+ */
+export function stripPayloadOverrides(env: NodeJS.ProcessEnv): StrippedEnv {
+    const stripped = { ...env };
+    const dropped: string[] = [];
+    for (const key of PAYLOAD_OVERRIDE_ENV_KEYS) {
+        if (stripped[key] !== undefined) {
+            dropped.push(key);
+            delete stripped[key];
+        }
+    }
+    return { env: stripped, dropped };
+}
 
 async function pickFreePort(): Promise<number> {
     return new Promise((resolve, reject) => {
@@ -87,8 +128,15 @@ export async function launchAndMeasure(
     diagnostics: Diagnostics
 ): Promise<MeasuredLegs> {
     const port = await pickFreePort();
+    const { env: spawnEnv, dropped } = stripPayloadOverrides(process.env);
+    if (dropped.length > 0) {
+        process.stdout.write(
+            `dropped override(s) ${dropped.join(', ')} — the packaged app loads only what its payload identity hashed\n`
+        );
+    }
     const child = spawn(binary, [`--remote-debugging-port=${String(port)}`, `--user-data-dir=${profileDir}`], {
         stdio: ['ignore', 'pipe', 'pipe'],
+        env: spawnEnv,
     });
     const output: string[] = [];
     child.stdout?.on('data', (chunk: Buffer) => output.push(chunk.toString('utf8')));

@@ -82,6 +82,19 @@ const STREAM_ERROR_MARKER = '[AudioEngine] native engine streamError';
 
 const STATUS_BAR_SELECTOR = 'footer[aria-label="Application status"]';
 
+/**
+ * The one outcome an aborted pre-connect `fetch` and an already-tripped
+ * `signal` are both reported as, so `launchAndMeasure`'s caller sees one
+ * consistent reason rather than a raw `AbortError` in one case and a named
+ * message in the other.
+ */
+const SPAWN_ABORTED_BEFORE_CONNECT_MESSAGE = 'the packaged app process failed before its page target ever appeared';
+
+/** `fetch` rejects with a `DOMException` named `AbortError` when its `signal` fires, in both the browser and Node's own `undici`-backed implementation. */
+function isAbortError(error: unknown): boolean {
+    return error instanceof Error && error.name === 'AbortError';
+}
+
 type EngineDiagnosticsReading = {
     running: boolean;
     counters: Record<string, number>;
@@ -160,30 +173,39 @@ function asCdpVersion(payload: unknown): CdpVersion {
  * page is actually there is what keeps `connectOverCDP` from ever attaching to
  * a target still mid-creation.
  *
- * `signal`, when given, is checked at the top of every iteration: if the
- * packaged process has already failed to spawn, the debug port this polls
- * will never open, and without a way to cut the loop short it would keep
- * polling a dead port for the rest of `APP_READY_TIMEOUT_MS` regardless.
- * `launchAndMeasure` aborts as soon as it has the spawn error in hand, so
- * this loop's own timeout error, thrown here after that, never reaches a
- * caller — `Promise.race` there has already settled on the spawn error by
- * the time this rejection arrives.
+ * `signal`, when given, is checked at the top of every iteration and passed
+ * into the `fetch` itself: if the packaged process has already failed to
+ * spawn, the debug port this polls will never open, and without a way to
+ * cut the loop short it would keep polling a dead port for the rest of
+ * `APP_READY_TIMEOUT_MS` regardless. Checking only at the top of the loop
+ * would still leave one in-flight `fetch` to complete or time out on its
+ * own; passing the signal into the `fetch` call itself aborts that request
+ * too, so an abort during the request is not silently swallowed by the
+ * catch block below as "the app has not opened the port yet" — `isAbortError`
+ * recognises it and reports the same aborted outcome the top-of-loop check
+ * does. `launchAndMeasure` aborts as soon as it has the spawn error in hand,
+ * so this rejection, arriving after that, never reaches a caller —
+ * `Promise.race` there has already settled on the spawn error by the time
+ * it does.
  */
 async function waitForAppPageTarget(port: number, signal?: AbortSignal): Promise<AppPageTarget> {
     const deadline = Date.now() + APP_READY_TIMEOUT_MS;
     while (Date.now() < deadline) {
         if (signal?.aborted === true) {
-            throw new Error('the packaged app process failed before its page target ever appeared');
+            throw new Error(SPAWN_ABORTED_BEFORE_CONNECT_MESSAGE);
         }
         try {
-            const response = await fetch(`http://127.0.0.1:${String(port)}/json/list`);
+            const response = await fetch(`http://127.0.0.1:${String(port)}/json/list`, { signal });
             if (response.ok) {
                 const target = findAppPageTarget(await response.json(), APP_URL_PREFIX);
                 if (target !== null) {
                     return target;
                 }
             }
-        } catch {
+        } catch (error) {
+            if (isAbortError(error)) {
+                throw new Error(SPAWN_ABORTED_BEFORE_CONNECT_MESSAGE, { cause: error });
+            }
             // The app has not opened the port yet. Keep polling until the deadline.
         }
         await sleep(100);
@@ -193,8 +215,13 @@ async function waitForAppPageTarget(port: number, signal?: AbortSignal): Promise
     );
 }
 
-async function readCdpVersion(port: number): Promise<CdpVersion> {
-    const response = await fetch(`http://127.0.0.1:${String(port)}/json/version`);
+async function readCdpVersion(port: number, signal?: AbortSignal): Promise<CdpVersion> {
+    let response: Response;
+    try {
+        response = await fetch(`http://127.0.0.1:${String(port)}/json/version`, { signal });
+    } catch (error) {
+        throw isAbortError(error) ? new Error(SPAWN_ABORTED_BEFORE_CONNECT_MESSAGE, { cause: error }) : error;
+    }
     if (!response.ok) {
         throw new Error(`http://127.0.0.1:${String(port)}/json/version answered with HTTP ${String(response.status)}`);
     }
@@ -578,7 +605,7 @@ export async function connectAndMeasure(
     const target = await waitForAppPageTarget(port, signal);
     process.stdout.write(`page              ${target.url} "${target.title}"\n`);
 
-    const version = await readCdpVersion(port);
+    const version = await readCdpVersion(port, signal);
     process.stdout.write(`browser           ${version.browser}\n`);
     process.stdout.write(`user agent        ${version.userAgent}\n`);
 
