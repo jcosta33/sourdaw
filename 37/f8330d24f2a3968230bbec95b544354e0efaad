@@ -1,0 +1,29 @@
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_9b530f08172a54::t_828b843e2aa08b 702-703,747-748,762-763,852-853
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  s_44711db7f039c8::t_bdbce998939ccb 30,35-38,59-62,159-178,340-341,1030-1097
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "37f8330d24f2a3968230bbec95b544354e0efaad",
+  "prompts": {},
+  "sessions": {
+    "s_44711db7f039c8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a730fee9e65bb7af5",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
