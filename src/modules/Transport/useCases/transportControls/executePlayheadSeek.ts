@@ -1,7 +1,8 @@
 import { logger } from '#/infra/logger/appLogger';
-import { repositionNativeLiveGraphSession, stopAllScheduled } from '#/modules/AudioEngine/useCases';
+import { audioEngine, repositionNativeLiveGraphSession, stopAllScheduled } from '#/modules/AudioEngine/useCases';
 import { resetMidiState } from '#/modules/MIDI/useCases';
 
+import { getTempoAtBeat } from '../../models/TempoMap';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
@@ -88,6 +89,22 @@ export function executePlayheadSeek(beat: number): Promise<void> {
         // playing.
         if (wasPlaying && getTransportState()?.isPlaying === true) {
             startPlayheadScheduler();
+        } else {
+            const currentState = getTransportState();
+            if (currentState) {
+                const changes = tempoMapStore.value?.changes ?? [];
+                const positionSeconds = secondsBetweenBeats(changes, 0, targetBeat, currentState.tempo);
+                const tempo = getTempoAtBeat(changes, targetBeat, currentState.tempo);
+                audioEngine.setTransportInfo(
+                    targetBeat,
+                    positionSeconds,
+                    tempo,
+                    false,
+                    currentState.loopStart,
+                    currentState.loopEnd,
+                    currentState.isLooping
+                );
+            }
         }
 
         return yeastPanic;
