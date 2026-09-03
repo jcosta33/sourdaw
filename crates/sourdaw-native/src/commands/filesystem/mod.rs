@@ -565,12 +565,10 @@ fn names_private_directory(component: &str) -> bool {
 /// answers an application-data path from the built-in roots without ever
 /// consulting the registry, so a lazy creation would still be pending during
 /// the first renderer command a fresh profile guards.
-/// The wrapper is the half that resolves the real application data directory,
-/// and its only in-crate callers are gated — `restore_grants` out of the test
-/// build, the addon behind its feature — so a test build compiles it with no
-/// caller at all. [`create_private_state_directory`] is where the work is, and
-/// that is what the test drives.
-#[cfg(not(test))]
+///
+/// Ensures the private state directory exists for both production and test
+/// addon initializations. [`create_private_state_directory`] is where the
+/// work is, and that is what tests drive directly.
 pub(crate) fn ensure_private_state_directory() {
     let Some(directory) = private_state_directory() else {
         return;
