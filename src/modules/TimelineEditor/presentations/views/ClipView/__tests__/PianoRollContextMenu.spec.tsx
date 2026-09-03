@@ -235,7 +235,7 @@ describe('PianoRollContextMenu', () => {
 
     it('should quantize notes through the AppAction boundary', () => {
         renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
-        fireEvent.click(screen.getByText('1/4'));
+        fireEvent.click(screen.getAllByText('1/4')[0]!);
 
         expect(executeAppAction).toHaveBeenCalledWith({
             type: 'quantizeNotes',
@@ -398,6 +398,98 @@ describe('PianoRollContextMenu', () => {
             type: 'retrogradeNotes',
             payload: { clipId: 'clip-1' },
         });
+        expect(defaultProps.onClose).toHaveBeenCalled();
+    });
+
+    it('should render quantize length options and dispatch quantizeNoteLengths on click', () => {
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} />);
+        expect(screen.getByText('Quantize Length')).toBeInTheDocument();
+
+        const quarterButtons = screen.getAllByText('1/4');
+        expect(quarterButtons).toHaveLength(2);
+        fireEvent.click(quarterButtons[1]!);
+
+        expect(executeAppAction).toHaveBeenCalledWith({
+            type: 'quantizeNoteLengths',
+            payload: { clipId: 'clip-1', gridSize: 0.25 },
+        });
+    });
+
+    it('should render velocity options and dispatch scaleAllVelocities (-20%, +20%) on click', () => {
+        const notes = [{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }];
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} notes={notes} />);
+        expect(screen.getByText('Velocity')).toBeInTheDocument();
+
+        const minus20 = screen.getByText('-20%');
+        const plus20 = screen.getByText('+20%');
+        expect(minus20).not.toBeDisabled();
+        expect(plus20).not.toBeDisabled();
+
+        fireEvent.click(minus20);
+        expect(executeAppAction).toHaveBeenCalledWith({
+            type: 'scaleAllVelocities',
+            payload: { clipId: 'clip-1', factor: 0.8 },
+        });
+
+        fireEvent.click(plus20);
+        expect(executeAppAction).toHaveBeenCalledWith({
+            type: 'scaleAllVelocities',
+            payload: { clipId: 'clip-1', factor: 1.2 },
+        });
+    });
+
+    it('should render velocity options and dispatch setAllVelocities (=100, =64) on click', () => {
+        const notes = [{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }];
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} notes={notes} />);
+
+        const set100 = screen.getByText('=100');
+        const set64 = screen.getByText('=64');
+        expect(set100).not.toBeDisabled();
+        expect(set64).not.toBeDisabled();
+
+        fireEvent.click(set100);
+        expect(executeAppAction).toHaveBeenCalledWith({
+            type: 'setAllVelocities',
+            payload: { clipId: 'clip-1', velocity: 100 },
+        });
+
+        fireEvent.click(set64);
+        expect(executeAppAction).toHaveBeenCalledWith({
+            type: 'setAllVelocities',
+            payload: { clipId: 'clip-1', velocity: 64 },
+        });
+    });
+
+    it('velocity buttons are disabled when notes array is empty', () => {
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} notes={[]} />);
+        expect(screen.getByText('-20%')).toBeDisabled();
+        expect(screen.getByText('+20%')).toBeDisabled();
+        expect(screen.getByText('=100')).toBeDisabled();
+        expect(screen.getByText('=64')).toBeDisabled();
+    });
+
+    it('onClose is called after triggering actions', () => {
+        const notes = [{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }];
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} notes={notes} />);
+
+        const quarterButtons = screen.getAllByText('1/4');
+        fireEvent.click(quarterButtons[1]!);
+        expect(defaultProps.onClose).toHaveBeenCalled();
+
+        vi.mocked(defaultProps.onClose).mockClear();
+        fireEvent.click(screen.getByText('-20%'));
+        expect(defaultProps.onClose).toHaveBeenCalled();
+
+        vi.mocked(defaultProps.onClose).mockClear();
+        fireEvent.click(screen.getByText('+20%'));
+        expect(defaultProps.onClose).toHaveBeenCalled();
+
+        vi.mocked(defaultProps.onClose).mockClear();
+        fireEvent.click(screen.getByText('=100'));
+        expect(defaultProps.onClose).toHaveBeenCalled();
+
+        vi.mocked(defaultProps.onClose).mockClear();
+        fireEvent.click(screen.getByText('=64'));
         expect(defaultProps.onClose).toHaveBeenCalled();
     });
 });

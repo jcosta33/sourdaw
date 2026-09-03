@@ -160,6 +160,28 @@ export const PianoRollContextMenu = ({
                     </Button>
                 ))}
             </Row>
+            <DawMenuSectionLabel className="text-[10px] font-normal normal-case tracking-normal">
+                Quantize Length
+            </DawMenuSectionLabel>
+            <Row align="stretch" gap={1} className="px-3 py-0.5">
+                {([1, 0.5, 0.25, 0.125] as const).map((g) => (
+                    <Button
+                        variant="bare"
+                        size="bare"
+                        type="button"
+                        key={`len-${g}`}
+                        className={pillBtnClass}
+                        onClick={act(() => {
+                            void executeAppAction({
+                                type: 'quantizeNoteLengths',
+                                payload: { clipId, gridSize: g },
+                            }).catch(() => logger.warn('Could not quantize note lengths'));
+                        })}
+                    >
+                        {{ 1: '1/1', 0.5: '1/2', 0.25: '1/4', 0.125: '1/8' }[g]}
+                    </Button>
+                ))}
+            </Row>
             {/* Transpose */}
             <DawMenuSeparator className="border-border/50" />
             <DawMenuSectionLabel className="text-[10px] font-normal normal-case tracking-normal">
@@ -241,6 +263,73 @@ export const PianoRollContextMenu = ({
             >
                 Reverse (Retrograde)
             </DawMenuButton>
+            {/* Velocity */}
+            <DawMenuSeparator className="border-border/50" />
+            <DawMenuSectionLabel className="text-[10px] font-normal normal-case tracking-normal">
+                Velocity
+            </DawMenuSectionLabel>
+            <Row align="stretch" gap={1} className="px-3 py-0.5">
+                <Button
+                    variant="bare"
+                    size="bare"
+                    type="button"
+                    disabled={notes.length === 0}
+                    className={pillBtnClass}
+                    onClick={act(() => {
+                        void executeAppAction({
+                            type: 'scaleAllVelocities',
+                            payload: { clipId, factor: 0.8 },
+                        }).catch(() => logger.warn('Could not scale velocities'));
+                    })}
+                >
+                    -20%
+                </Button>
+                <Button
+                    variant="bare"
+                    size="bare"
+                    type="button"
+                    disabled={notes.length === 0}
+                    className={pillBtnClass}
+                    onClick={act(() => {
+                        void executeAppAction({
+                            type: 'scaleAllVelocities',
+                            payload: { clipId, factor: 1.2 },
+                        }).catch(() => logger.warn('Could not scale velocities'));
+                    })}
+                >
+                    +20%
+                </Button>
+                <Button
+                    variant="bare"
+                    size="bare"
+                    type="button"
+                    disabled={notes.length === 0}
+                    className={pillBtnClass}
+                    onClick={act(() => {
+                        void executeAppAction({
+                            type: 'setAllVelocities',
+                            payload: { clipId, velocity: 100 },
+                        }).catch(() => logger.warn('Could not set velocities'));
+                    })}
+                >
+                    =100
+                </Button>
+                <Button
+                    variant="bare"
+                    size="bare"
+                    type="button"
+                    disabled={notes.length === 0}
+                    className={pillBtnClass}
+                    onClick={act(() => {
+                        void executeAppAction({
+                            type: 'setAllVelocities',
+                            payload: { clipId, velocity: 64 },
+                        }).catch(() => logger.warn('Could not set velocities'));
+                    })}
+                >
+                    =64
+                </Button>
+            </Row>
             {/* Humanize */}
             <DawMenuSeparator className="border-border/50" />
             {(
