@@ -783,23 +783,27 @@ jobs:
         if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true' && steps.production.outputs.deploy == 'true'
         run: pnpm install --frozen-lockfile
 
-      - name: Pull the production environment
+      - name: Link the Vercel CLI to the production project
         if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true' && steps.production.outputs.deploy == 'true'
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        # The CLI authenticates from `VERCEL_TOKEN` in the environment and
-        # resolves the project from the two ids beside it; none of the three
-        # belongs on a command line these logs echo.
+        run: node scripts/linkVercelCliProject.ts
+
+      - name: Pull the production environment
+        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true' && steps.production.outputs.deploy == 'true'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        # Org and project ids are absent here because the CLI treats them as the
+        # link and 404s an org lookup the deployments API never performs; the
+        # link step wrote `.vercel/project.json` from the project settings answer.
         run: pnpm dlx "$VERCEL_CLI" pull --yes --environment=production
 
       - name: Build the validated revision
         if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true' && steps.production.outputs.deploy == 'true'
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: pnpm dlx "$VERCEL_CLI" build --prod
 
       - name: Deploy the prebuilt revision
@@ -807,8 +811,6 @@ jobs:
         if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true' && steps.production.outputs.deploy == 'true'
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
           set -euo pipefail
           # `--meta githubCommitSha` is what the next run reads back to decide
