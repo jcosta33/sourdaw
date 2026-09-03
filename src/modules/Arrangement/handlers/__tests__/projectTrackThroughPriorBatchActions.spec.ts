@@ -90,4 +90,15 @@ describe('projectTrackThroughPriorBatchActions', () => {
 
         expect(track.clips.map((candidate) => candidate.id)).toEqual(['clip-a', 'clip-b']);
     });
+
+    it('projects the exact earlier automation mode for later expected-state validation', () => {
+        const track = trackWithClips('track-1', []);
+
+        const projected = projectFor(track, [
+            { type: 'setAutomationMode', payload: { trackId: track.id, mode: 'touch' } },
+        ]);
+
+        expect(projected.automationMode).toBe('touch');
+        expect(track.automationMode).toBe('read');
+    });
 });

@@ -45,4 +45,11 @@ regexes = [
   # an App credential. Audited 2026-09-02; Nightly `--all` sees the PR #3344
   # fixture on `agent/review-publication-lock-recovery`.
   '''2cd01237-cf63-4579-9e58-85893794529d''',
+
+  # Delivery-lock owner token fixture in `scripts/recoverDeliveryLock.ts` and
+  # `scripts/__tests__/recoverDeliveryLock3437.spec.ts`. `generic-api-key` matched
+  # only because the assignment is named `token`. It was never an issued credential.
+  # Audited 2026-09-03; Nightly `--all` still sees commit af09038c855e655b01dde6d723f185f4c13937d4
+  # on PR #3437 / `agent/recover-3437-lock`.
+  '''f515a71d-c25a-4714-b725-ef6e9b141005''',
 ]

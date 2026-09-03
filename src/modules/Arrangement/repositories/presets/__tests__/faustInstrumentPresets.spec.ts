@@ -5,16 +5,6 @@ import { FAUST_INSTRUMENT_PRESETS } from '../faustInstrumentPresets';
 
 import { scanRealFaustDeviceParamIds, scanRealFaustDeviceParams } from './faustRegistrationScan';
 
-/** The retired single-operator FM keys every shipped FM preset still authors. */
-const FM_SYNTH_RETIRED_PRESET_KEYS: ReadonlySet<string> = new Set([
-    'ratio',
-    'index',
-    'attack',
-    'decay',
-    'sustain',
-    'release',
-]);
-
 /**
  * The envelope keys every shipped additive preset still authors. The additive
  * DSP hardcodes its ADSR, so these never reached the audio; they stay authored
@@ -114,17 +104,11 @@ describe('faustInstrumentPresets', () => {
                     continue;
                 }
                 for (const paramId of Object.keys(device.parameterValues)) {
-                    if (device.type === 'faust-fm-synth' && FM_SYNTH_RETIRED_PRESET_KEYS.has(paramId)) {
-                        // Excluded by name, not by skipping the device: the
-                        // fm-synth descriptor declares `gain` now, so `gain`
-                        // and any key added after it stay under this guard
-                        // while the retired set's migration stays #3155's.
-                        continue;
-                    }
                     if (device.type === 'faust-additive-synth' && ADDITIVE_SYNTH_RETIRED_PRESET_KEYS.has(paramId)) {
-                        // Same shape as the fm-synth guard above: excluded by
-                        // name, not by skipping the device, so a new additive
-                        // key that misses the DSP still goes red here.
+                        // Additive Synth has no registered ADSR controls: its
+                        // DSP hardcodes the envelope, so only those
+                        // additive-only legacy keys stay excluded until that
+                        // migration lands.
                         continue;
                     }
                     if (!realIds.has(paramId)) {
@@ -134,6 +118,65 @@ describe('faustInstrumentPresets', () => {
             }
         }
         expect(unknownKeysByDevice).toEqual([]);
+    });
+
+    it('FM synth factory presets author current four-operator controls inside real bounds', () => {
+        const fmDevices = FAUST_INSTRUMENT_PRESETS.flatMap((preset) =>
+            preset.devices
+                .filter((device) => device.type === 'faust-fm-synth')
+                .map((device) => ({ presetId: preset.id, device }))
+        );
+        const fmPresetIds = fmDevices.map(({ presetId }) => presetId).sort();
+        expect(fmPresetIds).toEqual([
+            'factory-faust-fm-crystal-keys',
+            'factory-faust-fm-dx-bells',
+            'factory-faust-fm-epiano',
+            'factory-faust-fm-metallic-bass',
+            'factory-faust-fm-organ',
+            'factory-faust-fm-pad',
+        ]);
+
+        const registeredParams = scanRealFaustDeviceParams().get('faust-fm-synth');
+        if (!registeredParams) {
+            throw new Error('Expected a registerFaustDSP registration for faust-fm-synth');
+        }
+
+        const timbreFingerprints = new Set<string>();
+
+        for (const { presetId, device } of fmDevices) {
+            const parameterIds = Object.keys(device.parameterValues);
+            expect(parameterIds).not.toEqual(
+                expect.arrayContaining(['ratio', 'index', 'attack', 'decay', 'sustain', 'release'])
+            );
+            expect(parameterIds).not.toContain('freq');
+            expect(parameterIds).not.toContain('gate');
+            for (const operatorPrefix of ['op1', 'op2', 'op3', 'op4']) {
+                const operatorSuffixes = parameterIds
+                    .filter((parameterId) => parameterId.startsWith(`${operatorPrefix}_`))
+                    .map((parameterId) => parameterId.slice(operatorPrefix.length + 1))
+                    .sort();
+                expect(operatorSuffixes).toEqual(['attack', 'decay', 'level', 'ratio', 'release', 'sustain']);
+            }
+
+            for (const [parameterId, value] of Object.entries(device.parameterValues)) {
+                const registeredParam = registeredParams.get(parameterId);
+                if (!registeredParam) {
+                    throw new Error(`${presetId}/${parameterId}: authored but not registered`);
+                }
+                expect(value).toBeGreaterThanOrEqual(registeredParam.min);
+                expect(value).toBeLessThanOrEqual(registeredParam.max);
+            }
+
+            timbreFingerprints.add(
+                JSON.stringify(
+                    Object.entries(device.parameterValues)
+                        .filter(([parameterId]) => parameterId !== 'gain')
+                        .sort(([left], [right]) => left.localeCompare(right))
+                )
+            );
+        }
+
+        expect(timbreFingerprints.size).toBe(fmDevices.length);
     });
 
     it('welds the Faust instrument descriptors to the registrations, ids and bounds, in both directions', () => {

@@ -12,4 +12,14 @@ export type BatchLocalActionIdentity =
           actionOrdinal: number;
           actionType: 'addDevice';
           deviceId: string;
+      }
+    | {
+          actionOrdinal: number;
+          actionType: 'addTrack';
+          trackId: string;
+      }
+    | {
+          actionOrdinal: number;
+          actionType: 'addClip';
+          clipId: string;
       };

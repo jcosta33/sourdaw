@@ -61,6 +61,16 @@
 //! again: nothing else ever fills toward a deeper target, because the shed
 //! only enforces the target downward.
 //!
+//! The law covers one read, so a consumer that splits one device period into
+//! several back-to-back reads spends the depth without the writer getting a
+//! turn between them. The render callback does exactly that above
+//! [`crate::audio_thread::MAX_CALLBACK_FRAMES`], and the depth covers the read
+//! twice over, so an output period past twice that limit can underrun its
+//! third chunk. That is the same class of device the plugin bridge already
+//! counts as over reach, no backend advertises one, and the failure is a
+//! counted shortfall rather than corruption — so it is disclosed here and
+//! carries no code.
+//!
 //! **After a stall.** An underrun drops the reader back to unsettled, so it
 //! refills to the target before serving again, and the published latency goes
 //! back to zero until it does. A reader that kept taking whatever happened to
@@ -273,7 +283,11 @@ pub struct CaptureRingReader {
     observed_block_frames: Arc<AtomicUsize>,
     latency_frames: Arc<AtomicUsize>,
     published_latency: usize,
-    capacity_samples: usize,
+    /// The largest read the ring was sized against, in samples. Capacity is
+    /// bounded on the hypothesis that no read exceeds it
+    /// ([`CaptureShape::ring_frames`]), so the reader enforces the hypothesis
+    /// rather than trusting it.
+    read_ceiling_samples: usize,
     channels: usize,
     settled: bool,
     /// The largest block the writer has been seen to deliver, and the largest
@@ -315,14 +329,15 @@ impl CaptureRingReader {
             return false;
         }
 
-        if out.len() > self.capacity_samples || out.len() % self.channels != 0 {
+        if out.len() > self.read_ceiling_samples || out.len() % self.channels != 0 {
             // Two reads the ring will not serve, and neither is reachable from
-            // the engine: capacity covers the largest callback it accepts, and
-            // a render callback's slice is always a whole number of frames.
+            // the engine: the ceiling covers the largest callback it accepts,
+            // and a render callback's slice is always a whole number of frames.
             // They are guarded rather than trusted because both fail silently.
-            // A slice longer than the ring could ever hold would underrun on
-            // every callback for the life of the stream, and a slice that is
-            // not a whole number of frames would rotate which channel every
+            // A slice past the ceiling is the one capacity was bounded
+            // against, so serving it could settle a depth the ring cannot hold
+            // and the reader would never hand out another sample; a slice that
+            // is not a whole number of frames would rotate which channel every
             // later sample belongs to — the same corruption `write_block`
             // refuses a partial block for. Counted, and the reader is left
             // exactly as it was.
@@ -476,7 +491,7 @@ pub fn capture_ring(
         observed_block_frames,
         latency_frames,
         published_latency: 0,
-        capacity_samples: capacity,
+        read_ceiling_samples: shape.interleaved(shape.read_ceiling()),
         channels: shape.lanes(),
         settled: false,
         block_ceiling_frames: 0,
@@ -665,6 +680,48 @@ mod tests {
         // target first would hide the difference.
         let depth = reader.consumer.slots() / CHANNELS;
         assert!(depth >= READ && depth < target, "{depth} frames held");
+        assert!(reader.read_into(&mut destination));
+        assert_eq!(reader.counters().underruns(), 1);
+    }
+
+    #[test]
+    fn a_read_past_the_ceiling_the_ring_was_sized_against_is_refused() {
+        // Capacity is bounded on the hypothesis that no read exceeds the
+        // ceiling. A read one frame past it still fits the ring today, so
+        // nothing downstream fails — but the depth it would settle at is
+        // outside the bound the capacity proof rests on, and the first read
+        // large enough to reach that depth would leave the reader filling for
+        // the life of the stream. The hypothesis is enforced here so it stops
+        // being an assumption about callers.
+        let (mut writer, mut reader, latency) = ring(SHAPE);
+        let mut destination = out(READ);
+        let target = target_depth_frames(BLOCK, READ);
+
+        for _ in 0..target.div_ceil(BLOCK) + 1 {
+            writer.write_block(&block(BLOCK), CHANNELS);
+        }
+        assert!(reader.read_into(&mut destination));
+        let settled_latency = latency.load(Ordering::Relaxed);
+
+        let mut past_the_ceiling = out(SHAPE.output_read_ceiling + 1);
+        assert!(
+            past_the_ceiling.len() < SHAPE.ring_frames() * CHANNELS,
+            "the read has to fit the ring, or capacity rather than the ceiling refuses it"
+        );
+        assert!(!reader.read_into(&mut past_the_ceiling));
+        assert_eq!(reader.counters().underruns(), 1);
+        assert!(
+            past_the_ceiling.iter().all(|sample| *sample == 0.0),
+            "a refused read hands out no part of the ring"
+        );
+        assert_eq!(
+            latency.load(Ordering::Relaxed),
+            settled_latency,
+            "a read nobody was ever going to serve must not retract the figure"
+        );
+
+        // Nothing is written in between, so only a reader left settled serves
+        // this: one knocked back to filling would refill instead.
         assert!(reader.read_into(&mut destination));
         assert_eq!(reader.counters().underruns(), 1);
     }

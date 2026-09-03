@@ -422,7 +422,6 @@ export const sizeBaselineFiles = [
     'src/modules/Project/presentations/views/RecentProjectsMenu.tsx',
     'src/modules/Project/presentations/views/TemplateChooser.tsx',
     'src/modules/Project/stores/arrangementStore.ts',
-    'src/modules/Project/useCases/demoProjects/demoUtils/generateDemoDrumBuffer.ts',
     'src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts',
     'src/modules/Project/useCases/doesProductionBriefAllowActionBatch.ts',
     'src/modules/Project/useCases/getAgentProjectModelContract.ts',

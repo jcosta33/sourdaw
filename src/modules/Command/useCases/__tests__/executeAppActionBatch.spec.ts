@@ -7,16 +7,25 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
-import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import {
+    addClip,
+    createTrack,
+    getArrangementHandlers,
+    getTrackStoreState,
+    setTrackStoreState,
+} from '#/modules/Arrangement/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { doesProductionBriefAllowActionBatch, productionBriefActionBatchAdmission } from '#/modules/Project/useCases';
 import { type ActionHandler, type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
+import { type UndoEntry } from '../../models/UndoEntry';
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
+import { undoStore } from '../../stores/undoStore';
 import { type ActionHistoryMetadata } from '../actionHistoryMetadataPort';
 import { commandTrackDefaultsPort } from '../commandTrackDefaultsPort';
 import { executeAppActionBatch } from '../executeAppActionBatch';
 import { productionBriefAdmissionPort } from '../productionBriefAdmissionPort';
+import { undo } from '../undo';
 
 type SetEditingToolAction = Extract<AppAction, { type: 'setEditingTool' }>;
 type SetSnapValueAction = Extract<AppAction, { type: 'setSnapValue' }>;
@@ -1194,6 +1203,155 @@ describe('executeAppActionBatch', () => {
             actions: [],
         });
         expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('commits and undoes a compensated automation-mode batch through the production handler', async () => {
+        const previousTracks = trackStore.value ? structuredClone(trackStore.value) : null;
+        const previousUndo = undoStore.value ? structuredClone(undoStore.value) : null;
+        setTrackStoreState({
+            ...structuredClone(defaultTrackState),
+            tracks: [createTrack({ id: 'track-automation', kind: 'audio', name: 'Automation' })],
+        });
+        registerHandlerMap(getArrangementHandlers());
+
+        try {
+            const result = await executeAppActionBatch(
+                [{ type: 'setAutomationMode', payload: { trackId: 'track-automation', mode: 'write' } }],
+                { requireCompensation: true }
+            );
+
+            expect(result).toMatchObject({ status: 'committed' });
+            expect(getTrackStoreState()?.tracks.find((track) => track.id === 'track-automation')?.automationMode).toBe(
+                'write'
+            );
+
+            const undoEntry = mocks.commitUndoEntry.mock.calls[0]?.[0] as UndoEntry | undefined;
+            if (!undoEntry) {
+                throw new Error('Expected the automation-mode batch to create an undo entry');
+            }
+            undoStore.set({ past: [undoEntry], future: [] });
+
+            await expect(undo()).resolves.toEqual({ headConsumed: true });
+            expect(getTrackStoreState()?.tracks.find((track) => track.id === 'track-automation')?.automationMode).toBe(
+                'read'
+            );
+        } finally {
+            if (previousTracks) {
+                setTrackStoreState(previousTracks);
+            }
+            if (previousUndo) {
+                undoStore.set(previousUndo);
+            }
+        }
+    });
+
+    it('rejects a missing automation target before a valid sibling can write', async () => {
+        const previousTracks = trackStore.value ? structuredClone(trackStore.value) : null;
+        setTrackStoreState({
+            ...structuredClone(defaultTrackState),
+            tracks: [createTrack({ id: 'track-existing', kind: 'audio', name: 'Existing' })],
+        });
+        registerHandlerMap(getArrangementHandlers());
+
+        try {
+            const result = await executeAppActionBatch(
+                [
+                    { type: 'setAutomationMode', payload: { trackId: 'track-existing', mode: 'write' } },
+                    { type: 'setAutomationMode', payload: { trackId: 'track-missing', mode: 'touch' } },
+                ],
+                { requireCompensation: true }
+            );
+
+            expect(result).toEqual({
+                status: 'conflicted',
+                reason: 'Action conflicts with current project state: setAutomationMode',
+                actions: [],
+            });
+            expect(getTrackStoreState()?.tracks.find((track) => track.id === 'track-existing')?.automationMode).toBe(
+                'read'
+            );
+            expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        } finally {
+            if (previousTracks) {
+                setTrackStoreState(previousTracks);
+            }
+        }
+    });
+
+    it('records each planned automation mode so one grouped undo restores the original mode', async () => {
+        const previousTracks = trackStore.value ? structuredClone(trackStore.value) : null;
+        const previousUndo = undoStore.value ? structuredClone(undoStore.value) : null;
+        setTrackStoreState({
+            ...structuredClone(defaultTrackState),
+            tracks: [createTrack({ id: 'track-automation', kind: 'audio', name: 'Automation' })],
+        });
+        registerHandlerMap(getArrangementHandlers());
+        const writeAction = {
+            type: 'setAutomationMode' as const,
+            payload: { trackId: 'track-automation', mode: 'write' as const },
+        };
+        const touchAction = {
+            type: 'setAutomationMode' as const,
+            payload: { trackId: 'track-automation', mode: 'touch' as const, expectedMode: 'write' as const },
+        };
+        const latchAction = {
+            type: 'setAutomationMode' as const,
+            payload: { trackId: 'track-automation', mode: 'latch' as const, expectedMode: 'touch' as const },
+        };
+
+        try {
+            const result = await executeAppActionBatch([writeAction, touchAction, latchAction], {
+                groupId: 'automation-mode-batch',
+                groupLabel: 'Set automation modes',
+                requireCompensation: true,
+            });
+
+            expect(result).toMatchObject({ status: 'committed' });
+            expect(getTrackStoreState()?.tracks.find((track) => track.id === 'track-automation')?.automationMode).toBe(
+                'latch'
+            );
+
+            const undoEntries = mocks.commitUndoEntry.mock.calls.map(([entry]) => entry as UndoEntry);
+            expect(undoEntries).toMatchObject([
+                {
+                    groupId: 'automation-mode-batch',
+                    action: writeAction,
+                    inverseAction: {
+                        type: 'setAutomationMode',
+                        payload: { trackId: 'track-automation', mode: 'read', expectedMode: 'write' },
+                    },
+                },
+                {
+                    groupId: 'automation-mode-batch',
+                    action: touchAction,
+                    inverseAction: {
+                        type: 'setAutomationMode',
+                        payload: { trackId: 'track-automation', mode: 'write', expectedMode: 'touch' },
+                    },
+                },
+                {
+                    groupId: 'automation-mode-batch',
+                    action: latchAction,
+                    inverseAction: {
+                        type: 'setAutomationMode',
+                        payload: { trackId: 'track-automation', mode: 'touch', expectedMode: 'latch' },
+                    },
+                },
+            ]);
+            undoStore.set({ past: undoEntries, future: [] });
+
+            await expect(undo()).resolves.toEqual({ headConsumed: true });
+            expect(getTrackStoreState()?.tracks.find((track) => track.id === 'track-automation')?.automationMode).toBe(
+                'read'
+            );
+        } finally {
+            if (previousTracks) {
+                setTrackStoreState(previousTracks);
+            }
+            if (previousUndo) {
+                undoStore.set(previousUndo);
+            }
+        }
     });
 
     it('accepts a canonical no-op without requiring an inverse inside an atomic batch', async () => {

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
 import { exportCachedAudioBuffers } from '#/modules/AudioEngine/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -14,6 +15,15 @@ vi.mock('../../../../repositories/project/downloadProjectFile', () => ({
     downloadProjectFile: vi.fn(() => Promise.resolve('written' as const)),
 }));
 vi.mock('../../../arrangement/syncCurrentArrangementToStore', () => ({ syncCurrentArrangementToStore: vi.fn() }));
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: {
+        debug: vi.fn(),
+        error: vi.fn(),
+        info: vi.fn(),
+        setWriters: vi.fn(),
+        warn: vi.fn(),
+    },
+}));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 vi.mock('#/modules/CrdtDocument/stores', () => ({
     agentProjectRepairStateStore: agentProjectRepairStateStoreMock,
@@ -72,6 +82,7 @@ describe('exportProjectFile', () => {
     beforeEach(() => {
         agentProjectRepairStateStoreMock.value = null;
         vi.mocked(downloadProjectFile).mockClear();
+        vi.mocked(logger.error).mockClear();
         vi.mocked(notifyUser).mockClear();
         vi.mocked(exportCachedAudioBuffers).mockClear();
         vi.mocked(exportCachedAudioBuffers).mockResolvedValue({});
@@ -192,4 +203,19 @@ describe('exportProjectFile', () => {
             expect(notifyUser).not.toHaveBeenCalledWith('Project exported successfully', 'info');
         }
     );
+
+    it('reports a failed project-file download without rejecting the export action', async () => {
+        const failure = new Error('save dialog failed');
+        vi.mocked(downloadProjectFile).mockRejectedValueOnce(failure);
+
+        await expect(exportProjectFile()).resolves.toBeUndefined();
+
+        expect(logger.error).toHaveBeenCalledTimes(1);
+        const loggedError = vi.mocked(logger.error).mock.calls[0]?.[0];
+        expect(loggedError).toBeInstanceOf(Error);
+        expect(loggedError).toMatchObject({ message: 'Project export failed', cause: failure });
+        expect(notifyUser).toHaveBeenCalledTimes(1);
+        expect(notifyUser).toHaveBeenCalledWith('Failed to export project', 'error');
+        expect(notifyUser).not.toHaveBeenCalledWith('Project exported successfully', 'info');
+    });
 });

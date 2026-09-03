@@ -1275,6 +1275,117 @@ describe('review publish', () => {
         expect(() => publishReview(42, port)).toThrow(new RegExp(`review\\.json comments\\[1\\] ${field} is invalid`));
     });
 
+    describe('comment shape validation guards in parseCommentEntries', () => {
+        it.each([
+            {
+                label: 'null entry at index 0',
+                comments: [null],
+                expectedError: /review\.json comments\[0\] must be an object/,
+            },
+            {
+                label: 'primitive string entry at index 1',
+                comments: [validComment, 'not-an-object'],
+                expectedError: /review\.json comments\[1\] must be an object/,
+            },
+            {
+                label: 'array entry at index 1',
+                comments: [validComment, []],
+                expectedError: /review\.json comments\[1\] must be an object/,
+            },
+            {
+                label: 'missing path at index 0',
+                comments: [{ line: 10, side: 'RIGHT', defect: 'd', consequence: 'c', done: 'd' }],
+                expectedError: /review\.json comments\[0\] path is invalid/,
+            },
+            {
+                label: 'empty path at index 1',
+                comments: [
+                    validComment,
+                    { path: '', line: 10, side: 'RIGHT', defect: 'd', consequence: 'c', done: 'd' },
+                ],
+                expectedError: /review\.json comments\[1\] path is invalid/,
+            },
+            {
+                label: 'non-string path at index 1',
+                comments: [
+                    validComment,
+                    { path: 123, line: 10, side: 'RIGHT', defect: 'd', consequence: 'c', done: 'd' },
+                ],
+                expectedError: /review\.json comments\[1\] path is invalid/,
+            },
+            {
+                label: 'missing line at index 0',
+                comments: [{ path: 'a.ts', side: 'RIGHT', defect: 'd', consequence: 'c', done: 'd' }],
+                expectedError: /review\.json comments\[0\] line is invalid/,
+            },
+            {
+                label: 'zero line at index 0',
+                comments: [{ path: 'a.ts', line: 0, side: 'RIGHT', defect: 'd', consequence: 'c', done: 'd' }],
+                expectedError: /review\.json comments\[0\] line is invalid/,
+            },
+            {
+                label: 'negative line at index 1',
+                comments: [
+                    validComment,
+                    { path: 'a.ts', line: -1, side: 'RIGHT', defect: 'd', consequence: 'c', done: 'd' },
+                ],
+                expectedError: /review\.json comments\[1\] line is invalid/,
+            },
+            {
+                label: 'non-integer line at index 1',
+                comments: [
+                    validComment,
+                    { path: 'a.ts', line: 1.5, side: 'RIGHT', defect: 'd', consequence: 'c', done: 'd' },
+                ],
+                expectedError: /review\.json comments\[1\] line is invalid/,
+            },
+            {
+                label: 'non-number line string at index 1',
+                comments: [
+                    validComment,
+                    { path: 'a.ts', line: '10', side: 'RIGHT', defect: 'd', consequence: 'c', done: 'd' },
+                ],
+                expectedError: /review\.json comments\[1\] line is invalid/,
+            },
+            {
+                label: 'missing side at index 0',
+                comments: [{ path: 'a.ts', line: 10, defect: 'd', consequence: 'c', done: 'd' }],
+                expectedError: /review\.json comments\[0\] side must be LEFT or RIGHT/,
+            },
+            {
+                label: 'invalid side string at index 0',
+                comments: [{ path: 'a.ts', line: 10, side: 'TOP', defect: 'd', consequence: 'c', done: 'd' }],
+                expectedError: /review\.json comments\[0\] side must be LEFT or RIGHT/,
+            },
+            {
+                label: 'lowercase side at index 1',
+                comments: [
+                    validComment,
+                    { path: 'a.ts', line: 10, side: 'right', defect: 'd', consequence: 'c', done: 'd' },
+                ],
+                expectedError: /review\.json comments\[1\] side must be LEFT or RIGHT/,
+            },
+            {
+                label: 'non-string side at index 1',
+                comments: [
+                    validComment,
+                    { path: 'a.ts', line: 10, side: 42, defect: 'd', consequence: 'c', done: 'd' },
+                ],
+                expectedError: /review\.json comments\[1\] side must be LEFT or RIGHT/,
+            },
+        ])('refuses $label', ({ comments, expectedError }) => {
+            const { port } = fakePort({
+                json: {
+                    event: 'REQUEST_CHANGES',
+                    body: 'Please fix',
+                    comments,
+                },
+            });
+
+            expect(() => publishReview(42, port)).toThrow(expectedError);
+        });
+    });
+
     it("fires the APPROVE-carries-comments refusal before parsing that comment's fields", () => {
         const { port } = fakePort({
             json: { event: 'APPROVE', body: 'ok', comments: [{ path: 'a.ts', line: 1, side: 'RIGHT' }] },

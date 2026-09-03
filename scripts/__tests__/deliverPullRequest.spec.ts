@@ -7884,7 +7884,7 @@ describe('delivery shell boundary', () => {
                 })
             ).toThrow(/delivery receipt authority cannot be proven/i);
         } finally {
-            rmSync(primaryRoot, { recursive: true, force: true });
+            removeTemporaryGitRepository(primaryRoot);
         }
         expect(captures).toEqual([
             expect.stringContaining('pr view 42'),
@@ -8012,7 +8012,7 @@ describe('delivery shell boundary', () => {
                 })
             ).toThrow(/delivery receipt authority cannot be proven/i);
         } finally {
-            rmSync(primaryRoot, { recursive: true, force: true });
+            removeTemporaryGitRepository(primaryRoot);
         }
 
         expect(captures[0]).toContain('pr view 42');
@@ -8084,7 +8084,7 @@ describe('delivery shell boundary', () => {
                 postMergeValidation: persistedPostMergeValidation('head', closes, 2372),
             });
         } finally {
-            rmSync(primaryRoot, { recursive: true, force: true });
+            removeTemporaryGitRepository(primaryRoot);
         }
 
         expect(effects).toEqual(['complete:2372']);
@@ -8121,7 +8121,7 @@ describe('delivery shell boundary', () => {
             firstPort.writeDeliveryReceiptAuthority(42, authority);
             expect(secondPort.readDeliveryReceiptAuthority(42)).toEqual(authority);
         } finally {
-            rmSync(primaryRoot, { recursive: true, force: true });
+            removeTemporaryGitRepository(primaryRoot);
         }
     });
 
@@ -8201,8 +8201,8 @@ describe('delivery shell boundary', () => {
             expect(port.readDeliveryReceiptAuthority(42)).toEqual(hostileAuthority);
         } finally {
             process.env.PATH = previousPath;
-            rmSync(primaryRoot, { recursive: true, force: true });
-            rmSync(wrapperRoot, { recursive: true, force: true });
+            removeTemporaryGitRepository(primaryRoot);
+            removeTemporaryGitRepository(wrapperRoot);
         }
     });
 
@@ -8261,7 +8261,7 @@ describe('delivery shell boundary', () => {
             ).toThrow(/delivery receipt authority could not be stored/i);
             expect(secondPort.readDeliveryReceiptAuthority(42)).toEqual(storedAuthority);
         } finally {
-            rmSync(primaryRoot, { recursive: true, force: true });
+            removeTemporaryGitRepository(primaryRoot);
         }
     });
 
@@ -8305,7 +8305,7 @@ describe('delivery shell boundary', () => {
             ).toThrow(/delivery receipt authority could not be stored/i);
             expect(secondPort.readDeliveryReceiptAuthority(42)).toEqual(storedAuthority);
         } finally {
-            rmSync(primaryRoot, { recursive: true, force: true });
+            removeTemporaryGitRepository(primaryRoot);
         }
     });
 
@@ -8359,7 +8359,7 @@ describe('delivery shell boundary', () => {
             ).toThrow(/delivery receipt authority could not be cleared/i);
             expect(secondPort.readDeliveryReceiptAuthority(42)).toEqual(storedAuthority);
         } finally {
-            rmSync(primaryRoot, { recursive: true, force: true });
+            removeTemporaryGitRepository(primaryRoot);
         }
     });
 
@@ -8436,8 +8436,8 @@ describe('delivery shell boundary', () => {
             expect(port.readDeliveryReceiptAuthority(42)).toEqual(hostileAuthority);
         } finally {
             process.env.PATH = previousPath;
-            rmSync(primaryRoot, { recursive: true, force: true });
-            rmSync(wrapperRoot, { recursive: true, force: true });
+            removeTemporaryGitRepository(primaryRoot);
+            removeTemporaryGitRepository(wrapperRoot);
         }
     });
 
@@ -8590,8 +8590,8 @@ describe('delivery shell boundary', () => {
             expect(captures).not.toContain('merge-attempted');
         } finally {
             process.env.PATH = previousPath;
-            rmSync(primaryRoot, { recursive: true, force: true });
-            rmSync(wrapperRoot, { recursive: true, force: true });
+            removeTemporaryGitRepository(primaryRoot);
+            removeTemporaryGitRepository(wrapperRoot);
         }
     });
 
@@ -8666,7 +8666,7 @@ describe('delivery shell boundary', () => {
             try {
                 expect(() => port.readDeliveryReceiptAuthority(42)).toThrow(/delivery receipt authority is malformed/i);
             } finally {
-                rmSync(primaryRoot, { recursive: true, force: true });
+                removeTemporaryGitRepository(primaryRoot);
             }
         }
     );
@@ -8694,7 +8694,7 @@ describe('delivery shell boundary', () => {
                 /duplicate key|delivery receipt authority is malformed/i
             );
         } finally {
-            rmSync(primaryRoot, { recursive: true, force: true });
+            removeTemporaryGitRepository(primaryRoot);
         }
     });
 
@@ -8721,7 +8721,7 @@ describe('delivery shell boundary', () => {
                 /duplicate key|delivery receipt authority is malformed/i
             );
         } finally {
-            rmSync(primaryRoot, { recursive: true, force: true });
+            removeTemporaryGitRepository(primaryRoot);
         }
     });
 
@@ -8759,7 +8759,7 @@ describe('delivery shell boundary', () => {
                 /delivery receipt authority cannot be proven|delivery receipt authority cannot be verified/i
             );
         } finally {
-            rmSync(primaryRoot, { recursive: true, force: true });
+            removeTemporaryGitRepository(primaryRoot);
         }
     });
 
@@ -8831,8 +8831,8 @@ describe('delivery shell boundary', () => {
             );
         } finally {
             process.env.PATH = previousPath;
-            rmSync(primaryRoot, { recursive: true, force: true });
-            rmSync(wrapperRoot, { recursive: true, force: true });
+            removeTemporaryGitRepository(primaryRoot);
+            removeTemporaryGitRepository(wrapperRoot);
         }
     });
 
@@ -8863,7 +8863,7 @@ describe('delivery shell boundary', () => {
         try {
             expect(port.readDeliveryReceiptAuthority(42)).toEqual(authority);
         } finally {
-            rmSync(primaryRoot, { recursive: true, force: true });
+            removeTemporaryGitRepository(primaryRoot);
         }
     });
 
@@ -8907,7 +8907,7 @@ describe('delivery shell boundary', () => {
                 );
             }
         } finally {
-            rmSync(primaryRoot, { recursive: true, force: true });
+            removeTemporaryGitRepository(primaryRoot);
         }
     });
 
@@ -8944,7 +8944,7 @@ describe('delivery shell boundary', () => {
                 /delivery receipt authority cannot be proven|delivery receipt authority cannot be verified/i
             );
         } finally {
-            rmSync(primaryRoot, { recursive: true, force: true });
+            removeTemporaryGitRepository(primaryRoot);
         }
     });
 
@@ -8981,7 +8981,7 @@ describe('delivery shell boundary', () => {
                 /delivery receipt authority cannot be proven|delivery receipt authority cannot be verified/i
             );
         } finally {
-            rmSync(primaryRoot, { recursive: true, force: true });
+            removeTemporaryGitRepository(primaryRoot);
         }
     });
 
@@ -9008,7 +9008,7 @@ describe('delivery shell boundary', () => {
                 /delivery receipt authority cannot be proven|delivery receipt authority cannot be verified/i
             );
         } finally {
-            rmSync(primaryRoot, { recursive: true, force: true });
+            removeTemporaryGitRepository(primaryRoot);
         }
     });
 
@@ -9031,7 +9031,7 @@ describe('delivery shell boundary', () => {
         try {
             expect(port.readDeliveryReceiptAuthority(42)).toBeUndefined();
         } finally {
-            rmSync(primaryRoot, { recursive: true, force: true });
+            removeTemporaryGitRepository(primaryRoot);
         }
     });
 
