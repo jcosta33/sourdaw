@@ -81,6 +81,36 @@ async function readEngineTitle(page: Page): Promise<string> {
     }, STATUS_BAR_SELECTOR);
 }
 
+/**
+ * What actually sits at a target's own centre point, read through
+ * `document.elementFromPoint` rather than the target's own visibility: a
+ * click can fail because something else — traced on #3070, the onboarding
+ * tour — is receiving pointer events at that point while the target itself
+ * still reports as CSS-visible. A second click failure carries this so the
+ * reason is legible without a live trace.
+ */
+export async function describeElementAtCentre(
+    page: Page,
+    box: { x: number; y: number; width: number; height: number }
+): Promise<string> {
+    const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    const at = await page.evaluate((point: { x: number; y: number }) => {
+        const el = document.elementFromPoint(point.x, point.y);
+        if (el === null) {
+            return null;
+        }
+        return {
+            tag: el.tagName.toLowerCase(),
+            role: el.getAttribute('role'),
+            ariaLabel: el.getAttribute('aria-label'),
+            text30: (el.textContent ?? '').trim().slice(0, 30),
+        };
+    }, centre);
+    return at === null
+        ? 'no element at point'
+        : `<${at.tag} role=${at.role ?? 'null'} aria-label=${at.ariaLabel ?? 'null'}> "${at.text30}"`;
+}
+
 function describePageErrors(pageErrors: readonly DiagnosticsEntry[]): string {
     return pageErrors.length === 0
         ? '(none)'

@@ -100,7 +100,12 @@ import {
     waitForLivePluginOnTrack,
     type Diagnostics,
 } from './desktopLatencyDiagnostics.ts';
-import { openNewProjectFromLaunchScreen, waitForWorkspaceOrLaunchScreen } from './desktopLatencyLaunch.ts';
+import {
+    dismissOnboardingTour,
+    openEffectsTab,
+    openNewProjectFromLaunchScreen,
+    waitForWorkspaceOrLaunchScreen,
+} from './desktopLatencyLaunch.ts';
 import { recoverQuarantinedHarnessPlugin } from './desktopLatencyPreferencesRecovery.ts';
 import {
     computeCounterDeltas,
@@ -146,6 +151,9 @@ const QUIT_GRACE_MS = 10_000;
 
 /** `electron/scan.ts`'s own `SCAN_TIMEOUT_MS` bounds a scan at 120 s; this adds margin on top of it. */
 const SCAN_STEP_TIMEOUT_MS = 150_000;
+
+/** Room for two clicks, two "External Plugins" waits, and one onboarding-tour dismissal in between, each individually bounded at `STEP_TIMEOUT_MS`. */
+const EFFECTS_TAB_STEP_TIMEOUT_MS = STEP_TIMEOUT_MS * 3;
 
 const APP_URL_PREFIX = 'app://sourdaw/';
 
@@ -525,21 +533,12 @@ async function driveToPlayingProject(
         await panel.first().waitFor({ state: 'visible', timeout: STEP_TIMEOUT_MS });
     });
 
-    await step('open the Effects tab', async () => {
-        await page
-            .locator('[aria-label="Browser panel"]')
-            .getByRole('button', { name: 'Effects', exact: true })
-            .click({ timeout: STEP_TIMEOUT_MS });
-        // Not `[aria-label="Rescan plugins"]`: that button only exists in
-        // `PluginBrowser`'s `supportedPlugins.length > 0` branch, and a fresh
-        // launch never reaches it. The "External Plugins" eyebrow label sits
-        // outside every scan-state branch, so it proves the panel mounted
-        // regardless of scan state.
-        await page
-            .locator('[aria-label="Browser panel"]')
-            .getByText('External Plugins', { exact: true })
-            .waitFor({ state: 'visible', timeout: STEP_TIMEOUT_MS });
-    });
+    // Traced on #3070: on a fresh, isolated profile the sidebar's tab bar
+    // mounts seconds after the panel container above is visible, and the
+    // first-run tour then spotlights it before this driver ever clicks it.
+    await step('dismiss the onboarding tour', () => dismissOnboardingTour(page, STEP_TIMEOUT_MS));
+
+    await step('open the Effects tab', () => openEffectsTab(page, STEP_TIMEOUT_MS), EFFECTS_TAB_STEP_TIMEOUT_MS);
 
     await step(
         'scan for the harness plugin',
