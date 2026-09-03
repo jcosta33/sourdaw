@@ -579,36 +579,54 @@ describe('high-level intent execution', () => {
                 throw new TypeError('Expected an idempotent replay receipt for the committed batch');
             }
 
-            // Leg A: run-level recovery reuses the durable receipt and the AgentRun lifecycle. It
-            // refuses to fabricate an exact post-commit checkpoint revision it was never given: the
-            // prepared continuation promotes without a sourceRevision for this generic (non-render)
-            // effect, so recovery is manual-repair.
+            // Leg A: run-level recovery reuses the durable receipt and refuses without exact
+            // post-commit revision evidence. The manual-repair state it would require is already
+            // durable — the confirm's promote and the receipt saga projection wrote it before
+            // recovery ever runs — so this call must leave the durable continuation and saga
+            // untouched rather than re-derive them.
+            const runBeforeRecovery = agentRunLifecycle.get(runId);
+            const recoveryBeforeRecovery = agentRunLifecycle.getPendingEffectRecovery({ runId, batchId });
+            expect(recoveryBeforeRecovery).toMatchObject({ checkpoint: 'durable', recovery: 'manual-repair' });
+            expect(runBeforeRecovery).toMatchObject({ phase: 'partially-completed' });
+            const addTrackStepId = `effect:${batchId}:${addTrackCommandId}`;
+            const sagaStepBeforeRecovery = runBeforeRecovery?.saga.steps.find((step) => step.stepId === addTrackStepId);
+            expect(sagaStepBeforeRecovery).toMatchObject({ state: 'manual-repair' });
+            const continuationBefore = structuredClone(runBeforeRecovery?.pendingEffectContinuations ?? []);
+            expect(continuationBefore).toEqual([
+                expect.objectContaining({
+                    batchId,
+                    receiptIdentity: `${priorReceipt.schemaVersion}:${runId}:${batchId}:partially-committed`,
+                    recovery: 'manual-repair',
+                    effects: [
+                        {
+                            commandId: addTrackCommandId,
+                            kind: 'external-effect',
+                            operation: 'addTrack',
+                            reason: OFFLINE_EVENT_BUS_REASON,
+                            remediation: 'reconcile',
+                            state: 'pending',
+                        },
+                    ],
+                }),
+            ]);
+            expect(continuationBefore[0]).not.toHaveProperty('sourceRevision');
+            const sagaBefore = (runBeforeRecovery?.saga.steps ?? []).map(({ updatedAt: _updatedAt, ...step }) => step);
+
             await expect(recoverAgentRunPendingEffects({ runId, batchId })).resolves.toEqual({
                 status: 'failed',
                 reason: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
             });
-            const lifecycleAfterRecovery = agentRunLifecycle.get(runId);
-            expect(lifecycleAfterRecovery).toMatchObject({ phase: 'partially-completed' });
-            const continuationAfterRecovery = lifecycleAfterRecovery?.pendingEffectContinuations[0];
-            expect(continuationAfterRecovery).toMatchObject({
-                batchId,
-                receiptIdentity: `${priorReceipt.schemaVersion}:${runId}:${batchId}:partially-committed`,
-                recovery: 'manual-repair',
-                effects: [
-                    {
-                        commandId: addTrackCommandId,
-                        kind: 'external-effect',
-                        operation: 'addTrack',
-                        reason: OFFLINE_EVENT_BUS_REASON,
-                        remediation: 'reconcile',
-                        state: 'pending',
-                    },
-                ],
-            });
-            expect(continuationAfterRecovery).not.toHaveProperty('sourceRevision');
 
-            // No-alternate-path (Leg A on its own): recovery neither replayed the project mutation
-            // nor re-ran the offline effect.
+            // No-alternate-path (Leg A on its own): recovery neither replayed the project mutation,
+            // nor re-ran the offline effect, nor rewrote the durable continuation or saga step it
+            // already found settled.
+            const runAfterRecovery = agentRunLifecycle.get(runId);
+            expect(runAfterRecovery).toMatchObject({ phase: 'partially-completed' });
+            expect(runAfterRecovery?.pendingEffectContinuations).toEqual(continuationBefore);
+            const sagaAfterRecovery = (runAfterRecovery?.saga.steps ?? []).map(
+                ({ updatedAt: _updatedAt, ...step }) => step
+            );
+            expect(sagaAfterRecovery).toEqual(sagaBefore);
             expect(captureProjectRevision()).toBe(revisionAfterCommit);
             expect(undoStore.value?.past ?? []).toEqual(pastAfterCommit);
             expect(countTrackAddedEmits(emit)).toBe(2);
