@@ -1,0 +1,31 @@
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_ac03a4ebaa3f6e::t_2e72c36c66817b 4304-4345
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_ac03a4ebaa3f6e::t_53fbaef404137b 49,573-580
+src/modules/AiRuntime/transformers/promptParser/__tests__/hasHighLevelCreationEvidence.spec.ts
+  s_ac03a4ebaa3f6e::t_d63d25a220d08a 18-24,29-34,48-49,53-68
+src/modules/AiRuntime/transformers/promptParser/hasHighLevelCreationEvidence.ts
+  s_ac03a4ebaa3f6e::t_cc432848be9872 6-9,11,15-17,20,25-26
+src/modules/AiRuntime/transformers/validateNotesWithinClipSpan.ts
+  s_ac03a4ebaa3f6e::t_331ad2864d6d21 1-38
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentAdversarial.spec.ts
+  s_ac03a4ebaa3f6e::t_49c9d7d6782677 596-599,612-616,618-644
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_ac03a4ebaa3f6e::t_8f30c992187ced 21,3736-3738,3748,3751
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "7de32ef47af77d022e12208baa520d94aa505a55",
+  "prompts": {},
+  "sessions": {
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
