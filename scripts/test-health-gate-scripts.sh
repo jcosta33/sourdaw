@@ -409,8 +409,16 @@ expect(
     'static must run the device write boundary census outside unit shards'
 );
 expect(
+    stepNamed(staticJob, 'Device write boundary census')?.['continue-on-error'] === undefined,
+    'static Device write boundary census must stay blocking'
+);
+expect(
     stepNamed(nightly.jobs?.static, 'Device write boundary census')?.run === deviceWriteBoundaryCensusRun,
     'nightly static must run the device write boundary census outside unit shards'
+);
+expect(
+    stepNamed(nightly.jobs?.static, 'Device write boundary census')?.['continue-on-error'] === undefined,
+    'nightly static Device write boundary census must stay blocking'
 );
 const releaseProofRun = 'pnpm test:run scripts/__tests__/releaseProof.spec.ts';
 expect(
@@ -418,8 +426,16 @@ expect(
     'static must run the release proof spec outside unit shards'
 );
 expect(
+    stepNamed(staticJob, 'Release proof')?.['continue-on-error'] === undefined,
+    'static Release proof must stay blocking'
+);
+expect(
     stepNamed(nightly.jobs?.static, 'Release proof')?.run === releaseProofRun,
     'nightly static must run the release proof spec outside unit shards'
+);
+expect(
+    stepNamed(nightly.jobs?.static, 'Release proof')?.['continue-on-error'] === undefined,
+    'nightly static Release proof must stay blocking'
 );
 expect(
     smoke?.if === "github.event.pull_request != null && needs.decide.outputs.e2e == 'true'",

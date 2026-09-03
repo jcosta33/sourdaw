@@ -55,6 +55,17 @@ describe('appendUnitShardExclusions', () => {
         expect(appendUnitShardExclusions(args)).toEqual([...args, '--exclude', unitShardExcludeGlob(censusSpec)]);
     });
 
+    it('still appends the exclude when a non-exclude argument merely contains a listed basename', () => {
+        const args = ['--shard=2/4', '--not-exclude', unitShardExcludeGlob(releaseProofSpec)] as const;
+        expect(appendUnitShardExclusions(args)).toEqual([
+            ...args,
+            '--exclude',
+            unitShardExcludeGlob(censusSpec),
+            '--exclude',
+            unitShardExcludeGlob(releaseProofSpec),
+        ]);
+    });
+
     it('appends only the release proof glob when the census is already excluded', () => {
         const args = ['--shard=2/4', '--exclude', unitShardExcludeGlob(censusSpec)] as const;
         expect(appendUnitShardExclusions(args)).toEqual([...args, '--exclude', unitShardExcludeGlob(releaseProofSpec)]);
