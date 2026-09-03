@@ -14,10 +14,10 @@
  * newer one that already deployed. Promoting it would be a rollback nobody
  * asked for. The ancestry between the served revision and the candidate is
  * what tells the two cases apart: a served revision that is an ancestor of
- * the candidate is simply behind, and the candidate deploys; a served
- * revision the candidate does not descend from — behind it, or on a
- * divergent history entirely — must not be overwritten, and the train
- * refuses.
+ * the candidate is simply older, and the candidate deploys; a served
+ * revision the candidate does not descend from — a descendant of the
+ * candidate instead (GitHub answers `behind`), or on a divergent history
+ * entirely (`diverged`) — must not be overwritten, and the train refuses.
  *
  * The comparison reads the newest READY production deployment and the commit
  * revision the train recorded on it (`vercel deploy --meta githubCommitSha`),
@@ -77,7 +77,11 @@ const DEPLOYMENTS_ENDPOINT = 'https://api.vercel.com/v7/deployments';
 const TEAM_SCOPE_PREFIX = 'team_';
 const COMMIT_REVISION = /^[0-9a-f]{40}$/u;
 const COMPARE_API_VERSION = '2022-11-28';
-const REVISION_COMPARISONS: readonly RevisionComparison[] = ['ahead', 'behind', 'identical', 'diverged'];
+const REVISION_COMPARISONS: readonly string[] = ['ahead', 'behind', 'identical', 'diverged'];
+
+function isRevisionComparison(value: string): value is RevisionComparison {
+    return REVISION_COMPARISONS.includes(value);
+}
 
 function asRecord(value: unknown): Record<string, unknown> | null {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -198,10 +202,10 @@ export function buildCompareUrl(repository: string, base: ValidatedRevision, hea
  */
 export function readComparisonStatus(payload: unknown): RevisionComparison {
     const status = asRecord(payload)?.status;
-    if (typeof status !== 'string' || !REVISION_COMPARISONS.includes(status as RevisionComparison)) {
+    if (typeof status !== 'string' || !isRevisionComparison(status)) {
         throw new Error('the revision comparison answered an unknown status');
     }
-    return status as RevisionComparison;
+    return status;
 }
 
 async function readProductionDeployments(url: string, token: string): Promise<unknown> {
@@ -287,8 +291,8 @@ export function reportDecision(decision: ProductionTrainDecision, candidateRevis
             return;
         case 'stale':
             console.log(
-                `production serves ${decision.deployedRevision ?? 'no readable revision'}, which does not descend ` +
-                    `from ${candidateRevision}; the train deploys nothing`
+                `production serves ${decision.deployedRevision ?? 'no readable revision'}, which the candidate ` +
+                    `${candidateRevision} does not descend from; the train deploys nothing`
             );
             return;
         case 'deploy':

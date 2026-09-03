@@ -716,15 +716,19 @@ expect(
 // what it deploys.
 const deployWeb = nightly.jobs?.['deploy-web'];
 const deployWebNeeds = deployWeb?.needs ?? [];
-// Every leg that validates the web artifact. The desktop shell and the
-// collaboration server ship nothing this deployment carries, so their legs
-// (rust, native-macos, native-windows) must not freeze it.
+// Every leg that validates the web artifact. The Rust workspace leg is one
+// of them: it is the only test of daw-dsp, daw-wasm-decoder, proof-chamber
+// and scoring, which ship in the web bundle as the committed
+// `public/wasm/*` packages. The desktop shell ships nothing this deployment
+// carries, so its native legs (native-macos, native-windows) must not
+// freeze it.
 const expectedDeployWebNeeds = [
     'static',
     'lint',
     'boundaries',
     'unit',
     'build',
+    'rust',
     'e2e',
     'browser-ai-webgpu',
     'codeql',
@@ -859,6 +863,10 @@ expect(
         deployWebResolveStep?.env?.VERCEL_ORG_ID === '${{ secrets.VERCEL_ORG_ID }}' &&
         deployWebResolveStep?.env?.VERCEL_PROJECT_ID === '${{ secrets.VERCEL_PROJECT_ID }}',
     'the production-revision step must authenticate its Vercel query from the environment'
+);
+expect(
+    deployWebResolveStep?.run === 'node scripts/resolveVercelProductionDeployment.ts',
+    'the daily deploy train must decide through scripts/resolveVercelProductionDeployment.ts'
 );
 const credentialCondition = "env.DEPLOY_CREDENTIAL_PRESENT == 'true'";
 for (const stepName of [

@@ -361,4 +361,17 @@ describe('the reported decision', () => {
         expect(output).not.toContain(DEPLOYED);
         expect(output).not.toContain(CANDIDATE);
     });
+
+    it('logs a stale refusal naming the candidate as what fails to descend, not the served revision', () => {
+        const served = requireCommitRevision(DEPLOYED);
+        const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+        try {
+            outputOf({ deploy: false, reason: 'stale', deployedRevision: served });
+            expect(log).toHaveBeenCalledWith(
+                `production serves ${DEPLOYED}, which the candidate ${CANDIDATE} does not descend from; the train deploys nothing`
+            );
+        } finally {
+            log.mockRestore();
+        }
+    });
 });

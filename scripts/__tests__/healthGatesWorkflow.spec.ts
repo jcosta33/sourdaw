@@ -147,16 +147,19 @@ const VERCEL_ORG_ID_REFERENCE = '${{ secrets.VERCEL_ORG_ID }}';
 const VERCEL_PROJECT_ID_REFERENCE = '${{ secrets.VERCEL_PROJECT_ID }}';
 const VERCEL_CLI_STEPS = ['Deploy the prebuilt revision'] as const;
 const VERCEL_PULL_STEP = 'Pull the production environment';
-// Every leg that validates the web artifact. The Rust workspace and the
-// native macOS and Windows legs validate the desktop shell and the
-// collaboration server instead, which this deployment does not ship, so
-// their failures must not freeze it.
+// Every leg that validates the web artifact. The Rust workspace leg is one
+// of them: it is the only test of daw-dsp, daw-wasm-decoder, proof-chamber
+// and scoring, which ship in the web bundle as the committed
+// `public/wasm/*` packages. The native macOS and Windows legs validate the
+// desktop shell instead, which this deployment does not ship, so their
+// failures must not freeze it.
 const DEPLOY_WEB_NEEDS = [
     'static',
     'lint',
     'boundaries',
     'unit',
     'build',
+    'rust',
     'e2e',
     'browser-ai-webgpu',
     'codeql',
@@ -937,13 +940,17 @@ function assertDailyDeployTrain(candidate: UnknownRecord): string {
     ) {
         throw new Error('the production-revision step must authenticate its Vercel query from the environment');
     }
+    if (stringAt(resolveStep, 'run') !== 'node scripts/resolveVercelProductionDeployment.ts') {
+        throw new Error('the daily deploy train must decide through scripts/resolveVercelProductionDeployment.ts');
+    }
     const skipReportStep = stepNamed(job, DEPLOY_WEB_SKIP_REPORT_STEP);
     if (skipReportStep.if !== `${DEPLOY_CREDENTIAL_CONDITION} && steps.production.outputs.deploy != 'true'`) {
         throw new Error(
             'the daily deploy train must report why nothing was deployed only when credentialed but not deploying'
         );
     }
-    if (recordAt(skipReportStep, 'env').REASON !== '${{ steps.production.outputs.reason }}') {
+    const skipReportEnv = skipReportStep.env === undefined ? {} : recordAt(skipReportStep, 'env');
+    if (skipReportEnv.REASON !== '${{ steps.production.outputs.reason }}') {
         throw new Error('the skip report must read the decision reason the production-revision step published');
     }
     return stringAt(guardStep, 'run');
@@ -1620,12 +1627,17 @@ describe('health gates workflow contract', () => {
             'the daily deploy train must depend on exactly the scheduled validation legs'
         );
 
-        // The desktop shell and the collaboration server ship nothing this
-        // deployment carries; reintroducing their legs must not freeze the web
-        // again behind a red native build.
-        const rustReintroducedTrain = asRecord(structuredClone(nightly), 'rust-reintroduced deploy train');
-        arrayAt(jobAt(rustReintroducedTrain, DEPLOY_WEB_JOB), 'needs').push('rust');
-        expect(() => assertDailyDeployTrain(rustReintroducedTrain)).toThrow(
+        // The desktop shell ships nothing this deployment carries; adding its
+        // native leg back must not freeze the web again behind a red native
+        // build. (The Rust workspace leg belongs in `needs` — it is the only
+        // test of the committed `public/wasm/*` packages this bundle ships —
+        // so it stays in DEPLOY_WEB_NEEDS rather than being the mutation here.)
+        const nativeWindowsReintroducedTrain = asRecord(
+            structuredClone(nightly),
+            'native-windows-reintroduced deploy train'
+        );
+        arrayAt(jobAt(nativeWindowsReintroducedTrain, DEPLOY_WEB_JOB), 'needs').push('native-windows');
+        expect(() => assertDailyDeployTrain(nativeWindowsReintroducedTrain)).toThrow(
             'the daily deploy train must depend on exactly the scheduled validation legs'
         );
 
@@ -1687,6 +1699,16 @@ describe('health gates workflow contract', () => {
         ).VERCEL_ORG_ID = 'org_fixture';
         expect(() => assertDailyDeployTrain(misauthenticatedResolver)).toThrow(
             'the production-revision step must authenticate its Vercel query from the environment'
+        );
+
+        // Mutation-kill: a resolve step that writes its own outputs inline,
+        // bypassing the ancestry decision the script makes, must fail this
+        // spec rather than only being caught by reading the script's source.
+        const inlinedResolver = asRecord(structuredClone(nightly), 'inlined resolver deploy train');
+        stepNamed(jobAt(inlinedResolver, DEPLOY_WEB_JOB), DEPLOY_WEB_RESOLVE_STEP).run =
+            'printf \'deploy=true\\nreason=deploy\\n\' >> "$GITHUB_OUTPUT"';
+        expect(() => assertDailyDeployTrain(inlinedResolver)).toThrow(
+            'the daily deploy train must decide through scripts/resolveVercelProductionDeployment.ts'
         );
 
         const unconditionalSkipReport = asRecord(structuredClone(nightly), 'unconditional skip-report deploy train');

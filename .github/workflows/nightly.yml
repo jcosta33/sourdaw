@@ -607,14 +607,18 @@ jobs:
     # when somebody dispatches this workflow by hand against `main`.
     #
     # It promotes the revision this run validated and no other. Every leg that
-    # validates the web artifact is a dependency; the Rust workspace and the
-    # native macOS and Windows legs validate the desktop shell and the
-    # collaboration server, which this deployment does not ship, so their
-    # failures must not freeze the web. The implicit `success()` on `needs`
-    # keeps the job from starting unless each one succeeded — a failure, a
-    # cancellation or a skip leaves production untouched. The first step reads
-    # those same results explicitly, so the refusal survives a later condition
-    # that admits this job on a run it should not deploy from.
+    # validates the web artifact is a dependency, and the Rust workspace leg is
+    # one of them: it is the only test of daw-dsp, daw-wasm-decoder,
+    # proof-chamber and scoring, which ship in the web bundle as the committed
+    # `public/wasm/*` packages — `wasm:verify` proves those artifacts are
+    # fresh, not that they are correct, so only the Rust leg's own tests do
+    # that. The native macOS and Windows legs validate the desktop shell,
+    # which this deployment does not ship, so their failures must not freeze
+    # the web. The implicit `success()` on `needs` keeps the job from starting
+    # unless each one succeeded — a failure, a cancellation or a skip leaves
+    # production untouched. The first step reads those same results
+    # explicitly, so the refusal survives a later condition that admits this
+    # job on a run it should not deploy from.
     #
     # It is deliberately absent from `gate`: the summary reports what a pull
     # request proved, and no pull request ever runs this job.
@@ -642,6 +646,7 @@ jobs:
       - boundaries
       - unit
       - build
+      - rust
       - e2e
       - browser-ai-webgpu
       - codeql
