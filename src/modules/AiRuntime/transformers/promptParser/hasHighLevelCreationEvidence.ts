@@ -50,36 +50,31 @@ const OBJECT_IDENTIFIER_NUMBER_PATTERN = /^\s+#?\d+\b/u;
  * A single capital letter identifier immediately after the matched noun, as in "clip A". Read
  * case-sensitively on purpose: a lowercase letter is ordinary prose, not an identifier, and
  * admitting it would false-disqualify real creation requests that happen to end on a short word.
+ *
+ * A spelled-out number ("track three") is deliberately not read as an identifier: unlike a decimal,
+ * hash-prefixed, or lettered tail, a spelled-out number reads as a pronoun as often as an
+ * identifier, as in "a bunch of drums one after another" or "a set of chords three at a time" — both
+ * still introduce something new, and disqualifying them would cost that reading.
  */
 const OBJECT_IDENTIFIER_LETTER_PATTERN = /^\s+[A-Z]\b/u;
 
 /**
- * A spelled-out identifier number one through ten immediately after the matched noun, as in
- * "track three", read case-insensitively.
- */
-const OBJECT_IDENTIFIER_WORD_PATTERN = /^\s+(?:one|two|three|four|five|six|seven|eight|nine|ten)\b/iu;
-
-/**
- * An identifier immediately after the matched noun, as in "track 3", "track #3", "clip A", or
- * "track three". Paired with PARTITIVE_GAP_PATTERN, it turns a partitive phrase into a reference to
- * an existing object: the object named by kind and identifier is what is duplicated or bounced, not
- * created.
+ * An identifier immediately after the matched noun, as in "track 3", "track #3", or "clip A".
+ * Paired with PARTITIVE_GAP_PATTERN, it turns a partitive phrase into a reference to an existing
+ * object: the object named by kind and identifier is what is duplicated or bounced, not created.
  */
 function namesAnExistingIdentifier(tail: string): boolean {
-    return (
-        OBJECT_IDENTIFIER_NUMBER_PATTERN.test(tail) ||
-        OBJECT_IDENTIFIER_LETTER_PATTERN.test(tail) ||
-        OBJECT_IDENTIFIER_WORD_PATTERN.test(tail)
-    );
+    return OBJECT_IDENTIFIER_NUMBER_PATTERN.test(tail) || OBJECT_IDENTIFIER_LETTER_PATTERN.test(tail);
 }
 
 /**
- * A number-of-beats phrase, as in "8 beats" or "1 beat", where the matched determiner is itself the
- * count and the whole match names a duration rather than an object: "make the intro 8 beats longer"
- * measures an edit, it does not ask for eight beats to exist. Tested against the whole match text,
- * because the determiner and the noun sit adjacent here with no gap between them.
+ * A number-of-beats phrase, as in "8 beats", "1 beat", or "8 more beats", where the matched
+ * determiner is itself the count and the whole match names a duration rather than an object: "make
+ * the intro 8 beats longer" measures an edit, it does not ask for eight beats to exist. Tested
+ * against the whole match text, and shares INTRODUCED_OBJECT_PATTERN's own two-word gap allowance
+ * so a qualifier between the count and "beats" (as in "more" or "extra") does not evade it.
  */
-const MEASURE_PHRASE_PATTERN = /^\d+\s+beats?$/iu;
+const MEASURE_PHRASE_PATTERN = /^\d+\s+(?:\w+\s+){0,2}beats?$/iu;
 
 /** Separators a request writes between one instruction and the next. */
 const CLAUSE_SEPARATOR_PATTERN = /[,;.!?]|\bthen\b|\band\b/iu;

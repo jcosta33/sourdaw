@@ -53,6 +53,12 @@ describe('hasHighLevelCreationEvidence', () => {
         // A non-numeric determiner on "beats" still introduces a plural object; only a numeric
         // determiner naming a beat count reads as a duration instead.
         'add some beats',
+        // A spelled-out number reads as a pronoun as often as an identifier, so it never
+        // disqualifies a partitive match: each of these still introduces something new.
+        'add a bunch of drums one after another',
+        'write a set of chords one bar each',
+        'create a couple of tracks one for drums',
+        'make a set of chords three at a time',
     ])('reads a request for something new as creation evidence: %s', (request) => {
         expect(hasHighLevelCreationEvidence(request)).toBe(true);
     });
@@ -69,6 +75,13 @@ describe('hasHighLevelCreationEvidence', () => {
         // Deliberate: a request that reaches for a genre is describing music to be written, and the
         // route it opens still admits only commands confined to objects the batch itself creates.
         expect(hasHighLevelCreationEvidence('add reverb to the jazz track')).toBe(true);
+    });
+
+    it('reads a spelled-out number after a partitive gap as creation, which is accepted looseness', () => {
+        // A spelled-out number is a pronoun as often as an identifier ("one after another", "three
+        // at a time"), so it is deliberately not read the way a decimal or lettered tail is. "track
+        // three" therefore stays a creation reading rather than a reference to an existing track.
+        expect(hasHighLevelCreationEvidence('make a copy of track three')).toBe(true);
     });
 
     it.each([
@@ -111,11 +124,9 @@ describe('hasHighLevelCreationEvidence', () => {
         'make a duplicate of clip 4',
         'produce a bounce of track 2',
         'make a stem of track 5',
-        // The identifier tail also reads a hash-prefixed number, a single capital letter, or a
-        // spelled-out number one through ten.
+        // The identifier tail also reads a hash-prefixed number or a single capital letter.
         'make a copy of track #3',
         'make a copy of clip A',
-        'make a copy of track three',
         // False for an unrelated reason: the gap "copy of the " is three words, past the two-word
         // cap INTRODUCED_OBJECT_PATTERN allows, so the pattern never matches here at all.
         'make a copy of the drums',
@@ -128,6 +139,11 @@ describe('hasHighLevelCreationEvidence', () => {
         'make each note 2 beats long',
         'make the drums 2 beats later',
         'make it 1 beat longer',
+        // A qualifier between the count and "beats" does not evade the measure reading.
+        'add 8 more beats to the loop',
+        'make it 8 more beats longer',
+        'make the intro 4 extra beats longer',
+        'add 2 more beats',
     ])('refuses a mixing or editing request that names an object the project already holds: %s', (request) => {
         expect(hasHighLevelCreationEvidence(request)).toBe(false);
     });
