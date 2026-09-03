@@ -25,8 +25,8 @@ use std::ptr;
 /// at the same moment the audio thread is inside `process`, so this returns
 /// `&Tone` rather than `&mut Tone` and no caller may claim exclusivity over
 /// it — `Tone`'s own methods already serialise the state that needs it
-/// (`Cell` for the audio-thread-only fields) or share it safely (`AtomicU64`
-/// for `level`).
+/// (`Cell` for the fields only `[audio-thread]` and `[main-thread & !active]`
+/// callbacks touch) or share it safely (`AtomicU64` for `level`).
 ///
 /// # Safety
 /// `plugin`, when non-null, must point to a live `clap_plugin` created by

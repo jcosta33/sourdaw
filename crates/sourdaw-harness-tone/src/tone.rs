@@ -18,11 +18,24 @@ pub(crate) const LEVEL_DEFAULT: f64 = 0.25;
 /// `process` is inside `apply_parameter_events` on the audio thread, so no
 /// method here ever mints `&mut Tone`.
 ///
-/// `sample_rate` and `phase` are audio-thread-owned: CLAP serialises
-/// `activate`/`reset`/`process` against each other and against every other
-/// `[audio-thread]` call, so exactly one thread ever touches them at a time
-/// and a `Cell` (a plain load or store, no fence) is enough — no other
-/// thread reads them, so there is nothing to synchronise with an atomic.
+/// `sample_rate` and `phase` change hands by lifecycle state, not by a fixed
+/// thread: `clap/plugin.h` annotates `activate` `[main-thread & !active]`, so
+/// it writes both fields on the main thread while this instance is still
+/// inactive; `reset` and `process` are `[audio-thread & active]`, so they
+/// touch the same fields on the audio thread once it is. What excludes
+/// `activate` from the other two is that predicate — never active and
+/// active can't both hold — not which thread called in, and the host's own
+/// activation handoff (it must not call `process` before `activate`
+/// returns, nor `activate` again before `deactivate`) is what supplies the
+/// happens-before edge between the writer and the next reader. That is
+/// exactly what a plain `Cell` needs: one thread touching the field at a
+/// time, with a caller-supplied ordering guarantee, so no fence or atomic
+/// is required. Any future field on this pattern gets the same treatment
+/// only if every callback that touches it is `[audio-thread]` or
+/// `[main-thread & !active]` — anything reachable from a
+/// `[main-thread & active]` or thread-unconstrained callback (as `level` is,
+/// see below) needs an atomic instead.
+///
 /// `level` is the one field both threads touch: the main thread through
 /// `clap.params.get_value`/`text_to_value`, the audio thread through
 /// `flush`/`process`. It lives in an `AtomicU64` carrying `f64::to_bits`,
