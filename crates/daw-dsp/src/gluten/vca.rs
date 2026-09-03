@@ -26,11 +26,6 @@ impl AutoRelease {
         }
     }
 
-    fn update_sample_rate(&mut self, sample_rate: f32) {
-        self.coeff_release_fast = (-1.0 / (0.619 * sample_rate)).exp();
-        self.coeff_release_slow = (-1.0 / (0.353 * sample_rate)).exp();
-    }
-
     fn process(&mut self, rectified: f32, coeff_attack: f32) -> f32 {
         // Fast envelope
         if rectified > self.env_fast {

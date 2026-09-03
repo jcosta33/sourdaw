@@ -51,7 +51,13 @@ import {
     isApprovedRendererTerminal,
     notifyCurrentWindowDestroying,
 } from './mainWindowTeardown.js';
-import { loadNativeAddon, NATIVE_ADDON_PATH_ENV, resolveNativeAddonPath, type NativeHost } from './native.js';
+import {
+    loadNativeAddon,
+    NATIVE_ADDON_PATH_ENV,
+    resolveNativeAddonPath,
+    resolveScanHelperPath,
+    type NativeHost,
+} from './native.js';
 import { forwardNativeEvent } from './nativeEventRouter.js';
 import { createNativeMenuActionDispatcher } from './nativeMenuActionDispatcher.js';
 import { createNativeMenuProjectStateController } from './nativeMenuProjectState.js';
@@ -69,6 +75,7 @@ import { completeMacCloseAfterSessionQuiesce, createRendererSessionQuiescer } fr
 import { activateRendererWindow } from './rendererWindowActivation.js';
 import { registerCommandRouter } from './router.js';
 import { createScanSupervisor, type ScanSupervisor } from './scan.js';
+import { publishScanWorkerLaunch } from './scanWorker.js';
 import { applyPermissionPolicy, decideWindowOpen, isNavigationAllowed, trustedFrameGuard } from './security.js';
 import { createProductionShellComposition, requestApprovedWindowClose } from './shellComposition.js';
 import { runBeforeQuitCascade, type QuitPreparationOutcome, type ShutdownOutcome } from './shutdown.js';
@@ -497,6 +504,15 @@ const nativeAddonPath = (): string =>
         repoRoot: repoRoot(),
     });
 
+const scanHelperPath = (): string =>
+    resolveScanHelperPath({
+        env: process.env,
+        isPackaged: app.isPackaged,
+        resourcesPath: process.resourcesPath,
+        repoRoot: repoRoot(),
+        platform: process.platform,
+    });
+
 /**
  * The live renderer, for the event and stream paths.
  *
@@ -554,11 +570,16 @@ const createUtilityScanSupervisor = (addonPath: string): ScanSupervisor =>
     createScanSupervisor({
         timers: systemTimers,
         fork: () => {
+            // The fork inherits the leaf launch command through `...process.env`
+            // rather than recomputing it: `startNativeSurface` publishes it into
+            // the main process's own environment once, before this supervisor is
+            // built, and that one publish is the only place the command is
+            // computed.
             const child = utilityProcess.fork(join(import.meta.dirname, 'scanWorker.js'), [], {
-                // The addon path is passed rather than re-derived: the utility
-                // process has no `app` and cannot ask whether this is a
-                // packaged build.
-                env: { ...process.env, [NATIVE_ADDON_PATH_ENV]: addonPath },
+                env: {
+                    ...process.env,
+                    [NATIVE_ADDON_PATH_ENV]: addonPath,
+                },
                 stdio: 'ignore',
             });
             return {
@@ -625,6 +646,12 @@ const startNativeSurface = (): void => {
         schedule: queueMicrotask,
         channel: EVENT_CHANNEL,
     });
+
+    // Published before nativeHost is built, so it is in place before either
+    // scanning call that can follow: the batch scan through the forked
+    // supervisor and the targeted rescan `load_plugin` runs directly on this
+    // host. The addon load itself does not depend on it.
+    publishScanWorkerLaunch(process.env, scanHelperPath());
 
     const addonPath = nativeAddonPath();
     try {

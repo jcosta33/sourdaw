@@ -674,7 +674,7 @@ jobs:
       # exists. Only the comparison is published here — never the token.
       DEPLOY_CREDENTIAL_PRESENT: ${{ secrets.VERCEL_TOKEN != '' }}
       # Pinned: a CLI that resolves to whatever is newest can change what
-      # `build` produces between two runs of the same validated revision.
+      # `deploy --prebuilt` accepts between two runs of the same revision.
       VERCEL_CLI: vercel@59.9.1
     steps:
       - name: Require a validated revision of main
@@ -791,20 +791,14 @@ jobs:
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: node scripts/linkVercelCliProject.ts
 
-      - name: Pull the production environment
-        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true' && steps.production.outputs.deploy == 'true'
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        # Org and project ids are absent here because the CLI treats them as the
-        # link and 404s an org lookup the deployments API never performs; the
-        # link step wrote `.vercel/project.json` from the project settings answer.
-        run: pnpm dlx "$VERCEL_CLI" pull --yes --environment=production
-
       - name: Build the validated revision
         if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true' && steps.production.outputs.deploy == 'true'
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: pnpm dlx "$VERCEL_CLI" build --prod
+        # Local Vite build plus a Build Output API v3 tree. CLI pull/build both
+        # GET /teams/ and 403 a project-scoped token (vercel/vercel#17506).
+        run: |
+          set -euo pipefail
+          pnpm build
+          node scripts/writeVercelPrebuiltOutput.ts
 
       - name: Deploy the prebuilt revision
         id: deployment

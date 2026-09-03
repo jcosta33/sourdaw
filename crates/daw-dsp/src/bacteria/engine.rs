@@ -908,10 +908,6 @@ impl StepSequencer {
         let idx = (self.position as usize) % self.num_steps;
         self.steps[idx]
     }
-
-    fn reset(&mut self) {
-        self.position = 0.0;
-    }
 }
 
 impl BacteriaEngine {
