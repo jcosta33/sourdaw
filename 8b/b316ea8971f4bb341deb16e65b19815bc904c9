@@ -1,0 +1,45 @@
+src/modules/Project/presentations/views/__tests__/RecentProjectsMenu.spec.tsx
+  s_9b530f08172a54::t_d736d66802897c 1-2,74-80,82-88
+src/modules/Project/presentations/views/RecentProjectsMenu.tsx
+  s_5e192f388b1901::t_478e726ef9b426 144-146,156-159
+src/modules/TimelineEditor/presentations/views/Inspector/TrackAutomationSection.tsx
+  s_2bfdd592c267b1::t_8c1904b7b3339f 75,85
+src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx
+  s_2bfdd592c267b1::t_5cbbb65ddc7e9e 164,174
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackAutomationSection.spec.tsx
+  s_2bfdd592c267b1::t_f89acca35e197a 180-194
+src/modules/WorkspaceShell/presentations/views/Prompt/__tests__/LlmStatusBadge.spec.tsx
+  s_2bfdd592c267b1::t_52e7b72277b48b 94-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "8bb316ea8971f4bb341deb16e65b19815bc904c9",
+  "prompts": {},
+  "sessions": {
+    "s_2bfdd592c267b1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ac3091977d43fb12c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_5e192f388b1901": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a32533a729d4985bd",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
