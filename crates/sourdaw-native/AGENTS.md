@@ -51,8 +51,9 @@ The native audio, DSP and plugin-hosting bodies, plus the Node addon that expose
   block is still recorded, because a dropout is a hole in the take's time, not a cut in it.
 - A slot that records is built at the engine handle's own sample rate. The tap, the render pass and
   the take's stamped rate are all the device's, and any other number desynchronises all three. An
-  instance created before the engine runs is therefore dormant rather than refused: it holds its
-  ring ends command-side and registers on the engine's first graph batch, at that engine's rate.
+  instance created before the engine runs is therefore dormant rather than refused: it holds the
+  panel's writes command-side and registers on the engine's first graph batch, at that engine's
+  rate.
 - The native chain renders hosted plugins and the timeline graph built through the graph-command
   surface (`commands/graph.rs` — tracks, clips, buses, sends, device chains), started lazily by the
   first `apply_graph_commands`. Web Audio remains the live product path until the D3.c cutover;

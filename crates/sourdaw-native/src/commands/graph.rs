@@ -2457,8 +2457,15 @@ pub async fn apply_graph_commands(
     // before this batch claims the engine below. A crumbs refusal is that
     // instance's to carry, never this batch's: it stays dormant for the next
     // one.
-    for (instance_id, reason) in crumbs::attach_dormant_crumbs(crumbs, &state.engine) {
-        eprintln!("[Crumbs] instance '{instance_id}' could not attach to the engine: {reason}");
+    match crumbs::attach_dormant_crumbs(crumbs, &state.engine) {
+        Ok(refusals) => {
+            for (instance_id, reason) in refusals {
+                eprintln!(
+                    "[Crumbs] instance '{instance_id}' could not attach to the engine: {reason}"
+                );
+            }
+        }
+        Err(error) => eprintln!("[Crumbs] dormant instances could not be attached: {error}"),
     }
 
     let mut engine_guard = state
@@ -4581,7 +4588,6 @@ mod tests {
     #[test]
     fn the_first_batch_attaches_dormant_crumbs() {
         use crate::host::native_bridge::CrumbsPluginSlot;
-        use daw_engine::plugin_slot::NativePlugin;
 
         let state = AppState::default();
         let crumbs = CrumbsState::default();
