@@ -1,0 +1,31 @@
+crates/sourdaw-harness-tone/src/tone.rs
+  s_9b530f08172a54::t_8d28085dda885c 5-7,16-30,34,37-38,44-46,50-57,60-61,68-69,74-80,91-102,104-109,114,116,130,138
+crates/sourdaw-harness-tone/src/params.rs
+  s_9b530f08172a54::t_9999c9d4fe7f9c 67
+scripts/__tests__/installHarnessPlugin.spec.ts
+  s_9b530f08172a54::t_490f73b358baed 25
+scripts/installHarnessPlugin.ts
+  s_9b530f08172a54::t_1866276ab41b82 35
+crates/sourdaw-harness-tone/src/plugin.rs
+  s_9b530f08172a54::t_58fffee0b7457e 146
+  s_9b530f08172a54::t_2399e64fca65ac 179
+  s_9b530f08172a54::t_32c85ebec757b2 24-30,33-35,43
+  s_9b530f08172a54::t_c233f99dab825b 171
+  s_9b530f08172a54::t_2eb69006cffe43 268-269,272,275,286-287,290,294-295
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "a5ae65815a8f7464a01c3210f00378ffa1662ed4",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
