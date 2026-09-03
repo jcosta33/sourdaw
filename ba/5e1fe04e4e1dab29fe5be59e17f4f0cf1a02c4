@@ -1,0 +1,33 @@
+src/modules/AiRuntime/stores/__tests__/selectAgentRunPendingEffectRecoveries.spec.ts
+  s_ac03a4ebaa3f6e::t_39065fc593010c 267,277-282,284-287
+  s_ac03a4ebaa3f6e::t_8765f06b9f75ec 89-90
+  s_ac03a4ebaa3f6e::t_c5071d58a21944 220
+src/modules/AiRuntime/useCases/createAgentRunPendingEffectContinuation.ts
+  s_ac03a4ebaa3f6e::t_64a955d53f654d 12,14-16,25
+src/modules/AiRuntime/useCases/projectAgentRunReceiptSaga.ts
+  s_ac03a4ebaa3f6e::t_8e6fe19d174079 44-49
+  s_ac03a4ebaa3f6e::t_ee444a92ac4246 187-190,193-197
+  s_ac03a4ebaa3f6e::t_0f403d9a723057 4-8
+src/modules/AiRuntime/useCases/recordAgentRunPendingEffectContinuation.ts
+  s_ac03a4ebaa3f6e::t_99469b0343e28d 23
+src/modules/AiRuntime/useCases/__tests__/recordAgentRunReceiptSaga.spec.ts
+  s_ac03a4ebaa3f6e::t_82d51f1591a04f 337
+  s_ac03a4ebaa3f6e::t_844d17c8c3c8f2 14,16
+  s_ac03a4ebaa3f6e::t_d33f543741d7ba 307-336,338-373
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "ba5e1fe04e4e1dab29fe5be59e17f4f0cf1a02c4",
+  "prompts": {},
+  "sessions": {
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
