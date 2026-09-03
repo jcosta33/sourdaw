@@ -35,9 +35,7 @@ export const ConfirmDialog = (): ReactElement => {
                     aria-modal="true"
                     aria-label={pending.title ?? pending.message}
                     onKeyDown={(event) => {
-                        if (event.key === 'Escape') {
-                            cancel();
-                        } else if (event.key === 'Enter') {
+                        if (event.key === 'Enter') {
                             if (event.target instanceof HTMLElement && event.target.tagName === 'BUTTON') {
                                 return;
                             }
@@ -45,7 +43,7 @@ export const ConfirmDialog = (): ReactElement => {
                         }
                     }}
                     className={cn(
-                        'gap-0 min-w-[320px] max-w-[480px] rounded-lg border bg-surface-raised p-4 shadow-xl',
+                        'gap-0 min-w-[320px] max-w-[480px] sm:max-w-[480px] rounded-lg border bg-surface-raised p-4 shadow-xl',
                         isDanger ? 'border-[var(--color-state-danger)]/40' : 'border-border'
                     )}
                 >

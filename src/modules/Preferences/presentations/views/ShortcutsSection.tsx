@@ -210,7 +210,7 @@ export const ShortcutsSection = (): ReactElement => {
                         showCloseButton={false}
                         aria-modal="true"
                         aria-label={`Binding: ${editingDefinition.label}`}
-                        className="w-full max-w-sm p-0 border-none bg-transparent shadow-none"
+                        className="w-full max-w-sm sm:max-w-sm p-0 border-none bg-transparent shadow-none"
                     >
                         <DawUtilityPanel className="w-full">
                             <DawHeaderBand
