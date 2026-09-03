@@ -183,6 +183,25 @@ describe('StepSequencer — pointer interaction', () => {
         expect(onToggleStep).toHaveBeenCalledWith(0, 0);
     });
 
+    it('ignores non-primary pointerdown events (e.g. right-click) so steps are not toggled', () => {
+        const onToggleStep = vi.fn();
+        const pads = [makePad(0)];
+        const pattern = makePattern(1, 2);
+        render(
+            <StepSequencer
+                pattern={pattern}
+                pads={pads}
+                currentStep={0}
+                isPlaying={false}
+                onToggleStep={onToggleStep}
+                onSetVelocity={vi.fn()}
+            />
+        );
+        const cell = screen.getAllByRole('checkbox')[0]!;
+        fireEvent.pointerDown(cell, { button: 2 });
+        expect(onToggleStep).not.toHaveBeenCalled();
+    });
+
     it('fires onSetVelocity on alt-drag pointer move', () => {
         const onSetVelocity = vi.fn();
         const pads = [makePad(0)];
@@ -233,6 +252,7 @@ describe('StepSequencer — sound locks', () => {
 
     it('opens sound lock menu on contextmenu / right-click and calls onSetSoundLock when an engine is selected', () => {
         const onSetSoundLock = vi.fn();
+        const onToggleStep = vi.fn();
         const pads = [makePad(0)];
         const pattern = makePattern(1, 4);
 
@@ -242,15 +262,17 @@ describe('StepSequencer — sound locks', () => {
                 pads={pads}
                 currentStep={0}
                 isPlaying={false}
-                onToggleStep={vi.fn()}
+                onToggleStep={onToggleStep}
                 onSetVelocity={vi.fn()}
                 onSetSoundLock={onSetSoundLock}
             />
         );
 
         const cell = screen.getAllByRole('checkbox')[1]!;
+        fireEvent.pointerDown(cell, { button: 2 });
         fireEvent.contextMenu(cell, { clientX: 120, clientY: 240 });
 
+        expect(onToggleStep).not.toHaveBeenCalled();
         expect(screen.getByText('Sound Lock Engine')).toBeInTheDocument();
         const engineButton = screen.getByRole('menuitem', { name: 'hihat-closed' });
         fireEvent.click(engineButton);
