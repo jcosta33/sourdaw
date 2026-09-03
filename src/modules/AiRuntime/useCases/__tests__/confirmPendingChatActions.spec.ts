@@ -3227,7 +3227,10 @@ describe('confirmPendingChatActions transaction admission', () => {
                         expect.objectContaining({
                             commandId: envelope.commandId,
                             kind: 'runtime-graph',
-                            remediation: 'repair',
+                            state: 'pending',
+                            operation: 'addDevice',
+                            reason: 'runtime graph revision is stale',
+                            remediation: 'retry',
                         }),
                     ],
                     recovery: 'manual-repair',

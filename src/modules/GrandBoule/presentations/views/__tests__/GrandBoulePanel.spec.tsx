@@ -182,4 +182,12 @@ describe('GrandBoulePanel', () => {
         render(<GrandBoulePanel deviceId="grand-boule-2" />);
         expect(screen.getByText('idle')).toBeInTheDocument();
     });
+
+    it('establishes min-height floor and allows bottom drawer scrolling without overflow-hidden', () => {
+        const { container } = render(<GrandBoulePanel deviceId="dev-1" />);
+        const faceplate = container.querySelector<HTMLElement>('.grand-boule-faceplate');
+        expect(faceplate).not.toBeNull();
+        expect(faceplate?.className).toContain('min-h-[440px]');
+        expect(faceplate?.className).not.toContain('overflow-hidden');
+    });
 });

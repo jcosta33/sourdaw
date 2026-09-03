@@ -563,6 +563,16 @@ expect(
     'lint and boundaries must skip a head that carries only prose'
 );
 expect(staticJob?.if === undefined, 'static must stay unconditional so release inventory observes prose changes too');
+const deviceWriteBoundaryCensusRun =
+    'pnpm test:run src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts';
+expect(
+    stepNamed(staticJob, 'Device write boundary census')?.run === deviceWriteBoundaryCensusRun,
+    'static must run the device write boundary census outside unit shards'
+);
+expect(
+    stepNamed(nightly.jobs?.static, 'Device write boundary census')?.run === deviceWriteBoundaryCensusRun,
+    'nightly static must run the device write boundary census outside unit shards'
+);
 expect(
     smoke?.if === "github.event.pull_request != null && needs.decide.outputs.e2e == 'true'",
     'the offline smoke set must run on every pull-request run that touches the browser surface, including the review run an approval leaves reporting'
@@ -852,6 +862,10 @@ expect(
 expect(
     stepNamed(nightlyE2e, 'Run shard')?.['continue-on-error'] === undefined,
     'nightly end-to-end Run shard must stay blocking'
+);
+expect(
+    stepNamed(nightlyUnit, 'Run shard')?.run === 'pnpm run test:run --shard=${{ matrix.shard }}/4',
+    'nightly unit Run shard must run through the test:run wrapper that applies the census exclusion'
 );
 expect(
     unitFailureWarning?.if === shardFailureCondition,

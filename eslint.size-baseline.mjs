@@ -40,6 +40,7 @@ export const sizeBaselineFiles = [
     'scripts/resourceGuard.ts',
     'scripts/supersedePullRequest.ts',
     'scripts/trustedGithubWriteBootstrap.ts',
+    'server/collab-server.ts',
     'src/app/captureCommandBatchPreflightState.ts',
     'src/components/daw/Fader.tsx',
     'src/components/daw/RotaryKnob.tsx',

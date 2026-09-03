@@ -32,4 +32,12 @@ describe('BacteriaPanel', () => {
         const buttons = screen.queryAllByRole('button');
         expect(buttons.length).toBeGreaterThanOrEqual(0);
     });
+
+    it('should establish min-height floor and retain overflow containment', () => {
+        const { container } = render(<BacteriaPanel deviceId="dev-1" />);
+        const faceplate = container.querySelector<HTMLElement>('.bacteria-faceplate');
+        expect(faceplate).not.toBeNull();
+        expect(faceplate?.className).toContain('min-h-[460px]');
+        expect(faceplate?.style.overflow).toBe('hidden');
+    });
 });

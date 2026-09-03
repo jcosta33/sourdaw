@@ -121,3 +121,20 @@ Probe that would have caught it: when a diff reads a method off a native or clas
 later, fake that host receiver-sensitively — a plain function or class method that throws unless
 `this` is the host — so an unbound call fails the spec; then diff every call site reading the same
 kind of host for consistent receiver handling, and flag one that binds where another does not.
+
+### 2026-09-03 — a missing-environment assertion that read the runner's ambient variables (escaped via PR #3513)
+
+The spec expected the `GITHUB_REPOSITORY` refusal while stubbing neither GitHub variable. Actions
+exports `GITHUB_REPOSITORY` to every step, so the runner threw for `GITHUB_TOKEN` instead and the
+case failed on every nightly shard while passing on the author's shell. PR #3526 repaired it by
+stubbing `GITHUB_REPOSITORY` to `''` before the first assertion and re-stubbing `GITHUB_TOKEN` to
+`''` before the second.
+
+Blind spot: a spec that asserts on the absence of an environment variable is only valid if it
+controls every variable the code reads, and the stance checked what the spec stubbed rather than
+what the runner already exports.
+
+Probe that would have caught it: for any assertion on a missing-environment error, list every
+`process.env` name the code path reads before the asserted one and require the spec to stub each of
+them explicitly; run the spec once with `GITHUB_REPOSITORY`, `GITHUB_ACTIONS`, `CI`, and
+`GITHUB_TOKEN` exported in the shell.
