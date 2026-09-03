@@ -29,9 +29,10 @@
  * wrap count the stamp anchored at and its start frame is below the frame the
  * last wrap walked to, and a write that is not a step first cancels every
  * queued stamp landing at or after its own start (`charge_automation`'s stale
- * drop, mirroring `RampedParam::cancel_stale`). Both are applied against the
- * same snapshot that windows the pump, so what is sent is what the engine can
- * hold.
+ * drop, mirroring `RampedParam::cancel_stale`). The anchor is set the only way
+ * the engine sets it: at a batch admission, after the stamp's own batch has
+ * drained. All of it is applied against the same snapshot that windows the
+ * pump, so what is sent is what the engine can hold.
  */
 
 import { logger } from '#/infra/logger/appLogger';
@@ -88,11 +89,12 @@ function stampOf(write: AudioGraphParameterWrite, sampleRate: number): LiveAutom
         return {
             startFrame: frameAt(write.startTime, sampleRate),
             landFrame: frameAt(write.landTime, sampleRate),
+            admittedBatch: null,
             seamAnchor: null,
         };
     }
     const frame = frameAt(write.time, sampleRate);
-    return { startFrame: frame, landFrame: frame, seamAnchor: null };
+    return { startFrame: frame, landFrame: frame, admittedBatch: null, seamAnchor: null };
 }
 
 /** A step appends; every other shape this writer carries cancels the stale first. */
@@ -202,28 +204,85 @@ function carryQueuedStamps(
  * straddles the seam publishes the wrapped position, never the frames it
  * walked to get there — so a stamp in that last stretch is never behind an
  * echo, and it releases once {@link SEAMS_PROVING_A_WHOLE_PASS} seams have
- * closed since the wrap count the stamp was first found queued at
- * (`landed_wraps`'s `get_or_insert`, materialized here on the stamp) and its
- * start frame is below the frame the last wrap walked to, whose floor the pass
- * holds. The batch horizon the engine gates both halves on has no reading this
- * side; the margin absorbs that lag exactly as it absorbs the echo's.
+ * closed since its anchor and its start frame is below the frame the last wrap
+ * walked to, whose floor the pass holds.
+ *
+ * The anchor is the half's delicate piece. The engine sets it
+ * (`landed_wraps`'s `get_or_insert`) only from `release_landed`, which runs
+ * only as a batch is admitted (graph.rs:2465) — and only once the stamp's own
+ * batch has drained, because `admitted_batch > batches_applied` returns
+ * unproven before the anchor is read. The mirror holds the same two facts per
+ * stamp — the fence its batch was admitted at rides the apply result, and a
+ * snapshot's `batchesApplied` dates a drain — so {@link anchorStampsAtAdmission}
+ * sets the anchor on ticks that send a batch, from the same snapshot that
+ * windows the send, and only the fence-less fallback anchors here. Anchoring
+ * anywhere else — on the release-only ticks of the admission silence before a
+ * seam — dates the stamp one seam earlier than the engine can, and the release
+ * then fires one pass early: the mirror believes a slot the ledger still
+ * charges, and the engine refuses the batch that believed it.
  */
 function releaseLanded(pass: LiveAutomationWriterPass, positionSeconds: number, loopWraps: number | null): void {
     const playheadFrame = frameAt(positionSeconds, pass.sampleRate);
     for (const slot of pass.targets) {
-        slot.queued = slot.queued.flatMap((stamp) => {
-            if (stamp.startFrame < playheadFrame) {
-                return [];
+        slot.queued = slot.queued.filter((stamp) => !provenPopped(pass, stamp, playheadFrame, loopWraps));
+    }
+}
+
+/** `proven_popped` in `graph.rs`: the playhead proof, then the seam proof. */
+function provenPopped(
+    pass: LiveAutomationWriterPass,
+    stamp: LiveAutomationQueuedStamp,
+    playheadFrame: number,
+    loopWraps: number | null
+): boolean {
+    if (stamp.startFrame < playheadFrame) {
+        return true;
+    }
+    if (loopWraps === null || pass.wrapFloorFrame === null) {
+        return false;
+    }
+    if (stamp.admittedBatch === null) {
+        // No fence to wait a drain out on: the fallback anchors the way the
+        // mirror did before fences were read, on the first tick that finds
+        // the stamp queued.
+        stamp.seamAnchor ??= loopWraps;
+    }
+    return (
+        stamp.seamAnchor !== null &&
+        loopWraps - stamp.seamAnchor >= SEAMS_PROVING_A_WHOLE_PASS &&
+        stamp.startFrame < pass.wrapFloorFrame
+    );
+}
+
+/**
+ * Anchor what this admission's snapshot can prove drained — the cadence the
+ * engine's ledger keeps, because `release_landed` runs only when a batch is
+ * admitted.
+ *
+ * A tick that sends nothing is the admission silence between those calls: an
+ * unanchored stamp keeps its `null` through it, however many ticks pass. The
+ * anchor lands on the first tick that actually sends a batch whose snapshot
+ * has reached the stamp's own fence — the earliest echo that can postdate an
+ * admission after that batch drained — and takes that snapshot's wrap count,
+ * exactly the value `landed_wraps`'s `get_or_insert` would read.
+ */
+function anchorStampsAtAdmission(
+    pass: LiveAutomationWriterPass,
+    loopWraps: number | null,
+    batchesApplied: number | null
+): void {
+    if (loopWraps === null || batchesApplied === null || pass.wrapFloorFrame === null) {
+        return;
+    }
+    for (const slot of pass.targets) {
+        for (const stamp of slot.queued) {
+            if (stamp.seamAnchor !== null || stamp.admittedBatch === null) {
+                continue;
             }
-            if (loopWraps === null || pass.wrapFloorFrame === null) {
-                return [stamp];
+            if (batchesApplied >= stamp.admittedBatch) {
+                stamp.seamAnchor = loopWraps;
             }
-            const seamAnchor = stamp.seamAnchor ?? loopWraps;
-            if (loopWraps - seamAnchor >= SEAMS_PROVING_A_WHOLE_PASS && stamp.startFrame < pass.wrapFloorFrame) {
-                return [];
-            }
-            return [seamAnchor === stamp.seamAnchor ? stamp : { ...stamp, seamAnchor }];
-        });
+        }
     }
 }
 
@@ -293,6 +352,10 @@ export async function pumpNativeLiveAutomationWriter(input: PumpNativeLiveAutoma
     if (admissions.length === 0) {
         return;
     }
+    // This tick sends a batch, and a batch admission is the only moment the
+    // engine's ledger runs its release proof: anchor what this snapshot — the
+    // one that windows the send — can prove drained.
+    anchorStampsAtAdmission(pass, input.loopWraps, input.batchesApplied);
 
     nativeLiveAutomationWriter.inFlightEpoch = epoch;
     try {
@@ -325,6 +388,13 @@ export async function pumpNativeLiveAutomationWriter(input: PumpNativeLiveAutoma
         }
         for (const { slot, writes, queued } of admissions) {
             slot.cursor += writes.length;
+            // The batch's own stamps — the tail of what the admission queued,
+            // one per write it carried — learn their fence now:
+            // `admitted_batch` is the number the engine gave this admission,
+            // and the seam anchor waits for a snapshot that has drained it.
+            for (const stamp of queued.slice(queued.length - writes.length)) {
+                stamp.admittedBatch = result.admittedBatch ?? null;
+            }
             slot.queued = [...queued];
         }
     } catch (error) {

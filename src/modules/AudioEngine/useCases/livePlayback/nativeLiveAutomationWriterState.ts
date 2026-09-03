@@ -53,10 +53,10 @@ export const AUTOMATION_QUEUE_CAPACITY = 8;
 
 /**
  * One slot this side never fills. The mirror releases on the echoed playhead,
- * and that echo is a frame or two behind the engine's own; the engine's ledger
- * also holds a stamp until the batch that carried it is proven drained, which
- * no snapshot this side reads reports. The margin is what keeps that lag from
- * turning into a refusal.
+ * and that echo is a frame or two behind the engine's own; the same echo is
+ * also the newest wrap count a send tick can anchor at, however much newer the
+ * engine's own is by the time the batch lands. The margin is what keeps those
+ * lags from turning into a refusal.
  */
 export const AUTOMATION_QUEUE_MARGIN = 1;
 
@@ -78,20 +78,37 @@ export const SEAMS_PROVING_A_WHOLE_PASS = 2;
  * Frames, not seconds, because both the release proof and the cancellation law
  * this mirrors compare frames — `graph.rs` rounds every stamp through
  * `seconds_to_frames` before it charges anything.
+ *
+ * Mutable, the way `release_landed`'s `retain_mut` mutates `PendingStamp` in
+ * place: the fence and the anchor land on the stamp after it enters the
+ * ledger, and an admission's queue arrays share these objects with the slot's.
  */
-export type LiveAutomationQueuedStamp = Readonly<{
+export type LiveAutomationQueuedStamp = {
     /** What the release proof compares: `PendingStamp::at_frame`. */
     startFrame: number;
     /** What a replace's cancellation compares: `PendingStamp::lands_at`. */
     landFrame: number;
     /**
-     * `PendingStamp::landed_wraps`: the engine's loop-wrap count the first time
-     * an echo found the stamp still queued at or past the playhead — the anchor
-     * the seam half of `proven_popped` measures {@link SEAMS_PROVING_A_WHOLE_PASS}
-     * from. `null` while no echo has needed that proof for it.
+     * `PendingStamp::admitted_batch`: the engine fence number of the batch that
+     * carried this stamp, read off the apply result's `admittedBatch` — what a
+     * snapshot's `batchesApplied` reaches once that batch has drained. `null`
+     * when the backend reports no fence (a mapping or an in-process renderer
+     * has none), which is what the anchor's fallback answers for.
+     */
+    admittedBatch: number | null;
+    /**
+     * `PendingStamp::landed_wraps`: the engine's loop-wrap count the seam half
+     * of `proven_popped` measures {@link SEAMS_PROVING_A_WHOLE_PASS} from. The
+     * engine sets it only from `release_landed` — which runs only as a batch
+     * is admitted — and only once this stamp's own batch has drained, so the
+     * mirror sets it only on a tick that sends a batch and whose snapshot has
+     * reached {@link admittedBatch}. When that fence is `null` there is no
+     * drain to wait on, and the first tick that finds the stamp queued anchors
+     * it instead, the cadence the mirror ran before fences were read. `null`
+     * until either sets it.
      */
     seamAnchor: number | null;
-}>;
+};
 
 /** One parameter's share of the pass: its curve, how much of it has landed, and what the engine still holds. */
 export type LiveAutomationWriterTarget = {
