@@ -1797,7 +1797,7 @@ export const BacteriaPanel = ({ deviceId }: { deviceId: string }): ReactElement 
         <Row
             align="stretch"
             gap={2.5}
-            className="bacteria-faceplate h-full min-h-0 p-2.5"
+            className="bacteria-faceplate h-full min-h-[460px] p-2.5"
             style={{ overflow: 'hidden' }}
         >
             <PresetRail
