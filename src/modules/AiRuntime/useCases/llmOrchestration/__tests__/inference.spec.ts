@@ -4,6 +4,9 @@ import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError
 import { isModelProviderFailureError } from '../../../errors/ModelProviderFailureError';
 import { TOOL_PLAN_MAX_OUTPUT_TOKENS } from '../../../models/HostedToolPlanLimits';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
+import { WORKFLOW_ACTION_TOOL_NAMES } from '../../../models/WorkflowCapability';
+import { getPlanningProviderToolSchemas } from '../../getPlanningProviderToolSchemas';
+import { getPlanningProviderSchemaContract } from '../../planningProviderSchema';
 import { generateToolPlanningOutcome, type ProviderAttemptAdmission } from '../inference';
 
 const mocks = vi.hoisted(() => ({
@@ -104,12 +107,12 @@ const toolSchemas: ToolSchema[] = [
     },
 ];
 
-function toolSchema(name: string): ToolSchema {
+function toolSchema(name: string, description?: string): ToolSchema {
     return {
         type: 'function',
         function: {
             name,
-            description: `${name} tool.`,
+            description: description ?? `${name} tool.`,
             parameters: { type: 'object', additionalProperties: false, properties: {}, required: [] },
         },
     };
@@ -214,16 +217,22 @@ describe('generateToolPlanningOutcome', () => {
         });
     });
 
-    it('keeps both catalog tools available to WebLLM under 30-tool selection pressure', async () => {
+    it('keeps the five application tools available to WebLLM under 30-tool selection pressure', async () => {
         mocks.backendChain.value = ['webllm'];
         mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
-        const competingTools = Array.from({ length: 30 }, (_, index) => toolSchema(`competingTool${String(index)}`));
+        // 120 competing tools whose names and descriptions match the "plan a command" prompt.
+        // Decline is excluded because it scores 101 against 102 for each competitor; last position
+        // is only the tiebreak backstop, and decline cannot reach it when not mandatory.
+        const competingTools = Array.from({ length: 120 }, (_, index) =>
+            toolSchema(`planAction${String(index)}`, 'plan a command')
+        );
         const schemas = [
             toolSchema('project.query'),
             toolSchema('command.batch.propose'),
-            ...competingTools,
             toolSchema('agent.command-index.search'),
             toolSchema('agent.catalog.discover'),
+            ...competingTools,
+            toolSchema('command.batch.decline'),
         ];
 
         await expect(generateToolPlanningOutcome('system', 'plan a command', schemas)).resolves.toMatchObject({
@@ -236,10 +245,73 @@ describe('generateToolPlanningOutcome', () => {
             expect.arrayContaining([
                 'project.query',
                 'command.batch.propose',
+                'command.batch.decline',
                 'agent.command-index.search',
                 'agent.catalog.discover',
             ])
         );
+    });
+
+    it('advertises the production planning contract to WebLLM at the 30-tool cap', async () => {
+        mocks.backendChain.value = ['webllm'];
+        mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
+
+        // The list production sends: the planning contract plus every workflow action tool.
+        const planningContract = getPlanningProviderSchemaContract().schemas;
+        const schemas = getPlanningProviderToolSchemas();
+
+        // The list production sends must carry exactly the planning contract plus every workflow action tool, and this holds across catalog growth.
+        expect(new Set(schemas.map((tool) => tool.function.name))).toEqual(
+            new Set([...planningContract.map((tool) => tool.function.name), ...WORKFLOW_ACTION_TOOL_NAMES])
+        );
+
+        await expect(generateToolPlanningOutcome('system', 'plan a command', schemas)).resolves.toMatchObject({
+            status: 'complete',
+        });
+
+        const advertisedTools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? [];
+        const advertisedNames = advertisedTools.map((tool: ToolSchema) => tool.function.name);
+
+        // The mandatory set (workflow selector, the application tools, every workflow action tool)
+        // leaves one free slot under the WebLLM cap, and it goes to the first non-mandatory
+        // catalog tool.
+        expect(advertisedNames).toHaveLength(30);
+        expect(new Set(advertisedNames)).toEqual(
+            new Set([
+                'selectWorkflowCapability',
+                'project.query',
+                'agent.catalog.discover',
+                'agent.command-index.search',
+                'command.batch.propose',
+                'command.batch.decline',
+                'removeTrack',
+                'muteTrack',
+                'soloTrack',
+                'setTrackGain',
+                'setTrackPan',
+                'addDevice',
+                'setDeviceParameter',
+                'removeDevice',
+                'arpeggiate',
+                'createBus',
+                'addSend',
+                'setTrackOutput',
+                'addSidechainRoute',
+                'removeSidechainRoute',
+                'importStemSet',
+                'removeShortMidiOverlaps',
+                'createDrumPreviewBranches',
+                'copyMidiArticulations',
+                'addAdjustmentRegion',
+                'automateSendRange',
+                'automateTrackGainRange',
+                'automateSendRanges',
+                'renderProjectSections',
+                'project.resolve',
+            ])
+        );
+        // The free slot goes to the first non-mandatory catalog tool; agent.capabilities is not it.
+        expect(advertisedNames).not.toContain('agent.capabilities');
     });
 
     it.each(['disclosure-publication', 'provider-start'] as const)(

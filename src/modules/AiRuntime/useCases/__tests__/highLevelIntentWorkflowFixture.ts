@@ -269,28 +269,6 @@ export function cycleProviderAttempt(completion: ProviderCompletionMock, turns: 
     return seenMessages;
 }
 
-type CloudCompletionMock = {
-    mockImplementation: (fn: (systemPrompt: string, userMessage: string) => Promise<ProviderCall[]>) => unknown;
-};
-
-/**
- * The hosted backend returns parsed tool calls rather than a JSON string, and it is advertised the
- * whole planning contract: the local backend narrows its tool list to a prompt-selected subset, so a
- * turn that has to reach a rarely selected planning tool is scripted here.
- */
-export function scriptCloudProviderTurns(completion: CloudCompletionMock, turns: readonly ScriptedTurn[]): string[] {
-    const seenMessages: string[] = [];
-    completion.mockImplementation((_systemPrompt, userMessage) => {
-        seenMessages.push(userMessage);
-        const turn = turns[seenMessages.length - 1];
-        if (!turn) {
-            throw new Error(`Expected exactly ${String(turns.length)} provider turns`);
-        }
-        return Promise.resolve(turn(userMessage));
-    });
-    return seenMessages;
-}
-
 /**
  * One page entry per intent. The evidence the next turn is shown is bounded, and a full index page
  * for three intents plus the discovered schemas overruns it — which reaches the script as a missing

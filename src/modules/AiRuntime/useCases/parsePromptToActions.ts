@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { markerStore } from '#/modules/Arrangement/stores';
-import { getExecutableAppActionToolSchemas, requiresAppActionConfirmation } from '#/modules/Command/useCases';
+import { requiresAppActionConfirmation } from '#/modules/Command/useCases';
 import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases';
 
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
@@ -13,7 +13,6 @@ import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../m
 import { type PlanningOutcome } from '../models/PlanningOutcome';
 import { type RuntimeAction } from '../models/RuntimeAction';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
-import { DAW_TOOL_SCHEMAS, type ToolSchema } from '../models/ToolDefinitions';
 import {
     isWorkflowCapabilityId,
     WORKFLOW_ACTION_TOOL_NAMES,
@@ -57,6 +56,7 @@ import {
 import { ApplicationOwnedToolLoopRequestError, runApplicationOwnedToolLoop } from './applicationOwnedToolLoop';
 import { buildAgentContext } from './buildAgentContext';
 import { compileArbitraryCommandList } from './compileArbitraryCommandList';
+import { getPlanningProviderToolSchemas } from './getPlanningProviderToolSchemas';
 import { type ProjectContext } from './getProjectContext';
 import {
     generateToolPlanningOutcome,
@@ -64,7 +64,6 @@ import {
     type ProviderAttemptAdmissionResult,
 } from './llmOrchestration/inference';
 import { materializeActionStateGuards } from './materializeActionStateGuards';
-import { getPlanningProviderSchemaContract } from './planningProviderSchema';
 import { validateActions } from './validateActions';
 
 type CreateFastPathResultInput = {
@@ -335,56 +334,7 @@ const planPromptIntent = inject({ logger })(
                     context,
                     projectRevision
                 )?.capability;
-                const specializedWorkflowToolSchemas: readonly ToolSchema[] = [
-                    {
-                        type: 'function',
-                        function: {
-                            name: 'automateTrackGainRange',
-                            description: 'Automate track gain over a named section range',
-                            parameters: {
-                                type: 'object',
-                                properties: {
-                                    trackIds: { type: 'array', items: { type: 'string' } },
-                                    sectionName: { type: 'string' },
-                                    gainDb: { type: 'number' },
-                                },
-                                required: ['trackIds', 'sectionName', 'gainDb'],
-                            },
-                        },
-                    },
-                    {
-                        type: 'function',
-                        function: {
-                            name: 'automateSendRange',
-                            description: 'Automate send reduction over a named section range',
-                            parameters: {
-                                type: 'object',
-                                properties: {
-                                    trackIds: { type: 'array', items: { type: 'string' } },
-                                    busId: { type: 'string' },
-                                    sectionName: { type: 'string' },
-                                    reductionDb: { type: 'number' },
-                                },
-                                required: ['trackIds', 'busId', 'sectionName', 'reductionDb'],
-                            },
-                        },
-                    },
-                ];
-                const executableAppActionToolSchemas = getExecutableAppActionToolSchemas();
-                const workflowToolSchemas = [
-                    ...DAW_TOOL_SCHEMAS.filter((tool) => WORKFLOW_ACTION_TOOL_NAMES.has(tool.function.name)),
-                    ...executableAppActionToolSchemas.filter((tool) =>
-                        WORKFLOW_ACTION_TOOL_NAMES.has(tool.function.name)
-                    ),
-                    ...specializedWorkflowToolSchemas,
-                ];
-                const uniqueWorkflowToolSchemas = Array.from(
-                    new Map(workflowToolSchemas.map((tool) => [tool.function.name, tool])).values()
-                );
-                const providerToolSchemas = [
-                    ...getPlanningProviderSchemaContract().schemas,
-                    ...uniqueWorkflowToolSchemas,
-                ];
+                const providerToolSchemas = getPlanningProviderToolSchemas();
                 const terminalToolNames = new Set([
                     WORKFLOW_CAPABILITY_TOOL_NAME,
                     COMMAND_BATCH_PROPOSAL_TOOL_NAME,

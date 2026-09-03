@@ -69,7 +69,6 @@ import {
     isRecord,
     proposeDiscoveredCalls,
     PROPOSED_COMMAND_NAMES,
-    scriptCloudProviderTurns,
     scriptHighLevelIntentProvider,
     scriptProviderTurns,
     SEARCH_INTENTS,
@@ -85,8 +84,8 @@ const EXISTING_TRACK_ID = 'track-existing';
 const EXISTING_CLIP_ID = 'clip-existing';
 
 const runtimeMocks = vi.hoisted(() => {
-    const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
-    return { backend, generateWebLlmCompletion: vi.fn(), generateCloudToolCalls: vi.fn() };
+    const backend: { value: 'webllm' } = { value: 'webllm' };
+    return { backend, generateWebLlmCompletion: vi.fn() };
 });
 
 vi.mock('../llmOrchestration/backendResolution/getBackendChain', () => ({
@@ -103,10 +102,6 @@ vi.mock('../../repositories/webLlm/generateWebLlmCompletion', () => ({
 
 vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
     isWebLlmLoaded: () => true,
-}));
-
-vi.mock('../../repositories/cloudLlm/cloudInference/generateCloudToolCalls', () => ({
-    generateCloudToolCalls: runtimeMocks.generateCloudToolCalls,
 }));
 
 const noActionHistoryMetadataPort = {
@@ -335,8 +330,7 @@ describe('high-level intent conformance', () => {
     });
 
     it('asks the questions that would resolve an ambiguous request instead of proposing a batch', async () => {
-        runtimeMocks.backend.value = 'cloud';
-        scriptCloudProviderTurns(runtimeMocks.generateCloudToolCalls, [
+        scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
             () => [
                 declineCall({
                     kind: 'clarify',
@@ -356,8 +350,7 @@ describe('high-level intent conformance', () => {
     });
 
     it('reports what it searched for when the catalog holds no command for the request', async () => {
-        runtimeMocks.backend.value = 'cloud';
-        scriptCloudProviderTurns(runtimeMocks.generateCloudToolCalls, [
+        scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
             () => searchCalls(['master the song for vinyl']),
             () => [
                 declineCall({
