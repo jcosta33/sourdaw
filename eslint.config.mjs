@@ -1419,10 +1419,7 @@ const sourdawPlugin = {
                         }
 
                         // Bare `memo(...)` imported from react (e.g. `import { memo }`).
-                        if (
-                            node.callee.type === 'Identifier' &&
-                            reactMemoBindings.has(node.callee.name)
-                        ) {
+                        if (node.callee.type === 'Identifier' && reactMemoBindings.has(node.callee.name)) {
                             context.report({
                                 node,
                                 messageId: 'noManualMemoization',
@@ -1691,8 +1688,7 @@ const sourdawPlugin = {
             meta: {
                 type: 'problem',
                 docs: {
-                    description:
-                        'Warn when production repository files import or re-export use-case layer APIs.',
+                    description: 'Warn when production repository files import or re-export use-case layer APIs.',
                 },
                 schema: [],
                 messages: {
@@ -1764,8 +1760,7 @@ const sourdawPlugin = {
             meta: {
                 type: 'problem',
                 docs: {
-                    description:
-                        'Warn when production model files import or re-export use-case or store layer APIs.',
+                    description: 'Warn when production model files import or re-export use-case or store layer APIs.',
                 },
                 schema: [],
                 messages: {
@@ -2419,6 +2414,20 @@ export default defineConfig(
             },
             parserOptions: {
                 project: './tsconfig.e2e.json',
+                tsconfigRootDir: import.meta.dirname,
+            },
+        },
+    },
+
+    // ─── Standalone Collaboration Server ────────────────────────────────────
+    {
+        files: ['server/**/*.ts'],
+        languageOptions: {
+            globals: {
+                ...globals.node,
+            },
+            parserOptions: {
+                project: './server/tsconfig.json',
                 tsconfigRootDir: import.meta.dirname,
             },
         },

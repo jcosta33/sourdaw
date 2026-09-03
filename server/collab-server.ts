@@ -108,6 +108,7 @@ function readTlsMaterial(): TlsMaterial | null {
     if (!certPath || !keyPath) {
         console.error('Invalid TLS configuration: COLLAB_TLS_CERT and COLLAB_TLS_KEY must both be set');
         process.exit(1);
+        return null;
     }
 
     try {
@@ -115,6 +116,7 @@ function readTlsMaterial(): TlsMaterial | null {
     } catch {
         console.error('Invalid TLS configuration: COLLAB_TLS_CERT and COLLAB_TLS_KEY must name readable PEM files');
         process.exit(1);
+        return null;
     }
 }
 
