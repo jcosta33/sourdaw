@@ -145,6 +145,7 @@
 //! - A bus strip has no send taps in `daw-engine`; a send whose source is a
 //!   bus refuses with a reason naming the gap (`bus-send-unsupported`).
 
+use crate::commands::crumbs::{self, CrumbsState};
 use crate::state::{AppState, TimelineSample};
 use daw_engine::offline::OfflineRenderer;
 use daw_engine::scheduler::{
@@ -2413,7 +2414,11 @@ fn start_into_empty_slot<T, E>(
 /// rebuilds a whole topology — every play does — sends a batch marked
 /// `replaceTopology` and the previous one is torn down inside the same fence
 /// ([`GraphRegistry::take_topology_down`]).
-pub async fn apply_graph_commands(batch: Value, state: &AppState) -> Result<Value, String> {
+pub async fn apply_graph_commands(
+    batch: Value,
+    state: &AppState,
+    crumbs: &CrumbsState,
+) -> Result<Value, String> {
     // A batch that does not even deserialize is a refusal, not a transport
     // error: the contract's one failure vocabulary is the `rejected` result,
     // and a thrown error beside it would be a second vocabulary for the same
@@ -2444,6 +2449,16 @@ pub async fn apply_graph_commands(batch: Value, state: &AppState) -> Result<Valu
                 format!("engine-not-running: {error}"),
             )),
         };
+    }
+
+    // An engine exists from here on, so this is where a crumbs instance
+    // created before it ran takes its slot (#2265). Instances then engine —
+    // the order every path holding both takes them in — and both released
+    // before this batch claims the engine below. A crumbs refusal is that
+    // instance's to carry, never this batch's: it stays dormant for the next
+    // one.
+    for (instance_id, reason) in crumbs::attach_dormant_crumbs(crumbs, &state.engine) {
+        eprintln!("[Crumbs] instance '{instance_id}' could not attach to the engine: {reason}");
     }
 
     let mut engine_guard = state
@@ -4507,6 +4522,7 @@ mod tests {
         let first = block_on_test(apply_graph_commands(
             json!({ "schemaVersion": 1, "commands": [track_strip("t1"), pan_step("t1", 0.1, 1.0)] }),
             &state,
+            &CrumbsState::default(),
         ))
         .expect("the batch resolves to a result");
         assert_eq!(first["application"], "applied");
@@ -4545,6 +4561,7 @@ mod tests {
         let second = block_on_test(apply_graph_commands(
             json!({ "schemaVersion": 1, "commands": [pan_step("t1", 0.2, 2.0)] }),
             &state,
+            &CrumbsState::default(),
         ))
         .expect("the second batch resolves to a result");
         assert_eq!(second["application"], "applied");
@@ -4554,6 +4571,57 @@ mod tests {
             "each applied batch reports the next fence, never the one before it"
         );
         assert_eq!(drain_counting_fences(&mut command_rx), 1);
+    }
+
+    /// Issue #2265: the engine starts here, on the first batch, so this is the
+    /// only moment an instance created before it ran can take its slot. The
+    /// batch that starts the engine attaches it — the panel's sampler becomes
+    /// audible and recordable on the first play rather than staying dead for
+    /// the session — and the batch's own application is unaffected.
+    #[test]
+    fn the_first_batch_attaches_dormant_crumbs() {
+        use crate::host::native_bridge::CrumbsPluginSlot;
+        use daw_engine::plugin_slot::NativePlugin;
+
+        let state = AppState::default();
+        let crumbs = CrumbsState::default();
+        block_on_test(crumbs::create_crumbs(
+            "before-first-play".to_string(),
+            &crumbs,
+            &state,
+        ))
+        .expect("a create before the engine runs holds a dormant instance");
+
+        // Filling the slot first is what makes this a capture engine, exactly
+        // as the lazy bootstrap's own tests do: the batch reuses this handle
+        // rather than opening a device.
+        let (engine, mut command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let result = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": [track_strip("t1")] }),
+            &state,
+            &crumbs,
+        ))
+        .expect("the batch resolves to a result");
+        assert_eq!(
+            result["application"], "applied",
+            "attaching the sampler is not the batch's business to fail over"
+        );
+
+        let mut crumbs_slots = 0;
+        while let Ok(command) = command_rx.pop() {
+            if let GraphCommand::AddPlugin(_, plugin) = command {
+                if plugin.as_any().downcast_ref::<CrumbsPluginSlot>().is_some() {
+                    crumbs_slots += 1;
+                }
+            }
+        }
+        assert_eq!(
+            crumbs_slots, 1,
+            "the batch that started the engine published the dormant instance's slot onto it"
+        );
     }
 
     /// Debt 3, refusal ordering: a batch that lost its revision race rejects
@@ -4567,7 +4635,7 @@ mod tests {
             "correlation": { "appRevision": 5, "projectRevision": "p1" },
             "commands": [] });
 
-        let result = block_on_test(apply_graph_commands(stale, &state))
+        let result = block_on_test(apply_graph_commands(stale, &state, &CrumbsState::default()))
             .expect("a stale correlation resolves to a result, not a throw");
         assert_eq!(result["acceptance"], "rejected");
         assert_eq!(result["application"], "not-applied");
@@ -4580,8 +4648,12 @@ mod tests {
         let malformed = json!({ "schemaVersion": 1,
             "correlation": { "appRevision": "not-a-revision" },
             "commands": [] });
-        let result = block_on_test(apply_graph_commands(malformed, &state))
-            .expect("an unreadable correlation resolves to a result");
+        let result = block_on_test(apply_graph_commands(
+            malformed,
+            &state,
+            &CrumbsState::default(),
+        ))
+        .expect("an unreadable correlation resolves to a result");
         assert_eq!(result["acceptance"], "rejected");
         assert!(result["reason"]
             .as_str()
@@ -4904,8 +4976,12 @@ mod tests {
                           "parameterValues": {} } }
         ]});
 
-        let result = block_on_test(apply_graph_commands(malformed, &state))
-            .expect("a parse failure must resolve to a result, not throw");
+        let result = block_on_test(apply_graph_commands(
+            malformed,
+            &state,
+            &CrumbsState::default(),
+        ))
+        .expect("a parse failure must resolve to a result, not throw");
 
         assert_eq!(result["acceptance"], "rejected");
         assert_eq!(result["application"], "not-applied");

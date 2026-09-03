@@ -499,6 +499,7 @@ mod tests {
     /// polls.
     #[test]
     fn a_refused_maps_push_numbers_no_fence() {
+        use crate::commands::crumbs::CrumbsState;
         use crate::commands::graph::apply_graph_commands;
 
         let state = AppState::default();
@@ -522,6 +523,7 @@ mod tests {
         let batch = crate::block_on_test(apply_graph_commands(
             serde_json::json!({ "schemaVersion": 1, "commands": [] }),
             &state,
+            &CrumbsState::default(),
         ))
         .expect("the batch resolves to a result");
         assert_eq!(batch["application"], "applied");
@@ -540,6 +542,7 @@ mod tests {
     /// transport reading taken before a locate would pass for one taken after.
     #[test]
     fn installing_maps_numbers_its_fence_in_the_same_count_a_graph_batch_uses() {
+        use crate::commands::crumbs::CrumbsState;
         use crate::commands::graph::apply_graph_commands;
 
         let state = AppState::default();
@@ -565,6 +568,7 @@ mod tests {
         let batch = crate::block_on_test(apply_graph_commands(
             serde_json::json!({ "schemaVersion": 1, "commands": [] }),
             &state,
+            &CrumbsState::default(),
         ))
         .expect("the batch resolves to a result");
         assert_eq!(batch["application"], "applied");
