@@ -1,44 +1,40 @@
 /**
- * CI unit shards share one Vitest worker pool per matrix leg. The device write
- * boundary census walks production sources once in `beforeAll`, but after
- * thousands of prior specs in the same shard process its classify case can
- * exceed Vitest's default timeout. Keep the census out of sharded runs and
- * execute it once from the static contract lane instead.
+ * CI unit shards share one Vitest worker pool per matrix leg. A spec whose cost
+ * is charged once per file, or once per case in a subprocess, pays that cost on
+ * top of the shard's accumulated load and can exceed Vitest's default timeout
+ * there. Keep those specs out of sharded runs and execute them once from the
+ * static contract lane instead.
  */
 
-export const DEVICE_WRITE_BOUNDARY_CENSUS_SPEC =
-    'src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts' as const;
+import { basename } from 'node:path';
 
-export const DEVICE_WRITE_BOUNDARY_CENSUS_EXCLUDE_GLOB =
-    `**/${DEVICE_WRITE_BOUNDARY_CENSUS_SPEC.split('/').at(-1)}` as const;
+export const UNIT_SHARD_EXCLUDED_SPECS = [
+    // Walks every production source once in `beforeAll`, after thousands of prior specs have loaded into the same shard process.
+    'src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts',
+    // Every case assembles a full release candidate: two repository clones and a zip subprocess apiece.
+    'scripts/__tests__/releaseProof.spec.ts',
+] as const;
 
-function hasVitestShardArgument(args: readonly string[]): boolean {
-    for (const argument of args) {
-        if (argument.startsWith('--shard=') || argument === '--shard') {
-            return true;
-        }
-    }
-    return false;
+export function unitShardExcludeGlob(spec: string): string {
+    return `**/${basename(spec)}`;
 }
 
-function alreadyExcludesCensus(args: readonly string[]): boolean {
-    for (const argument of args) {
-        if (argument === DEVICE_WRITE_BOUNDARY_CENSUS_SPEC) {
-            return true;
-        }
-        if (argument.startsWith('--exclude=') && argument.includes('deviceWriteBoundaryClosure.spec.ts')) {
-            return true;
-        }
-        if (argument === '--exclude' && args.includes(DEVICE_WRITE_BOUNDARY_CENSUS_EXCLUDE_GLOB)) {
-            return true;
-        }
+function hasVitestShardArgument(args: readonly string[]): boolean {
+    return args.some((argument) => argument === '--shard' || argument.startsWith('--shard='));
+}
+
+function alreadyExcludes(args: readonly string[], spec: string): boolean {
+    const glob = unitShardExcludeGlob(spec);
+    if (args.includes(spec) || args.includes(`--exclude=${glob}`)) {
+        return true;
     }
-    return false;
+    return args.some((argument, index) => argument === '--exclude' && args[index + 1] === glob);
 }
 
 export function appendUnitShardExclusions(args: readonly string[]): readonly string[] {
-    if (!hasVitestShardArgument(args) || alreadyExcludesCensus(args)) {
+    if (!hasVitestShardArgument(args)) {
         return args;
     }
-    return [...args, '--exclude', DEVICE_WRITE_BOUNDARY_CENSUS_EXCLUDE_GLOB];
+    const missing = UNIT_SHARD_EXCLUDED_SPECS.filter((spec) => !alreadyExcludes(args, spec));
+    return [...args, ...missing.flatMap((spec) => ['--exclude', unitShardExcludeGlob(spec)])];
 }

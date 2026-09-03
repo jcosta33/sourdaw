@@ -1,17 +1,19 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
 import {
     appendUnitShardExclusions,
-    DEVICE_WRITE_BOUNDARY_CENSUS_EXCLUDE_GLOB,
-    DEVICE_WRITE_BOUNDARY_CENSUS_SPEC,
+    UNIT_SHARD_EXCLUDED_SPECS,
+    unitShardExcludeGlob,
 } from '../vitestUnitShardExclusions.ts';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const [censusSpec, releaseProofSpec] = UNIT_SHARD_EXCLUDED_SPECS;
+const excludeArguments = UNIT_SHARD_EXCLUDED_SPECS.flatMap((spec) => ['--exclude', unitShardExcludeGlob(spec)]);
 
 describe('appendUnitShardExclusions', () => {
     it('leaves non-sharded invocations unchanged', () => {
@@ -19,63 +21,84 @@ describe('appendUnitShardExclusions', () => {
         expect(appendUnitShardExclusions(args)).toEqual(args);
     });
 
-    it('appends the census exclude glob when sharding', () => {
-        expect(appendUnitShardExclusions(['--shard=2/4'])).toEqual([
-            '--shard=2/4',
+    // Spelled out rather than derived, so shortening or reordering the list fails here instead of passing silently.
+    it('appends the census and release proof exclude globs, in that order, when sharding', () => {
+        expect(appendUnitShardExclusions(['--shard=1/4'])).toEqual([
+            '--shard=1/4',
             '--exclude',
-            DEVICE_WRITE_BOUNDARY_CENSUS_EXCLUDE_GLOB,
+            '**/deviceWriteBoundaryClosure.spec.ts',
+            '--exclude',
+            '**/releaseProof.spec.ts',
         ]);
     });
 
-    it('leaves a non-sharded invocation naming the census spec unchanged', () => {
-        expect(appendUnitShardExclusions([DEVICE_WRITE_BOUNDARY_CENSUS_SPEC])).toEqual([
-            DEVICE_WRITE_BOUNDARY_CENSUS_SPEC,
-        ]);
+    it('appends one exclude glob per listed spec when sharding', () => {
+        expect(appendUnitShardExclusions(['--shard=2/4'])).toEqual(['--shard=2/4', ...excludeArguments]);
     });
 
-    it('does not duplicate the exclude when the sharded census spec names itself', () => {
-        const args = ['--shard=2/4', DEVICE_WRITE_BOUNDARY_CENSUS_SPEC] as const;
-        expect(appendUnitShardExclusions(args)).toEqual(args);
+    it('leaves a non-sharded invocation naming a listed spec unchanged', () => {
+        expect(appendUnitShardExclusions([releaseProofSpec])).toEqual([releaseProofSpec]);
     });
 
-    it('does not duplicate the exclude when it is already present as separate --exclude arguments', () => {
-        const args = ['--shard=2/4', '--exclude', DEVICE_WRITE_BOUNDARY_CENSUS_EXCLUDE_GLOB] as const;
-        expect(appendUnitShardExclusions(args)).toEqual(args);
+    it('does not duplicate an exclude when the sharded run names that spec as a positional path', () => {
+        const args = ['--shard=2/4', releaseProofSpec] as const;
+        expect(appendUnitShardExclusions(args)).toEqual([...args, '--exclude', unitShardExcludeGlob(censusSpec)]);
     });
 
-    it('does not duplicate the exclude when it is already present as a single --exclude= argument', () => {
-        const args = ['--shard=2/4', '--exclude=**/deviceWriteBoundaryClosure.spec.ts'] as const;
-        expect(appendUnitShardExclusions(args)).toEqual(args);
+    it('does not duplicate an exclude already present as separate --exclude arguments', () => {
+        const args = ['--shard=2/4', '--exclude', unitShardExcludeGlob(releaseProofSpec)] as const;
+        expect(appendUnitShardExclusions(args)).toEqual([...args, '--exclude', unitShardExcludeGlob(censusSpec)]);
+    });
+
+    it('does not duplicate an exclude already present as a single --exclude= argument', () => {
+        const args = ['--shard=2/4', `--exclude=${unitShardExcludeGlob(releaseProofSpec)}`] as const;
+        expect(appendUnitShardExclusions(args)).toEqual([...args, '--exclude', unitShardExcludeGlob(censusSpec)]);
+    });
+
+    it('appends only the release proof glob when the census is already excluded', () => {
+        const args = ['--shard=2/4', '--exclude', unitShardExcludeGlob(censusSpec)] as const;
+        expect(appendUnitShardExclusions(args)).toEqual([...args, '--exclude', unitShardExcludeGlob(releaseProofSpec)]);
     });
 });
 
-describe('DEVICE_WRITE_BOUNDARY_CENSUS_EXCLUDE_GLOB', () => {
-    it('names a spec that exists on disk', () => {
-        expect(existsSync(join(repoRoot, DEVICE_WRITE_BOUNDARY_CENSUS_SPEC))).toBe(true);
+function collectSpecFiles(args: readonly string[]): readonly string[] {
+    const result = spawnSync(join(repoRoot, 'node_modules/.bin/vitest'), ['list', '--filesOnly', ...args], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+    });
+    expect(result.status).toBe(0);
+    return result.stdout.split('\n').filter((line) => line.length > 0);
+}
+
+describe('UNIT_SHARD_EXCLUDED_SPECS', () => {
+    it('names specs that exist on disk', () => {
+        for (const spec of UNIT_SHARD_EXCLUDED_SPECS) {
+            expect(existsSync(join(repoRoot, spec)), spec).toBe(true);
+        }
     });
 
-    // Spawns a second Vitest process to collect real files, so it runs slower than the rest of this file.
-    it('removes the census from a real Vitest collection', { timeout: 60_000 }, () => {
-        const vitestBin = join(repoRoot, 'node_modules/.bin/vitest');
-        const targetDir = 'src/modules/Arrangement/stores/__tests__';
+    // Spawns Vitest twice per listed spec to collect real files, so it runs slower than the rest of this file.
+    it('drops every listed spec from a sharded collection of its own directory', { timeout: 180_000 }, () => {
+        const proven = UNIT_SHARD_EXCLUDED_SPECS.map((spec) => {
+            const targetDir = dirname(spec);
+            const specFile = basename(spec);
 
-        const excluded = spawnSync(
-            vitestBin,
-            ['list', '--filesOnly', targetDir, '--exclude', DEVICE_WRITE_BOUNDARY_CENSUS_EXCLUDE_GLOB],
-            { cwd: repoRoot, encoding: 'utf8' }
-        );
-        const excludedLines = excluded.stdout.split('\n').filter((line) => line.length > 0);
+            const control = collectSpecFiles([targetDir]);
+            expect(
+                control.some((line) => line.endsWith(`/${specFile}`)),
+                `${spec} in control`
+            ).toBe(true);
 
-        expect(excluded.status).toBe(0);
-        expect(excludedLines.length).toBeGreaterThan(0);
-        expect(excludedLines.some((line) => line.endsWith('deviceWriteBoundaryClosure.spec.ts'))).toBe(false);
+            const sharded = collectSpecFiles(appendUnitShardExclusions(['--shard=1/1', targetDir]));
+            expect(sharded.length, `${targetDir} collected nothing`).toBeGreaterThan(0);
+            expect(
+                sharded.some((line) => line.endsWith(`/${specFile}`)),
+                `${spec} survived sharding`
+            ).toBe(false);
 
-        const unfiltered = spawnSync(vitestBin, ['list', '--filesOnly', targetDir], {
-            cwd: repoRoot,
-            encoding: 'utf8',
+            return specFile;
         });
-        const unfilteredLines = unfiltered.stdout.split('\n').filter((line) => line.length > 0);
 
-        expect(unfilteredLines.some((line) => line.endsWith('deviceWriteBoundaryClosure.spec.ts'))).toBe(true);
+        expect(proven).toEqual(['deviceWriteBoundaryClosure.spec.ts', 'releaseProof.spec.ts']);
     });
 });
