@@ -1,0 +1,22 @@
+src/infra/store/storage/createAutomergeStorage.ts
+  s_28abfd94826e36::t_09daae6532c982 934-935
+  s_28abfd94826e36::t_979dded780784f 933
+src/modules/AiRuntime/useCases/__tests__/landProjectEdit.ts
+  s_28abfd94826e36::t_ded07dc6b75455 2,16-20,23,25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "ee306778480de11da971ecbc5fea6ce0846095a7",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
