@@ -391,4 +391,97 @@ describe('splitClip', () => {
         expect(getEnvelope('c1')).toBeUndefined();
         expect(getEnvelope('new-clip-right')).toBeUndefined();
     });
+
+    it('scales audioOffsetBeats and warp marker partition by stretchRatio when splitting a stretched clip', () => {
+        mocks.getTrackState.mockReturnValue(
+            makeState([
+                ClipDummy.create({
+                    id: 'c1',
+                    startBeat: 0,
+                    endBeat: 8,
+                    audioOffsetBeats: 2,
+                    stretchRatio: 0.5,
+                }),
+            ])
+        );
+        setWarpState('c1', {
+            enabled: true,
+            stretchMode: 'complex',
+            originalTempo: 120,
+            markers: [
+                { id: 'w-left', originalBeat: 3, warpedBeat: 3.25 },
+                { id: 'w-seam', originalBeat: 4, warpedBeat: 4 },
+                { id: 'w-right', originalBeat: 5, warpedBeat: 5.5 },
+            ],
+        });
+
+        expect(splitClip('c1', 4)).toBe('new-clip-right');
+
+        const clips = newTrackState().tracks[0]?.clips ?? [];
+        const right = clips.find((candidate) => candidate.id === 'new-clip-right');
+        expect(right?.audioOffsetBeats).toBe(4);
+
+        expect(warpStates.get('c1')?.markers).toEqual([{ id: 'w-left', originalBeat: 3, warpedBeat: 3.25 }]);
+        expect(warpStates.get('new-clip-right')?.markers).toEqual([
+            { id: 'w-seam', originalBeat: 4, warpedBeat: 4 },
+            { id: 'w-right', originalBeat: 5, warpedBeat: 5.5 },
+        ]);
+    });
+
+    it('scales audioOffsetBeats by stretchRatio when splitting a sped-up clip', () => {
+        mocks.getTrackState.mockReturnValue(
+            makeState([
+                ClipDummy.create({
+                    id: 'c1',
+                    startBeat: 0,
+                    endBeat: 4,
+                    audioOffsetBeats: 1,
+                    stretchRatio: 2,
+                }),
+            ])
+        );
+
+        expect(splitClip('c1', 2)).toBe('new-clip-right');
+
+        const clips = newTrackState().tracks[0]?.clips ?? [];
+        const right = clips.find((candidate) => candidate.id === 'new-clip-right');
+        expect(right?.audioOffsetBeats).toBe(5);
+    });
+
+    it('continues to use 1:1 scaling for audioOffsetBeats when splitting an unstretched clip', () => {
+        mocks.getTrackState.mockReturnValue(
+            makeState([
+                ClipDummy.create({
+                    id: 'c1',
+                    startBeat: 0,
+                    endBeat: 4,
+                    audioOffsetBeats: 1,
+                }),
+            ])
+        );
+
+        expect(splitClip('c1', 2)).toBe('new-clip-right');
+
+        let clips = newTrackState().tracks[0]?.clips ?? [];
+        let right = clips.find((candidate) => candidate.id === 'new-clip-right');
+        expect(right?.audioOffsetBeats).toBe(3);
+
+        mocks.getTrackState.mockReturnValue(
+            makeState([
+                ClipDummy.create({
+                    id: 'c1',
+                    startBeat: 0,
+                    endBeat: 4,
+                    audioOffsetBeats: 1,
+                    stretchRatio: 1,
+                }),
+            ])
+        );
+
+        expect(splitClip('c1', 2)).toBe('new-clip-right');
+
+        clips = newTrackState().tracks[0]?.clips ?? [];
+        right = clips.find((candidate) => candidate.id === 'new-clip-right');
+        expect(right?.audioOffsetBeats).toBe(3);
+    });
 });
