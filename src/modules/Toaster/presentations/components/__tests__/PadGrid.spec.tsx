@@ -215,6 +215,7 @@ describe('PadGrid — 16 Levels mode', () => {
     });
 
     it('triggers exactly once during a full mouse click cycle in 16-levels mode', () => {
+        const onSelectPad = vi.fn();
         const onTriggerPad = vi.fn();
         const onReleasePad = vi.fn();
         const pads = Array.from({ length: 4 }, (_, index) => makePad(index));
@@ -222,7 +223,7 @@ describe('PadGrid — 16 Levels mode', () => {
             <PadGrid
                 pads={pads}
                 selectedIndex={0}
-                onSelectPad={vi.fn()}
+                onSelectPad={onSelectPad}
                 onTriggerPad={onTriggerPad}
                 onReleasePad={onReleasePad}
                 sixteenLevelsTarget="tune"
@@ -234,6 +235,7 @@ describe('PadGrid — 16 Levels mode', () => {
         fireEvent.mouseUp(pad1);
         fireEvent.click(pad1);
 
+        expect(onSelectPad).not.toHaveBeenCalled();
         expect(onTriggerPad).toHaveBeenCalledTimes(1);
         expect(onTriggerPad).toHaveBeenCalledWith(1);
         expect(onReleasePad).toHaveBeenCalledTimes(1);
@@ -241,6 +243,7 @@ describe('PadGrid — 16 Levels mode', () => {
     });
 
     it('triggers exactly once during a Space key cycle in 16-levels mode', () => {
+        const onSelectPad = vi.fn();
         const onTriggerPad = vi.fn();
         const onReleasePad = vi.fn();
         const pads = Array.from({ length: 4 }, (_, index) => makePad(index));
@@ -248,7 +251,7 @@ describe('PadGrid — 16 Levels mode', () => {
             <PadGrid
                 pads={pads}
                 selectedIndex={0}
-                onSelectPad={vi.fn()}
+                onSelectPad={onSelectPad}
                 onTriggerPad={onTriggerPad}
                 onReleasePad={onReleasePad}
                 sixteenLevelsTarget="tune"
@@ -260,6 +263,7 @@ describe('PadGrid — 16 Levels mode', () => {
         fireEvent.keyUp(pad2, { key: ' ' });
         fireEvent.click(pad2);
 
+        expect(onSelectPad).not.toHaveBeenCalled();
         expect(onTriggerPad).toHaveBeenCalledTimes(1);
         expect(onTriggerPad).toHaveBeenCalledWith(2);
         expect(onReleasePad).toHaveBeenCalledTimes(1);

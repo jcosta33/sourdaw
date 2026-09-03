@@ -139,13 +139,16 @@ describe('ToasterPanel', () => {
         expect(mocks.enter16Levels).toHaveBeenCalledWith('toaster-test', 0, 'velocity');
 
         fireEvent.click(toggleButton);
+        expect(mocks.exit16Levels).toHaveBeenCalledTimes(1);
         expect(mocks.exit16Levels).toHaveBeenCalledWith('toaster-test');
         expect(toggleButton).toHaveAttribute('aria-pressed', 'false');
 
         mocks.exit16Levels.mockClear();
         mocks.stopNoteRepeat.mockClear();
         unmount();
+        expect(mocks.exit16Levels).toHaveBeenCalledTimes(1);
         expect(mocks.exit16Levels).toHaveBeenCalledWith('toaster-test');
+        expect(mocks.stopNoteRepeat).toHaveBeenCalledTimes(1);
         expect(mocks.stopNoteRepeat).toHaveBeenCalledWith('toaster-test');
     });
 
@@ -162,6 +165,8 @@ describe('ToasterPanel', () => {
 
         expect(mocks.trigger16Level).toHaveBeenCalledTimes(1);
         expect(mocks.trigger16Level).toHaveBeenCalledWith(3, 'toaster-test');
+        expect(mocks.triggerToasterPad).not.toHaveBeenCalled();
+        expect(mocks.startNoteRepeat).not.toHaveBeenCalled();
     });
 
     it('toggling note repeat starts and stops note repeat', () => {
@@ -190,6 +195,7 @@ describe('ToasterPanel', () => {
 
         mocks.stopNoteRepeat.mockClear();
         fireEvent.click(repeatButton);
+        expect(mocks.stopNoteRepeat).toHaveBeenCalledTimes(1);
         expect(mocks.stopNoteRepeat).toHaveBeenCalledWith('toaster-test');
         expect(repeatButton).toHaveAttribute('aria-pressed', 'false');
     });
