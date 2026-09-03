@@ -1,3 +1,5 @@
+import * as React from 'react';
+
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -69,9 +71,21 @@ vi.mock('#/components/ui/button', () => ({
 }));
 
 vi.mock('#/components/ui/tooltip', () => ({
-    Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    Tooltip: ({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) => (
+        <>
+            {React.Children.map(children, (child) =>
+                React.isValidElement(child) ? React.cloneElement(child, props) : child
+            )}
+        </>
+    ),
     TooltipContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-    TooltipTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    TooltipTrigger: ({ children, asChild: _asChild, ...props }: React.PropsWithChildren<{ asChild?: boolean }>) => (
+        <>
+            {React.Children.map(children, (child) =>
+                React.isValidElement(child) ? React.cloneElement(child, props) : child
+            )}
+        </>
+    ),
 }));
 
 vi.mock('../TemplateChooser', () => ({

@@ -161,6 +161,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                                 variant="ghost"
                                 size="icon-xs"
                                 aria-label="Add device"
+                                aria-haspopup="menu"
                                 data-testid="add-device-button"
                             >
                                 <Plus className="size-3" />
@@ -170,6 +171,7 @@ export const TrackDevicesSection = ({ track, onSelectDevice }: TrackDevicesSecti
                             align="end"
                             sideOffset={4}
                             role="menu"
+                            aria-label="Add device"
                             className="daw-floating-surface w-48 p-0 py-1 rounded-md"
                         >
                             <DawMenuSectionLabel>Effects</DawMenuSectionLabel>

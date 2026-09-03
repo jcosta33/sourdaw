@@ -72,6 +72,7 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                                 variant="ghost"
                                 size="icon-xs"
                                 aria-label="Add automation lane"
+                                aria-haspopup="menu"
                                 data-testid="add-automation-button"
                             >
                                 <Plus className="size-3" />
@@ -81,6 +82,7 @@ export const TrackAutomationSection = ({ track }: TrackAutomationSectionProps): 
                             align="end"
                             sideOffset={4}
                             role="menu"
+                            aria-label="Add automation lane"
                             className="daw-floating-surface w-48 p-0 py-1 rounded-md"
                         >
                             <DawMenuSectionLabel>Track</DawMenuSectionLabel>

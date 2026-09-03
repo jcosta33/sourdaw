@@ -133,13 +133,14 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
             <Popover open={showPanel} onOpenChange={setShowPanel}>
                 <PopoverTrigger asChild>
                     <Button
-                        variant="default"
+                        variant="ghost"
                         size="xs"
                         type="button"
-                        className="h-6 gap-1 px-2 text-[10px] font-medium"
+                        className="h-6 gap-1 px-2 text-[10px] font-medium text-primary hover:text-primary hover:bg-primary/10 transition-all"
+                        title="Load AI model"
                     >
                         <Sparkles className="size-2.5" aria-hidden="true" />
-                        Load AI
+                        {backend === 'cloud' ? 'Hosted AI' : 'Load AI'}
                     </Button>
                 </PopoverTrigger>
                 <PopoverContent
