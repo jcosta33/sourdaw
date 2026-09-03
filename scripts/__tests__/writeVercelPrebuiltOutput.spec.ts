@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -10,6 +11,39 @@ type HeaderEntry = {
     readonly key: string;
     readonly value: string;
 };
+
+const REPOSITORY_ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
+const PRODUCTION_VERCEL_HEADERS = readProductionVercelHeaders();
+
+function readProductionVercelHeaders(): readonly HeaderEntry[] {
+    const payload: unknown = JSON.parse(readFileSync(join(REPOSITORY_ROOT, 'vercel.json'), 'utf8'));
+    if (typeof payload !== 'object' || payload === null || !('headers' in payload)) {
+        throw new Error('vercel.json is missing production headers');
+    }
+    const headers = (payload as { readonly headers: unknown }).headers;
+    if (!Array.isArray(headers) || headers.length === 0) {
+        throw new Error('vercel.json is missing production headers');
+    }
+    const firstRule = headers[0];
+    if (typeof firstRule !== 'object' || firstRule === null || !('headers' in firstRule)) {
+        throw new Error('vercel.json is missing production headers');
+    }
+    const ruleHeaders = (firstRule as { readonly headers: unknown }).headers;
+    if (!Array.isArray(ruleHeaders)) {
+        throw new Error('vercel.json is missing production headers');
+    }
+    return ruleHeaders.map((entry) => {
+        if (typeof entry !== 'object' || entry === null) {
+            throw new Error('vercel.json is missing production headers');
+        }
+        const key = 'key' in entry && typeof entry.key === 'string' ? entry.key : '';
+        const value = 'value' in entry && typeof entry.value === 'string' ? entry.value : '';
+        if (key === '' || value === '') {
+            throw new Error('vercel.json is missing production headers');
+        }
+        return { key, value };
+    });
+}
 
 const EXISTING_PROJECT_LINK = '{"orgId":"team_fixture","projectId":"prj_fixture"}\n';
 
@@ -75,11 +109,7 @@ describe('writeVercelPrebuiltOutput', () => {
         const headerSource = '/api/(.*)';
         writeVercelJson(
             rootDirectory,
-            [
-                { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
-                { key: 'Cross-Origin-Embedder-Policy', value: 'require-corp' },
-                { key: probeName, value: probeValue },
-            ],
+            [...PRODUCTION_VERCEL_HEADERS, { key: probeName, value: probeValue }],
             headerSource
         );
         const linkPath = writeExistingProjectLink(rootDirectory);
@@ -103,8 +133,7 @@ describe('writeVercelPrebuiltOutput', () => {
             {
                 src: headerSource,
                 headers: {
-                    'Cross-Origin-Opener-Policy': 'same-origin',
-                    'Cross-Origin-Embedder-Policy': 'require-corp',
+                    ...Object.fromEntries(PRODUCTION_VERCEL_HEADERS.map((header) => [header.key, header.value])),
                     [probeName]: probeValue,
                 },
                 continue: true,
@@ -148,6 +177,16 @@ describe('writeVercelPrebuiltOutput', () => {
         writeVercelJson(rootDirectory, [{ key: 'X-Isolation', value: 'required' }]);
 
         expect(() => writeVercelPrebuiltOutput(rootDirectory)).toThrow('the Vite dist directory is missing');
+        expect(existsSync(join(rootDirectory, '.vercel', 'output'))).toBe(false);
+    });
+
+    it('throws when dist contains no files', () => {
+        const rootDirectory = makeRoot();
+        roots.push(rootDirectory);
+        mkdirSync(join(rootDirectory, 'dist'), { recursive: true });
+        writeVercelJson(rootDirectory, [{ key: 'X-Isolation', value: 'required' }]);
+
+        expect(() => writeVercelPrebuiltOutput(rootDirectory)).toThrow('the Vite dist directory contains no files');
         expect(existsSync(join(rootDirectory, '.vercel', 'output'))).toBe(false);
     });
 
