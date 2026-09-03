@@ -40,14 +40,18 @@ export const PromptDialog = (): ReactElement => {
                     showCloseButton={false}
                     role="dialog"
                     aria-modal="true"
+                    aria-label={pending.title ?? pending.message}
                     onKeyDown={(event) => {
                         if (event.key === 'Escape') {
                             cancel();
                         } else if (event.key === 'Enter') {
+                            if (event.target instanceof HTMLElement && event.target.tagName === 'BUTTON') {
+                                return;
+                            }
                             submit();
                         }
                     }}
-                    className="min-w-[320px] max-w-[480px] rounded-lg border border-border bg-surface-raised p-4 shadow-xl"
+                    className="gap-0 min-w-[320px] max-w-[480px] rounded-lg border border-border bg-surface-raised p-4 shadow-xl"
                 >
                     {pending.title ? (
                         <DialogTitle className="mb-2 text-sm font-semibold text-foreground">

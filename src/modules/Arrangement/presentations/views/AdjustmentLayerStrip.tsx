@@ -786,7 +786,7 @@ const AdjustmentLayerParamEditor = ({
                 showCloseButton={false}
                 aria-modal="true"
                 aria-label={`Adjustment Layer: ${layer.name}`}
-                className="w-[380px] p-4 rounded-md daw-floating-surface border border-border"
+                className="gap-0 w-[380px] p-4 rounded-md daw-floating-surface border border-border"
             >
                 <Row justify="between" className="mb-3">
                     <div>
@@ -979,7 +979,7 @@ const AffectedTracksPicker = ({ layer, tracks, onClose, onChange }: AffectedTrac
                 showCloseButton={false}
                 aria-modal="true"
                 aria-label={`Affected tracks for ${layer.name}`}
-                className="w-[320px] p-4 rounded-md daw-floating-surface border border-border"
+                className="gap-0 w-[320px] p-4 rounded-md daw-floating-surface border border-border"
             >
                 <Row justify="between" className="mb-3">
                     <div>
