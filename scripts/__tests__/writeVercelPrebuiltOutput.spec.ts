@@ -23,13 +23,13 @@ function writeDist(rootDirectory: string): void {
     writeFileSync(join(rootDirectory, 'dist', 'nested', 'asset.txt'), 'nested-asset\n');
 }
 
-function writeVercelJson(rootDirectory: string, headers: readonly HeaderEntry[]): void {
+function writeVercelJson(rootDirectory: string, headers: readonly HeaderEntry[], source = '/(.*)'): void {
     writeFileSync(
         join(rootDirectory, 'vercel.json'),
         `${JSON.stringify({
             headers: [
                 {
-                    source: '/(.*)',
+                    source,
                     headers,
                 },
             ],
@@ -72,10 +72,15 @@ describe('writeVercelPrebuiltOutput', () => {
         writeDist(rootDirectory);
         const probeName = `X-Prebuilt-Probe-${String(Date.now())}`;
         const probeValue = `probe-${String(Date.now())}`;
-        writeVercelJson(rootDirectory, [
-            { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
-            { key: probeName, value: probeValue },
-        ]);
+        const headerSource = '/api/(.*)';
+        writeVercelJson(
+            rootDirectory,
+            [
+                { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+                { key: probeName, value: probeValue },
+            ],
+            headerSource
+        );
         const linkPath = writeExistingProjectLink(rootDirectory);
         mkdirSync(join(rootDirectory, '.vercel', 'output', 'static'), { recursive: true });
         writeFileSync(join(rootDirectory, '.vercel', 'output', 'static', 'stale.txt'), 'stale\n');
@@ -95,7 +100,7 @@ describe('writeVercelPrebuiltOutput', () => {
         expect(config.version).toBe(3);
         expect(config.routes).toEqual([
             {
-                src: '/(.*)',
+                src: headerSource,
                 headers: {
                     'Cross-Origin-Opener-Policy': 'same-origin',
                     [probeName]: probeValue,

@@ -794,6 +794,10 @@ expect(
     'the daily web deploy must build locally rather than through the Vercel CLI'
 );
 expect(
+    stepNamed(deployWeb, 'Pull the production environment') === undefined,
+    'the daily web deploy must not pull the production environment through the Vercel CLI'
+);
+expect(
     deployWeb?.environment === 'Production',
     'the daily web deploy must draw its credential from the Production environment'
 );

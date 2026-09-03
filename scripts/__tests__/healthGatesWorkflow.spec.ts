@@ -142,6 +142,7 @@ const DEPLOY_ARMING_PRECONDITIONS = [
 const DEPLOYMENT_URL_REFERENCE = '${{ steps.deployment.outputs.url }}';
 const VERCEL_TOKEN_REFERENCE = '${{ secrets.VERCEL_TOKEN }}';
 const VERCEL_CLI_STEPS = ['Deploy the prebuilt revision'] as const;
+const VERCEL_PULL_STEP = 'Pull the production environment';
 // Every leg a scheduled run performs. The train promotes a revision only once
 // each of them has reported success on that same revision.
 const DEPLOY_WEB_NEEDS = [
@@ -879,6 +880,9 @@ function assertDailyDeployTrain(candidate: UnknownRecord): DeployTrainScripts {
     }
     if (buildRun.includes('$VERCEL_CLI') || buildRun.includes('vercel')) {
         throw new Error('Build the validated revision must not invoke the Vercel CLI');
+    }
+    if (arrayAt(job, 'steps').some((candidate: unknown) => asRecord(candidate, 'step').name === VERCEL_PULL_STEP)) {
+        throw new Error('the daily deploy train must not pull the production environment through the Vercel CLI');
     }
     if (buildStep.env !== undefined) {
         const buildEnv = recordAt(buildStep, 'env');
@@ -1639,6 +1643,15 @@ describe('health gates workflow contract', () => {
         vercelCliBuildStep.run = `${stringAt(vercelCliBuildStep, 'run')}\npnpm dlx "$VERCEL_CLI" build`;
         expect(() => assertDailyDeployTrain(vercelCliBuild)).toThrow(
             'Build the validated revision must not invoke the Vercel CLI'
+        );
+
+        const vercelCliPull = asRecord(structuredClone(nightly), 'vercel-cli pull deploy train');
+        arrayAt(jobAt(vercelCliPull, DEPLOY_WEB_JOB), 'steps').unshift({
+            name: VERCEL_PULL_STEP,
+            run: 'pnpm dlx "$VERCEL_CLI" pull --environment=production',
+        });
+        expect(() => assertDailyDeployTrain(vercelCliPull)).toThrow(
+            'the daily deploy train must not pull the production environment through the Vercel CLI'
         );
 
         const reboundIsolation = asRecord(structuredClone(nightly), 'rebound-isolation deploy train');
