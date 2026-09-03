@@ -1,0 +1,19 @@
+scripts/__tests__/resolveVercelProductionDeployment.spec.ts
+  s_723634e6e6ad95::t_38229278e8f72f 313,316-319
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "40995aac706c0226e7784fa64005d57cbe1a6a61",
+  "prompts": {},
+  "sessions": {
+    "s_723634e6e6ad95": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a807b79b0636ee843",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,28 @@
+src/modules/Bacteria/presentations/views/BacteriaPanel.tsx
+  h_1228e573df1f42 1800
+src/modules/Bacteria/presentations/views/__tests__/BacteriaPanel.spec.tsx
+  h_1228e573df1f42 35-42
+src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx
+  h_1228e573df1f42 324-325
+src/modules/GrandBoule/presentations/views/__tests__/GrandBoulePanel.spec.tsx
+  h_1228e573df1f42 185-192
+src/modules/Levain/presentations/views/LevainPanel.tsx
+  h_1228e573df1f42 99-100
+src/modules/Levain/presentations/views/__tests__/LevainPanel.spec.tsx
+  h_1228e573df1f42 240-249
+src/modules/Yeast/presentations/views/YeastPanel.tsx
+  h_1228e573df1f42 461-462
+src/modules/Yeast/presentations/views/__tests__/YeastPanel.spec.tsx
+  h_1228e573df1f42 640-649
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "92a292f38d8e1969ae4fd3b0ba44487237404ba0",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
