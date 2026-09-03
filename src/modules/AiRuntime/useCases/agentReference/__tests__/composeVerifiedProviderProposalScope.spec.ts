@@ -148,6 +148,7 @@ function compilerEvidenceFor(providerKnownTargetIds: readonly string[]): Arbitra
         selectors: [],
         items: [],
         commands: [],
+        expandedMidiTransforms: [],
     };
 }
 

@@ -36,6 +36,9 @@ export {
     getExecutableAppActionIntentCatalogUnicodeLength,
 } from './getExecutableAppActionIntentCatalogUnicodeLength';
 export { getExecutableAppActionToolSchemas } from './getExecutableAppActionToolSchemas';
+export { getMidiTransformToolSchemas } from './getMidiTransformToolSchemas';
+export { getMidiTransformContract } from './getMidiTransformContract';
+export { expandMidiTransform } from './expandMidiTransform';
 export { getExecutableAppActionProviderSchema } from './getExecutableAppActionProviderSchema';
 export { getExecutableAppActionGroundingCatalog } from './getExecutableAppActionGroundingCatalog';
 export { getExecutableAppActionGroundingRules } from './getExecutableAppActionGroundingRules';

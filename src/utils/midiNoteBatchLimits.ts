@@ -14,3 +14,11 @@ export const ADD_NOTES_MAX_NOTES_PER_COMMAND = 128;
  * arguments must agree, or a note one route admits is a note another silently rewrites.
  */
 export const MIDI_NOTE_MIN_DURATION_BEATS = 0.0625;
+
+/**
+ * The most notes one deterministic MIDI transform may produce, in total, before the expansion is
+ * refused. Four `addNotes` commands is what a transform may occupy of the batch's command budget,
+ * so the note bound is stated as that many full commands rather than as a second free number that
+ * could drift away from the per-command cap it is derived from.
+ */
+export const MIDI_TRANSFORM_MAX_NOTES = 4 * ADD_NOTES_MAX_NOTES_PER_COMMAND;

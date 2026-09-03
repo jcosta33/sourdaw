@@ -1,4 +1,8 @@
-import { getExecutableAppActionIntentCatalog, getExecutableAppActionToolSchemas } from '#/modules/Command/useCases';
+import {
+    getExecutableAppActionIntentCatalog,
+    getExecutableAppActionToolSchemas,
+    getMidiTransformToolSchemas,
+} from '#/modules/Command/useCases';
 
 import { type ToolSchema } from '../models/ToolDefinitions';
 
@@ -92,7 +96,7 @@ const lifecycleAvailability: readonly LifecycleAvailability[] = [
 
 function getCategoryEntries(category: Exclude<CatalogCategory, 'command-index'>) {
     if (category === 'command') {
-        return getExecutableAppActionToolSchemas();
+        return [...getExecutableAppActionToolSchemas(), ...getMidiTransformToolSchemas()];
     }
     if (category === 'preview') {
         return lifecycleAvailability.filter((entry) => entry.name === 'command.batch.preview');

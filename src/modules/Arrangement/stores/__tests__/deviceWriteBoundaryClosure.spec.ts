@@ -656,7 +656,12 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // sendChatMessage (#2975). Provider-request compilation only.
         'src/modules/AiRuntime/useCases/agentRequestOrchestration/streamExplainChatResponse.ts': 1,
         'src/modules/AiRuntime/useCases/aiRuntimeQueries/runLocalModelTextCompletion.ts': 1,
-        'src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts': 1,
+        // Count provenance: measured 3 — the exported batch compiler's
+        // declaration, plus the declaration and one call of
+        // `compileMidiTransformItem`, which expands a MIDI transform into
+        // immutable `addNotes` command metadata. Nothing here hydrates or
+        // writes a device.
+        'src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts': 3,
         'src/modules/AiRuntime/useCases/llmOrchestration/inference.ts': 1,
         'src/modules/AiRuntime/useCases/modelProviderProtocol.ts': 3,
         'src/modules/AiRuntime/useCases/parsePromptToActions.ts': 3,

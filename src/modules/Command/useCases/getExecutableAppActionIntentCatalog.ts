@@ -1,8 +1,16 @@
+import { getMidiTransformDescriptors } from '../stores/midiTransformRegistry';
+
 import {
     getExecutableAppActionIntentCatalogUnicodeLength,
     MAX_EXECUTABLE_APP_ACTION_INTENT_CATALOG_INTENT_LENGTH,
 } from './getExecutableAppActionIntentCatalogUnicodeLength';
 import { getExecutableCommandRegistrations } from './getExecutableCommandRegistrations';
+
+/**
+ * A transform writes into one clip, so it advertises the capability its expanded `addNotes` will
+ * name. Stating it here keeps a transform scored by the same three sources a command is.
+ */
+const MIDI_TRANSFORM_TARGET_CAPABILITIES = ['writable-midi-clip'] as const;
 
 const MAX_CATALOG_PAGE_SIZE = 8;
 const MAX_CURSOR_LENGTH = 2048;
@@ -230,22 +238,39 @@ function inflectionVariants(term: string): readonly string[] {
     return [...variants];
 }
 
+/**
+ * Every entry the index scores, in one order: registered commands, then registered MIDI transforms.
+ * A transform is compiled into commands rather than executed, but a planner finds it by intent
+ * exactly as it finds a command, so it is scored by the same name, phrases and purpose.
+ */
+function collectIntentCatalogEntries(): IntentCatalogEntry[] {
+    const commandEntries = getExecutableCommandRegistrations()
+        .filter((registration) => registration.discoverability === 'visible')
+        .map((registration) => ({
+            name: registration.actionType,
+            purpose: registration.toolDescription,
+            semanticCategories: semanticCategories({
+                actionType: registration.actionType,
+                intentPhrases: registration.intentPhrases,
+                targetCapabilities: registration.capabilityChecks.map(({ capability }) => capability),
+            }),
+        }));
+    const transformEntries = getMidiTransformDescriptors().map((descriptor) => ({
+        name: descriptor.name,
+        purpose: descriptor.description,
+        semanticCategories: semanticCategories({
+            actionType: descriptor.name,
+            intentPhrases: descriptor.intentPhrases,
+            targetCapabilities: MIDI_TRANSFORM_TARGET_CAPABILITIES,
+        }),
+    }));
+    return [...commandEntries, ...transformEntries];
+}
+
 export function getExecutableAppActionIntentCatalog(input: { intent: string; page?: IntentCatalogPage }) {
     const { intent, searchKey } = intentSearchKey(input.intent);
-    const entries = getExecutableCommandRegistrations()
-        .filter((registration) => registration.discoverability === 'visible')
-        .map((registration, index) => {
-            const entry: IntentCatalogEntry = {
-                name: registration.actionType,
-                purpose: registration.toolDescription,
-                semanticCategories: semanticCategories({
-                    actionType: registration.actionType,
-                    intentPhrases: registration.intentPhrases,
-                    targetCapabilities: registration.capabilityChecks.map(({ capability }) => capability),
-                }),
-            };
-            return { entry, index, score: intentScore(entry, searchKey) };
-        })
+    const entries = collectIntentCatalogEntries()
+        .map((entry, index) => ({ entry, index, score: intentScore(entry, searchKey) }))
         .filter(({ score }) => score > 0)
         .sort((left, right) => right.score - left.score || left.index - right.index)
         .map(({ entry }) => entry);
