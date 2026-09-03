@@ -1,0 +1,82 @@
+crates/sourdaw-native/Cargo.toml
+  s_9b530f08172a54::t_925169a0cee6a0 14-20
+electron/__tests__/commands.spec.ts
+  s_9b530f08172a54::t_b7306f84b391b0 48-58
+electron-builder.yml
+  s_9b530f08172a54::t_2c5a8e706eaaf2 81-84,86,93-94
+crates/sourdaw-native/src/lib.rs
+  s_9b530f08172a54::t_6808a5d177fa86 84-93
+electron/native.ts
+  s_9b530f08172a54::t_801cd84666f037 107-108
+  s_9b530f08172a54::t_ec1b089fc57042 136-139
+  s_9b530f08172a54::t_65fa8e2accfbf8 98-106,109-135,141-145
+  s_9b530f08172a54::t_6a8214f56b259e 140
+  s_9b530f08172a54::t_3ac934e5c4564b 154
+scripts/flipElectronFuses.ts
+  s_9b530f08172a54::t_244ddeaf236c4e 13-21
+docs/architecture/02-rust-backend.md
+  s_9b530f08172a54::t_629a6bc1eb5dfe 313-315
+electron/main.ts
+  s_9b530f08172a54::t_666ad52d3b185f 599
+  s_9b530f08172a54::t_4bc24b5eb97596 569-574,578-582
+  s_9b530f08172a54::t_4887a882183c59 78
+  s_9b530f08172a54::t_ebd5e251658ae0 507-515
+  s_9b530f08172a54::t_dca3acef5395b7 54-60
+.gitignore
+  s_9b530f08172a54::t_1d864e2be8c866 52-55
+electron/scanWorker.ts
+  s_9b530f08172a54::t_2217c073024fa2 4-7,9,11-19,21,23-28
+  s_9b530f08172a54::t_9b702794c42142 52,54-59,61-62,65-77
+  s_9b530f08172a54::t_2aedf8a4a2973c 63
+  s_9b530f08172a54::t_682d0ddcdd0d10 64
+  s_9b530f08172a54::t_ae5f0da4618d87 22
+crates/sourdaw-plugin-scan-helper/Cargo.toml
+  s_9b530f08172a54::t_ad3eb92681c3f5 19-23
+  s_9b530f08172a54::t_5594e17e707e27 1-18
+Cargo.toml
+  s_9b530f08172a54::t_1e3865594c50b8 13-14
+  s_9b530f08172a54::t_713eed997b9a59 54-61
+  s_9b530f08172a54::t_70a05e9478faf2 53
+  s_9b530f08172a54::t_dffc9d6101e0df 62
+scripts/buildNativeAddon.ts
+  s_9b530f08172a54::t_6d7f5d7a419a90 79,81,87-91
+  s_9b530f08172a54::t_5b54eaabf34eaf 14-20
+  s_9b530f08172a54::t_bb897adc3fa471 59,61
+  s_9b530f08172a54::t_54f168b855392b 4-5,7-13,24,38-43,49,52-58,60,62-65,68-71,74-78,80,82-86,92-103
+electron/__tests__/scanWorker.spec.ts
+  s_9b530f08172a54::t_379bc8bc20f7e3 25,37-39,46-48,51-53,60-64,66-69,73-76,80-88
+  s_9b530f08172a54::t_e65c4fb488d2d1 89-91
+crates/sourdaw-plugin-scan-helper/src/main.rs
+  s_9b530f08172a54::t_b3b37e1829467d 2-25,30
+  s_9b530f08172a54::t_957137451280fb 1,26-29,31-46
+electron/__tests__/native.spec.ts
+  s_9b530f08172a54::t_bf79d79da29963 1-72
+Cargo.lock
+  s_9b530f08172a54::t_0b159acf2cfcf4 2572-2579
+crates/sourdaw-plugin-scan-helper/tests/scan_helper_binary.rs
+  s_7dab9af76ff572::t_c02ff763d26d72 1-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "70e49b06689ed1a57a035f50e1f1ce90aec0e536",
+  "prompts": {},
+  "sessions": {
+    "s_7dab9af76ff572": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a306c9e6a5a59f806",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
