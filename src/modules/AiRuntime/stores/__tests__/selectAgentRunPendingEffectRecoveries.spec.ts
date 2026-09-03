@@ -60,7 +60,6 @@ function createRenderOnlyEffect(): AgentRunPendingEffect {
 function createPendingEffectRecovery(input: {
     effects: AgentRunPendingEffect[];
     bindSourceRevision: boolean;
-    storedRecovery: 'reconcile-batch' | 'manual-repair';
     lastError: string | null;
 }) {
     agentRunLifecycle.create({
@@ -87,7 +86,8 @@ function createPendingEffectRecovery(input: {
             effects: input.effects,
             lastError: input.lastError,
             receiptIdentity,
-            recovery: input.storedRecovery,
+            // The store re-derives `recovery` from policy on every read; the stored value is inert.
+            recovery: 'reconcile-batch',
             serializedBatch: '{"batch":"render-owner"}',
             ...(input.bindSourceRevision ? { sourceRevision: COMMITTED_REVISION } : {}),
         },
@@ -100,7 +100,6 @@ function createRetainedRenderRecovery() {
     return createPendingEffectRecovery({
         effects: [createRenderOnlyEffect()],
         bindSourceRevision: true,
-        storedRecovery: 'reconcile-batch',
         lastError: null,
     });
 }
@@ -218,13 +217,12 @@ describe('selectAgentRunPendingEffectRecoveries', () => {
         }
     );
 
-    it('projects the stored reconcile-batch recovery of a render-only continuation bound to its source revision', () => {
+    it('projects reconcile-batch for a render-only continuation bound to its source revision', () => {
         const renderEffect = createRenderOnlyEffect();
 
         createPendingEffectRecovery({
             effects: [renderEffect],
             bindSourceRevision: true,
-            storedRecovery: 'reconcile-batch',
             lastError: null,
         });
 
@@ -252,7 +250,6 @@ describe('selectAgentRunPendingEffectRecoveries', () => {
         createPendingEffectRecovery({
             effects: [genericEffect],
             bindSourceRevision: false,
-            storedRecovery: 'manual-repair',
             lastError: null,
         });
 
@@ -267,7 +264,7 @@ describe('selectAgentRunPendingEffectRecoveries', () => {
         ]);
     });
 
-    it('projects manual repair for a runtime-graph continuation', () => {
+    it('refuses to persist a source revision bound to a non-render-only continuation', () => {
         const runtimeGraphEffect: AgentRunPendingEffect = {
             commandId: COMMAND_ID,
             kind: 'runtime-graph',
@@ -277,21 +274,16 @@ describe('selectAgentRunPendingEffectRecoveries', () => {
             state: 'pending',
         };
 
-        createPendingEffectRecovery({
-            effects: [runtimeGraphEffect],
-            bindSourceRevision: false,
-            storedRecovery: 'manual-repair',
-            lastError: null,
-        });
-
-        expect(selectAgentRunPendingEffectRecoveries(readAgentRunState())).toEqual([
-            {
-                runId: RUN_ID,
-                batchId: BATCH_ID,
+        // The store admits `sourceRevision` only on continuations whose every effect is a
+        // render-project-sections external effect; the sanitizer drops the whole run rather
+        // than persist a binding it cannot honor, and the write-time capacity guard turns
+        // that drop into a hard failure instead of a silently truncated run list.
+        expect(() =>
+            createPendingEffectRecovery({
                 effects: [runtimeGraphEffect],
-                recovery: 'manual-repair',
-                lastError: MISSING_EXACT_CHECKPOINT_RECOVERY_REASON,
-            },
-        ]);
+                bindSourceRevision: true,
+                lastError: null,
+            })
+        ).toThrow('Agent run state contains data outside the persistent schema bounds');
     });
 });

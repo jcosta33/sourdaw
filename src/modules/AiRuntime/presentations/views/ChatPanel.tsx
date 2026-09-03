@@ -387,7 +387,6 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                                     variant="secondary"
                                     className="mt-2 h-7 gap-1.5 text-[11px]"
                                     disabled={chatState.isGenerating}
-                                    aria-label="Reconcile pending effects"
                                     onClick={() =>
                                         handleRecoverPendingEffects(continuation.runId, continuation.batchId)
                                     }
