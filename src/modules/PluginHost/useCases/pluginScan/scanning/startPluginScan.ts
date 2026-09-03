@@ -106,16 +106,18 @@ export async function startPluginScan(options: StartPluginScanOptions = {}): Pro
                 // is authoritative for what is quarantined right now, whether
                 // this scan reported errors or not.
                 quarantined: result.quarantined,
-                // The native contract calls a non-empty error list "a scan the
-                // user has a problem with". That scan's `plugins` is the
-                // partial output of a failed run — writing it would drop every
-                // plugin under a root that failed to read, which is the wipe
-                // this guards against — so a failed scan leaves the list alone
-                // and reports why. Only a clean enumeration restates the list,
-                // and a clean empty one is a valid result, not a wipe.
-                // `lastScanTime` dates the list the store holds, so it advances
-                // with that write and not with the attempt.
-                ...(result.errors.length > 0 ? {} : { scannedPlugins: result.plugins, lastScanTime: Date.now() }),
+                // A result in hand is a completed enumeration, and a completed
+                // enumeration is authoritative for what is installed: the
+                // native side answers an incomplete one with a failure the
+                // repository throws, and it has already rebuilt the registry
+                // activation reads from this very result. A candidate that
+                // failed is reported beside the list, never in front of it —
+                // withholding the list over one error hid every other plugin
+                // the scan found (#3497). A scan that did not run or threw
+                // leaves the list alone, above and below. `lastScanTime` dates
+                // the list the store holds, so it advances with this write.
+                scannedPlugins: result.plugins,
+                lastScanTime: Date.now(),
             };
         });
     } catch (error) {

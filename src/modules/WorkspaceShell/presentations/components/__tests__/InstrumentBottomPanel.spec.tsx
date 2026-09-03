@@ -92,6 +92,25 @@ describe('InstrumentBottomPanel — aria-label and callbacks', () => {
         );
         expect(screen.getByTestId('child-content')).toBeTruthy();
     });
+
+    it('houses children inside an overflow-y-auto scroll container for vertical overflow', () => {
+        render(
+            <InstrumentBottomPanel
+                label="X"
+                labelColor="text-white"
+                borderColor="border-white/20"
+                height={200}
+                onResize={vi.fn()}
+                onClose={vi.fn()}
+            >
+                <div data-testid="child-content">Child element</div>
+            </InstrumentBottomPanel>
+        );
+        const bodyContainer = screen.getByTestId('instrument-bottom-panel-body');
+        expect(bodyContainer).toBeTruthy();
+        expect(bodyContainer.className).toContain('overflow-y-auto');
+        expect(bodyContainer.contains(screen.getByTestId('child-content'))).toBe(true);
+    });
 });
 
 /**

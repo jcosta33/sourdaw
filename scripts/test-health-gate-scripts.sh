@@ -178,11 +178,14 @@ fi
 SH
 chmod +x "$git_tip_bin/git"
 
-WORKFLOW_PATH="$repo_root/.github/workflows/health-gates.yml" NIGHTLY_PATH="$repo_root/.github/workflows/nightly.yml" REPO_ROOT="$repo_root" TEST_TEMP_ROOT="$temp_root" FAKE_BIN="$fake_bin" GIT_TIP_BIN="$git_tip_bin" node --input-type=module <<'NODE'
+WORKFLOW_PATH="$repo_root/.github/workflows/health-gates.yml" NIGHTLY_PATH="$repo_root/.github/workflows/nightly.yml" REPO_ROOT="$repo_root" TEST_TEMP_ROOT="$temp_root" FAKE_BIN="$fake_bin" GIT_TIP_BIN="$git_tip_bin" pnpm exec tsx --input-type=module <<'NODE'
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { parse } from 'yaml';
 
+const { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } = await import(
+    `${process.env.REPO_ROOT}/scripts/deployWebWorkflowContract.ts`
+);
 const workflow = parse(readFileSync(process.env.WORKFLOW_PATH, 'utf8'));
 const nightly = parse(readFileSync(process.env.NIGHTLY_PATH, 'utf8'));
 const gitleaksHelper = readFileSync(`${process.env.REPO_ROOT}/scripts/run-gitleaks-history-scan.sh`, 'utf8');
@@ -779,11 +782,22 @@ expect(
     deployWebIsolationStep?.env?.DEPLOYMENT_URL === '${{ steps.deployment.outputs.url }}',
     'the daily web deploy must assert isolation against the deployment it just created, not against a fixed alias'
 );
-for (const stepName of ['Pull the production environment', 'Build the validated revision', 'Deploy the prebuilt revision']) {
+for (const stepName of ['Deploy the prebuilt revision']) {
     expect(
         stepNamed(deployWeb, stepName)?.env?.VERCEL_TOKEN === '${{ secrets.VERCEL_TOKEN }}',
         `${stepName} must authenticate the Vercel CLI from the environment`
     );
+}
+const deployWebBuildRun = stepNamed(deployWeb, 'Build the validated revision')?.run ?? '';
+try {
+    assertDeployWebBuildRun(deployWebBuildRun);
+} catch (error) {
+    expect(false, error instanceof Error ? error.message : String(error));
+}
+try {
+    assertDeployWebJobNoVercelPull(deployWeb?.steps ?? []);
+} catch (error) {
+    expect(false, error instanceof Error ? error.message : String(error));
 }
 expect(
     deployWeb?.environment === 'Production',
@@ -868,7 +882,7 @@ for (const stepName of [
 }
 for (const stepName of [
     'Install dependencies',
-    'Pull the production environment',
+    'Link the Vercel CLI to the production project',
     'Build the validated revision',
     'Deploy the prebuilt revision',
     'Assert cross-origin isolation on the deployment',

@@ -140,22 +140,22 @@ describe('neuralLibraryPersistence', () => {
             const createObjectURL = vi.fn(() => 'blob:fake-url');
             const revokeObjectURL = vi.fn();
             vi.stubGlobal('URL', { createObjectURL, revokeObjectURL });
-            const click = vi.fn();
-            vi.spyOn(document, 'createElement').mockReturnValue({
-                href: '',
-                download: '',
-                click,
-            } as unknown as HTMLAnchorElement);
+            const anchor = document.createElement('a');
+            const click = vi.spyOn(anchor, 'click').mockImplementation(() => {});
+            vi.spyOn(document, 'createElement').mockReturnValue(anchor);
 
             downloadGrinderNeuralModelFile({ file_name: 'capture.nam', file_text: '{"name":"x"}' });
 
             // The URL must still be live the instant click() returns.
             expect(click).toHaveBeenCalledTimes(1);
+            expect(anchor.href).toBe('blob:fake-url');
+            expect(anchor.download).toBe('capture.nam');
             expect(revokeObjectURL).not.toHaveBeenCalled();
 
             // It is released only after the deferred task runs.
-            vi.runAllTimers();
+            vi.advanceTimersByTime(1000);
             expect(revokeObjectURL).toHaveBeenCalledExactlyOnceWith('blob:fake-url');
+            expect(anchor.parentNode).toBeNull();
 
             vi.restoreAllMocks();
         });

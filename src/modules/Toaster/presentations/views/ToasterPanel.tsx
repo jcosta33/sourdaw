@@ -40,6 +40,7 @@ import { loadToasterKitPreset } from '../../useCases/loadToasterKit';
 import { type NoteRepeatRate } from '../../useCases/noteRepeat';
 import { setPadParamImmediate } from '../../useCases/setPadParamImmediate';
 import { type SixteenLevelsTarget } from '../../useCases/sixteenLevels';
+import { setSoundLock } from '../../useCases/soundLocks/setSoundLock';
 import { startNoteRepeat } from '../../useCases/startNoteRepeat';
 import { startSequencer } from '../../useCases/startSequencer';
 import { stopNoteRepeat } from '../../useCases/stopNoteRepeat';
@@ -659,6 +660,9 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 onToggleStep={(trackId, stepIndex) => toggleStep(deviceId, trackId, stepIndex)}
                                 onSetVelocity={(trackId, stepIndex, vel) =>
                                     setStepVelocity(deviceId, trackId, stepIndex, vel)
+                                }
+                                onSetSoundLock={(trackId, stepIndex, engine) =>
+                                    setSoundLock(deviceId, trackId, stepIndex, engine)
                                 }
                             />
                         ) : null}

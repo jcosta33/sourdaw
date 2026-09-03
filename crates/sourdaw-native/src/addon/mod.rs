@@ -348,14 +348,6 @@ impl SourdawNative {
         })
     }
 
-    #[napi]
-    pub async fn post_process_audio(&self, request: Value) -> Result<String> {
-        let request = serde_json::from_value(request).map_err(|error| {
-            Error::from_reason(format!("Invalid post-process request: {error}"))
-        })?;
-        reason(commands::audio_postprocess::post_process_audio(request).await)
-    }
-
     // ── Dictation ──────────────────────────────────────────────────────
 
     #[napi]
