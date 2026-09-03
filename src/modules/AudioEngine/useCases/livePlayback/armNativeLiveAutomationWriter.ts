@@ -188,6 +188,10 @@ export function armNativeLiveAutomationWriter(input: ArmNativeLiveAutomationWrit
         targets: entry.targets,
         loopTargets: loop?.targets ?? null,
         lastLoopWraps: null,
+        // The floor every wrap's `last_wrap_frame` provably passes: the loop
+        // end frame, which `advance_playhead`'s `next >= end` bounds it below
+        // by. `null` when nothing wraps, which silences the seam half.
+        wrapFloorFrame: spans.loop ? secondsToFrames(spans.loop.endSeconds, input.sampleRate) : null,
         queueFullReported: false,
     };
 

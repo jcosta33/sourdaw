@@ -23,11 +23,15 @@
  *
  * As much as the engine's ledger will take, which is the capacity minus what
  * that ledger still believes is queued. The mirror follows `graph.rs` exactly:
- * a stamp releases when the echoed playhead has passed its *start* frame
- * (`proven_popped`), and a write that is not a step first cancels every queued
- * stamp landing at or after its own start (`charge_automation`'s stale drop,
- * mirroring `RampedParam::cancel_stale`). Both are applied against the same
- * snapshot that windows the pump, so what is sent is what the engine can hold.
+ * a stamp releases when the echoed playhead has passed its *start* frame, or —
+ * the seam half of `proven_popped`, for the stamps a loop's pinned playhead
+ * never passes — once `SEAMS_PROVING_A_WHOLE_PASS` seams have closed since the
+ * wrap count the stamp anchored at and its start frame is below the frame the
+ * last wrap walked to, and a write that is not a step first cancels every
+ * queued stamp landing at or after its own start (`charge_automation`'s stale
+ * drop, mirroring `RampedParam::cancel_stale`). Both are applied against the
+ * same snapshot that windows the pump, so what is sent is what the engine can
+ * hold.
  */
 
 import { logger } from '#/infra/logger/appLogger';
@@ -38,6 +42,7 @@ import {
     AUTOMATION_QUEUE_CAPACITY,
     AUTOMATION_QUEUE_MARGIN,
     AUTOMATION_WINDOW_SECONDS,
+    SEAMS_PROVING_A_WHOLE_PASS,
     nativeLiveAutomationWriter,
     writeStartSeconds,
     type LiveAutomationQueuedStamp,
@@ -80,10 +85,14 @@ function frameAt(seconds: number, sampleRate: number): number {
 
 function stampOf(write: AudioGraphParameterWrite, sampleRate: number): LiveAutomationQueuedStamp {
     if (write.shape === 'ramp-to') {
-        return { startFrame: frameAt(write.startTime, sampleRate), landFrame: frameAt(write.landTime, sampleRate) };
+        return {
+            startFrame: frameAt(write.startTime, sampleRate),
+            landFrame: frameAt(write.landTime, sampleRate),
+            seamAnchor: null,
+        };
     }
     const frame = frameAt(write.time, sampleRate);
-    return { startFrame: frame, landFrame: frame };
+    return { startFrame: frame, landFrame: frame, seamAnchor: null };
 }
 
 /** A step appends; every other shape this writer carries cancels the stale first. */
@@ -184,11 +193,37 @@ function carryQueuedStamps(
     }
 }
 
-/** Drop what the echoed playhead proves the engine popped (`proven_popped`). */
-function releaseLanded(pass: LiveAutomationWriterPass, positionSeconds: number): void {
+/**
+ * Drop what the engine's echo proves popped — `proven_popped` in `graph.rs`,
+ * both halves.
+ *
+ * The playhead half: a stamp strictly below the echoed playhead is popped. The
+ * seam half: a loop pins the playhead below the region's end — the block that
+ * straddles the seam publishes the wrapped position, never the frames it
+ * walked to get there — so a stamp in that last stretch is never behind an
+ * echo, and it releases once {@link SEAMS_PROVING_A_WHOLE_PASS} seams have
+ * closed since the wrap count the stamp was first found queued at
+ * (`landed_wraps`'s `get_or_insert`, materialized here on the stamp) and its
+ * start frame is below the frame the last wrap walked to, whose floor the pass
+ * holds. The batch horizon the engine gates both halves on has no reading this
+ * side; the margin absorbs that lag exactly as it absorbs the echo's.
+ */
+function releaseLanded(pass: LiveAutomationWriterPass, positionSeconds: number, loopWraps: number | null): void {
     const playheadFrame = frameAt(positionSeconds, pass.sampleRate);
     for (const slot of pass.targets) {
-        slot.queued = slot.queued.filter((stamp) => stamp.startFrame >= playheadFrame);
+        slot.queued = slot.queued.flatMap((stamp) => {
+            if (stamp.startFrame < playheadFrame) {
+                return [];
+            }
+            if (loopWraps === null || pass.wrapFloorFrame === null) {
+                return [stamp];
+            }
+            const seamAnchor = stamp.seamAnchor ?? loopWraps;
+            if (loopWraps - seamAnchor >= SEAMS_PROVING_A_WHOLE_PASS && stamp.startFrame < pass.wrapFloorFrame) {
+                return [];
+            }
+            return [seamAnchor === stamp.seamAnchor ? stamp : { ...stamp, seamAnchor }];
+        });
     }
 }
 
@@ -252,7 +287,7 @@ export async function pumpNativeLiveAutomationWriter(input: PumpNativeLiveAutoma
     }
 
     takeLoopSeam({ pass, positionSeconds: input.positionSeconds, loopWraps: input.loopWraps });
-    releaseLanded(pass, input.positionSeconds);
+    releaseLanded(pass, input.positionSeconds, input.loopWraps);
 
     const admissions = admitWindow({ pass, positionSeconds: input.positionSeconds });
     if (admissions.length === 0) {

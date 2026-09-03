@@ -14,12 +14,14 @@
  *
  * A fixed per-pump count cannot express that ceiling. The control-side ledger
  * frees a slot per stamp, not per batch — a queued write releases only once the
- * echoed playhead has passed its *start* frame (`proven_popped`) — and a curved
- * lane compiles onto a 10 ms grid, so a 0.1 s lookahead can hold ten writes for
- * one parameter. Sending a fixed six would be refused two ticks in three on
- * exactly the lanes automation matters most for. {@link LiveAutomationWriterTarget}
- * therefore mirrors the ledger: what a pump may add is the capacity minus what
- * the mirror still believes is queued, minus {@link AUTOMATION_QUEUE_MARGIN}.
+ * echoed playhead has passed its *start* frame or, for a stamp a looping
+ * playhead never passes, once the seam half of `proven_popped` proves one
+ * whole pass ran with it queued — and a curved lane compiles onto a 10 ms
+ * grid, so a 0.1 s lookahead can hold ten writes for one parameter. Sending a
+ * fixed six would be refused two ticks in three on exactly the lanes
+ * automation matters most for. {@link LiveAutomationWriterTarget} therefore
+ * mirrors the ledger: what a pump may add is the capacity minus what the
+ * mirror still believes is queued, minus {@link AUTOMATION_QUEUE_MARGIN}.
  *
  * ## Why module state
  *
@@ -59,6 +61,18 @@ export const AUTOMATION_QUEUE_CAPACITY = 8;
 export const AUTOMATION_QUEUE_MARGIN = 1;
 
 /**
+ * `SEAMS_PROVING_A_WHOLE_PASS` in `crates/sourdaw-native/src/commands/graph.rs`.
+ *
+ * How many seams must close after a stamp is known queued before one whole
+ * pass is proven to have run with it there. One is not enough: the seam that
+ * closes first ends the pass the stamp was admitted into, and the playhead may
+ * already have been past the stamp when it landed, so that pass proves nothing
+ * about it. The pass between the first and second seam is the earliest one
+ * that ran from the region's start with the stamp queued.
+ */
+export const SEAMS_PROVING_A_WHOLE_PASS = 2;
+
+/**
  * One write the mirror believes the engine's queue still holds.
  *
  * Frames, not seconds, because both the release proof and the cancellation law
@@ -70,6 +84,13 @@ export type LiveAutomationQueuedStamp = Readonly<{
     startFrame: number;
     /** What a replace's cancellation compares: `PendingStamp::lands_at`. */
     landFrame: number;
+    /**
+     * `PendingStamp::landed_wraps`: the engine's loop-wrap count the first time
+     * an echo found the stamp still queued at or past the playhead — the anchor
+     * the seam half of `proven_popped` measures {@link SEAMS_PROVING_A_WHOLE_PASS}
+     * from. `null` while no echo has needed that proof for it.
+     */
+    seamAnchor: number | null;
 }>;
 
 /** One parameter's share of the pass: its curve, how much of it has landed, and what the engine still holds. */
@@ -132,6 +153,20 @@ export type LiveAutomationWriterPass = {
      * playhead instead (see `pumpNativeLiveAutomationWriter`).
      */
     lastLoopWraps: number | null;
+    /**
+     * The floor of the engine's `last_wrap_frame` for this pass's loop, or
+     * `null` when the pass does not wrap.
+     *
+     * The engine records the frame its block walk had reached when the seam
+     * closed — `block_start + span` in `Scheduler::advance_playhead`, always at
+     * or past the loop end — and the seam half of `proven_popped` releases
+     * every stamp stamped strictly below it. That frame is published nowhere
+     * this side reads, so the mirror holds the loop end frame: below every
+     * `last_wrap_frame` the engine can record, and above every start frame the
+     * arm's own end clip admits, so the proof releases exactly the stamps the
+     * engine's does and never one it would not.
+     */
+    wrapFloorFrame: number | null;
     /** Whether this pass has already reported the engine's queue full. */
     queueFullReported: boolean;
 };
