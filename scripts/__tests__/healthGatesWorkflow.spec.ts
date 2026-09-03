@@ -186,6 +186,7 @@ const VERCEL_ORG_ID_REFERENCE = '${{ secrets.VERCEL_ORG_ID }}';
 const VERCEL_PROJECT_ID_REFERENCE = '${{ secrets.VERCEL_PROJECT_ID }}';
 const VERCEL_CLI_STEPS = ['Deploy the prebuilt revision'] as const;
 const VERCEL_PULL_STEP = 'Pull the production environment';
+const VERCEL_LINK_STEP = 'Link the Vercel CLI to the production project';
 // Every leg that validates the web artifact. The Rust workspace leg is one
 // of them: it is the only test of daw-dsp, daw-wasm-decoder, proof-chamber
 // and scoring, which ship in the web bundle as the committed
@@ -1154,6 +1155,18 @@ function assertDailyDeployTrain(candidate: UnknownRecord): string {
         }
         if (env.VERCEL_PROJECT_ID !== undefined) {
             throw new Error(`${name} must not pass VERCEL_PROJECT_ID to the CLI`);
+        }
+    }
+    // The link step is the one place the org and project ids belong: `vercel link` reads them from
+    // the environment, and a missing id links the deploy to whatever the token's default resolves to.
+    const linkEnv = recordAt(stepNamed(job, VERCEL_LINK_STEP), 'env');
+    for (const [key, reference] of [
+        ['VERCEL_TOKEN', VERCEL_TOKEN_REFERENCE],
+        ['VERCEL_ORG_ID', VERCEL_ORG_ID_REFERENCE],
+        ['VERCEL_PROJECT_ID', VERCEL_PROJECT_ID_REFERENCE],
+    ] as const) {
+        if (linkEnv[key] !== reference) {
+            throw new Error(`${VERCEL_LINK_STEP} must read ${key} from the environment`);
         }
     }
     const isolationStep = stepNamed(job, 'Assert cross-origin isolation on the deployment');
@@ -2199,6 +2212,15 @@ describe('health gates workflow contract', () => {
             .GITHUB_TOKEN;
         expect(() => assertDailyDeployTrain(tokenlessResolver)).toThrow(
             'the production-revision step must authenticate its ancestry comparison with a GitHub token'
+        );
+
+        // Mutation-kill: a link step missing its org id must fail this spec,
+        // not link the deploy to whatever project the token's default
+        // resolves to at runtime.
+        const orglessLink = asRecord(structuredClone(nightly), 'org-less link step deploy train');
+        delete recordAt(stepNamed(jobAt(orglessLink, DEPLOY_WEB_JOB), VERCEL_LINK_STEP), 'env').VERCEL_ORG_ID;
+        expect(() => assertDailyDeployTrain(orglessLink)).toThrow(
+            `${VERCEL_LINK_STEP} must read VERCEL_ORG_ID from the environment`
         );
 
         const unidentifiedResolver = asRecord(structuredClone(nightly), 'unidentified resolver deploy train');

@@ -726,12 +726,12 @@ function gateNeeds(declared: unknown): string[] {
 
 /**
  * The names GitHub labels a job's checks with, or a refusal where this gate cannot produce them. A
- * matrix name on a job the gate needs directly is a template GitHub substitutes per shard, and the
- * summary carries no strategy for it, so the declared name matches no check on the head — it would
- * silently match nothing and tolerate every real cancellation, and refuses instead. That refusal is
- * recorded as issue #2924. A job that calls a reusable workflow resolves through the called file the
- * launcher carried, where the same substitution becomes derivable because the called file declares
- * its own matrix values.
+ * matrix name on a job the gate needs directly is a template GitHub substitutes per shard, and as
+ * declared it matches no check on the head — it would silently match nothing and tolerate every
+ * real cancellation. The summary does carry that job's strategy now; the refusal to expand a direct
+ * job's matrix here was kept deliberately and is recorded as issue #2924. A job that calls a
+ * reusable workflow resolves through the called file the launcher carried, where the same
+ * substitution becomes derivable because the called file declares its own matrix values.
  */
 function requiredCheckNames(jobId: string, jobs: WorkflowJobs, called: CalledWorkflows): string[] {
     const job = jobs[jobId];

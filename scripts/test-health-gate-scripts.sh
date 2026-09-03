@@ -973,7 +973,7 @@ expect(
 expect(
     deployWeb?.if ===
         "github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')",
-    'the daily web deploy must run only on the version-controlled schedule and a dispatch of main, since a dispatch otherwise carries whichever ref fired it and the Production environment has no branch policy'
+    'the daily web deploy must run only on the version-controlled schedule and a dispatch of main, since a dispatch otherwise carries whichever ref fired it; the Production environment branch policy is the environment-side half, pinned with the arming preconditions below'
 );
 expect(
     deployWebGuardStep?.env?.TRAIN_REF === '${{ github.ref }}',
@@ -995,6 +995,20 @@ for (const stepName of ['Deploy the prebuilt revision']) {
     expect(
         stepNamed(deployWeb, stepName)?.env?.VERCEL_TOKEN === '${{ secrets.VERCEL_TOKEN }}',
         `${stepName} must authenticate the Vercel CLI from the environment`
+    );
+}
+// The link step is the one place the org and project ids belong: `vercel link`
+// reads them from the environment, and a missing id links the deploy to
+// whatever the token's default resolves to.
+const deployWebLinkStep = stepNamed(deployWeb, 'Link the Vercel CLI to the production project');
+for (const [key, reference] of [
+    ['VERCEL_TOKEN', '${{ secrets.VERCEL_TOKEN }}'],
+    ['VERCEL_ORG_ID', '${{ secrets.VERCEL_ORG_ID }}'],
+    ['VERCEL_PROJECT_ID', '${{ secrets.VERCEL_PROJECT_ID }}'],
+]) {
+    expect(
+        deployWebLinkStep?.env?.[key] === reference,
+        `Link the Vercel CLI to the production project must read ${key} from the environment`
     );
 }
 const deployWebBuildRun = stepNamed(deployWeb, 'Build the validated revision')?.run ?? '';
