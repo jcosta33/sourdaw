@@ -1,0 +1,19 @@
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_9b530f08172a54::t_9c432f242fee58 66-69,171,1197,1232,1332,1354,1365,1423,1488,1544,1627,1640,1720,1790,1899,1944,1975,2041,2074,2103,2138,2167,2192,2219,2237,2442,2467,2487,2503,2638,2663,2684,2710,2741,2776,2837-2838
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "653e9d6e65fd08ce4653969a3401928877fac16d",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
