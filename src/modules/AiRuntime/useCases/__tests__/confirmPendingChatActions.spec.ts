@@ -49,6 +49,7 @@ import {
     mutateCrdtDoc,
     removeCrdtDoc,
     getCrdtDoc,
+    inspectAgentProjectDivergence,
     registerCrdtStorageRuntime,
     resetCrdtProjectAuthority,
     transactSnapshot,
@@ -676,6 +677,99 @@ describe('confirmPendingChatActions transaction admission', () => {
             pendingActionConfirmationStatus: 'invalidated',
             content: expect.stringContaining('project changed'),
         });
+    });
+
+    // The classifier reports non-overlapping with mayReapply true, but
+    // captureProjectMutationAuthorization revokes execution at shouldExecute
+    // before allowCompatibleProjectDivergence is consulted, so the commit-time
+    // reapply path stays unreachable for confirmed batches.
+    it('still fails closed on a foreign write during the admission window even when the divergence classifier would allow a reapply', async () => {
+        commandProjectDivergencePort.setProvider(inspectAgentProjectDivergence);
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
+        const execute = vi.fn<ActionHandler<SetTempoAction>['execute']>((action) => {
+            ownedStorage.set({ bpm: action.payload.bpm });
+        });
+        registerHandlerMap({
+            setTempo: {
+                canReapplyAfterDivergence: (action) => action.payload.expectedBpm !== undefined,
+                execute,
+                describe: (action) => ({
+                    label: 'Set tempo',
+                    inverseAction: {
+                        type: 'setTempo',
+                        payload: { bpm: 120, expectedBpm: action.payload.bpm },
+                    },
+                }),
+                undoable: true,
+                validate: () => true,
+            },
+        });
+        const action = { type: 'setTempo', payload: { bpm: 128 } } satisfies SetTempoAction;
+        const projectRevision = captureProjectRevision();
+        const envelope = migrateLegacyAppActionToVersionedCommandEnvelope({
+            action,
+            expectedEffect: 'Tempo changes to 128 BPM.',
+            normalizedProjectRevision: projectRevision,
+            options: { groupId: 'group-admission-reapply', groupLabel: 'Set tempo', source: 'prompt' },
+        });
+        const commandBatch = compileVersionedCommandBatchEnvelope({
+            runId: 'confirmation-admission-reapply',
+            batchId: 'group-admission-reapply',
+            projectId: captureProjectIdentity(),
+            baseRevision: projectRevision,
+            intent: 'set tempo to 128',
+            commands: [serializeVersionedCommandEnvelope(envelope)],
+        });
+        const proposal = {
+            id: 'confirmation-admission-reapply-1',
+            prompt: 'set tempo to 128',
+            assistantMessageId: 'assistant-1',
+            actions: [action],
+            actionLabels: ['Set tempo'],
+            commandBatch,
+            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            executionMode: 'atomic' as const,
+            projectRevision,
+        };
+        proposePendingActionConfirmation(proposal);
+
+        let releaseSnapshotTransaction!: () => void;
+        let markSnapshotTransactionStarted!: () => void;
+        const snapshotTransactionStarted = new Promise<void>((resolve) => {
+            markSnapshotTransactionStarted = resolve;
+        });
+        const release = new Promise<void>((resolve) => {
+            releaseSnapshotTransaction = resolve;
+        });
+        const blockingTransaction = transactSnapshot(async () => {
+            markSnapshotTransactionStarted();
+            await release;
+        });
+        await snapshotTransactionStarted;
+
+        const confirmation = confirmPendingChatActions({ confirmationId: 'confirmation-admission-reapply-1' });
+        await vi.waitFor(() =>
+            expect(getPendingActionConfirmation('confirmation-admission-reapply-1')?.status).toBe('accepted')
+        );
+        mutateCrdtDoc<Record<string, unknown>>({
+            id: 'independent',
+            changeFn: (doc) => {
+                doc.changedDuringAdmission = true;
+            },
+        });
+        releaseSnapshotTransaction();
+
+        await blockingTransaction;
+        await expect(confirmation).resolves.toMatchObject({
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+        });
+        expect(execute).not.toHaveBeenCalled();
+        expect(getCrdtDoc<{ changedDuringAdmission: boolean }>('independent')).toMatchObject({
+            changedDuringAdmission: true,
+        });
+        expect(undoStore.value?.past).toEqual([]);
     });
 
     it('keeps the winning same-turn confirmation authoritative when the losing receipt lookup rejects later', async () => {
