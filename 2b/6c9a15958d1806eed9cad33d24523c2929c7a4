@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/__tests__/midiTransformCompilation.spec.ts
+  s_ac03a4ebaa3f6e::t_84398dd8b584a3 324-339
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_ac03a4ebaa3f6e::t_d50e6856c18372 887-894,929,935-938,950,957
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "2b6c9a15958d1806eed9cad33d24523c2929c7a4",
+  "prompts": {},
+  "sessions": {
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
