@@ -3,6 +3,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     assignToasterPatternGroove: vi.fn<() => Promise<void>>(),
+    enter16Levels: vi.fn(),
+    exit16Levels: vi.fn(),
+    trigger16Level: vi.fn(),
+    startNoteRepeat: vi.fn(),
+    stopNoteRepeat: vi.fn(),
+    triggerToasterPad: vi.fn(),
 }));
 
 import { ToasterPanel } from '../ToasterPanel';
@@ -12,6 +18,24 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 vi.mock('../../../useCases/assignToasterPatternGroove', () => ({
     assignToasterPatternGroove: mocks.assignToasterPatternGroove,
+}));
+vi.mock('../../../useCases/enter16Levels', () => ({
+    enter16Levels: mocks.enter16Levels,
+}));
+vi.mock('../../../useCases/exit16Levels', () => ({
+    exit16Levels: mocks.exit16Levels,
+}));
+vi.mock('../../../useCases/trigger16Level', () => ({
+    trigger16Level: mocks.trigger16Level,
+}));
+vi.mock('../../../useCases/startNoteRepeat', () => ({
+    startNoteRepeat: mocks.startNoteRepeat,
+}));
+vi.mock('../../../useCases/stopNoteRepeat', () => ({
+    stopNoteRepeat: mocks.stopNoteRepeat,
+}));
+vi.mock('../../../useCases/triggerPad', () => ({
+    triggerToasterPad: mocks.triggerToasterPad,
 }));
 
 describe('ToasterPanel', () => {
@@ -91,5 +115,93 @@ describe('ToasterPanel', () => {
         render(<ToasterPanel deviceId="toaster-test" />);
 
         expect(screen.getByRole('status')).toHaveTextContent('Straight timing is active; no groove is assigned.');
+    });
+
+    it('toggles 16-levels enters and exits 16-levels session', () => {
+        const { unmount } = render(<ToasterPanel deviceId="toaster-test" />);
+
+        const toggleButton = screen.getByRole('button', { name: '16 Levels mode' });
+        expect(toggleButton).toHaveAttribute('aria-pressed', 'false');
+
+        fireEvent.click(toggleButton);
+        expect(mocks.enter16Levels).toHaveBeenCalledWith('toaster-test', 0, 'tune');
+        expect(toggleButton).toHaveAttribute('aria-pressed', 'true');
+
+        const targetSelect = screen.getByRole('combobox', { name: '16 Levels target' });
+        expect(targetSelect).toBeTruthy();
+
+        fireEvent.change(targetSelect, { target: { value: 'velocity' } });
+        expect(mocks.enter16Levels).toHaveBeenCalledWith('toaster-test', 0, 'velocity');
+
+        fireEvent.click(toggleButton);
+        expect(mocks.exit16Levels).toHaveBeenCalledWith('toaster-test');
+        expect(toggleButton).toHaveAttribute('aria-pressed', 'false');
+
+        mocks.exit16Levels.mockClear();
+        mocks.stopNoteRepeat.mockClear();
+        unmount();
+        expect(mocks.exit16Levels).toHaveBeenCalledWith('toaster-test');
+        expect(mocks.stopNoteRepeat).toHaveBeenCalledWith('toaster-test');
+    });
+
+    it('toggling 16-levels triggers 16-levels target on pad click', () => {
+        render(<ToasterPanel deviceId="toaster-test" />);
+
+        const toggleButton = screen.getByRole('button', { name: '16 Levels mode' });
+        fireEvent.click(toggleButton);
+
+        const pad4 = screen.getByTestId('toaster-pad-3');
+        fireEvent.mouseDown(pad4, { button: 0 });
+
+        expect(mocks.trigger16Level).toHaveBeenCalledWith(3, 'toaster-test');
+    });
+
+    it('toggling note repeat starts and stops note repeat', () => {
+        render(<ToasterPanel deviceId="toaster-test" />);
+
+        const repeatButton = screen.getByRole('button', { name: 'Note repeat mode' });
+        expect(repeatButton).toHaveAttribute('aria-pressed', 'false');
+
+        fireEvent.click(repeatButton);
+        expect(repeatButton).toHaveAttribute('aria-pressed', 'true');
+
+        const rateSelect = screen.getByRole('combobox', { name: 'Note repeat rate' });
+        expect(rateSelect).toBeTruthy();
+        fireEvent.change(rateSelect, { target: { value: '1/8' } });
+
+        const pad0 = screen.getByTestId('toaster-pad-0');
+        fireEvent.mouseDown(pad0, { button: 0 });
+        expect(mocks.startNoteRepeat).toHaveBeenCalledWith('toaster-test', 0, 100, 120, '1/8');
+
+        fireEvent.mouseUp(pad0);
+        expect(mocks.stopNoteRepeat).toHaveBeenCalledWith('toaster-test');
+
+        mocks.stopNoteRepeat.mockClear();
+        fireEvent.click(repeatButton);
+        expect(mocks.stopNoteRepeat).toHaveBeenCalledWith('toaster-test');
+        expect(repeatButton).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('combines 16-levels and note repeat on pad trigger', () => {
+        render(<ToasterPanel deviceId="toaster-test" />);
+
+        fireEvent.click(screen.getByRole('button', { name: '16 Levels mode' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Note repeat mode' }));
+
+        // Tune target (default): trigger16Level called, then startNoteRepeat with 127
+        const pad2 = screen.getByTestId('toaster-pad-2');
+        fireEvent.mouseDown(pad2, { button: 0 });
+        expect(mocks.trigger16Level).toHaveBeenCalledWith(2, 'toaster-test');
+        expect(mocks.startNoteRepeat).toHaveBeenCalledWith('toaster-test', 0, 127, 120, '1/16');
+
+        // Switch to velocity target
+        const targetSelect = screen.getByRole('combobox', { name: '16 Levels target' });
+        fireEvent.change(targetSelect, { target: { value: 'velocity' } });
+
+        mocks.startNoteRepeat.mockClear();
+        // Pad 15: velocity round(16/16 * 127) = 127
+        const pad15 = screen.getByTestId('toaster-pad-15');
+        fireEvent.mouseDown(pad15, { button: 0 });
+        expect(mocks.startNoteRepeat).toHaveBeenCalledWith('toaster-test', 0, 127, 120, '1/16');
     });
 });

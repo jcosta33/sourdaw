@@ -7,6 +7,7 @@ import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
 import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
 import { DawPluginSectionCard } from '#/components/daw/DawPluginSectionCard';
+import { DawPluginToggle } from '#/components/daw/DawPluginToggle';
 import { RotaryKnob } from '#/components/daw/RotaryKnob';
 import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
@@ -29,15 +30,22 @@ import {
 } from '../../stores/toasterStore';
 import { applyEuclideanToTrack } from '../../useCases/applyEuclidean';
 import { assignToasterPatternGroove } from '../../useCases/assignToasterPatternGroove';
+import { enter16Levels } from '../../useCases/enter16Levels';
+import { exit16Levels } from '../../useCases/exit16Levels';
 import { exportPatternToTimeline } from '../../useCases/exportPatternToTimeline';
 import { getToasterPatternGrooveStatus } from '../../useCases/getToasterPatternGrooveStatus';
 import { getToasterPresetKit } from '../../useCases/getToasterPresetKit';
 import { getToasterPresetSummaries } from '../../useCases/getToasterPresetSummaries';
 import { loadToasterKitPreset } from '../../useCases/loadToasterKit';
+import { type NoteRepeatRate } from '../../useCases/noteRepeat';
+import { type SixteenLevelsTarget } from '../../useCases/sixteenLevels';
+import { startNoteRepeat } from '../../useCases/startNoteRepeat';
 import { startSequencer } from '../../useCases/startSequencer';
+import { stopNoteRepeat } from '../../useCases/stopNoteRepeat';
 import { stopSequencer } from '../../useCases/stopSequencer';
 import { setToasterKitParam } from '../../useCases/toasterParamBridge/setToasterKitParam';
 import { setToasterPadParam } from '../../useCases/toasterParamBridge/setToasterPadParam';
+import { trigger16Level } from '../../useCases/trigger16Level';
 import { triggerToasterPad } from '../../useCases/triggerPad';
 import { PadGrid } from '../components/PadGrid';
 import { PadMixer } from '../components/PadMixer';
@@ -123,6 +131,24 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
     const [eucSteps, setEucSteps] = useState(16);
     const [grooveAmountPreview, setGrooveAmountPreview] = useState<GrooveAmountPreview | null>(null);
     const [grooveAssignmentFailure, setGrooveAssignmentFailure] = useState<GrooveAssignmentFailure | null>(null);
+    const [is16Levels, setIs16Levels] = useState(false);
+    const [sixteenLevelsTarget, setSixteenLevelsTarget] = useState<SixteenLevelsTarget>('tune');
+    const [isRepeatActive, setIsRepeatActive] = useState(false);
+    const [repeatRate, setRepeatRate] = useState<NoteRepeatRate>('1/16');
+
+    useEffect(() => {
+        return () => {
+            exit16Levels(deviceId);
+            stopNoteRepeat(deviceId);
+        };
+    }, [deviceId]);
+
+    const activePadIndex = state.selectedPadIndex;
+    useEffect(() => {
+        if (is16Levels) {
+            enter16Levels(deviceId, activePadIndex, sixteenLevelsTarget);
+        }
+    }, [deviceId, is16Levels, activePadIndex, sixteenLevelsTarget]);
 
     useEffect(() => {
         if (!selectedTrackId || !state) {
@@ -221,8 +247,51 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
         return `${preset.name} ${preset.description} ${preset.tags.join(' ')}`.toLowerCase().includes(presetSearch);
     });
 
+    function handleToggle16Levels(): void {
+        const next = !is16Levels;
+        setIs16Levels(next);
+        if (next) {
+            enter16Levels(deviceId, selectedPadIndex, sixteenLevelsTarget);
+        } else {
+            exit16Levels(deviceId);
+        }
+    }
+
+    function handleToggleRepeat(): void {
+        const next = !isRepeatActive;
+        setIsRepeatActive(next);
+        if (!next) {
+            stopNoteRepeat(deviceId);
+        }
+    }
+
     function triggerPad(index: number): void {
-        triggerToasterPad(deviceId, index, 100);
+        const bpm = transportStore.value?.tempo ?? 120;
+        if (isRepeatActive) {
+            if (is16Levels) {
+                if (sixteenLevelsTarget === 'velocity') {
+                    const velocity = Math.round(((index + 1) / 16) * 127);
+                    startNoteRepeat(deviceId, selectedPadIndex, velocity, bpm, repeatRate);
+                } else {
+                    trigger16Level(index, deviceId);
+                    startNoteRepeat(deviceId, selectedPadIndex, 127, bpm, repeatRate);
+                }
+            } else {
+                startNoteRepeat(deviceId, index, 100, bpm, repeatRate);
+            }
+        } else {
+            if (is16Levels) {
+                trigger16Level(index, deviceId);
+            } else {
+                triggerToasterPad(deviceId, index, 100);
+            }
+        }
+    }
+
+    function releasePad(_index: number): void {
+        if (isRepeatActive) {
+            stopNoteRepeat(deviceId);
+        }
     }
 
     function handleSelectPattern(patternId: string): void {
@@ -335,11 +404,70 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                         title="Pad bay"
                         detail="Pads stay chunky, the active hit stays obvious, and the quick shaping lives right here."
                     >
+                        <Row justify="between" align="center" gap={2} className="mb-2">
+                            <Row align="center" gap={1.5}>
+                                <DawPluginToggle
+                                    pressed={is16Levels}
+                                    tone="peach"
+                                    size="xs"
+                                    onClick={handleToggle16Levels}
+                                    aria-label="16 Levels mode"
+                                >
+                                    16 Levels
+                                </DawPluginToggle>
+                                {is16Levels ? (
+                                    <DawCompactSelect
+                                        size="micro"
+                                        value={sixteenLevelsTarget}
+                                        onChange={(event) =>
+                                            setSixteenLevelsTarget(event.target.value as SixteenLevelsTarget)
+                                        }
+                                        aria-label="16 Levels target"
+                                    >
+                                        <option value="tune">Tune</option>
+                                        <option value="velocity">Velocity</option>
+                                        <option value="decay">Decay</option>
+                                        <option value="filter">Filter</option>
+                                    </DawCompactSelect>
+                                ) : null}
+                            </Row>
+                            <Row align="center" gap={1.5}>
+                                <DawPluginToggle
+                                    pressed={isRepeatActive}
+                                    tone="amber"
+                                    size="xs"
+                                    onClick={handleToggleRepeat}
+                                    aria-label="Note repeat mode"
+                                >
+                                    Repeat
+                                </DawPluginToggle>
+                                {isRepeatActive ? (
+                                    <DawCompactSelect
+                                        size="micro"
+                                        value={repeatRate}
+                                        onChange={(event) => setRepeatRate(event.target.value as NoteRepeatRate)}
+                                        aria-label="Note repeat rate"
+                                    >
+                                        <option value="1/4">1/4</option>
+                                        <option value="1/8">1/8</option>
+                                        <option value="1/16">1/16</option>
+                                        <option value="1/32">1/32</option>
+                                        <option value="1/4t">1/4T</option>
+                                        <option value="1/8t">1/8T</option>
+                                        <option value="1/16t">1/16T</option>
+                                        <option value="1/32t">1/32T</option>
+                                    </DawCompactSelect>
+                                ) : null}
+                            </Row>
+                        </Row>
                         <PadGrid
                             pads={kit.pads}
                             selectedIndex={selectedPadIndex}
                             onSelectPad={(index) => selectPad(deviceId, index)}
                             onTriggerPad={triggerPad}
+                            sixteenLevelsTarget={is16Levels ? sixteenLevelsTarget : null}
+                            targetPadName={selectedPad?.name}
+                            onReleasePad={releasePad}
                         />
 
                         <Row gap={3} className="toaster-window px-3 py-3">

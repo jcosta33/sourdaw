@@ -130,3 +130,139 @@ describe('PadGrid — pad state display', () => {
         expect(screen.getByText('65%')).toBeTruthy();
     });
 });
+
+describe('PadGrid — 16 Levels mode', () => {
+    it('renders 16-levels display text, secondary pad name, and aria-labels for velocity', () => {
+        const pads = Array.from({ length: 16 }, (_, index) => makePad(index));
+        render(
+            <PadGrid
+                pads={pads}
+                selectedIndex={0}
+                onSelectPad={vi.fn()}
+                onTriggerPad={vi.fn()}
+                sixteenLevelsTarget="velocity"
+                targetPadName="Custom Kick"
+            />
+        );
+
+        // Level 1: round((1/16)*127) = 8
+        expect(screen.getByText('Vel 8')).toBeTruthy();
+        // Level 16: round((16/16)*127) = 127
+        expect(screen.getByText('Vel 127')).toBeTruthy();
+        // All pads show the targetPadName as secondary
+        expect(screen.getAllByText('Custom Kick').length).toBe(16);
+
+        // aria-labels
+        expect(screen.getByRole('button', { name: 'Trigger level 1 (Vel 8) of Custom Kick' })).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Trigger level 16 (Vel 127) of Custom Kick' })).toBeTruthy();
+    });
+
+    it.each([
+        { target: 'tune' as const, level0: '-21.0st', level15: '24.0st' },
+        { target: 'decay' as const, level0: '6%', level15: '100%' },
+        { target: 'filter' as const, level0: '31Hz', level15: '20000Hz' },
+    ])('renders correct level readouts for $target target', ({ target, level0, level15 }) => {
+        const pads = Array.from({ length: 16 }, (_, index) => makePad(index));
+        render(
+            <PadGrid
+                pads={pads}
+                selectedIndex={0}
+                onSelectPad={vi.fn()}
+                onTriggerPad={vi.fn()}
+                sixteenLevelsTarget={target}
+            />
+        );
+
+        expect(screen.getByText(level0)).toBeTruthy();
+        expect(screen.getByText(level15)).toBeTruthy();
+    });
+
+    it('does not fire onSelectPad on pad click when sixteenLevelsTarget is set', () => {
+        const onSelectPad = vi.fn();
+        const pads = Array.from({ length: 16 }, (_, index) => makePad(index));
+        render(
+            <PadGrid
+                pads={pads}
+                selectedIndex={0}
+                onSelectPad={onSelectPad}
+                onTriggerPad={vi.fn()}
+                sixteenLevelsTarget="tune"
+            />
+        );
+
+        const pad2 = screen.getByRole('button', { name: /trigger level 3/i });
+        fireEvent.click(pad2);
+
+        expect(onSelectPad).not.toHaveBeenCalled();
+    });
+});
+
+describe('PadGrid — release events', () => {
+    it('fires onReleasePad on mouseUp when pressed', () => {
+        const onReleasePad = vi.fn();
+        const pads = Array.from({ length: 4 }, (_, index) => makePad(index));
+        render(
+            <PadGrid
+                pads={pads}
+                selectedIndex={0}
+                onSelectPad={vi.fn()}
+                onTriggerPad={vi.fn()}
+                onReleasePad={onReleasePad}
+            />
+        );
+
+        const pad = screen.getByRole('button', { name: /trigger p1/i });
+        fireEvent.mouseDown(pad, { button: 0 });
+        fireEvent.mouseUp(pad);
+
+        expect(onReleasePad).toHaveBeenCalledWith(1);
+    });
+
+    it('fires onReleasePad on mouseLeave when pressed, but not when unpressed', () => {
+        const onReleasePad = vi.fn();
+        const pads = Array.from({ length: 4 }, (_, index) => makePad(index));
+        render(
+            <PadGrid
+                pads={pads}
+                selectedIndex={0}
+                onSelectPad={vi.fn()}
+                onTriggerPad={vi.fn()}
+                onReleasePad={onReleasePad}
+            />
+        );
+
+        const pad = screen.getByRole('button', { name: /trigger p2/i });
+        fireEvent.mouseLeave(pad);
+        expect(onReleasePad).not.toHaveBeenCalled();
+
+        fireEvent.mouseDown(pad, { button: 0 });
+        fireEvent.mouseLeave(pad);
+        expect(onReleasePad).toHaveBeenCalledWith(2);
+    });
+
+    it('fires onReleasePad on keyUp for Enter and Space', () => {
+        const onReleasePad = vi.fn();
+        const pads = Array.from({ length: 4 }, (_, index) => makePad(index));
+        render(
+            <PadGrid
+                pads={pads}
+                selectedIndex={0}
+                onSelectPad={vi.fn()}
+                onTriggerPad={vi.fn()}
+                onReleasePad={onReleasePad}
+            />
+        );
+
+        const pad = screen.getByRole('button', { name: /trigger p3/i });
+        fireEvent.keyUp(pad, { key: 'Enter' });
+        expect(onReleasePad).toHaveBeenCalledWith(3);
+
+        onReleasePad.mockClear();
+        fireEvent.keyUp(pad, { key: ' ' });
+        expect(onReleasePad).toHaveBeenCalledWith(3);
+
+        onReleasePad.mockClear();
+        fireEvent.keyUp(pad, { key: 'Tab' });
+        expect(onReleasePad).not.toHaveBeenCalled();
+    });
+});
