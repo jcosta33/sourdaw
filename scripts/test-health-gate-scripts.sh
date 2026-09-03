@@ -544,6 +544,7 @@ expect(!/^\s*paths\s*=/mu.test(gitleaksConfig), 'trusted Gitleaks config must no
 const rfc4122ExampleUuid = ['123e4567', 'e89b', '12d3', 'a456', '426614174000'].join('-');
 const rfc4122ExampleUuidSuccessor = ['123e4567', 'e89b', '12d3', 'a456', '426614174001'].join('-');
 const reviewPublicationRecoveryUuid = ['2cd01237', 'cf63', '4579', '9e58', '85893794529d'].join('-');
+const deliveryLockRecoveryUuid = ['f515a71d', 'c25a', '4714', 'b725', 'ef6e9b141005'].join('-');
 function trustedAllowlistRegexes(config) {
     const allowlist = /^\[allowlist\]\s*$([\s\S]*)/mu.exec(config)?.[1];
     const array = allowlist === undefined ? undefined : /^\s*regexes\s*=\s*\[([\s\S]*?)^\s*\]/mu.exec(allowlist)?.[1];
@@ -568,6 +569,7 @@ const exactAllowlistRegexes = [
     rfc4122ExampleUuid,
     rfc4122ExampleUuidSuccessor,
     reviewPublicationRecoveryUuid,
+    deliveryLockRecoveryUuid,
 ];
 expect(
     gitleaksConfig.includes(`'''${rfc4122ExampleUuid}'''`) &&
