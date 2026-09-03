@@ -57,6 +57,18 @@ describe('classifyRemoteBranch', () => {
         const value = branch('beta', 'tip-beta');
         expect(classifyRemoteBranch(value, [closedPr(2, 'tip-beta')])).toBe('spent');
     });
+
+    it('should classify an incompletely listed branch as unlisted even when a fetched node is OPEN', () => {
+        const value = branch('gamma', 'tip-gamma');
+        expect(classifyRemoteBranch(value, [openPr(3, 'tip-gamma')], false)).toBe('unlisted');
+    });
+
+    it('should classify a branch with exactly ten of ten fetched pull requests as spent, not unlisted', () => {
+        const value = branch('delta', 'tip-delta');
+        const pullRequests = Array.from({ length: 9 }, (_unused, index) => closedPr(index + 1, `old-tip-${index}`));
+        pullRequests.push(mergedPr(10, 'tip-delta'));
+        expect(classifyRemoteBranch(value, pullRequests, true)).toBe('spent');
+    });
 });
 
 describe('encodeBranchRefPath', () => {
@@ -112,7 +124,8 @@ function fakePort(input: FakePortInput): {
         listBranches: () => input.branches,
         pullRequestsFor: (names) => {
             pullRequestBatchSizes.push(names.length);
-            return input.pullRequestsFor(names);
+            const raw = input.pullRequestsFor(names);
+            return new Map(names.map((name) => [name, { pullRequests: raw.get(name) ?? [], complete: true }]));
         },
         branchTip: (name) => {
             branchTipCalls.push(name);
@@ -325,6 +338,31 @@ describe('pruneRemoteBranches', () => {
         expect(deleteCalls).toEqual([]);
         expect(lines).toContain('kept rebased: moved at re-check');
     });
+
+    it('should keep a branch as unlisted at plan time when its pull-request listing is incomplete, even with ten MERGED nodes at the tip', () => {
+        // Ten MERGED nodes at the branch tip look spent to classifyRemoteBranch, but the listing is
+        // truncated (an eleventh, unfetched pull request could be OPEN and invisible). The port signals
+        // that with complete: false, and classifyRemoteBranch must return 'unlisted' before ever looking
+        // at pull-request state, so the branch is kept rather than silently treated as spent.
+        const target = branch('busy', 'tip-busy');
+        const tenMergedAtTip = Array.from({ length: 10 }, (_unused, index) => mergedPr(index + 1, 'tip-busy'));
+        const deleteCalls: string[] = [];
+        const port: PruneRemoteBranchesPort = {
+            listBranches: () => [target],
+            pullRequestsFor: (names) =>
+                new Map(names.map((name) => [name, { pullRequests: tenMergedAtTip, complete: false }])),
+            branchTip: () => target.tip,
+            deleteBranch: (name) => {
+                deleteCalls.push(name);
+                return 'deleted';
+            },
+        };
+        const { log, lines } = collectingLog();
+        const code = pruneRemoteBranches(dryArgs(), port, log);
+        expect(code).toBe(0);
+        expect(deleteCalls).toEqual([]);
+        expect(lines).toContain('kept busy: pull requests not fully listed');
+    });
 });
 
 describe('deleteRemoteBranch', () => {
@@ -348,6 +386,22 @@ describe('deleteRemoteBranch', () => {
         }
         expect(caught).toBeInstanceOf(Error);
         expect((caught as Error).message).toContain('missing-branch');
+        expect((caught as Error).cause).toBe(original);
+    });
+
+    it('should reject an HTTP 422 that is not Reference-does-not-exist, naming the branch and carrying the original error as cause', () => {
+        const original = new Error('gh: Validation Failed: Cannot delete a protected branch (HTTP 422)');
+        const runner = (): string => {
+            throw original;
+        };
+        let caught: unknown;
+        try {
+            deleteRemoteBranch('main', runner);
+        } catch (error) {
+            caught = error;
+        }
+        expect(caught).toBeInstanceOf(Error);
+        expect((caught as Error).message).toContain('main');
         expect((caught as Error).cause).toBe(original);
     });
 

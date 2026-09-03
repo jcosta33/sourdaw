@@ -21,11 +21,12 @@ export type RemoteBranch = { name: string; tip: string };
 export type PullRequestState = 'OPEN' | 'MERGED' | 'CLOSED';
 export type BranchPullRequest = { number: number; state: PullRequestState; headRefOid: string };
 export type DeleteOutcome = 'deleted' | 'already-gone';
-export type BranchClass = 'protected' | 'open' | 'unpublished' | 'moved' | 'spent';
+export type BranchClass = 'protected' | 'unlisted' | 'open' | 'unpublished' | 'moved' | 'spent';
+export type PullRequestListing = { pullRequests: BranchPullRequest[]; complete: boolean };
 
 export type PruneRemoteBranchesPort = {
     listBranches: () => RemoteBranch[];
-    pullRequestsFor: (branches: string[]) => Map<string, BranchPullRequest[]>;
+    pullRequestsFor: (branches: string[]) => Map<string, PullRequestListing>;
     branchTip: (name: string) => string | undefined;
     deleteBranch: (name: string) => DeleteOutcome;
 };
@@ -75,9 +76,16 @@ export function encodeBranchRefPath(name: string): string {
     return name.split('/').map(encodeURIComponent).join('/');
 }
 
-export function classifyRemoteBranch(branch: RemoteBranch, pullRequests: BranchPullRequest[]): BranchClass {
+export function classifyRemoteBranch(
+    branch: RemoteBranch,
+    pullRequests: BranchPullRequest[],
+    complete: boolean = true
+): BranchClass {
     if (branch.name === REQUIRED_BASE_BRANCH) {
         return 'protected';
+    }
+    if (!complete) {
+        return 'unlisted';
     }
     if (pullRequests.some((pullRequest) => pullRequest.state === 'OPEN')) {
         return 'open';
@@ -99,31 +107,39 @@ function batchNames(names: string[], size: number): string[][] {
     return batches;
 }
 
-function fetchPullRequestsInBatches(names: string[], port: PruneRemoteBranchesPort): Map<string, BranchPullRequest[]> {
-    const result = new Map<string, BranchPullRequest[]>();
+function fetchPullRequestsInBatches(names: string[], port: PruneRemoteBranchesPort): Map<string, PullRequestListing> {
+    const result = new Map<string, PullRequestListing>();
     for (const batch of batchNames(names, BATCH_SIZE)) {
         const batchResult = port.pullRequestsFor(batch);
         for (const name of batch) {
-            const pullRequests = batchResult.get(name);
-            if (pullRequests === undefined) {
+            const listing = batchResult.get(name);
+            if (listing === undefined) {
                 fail(`missing pull-request batch result for ${name}`);
             }
-            result.set(name, pullRequests);
+            result.set(name, listing);
         }
     }
     return result;
 }
 
-function classifyBranches(branches: RemoteBranch[], prMap: Map<string, BranchPullRequest[]>): Map<string, BranchClass> {
+function classifyBranches(branches: RemoteBranch[], prMap: Map<string, PullRequestListing>): Map<string, BranchClass> {
     const classes = new Map<string, BranchClass>();
     for (const branch of branches) {
-        classes.set(branch.name, classifyRemoteBranch(branch, prMap.get(branch.name) ?? []));
+        const listing = prMap.get(branch.name);
+        classes.set(branch.name, classifyRemoteBranch(branch, listing?.pullRequests ?? [], listing?.complete ?? true));
     }
     return classes;
 }
 
 function countByClass(classes: Map<string, BranchClass>): Record<BranchClass, number> {
-    const counts: Record<BranchClass, number> = { protected: 0, open: 0, unpublished: 0, moved: 0, spent: 0 };
+    const counts: Record<BranchClass, number> = {
+        protected: 0,
+        unlisted: 0,
+        open: 0,
+        unpublished: 0,
+        moved: 0,
+        spent: 0,
+    };
     for (const value of classes.values()) {
         counts[value] += 1;
     }
@@ -152,10 +168,22 @@ function printNamesUnderHeading(
     }
 }
 
+function printUnlistedBranches(
+    branches: RemoteBranch[],
+    classes: Map<string, BranchClass>,
+    log: (message: string) => void
+): void {
+    for (const branch of branches) {
+        if (classes.get(branch.name) === 'unlisted') {
+            log(`kept ${branch.name}: pull requests not fully listed`);
+        }
+    }
+}
+
 function printPlan(
     branches: RemoteBranch[],
     classes: Map<string, BranchClass>,
-    prMap: Map<string, BranchPullRequest[]>,
+    prMap: Map<string, PullRequestListing>,
     log: (message: string) => void
 ): void {
     const counts = countByClass(classes);
@@ -164,12 +192,13 @@ function printPlan(
     }
     for (const branch of branches) {
         if (classes.get(branch.name) === 'spent') {
-            const pr = matchingPullRequest(branch, prMap.get(branch.name) ?? []);
+            const pr = matchingPullRequest(branch, prMap.get(branch.name)?.pullRequests ?? []);
             log(`spent ${branch.name} ${branch.tip.slice(0, 9)} #${pr.number}:${pr.state}`);
         }
     }
     printNamesUnderHeading('moved', branches, classes, log);
     printNamesUnderHeading('unpublished', branches, classes, log);
+    printUnlistedBranches(branches, classes, log);
 }
 
 type ApplyOutcome = {
@@ -217,8 +246,13 @@ function applySpentBranches(
             log(`already gone ${branch.name}`);
             continue;
         }
-        const freshPullRequests = port.pullRequestsFor([branch.name]).get(branch.name) ?? [];
-        const recheckClass = classifyRemoteBranch({ name: branch.name, tip: freshTip }, freshPullRequests);
+        const freshListing = port.pullRequestsFor([branch.name]).get(branch.name);
+        const freshPullRequests = freshListing?.pullRequests ?? [];
+        const recheckClass = classifyRemoteBranch(
+            { name: branch.name, tip: freshTip },
+            freshPullRequests,
+            freshListing?.complete ?? true
+        );
         const tipMoved = freshTip !== branch.tip;
         if (recheckClass !== 'spent' || tipMoved) {
             keptAtRecheck += 1;
@@ -344,31 +378,35 @@ function pullRequestBatchQuery(size: number): string {
     const aliases = Array.from(
         { length: size },
         (_unused, index) =>
-            `b${index}: pullRequests(headRefName:$n${index}, first:10, states:[OPEN,MERGED,CLOSED], orderBy:{field:CREATED_AT,direction:DESC}){nodes{number state headRefOid}}`
+            `b${index}: pullRequests(headRefName:$n${index}, first:10, states:[OPEN,MERGED,CLOSED], orderBy:{field:CREATED_AT,direction:DESC}){totalCount nodes{number state headRefOid}}`
     ).join(' ');
     return `query(${params}){repository(owner:"${REQUIRED_OWNER}",name:"${REQUIRED_NAME}"){${aliases}}}`;
 }
 
-function pullRequestsForBranches(names: string[], gh: Gh): Map<string, BranchPullRequest[]> {
+function pullRequestsForBranches(names: string[], gh: Gh): Map<string, PullRequestListing> {
     if (names.length === 0) {
         return new Map();
     }
     const query = pullRequestBatchQuery(names.length);
     const fields = names.flatMap((name, index) => ['-f', `n${index}=${name}`]);
     const response = graphql(gh, query, fields, 'branch pull requests') as {
-        data?: { repository?: Record<string, { nodes?: unknown } | undefined> };
+        data?: { repository?: Record<string, { nodes?: unknown; totalCount?: unknown } | undefined> };
     };
     const repository = response.data?.repository;
     if (repository === undefined) {
         fail('invalid branch pull-request response');
     }
-    const result = new Map<string, BranchPullRequest[]>();
+    const result = new Map<string, PullRequestListing>();
     for (const [index, name] of names.entries()) {
         const alias = repository[`b${index}`];
         if (alias === undefined || !Array.isArray(alias.nodes)) {
             fail(`missing pull-request alias for ${name}`);
         }
-        result.set(name, alias.nodes.map(toBranchPullRequest));
+        if (typeof alias.totalCount !== 'number') {
+            fail(`invalid pull-request total count for ${name}`);
+        }
+        const pullRequests = alias.nodes.map(toBranchPullRequest);
+        result.set(name, { pullRequests, complete: pullRequests.length === alias.totalCount });
     }
     return result;
 }
