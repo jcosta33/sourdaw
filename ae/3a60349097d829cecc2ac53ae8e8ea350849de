@@ -1,0 +1,22 @@
+src/modules/AiRuntime/useCases/__tests__/landProjectEdit.ts
+  s_28abfd94826e36::t_40f9761b8add99 9-13,16-17,19-21
+  s_28abfd94826e36::t_1d1454a20888df 18
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentExecution.spec.ts
+  s_28abfd94826e36::t_ee076c209948bf 372-374
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "ae3a60349097d829cecc2ac53ae8e8ea350849de",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
