@@ -1,0 +1,108 @@
+src/modules/AiRuntime/AGENTS.md
+  s_ac03a4ebaa3f6e::t_72ccbf1c51670c 28-30
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_ac03a4ebaa3f6e::t_6ba4505d5d51c8 504-508
+  s_ac03a4ebaa3f6e::t_6dc8cecac809bd 172-173,185
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_ac03a4ebaa3f6e::t_57ed982f964156 4
+  s_ac03a4ebaa3f6e::t_a0919eed84e86a 940
+src/modules/AiRuntime/transformers/describePlanningOutcome.ts
+  s_ac03a4ebaa3f6e::t_6a081999c42b6f 10-12
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentCompilation.spec.ts
+  s_ac03a4ebaa3f6e::t_cdb81b97e6b1b2 303
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  s_ac03a4ebaa3f6e::t_55f22ace4576ef 325
+  s_ac03a4ebaa3f6e::t_a025eea2fac2f6 311-315
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_ac03a4ebaa3f6e::t_5f6a4f6678e81e 24
+  s_ac03a4ebaa3f6e::t_2a762e5785d985 228
+.agents/decisions/0042-high-level-intent-compiles-through-the-bounded-catalog.md
+  s_ac03a4ebaa3f6e::t_e87c701f65b0ec 59-66
+  s_ac03a4ebaa3f6e::t_1a3f3e5e894e6f 92-104
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_ac03a4ebaa3f6e::t_3e1d415fcbe47f 3
+  s_ac03a4ebaa3f6e::t_b7c199158d9a89 196
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_ac03a4ebaa3f6e::t_09ef1858dc383e 869-875
+  s_ac03a4ebaa3f6e::t_d250e4c9791d44 1158-1160
+  s_ac03a4ebaa3f6e::t_094905d971ee3b 840-843
+  s_ac03a4ebaa3f6e::t_0958419c6c0ae0 22
+  s_ac03a4ebaa3f6e::t_e458dd28b14ead 844-857
+src/modules/AiRuntime/models/PlanningOutcome.ts
+  s_ac03a4ebaa3f6e::t_156d16ee957bff 11-15
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_ac03a4ebaa3f6e::t_ef8b2fa37b594e 3701-3730
+  s_ac03a4ebaa3f6e::t_2cf803ad7d6afd 3758-3760
+  s_ac03a4ebaa3f6e::t_d4b57fd6fcc3ba 32
+  s_ac03a4ebaa3f6e::t_53b071148cb7aa 3786-3788
+  s_ac03a4ebaa3f6e::t_38febd65e66db3 3871-3872
+  s_ac03a4ebaa3f6e::t_13cf14acd1ec9e 3700
+  s_55916eec834fd4::t_afe159d381a91c 10,3887,3917,4137,4220,4255
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentAdversarial.spec.ts
+  s_ac03a4ebaa3f6e::t_8adb917e164c9d 556
+  s_ac03a4ebaa3f6e::t_66c03a54b1a65d 6-10
+  s_ac03a4ebaa3f6e::t_c5a97a92afdea9 184
+  s_ac03a4ebaa3f6e::t_70470b8cc3a4e5 516-517,519-522,526-527
+  s_ac03a4ebaa3f6e::t_e7d90101bf97c2 407-418,422-423
+  s_ac03a4ebaa3f6e::t_498db96ef00b78 518,523,531
+  s_ac03a4ebaa3f6e::t_bc5d0a4951f470 462-515,524-525,528-530,532-540
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_ac03a4ebaa3f6e::t_f32aba6927b61c 406-430
+  s_ac03a4ebaa3f6e::t_fa7dca6611e4b8 1641-1645
+  s_ac03a4ebaa3f6e::t_9f6ec66bcf77a9 10
+  s_ac03a4ebaa3f6e::t_cfee345e273917 405
+  s_ac03a4ebaa3f6e::t_79c9f8f7b5a80f 1640
+src/modules/Command/useCases/__tests__/addNotesCommandRegistration.spec.ts
+  s_ac03a4ebaa3f6e::t_02b388e120511e 26
+  s_ac03a4ebaa3f6e::t_8613e61805609a 264
+src/modules/AiRuntime/useCases/agentReference/batchLocalBindingProducers.ts
+  s_ac03a4ebaa3f6e::t_ed2e39a88d404c 15-28
+  s_ac03a4ebaa3f6e::t_75b89dc9fd5edb 37-40
+  s_ac03a4ebaa3f6e::t_00ae45ebf98543 29-36,41-42
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_ac03a4ebaa3f6e::t_cf82a041d783b6 4
+  s_ac03a4ebaa3f6e::t_0d5f307948ee7c 30-41
+src/modules/AiRuntime/transformers/promptParser/hasHighLevelCreationEvidence.ts
+  s_ac03a4ebaa3f6e::t_f13dcd9cc1ead7 28
+  s_ac03a4ebaa3f6e::t_ea024fe2c07271 5-18,23-27,29-38,41,49
+src/modules/AiRuntime/models/SemanticCommandList.ts
+  s_ac03a4ebaa3f6e::t_c9a873106bd435 18-22
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_ac03a4ebaa3f6e::t_bcbe173254113b 1071
+  s_ac03a4ebaa3f6e::t_61413d8f5a898a 797-818
+  s_ac03a4ebaa3f6e::t_e1f4847679b1fc 66-67
+  s_ac03a4ebaa3f6e::t_505de183670e16 961,1092
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/orchestratePromptChatRequest.spec.ts
+  s_ac03a4ebaa3f6e::t_c9d4b6e31505bb 560-564
+  s_ac03a4ebaa3f6e::t_1075c0f7ad5eb9 581-582
+src/modules/AiRuntime/transformers/promptParser/__tests__/hasHighLevelCreationEvidence.spec.ts
+  s_ac03a4ebaa3f6e::t_0f13fa84b4f3c8 1-28
+src/modules/MIDI/transformers/isMaterializedAddNotesArguments.ts
+  s_ac03a4ebaa3f6e::t_712cbbe0ab4307 1,49
+src/utils/midiNoteBatchLimits.ts
+  s_ac03a4ebaa3f6e::t_40c1a2c2e09b78 9-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "ac5ece86f6ab76d051a13c697ad85fe5661a0eba",
+  "prompts": {},
+  "sessions": {
+    "s_55916eec834fd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a82b0370a0cde5723",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
