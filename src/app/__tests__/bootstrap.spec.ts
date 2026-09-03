@@ -98,6 +98,7 @@ const {
     setTrackPanMock,
     setMidiLearnDependenciesMock,
     registerCrdtStorageRuntimeMock,
+    captureProjectIdentityMock,
     captureProjectRevisionMock,
     projectRevisionMatchesLiveIgnoringCommandCheckpointMock,
     agentProjectInspectionSetProviderMock,
@@ -166,6 +167,7 @@ const {
         setTrackPanMock: vi.fn(),
         setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
+        captureProjectIdentityMock: vi.fn<() => string>(() => 'identity-1'),
         captureProjectRevisionMock: vi.fn<() => string>(() => 'revision-1'),
         projectRevisionMatchesLiveIgnoringCommandCheckpointMock: vi.fn<(expectedRevision: string) => boolean>(
             () => true
@@ -346,6 +348,7 @@ vi.mock('#/modules/CrdtDocument/stores', () => ({
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     DOC_PREFIX_ROOT: 'root',
     agentProjectInspectionPort: { setProvider: agentProjectInspectionSetProviderMock },
+    captureProjectIdentity: captureProjectIdentityMock,
     captureProjectRevision: captureProjectRevisionMock,
     projectRevisionMatchesLiveIgnoringCommandCheckpoint: projectRevisionMatchesLiveIgnoringCommandCheckpointMock,
     createCommandPreviewWorkspace: noop,

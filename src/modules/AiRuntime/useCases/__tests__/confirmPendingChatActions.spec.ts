@@ -39,6 +39,7 @@ import {
 } from '#/modules/Command/useCases';
 import * as commandUseCases from '#/modules/Command/useCases';
 import {
+    captureProjectIdentity,
     captureProjectRevision,
     captureUnownedProjectMutations,
     createCommandRecoveryWorkspace,
@@ -624,7 +625,7 @@ describe('confirmPendingChatActions transaction admission', () => {
         const commandBatch = compileVersionedCommandBatchEnvelope({
             runId: 'confirmation-admission',
             batchId: 'group-admission',
-            projectId: projectRevision,
+            projectId: captureProjectIdentity(),
             baseRevision: projectRevision,
             intent: 'set tempo to 128',
             commands: [serializeVersionedCommandEnvelope(envelope)],
