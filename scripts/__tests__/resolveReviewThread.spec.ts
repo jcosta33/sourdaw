@@ -281,8 +281,10 @@ type Input = {
     existingReplyReviewCommitOid?: string;
     existingReplyReviewAuthorNodeId?: string | null;
     existingReplyReviewAuthorType?: string | null;
+    existingReplyReviewFullDatabaseId?: string;
     inspectedPullRequestReviewAuthorNodeId?: string | null;
     inspectedPullRequestReviewAuthorType?: string | null;
+    inspectedPullRequestReviewState?: ReviewState;
     existingReplyReviewMissing?: boolean;
     secondaryReplyReviewState?: ReviewState;
     secondaryReplyReviewId?: string;
@@ -471,6 +473,9 @@ function fakePort(input: Input = {}) {
                 : existingReviewAuthorType;
         if (!reviewMissing) {
             pushReview(configuredReviewId, reviewState, reviewBody, reviewCommitOid);
+            if (!useSecondaryReplyReview && input.existingReplyReviewFullDatabaseId !== undefined) {
+                reviews[reviews.length - 1]!.fullDatabaseId = input.existingReplyReviewFullDatabaseId;
+            }
             reviews[reviews.length - 1]!.authorNodeId = reviewAuthorNodeId;
             reviews[reviews.length - 1]!.authorType = reviewAuthorType;
         }
@@ -665,7 +670,10 @@ function fakePort(input: Input = {}) {
             return {
                 id: review.id,
                 fullDatabaseId: review.fullDatabaseId,
-                state: review.state,
+                state:
+                    input.inspectedPullRequestReviewState === undefined
+                        ? review.state
+                        : input.inspectedPullRequestReviewState,
                 body: review.body,
                 commitOid: review.commitOid,
                 authorNodeId:
@@ -5816,11 +5824,13 @@ describe('review thread resolution', () => {
                 initialResolvedByType: null,
             },
             /unreconciled in-flight updateReviewBody mutation/i,
+            {},
         ],
         [
             'the immutable review commit changes',
             { existingReplyReviewCommitOid: movedHead },
             /could not prove an unlanded historical review/i,
+            {},
         ],
         [
             'a second Done marker is attached',
@@ -5830,15 +5840,53 @@ describe('review thread resolution', () => {
                 secondaryReplyReviewCommitOid: head,
             },
             /unreconciled in-flight updateReviewBody mutation/i,
+            {},
         ],
         [
             'the immutable review is attached to another thread',
             { attachedReviewThreadIdsByReviewId: { [reviewId]: [otherThreadId] } },
             /attached review-thread comments/i,
+            {},
+        ],
+        [
+            'the owner records a different review database identity',
+            {},
+            /could not prove an unlanded historical review/i,
+            { reviewDatabaseId: '9223372036854775809' },
+        ],
+        [
+            'the immutable review actor drifts',
+            { existingReplyReviewAuthorNodeId: REVIEWER_BOT_NODE_ID },
+            /non-author review/i,
+            {},
+        ],
+        [
+            'the immutable review database identity drifts',
+            { existingReplyReviewFullDatabaseId: '9223372036854775809' },
+            /could not prove an unlanded historical review/i,
+            {},
+        ],
+        [
+            'the immutable review body drifts',
+            { existingReplyReviewBody: 'drifted immutable body' },
+            /noncanonical author review/i,
+            {},
+        ],
+        [
+            'the historical review receipt state drifts',
+            { inspectedPullRequestReviewState: 'APPROVED' },
+            /could not prove an unlanded historical review/i,
+            {},
+        ],
+        [
+            'a pending Done marker is attached',
+            { addPendingReplyMarkerToResolvedThread: true },
+            /unreconciled in-flight updateReviewBody mutation/i,
+            {},
         ],
     ] as const)(
         'retains a markerless v6 immutable H1 recovery with owner and pull request at H2 when %s',
-        (_label, override, expectedError) => {
+        (_label, override, expectedError, mutationOverride) => {
             const repository = createTemporaryGitRepository();
             const { port: basePort, calls } = fakePort({
                 heads: [movedHead, movedHead, movedHead],
@@ -5869,6 +5917,7 @@ describe('review thread resolution', () => {
                 reviewDatabaseId: '9223372036854775808',
                 reviewCommitOid: head,
                 body: resolutionReviewSummary(pullRequestId, threadId, head),
+                ...mutationOverride,
             };
             try {
                 const sharedOwnerOid = writeSharedMutationLockOwnerBlob(repository, 999999);

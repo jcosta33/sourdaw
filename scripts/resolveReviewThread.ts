@@ -5285,7 +5285,7 @@ function hasExactPreMarkerImmutableEmptySubmittedReviewRecovery(
     }
     assertCompletedResolution(thread, owner.threadId);
     assertManagedReplyMarkersReadable(thread, context, ['PENDING', 'COMMENTED'], true);
-    const managed = managedReplyMarkers(thread, context, ['COMMENTED'], true);
+    const managed = managedReplyMarkers(thread, context, ['PENDING', 'COMMENTED'], true);
     if (managed.length !== 1) {
         return false;
     }
