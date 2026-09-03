@@ -1,0 +1,33 @@
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_ac03a4ebaa3f6e::t_31c88b17424449 20,501-504,518,762,804-814,1312-1327,1332-1341,1567-1581
+.github/workflows/validation.yml
+  s_7829fc4cad3af3::t_da0c5b0c717bb4 597-611,637-648
+scripts/deliverPullRequest.ts
+  s_ac03a4ebaa3f6e::t_3262523e0b37e9 507-512
+scripts/test-health-gate-scripts.sh
+  s_ac03a4ebaa3f6e::t_85ad63657181ca 408-418,420-421,424-430,453-460
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "6f03095280ba7a8ecd38ffd1c72c28c9e093c9e4",
+  "prompts": {},
+  "sessions": {
+    "s_7829fc4cad3af3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aa3f96dd301f6a4d2",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
