@@ -5,7 +5,7 @@ import { getExecutableAppActionToolSchemas } from '#/modules/Command/useCases';
 import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
 import { isModelProviderFailureError } from '../../../errors/ModelProviderFailureError';
 import { TOOL_PLAN_MAX_OUTPUT_TOKENS } from '../../../models/HostedToolPlanLimits';
-import { type ToolSchema } from '../../../models/ToolDefinitions';
+import { DAW_TOOL_SCHEMAS, type ToolSchema } from '../../../models/ToolDefinitions';
 import { WORKFLOW_ACTION_TOOL_NAMES } from '../../../models/WorkflowCapability';
 import { getPlanningProviderSchemaContract } from '../../planningProviderSchema';
 import { generateToolPlanningOutcome, type ProviderAttemptAdmission } from '../inference';
@@ -257,22 +257,29 @@ describe('generateToolPlanningOutcome', () => {
         mocks.backendChain.value = ['webllm'];
         mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
 
-        // Build the production schema: planning provider contract (6 tools: 1 workflow capability + 5 application)
-        // plus workflow action tools (23) plus one additional non-mandatory tool to reach the 30-tool cap.
+        // Build the exact schema list parsePromptToActions.ts assembles: the planning provider
+        // contract (12 schemas: 11 agent-catalog tools + selectWorkflowCapability) plus the
+        // deduplicated workflow action tool schemas (23), for 35 total.
         const planningContract = getPlanningProviderSchemaContract().schemas;
         const executableSchemas = getExecutableAppActionToolSchemas();
-        const workflowActionSchemas = Array.from(
-            executableSchemas.filter((tool) => WORKFLOW_ACTION_TOOL_NAMES.has(tool.function.name))
+        const specializedWorkflowToolSchemas: readonly ToolSchema[] = [
+            toolSchema('automateTrackGainRange', 'Automate track gain over a named section range'),
+            toolSchema('automateSendRange', 'Automate send reduction over a named section range'),
+        ];
+        const workflowToolSchemas = [
+            ...DAW_TOOL_SCHEMAS.filter((tool) => WORKFLOW_ACTION_TOOL_NAMES.has(tool.function.name)),
+            ...executableSchemas.filter((tool) => WORKFLOW_ACTION_TOOL_NAMES.has(tool.function.name)),
+            ...specializedWorkflowToolSchemas,
+        ];
+        const uniqueWorkflowToolSchemas = Array.from(
+            new Map(workflowToolSchemas.map((tool) => [tool.function.name, tool])).values()
         );
+        const schemas = [...planningContract, ...uniqueWorkflowToolSchemas];
 
-        // Add one non-mandatory tool to reach the 30-tool cap.
-        const additionalTools = executableSchemas.filter(
-            (tool) =>
-                !planningContract.some((p) => p.function.name === tool.function.name) &&
-                !WORKFLOW_ACTION_TOOL_NAMES.has(tool.function.name)
-        );
-
-        const schemas = [...planningContract, ...workflowActionSchemas, ...additionalTools];
+        // Precondition: this must stay production-shaped (12 contract schemas + 23 workflow action
+        // schemas). If it drifts, the case below is no longer testing what parsePromptToActions.ts
+        // actually sends.
+        expect(schemas).toHaveLength(35);
 
         await expect(generateToolPlanningOutcome('system', 'plan a command', schemas)).resolves.toMatchObject({
             status: 'complete',
@@ -281,22 +288,43 @@ describe('generateToolPlanningOutcome', () => {
         const advertisedTools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? [];
         const advertisedNames = advertisedTools.map((tool: ToolSchema) => tool.function.name);
 
-        // The 30-tool cap holds: 1 workflow capability + 5 application tools + 23 workflow action tools + 1 prompt-selected tool
-        expect(advertisedNames).toHaveLength(30);
-        // The five application tools (mandatory) must all be present, including decline.
-        // This pins that decline is not evicted by selection pressure in production shape.
-        expect(advertisedNames).toEqual(
-            expect.arrayContaining([
-                'selectWorkflowCapability',
-                'project.query',
-                'command.batch.propose',
-                'command.batch.decline',
-                'agent.command-index.search',
-                'agent.catalog.discover',
-            ])
-        );
-        // All 23 workflow action tools must be present.
-        expect(advertisedNames).toEqual(expect.arrayContaining(Array.from(WORKFLOW_ACTION_TOOL_NAMES)));
+        // The mandatory set is 29 of the 30-tool cap (selectWorkflowCapability + the 5 application
+        // tools + the 23 workflow action tools), so exactly one free slot remains for the
+        // highest-ranked non-mandatory catalog tool.
+        expect(advertisedNames).toEqual([
+            'selectWorkflowCapability',
+            'project.query',
+            'agent.catalog.discover',
+            'agent.command-index.search',
+            'command.batch.propose',
+            'command.batch.decline',
+            'removeTrack',
+            'muteTrack',
+            'soloTrack',
+            'setTrackGain',
+            'setTrackPan',
+            'addDevice',
+            'setDeviceParameter',
+            'removeDevice',
+            'arpeggiate',
+            'createBus',
+            'addSend',
+            'setTrackOutput',
+            'addSidechainRoute',
+            'removeSidechainRoute',
+            'importStemSet',
+            'removeShortMidiOverlaps',
+            'createDrumPreviewBranches',
+            'copyMidiArticulations',
+            'addAdjustmentRegion',
+            'automateSendRange',
+            'automateTrackGainRange',
+            'automateSendRanges',
+            'renderProjectSections',
+            'project.resolve',
+        ]);
+        // The free slot goes to the first non-mandatory catalog tool; agent.capabilities is not it.
+        expect(advertisedNames).not.toContain('agent.capabilities');
     });
 
     it.each(['disclosure-publication', 'provider-start'] as const)(
