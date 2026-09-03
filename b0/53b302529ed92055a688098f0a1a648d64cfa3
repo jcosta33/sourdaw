@@ -1,0 +1,31 @@
+src/modules/Toaster/presentations/views/ToasterPanel.tsx
+  s_9b530f08172a54::t_e0109772f9ec58 43,664-666
+src/modules/Toaster/presentations/views/__tests__/ToasterPanel.spec.tsx
+  s_9b530f08172a54::t_242e4f0d8ca0c7 13,33-35,256-268
+src/modules/Toaster/presentations/components/StepSequencer.tsx
+  s_dfb65312e8705b::t_5c45dde81dffb0 1,3-4,7,16,21-36,44,47-52,55-57,63-66,93,133-134,146-156,161-175,195-203,229-270
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b053b302529ed92055a688098f0a1a648d64cfa3",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_dfb65312e8705b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "293bb5fa-b660-405b-a86a-ce1ae9d0d147",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
