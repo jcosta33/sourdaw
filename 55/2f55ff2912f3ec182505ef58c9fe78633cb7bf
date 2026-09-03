@@ -1,0 +1,29 @@
+src/modules/Project/presentations/views/__tests__/MissingMediaPanel.spec.tsx
+  s_9b530f08172a54::t_f2d4349721fde5 153,155,161-163
+src/modules/Project/presentations/views/__tests__/ArrangementSelector.spec.tsx
+  s_d9913c6e4b8d5e::t_c1910c810a2692 203,214-216,219
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "552f55ff2912f3ec182505ef58c9fe78633cb7bf",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_d9913c6e4b8d5e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-af616de497693cb55",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
