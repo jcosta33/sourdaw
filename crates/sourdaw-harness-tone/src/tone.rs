@@ -21,26 +21,32 @@ pub(crate) const LEVEL_DEFAULT: f64 = 0.25;
 /// `sample_rate` and `phase` change hands by lifecycle state, not by a fixed
 /// thread: `clap/plugin.h` annotates `activate` `[main-thread & !active]`, so
 /// it writes both fields on the main thread while this instance is still
-/// inactive; `reset` and `process` are `[audio-thread & active]`, so they
-/// touch the same fields on the audio thread once it is. What excludes
-/// `activate` from the other two is that predicate — never active and
-/// active can't both hold — not which thread called in, and the host's own
-/// activation handoff (it must not call `process` before `activate`
-/// returns, nor `activate` again before `deactivate`) is what supplies the
-/// happens-before edge between the writer and the next reader. That is
-/// exactly what a plain `Cell` needs: one thread touching the field at a
-/// time, with a caller-supplied ordering guarantee, so no fence or atomic
-/// is required. Any future field on this pattern gets the same treatment
-/// only if every callback that touches it is `[audio-thread]` or
+/// inactive; `reset` is `[audio-thread & active]` and `process` is
+/// `[audio-thread & active & processing]` — `processing` implies `active`,
+/// so both still only ever run while active — and they touch the same
+/// fields on the audio thread once it is. What excludes `activate` from the
+/// other two is that predicate — never active and active can't both hold —
+/// not which thread called in. CLAP's annotations only order the calls
+/// (no `process` before `activate` returns, no `activate` again before
+/// `deactivate`); they say nothing about memory ordering. The
+/// happens-before edge a `Cell` needs instead comes from an assumption
+/// about the host, not the spec: every real host publishes the
+/// now-active instance to its audio thread through some ordering
+/// primitive of its own — an atomic, a mutex, a thread handoff — before it
+/// ever calls `process`. That publication is what a plain `Cell` rides on:
+/// one thread touching the field at a time, with the host's own ordering
+/// guarantee carrying the write across, so no fence or atomic is required
+/// here. Any future field on this pattern gets the same treatment only if
+/// every callback that touches it is `[audio-thread]` or
 /// `[main-thread & !active]` — anything reachable from a
 /// `[main-thread & active]` or thread-unconstrained callback (as `level` is,
 /// see below) needs an atomic instead.
 ///
 /// `level` is the one field both threads touch: the main thread through
-/// `clap.params.get_value`/`text_to_value`, the audio thread through
-/// `flush`/`process`. It lives in an `AtomicU64` carrying `f64::to_bits`,
-/// with `Relaxed` ordering — the value itself is the only thing that needs
-/// to cross threads, not anything it happens alongside.
+/// `clap.params.get_value`, the audio thread through `flush`/`process`. It
+/// lives in an `AtomicU64` carrying `f64::to_bits`, with `Relaxed`
+/// ordering — the value itself is the only thing that needs to cross
+/// threads, not anything it happens alongside.
 pub(crate) struct Tone {
     /// The rate `activate` was called with. Zero until then, which
     /// `next_sample` treats as "hold the phase" rather than divide by it.

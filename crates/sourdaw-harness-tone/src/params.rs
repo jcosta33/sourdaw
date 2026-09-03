@@ -115,13 +115,13 @@ unsafe extern "C" fn text_to_value(
 }
 
 /// `clap/ext/params.h` annotates `flush` `[active ? audio-thread : main-thread]`,
-/// so it runs on the audio thread whenever this instance is active — which
-/// is the only state a real host flushes parameters mid-session for. The
-/// header also guarantees `flush` is never called concurrently with
-/// `process`, so the two never race for `level` and the `AtomicU64` alone
-/// is enough; nothing here needs a lock on top of it. Because this can run
-/// on the audio thread, `apply_parameter_events` must stay allocation- and
-/// lock-free. No output events: this plugin never raises one of its own.
+/// so it runs on the audio thread while this instance is active and on the
+/// main thread while it is not — this plugin must be correct in both
+/// branches. The header also guarantees `flush` is never called concurrently
+/// with `process`, so the two never race for `level` and the `AtomicU64`
+/// alone is enough; nothing here needs a lock on top of it. Because this can
+/// run on the audio thread, `apply_parameter_events` must stay allocation-
+/// and lock-free. No output events: this plugin never raises one of its own.
 unsafe extern "C" fn flush(
     plugin: *const clap_plugin,
     in_: *const clap_input_events,
