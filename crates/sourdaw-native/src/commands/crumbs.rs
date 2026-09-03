@@ -105,10 +105,11 @@ pub struct CrumbsInstanceData {
     pub metering: Arc<CrumbsMetering>,
     pub engine_slot: CrumbsEngineSlot,
     pub next_sample_id: SampleId,
-    /// Engine-mirror entries (AddSample + SetActiveSample) whose push hit a
-    /// full command ring; retried at the top of every drain (PR #579
-    /// review). Retries are idempotent: AddSample uses set() with the same
-    /// id and data.
+    /// Engine-mirror entries (AddSample + SetActiveSample) a full command
+    /// ring refused; retried at the top of every drain (PR #579 review). An
+    /// entry leaves only once both halves land, so a selection the ring
+    /// refuses is retried rather than lost. Retries are idempotent:
+    /// AddSample uses set() with the same id and data.
     pub pending_mirror: Vec<(SampleId, Arc<SampleData>)>,
 }
 
@@ -196,7 +197,17 @@ pub fn drain_pending_recording_commits(instance: &mut CrumbsInstanceData) {
         if pushed.is_err() {
             return;
         }
-        let _ = ends.command_tx.push(CrumbsCommand::SetActiveSample(*id));
+        // Both halves or neither. The selection is the half the session ends
+        // on, so an entry whose AddSample landed but whose SetActiveSample
+        // the ring refused stays parked; the next drain re-pushes the pair,
+        // and the repeated AddSample costs a ring slot and nothing else.
+        if ends
+            .command_tx
+            .push(CrumbsCommand::SetActiveSample(*id))
+            .is_err()
+        {
+            return;
+        }
         pending_mirror.remove(0);
     }
 
@@ -223,7 +234,16 @@ pub fn drain_pending_recording_commits(instance: &mut CrumbsInstanceData) {
         });
         match pushed {
             Ok(()) => {
-                let _ = ends.command_tx.push(CrumbsCommand::SetActiveSample(id));
+                // A landed AddSample whose selection the ring refused parks
+                // too, on the same both-halves-or-neither rule as the retry
+                // above.
+                if ends
+                    .command_tx
+                    .push(CrumbsCommand::SetActiveSample(id))
+                    .is_err()
+                {
+                    pending_mirror.push((id, sample));
+                }
             }
             Err(_) => {
                 pending_mirror.push((id, sample));
@@ -1687,6 +1707,59 @@ mod tests {
             }
         }
         assert!(saw_add && saw_active);
+    }
+
+    /// A mirror is a pair. One free slot takes the AddSample and leaves the
+    /// selection refused, so the entry that carries it must survive to be
+    /// retried — dropping it strands the engine on the wrong active sample.
+    #[test]
+    fn a_deferred_mirror_keeps_its_entry_until_its_selection_lands() {
+        let (mut instance, _commit_tx, _recycle_rx, mut cmd_rx) = instance_with_rings();
+        let sample = Arc::new(SampleData::from_stereo(
+            vec![0.25f32; 32],
+            vec![0.25f32; 32],
+            48_000,
+        ));
+        instance.pending_mirror.push((7, Arc::clone(&sample)));
+
+        // One free slot: the AddSample lands and the selection is refused.
+        fill_command_ring(&mut instance);
+        cmd_rx
+            .pop()
+            .expect("the filled ring holds commands to free");
+
+        drain_pending_recording_commits(&mut instance);
+        assert_eq!(
+            instance.pending_mirror.len(),
+            1,
+            "an entry whose selection the ring refused must stay parked"
+        );
+
+        // Two free slots: the pair lands whole and the entry retires.
+        while cmd_rx.pop().is_ok() {}
+        drain_pending_recording_commits(&mut instance);
+        assert!(
+            instance.pending_mirror.is_empty(),
+            "a mirror whose pair landed retires"
+        );
+        let mut delivered = Vec::new();
+        while let Ok(command) = cmd_rx.pop() {
+            match command {
+                CrumbsCommand::AddSample { id, .. } => delivered.push(format!("add {id}")),
+                CrumbsCommand::SetActiveSample(id) => delivered.push(format!("select {id}")),
+                _ => {}
+            }
+        }
+        assert_eq!(
+            delivered.last().map(String::as_str),
+            Some("select 7"),
+            "the mirror ends on the selection it carried"
+        );
+        assert_eq!(
+            delivered[delivered.len() - 2].as_str(),
+            "add 7",
+            "the selection follows the sample it selects"
+        );
     }
 
     /// A commit still in flight when the instance is destroyed is dropped
