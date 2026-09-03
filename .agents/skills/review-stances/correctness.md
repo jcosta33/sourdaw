@@ -45,3 +45,20 @@ enumerate every clause of the owning component's invariant from its source (the 
 render-and-pop law) and require each clause in the mirror — a clause no current test exercises is
 the finding. Then run the starvation scenario with the step one poll interval below the loop end
 and require the write to be released.
+
+### 2026-09-03 — a narrowed sanitizer checked against one writer of the shape (escaped via PR #3112; fixed in #3477)
+
+PR #3112 added a persistence rule that a pending-effect continuation may carry `sourceRevision`
+only when every effect is a section render, and in the same PR made prepared-continuation
+promotion pass the finalized revision for every continuation. For any generic effect, the promote's
+persist failed sanitation, the throw was swallowed by an empty catch on the commit path, and the
+placeholder prepared entry became the durable proof, so recovery refused every generic partially
+committed batch with a proof mismatch. Many review rounds attacked the render paths only.
+
+Blind spot: a new restriction on what a store accepts was checked against the writer the PR was
+about, never against every writer of that record; and an empty catch around the persist hid the
+violation from every test on the path.
+
+Probe that would have caught it: when a diff narrows what a store or sanitizer admits, list every
+producer of that record at head and drive each through the new clause. When a diff adds or keeps an
+empty catch around a persistence call, name the throw it hides and construct the input that throws.

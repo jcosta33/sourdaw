@@ -43,6 +43,8 @@ import { type SixteenLevelsTarget } from '../../useCases/sixteenLevels';
 import { setSoundLock } from '../../useCases/soundLocks/setSoundLock';
 import { startNoteRepeat } from '../../useCases/startNoteRepeat';
 import { startSequencer } from '../../useCases/startSequencer';
+import { setStepCondition } from '../../useCases/stepModifications/setStepCondition';
+import { setStepRetrigger } from '../../useCases/stepModifications/setStepRetrigger';
 import { stopNoteRepeat } from '../../useCases/stopNoteRepeat';
 import { stopSequencer } from '../../useCases/stopSequencer';
 import { setToasterKitParam } from '../../useCases/toasterParamBridge/setToasterKitParam';
@@ -663,6 +665,12 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 }
                                 onSetSoundLock={(trackId, stepIndex, engine) =>
                                     setSoundLock(deviceId, trackId, stepIndex, engine)
+                                }
+                                onSetRetrigger={(trackId, stepIndex, count) =>
+                                    setStepRetrigger(deviceId, trackId, stepIndex, count)
+                                }
+                                onSetCondition={(trackId, stepIndex, condition) =>
+                                    setStepCondition(deviceId, trackId, stepIndex, condition)
                                 }
                             />
                         ) : null}

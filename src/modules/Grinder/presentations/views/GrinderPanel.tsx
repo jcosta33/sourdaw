@@ -2108,8 +2108,8 @@ export const GrinderPanel = ({ deviceId }: { deviceId: string }): ReactElement =
     }
 
     return (
-        <Stack className="grinder-faceplate h-full overflow-hidden p-3">
-            <Row align="stretch" grow gap={3} className="min-h-0 overflow-hidden">
+        <Stack className="grinder-faceplate h-full min-h-[460px] p-3">
+            <Row align="stretch" grow gap={3} className="min-h-[420px]">
                 <BrowserRail deviceId={deviceId} patch={patch} replacePatch={replacePatch} />
                 <Stack as="section" grow gap={3} className="overflow-y-auto pr-1">
                     <SectionTabs deviceId={deviceId} patch={patch} />

@@ -122,7 +122,7 @@ export const CrustPanel = ({ deviceId }: { deviceId: string }): ReactElement => 
     }
 
     return (
-        <Stack gap={2.5} className="crust-faceplate h-full overflow-hidden p-2.5 text-foreground">
+        <Stack gap={2.5} className="crust-faceplate h-full min-h-[440px] p-2.5 text-foreground">
             <Row as="header" wrap gap={2.5} shrink={false} className="crust-window px-3 py-2">
                 <Stack gap={1}>
                     <div className="text-[8px] uppercase tracking-[0.28em] text-[var(--color-accent-copper)]/70">

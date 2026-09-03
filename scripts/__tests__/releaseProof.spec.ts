@@ -151,6 +151,7 @@ type DesktopOptions = {
     invalidLoadCommands?: boolean;
     oversizedLoadCommands?: boolean;
     nativeFileType?: number;
+    scanHelper?: 'valid' | 'missing';
     packagedFfmpegArch?: 'arm64' | 'x64';
     packagedFfmpeg?: 'valid' | 'missing' | 'different';
     runtimeFfmpeg?: 'matching' | 'missing' | 'different';
@@ -338,6 +339,11 @@ function createDesktopZip(fixture: Fixture, archiveDirectory: string, options: D
     const nativeAddon = join(resources, 'sourdaw-native.node');
     write(nativeAddon, arm64MachO(options.arch ?? 'arm64', options.nativeFileType ?? 8));
     chmodSync(nativeAddon, 0o755);
+    if (options.scanHelper !== 'missing') {
+        const scanHelper = join(resources, 'sourdaw-plugin-scan-helper');
+        write(scanHelper, arm64MachO(options.arch ?? 'arm64', 2));
+        chmodSync(scanHelper, 0o755);
+    }
     const packagedFfmpeg = join(
         appRoot,
         'Contents/Frameworks/Sourdaw Framework.framework/Versions/A/Libraries/libffmpeg.dylib'
@@ -1696,6 +1702,7 @@ describe('release proof', () => {
             /does not match the installed Electron runtime/u,
         ],
         ['missing installed libffmpeg', { runtimeFfmpeg: 'missing' as const }, /installed Electron runtime.*invalid/u],
+        ['missing plugin scan helper', { scanHelper: 'missing' as const }, /desktop plugin scan helper.*missing/u],
     ])('rejects %s', (_label, options, message) => {
         const fixture = createFixture(options);
         expect(() => assemble(fixture)).toThrow(message);

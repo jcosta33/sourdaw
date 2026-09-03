@@ -40,10 +40,21 @@ impl PluginScanPolicy {
     /// under two nested roots ranks with the more specific of them.
     pub fn root_rank(&self, path: &Path) -> Option<usize> {
         self.allowed_roots.iter().position(|allowed_root| {
-            let allowed_root = fs::canonicalize(allowed_root)
-                .unwrap_or_else(|_| normalize_path_lexically(allowed_root));
+            let allowed_root = resolve_allowed_root(allowed_root);
             path == allowed_root || path.starts_with(&allowed_root)
         })
+    }
+
+    /// Whether `path` is one of the platform's own scan roots, rather than a
+    /// folder somewhere under one.
+    ///
+    /// `root_rank` cannot answer this: it ranks a descendant with the root that
+    /// contains it, so a caller that has to tell a folder the platform defines
+    /// from one the user added under it needs the exact match.
+    pub fn is_platform_default_root(&self, path: &Path) -> bool {
+        self.allowed_roots
+            .iter()
+            .any(|allowed_root| resolve_allowed_root(allowed_root).as_path() == path)
     }
 
     /// Authorize a scan root, returning the resolved path that was authorized.
@@ -112,6 +123,13 @@ impl PluginScanPolicy {
 
         Err(unauthorized_scan_path(&requested_path))
     }
+}
+
+/// An allowed root as the checks have to compare it: resolved when it is on
+/// disk, normalized lexically when it is not, because a root the machine does
+/// not have cannot be canonicalized.
+fn resolve_allowed_root(allowed_root: &Path) -> PathBuf {
+    fs::canonicalize(allowed_root).unwrap_or_else(|_| normalize_path_lexically(allowed_root))
 }
 
 fn unauthorized_scan_path(path: &Path) -> String {
@@ -342,6 +360,21 @@ mod tests {
             "a descendant ranks with the root that contains it"
         );
         assert_eq!(policy.root_rank(Path::new("/somewhere/else")), None);
+    }
+
+    /// The distinction `root_rank` cannot make: a folder the platform defines
+    /// is the platform's to have or not have, while a folder under one is the
+    /// user's own addition and answers for itself.
+    #[test]
+    fn a_platform_root_is_a_default_root_and_a_folder_under_one_is_not() {
+        let policy = PluginScanPolicy::with_allowed_roots(vec![
+            PathBuf::from("/per-user/VST3"),
+            PathBuf::from("/machine-wide/VST3"),
+        ]);
+
+        assert!(policy.is_platform_default_root(Path::new("/machine-wide/VST3")));
+        assert!(!policy.is_platform_default_root(Path::new("/machine-wide/VST3/Vendor")));
+        assert!(!policy.is_platform_default_root(Path::new("/somewhere/else")));
     }
 
     #[test]

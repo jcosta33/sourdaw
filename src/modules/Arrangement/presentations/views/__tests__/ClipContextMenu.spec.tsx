@@ -625,4 +625,22 @@ describe('ClipContextMenu', () => {
         const input = screen.getByTestId('inline-editor').querySelector('input') as HTMLInputElement;
         expect(input.value).toBe('');
     });
+
+    it('dispatches invertNotes through executeAppAction and closes the menu', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="midi1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Invert Pitch' }));
+
+        expect(executeAppAction).toHaveBeenCalledWith({ type: 'invertNotes', payload: { clipId: 'midi1' } });
+        expect(mockOnClose).toHaveBeenCalled();
+    });
+
+    it('dispatches retrogradeNotes through executeAppAction and closes the menu', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="midi1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Reverse (Retrograde)' }));
+
+        expect(executeAppAction).toHaveBeenCalledWith({ type: 'retrogradeNotes', payload: { clipId: 'midi1' } });
+        expect(mockOnClose).toHaveBeenCalled();
+    });
 });

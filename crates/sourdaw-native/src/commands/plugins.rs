@@ -135,6 +135,35 @@ pub(crate) const MAX_SCAN_CANDIDATES: usize = 256;
 const MAX_SCAN_DURATION: Duration = Duration::from_secs(30);
 static PLUGIN_SCAN_PERMIT: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
 
+/// The two clocks a scan runs under.
+///
+/// `walk` bounds the whole enumeration; `candidate` is what a single
+/// candidate's helper is handed, and it is never divided — see
+/// [`covers_a_whole_candidate`]. Passed in rather than read from the constants
+/// so a test can prove both rules in milliseconds.
+#[derive(Debug, Clone, Copy)]
+struct ScanBudget {
+    walk: Duration,
+    candidate: Duration,
+}
+
+/// The budget every production scan runs under.
+const PRODUCTION_SCAN_BUDGET: ScanBudget = ScanBudget {
+    walk: MAX_SCAN_DURATION,
+    candidate: plugin_scan_worker::WORKER_TIMEOUT,
+};
+
+/// Whether `deadline` still leaves room to hand a candidate its whole budget.
+///
+/// A helper started with the walk's leftover is killed for the walk's clock
+/// rather than its own, and it reports that as a helper timeout — which
+/// [`quarantine_if_process_failure`] cannot tell from a plugin that genuinely
+/// hangs, so the walk would permanently blame a plugin for a budget it was
+/// never given. A candidate is therefore started whole or not started.
+fn covers_a_whole_candidate(deadline: Instant, budget: ScanBudget) -> bool {
+    deadline.saturating_duration_since(Instant::now()) >= budget.candidate
+}
+
 /// Drop every candidate whose path an earlier one already claimed.
 ///
 /// Order preserving, which a `sort` + `dedup` is not: two authorized roots can
@@ -344,6 +373,13 @@ fn apply_instance_scan_result(
 /// every quarantine record it encounters before that candidate's helper runs,
 /// so a fresh crash re-quarantines from a clean slate and a clean run leaves
 /// nothing behind.
+///
+/// A scan that runs out of its budget still answers `Ok`: it returns the
+/// plugins it did reach and names the limit on the `errors` channel beside
+/// them, rather than withholding the list behind a failure. Every candidate
+/// the walk starts is handed the whole per-candidate budget or is not started
+/// at all, so a helper timeout is always that candidate's own and never the
+/// walk's clock running out on it.
 pub async fn scan_plugins(
     paths: Vec<String>,
     retry_quarantined: bool,
@@ -372,6 +408,7 @@ async fn scan_plugins_with_policy(
         paths,
         retry_quarantined,
         scan_policy,
+        PRODUCTION_SCAN_BUDGET,
         state,
         plugin_scan_worker::scan_descriptor_metadata,
         plugin_scan_worker::scan_instance_metadata,
@@ -379,17 +416,26 @@ async fn scan_plugins_with_policy(
     .await
 }
 
-/// `scan_descriptor`/`scan_instance` are parameters so a test can inject a
-/// scan outcome — success, a crash, a timeout — without spawning a real
-/// worker process, the same way [`resolve_registry_entry`]'s rescan closure
-/// lets a targeted-rescan test inject one without a real subprocess.
-/// Production reaches this only through [`scan_plugins_with_policy`], which
-/// always supplies [`plugin_scan_worker::scan_descriptor_metadata`] and
-/// [`plugin_scan_worker::scan_instance_metadata`].
+/// `budget` and `scan_descriptor`/`scan_instance` are parameters so a test can
+/// reach the deadline in milliseconds and inject a scan outcome — success, a
+/// crash, a timeout — without spawning a real worker process, the same way
+/// [`resolve_registry_entry`]'s rescan closure lets a targeted-rescan test
+/// inject one without a real subprocess. Production reaches this only through
+/// [`scan_plugins_with_policy`], which always supplies
+/// [`PRODUCTION_SCAN_BUDGET`], [`plugin_scan_worker::scan_descriptor_metadata`]
+/// and [`plugin_scan_worker::scan_instance_metadata`].
+///
+/// Two rules the budget carries. `budget.walk` bounds the enumeration and
+/// nothing else: a walk cut short reports the limit through `errors` and still
+/// returns everything it found, published into the registry, as a complete
+/// scan does. `budget.candidate` is indivisible: a candidate reached with less
+/// than that left is skipped rather than handed a truncated bound, because a
+/// helper killed early is quarantined for a timeout the walk caused.
 async fn scan_plugins_with_backend(
     paths: Vec<String>,
     retry_quarantined: bool,
     scan_policy: PluginScanPolicy,
+    budget: ScanBudget,
     state: &AppState,
     scan_descriptor: impl Fn(PluginFormat, &Path, Duration) -> Result<Vec<ScannedDescriptor>, String>
         + Send
@@ -410,8 +456,8 @@ async fn scan_plugins_with_backend(
     let requested_paths: Vec<PathBuf> = paths.iter().map(PathBuf::from).collect();
     let registry_store = Arc::clone(&state.plugin_registry_store);
 
-    let deadline = start + MAX_SCAN_DURATION;
-    let (plugins, mut errors, notices, scanned_paths, scan_complete, authorized_paths) =
+    let deadline = start + budget.walk;
+    let (plugins, errors, notices, scanned_paths, scan_complete, authorized_paths) =
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
             // Authorization is filesystem work — an existence check, a symlink
@@ -461,8 +507,7 @@ async fn scan_plugins_with_backend(
             let mut plugins = Vec::new();
             let mut scanned_paths = Vec::new();
             for candidate in candidates {
-                let remaining = deadline.saturating_duration_since(Instant::now());
-                if remaining.is_zero() {
+                if !covers_a_whole_candidate(deadline, budget) {
                     scan_errors.push("Plugin scan time limit exceeded".to_string());
                     scan_complete = false;
                     break;
@@ -479,7 +524,7 @@ async fn scan_plugins_with_backend(
                     continue;
                 }
 
-                match scan_descriptor(candidate.format, &candidate.path, remaining) {
+                match scan_descriptor(candidate.format, &candidate.path, budget.candidate) {
                     // One bundle may declare several plugins — CLAP's factory is
                     // count/index shaped — and each gets its own inspection and
                     // its own row. A file that declares one keeps producing
@@ -492,17 +537,18 @@ async fn scan_plugins_with_backend(
                             // and `scanned_plugin` records why — a capability
                             // field this scan never asked for must never be
                             // published as a measured zero.
-                            let instance_remaining =
-                                deadline.saturating_duration_since(Instant::now());
-                            let instance = if instance_remaining.is_zero() {
-                                Err("deadline".to_string())
-                            } else {
+                            let instance = if covers_a_whole_candidate(deadline, budget) {
                                 scan_instance(
                                     candidate.format,
                                     &candidate.path,
                                     &descriptor.descriptor_id,
-                                    instance_remaining,
+                                    budget.candidate,
                                 )
+                            } else {
+                                // Not a truncated attempt: "deadline" is a
+                                // data-level refusal, so the row keeps its
+                                // reason and the binary is not blamed.
+                                Err("deadline".to_string())
                             };
                             apply_instance_scan_result(
                                 descriptor,
@@ -557,10 +603,6 @@ async fn scan_plugins_with_backend(
     );
     persist_plugin_registry(state).await;
 
-    if !scan_complete {
-        return Err("Plugin scan did not complete within safety limits".to_string());
-    }
-
     let quarantined: Vec<QuarantinedPlugin> = state
         .plugin_registry_store
         .quarantined_snapshot()
@@ -578,6 +620,14 @@ async fn scan_plugins_with_backend(
         notices,
         scan_duration_ms: start.elapsed().as_millis() as u64,
         quarantined,
+        complete: scan_complete,
+        // The same paths the registry retention above ran against, so a caller
+        // merging this result into an older list applies the rule the registry
+        // already applied to its own rows.
+        scanned_paths: scanned_paths
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect(),
     })
 }
 
@@ -598,6 +648,13 @@ pub async fn get_default_plugin_paths() -> Result<Vec<String>, String> {
 /// machine-wide, then network — not to the order a caller happened to list them.
 /// The sort is stable, so roots the platform does not list keep the caller's
 /// order among themselves and come last.
+///
+/// A platform default root that is not a directory is skipped in silence,
+/// because every scan requests all of them and a machine that has never
+/// installed a format has none of that format's folders. Reporting those would
+/// make the ordinary state of a machine look like a failed scan. A root under
+/// one — a folder the user added — is still refused by name: the user typed it,
+/// so its absence is theirs to see and fix.
 fn authorize_scan_roots(
     policy: &PluginScanPolicy,
     requested: Vec<PathBuf>,
@@ -614,7 +671,9 @@ fn authorize_scan_roots(
             }
         };
         if !canonical.is_dir() {
-            errors.push(format!("Not a directory: {}", path.display()));
+            if !policy.is_platform_default_root(&canonical) {
+                errors.push(format!("Not a directory: {}", path.display()));
+            }
             continue;
         }
         authorized.push(canonical);
@@ -3812,6 +3871,7 @@ mod tests {
             vec![root.display().to_string()],
             true,
             policy,
+            PRODUCTION_SCAN_BUDGET,
             &state,
             fake_successful_descriptor_scan,
             fake_successful_instance_scan,
@@ -3823,6 +3883,15 @@ mod tests {
             !result.plugins.is_empty(),
             "the injected success must actually publish a plugin: {:?}",
             result.plugins
+        );
+        assert!(
+            result.complete,
+            "a walk that reached every candidate is authoritative for the whole root"
+        );
+        assert_eq!(
+            result.scanned_paths,
+            vec![plugin_path.display().to_string()],
+            "a complete walk names every candidate it reached"
         );
         assert!(
             state
@@ -3838,6 +3907,296 @@ mod tests {
                 .all(|entry| entry.path != plugin_path.display().to_string()),
             "the scan response must not still name a candidate the retry just cleared: {:?}",
             result.quarantined
+        );
+    }
+
+    /// Every call one fake scan backend saw: the candidate it was asked
+    /// about, and the bound the walk handed it.
+    type ScanCallLog = Arc<Mutex<Vec<(PathBuf, Duration)>>>;
+
+    fn scan_call_log() -> ScanCallLog {
+        Arc::new(Mutex::new(Vec::new()))
+    }
+
+    fn record_scan_call(log: &ScanCallLog, path: &Path, timeout: Duration) {
+        log.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push((path.to_path_buf(), timeout));
+    }
+
+    fn scan_calls_for(log: &ScanCallLog, path: &Path) -> usize {
+        log.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .filter(|(called_path, _)| called_path == path)
+            .count()
+    }
+
+    fn recorded_scan_timeouts(log: &ScanCallLog) -> Vec<Duration> {
+        log.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .map(|(_, timeout)| *timeout)
+            .collect()
+    }
+
+    fn time_limit_errors(errors: &[String]) -> usize {
+        errors
+            .iter()
+            .filter(|error| error.as_str() == "Plugin scan time limit exceeded")
+            .count()
+    }
+
+    /// A walk that runs out of its budget answers with what it found. The
+    /// failure used to replace the whole result, so every plugin already
+    /// scanned — and already published into the registry — was withheld from
+    /// the caller, who saw an error and an empty list (#3505). A safety limit
+    /// reached is reported beside the list, never in front of it (ADR 0031).
+    #[test]
+    fn an_incomplete_walk_returns_the_plugins_it_found_beside_the_limit_error() {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root("incomplete-walk-partial-results");
+        let first = root.join("A-First.clap");
+        let second = root.join("B-Second.clap");
+        std::fs::write(&first, b"clap-bytes").expect("fixture plugin file should be written");
+        std::fs::write(&second, b"clap-bytes").expect("fixture plugin file should be written");
+        let policy = PluginScanPolicy::with_allowed_roots(vec![root.clone()]);
+        let budget = ScanBudget {
+            walk: Duration::from_millis(300),
+            candidate: Duration::from_millis(100),
+        };
+
+        let descriptor_calls = scan_call_log();
+        let descriptor_log = Arc::clone(&descriptor_calls);
+        let state = AppState::default();
+
+        let result = crate::block_on_test(scan_plugins_with_backend(
+            vec![root.display().to_string()],
+            false,
+            policy,
+            budget,
+            &state,
+            move |_format, path, timeout| {
+                record_scan_call(&descriptor_log, path, timeout);
+                // Outlasts the walk, so the second candidate is reached with
+                // the budget already spent.
+                std::thread::sleep(Duration::from_millis(350));
+                Ok(vec![descriptor("com.vendor.found-before-the-limit")])
+            },
+            fake_successful_instance_scan,
+        ))
+        .expect("a walk cut short must still answer with the plugins it found");
+        let _ = std::fs::remove_dir_all(&root);
+
+        let found: Vec<&str> = result
+            .plugins
+            .iter()
+            .map(|plugin| plugin.descriptor_id.as_str())
+            .collect();
+        assert_eq!(
+            found,
+            vec!["com.vendor.found-before-the-limit"],
+            "the plugin scanned before the limit must reach the caller, and the candidate the \
+             walk never started must not"
+        );
+        assert_eq!(
+            time_limit_errors(&result.errors),
+            1,
+            "the limit belongs on the failures channel, exactly once: {:?}",
+            result.errors
+        );
+        assert!(
+            !result.complete,
+            "a walk that stopped at its limit must say so, or the caller cannot tell how far \
+             this result reaches"
+        );
+        assert_eq!(
+            result.scanned_paths,
+            vec![first.display().to_string()],
+            "the result is authoritative for the candidates the walk reached, and no others"
+        );
+        assert_eq!(scan_calls_for(&descriptor_calls, &first), 1);
+        assert_eq!(
+            scan_calls_for(&descriptor_calls, &second),
+            0,
+            "a candidate the walk had no budget for must never reach a helper"
+        );
+        assert!(
+            state
+                .plugin_registry_store
+                .is_quarantined(&second)
+                .is_none(),
+            "a candidate the walk never started must not be blamed for the walk's own budget"
+        );
+        let registry = state
+            .plugin_registry
+            .lock()
+            .expect("plugin registry lock should be available");
+        assert!(
+            registry
+                .values()
+                .any(|entry| entry.path == first.display().to_string()),
+            "publication into the registry must happen for an incomplete walk too: {:?}",
+            registry.keys().collect::<Vec<_>>()
+        );
+    }
+
+    /// A candidate is handed its whole budget or is not started. Handing it
+    /// the walk's leftover killed it early and quarantined it for a timeout
+    /// the walk caused, which is a permanent record against a plugin that was
+    /// never given its own bound (#3505).
+    #[test]
+    fn a_candidate_is_never_started_with_a_truncated_budget() {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root("whole-candidate-budget");
+        let first = root.join("A-First.clap");
+        let second = root.join("B-Second.clap");
+        std::fs::write(&first, b"clap-bytes").expect("fixture plugin file should be written");
+        std::fs::write(&second, b"clap-bytes").expect("fixture plugin file should be written");
+        let policy = PluginScanPolicy::with_allowed_roots(vec![root.clone()]);
+        let budget = ScanBudget {
+            walk: Duration::from_millis(400),
+            candidate: Duration::from_millis(100),
+        };
+
+        let descriptor_calls = scan_call_log();
+        let instance_calls = scan_call_log();
+        let descriptor_log = Arc::clone(&descriptor_calls);
+        let instance_log = Arc::clone(&instance_calls);
+        let state = AppState::default();
+
+        let result = crate::block_on_test(scan_plugins_with_backend(
+            vec![root.display().to_string()],
+            false,
+            policy,
+            budget,
+            &state,
+            move |_format, path, timeout| {
+                record_scan_call(&descriptor_log, path, timeout);
+                std::thread::sleep(Duration::from_millis(50));
+                Ok(vec![descriptor("com.vendor.first")])
+            },
+            move |_format, path, _plugin_id, timeout| {
+                record_scan_call(&instance_log, path, timeout);
+                // Leaves the walk with less than a whole candidate budget, so
+                // the second candidate is reached with a truncated one on
+                // offer.
+                std::thread::sleep(Duration::from_millis(320));
+                Ok(scanner::ScannedInstance::default())
+            },
+        ))
+        .expect("a walk cut short must still answer with the plugins it found");
+        let _ = std::fs::remove_dir_all(&root);
+
+        let handed_out: Vec<Duration> = recorded_scan_timeouts(&descriptor_calls)
+            .into_iter()
+            .chain(recorded_scan_timeouts(&instance_calls))
+            .collect();
+        assert!(
+            !handed_out.is_empty()
+                && handed_out
+                    .iter()
+                    .all(|timeout| *timeout == budget.candidate),
+            "every started pass must get the whole per-candidate budget: {handed_out:?}"
+        );
+        assert_eq!(scan_calls_for(&descriptor_calls, &first), 1);
+        assert_eq!(scan_calls_for(&instance_calls, &first), 1);
+        assert_eq!(
+            scan_calls_for(&descriptor_calls, &second),
+            0,
+            "a candidate that cannot be given its whole budget must not be started"
+        );
+        assert!(
+            state
+                .plugin_registry_store
+                .is_quarantined(&second)
+                .is_none(),
+            "the skipped candidate must carry no quarantine record"
+        );
+        assert_eq!(
+            time_limit_errors(&result.errors),
+            1,
+            "the skip belongs on the failures channel: {:?}",
+            result.errors
+        );
+    }
+
+    /// The instance pass obeys the same rule inside a bundle: near the
+    /// deadline it is skipped, not truncated. A truncated instance helper
+    /// reports a timeout, and `quarantine_if_process_failure` cannot tell that
+    /// from a plugin that hangs on `create_plugin`.
+    #[test]
+    fn an_instance_pass_is_skipped_rather_than_truncated_near_the_deadline() {
+        let _scan_serial = SCAN_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = created_temp_scan_root("instance-pass-skipped-near-deadline");
+        let bundle_path = root.join("Bundle.clap");
+        std::fs::write(&bundle_path, b"clap-bytes").expect("fixture plugin file should be written");
+        let policy = PluginScanPolicy::with_allowed_roots(vec![root.clone()]);
+        let budget = ScanBudget {
+            walk: Duration::from_millis(300),
+            candidate: Duration::from_millis(100),
+        };
+
+        let instance_calls = scan_call_log();
+        let instance_log = Arc::clone(&instance_calls);
+        let state = AppState::default();
+
+        let result = crate::block_on_test(scan_plugins_with_backend(
+            vec![root.display().to_string()],
+            false,
+            policy,
+            budget,
+            &state,
+            |_format, _path, _timeout| {
+                // Spends most of the walk, so neither of the two plugins this
+                // bundle declares can be given a whole instance budget.
+                std::thread::sleep(Duration::from_millis(250));
+                Ok(vec![
+                    descriptor("com.vendor.bundle-one"),
+                    descriptor("com.vendor.bundle-two"),
+                ])
+            },
+            move |_format, path, _plugin_id, timeout| {
+                record_scan_call(&instance_log, path, timeout);
+                Ok(scanner::ScannedInstance::default())
+            },
+        ))
+        .expect("a bundle whose instance passes are skipped is still a published bundle");
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert_eq!(
+            scan_calls_for(&instance_calls, &bundle_path),
+            0,
+            "an instance pass with less than a whole budget left must not be started"
+        );
+        assert_eq!(
+            result.plugins.len(),
+            2,
+            "both plugins the bundle declares stay published: {:?}",
+            result.plugins
+        );
+        assert!(
+            result
+                .plugins
+                .iter()
+                .all(|plugin| plugin.path == bundle_path.display().to_string()
+                    && plugin.parameter_metadata_reason.as_deref()
+                        == Some(scanner::PARAMETER_METADATA_UNAVAILABLE_REASON)),
+            "a row whose instance pass never ran must say why its parameters are missing: {:?}",
+            result.plugins
+        );
+        assert!(
+            state
+                .plugin_registry_store
+                .is_quarantined(&bundle_path)
+                .is_none(),
+            "running out of walk budget is not evidence against the binary"
         );
     }
 
@@ -4005,6 +4364,41 @@ mod tests {
             errors
                 .iter()
                 .any(|error| error.contains("Unauthorized plugin scan path")),
+            "{errors:?}"
+        );
+    }
+
+    /// Every scan requests all of the platform's default roots, and an ordinary
+    /// machine has never created most of them. Reported as errors they made a
+    /// scan that enumerated everything look like a failed one (#3497). The root
+    /// that is there is still scanned, which is the unchanged half.
+    #[test]
+    fn an_absent_default_root_is_skipped_without_an_error() {
+        let present = created_temp_scan_root("absent-default-present");
+        let absent = unique_temp_scan_root("absent-default-missing");
+        let policy = PluginScanPolicy::with_allowed_roots(vec![present.clone(), absent.clone()]);
+
+        let (ordered, errors) = authorize_scan_roots(&policy, vec![absent, present.clone()]);
+
+        let _ = std::fs::remove_dir_all(&present);
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(ordered, vec![present]);
+    }
+
+    /// A folder the user added under a default root is theirs, so its absence
+    /// is a mistake they can see and fix — the settings panel shows it red.
+    #[test]
+    fn an_absent_user_added_root_is_still_an_error() {
+        let root = created_temp_scan_root("absent-user-added");
+        let missing_child = root.join("Vendor");
+        let policy = PluginScanPolicy::with_allowed_roots(vec![root.clone()]);
+
+        let (ordered, errors) = authorize_scan_roots(&policy, vec![missing_child]);
+
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(ordered.is_empty(), "{ordered:?}");
+        assert!(
+            errors.iter().any(|error| error.contains("Not a directory")),
             "{errors:?}"
         );
     }

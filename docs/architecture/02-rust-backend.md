@@ -310,7 +310,9 @@ device factory manifest, and the persisted registry all read those fields.
 Plugin entry points are loaded only inside the bounded scan worker
 ([ADR 0004](../../.agents/decisions/0004-plugin-hosting-security-policy.md)). Extending what
 discovery asks a plugin does not extend where it asks: a new query goes to the instance the worker
-already created, never to a new process and never to the application process.
+already created, never to a new process and never to the application process. That worker runs in a
+dedicated native helper executable the application ships and names through the launch-command
+environment variable, never by re-entering the application runtime.
 
 ### Rule
 

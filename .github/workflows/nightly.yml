@@ -611,12 +611,19 @@ jobs:
     # production, and it takes it once a day off this workflow's schedule, or
     # when somebody dispatches this workflow by hand against `main`.
     #
-    # It promotes the revision this run validated and no other. Every leg a
-    # scheduled run performs is a dependency, and the implicit `success()` on
-    # `needs` keeps the job from starting unless each one succeeded — a failure,
-    # a cancellation or a skip leaves production untouched. The first step reads
-    # those same results explicitly, so the refusal survives a later condition
-    # that admits this job on a run it should not deploy from.
+    # It promotes the revision this run validated and no other. Every leg that
+    # validates the web artifact is a dependency, and the Rust workspace leg is
+    # one of them: it is the only test of daw-dsp, daw-wasm-decoder,
+    # proof-chamber and scoring, which ship in the web bundle as the committed
+    # `public/wasm/*` packages — `wasm:verify` proves those artifacts are
+    # fresh, not that they are correct, so only the Rust leg's own tests do
+    # that. The native macOS and Windows legs validate the desktop shell,
+    # which this deployment does not ship, so their failures must not freeze
+    # the web. The implicit `success()` on `needs` keeps the job from starting
+    # unless each one succeeded — a failure, a cancellation or a skip leaves
+    # production untouched. The first step reads those same results
+    # explicitly, so the refusal survives a later condition that admits this
+    # job on a run it should not deploy from.
     #
     # It is deliberately absent from `gate`: the summary reports what a pull
     # request proved, and no pull request ever runs this job.
@@ -645,8 +652,6 @@ jobs:
       - unit
       - build
       - rust
-      - native-macos
-      - native-windows
       - e2e
       - browser-ai-webgpu
       - codeql
@@ -654,7 +659,13 @@ jobs:
     if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     # Scopes the deployment credential to the environment that already owns
     # production for this repository.
-    environment: Production
+    #
+    # The URL is set only by the deploy step below, which runs only on a real
+    # deployment — so a GitHub deployment record with no environment URL is a
+    # train that deployed nothing.
+    environment:
+      name: Production
+      url: ${{ steps.deployment.outputs.url }}
     # One train at a time. GitHub does not serialise jobs that share an
     # environment, and the workflow's own group falls back to the run id for
     # exactly the two events that reach here, so this is the only thing that
@@ -663,9 +674,10 @@ jobs:
     # It serialises and nothing more. Entry to this queue is ordered by when
     # each run's validation legs finished, not by commit order, so an older
     # revision can still be next in line — and a re-run replays its original
-    # run's SHA through every guard here. What makes the newest revision win is
-    # the freshness step below, which refuses any candidate that is no longer
-    # the tip of `main`. Never cancel: a cancelled deploy can die between upload
+    # run's SHA through every guard here. What prevents a rollback is the
+    # production-revision step below, which runs inside this queue and refuses
+    # any candidate that does not descend from the revision production serves
+    # at that moment. Never cancel: a cancelled deploy can die between upload
     # and alias assignment.
     concurrency:
       group: deploy-web-production
@@ -679,7 +691,7 @@ jobs:
       # exists. Only the comparison is published here — never the token.
       DEPLOY_CREDENTIAL_PRESENT: ${{ secrets.VERCEL_TOKEN != '' }}
       # Pinned: a CLI that resolves to whatever is newest can change what
-      # `build` produces between two runs of the same validated revision.
+      # `deploy --prebuilt` accepts between two runs of the same revision.
       VERCEL_CLI: vercel@59.9.1
     steps:
       - name: Require a validated revision of main
@@ -715,33 +727,8 @@ jobs:
           printf '3. `VERCEL_PROJECT_ID`\n' >> "$GITHUB_STEP_SUMMARY"
           printf '4. a deployment branch policy limited to `main`, which is the only thing that keeps a dispatched copy of this workflow from receiving the token\n' >> "$GITHUB_STEP_SUMMARY"
 
-      # No checkout: `ls-remote` reads the ref over HTTPS, and a stale candidate
-      # should not pay for a working tree it will not build.
-      - name: Refuse a stale candidate revision
-        id: freshness
-        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true'
-        env:
-          CANDIDATE_REVISION: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          tip=$(git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" refs/heads/main | cut -f1)
-          if [ -z "$tip" ]; then
-            printf 'could not read the current tip of main\n' >&2
-            exit 1
-          fi
-          if [ "$tip" != "$CANDIDATE_REVISION" ]; then
-            printf 'fresh=false\n' >> "$GITHUB_OUTPUT"
-            printf '::notice title=Web deploy skipped::stale candidate %s, main is now %s, deploying nothing\n' \
-              "$CANDIDATE_REVISION" "$tip"
-            printf '### Web deploy skipped\n\nstale candidate `%s`, main is now `%s`, deploying nothing\n' \
-              "$CANDIDATE_REVISION" "$tip" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          printf 'fresh=true\n' >> "$GITHUB_OUTPUT"
-          printf 'the candidate is the current tip of main\n'
-
       - name: Checkout the validated revision
-        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true'
+        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Explicit rather than implied: what gets built here has to be the
@@ -751,17 +738,17 @@ jobs:
           persist-credentials: false
 
       - name: Enable Corepack
-        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true'
+        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true'
         run: corepack enable
 
       - name: Set up pnpm
-        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true'
+        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true'
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           package_json_file: package.json
 
       - name: Set up Node
-        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true'
+        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -769,51 +756,60 @@ jobs:
 
       - name: Resolve the current production revision
         id: production
-        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true'
+        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true'
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           CANDIDATE_REVISION: ${{ github.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/resolveVercelProductionDeployment.ts
 
-      - name: Report the unchanged production revision
-        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true' && steps.production.outputs.deploy != 'true'
+      - name: Report why nothing was deployed
+        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.production.outputs.deploy != 'true'
+        env:
+          REASON: ${{ steps.production.outputs.reason }}
         run: |
           set -euo pipefail
-          printf '::notice title=Web deploy skipped::Production already serves %s; no deployment was created.\n' "$GITHUB_SHA"
-          printf '### Web deploy skipped\n\nProduction already serves `%s`.\n' "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+          case "$REASON" in
+            serving)
+              printf '::notice title=Web deploy skipped::Production already serves %s; no deployment was created.\n' "$GITHUB_SHA"
+              printf '### Web deploy skipped\n\nProduction already serves `%s`.\n' "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            stale)
+              printf '::notice title=Web deploy skipped::Production already serves a newer revision than %s; deploying nothing\n' "$GITHUB_SHA"
+              printf '### Web deploy skipped\n\nProduction already serves a newer revision than `%s`; deploying nothing.\n' "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            *)
+              printf 'unknown deploy decision reason: %s\n' "$REASON" >&2
+              exit 1
+              ;;
+          esac
 
       - name: Install dependencies
-        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true' && steps.production.outputs.deploy == 'true'
+        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.production.outputs.deploy == 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Link the Vercel CLI to the production project
-        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true' && steps.production.outputs.deploy == 'true'
+        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.production.outputs.deploy == 'true'
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: node scripts/linkVercelCliProject.ts
 
-      - name: Pull the production environment
-        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true' && steps.production.outputs.deploy == 'true'
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        # Org and project ids are absent here because the CLI treats them as the
-        # link and 404s an org lookup the deployments API never performs; the
-        # link step wrote `.vercel/project.json` from the project settings answer.
-        run: pnpm dlx "$VERCEL_CLI" pull --yes --environment=production
-
       - name: Build the validated revision
-        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true' && steps.production.outputs.deploy == 'true'
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: pnpm dlx "$VERCEL_CLI" build --prod
+        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.production.outputs.deploy == 'true'
+        # Local Vite build plus a Build Output API v3 tree. CLI pull/build both
+        # GET /teams/ and 403 a project-scoped token (vercel/vercel#17506).
+        run: |
+          set -euo pipefail
+          pnpm build
+          node scripts/writeVercelPrebuiltOutput.ts
 
       - name: Deploy the prebuilt revision
         id: deployment
-        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true' && steps.production.outputs.deploy == 'true'
+        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.production.outputs.deploy == 'true'
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
@@ -836,7 +832,7 @@ jobs:
           printf '### Web deployed\n\n`%s` is live at %s\n' "$GITHUB_SHA" "$deployment_url" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Assert cross-origin isolation on the deployment
-        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true' && steps.production.outputs.deploy == 'true'
+        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.production.outputs.deploy == 'true'
         env:
           DEPLOYMENT_URL: ${{ steps.deployment.outputs.url }}
         run: |

@@ -201,18 +201,29 @@ function assertIssueClosingReferences(
     relationship: IssueRelationship | undefined,
     repository?: string
 ): void {
-    const references = [...body.matchAll(CLOSING_REFERENCE_PATTERN)].map<ClosingReference>((match) =>
-        match[1] === undefined ? { repository: match[2], issue: match[3] ?? '' } : { issue: match[1] }
-    );
+    const matches = [...body.matchAll(CLOSING_REFERENCE_PATTERN)];
     const expected = relationship === 'closes' ? issue : undefined;
-    if (
-        expected === undefined
-            ? references.length > 0
-            : references.length !== 1 ||
-              references[0] === undefined ||
-              !isExpectedClosingReference(references[0], expected, repository)
-    ) {
-        fail('pull-request body contains unexpected issue-closing references');
+    const unexpectedPhrases: string[] = [];
+    let matchedExpected = false;
+
+    for (const match of matches) {
+        const reference: ClosingReference =
+            match[1] === undefined ? { repository: match[2], issue: match[3] ?? '' } : { issue: match[1] };
+        if (expected !== undefined && !matchedExpected && isExpectedClosingReference(reference, expected, repository)) {
+            matchedExpected = true;
+        } else {
+            unexpectedPhrases.push(match[0]);
+        }
+    }
+
+    if (unexpectedPhrases.length > 0 || (expected !== undefined && !matchedExpected)) {
+        const phrases = unexpectedPhrases.map((phrase) => `"${phrase}"`).join(', ');
+        const phraseDetail = phrases.length > 0 ? ` (${phrases})` : '';
+        fail(
+            `pull-request body contains unexpected issue-closing references${phraseDetail}. ` +
+                'GitHub closing keywords (close, fix, resolve #<issue>) in pull-request descriptions auto-close issues on merge; ' +
+                'remove the keyword from prose or rephrase.'
+        );
     }
 }
 

@@ -164,25 +164,14 @@ esac
 SH
 chmod +x "$fake_bin/gh"
 
-# The freshness step's only external command. It lives in its own bin directory
-# because the Gitleaks controls above run real `git` through $fake_bin.
-git_tip_bin="$temp_root/bin-git-tip"
-mkdir -p "$git_tip_bin"
-cat > "$git_tip_bin/git" <<'SH'
-#!/bin/sh
-set -eu
-printf 'git %s\n' "$*" >> "${COMMAND_LOG:-/dev/null}"
-if [ -n "${FAKE_MAIN_TIP:-}" ]; then
-    printf '%s\trefs/heads/main\n' "$FAKE_MAIN_TIP"
-fi
-SH
-chmod +x "$git_tip_bin/git"
-
-WORKFLOW_PATH="$repo_root/.github/workflows/health-gates.yml" NIGHTLY_PATH="$repo_root/.github/workflows/nightly.yml" REPO_ROOT="$repo_root" TEST_TEMP_ROOT="$temp_root" FAKE_BIN="$fake_bin" GIT_TIP_BIN="$git_tip_bin" node --input-type=module <<'NODE'
+WORKFLOW_PATH="$repo_root/.github/workflows/health-gates.yml" NIGHTLY_PATH="$repo_root/.github/workflows/nightly.yml" REPO_ROOT="$repo_root" TEST_TEMP_ROOT="$temp_root" FAKE_BIN="$fake_bin" pnpm exec tsx --input-type=module <<'NODE'
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { parse } from 'yaml';
 
+const { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } = await import(
+    `${process.env.REPO_ROOT}/scripts/deployWebWorkflowContract.ts`
+);
 const workflow = parse(readFileSync(process.env.WORKFLOW_PATH, 'utf8'));
 const nightly = parse(readFileSync(process.env.NIGHTLY_PATH, 'utf8'));
 const gitleaksHelper = readFileSync(`${process.env.REPO_ROOT}/scripts/run-gitleaks-history-scan.sh`, 'utf8');
@@ -737,6 +726,12 @@ expect(
 // what it deploys.
 const deployWeb = nightly.jobs?.['deploy-web'];
 const deployWebNeeds = deployWeb?.needs ?? [];
+// Every leg that validates the web artifact. The Rust workspace leg is one
+// of them: it is the only test of daw-dsp, daw-wasm-decoder, proof-chamber
+// and scoring, which ship in the web bundle as the committed
+// `public/wasm/*` packages. The desktop shell ships nothing this deployment
+// carries, so its native legs (native-macos, native-windows) must not
+// freeze it.
 const expectedDeployWebNeeds = [
     'static',
     'lint',
@@ -744,8 +739,6 @@ const expectedDeployWebNeeds = [
     'unit',
     'build',
     'rust',
-    'native-macos',
-    'native-windows',
     'e2e',
     'browser-ai-webgpu',
     'codeql',
@@ -753,8 +746,8 @@ const expectedDeployWebNeeds = [
 ];
 const deployWebGuardStep = stepNamed(deployWeb, 'Require a validated revision of main');
 const deployWebGuardRun = deployWebGuardStep?.run ?? '';
-const deployWebFreshnessStep = stepNamed(deployWeb, 'Refuse a stale candidate revision');
-const deployWebFreshnessRun = deployWebFreshnessStep?.run ?? '';
+const deployWebResolveStep = stepNamed(deployWeb, 'Resolve the current production revision');
+const deployWebSkipReportStep = stepNamed(deployWeb, 'Report why nothing was deployed');
 const deployWebDeployRun = stepNamed(deployWeb, 'Deploy the prebuilt revision')?.run ?? '';
 const deployWebIsolationStep = stepNamed(deployWeb, 'Assert cross-origin isolation on the deployment');
 const deployWebArmingReport = stepNamed(deployWeb, 'Report the missing deployment credential')?.run ?? '';
@@ -789,15 +782,27 @@ expect(
     deployWebIsolationStep?.env?.DEPLOYMENT_URL === '${{ steps.deployment.outputs.url }}',
     'the daily web deploy must assert isolation against the deployment it just created, not against a fixed alias'
 );
-for (const stepName of ['Pull the production environment', 'Build the validated revision', 'Deploy the prebuilt revision']) {
+for (const stepName of ['Deploy the prebuilt revision']) {
     expect(
         stepNamed(deployWeb, stepName)?.env?.VERCEL_TOKEN === '${{ secrets.VERCEL_TOKEN }}',
         `${stepName} must authenticate the Vercel CLI from the environment`
     );
 }
+const deployWebBuildRun = stepNamed(deployWeb, 'Build the validated revision')?.run ?? '';
+try {
+    assertDeployWebBuildRun(deployWebBuildRun);
+} catch (error) {
+    expect(false, error instanceof Error ? error.message : String(error));
+}
+try {
+    assertDeployWebJobNoVercelPull(deployWeb?.steps ?? []);
+} catch (error) {
+    expect(false, error instanceof Error ? error.message : String(error));
+}
 expect(
-    deployWeb?.environment === 'Production',
-    'the daily web deploy must draw its credential from the Production environment'
+    deployWeb?.environment?.name === 'Production' &&
+        deployWeb?.environment?.url === '${{ steps.deployment.outputs.url }}',
+    'the daily web deploy must draw its credential from the Production environment and publish its URL only from a real deployment'
 );
 expect(
     deployWeb?.env?.DEPLOY_CREDENTIAL_PRESENT === "${{ secrets.VERCEL_TOKEN != '' }}",
@@ -848,22 +853,32 @@ for (const ref of ['refs/heads/agent/2940/daily-train', 'refs/tags/v1.0.0', 'mai
 
 // Entry to the deploy queue is ordered by when each run's validation legs
 // finished, and a re-run replays its original run's SHA, so the candidate can
-// be a revision main has already moved past. The tip comparison is what makes
-// the newest revision win.
+// be a revision main has already moved past in the queue while still
+// descending from what production serves. The production-revision step below
+// decides on ancestry, not tip equality, and runs inside the same queue.
 expect(
-    deployWebFreshnessStep?.id === 'freshness',
-    'the daily web deploy must publish its freshness decision under a stable step id'
+    deployWebResolveStep?.id === 'production',
+    'the daily web deploy must publish its production-revision decision under a stable step id'
 );
 expect(
-    deployWebFreshnessStep?.env?.CANDIDATE_REVISION === '${{ github.sha }}',
-    'the freshness check must read the revision this run is about to deploy'
+    deployWebResolveStep?.env?.CANDIDATE_REVISION === '${{ github.sha }}',
+    'the production-revision step must read the revision this run is about to deploy'
 );
 expect(
-    deployWebFreshnessRun.includes('git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" refs/heads/main') &&
-        deployWebFreshnessRun.includes('"$tip" != "$CANDIDATE_REVISION"'),
-    'the freshness check must compare the candidate against the current tip of main read from the remote'
+    deployWebResolveStep?.env?.GITHUB_TOKEN === '${{ github.token }}',
+    'the production-revision step must authenticate its ancestry comparison with a GitHub token'
 );
-const freshCondition = "env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshness.outputs.fresh == 'true'";
+expect(
+    deployWebResolveStep?.env?.VERCEL_TOKEN === '${{ secrets.VERCEL_TOKEN }}' &&
+        deployWebResolveStep?.env?.VERCEL_ORG_ID === '${{ secrets.VERCEL_ORG_ID }}' &&
+        deployWebResolveStep?.env?.VERCEL_PROJECT_ID === '${{ secrets.VERCEL_PROJECT_ID }}',
+    'the production-revision step must authenticate its Vercel query from the environment'
+);
+expect(
+    deployWebResolveStep?.run === 'node scripts/resolveVercelProductionDeployment.ts',
+    'the daily deploy train must decide through scripts/resolveVercelProductionDeployment.ts'
+);
+const credentialCondition = "env.DEPLOY_CREDENTIAL_PRESENT == 'true'";
 for (const stepName of [
     'Checkout the validated revision',
     'Enable Corepack',
@@ -872,22 +887,30 @@ for (const stepName of [
     'Resolve the current production revision',
 ]) {
     expect(
-        stepNamed(deployWeb, stepName)?.if === freshCondition,
-        `${stepName} must not run for a revision that is no longer the tip of main`
+        stepNamed(deployWeb, stepName)?.if === credentialCondition,
+        `${stepName} must not run without the deployment credential`
     );
 }
 for (const stepName of [
     'Install dependencies',
-    'Pull the production environment',
+    'Link the Vercel CLI to the production project',
     'Build the validated revision',
     'Deploy the prebuilt revision',
     'Assert cross-origin isolation on the deployment',
 ]) {
     expect(
-        stepNamed(deployWeb, stepName)?.if === `${freshCondition} && steps.production.outputs.deploy == 'true'`,
-        `${stepName} must run only for a fresh candidate production does not already serve`
+        stepNamed(deployWeb, stepName)?.if === `${credentialCondition} && steps.production.outputs.deploy == 'true'`,
+        `${stepName} must run only for a candidate production does not already serve`
     );
 }
+expect(
+    deployWebSkipReportStep?.if === `${credentialCondition} && steps.production.outputs.deploy != 'true'`,
+    'the daily web deploy must report why nothing was deployed only when credentialed but not deploying'
+);
+expect(
+    deployWebSkipReportStep?.env?.REASON === "${{ steps.production.outputs.reason }}",
+    'the skip report must read the decision reason the production-revision step published'
+);
 for (const precondition of [
     'VERCEL_TOKEN',
     'VERCEL_ORG_ID',
@@ -899,55 +922,6 @@ for (const precondition of [
         `the gated-off report must name every arming precondition, including ${precondition}; the branch policy is what binds a dispatched copy of this workflow, which no in-file condition can`
     );
 }
-
-function runFreshness(candidateRevision, remoteTip) {
-    const outputPath = `${process.env.TEST_TEMP_ROOT}/freshness-output`;
-    const summaryPath = `${process.env.TEST_TEMP_ROOT}/freshness-summary`;
-    writeFileSync(outputPath, '');
-    writeFileSync(summaryPath, '');
-    const result = spawnSync('bash', ['-c', deployWebFreshnessRun], {
-        cwd: process.env.TEST_TEMP_ROOT,
-        encoding: 'utf8',
-        env: {
-            ...process.env,
-            PATH: `${process.env.GIT_TIP_BIN}:${process.env.PATH}`,
-            GITHUB_REPOSITORY: 'jcosta33/sourdaw',
-            CANDIDATE_REVISION: candidateRevision,
-            FAKE_MAIN_TIP: remoteTip,
-            GITHUB_OUTPUT: outputPath,
-            GITHUB_STEP_SUMMARY: summaryPath,
-        },
-    });
-    return {
-        status: result.status,
-        stdout: result.stdout,
-        outputs: readFileSync(outputPath, 'utf8'),
-        summary: readFileSync(summaryPath, 'utf8'),
-    };
-}
-
-const candidateRevision = '1'.repeat(40);
-const newerTip = '2'.repeat(40);
-const freshRun = runFreshness(candidateRevision, candidateRevision);
-expect(
-    freshRun.status === 0 && freshRun.outputs.includes('fresh=true'),
-    'the daily web deploy must proceed when the candidate is the current tip of main'
-);
-const staleRun = runFreshness(candidateRevision, newerTip);
-expect(
-    staleRun.status === 0 && staleRun.outputs.includes('fresh=false') && !staleRun.outputs.includes('fresh=true'),
-    'a candidate main has moved past must be a green refusal, not a deploy and not a failure'
-);
-expect(
-    staleRun.stdout.includes(
-        `stale candidate ${candidateRevision}, main is now ${newerTip}, deploying nothing`
-    ) && staleRun.summary.includes(`stale candidate \`${candidateRevision}\``),
-    'a stale refusal must say so loudly in the annotation and the step summary'
-);
-expect(
-    runFreshness(candidateRevision, '').status !== 0,
-    'an unreadable tip of main must fail the job rather than resolve to a deploy'
-);
 
 expect(nightlyReport?.name === 'Nightly failure report', 'nightly report job must remain present');
 expect(

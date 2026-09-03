@@ -6,9 +6,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
     installBundleAtomically,
+    isProcessAlive,
     parsePrepareReviewArgs,
     prepareReview,
     reviewBundlePath,
+    sweepStaleBundleSiblings,
     type PrepareReviewPort,
     type ReviewPullRequest,
 } from '../prepareReview.ts';
@@ -345,6 +347,118 @@ describe('review prepare', () => {
             installBundleAtomically(destination, { 'manifest.json': '{"pr":42,"headSha":"new"}\n' });
 
             expect(readdirSync(root)).toEqual(['42-head']);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    describe('isProcessAlive', () => {
+        it('returns true for process.pid', () => {
+            expect(isProcessAlive(process.pid)).toBe(true);
+        });
+
+        it('returns false for invalid and unallocated process ids', () => {
+            expect(isProcessAlive(0)).toBe(false);
+            expect(isProcessAlive(-1)).toBe(false);
+            expect(isProcessAlive(Number.NaN)).toBe(false);
+            expect(isProcessAlive(1.5)).toBe(false);
+            expect(isProcessAlive(2147483647)).toBe(false);
+        });
+    });
+
+    describe('sweepStaleBundleSiblings', () => {
+        it('reclaims dead .staging-* and .previous-* sibling directories when process is dead', () => {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-bundle-'));
+            const destination = join(root, '42-head');
+            try {
+                const deadStaging = join(root, '42-head.staging-99999-1000');
+                const deadPrevious = join(root, '42-head.previous-99999-2000');
+                mkdirSync(deadStaging, { recursive: true });
+                mkdirSync(deadPrevious, { recursive: true });
+                writeFileSync(join(deadStaging, 'file.txt'), 'stale staging');
+                writeFileSync(join(deadPrevious, 'file.txt'), 'stale previous');
+
+                sweepStaleBundleSiblings(destination, (pid) => pid !== 99999);
+
+                expect(existsSync(deadStaging)).toBe(false);
+                expect(existsSync(deadPrevious)).toBe(false);
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+            }
+        });
+
+        it('preserves active sibling directories when process is alive', () => {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-bundle-'));
+            const destination = join(root, '42-head');
+            try {
+                const activeStaging = join(root, '42-head.staging-12345-1000');
+                const activePrevious = join(root, '42-head.previous-12345-2000');
+                mkdirSync(activeStaging, { recursive: true });
+                mkdirSync(activePrevious, { recursive: true });
+
+                sweepStaleBundleSiblings(destination, (pid) => pid === 12345);
+
+                expect(existsSync(activeStaging)).toBe(true);
+                expect(existsSync(activePrevious)).toBe(true);
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+            }
+        });
+
+        it('ignores non-directory entries and entries that do not match the staging/previous pattern', () => {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-bundle-'));
+            const destination = join(root, '42-head');
+            try {
+                const nonDirMatching = join(root, '42-head.staging-99999-1000');
+                const otherDir = join(root, 'other-dir');
+                const otherFile = join(root, 'some-file.txt');
+                const nonMatchingDir = join(root, '42-head.other-99999-1000');
+
+                writeFileSync(nonDirMatching, 'not a dir');
+                mkdirSync(otherDir, { recursive: true });
+                writeFileSync(otherFile, 'hello');
+                mkdirSync(nonMatchingDir, { recursive: true });
+
+                sweepStaleBundleSiblings(destination, () => false);
+
+                expect(existsSync(nonDirMatching)).toBe(true);
+                expect(existsSync(otherDir)).toBe(true);
+                expect(existsSync(otherFile)).toBe(true);
+                expect(existsSync(nonMatchingDir)).toBe(true);
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+            }
+        });
+
+        it('returns cleanly when destination parent directory does not exist', () => {
+            const nonExistentDestination = join(tmpdir(), `non-existent-${Date.now()}`, 'sub', 'bundle');
+            expect(() => sweepStaleBundleSiblings(nonExistentDestination)).not.toThrow();
+        });
+    });
+
+    it('cleans up dead staging siblings while installing the new bundle', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-bundle-'));
+        const destination = join(root, '42-head');
+        try {
+            const deadStaging = join(root, '42-head.staging-99999-1000');
+            const deadPrevious = join(root, '42-head.previous-99999-2000');
+            const liveStaging = join(root, '42-head.staging-12345-3000');
+            mkdirSync(deadStaging, { recursive: true });
+            mkdirSync(deadPrevious, { recursive: true });
+            mkdirSync(liveStaging, { recursive: true });
+            writeFileSync(join(deadStaging, 'orphan.txt'), 'stale');
+
+            installBundleAtomically(
+                destination,
+                { 'manifest.json': '{"pr":42,"headSha":"new"}\n' },
+                (pid) => pid === 12345
+            );
+
+            expect(existsSync(deadStaging)).toBe(false);
+            expect(existsSync(deadPrevious)).toBe(false);
+            expect(existsSync(liveStaging)).toBe(true);
+            expect(existsSync(destination)).toBe(true);
+            expect(readFileSync(join(destination, 'manifest.json'), 'utf8')).toContain('new');
         } finally {
             rmSync(root, { recursive: true, force: true });
         }

@@ -210,11 +210,36 @@ describe('generateToolPlanningOutcome', () => {
         );
         expect(mocks.initWebLlmEngine).toHaveBeenCalledOnce();
         expect(mocks.generateWebLlmToolCalls).toHaveBeenCalledOnce();
+        expect(mocks.generateWebLlmToolCalls).toHaveBeenCalledWith(
+            expect.any(String),
+            'mute the first track',
+            expect.any(Array),
+            8192,
+            undefined
+        );
         expect(mocks.llmStatusSet).toHaveBeenLastCalledWith({
             state: 'ready',
             backend: 'webllm',
             modelId: 'Qwen3-4B-q4f16_1-MLC',
         });
+    });
+
+    it('passes admitted maxOutputTokens limit to WebLLM tool calls', async () => {
+        mocks.backendChain.value = ['webllm'];
+        mocks.generateWebLlmToolCalls.mockResolvedValue({
+            status: 'complete',
+            toolCalls: [],
+        });
+
+        await generateToolPlanningOutcome('system', 'mute the first track', toolSchemas);
+
+        expect(mocks.generateWebLlmToolCalls).toHaveBeenCalledWith(
+            expect.any(String),
+            'mute the first track',
+            expect.any(Array),
+            8192,
+            undefined
+        );
     });
 
     it('keeps the five application tools available to WebLLM under 30-tool selection pressure', async () => {
