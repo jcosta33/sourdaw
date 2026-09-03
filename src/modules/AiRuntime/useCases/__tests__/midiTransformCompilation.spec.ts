@@ -321,6 +321,22 @@ describe('MIDI transform compilation', () => {
         expect(result.status).toBe(scenario.accepted ? 'accepted' : 'rejected');
     });
 
+    it('refuses an unbounded clip reference without quoting it back', () => {
+        const hostileReference = `$${'reference-text\n'.repeat(17).slice(0, 255)}`;
+
+        const result = compileArbitraryCommandList({
+            context: existingClipContext,
+            revision: 'revision-transform',
+            calls: [propose([{ id: 'write-line', name: 'melody', arguments: { clipId: hostileReference, bars: 4 } }])],
+        });
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'MIDI transform melody requires an earlier bounded producer for target too long to name.',
+        });
+        expect(JSON.stringify(result)).not.toContain('reference-text');
+    });
+
     it('expands a swung drum pattern that fills its clip into addNotes that end inside it', () => {
         clearMidiTransformRegistry();
         registerMidiTransforms(MIDI_TRANSFORM_IMPLEMENTATIONS);

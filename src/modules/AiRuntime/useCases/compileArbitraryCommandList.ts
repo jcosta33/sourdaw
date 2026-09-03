@@ -884,6 +884,14 @@ const EXPANDED_TRANSFORM_COMMAND_NAME = 'addNotes';
 /** A transform writes notes, so its clip must be one the batch is allowed to write notes into. */
 const MIDI_TRANSFORM_TARGET_CAPABILITY = 'writable-midi-clip';
 
+/**
+ * A clip reference is provider-authored text that only has to be a bounded id, so it is named back
+ * in a rejection the chat renders only while it is short enough to read as a reference.
+ */
+function describeTargetReference(value: string): string {
+    return value.length <= MAX_QUOTED_REFERENCE_LENGTH ? `target ${value}` : 'target too long to name';
+}
+
 type TransformClipResolution = { status: 'accepted'; clipSpanBeats: number } | RejectedCompilation;
 
 /**
@@ -918,13 +926,16 @@ function resolveTransformClipSpanBeats(input: {
         ) {
             return {
                 status: 'rejected',
-                reason: `MIDI transform target ${clipReference} is outside the writable MIDI clip contract.`,
+                reason: `MIDI transform ${describeTargetReference(clipReference)} is outside the writable MIDI clip contract.`,
             };
         }
         const clipSpanBeats = clip.endBeat - clip.startBeat;
         return clipSpanBeats > 0
             ? { status: 'accepted', clipSpanBeats }
-            : { status: 'rejected', reason: `MIDI transform target ${clipReference} spans no beats.` };
+            : {
+                  status: 'rejected',
+                  reason: `MIDI transform ${describeTargetReference(clipReference)} spans no beats.`,
+              };
     }
     const binding = clipReference.slice(1);
     const producer = input.producersByBinding.get(binding);
@@ -936,14 +947,14 @@ function resolveTransformClipSpanBeats(input: {
     ) {
         return {
             status: 'rejected',
-            reason: `Batch-local target ${clipReference} requires an earlier bounded producer dependency.`,
+            reason: `MIDI transform ${input.item.name} requires an earlier bounded producer for ${describeTargetReference(clipReference)}.`,
         };
     }
     const clipSpanBeats = producer.createdClipSpanBeats;
     return clipSpanBeats === undefined
         ? {
               status: 'rejected',
-              reason: `Batch-local target ${clipReference} declares no clip span for a MIDI transform to fit inside.`,
+              reason: `MIDI transform ${input.item.name} has no declared clip span for ${describeTargetReference(clipReference)} to fit inside.`,
           }
         : { status: 'accepted', clipSpanBeats };
 }
