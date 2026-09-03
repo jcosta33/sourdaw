@@ -931,7 +931,6 @@ describe('stem import and starting mix workflow', () => {
             { type: 'addTrack', payload: { id: 'track-collaborator', name: 'Collaborator', kind: 'audio' } },
             { skipUndo: true }
         );
-        flushAutomergeStorageWrites();
 
         // The stem-import plan targets no existing object (getStemImportPlanScope reports
         // targetIds: []), so a brand new, locally added track is a non-overlapping edit: the
