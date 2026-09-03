@@ -182,6 +182,22 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
             >
                 Arpeggiate
             </DawMenuButton>
+            <DawMenuButton
+                role="menuitem"
+                onClick={act(() => {
+                    void executeAppAction({ type: 'invertNotes', payload: { clipId } });
+                })}
+            >
+                Invert Pitch
+            </DawMenuButton>
+            <DawMenuButton
+                role="menuitem"
+                onClick={act(() => {
+                    void executeAppAction({ type: 'retrogradeNotes', payload: { clipId } });
+                })}
+            >
+                Reverse (Retrograde)
+            </DawMenuButton>
             <DawMenuButton role="menuitem" onClick={act(() => exportMidiClip(clipId))}>
                 Export as MIDI…
             </DawMenuButton>
