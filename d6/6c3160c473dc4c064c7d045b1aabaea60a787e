@@ -1,0 +1,39 @@
+src/infra/dialogService/ConfirmDialog.tsx
+  s_9b530f08172a54::t_8bc0fc3dc861c1 36,41-43,48
+src/infra/dialogService/PromptDialog.tsx
+  s_ac03a4ebaa3f6e::t_bb2562556f26e6 43,48-50,54
+src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx
+  s_132d8b8d15acc8::t_f712ee8fec4f3f 789,982
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d66c3160c473dc4c064c7d045b1aabaea60a787e",
+  "prompts": {},
+  "sessions": {
+    "s_132d8b8d15acc8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ab9e72e336290f111",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
