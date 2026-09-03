@@ -17,9 +17,10 @@ name: Heavy gates
 # This file must never mint a check run named `Gate`. That name is a required
 # status check on `main`, GitHub counts a `skipped` conclusion as satisfying a
 # required check, and every event here can legitimately skip. `HeavyGate` is
-# this workflow's own summary and is deliberately not ruleset-required — under
-# the current zero-approval ruleset a change can merge without any run of this
-# workflow, and pretending otherwise in a check name would be the same lie in a
+# this workflow's own summary and is deliberately not ruleset-required — the
+# ruleset requires one approving review and that review triggers this
+# workflow, but no required check makes the merge wait for this workflow's
+# verdict, and pretending otherwise in a check name would be the same lie in a
 # new place. The enforcement this workflow's results are meant to carry arrives
 # when `deliver`'s required-CI admission is armed.
 #
@@ -35,12 +36,14 @@ permissions:
   pull-requests: read
 
 concurrency:
-  # An approving review shares the pull request's group so two reviews on one
-  # pull request do not run the heavy lane twice, and never cancels: it is the
-  # only run that observes these legs on that head. A review that does not
-  # approve gets a run-id group, so it replaces nothing — and the validation
-  # caller below refuses it, so it mints no verdict-bearing check runs, only
-  # skipped ones.
+  # An approving review shares the pull request's group and never cancels: the
+  # approving run is the only run that observes these legs on that head, so
+  # cancelling it would leave that head unobserved. Two approvals on one pull
+  # request therefore run the heavy lane serially — a second approval queues
+  # behind the first and runs it in full, because the group prevents concurrent
+  # duplication, not repetition. A review that does not approve gets a run-id
+  # group, so it replaces nothing — and the validation caller below refuses it,
+  # so it mints no verdict-bearing check runs, only skipped ones.
   group: heavy-gates-${{ (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') && github.event.pull_request.number || github.run_id }}
   cancel-in-progress: false
 
@@ -205,11 +208,11 @@ jobs:
     name: CodeQL
     needs: validation
     # Minutes rather than seconds, so it runs with the heavy lane instead of on
-    # every push. Be exact about what that costs: the live ruleset requires no
-    # approving review, so a change can reach `main` without any run of this
-    # workflow. The nightly is what observes `main` unconditionally, and the
-    # merge-time enforcement arrives when `deliver`'s required-CI admission is
-    # armed.
+    # every push. Be exact about what that costs: the ruleset's required
+    # approving review triggers this workflow, but `HeavyGate` is not a
+    # required check, so a change can merge without this workflow's verdict.
+    # The nightly is what observes `main` unconditionally, and the merge-time
+    # enforcement arrives when `deliver`'s required-CI admission is armed.
     # A fork's approved review runs with a read-only GITHUB_TOKEN, and the
     # code-scanning upload carve-out covers only the `pull_request` event, so
     # the SARIF upload would be refused and fail the run on the head. The

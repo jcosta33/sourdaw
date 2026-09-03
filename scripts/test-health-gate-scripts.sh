@@ -446,6 +446,21 @@ expect(
     JSON.stringify(Object.keys(validationWorkflow.jobs ?? {})) === JSON.stringify(expectedValidationJobs),
     `validation.yml must hold exactly these jobs, in order: ${expectedValidationJobs.join(', ')}`
 );
+// The decide outputs reach callers only through this export list: deleting one
+// leaves `needs.validation.outputs.<name>` empty while the decide pins stay
+// green, which is how the approved-review heavy lane could skip under a green
+// HeavyGate.
+expect(
+    JSON.stringify(Object.keys(validationEvents?.workflow_call?.outputs ?? {}).sort()) ===
+        JSON.stringify(['code', 'e2e', 'heavy', 'rust', 'server', 'web']),
+    'validation.yml must export exactly the six scope outputs to its callers'
+);
+for (const exportName of ['heavy', 'rust', 'server', 'e2e', 'web', 'code']) {
+    expect(
+        validationEvents?.workflow_call?.outputs?.[exportName]?.value === `\${{ jobs.decide.outputs.${exportName} }}`,
+        `the ${exportName} caller output must forward jobs.decide.outputs.${exportName}`
+    );
+}
 for (const [file, parsed] of [['health-gates.yml', workflow], ['heavy-gates.yml', heavyWorkflow]]) {
     expect(
         parsed.jobs?.validation?.uses === './.github/workflows/validation.yml',
@@ -494,28 +509,24 @@ const allFalseScopes = { rust: 'false', server: 'false', e2e: 'false', web: 'fal
 const reviewScopes = { rust: 'false', server: 'true', e2e: 'false', web: 'true' };
 const pullRequestScopes = { rust: 'true', server: 'false', e2e: 'true', web: 'false' };
 const unclassifiedScopes = { ...allFalseScopes, unclassified: 'true' };
-function runNightlyResolveScope() {
-    const outputPath = `${process.env.TEST_TEMP_ROOT}/resolve-scope-nightly.output`;
+function runNightlyResolveScope(event) {
+    const outputPath = `${process.env.TEST_TEMP_ROOT}/resolve-scope-nightly-${event}.output`;
     writeFileSync(outputPath, '');
     const result = spawnSync('bash', ['-c', nightlyResolveScopeRun], {
         encoding: 'utf8',
-        env: { ...process.env, GITHUB_OUTPUT: outputPath },
+        env: { ...process.env, EVENT: event, GITHUB_OUTPUT: outputPath },
     });
-    expect(result.status === 0, `Nightly resolve scope must execute: ${result.stderr.trim()}`);
+    expect(result.status === 0, `Nightly resolve scope must execute for ${event}: ${result.stderr.trim()}`);
     return readFileSync(outputPath, 'utf8');
 }
-expect(
-    runNightlyResolveScope() === 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\ncode=true\n',
-    'nightly must enable the heavy path and every scope'
-);
-expect(
-    runResolveScope('schedule', allFalseScopes) === 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\ncode=true\n',
-    'schedule must enable the heavy path and every scope'
-);
-expect(
-    runResolveScope('workflow_dispatch', allFalseScopes) === 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\ncode=true\n',
-    'workflow_dispatch must enable the heavy path and every scope'
-);
+// The schedule and dispatch events belong to the nightly alone, so the
+// all-scopes probes run its script; validation.yml answers workflow_call only.
+for (const eventName of ['schedule', 'workflow_dispatch']) {
+    expect(
+        runNightlyResolveScope(eventName) === 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\ncode=true\n',
+        `nightly must enable the heavy path and every scope on ${eventName}`
+    );
+}
 expect(
     runResolveScope('pull_request_review', reviewScopes) === 'heavy=true\nrust=false\nserver=true\ne2e=false\nweb=true\ncode=true\n',
     'pull_request_review must enable the heavy path and preserve path-filter outputs'

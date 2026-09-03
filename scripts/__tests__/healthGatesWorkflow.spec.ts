@@ -378,6 +378,21 @@ function assertScopeContract(candidate: UnknownRecord): string {
             throw new Error(`decide ${name} output must expose steps.scope.outputs.${name}`);
         }
     }
+    // The decide outputs reach callers only through the `workflow_call` export
+    // list: deleting one leaves `needs.validation.outputs.<name>` empty while
+    // every pin above stays green, which is how the approved-review heavy lane
+    // could skip under a green HeavyGate. Pin the exact export set and each
+    // forwarding value.
+    const callerOutputs = recordAt(recordAt(recordAt(candidate, 'on'), 'workflow_call'), 'outputs');
+    const exportedNames = Object.keys(callerOutputs).sort();
+    if (JSON.stringify(exportedNames) !== JSON.stringify(Object.keys(SCOPE_OUTPUT_REFERENCES).sort())) {
+        throw new Error('validation.yml must export exactly the six scope outputs to its callers');
+    }
+    for (const name of exportedNames) {
+        if (recordAt(callerOutputs, name).value !== `\${{ jobs.decide.outputs.${name} }}`) {
+            throw new Error(`the ${name} caller output must forward jobs.decide.outputs.${name}`);
+        }
+    }
     const scope = stepNamed(decide, 'Resolve scope');
     if (scope.id !== 'scope') {
         throw new Error('Resolve scope must retain the scope step id');
@@ -1404,9 +1419,6 @@ describe('health gates workflow contract', () => {
             code: 'false',
         });
         expect(runScopeScript(scopeScript, 'pull_request_review')).toMatchObject({ heavy: 'true' });
-        for (const eventName of ['schedule', 'workflow_dispatch']) {
-            expect(runScopeScript(scopeScript, eventName)).toEqual(FORCED_SCOPE_OUTPUTS);
-        }
         const nightlyScope = assertNightlyScopeContract(nightly);
         expect(runScopeScript(nightlyScope, 'schedule')).toEqual(FORCED_SCOPE_OUTPUTS);
         expect(runScopeScript(nightlyScope, 'workflow_dispatch')).toEqual(FORCED_SCOPE_OUTPUTS);
@@ -1425,6 +1437,14 @@ describe('health gates workflow contract', () => {
         recordAt(jobAt(undisclosedWebScope, 'decide'), 'outputs').web = HEAVY_OUTPUT_REFERENCE;
         expect(() => assertScopeContract(undisclosedWebScope)).toThrow(
             'decide web output must expose steps.scope.outputs.web'
+        );
+        // Deleting the `heavy` export leaves `needs.validation.outputs.heavy`
+        // empty, so the whole approved-review heavy lane skips while HeavyGate
+        // still reports green: the export list is part of the contract.
+        const unexportedHeavy = asRecord(structuredClone(validationWorkflow), 'unexported heavy validationWorkflow');
+        delete recordAt(recordAt(recordAt(unexportedHeavy, 'on'), 'workflow_call'), 'outputs').heavy;
+        expect(() => assertScopeContract(unexportedHeavy)).toThrow(
+            'validation.yml must export exactly the six scope outputs to its callers'
         );
     });
 

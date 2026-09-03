@@ -339,10 +339,10 @@ function validateCiAdmission(pullRequest: PullRequestSnapshot, checks: CheckEvid
  * remote mutation boundary, which is what strands the per-PR lock. Refusing here, before either call,
  * lets the lock release normally. The named checks are read best-effort, purely to make the refusal
  * legible, and the three outcomes say different things: a failed read cannot name anything; an
- * unsatisfied set names what is still pending or failing; an empty set means every required check the
- * ruleset names is already a settled success, so the block is something else the ruleset also
- * enforces — an unresolved review thread, the review decision, or another rule entirely — and saying
- * "could not be listed" there would be false, not just uninformative.
+ * unsatisfied set names what is still pending or failing; an empty set means every required check
+ * the ruleset names is satisfied on its newest attempt, so the block is something else the ruleset
+ * also enforces — an unresolved review thread, the review decision, or another rule entirely — and
+ * saying "could not be listed" there would be false, not just uninformative.
  */
 function validateAdvisoryMergeGate(pullRequest: PullRequestSnapshot, checks: CheckEvidencePort): void {
     if (pullRequest.mergeStateStatus !== BLOCKED_MERGE_STATE) {
@@ -362,8 +362,8 @@ function validateAdvisoryMergeGate(pullRequest: PullRequestSnapshot, checks: Che
 }
 
 /**
- * The names GitHub's live ruleset requires, filtered to the ones the head's own check runs do not yet
- * show as a settled success. Both the ruleset read and the check-run read are network calls that can
+ * The names GitHub's live ruleset requires, filtered to the ones the head's own check runs do not
+ * yet show as satisfied. Both the ruleset read and the check-run read are network calls that can
  * fail independently of the `BLOCKED` verdict itself, and either failure leaves this undefined rather
  * than losing the refusal to an unrelated exception.
  */
@@ -374,18 +374,30 @@ function unsatisfiedAdvisoryRequiredContexts(
     try {
         const requiredContexts = checks.requiredStatusCheckContexts();
         const checkRuns = checks.headCheckRuns(pullRequest.number, pullRequest.headRefOid);
-        return requiredContexts.filter(
-            (context) =>
-                !checkRuns.some(
-                    (run) =>
-                        run.name === context &&
-                        run.status === SETTLED_CHECK_STATUS &&
-                        run.conclusion === PASSING_CONCLUSION
-                )
-        );
+        return requiredContexts.filter((context) => !isSatisfiedRequiredContext(context, checkRuns));
     } catch {
         return undefined;
     }
+}
+
+/**
+ * GitHub evaluates the newest run of a required name, so any settled success under the name cannot
+ * satisfy the context: an older green attempt must not cover a newer red one. The context is
+ * satisfied only when some settled success provably started after every other attempt of the name —
+ * a newer failure then leaves it unsatisfied, an attempt still in flight leaves it pending, and an
+ * attempt GitHub reports no start for supersedes nothing, the same conservatism as `startedAfter`.
+ */
+function isSatisfiedRequiredContext(context: string, checkRuns: HeadCheckRun[]): boolean {
+    const attempts = checkRuns.filter((run) => run.name === context);
+    const successes = attempts.filter(
+        (run) => run.status === SETTLED_CHECK_STATUS && run.conclusion === PASSING_CONCLUSION
+    );
+    if (successes.length === 0) {
+        return false;
+    }
+    return attempts.every(
+        (attempt) => successes.includes(attempt) || successes.some((success) => startedAfter(success, attempt))
+    );
 }
 
 /**

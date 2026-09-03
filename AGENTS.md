@@ -408,9 +408,10 @@ No job outside `health-gates.yml` may be named `Gate`.
 So `unit` decides the required check, through the validation lane it lives in, on every run that
 touches the web scope. The end-to-end suite does not: no pull-request run executes it, so naming it
 in `Gate` would have listed an always-skipped job and claimed coverage the check never had. It
-decides `HeavyGate` on approving-review runs and gates hard on the nightly train. Under the current
-ruleset an approving review is not required to merge, so nothing today forces that suite to have run
-against a head before it lands; its merge enforcement arrives when `deliver`'s required-CI admission
+decides `HeavyGate` on approving-review runs and gates hard on the nightly train. The ruleset
+requires one approving review, and that review triggers the heavy lane, but no required check makes
+the merge wait for the lane's verdict, so nothing today forces that suite to have passed against a
+head before it lands; its merge enforcement arrives when `deliver`'s required-CI admission
 is armed, which is a separate change. The earlier policy of keeping pull-request-editable workflows
 out of merge authority is superseded — a head that softens its own gate is caught by review of that
 file like any other reviewed code — but note what that leaves: the ruleset is the only CI merge
@@ -421,9 +422,10 @@ locally to satisfy a gate the pipeline already runs on every push; Resource Safe
 stays local.
 
 `main` is covered by a ruleset. Read the live one rather than trusting a copy here — it blocks
-deletion and non-fast-forward, forces a squashed pull request, demands resolved threads, and
-requires `Gate` on the pull-request head, but the enforcement that actually holds is repository
-configuration, not something this file can promise. The ruleset is non-strict: the head need not
+deletion and non-fast-forward, forces a squashed pull request, requires one approving review with
+the last push approved, demands resolved threads, and requires `Gate` on the pull-request head, but
+the enforcement that actually holds is repository configuration, not something this file can
+promise. The ruleset is non-strict: the head need not
 carry `main` before it can merge, so a lane that has fallen behind still delivers without merging
 `origin/main` — unless there is a real conflict or GitHub cannot merge the head, and taking `main`
 then produces a new head, which needs a fresh `Gate` and a fresh review.
