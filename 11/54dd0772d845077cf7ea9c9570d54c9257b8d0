@@ -1,0 +1,43 @@
+src/infra/dialogService/ConfirmDialog.tsx
+  s_248adeea07f8db::t_db25f3115c7f1f 5,11-13,18,20,23-26,31-71
+src/infra/dialogService/PromptDialog.tsx
+  s_248adeea07f8db::t_bc95dac1cce155 5,18,30-33,38-79
+src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx
+  s_686a78ccb953f2::t_188c47997a321e 16,777-787,789,856-857,970-980,982,1055-1056
+src/modules/CrdtDocument/presentations/views/BranchManagerDialog.tsx
+  s_30ab1869eedd96::t_3458a99490b695 9,112-115,120-169,171-181,183-185
+src/modules/CrdtDocument/presentations/views/MergeResultDialog.tsx
+  s_248adeea07f8db::t_404fe80d69eb47 9,27-79,82-83,87-108,110-111,116-117
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "1154dd0772d845077cf7ea9c9570d54c9257b8d0",
+  "prompts": {},
+  "sessions": {
+    "s_248adeea07f8db": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a26b63033d56c60f7",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_30ab1869eedd96": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a1fb9dfd11e81952f",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_686a78ccb953f2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-af2698fb09b7bcd96",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
