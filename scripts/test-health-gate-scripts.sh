@@ -405,11 +405,29 @@ expect(
 // `Gate` is the required context. Only health-gates.yml may mint it, so no job
 // anywhere else may carry that name — a same-named check run from another
 // workflow competes for the required context.
+function gateNameViolations(file, jobs) {
+    const violations = [];
+    for (const [id, job] of Object.entries(jobs ?? {})) {
+        if ((job?.name ?? id) === 'Gate') {
+            violations.push(
+                `${file} job ${id} must not be named Gate; only a pull_request run of health-gates.yml may mint that check`
+            );
+        }
+    }
+    return violations;
+}
 for (const [file, parsed] of [['validation.yml', validationWorkflow], ['heavy-gates.yml', heavyWorkflow]]) {
-    for (const [id, job] of Object.entries(parsed.jobs ?? {})) {
-        expect(job?.name !== 'Gate', `${file} job ${id} must not be named Gate; only a pull_request run of health-gates.yml may mint that check`);
+    for (const violation of gateNameViolations(file, parsed.jobs ?? {})) {
+        expect(false, violation);
     }
 }
+// GitHub names an unnamed job's check run after its job id, so an unnamed
+// Gate-keyed job mints the required context too. The guard must read the id
+// as the name, and this mutant proves it does.
+expect(
+    gateNameViolations('mutant.yml', { Gate: { needs: ['decide'] } }).length === 1,
+    'the Gate-name guard must catch an unnamed Gate-keyed job'
+);
 expect(heavyGate?.name === 'HeavyGate', 'the heavy summary must keep its own distinct, non-required name');
 expect(
     JSON.stringify(heavyGate?.needs ?? []) === JSON.stringify(expectedHeavyGateNeeds),
@@ -432,6 +450,14 @@ for (const [file, parsed] of [['health-gates.yml', workflow], ['heavy-gates.yml'
         `${file} must call the shared validation lane rather than redefine it`
     );
 }
+expect(
+    heavyWorkflow.jobs?.validation?.if === "github.event.review.state == 'approved'",
+    'the heavy validation lane must refuse non-approved reviews, which mint nothing on the head'
+);
+expect(
+    workflow.jobs?.validation?.if === undefined,
+    'the health validation lane must run on every pull request'
+);
 expect(
     concurrency?.group === 'health-gates-${{ github.event.pull_request.number }}',
     'pull-request validation must group by pull request'

@@ -17,6 +17,7 @@ type UnknownRecord = Record<string, unknown>;
 type JobResult = 'cancelled' | 'failure' | 'skipped' | 'success';
 
 const REVIEW_CONDITION = "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'";
+const APPROVED_REVIEW_CONDITION = "github.event.review.state == 'approved'";
 const HEAVY_OUTPUT_REFERENCE = '${{ steps.scope.outputs.heavy }}';
 const HEAVY_CONDITION = "needs.validation.outputs.heavy == 'true'";
 const FORCED_SCOPE_OUTPUTS = {
@@ -497,7 +498,10 @@ function assertPullRequestWorkflowIsolation(candidate: UnknownRecord): void {
     }
 }
 
-function nightlyJobCheckName(jobId: string, value: unknown): string {
+// The check-run name GitHub reports for a job: its declared `name`, or its job
+// id when it declares none. Reading the id as the name is what keeps an
+// unnamed `Gate`-keyed job from minting the required context undetected.
+function jobCheckName(jobId: string, value: unknown): string {
     const job = asRecord(value, jobId);
     const name = job.name;
     if (typeof name === 'string') {
@@ -511,7 +515,7 @@ function assertNightlyDoesNotMintGate(jobs: UnknownRecord): void {
         throw new Error('the nightly train must not mint Gate');
     }
     for (const [jobId, value] of Object.entries(jobs)) {
-        if (nightlyJobCheckName(jobId, value) === REQUIRED_CHECK_NAME) {
+        if (jobCheckName(jobId, value) === REQUIRED_CHECK_NAME) {
             throw new Error('the nightly train must not mint Gate');
         }
     }
@@ -755,7 +759,7 @@ function assertRequiredCheckIsolation(set: WorkflowSet): void {
         ['nightly.yml', set.nightly],
     ] as const) {
         for (const [id, job] of Object.entries(recordAt(candidate, 'jobs'))) {
-            if (asRecord(job, `${file} ${id}`).name === REQUIRED_CHECK_NAME) {
+            if (jobCheckName(id, job) === REQUIRED_CHECK_NAME) {
                 throw new Error(`${file} must not name a job ${REQUIRED_CHECK_NAME}`);
             }
         }
@@ -796,6 +800,17 @@ function assertJobGraph(set: WorkflowSet): void {
         if (jobAt(candidate, 'validation').uses !== VALIDATION_CALL) {
             throw new Error(`${file} must call the shared validation lane rather than redefine it`);
         }
+    }
+    // Only an approved review may run the review lane: without the predicate
+    // the caller still executes on a comment-only or changes-requested
+    // submission, and every skipped leg inside it lands on the head as a
+    // `Validation / …` check run beside the push lane's. The push lane's own
+    // caller stays unconditional — it is the run that mints `Gate`.
+    if (jobAt(set.heavy, 'validation').if !== APPROVED_REVIEW_CONDITION) {
+        throw new Error('the heavy validation lane must refuse non-approved reviews, which mint nothing');
+    }
+    if (jobAt(set.health, 'validation').if !== undefined) {
+        throw new Error('the health validation lane must run on every pull request');
     }
     if (JSON.stringify(Object.keys(recordAt(set.validation, 'jobs'))) !== JSON.stringify([...VALIDATION_JOBS])) {
         throw new Error('validation.yml must hold exactly the pinned job list, in order');
@@ -1294,24 +1309,36 @@ describe('health gates workflow contract', () => {
         recordAt(namelessGateId, 'jobs').Gate = { needs: ['decide'] };
         expect(() => assertNightlyWorkflowIsolation(namelessGateId)).toThrow('the nightly train must not mint Gate');
 
+        // GitHub names an unnamed job's check run after its job id, so an
+        // unnamed `Gate`-keyed job mints the required context exactly as a
+        // `name: Gate` declaration would. The isolation sweep must read the id
+        // as the name in every file, not only in nightly.yml.
+        const namelessGateIdInHeavy = cloneWorkflows('nameless-gate-id heavy');
+        recordAt(namelessGateIdInHeavy.heavy, 'jobs').Gate = { needs: ['validation'] };
+        expect(() => assertRequiredCheckIsolation(namelessGateIdInHeavy)).toThrow(
+            'heavy-gates.yml must not name a job Gate'
+        );
+
+        const namelessGateIdInValidation = cloneWorkflows('nameless-gate-id validation');
+        recordAt(namelessGateIdInValidation.validation, 'jobs').Gate = { needs: ['decide'] };
+        expect(() => assertRequiredCheckIsolation(namelessGateIdInValidation)).toThrow(
+            'validation.yml must not name a job Gate'
+        );
+
         const droppedNightlyLeg = asRecord(structuredClone(nightly), 'dropped-leg nightly');
         delete recordAt(droppedNightlyLeg, 'jobs')['nightly-report'];
         expect(() => assertNightlyWorkflowIsolation(droppedNightlyLeg)).toThrow('nightly must define nightly-report');
 
-        const extraPullRequestTarget = asRecord(structuredClone(workflow), 'extra pull_request_target workflow');
-        recordAt(extraPullRequestTarget, 'on').pull_request_target = {};
-        expect(() => {
-            expect(Object.keys(recordAt(extraPullRequestTarget, 'on')).sort()).toEqual(['pull_request']);
-        }).toThrow();
-
-        const extraPullRequestOnNightly = asRecord(structuredClone(nightly), 'extra pull_request nightly');
-        recordAt(extraPullRequestOnNightly, 'on').pull_request = {};
-        expect(() => {
-            expect(Object.keys(recordAt(extraPullRequestOnNightly, 'on')).sort()).toEqual([
-                'schedule',
-                'workflow_dispatch',
-            ]);
-        }).toThrow();
+        // The `reviewTriggered` probe above already routes an extra health-gates
+        // trigger through the same on-keys equality this block asserted inline,
+        // so a second unrouted `pull_request_target` mutant would pin nothing.
+        // The nightly trigger set has no such routed probe: this one exercises
+        // the production pin rather than restating it inline.
+        const extraPullRequestOnNightly = cloneWorkflows('extra pull_request nightly');
+        recordAt(extraPullRequestOnNightly.nightly, 'on').pull_request = {};
+        expect(() => assertRequiredCheckIsolation(extraPullRequestOnNightly)).toThrow(
+            'the nightly workflow must own exactly the schedule and dispatch events'
+        );
 
         expect(() => assertWorkflowPermissions(workflow)).not.toThrow();
         expect(() => assertWorkflowPermissions(validationWorkflow)).not.toThrow();
@@ -1536,6 +1563,21 @@ describe('health gates workflow contract', () => {
         const ungatedNeeds = arrayAt(jobAt(ungatedValidation.health, 'gate'), 'needs');
         ungatedNeeds.splice(ungatedNeeds.indexOf('validation'), 1);
         expect(() => assertJobGraph(ungatedValidation)).toThrow('gate must depend on validation');
+
+        // A review that does not approve must mint nothing: drop the predicate
+        // and the reusable lane runs on every submission, landing its skipped
+        // legs on the head as `Validation / …` check runs.
+        const ungatedReviewLane = cloneWorkflows('ungated review lane');
+        delete jobAt(ungatedReviewLane.heavy, 'validation').if;
+        expect(() => assertJobGraph(ungatedReviewLane)).toThrow(
+            'the heavy validation lane must refuse non-approved reviews, which mint nothing'
+        );
+
+        const gatedPushLane = cloneWorkflows('gated push lane');
+        jobAt(gatedPushLane.health, 'validation').if = APPROVED_REVIEW_CONDITION;
+        expect(() => assertJobGraph(gatedPushLane)).toThrow(
+            'the health validation lane must run on every pull request'
+        );
 
         // A leg dropped out of the shared lane leaves the required Gate without
         // failing anything: the summary still passes, on less evidence.

@@ -382,8 +382,10 @@ environment overrides that could redirect them — Node loader and preload setti
 CLI, GitHub Actions, and App configuration — and use the launcher-resolved `git` and `gh`.
 
 Hosted checks run across four workflow files, and the split between them is a security boundary
-rather than an organising preference. `Gate` is a required status check on `main`, in strict mode,
-by owner decision. GitHub counts a check run whose conclusion is `skipped` as satisfying a required
+rather than an organising preference. `Gate` is a required status check on `main`, by owner
+decision: it must pass on the pull-request head. The ruleset is non-strict, so the head need not
+carry `main` first — taking `main` is required only on a real conflict or when mergeability
+demands it. GitHub counts a check run whose conclusion is `skipped` as satisfying a required
 check, and prefers the newest run of that name — so any event that can reach the file minting `Gate`
 and legitimately skip it mints a passing `Gate` over a red head. A `pull_request_review` trigger did
 exactly that in production. Therefore:
@@ -420,11 +422,11 @@ stays local.
 
 `main` is covered by a ruleset. Read the live one rather than trusting a copy here — it blocks
 deletion and non-fast-forward, forces a squashed pull request, demands resolved threads, and
-requires `Gate` under a strict policy, but the enforcement that actually holds is repository
-configuration, not something this file can promise. Strict means the head must carry `main` before
-it can merge, so a lane that has fallen behind merges `origin/main` and republishes rather than
-waiting — and that produces a new head, which needs a fresh `Gate` and a fresh review. Take `main`
-before asking for review, not after it.
+requires `Gate` on the pull-request head, but the enforcement that actually holds is repository
+configuration, not something this file can promise. The ruleset is non-strict: the head need not
+carry `main` before it can merge, so a lane that has fallen behind still delivers without merging
+`origin/main` — unless there is a real conflict or GitHub cannot merge the head, and taking `main`
+then produces a new head, which needs a fresh `Gate` and a fresh review.
 
 Some crates compile to wasm packages that ship as committed artifacts. `scripts/wasm-artifacts.ts`
 is the list, and it names each package's build script because that name is not derivable from the

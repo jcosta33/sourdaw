@@ -504,11 +504,12 @@ function unretiredFailedCheckRun(checkRuns: HeadCheckRun[]): HeadCheckRun | unde
 /**
  * Only a later attempt that itself reached a verdict retires an earlier one. A non-verdict
  * conclusion and a still-running rerun decide nothing, so reading either as the newer word would
- * drop a real failure out of the evidence — the one direction this rule must never move. Health
- * gates no longer subscribe to `pull_request_review`, so this repository no longer mints that skip
- * itself; a skipped later attempt from any other path would still be the same shape. Were a skip
- * allowed to retire, it would stamp a fresh non-verdict over a genuine failing execution and the
- * head would merge.
+ * drop a real failure out of the evidence — the one direction this rule must never move.
+ * health-gates.yml no longer subscribes to `pull_request_review`, and the heavy workflow's
+ * validation lane runs only on approved reviews, so a non-approved review event mints no checks
+ * on the head; a skipped later attempt from any other path would still be the same shape. Were a
+ * skip allowed to retire, it would stamp a fresh non-verdict over a genuine failing execution and
+ * the head would merge.
  *
  * Attempts GitHub reports no start for, and attempts that share a start, order nothing and so retire
  * nothing: absent or ambiguous recency leaves the failure standing rather than guessing it away.

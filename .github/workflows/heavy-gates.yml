@@ -38,7 +38,8 @@ concurrency:
   # An approving review shares the pull request's group so two reviews on one
   # pull request do not run the heavy lane twice, and never cancels: it is the
   # only run that observes these legs on that head. A review that does not
-  # approve gets a run-id group, so it replaces nothing.
+  # approve gets a run-id group, so it replaces nothing — and the validation
+  # caller below refuses it, so it mints no check runs at all.
   group: heavy-gates-${{ (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') && github.event.pull_request.number || github.run_id }}
   cancel-in-progress: false
 
@@ -48,6 +49,10 @@ env:
 jobs:
   validation:
     name: Validation
+    # A non-approved review must mint nothing on the head: without this
+    # predicate the reusable lane still runs, and every skipped leg inside it
+    # lands on the head as a `Validation / …` check run beside the push lane's.
+    if: github.event.review.state == 'approved'
     uses: ./.github/workflows/validation.yml
 
   e2e:
