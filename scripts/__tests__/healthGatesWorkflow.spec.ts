@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseDocument } from 'yaml';
@@ -54,12 +54,53 @@ const GATE_CONDITION = '${{ !cancelled() }}';
 const HEAVY_GATE_CONDITION =
     "${{ !cancelled() && (github.event_name != 'pull_request_review' || github.event.review.state == 'approved') }}";
 const HEALTH_GATES_TRIGGERS = ['pull_request'] as const;
-const HEAVY_GATES_TRIGGERS = ['pull_request_review', 'schedule', 'workflow_dispatch'] as const;
+const HEAVY_GATES_TRIGGERS = ['pull_request_review'] as const;
+const NIGHTLY_TRIGGERS = ['schedule', 'workflow_dispatch'] as const;
 const VALIDATION_TRIGGERS = ['workflow_call'] as const;
 const VALIDATION_CALL = './.github/workflows/validation.yml';
 const REQUIRED_CHECK_NAME = 'Gate';
 const HEAVY_SUMMARY_NAME = 'HeavyGate';
 const NIGHTLY_CRON = '0 3 * * *';
+const NIGHTLY_CONCURRENCY_GROUP = 'nightly-${{ github.run_id }}';
+const NIGHTLY_HEAVY_CONDITION = "needs.decide.outputs.heavy == 'true'";
+const NIGHTLY_E2E_WIRING = {
+    needs: 'decide',
+    if: "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'",
+} as const;
+const NIGHTLY_BROWSER_AI_WEBGPU_CONDITION =
+    "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'";
+const NATIVE_PARITY_JOB = 'native-parity';
+const NATIVE_PARITY_JOB_NAME = 'Native parity (macOS)';
+const NATIVE_PARITY_RUNNER = 'macos-latest';
+// Parity breaks from either side of the seam: the Rust renderer the addon
+// exposes, or the TypeScript that produces the graph it renders.
+const NATIVE_PARITY_CONDITION = "needs.decide.outputs.rust == 'true' || needs.decide.outputs.web == 'true'";
+const NATIVE_PARITY_BUILD_STEP = 'Build the native addon';
+const NATIVE_PARITY_ADDON_STEP = 'Require the built addon the parity specs probe for';
+const NATIVE_PARITY_RUN_STEP = 'Run the addon parity specs';
+const NATIVE_ADDON_BUILD_COMMAND = 'node scripts/buildNativeAddon.ts';
+// The single path every addon-loading spec probes with `existsSync` to choose
+// between running and skipping. Requiring it after the build is what turns the
+// silent hosted skip this leg exists to end into a failure — so the presence
+// step is executed below against a tree with and without this file, never read
+// for a substring: a body that merely names the path and exits 0 reads exactly
+// like a working guard.
+const NATIVE_ADDON_ARTIFACT = 'crates/sourdaw-native/sourdaw-native.node';
+// What makes a spec addon-loading. Discovered rather than listed: a fourth
+// such spec added without this leg would otherwise skip on every hosted run
+// forever, and a written list is exactly what nobody updates.
+const NATIVE_ADDON_IMPORT = 'NATIVE_ADDON_FILE';
+const PNPM_SETUP_STEP = 'Set up pnpm';
+const NODE_SETUP_STEP = 'Set up Node';
+const PULL_REQUEST_EXCLUDED_JOBS = [
+    'e2e',
+    'e2e-report',
+    'browser-ai-webgpu',
+    'codeql',
+    'secrets',
+    'deploy-web',
+    'nightly-report',
+] as const;
 const DEPENDENCY_REVIEW_ACTION = 'actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294';
 const TRUSTED_SCANNER_REF = '${{ github.event.pull_request.base.sha || github.sha }}';
 const SCAN_TARGET_REF = '${{ github.event.pull_request.head.sha || github.sha }}';
@@ -80,6 +121,7 @@ const BROWSER_AI_WEBGPU_PACKAGE_SCRIPT =
 const BROWSER_AI_WEBGPU_TEST_MATCH = ['browserAiWebGpuAdmission.spec.ts', 'browserAiAdmittedPresentation.spec.ts'];
 const BROWSER_AI_WEBGPU_ORIGIN = 'http://localhost:5188';
 const BROWSER_AI_WEBGPU_SERVER_COMMAND = 'pnpm dev --host 127.0.0.1 --port 5188 --strictPort';
+const BROWSER_AI_WEBGPU_GLOBAL_SETUP = './firstPaintWarmup.ts';
 // The required Gate depends on the shared validation call and nothing else. A
 // `uses:` job reports failure when any job inside it failed, so this is not a
 // weaker summary than the old flat list — and `VALIDATION_JOBS` below is what
@@ -98,6 +140,7 @@ const VALIDATION_JOBS = [
     'rust',
     'native-macos',
     'native-windows',
+    'native-parity',
     'dependency-review',
     'pr-secrets',
 ] as const;
@@ -135,11 +178,21 @@ const VERCEL_CLI_STEPS = [
 ] as const;
 // Every leg a scheduled run performs. The train promotes a revision only once
 // each of them has reported success on that same revision.
-// The fast legs arrive through the validation call rather than one by one; a
-// `uses:` job reports failure when any job inside it failed, so the train still
-// promotes only a revision every leg reported success on.
-const DEPLOY_WEB_NEEDS = ['validation', 'e2e', 'browser-ai-webgpu', 'codeql', 'secrets'] as const;
-const NIGHTLY_REPORT_NEEDS = ['validation', 'e2e', 'browser-ai-webgpu', 'codeql', 'secrets', 'deploy-web'] as const;
+const DEPLOY_WEB_NEEDS = [
+    'static',
+    'lint',
+    'boundaries',
+    'unit',
+    'build',
+    'rust',
+    'native-macos',
+    'native-windows',
+    'e2e',
+    'browser-ai-webgpu',
+    'codeql',
+    'secrets',
+] as const;
+const NIGHTLY_REPORT_NEEDS = [...DEPLOY_WEB_NEEDS, DEPLOY_WEB_JOB] as const;
 const DEPLOY_CREDENTIAL_REFERENCE = "${{ secrets.VERCEL_TOKEN != '' }}";
 const DEPLOY_CREDENTIAL_CONDITION = "env.DEPLOY_CREDENTIAL_PRESENT == 'true'";
 const DEPLOY_FRESH_REVISION_CONDITION = `${DEPLOY_CREDENTIAL_CONDITION} && steps.freshness.outputs.fresh == 'true'`;
@@ -204,6 +257,7 @@ function loadWorkflow(fileName: string): { document: ReturnType<typeof parseDocu
 const { document: workflowDocument, parsed: workflow } = loadWorkflow('health-gates.yml');
 const { parsed: validationWorkflow } = loadWorkflow('validation.yml');
 const { parsed: heavyWorkflow } = loadWorkflow('heavy-gates.yml');
+const { document: nightlyDocument, parsed: nightly } = loadWorkflow('nightly.yml');
 const parsedVercelConfig: unknown = JSON.parse(readFileSync(join(repositoryRoot, 'vercel.json'), 'utf8'));
 const vercelConfig = asRecord(parsedVercelConfig, 'Vercel configuration');
 
@@ -416,10 +470,241 @@ function assertPullRequestSecretScan(candidate: UnknownRecord): void {
     }
 }
 
-type WorkflowSet = { health: UnknownRecord; validation: UnknownRecord; heavy: UnknownRecord };
+function assertNightlyScopeContract(candidate: UnknownRecord): string {
+    const decide = jobAt(candidate, 'decide');
+    if (decide.if !== undefined) {
+        throw new Error('nightly decide must run on every scheduled and dispatched run');
+    }
+    const outputs = recordAt(decide, 'outputs');
+    for (const [name, reference] of Object.entries(SCOPE_OUTPUT_REFERENCES)) {
+        if (outputs[name] !== reference) {
+            throw new Error(`nightly decide ${name} output must expose steps.scope.outputs.${name}`);
+        }
+    }
+    const scope = stepNamed(decide, 'Resolve scope');
+    if (scope.id !== 'scope') {
+        throw new Error('nightly Resolve scope must retain the scope step id');
+    }
+    return stringAt(scope, 'run');
+}
+
+function assertPullRequestWorkflowIsolation(candidate: UnknownRecord): void {
+    const jobs = recordAt(candidate, 'jobs');
+    for (const name of PULL_REQUEST_EXCLUDED_JOBS) {
+        if (Object.hasOwn(jobs, name)) {
+            throw new Error(`the pull-request workflow must not define ${name}`);
+        }
+    }
+}
+
+function nightlyJobCheckName(jobId: string, value: unknown): string {
+    const job = asRecord(value, jobId);
+    const name = job.name;
+    if (typeof name === 'string') {
+        return name;
+    }
+    return jobId;
+}
+
+function assertNightlyDoesNotMintGate(jobs: UnknownRecord): void {
+    if (Object.hasOwn(jobs, 'gate')) {
+        throw new Error('the nightly train must not mint Gate');
+    }
+    for (const [jobId, value] of Object.entries(jobs)) {
+        if (nightlyJobCheckName(jobId, value) === REQUIRED_CHECK_NAME) {
+            throw new Error('the nightly train must not mint Gate');
+        }
+    }
+}
+
+function assertNightlyWorkflowIsolation(candidate: UnknownRecord): void {
+    const jobs = recordAt(candidate, 'jobs');
+    assertNightlyDoesNotMintGate(jobs);
+    for (const name of ['e2e', 'browser-ai-webgpu', 'codeql', 'secrets', 'deploy-web', 'nightly-report']) {
+        if (!Object.hasOwn(jobs, name)) {
+            throw new Error(`nightly must define ${name}`);
+        }
+    }
+}
+
+function assertNightlyPermissions(candidate: UnknownRecord): void {
+    const permissions = recordAt(candidate, 'permissions');
+    if (permissions.contents !== 'read' || Object.keys(permissions).length !== 1) {
+        throw new Error('nightly must grant only read access to contents');
+    }
+}
+
+function assertNightlyConcurrencyContract(candidate: UnknownRecord): void {
+    const concurrency = recordAt(candidate, 'concurrency');
+    if (concurrency.group !== NIGHTLY_CONCURRENCY_GROUP) {
+        throw new Error('nightly must isolate each run on its own run id');
+    }
+    if (concurrency['cancel-in-progress'] !== false) {
+        throw new Error('nightly must not cancel an in-progress train');
+    }
+}
+
+function assertNightlySecurityGraph(candidate: UnknownRecord): void {
+    if (
+        jobAt(candidate, 'codeql').if !== NIGHTLY_HEAVY_CONDITION ||
+        jobAt(candidate, 'secrets').if !== NIGHTLY_HEAVY_CONDITION
+    ) {
+        throw new Error('security scans must consume the heavy scope output');
+    }
+    if (jobAt(candidate, 'codeql').needs !== 'decide' || jobAt(candidate, 'secrets').needs !== 'decide') {
+        throw new Error('security scans must depend directly on decide');
+    }
+    const e2e = jobAt(candidate, 'e2e');
+    if (e2e.needs !== NIGHTLY_E2E_WIRING.needs || e2e.if !== NIGHTLY_E2E_WIRING.if) {
+        throw new Error('e2e must retain its current decide dependency and scope condition');
+    }
+    if (e2e['continue-on-error'] !== undefined) {
+        throw new Error('nightly e2e must not continue on error');
+    }
+    const unit = jobAt(candidate, 'unit');
+    if (unit['continue-on-error'] !== undefined) {
+        throw new Error('nightly unit must not continue on error');
+    }
+    if (stepNamed(unit, SUITE_SHARD_STEP)['continue-on-error'] !== undefined) {
+        throw new Error('nightly unit Run shard must not continue on error');
+    }
+    if (stepNamed(e2e, SUITE_SHARD_STEP)['continue-on-error'] !== undefined) {
+        throw new Error('nightly e2e Run shard must not continue on error');
+    }
+}
+
+function stepUsesPnpmCache(step: UnknownRecord): boolean {
+    const setupOptions = step.with;
+    if (setupOptions === undefined) {
+        return false;
+    }
+    return recordAt(step, 'with').cache === 'pnpm';
+}
+
+function assertPnpmBeforeNodeOrder(candidate: UnknownRecord): void {
+    for (const [jobId, jobValue] of Object.entries(recordAt(candidate, 'jobs'))) {
+        const job = asRecord(jobValue, `${jobId} job`);
+        const steps = job.steps === undefined ? [] : arrayAt(job, 'steps');
+        for (let index = 0; index < steps.length; index += 1) {
+            const step = asRecord(steps[index], 'step');
+            if (step.name !== NODE_SETUP_STEP || !stepUsesPnpmCache(step)) {
+                continue;
+            }
+            if (index === 0) {
+                throw new Error(
+                    `${jobId} must run ${PNPM_SETUP_STEP} immediately before ${NODE_SETUP_STEP} when setup-node caches pnpm`
+                );
+            }
+            const previous = asRecord(steps[index - 1], 'previous step');
+            if (previous.name !== PNPM_SETUP_STEP) {
+                throw new Error(
+                    `${jobId} must run ${PNPM_SETUP_STEP} immediately before ${NODE_SETUP_STEP} when setup-node caches pnpm`
+                );
+            }
+        }
+    }
+}
+
+function removeStepNamed(job: UnknownRecord, name: string): void {
+    const steps = arrayAt(job, 'steps');
+    const index = steps.findIndex((candidate) => asRecord(candidate, 'step').name === name);
+    if (index === -1) {
+        throw new Error(`missing workflow step: ${name}`);
+    }
+    steps.splice(index, 1);
+}
+
+function swapStepsNamed(job: UnknownRecord, firstName: string, secondName: string): void {
+    const steps = arrayAt(job, 'steps');
+    const firstIndex = steps.findIndex((candidate) => asRecord(candidate, 'step').name === firstName);
+    const secondIndex = steps.findIndex((candidate) => asRecord(candidate, 'step').name === secondName);
+    if (firstIndex === -1 || secondIndex === -1) {
+        throw new Error(`missing workflow step: ${firstIndex === -1 ? firstName : secondName}`);
+    }
+    [steps[firstIndex], steps[secondIndex]] = [steps[secondIndex], steps[firstIndex]];
+}
+
+/**
+ * Runs the addon-presence step's own script in an empty tree, with and without
+ * the artifact every parity spec probes for. Absence must end the job: a guard
+ * that cannot fail leaves the specs skipping on every hosted run while this
+ * file stays green, which is the whole failure mode the step exists to close.
+ */
+function runAddonPresenceGuard(script: string, artifactPresent: boolean): number | null {
+    const directory = mkdtempSync(join(tmpdir(), 'sourdaw-health-addon-'));
+    try {
+        if (artifactPresent) {
+            const artifact = join(directory, NATIVE_ADDON_ARTIFACT);
+            mkdirSync(dirname(artifact), { recursive: true });
+            writeFileSync(artifact, '');
+        }
+        return spawnSync('bash', ['-c', script], {
+            cwd: directory,
+            encoding: 'utf8',
+            env: { ...process.env },
+            shell: false,
+        }).status;
+    } finally {
+        rmSync(directory, { recursive: true, force: true });
+    }
+}
+
+function addonLoadingSpecs(directory: string): string[] {
+    return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+        const path = join(directory, entry.name);
+        if (entry.isDirectory()) {
+            return addonLoadingSpecs(path);
+        }
+        if (!/\.spec\.tsx?$/u.test(entry.name) || !readFileSync(path, 'utf8').includes(NATIVE_ADDON_IMPORT)) {
+            return [];
+        }
+        return [relative(repositoryRoot, path).split(sep).join('/')];
+    });
+}
+
+function assertNativeParityJob(candidate: UnknownRecord): void {
+    const job = jobAt(candidate, NATIVE_PARITY_JOB);
+    if (job.name !== NATIVE_PARITY_JOB_NAME || job['runs-on'] !== NATIVE_PARITY_RUNNER) {
+        throw new Error('native parity must run on the one platform the native crate compiles on');
+    }
+    if (job.needs !== 'decide' || job.if !== NATIVE_PARITY_CONDITION) {
+        throw new Error('native parity must answer to both the Rust and the web scopes');
+    }
+    if (job['continue-on-error'] !== undefined) {
+        throw new Error('native parity must not continue on error');
+    }
+    if (stringAt(stepNamed(job, NATIVE_PARITY_BUILD_STEP), 'run') !== NATIVE_ADDON_BUILD_COMMAND) {
+        throw new Error('native parity must build the addon through the builder the desktop chain ships');
+    }
+    const presenceGuard = stringAt(stepNamed(job, NATIVE_PARITY_ADDON_STEP), 'run');
+    if (runAddonPresenceGuard(presenceGuard, false) === 0) {
+        throw new Error('native parity must fail a run whose addon the parity specs would not find');
+    }
+    if (runAddonPresenceGuard(presenceGuard, true) !== 0) {
+        throw new Error('native parity must accept the addon its own builder produces');
+    }
+    const runStep = stepNamed(job, NATIVE_PARITY_RUN_STEP);
+    if (runStep['continue-on-error'] !== undefined) {
+        throw new Error('native parity must not continue on error');
+    }
+    const specs = addonLoadingSpecs(join(repositoryRoot, 'src'));
+    // Without this the loop below is vacuous, and a discovery that stopped
+    // finding anything would read as a leg with nothing left to prove.
+    if (specs.length === 0) {
+        throw new Error('no spec loads the native addon, so the parity leg proves nothing');
+    }
+    const command = stringAt(runStep, 'run');
+    for (const spec of specs) {
+        if (!command.includes(spec)) {
+            throw new Error(`native parity must run ${spec}`);
+        }
+    }
+}
+
+type WorkflowSet = { health: UnknownRecord; validation: UnknownRecord; heavy: UnknownRecord; nightly: UnknownRecord };
 
 function workflowSet(): WorkflowSet {
-    return { health: workflow, validation: validationWorkflow, heavy: heavyWorkflow };
+    return { health: workflow, validation: validationWorkflow, heavy: heavyWorkflow, nightly };
 }
 
 function cloneWorkflows(label: string): WorkflowSet {
@@ -428,6 +713,7 @@ function cloneWorkflows(label: string): WorkflowSet {
         health: asRecord(clone.health, `${label} health`),
         validation: asRecord(clone.validation, `${label} validation`),
         heavy: asRecord(clone.heavy, `${label} heavy`),
+        nightly: asRecord(clone.nightly, `${label} nightly`),
     };
 }
 
@@ -466,6 +752,7 @@ function assertRequiredCheckIsolation(set: WorkflowSet): void {
     for (const [file, candidate] of [
         ['validation.yml', set.validation],
         ['heavy-gates.yml', set.heavy],
+        ['nightly.yml', set.nightly],
     ] as const) {
         for (const [id, job] of Object.entries(recordAt(candidate, 'jobs'))) {
             if (asRecord(job, `${file} ${id}`).name === REQUIRED_CHECK_NAME) {
@@ -474,14 +761,17 @@ function assertRequiredCheckIsolation(set: WorkflowSet): void {
         }
     }
     if (JSON.stringify(Object.keys(recordAt(set.heavy, 'on')).sort()) !== JSON.stringify([...HEAVY_GATES_TRIGGERS])) {
-        throw new Error('the heavy workflow must own exactly the review, schedule, and dispatch events');
+        throw new Error('the heavy workflow must own exactly the review event that health-gates.yml gave up');
     }
     if (JSON.stringify(Object.keys(recordAt(set.validation, 'on'))) !== JSON.stringify([...VALIDATION_TRIGGERS])) {
         throw new Error('validation.yml must be reusable-only');
     }
-    const schedule = arrayAt(recordAt(set.heavy, 'on'), 'schedule');
-    if (asRecord(schedule[0], 'heavy cron').cron !== NIGHTLY_CRON) {
-        throw new Error('the nightly cron must survive the move to the heavy workflow');
+    if (JSON.stringify(Object.keys(recordAt(set.nightly, 'on')).sort()) !== JSON.stringify([...NIGHTLY_TRIGGERS])) {
+        throw new Error('the nightly workflow must own exactly the schedule and dispatch events');
+    }
+    const schedule = arrayAt(recordAt(set.nightly, 'on'), 'schedule');
+    if (asRecord(schedule[0], 'nightly cron').cron !== NIGHTLY_CRON) {
+        throw new Error('the nightly cron must survive the move to nightly.yml');
     }
 }
 
@@ -511,6 +801,7 @@ function assertJobGraph(set: WorkflowSet): void {
         throw new Error('validation.yml must hold exactly the pinned job list, in order');
     }
     assertBlockingSuites(set);
+    assertNightlySecurityGraph(set.nightly);
     assertNightlyReportCoverage(set);
     assertSummaryMembership(set);
 }
@@ -519,11 +810,11 @@ function assertJobGraph(set: WorkflowSet): void {
 // the approval gate skip, so a leg missing from its needs is a class of failure
 // that reports nowhere a person looks.
 function assertNightlyReportCoverage(set: WorkflowSet): void {
-    const nightly = jobAt(set.heavy, 'nightly-report');
-    if (JSON.stringify(arrayAt(nightly, 'needs')) !== JSON.stringify([...NIGHTLY_REPORT_NEEDS])) {
+    const nightlyReport = jobAt(set.nightly, 'nightly-report');
+    if (JSON.stringify(arrayAt(nightlyReport, 'needs')) !== JSON.stringify([...NIGHTLY_REPORT_NEEDS])) {
         throw new Error('the nightly reporter must depend on every leg a scheduled run performs');
     }
-    if (nightly.if !== "${{ failure() && github.event_name == 'schedule' }}") {
+    if (nightlyReport.if !== "${{ failure() && github.event_name == 'schedule' }}") {
         throw new Error('the nightly reporter must file only for a failed scheduled run');
     }
 }
@@ -593,6 +884,28 @@ function assertBrowserAiWebGpuJob(candidate: UnknownRecord): void {
     }
 }
 
+// The nightly runs the same hardware proof off its own decide job; its
+// membership in the deploy train and the nightly report is pinned through
+// those needs lists, so no summary-gate check belongs here.
+function assertNightlyBrowserAiWebGpuJob(candidate: UnknownRecord): void {
+    const job = jobAt(candidate, BROWSER_AI_WEBGPU_JOB);
+    if (job.name !== BROWSER_AI_WEBGPU_JOB_NAME) {
+        throw new Error('Browser AI WebGPU job must retain its stable name');
+    }
+    if (job.needs !== 'decide' || job.if !== NIGHTLY_BROWSER_AI_WEBGPU_CONDITION) {
+        throw new Error('Browser AI WebGPU job must retain its heavy E2E scope condition');
+    }
+    if (job['runs-on'] !== BROWSER_AI_WEBGPU_RUNNER) {
+        throw new Error('Browser AI WebGPU job must use the standard macos-14 runner');
+    }
+    if (stringAt(stepNamed(job, 'Install Chromium'), 'run') !== 'pnpm exec playwright install chromium') {
+        throw new Error('Browser AI WebGPU job must install Chromium directly');
+    }
+    if (stringAt(stepNamed(job, 'Run Browser AI WebGPU admission'), 'run') !== BROWSER_AI_WEBGPU_COMMAND) {
+        throw new Error('Browser AI WebGPU job must run the dedicated hardware command');
+    }
+}
+
 function assertBrowserAiWebGpuProofChain(manifest: UnknownRecord, config: UnknownRecord): void {
     const scripts = recordAt(manifest, 'scripts');
     if (scripts[BROWSER_AI_WEBGPU_SCRIPT_NAME] !== BROWSER_AI_WEBGPU_PACKAGE_SCRIPT) {
@@ -625,6 +938,9 @@ function assertBrowserAiWebGpuProofChain(manifest: UnknownRecord, config: Unknow
         recordAt(config, 'use').baseURL !== BROWSER_AI_WEBGPU_ORIGIN
     ) {
         throw new Error('Browser AI WebGPU config must own a non-reused isolated server');
+    }
+    if (config.globalSetup !== BROWSER_AI_WEBGPU_GLOBAL_SETUP) {
+        throw new Error('Browser AI WebGPU config must warm the cold first paint before its specs observe it');
     }
 }
 
@@ -751,11 +1067,6 @@ function assertDailyDeployTrain(candidate: UnknownRecord): DeployTrainScripts {
             throw new Error(`a daily web deployment must not carry a release side effect: ${sideEffect.source}`);
         }
     }
-    // Promotion is not validation. It must not be able to fail either summary,
-    // and the required `Gate` lives in another workflow entirely now.
-    if (arrayAt(jobAt(candidate, 'heavy-gate'), 'needs').includes(DEPLOY_WEB_JOB)) {
-        throw new Error('the daily deploy train must stay outside the heavy summary');
-    }
     const armingReport = stringAt(stepNamed(job, DEPLOY_WEB_CREDENTIAL_REPORT_STEP), 'run');
     for (const precondition of DEPLOY_ARMING_PRECONDITIONS) {
         if (!armingReport.includes(precondition)) {
@@ -781,6 +1092,17 @@ function assertDailyDeployTrain(candidate: UnknownRecord): DeployTrainScripts {
         throw new Error('the freshness check must compare the candidate against that tip');
     }
     return { validation: stringAt(guardStep, 'run'), freshness };
+}
+
+// Promotion is not validation. It must not be able to fail either summary, and
+// the required `Gate` lives in another workflow entirely now.
+function assertDeployOutsideSummaries(set: WorkflowSet): void {
+    if (arrayAt(jobAt(set.heavy, 'heavy-gate'), 'needs').includes(DEPLOY_WEB_JOB)) {
+        throw new Error('the daily deploy train must stay outside the heavy summary');
+    }
+    if (arrayAt(jobAt(set.health, 'gate'), 'needs').includes(DEPLOY_WEB_JOB)) {
+        throw new Error('the daily deploy train must stay outside the required Gate');
+    }
 }
 
 function assertGateContract(candidate: UnknownRecord): string {
@@ -909,11 +1231,18 @@ describe('health gates workflow contract', () => {
     // that can skip it out of the file that mints it.
     it('lets only a pull-request run mint the required Gate', () => {
         expect(workflowDocument.errors).toEqual([]);
+        expect(nightlyDocument.errors).toEqual([]);
         expect(Object.keys(recordAt(workflow, 'on'))).toEqual([...HEALTH_GATES_TRIGGERS]);
         expect(Object.keys(recordAt(heavyWorkflow, 'on')).sort()).toEqual([...HEAVY_GATES_TRIGGERS]);
         expect(Object.keys(recordAt(validationWorkflow, 'on'))).toEqual([...VALIDATION_TRIGGERS]);
+        expect(Object.keys(recordAt(nightly, 'on')).sort()).toEqual([...NIGHTLY_TRIGGERS]);
         expect(recordAt(recordAt(heavyWorkflow, 'on'), 'pull_request_review').types).toEqual(['submitted']);
+        expect(nightly.name).toBe('Nightly');
         expect(() => assertRequiredCheckIsolation(workflowSet())).not.toThrow();
+        expect(() => assertPullRequestWorkflowIsolation(workflow)).not.toThrow();
+        expect(() => assertNightlyWorkflowIsolation(nightly)).not.toThrow();
+        expect(() => assertNightlyPermissions(nightly)).not.toThrow();
+        expect(() => assertNightlyConcurrencyContract(nightly)).not.toThrow();
 
         const reviewTriggered = cloneWorkflows('review-triggered');
         recordAt(reviewTriggered.health, 'on').pull_request_review = { types: ['submitted'] };
@@ -932,10 +1261,57 @@ describe('health gates workflow contract', () => {
         expect(() => assertRequiredCheckIsolation(shadowedGate)).toThrow('heavy-gates.yml must not name a job Gate');
 
         const strandedCron = cloneWorkflows('stranded cron');
-        arrayAt(recordAt(strandedCron.heavy, 'on'), 'schedule')[0] = { cron: '0 4 * * *' };
+        arrayAt(recordAt(strandedCron.nightly, 'on'), 'schedule')[0] = { cron: '0 4 * * *' };
         expect(() => assertRequiredCheckIsolation(strandedCron)).toThrow(
-            'the nightly cron must survive the move to the heavy workflow'
+            'the nightly cron must survive the move to nightly.yml'
         );
+
+        const shadowedNightlyGate = cloneWorkflows('shadowed nightly gate');
+        jobAt(shadowedNightlyGate.nightly, 'secrets').name = REQUIRED_CHECK_NAME;
+        expect(() => assertRequiredCheckIsolation(shadowedNightlyGate)).toThrow('nightly.yml must not name a job Gate');
+
+        const scheduleInHeavy = cloneWorkflows('schedule in heavy');
+        recordAt(scheduleInHeavy.heavy, 'on').schedule = [{ cron: NIGHTLY_CRON }];
+        expect(() => assertRequiredCheckIsolation(scheduleInHeavy)).toThrow(
+            'the heavy workflow must own exactly the review event that health-gates.yml gave up'
+        );
+
+        const leakingDeploy = asRecord(structuredClone(workflow), 'leaking deploy workflow');
+        recordAt(leakingDeploy, 'jobs')[DEPLOY_WEB_JOB] = jobAt(nightly, DEPLOY_WEB_JOB);
+        expect(() => assertPullRequestWorkflowIsolation(leakingDeploy)).toThrow(
+            'the pull-request workflow must not define deploy-web'
+        );
+
+        const mintingGate = asRecord(structuredClone(nightly), 'minting-gate nightly');
+        recordAt(mintingGate, 'jobs').gate = jobAt(workflow, 'gate');
+        expect(() => assertNightlyWorkflowIsolation(mintingGate)).toThrow('the nightly train must not mint Gate');
+
+        const impostorGate = asRecord(structuredClone(nightly), 'impostor-gate nightly');
+        recordAt(impostorGate, 'jobs')['fake-gate'] = { name: 'Gate', needs: ['decide'] };
+        expect(() => assertNightlyWorkflowIsolation(impostorGate)).toThrow('the nightly train must not mint Gate');
+
+        const namelessGateId = asRecord(structuredClone(nightly), 'nameless-gate-id nightly');
+        recordAt(namelessGateId, 'jobs').Gate = { needs: ['decide'] };
+        expect(() => assertNightlyWorkflowIsolation(namelessGateId)).toThrow('the nightly train must not mint Gate');
+
+        const droppedNightlyLeg = asRecord(structuredClone(nightly), 'dropped-leg nightly');
+        delete recordAt(droppedNightlyLeg, 'jobs')['nightly-report'];
+        expect(() => assertNightlyWorkflowIsolation(droppedNightlyLeg)).toThrow('nightly must define nightly-report');
+
+        const extraPullRequestTarget = asRecord(structuredClone(workflow), 'extra pull_request_target workflow');
+        recordAt(extraPullRequestTarget, 'on').pull_request_target = {};
+        expect(() => {
+            expect(Object.keys(recordAt(extraPullRequestTarget, 'on')).sort()).toEqual(['pull_request']);
+        }).toThrow();
+
+        const extraPullRequestOnNightly = asRecord(structuredClone(nightly), 'extra pull_request nightly');
+        recordAt(extraPullRequestOnNightly, 'on').pull_request = {};
+        expect(() => {
+            expect(Object.keys(recordAt(extraPullRequestOnNightly, 'on')).sort()).toEqual([
+                'schedule',
+                'workflow_dispatch',
+            ]);
+        }).toThrow();
 
         expect(() => assertWorkflowPermissions(workflow)).not.toThrow();
         expect(() => assertWorkflowPermissions(validationWorkflow)).not.toThrow();
@@ -967,9 +1343,19 @@ describe('health gates workflow contract', () => {
         expect(() => assertConcurrencyContract(splitPullRequest)).toThrow(
             'workflow must group runs by pull request or ref'
         );
+        const pausingPullRequest = asRecord(structuredClone(workflow), 'pausing pull-request workflow');
+        recordAt(pausingPullRequest, 'concurrency')['cancel-in-progress'] = false;
+        expect(() => assertConcurrencyContract(pausingPullRequest)).toThrow(
+            'only a newer pull-request run may cancel in-progress work'
+        );
+        const cancellingNightly = asRecord(structuredClone(nightly), 'cancelling nightly workflow');
+        recordAt(cancellingNightly, 'concurrency')['cancel-in-progress'] = true;
+        expect(() => assertNightlyConcurrencyContract(cancellingNightly)).toThrow(
+            'nightly must not cancel an in-progress train'
+        );
     });
 
-    it('runs the heavy security lane only for approved reviews, schedules, and dispatches', () => {
+    it('runs the heavy security lane only for approved reviews, and the full train on the nightly', () => {
         const scopeScript = assertScopeContract(validationWorkflow);
         expect(runScopeScript(scopeScript, 'pull_request')).toEqual({
             heavy: 'false',
@@ -983,6 +1369,14 @@ describe('health gates workflow contract', () => {
         for (const eventName of ['schedule', 'workflow_dispatch']) {
             expect(runScopeScript(scopeScript, eventName)).toEqual(FORCED_SCOPE_OUTPUTS);
         }
+        const nightlyScope = assertNightlyScopeContract(nightly);
+        expect(runScopeScript(nightlyScope, 'schedule')).toEqual(FORCED_SCOPE_OUTPUTS);
+        expect(runScopeScript(nightlyScope, 'workflow_dispatch')).toEqual(FORCED_SCOPE_OUTPUTS);
+        const gatedNightly = asRecord(structuredClone(nightly), 'gated nightly decide');
+        jobAt(gatedNightly, 'decide').if = "github.event_name == 'schedule'";
+        expect(() => assertNightlyScopeContract(gatedNightly)).toThrow(
+            'nightly decide must run on every scheduled and dispatched run'
+        );
         const nonApproval = asRecord(structuredClone(validationWorkflow), 'non-approval validationWorkflow');
         jobAt(nonApproval, 'decide').if = "github.event_name != 'pull_request_review'";
         expect(() => assertScopeContract(nonApproval)).toThrow('decide must only admit submitted approved reviews');
@@ -1112,10 +1506,26 @@ describe('health gates workflow contract', () => {
         }
 
         const blindNightly = cloneWorkflows('blind nightly');
-        const nightlyNeeds = arrayAt(jobAt(blindNightly.heavy, 'nightly-report'), 'needs');
-        nightlyNeeds.splice(nightlyNeeds.indexOf('validation'), 1);
+        const nightlyNeeds = arrayAt(jobAt(blindNightly.nightly, 'nightly-report'), 'needs');
+        nightlyNeeds.splice(nightlyNeeds.indexOf('unit'), 1);
         expect(() => assertJobGraph(blindNightly)).toThrow(
             'the nightly reporter must depend on every leg a scheduled run performs'
+        );
+
+        const disconnectedNightly = cloneWorkflows('disconnected nightly security');
+        jobAt(disconnectedNightly.nightly, 'secrets').needs = 'build';
+        expect(() => assertJobGraph(disconnectedNightly)).toThrow('security scans must depend directly on decide');
+
+        const ungatedNightlyE2eScope = cloneWorkflows('ungated nightly e2e scope');
+        jobAt(ungatedNightlyE2eScope.nightly, 'e2e').if = "needs.decide.outputs.e2e == 'true'";
+        expect(() => assertJobGraph(ungatedNightlyE2eScope)).toThrow(
+            'e2e must retain its current decide dependency and scope condition'
+        );
+
+        const permissiveNightlyUnit = cloneWorkflows('permissive nightly unit');
+        stepNamed(jobAt(permissiveNightlyUnit.nightly, 'unit'), SUITE_SHARD_STEP)['continue-on-error'] = true;
+        expect(() => assertJobGraph(permissiveNightlyUnit)).toThrow(
+            'nightly unit Run shard must not continue on error'
         );
 
         const widenedSummary = cloneWorkflows('widened summary');
@@ -1186,6 +1596,88 @@ describe('health gates workflow contract', () => {
         }
     });
 
+    it('requires Set up pnpm immediately before Set up Node on every pnpm-cached nightly and heavy-lane job', () => {
+        expect(() => assertPnpmBeforeNodeOrder(nightly)).not.toThrow();
+        expect(() => assertPnpmBeforeNodeOrder(heavyWorkflow)).not.toThrow();
+
+        const missingPnpmSetup = asRecord(structuredClone(nightly), 'missing pnpm setup nightly');
+        removeStepNamed(jobAt(missingPnpmSetup, 'unit'), PNPM_SETUP_STEP);
+        expect(() => assertPnpmBeforeNodeOrder(missingPnpmSetup)).toThrow(
+            `unit must run ${PNPM_SETUP_STEP} immediately before ${NODE_SETUP_STEP} when setup-node caches pnpm`
+        );
+
+        const reversedSetup = asRecord(structuredClone(nightly), 'reversed pnpm setup nightly');
+        swapStepsNamed(jobAt(reversedSetup, 'unit'), PNPM_SETUP_STEP, NODE_SETUP_STEP);
+        expect(() => assertPnpmBeforeNodeOrder(reversedSetup)).toThrow(
+            `unit must run ${PNPM_SETUP_STEP} immediately before ${NODE_SETUP_STEP} when setup-node caches pnpm`
+        );
+
+        const reversedDeploySetup = asRecord(structuredClone(nightly), 'reversed deploy pnpm setup nightly');
+        swapStepsNamed(jobAt(reversedDeploySetup, DEPLOY_WEB_JOB), PNPM_SETUP_STEP, NODE_SETUP_STEP);
+        expect(() => assertPnpmBeforeNodeOrder(reversedDeploySetup)).toThrow(
+            `${DEPLOY_WEB_JOB} must run ${PNPM_SETUP_STEP} immediately before ${NODE_SETUP_STEP} when setup-node caches pnpm`
+        );
+
+        const reversedHeavySetup = asRecord(structuredClone(heavyWorkflow), 'reversed pnpm setup heavyWorkflow');
+        swapStepsNamed(jobAt(reversedHeavySetup, 'e2e'), PNPM_SETUP_STEP, NODE_SETUP_STEP);
+        expect(() => assertPnpmBeforeNodeOrder(reversedHeavySetup)).toThrow(
+            `e2e must run ${PNPM_SETUP_STEP} immediately before ${NODE_SETUP_STEP} when setup-node caches pnpm`
+        );
+    });
+
+    it('builds the native addon and runs every spec that loads it, unsoftened', () => {
+        expect(() => assertNativeParityJob(validationWorkflow)).not.toThrow();
+        expect(addonLoadingSpecs(join(repositoryRoot, 'src'))).toContain(
+            'src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveGraphProgrammeParity.spec.ts'
+        );
+
+        const softenedJob = asRecord(structuredClone(validationWorkflow), 'softened native parity job');
+        jobAt(softenedJob, NATIVE_PARITY_JOB)['continue-on-error'] = true;
+        expect(() => assertNativeParityJob(softenedJob)).toThrow('native parity must not continue on error');
+
+        const softenedRun = asRecord(structuredClone(validationWorkflow), 'softened native parity run');
+        stepNamed(jobAt(softenedRun, NATIVE_PARITY_JOB), NATIVE_PARITY_RUN_STEP)['continue-on-error'] = true;
+        expect(() => assertNativeParityJob(softenedRun)).toThrow('native parity must not continue on error');
+
+        const forkedBuild = asRecord(structuredClone(validationWorkflow), 'forked native addon build');
+        stepNamed(jobAt(forkedBuild, NATIVE_PARITY_JOB), NATIVE_PARITY_BUILD_STEP).run =
+            'cargo build --release --package sourdaw-native --features napi-addon';
+        expect(() => assertNativeParityJob(forkedBuild)).toThrow(
+            'native parity must build the addon through the builder the desktop chain ships'
+        );
+
+        const narrowedScope = asRecord(structuredClone(validationWorkflow), 'narrowed native parity scope');
+        jobAt(narrowedScope, NATIVE_PARITY_JOB).if = "needs.decide.outputs.rust == 'true'";
+        expect(() => assertNativeParityJob(narrowedScope)).toThrow(
+            'native parity must answer to both the Rust and the web scopes'
+        );
+
+        const droppedSpec = asRecord(structuredClone(validationWorkflow), 'dropped parity spec workflow');
+        const runStep = stepNamed(jobAt(droppedSpec, NATIVE_PARITY_JOB), NATIVE_PARITY_RUN_STEP);
+        const dropped = addonLoadingSpecs(join(repositoryRoot, 'src'))[0] ?? '';
+        runStep.run = stringAt(runStep, 'run').replace(dropped, '');
+        expect(() => assertNativeParityJob(droppedSpec)).toThrow(`native parity must run ${dropped}`);
+    });
+
+    it('refuses an addon presence guard that cannot fail', () => {
+        // Executed, not read: each of these bodies names the artifact exactly as
+        // the real step does, and each would let the parity specs skip on every
+        // hosted run while a substring pin reported the leg intact.
+        const namingGuard = asRecord(structuredClone(validationWorkflow), 'path-naming native parity guard');
+        stepNamed(jobAt(namingGuard, NATIVE_PARITY_JOB), NATIVE_PARITY_ADDON_STEP).run =
+            `echo ${NATIVE_ADDON_ARTIFACT}; true`;
+        expect(() => assertNativeParityJob(namingGuard)).toThrow(
+            'native parity must fail a run whose addon the parity specs would not find'
+        );
+
+        const misdirectedGuard = asRecord(structuredClone(validationWorkflow), 'misdirected native parity guard');
+        stepNamed(jobAt(misdirectedGuard, NATIVE_PARITY_JOB), NATIVE_PARITY_ADDON_STEP).run =
+            `test -f ${NATIVE_ADDON_ARTIFACT}.built`;
+        expect(() => assertNativeParityJob(misdirectedGuard)).toThrow(
+            'native parity must accept the addon its own builder produces'
+        );
+    });
+
     it('fetches immutable measurement provenance history only in the unit matrix', () => {
         expect(() => assertUnitProvenanceHistory(validationWorkflow)).not.toThrow();
 
@@ -1207,6 +1699,7 @@ describe('health gates workflow contract', () => {
 
     it('gates the dedicated Browser AI WebGPU and admitted-presentation proofs on a standard macOS runner', async () => {
         expect(() => assertBrowserAiWebGpuJob(heavyWorkflow)).not.toThrow();
+        expect(() => assertNightlyBrowserAiWebGpuJob(nightly)).not.toThrow();
         expect(() => assertBrowserAiWebGpuProofChain(packageManifest, browserAiWebGpuConfig)).not.toThrow();
 
         for (const runner of ['self-hosted', 'macos-14-large', 'macos-14-xlarge']) {
@@ -1286,6 +1779,12 @@ describe('health gates workflow contract', () => {
             'Browser AI WebGPU config must own a non-reused isolated server'
         );
 
+        const coldFirstPaint = asRecord(structuredClone(browserAiWebGpuConfig), 'cold-first-paint Browser AI config');
+        delete coldFirstPaint.globalSetup;
+        expect(() => assertBrowserAiWebGpuProofChain(packageManifest, coldFirstPaint)).toThrow(
+            'Browser AI WebGPU config must warm the cold first paint before its specs observe it'
+        );
+
         const fallbackRequestAdapter = vi.fn().mockResolvedValue({
             info: { isFallbackAdapter: true },
             requestDevice: vi.fn(),
@@ -1317,6 +1816,7 @@ describe('health gates workflow contract', () => {
 
     it('runs a trusted, credentialless scanner over the untrusted target history', () => {
         expect(() => assertCredentiallessScanner(heavyWorkflow)).not.toThrow();
+        expect(() => assertCredentiallessScanner(nightly)).not.toThrow();
         const targetControlledScanner = asRecord(
             structuredClone(heavyWorkflow),
             'target-controlled scanner heavyWorkflow'
@@ -1336,7 +1836,8 @@ describe('health gates workflow contract', () => {
     it('promotes the validated revision daily, only with a credential and only when it changed', () => {
         expect(() => assertGitDeploymentsDisabled(vercelConfig)).not.toThrow();
         expect(() => assertCrossOriginIsolationHeaders(vercelConfig)).not.toThrow();
-        const { validation: validationGuard, freshness: freshnessGuard } = assertDailyDeployTrain(heavyWorkflow);
+        const { validation: validationGuard, freshness: freshnessGuard } = assertDailyDeployTrain(nightly);
+        expect(() => assertDeployOutsideSummaries(workflowSet())).not.toThrow();
 
         const candidate = '1'.repeat(40);
         const newerTip = '2'.repeat(40);
@@ -1359,15 +1860,13 @@ describe('health gates workflow contract', () => {
         expect(runFreshnessGuard(freshnessGuard, candidate, '').status).not.toBe(0);
 
         const onMain = { TRAIN_REF: 'refs/heads/main' };
-        expect(runResultsGuard(validationGuard, needsResults(heavyWorkflow, DEPLOY_WEB_JOB, 'success'), onMain)).toBe(
-            0
-        );
+        expect(runResultsGuard(validationGuard, needsResults(nightly, DEPLOY_WEB_JOB, 'success'), onMain)).toBe(0);
         const degraded: JobResult[] = ['failure', 'cancelled', 'skipped'];
         for (const result of degraded) {
             expect(
                 runResultsGuard(
                     validationGuard,
-                    needsResults(heavyWorkflow, DEPLOY_WEB_JOB, 'success', { e2e: result }),
+                    needsResults(nightly, DEPLOY_WEB_JOB, 'success', { e2e: result }),
                     onMain
                 )
             ).not.toBe(0);
@@ -1376,7 +1875,7 @@ describe('health gates workflow contract', () => {
         // half that still holds when somebody edits that condition.
         for (const ref of ['refs/heads/agent/2940/daily-train', 'refs/tags/v1.0.0', 'main']) {
             expect(
-                runResultsGuard(validationGuard, needsResults(heavyWorkflow, DEPLOY_WEB_JOB, 'success'), {
+                runResultsGuard(validationGuard, needsResults(nightly, DEPLOY_WEB_JOB, 'success'), {
                     TRAIN_REF: ref,
                 })
             ).not.toBe(0);
@@ -1400,7 +1899,7 @@ describe('health gates workflow contract', () => {
             'the deployed application must stay cross-origin isolated'
         );
 
-        const pullRequestTrain = asRecord(structuredClone(heavyWorkflow), 'pull-request deploy train');
+        const pullRequestTrain = asRecord(structuredClone(nightly), 'pull-request deploy train');
         jobAt(pullRequestTrain, DEPLOY_WEB_JOB).if = PULL_REQUEST_PAYLOAD_CONDITION;
         expect(() => assertDailyDeployTrain(pullRequestTrain)).toThrow(
             'the daily deploy train must run only on the schedule and a dispatch of main'
@@ -1409,39 +1908,39 @@ describe('health gates workflow contract', () => {
         // A dispatch carries whichever ref was chosen, and every validation leg
         // would report honestly on it, so dropping this clause is what would
         // let an unmerged branch reach production.
-        const anyBranchDispatch = asRecord(structuredClone(heavyWorkflow), 'any-branch dispatch deploy train');
+        const anyBranchDispatch = asRecord(structuredClone(nightly), 'any-branch dispatch deploy train');
         jobAt(anyBranchDispatch, DEPLOY_WEB_JOB).if =
             "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'";
         expect(() => assertDailyDeployTrain(anyBranchDispatch)).toThrow(
             'the daily deploy train must run only on the schedule and a dispatch of main'
         );
 
-        const unguardedRef = asRecord(structuredClone(heavyWorkflow), 'unguarded-ref deploy train');
+        const unguardedRef = asRecord(structuredClone(nightly), 'unguarded-ref deploy train');
         delete recordAt(stepNamed(jobAt(unguardedRef, DEPLOY_WEB_JOB), DEPLOY_WEB_GUARD_STEP), 'env').TRAIN_REF;
         expect(() => assertDailyDeployTrain(unguardedRef)).toThrow(
             'the daily deploy train must read the ref it is about to deploy'
         );
 
-        const racingTrain = asRecord(structuredClone(heavyWorkflow), 'racing deploy train');
+        const racingTrain = asRecord(structuredClone(nightly), 'racing deploy train');
         delete jobAt(racingTrain, DEPLOY_WEB_JOB).concurrency;
         expect(() => assertDailyDeployTrain(racingTrain)).toThrow(
             'the daily deploy train must serialise itself against every other production deploy'
         );
 
-        const cancellingTrain = asRecord(structuredClone(heavyWorkflow), 'cancelling deploy train');
+        const cancellingTrain = asRecord(structuredClone(nightly), 'cancelling deploy train');
         recordAt(jobAt(cancellingTrain, DEPLOY_WEB_JOB), 'concurrency')['cancel-in-progress'] = true;
         expect(() => assertDailyDeployTrain(cancellingTrain)).toThrow(
             'the daily deploy train must queue behind a running deploy rather than cancel it'
         );
 
-        const unauthenticatedBuild = asRecord(structuredClone(heavyWorkflow), 'unauthenticated deploy train');
+        const unauthenticatedBuild = asRecord(structuredClone(nightly), 'unauthenticated deploy train');
         delete recordAt(stepNamed(jobAt(unauthenticatedBuild, DEPLOY_WEB_JOB), 'Build the validated revision'), 'env')
             .VERCEL_TOKEN;
         expect(() => assertDailyDeployTrain(unauthenticatedBuild)).toThrow(
             'Build the validated revision must authenticate from the environment rather than an echoed argument'
         );
 
-        const reboundIsolation = asRecord(structuredClone(heavyWorkflow), 'rebound-isolation deploy train');
+        const reboundIsolation = asRecord(structuredClone(nightly), 'rebound-isolation deploy train');
         recordAt(
             stepNamed(jobAt(reboundIsolation, DEPLOY_WEB_JOB), 'Assert cross-origin isolation on the deployment'),
             'env'
@@ -1450,44 +1949,44 @@ describe('health gates workflow contract', () => {
             'the daily deploy train must read its headers back off the deployment it just created'
         );
 
-        const unvalidatedTrain = asRecord(structuredClone(heavyWorkflow), 'unvalidated deploy train');
+        const unvalidatedTrain = asRecord(structuredClone(nightly), 'unvalidated deploy train');
         const trainNeeds = arrayAt(jobAt(unvalidatedTrain, DEPLOY_WEB_JOB), 'needs');
         trainNeeds.splice(trainNeeds.indexOf('codeql'), 1);
         expect(() => assertDailyDeployTrain(unvalidatedTrain)).toThrow('the daily deploy train must depend on codeql');
 
-        const widenedTrain = asRecord(structuredClone(heavyWorkflow), 'widened deploy train');
+        const widenedTrain = asRecord(structuredClone(nightly), 'widened deploy train');
         arrayAt(jobAt(widenedTrain, DEPLOY_WEB_JOB), 'needs').push('smoke');
         expect(() => assertDailyDeployTrain(widenedTrain)).toThrow(
             'the daily deploy train must depend on exactly the scheduled validation legs'
         );
 
-        const unscopedTrain = asRecord(structuredClone(heavyWorkflow), 'unscoped deploy train');
+        const unscopedTrain = asRecord(structuredClone(nightly), 'unscoped deploy train');
         delete jobAt(unscopedTrain, DEPLOY_WEB_JOB).environment;
         expect(() => assertDailyDeployTrain(unscopedTrain)).toThrow(
             'the daily deploy train must draw its credential from the Production environment'
         );
 
-        const ungatedTrain = asRecord(structuredClone(heavyWorkflow), 'ungated deploy train');
+        const ungatedTrain = asRecord(structuredClone(nightly), 'ungated deploy train');
         delete recordAt(jobAt(ungatedTrain, DEPLOY_WEB_JOB), 'env').DEPLOY_CREDENTIAL_PRESENT;
         expect(() => assertDailyDeployTrain(ungatedTrain)).toThrow(
             'the daily deploy train must resolve credential presence without exposing the token'
         );
 
-        const credentiallessDeploy = asRecord(structuredClone(heavyWorkflow), 'credentialless deploy train');
+        const credentiallessDeploy = asRecord(structuredClone(nightly), 'credentialless deploy train');
         stepNamed(jobAt(credentiallessDeploy, DEPLOY_WEB_JOB), DEPLOY_WEB_FRESHNESS_STEP).if =
             "github.event_name == 'schedule'";
         expect(() => assertDailyDeployTrain(credentiallessDeploy)).toThrow(
             `${DEPLOY_WEB_FRESHNESS_STEP} must not run without the deployment credential`
         );
 
-        const unfreshResolver = asRecord(structuredClone(heavyWorkflow), 'stale-tolerant deploy train');
+        const unfreshResolver = asRecord(structuredClone(nightly), 'stale-tolerant deploy train');
         stepNamed(jobAt(unfreshResolver, DEPLOY_WEB_JOB), 'Resolve the current production revision').if =
             DEPLOY_CREDENTIAL_CONDITION;
         expect(() => assertDailyDeployTrain(unfreshResolver)).toThrow(
             'Resolve the current production revision must not run for a revision that is no longer the tip of main'
         );
 
-        const untippedTrain = asRecord(structuredClone(heavyWorkflow), 'untipped deploy train');
+        const untippedTrain = asRecord(structuredClone(nightly), 'untipped deploy train');
         const untippedStep = stepNamed(jobAt(untippedTrain, DEPLOY_WEB_JOB), DEPLOY_WEB_FRESHNESS_STEP);
         untippedStep.run = stringAt(untippedStep, 'run').replace(
             'git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" refs/heads/main',
@@ -1497,7 +1996,7 @@ describe('health gates workflow contract', () => {
             'the freshness check must read the current tip of main from the remote'
         );
 
-        const uncomparedTip = asRecord(structuredClone(heavyWorkflow), 'uncompared-tip deploy train');
+        const uncomparedTip = asRecord(structuredClone(nightly), 'uncompared-tip deploy train');
         const uncomparedStep = stepNamed(jobAt(uncomparedTip, DEPLOY_WEB_JOB), DEPLOY_WEB_FRESHNESS_STEP);
         uncomparedStep.run = stringAt(uncomparedStep, 'run').replace('"$tip" != "$CANDIDATE_REVISION"', '1 -eq 2');
         expect(() => assertDailyDeployTrain(uncomparedTip)).toThrow(
@@ -1509,48 +2008,48 @@ describe('health gates workflow contract', () => {
         const alwaysFresh = stringAt(uncomparedStep, 'run');
         expect(runFreshnessGuard(alwaysFresh, candidate, newerTip).outputs).toContain('fresh=true');
 
-        const halfArmedReport = asRecord(structuredClone(heavyWorkflow), 'half-armed deploy train');
+        const halfArmedReport = asRecord(structuredClone(nightly), 'half-armed deploy train');
         const reportStep = stepNamed(jobAt(halfArmedReport, DEPLOY_WEB_JOB), DEPLOY_WEB_CREDENTIAL_REPORT_STEP);
         reportStep.run = stringAt(reportStep, 'run').replace('deployment branch policy limited to `main`', 'nothing');
         expect(() => assertDailyDeployTrain(halfArmedReport)).toThrow(
             'the gated-off report must name every arming precondition, including deployment branch policy limited to `main`'
         );
 
-        const floatingCli = asRecord(structuredClone(heavyWorkflow), 'floating-CLI deploy train');
+        const floatingCli = asRecord(structuredClone(nightly), 'floating-CLI deploy train');
         recordAt(jobAt(floatingCli, DEPLOY_WEB_JOB), 'env').VERCEL_CLI = 'vercel@latest';
         expect(() => assertDailyDeployTrain(floatingCli)).toThrow(
             'the daily deploy train must pin an exact Vercel CLI version'
         );
 
-        const movingTarget = asRecord(structuredClone(heavyWorkflow), 'moving-target deploy train');
+        const movingTarget = asRecord(structuredClone(nightly), 'moving-target deploy train');
         recordAt(stepNamed(jobAt(movingTarget, DEPLOY_WEB_JOB), 'Checkout the validated revision'), 'with').ref =
             '${{ github.ref }}';
         expect(() => assertDailyDeployTrain(movingTarget)).toThrow(
             'the daily deploy train must build the revision its validation legs reported on'
         );
 
-        const duplicatingTrain = asRecord(structuredClone(heavyWorkflow), 'duplicating deploy train');
+        const duplicatingTrain = asRecord(structuredClone(nightly), 'duplicating deploy train');
         stepNamed(jobAt(duplicatingTrain, DEPLOY_WEB_JOB), 'Deploy the prebuilt revision').if =
             DEPLOY_CREDENTIAL_CONDITION;
         expect(() => assertDailyDeployTrain(duplicatingTrain)).toThrow(
             'Deploy the prebuilt revision must not run for a revision production already serves'
         );
 
-        const anonymousDeploy = asRecord(structuredClone(heavyWorkflow), 'anonymous deploy train');
+        const anonymousDeploy = asRecord(structuredClone(nightly), 'anonymous deploy train');
         const deployStep = stepNamed(jobAt(anonymousDeploy, DEPLOY_WEB_JOB), 'Deploy the prebuilt revision');
         deployStep.run = stringAt(deployStep, 'run').replace('--meta githubCommitSha="$GITHUB_SHA"', '');
         expect(() => assertDailyDeployTrain(anonymousDeploy)).toThrow(
             'the daily deploy train must record the deployed revision on the deployment'
         );
 
-        const unassertedIsolation = asRecord(structuredClone(heavyWorkflow), 'unasserted-isolation deploy train');
+        const unassertedIsolation = asRecord(structuredClone(nightly), 'unasserted-isolation deploy train');
         stepNamed(jobAt(unassertedIsolation, DEPLOY_WEB_JOB), 'Assert cross-origin isolation on the deployment').run =
             'curl --fail --silent --head "$DEPLOYMENT_URL"';
         expect(() => assertDailyDeployTrain(unassertedIsolation)).toThrow(
             'the daily deploy train must read the isolation headers back off the deployment'
         );
 
-        const taggingTrain = asRecord(structuredClone(heavyWorkflow), 'tagging deploy train');
+        const taggingTrain = asRecord(structuredClone(nightly), 'tagging deploy train');
         arrayAt(jobAt(taggingTrain, DEPLOY_WEB_JOB), 'steps').push({
             name: 'Tag the deployed revision',
             run: 'git tag "web-$GITHUB_SHA"',
@@ -1559,9 +2058,9 @@ describe('health gates workflow contract', () => {
             'a daily web deployment must not carry a release side effect: git tag'
         );
 
-        const gatingTrain = asRecord(structuredClone(heavyWorkflow), 'gating deploy train');
-        arrayAt(jobAt(gatingTrain, 'heavy-gate'), 'needs').push(DEPLOY_WEB_JOB);
-        expect(() => assertDailyDeployTrain(gatingTrain)).toThrow(
+        const gatingTrain = cloneWorkflows('gating deploy train');
+        arrayAt(jobAt(gatingTrain.heavy, 'heavy-gate'), 'needs').push(DEPLOY_WEB_JOB);
+        expect(() => assertDeployOutsideSummaries(gatingTrain)).toThrow(
             'the daily deploy train must stay outside the heavy summary'
         );
     });

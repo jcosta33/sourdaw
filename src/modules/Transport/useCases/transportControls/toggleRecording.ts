@@ -24,7 +24,7 @@ import { recordingLifecycle } from './recordingLifecycle';
 import { startPlayback } from './startPlayback';
 import { stopActiveRecording } from './stopActiveRecording';
 
-async function beginActualRecording(startToken: number): Promise<boolean> {
+async function beginActualRecording(startToken: number, anchorBeat?: number): Promise<boolean> {
     const ctx = getAudioContext();
     const totalHardwareLatencySec = (ctx.baseLatency || 0) + (ctx.outputLatency || 0);
     const armedTracks = getTrackStoreState()?.tracks.filter((time) => time.armed) ?? [];
@@ -82,21 +82,72 @@ async function beginActualRecording(startToken: number): Promise<boolean> {
     // the live playhead. The transport store is written on discrete events only,
     // so during playback its `playheadPosition` still holds the beat playback
     // started at — `startRecording`'s default would open the clip back there.
+    // Otherwise an armed count-in hands in the boundary beat it counted to;
+    // `undefined` keeps the stationary default.
     const rolling = getTransportState()?.isPlaying === true;
-    clips = startRecording(rolling ? playheadPositionRef.current : undefined);
+    clips = startRecording(rolling ? playheadPositionRef.current : anchorBeat);
     updateTransportState({ isRecording: true });
     return true;
 }
 
-function beginRecordingAndMaybePlayback(): void {
+function beginRecordingAndMaybePlayback(anchorBeat?: number): void {
     const startToken = recordingLifecycle.beginPendingRecordingStart();
-    void beginActualRecording(startToken).then((started) => {
+    void beginActualRecording(startToken, anchorBeat).then((started) => {
         const current = getTransportState();
         if (started && current && !current.isPlaying) {
             startPlayback();
         }
         return null;
     });
+}
+
+/**
+ * The punch window grants its crossing detection one scheduler grain (10 ms)
+ * before it stops calling the take on time. The count-in's armed start rides
+ * the JS timer wheel, whose unloaded wake-up jitter alone is a few
+ * milliseconds, so it gets five grains: within this window of the boundary the
+ * take still opens on the boundary beat, and beyond it the miss is surfaced
+ * instead — a take that begins audibly behind the counted-downbeat is not a
+ * take the user asked for.
+ */
+const COUNT_IN_BOUNDARY_TOLERANCE_SEC = 0.05;
+
+/**
+ * Arm the recording start on the audio clock the count-in clicks were
+ * scheduled on (ADR 0039: a feature evaluates against the clock that scheduled
+ * the sound it is reasoning about).
+ *
+ * The main thread cannot wake on the audio clock, so a `setTimeout` is only a
+ * wake-up hint. On every wake the clock decides: not yet at the boundary (a
+ * suspended context freezes it) re-arms for the audio-clock remainder instead
+ * of opening the take against a frozen clock; past the boundary within
+ * tolerance opens the take anchored on `boundaryBeat`; past the tolerance
+ * surfaces the missed count-in rather than silently recording a late take.
+ * Cancellation keeps its existing semantics: `stopActiveRecording` clears the
+ * pending timer, and the identity guard drops a wake that a cancel or a newer
+ * arm somehow left behind.
+ */
+function armCountInRecordingStart(countInEndTimeSec: number, countInDurationSec: number, boundaryBeat: number): void {
+    let wakeTimerId: ReturnType<typeof setTimeout> | null = null;
+    const wake = (): void => {
+        if (recordingLifecycle.countInTimerId !== wakeTimerId) {
+            return;
+        }
+        recordingLifecycle.setCountInTimerId(null);
+        const now = getAudioContext().currentTime;
+        if (now < countInEndTimeSec) {
+            wakeTimerId = setTimeout(wake, (countInEndTimeSec - now) * 1000);
+            recordingLifecycle.setCountInTimerId(wakeTimerId);
+            return;
+        }
+        if (now - countInEndTimeSec > COUNT_IN_BOUNDARY_TOLERANCE_SEC) {
+            notifyUser('Missed the count-in start — recording was not begun. Press record again.', 'warning');
+            return;
+        }
+        beginRecordingAndMaybePlayback(boundaryBeat);
+    };
+    wakeTimerId = setTimeout(wake, countInDurationSec * 1000);
+    recordingLifecycle.setCountInTimerId(wakeTimerId);
 }
 
 export function toggleRecording(): void {
@@ -167,16 +218,20 @@ export function toggleRecording(): void {
         ensureTrackStrips();
 
         const ctx = getAudioContext();
+        // The clicks and the boundary they count to sit on the same audio clock,
+        // so capture both from one read: the take must open when *this* clock
+        // reaches the boundary, never when the JS timer wheel gets around to it.
+        const countInStartTime = ctx.currentTime;
+        const countInEndTime = countInStartTime + countInDurationSec;
         for (let index = 0; index < countInBeats; index++) {
-            const time = ctx.currentTime + index * secondsPerCountInBeat;
-            scheduleClick(time, index % numerator === 0, state.metronomeVolume ?? 0.5);
+            scheduleClick(
+                countInStartTime + index * secondsPerCountInBeat,
+                index % numerator === 0,
+                state.metronomeVolume ?? 0.5
+            );
         }
 
-        const timerId = setTimeout(() => {
-            recordingLifecycle.setCountInTimerId(null);
-            beginRecordingAndMaybePlayback();
-        }, countInDurationSec * 1000);
-        recordingLifecycle.setCountInTimerId(timerId);
+        armCountInRecordingStart(countInEndTime, countInDurationSec, state.playheadPosition);
         return;
     }
 

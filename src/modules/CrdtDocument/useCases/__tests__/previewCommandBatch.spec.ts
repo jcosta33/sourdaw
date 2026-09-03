@@ -20,6 +20,7 @@ import {
 } from '#/modules/Command/useCases';
 import { tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState, getTransportHandlers } from '#/modules/Transport/useCases';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
 const runtimeMocks = vi.hoisted(() => ({
     addDeviceToStrip: vi.fn(),
@@ -146,6 +147,102 @@ describe('previewCommandBatch', () => {
             status: 'rejected',
             reason: 'Partial acceptance requires a successful preview outcome',
         });
+    });
+
+    it('supplies complete ordered batch context while describing and executing preview actions', async () => {
+        const described: Array<{ type: AppAction['type']; context?: HandlerValidationContext }> = [];
+        const executed: Array<{ type: AppAction['type']; context?: HandlerValidationContext }> = [];
+        registerHandlerMap({
+            setTrackGain: {
+                describe: (action, context) => {
+                    described.push({ type: action.type, context });
+                    return { label: 'Set track gain' };
+                },
+                execute: (action, context) => {
+                    executed.push({ type: action.type, context });
+                    return { status: 'written' };
+                },
+                previewExecution: 'isolated-project',
+                undoable: false,
+                validate: () => true,
+            },
+            setTrackPan: {
+                describe: (action, context) => {
+                    described.push({ type: action.type, context });
+                    return { label: 'Set track pan' };
+                },
+                execute: (action, context) => {
+                    executed.push({ type: action.type, context });
+                    return { status: 'written' };
+                },
+                previewExecution: 'isolated-project',
+                undoable: false,
+                validate: () => true,
+            },
+        });
+        commandBatchPreflightPort.setProvider(() => ({
+            audioGraphValid: true,
+            availableAssetHashes: [],
+            availableAudioBufferIds: [],
+            lockedRanges: [],
+            projectId: 'project-preview',
+            projectInvariantsValid: true,
+            targetFingerprints: { 'track-gain': 'gain-v1', 'track-pan': 'pan-v1' },
+        }));
+        const revision = captureProjectRevision();
+        const first = createVersionedCommandEnvelope({
+            action: { type: 'setTrackGain', payload: { trackId: 'track-gain', gain: 0.8, expectedGain: 1 } },
+            availableDeviceVersions: {},
+            expectedEffect: 'Track gain changes.',
+            normalizedProjectRevision: revision,
+            objectReferences: [{ argument: 'trackId', id: 'track-gain', scope: 'stable' }],
+            parameterUnits: [
+                { argument: 'gain', unit: 'linear-gain' },
+                { argument: 'expectedGain', unit: 'linear-gain' },
+            ],
+            reason: 'Preview track gain.',
+            time: [],
+        });
+        const second = createVersionedCommandEnvelope({
+            action: { type: 'setTrackPan', payload: { trackId: 'track-pan', pan: -0.2, expectedPan: 0 } },
+            availableDeviceVersions: {},
+            dependencyIds: [first.commandId],
+            expectedEffect: 'Track pan changes.',
+            normalizedProjectRevision: revision,
+            objectReferences: [{ argument: 'trackId', id: 'track-pan', scope: 'stable' }],
+            parameterUnits: [
+                { argument: 'pan', unit: 'pan-percent' },
+                { argument: 'expectedPan', unit: 'pan-percent' },
+            ],
+            reason: 'Preview track pan.',
+            time: [],
+        });
+        const batch = compileVersionedCommandBatchEnvelope({
+            baseRevision: revision,
+            batchId: 'batch-ordered-preview-context',
+            commands: [serializeVersionedCommandEnvelope(first), serializeVersionedCommandEnvelope(second)],
+            intent: 'Preview ordered context',
+            mode: 'preview',
+            projectId: 'project-preview',
+            runId: 'run-ordered-preview-context',
+        });
+
+        const preview = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            serialized: batch.serialized,
+        });
+
+        expect(preview.status).toBe('previewed');
+        const actions = [first, second].map((command) => ({ type: command.operation, payload: command.arguments }));
+        for (const [index, observed] of described.entries()) {
+            expect(observed.context).toMatchObject({ actions, actionIndex: index, executionMode: 'isolated-preview' });
+        }
+        for (const [index, observed] of executed.entries()) {
+            expect(observed.context).toMatchObject({ actions, actionIndex: index, executionMode: 'isolated-preview' });
+        }
+        if (preview.status === 'previewed') {
+            preview.resource.release();
+        }
     });
 
     it('previews a registered production addTrack command without publishing the track', async () => {

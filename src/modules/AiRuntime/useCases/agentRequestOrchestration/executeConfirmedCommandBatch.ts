@@ -191,7 +191,13 @@ function getFreshArtifactBindings(
                 candidate.tailSeconds === job.tailSeconds
         );
         const artifact = matchingArtifacts[0];
-        if (preexistingJobIds.has(job.jobId) || matchingArtifacts.length > 1) {
+        if (matchingArtifacts.length > 1) {
+            throw new Error(`Exactly one fresh section render artifact is required for committed job ${job.jobId}.`);
+        }
+        if (preexistingJobIds.has(job.jobId)) {
+            if (allowMissingArtifact) {
+                return [];
+            }
             throw new Error(`Exactly one fresh section render artifact is required for committed job ${job.jobId}.`);
         }
         if (!artifact) {
@@ -277,6 +283,7 @@ export async function executeConfirmedCommandBatch(
                     runId: confirmation.runId,
                     receipt,
                     commandBatch,
+                    getFinalizedRevision: () => committedProjectRevision ?? undefined,
                 });
             },
             onProjectCommitFinalized: ({

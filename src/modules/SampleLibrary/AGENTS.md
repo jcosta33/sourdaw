@@ -10,10 +10,9 @@ Local and native sample collection indexing, folder tree hierarchies, sample met
 
 ## Key Subsystems
 
-- **Sample Database & Persistence**: IndexedDB persistence for library root directories, sample file paths, and tag metadata (`stores/sampleDatabaseStore.ts`, `repositories/libraryPersistence/`).
+- **Sample Database & Persistence**: IndexedDB persistence for library root directories, sample file paths, and metadata (`stores/libraryStore.ts`, `repositories/libraryPersistence/`).
 - **Native & Browser Filesystem Access**: `repositories/` (`readNativeDirectory.ts`, `readNativeAudioFileBytes.ts`, `pickNativeSampleFolder.ts`, `readBrowserLibrarySampleFile.ts`) provide dual-runtime directory scanning.
 - **Similarity & Spatial Projection**: `useCases/findSimilarSamples.ts`, `useCases/projectSpatialMap.ts`, and `stores/embeddingStore.ts` compute audio similarity distances and project multidimensional embeddings into 2D coordinates.
-- **Audio Tagging & Metadata**: Categorizes samples by instrumentation, BPM, key, and sonic characteristics (`services/sampleTaggingHelpers.ts`, `models/SampleEntry.ts`).
 
 ## Invariants & Traps
 

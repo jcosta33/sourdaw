@@ -91,6 +91,13 @@ impl DelayLine {
         }
     }
 
+    /// Empty the line, reusing its buffer. `len` is a property of the
+    /// allocation, so it is left alone.
+    fn reset(&mut self) {
+        self.buffer.fill(0.0);
+        self.write_pos = 0;
+    }
+
     #[inline]
     fn write(&mut self, sample: f32) {
         // Magnitude truncation to eliminate limit-cycle oscillation
@@ -214,6 +221,14 @@ impl Allpass {
         }
     }
 
+    /// Empty the internal line and return the gain to `gain`, which the
+    /// caller supplies because `diffusion`, `density` and `gravity` all move
+    /// it away from what the constructor chose.
+    fn reset(&mut self, gain: f32) {
+        self.delay.reset();
+        self.gain = gain;
+    }
+
     #[inline]
     fn process(&mut self, input: f32) -> f32 {
         let delayed = self.delay.read(self.delay.len - 1);
@@ -314,6 +329,30 @@ struct GranularShifter {
     scatter_range: f64, // samples of grain-position scatter
 }
 
+/// Jitter seeds for the two tank halves. Named because `reset` has to hand the
+/// shifters the same two numbers the constructor did, and two halves seeded
+/// alike scatter their grains in lockstep.
+const SHIMMER_LEFT_SEED: u32 = 54_321;
+const SHIMMER_RIGHT_SEED: u32 = 1_402_237;
+
+/// 30 ms of grain. A grain reaches back one grain of history, plus however far
+/// its own scatter draw pushes it, so four of these covers both with room to
+/// spare — which is what `new` allocates and what `reset` must not change.
+fn grain_size(sample_rate: f32) -> usize {
+    (0.030 * sample_rate as f64) as usize
+}
+
+/// Butterworth Q pair for the fourth-order anti-imaging cascade. The corner
+/// only moves off its conventional 6 kHz on a rate low enough that the octave
+/// would otherwise fold below it.
+fn feed_filters(sample_rate: f32) -> [Biquad; 2] {
+    let corner = SHIMMER_FEED_HZ.min(0.55 * sample_rate / (2.0 * MAX_SHIMMER_RATIO));
+    let mut feed = [Biquad::new(), Biquad::new()];
+    feed[0].design_lowpass(corner, 0.541_196, sample_rate);
+    feed[1].design_lowpass(corner, 1.306_563, sample_rate);
+    feed
+}
+
 impl GranularShifter {
     /// One shifter owns one channel. `jitter_seed` decorrelates the wash
     /// between the two tank halves, which would otherwise scatter their grains
@@ -322,20 +361,12 @@ impl GranularShifter {
         // 30ms grain. A grain reaches back one grain of history, plus however
         // far its own scatter draw pushes it, so four grains of buffer covers
         // both with room to spare.
-        let grain_size = (0.030 * sample_rate as f64) as usize;
+        let grain_size = grain_size(sample_rate);
         let buf_size = grain_size * 4;
-
-        // Butterworth Q pair for a fourth-order cascade. The corner only moves
-        // off its conventional 6 kHz on a rate low enough that the octave would
-        // otherwise fold below it.
-        let corner = SHIMMER_FEED_HZ.min(0.55 * sample_rate / (2.0 * MAX_SHIMMER_RATIO));
-        let mut feed = [Biquad::new(), Biquad::new()];
-        feed[0].design_lowpass(corner, 0.541_196, sample_rate);
-        feed[1].design_lowpass(corner, 1.306_563, sample_rate);
 
         Self {
             buffer: vec![0.0; buf_size],
-            feed,
+            feed: feed_filters(sample_rate),
             write_pos: 0,
             phase1: 0.0,
             phase2: 0.5, // 180° offset for overlap
@@ -348,6 +379,29 @@ impl GranularShifter {
             jitter_state: jitter_seed,
             scatter_range: grain_size as f64,
         }
+    }
+
+    /// Return to the state `new` leaves behind, reusing the grain buffer.
+    ///
+    /// `jitter_seed` is passed back in because it is what decorrelates the two
+    /// tank halves: a reset that seeded both shifters the same way would
+    /// scatter their grains in lockstep and collapse the shimmer to the centre
+    /// of the image, which is the thing the constructor's two seeds exist to
+    /// prevent.
+    fn reset(&mut self, sample_rate: f32, jitter_seed: u32) {
+        self.buffer.fill(0.0);
+        self.feed = feed_filters(sample_rate);
+        self.write_pos = 0;
+        self.phase1 = 0.0;
+        self.phase2 = 0.5;
+        self.scatter1 = 0.0;
+        self.scatter2 = 0.0;
+        self.pitch_ratio = 2.0;
+        self.grain_size = grain_size(sample_rate);
+        self.enabled = false;
+        self.amount = 0.2;
+        self.jitter_state = jitter_seed;
+        self.scatter_range = self.grain_size as f64;
     }
 
     /// Cheap noise for jitter
@@ -790,8 +844,8 @@ impl ProofChamber {
 
             output: OutputStage::new(sample_rate),
 
-            shimmer_left: GranularShifter::new(sample_rate, 54321),
-            shimmer_right: GranularShifter::new(sample_rate, 1_402_237),
+            shimmer_left: GranularShifter::new(sample_rate, SHIMMER_LEFT_SEED),
+            shimmer_right: GranularShifter::new(sample_rate, SHIMMER_RIGHT_SEED),
 
             smooth_mix: 0.3,
             smooth_decay: 0.5,
@@ -801,6 +855,88 @@ impl ProofChamber {
             scaled_taps_l: scale_taps(&LEFT_TAPS),
             scaled_taps_r: scale_taps(&RIGHT_TAPS),
         }
+    }
+
+    /// Return to the state `new` leaves behind, reusing every delay line, the
+    /// pre-delay buffer, the early-reflection buffer and the two grain buffers
+    /// already allocated.
+    ///
+    /// Selecting an algorithm is audio-thread work, so the engine that becomes
+    /// active is reset here instead of being rebuilt (#3307). Every value below
+    /// is the constructor's — read the reasoning for each one there, beside the
+    /// literal it belongs to — and
+    /// `tests/engine_reset_is_factory_fresh.rs` renders a driven-then-reset
+    /// plate against a fresh one so the two cannot drift apart.
+    ///
+    /// `scaled_delays`, `scaled_taps_l`, `scaled_taps_r` and `excursion` are
+    /// absent because they are functions of the sample rate alone and no
+    /// `set_param` arm or render step writes them: they still hold what the
+    /// constructor computed.
+    pub fn reset(&mut self) {
+        let sample_rate = self.sample_rate;
+
+        self.mix = 0.3;
+        self.decay = 0.5;
+        self.damping = 0.3;
+        self.predelay_ms = 15.0;
+        self.size = 0.75;
+        self.mod_rate = 1.0;
+        self.mod_depth = 0.3;
+        self.diffusion = 0.75;
+        self.freeze = false;
+        self.gravity = 0.5;
+        self.saturation_type = 0;
+        self.saturation_enabled = false;
+        self.early_late_balance = 0.4;
+
+        self.bandwidth_filter = OnePole::new(1.0 - 0.9995);
+        self.input_diffusers[0].reset(0.750);
+        self.input_diffusers[1].reset(0.750);
+        self.input_diffusers[2].reset(0.625);
+        self.input_diffusers[3].reset(0.625);
+
+        self.early_reflections.reset(sample_rate, 0.5);
+
+        self.predelay.reset();
+        self.predelay_len = ((15.0 / 1000.0) * sample_rate) as usize;
+
+        self.left_mod_ap.reset();
+        self.left_mod_ap_gain = -0.70;
+        self.left_delay_1.reset();
+        self.left_damp = OnePole::new(0.3);
+        self.left_ap.reset(0.50);
+        self.left_delay_2.reset();
+
+        self.right_mod_ap.reset();
+        self.right_mod_ap_gain = -0.70;
+        self.right_delay_1.reset();
+        self.right_damp = OnePole::new(0.3);
+        self.right_ap.reset(0.50);
+        self.right_delay_2.reset();
+
+        // Arrays and scalars only, so rebuilding the two stages frees nothing
+        // and allocates nothing. The sentinels below force `process` to design
+        // them against the real tank loss on the first block, exactly as they
+        // do for a fresh engine.
+        self.decay_eq_left = DecayRateEq::new(sample_rate, 1.0);
+        self.decay_eq_right = DecayRateEq::new(sample_rate, 1.0);
+        self.decay_eq_base_gain = f32::NAN;
+        self.decay_eq_damping = f32::NAN;
+
+        self.left_tank_output = 0.0;
+        self.right_tank_output = 0.0;
+
+        self.lfo_phase_l = 0.0;
+        self.lfo_phase_r = 0.25;
+
+        self.output.reset();
+
+        self.shimmer_left.reset(sample_rate, SHIMMER_LEFT_SEED);
+        self.shimmer_right.reset(sample_rate, SHIMMER_RIGHT_SEED);
+
+        self.smooth_mix = 0.3;
+        self.smooth_decay = 0.5;
+        self.smooth_coeff = 1.0 - (-1.0 / (0.030 * sample_rate)).exp();
     }
 
     pub fn set_param(&mut self, name: &str, value: f32) {

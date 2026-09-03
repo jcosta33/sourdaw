@@ -11,6 +11,9 @@ export function createSession(name: string): string {
     const peerId = runtime.generatePeerId();
     const sessionId = runtime.generateSessionId();
     const color = runtime.pickPeerColor([]);
+    // The room capability every later joiner has to present. `cleanup` above
+    // cleared the previous one, so this is the only secret this session has.
+    runtime.state.sessionSecret = runtime.generateSessionSecret();
 
     runtime.initialize(collaborationAssetOwnership.getOwnerId());
     runtime.startPlayheadBroadcast();

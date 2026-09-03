@@ -1791,7 +1791,7 @@ describe('AudioEngine', () => {
             expect(engine.getHealth().workletReady).toBe(false);
 
             // SAB released: a post-dispose transport write must not throw.
-            expect(() => engine.setTransportInfo(1, 120, true)).not.toThrow();
+            expect(() => engine.setTransportInfo(1, 0.5, 120, true)).not.toThrow();
 
             const addModuleCallsBefore = mockCtx.audioWorklet.addModule.mock.calls.length;
             await expect(engine.initialize()).rejects.toThrow('Audio engine has been disposed');
@@ -1838,7 +1838,16 @@ describe('AudioEngine', () => {
         // Int32 index of the seqlock counter; mirrors TRANSPORT_SEQ_I32 in the impl
         // and TRANSPORT_SEQ_I32 in services/kneadProcessor.ts.
         const SEQ_I32 = 14;
-        const F64 = { beat: 0, tempo: 1, sampleRate: 2, loopStart: 3, loopEnd: 4, isPlaying: 5, isLooping: 6 };
+        const F64 = {
+            beat: 0,
+            tempo: 1,
+            sampleRate: 2,
+            loopStart: 3,
+            loopEnd: 4,
+            isPlaying: 5,
+            isLooping: 6,
+            positionSeconds: 8,
+        };
 
         // The engine allocates its own transport SAB internally. We recover it by
         // spying on the Int32Array the constructor wraps over that buffer (the seq
@@ -1861,9 +1870,9 @@ describe('AudioEngine', () => {
                 constructor(...args: unknown[]) {
                     // @ts-expect-error spread into the typed-array constructor
                     super(...args);
-                    // The transport SAB is the only 64-byte buffer the constructor
+                    // The transport SAB is the only 72-byte buffer the constructor
                     // wraps with an Int32Array; ignore any other typed-array builds.
-                    if (args[0] instanceof ArrayBuffer && args[0].byteLength === 64) {
+                    if (args[0] instanceof ArrayBuffer && args[0].byteLength === 72) {
                         capturedBuffer = args[0];
                     }
                 }
@@ -1879,7 +1888,7 @@ describe('AudioEngine', () => {
             const seq = new Int32Array(buf);
 
             const before = Atomics.load(seq, SEQ_I32);
-            engine.setTransportInfo(4, 130, true, 1, 5, true);
+            engine.setTransportInfo(4, 1.846, 130, true, 1, 5, true);
             const after = Atomics.load(seq, SEQ_I32);
 
             // Even after the write completes (write-in-progress is the odd state).
@@ -1893,9 +1902,9 @@ describe('AudioEngine', () => {
             const seq = new Int32Array(buf);
             const data = new Float64Array(buf);
 
-            engine.setTransportInfo(2.5, 90, false, 8, 16, true);
+            engine.setTransportInfo(2.5, 1.75, 90, false, 8, 16, true);
 
-            // All seven fields carry the values passed, and the counter is settled
+            // Every field carries the value passed, and the counter is settled
             // even — the combination a reader requires for a trusted snapshot.
             expect(data[F64.beat]).toBe(2.5);
             expect(data[F64.tempo]).toBe(90);
@@ -1904,6 +1913,11 @@ describe('AudioEngine', () => {
             expect(data[F64.loopEnd]).toBe(16);
             expect(data[F64.isPlaying]).toBe(0);
             expect(data[F64.isLooping]).toBe(1);
+            // The song position the caller integrated through the tempo map. It
+            // is deliberately not 2.5 beats at 90 BPM: the worklet reader must
+            // get the caller's integration verbatim, never a value this writer
+            // could have derived from the beat and the tempo beside it.
+            expect(data[F64.positionSeconds]).toBe(1.75);
             expect(Atomics.load(seq, SEQ_I32) % 2).toBe(0);
         });
 
@@ -1918,15 +1932,23 @@ describe('AudioEngine', () => {
             const seq = new Int32Array(buf);
             const data = new Float64Array(buf);
 
-            function seqlockRead(): { beat: number; tempo: number; playing: boolean; cleanFirstTry: boolean } {
+            function seqlockRead(): {
+                beat: number;
+                tempo: number;
+                positionSeconds: number;
+                playing: boolean;
+                cleanFirstTry: boolean;
+            } {
                 let beat = 0;
                 let tempo = 120;
+                let positionSeconds = 0;
                 let playing = false;
                 let cleanFirstTry = false;
                 for (let attempt = 0; attempt <= 8; attempt++) {
                     const start = Atomics.load(seq, SEQ_I32);
                     beat = data[F64.beat] ?? 0;
                     tempo = data[F64.tempo] ?? 120;
+                    positionSeconds = data[F64.positionSeconds] ?? 0;
                     playing = (data[F64.isPlaying] ?? 0) > 0.5;
                     const end = Atomics.load(seq, SEQ_I32);
                     if (start === end && (start & 1) === 0) {
@@ -1934,23 +1956,25 @@ describe('AudioEngine', () => {
                         break;
                     }
                 }
-                return { beat, tempo, playing, cleanFirstTry };
+                return { beat, tempo, positionSeconds, playing, cleanFirstTry };
             }
 
             const seqBeforeWrites = Atomics.load(seq, SEQ_I32);
 
-            engine.setTransportInfo(42, 128, true, 0, 0, false);
+            engine.setTransportInfo(42, 21.5, 128, true, 0, 0, false);
             const r1 = seqlockRead();
             expect(r1.cleanFirstTry).toBe(true);
             expect(r1.beat).toBe(42);
             expect(r1.tempo).toBe(128);
+            expect(r1.positionSeconds).toBe(21.5);
             expect(r1.playing).toBe(true);
 
-            engine.setTransportInfo(7, 100, false, 0, 0, false);
+            engine.setTransportInfo(7, 3.25, 100, false, 0, 0, false);
             const r2 = seqlockRead();
             expect(r2.cleanFirstTry).toBe(true);
             expect(r2.beat).toBe(7);
             expect(r2.tempo).toBe(100);
+            expect(r2.positionSeconds).toBe(3.25);
             expect(r2.playing).toBe(false);
 
             // Each write must advance the seqlock counter by exactly 2 (odd→even):
@@ -2594,6 +2618,21 @@ describe('AudioEngine', () => {
             }
         });
 
+        it('resets device runtime state through the generic controller surface', () => {
+            const reset = vi.fn();
+            const strip = engine.ensureTrackStrip('tGrinder');
+            strip.deviceNodes.push({
+                deviceId: 'grinder-dev',
+                type: 'grinder',
+                nodes: [],
+                controller: { reset, setParam: vi.fn(), setBypass: vi.fn() },
+            } as never);
+
+            engine.stopAllScheduled();
+
+            expect(reset).toHaveBeenCalledOnce();
+        });
+
         it('does not fan out per-note messages to an instrument worklet port', () => {
             const strip = engine.ensureTrackStrip('tFerm');
             const workletNode = new FakeWorkletNode();
@@ -2711,7 +2750,7 @@ describe('AudioEngine', () => {
                     noSabEngine = createAudioEngine(asAudioContext(mockCtx));
                 }).not.toThrow();
                 // Transport writes are a safe no-op with no SAB backing.
-                expect(() => noSabEngine!.setTransportInfo(4, 120, true)).not.toThrow();
+                expect(() => noSabEngine!.setTransportInfo(4, 2, 120, true)).not.toThrow();
             } finally {
                 vi.stubGlobal('SharedArrayBuffer', savedSAB);
             }
@@ -2755,6 +2794,131 @@ describe('AudioEngine', () => {
 
         it('setTrackOutput is a no-op when the track has no strip', () => {
             expect(() => engine.setTrackOutput('ghost-track', 'hw_out')).not.toThrow();
+        });
+    });
+
+    describe('unregistered runtime graph validators', () => {
+        it('applies a forward device-chain delta when both validators are null', () => {
+            engine.setRuntimeGraphProjectRevisionValidator(null);
+            engine.setRuntimeGraphTopologyValidator(null);
+            engine.ensureTrackStrip('aba-track');
+            const delta = createRuntimeDeviceDelta(
+                engine.getRuntimeGraphRevision(),
+                'add-device',
+                [],
+                [{ id: 'device-1', type: 'eq' }]
+            );
+
+            const result = engine.applyRuntimeGraphDelta(delta);
+
+            expect(result).toMatchObject({ acceptance: 'accepted', application: 'applied' });
+            expect(result).not.toEqual(
+                expect.objectContaining({
+                    reason: 'Runtime graph delta cannot validate its project revision',
+                })
+            );
+            expect(result).not.toEqual(
+                expect.objectContaining({
+                    reason: 'Runtime graph delta cannot validate its project topology',
+                })
+            );
+            expect(getMockTrackNode(engine, 'aba-track').strip.deviceNodes).toEqual([
+                expect.objectContaining({ deviceId: 'device-1', type: 'eq' }),
+            ]);
+        });
+
+        it('applies track-strip initialization when both validators are null', () => {
+            engine.setRuntimeGraphProjectRevisionValidator(null);
+            engine.setRuntimeGraphTopologyValidator(null);
+
+            const result = engine.initializeTrackStripFromSnapshot(
+                createTrackStripInitialization(engine.getRuntimeGraphRevision(), [
+                    { id: 'eq-1', type: 'eq', parameterIds: ['frequency'] },
+                ])
+            );
+
+            expect(result).toMatchObject({ acceptance: 'accepted', application: 'applied' });
+            expect(result).not.toEqual(
+                expect.objectContaining({
+                    reason: 'Runtime graph initialization cannot validate its project revision',
+                })
+            );
+            expect(result).not.toEqual(
+                expect.objectContaining({
+                    reason: 'Runtime graph initialization cannot validate its project topology',
+                })
+            );
+            expect(engine.getTrackStrip('bootstrap-track')?.deviceNodes.map((device) => device.deviceId)).toEqual([
+                'eq-1',
+            ]);
+        });
+
+        it('applies a current set-track-output delta when both validators are null', () => {
+            engine.setRuntimeGraphProjectRevisionValidator(null);
+            engine.setRuntimeGraphTopologyValidator(null);
+            const source = engine.ensureTrackStrip('source');
+            engine.ensureTrackStrip('target');
+
+            const result = engine.applyRuntimeGraphDelta(createRuntimeOutputDelta(engine.getRuntimeGraphRevision()));
+
+            expect(result).toMatchObject({ acceptance: 'accepted', application: 'applied' });
+            expect(result).not.toEqual(
+                expect.objectContaining({
+                    reason: 'Runtime graph delta cannot validate its project revision',
+                })
+            );
+            expect(result).not.toEqual(
+                expect.objectContaining({
+                    reason: 'Runtime graph delta cannot validate its project topology',
+                })
+            );
+            expect(source.outputId).toBe('target');
+        });
+
+        it('still rejects topology mismatch when only the revision validator is null', () => {
+            engine.setRuntimeGraphProjectRevisionValidator(null);
+            engine.setRuntimeGraphTopologyValidator(() => false);
+            engine.ensureTrackStrip('aba-track');
+            const delta = createRuntimeDeviceDelta(
+                engine.getRuntimeGraphRevision(),
+                'add-device',
+                [],
+                [{ id: 'device-1', type: 'eq' }]
+            );
+
+            const result = engine.applyRuntimeGraphDelta(delta);
+
+            expect(result).toEqual(
+                expect.objectContaining({
+                    acceptance: 'rejected',
+                    application: 'not-applied',
+                    reason: 'Runtime graph delta does not match the current project topology',
+                })
+            );
+            expect(getMockTrackNode(engine, 'aba-track').strip.deviceNodes).toEqual([]);
+        });
+
+        it('still rejects a stale project revision when only the topology validator is null', () => {
+            engine.setRuntimeGraphTopologyValidator(null);
+            engine.setRuntimeGraphProjectRevisionValidator(() => false);
+            engine.ensureTrackStrip('aba-track');
+            const delta = createRuntimeDeviceDelta(
+                engine.getRuntimeGraphRevision(),
+                'add-device',
+                [],
+                [{ id: 'device-1', type: 'eq' }]
+            );
+
+            const result = engine.applyRuntimeGraphDelta(delta);
+
+            expect(result).toEqual(
+                expect.objectContaining({
+                    acceptance: 'rejected',
+                    application: 'not-applied',
+                    reason: 'Runtime graph delta is stale for the current project revision',
+                })
+            );
+            expect(getMockTrackNode(engine, 'aba-track').strip.deviceNodes).toEqual([]);
         });
     });
 

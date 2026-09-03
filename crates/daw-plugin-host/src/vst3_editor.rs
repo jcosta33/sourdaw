@@ -30,10 +30,19 @@
 //! on. That is the contract this module is written against, and it is the
 //! caller's to keep: nothing here can check which thread it was entered on.
 //!
-//! Two entries into this file are outside it. The editor-support probe creates
-//! and releases a throwaway view on whatever thread asked, and `Vst3Editor`'s
-//! own `Drop` runs wherever the runtime is finally released. Both are known and
-//! tracked separately; neither is on the open/close path above.
+//! The editor-support probe is inside that contract, not an exception to it.
+//! VST3 has no view-free way to ask the question: no controller-side
+//! `hasEditor` exists, and a class's category string ("Instrument", "Fx") says
+//! what a plugin processes, never whether it draws — so `createView` is the
+//! query, a null answer is the format's way of saying there is no editor, and
+//! asking means creating and releasing a real view. That ask is an editor call
+//! like any other: the loader carries it to the shell's UI thread before any
+//! window exists and before the runtime is registered anywhere, the backend
+//! caches the answer it returns, and every later capability read answers from
+//! that cache without creating a view. `Vst3Editor`'s own `Drop` remains the
+//! one entry outside the contract, running wherever the runtime is finally
+//! released; it is known and tracked separately, and it is not on the
+//! open/close path above.
 //!
 //! `ViewRect` is not one unit on every platform. macOS states it in logical
 //! points and the window server applies the backing scale, while Windows and
@@ -856,6 +865,10 @@ impl Drop for Vst3Editor {
 /// VST3 has no cheaper question than this one: `createView` *is* the query, and a
 /// null answer is the format's way of saying there is no editor. The view is
 /// released immediately — it was never attached, so there is nothing to undo.
+///
+/// Creating that view is an editor call, so the caller carries this ask to the
+/// thread that owns editor windows, exactly as it carries `open` and the rest;
+/// see the module note for why no view-free derivation of the answer exists.
 pub fn plugin_offers_an_editor(controller: &ComPtr<IEditController>) -> bool {
     create_editor_view(controller).is_some()
 }

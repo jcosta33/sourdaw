@@ -33,6 +33,24 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: vi.fn(),
+    createCrdtDoc: vi.fn(),
+    DOC_BRANCHES: '__branches__',
+    DOC_PREFIX_ROOT: 'root',
+    getCrdtDoc: vi.fn(),
+    getCrdtDocIds: vi.fn(),
+    hasCrdtDoc: vi.fn(),
+    mutateCrdtDoc: vi.fn(),
+    persistCrdtProject: vi.fn(),
+    preserveBranchStateForSession: vi.fn(),
+    removeCrdtDoc: vi.fn(),
+    replaceBranchState: vi.fn(),
+    replaceCrdtDoc: vi.fn(),
+    restoreBranchStateAfterSession: vi.fn(),
+    runCrdtPersistenceBarrier: vi.fn(),
+    sanitizeIncomingCrdtDocument: vi.fn(),
+    setupProjectionBridge: vi.fn(),
+    subscribeToCrdtChanges: vi.fn(),
+    waitForCrdtDocumentTransition: vi.fn(),
 }));
 vi.mock('../notifyAiChange', () => ({ notifyAiChange: vi.fn() }));
 vi.mock('../recordAiActionGroup', () => ({ recordAiActionGroup: vi.fn() }));
@@ -182,6 +200,15 @@ const devicePendingEffect = {
     state: 'pending',
 } satisfies NonNullable<BatchExecutionObservation['warningDetails']>[number]['pendingEffect'];
 
+const renderPendingEffect = {
+    commandId: postCommitFixture.command.commandId,
+    kind: 'external-effect',
+    operation: 'renderProjectSections',
+    reason: 'renderer unavailable',
+    remediation: 'reconcile',
+    state: 'pending',
+} satisfies NonNullable<BatchExecutionObservation['warningDetails']>[number]['pendingEffect'];
+
 function partiallyCommittedObservation(): BatchExecutionObservation {
     return {
         status: 'committed-with-warning',
@@ -317,6 +344,96 @@ describe('executePlannedActions', () => {
             ],
             workLeases: [expect.objectContaining({ workId: receipt.batchId, terminalState: 'orphaned' })],
         });
+    });
+
+    it('promotes render-only recovery with the exact finalized project revision', async () => {
+        const observation: BatchExecutionObservation = {
+            status: 'committed-with-warning',
+            actions: [receiptAction(postCommitFixture)],
+            warning: renderPendingEffect.reason,
+            warningDetails: [
+                {
+                    kind: 'external-effect',
+                    commandId: renderPendingEffect.commandId,
+                    message: renderPendingEffect.reason,
+                    pendingEffect: renderPendingEffect,
+                },
+            ],
+        };
+        const receipt = await createReceipt(postCommitFixture, observation);
+        agentRunLifecycle.create({
+            runId: receipt.runId,
+            request: 'Render the retained section.',
+            mode: 'apply',
+            createdRevision: 'revision-R1',
+            createdAt: 100,
+        });
+        agentRunLifecycle.recordCommittedWork({
+            runId: receipt.runId,
+            workId: 'prior-batch',
+            receiptIdentity: 'receipt-prior-batch',
+            committedRevision: 'revision-R1',
+            completesRun: false,
+            committedAt: 101,
+        });
+        vi.mocked(executeVersionedCommandBatchEnvelope).mockImplementation(async ({ options }) => {
+            const preparation = options?.onProjectCommitCheckpoint?.({ receipt });
+            options?.onProjectCommitFinalized?.({ receipt, revision: 'revision-R2' });
+            preparation?.promote({ receipt });
+            return {
+                status: 'committed-with-warning',
+                actions: [{ ...receiptAction(postCommitFixture), label: 'Render retained section' }],
+                receipt,
+                warning: renderPendingEffect.reason,
+                warningDetails: observation.warningDetails ? [...observation.warningDetails] : undefined,
+            };
+        });
+
+        const result = await executePlannedActions({
+            commandBatch: postCommitFixture.commandBatch,
+            prompt: 'Render the retained section.',
+            actions: postCommitFixture.actions,
+            projectRevision: 'revision-1',
+        });
+
+        expect(result).toMatchObject({ status: 'committed', committedRevision: 'revision-R2' });
+        expect(agentRunLifecycle.get(receipt.runId)?.pendingEffectContinuations[0]?.sourceRevision).toBe('revision-R2');
+        expect(readAgentRunState().pendingEffectRecoveryLedger?.[0]?.sourceRevision).toBe('revision-R2');
+    });
+
+    it('reports unavailable exact commit provenance without sampling a later project revision', async () => {
+        const receipt = await createReceipt(projectFixture, {
+            status: 'committed',
+            actions: [receiptAction(projectFixture)],
+        });
+        vi.mocked(captureProjectRevision).mockReturnValue('revision-R3');
+        vi.mocked(executeVersionedCommandBatchEnvelope).mockImplementation(async ({ options }) => {
+            options?.onProjectCommitFinalizationUnavailable?.({ reason: 'revision capture failed at commit' });
+            return {
+                status: 'committed',
+                actions: [{ ...receiptAction(projectFixture), label: 'Mute vocals' }],
+                receipt,
+            };
+        });
+
+        const result = await executePlannedActions({
+            commandBatch: projectFixture.commandBatch,
+            prompt: 'Mute vocals',
+            actions: projectFixture.actions,
+            projectRevision: 'revision-1',
+        });
+
+        expect(result).toMatchObject({
+            status: 'committed',
+            finalizationEvidenceFailure: 'revision capture failed at commit',
+        });
+        expect(result).not.toHaveProperty('committedRevision');
+        expect(notifyAiChange).toHaveBeenCalledWith(
+            'The project change is durably committed, but its finalization evidence is unavailable: revision capture failed at commit. Do not replay these actions. Inspect the current project state before further automation.',
+            ['muteTrack']
+        );
+        expect(notifyAiChange).toHaveBeenCalledTimes(1);
+        expect(notifyAiChange).not.toHaveBeenCalledWith('Executed: Mute vocals', expect.anything());
     });
 
     it('removes a prepared recovery capsule when the owning project checkpoint aborts', async () => {

@@ -19,11 +19,11 @@ import {
 
 import { AppActionConflictError } from '../errors/AppActionExecutionError';
 import { type VersionedCommandEnvelope, type VersionedCommandReceipt } from '../models/VersionedCommandEnvelope';
-import { registerActionReplayCapability, revokeActionReplayCapability } from '../stores/actionReplayCapabilities';
+import { registerActionReplayCapabilities, revokeActionReplayCapability } from '../stores/actionReplayCapabilities';
 
-import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
+import { actionHistoryMetadataPort, type ActionHistoryMetadata } from './actionHistoryMetadataPort';
 import { type CommandBatchValidationPreparation } from './commandBatchValidation';
-import { commitUndoEntry } from './commitUndoEntry';
+import { commitUndoEntries } from './commitUndoEntries';
 import { createExecutionCommandEnvelope } from './createExecutionCommandEnvelope';
 import { createUndoEntry } from './createUndoEntry';
 import { createVersionedCommandReceipt } from './createVersionedCommandReceipt';
@@ -33,6 +33,7 @@ import { getVersionedCommandArgumentsDigest } from './getVersionedCommandArgumen
 import { getProjectMutationAdmissionFailure, PROJECT_REPAIR_REQUIRED_MESSAGE } from './isProjectMutationAllowed';
 import { recordAction } from './macro/recording/recordAction';
 import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
+import { materializeCommandHandlerArguments } from './materializeCommandHandlerArguments';
 import { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
 import { traceAppAction } from './traceAppAction';
 
@@ -51,7 +52,11 @@ type PendingPostCommitEffectBase = {
 export type PendingPostCommitEffect = PendingPostCommitEffectBase &
     (
         | { kind: 'runtime-graph'; remediation: 'retry' | 'repair' }
-        | { kind: 'external-effect'; remediation: 'reconcile' | 'manual-repair' }
+        | {
+              kind: 'external-effect';
+              remediation: 'reconcile' | 'manual-repair';
+              failureKind?: 'retention-capacity';
+          }
     );
 
 type BatchWarningDetail = {
@@ -96,6 +101,10 @@ type ExecuteAppActionBatchOptions = ExecuteOptions & {
         actions: readonly ExecutedBatchAction[];
         pendingEffects: readonly PendingPostCommitEffect[];
     }) => void;
+    /**
+     * Reports the caller's own action objects — never the canonical clones — in committed order, so
+     * an observer that correlates a commit back to what it dispatched can do so by identity.
+     */
     onCommitted?: (actions: readonly AppAction[]) => void;
 };
 
@@ -106,6 +115,7 @@ type ExecuteAppActionBatch = (
 
 type PreparedBatchAction = {
     action: AppAction;
+    requestedAction: AppAction;
     afterAbort: HandlerAfterCommit | null;
     afterCommit: HandlerAfterCommit | null;
     afterAmbiguousCommit: HandlerAfterCommit | null;
@@ -115,6 +125,14 @@ type PreparedBatchAction = {
     description: HandlerDescribeResult | null;
     envelope: VersionedCommandEnvelope;
     label: string;
+};
+
+type CanonicalizedBatchAction = {
+    action: AppAction;
+    requestedAction: AppAction;
+    applicationAssignedIds: VersionedCommandEnvelope['applicationAssignedIds'];
+    handler: ActionHandler;
+    suppliedEnvelope: VersionedCommandEnvelope | undefined;
 };
 
 type AutomergeStorageTransactionScope = <Result>(callback: () => Result) => Result;
@@ -170,6 +188,8 @@ function getPendingPostCommitEffect(
         declared.reason.trim().length > 0 &&
         (declared.remediation === 'reconcile' || declared.remediation === 'manual-repair')
     ) {
+        const failureKind =
+            isRecord(error) && error.failureKind === 'retention-capacity' ? error.failureKind : undefined;
         return {
             commandId: prepared.envelope.commandId,
             kind: declared.kind,
@@ -177,6 +197,7 @@ function getPendingPostCommitEffect(
             reason: declared.reason,
             remediation: declared.remediation,
             state: declared.state,
+            ...(failureKind ? { failureKind } : {}),
         };
     }
     if (prepared.postCommitEffect?.kind === 'runtime-graph') {
@@ -460,6 +481,11 @@ function recordCommittedBatch(
     preparedActions: readonly PreparedBatchAction[],
     options: ExecuteOptions | undefined
 ): void {
+    if (!options?.skipMacroRecording) {
+        for (const { action } of preparedActions) {
+            recordAction(action);
+        }
+    }
     const historyActions = preparedActions.filter(
         ({ description, handler }) => !options?.skipUndo && handler.undoable && description !== null
     );
@@ -499,13 +525,15 @@ function recordCommittedBatch(
             });
         }
     }
-    for (const prepared of preparedActions) {
+    const historyUnit: Array<{
+        metadata: ActionHistoryMetadata;
+        inverseAction: AppAction | null;
+        undoEntry: ReturnType<typeof createUndoEntry>;
+    }> = [];
+    for (const prepared of historyActions) {
         const { action, description, envelope, handler, label } = prepared;
-        if (!options?.skipMacroRecording) {
-            recordAction(action);
-        }
-        if (options?.skipUndo || !handler.undoable || !description) {
-            continue;
+        if (!description) {
+            throw new Error(`Missing history description for ${action.type}`);
         }
 
         const entryId = envelope.commandId;
@@ -540,7 +568,7 @@ function recordCommittedBatch(
             }
         }
         const historyGroupLabel = historyGroupId ? options?.groupLabel : undefined;
-        const metadata = {
+        const metadata: ActionHistoryMetadata = {
             id: entryId,
             label,
             actionKind: action.type,
@@ -550,18 +578,6 @@ function recordCommittedBatch(
             groupLabel: historyGroupLabel,
             reverted: false,
         };
-        const evictedEntryIds = actionHistoryMetadataPort.record(metadata);
-        for (const evictedEntryId of evictedEntryIds) {
-            revokeActionReplayCapability(evictedEntryId);
-        }
-        if (inverseAction) {
-            registerActionReplayCapability({
-                entryId,
-                inverseAction,
-                metadata,
-            });
-        }
-
         const undoEntry = createUndoEntry(
             description.label,
             action,
@@ -573,7 +589,21 @@ function recordCommittedBatch(
             undoEntry.groupId = historyGroupId;
             undoEntry.groupLabel = historyGroupLabel;
         }
-        commitUndoEntry(undoEntry);
+        historyUnit.push({ metadata, inverseAction, undoEntry });
+    }
+    if (historyUnit.length === 0) {
+        return;
+    }
+
+    const evictedEntryIds = actionHistoryMetadataPort.recordBatch(historyUnit.map(({ metadata }) => metadata));
+    registerActionReplayCapabilities(
+        historyUnit.flatMap(({ metadata, inverseAction }) =>
+            inverseAction ? [{ entryId: metadata.id, inverseAction, metadata }] : []
+        )
+    );
+    commitUndoEntries(historyUnit.map(({ undoEntry }) => undoEntry));
+    for (const evictedEntryId of evictedEntryIds) {
+        revokeActionReplayCapability(evictedEntryId);
     }
 }
 
@@ -624,7 +654,74 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             if (options?.shouldExecute && !options.shouldExecute()) {
                 return { status: 'cancelled', reason: 'Batch execution authority was revoked', actions: [] };
             }
-            const productionBriefAdmission = productionBriefAdmissionPort.capture(actions);
+            if (options?.commandEnvelopes && options.commandEnvelopes.length !== actions.length) {
+                return {
+                    status: 'rejected',
+                    reason: 'Command envelope count does not match the action batch',
+                    actions: [],
+                };
+            }
+            // Canonicalization draws session-wide application defaults — the next track colour
+            // leaves the shared palette here — so a batch the production brief already refuses is
+            // turned away on its requested actions, before the loop can spend any of them.
+            if (!productionBriefAdmissionPort.capture(actions).allowsCurrent()) {
+                return {
+                    status: 'conflicted',
+                    reason: 'Action batch conflicts with locked production intent',
+                    actions: [],
+                };
+            }
+            const canonicalizedActions: CanonicalizedBatchAction[] = [];
+            for (const [index, requestedAction] of actions.entries()) {
+                const suppliedEnvelope = options?.commandEnvelopes?.[index];
+                const materialized = suppliedEnvelope
+                    ? { action: requestedAction, applicationAssignedIds: suppliedEnvelope.applicationAssignedIds }
+                    : materializeCommandApplicationIds(requestedAction);
+                let action = materialized.action;
+                const handler = getCommandHandler(action);
+                if (!handler) {
+                    return {
+                        status: 'rejected',
+                        reason: `No registered handler for action: ${action.type}`,
+                        actions: [],
+                    };
+                }
+                try {
+                    action = materializeCommandHandlerArguments(action, handler);
+                    if (
+                        suppliedEnvelope &&
+                        (suppliedEnvelope.operation !== action.type ||
+                            suppliedEnvelope.groupId !== options.groupId ||
+                            suppliedEnvelope.argumentsDigest !==
+                                getVersionedCommandArgumentsDigest({
+                                    operation: action.type,
+                                    arguments: action.payload ?? {},
+                                }))
+                    ) {
+                        return {
+                            status: 'rejected',
+                            reason: `Command envelope does not match action ${action.type}`,
+                            actions: [],
+                        };
+                    }
+                } catch (error) {
+                    return {
+                        status: 'rejected',
+                        reason: `Could not preflight ${action.type}: ${failureReason(error)}`,
+                        actions: [],
+                    };
+                }
+                canonicalizedActions.push({
+                    action,
+                    requestedAction,
+                    applicationAssignedIds: materialized.applicationAssignedIds,
+                    handler,
+                    suppliedEnvelope,
+                });
+            }
+
+            const canonicalActions = canonicalizedActions.map((candidate) => candidate.action);
+            const productionBriefAdmission = productionBriefAdmissionPort.capture(canonicalActions);
             if (!productionBriefAdmission.allowsCurrent()) {
                 return {
                     status: 'conflicted',
@@ -634,32 +731,18 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             }
 
             const preparedActions: PreparedBatchAction[] = [];
-            if (options?.commandEnvelopes && options.commandEnvelopes.length !== actions.length) {
-                return {
-                    status: 'rejected',
-                    reason: 'Command envelope count does not match the action batch',
-                    actions: [],
-                };
-            }
-            for (const [index, requestedAction] of actions.entries()) {
-                const suppliedEnvelope = options?.commandEnvelopes?.[index];
-                const materialized = suppliedEnvelope
-                    ? { action: requestedAction, applicationAssignedIds: suppliedEnvelope.applicationAssignedIds }
-                    : materializeCommandApplicationIds(requestedAction);
-                const action = materialized.action;
-                const handler = getCommandHandler(action);
-                if (!handler) {
-                    return {
-                        status: 'rejected',
-                        reason: `No registered handler for action: ${action.type}`,
-                        actions: [],
-                    };
-                }
+            for (const [index, canonicalized] of canonicalizedActions.entries()) {
+                const { applicationAssignedIds, handler, suppliedEnvelope } = canonicalized;
+                const action = canonicalized.action;
                 let description: HandlerDescribeResult | null;
                 try {
                     description = null;
                     if (handler.undoable || handler.executionKind === 'runtime') {
-                        description = handler.describe(action);
+                        description = handler.describe(action, {
+                            actions: canonicalActions,
+                            actionIndex: index,
+                            signal: options?.signal,
+                        });
                     }
                 } catch (error) {
                     return {
@@ -682,10 +765,15 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 }
                 if (options?.requireCompensation && description?.inverseAction) {
                     const inverseHandler = getCommandHandler(description.inverseAction);
+                    const compensationActions = [...canonicalActions.slice(0, index + 1), description.inverseAction];
                     if (
                         !inverseHandler?.validate ||
                         inverseHandler.batchRestriction === 'missing-validation' ||
-                        inverseHandler.canReapplyAfterDivergence?.(description.inverseAction) !== true
+                        inverseHandler.canReapplyAfterDivergence?.(description.inverseAction, {
+                            actions: compensationActions,
+                            actionIndex: compensationActions.length - 1,
+                            signal: options?.signal,
+                        }) !== true
                     ) {
                         return {
                             status: 'rejected',
@@ -694,32 +782,17 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                         };
                     }
                 }
-                if (
-                    suppliedEnvelope &&
-                    (suppliedEnvelope.operation !== action.type ||
-                        suppliedEnvelope.groupId !== options.groupId ||
-                        suppliedEnvelope.argumentsDigest !==
-                            getVersionedCommandArgumentsDigest({
-                                operation: action.type,
-                                arguments: action.payload ?? {},
-                            }))
-                ) {
-                    return {
-                        status: 'rejected',
-                        reason: `Command envelope does not match action ${action.type}`,
-                        actions: [],
-                    };
-                }
                 const command = suppliedEnvelope
                     ? { action, envelope: suppliedEnvelope }
                     : createExecutionCommandEnvelope({
                           action,
-                          applicationAssignedIds: materialized.applicationAssignedIds,
+                          applicationAssignedIds,
                           expectedEffect: description?.label ?? action.type,
                           options,
                       });
                 preparedActions.push({
                     action: command.action,
+                    requestedAction: canonicalized.requestedAction,
                     afterAbort: null,
                     afterCommit: null,
                     afterAmbiguousCommit: null,
@@ -896,7 +969,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 );
             }
 
-            const committedActions = executedActions.map(({ action }) => action);
+            const committedActions = executedActions.map(({ requestedAction }) => requestedAction);
             const executedBatchActions = executedActions.map(createExecutedBatchAction);
 
             try {

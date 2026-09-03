@@ -1,6 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
-import analyzePitchWasmModule, { analyze_pitch_wasm } from '#/modules/AudioEngine/wasm/daw_dsp.js';
 
 import { analyzeNativePitch } from '../../repositories/audioAnalysis/analyze-native-pitch';
 import { listenPitchAnalysisProgress } from '../../repositories/audioAnalysis/listen-pitch-analysis-progress';
@@ -13,13 +12,18 @@ import { audioBufferCache } from '../../stores/audioBufferCache';
 // browser-side Knead analysis — the editor then hung on the "Analyzing…"
 // spinner because the throw propagated without resetting `isAnalyzing`. The
 // default export is the standard wasm-bindgen async init (`__wbg_init`);
-// memoize one main-thread init the same way `decodeAudioBytesWasm` does.
-let mainThreadInitPromise: Promise<unknown> | null = null;
-function ensureMainThreadWasmInit(): Promise<unknown> {
-    if (!mainThreadInitPromise) {
-        mainThreadInitPromise = analyzePitchWasmModule();
+// load the module only at call time so the AudioEngine useCases barrel (and
+// Project/useCases recovery) can evaluate after a failed WASM graph.
+type DawDspPitchModule = typeof import('#/modules/AudioEngine/wasm/daw_dsp.js');
+let mainThreadPitchWasmPromise: Promise<DawDspPitchModule> | null = null;
+function loadDawDspPitchModule(): Promise<DawDspPitchModule> {
+    if (!mainThreadPitchWasmPromise) {
+        mainThreadPitchWasmPromise = import('#/modules/AudioEngine/wasm/daw_dsp.js').then(async (mod) => {
+            await mod.default();
+            return mod;
+        });
     }
-    return mainThreadInitPromise;
+    return mainThreadPitchWasmPromise;
 }
 
 export type PitchPoint = {
@@ -100,8 +104,8 @@ async function analyzePitchWithWasm({ targetClip, onProgress }: AnalyzePitchWith
     }
 
     // The wasm-bindgen glue must be initialized on the main thread before any
-    // `daw_dsp` export is read — see `ensureMainThreadWasmInit` above.
-    await ensureMainThreadWasmInit();
+    // `daw_dsp` export is read — see `loadDawDspPitchModule` above.
+    const { analyze_pitch_wasm } = await loadDawDspPitchModule();
 
     // Artificial progress steps to keep UI somewhat responsive.
     const progressSteps = [0.2, 0.5, 0.8];

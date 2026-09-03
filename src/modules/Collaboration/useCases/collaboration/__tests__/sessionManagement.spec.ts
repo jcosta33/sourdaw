@@ -312,6 +312,7 @@ function makePeer(overrides: Partial<PeerInfo> = {}): PeerInfo {
         isConnected: true,
         lastSeen: Date.now(),
         latencyMs: null,
+        syncHealth: 'converging',
         ...overrides,
     };
 }
@@ -347,10 +348,22 @@ describe('sessionRuntimePrimitives', () => {
     });
 
     describe('generateSessionId', () => {
-        it('returns the first 8 hex characters of a UUID', () => {
+        it('returns a whole UUID rather than a truncated prefix of one', () => {
             const id = sessionRuntimePrimitives.generateSessionId();
-            expect(id).toHaveLength(8);
-            expect(id).toMatch(/^[0-9a-f]{8}$/i);
+            expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+        });
+    });
+
+    describe('generateSessionSecret', () => {
+        it('returns 128 bits of base64url with no padding', () => {
+            const secret = sessionRuntimePrimitives.generateSessionSecret();
+            expect(secret).toMatch(/^[A-Za-z0-9_-]{22}$/);
+        });
+
+        it('does not repeat a secret across sessions', () => {
+            const first = sessionRuntimePrimitives.generateSessionSecret();
+            const second = sessionRuntimePrimitives.generateSessionSecret();
+            expect(first).not.toBe(second);
         });
     });
 
@@ -478,6 +491,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                             isConnected: true,
                             lastSeen: 1,
                             latencyMs: null,
+                            syncHealth: 'converging',
                         },
                     ],
                 })
@@ -524,6 +538,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                             isConnected: true,
                             lastSeen: 1,
                             latencyMs: null,
+                            syncHealth: 'converging',
                         },
                     ],
                 })
@@ -577,6 +592,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                             isConnected: true,
                             lastSeen: 1,
                             latencyMs: null,
+                            syncHealth: 'converging',
                         },
                     ],
                 })
@@ -617,6 +633,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                             isConnected: true,
                             lastSeen: 1,
                             latencyMs: null,
+                            syncHealth: 'converging',
                         },
                     ],
                 })
@@ -654,6 +671,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                             isConnected: true,
                             lastSeen: 1,
                             latencyMs: null,
+                            syncHealth: 'converging',
                         },
                         {
                             id: 'guest-peer',
@@ -663,6 +681,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                             isConnected: true,
                             lastSeen: 1,
                             latencyMs: null,
+                            syncHealth: 'converging',
                         },
                     ],
                 })
@@ -711,6 +730,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                             isConnected: true,
                             lastSeen: 1,
                             latencyMs: null,
+                            syncHealth: 'converging',
                         },
                     ],
                 })
@@ -753,6 +773,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                             isConnected: true,
                             lastSeen: 1,
                             latencyMs: null,
+                            syncHealth: 'converging',
                         },
                     ],
                 })
@@ -790,6 +811,17 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             expect(sessionRuntimePrimitives.state.peerManager).toBeNull();
             expect(sessionRuntimePrimitives.state.automergeSync).toBeNull();
             expect(sessionRuntimePrimitives.state.assetTransfer).toBeNull();
+        });
+
+        // The secret authorises relay room membership, so a session that has
+        // been torn down must not leave one behind for the next join to reuse.
+        it('clears the room secret so a torn-down session cannot authorise a join', () => {
+            sessionRuntimePrimitives.initialize('project-owner-1');
+            sessionRuntimePrimitives.state.sessionSecret = 'room-secret-1';
+
+            sessionRuntimePrimitives.cleanup();
+
+            expect(sessionRuntimePrimitives.state.sessionSecret).toBeNull();
         });
 
         // Dropping the reference alone leaves in-flight transfers holding
@@ -868,7 +900,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
          */
         it('records a quarantined peer in durable state rather than the transient error slot', () => {
             sessionRuntimePrimitives.initialize('project-owner-1');
-            collaborationStore.set(makeState());
+            collaborationStore.set(makeState({ peers: [makePeer({ id: 'peer-2' })] }));
+            latestPeerManager().getConnectedPeerIds.mockReturnValue(['peer-2', 'peer-3']);
 
             latestAutomergeSync().hooks.onSyncQuarantine?.({
                 peerId: 'peer-2',
@@ -877,6 +910,21 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             });
 
             expect(collaborationStore.value?.quarantinedPeerIds).toEqual(['peer-2']);
+            expect(collaborationStore.value?.peers[0]?.syncHealth).toBe('diverged');
+            expect(latestPeerManager().sendCrdtSync.mock.calls).toEqual([
+                [
+                    {
+                        peerId: 'peer-2',
+                        message: { type: 'sync-channel-quarantined', peerId: 'peer-2' },
+                    },
+                ],
+                [
+                    {
+                        peerId: 'peer-3',
+                        message: { type: 'sync-channel-quarantined', peerId: 'peer-2' },
+                    },
+                ],
+            ]);
         });
 
         it('lists a peer once however many of its documents are quarantined', () => {
@@ -906,6 +954,88 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
     });
 
     describe('handlePeerMessage (routed through the captured onMessage callback)', () => {
+        it('records the detector when this local peer is the named quarantined sender', () => {
+            sessionRuntimePrimitives.initialize('project-owner-1');
+            collaborationStore.set(
+                makeState({
+                    localPeerId: 'local-1',
+                    peers: [makePeer({ id: 'detector-peer' })],
+                })
+            );
+
+            latestPeerManager().callbacks.onMessage({
+                peerId: 'detector-peer',
+                message: { type: 'sync-channel-quarantined', peerId: 'local-1' },
+            });
+
+            expect(collaborationStore.value?.quarantinedPeerIds).toEqual(['detector-peer']);
+            expect(collaborationStore.value?.peers[0]?.syncHealth).toBe('diverged');
+        });
+
+        it('records the named diverged peer when a connected detector reports it', () => {
+            sessionRuntimePrimitives.initialize('project-owner-1');
+            collaborationStore.set(
+                makeState({
+                    localPeerId: 'local-1',
+                    peers: [makePeer({ id: 'detector-peer' }), makePeer({ id: 'diverged-peer' })],
+                })
+            );
+
+            latestPeerManager().callbacks.onMessage({
+                peerId: 'detector-peer',
+                message: { type: 'sync-channel-quarantined', peerId: 'diverged-peer' },
+            });
+
+            expect(collaborationStore.value?.quarantinedPeerIds).toEqual(['diverged-peer']);
+            expect(collaborationStore.value?.peers[1]?.syncHealth).toBe('diverged');
+        });
+
+        /**
+         * Turns red on: requiring `message.peerId` to already be in `state.peers`.
+         * A third joiner's roster is often only the host, so a host report that
+         * names sibling joiner J1 would otherwise be dropped.
+         */
+        it('records a sibling joiner named by the host even when the local roster is only the host', () => {
+            sessionRuntimePrimitives.initialize('project-owner-1');
+            collaborationStore.set(
+                makeState({
+                    localPeerId: 'local-j2',
+                    peers: [makePeer({ id: 'host-1', isHost: true })],
+                })
+            );
+
+            latestPeerManager().callbacks.onMessage({
+                peerId: 'host-1',
+                message: { type: 'sync-channel-quarantined', peerId: 'joiner-j1' },
+            });
+
+            expect(collaborationStore.value?.quarantinedPeerIds).toEqual(['joiner-j1']);
+        });
+
+        it('keeps a local diverged flag when legacy peer-info omits sync health', () => {
+            sessionRuntimePrimitives.initialize('project-owner-1');
+            collaborationStore.set(
+                makeState({
+                    localPeerId: 'local-1',
+                    peers: [makePeer({ id: 'detector-peer' }), makePeer({ id: 'diverged-peer' })],
+                })
+            );
+            latestPeerManager().callbacks.onMessage({
+                peerId: 'detector-peer',
+                message: { type: 'sync-channel-quarantined', peerId: 'diverged-peer' },
+            });
+
+            const legacyPeer = makePeer({ id: 'diverged-peer' }) as Partial<PeerInfo>;
+            delete legacyPeer.syncHealth;
+            latestPeerManager().callbacks.onMessage({
+                peerId: 'diverged-peer',
+                message: { type: 'peer-info', peer: legacyPeer as PeerInfo },
+            });
+
+            expect(collaborationStore.value?.quarantinedPeerIds).toEqual(['diverged-peer']);
+            expect(collaborationStore.value?.peers[1]?.syncHealth).toBe('diverged');
+        });
+
         it('routes an asset crdt-sync message to the asset transfer subsystem', () => {
             sessionRuntimePrimitives.initialize('project-owner-1');
             const message: PeerMessage = { type: 'crdt-sync', docId: DOC_ID_ASSET, data: 'payload' };
@@ -1103,6 +1233,29 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
 
             expect(collaborationStore.value?.peers).toHaveLength(1);
         });
+
+        /**
+         * Turns red on: `removePeer` leaving a remote-only id in
+         * `quarantinedPeerIds`. A host-relayed report never hits
+         * `onSyncQuarantineLifted` on this node, so leave is the only drop.
+         */
+        it('clears a remote-only quarantine record when that peer is removed', () => {
+            sessionRuntimePrimitives.initialize('project-owner-1');
+            collaborationStore.set(
+                makeState({
+                    localPeerId: 'local-j2',
+                    peers: [makePeer({ id: 'host-1', isHost: true })],
+                    quarantinedPeerIds: ['joiner-j1'],
+                })
+            );
+
+            latestPeerManager().callbacks.onMessage({
+                peerId: 'joiner-j1',
+                message: { type: 'peer-leave', peerId: 'joiner-j1' },
+            });
+
+            expect(collaborationStore.value?.quarantinedPeerIds).toEqual([]);
+        });
     });
 
     describe('handlePeerConnected (routed through the captured onConnected callback)', () => {
@@ -1165,6 +1318,25 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             vi.advanceTimersByTime(20_000);
 
             expect(collaborationStore.value?.peers.some((peer) => peer.id === 'peer-1')).toBe(true);
+        });
+
+        /**
+         * Turns red on: `quarantinedPeerIds: []` in `handlePeerConnected`.
+         * Admitting a new peer must not erase a live quarantine.
+         */
+        it('leaves quarantinedPeerIds intact when a new peer connects', () => {
+            sessionRuntimePrimitives.initialize('project-owner-1');
+            collaborationStore.set(makeState({ peers: [makePeer({ id: 'peer-2' })] }));
+            latestAutomergeSync().hooks.onSyncQuarantine?.({
+                peerId: 'peer-2',
+                docId: 'root',
+                error: new Error('sanitation failed'),
+            });
+            expect(collaborationStore.value?.quarantinedPeerIds).toEqual(['peer-2']);
+
+            latestPeerManager().callbacks.onConnected('peer-3');
+
+            expect(collaborationStore.value?.quarantinedPeerIds).toEqual(['peer-2']);
         });
     });
 

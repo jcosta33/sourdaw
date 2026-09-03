@@ -3,8 +3,8 @@ name: Health gates
 # This workflow exists so that nobody has to run these checks on their own
 # machine. Several agents working in parallel lanes cannot each run a repository
 # -wide typecheck, lint, or test suite without exhausting the machine they share
-# and stalling one another. Everything that costs real resources belongs here or
-# in `heavy-gates.yml`.
+# and stalling one another. Everything that costs real resources belongs here,
+# in `heavy-gates.yml`, or in `nightly.yml`.
 #
 # It has exactly one trigger, and that is load-bearing rather than incidental.
 # `Gate` is a required status check on `main`, and GitHub counts a check run
@@ -14,9 +14,10 @@ name: Health gates
 # `pull_request_review` trigger did exactly that: a comment-only review skipped
 # every job, minted `Gate` as `skipped`, and flipped the required check to
 # satisfied on a head whose earlier `Gate` had failed. The fix is structural
-# rather than conditional — the review, schedule and dispatch events live in
-# `heavy-gates.yml`, which mints `HeavyGate` and never `Gate`. Do not add a
-# trigger here, and do not name a job in `heavy-gates.yml` `Gate`.
+# rather than conditional — the review event lives in `heavy-gates.yml`, which
+# mints `HeavyGate` and never `Gate`, and the schedule and dispatch events live
+# in `nightly.yml`, which mints no summary check at all. Do not add a trigger
+# here, and do not name a job in either of those files `Gate`.
 #
 # The validation legs themselves live in `validation.yml`, called from here and
 # from the heavy workflow so there is one definition of them rather than two.

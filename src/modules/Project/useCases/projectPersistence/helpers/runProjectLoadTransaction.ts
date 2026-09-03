@@ -2,6 +2,7 @@ import { cancelPendingAudioBufferImport } from '#/modules/AudioEngine/useCases';
 import { resetActionReplayAuthority } from '#/modules/Command/useCases';
 
 import { projectIdentityTransitionDependencies } from '../projectIdentityTransitionDependencies';
+import { whenProjectIdentityTransitionDependenciesConfigured } from '../whenProjectIdentityTransitionDependenciesConfigured';
 
 let nextProjectTransitionId = 0;
 let activeProjectTransitionId = 0;
@@ -131,6 +132,7 @@ export function runProjectLoadTransaction({
                 countedAsPreparing = true;
                 preparingProjectTransitionCount += 1;
                 try {
+                    await whenProjectIdentityTransitionDependenciesConfigured();
                     resetActionReplayAuthority();
                     await projectIdentityTransitionDependencies.leaveCollaborationSession();
                     if (transitionId !== latestPreparedProjectTransitionId) {

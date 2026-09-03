@@ -38,8 +38,12 @@ function isOwnedByRetryableSectionRenderFollowUp(
     continuation: AgentRunPendingEffectContinuation,
     committedRevision: string | null
 ): boolean {
+    // A confirmation can own a retained render only when its committed follow-up
+    // revision is the exact source revision bound to that continuation.
     return (
-        continuation.recovery !== 'manual-repair' &&
+        continuation.sourceRevision !== undefined &&
+        continuation.sourceRevision === committedRevision &&
+        continuation.effects.every(({ remediation }) => remediation !== 'manual-repair') &&
         continuation.effects.length === 1 &&
         continuation.effects[0]?.kind === 'external-effect' &&
         continuation.effects[0].operation === 'renderProjectSections' &&

@@ -4,10 +4,12 @@ import { selectExecutableAppActionToolSchemasForPrompt } from '#/modules/Command
 
 import { isAiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { createAiRuntimeError } from '../../errors/AiRuntimeError';
+import { snapshotHostedAiHttpStatus } from '../../errors/HostedAiHttpStatusError';
 import { createModelProviderFailureError, isModelProviderFailureError } from '../../errors/ModelProviderFailureError';
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
 import { REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy';
 import { PROJECT_QUERY_TOOL_NAME } from '../../models/ApplicationOwnedTool';
+import { TOOL_PLAN_MAX_OUTPUT_TOKENS } from '../../models/HostedToolPlanLimits';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { WEBLLM_MODEL_ID } from '../../models/ModelInfo';
 import {
@@ -22,7 +24,7 @@ import {
     type ModelProviderSession,
     type ModelProviderStreamIdentity,
 } from '../../models/ModelProviderProtocol';
-import { DAW_TOOL_SCHEMAS, type ToolSchema } from '../../models/ToolDefinitions';
+import { type ToolSchema } from '../../models/ToolDefinitions';
 import { WORKFLOW_ACTION_TOOL_NAMES, WORKFLOW_CAPABILITY_TOOL_NAME } from '../../models/WorkflowCapability';
 import { generateCloudToolCalls } from '../../repositories/cloudLlm/cloudInference/generateCloudToolCalls';
 import { getCloudProviderInfo } from '../../repositories/cloudLlm/getCloudProviderInfo';
@@ -33,7 +35,11 @@ import { aiBackendPreferenceStore } from '../../stores/aiBackendPreferenceStore'
 import { llmStatusStore } from '../../stores/llmStatusStore';
 import { extractAgentPlanProposal, normalizeAgentPlanProposal } from '../../transformers/normalizeAgentPlanProposal';
 import { type ToolCallResult, type ToolPlanningOutcome } from '../../transformers/toolCallParser';
-import { COMMAND_BATCH_PROPOSAL_TOOL_NAME } from '../agentToolCatalog';
+import {
+    AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+    AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+    COMMAND_BATCH_PROPOSAL_TOOL_NAME,
+} from '../agentToolCatalog';
 import { createModelProviderStreamWriter } from '../createModelProviderStreamWriter';
 import { remoteTransmissionDisclosure } from '../discloseRemoteTransmission';
 import { createModelProviderProtocol } from '../modelProviderProtocol';
@@ -44,6 +50,27 @@ function createToolPlanningAbortError(): Error {
     const error = new Error('AI tool planning aborted');
     error.name = 'AbortError';
     return error;
+}
+
+function hostedAiHttpSafeMessage(status: number): string {
+    if (status === 401 || status === 403) {
+        return `Hosted AI request failed (HTTP ${String(status)}) — check your API key.`;
+    }
+    if (status === 404) {
+        return 'Hosted AI request failed (HTTP 404) — the model or endpoint was not found.';
+    }
+    if (status === 429) {
+        return 'Hosted AI request failed (HTTP 429) — rate limited; retry later.';
+    }
+    return `Hosted AI request failed (HTTP ${String(status)}).`;
+}
+
+function hostedAiHttpFailure(status: number): Pick<ModelProviderFailure, 'code' | 'retryable' | 'safeMessage'> {
+    return {
+        code: `hosted-http-${String(status)}`,
+        retryable: status === 429 || status === 503,
+        safeMessage: hostedAiHttpSafeMessage(status),
+    };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -138,18 +165,23 @@ function preSessionProviderResult(input: {
             retryable: true,
             safeMessage: 'The model provider request was cancelled.',
         };
-    } else if (normalizedFailure === null) {
-        failure = {
-            code: 'provider-attempt-failed',
-            retryable: true,
-            safeMessage: 'The model provider request failed before its session started.',
-        };
-    } else {
+    } else if (normalizedFailure !== null) {
         failure = {
             code: normalizedFailure.code,
             retryable: normalizedFailure.retryable,
             safeMessage: normalizedFailure.message,
         };
+    } else {
+        const httpStatus = snapshotHostedAiHttpStatus(input.error);
+        if (httpStatus !== null) {
+            failure = hostedAiHttpFailure(httpStatus);
+        } else {
+            failure = {
+                code: 'provider-attempt-failed',
+                retryable: true,
+                safeMessage: 'The model provider request failed before its session started.',
+            };
+        }
     }
     const dataCategories = input.attempt.request.dataCategories;
     return {
@@ -251,7 +283,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
     return async function generateToolPlanningOutcome(
         systemPrompt: string,
         userMessage: string,
-        toolSchemas?: readonly ToolSchema[],
+        toolSchemas: readonly ToolSchema[],
         signal?: AbortSignal,
         toolSelectionPrompt: string = userMessage,
         onProviderResult?: (result: ModelProviderResult) => void,
@@ -259,7 +291,6 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
         onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult
     ): Promise<ToolPlanningOutcome> {
         const chain = getBackendChain({ operation: 'tools', modality: 'text', streaming: false });
-        const availableTools = toolSchemas ?? DAW_TOOL_SCHEMAS;
         const reportProviderResult = (result: ModelProviderResult): void => {
             try {
                 onProviderResult?.(result);
@@ -294,21 +325,25 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 if (signal?.aborted) {
                     throw createToolPlanningAbortError();
                 }
-                let providerTools = availableTools;
+                let providerTools = toolSchemas;
                 if (backend === 'webllm') {
-                    const workflowSelectionTools = availableTools.filter(
+                    const workflowSelectionTools = toolSchemas.filter(
                         (tool) => tool.function.name === WORKFLOW_CAPABILITY_TOOL_NAME
                     );
-                    const applicationTools = availableTools.filter(
+                    const applicationTools = toolSchemas.filter(
                         (tool) =>
                             tool.function.name === PROJECT_QUERY_TOOL_NAME ||
-                            tool.function.name === COMMAND_BATCH_PROPOSAL_TOOL_NAME
+                            tool.function.name === COMMAND_BATCH_PROPOSAL_TOOL_NAME ||
+                            tool.function.name === AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME ||
+                            tool.function.name === AGENT_CATALOG_DISCOVERY_TOOL_NAME
                     );
-                    const actionTools = availableTools.filter(
+                    const actionTools = toolSchemas.filter(
                         (tool) =>
                             tool.function.name !== WORKFLOW_CAPABILITY_TOOL_NAME &&
                             tool.function.name !== PROJECT_QUERY_TOOL_NAME &&
-                            tool.function.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME
+                            tool.function.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME &&
+                            tool.function.name !== AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME &&
+                            tool.function.name !== AGENT_CATALOG_DISCOVERY_TOOL_NAME
                     );
                     const selectedActionTools = selectExecutableAppActionToolSchemasForPrompt({
                         toolSchemas: actionTools,
@@ -332,7 +367,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         ...promptActionTools.slice(0, Math.max(0, 30 - mandatoryTools.length)),
                     ];
                     logger.info(
-                        `[AI Engine] (webllm) Using ${String(providerTools.length)}/${String(availableTools.length)} tools`
+                        `[AI Engine] (webllm) Using ${String(providerTools.length)}/${String(toolSchemas.length)} tools`
                     );
                 }
                 const providerName = getProviderName(backend);
@@ -365,9 +400,13 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         parameters: tool.function.parameters,
                     })),
                     stream: false,
-                    limits: { maxOutputTokens: 2_048 },
+                    limits: { maxOutputTokens: TOOL_PLAN_MAX_OUTPUT_TOKENS },
                     controls: { cache: 'provider-default', reasoning: 'provider-default' },
-                    budget: { maxInputTokens: 32_768, maxOutputTokens: 2_048, maxTotalTokens: 34_816 },
+                    budget: {
+                        maxInputTokens: 32_768,
+                        maxOutputTokens: TOOL_PLAN_MAX_OUTPUT_TOKENS,
+                        maxTotalTokens: 32_768 + TOOL_PLAN_MAX_OUTPUT_TOKENS,
+                    },
                     dataPolicy: backend === 'cloud' ? 'remote-allowed' : 'local-only',
                     ...(remoteDisclosure === undefined
                         ? {}
@@ -439,13 +478,15 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         cloudInference = generateCloudToolCalls(
                             providerSystemPrompt,
                             providerUserMessage,
-                            providerTools
+                            providerTools,
+                            providerRequest.limits.maxOutputTokens
                         );
                     } else {
                         cloudInference = generateCloudToolCalls(
                             providerSystemPrompt,
                             providerUserMessage,
                             providerTools,
+                            providerRequest.limits.maxOutputTokens,
                             signal
                         );
                     }
@@ -552,14 +593,22 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             },
                         });
                     } else {
-                        failedResult = providerSource.finish({
-                            reason: 'error',
-                            failure: {
-                                code: 'provider-attempt-failed',
-                                retryable: true,
-                                safeMessage: 'The model provider request failed.',
-                            },
-                        });
+                        const httpStatus = snapshotHostedAiHttpStatus(error);
+                        if (httpStatus !== null) {
+                            failedResult = providerSource.finish({
+                                reason: 'error',
+                                failure: hostedAiHttpFailure(httpStatus),
+                            });
+                        } else {
+                            failedResult = providerSource.finish({
+                                reason: 'error',
+                                failure: {
+                                    code: 'provider-attempt-failed',
+                                    retryable: true,
+                                    safeMessage: 'The model provider request failed.',
+                                },
+                            });
+                        }
                     }
                     reportProviderResult(failedResult);
                     if (failedResult.failure !== null) {

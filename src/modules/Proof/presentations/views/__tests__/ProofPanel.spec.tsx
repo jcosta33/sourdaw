@@ -18,6 +18,9 @@ import { ProofPanel } from '../ProofPanel';
 
 // getAudioSampleRate reads the live AudioContext, which jsdom does not provide.
 // Mock it so the latency readout assertion can pin a known, non-44100 rate.
+// getAudioSampleRate, getMasterAnalyser, and isEngineAudioAvailable are wired
+// spies; the other AudioEngine keys listed in the mock are unread graph-coverage
+// stubs (`vi.fn()` and `audioEngine: {}`).
 const sampleRateMock = vi.fn<() => number>(() => 48_000);
 const { persistDevicePatchMock, persistedProjectPatches } = vi.hoisted(() => {
     const persistedProjectPatches = new Map<string, Record<string, unknown>>();
@@ -35,6 +38,54 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioSampleRate: () => sampleRateMock(),
     getMasterAnalyser: () => null,
     isEngineAudioAvailable: () => true,
+    addMidiFxToStrip: vi.fn(),
+    analyzePitchForClip: vi.fn(),
+    applyNoteExpression: vi.fn(),
+    applyRuntimeGraphDelta: vi.fn(),
+    audioEngine: {},
+    cacheAudioBuffer: vi.fn(),
+    clearReportedLatency: vi.fn(),
+    createRuntimeGraphTopologyFingerprint: vi.fn(),
+    decodeAudioFile: vi.fn(),
+    ensureBusStrip: vi.fn(),
+    garbageCollectCachedAudioBuffersByAge: vi.fn(),
+    garbageCollectCachedAudioBuffersBySize: vi.fn(),
+    garbageCollectFreezeAudioBuffers: vi.fn(),
+    getAudioContext: vi.fn(),
+    getCachedAudioBuffer: vi.fn(),
+    getCompensationDelay: vi.fn(),
+    getDefaultBendRangeSemitones: vi.fn(),
+    getDeviceChainTailSeconds: vi.fn(),
+    getEngineState: vi.fn(),
+    getFactoryDrumKitByIndex: vi.fn(),
+    getLiveEngineSampleRate: vi.fn(),
+    getRuntimeGraphRevision: vi.fn(),
+    getTrackStrip: vi.fn(),
+    initializeTrackStripFromSnapshot: vi.fn(),
+    matchesRuntimeDeviceChainTopology: vi.fn(),
+    removeBusStrip: vi.fn(),
+    removeMidiFxFromStrip: vi.fn(),
+    removeSend: vi.fn(),
+    removeTrackStrip: vi.fn(),
+    renderTrackSubgraphOffline: vi.fn(),
+    reportBridgeRoundTripFrames: vi.fn(),
+    reportLatency: vi.fn(),
+    resolveToasterPadBinding: vi.fn(),
+    setBusGain: vi.fn(),
+    setSend: vi.fn(),
+    setTrackGain: vi.fn(),
+    setTrackMute: vi.fn(),
+    setTrackOutput: vi.fn(),
+    setTrackPan: vi.fn(),
+    setTrackSoloGate: vi.fn(),
+    startInputMonitoring: vi.fn(),
+    stopInputMonitoring: vi.fn(),
+    unwireSidechainRoute: vi.fn(),
+    updateDeviceBypass: vi.fn(),
+    updateDeviceParam: vi.fn(),
+    updateMidiFxBypass: vi.fn(),
+    updateMidiFxParam: vi.fn(),
+    wireSidechainRoute: vi.fn(),
 }));
 
 // Spied, not replaced: the panel calls it once per render of its own body, so
@@ -252,6 +303,67 @@ describe('ProofPanel', () => {
 
         const missionCard = screen.getByText('Mission').closest('section');
         expect(missionCard).toHaveClass('shrink-0');
+    });
+
+    it('lets the faceplate scroll instead of clipping the desk when the panel is smaller than it', () => {
+        render(<ProofPanel deviceId={DEVICE_ID} />);
+
+        const faceplate = document.querySelector('.proof-faceplate');
+        expect(faceplate).not.toBeNull();
+        expect(faceplate).toHaveClass('overflow-auto');
+        expect(faceplate).not.toHaveClass('overflow-hidden');
+    });
+
+    it('reserves a desk-column minimum that covers the EQ surface so the rails cannot crush it', () => {
+        seedState({ uiLevel: 3 });
+        render(<ProofPanel deviceId={DEVICE_ID} />);
+
+        const canvas = screen.getByLabelText('8-band parametric EQ frequency response');
+        const surfaceWidth = Number.parseFloat(canvas.style.width);
+        expect(surfaceWidth).toBeGreaterThan(0);
+
+        const grid = document.querySelector('.proof-faceplate > div');
+        const deskColumnMin = /minmax\((\d+(?:\.\d+)?)rem,1fr\)/.exec(grid?.className ?? '');
+        expect(deskColumnMin).not.toBeNull();
+        // The desk minimum must cover the EQ canvas plus the section (px-2)
+        // and desk (p-3) padding around it, so the surface is fully visible
+        // without scrolling whenever the desk column is at its minimum.
+        expect(Number.parseFloat(deskColumnMin![1]!) * 16).toBeGreaterThanOrEqual(surfaceWidth + 40);
+    });
+
+    it('keeps the desk window at a usable minimum height instead of letting the header starve it', () => {
+        seedState({ uiLevel: 3 });
+        render(<ProofPanel deviceId={DEVICE_ID} />);
+
+        const canvas = screen.getByLabelText('8-band parametric EQ frequency response');
+        const deskWindow = canvas.closest('.proof-window');
+        expect(deskWindow).toHaveClass('min-h-40');
+        expect(deskWindow).not.toHaveClass('min-h-0');
+    });
+
+    it.each<{ uiLevel: ProofState['uiLevel']; surface: string }>([
+        { uiLevel: 3, surface: '8-band parametric EQ frequency response' },
+        { uiLevel: 5, surface: 'Loudness history graph' },
+    ])('leaves no overflow trap between the desk window and the level-$uiLevel surface', ({ uiLevel, surface }) => {
+        seedState({ uiLevel });
+        render(<ProofPanel deviceId={DEVICE_ID} />);
+
+        const canvas = screen.getByLabelText(surface);
+        const deskWindow = canvas.closest('.proof-window');
+        expect(deskWindow).toHaveClass('overflow-auto');
+
+        // Any clipping or scrolling box between the desk window and its
+        // surfaces reintroduces the collapse: a scroll container's automatic
+        // minimum size is zero, so a fixed-width aside crushes the surface
+        // column and paints where the surface reports its hit targets, and a
+        // clipping box hides the overflow the desk window exists to scroll.
+        const traps: string[] = [];
+        for (let node = canvas.parentElement; node !== null && node !== deskWindow; node = node.parentElement) {
+            if (/(^|\s)overflow-/.test(node.className)) {
+                traps.push(node.className);
+            }
+        }
+        expect(traps).toEqual([]);
     });
 
     it.each<{ uiLevel: ProofState['uiLevel']; expectedNames: string[] }>([

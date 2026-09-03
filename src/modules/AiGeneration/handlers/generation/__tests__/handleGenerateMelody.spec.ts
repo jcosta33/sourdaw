@@ -25,6 +25,7 @@ vi.mock('../generationHandlerHelpers', () => ({
 vi.mock('#/modules/Arrangement/useCases', () => ({
     addTrack: vi.fn(),
     getTrackStoreState: vi.fn(),
+    selectClipWithFocus: vi.fn(),
 }));
 
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({

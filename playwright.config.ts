@@ -7,6 +7,9 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
     testDir: './tests/e2e',
     testIgnore: ['**/__tests__/**'],
+    // Warm the dev server's cold module transform once, before any test's
+    // first-paint bound starts observing. See tests/e2e/firstPaintWarmup.ts.
+    globalSetup: './tests/e2e/firstPaintWarmup.ts',
     // Default per-test timeout. The ceiling accommodates independently bounded
     // cold first-paint and workspace-ready phases without outer preemption.
     // Template launches boot the WASM DSP + audio graph before the launch
@@ -15,12 +18,13 @@ export default defineConfig({
     timeout: 90_000,
     fullyParallel: true,
     forbidOnly: !!env.CI,
-    retries: env.CI ? 2 : 0,
+    // A result that needed a retry is a flaky result and creates the same duty as a failure.
+    retries: 0,
     workers: 1,
     reporter: 'html',
     use: {
         baseURL: 'http://localhost:5173',
-        trace: 'on-first-retry',
+        trace: 'retain-on-failure',
     },
     projects: [
         {

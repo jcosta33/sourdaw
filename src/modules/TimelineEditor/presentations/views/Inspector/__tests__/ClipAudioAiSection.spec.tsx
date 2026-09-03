@@ -118,41 +118,29 @@ vi.mock('../../../components/Inspector/ControlHeader', () => ({
     ),
 }));
 
-vi.mock('#/modules/AiGeneration/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/AiGeneration/useCases')>();
-    return {
-        ...actual,
-        handleAiDenoiseClip: vi.fn(),
-    };
-});
+// Non-spread listing of handleAiDenoiseClip — ClipAudioAiSection imports it for Apply Denoise.
+vi.mock('#/modules/AiGeneration/useCases', () => ({
+    handleAiDenoiseClip: vi.fn(),
+}));
 
-vi.mock('#/modules/AudioAnalysis/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/AudioAnalysis/useCases')>();
-    return {
-        ...actual,
-        polyphonicAudioToMidi: vi.fn(),
-        insertPolyphonicMidiNotes: vi.fn(),
-        detectDominantPitch: vi.fn(),
-        summarizeFeatures: vi.fn(),
-        audioToMidi: vi.fn(),
-    };
-});
+// Non-spread listing of notifyAiChange — ClipAudioAiSection imports it for denoise, MIDI (Basic), and polyphonic success toasts.
+vi.mock('#/modules/AiRuntime/useCases', () => ({ notifyAiChange: vi.fn() }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    getCachedAudioBuffer: vi.fn(() => null),
+// Non-spread listing of getCachedAudioBuffer — ClipAudioAiSection imports it for the denoised-buffer A/B controls.
+vi.mock('#/modules/AudioEngine/useCases', () => ({ getCachedAudioBuffer: vi.fn(() => null) }));
+
+// Non-spread listing of audioToMidi, detectDominantPitch, insertPolyphonicMidiNotes, polyphonicAudioToMidi, and summarizeFeatures — ClipAudioAiSection imports each for MIDI (Basic), Analyze Clip, and Audio → MIDI (Poly).
+vi.mock('#/modules/AudioAnalysis/useCases', () => ({
+    audioToMidi: vi.fn(),
+    detectDominantPitch: vi.fn(),
+    insertPolyphonicMidiNotes: vi.fn(),
+    polyphonicAudioToMidi: vi.fn(),
+    summarizeFeatures: vi.fn(),
 }));
 
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
 }));
-
-vi.mock('#/modules/AiRuntime/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/AiRuntime/useCases')>();
-    return {
-        ...actual,
-        notifyAiChange: vi.fn(),
-    };
-});
 
 describe('ClipAudioAiSection', () => {
     const defaultProps = {

@@ -26,8 +26,7 @@ function normalizeBaseUrl(provider: HostedLlmProvider, baseUrl: string | undefin
         throw createAiRuntimeError('Provider base URL cannot include credentials, a query, or a fragment');
     }
 
-    const isLoopback =
-        parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '[::1]';
+    const isLoopback = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
     if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && isLoopback)) {
         throw createAiRuntimeError('Provider base URL must use HTTPS or loopback HTTP');
     }

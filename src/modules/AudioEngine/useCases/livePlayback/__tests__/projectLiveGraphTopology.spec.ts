@@ -17,8 +17,46 @@ import { describe, expect, it } from 'vitest';
 import { type Device, type Track } from '#/modules/Arrangement/stores';
 import { createTrack as createTrackFromProjectDefaults } from '#/modules/Arrangement/useCases';
 
-import { type AudioGraphCommand } from '../../../models/AudioGraphBackend';
+import { type AudioGraphClipPlayback, type AudioGraphCommand } from '../../../models/AudioGraphBackend';
+import { type LiveGraphProgramme } from '../projectLiveGraphProgramme';
 import { projectLiveGraphTopology, type LiveGraphTopologyInput } from '../projectLiveGraphTopology';
+
+/**
+ * A programme naming `stripIds`, one unity-rate playback each. The producer
+ * under test reads only which strips play and how many playbacks they carry —
+ * the arithmetic that fills these in is `projectLiveGraphProgramme`'s, and its
+ * agreement with the export is proven by rendering both
+ * (`projectLiveGraphProgrammeParity.spec.ts`).
+ */
+function programmeFor(stripIds: readonly string[], bakedStripIds: readonly string[] = []): LiveGraphProgramme {
+    return {
+        playbacksByStripId: new Map(
+            stripIds.map((stripId): [string, readonly AudioGraphClipPlayback[]] => [
+                stripId,
+                [
+                    {
+                        trackId: stripId,
+                        source: { sourceId: `material-${stripId}` },
+                        startTime: 0,
+                        sourceOffsetSeconds: 0,
+                        durationSeconds: 1,
+                        playbackRate: 1,
+                        gain: 1,
+                        fade: { microFadeSeconds: 0.003 },
+                    },
+                ],
+            ])
+        ),
+        bakedStripIds: new Set(bakedStripIds),
+        exclusions: [],
+    };
+}
+
+const NO_PROGRAMME: LiveGraphProgramme = {
+    playbacksByStripId: new Map(),
+    bakedStripIds: new Set(),
+    exclusions: [],
+};
 
 function createTrack(overrides?: Partial<Track>): Track {
     return {
@@ -74,6 +112,8 @@ function project(overrides: Partial<LiveGraphTopologyInput>): readonly AudioGrap
         soloGatedTrackIds: new Set(),
         vcaMultiplierByTrackId: new Map(),
         transport: { playing: true, positionSeconds: 0 },
+        monitor: 'shadowed',
+        programme: NO_PROGRAMME,
         ...overrides,
     });
 }
@@ -324,7 +364,7 @@ describe('projectLiveGraphTopology', () => {
         expect(creation?.kind === 'create-track-strip' && creation.state.soloGated).toBe(false);
     });
 
-    it('builds every strip as contributing no audio while nothing is scheduled on it', () => {
+    it('builds a strip with nothing to play as contributing no audio', () => {
         const commands = project({
             stripTracks: [createTrack({ id: 'audio-1' }), createTrack({ id: 'bus-1', kind: 'bus' })],
         });
@@ -339,47 +379,142 @@ describe('projectLiveGraphTopology', () => {
         }
     });
 
-    it('schedules no clip, so the engine this batch starts renders silence beside Web Audio', () => {
+    it('builds a playing strip whose whole chain is native as contributing audio', () => {
+        const commands = project({
+            stripTracks: [createTrack({ id: 'audio-1', devices: [createDevice({ id: 'dev-1', type: 'knead' })] })],
+            programme: programmeFor(['audio-1']),
+        });
+
+        const creation = stripCreation(commands, 'audio-1');
+        expect(creation?.kind === 'create-track-strip' && creation.contributesAudio).toBe(true);
+    });
+
+    it('keeps a playing strip carrying a WASM device off contributing audio, and still schedules it', () => {
+        // `map_device` refuses the *whole batch* over a bodiless device on a
+        // contributing strip, so the flag is what keeps one WASM built-in from
+        // costing the session every strip it has. The clips still go.
+        const commands = project({
+            stripTracks: [
+                createTrack({ id: 'audio-1', devices: [createDevice({ id: 'dev-1', type: 'builtin-filter' })] }),
+            ],
+            programme: programmeFor(['audio-1']),
+        });
+
+        const creation = stripCreation(commands, 'audio-1');
+        expect(creation?.kind === 'create-track-strip' && creation.contributesAudio).toBe(false);
+        expect(commands.filter((command) => command.kind === 'schedule-clip')).toHaveLength(1);
+    });
+
+    it('keeps a playing strip carrying an external plugin off contributing audio', () => {
         const commands = project({
             stripTracks: [
                 createTrack({
                     id: 'audio-1',
-                    clips: [
-                        {
-                            id: 'clip-1',
-                            trackId: 'audio-1',
-                            name: 'clip-1',
-                            startBeat: 0,
-                            endBeat: 4,
-                            type: 'audio',
-                            fadeInBeats: 0,
-                            fadeOutBeats: 0,
-                            gain: 1,
-                            color: '#00ff00',
-                            locked: false,
-                            muted: false,
-                            audioBufferId: 'buffer-1',
-                        },
-                    ],
+                    devices: [createDevice({ id: 'dev-1', type: 'knead', externalPluginId: 'clap:reverb' })],
                 }),
             ],
+            programme: programmeFor(['audio-1']),
         });
 
-        expect(commands.filter((command) => command.kind === 'schedule-clip')).toEqual([]);
+        const creation = stripCreation(commands, 'audio-1');
+        expect(creation?.kind === 'create-track-strip' && creation.contributesAudio).toBe(false);
     });
 
-    it('ends the batch with the transport it was asked for', () => {
+    it('renders the programme into the shadowed monitor rather than scheduling nothing', () => {
+        const commands = project({
+            stripTracks: [createTrack({ id: 'audio-1' }), createTrack({ id: 'audio-2' })],
+            programme: programmeFor(['audio-1', 'audio-2']),
+        });
+
+        // The engine holds a real timeline; the monitor above it is what keeps
+        // that inaudible beside Web Audio (#3123).
+        expect(commands[0]).toEqual({ kind: 'set-monitor-shadow', shadowed: true });
+        expect(
+            commands.flatMap((command) => (command.kind === 'schedule-clip' ? [command.playback.trackId] : []))
+        ).toEqual(['audio-1', 'audio-2']);
+    });
+
+    it('schedules every clip after the strip that plays it', () => {
+        const commands = project({
+            stripTracks: [createTrack({ id: 'audio-1' })],
+            programme: programmeFor(['audio-1']),
+        });
+
+        const stripAt = commands.findIndex((command) => command.kind === 'create-track-strip');
+        const clipAt = commands.findIndex((command) => command.kind === 'schedule-clip');
+        expect(stripAt).toBeGreaterThanOrEqual(0);
+        expect(clipAt).toBeGreaterThan(stripAt);
+    });
+
+    it('locates before it builds a strip, so the seek cannot cancel the mix the strip states', () => {
+        // `set-transport` maps to a `SeekFrames`, and a seek cancels every
+        // mixer write stamped at or past the frame it lands on. A strip states
+        // its fader, pan and sends as writes at frame 0, so a transport after
+        // the strips would leave every strip at the engine's default — silently
+        // and only until someone listens.
+        const commands = project({
+            stripTracks: [createTrack({ id: 'audio-1', gain: 0.4 })],
+            transport: { playing: true, positionSeconds: 0 },
+            programme: programmeFor(['audio-1']),
+        });
+
+        const transportAt = commands.findIndex((command) => command.kind === 'set-transport');
+        const stripAt = commands.findIndex((command) => command.kind === 'create-track-strip');
+        const routeAt = commands.findIndex((command) => command.kind === 'set-track-output');
+        expect(transportAt).toBeGreaterThanOrEqual(0);
+        expect(stripAt).toBeGreaterThan(transportAt);
+        expect(routeAt).toBeGreaterThan(transportAt);
+    });
+
+    it('drops a frozen strip’s device chain, because its bake already carries the processing', () => {
+        const commands = project({
+            stripTracks: [
+                createTrack({ id: 'audio-1', devices: [createDevice({ id: 'dev-1', type: 'builtin-filter' })] }),
+            ],
+            programme: programmeFor(['audio-1'], ['audio-1']),
+        });
+
+        const creation = stripCreation(commands, 'audio-1');
+        expect(creation?.kind === 'create-track-strip' && creation.devices).toEqual([]);
+        // An empty chain is trivially native-representable, so the bake is
+        // free to contribute audio.
+        expect(creation?.kind === 'create-track-strip' && creation.contributesAudio).toBe(true);
+    });
+
+    it('carries the transport it was asked for', () => {
         const commands = project({
             stripTracks: [createTrack({ id: 'audio-1' })],
             transport: { playing: true, positionSeconds: 12.5 },
         });
 
-        expect(commands.at(-1)).toEqual({ kind: 'set-transport', playing: true, positionSeconds: 12.5 });
+        expect(commands[1]).toEqual({ kind: 'set-transport', playing: true, positionSeconds: 12.5 });
     });
 
     it('carries a stopped transport as faithfully as a playing one', () => {
         const commands = project({ transport: { playing: false, positionSeconds: 3 } });
 
-        expect(commands).toEqual([{ kind: 'set-transport', playing: false, positionSeconds: 3 }]);
+        expect(commands).toEqual([
+            { kind: 'set-monitor-shadow', shadowed: true },
+            { kind: 'set-transport', playing: false, positionSeconds: 3 },
+        ]);
+    });
+
+    it('opens the batch with the monitor mode, ahead of anything that could be audible', () => {
+        const commands = project({
+            stripTracks: [createTrack({ id: 'audio-1' })],
+            monitor: 'shadowed',
+        });
+
+        // The batch applies whole at one block boundary, so ordering inside it
+        // is a statement rather than a race — but the statement is the point:
+        // nothing in this batch may be read as audible before the mode that
+        // decides it.
+        expect(commands[0]).toEqual({ kind: 'set-monitor-shadow', shadowed: true });
+    });
+
+    it('asks for an open monitor only when the caller asks for the cutover', () => {
+        const commands = project({ stripTracks: [createTrack({ id: 'audio-1' })], monitor: 'audible' });
+
+        expect(commands[0]).toEqual({ kind: 'set-monitor-shadow', shadowed: false });
     });
 });

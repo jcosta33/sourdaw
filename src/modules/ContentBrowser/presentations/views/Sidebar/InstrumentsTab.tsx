@@ -8,6 +8,7 @@ import { DawSectionDivider } from '#/components/daw/DawSectionDivider';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
+import { logger } from '#/infra/logger/appLogger';
 import { findWithheldDeviceType, isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
 import {
     addTrack,
@@ -157,7 +158,10 @@ export const InstrumentsTab = ({
         try {
             await executePresetLoad(plan);
             return plan;
-        } catch {
+        } catch (error) {
+            // The toast names the outcome; the durable log keeps the reason the
+            // load was refused diagnosable.
+            logger.warn('executePresetLoad failed for instrument preset:', error);
             notifyUser('Preset project changes require runtime retry or repair.', 'error');
             return null;
         }

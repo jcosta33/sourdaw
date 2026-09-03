@@ -27,6 +27,24 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     settlePendingProjectWritesAndCaptureRevision: mocks.settlePendingProjectWritesAndCaptureRevision,
+    createCrdtDoc: vi.fn(),
+    DOC_BRANCHES: '__branches__',
+    DOC_PREFIX_ROOT: 'root',
+    getCrdtDoc: vi.fn(),
+    getCrdtDocIds: vi.fn(),
+    hasCrdtDoc: vi.fn(),
+    mutateCrdtDoc: vi.fn(),
+    persistCrdtProject: vi.fn(),
+    preserveBranchStateForSession: vi.fn(),
+    removeCrdtDoc: vi.fn(),
+    replaceBranchState: vi.fn(),
+    replaceCrdtDoc: vi.fn(),
+    restoreBranchStateAfterSession: vi.fn(),
+    runCrdtPersistenceBarrier: vi.fn(),
+    sanitizeIncomingCrdtDocument: vi.fn(),
+    setupProjectionBridge: vi.fn(),
+    subscribeToCrdtChanges: vi.fn(),
+    waitForCrdtDocumentTransition: vi.fn(),
 }));
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
@@ -253,6 +271,58 @@ describe('submitAdmittedPromptRequest', () => {
         expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({ phase: 'failed' });
         expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(
             'Command not executed: Action saveProject cannot be executed by AI because it does not report completion.',
+            []
+        );
+    });
+
+    it('asks the provider questions back to the user instead of the generic no-match advice', async () => {
+        mocks.planPromptActions.mockResolvedValue({
+            context: { tracks: [] },
+            result: {
+                actions: [],
+                rawText: 'Make it sound better',
+                requiresConfirmation: false,
+                planningOutcome: {
+                    kind: 'clarify',
+                    reason: 'The request does not say which part of the mix to change.',
+                    questions: ['Which tracks should change?', 'Louder or brighter?'],
+                },
+            },
+            projectRevision: 'revision-1',
+        });
+
+        await expect(
+            submitAdmittedPromptRequest({ prompt: 'Make it sound better', source: 'prompt-bar' })
+        ).resolves.toEqual({ status: 'no-op', runId: RUN_ID });
+
+        expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(
+            'The request does not say which part of the mix to change. 1. Which tracks should change? 2. Louder or brighter?',
+            []
+        );
+    });
+
+    it('says a searched-for capability is unsupported instead of the generic no-match advice', async () => {
+        mocks.planPromptActions.mockResolvedValue({
+            context: { tracks: [] },
+            result: {
+                actions: [],
+                rawText: 'Master this for vinyl',
+                requiresConfirmation: false,
+                planningOutcome: {
+                    kind: 'unsupported',
+                    reason: 'No command in this project masters for vinyl.',
+                    searchedIntents: ['master for vinyl'],
+                },
+            },
+            projectRevision: 'revision-1',
+        });
+
+        await expect(
+            submitAdmittedPromptRequest({ prompt: 'Master this for vinyl', source: 'prompt-bar' })
+        ).resolves.toEqual({ status: 'no-op', runId: RUN_ID });
+
+        expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(
+            'Not supported: No command in this project masters for vinyl. Searched: master for vinyl',
             []
         );
     });

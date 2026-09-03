@@ -24,12 +24,36 @@ vi.mock('../midiNoteTransforms/scaleVelocities', () => ({ scaleVelocities: mocks
 vi.mock('../midiNoteTransforms/setAllVelocities', () => ({ setAllVelocities: mocks.setAllVelocities }));
 vi.mock('../midiNoteTransforms/transposeNotes', () => ({ transposeNotes: mocks.transposeNotes }));
 
+import { defaultTrackState } from '#/modules/Arrangement/stores';
+import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
+
 import { type MidiNote } from '../../models/MidiNote';
 import { getMidiNoteTransformHandlers } from '../getMidiNoteTransformHandlers';
+
+/** addNotes writes only to a live unlocked MIDI clip on an unfrozen track. */
+function seedWritableMidiClip(): void {
+    setTrackStoreState({
+        ...defaultTrackState,
+        tracks: [createTrack({ id: 'track1', kind: 'midi', name: 'MIDI' })],
+    });
+    if (
+        addClip({
+            id: 'clip1',
+            trackId: 'track1',
+            startBeat: 0,
+            endBeat: 4,
+            name: 'MIDI clip',
+            type: 'midi',
+        }) === null
+    ) {
+        throw new Error('Expected MIDI clip fixture');
+    }
+}
 
 describe('getMidiNoteTransformHandlers', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        seedWritableMidiClip();
     });
 
     it('should expose MIDI-owned note transform action handlers', () => {
@@ -57,7 +81,19 @@ describe('getMidiNoteTransformHandlers', () => {
 
         void handlers.addNotes.execute({
             type: 'addNotes',
-            payload: { clipId: 'clip1', notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 100 }] },
+            payload: {
+                clipId: 'clip1',
+                notes: [
+                    {
+                        id: 'note-delegated-1',
+                        pitch: 60,
+                        startBeat: 0,
+                        duration: 1,
+                        velocity: 100,
+                        probability: 100,
+                    },
+                ],
+            },
         });
         void handlers.transposeNotes.execute({ type: 'transposeNotes', payload: { clipId: 'clip1', semitones: 2 } });
         void handlers.humanizeNotes.execute({ type: 'humanizeNotes', payload: { clipId: 'clip1', amount: 0.25 } });

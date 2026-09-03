@@ -1026,11 +1026,61 @@ fn create_hosted_runtime(
     }
 }
 
+/// Ask a freshly loaded runtime whether it offers an editor, on the shell's UI
+/// thread.
+///
+/// For VST3 the question is itself an editor call — `createView` is the only
+/// "has an editor" query the format defines, so asking it means creating and
+/// releasing a real view — and the load asks before any window exists, on the
+/// worker that took the load. The ask is carried to the shell's thread exactly
+/// like the open it precedes; the worker holds no control gate at this point
+/// (the runtime is still unregistered), so the carry closes no cycle. CLAP's
+/// answer reads the descriptor's `gui` extension and never reaches the plugin,
+/// so the carry is one harmless hop there — uniform rather than format-aware,
+/// so the rule stays "every editor call crosses", whatever a format's answer is
+/// drawn from.
+///
+/// Standing alone, like [`insert_engine_plugin_record`], because the load path
+/// needs a real plugin library before this point and the thread contract has to
+/// stay observable against a plugin that records its caller.
+fn editor_support_on_ui_thread<P: AudioPlugin + ?Sized + 'static>(
+    windows_host: &dyn PluginWindowHost,
+    runtime: &mut P,
+) -> Result<bool, String> {
+    lend_on_ui_thread(windows_host, runtime, |runtime| runtime.has_gui())
+}
+
 pub async fn load_plugin(
     plugin_id: PluginId,
     instance_id: PluginInstanceId,
     engine_sample_rate: f64,
+    windows_host: &dyn PluginWindowHost,
     state: &AppState,
+) -> Result<PluginInstance, String> {
+    load_plugin_with_backend(
+        plugin_id,
+        instance_id,
+        engine_sample_rate,
+        windows_host,
+        state,
+        create_hosted_runtime,
+    )
+    .await
+}
+
+/// `create_runtime` is a parameter so a test can inject a fixture runtime —
+/// one whose editor-support ask records its caller — without loading a real
+/// plugin library, the same way [`scan_plugins_with_backend`]'s
+/// `scan_descriptor`/`scan_instance` let a scan test inject a scan outcome.
+/// Production reaches this only through [`load_plugin`], which always supplies
+/// [`create_hosted_runtime`].
+async fn load_plugin_with_backend(
+    plugin_id: PluginId,
+    instance_id: PluginInstanceId,
+    engine_sample_rate: f64,
+    windows_host: &dyn PluginWindowHost,
+    state: &AppState,
+    create_runtime: impl Fn(HostBackend, &str, &str, f64) -> Result<HostedRuntime, String>,
 ) -> Result<PluginInstance, String> {
     // The rate is decided before anything is resolved, locked or constructed:
     // it is the caller's own input, refusing it costs nothing, and a load that
@@ -1092,10 +1142,16 @@ pub async fn load_plugin(
         eprintln!("{note}");
     }
 
-    let wrapper = create_hosted_runtime(backend, &entry.path, &descriptor_id, sample_rate)?;
+    let mut wrapper = create_runtime(backend, &entry.path, &descriptor_id, sample_rate)?;
     let name = wrapper.get_name().to_string();
     let params = wrapper.get_parameters();
-    let has_gui = wrapper.has_gui();
+    // Asked on the shell's UI thread because, for VST3, the question is a real
+    // `createView` — the only "has an editor" query the format has — and this
+    // load ask is the one place a view is created before any window exists. The
+    // backend caches the answer, so every later capability read
+    // (`is_plugin_gui_supported`, the open path's own check) answers from it
+    // without touching the plugin.
+    let has_gui = editor_support_on_ui_thread(windows_host, &mut wrapper)?;
     // Query the plugin's latency on the control thread while it is active (the
     // wrapper just activated it) — both formats define the value only for an
     // active plugin. Captured before the wrapper moves into the engine-owned
@@ -1162,22 +1218,23 @@ pub async fn load_plugin(
             let id = engine.reserve_plugin_id();
             let (bridge, bridge_handle) = create_audio_bridge(id);
 
-            // Wake the request watcher when this instance asks its host for
-            // something it may only be given off its own callback thread — an
-            // editor resize, or the report that its state changed.
+            // Mark this instance as one whose plugin-initiated asks get carried
+            // off the calling thread — the watcher wakes for the `[main-thread]`
+            // asks (a state change, a parameter rescan), and the drain thread
+            // answers the `[thread-safe]` ones (an editor resize, a flush).
             //
-            // Engine-owned only, because the watcher carries an ask out through
-            // `engine_plugins`: an instance the engine never took is not
-            // reachable from there, and installing the wake on one would have the
-            // plugin told its resize was accepted by a follow-up that could never
-            // run. No wake is the honest answer — `request_resize` then returns
-            // false, and a plugin that is refused can lay itself out to the size
-            // it has.
+            // Engine-owned only, because both carriers reach an instance
+            // through `engine_plugins`: one the engine never took is not
+            // reachable from there, and installing the wake on one would have
+            // the plugin told its resize was accepted by a follow-up that could
+            // never run. No wake is the honest answer — `request_resize` then
+            // returns false, and a plugin that is refused can lay itself out to
+            // the size it has.
             //
-            // The answer is discarded rather than reported, because a refusal is
-            // the ordinary case for a format that raises none of these asks: only
-            // CLAP routes an editor resize and a state change back through the
-            // host.
+            // The answer is discarded rather than reported, because a refusal
+            // means a second install: CLAP routes an editor resize, a parameter
+            // rescan and a state change back through the host, and VST3 a state
+            // change through `IComponentHandler2::setDirty`.
             let requesting_instance_id = instance_id.0.clone();
             let _ = wrapper.set_plugin_host_request_notifier(Box::new(move |request| {
                 crate::host::plugin_host_requests::notify_plugin_host_request(
@@ -1921,9 +1978,8 @@ pub async fn process_plugin_audio(
     let frames = audio_bytes.len() / BYTES_PER_FRAME;
 
     // Push input to the audio thread. A refusal means the input ring was full,
-    // so this block never reaches the plugin — and on the native sampler's
-    // record feed that is a hole in the recording, not a dropped frame of
-    // monitoring. It cannot fail the command: the caller is the worklet relay,
+    // so this block never reaches the plugin and its output is a hole in the
+    // processed stream. It cannot fail the command: the caller is the worklet relay,
     // an error there costs the output block that IS ready below, and the very
     // condition being reported is the engine already running behind. So it is
     // counted where `engine_rt_diagnostics` can see it, alongside the engine's
@@ -1996,6 +2052,8 @@ pub async fn process_plugin_audio(
 mod tests {
     use super::*;
     use crate::host::plugin_window::testing::DedicatedUiWindowHost;
+    use crate::host::plugin_window::PluginEditorWindow;
+    use crate::host::ui_thread::{UiThread, UiThreadTask};
     use crate::state::EnginePluginInstanceData;
     use daw_core::PluginInstanceId;
     use std::path::Path;
@@ -2468,15 +2526,26 @@ mod tests {
         );
     }
 
-    /// Replace the record under an instance id with a fresh runtime, exactly as
-    /// an unload followed by a reload of the same id does.
-    fn reload_engine_owned_fixture(state: &AppState, instance_id: &str, parameter_value: f64) {
-        state
-            .engine_plugins
-            .lock()
-            .expect("engine_plugins lock")
-            .remove(instance_id);
+    /// Replace the record under an instance id with a fresh runtime — exactly
+    /// as an unload followed by a reload of the same id does — for a caller
+    /// already inside the map's critical section. The interleaving tests
+    /// install the replacement under one held lock so no racing command can
+    /// observe the id absent or half-replaced.
+    fn reload_engine_owned_record(
+        engine_plugins: &mut HashMap<String, EnginePluginInstanceData>,
+        instance_id: &str,
+        replacement: EnginePluginInstanceData,
+    ) {
+        engine_plugins.remove(instance_id);
+        engine_plugins.insert(instance_id.to_string(), replacement);
+    }
 
+    /// Build the record [`reload_engine_owned_record`] installs. Kept separate
+    /// from the swap so the swap is exactly two map operations under the held
+    /// lock, and so a choreography can place this real construction work
+    /// deliberately on one side of a gate rather than paying it inside the
+    /// critical section.
+    fn reloaded_engine_owned_record(parameter_value: f64) -> EnginePluginInstanceData {
         let mut wrapper =
             ClapWrapper::new_engine_owned_command_fixture("Reloaded Fixture", Vec::new(), true);
         wrapper.set_engine_owned_command_fixture_parameters(vec![plugin_parameter(
@@ -2484,23 +2553,66 @@ mod tests {
             parameter_value,
         )]);
         let parameters = wrapper.get_parameters();
-        state
-            .engine_plugins
-            .lock()
-            .expect("engine_plugins lock")
-            .insert(
-                instance_id.to_string(),
-                EnginePluginInstanceData {
-                    engine_plugin_id: 18,
-                    runtime: Arc::new(SharedHostedPlugin::new(wrapper.into())),
-                    name: "Reloaded Fixture".to_string(),
-                    parameters,
-                    has_gui: true,
-                    bridge: None,
-                    relay_scratch: crate::state::PluginRelayScratch::default(),
-                    parameter_events: None,
-                },
+        EnginePluginInstanceData {
+            engine_plugin_id: 18,
+            runtime: Arc::new(SharedHostedPlugin::new(wrapper.into())),
+            name: "Reloaded Fixture".to_string(),
+            parameters,
+            has_gui: true,
+            bridge: None,
+            relay_scratch: crate::state::PluginRelayScratch::default(),
+            parameter_events: None,
+        }
+    }
+
+    /// Take `engine_plugins` while a command is parked on its runtime's control
+    /// gate, or name the phase and fail: these commands release the map before
+    /// their control wait, so a lock that never frees is exactly the regression
+    /// the swap tests guard against.
+    ///
+    /// A polled condition wait on a real contention point — `try_lock` plus
+    /// `yield_now`, bounded by a deadline — not a wall-clock ordering: the wait
+    /// ends when the map is actually free, and the deadline only converts a
+    /// would-be hang into a loud failure.
+    fn lock_engine_plugins_for_the_swap<'state>(
+        state: &'state AppState,
+        phase: &str,
+    ) -> std::sync::MutexGuard<'state, HashMap<String, EnginePluginInstanceData>> {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            if let Ok(engine_plugins) = state.engine_plugins.try_lock() {
+                return engine_plugins;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "{phase} must free engine_plugins while it waits for plugin control"
             );
+            std::thread::yield_now();
+        }
+    }
+
+    /// Wait until the command thread under test is provably past its runtime
+    /// resolution: resolving clones the record's `Arc`, so the strong count
+    /// rising above the pre-spawn `baseline` is that resolve made observable.
+    ///
+    /// The raised count is stable, not a transient to be missed — the command
+    /// parks on the control gate this choreography holds, and only leaves the
+    /// command — dropping its clone — after that gate opens. A command that
+    /// resolved before a swap therefore holds the runtime the swap replaces,
+    /// whatever the scheduler does with it in between.
+    fn wait_for_the_command_resolve(
+        runtime: &Arc<SharedHostedPlugin>,
+        baseline: usize,
+        phase: &str,
+    ) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Arc::strong_count(runtime) <= baseline {
+            assert!(
+                Instant::now() < deadline,
+                "{phase} must resolve the runtime it addresses before the choreography proceeds"
+            );
+            std::thread::yield_now();
+        }
     }
 
     fn parameter_values(parameters: &[PluginParameter]) -> Vec<f64> {
@@ -2516,6 +2628,12 @@ mod tests {
     /// And once it is free, an unload+reload can land in that window: the value
     /// went to the runtime that is gone, so it must not be written onto the
     /// record that replaced it.
+    ///
+    /// The interleaving is constructed with gates, not sleeps: the control
+    /// holder parks the write on the runtime's real control gate, the reload
+    /// replaces the record while that gate is still held, and the gate is
+    /// handed back only once the replacement is installed — so the write can
+    /// never complete against the record it resolved.
     #[test]
     fn set_plugin_parameter_frees_the_map_during_the_write_and_refuses_a_swapped_record() {
         let state = AppState::default();
@@ -2523,40 +2641,47 @@ mod tests {
         let runtime = engine_fixture_runtime(&state, "instance-swapped-write");
 
         std::thread::scope(|scope| {
-            // The plugin owns its control path for longer than the map-lock
-            // deadline below, so a command that held the map across the write
-            // would hold it past that deadline.
-            let control_holder = scope.spawn(|| {
-                runtime.with_control(Duration::from_secs(5), |_| {
-                    std::thread::sleep(Duration::from_millis(800));
+            let (control_held, control_gate_taken) = std::sync::mpsc::channel();
+            let state_ref = &state;
+            let resolve_baseline = Arc::strong_count(&runtime);
+            // The holder owns the runtime's control gate — the mutex and the
+            // access seam beneath it — for its whole closure, and the closure
+            // performs the swap itself. The swap waits for the writer's
+            // resolve to become observable: resolving clones the record's
+            // `Arc`, so the count rising above its pre-spawn baseline proves
+            // the writer holds the OLD runtime — a writer the scheduler
+            // parked mid-command can therefore never resolve the replacement
+            // and legitimately write to it. The map must be free for the
+            // swap — the first half of this contract — and the replacement
+            // goes in under one critical section while the gate is still
+            // held, so the write-back always meets a swapped record.
+            let control_holder = scope.spawn(move || {
+                runtime.with_control(Duration::from_secs(5), |_plugin| {
+                    control_held.send(()).expect("the test is still listening");
+                    wait_for_the_command_resolve(&runtime, resolve_baseline, "the writer");
+                    let replacement = reloaded_engine_owned_record(0.25);
+                    let mut engine_plugins =
+                        lock_engine_plugins_for_the_swap(state_ref, "set_plugin_parameter");
+                    reload_engine_owned_record(
+                        &mut engine_plugins,
+                        "instance-swapped-write",
+                        replacement,
+                    );
                     Ok(())
                 })
             });
-            std::thread::sleep(Duration::from_millis(100));
+            control_gate_taken
+                .recv_timeout(Duration::from_secs(5))
+                .expect("the control holder must take the gate before the write runs");
 
-            let writer = scope.spawn(|| {
+            let writer = scope.spawn(move || {
                 crate::block_on_test(set_plugin_parameter(
                     PluginInstanceId("instance-swapped-write".to_string()),
                     7,
                     0.75,
-                    &state,
+                    state_ref,
                 ))
             });
-            std::thread::sleep(Duration::from_millis(100));
-
-            let deadline = Instant::now() + Duration::from_millis(300);
-            loop {
-                if state.engine_plugins.try_lock().is_ok() {
-                    break;
-                }
-                assert!(
-                    Instant::now() < deadline,
-                    "set_plugin_parameter must not hold engine_plugins across the control write"
-                );
-                std::thread::sleep(Duration::from_millis(5));
-            }
-
-            reload_engine_owned_fixture(&state, "instance-swapped-write", 0.25);
 
             assert_eq!(writer.join().expect("writer thread"), Ok(()));
             control_holder
@@ -2581,6 +2706,12 @@ mod tests {
     /// own `set_state`, so a slow plugin parked the audio relay for seconds. And
     /// once the map is free, an unload+reload can land in that window: the
     /// parameters the dead runtime reported are not the replacement's.
+    ///
+    /// The interleaving is constructed with gates, not sleeps: the control
+    /// holder parks the restore on the runtime's real control gate, the reload
+    /// replaces the record while that gate is still held, and the gate is
+    /// handed back only once the replacement is installed — so the restore can
+    /// never complete against the record it resolved.
     #[test]
     fn write_plugin_state_chunk_frees_the_map_during_the_restore_and_refuses_a_swapped_record() {
         let state = AppState::default();
@@ -2594,31 +2725,41 @@ mod tests {
             .expect("fixture control access should succeed");
 
         std::thread::scope(|scope| {
-            let control_holder = scope.spawn(|| {
-                runtime.with_control(Duration::from_secs(5), |_| {
-                    std::thread::sleep(Duration::from_millis(800));
+            let (control_held, control_gate_taken) = std::sync::mpsc::channel();
+            let state_ref = &state;
+            let resolve_baseline = Arc::strong_count(&runtime);
+            // The holder owns the runtime's control gate — the mutex and the
+            // access seam beneath it — for its whole closure, and the closure
+            // performs the swap itself. The swap waits for the writer's
+            // resolve to become observable: resolving clones the record's
+            // `Arc`, so the count rising above its pre-spawn baseline proves
+            // the writer holds the OLD runtime, whatever the scheduler does.
+            // The map must be free for the swap — the first half of this
+            // contract — and the replacement goes in under one critical
+            // section while the gate is still held, so the write-back always
+            // meets a swapped record.
+            let control_holder = scope.spawn(move || {
+                runtime.with_control(Duration::from_secs(5), |_plugin| {
+                    control_held.send(()).expect("the test is still listening");
+                    wait_for_the_command_resolve(&runtime, resolve_baseline, "the writer");
+                    let replacement = reloaded_engine_owned_record(0.25);
+                    let mut engine_plugins =
+                        lock_engine_plugins_for_the_swap(state_ref, "write_plugin_state_chunk");
+                    reload_engine_owned_record(
+                        &mut engine_plugins,
+                        "instance-swapped-restore",
+                        replacement,
+                    );
                     Ok(())
                 })
             });
-            std::thread::sleep(Duration::from_millis(100));
+            control_gate_taken
+                .recv_timeout(Duration::from_secs(5))
+                .expect("the control holder must take the gate before the restore runs");
 
-            let writer = scope
-                .spawn(|| write_plugin_state_chunk("instance-swapped-restore", &[9, 8, 7], &state));
-            std::thread::sleep(Duration::from_millis(100));
-
-            let deadline = Instant::now() + Duration::from_millis(300);
-            loop {
-                if state.engine_plugins.try_lock().is_ok() {
-                    break;
-                }
-                assert!(
-                    Instant::now() < deadline,
-                    "write_plugin_state_chunk must not hold engine_plugins across the restore"
-                );
-                std::thread::sleep(Duration::from_millis(5));
-            }
-
-            reload_engine_owned_fixture(&state, "instance-swapped-restore", 0.25);
+            let writer = scope.spawn(move || {
+                write_plugin_state_chunk("instance-swapped-restore", &[9, 8, 7], state_ref)
+            });
 
             assert_eq!(writer.join().expect("writer thread"), Ok(()));
             control_holder
@@ -2643,6 +2784,12 @@ mod tests {
     /// Same window on the read side: an unload+reload between the poll and the
     /// cache write-back makes `get_mut` resolve a NEW record, and the dead
     /// plugin's parameters used to be stored onto it and returned as its own.
+    ///
+    /// The interleaving is constructed with gates, not sleeps: the control
+    /// holder parks the poll on the runtime's real control gate, the reload
+    /// replaces the record while that gate is still held, and the gate is
+    /// handed back only once the replacement is installed — so the poll can
+    /// never complete against the record it resolved.
     #[test]
     fn get_plugin_parameters_refuses_to_store_a_dead_runtimes_poll_onto_its_replacement() {
         let state = AppState::default();
@@ -2656,23 +2803,44 @@ mod tests {
             .expect("fixture control access should succeed");
 
         let polled = std::thread::scope(|scope| {
-            let control_holder = scope.spawn(|| {
-                runtime.with_control(Duration::from_secs(5), |_| {
-                    std::thread::sleep(Duration::from_millis(500));
+            let (control_held, control_gate_taken) = std::sync::mpsc::channel();
+            let state_ref = &state;
+            let resolve_baseline = Arc::strong_count(&runtime);
+            // The holder owns the runtime's control gate — the mutex and the
+            // access seam beneath it — for its whole closure, and the closure
+            // performs the swap itself. The swap waits for the reader's
+            // resolve to become observable: resolving clones the record's
+            // `Arc`, so the count rising above its pre-spawn baseline proves
+            // the reader holds the OLD runtime, whatever the scheduler does.
+            // The map must be free for the swap, and the replacement goes in
+            // under one critical section while the gate is still held, so the
+            // poll always describes the dead runtime and the write-back
+            // always meets a swapped record.
+            let control_holder = scope.spawn(move || {
+                runtime.with_control(Duration::from_secs(5), |_plugin| {
+                    control_held.send(()).expect("the test is still listening");
+                    wait_for_the_command_resolve(&runtime, resolve_baseline, "the reader");
+                    let replacement = reloaded_engine_owned_record(0.25);
+                    let mut engine_plugins =
+                        lock_engine_plugins_for_the_swap(state_ref, "get_plugin_parameters");
+                    reload_engine_owned_record(
+                        &mut engine_plugins,
+                        "instance-swapped-poll",
+                        replacement,
+                    );
                     Ok(())
                 })
             });
-            std::thread::sleep(Duration::from_millis(100));
+            control_gate_taken
+                .recv_timeout(Duration::from_secs(5))
+                .expect("the control holder must take the gate before the poll runs");
 
-            let reader = scope.spawn(|| {
+            let reader = scope.spawn(move || {
                 crate::block_on_test(get_plugin_parameters(
                     PluginInstanceId("instance-swapped-poll".to_string()),
-                    &state,
+                    state_ref,
                 ))
             });
-            std::thread::sleep(Duration::from_millis(150));
-
-            reload_engine_owned_fixture(&state, "instance-swapped-poll", 0.25);
 
             let polled = reader.join().expect("reader thread");
             control_holder
@@ -2705,6 +2873,13 @@ mod tests {
     /// poll was determined is newer than the poll, and the cache already holds
     /// it. Storing the poll on top reverts it — the exact knob snap-back
     /// `poll_parameters` claims to prevent.
+    ///
+    /// The window is constructed with gates, not sleeps: the map is taken only
+    /// once the reader's resolve is observable, is held from before the poll
+    /// may run until the newer write and its cache entry are both in, and the
+    /// write is enqueued after a control round trip that queues behind the
+    /// reader's poll — so the write-back meets a cache that is newer than the
+    /// poll, and no schedule of correct code fails.
     #[test]
     fn get_plugin_parameters_does_not_revert_a_write_accepted_during_the_poll() {
         let state = AppState::default();
@@ -2718,42 +2893,97 @@ mod tests {
             .expect("fixture control access should succeed");
 
         let polled = std::thread::scope(|scope| {
-            let control_holder = scope.spawn(|| {
-                runtime.with_control(Duration::from_secs(5), |_| {
-                    std::thread::sleep(Duration::from_millis(600));
+            let (control_held, control_gate_taken) = std::sync::mpsc::channel();
+            let (let_poll_run, poll_may_run) = std::sync::mpsc::channel();
+            let (go_hold_map, hold_map) = std::sync::mpsc::channel();
+            let (map_held, map_was_held) = std::sync::mpsc::channel();
+
+            // The holder owns the runtime's control gate for its whole
+            // closure and opens it only on this thread's say-so — which is
+            // sent once the map below is held — so the reader's write-back
+            // can never run before the newer write is in the cache.
+            let event_runtime = Arc::clone(&runtime);
+            let state_ref = &state;
+            let resolve_baseline = Arc::strong_count(&runtime);
+            let control_holder = scope.spawn(move || {
+                runtime.with_control(Duration::from_secs(5), |_plugin| {
+                    control_held.send(()).expect("the test is still listening");
+                    poll_may_run
+                        .recv_timeout(Duration::from_secs(5))
+                        .expect("the test opens the gate once the map is held");
                     Ok(())
                 })
             });
-            std::thread::sleep(Duration::from_millis(100));
+            control_gate_taken
+                .recv_timeout(Duration::from_secs(5))
+                .expect("the control holder must take the gate before the poll runs");
 
-            let reader = scope.spawn(|| {
+            let reader = scope.spawn(move || {
                 crate::block_on_test(get_plugin_parameters(
                     PluginInstanceId("instance-late-write".to_string()),
-                    &state,
+                    state_ref,
                 ))
             });
-            // The reader has cloned the runtime and is parked in the poll.
-            std::thread::sleep(Duration::from_millis(200));
 
-            // Occupy the map so the reader cannot store the instant its poll
-            // returns, then land the write in that window exactly as
-            // `set_plugin_parameter` does: enqueue, then record it in the cache.
-            let mut engine_plugins = state.engine_plugins.lock().expect("engine_plugins lock");
-            std::thread::sleep(Duration::from_millis(600));
-            runtime
-                .enqueue_parameter(7, 0.75)
-                .expect("the queued write should be accepted");
-            engine_plugins
-                .get_mut("instance-late-write")
-                .expect("fixture should exist")
-                .parameters = vec![plugin_parameter(7, 0.75)];
-            drop(engine_plugins);
+            // Holds the map across the reader's poll, then lands the write in
+            // that window exactly as `set_plugin_parameter` does: enqueue,
+            // then record it in the cache.
+            let map_holder = scope.spawn(move || {
+                hold_map
+                    .recv_timeout(Duration::from_secs(5))
+                    .expect("the test asks for the map once the reader runs");
+
+                // The map is taken only once the reader's resolve is
+                // observable: resolving clones the record's `Arc`, so the
+                // count rising above the pre-spawn baseline proves the reader
+                // is inside the command with this runtime. From there the
+                // still-closed gate leaves the poll the only step it can
+                // take, so the enqueue below cannot land before the reader
+                // has even resolved.
+                wait_for_the_command_resolve(&event_runtime, resolve_baseline, "the reader");
+
+                let mut engine_plugins =
+                    lock_engine_plugins_for_the_swap(state_ref, "get_plugin_parameters");
+                map_held.send(()).expect("the test is still listening");
+
+                // The gate above is still closed, so the reader parks on the
+                // control mutex and this round trip queues behind it; the
+                // reader holds that mutex across its whole poll, so this
+                // returning means the reader's snapshot is taken and the
+                // enqueued write is the newer one. The one escape is a reader
+                // descheduled between its resolve and the mutex: this then
+                // runs uncontended and the enqueue precedes the poll, whose
+                // own pending check refuses the window for this run — that
+                // schedule leaves the write-back guard unexercised but no
+                // schedule of correct code fails.
+                event_runtime
+                    .with_control(Duration::from_secs(2), |_plugin| Ok(()))
+                    .expect("fixture control access should succeed");
+                event_runtime
+                    .enqueue_parameter(7, 0.75)
+                    .expect("the queued write should be accepted");
+                engine_plugins
+                    .get_mut("instance-late-write")
+                    .expect("fixture should exist")
+                    .parameters = vec![plugin_parameter(7, 0.75)];
+            });
+
+            go_hold_map
+                .send(())
+                .expect("the map holder is still waiting");
+            map_was_held
+                .recv_timeout(Duration::from_secs(5))
+                .expect("the map must be held before the poll may run");
+            let_poll_run
+                .send(())
+                .expect("the control holder is still parked in its gate");
 
             let polled = reader.join().expect("reader thread");
             control_holder
                 .join()
                 .expect("control holder thread")
                 .expect("fixture control access should succeed");
+            map_holder.join().expect("map holder thread");
             polled
         })
         .expect("parameters should resolve");
@@ -2806,6 +3036,7 @@ mod tests {
             PluginId("aaaa1111".to_string()),
             PluginInstanceId("poisoned-registry-instance".to_string()),
             TEST_ENGINE_SAMPLE_RATE,
+            &NoWindowHost,
             &state,
         ))
         .expect_err("a fake plugin path cannot load");
@@ -2984,6 +3215,7 @@ mod tests {
             PluginId("aaaa1111".to_string()),
             PluginInstanceId("rateless-instance".to_string()),
             0.0,
+            &NoWindowHost,
             &state,
         ))
         .expect_err("a load with no usable engine rate must refuse");
@@ -3060,6 +3292,7 @@ mod tests {
             PluginId("aaaa1111".to_string()),
             PluginInstanceId("over-ceiling-instance".to_string()),
             TEST_ENGINE_SAMPLE_RATE,
+            &NoWindowHost,
             &state,
         ))
         .expect_err("a load at the hosted session ceiling must refuse");
@@ -3070,6 +3303,252 @@ mod tests {
                 "the session hosts its maximum of {HOSTED_PLUGIN_RESERVE} native plugin instances"
             ),
             "the refusal must be the ceiling's own message, not a later failure"
+        );
+    }
+
+    /// A shell whose UI thread never takes an editor lend — what the real
+    /// seam's deadline produces when the shell is gone or stuck. Standing in
+    /// for the give-up rather than reproducing its wait, because a host that
+    /// hangs proves nothing about what broke.
+    struct LendRefusingWindowHost;
+
+    impl UiThread for LendRefusingWindowHost {
+        fn is_ui_thread(&self) -> bool {
+            false
+        }
+
+        fn run_on_ui_thread(&self, _task: &Arc<UiThreadTask>) -> Result<(), String> {
+            Err("the shell's UI thread did not take the editor call".to_string())
+        }
+    }
+
+    impl PluginWindowHost for LendRefusingWindowHost {
+        fn window_exists(&self, _label: &str) -> bool {
+            false
+        }
+
+        fn create_editor_window(
+            &self,
+            _label: &str,
+            _title: &str,
+            _instance_id: &str,
+        ) -> Result<Box<dyn PluginEditorWindow>, String> {
+            Err("This host cannot create plugin editor windows".to_string())
+        }
+
+        fn destroy_window(&self, _label: &str) {}
+        fn hide_window(&self, _label: &str) {}
+        fn show_window(&self, _label: &str) {}
+    }
+
+    /// A plugin that records the thread its editor support was asked on. The
+    /// real VST3 backend's ask is a `createView` — the format has no other
+    /// "has an editor" query — so this stands in for exactly the call the load
+    /// path must not make on its own worker.
+    struct EditorSupportThreadPlugin {
+        offered: bool,
+        asked_on: Arc<Mutex<Vec<std::thread::ThreadId>>>,
+    }
+
+    impl AudioPlugin for EditorSupportThreadPlugin {
+        fn has_gui(&self) -> bool {
+            self.asked_on
+                .lock()
+                .expect("asked-on log")
+                .push(std::thread::current().id());
+            self.offered
+        }
+
+        fn process(&mut self, _: &[&[f32]], _: &mut [&mut [f32]], _: usize) {}
+        fn set_parameter(&mut self, _: u32, _: f64) {}
+        fn get_parameters(&self) -> Vec<PluginParameter> {
+            Vec::new()
+        }
+        fn get_state(&self) -> Result<Vec<u8>, String> {
+            Ok(Vec::new())
+        }
+        fn set_state(&mut self, _: &[u8]) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    /// The editor-support helper's own contract, apart from any load: the ask
+    /// is an editor call for VST3 — a real `createView` before any window
+    /// exists — so it has to reach the plugin on the shell's UI thread like the
+    /// open it precedes, not on the worker that took it. Both answers cross: a
+    /// plugin that offers an editor and one that does not must keep their own
+    /// answer through the hop.
+    #[test]
+    fn editor_support_keeps_the_plugins_answer_across_the_thread_hop() {
+        for offered in [true, false] {
+            let asked_on = Arc::new(Mutex::new(Vec::new()));
+            let mut plugin = EditorSupportThreadPlugin {
+                offered,
+                asked_on: Arc::clone(&asked_on),
+            };
+            let windows = DedicatedUiWindowHost::start();
+
+            let answer = editor_support_on_ui_thread(&windows, &mut plugin)
+                .expect("the ask must be answered");
+
+            assert_eq!(
+                answer, offered,
+                "the plugin's own answer must survive the hop, whatever it is"
+            );
+            assert_eq!(
+                *asked_on.lock().expect("asked-on log"),
+                [windows.thread_id],
+                "the editor-support ask must reach the plugin on the shell's thread and nowhere \
+                 else"
+            );
+            assert_ne!(
+                windows.thread_id,
+                std::thread::current().id(),
+                "the fake shell thread must not be this one, or this test proves nothing"
+            );
+        }
+    }
+
+    /// The registry row the load-path tests resolve. The format is `clap`
+    /// because the runtime they inject is a CLAP fixture; nothing else in the
+    /// row reaches the plugin, whose construction the test replaces.
+    fn register_editor_support_fixture(state: &AppState) {
+        state
+            .plugin_registry
+            .lock()
+            .expect("plugin registry lock should be available")
+            .insert(
+                "editor-support-fixture".to_string(),
+                PluginRegistryEntry {
+                    path: "/plugins/editor-support-fixture.clap".to_string(),
+                    stable_id: "editor-support-fixture".to_string(),
+                    descriptor_id: "com.sourdaw.editor-support-fixture".to_string(),
+                    format: "clap".to_string(),
+                    name: "Editor Support Fixture".to_string(),
+                    num_inputs: 2,
+                    num_outputs: 2,
+                    has_custom_ui: true,
+                    capability_metadata_reason: None,
+                },
+            );
+    }
+
+    /// The load path's own routing, one level deeper than the helper test
+    /// above: the ask has to cross inside the real `load_plugin`, from the
+    /// worker that took the load, against a runtime the load itself
+    /// constructed. The fixture records the thread its support was asked on,
+    /// so the assertion is the plugin's own observation of its caller.
+    #[test]
+    fn loading_a_plugin_asks_its_editor_support_on_the_shells_ui_thread() {
+        let state = AppState::default();
+        register_editor_support_fixture(&state);
+        let wrapper = ClapWrapper::new_engine_owned_command_fixture(
+            "Editor Support Fixture",
+            Vec::new(),
+            true,
+        );
+        let asked_on = wrapper
+            .engine_owned_command_fixture_editor_support_threads()
+            .expect("the command fixture records its editor-support asks");
+        let runtime_slot = Arc::new(Mutex::new(Some(HostedRuntime::from(wrapper))));
+        let slot = Arc::clone(&runtime_slot);
+        let windows = DedicatedUiWindowHost::start();
+
+        let instance = crate::block_on_test(load_plugin_with_backend(
+            PluginId("editor-support-fixture".to_string()),
+            PluginInstanceId("editor-support-instance".to_string()),
+            TEST_ENGINE_SAMPLE_RATE,
+            &windows,
+            &state,
+            |_backend, _path, _descriptor_id, _sample_rate| {
+                slot.lock()
+                    .expect("fixture runtime slot")
+                    .take()
+                    .ok_or_else(|| "the fixture runtime is single-use".to_string())
+            },
+        ))
+        .expect("the fixture plugin should load");
+
+        assert_ne!(
+            windows.thread_id,
+            std::thread::current().id(),
+            "the fake shell thread must not be this one, or this test proves nothing"
+        );
+        assert_eq!(
+            instance.name, "Editor Support Fixture",
+            "the loaded instance must be the fixture the load constructed"
+        );
+        assert!(
+            state
+                .plugins
+                .lock()
+                .expect("plugins lock")
+                .contains_key("editor-support-instance"),
+            "a load with no engine behind it keeps its plugin in the command-owned map"
+        );
+        assert_eq!(
+            *asked_on.lock().expect("editor-support ask log"),
+            [windows.thread_id],
+            "the load's editor-support ask must reach the plugin on the shell's thread and \
+             nowhere else"
+        );
+    }
+
+    /// A shell whose UI thread cannot take the lend — the give-up the real
+    /// seam's deadline produces. Swallowing it (`.unwrap_or(false)`) would
+    /// report a successful load whose plugin has its GUI permanently hidden,
+    /// so the load must refuse with the lend's own failure and leave no
+    /// instance behind.
+    #[test]
+    fn a_load_whose_editor_support_lend_never_lands_refuses_the_plugin() {
+        let state = AppState::default();
+        register_editor_support_fixture(&state);
+        let wrapper = ClapWrapper::new_engine_owned_command_fixture(
+            "Editor Support Fixture",
+            Vec::new(),
+            true,
+        );
+        let asked_on = wrapper
+            .engine_owned_command_fixture_editor_support_threads()
+            .expect("the command fixture records its editor-support asks");
+        let runtime_slot = Arc::new(Mutex::new(Some(HostedRuntime::from(wrapper))));
+        let slot = Arc::clone(&runtime_slot);
+
+        let error = crate::block_on_test(load_plugin_with_backend(
+            PluginId("editor-support-fixture".to_string()),
+            PluginInstanceId("lend-refused-instance".to_string()),
+            TEST_ENGINE_SAMPLE_RATE,
+            &LendRefusingWindowHost,
+            &state,
+            |_backend, _path, _descriptor_id, _sample_rate| {
+                slot.lock()
+                    .expect("fixture runtime slot")
+                    .take()
+                    .ok_or_else(|| "the fixture runtime is single-use".to_string())
+            },
+        ))
+        .expect_err("a load whose editor-support lend fails must refuse");
+
+        assert_eq!(
+            error, "the shell's UI thread did not take the editor call",
+            "the refusal must be the lend's own failure, not a later one"
+        );
+        assert!(
+            asked_on.lock().expect("editor-support ask log").is_empty(),
+            "a lend that never landed must not have reached the plugin either"
+        );
+        assert!(
+            !state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock")
+                .contains_key("lend-refused-instance")
+                && !state
+                    .plugins
+                    .lock()
+                    .expect("plugins lock")
+                    .contains_key("lend-refused-instance"),
+            "a refused load must leave no instance behind"
         );
     }
 
@@ -3102,6 +3581,7 @@ mod tests {
             PluginId("clap-without-descriptor-id".to_string()),
             PluginInstanceId("clap-instance".to_string()),
             TEST_ENGINE_SAMPLE_RATE,
+            &NoWindowHost,
             &state,
         ));
 
@@ -3574,6 +4054,7 @@ mod tests {
             PluginId("vst3-fixture".to_string()),
             PluginInstanceId("vst3-instance".to_string()),
             TEST_ENGINE_SAMPLE_RATE,
+            &NoWindowHost,
             &state,
         ));
 
@@ -3589,6 +4070,7 @@ mod tests {
             PluginId("vst3-fixture".to_string()),
             PluginInstanceId("vst3-instance".to_string()),
             TEST_ENGINE_SAMPLE_RATE,
+            &NoWindowHost,
             &state,
         ));
         assert_eq!(
@@ -3643,6 +4125,7 @@ mod tests {
                 PluginId(plugin_id.to_string()),
                 PluginInstanceId(format!("{plugin_id}-instance")),
                 TEST_ENGINE_SAMPLE_RATE,
+                &NoWindowHost,
                 &state,
             ));
 
@@ -3735,6 +4218,7 @@ mod tests {
             PluginId("unknown-format".to_string()),
             PluginInstanceId("unknown-instance".to_string()),
             TEST_ENGINE_SAMPLE_RATE,
+            &NoWindowHost,
             &state,
         ));
 

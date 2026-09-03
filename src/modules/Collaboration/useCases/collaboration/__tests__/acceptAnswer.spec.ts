@@ -168,6 +168,7 @@ describe('acceptAnswer', () => {
                     isConnected: true,
                     lastSeen: 1,
                     latencyMs: null,
+                    syncHealth: 'converging',
                 },
             ],
         });
@@ -187,6 +188,7 @@ describe('acceptAnswer', () => {
                 isConnected: true,
                 lastSeen: 1,
                 latencyMs: null,
+                syncHealth: 'converging',
             },
             {
                 id: 'joiner-9',
@@ -196,6 +198,7 @@ describe('acceptAnswer', () => {
                 isConnected: false,
                 lastSeen: expect.any(Number),
                 latencyMs: null,
+                syncHealth: 'converging',
             },
         ]);
     });

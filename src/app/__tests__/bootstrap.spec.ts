@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
+import { getMidiTransform, getMidiTransformDescriptors, getMidiTransformNames } from '#/modules/Command/stores';
+
 import { captureAgentProjectInspectionState } from '../captureCommandBatchPreflightState';
 
 import type { setArrangementEventBus } from '#/modules/Arrangement/useCases';
@@ -57,6 +59,9 @@ type RuntimeSinkUnderTest = {
 const {
     noop,
     sentinelHandlers,
+    assertCanonicalLlmActionStrategiesMock,
+    getExecutableAppActionGroundingCatalogMock,
+    executableAppActionGroundingCatalog,
     registerProductionCommandHandlersMock,
     configureCommandBatchIdempotencyMock,
     initBrowserAiMock,
@@ -94,6 +99,7 @@ const {
     setMidiLearnDependenciesMock,
     registerCrdtStorageRuntimeMock,
     captureProjectRevisionMock,
+    projectRevisionMatchesLiveIgnoringCommandCheckpointMock,
     agentProjectInspectionSetProviderMock,
     setArrangementEventBusMock,
     configureRuntimeGraphProjectRevisionValidatorMock,
@@ -103,12 +109,18 @@ const {
     setProjectIdentityTransitionDependenciesMock,
     commandRuntimeRepairPortMock,
     repairRuntimeGraphFromProjectMock,
+    sessionUndoWitnessStampPortMock,
+    stampSessionUndoWitnessMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
+    const executableAppActionGroundingCatalog = [{ actionType: 'addMarker', intentPhrases: [] }];
     return {
         noop,
         sentinelHandlers,
+        assertCanonicalLlmActionStrategiesMock: vi.fn(),
+        getExecutableAppActionGroundingCatalogMock: vi.fn(() => executableAppActionGroundingCatalog),
+        executableAppActionGroundingCatalog,
         registerProductionCommandHandlersMock: vi.fn<(maps: HandlerMapSentinel[]) => void>(),
         configureCommandBatchIdempotencyMock: vi.fn(),
         canExecuteCommandBatchMock: vi.fn(() => true),
@@ -155,6 +167,9 @@ const {
         setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
         captureProjectRevisionMock: vi.fn<() => string>(() => 'revision-1'),
+        projectRevisionMatchesLiveIgnoringCommandCheckpointMock: vi.fn<(expectedRevision: string) => boolean>(
+            () => true
+        ),
         agentProjectInspectionSetProviderMock: vi.fn(),
         setArrangementEventBusMock: vi.fn<(eventBus: ArrangementEventBus) => void>(),
         setProjectIdentityTransitionDependenciesMock:
@@ -168,6 +183,8 @@ const {
         setNotificationEventBusMock: vi.fn<(eventBus: NotificationEventBus) => void>(),
         commandRuntimeRepairPortMock: { setProvider: vi.fn() },
         repairRuntimeGraphFromProjectMock: vi.fn(() => Promise.resolve()),
+        sessionUndoWitnessStampPortMock: { setProvider: vi.fn() },
+        stampSessionUndoWitnessMock: vi.fn(),
     };
 });
 
@@ -176,9 +193,13 @@ vi.mock('#/infra/logger/runtimeLogger', () => ({ setRuntimeLogger: noop }));
 vi.mock('#/modules/AiGeneration/useCases', () => ({
     getGenerationHandlers: sentinelHandlers('AiGeneration'),
     getAiMidiHandlers: sentinelHandlers('AiMidi'),
+    // One stub per published descriptor: the registry refuses a map that does not cover the
+    // contract, so this stands in for the real generators without pulling their graph in.
+    MIDI_TRANSFORM_IMPLEMENTATIONS: Object.fromEntries(getMidiTransformNames().map((name) => [name, () => []])),
 }));
 
 vi.mock('#/modules/AiRuntime/useCases', () => ({
+    assertCanonicalLlmActionStrategies: assertCanonicalLlmActionStrategiesMock,
     beginMixAnalysis: noop,
     completeMixAnalysis: noop,
     failMixAnalysis: noop,
@@ -287,6 +308,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     configureCommandBatchIdempotency: configureCommandBatchIdempotencyMock,
     commandProjectDivergencePort: { setProvider: noop },
     executeAppAction: noop,
+    getExecutableAppActionGroundingCatalog: getExecutableAppActionGroundingCatalogMock,
     getVersionedCommandBatchCommitDisposition: getVersionedCommandBatchCommitDispositionMock,
     registerProductionCommandHandlers: registerProductionCommandHandlersMock,
     getMacroHandlers: sentinelHandlers('Macro'),
@@ -297,13 +319,14 @@ vi.mock('#/modules/Command/useCases', () => ({
         setGuard: noop,
     },
     setActionHistoryMetadataPort: noop,
-    commandProjectRevisionPort: { setProvider: noop },
+    commandProjectRevisionPort: { setProvider: noop, setLiveMatchIgnoringCommandCheckpoint: noop },
     commandDeviceVersionsPort: { setDeviceTypeResolver: noop, setResolver: noop },
     commandTrackDefaultsPort: { setTrackColorProvider: noop },
     commandRuntimeRepairPort: commandRuntimeRepairPortMock,
     setCommandEventBus: noop,
     syncActionReplayMetadata: noop,
     captureCommandTargetFingerprints: noop,
+    stampSessionUndoWitness: stampSessionUndoWitnessMock,
 }));
 
 vi.mock('#/modules/ControlRoom/useCases', () => ({
@@ -324,6 +347,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     DOC_PREFIX_ROOT: 'root',
     agentProjectInspectionPort: { setProvider: agentProjectInspectionSetProviderMock },
     captureProjectRevision: captureProjectRevisionMock,
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint: projectRevisionMatchesLiveIgnoringCommandCheckpointMock,
     createCommandPreviewWorkspace: noop,
     createCommandRecoveryWorkspace: noop,
     getCrdtDoc: noop,
@@ -332,8 +356,10 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     inspectAgentProjectDivergence: noop,
     markActionHistoryEntryReverted: noop,
     recordActionHistoryEntry: noop,
+    recordActionHistoryEntries: noop,
     clearActionHistory: noop,
     registerCrdtStorageRuntime: registerCrdtStorageRuntimeMock,
+    sessionUndoWitnessStampPort: sessionUndoWitnessStampPortMock,
 }));
 
 vi.mock('#/modules/DawInterchange/useCases', () => ({
@@ -356,6 +382,7 @@ vi.mock('#/modules/GrandBoule/useCases', () => ({
     getGrandBouleHandlers: sentinelHandlers('GrandBoule'),
     initGrandBouleSubscribers: () => noop,
     setGrandBouleEventBus: noop,
+    prepareOfflineGrandBoule: noop,
 }));
 
 vi.mock('#/modules/Grinder/stores', () => ({ updateGrinderTelemetry: noop }));
@@ -427,6 +454,7 @@ vi.mock('#/modules/Proof/useCases', () => ({
     registerProofDevice: noop,
     unregisterProofDevice: noop,
     syncFullPatch: noop,
+    prepareOfflineProof: noop,
 }));
 
 vi.mock('#/modules/PunchRecording/useCases', () => ({
@@ -451,6 +479,7 @@ vi.mock('#/modules/Toaster/useCases', () => ({
     initToasterKitPersistence: noop,
     setToasterEventBus: noop,
     setToasterGrooveAssignmentExecutor: noop,
+    prepareOfflineToaster: noop,
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
@@ -512,6 +541,8 @@ vi.mock('../registerGlobalErrorHandlers', () => ({
 // dependency bootstrap.ts pulls in is already mocked by the time it runs.
 import '../bootstrap';
 
+const raveModelBootCalls = [...initRaveModelsMock.mock.calls];
+
 function getDurableAssetOwnerRecoveryAfterProjectLoad(): DurableAssetOwnerRecoveryAfterProjectLoad {
     const dependencyCall = setProjectIdentityTransitionDependenciesMock.mock.calls.at(0);
     if (!dependencyCall) {
@@ -568,6 +599,16 @@ describe('bootstrap', () => {
         'Rave',
         'ControlRoom',
     ];
+
+    it('validates LLM strategy names against the command catalogue before handler registration', () => {
+        expect(getExecutableAppActionGroundingCatalogMock).toHaveBeenCalledExactlyOnceWith();
+        expect(assertCanonicalLlmActionStrategiesMock).toHaveBeenCalledExactlyOnceWith(
+            executableAppActionGroundingCatalog
+        );
+        expect(assertCanonicalLlmActionStrategiesMock.mock.invocationCallOrder[0] ?? Infinity).toBeLessThan(
+            registerProductionCommandHandlersMock.mock.invocationCallOrder[0] ?? Infinity
+        );
+    });
 
     it('registers every module handler map exactly once, in bootstrap wiring order', () => {
         const registeredModuleIds = registerProductionCommandHandlersMock.mock.calls[0]?.[0].map(
@@ -726,6 +767,12 @@ describe('bootstrap', () => {
         );
     });
 
+    it('wires the undo session witness stamp port to the real production stamp (#3331)', () => {
+        expect(sessionUndoWitnessStampPortMock.setProvider).toHaveBeenCalledExactlyOnceWith(
+            stampSessionUndoWitnessMock
+        );
+    });
+
     it('wires Automation lane ranges to Arrangement descriptor truth', () => {
         expect(setAutomationParameterRangeResolverMock).toHaveBeenCalledExactlyOnceWith(
             getAutomationParameterRangeMock
@@ -860,10 +907,19 @@ describe('bootstrap', () => {
         );
     });
 
+    it('registers a MIDI transform implementation for every published transform descriptor', () => {
+        // A descriptor the planner can discover but nothing can run would reject the batch at
+        // expansion time, after the plan was already proposed.
+        const names = getMidiTransformNames();
+        expect(names.length).toBeGreaterThan(0);
+        expect(getMidiTransformDescriptors().map((descriptor) => descriptor.name)).toEqual([...names]);
+        expect(names.filter((name) => getMidiTransform(name) === undefined)).toEqual([]);
+    });
+
     it('probes OPFS for RAVE model weights exactly once as a non-blocking boot step', () => {
         // Without this call raveStore.models stays empty forever, which would
         // withhold the RAVE palette entries permanently rather than gating them
         // on real model presence.
-        expect(initRaveModelsMock).toHaveBeenCalledExactlyOnceWith();
+        expect(raveModelBootCalls).toEqual([[]]);
     });
 });

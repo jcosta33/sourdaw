@@ -13,6 +13,11 @@ vi.mock('#/modules/Command/useCases', () => ({
         dispatched.push(action);
         return Promise.resolve({ status: 'ok' });
     },
+    REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
+    isAppActionCommittedError: vi.fn(() => false),
+    pushUndoEntry: vi.fn(),
+    resetActionReplayAuthority: vi.fn(),
+    syncActionReplayMetadata: vi.fn(),
 }));
 
 const engineWrites: { name: string; value: number }[] = [];

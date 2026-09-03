@@ -217,11 +217,17 @@ export async function createPopSongTemplate(): Promise<void> {
             },
         ],
     });
+    // Instrument chain inlined from factory preset 'factory-faust-rhodes-ambient' (faustInstrumentPresets).
     const rhodes = createInstrumentTrack({
         name: 'Rhodes',
         parentId: rhythmFolder.id,
-        deviceType: 'factory-faust-rhodes-ambient',
-        deviceName: 'Rhodes',
+        deviceType: 'faust-rhodes',
+        deviceName: 'Ambient Rhodes',
+        deviceParams: { brightness: 0.2, body_decay: 4.0, bell_decay: 0.05, gain: 0.35 },
+        extraDevices: [
+            { type: 'faust-zita-rev1-reverb', name: 'Ambient', params: { decay_time: 8, damping: 6000, dry_wet: 0.6 } },
+            { type: 'faust-tape-delay', name: 'Delay', params: { delay: 0.5, feedback: 0.4, dry_wet: 0.25 } },
+        ],
     });
     addSend({ from: rhythmGtr, to: reverbShort, level: 0.25 });
     addSend({ from: rhodes, to: reverbShort, level: 0.3 });
@@ -249,10 +255,38 @@ export async function createPopSongTemplate(): Promise<void> {
     addSend({ from: leadVocal, to: tapeDelay, level: 0.2 });
     addSend({ from: backupVocal, to: reverbLong, level: 0.3 });
 
+    // Instrument chain inlined from factory preset 'factory-pad-warm' (padPresets).
     const pad = createInstrumentTrack({
         name: 'Pad',
-        deviceType: 'factory-pad-warm',
+        deviceType: 'builtin-synth',
         deviceName: 'Warm Pad',
+        deviceParams: {
+            waveform: 2,
+            attack: 0.5,
+            decay: 0.5,
+            sustain: 0.8,
+            release: 2.0,
+            filterCutoff: 2000,
+            filterResonance: 0.5,
+            filterType: 0,
+            detune: 5,
+            gain: 0.25,
+            osc2Waveform: 2,
+            osc2Mix: 0.5,
+            osc2Detune: 7,
+            noiseLevel: 0.05,
+            stereoSpread: 0.7,
+            vibratoRate: 3.5,
+            vibratoDepth: 8,
+            vibratoDelay: 1.0,
+        },
+        extraDevices: [
+            {
+                type: 'builtin-reverb',
+                name: 'Reverb',
+                params: { 'rev-size': 0.8, 'rev-decay': 5, 'rev-damping': 0.4, 'rev-mix': 0.5 },
+            },
+        ],
     });
     addSend({ from: pad, to: reverbLong, level: 0.4 });
     addDeviceChain(pad, [

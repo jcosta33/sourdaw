@@ -42,6 +42,9 @@ import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
 
 import {
+    AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+    ambiguousSameObjectDivergence,
+    ambiguousSameObjectDivergenceMessage,
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
@@ -694,12 +697,9 @@ describe('mix prompt workflow', () => {
         expect(terminalMessage?.content).not.toContain('Outcome: committed');
     });
 
-    // The edit below changes the exact pan guard this proposal names, but the
-    // status, reason and receipt asserted here are what *any* project change
-    // after the proposal produces — a collaborator edit elsewhere reaches the
-    // same terminal state through the same code path. This test therefore pins
-    // the project-changed disposition, not target-conflict detection; that the
-    // two are indistinguishable is the production defect filed as #2894.
+    // The edit below changes the exact pan guard this proposal names, so the divergence port
+    // classifies it against that target rather than reporting a bare "the project changed": the
+    // status, the named target and the repair candidate are all specific to the conflicted track.
     it('leaves no runtime effect or history residue when the project changes before confirmation', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
@@ -719,7 +719,8 @@ describe('mix prompt workflow', () => {
 
         expect(result).toEqual({
             status: 'invalidated',
-            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+            reason: AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+            divergence: ambiguousSameObjectDivergence(['track-guitar-left']),
         });
         expect(runtimeMocks.setTrackGain).not.toHaveBeenCalled();
         expect(runtimeMocks.setTrackPan).not.toHaveBeenCalled();
@@ -734,9 +735,7 @@ describe('mix prompt workflow', () => {
         expect(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmation.id)
                 ?.content
-        ).toBe(
-            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
-        );
+        ).toBe(ambiguousSameObjectDivergenceMessage(['track-guitar-left']));
     });
 
     it.each(['write', 'touch', 'latch'] as const)(

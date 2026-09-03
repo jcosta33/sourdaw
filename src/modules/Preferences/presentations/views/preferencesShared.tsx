@@ -63,6 +63,8 @@ export const ToggleRow = ({
 
 // ── VoiceKeyEditor ────────────────────────────────────────────────────
 
+const VOICE_KEY_IDLE_HINT = 'Click to change — hold to activate voice input';
+
 export const VoiceKeyEditor = ({
     currentKey,
     onChange,
@@ -95,13 +97,19 @@ export const VoiceKeyEditor = ({
                 <CaptureKeyButton
                     ref={ref}
                     listening={listening}
+                    // The visible hint is a sibling span, so the button's own
+                    // accessible name must carry it: assistive tech (and the
+                    // display-scale E2E) address this control by that hint.
+                    aria-label={
+                        listening ? undefined : `Voice command key ${currentKey.toUpperCase()} — ${VOICE_KEY_IDLE_HINT}`
+                    }
                     className="px-3 py-1.5 text-xs"
                     onClick={() => setListening(true)}
                 >
                     {listening ? 'Press a key...' : currentKey.toUpperCase()}
                 </CaptureKeyButton>
                 <span className="text-[10px] text-muted-foreground">
-                    {listening ? 'Listening for keypress' : 'Click to change — hold to activate voice input'}
+                    {listening ? 'Listening for keypress' : VOICE_KEY_IDLE_HINT}
                 </span>
             </Row>
         </FieldGroup>

@@ -11,6 +11,8 @@ import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/C
 import {
     clearUndoHistory,
     commandBatchPreflightPort,
+    commandProjectRevisionPort,
+    configureCommandBatchIdempotency,
     executeAppAction,
     redo,
     resetActionReplayAuthority,
@@ -63,6 +65,8 @@ const mocks = vi.hoisted(() => {
     const backend: { value: 'cloud' | 'webllm' } = { value: 'webllm' };
     return {
         backend,
+        analyzeMixFromTrackLayout: vi.fn(),
+        summarizeFeatures: vi.fn(),
         stageDurableAsset:
             vi.fn<(file: File, name: string, leaseId: string) => Promise<{ hash: string; leaseId: string }>>(),
         commitDurablePromotionRecovery: vi.fn().mockResolvedValue({ status: 'committed' }),
@@ -139,7 +143,14 @@ vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({
     isWebLlmLoaded: () => true,
 }));
 
-vi.mock('#/modules/AudioAnalysis/useCases', () => ({ detectTempo: mocks.detectTempo }));
+// An exhaustive factory has to cover every name this spec's module graph reads from the barrel, not
+// only the ones the spec drives. The mentor lesson generator binds `analyzeMixFromTrackLayout` while
+// its module evaluates, so omitting it fails the whole file at import rather than at a call.
+vi.mock('#/modules/AudioAnalysis/useCases', () => ({
+    analyzeMixFromTrackLayout: mocks.analyzeMixFromTrackLayout,
+    detectTempo: mocks.detectTempo,
+    summarizeFeatures: mocks.summarizeFeatures,
+}));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
@@ -564,6 +575,21 @@ describe('stem import and starting mix workflow', () => {
         mocks.backend.value = 'webllm';
         mocks.executeBatchError.value = null;
         vi.stubGlobal('fetch', mocks.fetch);
+        // jsdom has no navigator.locks; the durable project checkpoint is
+        // written under that lock.
+        vi.stubGlobal('navigator', {
+            ...navigator,
+            locks: {
+                request: (_name: string, _options: LockOptions, task: () => unknown) => Promise.resolve(task()),
+            },
+        });
+        // Production shape, from `src/app/bootstrap.ts`. Only a batch executed
+        // under the durable idempotency ledger reaches a project checkpoint, and
+        // only a configured revision provider can expose that checkpoint's exact
+        // revision — which the confirmation path requires before it may report a
+        // clean commit.
+        configureCommandBatchIdempotency({ canExecute: () => true });
+        commandProjectRevisionPort.setProvider(captureProjectRevision);
         await cloudSession.clear();
         await cloudSession.replace_runtime({
             provider: 'openai-compatible',
@@ -635,7 +661,9 @@ describe('stem import and starting mix workflow', () => {
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         transportStore.set({ ...defaultTransportState });
         configureAutomergeStoragePort(null);
+        commandProjectRevisionPort.setProvider(null);
         removeCrdtDoc('root');
+        localStorage.removeItem('sourdaw:command-batch-idempotency:v1');
         vi.unstubAllGlobals();
     });
 

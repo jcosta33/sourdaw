@@ -153,6 +153,16 @@ impl OutputStage {
         }
     }
 
+    /// Return to the state `new` leaves behind.
+    ///
+    /// A whole-struct rewrite rather than a field walk, because this stage owns
+    /// no heap buffer: four one-pole states and a ratio, so rebuilding it is
+    /// both exact and allocation-free. An engine's `reset` calls this while it
+    /// is being selected on the audio thread.
+    pub fn reset(&mut self) {
+        *self = Self::new(self.sample_rate);
+    }
+
     /// Set the mid/side ratio. Called from a stereo engine's own `"width"` arm.
     pub fn set_width(&mut self, value: f32) {
         self.width = value.clamp(WIDTH_RANGE.0, WIDTH_RANGE.1);

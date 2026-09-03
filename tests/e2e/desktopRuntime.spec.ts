@@ -133,6 +133,15 @@ test('launches a project through the window.sourdaw desktop-runtime contract', a
                 isMaximized: () => Promise.resolve(false),
                 listenMaximized: () => () => undefined,
             },
+            nativeMenu: {
+                listen: () => () => undefined,
+                projectState: () => Promise.resolve(),
+                saveResult: () => Promise.resolve(),
+                listenSessionQuiesce: () => () => undefined,
+                listenSessionQuiesceCancel: () => () => undefined,
+                sessionQuiesced: () => Promise.resolve(),
+                sessionQuiesceStarted: () => Promise.resolve(true),
+            },
         };
 
         Reflect.set(window, '__SOURDAW_BRIDGE_CALLS__', calls);

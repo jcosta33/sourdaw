@@ -149,7 +149,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
 
     // ── Idle: model selector + load button ─────────────────────────────────
     if (status.state === 'idle') {
-        const renderIife_3 = () =>
+        const loadButtonLabel = (): string =>
             `Download & Load ${WEBLLM_MODELS.find((message) => message.id === selectedModelId)?.displayName ?? 'Model'}`;
 
         return (
@@ -229,7 +229,7 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                                         }}
                                     >
                                         <HardDrive className="size-3 mr-1.5" aria-hidden="true" />
-                                        {renderIife_3()}
+                                        {loadButtonLabel()}
                                     </Button>
                                 </>
                             )}

@@ -1,4 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { createServer as createHttpServer, STATUS_CODES, type IncomingMessage, type ServerResponse } from 'node:http';
+import { createServer as createHttpsServer } from 'node:https';
 import { performance } from 'node:perf_hooks';
 
 import { WebSocketServer, WebSocket, type RawData, type VerifyClientCallbackAsync } from 'ws';
@@ -15,10 +18,19 @@ type Session = {
     id: string;
     peers: Map<string, Peer>;
     hostId: string;
+    /**
+     * The capability that admits a peer to this room, minted by whoever created
+     * the session and carried in the invite. It is what separates knowing a
+     * session id from being allowed into the session: without it, the first
+     * socket to name an unused id becomes that room's host, and any
+     * relay-authenticated client can squat or read a room it was never invited
+     * to.
+     */
+    secret: string;
 };
 
 type ClientMessage =
-    | { type: 'join'; peerId: string; sessionId: string; name: string }
+    | { type: 'join'; peerId: string; sessionId: string; name: string; sessionSecret: string }
     | { type: 'leave'; peerId: string; sessionId: string }
     | { type: 'action'; peerId: string; sessionId: string; action: unknown; timestamp: number }
     | { type: 'cursor'; peerId: string; sessionId: string; cursor: { trackId: string; beat: number } }
@@ -44,6 +56,13 @@ type ServerMessage =
     | { type: 'error'; message: string };
 
 type JsonObject = { [key: string]: unknown };
+
+/**
+ * Ceiling for every client-supplied identifier, measured in bytes rather than
+ * characters so a multi-byte string cannot smuggle past a code-unit count.
+ * Identifiers become Map keys, so an unbounded one is memory a client controls.
+ */
+const MAX_IDENTIFIER_BYTES = 128;
 
 const sessions = new Map<string, Session>();
 const peerToSession = new Map<WebSocket, Peer>();
@@ -77,8 +96,59 @@ function readAuthToken(): string {
     return token;
 }
 
+type TlsMaterial = { cert: Buffer; key: Buffer };
+
+function readTlsMaterial(): TlsMaterial | null {
+    const certPath = process.env.COLLAB_TLS_CERT?.trim();
+    const keyPath = process.env.COLLAB_TLS_KEY?.trim();
+    if (!certPath && !keyPath) {
+        return null;
+    }
+
+    if (!certPath || !keyPath) {
+        console.error('Invalid TLS configuration: COLLAB_TLS_CERT and COLLAB_TLS_KEY must both be set');
+        process.exit(1);
+    }
+
+    try {
+        return { cert: readFileSync(certPath), key: readFileSync(keyPath) };
+    } catch {
+        console.error('Invalid TLS configuration: COLLAB_TLS_CERT and COLLAB_TLS_KEY must name readable PEM files');
+        process.exit(1);
+    }
+}
+
+function isLoopbackHost(host: string): boolean {
+    if (host === 'localhost' || host === '::1' || host === '[::1]') {
+        return true;
+    }
+
+    return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
+}
+
+/**
+ * A relay carries the whole project document in cleartext frames. Reaching one
+ * over a non-loopback address without TLS puts that document, and the auth
+ * token the client sends as a subprotocol, on the wire for anyone on the path,
+ * so the operator has to say which of the two they meant.
+ */
+function requireTransportSecurity(input: { host: string; tls: TlsMaterial | null }): void {
+    if (input.tls !== null || isLoopbackHost(input.host) || process.env.COLLAB_ALLOW_CLEARTEXT === '1') {
+        return;
+    }
+
+    console.error(
+        `Refusing to serve cleartext on non-loopback COLLAB_HOST ${input.host}: ` +
+            'set COLLAB_TLS_CERT and COLLAB_TLS_KEY to serve over TLS, ' +
+            'or set COLLAB_ALLOW_CLEARTEXT=1 to accept an unencrypted bind'
+    );
+    process.exit(1);
+}
+
 const AUTH_TOKEN = readAuthToken();
 const HOST = process.env.COLLAB_HOST?.trim() || '127.0.0.1';
+const TLS = readTlsMaterial();
+requireTransportSecurity({ host: HOST, tls: TLS });
 const PORT = readIntegerEnv({ name: 'PORT', fallback: 8787, min: 1, max: 65_535 });
 const HEARTBEAT_MS = readIntegerEnv({ name: 'COLLAB_HEARTBEAT_MS', fallback: 30_000, min: 10, max: 300_000 });
 const MAX_PAYLOAD_BYTES = readIntegerEnv({
@@ -120,6 +190,12 @@ const RATE_LIMIT_BYTES_PER_SECOND = readIntegerEnv({
     max: 256 * 1024 * 1024,
 });
 
+function matchesSecret(expectedSecret: string, providedSecret: string): boolean {
+    const expected = Buffer.from(expectedSecret);
+    const provided = Buffer.from(providedSecret);
+    return expected.length === provided.length && timingSafeEqual(expected, provided);
+}
+
 function isAuthorized(protocolHeader: string | string[] | undefined): boolean {
     if (typeof protocolHeader !== 'string') {
         return false;
@@ -130,10 +206,7 @@ function isAuthorized(protocolHeader: string | string[] | undefined): boolean {
         return false;
     }
 
-    const providedToken = protocols[1];
-    const expected = Buffer.from(AUTH_TOKEN);
-    const provided = Buffer.from(providedToken);
-    return expected.length === provided.length && timingSafeEqual(expected, provided);
+    return matchesSecret(AUTH_TOKEN, protocols[1]);
 }
 
 const verifyClient: VerifyClientCallbackAsync = ({ req }, done) => {
@@ -232,15 +305,28 @@ function get_number_field(input: { object_value: JsonObject; key: string }): num
     return value;
 }
 
+function get_identifier_field(input: { object_value: JsonObject; key: string }): string | null {
+    const value = get_string_field(input);
+    if (value === null) {
+        return null;
+    }
+
+    if (Buffer.byteLength(value) > MAX_IDENTIFIER_BYTES) {
+        return null;
+    }
+
+    return value;
+}
+
 type GetPeerFieldsOutput = { peerId: string; sessionId: string } | null;
 
 function get_peer_fields(object_value: JsonObject): GetPeerFieldsOutput {
-    const peerId = get_string_field({ object_value, key: 'peerId' });
+    const peerId = get_identifier_field({ object_value, key: 'peerId' });
     if (peerId === null) {
         return null;
     }
 
-    const sessionId = get_string_field({ object_value, key: 'sessionId' });
+    const sessionId = get_identifier_field({ object_value, key: 'sessionId' });
     if (sessionId === null) {
         return null;
     }
@@ -286,12 +372,19 @@ function parse_client_message(value: unknown): ParseClientMessageOutput {
     }
 
     if (type === 'join') {
-        const name = get_string_field({ object_value: value, key: 'name' });
+        const name = get_identifier_field({ object_value: value, key: 'name' });
         if (name === null) {
             return null;
         }
 
-        return { type, peerId: peer_fields.peerId, sessionId: peer_fields.sessionId, name };
+        // No secret, no join — that refusal is also what stops a client from
+        // creating a room nobody else could ever be admitted to.
+        const sessionSecret = get_identifier_field({ object_value: value, key: 'sessionSecret' });
+        if (sessionSecret === null) {
+            return null;
+        }
+
+        return { type, peerId: peer_fields.peerId, sessionId: peer_fields.sessionId, name, sessionSecret };
     }
 
     if (type === 'leave') {
@@ -331,7 +424,7 @@ function parse_client_message(value: unknown): ParseClientMessageOutput {
     }
 
     if (type === 'sync-response') {
-        const targetPeerId = get_string_field({ object_value: value, key: 'targetPeerId' });
+        const targetPeerId = get_identifier_field({ object_value: value, key: 'targetPeerId' });
         if (targetPeerId === null) {
             return null;
         }
@@ -460,6 +553,15 @@ function handleJoin(ws: WebSocket, msg: Extract<ClientMessage, { type: 'join' }>
     }
 
     let session = sessions.get(msg.sessionId);
+    // Ahead of every other check, so a caller holding no capability for this
+    // room learns nothing about it — not whether a peer id is taken, not
+    // whether it is full.
+    if (session && !matchesSecret(session.secret, msg.sessionSecret)) {
+        sendTo(ws, { type: 'error', message: 'Unauthorized' });
+        ws.close(1008, 'Unauthorized');
+        return;
+    }
+
     if (session?.peers.has(msg.peerId)) {
         sendTo(ws, { type: 'error', message: 'Peer ID already in use' });
         return;
@@ -478,7 +580,7 @@ function handleJoin(ws: WebSocket, msg: Extract<ClientMessage, { type: 'join' }>
     const isHost = !session;
 
     if (!session) {
-        session = { id: msg.sessionId, peers: new Map(), hostId: msg.peerId };
+        session = { id: msg.sessionId, peers: new Map(), hostId: msg.peerId, secret: msg.sessionSecret };
         sessions.set(msg.sessionId, session);
         console.log(`Session created: ${msg.sessionId}`);
     }
@@ -658,11 +760,28 @@ function handleMessage(ws: WebSocket, raw: string): void {
     }
 }
 
+const UPGRADE_REQUIRED_BODY = STATUS_CODES[426] ?? 'Upgrade Required';
+
+/**
+ * Only the WebSocket upgrade is served. A plain request left unanswered would
+ * hold its socket open, so answer it the same way `ws`'s own bundled server
+ * does when it owns the port.
+ */
+function respondUpgradeRequired(_request: IncomingMessage, response: ServerResponse): void {
+    response.writeHead(426, {
+        'Content-Length': Buffer.byteLength(UPGRADE_REQUIRED_BODY),
+        'Content-Type': 'text/plain',
+    });
+    response.end(UPGRADE_REQUIRED_BODY);
+}
+
+const httpServer =
+    TLS === null ? createHttpServer(respondUpgradeRequired) : createHttpsServer(TLS, respondUpgradeRequired);
+
 const wss = new WebSocketServer({
     handleProtocols: selectProtocol,
-    host: HOST,
     maxPayload: MAX_PAYLOAD_BYTES,
-    port: PORT,
+    server: httpServer,
     verifyClient,
 });
 
@@ -736,6 +855,8 @@ const heartbeat = setInterval(() => {
     }
 }, HEARTBEAT_MS);
 
+// `ws` forwards the attached server's `listening` and `error` events onto the
+// WebSocketServer, so both stay observed here rather than on `httpServer`.
 wss.on('close', () => {
     clearInterval(heartbeat);
 });
@@ -746,5 +867,7 @@ wss.on('error', (error: NodeJS.ErrnoException) => {
 });
 
 wss.on('listening', () => {
-    console.log(`Sourdaw Collaboration Server running on ws://${HOST}:${PORT}`);
+    console.log(`Sourdaw Collaboration Server running on ${TLS === null ? 'ws' : 'wss'}://${HOST}:${PORT}`);
 });
+
+httpServer.listen(PORT, HOST);

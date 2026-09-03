@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type captureUndoHistory } from '#/modules/Command/useCases';
+
 import { switchBranch } from '../switchBranch';
+
+// Derived from the public callable's own return type rather than importing
+// Command's private UndoEntry model across the module boundary.
+type UndoSnapshot = ReturnType<typeof captureUndoHistory>;
+type UndoSnapshotEntry = UndoSnapshot['past'][number];
 
 const ROOT_LIVE_DOC = { tag: 'root-live' };
 const FEATURE_SNAPSHOT = { tag: 'feature-snap' };
@@ -15,6 +22,9 @@ const mocks = vi.hoisted(() => ({
     insertDoc: vi.fn(),
     replaceDoc: vi.fn(),
     removeDoc: vi.fn(),
+    clearUndoHistory: vi.fn(),
+    captureUndoHistory: vi.fn<() => UndoSnapshot>(() => ({ past: [], future: [] })),
+    restoreUndoHistory: vi.fn(),
     storeValue: {
         branches: [
             { branchId: 'main', rootDocId: 'root' },
@@ -60,6 +70,11 @@ vi.mock('../../compactProject', () => ({ compactProject: mocks.compactProject })
 vi.mock('../../loadCrdtProject', () => ({ loadCrdtProject: mocks.loadCrdtProject }));
 vi.mock('../../runCrdtPersistenceOperation', () => ({
     runCrdtPersistenceOperation: mocks.runCrdtPersistenceOperation,
+}));
+vi.mock('#/modules/Command/useCases', () => ({
+    clearUndoHistory: mocks.clearUndoHistory,
+    captureUndoHistory: mocks.captureUndoHistory,
+    restoreUndoHistory: mocks.restoreUndoHistory,
 }));
 
 describe('switchBranch', () => {
@@ -157,10 +172,59 @@ describe('switchBranch', () => {
         expect(docs.branch_feat).toEqual(FEATURE_SNAPSHOT);
     });
 
+    it('restores the undo history captured before the swap when the transition rejects', async () => {
+        const persistenceFailure = new Error('compaction failed');
+        mocks.compactProject.mockRejectedValueOnce(persistenceFailure);
+        const preSwitchEntry: UndoSnapshotEntry = {
+            id: 'undo-1',
+            kind: 'callback',
+            label: 'Move clip',
+            timestamp: 1,
+            source: 'manual',
+            undo: () => {},
+            redo: () => undefined,
+        };
+        const preSwitchSnapshot: UndoSnapshot = { past: [preSwitchEntry], future: [] };
+        mocks.captureUndoHistory.mockReturnValueOnce(preSwitchSnapshot);
+
+        await expect(switchBranch('other')).rejects.toBe(persistenceFailure);
+
+        // `apply()` clears undo history as a side effect of swapping the root
+        // document; a rejected transition must restore the exact object capture
+        // returned before the swap — not a structurally-equal stand-in, and not
+        // a snapshot taken after clearUndoHistory() has already run.
+        expect(mocks.captureUndoHistory).toHaveBeenCalledOnce();
+        expect(mocks.restoreUndoHistory.mock.calls[0]?.[0]).toBe(preSwitchSnapshot);
+
+        const captureOrder = mocks.captureUndoHistory.mock.invocationCallOrder[0];
+        const clearOrder = mocks.clearUndoHistory.mock.invocationCallOrder[0];
+        if (captureOrder === undefined || clearOrder === undefined) {
+            throw new Error('Expected both captureUndoHistory and clearUndoHistory to have been invoked');
+        }
+        expect(captureOrder).toBeLessThan(clearOrder);
+    });
+
+    it('does not restore undo history when the switch succeeds', async () => {
+        await switchBranch('other');
+        expect(mocks.restoreUndoHistory).not.toHaveBeenCalled();
+    });
+
+    it('clears undo history when the root document is swapped', async () => {
+        await switchBranch('other');
+
+        // The undo stack's inverse entries are recorded against the outgoing
+        // branch's root document; once the root slot is swapped to another
+        // branch's document, replaying them would apply an inverse recorded
+        // against a document that is no longer active. Same reasoning as
+        // switchArrangement clearing undo history on snapshot load.
+        expect(mocks.clearUndoHistory).toHaveBeenCalledOnce();
+    });
+
     it('is a no-op when switching to the already-active branch', async () => {
         await switchBranch('feat');
         expect(mocks.replaceDoc).not.toHaveBeenCalled();
         expect(mocks.storeSet).not.toHaveBeenCalled();
+        expect(mocks.clearUndoHistory).not.toHaveBeenCalled();
     });
 
     it('rejects when the target branch does not exist', async () => {

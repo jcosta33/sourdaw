@@ -38,6 +38,9 @@ import { logger } from '#/infra/logger/appLogger';
 import { type EngineTransportPosition } from '../../models/EngineTransportPosition';
 import { getEngineTransportPosition } from '../../repositories/engineTransport/getEngineTransportPosition';
 
+import { nativeLiveAutomationWriter } from './nativeLiveAutomationWriterState';
+import { pumpNativeLiveAutomationWriter } from './pumpNativeLiveAutomationWriter';
+
 /** The scheduler id this feed registers its per-frame poll under. */
 export const NATIVE_ENGINE_PLAYHEAD_FEED_ID = 'audio-engine/native-engine-playhead';
 
@@ -62,6 +65,12 @@ export const nativeEnginePlayheadFeed: {
 /** Ask the engine where it is, unless this run's previous ask is unanswered. */
 export function pollNativeEnginePlayheadOnce(): void {
     const epoch = nativeEnginePlayheadFeed.epoch;
+    // The pass this read belongs to. A locate or a loop edit re-arms the writer
+    // without touching this feed's own run, so the feed's epoch alone cannot
+    // tell a reading of the world the new pass lives in from one of the world
+    // it replaced — and a reading of the old one would window the new pass at
+    // the position the musician just left.
+    const writerEpoch = nativeLiveAutomationWriter.epoch;
     // Only this run's own unanswered request holds the line. A request left
     // behind by an earlier run must not make this run skip its first frame.
     if (nativeEnginePlayheadFeed.inFlightEpoch === epoch) {
@@ -73,9 +82,24 @@ export function pollNativeEnginePlayheadOnce(): void {
             // A reading that lands after its own run ended belongs to a session
             // that is over; keeping it would let the next session start on a
             // stale position.
-            if (nativeEnginePlayheadFeed.epoch === epoch && nativeEnginePlayheadFeed.running) {
-                nativeEnginePlayheadFeed.reading = reading;
+            if (nativeEnginePlayheadFeed.epoch !== epoch || !nativeEnginePlayheadFeed.running) {
+                return;
             }
+            nativeEnginePlayheadFeed.reading = reading;
+            if (!reading.playing) {
+                return;
+            }
+            // The progress tick is also the automation writer's clock. It is
+            // the cadence `crates/sourdaw-native/src/commands/graph.rs` names
+            // when it leaves the per-pass re-arm to this side: the snapshot
+            // carries both the position the next window is measured from and
+            // the wrap count that says a loop seam closed.
+            void pumpNativeLiveAutomationWriter({
+                positionSeconds: reading.positionSeconds,
+                loopWraps: reading.loopWraps,
+                batchesApplied: reading.batchesApplied,
+                writerEpoch,
+            });
         })
         .catch((error: unknown) => {
             // A refused poll is not a reason to stop polling: the engine mutex

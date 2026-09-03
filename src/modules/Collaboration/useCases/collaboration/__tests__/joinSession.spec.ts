@@ -28,7 +28,7 @@ const mockRuntime = vi.hoisted(() => ({
     pickPeerColor: vi.fn<(excludeColors: string[]) => string>(),
     compressInvite: vi.fn<(json: string) => Promise<string>>(),
     decompressInvite: vi.fn<(raw: string) => Promise<string>>(),
-    state: { peerManager: null },
+    state: { peerManager: null, sessionSecret: null as string | null },
 }));
 
 vi.mock('../sessionManagement', () => ({ sessionRuntimePrimitives: mockRuntime }));
@@ -46,6 +46,7 @@ function makeOffer(overrides: Partial<Offer> = {}): Offer {
         sessionId: 'session-1',
         sdp: 'fake-offer-sdp',
         pendingPeerId: 'joiner-1',
+        sessionSecret: 'room-secret-1',
         ...overrides,
     };
 }
@@ -69,6 +70,7 @@ describe('joinSession', () => {
             quarantinedPeerIds: [],
         });
 
+        mockRuntime.state.sessionSecret = null;
         acceptOffer = vi.fn().mockResolvedValue('fake-answer-sdp');
         createPeer = vi.fn().mockReturnValue({ acceptOffer });
         mockRuntime.initialize.mockReturnValue({ createPeer } as unknown as PeerConnectionManager);
@@ -221,6 +223,7 @@ describe('joinSession', () => {
                 isConnected: false,
                 lastSeen: expect.any(Number),
                 latencyMs: null,
+                syncHealth: 'converging',
             },
         ]);
     });
@@ -249,6 +252,24 @@ describe('joinSession', () => {
         const sentJson = mockRuntime.compressInvite.mock.calls[0]![0];
         const answer = JSON.parse(sentJson) as SignalingMessage;
         expect(answer).toMatchObject({ type: 'answer', peerId: 'joiner-slot-9', pendingPeerId: 'joiner-slot-9' });
+    });
+
+    it('adopts the room secret carried by the invite', async () => {
+        const offer = makeOffer({ sessionSecret: 'room-secret-42' });
+        mockRuntime.decompressInvite.mockResolvedValueOnce(JSON.stringify(offer));
+
+        await joinSession('invite', 'Alice');
+
+        expect(mockRuntime.state.sessionSecret).toBe('room-secret-42');
+    });
+
+    it('holds no room secret for a legacy invite that predates one', async () => {
+        const { sessionSecret: _omitted, ...legacyOffer } = makeOffer();
+        mockRuntime.decompressInvite.mockResolvedValueOnce(JSON.stringify(legacyOffer));
+
+        await joinSession('invite', 'Alice');
+
+        expect(mockRuntime.state.sessionSecret).toBeNull();
     });
 
     it('falls back to a self-minted id for legacy invites without pendingPeerId', async () => {

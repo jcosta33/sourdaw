@@ -6,15 +6,21 @@ import {
     getAudioContext,
     setMasterGainValue,
     resumeEngine,
+    syncNativeTimelineSamples,
 } from '#/modules/AudioEngine/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
 import { initWebMidi } from '#/modules/MIDI/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { projectStore } from '#/modules/Project/stores';
-import { loadProject, saveProject } from '#/modules/Project/useCases';
+import {
+    loadProject,
+    reportProjectLoadFailure,
+    saveProject,
+    whenProjectIdentityTransitionDependenciesConfigured,
+} from '#/modules/Project/useCases';
 import { restoreLibrary, seedFactoryLibrary } from '#/modules/SampleLibrary/useCases';
 import { registerProSynthInstruments } from '#/modules/Synth/useCases';
-import { ensureTrackStrips, getTransportState } from '#/modules/Transport/useCases';
+import { ensureTrackStrips, getTransportState, syncTransportMapsToNativeSession } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 const FIRST_LOAD_HINT_KEY = 'wd:first-load-hint-shown';
@@ -22,21 +28,34 @@ const FIRST_LOAD_HINT_DELAY_MS = 3000;
 
 export const useAppInitialization = (): void => {
     useEffect(() => {
-        // syncKneadToEngine subscribes to the knead/track stores and returns an
-        // unsubscribe. It is created inside the async boot sequence, so we hold it
-        // in a closure and tear it down on cleanup. `disposed` covers the race
-        // where the effect unmounts before the async work registers the
-        // subscription — in that case we unsubscribe as soon as it lands.
+        // syncKneadToEngine, syncTransportMapsToNativeSession and
+        // syncNativeTimelineSamples each subscribe to a store and return an
+        // unsubscribe. All are created inside the async boot sequence, so we
+        // hold them in a closure and tear them down on cleanup. `disposed`
+        // covers the race where the effect unmounts before the async work
+        // registers the subscriptions — in that case we unsubscribe as soon as
+        // they land.
         let unsubscribeKnead: (() => void) | null = null;
+        let unsubscribeTransportMaps: (() => void) | null = null;
+        let unsubscribeTimelineSamples: (() => void) | null = null;
         let disposed = false;
 
         void (async () => {
             try {
                 await initializeAudioEngine();
                 unsubscribeKnead = syncKneadToEngine();
+                unsubscribeTransportMaps = syncTransportMapsToNativeSession();
+                // Subscribed before `loadProject`, so the project's material
+                // reaches the native sample pool as it lands rather than at
+                // the first play gesture (#3068).
+                unsubscribeTimelineSamples = syncNativeTimelineSamples();
                 if (disposed) {
                     unsubscribeKnead();
                     unsubscribeKnead = null;
+                    unsubscribeTransportMaps();
+                    unsubscribeTransportMaps = null;
+                    unsubscribeTimelineSamples();
+                    unsubscribeTimelineSamples = null;
                 }
                 const transport = getTransportState();
                 if (transport) {
@@ -45,11 +64,20 @@ export const useAppInitialization = (): void => {
                 void initWebMidi();
                 registerProSynthInstruments();
 
+                await whenProjectIdentityTransitionDependenciesConfigured();
+                if (disposed) {
+                    return;
+                }
                 await loadProject();
                 ensureTrackStrips();
             } catch (error) {
                 logger.error(new Error('App initialization failed', { cause: error }));
-                notifyUser('App failed to load — please reload the page.', 'error');
+                const message = 'App failed to load — please reload the page.';
+                notifyUser(message, 'error');
+                reportProjectLoadFailure({
+                    message,
+                    projectName: projectStore.value?.name ?? 'Untitled Project',
+                });
             }
         })();
 
@@ -58,6 +86,14 @@ export const useAppInitialization = (): void => {
             if (unsubscribeKnead) {
                 unsubscribeKnead();
                 unsubscribeKnead = null;
+            }
+            if (unsubscribeTransportMaps) {
+                unsubscribeTransportMaps();
+                unsubscribeTransportMaps = null;
+            }
+            if (unsubscribeTimelineSamples) {
+                unsubscribeTimelineSamples();
+                unsubscribeTimelineSamples = null;
             }
         };
     }, []);

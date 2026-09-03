@@ -9,6 +9,7 @@ import {
     markActionHistoryEntryReverted,
     mutateCrdtDoc,
     recordActionHistoryEntry,
+    recordActionHistoryEntries,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
 } from '#/modules/CrdtDocument/useCases';
@@ -16,11 +17,13 @@ import { chordTrackStore } from '#/modules/MIDI/stores';
 import { getChordTrackHandlers } from '#/modules/MIDI/useCases';
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
+import { hasActionReplayCapability } from '../../stores/actionReplayCapabilities';
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { setActionHistoryMetadataPort } from '../actionHistoryMetadataPort';
 import { clearActionHistory } from '../clearActionHistory';
 import { clearUndoHistory } from '../clearUndoHistory';
 import { executeAppAction } from '../executeAppAction';
+import { executeAppActionBatch } from '../executeAppActionBatch';
 import { getActionReplayStatus } from '../getActionReplayStatus';
 import { resetActionReplayAuthority } from '../resetActionReplayAuthority';
 import { revertAction } from '../revertAction';
@@ -53,6 +56,7 @@ describe('Command action-history replay integration', () => {
         clearCrdtActionHistory();
         setActionHistoryMetadataPort({
             record: recordActionHistoryEntry,
+            recordBatch: recordActionHistoryEntries,
             markReverted: markActionHistoryEntryReverted,
             clear: clearCrdtActionHistory,
         });
@@ -140,6 +144,67 @@ describe('Command action-history replay integration', () => {
         recordActionHistoryEntry(second_entry);
 
         expect(getActionReplayStatus(second_entry_id)).toEqual({ status: 'unavailable' });
+    });
+
+    it('publishes every grouped metadata entry to the real history store in command order', async () => {
+        clearHandlerRegistry();
+        registerHandlerMap({
+            setSnapValue: {
+                describe: () => ({ label: 'Set snap value' }),
+                execute: () => undefined,
+                undoable: true,
+            },
+            togglePlayback: {
+                describe: () => ({ label: 'Toggle playback' }),
+                execute: () => undefined,
+                undoable: true,
+            },
+        });
+        await expect(
+            executeAppActionBatch([{ type: 'setSnapValue', payload: { value: 0.5 } }, { type: 'togglePlayback' }], {
+                groupId: 'group-metadata',
+                groupLabel: 'Grouped metadata',
+                source: 'ai',
+            })
+        ).resolves.toMatchObject({ status: 'committed' });
+
+        expect(actionHistoryStore.value?.entries).toMatchObject([
+            {
+                actionKind: 'setSnapValue',
+                groupId: 'group-metadata',
+                groupLabel: 'Grouped metadata',
+                source: 'ai',
+            },
+            {
+                actionKind: 'togglePlayback',
+                groupId: 'group-metadata',
+                groupLabel: 'Grouped metadata',
+                source: 'ai',
+            },
+        ]);
+    });
+
+    it('revokes replay authority for grouped entries evicted before capability registration', async () => {
+        unsubscribe_action_history?.();
+        unsubscribe_action_history = null;
+        const evictedReplayableEntryId = '00000000-0000-4000-8000-000000000020';
+        vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce(evictedReplayableEntryId);
+        const actions: SetSnapValueAction[] = Array.from({ length: 202 }, (_, value) => ({
+            type: 'setSnapValue',
+            payload: { value },
+        }));
+
+        await expect(
+            executeAppActionBatch(actions, {
+                groupId: 'group-crossing-history-bound',
+                groupLabel: 'Cross history bound',
+            })
+        ).resolves.toMatchObject({ status: 'committed' });
+
+        expect(actionHistoryStore.value?.entries).toHaveLength(200);
+        expect(actionHistoryStore.value?.entries.some(({ id }) => id === evictedReplayableEntryId)).toBe(false);
+        expect(hasActionReplayCapability(evictedReplayableEntryId)).toBe(false);
+        expect(getActionReplayStatus(evictedReplayableEntryId)).toEqual({ status: 'unavailable' });
     });
 
     it('conflicts rather than overwriting a later chord edit', async () => {

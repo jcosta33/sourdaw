@@ -7,6 +7,7 @@ import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { FADER_GAIN_RANGE_DESCRIPTION, FADER_MAX_GAIN_LABEL } from '#/utils/audioLevelLaw';
+import { ADD_NOTES_MAX_NOTES_PER_COMMAND, MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
 
 import { getAppActionExecutionPolicy } from '../getAppActionExecutionPolicy';
 import { getExecutableAppActionGroundingRules } from '../getExecutableAppActionGroundingRules';
@@ -73,6 +74,11 @@ const EXPECTED_COMMANDS = [
         {
             name: { type: 'string', description: 'Display name (e.g. "Kick", "Vocals", "Synth Pad")' },
             kind: { type: 'string', enum: ['audio', 'midi', 'folder'], description: 'Track type' },
+            binding: {
+                type: 'string',
+                pattern: '^[a-z][a-z0-9-]{0,63}$',
+                description: 'Optional plan-local name. Later calls may target this newly created track as $<binding>.',
+            },
         },
         ['name', 'kind'],
         'bounded-reversible',
@@ -109,6 +115,11 @@ const EXPECTED_COMMANDS = [
             startBeat: { type: 'number', minimum: 0, description: 'Non-negative absolute start beat' },
             endBeat: { type: 'number', minimum: 0, description: 'Absolute end beat, strictly after startBeat' },
             name: { type: 'string', description: 'Explicit clip name' },
+            binding: {
+                type: 'string',
+                pattern: '^[a-z][a-z0-9-]{0,63}$',
+                description: 'Optional plan-local name. Later calls may target this newly created clip as $<binding>.',
+            },
         },
         ['trackId', 'startBeat', 'endBeat', 'name'],
         'bounded-reversible',
@@ -390,6 +401,32 @@ const EXPECTED_COMMANDS = [
         ['clipId', 'targetBeats'],
         'broad-reversible',
         true
+    ),
+    expectedCommand(
+        'addNotes',
+        'Add one or more MIDI notes to one unlocked MIDI clip.',
+        {
+            clipId: { type: 'string' },
+            notes: {
+                type: 'array',
+                minItems: 1,
+                maxItems: ADD_NOTES_MAX_NOTES_PER_COMMAND,
+                items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: {
+                        pitch: { type: 'number', minimum: 0, maximum: 127 },
+                        startBeat: { type: 'number', minimum: 0 },
+                        duration: { type: 'number', minimum: MIDI_NOTE_MIN_DURATION_BEATS },
+                        velocity: { type: 'number', minimum: 1, maximum: 127 },
+                    },
+                    required: ['pitch', 'startBeat', 'duration'],
+                },
+            },
+        },
+        ['clipId', 'notes'],
+        'bounded-reversible',
+        false
     ),
     expectedCommand(
         'quantizeNotes',
@@ -1599,6 +1636,12 @@ const EXPECTED_GROUNDING = [
                 unit: 'beat-duration',
             },
         ],
+    },
+    {
+        actionType: 'addNotes',
+        intentPhrases: ['add notes', 'add midi notes'],
+        targetRules: [{ argument: 'clipId', capability: 'writable-midi-clip' }],
+        valueRules: [],
     },
     {
         actionType: 'quantizeNotes',

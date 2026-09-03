@@ -26,6 +26,10 @@ function sameReceipt(left: VerifiedBatchReceipt, right: VerifiedBatchReceipt): b
     return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function commandProjectRevisionIsCurrent(expectedProjectRevision: string): boolean {
+    return commandProjectRevisionPort.matchesLiveIgnoringCommandCheckpoint(expectedProjectRevision);
+}
+
 function getFinalizationAdmissionFailure(input: {
     expectedProjectRevision: string;
     validateRecoveredEffects?: () => string | null;
@@ -38,7 +42,7 @@ function getFinalizationAdmissionFailure(input: {
         };
     }
     try {
-        if (commandProjectRevisionPort.capture() !== input.expectedProjectRevision) {
+        if (!commandProjectRevisionIsCurrent(input.expectedProjectRevision)) {
             return {
                 status: 'failed',
                 disposition: 'manual-repair',
@@ -162,16 +166,6 @@ export async function finalizeRecoveredCommandBatchEffects(input: {
                 reason: 'The pending project checkpoint changed before finalization',
             };
         }
-        let currentProjectRevision: string;
-        try {
-            currentProjectRevision = commandProjectRevisionPort.capture();
-        } catch (error) {
-            return {
-                status: 'failed',
-                disposition: 'retryable',
-                reason: `The current project revision could not be verified: ${error instanceof Error ? error.message : String(error)}`,
-            };
-        }
         if (!commandBatchExecutionAuthorityPort.canExecute()) {
             return {
                 status: 'failed',
@@ -179,11 +173,19 @@ export async function finalizeRecoveredCommandBatchEffects(input: {
                 reason: 'Only the authoritative collaboration host can finalize recovery',
             };
         }
-        if (currentProjectRevision !== input.expectedProjectRevision) {
+        try {
+            if (!commandProjectRevisionIsCurrent(input.expectedProjectRevision)) {
+                return {
+                    status: 'failed',
+                    disposition: 'manual-repair',
+                    reason: 'The project changed before external-effect finalization',
+                };
+            }
+        } catch (error) {
             return {
                 status: 'failed',
-                disposition: 'manual-repair',
-                reason: 'The project changed before external-effect finalization',
+                disposition: 'retryable',
+                reason: `The current project revision could not be verified: ${error instanceof Error ? error.message : String(error)}`,
             };
         }
         const recoveredReceipt = createRecoveredVerifiedBatchReceipt({

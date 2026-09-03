@@ -15,10 +15,12 @@ function toApplied(response: unknown): EngineTransportMapsApplied | null {
     const sampleRate = payload.sampleRate;
     const tempoSegments = payload.tempoSegments;
     const timeSignatureSegments = payload.timeSignatureSegments;
+    const admittedBatch = payload.admittedBatch;
     if (
         typeof sampleRate !== 'number' ||
         typeof tempoSegments !== 'number' ||
-        typeof timeSignatureSegments !== 'number'
+        typeof timeSignatureSegments !== 'number' ||
+        typeof admittedBatch !== 'number'
     ) {
         return null;
     }
@@ -28,6 +30,7 @@ function toApplied(response: unknown): EngineTransportMapsApplied | null {
         tempoSegments,
         timeSignatureSegments,
         loopEnabled: payload.loopEnabled === true,
+        admittedBatch,
     };
 }
 

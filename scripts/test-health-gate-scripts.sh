@@ -178,7 +178,7 @@ fi
 SH
 chmod +x "$git_tip_bin/git"
 
-WORKFLOW_PATH="$repo_root/.github/workflows/health-gates.yml" VALIDATION_WORKFLOW_PATH="$repo_root/.github/workflows/validation.yml" HEAVY_WORKFLOW_PATH="$repo_root/.github/workflows/heavy-gates.yml" REPO_ROOT="$repo_root" TEST_TEMP_ROOT="$temp_root" FAKE_BIN="$fake_bin" GIT_TIP_BIN="$git_tip_bin" node --input-type=module <<'NODE'
+WORKFLOW_PATH="$repo_root/.github/workflows/health-gates.yml" VALIDATION_WORKFLOW_PATH="$repo_root/.github/workflows/validation.yml" HEAVY_WORKFLOW_PATH="$repo_root/.github/workflows/heavy-gates.yml" NIGHTLY_PATH="$repo_root/.github/workflows/nightly.yml" REPO_ROOT="$repo_root" TEST_TEMP_ROOT="$temp_root" FAKE_BIN="$fake_bin" GIT_TIP_BIN="$git_tip_bin" node --input-type=module <<'NODE'
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { parse } from 'yaml';
@@ -192,8 +192,10 @@ import { parse } from 'yaml';
 const workflow = parse(readFileSync(process.env.WORKFLOW_PATH, 'utf8'));
 const validationWorkflow = parse(readFileSync(process.env.VALIDATION_WORKFLOW_PATH, 'utf8'));
 const heavyWorkflow = parse(readFileSync(process.env.HEAVY_WORKFLOW_PATH, 'utf8'));
+const nightly = parse(readFileSync(process.env.NIGHTLY_PATH, 'utf8'));
 const gitleaksHelper = readFileSync(`${process.env.REPO_ROOT}/scripts/run-gitleaks-history-scan.sh`, 'utf8');
 const gitleaksConfig = readFileSync(`${process.env.REPO_ROOT}/.gitleaks.toml`, 'utf8');
+const gitleaksIgnore = readFileSync(`${process.env.REPO_ROOT}/.gitleaksignore`, 'utf8');
 const failures = [];
 
 function expect(condition, message) {
@@ -202,8 +204,42 @@ function expect(condition, message) {
     }
 }
 
+expect(
+    gitleaksIgnore ===
+        'd0778b1ccdc63a5734b5815b682c9ff1a1ac10bc:scripts/__tests__/resolveReviewThread.spec.ts:generic-api-key:3288\n' +
+            'd0778b1ccdc63a5734b5815b682c9ff1a1ac10bc:scripts/__tests__/resolveReviewThread.spec.ts:generic-api-key:3355\n',
+    '.gitleaksignore must contain exactly the two approved resolver-test fingerprints'
+);
+
+function expectNightlyDoesNotMintGate(jobs) {
+    expect(jobs?.gate === undefined, 'nightly must not mint Gate');
+    for (const [jobId, job] of Object.entries(jobs ?? {})) {
+        const checkName = typeof job?.name === 'string' ? job.name : jobId;
+        if (checkName === 'Gate') {
+            expect(false, `nightly job ${jobId} must not mint Gate`);
+        }
+    }
+}
+
+
 function stepNamed(job, name) {
     return job?.steps?.find((step) => step.name === name);
+}
+
+function assertNightlyPnpmBeforeNodeOrder(jobs) {
+    for (const [jobId, job] of Object.entries(jobs ?? {})) {
+        const steps = job?.steps ?? [];
+        for (let index = 0; index < steps.length; index += 1) {
+            const step = steps[index];
+            if (step?.name !== 'Set up Node' || step?.with?.cache !== 'pnpm') {
+                continue;
+            }
+            expect(
+                steps[index - 1]?.name === 'Set up pnpm',
+                `${jobId} must run Set up pnpm immediately before Set up Node when setup-node caches pnpm`
+            );
+        }
+    }
 }
 
 function runResolveScope(event, scopes) {
@@ -284,14 +320,18 @@ const TOKEN_PATTERN = /GITHUB_TOKEN|GH_TOKEN|github\.token|\$\{\{\s*secrets\./iu
 const secrets = heavyWorkflow.jobs?.secrets;
 const unit = validationWorkflow.jobs?.unit;
 const e2e = heavyWorkflow.jobs?.e2e;
+const nightlyUnit = nightly.jobs?.unit;
+const nightlyE2e = nightly.jobs?.e2e;
+const nightlySecrets = nightly.jobs?.secrets;
 const gate = workflow.jobs?.gate;
 const heavyGate = heavyWorkflow.jobs?.['heavy-gate'];
 const dependencyReview = validationWorkflow.jobs?.['dependency-review'];
 const dependencyReviewWith = stepNamed(dependencyReview, 'Review dependency changes')?.with ?? {};
 const browserAiWebGpu = heavyWorkflow.jobs?.['browser-ai-webgpu'];
-const nightlyReport = heavyWorkflow.jobs?.['nightly-report'];
+const nightlyReport = nightly.jobs?.['nightly-report'];
 const resolveScopeRun = stepNamed(decide, 'Resolve scope')?.run ?? '';
-const decideCheckoutUses = stepNamed(decide, 'Checkout')?.uses ?? '';
+const nightlyResolveScopeRun = stepNamed(nightly.jobs?.decide, 'Resolve scope')?.run ?? '';
+const nightlyStaticCheckoutUses = stepNamed(nightly.jobs?.static, 'Checkout')?.uses ?? '';
 const trustedCheckout = stepNamed(secrets, 'Checkout trusted scanner');
 const targetCheckout = stepNamed(secrets, 'Checkout scan target');
 const positiveControl = stepNamed(secrets, 'Validate secret scanner positive control');
@@ -327,6 +367,7 @@ const expectedValidationJobs = [
     'rust',
     'native-macos',
     'native-windows',
+    'native-parity',
     'dependency-review',
     'pr-secrets',
 ];
@@ -344,20 +385,23 @@ expect(
     'health-gates.yml must answer to pull_request alone, because any other event can skip Gate and a skipped Gate satisfies the required check'
 );
 expect(gate?.if === '${{ !cancelled() }}', 'Gate must carry no predicate that could skip it and mint a passing required check');
-// The heavy lane owns the events that were removed above, and mints its own
-// differently-named summary so no skip of it can ever satisfy `Gate`.
+// The heavy lane owns the review event that was removed above, and mints its
+// own differently-named summary so no skip of it can ever satisfy `Gate`. The
+// schedule and dispatch events live in `nightly.yml`, pinned further below.
 expect(heavyWorkflow.name === 'Heavy gates', 'heavy workflow name must stay Heavy gates');
 expect(
-    JSON.stringify(Object.keys(heavyEvents ?? {}).sort()) ===
-        JSON.stringify(['pull_request_review', 'schedule', 'workflow_dispatch']),
-    'the heavy workflow must own exactly the review, schedule, and dispatch events that health-gates.yml gave up'
+    JSON.stringify(Object.keys(heavyEvents ?? {}).sort()) === JSON.stringify(['pull_request_review']),
+    'the heavy workflow must own exactly the review event that health-gates.yml gave up; the schedule and dispatch events live in nightly.yml'
 );
 expect(
     heavyEvents?.pull_request_review?.types?.includes('submitted'),
     'pull_request_review submitted must trigger the heavy workflow'
 );
-expect(heavyEvents?.schedule?.[0]?.cron === '0 3 * * *', 'the nightly cron must survive the move to the heavy workflow');
 expect(heavyEvents?.pull_request === undefined, 'the heavy workflow must not run on a pull-request push');
+expect(
+    nightly.on?.schedule?.[0]?.cron === '0 3 * * *',
+    'the nightly cron must survive the move of the schedule event to nightly.yml'
+);
 // `Gate` is the required context. Only health-gates.yml may mint it, so no job
 // anywhere else may carry that name — a same-named check run from another
 // workflow competes for the required context.
@@ -393,21 +437,49 @@ expect(
     'pull-request validation must group by pull request'
 );
 expect(
-    concurrency?.['cancel-in-progress'] === true,
-    'a newer pull-request push must cancel the older run, whose answer is about a head nobody will merge'
-);
-expect(
     heavyWorkflow.concurrency?.['cancel-in-progress'] === false,
     'the heavy lane must never cancel: an approving review run is the only run that observes those legs on that head'
+);
+expect(
+    concurrency?.['cancel-in-progress'] === true,
+    'a newer pull_request run must cancel in-progress validation of the same PR'
 );
 expect(
     decide?.if === "github.event_name != 'pull_request_review' || github.event.review.state == 'approved'",
     'decide must run the heavy path only for approved pull_request_review submissions'
 );
+expect(nightly.name === 'Nightly', 'nightly workflow name must stay Nightly');
+expect(
+    Object.keys(nightly.on ?? {}).sort().join('\0') === 'schedule\0workflow_dispatch',
+    'Nightly on must be exactly schedule and workflow_dispatch'
+);
+expectNightlyDoesNotMintGate(nightly.jobs);
+assertNightlyPnpmBeforeNodeOrder(nightly.jobs);
+expect(
+    nightly.concurrency?.group === 'nightly-${{ github.run_id }}',
+    'nightly must isolate each run on its own run id'
+);
+expect(nightly.concurrency?.['cancel-in-progress'] === false, 'nightly must not cancel an in-progress train');
+expect(workflow.jobs?.['deploy-web'] === undefined, 'the pull-request workflow must not deploy');
+expect(workflow.jobs?.e2e === undefined, 'the pull-request workflow must not run the end-to-end suite');
 const allFalseScopes = { rust: 'false', server: 'false', e2e: 'false', web: 'false' };
 const reviewScopes = { rust: 'false', server: 'true', e2e: 'false', web: 'true' };
 const pullRequestScopes = { rust: 'true', server: 'false', e2e: 'true', web: 'false' };
 const unclassifiedScopes = { ...allFalseScopes, unclassified: 'true' };
+function runNightlyResolveScope() {
+    const outputPath = `${process.env.TEST_TEMP_ROOT}/resolve-scope-nightly.output`;
+    writeFileSync(outputPath, '');
+    const result = spawnSync('bash', ['-c', nightlyResolveScopeRun], {
+        encoding: 'utf8',
+        env: { ...process.env, GITHUB_OUTPUT: outputPath },
+    });
+    expect(result.status === 0, `Nightly resolve scope must execute: ${result.stderr.trim()}`);
+    return readFileSync(outputPath, 'utf8');
+}
+expect(
+    runNightlyResolveScope() === 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\ncode=true\n',
+    'nightly must enable the heavy path and every scope'
+);
 expect(
     runResolveScope('schedule', allFalseScopes) === 'heavy=true\nrust=true\nserver=true\ne2e=true\nweb=true\ncode=true\n',
     'schedule must enable the heavy path and every scope'
@@ -523,6 +595,7 @@ expect(
     'merge-diff positive control must run outside the untrusted checkout'
 );
 expect(secrets?.if === "needs.validation.outputs.heavy == 'true'", 'secrets job must remain on the heavy path');
+expect(nightlySecrets?.if === "needs.decide.outputs.heavy == 'true'", 'nightly secrets job must remain on the heavy path');
 expect(/^actions\/checkout@[0-9a-f]{40}$/u.test(trustedCheckout?.uses ?? ''), 'trusted scanner checkout action must be pinned to a full commit SHA');
 expect(/^actions\/checkout@[0-9a-f]{40}$/u.test(targetCheckout?.uses ?? ''), 'scan target checkout action must be pinned to a full commit SHA');
 expect(
@@ -565,6 +638,61 @@ expect(
 );
 expect(gitleaksHelper.includes('--ignore-gitleaks-allow'), 'secret scan must reject PR-authored gitleaks:allow annotations');
 expect(!/^\s*paths\s*=/mu.test(gitleaksConfig), 'trusted Gitleaks config must not contain path-wide allowlists');
+const rfc4122ExampleUuid = ['123e4567', 'e89b', '12d3', 'a456', '426614174000'].join('-');
+const rfc4122ExampleUuidSuccessor = ['123e4567', 'e89b', '12d3', 'a456', '426614174001'].join('-');
+const reviewPublicationRecoveryUuid = ['2cd01237', 'cf63', '4579', '9e58', '85893794529d'].join('-');
+const deliveryLockRecoveryUuid = ['f515a71d', 'c25a', '4714', 'b725', 'ef6e9b141005'].join('-');
+const deliveryLockSecondRecoveryUuid = ['8cd2556c', 'c162', '45d7', 'bc73', '17a019c581b1'].join('-');
+function trustedAllowlistRegexes(config) {
+    const allowlist = /^\[allowlist\]\s*$([\s\S]*)/mu.exec(config)?.[1];
+    const array = allowlist === undefined ? undefined : /^\s*regexes\s*=\s*\[([\s\S]*?)^\s*\]/mu.exec(allowlist)?.[1];
+    if (array === undefined) {
+        return undefined;
+    }
+    const entries = array
+        .replace(/#.*$/gmu, '')
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter((entry) => entry !== '');
+    const values = entries.map((entry) => /^'''([^']*)'''$/u.exec(entry));
+    return values.every((value) => value !== null) ? values.map((value) => value[1]) : undefined;
+}
+
+const configuredAllowlistRegexes = trustedAllowlistRegexes(gitleaksConfig);
+const exactAllowlistRegexes = [
+    '64c64660ceed813476b314f52136d9698e075622',
+    '0354489231f6a874331aer4927569297c7fea4d5',
+    'idempotency-1',
+    '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb',
+    rfc4122ExampleUuid,
+    rfc4122ExampleUuidSuccessor,
+    reviewPublicationRecoveryUuid,
+    deliveryLockRecoveryUuid,
+    deliveryLockSecondRecoveryUuid,
+];
+expect(
+    gitleaksConfig.includes(`'''${rfc4122ExampleUuid}'''`) &&
+        gitleaksConfig.includes(`'''${rfc4122ExampleUuidSuccessor}'''`),
+    'trusted Gitleaks config must allowlist RFC 4122 example UUID token fixtures'
+);
+expect(
+    configuredAllowlistRegexes?.includes(reviewPublicationRecoveryUuid) === true,
+    'trusted Gitleaks config must allowlist the exact PR #3342 review-publication recovery UUID'
+);
+expect(
+    JSON.stringify(configuredAllowlistRegexes) === JSON.stringify(exactAllowlistRegexes),
+    'trusted Gitleaks config must preserve the exact audited literal allowlist without wildcard or alternation broadening'
+);
+expect(
+    JSON.stringify(trustedAllowlistRegexes(gitleaksConfig.replace(`'''${reviewPublicationRecoveryUuid}'''`, `'''${reviewPublicationRecoveryUuid}|.*'''`))) !==
+        JSON.stringify(exactAllowlistRegexes),
+    'trusted Gitleaks config must reject the triple-quoted review-publication UUID-or-dot-star mutation'
+);
+expect(
+    trustedAllowlistRegexes(gitleaksConfig.replace(`'''${reviewPublicationRecoveryUuid}'''`, `"${reviewPublicationRecoveryUuid}|.*"`)) ===
+        undefined,
+    'trusted Gitleaks config must reject a basic-quoted review-publication UUID-or-dot-star mutation'
+);
 expect(gitleaksHelper.includes('--log-opts=--all'), 'secret scan must scan the full fetched git history, not only a PR diff');
 expect(gitleaksHelper.includes('--redact=100'), 'secret scan must redact secrets from logs and stdout');
 expect(
@@ -647,6 +775,14 @@ expect(
     'end-to-end Run shard must fail its job on every event so a failing shard fails the required Gate'
 );
 expect(
+    stepNamed(nightlyUnit, 'Run shard')?.['continue-on-error'] === undefined,
+    'nightly unit Run shard must stay blocking'
+);
+expect(
+    stepNamed(nightlyE2e, 'Run shard')?.['continue-on-error'] === undefined,
+    'nightly end-to-end Run shard must stay blocking'
+);
+expect(
     unitFailureWarning?.if === shardFailureCondition,
     'unit shard failure warning must observe the failed Run shard outcome'
 );
@@ -679,6 +815,11 @@ expect(
         "${{ !cancelled() && (github.event_name != 'pull_request_review' || github.event.review.state == 'approved') }}",
     'HeavyGate must not report success over an all-skipped comment-only review run'
 );
+expect(!gateNeeds.includes('browser-ai-webgpu'), 'Gate must not depend on browser-ai-webgpu');
+expect(
+    gate?.if === '${{ !cancelled() }}',
+    'Gate must cancel with superseded runs and must report on every pull_request'
+);
 expect(
     Array.isArray(gateNeeds) &&
         gateNeeds.length === expectedGateNeeds.length &&
@@ -691,8 +832,9 @@ expect(expectedValidationJobs.includes('unit'), 'unit suite must stay inside the
 // `e2e` deliberately does not. It is a heavy-lane job that no pull-request run
 // executes, so listing it in `Gate` would have meant listing a job that is
 // always `skipped` — a claim of coverage the check never had. It decides
-// `HeavyGate` on approval, nightly and dispatch runs, and its merge enforcement
-// arrives when `deliver`'s required-CI admission is armed.
+// `HeavyGate` on approving-review runs and gates hard on the nightly train,
+// and its merge enforcement arrives when `deliver`'s required-CI admission is
+// armed.
 for (const heavyOnly of ['e2e', 'e2e-report', 'browser-ai-webgpu', 'codeql', 'secrets', 'deploy-web']) {
     expect(
         !gateNeeds.includes(heavyOnly),
@@ -713,12 +855,22 @@ expect(
 // The daily web train. It is the only route to production now that the Vercel
 // Git integration is off, so what it refuses to deploy from matters as much as
 // what it deploys.
-const deployWeb = heavyWorkflow.jobs?.['deploy-web'];
+const deployWeb = nightly.jobs?.['deploy-web'];
 const deployWebNeeds = deployWeb?.needs ?? [];
-// The fast legs reach this list through the validation call rather than one by
-// one. A `uses:` job reports failure when any job inside it failed, so the
-// train still promotes only a revision every leg reported success on.
-const expectedDeployWebNeeds = ['validation', 'e2e', 'browser-ai-webgpu', 'codeql', 'secrets'];
+const expectedDeployWebNeeds = [
+    'static',
+    'lint',
+    'boundaries',
+    'unit',
+    'build',
+    'rust',
+    'native-macos',
+    'native-windows',
+    'e2e',
+    'browser-ai-webgpu',
+    'codeql',
+    'secrets',
+];
 const deployWebGuardStep = stepNamed(deployWeb, 'Require a validated revision of main');
 const deployWebGuardRun = deployWebGuardStep?.run ?? '';
 const deployWebFreshnessStep = stepNamed(deployWeb, 'Refuse a stale candidate revision');
@@ -781,10 +933,7 @@ expect(
         deployWebNeeds.every((need, index) => need === expectedDeployWebNeeds[index]),
     `the daily web deploy must depend on exactly: ${expectedDeployWebNeeds.join(', ')}`
 );
-expect(
-    !gateNeeds.includes('deploy-web'),
-    'the daily web deploy must stay outside Gate, which reports what a pull request proved'
-);
+expectNightlyDoesNotMintGate(nightly.jobs);
 expect(
     deployWebDeployRun.includes('deploy --prebuilt --prod') &&
         deployWebDeployRun.includes('--meta githubCommitSha="$GITHUB_SHA"'),
@@ -801,18 +950,26 @@ expect(
     }) === 0,
     'the daily web deploy must proceed when every validation leg succeeded on main'
 );
-// `validation` carries the fast legs, `e2e` the slow half. Probing one of each
-// proves the guard reads its whole needs map rather than a favoured entry.
-for (const leg of ['validation', 'e2e']) {
-    for (const result of ['failure', 'cancelled', 'skipped']) {
-        expect(
-            workflowShellStatus(deployWebGuardRun, {
-                RESULTS: deployWebResults('success', { [leg]: result }),
-                TRAIN_REF: 'refs/heads/main',
-            }) !== 0,
-            `the daily web deploy must refuse to promote a revision whose ${leg} leg was ${result}`
-        );
-    }
+// `unit` is a fast leg and `e2e` the slow half of the nightly train. Probing
+// one of each proves the guard reads its whole needs map rather than a
+// favoured entry.
+for (const result of ['failure', 'cancelled', 'skipped']) {
+    expect(
+        workflowShellStatus(deployWebGuardRun, {
+            RESULTS: deployWebResults('success', { unit: result }),
+            TRAIN_REF: 'refs/heads/main',
+        }) !== 0,
+        `the daily web deploy must refuse to promote a revision whose unit leg was ${result}`
+    );
+}
+for (const result of ['failure', 'cancelled', 'skipped']) {
+    expect(
+        workflowShellStatus(deployWebGuardRun, {
+            RESULTS: deployWebResults('success', { e2e: result }),
+            TRAIN_REF: 'refs/heads/main',
+        }) !== 0,
+        `the daily web deploy must refuse to promote a revision whose e2e leg was ${result}`
+    );
 }
 for (const ref of ['refs/heads/agent/2940/daily-train', 'refs/tags/v1.0.0', 'main']) {
     expect(
@@ -842,6 +999,7 @@ const freshCondition = "env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.freshne
 for (const stepName of [
     'Checkout the validated revision',
     'Enable Corepack',
+    'Set up pnpm',
     'Set up Node',
     'Resolve the current production revision',
 ]) {
@@ -929,8 +1087,8 @@ expect(
     'nightly reporter must run inside a real git repository, since a gh build can consult local git for repo resolution even when every invocation already passes --repo'
 );
 expect(
-    nightlyReportCheckout?.uses === decideCheckoutUses && decideCheckoutUses !== '',
-    'nightly reporter checkout must use the same pinned actions/checkout ref as the rest of the workflow'
+    nightlyReportCheckout?.uses === nightlyStaticCheckoutUses && nightlyStaticCheckoutUses !== '',
+    'nightly reporter checkout must use the same pinned actions/checkout ref as the rest of the nightly workflow'
 );
 expect(
     nightlyReportCheckout?.with?.['persist-credentials'] === false,

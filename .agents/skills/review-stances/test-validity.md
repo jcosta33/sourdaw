@@ -19,6 +19,14 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-09-02 — a rejected review stranded its mutation lock (escaped via PR #3342)
+
+Review publication treated a definitive GitHub validation rejection as an ordinary failed write and retained a generic lock owner with no immutable publication intent. A later operator could not prove whether the review landed, so neither release nor replay was safe.
+
+Blind spot: tests asserted request validation but not the lock's recovery evidence after a remote mutation boundary.
+
+Probe that would have caught it: force a definitive 422 after the journaled pre-write transition, then prove recovery releases only when the prepared bundle digest, head, reviewer actor, and remote review enumeration all match; mutate each field and require the exact owner to remain retained.
+
 ### 2026-08-29 — a refactor that rewrites its own witnesses (escaped via PR #2988)
 
 PR #2988 extracted render-retry execution, claimed in its body that it kept exact revision, budget,
@@ -62,3 +70,38 @@ and the spec that will fail. The unit legs block a pull request now, so this fai
 reach the gate — but only on a head the suite has actually run against, and only for the shard that
 holds the spec. Read the gate as evidence about the head it ran on, never as evidence about a spec
 no run in this pull request executed.
+
+### 2026-08-30 — a vitest-green spec whose types fail the strict build (escaped both stances via PR #3127, caught only by the pipeline)
+
+PR #3127's new census spec passed its focused vitest run and both blind stances cleared it, but its
+`import.meta.glob` value handling failed the strict test typecheck (TS2322/TS2769 under
+`noUncheckedIndexedAccess`); only the pipeline's Types-and-contracts job caught it.
+The same class hit PR #3120 (a production WeakMap typed too narrowly for a new field, TS2339) —
+vitest transpiles without typechecking, so a green run is never type evidence.
+
+Blind spot: the stance proves specs discriminate by running them; vitest's pass says nothing about
+the strict `tsc` contracts the pipeline enforces, so a PR adding TypeScript files can carry type
+errors no spec-level probe surfaces.
+
+Probe that would have caught it: when a diff adds or edits TypeScript files, compile a narrow `tsc`
+program in /tmp (extend the lane tsconfig with strict options, include the changed files plus the
+ambient types the import closure needs) and require exit 0; reproduce the failure pre-fix when
+validating a posted type finding. (PR #3136's dispatch already carried this probe and produced clean
+heads.)
+
+### 2026-08-30 — a new device type string that is a classified third-party mark (escaped via PR #3127, caught by the release-inventory job)
+
+PR #3127 inlined preset chains whose faust device types carry trademark strings;
+`faust-1176-compressor` tripped the release inventory's mark census (unclassified mark path),
+failing the pipeline's Release-inventory step. Five sibling files were already classified in
+`release/open-source-inventory.json`.
+
+Blind spot: no stance treats the repository's artifact-contract checks (release inventory marks,
+dependency-license proofs) as part of the diff's blast radius; a new string constant in a type/name
+registry can violate a data contract no spec observes.
+
+Probe that would have caught it: when a diff adds type or name strings to registries (device types,
+plugin descriptors, preset ids), run `pnpm test:release-inventory` in the lane (cheap, ~10s) or at
+minimum grep the added strings against `release/open-source-inventory.json`'s marks values; classify
+any hit in the same change.
+

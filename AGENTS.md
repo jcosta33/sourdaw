@@ -51,7 +51,13 @@ Assign reviewers a model different from the author's when that set offers one; o
 author's.
 
 Every dispatch carries the objective, lane, branch, scope, exclusions, dependencies, acceptance
-conditions, and checks. Require back only status, changed paths, decisive evidence, and blockers.
+conditions, and checks. An acceptance condition names an observable — an event, a counter, a
+figure a caller reads — traced to the line that produces it before the dispatch is written, and
+a prescribed mechanism is traced to every code route it has to cover: a spec that asserts an
+observable nothing emits, or a mechanism that reaches only one of the routes it has to cover, is
+an orchestrator defect the author will faithfully implement. Specify the whole design before
+dispatching, never one review finding at a time. Require back only status, changed paths, decisive
+evidence, and blockers.
 
 Run agents in parallel only on write-disjoint work. Sequence shared contracts, generated artifacts,
 and overlapping files.
@@ -375,7 +381,7 @@ same account can read its credential files. Snapshot and token-bearing children 
 environment overrides that could redirect them — Node loader and preload settings, and Git, GitHub
 CLI, GitHub Actions, and App configuration — and use the launcher-resolved `git` and `gh`.
 
-Hosted checks run across three workflow files, and the split between them is a security boundary
+Hosted checks run across four workflow files, and the split between them is a security boundary
 rather than an organising preference. `Gate` is a required status check on `main`, in strict mode,
 by owner decision. GitHub counts a check run whose conclusion is `skipped` as satisfying a required
 check, and prefers the newest run of that name — so any event that can reach the file minting `Gate`
@@ -387,22 +393,26 @@ exactly that in production. Therefore:
   hole. Do not add a trigger to this file, and do not rename `gate`.
 - `.github/workflows/validation.yml` is the shared lane — types, lint, boundaries, the unit matrix,
   build, Rust, the natives, the offline smoke set, the diff secret scan, dependency review — called
-  by both other workflows so there is one definition rather than two that drift.
-- `.github/workflows/heavy-gates.yml` owns the review, schedule, and dispatch events and the jobs
-  that cannot fit a push budget: the end-to-end matrix, the Browser AI hardware proof, CodeQL, the
-  full-history secret scan, the daily web train, and the nightly report. Its summary is `HeavyGate`
-  and is deliberately not ruleset-required. No job outside `health-gates.yml` may be named `Gate`.
+  by `health-gates.yml` and `heavy-gates.yml` so there is one definition rather than two that drift.
+- `.github/workflows/heavy-gates.yml` owns the review event and the jobs that cannot fit a push
+  budget: the end-to-end matrix, the Browser AI hardware proof, CodeQL, and the full-history secret
+  scan. Its summary is `HeavyGate` and is deliberately not ruleset-required.
+- `.github/workflows/nightly.yml` owns the schedule and dispatch events: the full train, and the
+  nightly failure report. It is the only production web deploy — `vercel.json` turns the Git
+  integration off, so reaching `main` deploys nothing by itself.
+
+No job outside `health-gates.yml` may be named `Gate`.
 
 So `unit` decides the required check, through the validation lane it lives in, on every run that
 touches the web scope. The end-to-end suite does not: no pull-request run executes it, so naming it
 in `Gate` would have listed an always-skipped job and claimed coverage the check never had. It
-decides `HeavyGate` on approving-review, nightly and dispatch runs. Under the current ruleset an
-approving review is not required to merge, so nothing today forces that suite to have run against a
-head before it lands; its merge enforcement arrives when `deliver`'s required-CI admission is armed,
-which is a separate change. The earlier policy of keeping pull-request-editable workflows out of
-merge authority is superseded — a head that softens its own gate is caught by review of that file
-like any other reviewed code — but note what that leaves: the ruleset is the only CI merge authority
-while `deliver`'s admission stays advisory.
+decides `HeavyGate` on approving-review runs and gates hard on the nightly train. Under the current
+ruleset an approving review is not required to merge, so nothing today forces that suite to have run
+against a head before it lands; its merge enforcement arrives when `deliver`'s required-CI admission
+is armed, which is a separate change. The earlier policy of keeping pull-request-editable workflows
+out of merge authority is superseded — a head that softens its own gate is caught by review of that
+file like any other reviewed code — but note what that leaves: the ruleset is the only CI merge
+authority while `deliver`'s admission stays advisory.
 
 Those checks exist so that nobody runs them on this machine. Never run a repository-wide check
 locally to satisfy a gate the pipeline already runs on every push; Resource Safety governs what
@@ -521,8 +531,12 @@ both validation points, the pull request is non-draft and structurally mergeable
 thread is resolved at both points. Head, head branch, base branch, body, canonical closing target,
 and stacked dependents must remain stable between those reads. CI admission is snapshot-backed and
 currently advisory: successful, failed, pending, absent, cancelled, malformed, and unavailable CI
-evidence do not block an otherwise valid delivery. The dormant required-CI path retains the pinned
-workflow-derived gate and complete-rollup rules the trusted launcher reads from the pinned
+evidence do not block an otherwise valid delivery. The live `main` ruleset's required `Gate` check is
+enforced by GitHub itself regardless of this script's own CI admission mode, so `deliver` reads a
+`BLOCKED` merge state and refuses before any remote write — never posting the receipt or attempting
+the merge — rather than discovering that refusal from the merge endpoint after mutating. The dormant
+required-CI path retains the pinned workflow-derived gate and complete-rollup rules the trusted
+launcher reads from the pinned
 `origin/main` workflow copy for a future authority change; a lane cannot select it or reshape it.
 Delivery merges into `main` and nothing else: `lane:publish` opens every pull request there, so any
 other base is a retarget the delivery scripts did not make, and `deliver` refuses it rather than

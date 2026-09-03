@@ -7,7 +7,7 @@
 //! look identical to silence. This command is that reader.
 
 use crate::state::AppState;
-use daw_engine::engine_events::{EngineEvent, StreamErrorKind};
+use daw_engine::engine_events::{EngineEvent, StreamErrorKind, StreamSide};
 use daw_engine::midi::diagnostics::ActiveMidiRtDiagnosticsSnapshot;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::Ordering;
@@ -37,6 +37,23 @@ impl From<StreamErrorKind> for StreamErrorKindPayload {
     }
 }
 
+/// Which of the engine's device streams a report came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum StreamSidePayload {
+    Output,
+    Input,
+}
+
+impl From<StreamSide> for StreamSidePayload {
+    fn from(side: StreamSide) -> Self {
+        match side {
+            StreamSide::Output => Self::Output,
+            StreamSide::Input => Self::Input,
+        }
+    }
+}
+
 /// One engine event, tagged so the frontend can discriminate on `type`.
 ///
 /// `rename_all` on the enum renames the variants; a struct variant's own fields
@@ -45,13 +62,19 @@ impl From<StreamErrorKind> for StreamErrorKindPayload {
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum EngineEventPayload {
     #[serde(rename_all = "camelCase")]
-    StreamError { kind: StreamErrorKindPayload },
+    StreamError {
+        side: StreamSidePayload,
+        kind: StreamErrorKindPayload,
+    },
 }
 
 impl From<EngineEvent> for EngineEventPayload {
     fn from(event: EngineEvent) -> Self {
         match event {
-            EngineEvent::StreamError { kind } => Self::StreamError { kind: kind.into() },
+            EngineEvent::StreamError { side, kind } => Self::StreamError {
+                side: side.into(),
+                kind: kind.into(),
+            },
         }
     }
 }
@@ -62,6 +85,10 @@ impl From<EngineEvent> for EngineEventPayload {
 /// started: every counter reads zero in both cases, and only this flag says
 /// which. The counters are cumulative since engine start; `events` is drained,
 /// so an event is reported exactly once.
+///
+/// The frontend mirror of this type is hand-maintained (`crates/sourdaw-native/AGENTS.md`):
+/// a field added or renamed here needs the same edit in
+/// `src/modules/AudioEngine/models/EngineRtDiagnostics.ts`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EngineRtDiagnostics {
@@ -78,6 +105,19 @@ pub struct EngineRtDiagnostics {
     /// Counted on the control side, not the audio thread: input blocks the app
     /// could not hand to a bridge because its input ring was full.
     pub bridge_input_blocks_refused: u64,
+    /// A `RegisterCaptureConsumer` the input bus would not take, from
+    /// `ActiveMidiRtDiagnosticsSnapshot::capture_consumer_refusals`.
+    pub capture_consumer_refusals: u64,
+    /// Capture blocks no consumer took, from
+    /// `ActiveMidiRtDiagnosticsSnapshot::capture_blocks_dropped`.
+    pub capture_blocks_dropped: u64,
+    /// Capture blocks delivered as silence because the ring was filling or
+    /// had stalled, from `ActiveMidiRtDiagnosticsSnapshot::capture_input_underruns`.
+    pub capture_input_underruns: u64,
+    /// Frames of latency the capture path is currently adding, or zero while
+    /// capture is not serving — see `daw_engine::EngineHandle::input_latency_frames`
+    /// for what zero does and does not mean.
+    pub input_latency_frames: u64,
     pub events: Vec<EngineEventPayload>,
 }
 
@@ -91,6 +131,7 @@ fn running_engine_diagnostics(
     snapshot: ActiveMidiRtDiagnosticsSnapshot,
     events: Vec<EngineEvent>,
     bridge_input_blocks_refused: u64,
+    input_latency_frames: usize,
 ) -> EngineRtDiagnostics {
     EngineRtDiagnostics {
         running: true,
@@ -104,6 +145,10 @@ fn running_engine_diagnostics(
         bridge_backlog_blocks_shed: snapshot.bridge_backlog_blocks_shed,
         callback_frames_over_bridge_reach: snapshot.callback_frames_over_bridge_reach,
         bridge_input_blocks_refused,
+        capture_consumer_refusals: snapshot.capture_consumer_refusals,
+        capture_blocks_dropped: snapshot.capture_blocks_dropped,
+        capture_input_underruns: snapshot.capture_input_underruns,
+        input_latency_frames: input_latency_frames as u64,
         events: events.into_iter().map(EngineEventPayload::from).collect(),
     }
 }
@@ -137,11 +182,13 @@ pub async fn engine_rt_diagnostics(state: &AppState) -> Result<EngineRtDiagnosti
 
     let snapshot = engine.midi_rt_diagnostics_snapshot();
     let events = engine.drain_engine_events();
+    let input_latency_frames = engine.input_latency_frames();
 
     Ok(running_engine_diagnostics(
         snapshot,
         events,
         bridge_input_blocks_refused,
+        input_latency_frames,
     ))
 }
 
@@ -165,7 +212,12 @@ mod tests {
             bridge_backlog_blocks_shed: 8,
             callback_frames_over_bridge_reach: 9,
             bridge_input_blocks_refused: 10,
+            capture_consumer_refusals: 11,
+            capture_blocks_dropped: 12,
+            capture_input_underruns: 13,
+            input_latency_frames: 14,
             events: vec![EngineEventPayload::StreamError {
+                side: StreamSidePayload::Input,
                 kind: StreamErrorKindPayload::DeviceNotAvailable,
             }],
         };
@@ -180,8 +232,11 @@ mod tests {
                 r#""unsupportedEffectAdditions":4,"unmappedSetParamCalls":5,"#,
                 r#""bridgeOutputBlocksDropped":6,"unmatchedBridgeBlocks":7,"#,
                 r#""bridgeBacklogBlocksShed":8,"callbackFramesOverBridgeReach":9,"#,
-                r#""bridgeInputBlocksRefused":10,"#,
-                r#""events":[{"type":"streamError","kind":"deviceNotAvailable"}]}"#
+                r#""bridgeInputBlocksRefused":10,"captureConsumerRefusals":11,"#,
+                r#""captureBlocksDropped":12,"captureInputUnderruns":13,"#,
+                r#""inputLatencyFrames":14,"#,
+                r#""events":[{"type":"streamError","side":"input","#,
+                r#""kind":"deviceNotAvailable"}]}"#
             )
         );
     }
@@ -199,7 +254,9 @@ mod tests {
                 r#""unsupportedEffectAdditions":0,"unmappedSetParamCalls":0,"#,
                 r#""bridgeOutputBlocksDropped":0,"unmatchedBridgeBlocks":0,"#,
                 r#""bridgeBacklogBlocksShed":0,"callbackFramesOverBridgeReach":0,"#,
-                r#""bridgeInputBlocksRefused":0,"events":[]}"#
+                r#""bridgeInputBlocksRefused":0,"captureConsumerRefusals":0,"#,
+                r#""captureBlocksDropped":0,"captureInputUnderruns":0,"#,
+                r#""inputLatencyFrames":0,"events":[]}"#
             )
         );
     }
@@ -249,14 +306,19 @@ mod tests {
             unmatched_bridge_blocks: 7,
             bridge_backlog_blocks_shed: 8,
             callback_frames_over_bridge_reach: 9,
+            capture_consumer_refusals: 10,
+            capture_blocks_dropped: 12,
+            capture_input_underruns: 13,
         };
 
         let diagnostics = running_engine_diagnostics(
             snapshot,
             vec![EngineEvent::StreamError {
+                side: StreamSide::Output,
                 kind: StreamErrorKind::DeviceBusy,
             }],
             11,
+            14,
         );
 
         assert!(diagnostics.running);
@@ -269,14 +331,58 @@ mod tests {
         assert_eq!(diagnostics.unmatched_bridge_blocks, 7);
         assert_eq!(diagnostics.bridge_backlog_blocks_shed, 8);
         assert_eq!(diagnostics.callback_frames_over_bridge_reach, 9);
+        assert_eq!(diagnostics.capture_consumer_refusals, 10);
+        assert_eq!(diagnostics.capture_blocks_dropped, 12);
+        assert_eq!(diagnostics.capture_input_underruns, 13);
         // The refusal count is the app's, not the snapshot's: it must not be
         // read off the audio thread's counters.
         assert_eq!(diagnostics.bridge_input_blocks_refused, 11);
+        assert_eq!(diagnostics.input_latency_frames, 14);
         assert_eq!(
             diagnostics.events,
             vec![EngineEventPayload::StreamError {
+                side: StreamSidePayload::Output,
                 kind: StreamErrorKindPayload::DeviceBusy,
             }]
+        );
+    }
+
+    /// A capture failure and a playback failure reach the frontend as the
+    /// same event type, so the side is the only thing telling them apart. A
+    /// mapping that dropped it would report a microphone that vanished as the
+    /// speakers going away.
+    #[test]
+    fn each_stream_side_has_its_own_wire_spelling_and_survives_the_mapping() {
+        let mapped: Vec<EngineEventPayload> = [StreamSide::Input, StreamSide::Output]
+            .into_iter()
+            .map(|side| {
+                EngineEventPayload::from(EngineEvent::StreamError {
+                    side,
+                    kind: StreamErrorKind::Xrun,
+                })
+            })
+            .collect();
+
+        assert_eq!(
+            mapped,
+            vec![
+                EngineEventPayload::StreamError {
+                    side: StreamSidePayload::Input,
+                    kind: StreamErrorKindPayload::Xrun,
+                },
+                EngineEventPayload::StreamError {
+                    side: StreamSidePayload::Output,
+                    kind: StreamErrorKindPayload::Xrun,
+                },
+            ]
+        );
+        assert_eq!(
+            serde_json::to_string(&StreamSidePayload::Input).expect("side should serialize"),
+            r#""input""#
+        );
+        assert_eq!(
+            serde_json::to_string(&StreamSidePayload::Output).expect("side should serialize"),
+            r#""output""#
         );
     }
 

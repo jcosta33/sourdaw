@@ -6,6 +6,7 @@ import { ClipDummy } from '../../__tests__/ClipDummy';
 import { TrackDummy } from '../../__tests__/TrackDummy';
 import { type Clip, type Track } from '../../models/Track';
 import { type TrackState } from '../../repositories/track/getTrackState';
+import { setWarpState, warpStates } from '../../stores/warpStates';
 import { prepareStripSilence } from '../prepareStripSilence';
 
 const mocks = vi.hoisted(() => ({
@@ -69,6 +70,7 @@ function createTestAudioBuffer(channelData: Float32Array<ArrayBuffer>): AudioBuf
 describe('prepareStripSilence', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        warpStates.clear();
         transportStore.set({ ...defaultTransportState, tempo: FIXTURE_TEMPO });
         mocks.getAutomationLanes.mockReturnValue([]);
         mocks.resolveEligibleClipWriteTarget.mockReturnValue({
@@ -79,6 +81,7 @@ describe('prepareStripSilence', () => {
     });
 
     afterEach(() => {
+        warpStates.clear();
         transportStore.set(defaultTransportState);
     });
 
@@ -289,6 +292,38 @@ describe('prepareStripSilence', () => {
                 }),
             ]);
             expect(plan!.next.clipAutomationLanes[0]!.id).not.toBe('lane-a');
+        });
+
+        it('keeps warp markers on source-content transients instead of shifting them by segment start (regression #2866)', () => {
+            mocks.getTrackState.mockReturnValue(createTrackState(createTrackWithClips([createTrimmedClip()])));
+            mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(trimmedClipChannelData()));
+            // detectTransientsForClip writes beat from the decoded buffer with
+            // no clip audioOffsetBeats. These sit on the two audible regions
+            // at buffer beats 4 and 10.
+            const markersOnTransients = [
+                { id: 'transient-4', originalBeat: 4, warpedBeat: 4 },
+                { id: 'transient-10', originalBeat: 10, warpedBeat: 10 },
+            ];
+            setWarpState('clip-1', {
+                enabled: true,
+                markers: markersOnTransients,
+                stretchMode: 'beats',
+                originalTempo: 120,
+            });
+
+            const plan = prepareStripSilence({ clipId: 'clip-1' });
+
+            expect(plan).not.toBeNull();
+            // First segment shift would be 1 (startBeat 17), second 7 (startBeat 23).
+            expect(plan!.next.clips).toEqual([
+                expect.objectContaining({ startBeat: 17, endBeat: 19, audioOffsetBeats: 4 }),
+                expect.objectContaining({ startBeat: 23, endBeat: 26, audioOffsetBeats: 10 }),
+            ]);
+            const segmentSatellites = plan!.next.clipSatellites.filter((entry) => entry.clipId !== 'clip-1');
+            expect(segmentSatellites).toHaveLength(2);
+            for (const entry of segmentSatellites) {
+                expect(entry.warpState?.markers).toEqual(markersOnTransients);
+            }
         });
 
         it('returns null when the clip starts past the end of its buffer', () => {

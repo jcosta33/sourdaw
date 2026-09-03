@@ -466,6 +466,45 @@ export type AudioGraphSetTransportCommand = Readonly<{
     playing: boolean;
     /** Absolute position on the backend's clock. */
     positionSeconds: number;
+    /**
+     * Whether this write is also a locate. Absent means it is.
+     *
+     * A locate is destructive: the backend seeks, and a seek drops every mixer
+     * write already queued at or past the frame it lands on. A strip states its
+     * fader, its pan and each send level as writes at frame 0, so a transport
+     * write that locates to the session head *after* those strips were built
+     * erases the mix they declared — which is what a second batch that only
+     * needs to start playback would otherwise do.
+     *
+     * `false` says "roll from where you already stand". The position still
+     * travels and must still be truthful, because the backend reports it; only
+     * the seek is withheld.
+     */
+    locate?: boolean;
+}>;
+
+/**
+ * Shadow the backend's monitor: keep rendering, contribute nothing to the
+ * output a listener hears.
+ *
+ * A session mode, deliberately not the master fader. The master fader is
+ * project truth that a save and a bounce both read; this says only whether
+ * *this* backend's audio is currently allowed to reach the speakers, so a
+ * second engine can hold a live programme — rendering it block-accurately,
+ * advancing its own playhead, walking its own loop seams — while another one
+ * remains the audible path. Lifting it is the cutover.
+ *
+ * Silence means true zeros at the output, not a small gain, so a leak is
+ * something a test can assert the absence of exactly. The change lands at the
+ * next block boundary with no ramp, which makes a cutover from a non-zero
+ * programme a step; a backend that wants to declick it owns that.
+ *
+ * A backend with no monitor to shadow — an offline render is one — refuses
+ * this rather than accepting it and doing nothing.
+ */
+export type AudioGraphSetMonitorShadowCommand = Readonly<{
+    kind: 'set-monitor-shadow';
+    shadowed: boolean;
 }>;
 
 export type AudioGraphCommand =
@@ -479,7 +518,8 @@ export type AudioGraphCommand =
     | AudioGraphWriteParameterCommand
     | AudioGraphWriteDeviceParameterCommand
     | AudioGraphScheduleClipCommand
-    | AudioGraphSetTransportCommand;
+    | AudioGraphSetTransportCommand
+    | AudioGraphSetMonitorShadowCommand;
 
 /**
  * The correlation a graph write carries, shared with the live delta protocol
@@ -567,6 +607,18 @@ export type AudioGraphApplyResult =
           application: 'applied';
           correlation?: AudioGraphCorrelation;
           runtimeRevision: number;
+          /**
+           * The engine's fence number for this batch: what its
+           * `batchesApplied` count reaches once the audio thread has drained
+           * it. Present only from a backend that fenced a batch onto a live
+           * engine — a mapping and an in-process renderer have no such count.
+           *
+           * A caller that needs to know a transport reading postdates this
+           * batch compares the two. Nothing else on a reading can say it:
+           * this call resolves when the batch is queued, not when it is
+           * applied.
+           */
+          admittedBatch?: number;
           reports: readonly AudioGraphStripReport[];
       }>
     | Readonly<{

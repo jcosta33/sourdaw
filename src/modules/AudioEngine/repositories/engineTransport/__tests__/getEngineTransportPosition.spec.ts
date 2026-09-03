@@ -20,6 +20,7 @@ const NATIVE_PAYLOAD = {
     positionSeconds: 1.5,
     playheadFrame: 72_000,
     loopWraps: 2,
+    batchesApplied: 11,
     tempo: 128,
     timeSigNum: 5,
     timeSigDenom: 4,
@@ -58,5 +59,6 @@ describe('getEngineTransportPosition', () => {
         expect(position.running).toBe(true);
         expect(position.positionSeconds).toBe(0);
         expect(position.loopWraps).toBe(0);
+        expect(position.batchesApplied).toBe(0);
     });
 });

@@ -82,6 +82,10 @@ describe('createNativeLiveGraphBackend', () => {
                 acceptance: 'accepted',
                 application: 'applied',
                 runtimeRevision: 4,
+                // The fence this batch drained at: what a pass dates its
+                // snapshots against. Optional on the wire, but carried verbatim
+                // whenever the native side reports one.
+                admittedBatch: 6,
                 reports: [{ kind: 'track', id: 'audio-1', deviceIds: ['device-a'] }],
             })
         );
@@ -92,6 +96,7 @@ describe('createNativeLiveGraphBackend', () => {
             acceptance: 'accepted',
             application: 'applied',
             runtimeRevision: 4,
+            admittedBatch: 6,
             reports: [{ kind: 'track', id: 'audio-1', deviceIds: ['device-a'] }],
         });
     });

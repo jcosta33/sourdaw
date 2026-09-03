@@ -10,6 +10,7 @@ import {
 } from '#/modules/Arrangement/useCases';
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
 import { defaultWorkspaceState } from '#/modules/WorkspaceShell/stores';
+import { ARRANGE_RESIZE_HANDLE_WIDTH, MIN_TIMELINE_COLUMN_WIDTH } from '#/utils/Layout/allocateMainFirstWidths';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Clip, type Track } from '../../../models/TrackViewTypes';
@@ -37,30 +38,11 @@ vi.mock('#/infra/store/useStore', () => ({
     }),
 }));
 
-// Spread `importOriginal` first, then override only the views this file stubs.
-// This mock had already drifted: it still supplied a `MINIMAP_HEIGHT` the barrel
-// no longer exports, and it omitted `TakeLanesView`, which the barrel gained. The
-// omission is only harmless while ArrangeView does not render that view — mount
-// it and every render in this file reds on `undefined` (#1393).
-//
-// The spread is not free here, and the alternatives were measured rather than
-// assumed. `TimelineSurface` and `TrackListView` are stubbed three lines below, but
-// `importOriginal()` evaluates their real modules first, which costs this file
-// 4.15s → 7.25s (+75%) when run alone. Cutting the contract barrels they enter
-// through (`AiRuntime/useCases`, `Command/useCases`) recovers 0.55s of the 3.10s —
-// the weight is inside Arrangement's own private modules and no published contract
-// reaches it. Mocking those two private modules directly does recover it (4.79s),
-// and `deps:validate` rejects it: two NEW `cross-module-index-only` edges on the
-// tests cruise. Baselining those would be buying 2.4s with the boundary rule, so
-// the cost stands. Do not re-derive this; the numbers are in PR #1572.
-//
-// The height constants are deliberately *not* overridden: the spread supplies the
-// real 22 / 20 / 18, and re-stating those numbers here would change nothing today
-// while pinning the layout assertions to a stale value the day production moves
-// one. `getAdjustmentLayerStripHeight` stays overridden — that one does not match
-// production, so it is a real stub rather than a copy.
-vi.mock('#/modules/Arrangement/presentations/views', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Arrangement/presentations/views')>()),
+// Non-spread listing of only the names ArrangeView imports — avoids loading real
+// TimelineSurface / TrackListView and the incidental Arrangement / AudioEngine
+// useCases barrel walk their modules pull in. A listing factory must still include
+// every name ArrangeView actually imports, or render hits `undefined` (#1393).
+vi.mock('#/modules/Arrangement/presentations/views', () => ({
     AdjustmentLayerStrip: () => <div data-testid="adjustment-layer-strip">Adjustment Layer Strip</div>,
     getAdjustmentLayerStripHeight: (layerCount: number) => (layerCount > 0 ? 28 + layerCount * 18 : 0),
     TimelineSurface: () => <div data-testid="timeline-surface">Timeline Surface</div>,
@@ -78,6 +60,16 @@ vi.mock('#/modules/Arrangement/presentations/views', async (importOriginal) => (
     TrackListView: ({ style, extraHeaderHeight }: { style?: React.CSSProperties; extraHeaderHeight?: number }) => (
         <div data-testid="track-list-view" style={style} data-extra-height={extraHeaderHeight} />
     ),
+    ARRANGEMENT_BAR_HEIGHT: 22,
+    BEAT_RULER_HEIGHT: 18,
+    MARKER_LANE_HEIGHT: 20,
+}));
+
+// Non-spread listing of only SessionView — avoids loading LoopStationPanel from
+// the SessionLauncher views barrel and its incidental Transport/Arrangement/
+// AudioEngine useCases barrel walk.
+vi.mock('#/modules/SessionLauncher/presentations/views', () => ({
+    SessionView: () => <div data-testid="session-view">Session</div>,
 }));
 
 vi.mock('#/modules/Preferences/stores', () => ({
@@ -88,6 +80,10 @@ vi.mock('#/modules/Preferences/stores', () => ({
 
 vi.mock('#/modules/Preferences/useCases', () => ({
     setTimelineMinimapHeight: preferencesMocks.setTimelineMinimapHeight,
+    TRACK_HEIGHT_VALUES: { compact: 40, normal: 64, large: 96 },
+    defaultPreferences: {},
+    gridSnapBeats: vi.fn(() => 0),
+    setTrackHeight: vi.fn(),
 }));
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
@@ -125,6 +121,11 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     closeScratchPad: vi.fn(),
     setSessionViewWidth: vi.fn(),
     setTrackListWidth: vi.fn(),
+    closeCollaborationPanel: vi.fn(),
+    onScrollToPlayhead: vi.fn(),
+    onZoomToFit: vi.fn(),
+    onZoomToSelection: vi.fn(),
+    setWorkspaceMode: vi.fn(),
 }));
 
 vi.mock('../../components/ResizeHandle', () => ({
@@ -564,5 +565,34 @@ describe('ArrangeView', () => {
 
         expect(screen.getByTestId('timeline-minimap')).toHaveAttribute('data-height', '88');
         expect(screen.getByTestId('track-list-view')).toHaveAttribute('data-extra-height', '128');
+    });
+
+    it('keeps a positive timeline column when the arrange row is narrower than the open track list', () => {
+        // Leftover after default sidebar+inspector at a 640px CSS (200% UI scale) viewport.
+        Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+            configurable: true,
+            get: () => 150,
+        });
+        vi.mocked(useWorkspaceState).mockReturnValue({
+            ...defaultWorkspaceState,
+            trackListOpen: true,
+            trackListWidth: 220,
+            scratchPadOpen: false,
+            scratchPadHeight: 150,
+        });
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ clipEndBeat: 32 })],
+            selectedTrackId: 'track-1',
+        });
+
+        render(<ArrangeView />);
+
+        const trackListWidth = Number.parseFloat(screen.getByTestId('track-list-view').style.width);
+        const timelineColumn = screen.getByTestId('timeline-surface').parentElement;
+        expect(trackListWidth).toBeGreaterThan(0);
+        expect(trackListWidth).toBeLessThan(220);
+        expect(trackListWidth + ARRANGE_RESIZE_HANDLE_WIDTH + MIN_TIMELINE_COLUMN_WIDTH).toBeLessThanOrEqual(150);
+        expect(timelineColumn).toHaveClass('min-w-0');
+        expect(timelineColumn).toHaveStyle({ minWidth: `${MIN_TIMELINE_COLUMN_WIDTH}px` });
     });
 });

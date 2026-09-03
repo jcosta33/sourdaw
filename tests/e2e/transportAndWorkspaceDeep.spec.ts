@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
-import { launch_from_template, launch_new_project, setupWorkspace } from './e2eUtils';
+
+import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -33,11 +34,11 @@ test.describe('Recording Workflow', () => {
     });
 
     test('Record arm toggle works', async ({ page }) => {
-        const record = page.getByRole('button', { name: 'Record' }).or(page.getByRole('button', { name: 'Stop recording' }));
-        const pressed_before = await record.first().getAttribute('aria-pressed');
-        await record.first().click();
+        const record = page.getByTestId('transport-record');
+        const pressed_before = await record.getAttribute('aria-pressed');
+        await record.click();
         await page.waitForTimeout(300);
-        const pressed_after = await record.first().getAttribute('aria-pressed');
+        const pressed_after = await record.getAttribute('aria-pressed');
         expect(pressed_after).not.toBe(pressed_before);
     });
 });
@@ -123,6 +124,7 @@ test.describe('Punch Recording Controls', () => {
         await punch.click();
         await expect(punch).toHaveAttribute('aria-pressed', 'true');
 
+        await page.getByRole('button', { name: 'Punch recording settings' }).click();
         const punch_in = page.getByTestId('punch-in-beat');
         await expect(punch_in).toBeVisible({ timeout: 5000 });
 
@@ -197,7 +199,10 @@ test.describe('Background Capture Toggle', () => {
         await expect(capture_on).toHaveAttribute('aria-pressed', 'true');
 
         await capture_on.click();
-        await expect(page.getByRole('button', { name: 'Enable background capture' })).toHaveAttribute('aria-pressed', 'false');
+        await expect(page.getByRole('button', { name: 'Enable background capture' })).toHaveAttribute(
+            'aria-pressed',
+            'false'
+        );
     });
 });
 

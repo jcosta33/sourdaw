@@ -24,7 +24,7 @@ Root Project aggregate lifecycle, project persistence (IndexedDB and native file
 ## Key Subsystems
 
 - **Project Persistence**: Orchestrates saving, loading, dirty state tracking, and legacy migration across IndexedDB and native desktop files (`useCases/projectPersistence/`).
-- **Native Project Files**: Tauri IPC bridge for direct desktop disk I/O (`repositories/nativeProjectFiles/`: `saveProjectToFile`, `loadProjectFromFile`, `listProjectFiles`).
+- **Native Project Files**: Tauri IPC bridge for direct desktop disk I/O (`repositories/nativeProjectFiles/`: `saveProjectToFile`).
 - **Template Engine**: Factory templates and starter arrangements with audio preview loops (`useCases/projectTemplates/`).
 - **Missing Media Detector**: `stores/missingMediaStore.ts` and `useCases/projectPersistence/helpers/verifyAudioBufferReferences.ts` inspect audio buffer references against loaded clips to flag missing assets.
 - **Semantic Project Query Engine**: Structured read interface and creative brief validation for automated agents and AI workflows (`useCases/semanticProjectQueries.ts`, `models/ProductionBrief.ts`).

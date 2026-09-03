@@ -18,6 +18,16 @@ type WarpSectionProps = {
     onParam: (key: string, value: number) => void;
 };
 
+const formatAudioModRate = (rate: number): string => {
+    if (rate < 20) {
+        return `${rate.toFixed(1)}Hz`;
+    }
+    if (rate < 1000) {
+        return `${Math.round(rate)}Hz`;
+    }
+    return `${(rate / 1000).toFixed(1)}kHz`;
+};
+
 export const WarpSection = ({
     warpMode,
     warpAmount,
@@ -26,52 +36,7 @@ export const WarpSection = ({
     audioModTarget,
     onParam,
 }: WarpSectionProps): ReactElement => {
-    let audioModRateStr = '';
-    if (audioModRate < 20) {
-        audioModRateStr = `${audioModRate.toFixed(1)}Hz`;
-    } else if (audioModRate < 1000) {
-        audioModRateStr = `${Math.round(audioModRate)}Hz`;
-    } else {
-        audioModRateStr = `${(audioModRate / 1000).toFixed(1)}kHz`;
-    }
-
-    const renderIife_1 = () => {
-        if (audioModTarget > 0) {
-            return (
-                <Row align="end" gap={2} className="px-1">
-                    <Stack align="center" gap={0.5}>
-                        <RotaryKnob
-                            value={audioModRate}
-                            onChange={(v) => onParam('audioModRate', v)}
-                            min={0}
-                            max={5000}
-                            step={1}
-                            defaultValue={0}
-                            size="lg"
-                            tone="sage"
-                        />
-                        <span className="text-[7px] text-muted-foreground">Rate</span>
-                        <span className="text-[6px] text-muted-foreground/50 font-mono">{audioModRateStr}</span>
-                    </Stack>
-                    <Stack align="center" gap={0.5}>
-                        <RotaryKnob
-                            value={audioModDepth}
-                            onChange={(v) => onParam('audioModDepth', v)}
-                            min={0}
-                            max={1}
-                            step={0.01}
-                            defaultValue={0}
-                            size="lg"
-                            tone="sage"
-                        />
-                        <span className="text-[7px] text-muted-foreground">Depth</span>
-                    </Stack>
-                </Row>
-            );
-        } else {
-            return null;
-        }
-    };
+    const audioModRateStr = formatAudioModRate(audioModRate);
 
     return (
         <Stack gap={2}>
@@ -130,7 +95,37 @@ export const WarpSection = ({
                         </DawPluginChip>
                     ))}
                 </Row>
-                {renderIife_1()}
+                {audioModTarget > 0 ? (
+                    <Row align="end" gap={2} className="px-1">
+                        <Stack align="center" gap={0.5}>
+                            <RotaryKnob
+                                value={audioModRate}
+                                onChange={(v) => onParam('audioModRate', v)}
+                                min={0}
+                                max={5000}
+                                step={1}
+                                defaultValue={0}
+                                size="lg"
+                                tone="sage"
+                            />
+                            <span className="text-[7px] text-muted-foreground">Rate</span>
+                            <span className="text-[6px] text-muted-foreground/50 font-mono">{audioModRateStr}</span>
+                        </Stack>
+                        <Stack align="center" gap={0.5}>
+                            <RotaryKnob
+                                value={audioModDepth}
+                                onChange={(v) => onParam('audioModDepth', v)}
+                                min={0}
+                                max={1}
+                                step={0.01}
+                                defaultValue={0}
+                                size="lg"
+                                tone="sage"
+                            />
+                            <span className="text-[7px] text-muted-foreground">Depth</span>
+                        </Stack>
+                    </Row>
+                ) : null}
             </Stack>
         </Stack>
     );

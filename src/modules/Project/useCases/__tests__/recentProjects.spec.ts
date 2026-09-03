@@ -6,7 +6,7 @@ import { stopPlayback } from '#/modules/Transport/useCases';
 import { readNamedProjectJson } from '../../repositories/project/readNamedProjectJson';
 import { setProjectIdentityTransitionDependencies } from '../projectPersistence/projectIdentityTransitionDependencies';
 import { addToRecentProjects } from '../recentProjects/addToRecentProjects';
-import { getRecentProjects } from '../recentProjects/helpers';
+import { getRecentProjects, recentProjectChanges } from '../recentProjects/helpers';
 import { loadRecentProject } from '../recentProjects/loadRecentProject';
 import { removeFromRecentProjects } from '../recentProjects/removeFromRecentProjects';
 
@@ -18,6 +18,21 @@ const storageMocks = vi.hoisted(() => {
     const mockSet = vi.fn<(entries: RecentEntry[]) => void>();
     return { mockGet, mockSet };
 });
+
+const loadMocks = vi.hoisted(() => ({
+    replaceProjectData: vi.fn(),
+    runProjectLoadTransaction: vi.fn(),
+}));
+
+// replaceProjectData and runProjectLoadTransaction are mocked so loadRecentProject's
+// not-found test does not walk the full project-replacement graph (AudioEngine, etc.).
+vi.mock('../projectPersistence/helpers/replaceProjectData', () => ({
+    replaceProjectData: loadMocks.replaceProjectData,
+}));
+
+vi.mock('../projectPersistence/helpers/runProjectLoadTransaction', () => ({
+    runProjectLoadTransaction: loadMocks.runProjectLoadTransaction,
+}));
 
 vi.mock('#/modules/Project/repositories/project/readNamedProjectJson', () => ({
     readNamedProjectJson: vi.fn(),
@@ -46,29 +61,9 @@ vi.mock('#/infra/logger/appLogger', () => ({
 
 vi.mock('#/modules/Transport/useCases', () => ({
     stopPlayback: vi.fn(),
-}));
-
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    resetAudioGraph: vi.fn(),
-    getAudioContext: vi.fn(),
-}));
-
-vi.mock('../projectPersistence/helpers/hydrateModuleStoresFromProjectData', () => ({
-    hydrateModuleStoresFromProjectData: vi.fn(),
-}));
-
-vi.mock('#/modules/Command/useCases', () => ({
-    executeAppAction: vi.fn(),
-    clearUndoHistory: vi.fn(),
-    resetActionReplayAuthority: vi.fn(),
-}));
-
-vi.mock('../projectPersistence/helpers/verifyAudioBufferReferences', () => ({
-    verifyAudioBufferReferences: vi.fn(),
-}));
-
-vi.mock('#/modules/AudioEngine/stores', () => ({
-    audioBufferCache: { restoreFromIdb: vi.fn().mockResolvedValue(undefined) },
+    defaultTransportState: { masterGain: 75, isPlaying: false },
+    ensureTrackStrips: vi.fn(),
+    restoreTimelineMapSnapshot: vi.fn(),
 }));
 
 describe('recentProjects injectables', () => {
@@ -110,6 +105,17 @@ describe('recentProjects injectables', () => {
         expect(storageMocks.mockSet).toHaveBeenCalledWith([{ name: 'B', key: 'k2', updatedAt: 2 }]);
     });
 
+    it('notifies Project-owned recent-list subscribers after a storage write', () => {
+        const listener = vi.fn();
+        const unsubscribe = recentProjectChanges.subscribe(listener);
+
+        addToRecentProjects('My Song', 'key-a');
+        unsubscribe();
+        removeFromRecentProjects('key-a');
+
+        expect(listener).toHaveBeenCalledTimes(1);
+    });
+
     it('should expose getRecentProjects from storage', () => {
         storageMocks.mockGet.mockReturnValue([{ name: 'X', key: 'kx', updatedAt: 3 }]);
         expect(getRecentProjects()).toEqual([{ name: 'X', key: 'kx', updatedAt: 3 }]);
@@ -123,5 +129,6 @@ describe('recentProjects injectables', () => {
         expect(ok).toBe('not-found');
         expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('No project data found'));
         expect(stopPlayback).not.toHaveBeenCalled();
+        expect(loadMocks.replaceProjectData).not.toHaveBeenCalled();
     });
 });

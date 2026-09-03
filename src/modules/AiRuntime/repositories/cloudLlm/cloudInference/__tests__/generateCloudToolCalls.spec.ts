@@ -44,17 +44,20 @@ describe('generateCloudToolCalls', () => {
 
     it('rejects an unconfigured cloud runtime', async () => {
         mocks.getRuntime.mockReturnValue(null);
-        await expect(generateCloudToolCalls('state', 'message')).rejects.toThrow('Hosted AI is not configured');
+        await expect(generateCloudToolCalls('state', 'message', tools, 8192)).rejects.toThrow(
+            'Hosted AI is not configured'
+        );
     });
 
     it('dispatches Anthropic planning through the native provider path', async () => {
-        const result = await generateCloudToolCalls('state', 'message', tools);
+        const result = await generateCloudToolCalls('state', 'message', tools, 8192);
 
         expect(mocks.generateAnthropic).toHaveBeenCalledWith(
             expect.objectContaining({
                 systemPrompt: expect.stringContaining('state'),
                 userMessage: 'message',
                 toolSchemas: tools,
+                maxOutputTokens: 8192,
                 signal: expect.any(AbortSignal),
             })
         );
@@ -73,7 +76,7 @@ describe('generateCloudToolCalls', () => {
         mocks.getRuntime.mockReturnValue(runtime);
         mocks.generateOpenAi.mockResolvedValue([{ name: 'addTrack', arguments: {} }]);
 
-        await expect(generateCloudToolCalls('state', 'message', tools)).resolves.toEqual([
+        await expect(generateCloudToolCalls('state', 'message', tools, 8192)).resolves.toEqual([
             { name: 'addTrack', arguments: {} },
         ]);
         expect(mocks.generateOpenAi).toHaveBeenCalledWith(

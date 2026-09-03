@@ -67,3 +67,4 @@ export { updateWorkspaceState } from './workspaceState';
 // ── Window Chrome ─────────────────────────────────────────────────────────────
 
 export { windowChromeControls } from './windowChrome';
+export { nativeApplicationMenu } from './nativeApplicationMenu';

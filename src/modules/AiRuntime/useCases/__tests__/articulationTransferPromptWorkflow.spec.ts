@@ -34,6 +34,9 @@ import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
 
 import {
+    AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+    ambiguousSameObjectDivergence,
+    ambiguousSameObjectDivergenceMessage,
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
@@ -906,8 +909,8 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         expect(getConfirmationId()).toBe('');
     });
 
-    // Invalidation here follows from the project changing at all, not from the
-    // changed target being one this proposal names — see #2894.
+    // The collaborator changed a source note this proposal reads, so the divergence port classifies
+    // the conflict against that note rather than reporting that the project moved at all.
     it('invalidates a confirmed proposal after a collaborator changes a source articulation', async () => {
         await sendChatMessage(PROMPT);
         const confirmationId = getConfirmationId();
@@ -1133,12 +1136,8 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         ]);
     });
 
-    // The edit below conflicts with the second pair this proposal names, but the
-    // status, reason and receipt asserted here are what *any* project change
-    // after the proposal produces — renaming an unrelated audio track reaches
-    // the same terminal state through the same code path. This test therefore
-    // pins the project-changed disposition, not target-conflict detection; that
-    // the two are indistinguishable is the production defect filed as #2894.
+    // The edit below conflicts with the second pair this proposal names, and the refusal says so:
+    // the divergence port names the conflicted note, so a change elsewhere does not read the same.
     it('leaves no receipt or history residue when the project changes before confirmation', async () => {
         addSecondMidiAndAudioTracks();
         flushAutomergeStorageWrites();
@@ -1158,7 +1157,8 @@ describe('MF-03 articulation transfer prompt workflow', () => {
 
         expect(await confirmPendingChatActions({ confirmationId })).toEqual({
             status: 'invalidated',
-            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+            reason: AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+            divergence: ambiguousSameObjectDivergence(['brass-source']),
         });
 
         expect(midiStore.value?.notesByClipId['clip-chorus-two']?.map((note) => note.articulation)).toEqual([
@@ -1176,8 +1176,6 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         expect(undoStore.value?.past).toEqual([]);
         expect(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId === confirmationId)?.content
-        ).toBe(
-            'This proposal was not executed because the project changed after it was created. Review the current project and submit the command again.'
-        );
+        ).toBe(ambiguousSameObjectDivergenceMessage(['brass-source']));
     });
 });

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 
 import { type Device, type Track } from '#/modules/Arrangement/stores';
 
-import { createFindDeviceRef, encodeCrustValue } from '../helpers';
+import { createFindDeviceRef, encodeCrustValue, STYLE_TO_ALGORITHM } from '../helpers';
 
 function createDevice(id: string): Device {
     return {
@@ -104,6 +104,17 @@ describe('encodeCrustValue', () => {
     it('should return null for unencodable non-string values', () => {
         expect(encodeCrustValue('algorithm', null)).toBeNull();
         expect(encodeCrustValue('style', { label: 'transparent' })).toBeNull();
+    });
+});
+
+describe('STYLE_TO_ALGORITHM', () => {
+    // Same three pairs as Algorithm::from_style_index in crates/daw-dsp/src/crust/params.rs.
+    it.each([
+        ['transparent', 'transparent'],
+        ['punchy', 'punchy'],
+        ['loud', 'wall'],
+    ] as const)('should map style %s to algorithm %s', (style, algorithm) => {
+        expect(STYLE_TO_ALGORITHM[style]).toBe(algorithm);
     });
 });
 

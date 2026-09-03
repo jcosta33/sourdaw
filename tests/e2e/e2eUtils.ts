@@ -1,9 +1,16 @@
 import { expect, type Page } from '@playwright/test';
 import { stringify as superjsonStringify } from 'superjson';
 
-const LAUNCH_SCREEN_NAME = 'Sourdaw — start a project';
+export const LAUNCH_SCREEN_NAME = 'Sourdaw — start a project';
 const PLAYBACK_CONTROLS_NAME = 'Playback controls';
-const LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS = 45_000;
+/**
+ * The launch overlay is the application's first paint, so it is bounded
+ * independently of the suite ceiling: it admits a cold Vite transform while a
+ * genuine hang still fails well before the multi-step allowance. Every spec
+ * that waits on that overlay itself, rather than through the helpers below,
+ * owes the same bound.
+ */
+export const LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS = 45_000;
 
 type LaunchOverlayState = 'active' | 'exited';
 

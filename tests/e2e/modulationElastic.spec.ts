@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
-import { launch_from_template, launch_new_project, setupWorkspace } from './e2eUtils';
+
+import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -26,10 +27,21 @@ test.describe('Bottom Dock — Modulation, Automation & Elastic', () => {
         await expect(panel.getByRole('button').first()).toBeVisible({ timeout: 5000 });
     });
 
-    test('Elastic tab presence depends on audio clips', async ({ page }) => {
+    test('Elastic tab stays absent with a MIDI clip selected', async ({ page }) => {
+        // AppShell renders the tab only when `isAudioClipSelected` is true
+        // (src/modules/WorkspaceShell/presentations/views/AppShell.tsx); the
+        // tab is gated on the selected clip's type, so a selected MIDI clip
+        // must not show it.
+        const timeline = page.getByLabel('Timeline editor surface');
+        await timeline.click({ button: 'right', position: { x: 300, y: 30 } });
+        await page.getByRole('menuitem', { name: /Add Clip Here/i }).click();
+        await expect(page.getByText(/New midi clip/i).first()).toBeVisible();
+
+        await timeline.dblclick({ position: { x: 300, y: 30 } });
+        await expect(page.getByLabel('Piano roll editor')).toBeVisible();
+
         const elastic_tab = page.locator('#bottom-dock-tab-elastic');
-        const exists = await elastic_tab.count();
-        expect(exists).toBeGreaterThanOrEqual(0);
+        await expect(elastic_tab).toHaveCount(0);
     });
 
     test('Can switch modulation → automation → mixer with content each time', async ({ page }) => {

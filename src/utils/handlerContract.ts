@@ -1481,6 +1481,10 @@ export type AppAction =
               clipId: string;
               notes: readonly MidiClipNoteSnapshot[];
               expectedNotes: readonly MidiClipNoteSnapshot[];
+              /** Whether the replacement snapshot owns a MIDI notes bucket, preserving absence versus present-empty. */
+              notesBucketPresent?: boolean;
+              /** Whether the expected snapshot owns a MIDI notes bucket, preserving absence versus present-empty. */
+              expectedNotesBucketPresent?: boolean;
               /** Internal redo allowance for a newly recreated clip whose MIDI bucket does not exist yet. */
               allowMissingExpectedEmpty?: boolean;
               /** MF-03 replay eligibility captured from the approved source and clip topology. */
@@ -1570,6 +1574,8 @@ export type AppAction =
                *  before reverse mirrored them still decode. */
               fadeInBeats?: number;
               fadeOutBeats?: number;
+              /** Offset the restore puts back; optional so older undo entries still decode. */
+              audioOffsetBeats?: number;
               blobs?: KneadPitchBlobSnapshot[];
               contour?: PitchContourSnapshot;
           };
@@ -2108,6 +2114,8 @@ export type AppAction =
                   startBeat: number;
                   duration: number;
                   velocity?: number;
+                  /** Canonical handler materialization writes the default probability. */
+                  probability?: number;
               }>;
           };
       }
@@ -2335,6 +2343,14 @@ export type HandlerValidationContext = {
     readonly executionMode?: 'isolated-preview';
 };
 
+/** Neutral persisted-history shape supplied to an owning handler after Command
+ *  has validated each action against its current operation contract. */
+export type HandlerSessionActionEntry = {
+    readonly action: AppAction;
+    readonly inverseAction: AppAction | null;
+    readonly redoAction?: AppAction;
+};
+
 export type HandlerDeferredEffectAttempt = {
     readonly kind: 'work-attempt';
     readonly operation: AppActionType;
@@ -2344,17 +2360,23 @@ export type HandlerDeferredEffectAttempt = {
 /** One dispatchable action's handler. Built via `createHandler` and merged into a module
  *  handler map by each `get<Module>Handlers` factory. */
 type ActionHandlerCommon<Action extends AppAction> = {
-    describe: (action: Action) => HandlerDescribeResult;
+    describe: (action: Action, context?: HandlerValidationContext) => HandlerDescribeResult;
     /** Side-effect-free authoritative domain validation run for the whole batch before its first effect. */
     validate?: (action: Action, context: HandlerValidationContext) => boolean;
     /** Explicit action-specific proof that authoritative validation can safely reapply this action after target divergence. */
-    canReapplyAfterDivergence?: (action: Action) => boolean;
+    canReapplyAfterDivergence?: (action: Action, context?: HandlerValidationContext) => boolean;
     /** Resolve deterministic application-owned payload fields, without project/runtime writes, before hashing. */
     materializeCommandArguments?: (action: Action) => void;
+    /** Owner-provided strict validation for a payload after application-owned materialization. */
+    validateMaterializedCommandArguments?: (payload: unknown) => boolean;
+    /** Owner-provided strict validation for an internal persisted replay payload. */
+    validateSessionActionArguments?: (payload: unknown) => boolean;
     /** Capture an owner-provided rollback for non-CRDT pre-commit state before dispatch begins. */
     prepareAbort?: (action: Action) => HandlerAfterCommit;
     /** True when the canonical action is already reflected in project truth. */
     isNoop?: (action: Action) => boolean;
+    /** Owner-provided relationship validation for a persisted forward/inverse/redo entry. */
+    validateSessionEntry?: (entry: HandlerSessionActionEntry) => boolean;
     /** False when transaction abort fully rolls back the write and no pre-commit external effect can run. */
     requiresAbortCompensation?: boolean;
     /** Runtime handlers execute outside Automerge and cannot join project-mutation batches. */

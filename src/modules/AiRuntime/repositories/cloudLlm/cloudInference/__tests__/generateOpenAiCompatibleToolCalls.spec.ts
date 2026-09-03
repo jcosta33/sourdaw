@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { isHostedAiHttpStatusError } from '../../../../errors/HostedAiHttpStatusError';
 import { type OpenAiCompatibleCloudRuntime } from '../../cloudSession';
 import { generateOpenAiCompatibleToolCalls } from '../generateOpenAiCompatibleToolCalls';
 
@@ -34,6 +35,37 @@ function generateToolCalls() {
         userMessage: 'mute drums',
         toolSchemas: tools,
     });
+}
+
+function openaiRuntime(model: string): OpenAiCompatibleCloudRuntime {
+    return {
+        provider: 'openai',
+        authentication: 'api-key',
+        session_id: 'provider-session-00000000000000000000000000000000',
+        model,
+        base_url: 'https://api.openai.com/v1',
+    };
+}
+
+async function requestBodyFor(targetRuntime: OpenAiCompatibleCloudRuntime): Promise<Record<string, unknown>> {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { tool_calls: [] } }] }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+        })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    await generateOpenAiCompatibleToolCalls({
+        runtime: targetRuntime,
+        systemPrompt: 'system',
+        userMessage: 'mute drums',
+        toolSchemas: tools,
+    });
+    const request = fetchMock.mock.calls[0]?.[1];
+    if (!request || typeof request.body !== 'string') {
+        throw new Error('Expected a JSON request body');
+    }
+    return JSON.parse(request.body) as Record<string, unknown>;
 }
 
 function respondWith(payload: unknown): void {
@@ -119,6 +151,31 @@ describe('generateOpenAiCompatibleToolCalls', () => {
         expect(body.tools).toEqual(tools);
         expect(body.tool_choice).toBe('auto');
         expect(body.n).toBe(1);
+        expect(body).not.toHaveProperty('reasoning_effort');
+    });
+
+    it.each(['gpt-5.6', 'gpt-5.6-luna', 'gpt-5.6-luna-2026-04-01', 'gpt-5.6-unlisted-variant'])(
+        'sends reasoning_effort none for first-party OpenAI gpt-5.6 model %s',
+        async (model) => {
+            const body = await requestBodyFor(openaiRuntime(model));
+            expect(body).toMatchObject({ model, reasoning_effort: 'none' });
+        }
+    );
+
+    it.each(['gpt-5', 'gpt-5-2025-08-07', 'o3', 'o1-mini', 'gpt-4-turbo', 'gpt-4o'])(
+        'omits reasoning_effort for first-party OpenAI model %s',
+        async (model) => {
+            const body = await requestBodyFor(openaiRuntime(model));
+            expect(body).not.toHaveProperty('reasoning_effort');
+        }
+    );
+
+    it('omits reasoning_effort for openai-compatible endpoints', async () => {
+        const body = await requestBodyFor({
+            ...runtime,
+            model: 'gpt-5.6-luna',
+        });
+        expect(body).not.toHaveProperty('reasoning_effort');
     });
 
     it.each([
@@ -178,14 +235,21 @@ describe('generateOpenAiCompatibleToolCalls', () => {
     it('reports status without echoing credentials or provider response bodies', async () => {
         vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response('key=sk-secret', { status: 401 })));
 
-        await expect(
-            generateOpenAiCompatibleToolCalls({
-                runtime,
-                systemPrompt: 'system',
-                userMessage: 'mute drums',
-                toolSchemas: tools,
-            })
-        ).rejects.toThrow('Hosted AI tool request failed with status 401');
+        const error = await generateOpenAiCompatibleToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'mute drums',
+            toolSchemas: tools,
+        }).catch((error: unknown) => error);
+
+        expect(isHostedAiHttpStatusError(error)).toBe(true);
+        if (!isHostedAiHttpStatusError(error)) {
+            return;
+        }
+        expect(error.message).toBe('Hosted AI tool request failed with status 401');
+        expect(error.status).toBe(401);
+        expect(error.message).not.toContain('key=sk-secret');
+        expect(error.message).not.toContain('sk-secret');
     });
 
     it('rejects tool calls from a token-limited response', async () => {
@@ -398,5 +462,66 @@ describe('generateOpenAiCompatibleToolCalls', () => {
         expect(fetchMock.mock.calls[0]?.[1]?.headers).toEqual({
             'Content-Type': 'application/json',
         });
+    });
+
+    it('encodes dotted tool names on the wire and decodes them on the response', async () => {
+        const dottedTools = [
+            {
+                type: 'function' as const,
+                function: {
+                    name: 'project.query',
+                    description: 'Query the project',
+                    parameters: {
+                        type: 'object' as const,
+                        properties: {},
+                        required: [],
+                        additionalProperties: false,
+                    },
+                },
+            },
+        ];
+        const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+            new Response(
+                JSON.stringify({
+                    choices: [
+                        {
+                            finish_reason: 'tool_calls',
+                            message: {
+                                tool_calls: [
+                                    {
+                                        function: {
+                                            name: 'project_query',
+                                            arguments: '{}',
+                                        },
+                                    },
+                                ],
+                            },
+                        },
+                    ],
+                }),
+                { status: 200, headers: { 'Content-Type': 'application/json' } }
+            )
+        );
+        vi.stubGlobal('fetch', fetchMock);
+
+        const result = await generateOpenAiCompatibleToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'what tracks exist',
+            toolSchemas: dottedTools,
+        });
+
+        const request = fetchMock.mock.calls[0]?.[1];
+        if (!request || typeof request.body !== 'string') {
+            throw new Error('Expected a JSON request body');
+        }
+        const body = JSON.parse(request.body) as {
+            tools: Array<{ function: { name: string } }>;
+        };
+        expect(body.tools[0]?.function.name).toBe('project_query');
+        for (const tool of body.tools) {
+            expect(tool.function.name).not.toContain('.');
+        }
+        expect(result).toEqual([{ name: 'project.query', arguments: {} }]);
     });
 });

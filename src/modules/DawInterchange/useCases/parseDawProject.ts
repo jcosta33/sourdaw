@@ -3,11 +3,11 @@ import { parseMetadataXml } from './parseMetadataXml';
 import { parseProjectXml } from './parseProjectXml';
 import { readDawProjectZip } from './readDawProjectZip';
 
-export function parseDawProject(input: ArrayBuffer): DawProjectParseResult {
-    const contents = readDawProjectZip(input);
+export async function parseDawProject(input: ArrayBuffer): Promise<DawProjectParseResult> {
+    const contents = await readDawProjectZip(input);
     const project = parseProjectXml(contents.projectXml);
     const meta = contents.metadataXml ? parseMetadataXml(contents.metadataXml) : { title: '', artist: '', comment: '' };
-    const audioAssets = contents.readAudioAssets();
+    const audioAssets = await contents.readAudioAssets();
 
     return {
         meta,

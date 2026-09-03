@@ -6,6 +6,7 @@ import {
     type EngineEvent,
     type EngineRtDiagnostics,
     type EngineStreamErrorKind,
+    type EngineStreamSide,
 } from '../../models/EngineRtDiagnostics';
 
 const streamErrorKinds: readonly EngineStreamErrorKind[] = [
@@ -16,6 +17,12 @@ const streamErrorKinds: readonly EngineStreamErrorKind[] = [
     'xrun',
     'backendSpecific',
 ];
+
+function readStreamSide(value: unknown): EngineStreamSide {
+    // A native build that sends no side is one from before the engine had a
+    // capture stream, so every error it can report is an output error.
+    return value === 'input' ? 'input' : 'output';
+}
 
 function readCounter(payload: Record<string, unknown>, key: keyof EngineRtDiagnostics): number {
     const value = payload[key];
@@ -37,15 +44,16 @@ function toEngineEvent(value: unknown): EngineEvent | null {
         return null;
     }
 
+    const side = readStreamSide(candidate.side);
     const kind = candidate.kind;
     if (typeof kind !== 'string' || !streamErrorKinds.includes(kind as EngineStreamErrorKind)) {
         // An unmapped kind still means the stream errored — report it rather
         // than dropping the event, which is the failure this surface exists to
         // end.
-        return { type: 'streamError', kind: 'backendSpecific' };
+        return { type: 'streamError', side, kind: 'backendSpecific' };
     }
 
-    return { type: 'streamError', kind: kind as EngineStreamErrorKind };
+    return { type: 'streamError', side, kind: kind as EngineStreamErrorKind };
 }
 
 function toEngineRtDiagnostics(response: unknown): EngineRtDiagnostics {
@@ -73,6 +81,10 @@ function toEngineRtDiagnostics(response: unknown): EngineRtDiagnostics {
         bridgeBacklogBlocksShed: readCounter(payload, 'bridgeBacklogBlocksShed'),
         callbackFramesOverBridgeReach: readCounter(payload, 'callbackFramesOverBridgeReach'),
         bridgeInputBlocksRefused: readCounter(payload, 'bridgeInputBlocksRefused'),
+        captureConsumerRefusals: readCounter(payload, 'captureConsumerRefusals'),
+        captureBlocksDropped: readCounter(payload, 'captureBlocksDropped'),
+        captureInputUnderruns: readCounter(payload, 'captureInputUnderruns'),
+        inputLatencyFrames: readCounter(payload, 'inputLatencyFrames'),
         events,
     };
 }

@@ -25,6 +25,7 @@ function samplePeer(id: string): PeerInfo {
         isConnected: true,
         lastSeen: 1_700_000_000_000,
         latencyMs: 42,
+        syncHealth: 'converging',
     };
 }
 

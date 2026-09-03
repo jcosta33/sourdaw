@@ -16,6 +16,7 @@
  *   is a silent ~3.57x size penalty on exactly the payloads (plugin state,
  *   audio) that are already the largest thing the shell moves.
  */
+import { isNativeMenuIntent, type NativeMenuIntent } from './applicationMenu.js';
 import {
     DIALOG_MESSAGE_CHANNEL,
     DIALOG_OPEN_CHANNEL,
@@ -35,6 +36,13 @@ import {
     WINDOW_MAXIMIZED_CHANGED_CHANNEL,
     WINDOW_MINIMIZE_CHANNEL,
     WINDOW_TOGGLE_MAXIMIZE_CHANNEL,
+    NATIVE_MENU_ACTION_CHANNEL,
+    NATIVE_MENU_PROJECT_STATE_CHANNEL,
+    NATIVE_MENU_SAVE_RESULT_CHANNEL,
+    RENDERER_SESSION_QUIESCE_CHANNEL,
+    RENDERER_SESSION_QUIESCE_CANCEL_CHANNEL,
+    RENDERER_SESSION_QUIESCED_CHANNEL,
+    RENDERER_SESSION_QUIESCE_STARTED_CHANNEL,
     type SourdawBridge,
 } from './channels.js';
 import { commandChannel, isExposedCommand } from './commands.js';
@@ -183,6 +191,9 @@ export const createSourdawBridge = (
     const streamListeners = new Map<string, (payload: unknown) => void>();
     const voiceTerminalListeners = new Map<string, Set<(event: string, payload: unknown) => void>>();
     const maximizedListeners = new Set<(maximized: boolean) => void>();
+    const nativeMenuListeners = new Set<(intent: NativeMenuIntent) => void>();
+    const rendererSessionListeners = new Set<(requestId: number) => void>();
+    const rendererSessionCancelListeners = new Set<(requestId: number) => void>();
     let nextStreamId = 0;
     const voiceActivation = createVoiceActivation(ipc, voiceDocument);
 
@@ -234,6 +245,35 @@ export const createSourdawBridge = (
         }
         for (const listener of [...maximizedListeners]) {
             listener(maximized);
+        }
+    });
+
+    ipc.on(NATIVE_MENU_ACTION_CHANNEL, (_event, ...args) => {
+        const [intent] = args;
+        if (!isNativeMenuIntent(intent)) {
+            return;
+        }
+        for (const listener of [...nativeMenuListeners]) {
+            listener(intent);
+        }
+    });
+
+    ipc.on(RENDERER_SESSION_QUIESCE_CHANNEL, (_event, ...args) => {
+        const [requestId] = args;
+        if (typeof requestId !== 'number' || !Number.isSafeInteger(requestId) || requestId < 1) {
+            return;
+        }
+        for (const listener of [...rendererSessionListeners]) {
+            listener(requestId);
+        }
+    });
+    ipc.on(RENDERER_SESSION_QUIESCE_CANCEL_CHANNEL, (_event, ...args) => {
+        const [requestId] = args;
+        if (typeof requestId !== 'number' || !Number.isSafeInteger(requestId) || requestId < 1) {
+            return;
+        }
+        for (const listener of [...rendererSessionCancelListeners]) {
+            listener(requestId);
         }
     });
 
@@ -399,6 +439,37 @@ export const createSourdawBridge = (
                 return () => {
                     maximizedListeners.delete(callback);
                 };
+            },
+        },
+
+        nativeMenu: {
+            listen: (callback) => {
+                nativeMenuListeners.add(callback);
+                return () => nativeMenuListeners.delete(callback);
+            },
+            projectState: async (state) => {
+                await ipc.invoke(NATIVE_MENU_PROJECT_STATE_CHANNEL, state);
+            },
+            saveResult: async (result) => {
+                await ipc.invoke(NATIVE_MENU_SAVE_RESULT_CHANNEL, result);
+            },
+            listenSessionQuiesce: (callback) => {
+                rendererSessionListeners.add(callback);
+                return () => rendererSessionListeners.delete(callback);
+            },
+            listenSessionQuiesceCancel: (callback) => {
+                rendererSessionCancelListeners.add(callback);
+                return () => rendererSessionCancelListeners.delete(callback);
+            },
+            sessionQuiesced: async (result) => {
+                await ipc.invoke(RENDERER_SESSION_QUIESCED_CHANNEL, result);
+            },
+            sessionQuiesceStarted: async (requestId) => {
+                const accepted = await ipc.invoke(RENDERER_SESSION_QUIESCE_STARTED_CHANNEL, { requestId });
+                if (typeof accepted !== 'boolean') {
+                    throw new TypeError('renderer session quiesce start returned an invalid acknowledgement');
+                }
+                return accepted;
             },
         },
     };

@@ -617,6 +617,47 @@ describe('check-dependency-boundaries', () => {
         }
     });
 
+    it('should reject sibling-imported vendor types wrapped in library generics', () => {
+        const { repositoryDirectory, repositoryRoot, useCaseDirectory } = createCommonJsStaticGuardFixture(
+            'check-dependency-boundaries-library-generics-'
+        );
+
+        try {
+            writeFixtureFiles(repositoryDirectory, {
+                'vendorTypes.ts': [
+                    "import type { InvokeArgs } from '@tauri-apps/api/core';",
+                    'export type VendorArgs = InvokeArgs;',
+                ],
+                'wrapped.ts': [
+                    "import type { VendorArgs } from './vendorTypes';",
+                    'export type PromiseArgs = Promise<VendorArgs>;',
+                    'export type MapArgs = Map<string, VendorArgs>;',
+                    'export type CallbackArgs = (args: VendorArgs) => void;',
+                    'export type ArrayArgs = ReadonlyArray<VendorArgs>;',
+                ],
+            });
+            writeFixtureFiles(useCaseDirectory, {
+                'consume-wrapped.ts': [
+                    "import type { ArrayArgs, CallbackArgs, MapArgs, PromiseArgs } from '../repositories/wrapped';",
+                    'export type WrappedArgs = ArrayArgs | CallbackArgs | MapArgs | PromiseArgs;',
+                ],
+            });
+
+            const vendorFindings = findStaticGuardFindings(repositoryRoot).filter(({ reason }) =>
+                reason.includes('Tauri vendor type')
+            );
+
+            expect(vendorFindings).toEqual([
+                vendorFinding('src/modules/Foo/repositories/wrapped.ts', 2),
+                vendorFinding('src/modules/Foo/repositories/wrapped.ts', 3),
+                vendorFinding('src/modules/Foo/repositories/wrapped.ts', 4),
+                vendorFinding('src/modules/Foo/repositories/wrapped.ts', 5),
+            ]);
+        } finally {
+            rmSync(repositoryRoot, { force: true, recursive: true });
+        }
+    });
+
     it('should resolve exported vendor types across supported module forms and consumers', () => {
         let repositoryRoot: string | undefined;
 

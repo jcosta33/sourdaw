@@ -2,9 +2,15 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
-import { resumeEngine, requestMicPermission } from '#/modules/AudioEngine/useCases';
+import {
+    initializeAudioEngine,
+    resumeEngine,
+    requestMicPermission,
+    syncNativeTimelineSamples,
+} from '#/modules/AudioEngine/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
-import { finishProjectLoading, loadProject, saveProject } from '#/modules/Project/useCases';
+import { finishProjectLoading, loadProject, reportProjectLoadFailure, saveProject } from '#/modules/Project/useCases';
+import { syncTransportMapsToNativeSession } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { useAppInitialization } from '../useAppInitialization';
@@ -27,6 +33,11 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     setMasterGainValue: vi.fn(),
     resumeEngine: vi.fn(),
     requestMicPermission: vi.fn().mockResolvedValue(undefined),
+    // Returns an unsubscribe, like its two siblings below: the boot sequence
+    // calls it and holds what it returns, so a stub returning `undefined` makes
+    // the whole sequence throw into the catch and every later step — including
+    // `loadProject` — never runs.
+    syncNativeTimelineSamples: vi.fn(() => vi.fn()),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
     initWebMidi: vi.fn().mockResolvedValue(undefined),
@@ -40,10 +51,36 @@ vi.mock('#/modules/Project/stores', () => ({
         set: projectStoreMock.set,
     },
 }));
+const identityTransitionReady = vi.hoisted(() => {
+    let release: (() => void) | undefined;
+    return {
+        hold(): void {
+            this.ready = new Promise<void>((resolve) => {
+                release = resolve;
+            });
+        },
+        release(): void {
+            release?.();
+            this.ready = Promise.resolve();
+        },
+        reset(): void {
+            this.ready = Promise.resolve();
+            release = undefined;
+        },
+        fail(reason: unknown): void {
+            this.ready = Promise.reject(reason);
+            void this.ready.catch(() => undefined);
+        },
+        ready: Promise.resolve(),
+    };
+});
+
 vi.mock('#/modules/Project/useCases', () => ({
     loadProject: vi.fn().mockResolvedValue(undefined),
     finishProjectLoading: vi.fn(),
+    reportProjectLoadFailure: vi.fn(),
     saveProject: vi.fn(),
+    whenProjectIdentityTransitionDependenciesConfigured: () => identityTransitionReady.ready,
 }));
 vi.mock('#/modules/SampleLibrary/useCases', () => ({
     restoreLibrary: vi.fn().mockResolvedValue(undefined),
@@ -53,6 +90,7 @@ vi.mock('#/modules/Synth/useCases', () => ({ registerProSynthInstruments: vi.fn(
 vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: vi.fn(),
     getTransportState: vi.fn(() => transportStateMock.current),
+    syncTransportMapsToNativeSession: vi.fn(() => vi.fn()),
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 const mockPreferencesValueHolder: { current: Record<string, unknown> | null } = { current: { uiScale: 1 } };
@@ -74,6 +112,7 @@ vi.mock('#/modules/Preferences/stores', () => ({
 beforeEach(() => {
     transportStateMock.current = null;
     preferenceListeners.clear();
+    identityTransitionReady.reset();
 });
 
 describe('useAppInitialization — first-gesture engine resume', () => {
@@ -238,6 +277,41 @@ describe('useAppInitialization — knead engine subscription teardown', () => {
         // it to land before tearing down.
         await waitFor(() => {
             expect(syncKneadToEngine).toHaveBeenCalledTimes(1);
+        });
+        expect(unsubscribe).not.toHaveBeenCalled();
+
+        unmount();
+
+        expect(unsubscribe).toHaveBeenCalledTimes(1);
+    });
+
+    it('unsubscribes the transport-maps→native-session sync on unmount instead of leaking the subscription', async () => {
+        const unsubscribe = vi.fn();
+        vi.mocked(syncTransportMapsToNativeSession).mockReturnValue(unsubscribe);
+
+        const { unmount } = renderHook(() => useAppInitialization());
+
+        await waitFor(() => {
+            expect(syncTransportMapsToNativeSession).toHaveBeenCalledTimes(1);
+        });
+        expect(unsubscribe).not.toHaveBeenCalled();
+
+        unmount();
+
+        expect(unsubscribe).toHaveBeenCalledTimes(1);
+    });
+
+    it('unsubscribes the native timeline sample sync on unmount instead of leaking the subscription', async () => {
+        // The third store subscription the boot sequence opens (#3068). It has
+        // the same shape and the same leak as its two siblings above: the
+        // trackStore subscriber would accumulate on every remount and HMR.
+        const unsubscribe = vi.fn();
+        vi.mocked(syncNativeTimelineSamples).mockReturnValue(unsubscribe);
+
+        const { unmount } = renderHook(() => useAppInitialization());
+
+        await waitFor(() => {
+            expect(syncNativeTimelineSamples).toHaveBeenCalledTimes(1);
         });
         expect(unsubscribe).not.toHaveBeenCalled();
 
@@ -462,6 +536,38 @@ describe('useAppInitialization — Project loading boundary', () => {
         });
         expect(finishProjectLoading).not.toHaveBeenCalled();
         expect(projectStoreMock.set).not.toHaveBeenCalled();
+    });
+
+    it('does not load a project while identity-transition configuration is withheld', async () => {
+        identityTransitionReady.hold();
+
+        renderHook(() => useAppInitialization());
+
+        await waitFor(() => {
+            expect(initializeAudioEngine).toHaveBeenCalledOnce();
+        });
+        expect(loadProject).not.toHaveBeenCalled();
+
+        identityTransitionReady.release();
+
+        await waitFor(() => {
+            expect(loadProject).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    it('toasts when identity-transition configuration fails closed', async () => {
+        identityTransitionReady.fail(new Error('bootstrap chunk failed'));
+
+        renderHook(() => useAppInitialization());
+
+        await waitFor(() => {
+            expect(notifyUser).toHaveBeenCalledWith('App failed to load — please reload the page.', 'error');
+        });
+        expect(reportProjectLoadFailure).toHaveBeenCalledWith({
+            message: 'App failed to load — please reload the page.',
+            projectName: 'Untitled Project',
+        });
+        expect(loadProject).not.toHaveBeenCalled();
     });
 
     it('surfaces corrupt or rootless persistence instead of completing first-run startup', async () => {

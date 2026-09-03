@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type CommandBatchAuthority } from '../../models/VersionedCommandBatchEnvelope';
@@ -9,8 +10,10 @@ import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
 import { compileVersionedCommandBatchEnvelope } from '../compileVersionedCommandBatchEnvelope';
 import { createExecutionCommandEnvelope } from '../createExecutionCommandEnvelope';
 import { parseVersionedCommandBatchEnvelope } from '../parseVersionedCommandBatchEnvelope';
+import { parseVersionedCommandEnvelope } from '../parseVersionedCommandEnvelope';
 import { resolveVersionedCommandBatchBindings } from '../resolveVersionedCommandBatchBindings';
 import { serializeVersionedCommandBatchEnvelope } from '../serializeVersionedCommandBatchEnvelope';
+import { serializeVersionedCommandEnvelope } from '../serializeVersionedCommandEnvelope';
 
 import { executeApprovedVersionedCommandBatchEnvelope as executeVersionedCommandBatchEnvelope } from './commandApprovalTestFixture';
 
@@ -487,6 +490,144 @@ describe('command batch contract', () => {
         expect(parseVersionedCommandBatchEnvelope(JSON.stringify(protectedInput))).toEqual({
             status: 'invalid',
             reason: 'Command target range overlaps a protected range',
+        });
+    });
+
+    it('rejects the same malformed serialized addNotes command before and after owner registration', () => {
+        const rawAddNotes = actionCommand({
+            action: {
+                type: 'addNotes',
+                payload: {
+                    clipId: 'clip-midi',
+                    notes: [
+                        {
+                            id: 'note-noncanonical',
+                            pitch: 60,
+                            startBeat: 0,
+                            duration: 1,
+                            velocity: 100,
+                            probability: 99,
+                        },
+                    ],
+                },
+            },
+            commandId: '66666666-6666-4666-8666-666666666666',
+        });
+        const serialized = serializeVersionedCommandEnvelope(rawAddNotes);
+        const expected = {
+            status: 'invalid',
+            reason: 'Command operation is not deterministic at the serialized boundary',
+        } as const;
+
+        clearHandlerRegistry();
+        expect(parseVersionedCommandEnvelope(serialized)).toEqual(expected);
+
+        registerHandlerMap(getMidiNoteTransformHandlers());
+        expect(parseVersionedCommandEnvelope(serialized)).toEqual(expected);
+    });
+
+    it.each([
+        [
+            'a negative start beat',
+            { id: 'note-1', pitch: 60, startBeat: -2, duration: 1, velocity: 100, probability: 100 },
+        ],
+        [
+            'a fractional pitch',
+            { id: 'note-1', pitch: 60.5, startBeat: 0, duration: 1, velocity: 100, probability: 100 },
+        ],
+        [
+            'a pitch below MIDI range',
+            { id: 'note-1', pitch: -1, startBeat: 0, duration: 1, velocity: 100, probability: 100 },
+        ],
+        [
+            'a fractional velocity',
+            { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100.5, probability: 100 },
+        ],
+        [
+            'a velocity below MIDI range',
+            { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 0, probability: 100 },
+        ],
+        [
+            'a duration below the MIDI minimum',
+            { id: 'note-1', pitch: 60, startBeat: 0, duration: 0.01, velocity: 100, probability: 100 },
+        ],
+        [
+            'a noncanonical probability',
+            { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100, probability: 99 },
+        ],
+    ])('rejects a serialized addNotes command with %s', (_description, note) => {
+        registerHandlerMap(getMidiNoteTransformHandlers());
+        const rawAddNotes = actionCommand({
+            action: { type: 'addNotes', payload: { clipId: 'clip-midi', notes: [note] } },
+            commandId: '66666666-6666-4666-8666-666666666666',
+        });
+
+        const serialized = serializeVersionedCommandEnvelope(rawAddNotes);
+
+        expect(parseVersionedCommandEnvelope(serialized)).toEqual({
+            status: 'invalid',
+            reason: 'Command operation is not deterministic at the serialized boundary',
+        });
+        expect(() =>
+            compileVersionedCommandBatchEnvelope({
+                batchId: 'batch-add-notes-negative-start',
+                baseRevision: 'revision-1',
+                commands: [serialized],
+                intent: 'Add one MIDI note.',
+                projectId: 'project-1',
+                protectedRanges: [{ startBeat: 0, endBeat: 1 }],
+                runId: 'run-add-notes-negative-start',
+            })
+        ).toThrow('Command operation is not deterministic at the serialized boundary');
+    });
+
+    it('rejects canonical addNotes arguments changed after their digest was issued', () => {
+        registerHandlerMap(getMidiNoteTransformHandlers());
+        const action: Extract<AppAction, { type: 'addNotes' }> = {
+            type: 'addNotes',
+            payload: {
+                clipId: 'clip-midi',
+                notes: [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100, probability: 100 }],
+            },
+        };
+        const envelope = actionCommand({
+            action,
+            commandId: '77777777-7777-4777-8777-777777777777',
+        });
+        const tamperedEnvelope = {
+            ...envelope,
+            arguments: {
+                ...envelope.arguments,
+                notes: [{ ...action.payload.notes[0]!, pitch: 61 }],
+            },
+        };
+
+        expect(parseVersionedCommandEnvelope(serializeVersionedCommandEnvelope(tamperedEnvelope))).toEqual({
+            status: 'invalid',
+            reason: 'Command arguments failed integrity validation',
+        });
+    });
+
+    it('rejects duplicate application-assigned note IDs at the serialized boundary', () => {
+        registerHandlerMap(getMidiNoteTransformHandlers());
+        const duplicateIdAction: Extract<AppAction, { type: 'addNotes' }> = {
+            type: 'addNotes',
+            payload: {
+                clipId: 'clip-midi',
+                notes: [
+                    { id: 'note-duplicate', pitch: 60, startBeat: 0, duration: 1, velocity: 100, probability: 100 },
+                    { id: 'note-duplicate', pitch: 64, startBeat: 1, duration: 1, velocity: 96, probability: 100 },
+                ],
+            },
+        };
+        const envelope = actionCommand({
+            action: duplicateIdAction,
+            commandId: '88888888-8888-4888-8888-888888888888',
+        });
+
+        expect(parseVersionedCommandEnvelope(serializeVersionedCommandEnvelope(envelope))).toEqual({
+            status: 'invalid',
+            reason: 'Command operation is not deterministic at the serialized boundary',
         });
     });
 

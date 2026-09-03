@@ -43,9 +43,15 @@ The native audio, DSP and plugin-hosting bodies, plus the Node addon that expose
   main-thread MessagePort (`commands/plugins.rs` — `process_plugin_audio`). Capacity is headroom,
   not latency: the callback holds the round trip within twice the device period by processing a
   block and then withholding it from the return ring, so latency settles at that depth instead of
-  ratcheting up to the ring. Never shed a block before the plugin sees it — the input side is the
-  native sampler's only record feed.
-- The native chain renders bridged plugins plus the timeline graph built through the graph-command
+  ratcheting up to the ring. Never shed a block before the plugin sees it.
+- Recorded input is the engine's own capture tap, never render scratch. A slot that records
+  registers as a capture consumer and takes its audio in `process_capture_input`
+  (`host/native_bridge.rs`); the buffers every other `NativePlugin` method is handed are output,
+  and feeding them to a recorder splices a device buffer of silence into every take. An unserved
+  block is still recorded, because a dropout is a hole in the take's time, not a cut in it.
+- A slot that records is built at the engine handle's own sample rate. The tap, the render pass and
+  the take's stamped rate are all the device's, and any other number desynchronises all three.
+- The native chain renders hosted plugins and the timeline graph built through the graph-command
   surface (`commands/graph.rs` — tracks, clips, buses, sends, device chains), started lazily by the
   first `apply_graph_commands`. Web Audio remains the live product path until the D3.c cutover;
   nothing else may make the native chain sound.

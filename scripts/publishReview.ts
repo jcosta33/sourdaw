@@ -1,16 +1,14 @@
 #!/usr/bin/env node
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import {
     REQUIRED_REPOSITORY,
     REVIEWER_BOT_NODE_ID,
     assertRequiredRepository,
-    assertTrustedExecutingBlob,
     authenticateRole,
     isReviewerBotNodeId,
-    originMainBlob,
     parseJson,
     resolvePrimaryRoot,
     spawnCapture,
@@ -18,6 +16,18 @@ import {
 } from './githubAppIdentity.ts';
 import { composeReviewCommentBody, fail, type ReviewCommentContent } from './prContract.ts';
 import { reviewBundlePath } from './prepareReview.ts';
+import {
+    type PullRequestRemoteMutationBoundary,
+    type PullRequestReviewPublicationMutationBoundary,
+    type PullRequestReviewPublicationMutationSerialization,
+    currentReviewPublicationOwnerFence,
+    isReviewPublicationPullRequestMutationLockOwner,
+    pullRequestMutationLockRef,
+    readPullRequestMutationLockOid,
+    readPullRequestMutationLockOwner,
+    withPullRequestReviewPublicationMutationLock,
+} from './pullRequestMutationLock.ts';
+import { assertReviewCommentLinesInBundleDiff } from './reviewCommentDiffPreflight.ts';
 
 export type ReviewEvent = 'APPROVE' | 'REQUEST_CHANGES';
 
@@ -51,8 +61,9 @@ export type ReviewDocument = {
 
 export type PublishReviewPort = {
     primaryRoot: () => string;
-    currentHead: (number: number) => string;
+    pullRequest: (number: number) => { state: string; head: string };
     readReviewJson: (path: string) => unknown;
+    readBundleDiff: (path: string) => string;
     postReview: (input: {
         number: number;
         commitId: string;
@@ -61,6 +72,30 @@ export type PublishReviewPort = {
         comments: ReviewComment[];
     }) => { id: number; actorNodeId: string; login: string };
     log: (message: string) => void;
+};
+
+export type PublishReviewAuthentication = {
+    minted: { actorNodeId: string };
+    session: GhSession;
+};
+
+export type PublishReviewCoordinatorDependencies = {
+    primaryRoot: () => string;
+    serializeMutation: PullRequestReviewPublicationMutationSerialization;
+    authenticateReviewer: (primaryRoot: string) => Promise<PublishReviewAuthentication>;
+    repositoryName: (session: GhSession, primaryRoot: string) => string;
+    reviewPort: (
+        session: GhSession,
+        primaryRoot: string,
+        markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt'],
+        markDefinitiveNoMutationHttpStatus: PullRequestReviewPublicationMutationBoundary['markDefinitiveNoMutationHttpStatus']
+    ) => PublishReviewPort;
+    publish: (
+        number: number,
+        prepared: PreparedReviewPublication,
+        port: PublishReviewPort,
+        boundary: PullRequestReviewPublicationMutationBoundary
+    ) => number;
 };
 
 export function parsePublishReviewArgs(args: string[]): { number?: number; help: boolean } {
@@ -105,9 +140,38 @@ export function parseReviewDocument(value: unknown): ReviewDocument {
     return { event: record.event, body, comments };
 }
 
-export function publishReview(number: number, port: PublishReviewPort): number {
-    const headSha = port.currentHead(number);
-    const bundle = reviewBundlePath(port.primaryRoot(), number, headSha);
+export function reviewPublicationPayload(input: {
+    commitId: string;
+    event: ReviewEvent;
+    body: string;
+    comments: ReviewComment[];
+}): string {
+    return JSON.stringify({
+        commit_id: input.commitId,
+        event: input.event,
+        body: input.body,
+        comments: input.comments.map((comment) => ({
+            path: comment.path,
+            line: comment.line,
+            side: comment.side,
+            body: composeReviewCommentBody(comment),
+        })),
+    });
+}
+
+export function reviewPublicationPayloadDigest(payload: string): string {
+    return createHash('sha256').update(payload).digest('hex');
+}
+
+export type PreparedReviewPublication = {
+    head: string;
+    document: ReviewDocument;
+    payloadDigest: string;
+};
+
+function prepareReviewPublication(number: number, port: PublishReviewPort): PreparedReviewPublication {
+    const head = port.pullRequest(number).head;
+    const bundle = reviewBundlePath(port.primaryRoot(), number, head);
     let parsed: unknown;
     try {
         parsed = port.readReviewJson(join(bundle, 'review.json'));
@@ -115,16 +179,45 @@ export function publishReview(number: number, port: PublishReviewPort): number {
         fail(`missing review.json at ${join(bundle, 'review.json')}`);
     }
     const document = parseReviewDocument(parsed);
-    const current = port.currentHead(number);
-    if (current !== headSha) {
+    assertReviewCommentLinesInBundleDiff(document.comments, port.readBundleDiff(join(bundle, 'diff.patch')));
+    return {
+        head,
+        document,
+        payloadDigest: reviewPublicationPayloadDigest(
+            reviewPublicationPayload({
+                commitId: head,
+                event: document.event,
+                body: document.body,
+                comments: document.comments,
+            })
+        ),
+    };
+}
+
+export function publishPreparedReview(
+    number: number,
+    prepared: PreparedReviewPublication,
+    port: PublishReviewPort,
+    boundary?: PullRequestReviewPublicationMutationBoundary
+): number {
+    const pullRequest = port.pullRequest(number);
+    if (pullRequest.state !== 'OPEN') {
+        fail(`pull request is ${pullRequest.state}; refusing to post a review`);
+    }
+    if (pullRequest.head !== prepared.head) {
         fail('pull-request head moved; refusing to post a stale review');
     }
+    boundary?.journalReviewPublication({
+        expectedHead: prepared.head,
+        payloadDigest: prepared.payloadDigest,
+        reviewerActorNodeId: REVIEWER_BOT_NODE_ID,
+    });
     const posted = port.postReview({
         number,
-        commitId: headSha,
-        event: document.event,
-        body: document.body,
-        comments: document.comments,
+        commitId: prepared.head,
+        event: prepared.document.event,
+        body: prepared.document.body,
+        comments: prepared.document.comments,
     });
     if (!isReviewerBotNodeId(posted.actorNodeId)) {
         fail(`review was posted by actor ${posted.actorNodeId} (${posted.login}), not ${REVIEWER_BOT_NODE_ID}`);
@@ -133,10 +226,21 @@ export function publishReview(number: number, port: PublishReviewPort): number {
     return posted.id;
 }
 
+export function publishReview(
+    number: number,
+    port: PublishReviewPort,
+    boundary?: PullRequestReviewPublicationMutationBoundary
+): number {
+    return publishPreparedReview(number, prepareReviewPublication(number, port), port, boundary);
+}
+
 export function shellPort(
     session: GhSession,
     cwd: string = process.cwd(),
-    capture: typeof spawnCapture = spawnCapture
+    capture: typeof spawnCapture = spawnCapture,
+    markRemoteMutationAttempt: PullRequestRemoteMutationBoundary['markRemoteMutationAttempt'] = () => undefined,
+    markDefinitiveNoMutationHttpStatus: PullRequestReviewPublicationMutationBoundary['markDefinitiveNoMutationHttpStatus'] = () =>
+        undefined
 ): PublishReviewPort {
     const primaryRoot = resolvePrimaryRoot(
         (command, args, directory) => capture(command, args, { cwd: directory }),
@@ -145,45 +249,41 @@ export function shellPort(
     const gh = (args: string[], input?: string) => capture('gh', args, { cwd: primaryRoot, env: session.env, input });
     return {
         primaryRoot: () => primaryRoot,
-        currentHead: (number) =>
-            capture(
-                'gh',
-                [
-                    'pr',
-                    'view',
-                    String(number),
-                    '--repo',
-                    REQUIRED_REPOSITORY,
-                    '--json',
-                    'headRefOid',
-                    '--jq',
-                    '.headRefOid',
-                ],
-                { cwd: primaryRoot, env: session.env }
-            ),
+        pullRequest: (number) => {
+            const pullRequest = parseJson<{ state?: unknown; headRefOid?: unknown }>(
+                gh(['pr', 'view', String(number), '--repo', REQUIRED_REPOSITORY, '--json', 'state,headRefOid']),
+                'review publication pull request'
+            );
+            if (typeof pullRequest.state !== 'string' || typeof pullRequest.headRefOid !== 'string') {
+                fail('review publication pull request is unreadable');
+            }
+            return { state: pullRequest.state, head: pullRequest.headRefOid };
+        },
         readReviewJson: (path) => JSON.parse(readFileSync(path, 'utf8')) as unknown,
+        readBundleDiff: (path) => readFileSync(path, 'utf8'),
         postReview: ({ number, commitId, event, body, comments }) => {
+            const input = reviewPublicationPayload({ commitId, event, body, comments });
+            markRemoteMutationAttempt();
+            let created: string;
+            try {
+                created = gh(
+                    ['api', '--method', 'POST', `repos/${REQUIRED_REPOSITORY}/pulls/${number}/reviews`, '--input', '-'],
+                    input
+                );
+            } catch (error) {
+                // GitHub validates a review creation before persisting it, so its 422 answer
+                // proves the POST created nothing. Journal that proof into the lock owner so
+                // exact-owner recovery can tell this failure apart from an indeterminate one.
+                if (error instanceof Error && /\bHTTP 422\b/u.test(error.message)) {
+                    markDefinitiveNoMutationHttpStatus(422);
+                }
+                throw error;
+            }
             const response = parseJson<{
                 id: number;
                 state?: string;
                 user?: { node_id?: string; login?: string };
-            }>(
-                gh(
-                    ['api', '--method', 'POST', `repos/${REQUIRED_REPOSITORY}/pulls/${number}/reviews`, '--input', '-'],
-                    JSON.stringify({
-                        commit_id: commitId,
-                        event,
-                        body,
-                        comments: comments.map((comment) => ({
-                            path: comment.path,
-                            line: comment.line,
-                            side: comment.side,
-                            body: composeReviewCommentBody(comment),
-                        })),
-                    })
-                ),
-                'create review'
-            );
+            }>(created, 'create review');
             if (!Number.isSafeInteger(response.id) || response.id <= 0) {
                 fail('create review returned an unreadable id');
             }
@@ -272,8 +372,105 @@ function parseCommentEntries(entries: unknown[]): ReviewComment[] {
     });
 }
 
-async function main(): Promise<number> {
-    const parsed = parsePublishReviewArgs(process.argv.slice(2));
+export function defaultPublishReviewCoordinatorDependencies(): PublishReviewCoordinatorDependencies {
+    return {
+        primaryRoot: () => resolvePrimaryRoot(),
+        serializeMutation: withPullRequestReviewPublicationMutationLock,
+        authenticateReviewer: (primaryRoot) => authenticateRole({ primaryRoot, role: 'reviewer' }),
+        repositoryName: (session, primaryRoot) =>
+            spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
+                env: session.env,
+                cwd: primaryRoot,
+            }),
+        reviewPort: (session, primaryRoot, markRemoteMutationAttempt, markDefinitiveNoMutationHttpStatus) =>
+            shellPort(
+                session,
+                primaryRoot,
+                spawnCapture,
+                markRemoteMutationAttempt,
+                markDefinitiveNoMutationHttpStatus
+            ),
+        publish: publishPreparedReview,
+    };
+}
+
+export async function coordinatePublishReview(
+    number: number,
+    dependencies: PublishReviewCoordinatorDependencies = defaultPublishReviewCoordinatorDependencies()
+): Promise<void> {
+    const primaryRoot = dependencies.primaryRoot();
+    try {
+        const auth = await dependencies.authenticateReviewer(primaryRoot);
+        try {
+            if (!isReviewerBotNodeId(auth.minted.actorNodeId)) {
+                fail(`minted actor ${auth.minted.actorNodeId} is not ${REVIEWER_BOT_NODE_ID}`);
+            }
+            assertRequiredRepository(dependencies.repositoryName(auth.session, primaryRoot));
+            const preflightPort = dependencies.reviewPort(
+                auth.session,
+                primaryRoot,
+                () => undefined,
+                () => undefined
+            );
+            const prepared = prepareReviewPublication(number, preflightPort);
+            await dependencies.serializeMutation(
+                primaryRoot,
+                number,
+                async (boundary) =>
+                    dependencies.publish(
+                        number,
+                        prepared,
+                        dependencies.reviewPort(
+                            auth.session,
+                            primaryRoot,
+                            boundary.markRemoteMutationAttempt,
+                            boundary.markDefinitiveNoMutationHttpStatus
+                        ),
+                        boundary
+                    ),
+                {
+                    reviewPublication: {
+                        expectedHead: prepared.head,
+                        payloadDigest: prepared.payloadDigest,
+                        reviewerActorNodeId: auth.minted.actorNodeId,
+                        ownerFence: currentReviewPublicationOwnerFence,
+                    },
+                }
+            );
+        } finally {
+            auth.session.dispose();
+        }
+    } catch (error) {
+        const recovery = retainedReviewPublicationRecoveryCommand(primaryRoot, number);
+        if (recovery === undefined) {
+            throw error;
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`${message}; retained exact review-publication owner: ${recovery}`, { cause: error });
+    }
+}
+
+function retainedReviewPublicationRecoveryCommand(primaryRoot: string, number: number): string | undefined {
+    try {
+        const ownerOid = readPullRequestMutationLockOid(primaryRoot, pullRequestMutationLockRef(number), number);
+        if (ownerOid === undefined) {
+            return undefined;
+        }
+        const owner = readPullRequestMutationLockOwner(primaryRoot, ownerOid, number);
+        if (!isReviewPublicationPullRequestMutationLockOwner(owner)) {
+            return undefined;
+        }
+        return `pnpm review:publish:recover ${number} --owner ${ownerOid}`;
+    } catch {
+        return undefined;
+    }
+}
+
+export async function runPublishReviewCli(
+    args: string[],
+    dependencies?: PublishReviewCoordinatorDependencies
+): Promise<number> {
+    const parsed = parsePublishReviewArgs(args);
     if (parsed.help) {
         console.log('Usage: pnpm review:publish <pr-number>');
         return 0;
@@ -281,37 +478,6 @@ async function main(): Promise<number> {
     if (parsed.number === undefined) {
         fail('usage: pnpm review:publish <pr-number>');
     }
-    const executingFile = fileURLToPath(import.meta.url);
-    const cwd = process.cwd();
-    assertTrustedExecutingBlob(
-        'scripts/publishReview.ts',
-        executingFile,
-        originMainBlob('scripts/publishReview.ts', cwd)
-    );
-    const primaryRoot = resolvePrimaryRoot();
-    const auth = await authenticateRole({ primaryRoot, role: 'reviewer' });
-    try {
-        if (!isReviewerBotNodeId(auth.minted.actorNodeId)) {
-            fail(`minted actor ${auth.minted.actorNodeId} is not ${REVIEWER_BOT_NODE_ID}`);
-        }
-        const repository = spawnCapture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'], {
-            env: auth.session.env,
-            cwd: primaryRoot,
-        });
-        assertRequiredRepository(repository);
-        publishReview(parsed.number, shellPort(auth.session));
-        return 0;
-    } finally {
-        auth.session.dispose();
-    }
-}
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    void main().then(
-        (code) => process.exit(code),
-        (error: unknown) => {
-            console.error(error instanceof Error ? error.message : error);
-            process.exit(1);
-        }
-    );
+    await coordinatePublishReview(parsed.number, dependencies);
+    return 0;
 }

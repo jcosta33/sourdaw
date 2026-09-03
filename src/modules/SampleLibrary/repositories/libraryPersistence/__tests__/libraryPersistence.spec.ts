@@ -6,7 +6,14 @@ import { isDesktopRuntime } from '#/utils/desktopBridge';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type LibraryRoot, type SampleRecord, toBpm } from '../../../models/LibraryTypes';
-import { addLibraryRoot, addSamples, setActiveRoot, type LibraryState } from '../../../stores/libraryStore';
+import {
+    addLibraryRoot,
+    addSamples,
+    setActiveRoot,
+    updateLibraryRootStatus,
+    type LibraryState,
+} from '../../../stores/libraryStore';
+import { pickNativeSampleFolder } from '../../pickNativeSampleFolder';
 import { readNativeDirectory } from '../../readNativeDirectory';
 import * as helpers from '../helpers';
 import { persistLibraryRoots } from '../persistLibraryRoots';
@@ -36,6 +43,10 @@ vi.mock('#/utils/desktopBridge', () => ({
 
 vi.mock('../../readNativeDirectory', () => ({
     readNativeDirectory: vi.fn(),
+}));
+
+vi.mock('../../pickNativeSampleFolder', () => ({
+    pickNativeSampleFolder: vi.fn(),
 }));
 
 const mockNotificationEventBus = {
@@ -406,6 +417,32 @@ describe('Library Persistence', () => {
             expect(res).toBe(true);
             expect(handle.requestPermission).toHaveBeenCalledWith({ mode: 'read' });
         });
+
+        it('should restore a desktop root by re-picking its folder, since it has no handle to ask', async () => {
+            // A desktop root lost a native file grant, not a handle permission,
+            // and the only thing that mints one is the dialog.
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            const root = createNativeRoot({ status: 'permission_required' });
+            vi.mocked(pickNativeSampleFolder).mockResolvedValue(root.rootRef);
+            mockLibraryStore.value = createLibraryState({ roots: [root] });
+
+            await expect(requestPermission(root.id)).resolves.toBe(true);
+            expect(updateLibraryRootStatus).toHaveBeenCalledWith(root.id, 'ready');
+        });
+
+        it('should leave a desktop root alone when the dialog is cancelled or answers with another folder', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            const root = createNativeRoot({ status: 'permission_required' });
+            mockLibraryStore.value = createLibraryState({ roots: [root] });
+
+            vi.mocked(pickNativeSampleFolder).mockResolvedValue(null);
+            await expect(requestPermission(root.id)).resolves.toBe(false);
+
+            vi.mocked(pickNativeSampleFolder).mockResolvedValue('/Users/jose/Other Samples');
+            await expect(requestPermission(root.id)).resolves.toBe(false);
+
+            expect(updateLibraryRootStatus).not.toHaveBeenCalled();
+        });
     });
 
     describe('restoreLibrary', () => {
@@ -506,6 +543,22 @@ describe('Library Persistence', () => {
             await restoreLibrary();
 
             expectRestoredRoot({ id: 'root-1', status: 'path_missing' });
+        });
+
+        it('should mark restored native roots permission_required when the path is no longer granted', async () => {
+            // A desktop root reaches the native file commands through the grant
+            // minted when the user picked the folder. Without it the folder is
+            // still there and reconnecting restores it, which is the same
+            // recovery a browser handle with a lapsed permission needs — so it
+            // must not restore as `offline`, which offers the user nothing.
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            vi.mocked(readNativeDirectory).mockRejectedValue('Path is outside allowed native file roots');
+            const root = createNativeRoot();
+            vi.spyOn(helpers, 'openDb').mockResolvedValue(createRestoreDb({ roots: [root] }) as any);
+
+            await restoreLibrary();
+
+            expectRestoredRoot({ id: 'root-1', status: 'permission_required' });
         });
 
         it('should keep restored native roots ready when a child entry fails after the root opens', async () => {

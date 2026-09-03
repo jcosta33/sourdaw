@@ -6,10 +6,15 @@ const mocks = vi.hoisted(() => ({
     duplicateTrack: vi.fn(),
     getTrackStoreState: vi.fn<() => { tracks: { id: string; name?: string; kind: string }[] } | null>(),
     publishTrackAdded: vi.fn(),
+    serializeClipScopedAutomationLanes: vi.fn(),
 }));
 
 vi.mock('../../../useCases/duplicateTrack', () => ({
     duplicateTrack: mocks.duplicateTrack,
+}));
+
+vi.mock('../../../useCases/clip/serializeClipScopedAutomationLanes', () => ({
+    serializeClipScopedAutomationLanes: mocks.serializeClipScopedAutomationLanes,
 }));
 
 vi.mock('../../../useCases/getTrackStoreState', () => ({
@@ -71,6 +76,38 @@ describe('handleDuplicateTrack', () => {
             name: 'Copy',
             kind: 'audio',
         });
+    });
+
+    it('finalizes the inverse guard with the committed clips and their cloned automation lanes', async () => {
+        const action: Parameters<typeof handleDuplicateTrack.describe>[0] = {
+            type: 'duplicateTrack',
+            payload: { trackId: 't1' },
+        };
+        const described = handleDuplicateTrack.describe(action);
+        const targetTrackId = action.payload.targetTrackId;
+        if (!targetTrackId) {
+            throw new Error('Expected describe to prepare a destination track id');
+        }
+        // The duplication clones the source's clip-scoped automation lanes
+        // onto the copies' new clip ids, so the finalized guard must capture
+        // exactly those lanes — requiring absence would make the copy's own
+        // undo conflict on what the duplication itself created.
+        const committedDuplicate = { id: targetTrackId, name: 'Copy', kind: 'audio', clips: [{ id: 'clip-copy' }] };
+        mocks.duplicateTrack.mockReturnValue({ id: targetTrackId, name: 'Copy', kind: 'audio' });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', name: 'Source', kind: 'audio' }, committedDuplicate],
+        });
+        mocks.serializeClipScopedAutomationLanes.mockReturnValue('captured-lanes');
+
+        await handleDuplicateTrack.execute(action);
+
+        const inverse = described?.inverseAction;
+        if (!inverse || inverse.type !== 'discardCreatedTrack') {
+            throw new Error('Expected a discardCreatedTrack inverse');
+        }
+        expect(inverse.payload.generatedMidiStateGuard?.entityJson).toBe(JSON.stringify(committedDuplicate));
+        expect(inverse.payload.generatedMidiStateGuard?.clipAutomationLanesJson).toBe('captured-lanes');
+        expect(mocks.serializeClipScopedAutomationLanes).toHaveBeenCalledWith(['clip-copy']);
     });
 
     it('provides an inverse that removes the exact duplicate', () => {

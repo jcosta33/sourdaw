@@ -1,7 +1,7 @@
 {
     "schemaVersion": 4,
     "cargoRuntimeInventory": {
-        "cargoLockSha256": "bfe1982d1cdc8225a5076e82d2dbb5e2d839c7092a0fc2536d014bc4230b8a10",
+        "cargoLockSha256": "d72565a4570428b48a8a40bdc308fff00be3f2f430a83d3a9166f190ef7a9258",
         "sourceInputs": [
             {
                 "path": ".cargo/config.toml",
@@ -53,11 +53,11 @@
             },
             {
                 "path": "electron-builder.yml",
-                "sha256": "7bd6b91b280c621afb9e85f91332c04a026d75f60911d7daa866c84fc45c363f"
+                "sha256": "4ae43ed8914a152334e111eff309daaf330d8ef3bc408f20d87b9eac387310ed"
             },
             {
                 "path": "package.json",
-                "sha256": "a6651557fe8dc64a1babbf4016a46e4921b9984d7a1317139f646cfafd154f7e"
+                "sha256": "63638406055ca56a189636b8dd48db6cbe86b14c6aa7c7dfc096da82ceb76785"
             },
             {
                 "path": "rust-toolchain.toml",
@@ -189,6 +189,32 @@
                 ]
             },
             {
+                "name": "audio-codec-algorithms",
+                "version": "0.8.1",
+                "source": "registry+https://github.com/rust-lang/crates.io-index",
+                "license": "0BSD OR Apache-2.0",
+                "legalFiles": [
+                    {
+                        "label": "LICENSE-0BSD",
+                        "sha256": "39741fbd828e4f94222ddba0aa2133bffd41247713ff2fb41005b28001425a06"
+                    },
+                    {
+                        "label": "LICENSE-APACHE",
+                        "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+                    }
+                ],
+                "reportedLegalFiles": [
+                    {
+                        "label": "LICENSE-0BSD",
+                        "sha256": "39741fbd828e4f94222ddba0aa2133bffd41247713ff2fb41005b28001425a06"
+                    },
+                    {
+                        "label": "LICENSE-APACHE",
+                        "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+                    }
+                ]
+            },
+            {
                 "name": "audioadapter",
                 "version": "5.0.0",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
@@ -224,7 +250,7 @@
             },
             {
                 "name": "audioadapter-buffers",
-                "version": "5.1.0",
+                "version": "5.2.0",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "MIT OR Apache-2.0",
                 "legalFiles": [
@@ -258,7 +284,7 @@
             },
             {
                 "name": "audioadapter-sample",
-                "version": "5.1.0",
+                "version": "5.2.0",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "MIT OR Apache-2.0",
                 "legalFiles": [
@@ -3020,20 +3046,20 @@
             },
             {
                 "name": "napi",
-                "version": "3.12.1",
+                "version": "3.12.2",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "MIT",
                 "legalFiles": [],
                 "metadataFiles": [
                     {
                         "label": "Cargo.toml",
-                        "sha256": "999e3553edb48e42f77ef2354b2be48f48143f3c9726a149d08ffcf24c9ac2c7"
+                        "sha256": "20281c5d37d06c18cb00c74c0e86e685a5a819e94603755332ef2c1846669fd2"
                     }
                 ],
                 "reportedLegalFiles": [
                     {
                         "label": "assembled license record from lock-resolved package metadata and SPDX 3.28.0",
-                        "sha256": "a399b1cc6aed42a14348b2f572b4cad4888633e97cb2cfbfd6226da449a465b6"
+                        "sha256": "3a96af62ae0ad66e5932a688359880fd10437980255bf3dcd23a3a3d0ef587fa"
                     }
                 ]
             },
@@ -6224,7 +6250,7 @@
             },
             {
                 "name": "uuid",
-                "version": "1.24.1",
+                "version": "1.26.0",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "Apache-2.0 OR MIT",
                 "legalFiles": [
@@ -7781,14 +7807,14 @@
         ]
     },
     "packages": {
-        "cargo:napi@3.12.1": {
-            "source": "https://crates.io/api/v1/crates/napi/3.12.1/download",
-            "revision": "sha256:459197f1592f4c3dbbf9c1b13f5a4599a343e4ef66b96bc340e2a518b36a6662",
+        "cargo:napi@3.12.2": {
+            "source": "https://crates.io/api/v1/crates/napi/3.12.2/download",
+            "revision": "sha256:58c5f4d5375213fdb7be2655e152386e82f026f9a5ba36a75556e11359aafe09",
             "assembled": {
                 "metadata": [
                     {
                         "sourcePath": "Cargo.toml",
-                        "sha256": "999e3553edb48e42f77ef2354b2be48f48143f3c9726a149d08ffcf24c9ac2c7"
+                        "sha256": "20281c5d37d06c18cb00c74c0e86e685a5a819e94603755332ef2c1846669fd2"
                     }
                 ],
                 "licenses": [
@@ -8536,14 +8562,14 @@
                 ]
             }
         },
-        "npm:onnxruntime-common@1.27.0": {
-            "source": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.27.0.tgz",
-            "revision": "sha512-3KxL5wIVqa8Ex08jxSzncm9CMgw8CjOFyOQ7SxvG9o0cVLlhTNKXyIQuTbtX4tGPJEf73OER2xrjt4HJSBL4ow==",
+        "npm:onnxruntime-common@1.29.0": {
+            "source": "https://registry.npmjs.org/onnxruntime-common/-/onnxruntime-common-1.29.0.tgz",
+            "revision": "sha512-/F63/e2VJoaVXGGNu6S5QH7jivBThGO95OzAVXXQ8hTta/b1QxI8udHa6cI3+3mAb5WWIIaMMwfZw01oivjJ1g==",
             "assembled": {
                 "metadata": [
                     {
                         "sourcePath": "package.json",
-                        "sha256": "740784b70b19207529b9a08229aaa4bf7c211afcc30ab4594daa32891ccffb94"
+                        "sha256": "976083947171b96bb7e998fdc8137bc50d3efb44c786ff3dbafb7f1bc4684dc8"
                     }
                 ],
                 "licenses": [
@@ -8551,14 +8577,14 @@
                 ]
             }
         },
-        "npm:onnxruntime-web@1.27.0": {
-            "source": "https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.27.0.tgz",
-            "revision": "sha512-ogDLsqIozHZwifPuN37OproAo0byX6t43/bP8GzeZWBWD6MOGExswFAx3up4NS/vvWBOg2u2PXomDt3rMmdQSg==",
+        "npm:onnxruntime-web@1.29.0": {
+            "source": "https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.29.0.tgz",
+            "revision": "sha512-LuQlpX6MFLJZu756erwUeb1mNfoJGbs1kzDwJGNlf5RvfYMdqhcY3vNpDPK40CUV2HoWTkIj+uS0o36GFHjeYw==",
             "assembled": {
                 "metadata": [
                     {
                         "sourcePath": "package.json",
-                        "sha256": "8cdbce0a4f6205109083cc4675477632147ed48e13fa7f891827fd08ef3c818c"
+                        "sha256": "9c803baa1820e75a82907bbf29c0a4be84d4eaec33693b4ab3bd5051fde85ee9"
                     }
                 ],
                 "licenses": [

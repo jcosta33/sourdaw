@@ -135,6 +135,23 @@ describe('PromptBar', () => {
     });
 
     describe('preview mode', () => {
+        it('keeps the maximum preview batch in one constrained row', () => {
+            setPromptState({
+                preview: {
+                    actions: [],
+                    actionLabels: Array.from({ length: 16 }, (_, index) => `Action ${String(index + 1)}`),
+                    rawText: 'preview',
+                    requiresConfirmation: true,
+                    projectRevision: 'revision-1',
+                },
+            });
+
+            const { container } = render(<PromptBar />);
+            const preview = container.querySelector('.transport-bar__prompt-preview');
+            expect(preview).toHaveClass('max-w-full', 'overflow-hidden');
+            expect(preview?.querySelector('.flex-wrap')).toBeNull();
+        });
+
         it('renders the action labels and hides the normal input form', () => {
             setPromptState({
                 preview: {

@@ -172,9 +172,19 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
     enableWarp: vi.fn(),
 }));
 
-vi.mock('#/modules/AiGeneration/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/AiGeneration/useCases')>()),
+vi.mock('#/modules/AiGeneration/useCases', () => ({
     handleAiDenoiseClip: vi.fn(),
+    handleGenerateMidiPrompt: vi.fn(),
+    removeTask: vi.fn(),
+    cancelProcessingTask: vi.fn(),
+    toggleAiPanel: vi.fn(),
+    getAiMidiHandlers: vi.fn(),
+    applyChordProgressionToTrack: vi.fn(),
+    applyDrumPatternToTrack: vi.fn(),
+    applyMelodyToTrack: vi.fn(),
+    generateMidiVariations: vi.fn(),
+    getGenerationHandlers: vi.fn(),
+    denoiseAudio: vi.fn(),
 }));
 
 vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
@@ -182,7 +192,8 @@ vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
     verifyAudioBufferReferences: vi.fn(),
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeAppAction: vi.fn(),
 }));
 

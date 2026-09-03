@@ -11,10 +11,11 @@
  * ── Why `apply` maps, and renders nothing ─────────────────────────────────
  *
  * The contract requires a batch to be refused **at apply time**, whole, before
- * any of it is applied — and the native side's validation (`map_batch`, with
- * every refusal reason this backend is accountable for: `stretched-clip-
- * unsupported`, `smoothed-write-unsupported`, the queue-capacity refusals)
- * lives on the native side. So
+ * any of it is applied — and nearly every refusal reason this backend is
+ * accountable for (`smoothed-write-unsupported`, `bus-send-unsupported`,
+ * the queue-capacity refusals) is the native mapper's own. The exception is
+ * {@link UNSUPPORTED_COMMAND_REASONS}, refused here because the native mapper
+ * is shared with the live path and cannot refuse a command that path needs. So
  * `apply` probes through `map_graph_batch`: the incoming batch maps against
  * the graph the committed commands built, and the answer is the native
  * apply-result itself — refusal reasons and strip reports — with nothing
@@ -62,6 +63,7 @@
 import {
     type AudioGraphApplyResult,
     type AudioGraphBackend,
+    type AudioGraphCommand,
     type AudioGraphCommandBatch,
     type AudioGraphStripReport,
 } from '../../models/AudioGraphBackend';
@@ -120,6 +122,27 @@ export type NativeOfflineGraphBackend = AudioGraphBackend &
         render: (frames: number) => Promise<PlanarStereo>;
     }>;
 
+/**
+ * The commands this backend refuses on its own, ahead of the native probe.
+ *
+ * The header's rule is that validation lives on the native side, and this is
+ * the one class it cannot hold: `map_command` is shared with the live path,
+ * where the monitor gate is exactly the command it is meant to carry. A native
+ * mapper that refused it would break the live session; one that accepts it
+ * leaves a bounce accepting-and-ignoring a command whose own contract in
+ * `AudioGraphBackend` says a backend with no monitor must refuse it. So the
+ * refusal is sited where the "no monitor" is true — here — and it mirrors
+ * `createWebAudioOfflineBackend`, because both offline backends owe the caller
+ * the same answer.
+ */
+const UNSUPPORTED_COMMAND_REASONS: Partial<Record<AudioGraphCommand['kind'], string>> = {
+    'set-monitor-shadow': 'an offline render has no monitor to shadow: its output is the file, not a speaker',
+};
+
+function describeUnsupported(command: AudioGraphCommand): string | null {
+    return UNSUPPORTED_COMMAND_REASONS[command.kind] ?? null;
+}
+
 function rejected(reason: string): AudioGraphApplyResult {
     return { acceptance: 'rejected', application: 'not-applied', reason };
 }
@@ -176,6 +199,15 @@ export function createNativeOfflineGraphBackend(deps: NativeOfflineGraphBackendD
             }
             if (batch.schemaVersion !== 1) {
                 return rejected(`unsupported command schema version ${String(batch.schemaVersion)}`);
+            }
+            // Refuse the whole batch before anything of it crosses the wire —
+            // ahead of the sample registrations, which the header records as
+            // the one step the probe cannot roll back.
+            for (const command of batch.commands) {
+                const reason = describeUnsupported(command);
+                if (reason) {
+                    return rejected(`${NATIVE_OFFLINE_BACKEND_ID} cannot apply "${command.kind}": ${reason}`);
+                }
             }
 
             // The envelope is the applied batch's own — `schemaVersion` and

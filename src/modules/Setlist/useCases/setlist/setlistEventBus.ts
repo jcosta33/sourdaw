@@ -1,5 +1,3 @@
-import { Container } from '#/infra/di/Container';
-
 import type { MidiOutPayload } from '#/modules/WorkspaceShell/events';
 
 type SetlistEvents = {
@@ -11,8 +9,4 @@ export abstract class SetlistEventBus {
         event: TEventName,
         payload: SetlistEvents[TEventName]
     ): Promise<void>;
-}
-
-export function setSetlistEventBus(event_bus: SetlistEventBus): void {
-    Container.set(SetlistEventBus, event_bus);
 }

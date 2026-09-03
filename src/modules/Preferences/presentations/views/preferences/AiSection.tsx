@@ -13,6 +13,8 @@ import { useStore } from '#/infra/store/useStore';
 import { aiBackendPreferenceStore, hostedLlmProviderStatusStore, llmStatusStore } from '#/modules/AiRuntime/stores';
 import {
     configureCloudProvider,
+    getDefaultHostedAnthropicModel,
+    listHostedAnthropicModels,
     removeCloudProvider,
     resolveBackend,
     setAiBackendPreference,
@@ -39,12 +41,7 @@ type SelectedBackendInput = {
 };
 
 const HOSTED_MODEL_OPTIONS: Record<Exclude<HostedProviderSelection, 'openai-compatible'>, HostedModelOption[]> = {
-    anthropic: [
-        { value: 'claude-sonnet-5', label: 'Claude Sonnet 5 — Recommended' },
-        { value: 'claude-fable-5', label: 'Claude Fable 5 — Highest quality' },
-        { value: 'claude-opus-5', label: 'Claude Opus 5 — Agentic and enterprise' },
-        { value: 'claude-haiku-4-5', label: 'Claude Haiku 4.5 — Faster, lower cost' },
-    ],
+    anthropic: listHostedAnthropicModels(),
     openai: [
         { value: 'gpt-5.6-terra', label: 'GPT-5.6 Terra — Recommended' },
         { value: 'gpt-5.6-sol', label: 'GPT-5.6 Sol — Highest quality' },
@@ -56,7 +53,7 @@ const CUSTOM_MODEL_VALUE = 'custom';
 const MAX_API_KEY_BYTES = 16 * 1024;
 
 const DEFAULT_MODELS: Record<HostedProviderSelection, string> = {
-    anthropic: HOSTED_MODEL_OPTIONS.anthropic[0]!.value,
+    anthropic: getDefaultHostedAnthropicModel(),
     openai: HOSTED_MODEL_OPTIONS.openai[0]!.value,
     'openai-compatible': '',
 };
@@ -124,7 +121,7 @@ export const AiSection = (): ReactElement => {
     const modelOptions = provider === 'openai-compatible' ? [] : HOSTED_MODEL_OPTIONS[provider];
     const customFirstPartyModel =
         provider !== 'openai-compatible' && !modelOptions.some((option) => option.value === model);
-    const renderIife_16 = () => {
+    const backendDotTone = (): 'cyan' | 'primary' | 'muted' => {
         if (backend === 'webllm') {
             return 'cyan';
         }
@@ -133,7 +130,7 @@ export const AiSection = (): ReactElement => {
         }
         return 'muted';
     };
-    const renderIife_17 = () => {
+    const activeBackendLabel = (): string => {
         if (backend === 'cloud') {
             if (configuredProvider) {
                 return `Cloud (${getProviderLabel(configuredProvider.provider)})`;
@@ -212,8 +209,8 @@ export const AiSection = (): ReactElement => {
                             backend === 'none' && 'bg-muted text-muted-foreground'
                         )}
                     >
-                        <DawStatusDot tone={renderIife_16()} />
-                        {renderIife_17()}
+                        <DawStatusDot tone={backendDotTone()} />
+                        {activeBackendLabel()}
                     </span>
                 </Row>
             </FieldGroup>
