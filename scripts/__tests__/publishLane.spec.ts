@@ -703,6 +703,21 @@ describe('lane publish', () => {
         expect(bodies.at(-1)).not.toContain('Related #12');
     });
 
+    it('recomposes the Related section from Closes on a flagless update whose existing body carries extra Related lines', () => {
+        const { port, bodies } = fakePort({
+            existing: 41,
+            existingBody: composePublishBody(12, DEFAULT_SUBJECT, DEFAULT_SUMMARY, TEST_INSTRUCTIONS).replace(
+                'Closes #12',
+                'Closes #12\nRelated #7\nRelated #9'
+            ),
+        });
+
+        publishLane(12, port);
+
+        const relatedSection = bodies.at(-1)?.split('### 📌 Related tickets & additional notes\n')[1]?.trim();
+        expect(relatedSection).toBe('Closes #12');
+    });
+
     it('preserves valid existing test instructions when --test is omitted', () => {
         const existingInstructions = 'Open the settings panel and confirm the new control is visible.';
         const { port, bodies } = fakePort({

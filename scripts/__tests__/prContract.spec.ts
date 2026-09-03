@@ -98,9 +98,7 @@ describe('pull-request contract', () => {
         expect(issueRelationshipFromBody(`${prefix}None.`, undefined)).toBeUndefined();
         expect(() => issueRelationshipFromBody(`${prefix}Closes #21640`, 2164)).toThrow(/exactly one relationship/);
         expect(() => issueRelationshipFromBody(`${prefix}None.`, 2164)).toThrow(/exactly one relationship/);
-        expect(() => issueRelationshipFromBody(`${prefix}Closes #2164\nRelated #99`, 2164)).toThrow(
-            /exactly one relationship/
-        );
+        expect(issueRelationshipFromBody(`${prefix}Closes #2164\nRelated #99`, 2164)).toBe('closes');
         expect(() => issueRelationshipFromBody(`${prefix}None.\nCloses #2164`, 2164)).toThrow(
             /exactly one relationship/
         );
@@ -116,6 +114,25 @@ describe('pull-request contract', () => {
         expect(() => issueRelationshipFromBody(`${prefix}Closes #2164`, undefined)).toThrow(/must start/);
         expect(() => issueRelationshipFromBody(`${prefix}Closes other/sourdaw#2164`, 2164, 'jcosta33/sourdaw')).toThrow(
             /exactly one relationship/
+        );
+    });
+
+    it('tolerates extra Related lines for other issues once exactly one line names the lane issue', () => {
+        const prefix = '### 📌 Related tickets & additional notes\n';
+        expect(issueRelationshipFromBody(`${prefix}Closes #2857\nRelated #2854\nRelated #2856`, 2857)).toBe('closes');
+        expect(issueRelationshipFromBody(`${prefix}Related #2857\nRelated #2854`, 2857)).toBe('relates');
+        expect(issueRelationshipFromBody(`${prefix}Related #2854\nCloses #2857`, 2857)).toBe('closes');
+        expect(() => issueRelationshipFromBody(`${prefix}Related #2854\nRelated #2856`, 2857)).toThrow(
+            /exactly one relationship to #2857/
+        );
+        expect(() => issueRelationshipFromBody(`${prefix}Closes #2857\nRelated #2857`, 2857)).toThrow(
+            /exactly one relationship to #2857/
+        );
+        expect(() => issueRelationshipFromBody(`${prefix}Closes #2857\nNone.`, 2857)).toThrow(
+            /exactly one relationship to #2857/
+        );
+        expect(() => issueRelationshipFromBody(`${prefix}Closes #2854\nRelated #2857`, 2857)).toThrow(
+            /unexpected issue-closing references/
         );
     });
 

@@ -405,6 +405,15 @@ function assertSafeIssueNumber(value: number, label: string): void {
     }
 }
 
+/** The relationship lines that name `issue`, ignoring lines that relate the body to other issues. */
+function relationshipsForIssue(
+    relationships: IssueReference[],
+    issue: number,
+    repository: string | undefined
+): IssueReference[] {
+    return relationships.filter((reference) => isExpectedClosingReference(reference, issue, repository));
+}
+
 export function issueRelationshipFromBody(
     body: string,
     issue: number | undefined,
@@ -432,15 +441,9 @@ export function issueRelationshipFromBody(
         assertIssueClosingReferences(body, issue, undefined, repository);
         return undefined;
     }
-    const existing = relationships[0];
-    if (
-        relationships.length !== 1 ||
-        existing === undefined ||
-        existing.issue !== String(issue) ||
-        (existing.repository !== undefined &&
-            (repository === undefined || existing.repository.toLowerCase() !== repository.toLowerCase())) ||
-        lines.includes(NO_RELATED_TICKETS)
-    ) {
+    const matching = relationshipsForIssue(relationships, issue, repository);
+    const existing = matching[0];
+    if (matching.length !== 1 || existing === undefined || lines.includes(NO_RELATED_TICKETS)) {
         fail(`pull-request body must contain exactly one relationship to #${issue}`);
     }
     const relationship = existing.label === 'Closes' ? 'closes' : 'relates';
