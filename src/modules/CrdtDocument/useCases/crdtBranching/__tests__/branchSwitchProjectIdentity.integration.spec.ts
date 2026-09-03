@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DOC_PREFIX_ROOT } from '../../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../../repositories/automergeRepository';
@@ -56,6 +56,9 @@ describe('branch switch moves project identity', () => {
 
         const rootSwap = epochMoves.find(({ id }) => id === DOC_PREFIX_ROOT);
         expect(rootSwap).toBeDefined();
-        expect(rootSwap!.after).toBe(rootSwap!.before + 1);
+        if (!rootSwap) {
+            throw new Error('Expected the root swap to be recorded');
+        }
+        expect(rootSwap.after).toBe(rootSwap.before + 1);
     });
 });
