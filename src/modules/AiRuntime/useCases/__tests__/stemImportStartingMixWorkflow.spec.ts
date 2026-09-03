@@ -1,3 +1,4 @@
+import { change } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -23,8 +24,11 @@ import {
     captureProjectIdentity,
     captureProjectRevision,
     createCrdtDoc,
+    DOC_PREFIX_ROOT,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
+    replaceCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
@@ -918,7 +922,7 @@ describe('stem import and starting mix workflow', () => {
         expect(undoStore.value?.past).toHaveLength(0);
     });
 
-    it('asks for reapproval instead of discarding a stale proposal, keeping prepared resources and the collaborator edit intact until the second confirm commits', async () => {
+    it('asks for reapproval instead of discarding a stale proposal, keeping prepared resources and the locally added track intact until the second confirm commits', async () => {
         const originalTracks = structuredClone(trackStore.value?.tracks ?? []);
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(confirmationId());
@@ -928,8 +932,9 @@ describe('stem import and starting mix workflow', () => {
         );
 
         // The stem-import plan targets no existing object (getStemImportPlanScope reports
-        // targetIds: []), so a brand new collaborator track is a non-overlapping edit: the proposal
-        // is revalidated and rebound rather than discarded, and its prepared resources stay held.
+        // targetIds: []), so a brand new, locally added track is a non-overlapping edit: the
+        // proposal is revalidated and rebound rather than discarded, and its prepared resources
+        // stay held.
         const firstConfirm = await confirmPendingChatActions({ confirmationId: confirmation!.id });
         expect(firstConfirm).toMatchObject({
             status: 'reapproval_required',
@@ -952,6 +957,37 @@ describe('stem import and starting mix workflow', () => {
         expect(committedTracks.find((track) => track.id === 'track-guide')).toEqual(originalTracks[0]);
         expect(committedTracks.some((track) => track.name === 'Kick')).toBe(true);
         expect(undoStore.value?.past).toHaveLength(1);
+    });
+
+    // Pins today's behaviour rather than the fix: an applied remote sync lands through
+    // replaceCrdtDoc (automergeSync.ts:636), and automergeRepository.replaceDoc unconditionally
+    // moves the document identity epoch (markDocumentIdentityMutation). The base revision captured
+    // at proposal time then carries a stale identity epoch, so inspectAgentProjectDivergence
+    // (inspectAgentProjectDivergence.ts:100-104) cannot read the base document at all and reports
+    // 'ambiguous-same-object' instead of classifying the sync-landed track against the plan's
+    // targets — the confirm still hard-invalidates even though the edit is unrelated. Tracked as
+    // #3456; this head fixes only the local-edit case above.
+    it('still hard-invalidates a stale proposal when the unrelated edit lands via a project-identity-moving sync (#3456)', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmation = getPendingActionConfirmation(confirmationId());
+
+        flushAutomergeStorageWrites();
+        const currentDoc = getCrdtDoc<{ tracks: { tracks: Track[] } }>(DOC_PREFIX_ROOT);
+        if (!currentDoc) {
+            throw new TypeError('Expected a loaded root document');
+        }
+        const syncedDoc = change(currentDoc, (draft) => {
+            draft.tracks.tracks.push(createTrack('track-collaborator', 'Collaborator'));
+        });
+        replaceCrdtDoc({ id: DOC_PREFIX_ROOT, doc: syncedDoc });
+        trackStore.hydrate();
+
+        const confirmResult = await confirmPendingChatActions({ confirmationId: confirmation!.id });
+
+        expect(confirmResult).toMatchObject({ status: 'invalidated' });
+        expect(trackStore.value?.tracks.map((track) => track.id)).toContain('track-collaborator');
+        expect(undoStore.value?.past).toHaveLength(0);
+        expectPreparedStemResourcesReleased(1);
     });
 
     it('keeps grouped undo retryable when a collaborator changes an imported track', async () => {

@@ -308,7 +308,10 @@ describe('high-level intent execution', () => {
             startBeat: BLUES_CLIP_START_BEAT,
             endBeat: BLUES_CLIP_END_BEAT,
         });
-        expect(getMusicalNotes(bluesClip!.id)).toEqual(deriveBluesNotes());
+        if (!bluesClip) {
+            throw new TypeError('Expected the blues track to have one clip');
+        }
+        expect(getMusicalNotes(bluesClip.id)).toEqual(deriveBluesNotes());
         expect(getCreatedTracks().find((track) => track.kind === 'audio')).toMatchObject({
             name: 'Unrelated Track',
         });

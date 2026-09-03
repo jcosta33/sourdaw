@@ -672,6 +672,10 @@ describe('captureCommandBatchPreflightState', () => {
 
     it('fails closed when there is no project document at all', () => {
         mocks.getCrdtDoc.mockReturnValue(undefined);
+        // Bind projectId to the identity mock alone: both mocks return 'document-identity-a' by
+        // default, so that value alone would not distinguish this from a captureProjectRevision()
+        // regression on the same branch.
+        mocks.captureProjectIdentity.mockReturnValue('document-identity-c');
 
         const state = captureCommandBatchPreflightState({
             assetReferences: [{ assetHash: 'sha256:vocal', audioBufferId: 'buffer-vocal' }],
@@ -683,7 +687,7 @@ describe('captureCommandBatchPreflightState', () => {
             availableAssetHashes: [],
             availableAudioBufferIds: [],
             lockedRanges: [],
-            projectId: 'document-identity-a',
+            projectId: 'document-identity-c',
             projectInvariantsValid: false,
             targetFingerprints: { master: 'system-output:master' },
         });

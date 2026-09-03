@@ -938,14 +938,17 @@ describe('MF-03 articulation transfer prompt workflow', () => {
         ]);
     });
 
-    // The collaborator edit below lands on a new marker section, not on the plan's track or either
+    // The local marker edit below lands on a new marker section, not on the plan's track or either
     // of its clips: the divergence port classifies it as non-overlapping, so the unchanged plan is
     // revalidated and rebound rather than discarded outright.
     it('asks for reapproval instead of discarding the proposal after an unrelated marker edit, then commits the unchanged plan on the second confirm', async () => {
         await sendChatMessage(PROMPT);
         const confirmationId = getConfirmationId();
 
-        const markers = markerStore.value!;
+        const markers = markerStore.value;
+        if (!markers) {
+            throw new TypeError('Expected marker state');
+        }
         markerStore.set({
             ...markers,
             sections: [
