@@ -59,6 +59,8 @@ regexes = [
   # a follow-up incident pin in `scripts/recoverDeliveryLock.ts` and its spec needs
   # the byte-exact literal, so this allowlist entry lands first. A compare-and-swap
   # nonce, never an issued credential.
-  # Audited 2026-09-03; Nightly `--all` sees the retained ref `refs/sourdaw/delivery/pr-3437`.
+  # Audited 2026-09-03; the token enters scanned history only via the follow-up
+  # incident pin — the retained ref `refs/sourdaw/delivery/pr-3437` is local-only
+  # (the remote carries no `refs/sourdaw/*` refs) and unreachable by `--all` log scans.
   '''8cd2556c-c162-45d7-bc73-17a019c581b1''',
 ]
