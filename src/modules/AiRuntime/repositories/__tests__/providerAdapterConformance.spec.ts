@@ -492,6 +492,7 @@ describe('provider adapter conformance', () => {
                         },
                     },
                 ],
+                maxOutputTokens: 8192,
             })
         ).resolves.toEqual([{ id: 'call-1', name: 'muteTrack', arguments: { trackId: 'track-1', muted: true } }]);
         expect(fetchMock).not.toHaveBeenCalled();

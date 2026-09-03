@@ -80,7 +80,12 @@ describe('generateCloudToolCalls', () => {
             { name: 'addTrack', arguments: {} },
         ]);
         expect(mocks.generateOpenAi).toHaveBeenCalledWith(
-            expect.objectContaining({ runtime, userMessage: 'message', toolSchemas: tools })
+            expect.objectContaining({
+                runtime,
+                userMessage: 'message',
+                toolSchemas: tools,
+                maxOutputTokens: 8192,
+            })
         );
         expect(mocks.generateAnthropic).not.toHaveBeenCalled();
     });
