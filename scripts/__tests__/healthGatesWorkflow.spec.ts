@@ -581,6 +581,21 @@ function assertHeavyConcurrencyContract(candidate: UnknownRecord): void {
     }
 }
 
+// GitHub evaluates a job-level `concurrency` as its own group, independent of
+// the workflow-level one: a constant group with `cancel-in-progress: true` on
+// a matrix job would let queued shards cancel in-progress ones. The
+// workflow-level group is the only serialization these three files get —
+// nightly is exempt, and its deploy-web block stays pinned where it lives.
+function assertNoJobLevelConcurrency(candidate: UnknownRecord, file: string): void {
+    for (const [id, job] of Object.entries(recordAt(candidate, 'jobs'))) {
+        if (asRecord(job, `${file} job ${id}`).concurrency !== undefined) {
+            throw new Error(
+                `${file} job ${id} must not carry job-level concurrency; the workflow-level group is the only serialization`
+            );
+        }
+    }
+}
+
 function assertNightlySecurityGraph(candidate: UnknownRecord): void {
     if (
         jobAt(candidate, 'codeql').if !== NIGHTLY_HEAVY_CONDITION ||
@@ -1383,6 +1398,9 @@ describe('health gates workflow contract', () => {
         expect(() => assertWorkflowPermissions(heavyWorkflow)).not.toThrow();
         expect(() => assertConcurrencyContract(workflow)).not.toThrow();
         expect(() => assertHeavyConcurrencyContract(heavyWorkflow)).not.toThrow();
+        expect(() => assertNoJobLevelConcurrency(workflow, 'health-gates.yml')).not.toThrow();
+        expect(() => assertNoJobLevelConcurrency(validationWorkflow, 'validation.yml')).not.toThrow();
+        expect(() => assertNoJobLevelConcurrency(heavyWorkflow, 'heavy-gates.yml')).not.toThrow();
 
         const missingPullRequestAccess = asRecord(structuredClone(workflow), 'missing pull-request permission');
         delete recordAt(missingPullRequestAccess, 'permissions')['pull-requests'];
@@ -1426,6 +1444,15 @@ describe('health gates workflow contract', () => {
         recordAt(flattenedHeavy, 'concurrency').group = 'heavy-gates-${{ github.run_id }}';
         expect(() => assertHeavyConcurrencyContract(flattenedHeavy)).toThrow(
             'the heavy lane must group approving reviews by pull request and everything else by run id'
+        );
+        // A constant job-level group with cancellation on the e2e matrix would
+        // let queued shards cancel the in-progress ones: GitHub evaluates a
+        // job-level `concurrency` as its own group, independent of the
+        // workflow-level one this lane serializes on.
+        const shardCancelling = asRecord(structuredClone(heavyWorkflow), 'shard-cancelling heavyWorkflow');
+        jobAt(shardCancelling, 'e2e').concurrency = { group: 'e2e-shards', 'cancel-in-progress': true };
+        expect(() => assertNoJobLevelConcurrency(shardCancelling, 'heavy-gates.yml')).toThrow(
+            'heavy-gates.yml job e2e must not carry job-level concurrency'
         );
     });
 

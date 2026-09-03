@@ -488,6 +488,22 @@ expect(
     heavyWorkflow.concurrency?.['cancel-in-progress'] === false,
     'the heavy lane must never cancel: an approving review run is the only run that observes those legs on that head'
 );
+// A job-level `concurrency` is its own group, independent of the
+// workflow-level one: a constant group with cancellation on a matrix job
+// would let queued shards cancel in-progress ones. Nightly is exempt — its
+// deploy-web block stays pinned below.
+for (const [file, parsed] of [
+    ['health-gates.yml', workflow],
+    ['validation.yml', validationWorkflow],
+    ['heavy-gates.yml', heavyWorkflow],
+]) {
+    for (const [id, job] of Object.entries(parsed.jobs ?? {})) {
+        expect(
+            job?.concurrency === undefined,
+            `${file} job ${id} must not carry job-level concurrency; the workflow-level group is the only serialization`
+        );
+    }
+}
 expect(
     concurrency?.['cancel-in-progress'] === true,
     'a newer pull_request run must cancel in-progress validation of the same PR'
