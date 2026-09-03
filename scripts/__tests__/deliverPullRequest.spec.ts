@@ -7191,6 +7191,18 @@ describe('gating check names', () => {
                 'which the launcher did not carry, so no check can be proven to gate the merge',
         },
         {
+            label: 'a caller whose check name carries an expression',
+            call: [
+                '  release:',
+                '    name: Release ${{ github.event_name }}',
+                '    uses: ./.github/workflows/release.yml',
+            ].join('\n'),
+            called: { './.github/workflows/release.yml': releaseWorkflow },
+            message:
+                `Error: the release job in ${WORKFLOW_PATH} names its check Release \${{ github.event_name }}, ` +
+                'which GitHub substitutes before reporting it',
+        },
+        {
             label: 'a called workflow the pinned commit does not carry',
             call: releaseCall,
             called: {},
