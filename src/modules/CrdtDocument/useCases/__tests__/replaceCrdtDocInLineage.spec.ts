@@ -1,4 +1,4 @@
-import { change, init, type Doc } from '@automerge/automerge';
+import { change } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { automergeRepository } from '../../repositories/automergeRepository';
@@ -32,15 +32,6 @@ describe('replaceCrdtDocInLineage', () => {
 
         expect(automergeRepository.getDocumentIdentityEpoch()).toBe(initialIdentityEpoch);
         expect(captureProjectRevision()).not.toBe(initialRevision);
-    });
-
-    it('moves the document identity epoch by one when the id is not yet registered', () => {
-        const initialIdentityEpoch = automergeRepository.getDocumentIdentityEpoch();
-        const newDoc = init<Record<string, unknown>>() as Doc<unknown>;
-
-        replaceCrdtDocInLineage({ id: 'routing', doc: newDoc });
-
-        expect(automergeRepository.getDocumentIdentityEpoch()).toBe(initialIdentityEpoch + 1);
     });
 
     it('notifies a registered listener exactly once', () => {

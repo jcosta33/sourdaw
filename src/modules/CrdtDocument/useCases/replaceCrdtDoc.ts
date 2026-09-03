@@ -11,9 +11,10 @@ export type ReplaceCrdtDocInput = {
 
 /**
  * Replace the CRDT document stored under `id` with a new Automerge doc, moving the document
- * identity epoch — a membership or lineage change: branch fork/switch/transition, snapshot
- * restore, or project load. A sync merge or rollback that stays on the stored doc's own lineage
- * uses `replaceCrdtDocInLineage` instead, which leaves the identity epoch unchanged.
+ * identity epoch. Kept as the seam specs use to model an identity-moving project replacement;
+ * production routes that move identity — branch fork, switch, merge, transition, snapshot
+ * restore, project load — call `automergeRepository.replaceDoc` directly instead. A sync uses
+ * `replaceCrdtDocInLineage`, which leaves the identity epoch unchanged.
  */
 export function replaceCrdtDoc(input: ReplaceCrdtDocInput): void {
     automergeRepository.replaceDoc(input.id, input.doc);

@@ -986,7 +986,10 @@ describe('stem import and starting mix workflow', () => {
         expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
     });
 
-    it('still hard-invalidates when the edit lands through an identity-moving replacement', async () => {
+    // replaceCrdtDoc moves the identity epoch the way the branch routes do, pinned in
+    // captureProjectIdentity.spec.ts; this case observes the epoch gate at
+    // inspectAgentProjectDivergence.ts:103.
+    it('still hard-invalidates when the document identity moves under a pending proposal', async () => {
         await sendChatMessage(PROMPT);
         const confirmation = getPendingActionConfirmation(confirmationId());
 
