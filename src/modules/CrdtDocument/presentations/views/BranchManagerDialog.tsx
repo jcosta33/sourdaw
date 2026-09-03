@@ -6,6 +6,7 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
+import { Dialog, DialogContent } from '#/components/ui/dialog';
 import { Input } from '#/components/ui/input';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
@@ -108,77 +109,80 @@ export const BranchManagerDialog = ({ onClose }: BranchManagerDialogProps): Reac
     };
 
     return (
-        <Row
-            justify="center"
-            className="fixed inset-0 z-50 bg-bg-scrim/90 px-4 backdrop-blur-[2px]"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Branches"
-            onKeyDown={(event) => {
-                if (event.key === 'Escape') {
+        <Dialog
+            open
+            onOpenChange={(open) => {
+                if (!open) {
                     onClose();
                 }
             }}
         >
-            <DawUtilityPanel className="w-full max-w-sm">
-                <DawHeaderBand
-                    className="px-4 py-3"
-                    startSlot={<GitBranch className="size-3.5 text-muted-foreground" />}
-                    title="Branches"
-                    titleClassName="text-[11px] text-foreground"
-                    actions={
-                        <Button variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close branch manager">
-                            <X className="size-3" />
-                        </Button>
-                    }
-                />
+            <DialogContent
+                showCloseButton={false}
+                aria-modal="true"
+                aria-label="Branches"
+                className="w-full max-w-sm p-0 border-none bg-transparent shadow-none"
+            >
+                <DawUtilityPanel className="w-full">
+                    <DawHeaderBand
+                        className="px-4 py-3"
+                        startSlot={<GitBranch className="size-3.5 text-muted-foreground" />}
+                        title="Branches"
+                        titleClassName="text-[11px] text-foreground"
+                        actions={
+                            <Button variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close branch manager">
+                                <X className="size-3" />
+                            </Button>
+                        }
+                    />
 
-                <Stack gap={4} className="px-4 py-4">
-                    {operationError === null ? null : (
-                        <p key={failureSeq} role="alert" className="text-[11px] text-[var(--color-state-danger)]">
-                            {operationError}
-                        </p>
-                    )}
+                    <Stack gap={4} className="px-4 py-4">
+                        {operationError === null ? null : (
+                            <p key={failureSeq} role="alert" className="text-[11px] text-[var(--color-state-danger)]">
+                                {operationError}
+                            </p>
+                        )}
 
-                    <Stack gap={1} className="max-h-60 overflow-y-auto">
-                        {state.branches.map((branch) => (
-                            <BranchRow
-                                key={branch.branchId}
-                                branch={branch}
-                                isActive={branch.branchId === state.activeBranchId}
-                                onSwitch={() => handleSwitch(branch.branchId)}
-                                onMerge={() => void handleMerge(branch.branchId)}
-                                onDelete={() => handleDelete(branch.branchId)}
+                        <Stack gap={1} className="max-h-60 overflow-y-auto">
+                            {state.branches.map((branch) => (
+                                <BranchRow
+                                    key={branch.branchId}
+                                    branch={branch}
+                                    isActive={branch.branchId === state.activeBranchId}
+                                    onSwitch={() => handleSwitch(branch.branchId)}
+                                    onMerge={() => void handleMerge(branch.branchId)}
+                                    onDelete={() => handleDelete(branch.branchId)}
+                                />
+                            ))}
+                        </Stack>
+
+                        <Row align="stretch" gap={1.5}>
+                            <Input
+                                value={newBranchName}
+                                onChange={(event) => setNewBranchName(event.target.value)}
+                                placeholder="New branch name"
+                                className="h-7 flex-1 text-xs"
+                                onKeyDown={(event) => {
+                                    if (event.key === 'Enter') {
+                                        void handleCreate();
+                                    }
+                                }}
                             />
-                        ))}
+                            <Button
+                                variant="outline"
+                                size="xs"
+                                onClick={() => void handleCreate()}
+                                disabled={!newBranchName.trim() || creating}
+                                className="gap-1"
+                            >
+                                <Plus className="size-3" />
+                                Fork
+                            </Button>
+                        </Row>
                     </Stack>
-
-                    <Row align="stretch" gap={1.5}>
-                        <Input
-                            value={newBranchName}
-                            onChange={(event) => setNewBranchName(event.target.value)}
-                            placeholder="New branch name"
-                            className="h-7 flex-1 text-xs"
-                            onKeyDown={(event) => {
-                                if (event.key === 'Enter') {
-                                    void handleCreate();
-                                }
-                            }}
-                        />
-                        <Button
-                            variant="outline"
-                            size="xs"
-                            onClick={() => void handleCreate()}
-                            disabled={!newBranchName.trim() || creating}
-                            className="gap-1"
-                        >
-                            <Plus className="size-3" />
-                            Fork
-                        </Button>
-                    </Row>
-                </Stack>
-            </DawUtilityPanel>
-        </Row>
+                </DawUtilityPanel>
+            </DialogContent>
+        </Dialog>
     );
 };
 

@@ -6,6 +6,7 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
+import { Dialog, DialogContent } from '#/components/ui/dialog';
 import { useStore } from '#/infra/store/useStore';
 import { shortcutStore, type ShortcutDefinition, type ShortcutStoreState } from '#/modules/CommandInterface/stores';
 import { resetShortcutMappings, setShortcutMapping } from '#/modules/CommandInterface/useCases';
@@ -196,28 +197,39 @@ export const ShortcutsSection = (): ReactElement => {
                 ))}
             </Stack>
 
-            {editingDefinition ? (
-                <Row
-                    justify="center"
-                    className="fixed inset-0 z-50 bg-bg-scrim/90 px-4 backdrop-blur-[2px] pointer-events-auto"
-                >
-                    <DawUtilityPanel className="w-full max-w-sm">
-                        <DawHeaderBand
-                            className="px-4 py-3"
-                            startSlot={<Keyboard className="size-3.5 text-primary" />}
-                            title={`Binding: ${editingDefinition.label}`}
-                            titleClassName="text-[11px] text-foreground normal-case tracking-normal"
-                        />
-                        <Stack align="center" gap={3} className="px-4 py-5 text-center">
-                            <Keyboard className="size-8 text-primary" />
-                            <p className="text-sm text-muted-foreground">Press the desired key combination.</p>
-                            <Button variant="ghost" size="sm" onClick={() => setEditingId(null)}>
-                                Cancel
-                            </Button>
-                        </Stack>
-                    </DawUtilityPanel>
-                </Row>
-            ) : null}
+            <Dialog
+                open={Boolean(editingDefinition)}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setEditingId(null);
+                    }
+                }}
+            >
+                {editingDefinition ? (
+                    <DialogContent
+                        showCloseButton={false}
+                        aria-modal="true"
+                        aria-label={`Binding: ${editingDefinition.label}`}
+                        className="w-full max-w-sm p-0 border-none bg-transparent shadow-none"
+                    >
+                        <DawUtilityPanel className="w-full">
+                            <DawHeaderBand
+                                className="px-4 py-3"
+                                startSlot={<Keyboard className="size-3.5 text-primary" />}
+                                title={`Binding: ${editingDefinition.label}`}
+                                titleClassName="text-[11px] text-foreground normal-case tracking-normal"
+                            />
+                            <Stack align="center" gap={3} className="px-4 py-5 text-center">
+                                <Keyboard className="size-8 text-primary" />
+                                <p className="text-sm text-muted-foreground">Press the desired key combination.</p>
+                                <Button variant="ghost" size="sm" onClick={() => setEditingId(null)}>
+                                    Cancel
+                                </Button>
+                            </Stack>
+                        </DawUtilityPanel>
+                    </DialogContent>
+                ) : null}
+            </Dialog>
         </>
     );
 };
