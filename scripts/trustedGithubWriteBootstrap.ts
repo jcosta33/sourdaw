@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
     accessSync,
     constants,
@@ -15,7 +15,7 @@ import { delimiter, dirname, isAbsolute, join, posix, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url';
 
 export type TrustedGithubWriteCommand =
-    'deliver' | 'issue:reconcile' | 'lane:publish' | 'review:publish' | 'review:resolve';
+    'deliver' | 'issue:reconcile' | 'lane:publish' | 'review:publish' | 'review:publish:recover' | 'review:resolve';
 
 export const BOOTSTRAP_PATH = 'scripts/trustedGithubWriteBootstrap.ts';
 export const HEALTH_GATES_WORKFLOW_PATH = '.github/workflows/health-gates.yml';
@@ -24,6 +24,8 @@ export const TRUSTED_PRIMARY_ROOT_ENV = 'SOURDAW_TRUSTED_PRIMARY_ROOT';
 export const TRUSTED_COMMON_DIR_ENV = 'SOURDAW_TRUSTED_COMMON_DIR';
 export const TRUSTED_GIT_PATH_ENV = 'SOURDAW_TRUSTED_GIT_PATH';
 export const TRUSTED_GH_PATH_ENV = 'SOURDAW_TRUSTED_GH_PATH';
+export const TRUSTED_PS_PATH_ENV = 'SOURDAW_TRUSTED_PS_PATH';
+export const TRUSTED_POWERSHELL_PATH_ENV = 'SOURDAW_TRUSTED_POWERSHELL_PATH';
 export const TRUSTED_ORIGIN_COMMIT_ENV = 'SOURDAW_TRUSTED_ORIGIN_COMMIT';
 export const TRUSTED_GATE_WORKFLOW_ENV = 'SOURDAW_TRUSTED_GATE_WORKFLOW';
 
@@ -32,6 +34,8 @@ export type TrustedLauncherBinding = {
     commonDir: string;
     gitPath: string;
     ghPath: string;
+    psPath?: string;
+    powershellPath?: string;
 };
 
 /**
@@ -64,8 +68,42 @@ type SnapshotRunner = (
     entryPath: string,
     runner: string,
     args: string[],
-    snapshot: TrustedSourceSnapshot
+    snapshot: TrustedSourceSnapshot,
+    command: TrustedGithubWriteCommand
 ) => Promise<number>;
+
+export function trustedSnapshotRunsDetached(
+    command: TrustedGithubWriteCommand,
+    platform: NodeJS.Platform = process.platform
+): boolean {
+    return platform !== 'win32' && (command === 'review:publish' || command === 'review:publish:recover');
+}
+
+export function trustedSnapshotSignalTarget(
+    pid: number,
+    detached: boolean,
+    platform: NodeJS.Platform = process.platform
+): number {
+    return detached && platform !== 'win32' ? -pid : pid;
+}
+
+export function forwardTrustedSnapshotSignal(
+    pid: number,
+    detached: boolean,
+    platform: NodeJS.Platform,
+    signal: NodeJS.Signals,
+    send: (target: number, signal: NodeJS.Signals) => void = (target, forwardedSignal) =>
+        process.kill(target, forwardedSignal)
+): void {
+    try {
+        send(trustedSnapshotSignalTarget(pid, detached, platform), signal);
+    } catch (error) {
+        if (error instanceof Error && 'code' in error && error.code === 'ESRCH') {
+            return;
+        }
+        throw error;
+    }
+}
 
 const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string[]> = {
     deliver: [
@@ -94,6 +132,20 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
     'review:publish': [
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/publishReview.ts',
+        'scripts/reviewCommentDiffPreflight.ts',
+        'scripts/prepareReview.ts',
+        'scripts/pullRequestMutationLock.ts',
+        'scripts/githubAppIdentity.ts',
+        'scripts/prContract.ts',
+    ],
+    'review:publish:recover': [
+        'scripts/trustedGithubWriteBootstrap.ts',
+        'scripts/recoverPublishReviewLock.ts',
+        'scripts/publishReview.ts',
+        'scripts/reviewCommentDiffPreflight.ts',
+        'scripts/reviewPublicationLegacyIncidents.ts',
+        'scripts/reviewPublicationRecoveryReceipt.ts',
+        'scripts/reviewPublicationRemoteInspection.ts',
         'scripts/prepareReview.ts',
         'scripts/pullRequestMutationLock.ts',
         'scripts/githubAppIdentity.ts',
@@ -112,6 +164,7 @@ const commandEntries: Record<TrustedGithubWriteCommand, { path: string; runner: 
     'issue:reconcile': { path: 'scripts/reconcileTrackerIssue.ts', runner: 'runReconcileTrackerIssueCli' },
     'lane:publish': { path: 'scripts/publishLane.ts', runner: 'runPublishLaneCli' },
     'review:publish': { path: 'scripts/publishReview.ts', runner: 'runPublishReviewCli' },
+    'review:publish:recover': { path: 'scripts/recoverPublishReviewLock.ts', runner: 'runRecoverPublishReviewLockCli' },
     'review:resolve': { path: 'scripts/resolveThread.ts', runner: 'runResolveReviewThreadCli' },
 };
 
@@ -703,7 +756,7 @@ export async function executeTrustedSnapshot(
             writeFileSync(target, source, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
         }
         const entry = commandEntries[command];
-        const result = await runSnapshot(resolve(snapshotRoot, entry.path), entry.runner, args, snapshot);
+        const result = await runSnapshot(resolve(snapshotRoot, entry.path), entry.runner, args, snapshot, command);
         if (!Number.isSafeInteger(result)) {
             throw new TypeError(`trusted ${command} snapshot returned an invalid exit code`);
         }
@@ -717,7 +770,8 @@ async function runSnapshotModule(
     entryPath: string,
     runner: string,
     args: string[],
-    snapshot: TrustedSourceSnapshot
+    snapshot: TrustedSourceSnapshot,
+    command: TrustedGithubWriteCommand
 ): Promise<number> {
     const source = [
         "import { pathToFileURL } from 'node:url';",
@@ -725,13 +779,14 @@ async function runSnapshotModule(
         'const loaded = await import(pathToFileURL(entryPath).href);',
         'const command = Reflect.get(loaded, runner);',
         "if (typeof command !== 'function') throw new Error(`trusted snapshot does not export ${runner}`);",
-        'const trustedLauncher = typeof process.env.SOURDAW_TRUSTED_PRIMARY_ROOT === "string" && typeof process.env.SOURDAW_TRUSTED_GIT_PATH === "string" && typeof process.env.SOURDAW_TRUSTED_GH_PATH === "string" ? { primaryRoot: process.env.SOURDAW_TRUSTED_PRIMARY_ROOT, gitPath: process.env.SOURDAW_TRUSTED_GIT_PATH, ghPath: process.env.SOURDAW_TRUSTED_GH_PATH } : undefined;',
+        'const trustedLauncher = typeof process.env.SOURDAW_TRUSTED_PRIMARY_ROOT === "string" && typeof process.env.SOURDAW_TRUSTED_GIT_PATH === "string" && typeof process.env.SOURDAW_TRUSTED_GH_PATH === "string" ? { primaryRoot: process.env.SOURDAW_TRUSTED_PRIMARY_ROOT, gitPath: process.env.SOURDAW_TRUSTED_GIT_PATH, ghPath: process.env.SOURDAW_TRUSTED_GH_PATH, ...(typeof process.env.SOURDAW_TRUSTED_PS_PATH === "string" ? { psPath: process.env.SOURDAW_TRUSTED_PS_PATH } : {}), ...(typeof process.env.SOURDAW_TRUSTED_POWERSHELL_PATH === "string" ? { powershellPath: process.env.SOURDAW_TRUSTED_POWERSHELL_PATH } : {}) } : undefined;',
         'const dependencies = runner === "runDeliverCli" ? { trustedLauncher } : undefined;',
         'const result = dependencies === undefined ? await command(args) : await command(args, dependencies);',
         "if (!Number.isSafeInteger(result)) throw new Error('trusted snapshot returned an invalid exit code');",
         'process.exitCode = result;',
     ].join('\n');
-    const result = spawnSync(
+    const detached = trustedSnapshotRunsDetached(command);
+    const child = spawn(
         process.execPath,
         ['--input-type=module', '--eval', source, 'trusted-snapshot-runner', entryPath, runner, ...args],
         {
@@ -739,18 +794,43 @@ async function runSnapshotModule(
             env: trustedSnapshotEnv(snapshot),
             stdio: 'inherit',
             shell: false,
+            detached,
         }
     );
-    if (result.error !== undefined) {
-        throw result.error;
+    if (child.pid === undefined) {
+        throw new Error('trusted snapshot launcher could not determine the child process');
     }
-    if (result.status === null) {
-        throw new Error(`trusted snapshot terminated by ${result.signal ?? 'unknown signal'}`);
+    const restoreSignalHandlers = detached ? forwardSnapshotSignals(child.pid, process.platform) : () => undefined;
+    try {
+        const result = await new Promise<{ status: number | null; signal: NodeJS.Signals | null }>(
+            (resolve, reject) => {
+                child.once('error', reject);
+                child.once('close', (status, signal) => resolve({ status, signal }));
+            }
+        );
+        if (result.status === null) {
+            throw new Error(`trusted snapshot terminated by ${result.signal ?? 'unknown signal'}`);
+        }
+        if (result.status !== 0) {
+            throw new Error(`trusted snapshot failed with exit ${result.status}`);
+        }
+        return result.status;
+    } finally {
+        restoreSignalHandlers();
     }
-    if (result.status !== 0) {
-        throw new Error(`trusted snapshot failed with exit ${result.status}`);
+}
+
+function forwardSnapshotSignals(pid: number, platform: NodeJS.Platform): () => void {
+    const forward = (signal: NodeJS.Signals) => forwardTrustedSnapshotSignal(pid, true, platform, signal);
+    const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+    for (const signal of signals) {
+        process.on(signal, forward);
     }
-    return result.status;
+    return () => {
+        for (const signal of signals) {
+            process.off(signal, forward);
+        }
+    };
 }
 
 export function trustedSnapshotEnv(
@@ -765,13 +845,25 @@ export function trustedSnapshotEnv(
     if (launcher === undefined) {
         return env;
     }
-    env.PATH = [...new Set([dirname(launcher.gitPath), dirname(launcher.ghPath), dirname(process.execPath)])].join(
-        delimiter
-    );
+    env.PATH = [
+        ...new Set([
+            dirname(launcher.gitPath),
+            dirname(launcher.ghPath),
+            ...(launcher.psPath === undefined ? [] : [dirname(launcher.psPath)]),
+            ...(launcher.powershellPath === undefined ? [] : [dirname(launcher.powershellPath)]),
+            dirname(process.execPath),
+        ]),
+    ].join(delimiter);
     env[TRUSTED_PRIMARY_ROOT_ENV] = launcher.primaryRoot;
     env[TRUSTED_COMMON_DIR_ENV] = launcher.commonDir;
     env[TRUSTED_GIT_PATH_ENV] = launcher.gitPath;
     env[TRUSTED_GH_PATH_ENV] = launcher.ghPath;
+    if (launcher.psPath !== undefined) {
+        env[TRUSTED_PS_PATH_ENV] = launcher.psPath;
+    }
+    if (launcher.powershellPath !== undefined) {
+        env[TRUSTED_POWERSHELL_PATH_ENV] = launcher.powershellPath;
+    }
     env[TRUSTED_ORIGIN_COMMIT_ENV] = snapshot.commit;
     return env;
 }
@@ -822,22 +914,45 @@ export function trustedGitReadEnv(parent: NodeJS.ProcessEnv = process.env): Node
 }
 
 export function resolveTrustedExecutable(
-    name: 'git' | 'gh',
+    name: 'git' | 'gh' | 'ps',
     parent: NodeJS.ProcessEnv = process.env,
     platform: NodeJS.Platform = process.platform
 ): string {
-    const extension = platform === 'win32' ? '.exe' : '';
+    const extensions = platform === 'win32' ? ['.exe'] : [''];
     for (const directory of (parent.PATH ?? '').split(platform === 'win32' ? ';' : delimiter)) {
-        const candidate = resolve(directory || process.cwd(), `${name}${extension}`);
-        try {
-            accessSync(candidate, constants.X_OK);
-            return realpathSync(candidate);
-        } catch {
-            // Try the next operator-provided PATH entry. The protected launcher freezes the
-            // first executable it finds before any lane-selected child starts.
+        for (const extension of extensions) {
+            const candidate = resolve(directory || process.cwd(), `${name}${extension.toLowerCase()}`);
+            try {
+                accessSync(candidate, constants.X_OK);
+                return realpathSync(candidate);
+            } catch {
+                // Try the next operator-provided PATH entry. The protected launcher freezes the
+                // first executable it finds before any lane-selected child starts.
+            }
         }
     }
     throw new Error(`cannot resolve trusted ${name} executable from the launcher PATH`);
+}
+
+function resolveTrustedPowerShellExecutable(
+    parent: NodeJS.ProcessEnv = process.env,
+    platform: NodeJS.Platform = process.platform
+): string {
+    const extensions = platform === 'win32' ? ['.exe'] : [''];
+    for (const directory of (parent.PATH ?? '').split(platform === 'win32' ? ';' : delimiter)) {
+        for (const extension of extensions) {
+            const suffix = extension === '' ? '' : extension.toLowerCase();
+            const candidate = resolve(directory || process.cwd(), `powershell${suffix}`);
+            try {
+                accessSync(candidate, constants.X_OK);
+                return realpathSync(candidate);
+            } catch {
+                // Try the next operator-provided PATH entry. The protected launcher freezes the
+                // first executable it finds before any lane-selected child starts.
+            }
+        }
+    }
+    throw new Error('cannot resolve trusted powershell executable from the launcher PATH');
 }
 
 function repositoryCommonDir(checkoutRoot: string, gitPath: string): string {
@@ -848,6 +963,7 @@ function repositoryCommonDir(checkoutRoot: string, gitPath: string): string {
 export function resolveTrustedLauncherBinding(
     launcherRoot: string,
     parent: NodeJS.ProcessEnv = process.env,
+    command?: TrustedGithubWriteCommand,
     platform: NodeJS.Platform = process.platform
 ): TrustedLauncherBinding {
     const root = realpathSync(launcherRoot);
@@ -857,7 +973,29 @@ export function resolveTrustedLauncherBinding(
     if (root !== primaryRoot) {
         throw new Error('trusted GitHub writes must be launched from the protected primary checkout');
     }
-    return { primaryRoot, commonDir, gitPath, ghPath: resolveTrustedExecutable('gh', parent, platform) };
+    return {
+        primaryRoot,
+        commonDir,
+        gitPath,
+        ghPath: resolveTrustedExecutable('gh', parent, platform),
+        psPath: commandRequiresTrustedPs(command, platform)
+            ? resolveTrustedExecutable('ps', parent, platform)
+            : undefined,
+        powershellPath: commandRequiresTrustedPowerShell(command, platform)
+            ? resolveTrustedPowerShellExecutable(parent, platform)
+            : undefined,
+    };
+}
+
+function commandRequiresTrustedPs(command: TrustedGithubWriteCommand | undefined, platform: NodeJS.Platform): boolean {
+    return platform !== 'win32' && (command === 'review:publish' || command === 'review:publish:recover');
+}
+
+function commandRequiresTrustedPowerShell(
+    command: TrustedGithubWriteCommand | undefined,
+    platform: NodeJS.Platform
+): boolean {
+    return platform === 'win32' && (command === 'review:publish' || command === 'review:publish:recover');
 }
 
 function defaultPort(binding: TrustedLauncherBinding): TrustedSourcePort {
@@ -881,12 +1019,13 @@ function parseCommand(value: string | undefined): TrustedGithubWriteCommand {
         value === 'issue:reconcile' ||
         value === 'lane:publish' ||
         value === 'review:publish' ||
+        value === 'review:publish:recover' ||
         value === 'review:resolve'
     ) {
         return value;
     }
     throw new Error(
-        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:reconcile|lane:publish|review:publish|review:resolve> [args...]'
+        'usage: trustedGithubWriteBootstrap.ts <deliver|issue:reconcile|lane:publish|review:publish|review:publish:recover|review:resolve> [args...]'
     );
 }
 
@@ -894,7 +1033,7 @@ async function main(): Promise<number> {
     const executingFile = fileURLToPath(import.meta.url);
     const launcherRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
     const command = parseCommand(process.argv[2]);
-    const binding = resolveTrustedLauncherBinding(launcherRoot, process.env);
+    const binding = resolveTrustedLauncherBinding(launcherRoot, process.env, command);
     const port = defaultPort(binding);
     const commit = port.resolveOriginMain();
     const originBootstrap = port.readOriginSource(commit, BOOTSTRAP_PATH);

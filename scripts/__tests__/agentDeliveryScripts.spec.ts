@@ -26,13 +26,15 @@ import {
     shellPort,
     withPullRequestDeliveryLock,
 } from '../deliverPullRequest.ts';
-import { AUTHOR_BOT_NODE_ID } from '../githubAppIdentity.ts';
+import { AUTHOR_BOT_NODE_ID, REQUIRED_REPOSITORY, REVIEWER_BOT_NODE_ID } from '../githubAppIdentity.ts';
 import {
     coordinatePublishReview,
     runPublishReviewCli,
     type PublishReviewCoordinatorDependencies,
 } from '../publishReview.ts';
+import { withPullRequestReviewPublicationMutationLock } from '../pullRequestMutationLock.ts';
 import { githubTrackerIssuePort } from '../reconcileTrackerIssue.ts';
+import { runRecoverPublishReviewLockCli } from '../recoverPublishReviewLock.ts';
 import { runResolveReviewThreadCli } from '../resolveThread.ts';
 import {
     BOOTSTRAP_PATH,
@@ -476,7 +478,16 @@ function trustedReviewMutationFixture(root: string, mutationLog: string): void {
             '}',
         ].join('\n')
     );
-    for (const path of ['githubAppIdentity.ts', 'prContract.ts', 'prepareReview.ts']) {
+    for (const path of [
+        'githubAppIdentity.ts',
+        'prContract.ts',
+        'reviewPublicationLegacyIncidents.ts',
+        'prepareReview.ts',
+        'recoverPublishReviewLock.ts',
+        'reviewCommentDiffPreflight.ts',
+        'reviewPublicationRecoveryReceipt.ts',
+        'reviewPublicationRemoteInspection.ts',
+    ]) {
         writeFileSync(join(root, 'scripts', path), 'export {};\n');
     }
     runGit(root, ['init', '-b', 'main']);
@@ -775,6 +786,9 @@ describe('package scripts and gitignore', () => {
         expect(pkg.scripts['lane:publish']).toBe('node scripts/trustedGithubWriteBootstrap.ts lane:publish');
         expect(pkg.scripts['review:prepare']).toBe('node scripts/prepareReview.ts');
         expect(pkg.scripts['review:publish']).toBe('node scripts/trustedGithubWriteBootstrap.ts review:publish');
+        expect(pkg.scripts['review:publish:recover']).toBe(
+            'node scripts/trustedGithubWriteBootstrap.ts review:publish:recover'
+        );
         expect(pkg.scripts['review:resolve']).toBe('node scripts/trustedGithubWriteBootstrap.ts review:resolve');
         expect(pkg.scripts['review:resolve:recover']).toBeUndefined();
         expect(pkg.scripts['deliver:recover-lock']).toBeUndefined();
@@ -868,6 +882,10 @@ describe('package scripts and gitignore', () => {
             'publishLane.ts',
             'prepareReview.ts',
             'publishReview.ts',
+            'recoverPublishReviewLock.ts',
+            'reviewCommentDiffPreflight.ts',
+            'reviewPublicationRecoveryReceipt.ts',
+            'reviewPublicationRemoteInspection.ts',
             'deliverPullRequest.ts',
             'pullRequestMutationLock.ts',
             'removeLane.ts',
@@ -907,6 +925,19 @@ describe('package scripts and gitignore', () => {
         expect(trustedDependencyPaths('review:resolve')).toEqual([
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/resolveThread.ts',
+            'scripts/githubAppIdentity.ts',
+            'scripts/prContract.ts',
+        ]);
+        expect(trustedDependencyPaths('review:publish:recover')).toEqual([
+            'scripts/trustedGithubWriteBootstrap.ts',
+            'scripts/recoverPublishReviewLock.ts',
+            'scripts/publishReview.ts',
+            'scripts/reviewCommentDiffPreflight.ts',
+            'scripts/reviewPublicationLegacyIncidents.ts',
+            'scripts/reviewPublicationRecoveryReceipt.ts',
+            'scripts/reviewPublicationRemoteInspection.ts',
+            'scripts/prepareReview.ts',
+            'scripts/pullRequestMutationLock.ts',
             'scripts/githubAppIdentity.ts',
             'scripts/prContract.ts',
         ]);
@@ -989,6 +1020,25 @@ describe('package scripts and gitignore', () => {
                 expected: [
                     'scripts/trustedGithubWriteBootstrap.ts',
                     'scripts/publishReview.ts',
+                    'scripts/reviewCommentDiffPreflight.ts',
+                    'scripts/prepareReview.ts',
+                    'scripts/pullRequestMutationLock.ts',
+                    'scripts/githubAppIdentity.ts',
+                    'scripts/prContract.ts',
+                ],
+            },
+            {
+                command: 'review:publish:recover' as const,
+                entry: 'scripts/recoverPublishReviewLock.ts',
+                required: 'scripts/pullRequestMutationLock.ts',
+                expected: [
+                    'scripts/trustedGithubWriteBootstrap.ts',
+                    'scripts/recoverPublishReviewLock.ts',
+                    'scripts/publishReview.ts',
+                    'scripts/reviewCommentDiffPreflight.ts',
+                    'scripts/reviewPublicationLegacyIncidents.ts',
+                    'scripts/reviewPublicationRecoveryReceipt.ts',
+                    'scripts/reviewPublicationRemoteInspection.ts',
                     'scripts/prepareReview.ts',
                     'scripts/pullRequestMutationLock.ts',
                     'scripts/githubAppIdentity.ts',
@@ -1317,27 +1367,38 @@ describe('package scripts and gitignore', () => {
             }
         });
 
-        it('binds split trusted git and gh paths and carries them into the snapshot env', () => {
+        it('binds split trusted git, gh, and ps paths and carries them into the snapshot env', () => {
             const { fixtureRoot, primary } = cloneTrustedPublishPrimaryFixture('sourdaw-split-trusted-tools-');
             const gitBin = join(fixtureRoot, 'git-bin');
             const ghBin = join(fixtureRoot, 'gh-bin');
+            const psBin = join(fixtureRoot, 'ps-bin');
             const gitWrapper = join(gitBin, 'git');
             const ghWrapper = join(ghBin, 'gh');
+            const psWrapper = join(psBin, 'ps');
             const realGit = execFileSync('/usr/bin/which', ['git'], { encoding: 'utf8' }).trim();
             const realGh = execFileSync('/usr/bin/which', ['gh'], { encoding: 'utf8' }).trim();
+            const realPs = execFileSync('/usr/bin/which', ['ps'], { encoding: 'utf8' }).trim();
             try {
                 mkdirSync(gitBin);
                 mkdirSync(ghBin);
+                mkdirSync(psBin);
                 writeFileSync(gitWrapper, `#!/bin/sh\nexec ${JSON.stringify(realGit)} "$@"\n`);
                 writeFileSync(ghWrapper, `#!/bin/sh\nexec ${JSON.stringify(realGh)} "$@"\n`);
+                writeFileSync(psWrapper, `#!/bin/sh\nexec ${JSON.stringify(realPs)} "$@"\n`);
                 chmodSync(gitWrapper, 0o700);
                 chmodSync(ghWrapper, 0o700);
+                chmodSync(psWrapper, 0o700);
 
-                const binding = resolveTrustedLauncherBinding(primary, { PATH: [gitBin, ghBin].join(delimiter) });
+                const binding = resolveTrustedLauncherBinding(
+                    primary,
+                    { PATH: [gitBin, ghBin, psBin].join(delimiter) },
+                    'review:publish'
+                );
 
                 expect(binding.primaryRoot).toBe(realpathSync(primary));
                 expect(binding.gitPath).toBe(realpathSync(gitWrapper));
                 expect(binding.ghPath).toBe(realpathSync(ghWrapper));
+                expect(binding.psPath).toBe(realpathSync(psWrapper));
 
                 const env = trustedSnapshotEnv({
                     commit: 'a'.repeat(40),
@@ -1347,52 +1408,144 @@ describe('package scripts and gitignore', () => {
 
                 expect(env.SOURDAW_TRUSTED_GIT_PATH).toBe(binding.gitPath);
                 expect(env.SOURDAW_TRUSTED_GH_PATH).toBe(binding.ghPath);
+                expect(env.SOURDAW_TRUSTED_PS_PATH).toBe(binding.psPath);
                 expect(env.PATH).toBe(
-                    [...new Set([realpathSync(gitBin), realpathSync(ghBin), dirname(process.execPath)])].join(delimiter)
+                    [
+                        ...new Set([
+                            realpathSync(gitBin),
+                            realpathSync(ghBin),
+                            realpathSync(psBin),
+                            dirname(process.execPath),
+                        ]),
+                    ].join(delimiter)
                 );
             } finally {
                 rmSync(fixtureRoot, { recursive: true, force: true });
             }
         });
 
-        it('skips non-executable Windows git.exe candidates for executable fallbacks', () => {
+        it('binds a trusted powershell path for Windows review-mutation commands without requiring ps', () => {
+            const { fixtureRoot, primary } = cloneTrustedPublishPrimaryFixture('sourdaw-split-trusted-win32-tools-');
+            const gitBin = join(fixtureRoot, 'git-bin');
+            const ghBin = join(fixtureRoot, 'gh-bin');
+            const powerShellBin = join(fixtureRoot, 'powershell-bin');
+            const gitWrapper = join(gitBin, 'git.exe');
+            const ghWrapper = join(ghBin, 'gh.exe');
+            const powerShellWrapper = join(powerShellBin, 'powershell.exe');
+            const realGit = execFileSync('/usr/bin/which', ['git'], { encoding: 'utf8' }).trim();
+            const realGh = execFileSync('/usr/bin/which', ['gh'], { encoding: 'utf8' }).trim();
+            try {
+                mkdirSync(gitBin);
+                mkdirSync(ghBin);
+                mkdirSync(powerShellBin);
+                writeFileSync(gitWrapper, `#!/bin/sh\nexec ${JSON.stringify(realGit)} "$@"\n`);
+                writeFileSync(ghWrapper, `#!/bin/sh\nexec ${JSON.stringify(realGh)} "$@"\n`);
+                writeFileSync(powerShellWrapper, '#!/bin/sh\nexit 0\n');
+                chmodSync(gitWrapper, 0o700);
+                chmodSync(ghWrapper, 0o700);
+                chmodSync(powerShellWrapper, 0o700);
+
+                const binding = resolveTrustedLauncherBinding(
+                    primary,
+                    {
+                        PATH: [gitBin, ghBin, powerShellBin].join(';'),
+                        PATHEXT: '.EXE;.CMD;.BAT',
+                    },
+                    'review:publish',
+                    'win32'
+                );
+                const powershellPath = binding.powershellPath;
+                if (powershellPath === undefined) {
+                    throw new Error('expected a trusted powershell executable for Windows review publication');
+                }
+
+                expect(binding.primaryRoot).toBe(realpathSync(primary));
+                expect(binding.gitPath).toBe(realpathSync(gitWrapper));
+                expect(binding.ghPath).toBe(realpathSync(ghWrapper));
+                expect(binding.psPath).toBeUndefined();
+                expect(powershellPath).toBe(realpathSync(powerShellWrapper));
+                expect(spawnSync(powershellPath, [], { shell: false }).status).toBe(0);
+
+                const env = trustedSnapshotEnv({
+                    commit: 'a'.repeat(40),
+                    sources: new Map(),
+                    launcher: binding,
+                });
+
+                expect(env.SOURDAW_TRUSTED_POWERSHELL_PATH).toBe(powershellPath);
+                expect(env.SOURDAW_TRUSTED_PS_PATH).toBeUndefined();
+                expect(env.PATH).toBe(
+                    [
+                        ...new Set([
+                            realpathSync(gitBin),
+                            realpathSync(ghBin),
+                            realpathSync(powerShellBin),
+                            dirname(process.execPath),
+                        ]),
+                    ].join(delimiter)
+                );
+            } finally {
+                rmSync(fixtureRoot, { recursive: true, force: true });
+            }
+        });
+
+        it('skips non-executable Windows git.exe and powershell.exe candidates for executable fallbacks', () => {
             const { fixtureRoot, primary } = cloneTrustedPublishPrimaryFixture(
                 'sourdaw-trusted-win32-executable-fallbacks-'
             );
             const rejectedBin = join(fixtureRoot, 'rejected-bin');
             const gitBin = join(fixtureRoot, 'git-bin');
             const ghBin = join(fixtureRoot, 'gh-bin');
+            const powerShellBin = join(fixtureRoot, 'powershell-bin');
             const rejectedGit = join(rejectedBin, 'git.exe');
+            const rejectedPowerShell = join(rejectedBin, 'powershell.exe');
             const gitWrapper = join(gitBin, 'git.exe');
             const ghWrapper = join(ghBin, 'gh.exe');
+            const powerShellWrapper = join(powerShellBin, 'powershell.exe');
             const realGit = execFileSync('/usr/bin/which', ['git'], { encoding: 'utf8' }).trim();
             const realGh = execFileSync('/usr/bin/which', ['gh'], { encoding: 'utf8' }).trim();
             try {
                 mkdirSync(rejectedBin);
                 mkdirSync(gitBin);
                 mkdirSync(ghBin);
+                mkdirSync(powerShellBin);
                 writeFileSync(rejectedGit, '#!/bin/sh\nexit 99\n');
+                writeFileSync(rejectedPowerShell, '#!/bin/sh\nexit 99\n');
                 writeFileSync(gitWrapper, `#!/bin/sh\nexec ${JSON.stringify(realGit)} "$@"\n`);
                 writeFileSync(ghWrapper, `#!/bin/sh\nexec ${JSON.stringify(realGh)} "$@"\n`);
+                writeFileSync(powerShellWrapper, '#!/bin/sh\nexit 0\n');
                 chmodSync(rejectedGit, 0o600);
+                chmodSync(rejectedPowerShell, 0o600);
                 chmodSync(gitWrapper, 0o700);
                 chmodSync(ghWrapper, 0o700);
+                chmodSync(powerShellWrapper, 0o700);
 
                 const binding = resolveTrustedLauncherBinding(
                     primary,
-                    { PATH: [rejectedBin, gitBin, ghBin].join(';'), PATHEXT: '.EXE;.CMD;.BAT' },
+                    {
+                        PATH: [rejectedBin, gitBin, ghBin, powerShellBin].join(';'),
+                        PATHEXT: '.EXE;.CMD;.BAT',
+                    },
+                    'review:publish',
                     'win32'
                 );
+                const powershellPath = binding.powershellPath;
+                if (powershellPath === undefined) {
+                    throw new Error('expected a trusted powershell executable for Windows review publication');
+                }
 
                 expect(binding.gitPath).toBe(realpathSync(gitWrapper));
                 expect(binding.gitPath).not.toBe(realpathSync(rejectedGit));
+                expect(powershellPath).toBe(realpathSync(powerShellWrapper));
+                expect(powershellPath).not.toBe(realpathSync(rejectedPowerShell));
                 expect(spawnSync(binding.gitPath, ['--version'], { shell: false }).status).toBe(0);
+                expect(spawnSync(powershellPath, [], { shell: false }).status).toBe(0);
             } finally {
                 rmSync(fixtureRoot, { recursive: true, force: true });
             }
         });
 
-        it('binds git and gh for every command on both platforms, and reports invalid commands before binding', () => {
+        it('requires trusted process-identity bindings on review-mutation commands and reports invalid commands before binding', () => {
             const { fixtureRoot, primary } = cloneTrustedPublishPrimaryFixture('sourdaw-bootstrap-command-gating-');
             const gitBin = join(fixtureRoot, 'git-bin');
             const ghBin = join(fixtureRoot, 'gh-bin');
@@ -1422,12 +1575,40 @@ describe('package scripts and gitignore', () => {
                     gitPath: realpathSync(gitWrapper),
                     ghPath: realpathSync(ghWrapper),
                 });
-                expect(resolveTrustedLauncherBinding(primary, { PATH: windowsPath }, 'win32')).toEqual({
+                expect(resolveTrustedLauncherBinding(primary, { PATH: path }, 'lane:publish').psPath).toBeUndefined();
+                expect(
+                    resolveTrustedLauncherBinding(primary, { PATH: path }, 'issue:reconcile').psPath
+                ).toBeUndefined();
+                expect(resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:resolve').psPath).toBeUndefined();
+                for (const command of ['deliver', 'lane:publish', 'issue:reconcile', 'review:resolve'] as const) {
+                    expect(
+                        resolveTrustedLauncherBinding(primary, { PATH: windowsPath }, command, 'win32')
+                    ).toMatchObject({
+                        primaryRoot: realpathSync(primary),
+                        gitPath: realpathSync(windowsGitWrapper),
+                        ghPath: realpathSync(windowsGhWrapper),
+                        psPath: undefined,
+                        powershellPath: undefined,
+                    });
+                }
+                expect(resolveTrustedLauncherBinding(primary, { PATH: windowsPath }, undefined, 'win32')).toEqual({
                     primaryRoot: realpathSync(primary),
                     commonDir: realpathSync(join(primary, '.git')),
                     gitPath: realpathSync(windowsGitWrapper),
                     ghPath: realpathSync(windowsGhWrapper),
                 });
+                expect(() => resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:publish')).toThrow(
+                    /cannot resolve trusted ps executable/i
+                );
+                expect(() => resolveTrustedLauncherBinding(primary, { PATH: path }, 'review:publish:recover')).toThrow(
+                    /cannot resolve trusted ps executable/i
+                );
+                expect(() =>
+                    resolveTrustedLauncherBinding(primary, { PATH: windowsPath }, 'review:publish', 'win32')
+                ).toThrow(/cannot resolve trusted powershell executable/i);
+                expect(() =>
+                    resolveTrustedLauncherBinding(primary, { PATH: windowsPath }, 'review:publish:recover', 'win32')
+                ).toThrow(/cannot resolve trusted powershell executable/i);
 
                 const result = spawnSync(
                     process.execPath,
@@ -1441,7 +1622,7 @@ describe('package scripts and gitignore', () => {
                 );
                 expect(result.status).toBe(1);
                 expect(result.stderr).toMatch(/usage: trustedGithubWriteBootstrap\.ts/i);
-                expect(result.stderr).not.toMatch(/protected primary checkout/i);
+                expect(result.stderr).not.toMatch(/trusted ps executable|protected primary checkout/i);
             } finally {
                 rmSync(fixtureRoot, { recursive: true, force: true });
             }
@@ -1544,7 +1725,7 @@ describe('package scripts and gitignore', () => {
      * Only `deliver` decides a merge, so no other command reads a workflow. A launcher that read one
      * for every command would make them fail over a file and a parser they never use.
      */
-    it.each(['lane:publish', 'issue:reconcile', 'review:publish', 'review:resolve'] as const)(
+    it.each(['lane:publish', 'issue:reconcile', 'review:publish', 'review:publish:recover', 'review:resolve'] as const)(
         'reads no gating workflow for %s',
         async (command) => {
             const originReads: string[] = [];
@@ -1573,6 +1754,7 @@ describe('package scripts and gitignore', () => {
             'issue:reconcile',
             'lane:publish',
             'review:publish',
+            'review:publish:recover',
             'review:resolve',
         ] as const) {
             expect(trustedDependencyPaths(command)).toContain(BOOTSTRAP_PATH);
@@ -1678,6 +1860,12 @@ describe('package scripts and gitignore', () => {
             args: ['3239', 'value with spaces'],
         },
         {
+            command: 'review:publish:recover' as const,
+            entry: 'scripts/recoverPublishReviewLock.ts',
+            runner: 'runRecoverPublishReviewLockCli',
+            args: ['3344', '--owner', 'b'.repeat(40)],
+        },
+        {
             command: 'review:resolve' as const,
             entry: 'scripts/resolveThread.ts',
             runner: 'runResolveReviewThreadCli',
@@ -1701,9 +1889,12 @@ describe('package scripts and gitignore', () => {
                 })
             ).resolves.toBe(0);
             expect(JSON.parse(readFileSync(recordPath, 'utf8'))).toEqual(args);
-            expect(command === 'review:publish' ? runPublishReviewCli : runResolveReviewThreadCli).toBeTypeOf(
-                'function'
-            );
+            const importedRunners = {
+                'review:publish': runPublishReviewCli,
+                'review:publish:recover': runRecoverPublishReviewLockCli,
+                'review:resolve': runResolveReviewThreadCli,
+            } as const;
+            expect(importedRunners[command]).toBeTypeOf('function');
         } finally {
             rmSync(fixtureRoot, { recursive: true, force: true });
         }
@@ -1788,16 +1979,45 @@ describe('package scripts and gitignore', () => {
     it('refuses review publication before remote work while delivery owns the same PR fence', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-'));
         initializeDeliveryLockRepository(root);
+        const head = 'e'.repeat(40);
+        const bundle = join(root, '.agents', 'review-bundles', `2495-${head}`);
+        mkdirSync(bundle, { recursive: true });
+        writeFileSync(
+            join(bundle, 'review.json'),
+            JSON.stringify({ event: 'APPROVE', body: 'Attacked; held.', comments: [] })
+        );
+        writeFileSync(join(bundle, 'diff.patch'), '');
+        const executable = join(root, 'ps');
+        const previousPs = process.env.SOURDAW_TRUSTED_PS_PATH;
+        writeFileSync(
+            executable,
+            '#!/bin/sh\nif [ "$2" = "pgid=" ]; then printf "%s\\n" "$4"; else printf "%s\\n" "publication-process-start"; fi\n'
+        );
+        chmodSync(executable, 0o700);
+        process.env.SOURDAW_TRUSTED_PS_PATH = executable;
         const entered: string[] = [];
+        // Publication journals its payload at lock acquisition, so reviewer authentication and
+        // read-only preflight run before the fence is attempted; the fence must still refuse the
+        // mutation itself while delivery owns the PR.
         const publishDependencies: PublishReviewCoordinatorDependencies = {
             primaryRoot: () => root,
-            serializeMutation: withPullRequestDeliveryLock,
+            serializeMutation: withPullRequestReviewPublicationMutationLock,
             authenticateReviewer: async () => {
                 entered.push('publish:authenticate');
-                return expect.fail('reviewer authentication should not start');
+                return {
+                    minted: { actorNodeId: REVIEWER_BOT_NODE_ID },
+                    session: { configDir: '/tmp/reviewer', env: {}, dispose: () => undefined },
+                };
             },
-            repositoryName: () => expect.fail('publish repository lookup should not start'),
-            reviewPort: () => expect.fail('publish port should not be created'),
+            repositoryName: () => REQUIRED_REPOSITORY,
+            reviewPort: () => ({
+                primaryRoot: () => root,
+                pullRequest: () => ({ state: 'OPEN', head }),
+                readReviewJson: (path: string) => JSON.parse(readFileSync(path, 'utf8')),
+                readBundleDiff: (path: string) => readFileSync(path, 'utf8'),
+                postReview: () => expect.fail('review creation should not start'),
+                log: () => undefined,
+            }),
             publish: () => {
                 entered.push('publish:post');
                 return expect.fail('review creation should not start');
@@ -1808,11 +2028,16 @@ describe('package scripts and gitignore', () => {
                 await expect(coordinatePublishReview(2495, publishDependencies)).rejects.toThrow(
                     /already being delivered/
                 );
-                expect(entered).toEqual([]);
+                expect(entered).toEqual(['publish:authenticate']);
                 expect(deliveryLockExists(root, 2495)).toBe(true);
             });
             expect(deliveryLockExists(root, 2495)).toBe(false);
         } finally {
+            if (previousPs === undefined) {
+                delete process.env.SOURDAW_TRUSTED_PS_PATH;
+            } else {
+                process.env.SOURDAW_TRUSTED_PS_PATH = previousPs;
+            }
             rmSync(root, { recursive: true, force: true });
         }
     });

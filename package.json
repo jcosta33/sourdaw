@@ -45,6 +45,7 @@
         "lane:prune": "node scripts/pruneLane.ts",
         "review:prepare": "node scripts/prepareReview.ts",
         "review:publish": "node scripts/trustedGithubWriteBootstrap.ts review:publish",
+        "review:publish:recover": "node scripts/trustedGithubWriteBootstrap.ts review:publish:recover",
         "review:resolve": "node scripts/trustedGithubWriteBootstrap.ts review:resolve",
         "pr:supersede": "node scripts/supersedePullRequest.ts",
         "issue:reconcile": "node scripts/trustedGithubWriteBootstrap.ts issue:reconcile",
