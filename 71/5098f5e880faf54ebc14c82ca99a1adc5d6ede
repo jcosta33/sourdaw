@@ -1,0 +1,19 @@
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_9b530f08172a54::t_41595a2829b173 7193-7204
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "715098f5e880faf54ebc14c82ca99a1adc5d6ede",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
