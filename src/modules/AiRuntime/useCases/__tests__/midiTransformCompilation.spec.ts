@@ -1,8 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { MIDI_TRANSFORM_IMPLEMENTATIONS } from '#/modules/AiGeneration/useCases';
 import { clearMidiTransformRegistry, registerMidiTransforms } from '#/modules/Command/stores';
+import { ADD_NOTES_MAX_NOTES_PER_COMMAND, MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
 
-import { SEMANTIC_COMMAND_LIST_MAX_CREATIONS } from '../../models/SemanticCommandList';
+import {
+    SEMANTIC_COMMAND_LIST_MAX_COMMANDS,
+    SEMANTIC_COMMAND_LIST_MAX_CREATIONS,
+} from '../../models/SemanticCommandList';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 import { getAgentToolCatalogEntries } from '../getAgentToolCatalogEntries';
 import { validateArbitraryCommandListEvidence } from '../validateArbitraryCommandListEvidence';
@@ -314,6 +319,171 @@ describe('MIDI transform compilation', () => {
         });
 
         expect(result.status).toBe(scenario.accepted ? 'accepted' : 'rejected');
+    });
+
+    it('expands a swung drum pattern that fills its clip into addNotes that end inside it', () => {
+        clearMidiTransformRegistry();
+        registerMidiTransforms(MIDI_TRANSFORM_IMPLEMENTATIONS);
+
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-transform',
+            calls: [
+                propose([
+                    { id: 'c0', name: 'addTrack', arguments: { name: 'Drums', kind: 'midi', binding: 'kit' } },
+                    {
+                        id: 'c1',
+                        name: 'addClip',
+                        arguments: { trackId: '$kit', startBeat: 0, endBeat: 16, name: 'Beat', binding: 'drums' },
+                        dependsOn: ['c0'],
+                    },
+                    {
+                        id: 't1',
+                        name: 'drumPattern',
+                        arguments: { clipId: '$drums', bars: 4, style: 'punk', swing: 0.5 },
+                        dependsOn: ['c1'],
+                    },
+                ]),
+            ],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
+        if (result.status !== 'accepted' || result.compilerEvidence === undefined) {
+            return;
+        }
+        const { commands } = result.compilerEvidence;
+        expect(commands.map((command) => command.name)).toEqual(['addTrack', 'addClip', 'addNotes']);
+        const notes = commands
+            .filter((command) => command.name === 'addNotes')
+            .flatMap((command) => command.arguments.notes as { startBeat: number; duration: number }[]);
+        expect(notes.length).toBeGreaterThan(0);
+        expect(Math.max(...notes.map((note) => note.startBeat + note.duration))).toBeLessThanOrEqual(16);
+        expect(Math.min(...notes.map((note) => note.duration))).toBeGreaterThanOrEqual(MIDI_NOTE_MIN_DURATION_BEATS);
+    });
+
+    /** A generator wide enough that one transform costs several `addNotes`, on the tightest legal grid. */
+    const packedNotes = (count: number) => () =>
+        Array.from({ length: count }, (_unused, index) => ({
+            pitch: 60,
+            startBeat: index * 0.125,
+            duration: MIDI_NOTE_MIN_DURATION_BEATS,
+            velocity: 90,
+        }));
+
+    const wideClipItems = (count: number) => [
+        { id: 'make-track', name: 'addTrack', arguments: { name: 'Lead', kind: 'midi', binding: 'lead' } },
+        ...Array.from({ length: count }, (_unused, index) => ({
+            id: `wide-clip-${String(index)}`,
+            name: 'addClip',
+            arguments: {
+                trackId: '$lead',
+                startBeat: index * 64,
+                endBeat: index * 64 + 64,
+                name: `Wide ${String(index)}`,
+                binding: `wide${String(index)}`,
+            },
+            dependsOn: ['make-track'],
+        })),
+    ];
+
+    const wideTransformItem = (index: number, name: string) => ({
+        id: `wide-transform-${String(index)}`,
+        name,
+        arguments: { clipId: `$wide${String(index)}`, bars: 16, seed: 7 },
+        dependsOn: [`wide-clip-${String(index)}`],
+    });
+
+    it.each([
+        { accepted: false, clipCount: 11 },
+        { accepted: true, clipCount: 10 },
+    ])('holds the application command budget across an expansion with $clipCount created clips', (scenario) => {
+        const wideCount = 4 * ADD_NOTES_MAX_NOTES_PER_COMMAND;
+        clearMidiTransformRegistry();
+        registerMidiTransforms({
+            chordProgression: packedNotes(wideCount),
+            drumPattern: packedNotes(1),
+            melody: packedNotes(1),
+        });
+        const wideChunks = wideCount / ADD_NOTES_MAX_NOTES_PER_COMMAND;
+        const items = [
+            ...wideClipItems(scenario.clipCount),
+            ...[0, 1, 2].map((index) => wideTransformItem(index, 'chordProgression')),
+            wideTransformItem(3, 'melody'),
+        ];
+        const orderedCommandCount = 1 + scenario.clipCount + 3 * wideChunks + 1;
+
+        expect(orderedCommandCount).toBe(SEMANTIC_COMMAND_LIST_MAX_COMMANDS + (scenario.accepted ? 0 : 1));
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-transform',
+            calls: [propose(items)],
+        });
+
+        if (scenario.accepted) {
+            expect(result).toMatchObject({ status: 'accepted' });
+            return;
+        }
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Structured command list exceeds the application command budget.',
+        });
+    });
+
+    it('refuses two transforms writing the same created clip', () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-transform',
+            calls: [
+                propose([
+                    ...createdClipItems,
+                    chordProgressionItem({ clipId: '$verse', bars: 4, seed: 7 }),
+                    {
+                        id: 'write-more-chords',
+                        name: 'melody',
+                        arguments: { clipId: '$verse', bars: 4, seed: 9 },
+                        dependsOn: ['make-clip'],
+                    },
+                ]),
+            ],
+        });
+
+        expect(result).toEqual({
+            status: 'rejected',
+            reason: 'Structured command writes for addNotes on $verse are not safely composable.',
+        });
+    });
+
+    it('admits two transforms writing two created clips', () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-transform',
+            calls: [
+                propose([
+                    ...createdClipItems,
+                    {
+                        id: 'make-second-clip',
+                        name: 'addClip',
+                        arguments: {
+                            trackId: '$lead',
+                            startBeat: 32,
+                            endBeat: 64,
+                            name: 'Chorus',
+                            binding: 'chorus',
+                        },
+                        dependsOn: ['make-track'],
+                    },
+                    chordProgressionItem({ clipId: '$verse', bars: 4, seed: 7 }),
+                    {
+                        id: 'write-more-chords',
+                        name: 'melody',
+                        arguments: { clipId: '$chorus', bars: 4, seed: 9 },
+                        dependsOn: ['make-second-clip'],
+                    },
+                ]),
+            ],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
     });
 
     it('returns a registered transform schema through catalog discovery', () => {

@@ -6,6 +6,7 @@ import {
     getMidiTransformNames,
     registerMidiTransforms,
 } from '#/modules/Command/stores';
+import { MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
 
 import {
     CHORD_PROGRESSION_STYLES,
@@ -20,8 +21,17 @@ import { MIDI_TRANSFORM_IMPLEMENTATIONS } from '../midiTransformImplementations'
 
 type Descriptor = ReturnType<typeof getMidiTransformDescriptors>[number];
 type Parameter = Descriptor['parameters']['properties'][string];
+type TransformName = keyof typeof MIDI_TRANSFORM_IMPLEMENTATIONS;
 
 const CLIP_SPAN_BEATS = 64;
+const BEATS_PER_BAR = 4;
+
+/**
+ * A clip is only ever as long as the transform asked for, so the tightest clip is the honest one:
+ * anything a generator pushes past its own last bar is a note the expansion has to refuse.
+ */
+const BOUNDS_BARS = [1, 16];
+const BOUNDS_SEEDS = [1, 2, 3];
 
 /** The arguments the contract would hand a generator: the required ones, plus every declared default. */
 function publishedArguments(descriptor: Descriptor): Record<string, unknown> {
@@ -35,6 +45,36 @@ function publishedArguments(descriptor: Descriptor): Record<string, unknown> {
 function run(descriptor: Descriptor, transformArguments: Record<string, unknown>) {
     return MIDI_TRANSFORM_IMPLEMENTATIONS[descriptor.name](transformArguments, { clipSpanBeats: CLIP_SPAN_BEATS });
 }
+
+type NoteBoundsCase = { transform: TransformName; variant: string; overrides: Record<string, unknown> };
+
+function styleCases(transform: TransformName, styles: readonly string[]): NoteBoundsCase[] {
+    return styles.map((style) => ({ transform, variant: `style ${style}`, overrides: { style } }));
+}
+
+/**
+ * Every published argument value a generator can be handed, because the expansion refuses the whole
+ * proposal over one out-of-bounds note: a combination nothing covers is a combination that cannot be
+ * asked for.
+ */
+const NOTE_BOUNDS_CASES: NoteBoundsCase[] = [
+    ...styleCases('chordProgression', CHORD_PROGRESSION_STYLES),
+    ...CHORD_RHYTHMS.map((rhythm) => ({
+        transform: 'chordProgression' as const,
+        variant: `rhythm ${rhythm}`,
+        overrides: { rhythm },
+    })),
+    ...DRUM_PATTERN_STYLES.flatMap((style) =>
+        [0, 1].map((swing) => ({
+            transform: 'drumPattern' as const,
+            variant: `style ${style} at swing ${String(swing)}`,
+            overrides: { style, swing },
+        }))
+    ),
+    { transform: 'drumPattern', variant: 'density 1', overrides: { density: 1 } },
+    ...styleCases('melody', MELODY_STYLES),
+    { transform: 'melody', variant: 'density 1', overrides: { density: 1 } },
+];
 
 function numericBounds(parameter: Parameter): { minimum: number; maximum: number } | null {
     return parameter.type === 'string' || parameter.minimum === undefined || parameter.maximum === undefined
@@ -80,6 +120,28 @@ describe('MIDI transform implementations', () => {
             expect(published?.parameters.properties[argumentName]?.enum).toEqual([...vocabulary]);
         }
     );
+
+    it.each(NOTE_BOUNDS_CASES)('$transform writes every note inside its own bars with $variant', (boundsCase) => {
+        const descriptor = getMidiTransformDescriptors().find((candidate) => candidate.name === boundsCase.transform);
+        if (descriptor === undefined) {
+            throw new Error(`no descriptor published for ${boundsCase.transform}`);
+        }
+        for (const bars of BOUNDS_BARS) {
+            for (const seed of BOUNDS_SEEDS) {
+                const clipSpanBeats = bars * BEATS_PER_BAR;
+                const notes = MIDI_TRANSFORM_IMPLEMENTATIONS[boundsCase.transform](
+                    { ...publishedArguments(descriptor), ...boundsCase.overrides, bars, seed },
+                    { clipSpanBeats }
+                );
+                expect(notes.length).toBeGreaterThan(0);
+                for (const note of notes) {
+                    expect(note.startBeat).toBeGreaterThanOrEqual(0);
+                    expect(note.startBeat + note.duration).toBeLessThanOrEqual(clipSpanBeats);
+                    expect(note.duration).toBeGreaterThanOrEqual(MIDI_NOTE_MIN_DURATION_BEATS);
+                }
+            }
+        }
+    });
 
     describe.each(getMidiTransformNames())('%s', (name) => {
         const descriptor = () => {

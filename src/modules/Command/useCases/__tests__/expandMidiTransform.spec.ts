@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { ADD_NOTES_MAX_NOTES_PER_COMMAND } from '#/utils/midiNoteBatchLimits';
+import { ADD_NOTES_MAX_NOTES_PER_COMMAND, MIDI_TRANSFORM_MAX_NOTES } from '#/utils/midiNoteBatchLimits';
 
 import { type MaterializedMidiNote, type MidiTransformImplementation } from '../../models/MidiTransform';
 import { clearMidiTransformRegistry, registerMidiTransforms } from '../../stores/midiTransformRegistry';
@@ -140,5 +140,67 @@ describe('expandMidiTransform', () => {
         expect(
             expandMidiTransform({ name: 'arpeggiate', arguments: { clipId: 'clip-a', bars: 4 }, clipSpanBeats: 64 })
         ).toEqual({ rejectionReason: 'arpeggiate is not a registered MIDI transform.' });
+    });
+
+    it('sorts notes a generator emitted out of start-beat order across every chunk', () => {
+        const count = 2 * ADD_NOTES_MAX_NOTES_PER_COMMAND + 44;
+        registerTransforms({
+            chordProgression: () =>
+                Array.from({ length: count }, (_unused, index) => ({
+                    pitch: 60,
+                    startBeat: (count - 1 - index) * 0.25,
+                    duration: 0.25,
+                    velocity: 90,
+                })),
+        });
+
+        const expansion = expand({ clipId: 'clip-a', bars: 16, seed: 5 }, 128);
+
+        if (!('commands' in expansion)) {
+            throw new Error(`expected an accepted expansion, got: ${expansion.rejectionReason}`);
+        }
+        expect(expansion.commands).toHaveLength(3);
+        const startBeats = allNotes(expansion.commands).map((note) => note.startBeat);
+        expect(startBeats).toEqual(Array.from({ length: count }, (_unused, index) => index * 0.25));
+        const firstChunkStartBeats = expansion.commands[0]!.notes.map((note) => note.startBeat);
+        expect(Math.max(...firstChunkStartBeats)).toBeLessThan(
+            Math.min(...expansion.commands[1]!.notes.map((note) => note.startBeat))
+        );
+    });
+
+    it('refuses a generator that produced more notes than a transform may write', () => {
+        registerTransforms({ chordProgression: seededNotes(MIDI_TRANSFORM_MAX_NOTES + 1) });
+
+        expect(expand({ clipId: 'clip-a', bars: 16, seed: 5 }, 256)).toEqual({
+            rejectionReason: `MIDI transform chordProgression produced ${String(MIDI_TRANSFORM_MAX_NOTES + 1)} notes, more than the ${String(MIDI_TRANSFORM_MAX_NOTES)} a transform may write.`,
+        });
+    });
+
+    it('accepts a generator that produced exactly the notes a transform may write', () => {
+        registerTransforms({ chordProgression: seededNotes(MIDI_TRANSFORM_MAX_NOTES) });
+
+        const expansion = expand({ clipId: 'clip-a', bars: 16, seed: 5 }, 256);
+
+        if (!('commands' in expansion)) {
+            throw new Error(`expected an accepted expansion, got: ${expansion.rejectionReason}`);
+        }
+        expect(expansion.commands.map((command) => command.notes.length)).toEqual(
+            Array.from(
+                { length: MIDI_TRANSFORM_MAX_NOTES / ADD_NOTES_MAX_NOTES_PER_COMMAND },
+                () => ADD_NOTES_MAX_NOTES_PER_COMMAND
+            )
+        );
+    });
+
+    it('refuses an unbounded undeclared argument name without quoting it back', () => {
+        registerTransforms();
+        const hostileKey = 'k'.repeat(1000);
+
+        const expansion = expand({ clipId: 'clip-a', bars: 4, seed: 2, [hostileKey]: 1 });
+
+        expect(expansion).toEqual({
+            rejectionReason: 'MIDI transform chordProgression does not accept an undeclared argument.',
+        });
+        expect(JSON.stringify(expansion)).not.toContain(hostileKey);
     });
 });

@@ -4406,6 +4406,36 @@ describe('compileArbitraryCommandList', () => {
         ).toMatchObject({ status: 'rejected' });
     });
 
+    it('refuses an unbounded malformed batch-local target reference without quoting it back', () => {
+        const hostileReference = `$${'a'.repeat(1000)}`;
+
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: plan([]),
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'gain-drum-bus',
+                                    name: 'setTrackGain',
+                                    arguments: { trackId: hostileReference, gain: 0.8 },
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+
+        expect(result).toEqual({ status: 'rejected', reason: 'Malformed batch-local target reference.' });
+        expect(JSON.stringify(result)).not.toContain(hostileReference);
+    });
+
     it('compiles an exact ordered many-target selector into one bounded array argument', () => {
         const result = compileArbitraryCommandList({
             context,

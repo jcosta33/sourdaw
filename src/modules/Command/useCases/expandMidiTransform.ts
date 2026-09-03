@@ -17,6 +17,11 @@ import {
 import { getMidiTransform } from '../stores/midiTransformRegistry';
 
 const MAX_TRANSFORM_FAILURE_DETAIL_LENGTH = 200;
+/**
+ * Provider arguments are an open object, so an undeclared key is attacker-shaped text that would
+ * otherwise reach the chat error verbatim. Only an ordinary identifier is worth naming back.
+ */
+const SAFE_ARGUMENT_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/u;
 const MAX_ARGUMENT_STRING_LENGTH = 256;
 const MAX_MIDI_PITCH = 127;
 const MIN_MIDI_VELOCITY = 1;
@@ -83,7 +88,8 @@ function validateTransformArguments(
     const declared = descriptor.parameters.properties;
     for (const key of Object.keys(suppliedArguments)) {
         if (!Object.hasOwn(declared, key)) {
-            return rejected(`MIDI transform ${descriptor.name} does not accept the argument ${key}.`);
+            const named = SAFE_ARGUMENT_NAME_PATTERN.test(key) ? `the argument ${key}` : 'an undeclared argument';
+            return rejected(`MIDI transform ${descriptor.name} does not accept ${named}.`);
         }
     }
     const validated: ValidatedArguments = {};

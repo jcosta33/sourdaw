@@ -42,6 +42,12 @@ type Candidate = {
     enabled?: boolean;
 };
 
+/**
+ * A rejection reason reaches the chat, and a provider-authored argument is unbounded text. A
+ * reference is quoted back only while it is short enough to read as a reference.
+ */
+const MAX_QUOTED_REFERENCE_LENGTH = 64;
+
 export type ArbitraryCommandListSelectorEvidence = {
     itemId: string;
     stableIds: string[];
@@ -721,7 +727,13 @@ function validateTargetArgumentsWithoutSelectors(input: {
             }
             const binding = value.slice(1);
             if (!BATCH_LOCAL_BINDING_PATTERN.test(binding)) {
-                return { status: 'rejected', reason: `Malformed batch-local target reference: ${value}` };
+                return {
+                    status: 'rejected',
+                    reason:
+                        value.length <= MAX_QUOTED_REFERENCE_LENGTH
+                            ? `Malformed batch-local target reference: ${value}`
+                            : 'Malformed batch-local target reference.',
+                };
             }
             const producer = input.producersByBinding.get(binding);
             if (
