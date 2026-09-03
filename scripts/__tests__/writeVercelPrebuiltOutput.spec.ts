@@ -113,6 +113,7 @@ describe('writeVercelPrebuiltOutput', () => {
         writeDist(rootDirectory);
         writeVercelJson(rootDirectory, [{ key: 'X-Isolation', value: 'required' }]);
         const linkPath = writeExistingProjectLink(rootDirectory);
+        mkdirSync(join(rootDirectory, '.vercel', 'output'), { recursive: true });
 
         writeVercelPrebuiltOutput(rootDirectory);
 

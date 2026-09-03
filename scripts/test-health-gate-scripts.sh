@@ -789,6 +789,7 @@ const deployWebBuildRun = stepNamed(deployWeb, 'Build the validated revision')?.
 expect(
     deployWebBuildRun.includes('pnpm build') &&
         deployWebBuildRun.includes('scripts/writeVercelPrebuiltOutput.ts') &&
+        !deployWebBuildRun.includes('$VERCEL_CLI') &&
         !deployWebBuildRun.includes('vercel'),
     'the daily web deploy must build locally rather than through the Vercel CLI'
 );

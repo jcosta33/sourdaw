@@ -877,7 +877,7 @@ function assertDailyDeployTrain(candidate: UnknownRecord): DeployTrainScripts {
     if (!buildRun.includes('scripts/writeVercelPrebuiltOutput.ts')) {
         throw new Error('Build the validated revision must write the prebuilt output locally');
     }
-    if (buildRun.includes('vercel')) {
+    if (buildRun.includes('$VERCEL_CLI') || buildRun.includes('vercel')) {
         throw new Error('Build the validated revision must not invoke the Vercel CLI');
     }
     if (buildStep.env !== undefined) {
@@ -1632,6 +1632,13 @@ describe('health gates workflow contract', () => {
         ).VERCEL_ORG_ID = '${{ secrets.VERCEL_ORG_ID }}';
         expect(() => assertDailyDeployTrain(envLinkedDeploy)).toThrow(
             'Deploy the prebuilt revision must not pass VERCEL_ORG_ID to the CLI'
+        );
+
+        const vercelCliBuild = asRecord(structuredClone(nightly), 'vercel-cli build deploy train');
+        const vercelCliBuildStep = stepNamed(jobAt(vercelCliBuild, DEPLOY_WEB_JOB), 'Build the validated revision');
+        vercelCliBuildStep.run = `${stringAt(vercelCliBuildStep, 'run')}\npnpm dlx "$VERCEL_CLI" build`;
+        expect(() => assertDailyDeployTrain(vercelCliBuild)).toThrow(
+            'Build the validated revision must not invoke the Vercel CLI'
         );
 
         const reboundIsolation = asRecord(structuredClone(nightly), 'rebound-isolation deploy train');
