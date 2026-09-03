@@ -1,0 +1,41 @@
+src/modules/AiRuntime/useCases/__tests__/midiTransformCompilation.spec.ts
+  s_ac03a4ebaa3f6e::t_2bcfd2fd1f12d6 3,5,7-10,324-488
+src/modules/AiGeneration/useCases/generateDrumPattern/algorithm.ts
+  s_f70d3713ebe89a::t_53210c9810d47e 503-505,530,557-560
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_f70d3713ebe89a::t_65e03c7b08e384 4409-4438
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_f70d3713ebe89a::t_dfdf1e3ee4e662 45-50,730-736
+src/modules/Command/useCases/__tests__/expandMidiTransform.spec.ts
+  s_f70d3713ebe89a::t_459e390486a181 3,144-205
+src/modules/Command/useCases/expandMidiTransform.ts
+  s_f70d3713ebe89a::t_748db84a8f730a 20-24,91-92
+release/open-source-inventory.json
+  s_ac03a4ebaa3f6e::t_7b11ddb81ab8cf 1195
+src/modules/AiGeneration/useCases/midiTransforms/__tests__/midiTransformImplementations.spec.ts
+  s_ac03a4ebaa3f6e::t_9dbc237c5e793e 9,24,27-34,49-78,124-145
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "96c618b531b2c493e551f417bc40c3cef31086e4",
+  "prompts": {},
+  "sessions": {
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_f70d3713ebe89a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a7a5acbea933d858d",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
