@@ -1,0 +1,55 @@
+src/modules/Crumbs/useCases/crumbsLifecycle/__tests__/initCrumbsEngine.spec.ts
+  s_9b530f08172a54::t_8a9434634321f2 27,37
+src/modules/Crumbs/presentations/views/CrumbsPanel.tsx
+  s_9b530f08172a54::t_9fcb3763ada966 113
+crates/sourdaw-native/src/commands/crumbs.rs
+  s_9b530f08172a54::t_2b75b8a1f26ff2 231-235
+  s_9b530f08172a54::t_21cd9ce16c14b5 1063-1064,1083-1085,1155-1156,1556-1560
+electron/__tests__/commands.spec.ts
+  s_9b530f08172a54::t_4ea830693239f2 354
+src/modules/AudioEngine/models/EngineRtDiagnostics.ts
+  s_9b530f08172a54::t_846fc190eafed4 46-56,77-80
+src/modules/Crumbs/useCases/crumbsLifecycle/initCrumbsEngine.ts
+  s_9b530f08172a54::t_8e5d7c4ef00c61 16,21
+src/modules/AudioEngine/useCases/engineAccess/__tests__/refreshEngineRtDiagnostics.spec.ts
+  s_9b530f08172a54::t_dec003b3a5ae77 37-40
+crates/sourdaw-native/src/addon/mod.rs
+  s_9b530f08172a54::t_0b83001a18b72e 1057
+src/modules/AudioEngine/repositories/engineDiagnostics/__tests__/getEngineRtDiagnostics.spec.ts
+  s_9b530f08172a54::t_5914e0255c3ba8 34-37
+crates/daw-engine/src/lib.rs
+  s_9b530f08172a54::t_d865444a3a8738 951-956
+  s_9b530f08172a54::t_0c50c5b564280e 239-254
+  s_9b530f08172a54::t_178e4e554de307 995-1004
+src/modules/Crumbs/repositories/crumbsBridge/createCrumbsInstance.ts
+  s_9b530f08172a54::t_51f5360789e43f 3,7
+crates/sourdaw-native/src/commands/engine_diagnostics.rs
+  s_9b530f08172a54::t_ad4180d4512ddd 185,191
+  s_9b530f08172a54::t_d62af55805e58c 215-218
+  s_9b530f08172a54::t_1203a24ed28144 134,148,151
+  s_9b530f08172a54::t_e00f2be51e1d5c 235-237,257-259
+  s_9b530f08172a54::t_16f18b9bb36eb5 321,334-336,340
+  s_9b530f08172a54::t_d9b97b69cb7796 149-150
+  s_9b530f08172a54::t_85e7f065a883ff 88-91,108-120
+src/modules/AudioEngine/repositories/engineDiagnostics/getEngineRtDiagnostics.ts
+  s_9b530f08172a54::t_fdb00e682dbf85 86
+  s_9b530f08172a54::t_ccbdff2977c279 84-85,87
+src/utils/sourdawCommandArguments.ts
+  s_9b530f08172a54::t_75a6e41b8a05ba 37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "6b85811c0d092cd883cf8d23f05ad3370604e58f",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
