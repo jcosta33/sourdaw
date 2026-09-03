@@ -1,0 +1,19 @@
+src/components/layout/__tests__/index.spec.tsx
+  s_2ca49b8fa87db3::t_8154374590f387 6,136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "4afe5ffc1c1a1f1b7c0a8b7755b6e5bb9a1bde63",
+  "prompts": {},
+  "sessions": {
+    "s_2ca49b8fa87db3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aeb9fca0756755937",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
