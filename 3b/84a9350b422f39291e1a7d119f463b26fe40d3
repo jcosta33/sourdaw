@@ -1,0 +1,131 @@
+.agents/skills/review-stances/correctness.md
+  s_28abfd94826e36::t_33c40a5597f91a 65-80
+.agents/skills/review-stances/test-validity.md
+  s_28abfd94826e36::t_d1f357c11dd316 124-140
+.github/workflows/nightly.yml
+  s_28abfd94826e36::t_9af18ff8883b8b 116-120
+.github/workflows/validation.yml
+  s_ac03a4ebaa3f6e::t_f4efb4310c5cb5 251-255
+crates/daw-plugin-host/src/clap_wrapper.rs
+  s_28abfd94826e36::t_aa530cc7f0b0f5 41,85,632-633,636
+crates/daw-plugin-host/src/scanner.rs
+  s_28abfd94826e36::t_01821ddbe9b3c2 482,1080-1101,1181-1224,1238,1240-1241,1286,1288-1289
+eslint.config.mjs
+  s_28abfd94826e36::t_56b56cdb83355c 1422,1691,1763,2422-2435
+eslint.size-baseline.mjs
+  s_28abfd94826e36::t_6a35d7dcafd158 43
+release/open-source-inventory.json
+  s_28abfd94826e36::t_3aedb6303ecf8e 1195
+scripts/__tests__/resolveVercelProductionDeployment.spec.ts
+  s_28abfd94826e36::t_21242380fc9753 313,316-319
+scripts/__tests__/runLint.spec.ts
+  s_28abfd94826e36::t_6f16075e98d8ea 1,3-10,88-149
+scripts/__tests__/vitestUnitShardExclusions.spec.ts
+  s_28abfd94826e36::t_7374c7805312f9 1-81
+scripts/__tests__/vitestZeroTestReport.spec.ts
+  s_28abfd94826e36::t_b8283ddddea693 9,393-412
+scripts/runLint.ts
+  s_28abfd94826e36::t_f773e0e714ff06 4,109-130,146
+scripts/runVitestZeroTestGuard.ts
+  s_28abfd94826e36::t_6fa08a01d7cab6 14,38,42
+scripts/vitestUnitShardExclusions.ts
+  s_28abfd94826e36::t_b16f688d40f0fb 1-44
+server/collab-server.ts
+  s_28abfd94826e36::t_46551f959a44ea 111,119
+src/modules/AiRuntime/presentations/components/ChatComposer.tsx
+  s_28abfd94826e36::t_af67a1b37b2e57 5,68,71,73-74,84
+src/modules/AiRuntime/presentations/components/__tests__/ChatComposer.spec.tsx
+  s_28abfd94826e36::t_7c3390b33747bd 3,31-59
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_28abfd94826e36::t_ab46438d2c1b8d 3230-3233
+src/modules/Arrangement/presentations/views/ClipContextMenu.tsx
+  s_28abfd94826e36::t_387dda4a0a0347 185-200
+src/modules/Arrangement/presentations/views/__tests__/ClipContextMenu.spec.tsx
+  s_28abfd94826e36::t_e8f5e6518b052e 628-645
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClip.spec.ts
+  s_28abfd94826e36::t_881b151bcfe5ba 394-486
+src/modules/Arrangement/useCases/clipEditing/prepareClipSplit.ts
+  s_28abfd94826e36::t_a862e789545067 71-75,79-80,95
+src/modules/Bacteria/presentations/views/BacteriaPanel.tsx
+  s_28abfd94826e36::t_68bfd196a73342 1800
+src/modules/Bacteria/presentations/views/__tests__/BacteriaPanel.spec.tsx
+  s_28abfd94826e36::t_e2e533d3602b6e 35-42
+src/modules/Crust/presentations/views/CrustPanel.tsx
+  s_28abfd94826e36::t_3dcbae850eb3d0 125
+src/modules/Crust/presentations/views/__tests__/CrustPanel.spec.tsx
+  s_28abfd94826e36::t_6144769f5aa492 199-205
+src/modules/Gluten/presentations/views/GlutenPanel.tsx
+  s_28abfd94826e36::t_f5cf7d967a027d 605-606
+src/modules/Gluten/presentations/views/__tests__/GlutenPanel.spec.tsx
+  s_28abfd94826e36::t_dd12253c71d6cc 49-55
+src/modules/GrandBoule/presentations/views/GrandBoulePanel.tsx
+  s_28abfd94826e36::t_7468218fcee585 324-325
+src/modules/GrandBoule/presentations/views/__tests__/GrandBoulePanel.spec.tsx
+  s_28abfd94826e36::t_96ff473aaaa95a 185-192
+src/modules/Grinder/presentations/views/GrinderPanel.tsx
+  s_28abfd94826e36::t_98fd9f657b6e32 2111-2112
+src/modules/Grinder/presentations/views/__tests__/GrinderPanel.spec.tsx
+  s_28abfd94826e36::t_f40db36baab268 417-423
+src/modules/Levain/presentations/views/LevainPanel.tsx
+  s_28abfd94826e36::t_e61a7d325bde44 99-100
+src/modules/Levain/presentations/views/__tests__/LevainPanel.spec.tsx
+  s_28abfd94826e36::t_147c0881f1b4ee 240-249
+src/modules/TimelineEditor/presentations/views/ClipView/KneadEditor.tsx
+  s_28abfd94826e36::t_66cae39e286889 6,746-748,751,762-765,768-769,776
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRollContextMenu.tsx
+  s_28abfd94826e36::t_e3d0b5a65b4a34 163-184,266-332
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/KneadEditor.spec.tsx
+  s_28abfd94826e36::t_ca88dd5d35abca 351-352,354-357,360
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollContextMenu.spec.tsx
+  s_28abfd94826e36::t_bb998729b27245 238,403-494
+src/modules/Toaster/presentations/components/StepSequencer.tsx
+  s_28abfd94826e36::t_cff112a8980594 19,34-41,68,78,164-167,300,320-339
+src/modules/Toaster/presentations/components/__tests__/StepSequencer.spec.tsx
+  s_28abfd94826e36::t_90d03a2099f03e 486-541
+src/modules/Toaster/presentations/views/ToasterPanel.tsx
+  s_28abfd94826e36::t_005a86f8f27ee8 47,676-678
+src/modules/Toaster/presentations/views/__tests__/ToasterPanel.spec.tsx
+  s_28abfd94826e36::t_43dd67d89c56c8 16,45-47,307-319
+src/modules/Toaster/useCases/stepModifications/__tests__/setStepProbability.spec.ts
+  s_28abfd94826e36::t_4da1f71b34fe39 1-82
+src/modules/Toaster/useCases/stepModifications/setStepProbability.ts
+  s_28abfd94826e36::t_9f4736b7be32ff 1-40
+src/modules/Yeast/presentations/views/YeastPanel.tsx
+  s_28abfd94826e36::t_9fa82f64761aa4 461-462
+src/modules/Yeast/presentations/views/__tests__/YeastPanel.spec.tsx
+  s_28abfd94826e36::t_f3f0651e188655 640-649
+scripts/test-health-gate-scripts.sh
+  s_35a22d8c253f39::t_36fe3a2f0b2f41 566-575,866-869
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "3b84a9350b422f39291e1a7d119f463b26fe40d3",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_35a22d8c253f39": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a7dd3f773214d7984",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
