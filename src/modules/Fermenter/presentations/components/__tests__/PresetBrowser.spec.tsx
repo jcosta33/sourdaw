@@ -107,6 +107,17 @@ describe('PresetBrowser', () => {
             const allPill = screen.getByText('All', { selector: 'button' });
             expect(allPill.style.backgroundColor).toBe('var(--color-accent-lavender)');
         });
+
+        it('sets aria-pressed to true on the active category pill', () => {
+            render(<PresetBrowser {...defaultProps()} />);
+            const allPill = screen.getByText('All', { selector: 'button' });
+            const bassPill = screen.getByText('Bass', { selector: 'button' });
+            expect(allPill).toHaveAttribute('aria-pressed', 'true');
+            expect(bassPill).toHaveAttribute('aria-pressed', 'false');
+            fireEvent.click(bassPill);
+            expect(allPill).toHaveAttribute('aria-pressed', 'false');
+            expect(bassPill).toHaveAttribute('aria-pressed', 'true');
+        });
     });
 
     describe('user patches category', () => {

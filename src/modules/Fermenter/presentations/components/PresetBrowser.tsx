@@ -105,7 +105,13 @@ export const PresetBrowser = ({
                 />
             </div>
             {/* Category pills */}
-            <Row align="stretch" wrap gap={0.5} shrink={false} className="px-2 py-1 border-b border-border/20">
+            <Row
+                align="stretch"
+                wrap={false}
+                gap={0.5}
+                shrink={false}
+                className="overflow-x-auto no-scrollbar px-2 py-1 border-b border-border/20"
+            >
                 {CATEGORIES.map((cat) => {
                     let pillStyle: React.CSSProperties | undefined = undefined;
                     if (category === cat.id && cat.color) {
@@ -120,7 +126,8 @@ export const PresetBrowser = ({
                             size="bare"
                             key={cat.id}
                             type="button"
-                            className={`px-1.5 py-0.5 rounded text-[7px] font-medium transition-colors ${
+                            aria-pressed={category === cat.id}
+                            className={`shrink-0 whitespace-nowrap px-1.5 py-0.5 rounded text-[7px] font-medium transition-colors ${
                                 category === cat.id ? 'text-white' : 'text-muted-foreground/60 hover:text-foreground'
                             }`}
                             style={pillStyle}
@@ -162,7 +169,7 @@ export const PresetBrowser = ({
                 </Row>
             ) : null}
             {/* Preset list */}
-            <div className="flex-1 overflow-y-auto px-1 py-0.5">
+            <div className="min-h-[140px] flex-1 overflow-y-auto px-1 py-0.5">
                 {filtered.length === 0 ? (
                     <div className="text-center text-[9px] text-muted-foreground/50 py-6">No presets found</div>
                 ) : (

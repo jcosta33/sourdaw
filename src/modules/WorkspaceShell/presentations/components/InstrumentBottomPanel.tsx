@@ -33,13 +33,22 @@ export const InstrumentBottomPanel = ({
             className={`contain-strict flex flex-col bg-surface-base border-t ${borderColor} overflow-hidden shrink-0 animate-in slide-in-from-bottom-2 duration-200`}
             style={{ height }}
         >
-            <Row justify="between" shrink={false} className="px-3 py-1 border-b border-border/30 bg-surface-app/50">
+            <Row
+                justify="between"
+                shrink={false}
+                className="px-3 py-1 border-b border-border/30 bg-surface-app/50 z-10"
+            >
                 <span className={`text-[10px] font-bold ${labelColor} uppercase tracking-wider`}>{label}</span>
                 <Button variant="ghost" size="icon-xs" onClick={onClose} aria-label={`Close ${label}`}>
                     <X className="size-3.5" />
                 </Button>
             </Row>
-            {children}
+            <div
+                className="flex-1 min-h-0 overflow-y-auto overscroll-contain"
+                data-testid="instrument-bottom-panel-body"
+            >
+                {children}
+            </div>
         </div>
     </>
 );
