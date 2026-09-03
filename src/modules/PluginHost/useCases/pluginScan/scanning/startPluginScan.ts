@@ -1,9 +1,49 @@
+import { type ScannedPlugin } from '../../../models/ScannedPlugin';
 import { getDefaultPluginPaths } from '../../../repositories/pluginBridge/getDefaultPluginPaths';
 import { isScanPathAuthorized } from '../../../repositories/pluginBridge/isScanPathAuthorized';
 import { scanPlugins } from '../../../repositories/pluginBridge/scanPlugins';
+import { type ScanResult } from '../../../repositories/pluginBridge/types';
 import { pluginScanStore } from '../../../stores/pluginScanStore';
 
 import { getState } from './helpers';
+
+/** A plugin's format-scoped identity, the key the native list is unique on. */
+function pluginIdentity(plugin: ScannedPlugin): string {
+    // NUL cannot appear in either field, so no two pairs can collide by
+    // concatenation — the separator the native bundle keys use, for the reason.
+    return `${plugin.format}\u0000${plugin.descriptor_id}`;
+}
+
+/**
+ * The rows the browser holds once this result is applied.
+ *
+ * A complete walk enumerated everything installed, so it replaces the list.
+ *
+ * An incomplete one is authoritative only for the candidates it reached, so a
+ * previous row survives it — the retention the native registry applies to its
+ * own rows, which is what keeps the browser and the registry from disagreeing
+ * about an installed plugin. Two things end that survival. The walk reached
+ * the row's path, so this result restated it. Or a fresh row claims the row's
+ * format-scoped identity, which is the same plugin found under another root:
+ * the native list never carries two rows for one identity, and consumers rely
+ * on that — a descriptor- or name-addressed load resolves the first row of an
+ * identity, and the agent device manifest refuses two records for one factory
+ * identity. Fresh rows win either way.
+ *
+ * An empty descriptor id is never an identity: an absent id is no evidence
+ * that two files are the same plugin.
+ */
+function mergeScanResultIntoList(previous: ScannedPlugin[], result: ScanResult): ScannedPlugin[] {
+    if (result.complete) {
+        return result.plugins;
+    }
+    const reachedPaths = new Set(result.scanned_paths);
+    const freshIdentities = new Set(result.plugins.filter((plugin) => plugin.descriptor_id !== '').map(pluginIdentity));
+    const survivors = previous.filter(
+        (plugin) => !reachedPaths.has(plugin.path) && !freshIdentities.has(pluginIdentity(plugin))
+    );
+    return [...survivors, ...result.plugins];
+}
 
 export type StartPluginScanOptions = {
     /**
@@ -106,17 +146,18 @@ export async function startPluginScan(options: StartPluginScanOptions = {}): Pro
                 // is authoritative for what is quarantined right now, whether
                 // this scan reported errors or not.
                 quarantined: result.quarantined,
-                // A result in hand is a completed enumeration, and a completed
-                // enumeration is authoritative for what is installed: the
-                // native side answers an incomplete one with a failure the
-                // repository throws, and it has already rebuilt the registry
-                // activation reads from this very result. A candidate that
-                // failed is reported beside the list, never in front of it —
-                // withholding the list over one error hid every other plugin
-                // the scan found (#3497). A scan that did not run or threw
-                // leaves the list alone, above and below. `lastScanTime` dates
-                // the list the store holds, so it advances with this write.
-                scannedPlugins: result.plugins,
+                // A complete result is authoritative for everything installed
+                // and replaces the list. An incomplete one is authoritative
+                // only for the paths it reached, so a row under a path it
+                // never got to survives — exactly the row the native registry
+                // keeps, and the registry activation reads from is already
+                // rebuilt on that rule. A candidate that failed is reported
+                // beside the list, never in front of it — withholding the list
+                // over one error hid every other plugin the scan found (#3497).
+                // A scan that did not run or threw leaves the list alone, above
+                // and below. `lastScanTime` dates the list the store holds, so
+                // it advances with this write.
+                scannedPlugins: mergeScanResultIntoList(currentState.scannedPlugins, result),
                 lastScanTime: Date.now(),
             };
         });
