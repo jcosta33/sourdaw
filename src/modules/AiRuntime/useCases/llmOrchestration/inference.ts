@@ -38,6 +38,7 @@ import { type ToolCallResult, type ToolPlanningOutcome } from '../../transformer
 import {
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+    COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
 } from '../agentToolCatalog';
 import { createModelProviderStreamWriter } from '../createModelProviderStreamWriter';
@@ -334,6 +335,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         (tool) =>
                             tool.function.name === PROJECT_QUERY_TOOL_NAME ||
                             tool.function.name === COMMAND_BATCH_PROPOSAL_TOOL_NAME ||
+                            tool.function.name === COMMAND_BATCH_DECLINE_TOOL_NAME ||
                             tool.function.name === AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME ||
                             tool.function.name === AGENT_CATALOG_DISCOVERY_TOOL_NAME
                     );
@@ -342,6 +344,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             tool.function.name !== WORKFLOW_CAPABILITY_TOOL_NAME &&
                             tool.function.name !== PROJECT_QUERY_TOOL_NAME &&
                             tool.function.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME &&
+                            tool.function.name !== COMMAND_BATCH_DECLINE_TOOL_NAME &&
                             tool.function.name !== AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME &&
                             tool.function.name !== AGENT_CATALOG_DISCOVERY_TOOL_NAME
                     );

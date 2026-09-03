@@ -69,7 +69,6 @@ import {
     isRecord,
     proposeDiscoveredCalls,
     PROPOSED_COMMAND_NAMES,
-    scriptCloudProviderTurns,
     scriptHighLevelIntentProvider,
     scriptProviderTurns,
     SEARCH_INTENTS,
@@ -335,8 +334,7 @@ describe('high-level intent conformance', () => {
     });
 
     it('asks the questions that would resolve an ambiguous request instead of proposing a batch', async () => {
-        runtimeMocks.backend.value = 'cloud';
-        scriptCloudProviderTurns(runtimeMocks.generateCloudToolCalls, [
+        cycleProviderAttempt(runtimeMocks.generateWebLlmCompletion, [
             () => [
                 declineCall({
                     kind: 'clarify',
@@ -356,8 +354,7 @@ describe('high-level intent conformance', () => {
     });
 
     it('reports what it searched for when the catalog holds no command for the request', async () => {
-        runtimeMocks.backend.value = 'cloud';
-        scriptCloudProviderTurns(runtimeMocks.generateCloudToolCalls, [
+        cycleProviderAttempt(runtimeMocks.generateWebLlmCompletion, [
             () => searchCalls(['master the song for vinyl']),
             () => [
                 declineCall({

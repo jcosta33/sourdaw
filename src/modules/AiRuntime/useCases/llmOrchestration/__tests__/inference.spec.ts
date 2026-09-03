@@ -222,6 +222,7 @@ describe('generateToolPlanningOutcome', () => {
             toolSchema('project.query'),
             toolSchema('command.batch.propose'),
             ...competingTools,
+            toolSchema('command.batch.decline'),
             toolSchema('agent.command-index.search'),
             toolSchema('agent.catalog.discover'),
         ];
@@ -236,6 +237,7 @@ describe('generateToolPlanningOutcome', () => {
             expect.arrayContaining([
                 'project.query',
                 'command.batch.propose',
+                'command.batch.decline',
                 'agent.command-index.search',
                 'agent.catalog.discover',
             ])
