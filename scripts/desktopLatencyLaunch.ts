@@ -29,7 +29,11 @@ const SKIP_TOUR_BUTTON_NAME = 'Skip tour';
 /** `Sidebar.tsx` — the browser panel's own tab bar, scoped inside `[aria-label="Browser panel"]`. */
 const BROWSER_PANEL_SELECTOR = '[aria-label="Browser panel"]';
 const EFFECTS_TAB_BUTTON_NAME = 'Effects';
-/** Traced on #3070: the tab bar mounts seconds after the panel container does, so this polls faster than the overlay checks above. */
+/** `AlphaNoticeDialog.tsx` — the dialog carries no accessible name (see `dismissAlphaNotice`), so its dismiss control is what this polls for. */
+const ALPHA_NOTICE_DISMISS_NAME = 'Let me cook';
+/** Long enough for `AlphaNoticeDialog` to have mounted after the project is ready, if it was going to at all. */
+const ALPHA_NOTICE_GRACE_MS = 3_000;
+/** Faster than the overlay-absence checks above: these two first-run screens are traced to appear within a couple of seconds, not the launch overlay's slower exit transition. */
 const TOUR_POLL_MS = 250;
 
 async function sleep(ms: number): Promise<void> {
@@ -109,15 +113,57 @@ export async function openNewProjectFromLaunchScreen(page: Page, timeoutMs: numb
 }
 
 /**
- * On a fresh, isolated profile the sidebar's own tab bar — and its "Effects"
- * button — mounts a few seconds after the browser panel container is already
- * visible, and the first-run onboarding tour then spotlights that tab bar
- * before the driver ever gets to click it (traced on #3070: `elementFromPoint`
- * at the Effects button's centre resolved to `[role="dialog"][aria-label="Onboarding
- * tour"]` for several seconds after the button existed). The harness measures
- * audio, not onboarding, so this dismisses the tour the moment it appears and
- * otherwise returns as soon as the Effects button exists — on a profile where
- * the tour never shows, that is the only condition this waits for.
+ * `AppShell.tsx` opens `AlphaNoticeDialog` as soon as `project.initialized &&
+ * !alphaDismissed` — right after a fresh profile's first project is created —
+ * and does not start the onboarding tour until it closes. `AlphaNoticeDialog`
+ * renders a plain `<h2>`, not Radix's own `DialogTitle`, so `DialogContent`
+ * never gets a `titlePresent` context value and never sets `aria-labelledby`:
+ * the dialog carries no accessible name to poll `[role="dialog"]` by. Its
+ * "Let me cook" dismiss control is unique in the app and exists only while
+ * the dialog is mounted, so that is what this polls for instead. A profile
+ * that already dismissed the notice (persisted `alphaNoticeStore` state)
+ * never shows it again — `ALPHA_NOTICE_GRACE_MS` after this step starts is
+ * long enough for the dialog to have mounted if it was going to, so once
+ * that passes without it appearing and the Effects tab button is already
+ * reachable, this returns instead of waiting out the rest of `timeoutMs`.
+ */
+export async function dismissAlphaNotice(page: Page, timeoutMs: number): Promise<void> {
+    const startedAt = Date.now();
+    const deadline = startedAt + timeoutMs;
+    while (Date.now() < deadline) {
+        const dismissButton = page.getByRole('button', { name: ALPHA_NOTICE_DISMISS_NAME, exact: true });
+        if ((await dismissButton.count()) > 0) {
+            await dismissButton.click({ timeout: timeoutMs });
+            await dismissButton.waitFor({ state: 'detached', timeout: timeoutMs });
+            return;
+        }
+        if (Date.now() - startedAt >= ALPHA_NOTICE_GRACE_MS) {
+            const effectsButtonPresent =
+                (await page
+                    .locator(BROWSER_PANEL_SELECTOR)
+                    .getByRole('button', { name: EFFECTS_TAB_BUTTON_NAME, exact: true })
+                    .count()) > 0;
+            if (effectsButtonPresent) {
+                return;
+            }
+        }
+        await sleep(TOUR_POLL_MS);
+    }
+    throw new Error(`neither the alpha notice nor the Effects tab button appeared within ${timeoutMs} ms`);
+}
+
+/**
+ * `AppShell.tsx` does not start the onboarding tour until the alpha notice
+ * above closes and the track count is greater than zero, so the step above
+ * running first is what lets this one find the tour promptly rather than
+ * racing its own dialog for pointer events at the Effects button's centre
+ * (traced on #3070: `elementFromPoint` there resolved to
+ * `[role="dialog"][aria-label="Onboarding tour"]`, not the button, while the
+ * alpha notice — not a mount delay — was still blocking it). The harness
+ * measures audio, not onboarding, so this dismisses the tour the moment it
+ * appears and otherwise returns as soon as the Effects button exists — on a
+ * profile where the tour never shows, that is the only condition this waits
+ * for.
  */
 export async function dismissOnboardingTour(page: Page, timeoutMs: number): Promise<void> {
     const deadline = Date.now() + timeoutMs;

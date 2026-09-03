@@ -101,6 +101,7 @@ import {
     type Diagnostics,
 } from './desktopLatencyDiagnostics.ts';
 import {
+    dismissAlphaNotice,
     dismissOnboardingTour,
     openEffectsTab,
     openNewProjectFromLaunchScreen,
@@ -525,6 +526,14 @@ async function driveToPlayingProject(
         );
     }
 
+    // `AppShell.tsx` opens this the moment the project is initialized on a
+    // fresh profile, before the onboarding tour below ever starts — and its
+    // modal overlay marks every sibling `aria-hidden`, which is what the tour
+    // step used to race against. Placed here so it also covers the
+    // `workspace` start path, which skips the launch-screen click above but
+    // not this dialog.
+    await step('dismiss the alpha notice', () => dismissAlphaNotice(page, STEP_TIMEOUT_MS));
+
     await step('show the browser panel', async () => {
         const panel = page.locator('[aria-label="Browser panel"]');
         if ((await panel.count()) === 0) {
@@ -533,9 +542,9 @@ async function driveToPlayingProject(
         await panel.first().waitFor({ state: 'visible', timeout: STEP_TIMEOUT_MS });
     });
 
-    // Traced on #3070: on a fresh, isolated profile the sidebar's tab bar
-    // mounts seconds after the panel container above is visible, and the
-    // first-run tour then spotlights it before this driver ever clicks it.
+    // Traced on #3070: fresh profile → alpha notice → onboarding tour, in
+    // that order. The tour spotlights the tab bar before this driver ever
+    // clicks it; the harness measures audio, not onboarding.
     await step('dismiss the onboarding tour', () => dismissOnboardingTour(page, STEP_TIMEOUT_MS));
 
     await step('open the Effects tab', () => openEffectsTab(page, STEP_TIMEOUT_MS), EFFECTS_TAB_STEP_TIMEOUT_MS);
