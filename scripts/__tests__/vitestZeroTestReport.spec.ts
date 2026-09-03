@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 
 import { runZeroTestGuard } from '../runVitestZeroTestGuard.ts';
-import { DEVICE_WRITE_BOUNDARY_CENSUS_EXCLUDE_GLOB } from '../vitestUnitShardExclusions.ts';
+import { UNIT_SHARD_EXCLUDED_SPECS, unitShardExcludeGlob } from '../vitestUnitShardExclusions.ts';
 import {
     executedAssertionCount,
     formatSilentZeroCollectionFailure,
@@ -391,7 +391,7 @@ describe('runZeroTestGuard', () => {
         }
     });
 
-    it('excludes the device write boundary census from unit shard invocations', () => {
+    it('excludes every isolated spec from unit shard invocations, in list order', () => {
         const fake = fakeVitest('unit-shard-exclusion');
         try {
             runZeroTestGuard({
@@ -403,9 +403,9 @@ describe('runZeroTestGuard', () => {
             });
 
             const argv = JSON.parse(readFileSync(fake.argvPath, 'utf8')) as string[];
+            const excluded = argv.flatMap((argument, index) => (argument === '--exclude' ? [argv[index + 1]] : []));
             expect(argv).toContain('--shard=2/4');
-            expect(argv).toContain('--exclude');
-            expect(argv).toContain(DEVICE_WRITE_BOUNDARY_CENSUS_EXCLUDE_GLOB);
+            expect(excluded).toEqual(UNIT_SHARD_EXCLUDED_SPECS.map(unitShardExcludeGlob));
         } finally {
             rmSync(fake.root, { recursive: true, force: true });
         }
