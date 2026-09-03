@@ -1,0 +1,23 @@
+release/open-source-inventory.json
+  s_9b530f08172a54::t_5dd12a3a7ecefe 165
+electron/scanWorker.ts
+  s_9b530f08172a54::t_44e7537bf03b93 72-75,86-90
+electron/main.ts
+  s_9b530f08172a54::t_3a971e17dbf19d 650-653
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "1340e0bc849d084f4337629c2532c7f89e6346d1",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": null
+    }
+  }
+}
