@@ -564,4 +564,27 @@ describe('FermenterPanel', () => {
             expectRouted('fmFeedback', 1.3);
         });
     });
+
+    describe('compact header and minimum height layout constraints', () => {
+        it('renders compact toolbar strip and minimum height constraints for drawer scrolling', () => {
+            storeState.value = makeState({ activeVoices: 4, oscEngine: 0 });
+            const { container } = renderPanel();
+
+            const faceplate = container.querySelector('.fermenter-faceplate');
+            expect(faceplate).toHaveClass('min-h-[460px]');
+            expect(faceplate).toHaveClass('h-auto');
+
+            const header = container.querySelector('header');
+            expect(header).toHaveClass('min-h-[32px]');
+            expect(screen.getByText('Scene')).toBeInTheDocument();
+            expect(screen.getByText('4 voices')).toBeInTheDocument();
+
+            const paramScrollContainer = container.querySelector('.min-h-\\[180px\\]');
+            expect(paramScrollContainer).toBeInTheDocument();
+            expect(paramScrollContainer).toHaveClass('overflow-y-auto');
+
+            const rightRail = container.querySelector('aside.min-h-\\[220px\\]');
+            expect(rightRail).toBeInTheDocument();
+        });
+    });
 });
