@@ -94,6 +94,9 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     startRecording: mocks.startRecording,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    audioEngine: {
+        setTransportInfo: vi.fn(),
+    },
     resumeEngine: mocks.resumeEngine,
     getAudioContext: mocks.getAudioContext,
     scheduleClick: mocks.scheduleClick,
