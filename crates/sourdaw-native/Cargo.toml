@@ -13,6 +13,15 @@ name = "sourdaw_native"
 # so the same bodies ship as a Node addon once `napi-addon` is on.
 crate-type = ["cdylib", "rlib"]
 
+# The plugin-scan leaf helper: a standalone executable so the scan policy
+# never re-enters the application runtime to inspect a plugin. See its doc
+# comment for why `scripts/buildNativeAddon.ts` builds this target with
+# `CARGO_PROFILE_RELEASE_LTO=false` instead of the workspace's default
+# `lto = true` release profile.
+[[bin]]
+name = "sourdaw-plugin-scan-helper"
+path = "src/bin/sourdaw-plugin-scan-helper.rs"
+
 [features]
 # The napi surface is opt-in: an rlib consumer (tests, tooling) must not pull
 # the Node addon registration in with it.

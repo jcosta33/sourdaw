@@ -10,8 +10,15 @@
  *
  * - `RunAsNode: false` — `ELECTRON_RUN_AS_NODE=1` in the environment otherwise
  *   turns the signed, entitled app bundle into a general-purpose Node
- *   interpreter. Nothing in the shell needs it: plugin scanning runs in a
- *   `utilityProcess`, which is unaffected, unlike `child_process.fork`.
+ *   interpreter. Plugin scanning's leaf worker used to depend on exactly that
+ *   re-entry — re-executing this binary as Node to run `scanWorker.js` once
+ *   per candidate plugin — which this fuse silently broke: the child started
+ *   the full Electron application instead, every candidate burned its bound,
+ *   and the scan budget expired before a musician's plugin was ever reached
+ *   (jcosta33/sourdaw#3488). The leaf now runs in
+ *   `sourdaw-plugin-scan-helper`, a native executable the application ships
+ *   and the Rust scan policy launches directly, so this fuse holds with no
+ *   exception: nothing in the shell needs `ELECTRON_RUN_AS_NODE` any more.
  * - `OnlyLoadAppFromAsar: true` — collapses Electron's `app.asar` → `app` →
  *   `default_app.asar` search to a single entry, so dropping an unpacked `app`
  *   directory beside the archive cannot substitute code for the shipped app.

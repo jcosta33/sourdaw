@@ -106,17 +106,6 @@ impl<Event: Serialize> EventStream<Event> for TsfnEventStream {
     }
 }
 
-/// Run the bounded CLAP descriptor-extraction worker.
-///
-/// The process contract is an argv scan of the application binary: same
-/// policy, same bounded child process, same exit code regardless of which
-/// shell started the process. Returns `None` when this process was not
-/// started as a scan worker.
-#[napi]
-pub fn run_plugin_scan_worker() -> Option<i32> {
-    crate::run_plugin_scan_worker_from_process_args()
-}
-
 /// Every long-lived native singleton, and the commands that address them.
 #[napi]
 pub struct SourdawNative {

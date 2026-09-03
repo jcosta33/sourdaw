@@ -22,6 +22,7 @@ import {
     nativeCommand,
     SCAN_WORKER_COMMAND_ENV,
     scanWorkerCommand,
+    scanWorkerLaunchEnvironment,
 } from '../scanWorker.js';
 
 import type { NativeHost } from '../native.js';
@@ -33,44 +34,60 @@ const rustConstant = (name: string): string | undefined =>
 
 describe('the launch contract with the Rust policy', () => {
     it('uses the env var name the policy reads', () => {
-        // Renaming one side alone leaves the policy re-executing the Electron
-        // binary with a bare worker argument, which starts no worker at all.
+        // Renaming one side alone leaves the policy unable to find its launch
+        // command at all, so it falls back to re-executing the application
+        // binary — the exact re-entry the helper exists to avoid.
         expect(rustConstant('SCAN_WORKER_COMMAND_ENV')).toBe(SCAN_WORKER_COMMAND_ENV);
     });
 
     it('declares the fields the policy deserializes', () => {
         // `program`, `args` and `env` are the `ScanWorkerCommand` struct's serde
         // field names; a mismatch is a parse error at scan time, per plugin.
-        const declared: unknown = JSON.parse(JSON.stringify(scanWorkerCommand('/electron', '/app/scanWorker.js')));
+        const declared: unknown = JSON.parse(
+            JSON.stringify(scanWorkerCommand('/resources/sourdaw-plugin-scan-helper'))
+        );
 
         expect(declared).toEqual({
-            program: '/electron',
-            args: ['/app/scanWorker.js'],
-            env: { ELECTRON_RUN_AS_NODE: '1' },
+            program: '/resources/sourdaw-plugin-scan-helper',
+            args: [],
+            env: {},
         });
         for (const field of ['program', 'args', 'env']) {
             expect(policySource).toMatch(new RegExp(String.raw`pub ${field}:`, 'u'));
         }
     });
 
-    it('runs the leaf through the Electron binary in its Node role', () => {
-        // Without `ELECTRON_RUN_AS_NODE` the child starts as an Electron
-        // application — a browser process and a window — once per plugin.
-        const command = scanWorkerCommand('/Applications/Sourdaw.app/Contents/MacOS/Sourdaw', '/app/scanWorker.js');
+    it('launches the helper directly, with no arguments and no environment', () => {
+        // The helper is a plain executable, not a runtime that needs telling
+        // how to behave — unlike the Electron re-entry this replaces, there is
+        // no `ELECTRON_RUN_AS_NODE` or any other launch-time flag to carry.
+        const command = scanWorkerCommand('/Applications/Sourdaw.app/Contents/Resources/sourdaw-plugin-scan-helper');
 
-        expect(command.program).toBe('/Applications/Sourdaw.app/Contents/MacOS/Sourdaw');
-        expect(command.args).toEqual(['/app/scanWorker.js']);
-        expect(command.env).toEqual({ ELECTRON_RUN_AS_NODE: '1' });
+        expect(command.program).toBe('/Applications/Sourdaw.app/Contents/Resources/sourdaw-plugin-scan-helper');
+        expect(command.args).toEqual([]);
+        expect(command.env).toEqual({});
+        expect('ELECTRON_RUN_AS_NODE' in command.env).toBe(false);
     });
 
     it('leaves the worker arguments to the policy', () => {
-        // The declared `args` are a prefix; the policy appends the marker, the
-        // format, and the two paths. Naming the marker here would be a second
-        // definition of it, and the argument-parsing tests already live beside
-        // it in Rust.
-        expect(scanWorkerCommand('/electron', '/app/scanWorker.js').args).not.toContain(
+        // The policy appends the marker, the format, and the two paths at
+        // launch time; naming the marker here would be a second definition of
+        // it, and the argument-parsing tests already live beside it in Rust.
+        expect(scanWorkerCommand('/resources/sourdaw-plugin-scan-helper').args).not.toContain(
             rustConstant('WORKER_ARGUMENT')
         );
+    });
+
+    it('sets exactly the one env var the policy reads, carrying the launch command as JSON', () => {
+        const launchEnvironment = scanWorkerLaunchEnvironment('/resources/sourdaw-plugin-scan-helper');
+
+        expect(Object.keys(launchEnvironment)).toEqual([SCAN_WORKER_COMMAND_ENV]);
+        const declared: unknown = JSON.parse(launchEnvironment[SCAN_WORKER_COMMAND_ENV]);
+        expect(declared).toEqual({
+            program: '/resources/sourdaw-plugin-scan-helper',
+            args: [],
+            env: {},
+        });
     });
 });
 

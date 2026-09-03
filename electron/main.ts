@@ -51,7 +51,13 @@ import {
     isApprovedRendererTerminal,
     notifyCurrentWindowDestroying,
 } from './mainWindowTeardown.js';
-import { loadNativeAddon, NATIVE_ADDON_PATH_ENV, resolveNativeAddonPath, type NativeHost } from './native.js';
+import {
+    loadNativeAddon,
+    NATIVE_ADDON_PATH_ENV,
+    resolveNativeAddonPath,
+    resolveScanHelperPath,
+    type NativeHost,
+} from './native.js';
 import { forwardNativeEvent } from './nativeEventRouter.js';
 import { createNativeMenuActionDispatcher } from './nativeMenuActionDispatcher.js';
 import { createNativeMenuProjectStateController } from './nativeMenuProjectState.js';
@@ -69,6 +75,7 @@ import { completeMacCloseAfterSessionQuiesce, createRendererSessionQuiescer } fr
 import { activateRendererWindow } from './rendererWindowActivation.js';
 import { registerCommandRouter } from './router.js';
 import { createScanSupervisor, type ScanSupervisor } from './scan.js';
+import { scanWorkerLaunchEnvironment } from './scanWorker.js';
 import { applyPermissionPolicy, decideWindowOpen, isNavigationAllowed, trustedFrameGuard } from './security.js';
 import { createProductionShellComposition, requestApprovedWindowClose } from './shellComposition.js';
 import { runBeforeQuitCascade, type QuitPreparationOutcome, type ShutdownOutcome } from './shutdown.js';
@@ -497,6 +504,15 @@ const nativeAddonPath = (): string =>
         repoRoot: repoRoot(),
     });
 
+const scanHelperPath = (): string =>
+    resolveScanHelperPath({
+        env: process.env,
+        isPackaged: app.isPackaged,
+        resourcesPath: process.resourcesPath,
+        repoRoot: repoRoot(),
+        platform: process.platform,
+    });
+
 /**
  * The live renderer, for the event and stream paths.
  *
@@ -550,15 +566,20 @@ shellComposition = createProductionShellComposition({
  * without an Electron process, and this is the only code that has to know what
  * Electron calls those two signals.
  */
-const createUtilityScanSupervisor = (addonPath: string): ScanSupervisor =>
-    createScanSupervisor({
+const createUtilityScanSupervisor = (addonPath: string): ScanSupervisor => {
+    // Resolved once per supervisor, for the same reason the addon path is
+    // passed in rather than re-derived: the utility process has no `app` and
+    // cannot ask whether this is a packaged build.
+    const helperPath = scanHelperPath();
+    return createScanSupervisor({
         timers: systemTimers,
         fork: () => {
             const child = utilityProcess.fork(join(import.meta.dirname, 'scanWorker.js'), [], {
-                // The addon path is passed rather than re-derived: the utility
-                // process has no `app` and cannot ask whether this is a
-                // packaged build.
-                env: { ...process.env, [NATIVE_ADDON_PATH_ENV]: addonPath },
+                env: {
+                    ...process.env,
+                    [NATIVE_ADDON_PATH_ENV]: addonPath,
+                    ...scanWorkerLaunchEnvironment(helperPath),
+                },
                 stdio: 'ignore',
             });
             return {
@@ -575,6 +596,7 @@ const createUtilityScanSupervisor = (addonPath: string): ScanSupervisor =>
             };
         },
     });
+};
 
 /**
  * The scale of the display a plugin editor window is on.
