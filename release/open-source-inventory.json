@@ -1098,7 +1098,7 @@
                 "99432f2bf443219b3eb77e65e1a18583faad422e"
             ],
             "digests": [
-                "sha256:61604fc1184010bf8fa1892fe1322b3d00c410ed827949c8781621af96601610:crates/daw-dsp/src/toaster/engines/kick_808.rs",
+                "sha256:f537ba6b1f49b00f2d11b2c64d4335ee73dfa697273570a43710e2cd14f92bb6:crates/daw-dsp/src/toaster/engines/kick_808.rs",
                 "sha256:f70f0fbaf3cfd3bd1a9f8a8577f96159fee3da00358a9572ee355186858be949:release/upstream-proofs/mi-plaits-dsp-rs-kick_808.rs",
                 "sha256:b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c:git:github.com/sourcebox/mi-plaits-dsp-rs@6d3f7a5b84b25ec45d66c9f6be7109474690d795:LICENSE.txt",
                 "sha256:b2ec3cd241dd660bd4de9f07dd94ecce3ee9c696eaf15af7af68eae6ed4af04c:release/upstream-proofs/mi-plaits-dsp-rs-LICENSE.txt",
@@ -1325,13 +1325,13 @@
                 "wasm-pack 0.14.0",
                 "wasm-bindgen 0.2.127",
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:8d9c43025945afe19ad304549ab551e0b5fc3d5ca2e029f5b03da711244484f4",
+                "daw-dsp sha256:be54773e1b2d3530d43093c444d7375032d978d24aa8cdb03e1cdb73b15e84be",
                 "daw-wasm-decoder sha256:c9d101b5187e2ea6719a95901cbb5f1873fee984366492d636a2216271ad3f54",
-                "proof-chamber sha256:40eac08d4fd6309a56f66d69197927cec1ded58869955ec461fe20da4189854b",
-                "scoring sha256:f588acf6b04b86d36176584e22ac67464f51cb69b42b2af6e00276dfb0b0e36b"
+                "proof-chamber sha256:9d8c178c0883be34c328426e69dfbdfb1338c65957f46128281b63618b980f93",
+                "scoring sha256:035d2e8858fe6d6c8a6062b89d8054432841dc999581e5faf2286c36dedb1762"
             ],
             "digests": [
-                "sha256:d0610310dbe965e95187f4b1667a09dd57b6fe9b690eb6b7f6701bcbf8d4cdf6:public/wasm/manifest.json"
+                "sha256:0eb3b41b8a3308062f2bfa84f553386a644e6b9e14a49a6aa781ef21feaa31df:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1715,7 +1715,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "d0610310dbe965e95187f4b1667a09dd57b6fe9b690eb6b7f6701bcbf8d4cdf6"
+            "sha256": "0eb3b41b8a3308062f2bfa84f553386a644e6b9e14a49a6aa781ef21feaa31df"
         }
     ],
     "externalReferences": [
