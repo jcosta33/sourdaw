@@ -8,7 +8,6 @@ import {
     buildProjectSettingsUrl,
     linkVercelCliProject,
     readProjectLink,
-    requireEnvironment,
     writeProjectLinkFile,
 } from '../linkVercelCliProject';
 
@@ -31,25 +30,6 @@ describe('the project settings query URL', () => {
 
     it('scopes a team account through teamId', () => {
         const url = new URL(buildProjectSettingsUrl({ projectId: 'prj_fixture', orgId: 'team_fixture' }));
-        expect(url.searchParams.get('teamId')).toBe('team_fixture');
-    });
-});
-
-describe('credential trimming', () => {
-    afterEach(() => {
-        vi.unstubAllEnvs();
-    });
-
-    it('strips trailing newlines from secrets before building the URL', () => {
-        vi.stubEnv('VERCEL_PROJECT_ID', 'prj_fixture\n');
-        vi.stubEnv('VERCEL_ORG_ID', 'team_fixture\r\n');
-        const url = new URL(
-            buildProjectSettingsUrl({
-                projectId: requireEnvironment('VERCEL_PROJECT_ID'),
-                orgId: requireEnvironment('VERCEL_ORG_ID'),
-            })
-        );
-        expect(url.pathname.endsWith('/v9/projects/prj_fixture')).toBe(true);
         expect(url.searchParams.get('teamId')).toBe('team_fixture');
     });
 });
@@ -88,15 +68,35 @@ describe('linkVercelCliProject', () => {
         vi.stubEnv('VERCEL_PROJECT_ID', projectId);
     }
 
+    it('strips trailing newlines from secrets before querying project settings', async () => {
+        stubCredentials('team_fixture\r\n', 'prj_fixture\n');
+        const fetchMock = vi.fn().mockResolvedValue(okResponse(projectPayload('team_fixture', 'prj_fixture')));
+        vi.stubGlobal('fetch', fetchMock);
+
+        const rootDirectory = mkdtempSync(join(tmpdir(), 'sourdaw-vercel-link-'));
+        try {
+            await linkVercelCliProject(rootDirectory);
+            expect(fetchMock).toHaveBeenCalledOnce();
+            const requested = new URL(String(fetchMock.mock.calls[0]?.[0]));
+            expect(requested.pathname.endsWith('/v9/projects/prj_fixture')).toBe(true);
+            expect(requested.searchParams.get('teamId')).toBe('team_fixture');
+            expect(requested.href).not.toMatch(/[\r\n]/);
+        } finally {
+            rmSync(rootDirectory, { recursive: true, force: true });
+        }
+    });
+
     it('writes accountId from the API answer, not env VERCEL_ORG_ID', async () => {
-        stubCredentials();
-        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(projectPayload('team_live', 'prj_live'))));
+        const apiOrgId = `team_${String(Date.now())}`;
+        const apiProjectId = `prj_${String(Date.now())}`;
+        stubCredentials('user_wrong', 'prj_env');
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(projectPayload(apiOrgId, apiProjectId))));
 
         const rootDirectory = mkdtempSync(join(tmpdir(), 'sourdaw-vercel-link-'));
         try {
             await linkVercelCliProject(rootDirectory);
             const link = JSON.parse(readFileSync(join(rootDirectory, '.vercel', 'project.json'), 'utf8'));
-            expect(link).toEqual({ orgId: 'team_live', projectId: 'prj_live' });
+            expect(link).toEqual({ orgId: apiOrgId, projectId: apiProjectId });
             expect(link).not.toEqual({ orgId: 'user_wrong', projectId: 'prj_env' });
         } finally {
             rmSync(rootDirectory, { recursive: true, force: true });
@@ -113,6 +113,7 @@ describe('linkVercelCliProject', () => {
                 const message = String(error);
                 return message.includes('404') && !message.includes(TOKEN) && !message.includes('prj_fixture');
             });
+            expect(existsSync(join(rootDirectory, '.vercel', 'project.json'))).toBe(false);
         } finally {
             rmSync(rootDirectory, { recursive: true, force: true });
         }
