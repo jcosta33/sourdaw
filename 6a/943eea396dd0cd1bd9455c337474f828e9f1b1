@@ -1,0 +1,14 @@
+src/modules/Toaster/presentations/components/__tests__/StepSequencer.spec.tsx
+  h_1228e573df1f42 186-204,255,265,272,275
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "6a943eea396dd0cd1bd9455c337474f828e9f1b1",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
