@@ -256,9 +256,7 @@ describe('generateToolPlanningOutcome', () => {
         mocks.backendChain.value = ['webllm'];
         mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
 
-        // This is the exact list parsePromptToActions.ts sends: the planning provider contract
-        // (12 schemas: 11 agent-catalog tools + selectWorkflowCapability) plus the deduplicated
-        // workflow action tool schemas (23), for 35 total.
+        // The list production sends: the planning contract plus every workflow action tool.
         const planningContract = getPlanningProviderSchemaContract().schemas;
         const schemas = getPlanningProviderToolSchemas();
 
@@ -274,9 +272,9 @@ describe('generateToolPlanningOutcome', () => {
         const advertisedTools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? [];
         const advertisedNames = advertisedTools.map((tool: ToolSchema) => tool.function.name);
 
-        // The mandatory set is 29 of the 30-tool cap (selectWorkflowCapability + the 5 application
-        // tools + the 23 workflow action tools), so exactly one free slot remains for the
-        // highest-ranked non-mandatory catalog tool.
+        // The mandatory set (workflow selector, the application tools, every workflow action tool)
+        // leaves one free slot under the WebLLM cap, and it goes to the first non-mandatory
+        // catalog tool.
         expect(advertisedNames).toHaveLength(30);
         expect(new Set(advertisedNames)).toEqual(
             new Set([

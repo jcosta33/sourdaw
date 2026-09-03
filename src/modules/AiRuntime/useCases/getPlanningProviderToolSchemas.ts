@@ -42,8 +42,9 @@ const SPECIALIZED_WORKFLOW_TOOL_SCHEMAS: readonly ToolSchema[] = [
 ];
 
 /**
- * The provider-visible planning tool list: the WebLLM narrowing in inference.ts and its
- * production-shape spec both read it.
+ * The provider-visible planning tool list parsePromptToActions sends to the backend. The WebLLM
+ * narrowing in inference.ts caps what it advertises at 30, so the production-shape case in
+ * inference.spec.ts reads this list to pin which tools survive that cap.
  */
 export function getPlanningProviderToolSchemas(): readonly ToolSchema[] {
     const executableAppActionToolSchemas = getExecutableAppActionToolSchemas();
