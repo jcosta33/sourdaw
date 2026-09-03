@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { getExecutableAppActionToolSchemas } from '#/modules/Command/useCases';
+
 import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
 import { isModelProviderFailureError } from '../../../errors/ModelProviderFailureError';
 import { TOOL_PLAN_MAX_OUTPUT_TOKENS } from '../../../models/HostedToolPlanLimits';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
+import { WORKFLOW_ACTION_TOOL_NAMES } from '../../../models/WorkflowCapability';
+import { getPlanningProviderSchemaContract } from '../../planningProviderSchema';
 import { generateToolPlanningOutcome, type ProviderAttemptAdmission } from '../inference';
 
 const mocks = vi.hoisted(() => ({
@@ -217,9 +221,9 @@ describe('generateToolPlanningOutcome', () => {
     it('keeps the five application tools available to WebLLM under 30-tool selection pressure', async () => {
         mocks.backendChain.value = ['webllm'];
         mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
-        // 120 competing tools whose names and descriptions match the "plan a command" prompt,
-        // ensuring decline loses selection if it is not in the mandatory set. Positioned after
-        // competing tools so prompt selection fills available slots with competing tools first.
+        // 120 competing tools whose names and descriptions match the "plan a command" prompt.
+        // Decline is excluded because it scores 101 against 102 for each competitor; last position
+        // is only the tiebreak backstop, and decline cannot reach it when not mandatory.
         const competingTools = Array.from({ length: 120 }, (_, index) =>
             toolSchema(`planAction${String(index)}`, 'plan a command')
         );
@@ -247,6 +251,52 @@ describe('generateToolPlanningOutcome', () => {
                 'agent.catalog.discover',
             ])
         );
+    });
+
+    it('advertises the production planning contract to WebLLM at the 30-tool cap', async () => {
+        mocks.backendChain.value = ['webllm'];
+        mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
+
+        // Build the production schema: planning provider contract (6 tools: 1 workflow capability + 5 application)
+        // plus workflow action tools (23) plus one additional non-mandatory tool to reach the 30-tool cap.
+        const planningContract = getPlanningProviderSchemaContract().schemas;
+        const executableSchemas = getExecutableAppActionToolSchemas();
+        const workflowActionSchemas = Array.from(
+            executableSchemas.filter((tool) => WORKFLOW_ACTION_TOOL_NAMES.has(tool.function.name))
+        );
+
+        // Add one non-mandatory tool to reach the 30-tool cap.
+        const additionalTools = executableSchemas.filter(
+            (tool) =>
+                !planningContract.some((p) => p.function.name === tool.function.name) &&
+                !WORKFLOW_ACTION_TOOL_NAMES.has(tool.function.name)
+        );
+
+        const schemas = [...planningContract, ...workflowActionSchemas, ...additionalTools];
+
+        await expect(generateToolPlanningOutcome('system', 'plan a command', schemas)).resolves.toMatchObject({
+            status: 'complete',
+        });
+
+        const advertisedTools = mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? [];
+        const advertisedNames = advertisedTools.map((tool: ToolSchema) => tool.function.name);
+
+        // The 30-tool cap holds: 1 workflow capability + 5 application tools + 23 workflow action tools + 1 prompt-selected tool
+        expect(advertisedNames).toHaveLength(30);
+        // The five application tools (mandatory) must all be present, including decline.
+        // This pins that decline is not evicted by selection pressure in production shape.
+        expect(advertisedNames).toEqual(
+            expect.arrayContaining([
+                'selectWorkflowCapability',
+                'project.query',
+                'command.batch.propose',
+                'command.batch.decline',
+                'agent.command-index.search',
+                'agent.catalog.discover',
+            ])
+        );
+        // All 23 workflow action tools must be present.
+        expect(advertisedNames).toEqual(expect.arrayContaining(Array.from(WORKFLOW_ACTION_TOOL_NAMES)));
     });
 
     it.each(['disclosure-publication', 'provider-start'] as const)(
