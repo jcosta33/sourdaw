@@ -1,0 +1,23 @@
+src/modules/PluginHost/useCases/pluginScan/scanning/__tests__/startPluginScan.spec.ts
+  s_9b530f08172a54::t_5c6a43e73ae0bf 308-365
+  s_9b530f08172a54::t_c0e6b76b3511ef 267-282
+src/modules/PluginHost/useCases/pluginScan/scanning/startPluginScan.ts
+  s_9b530f08172a54::t_9ad240ab960eef 44-45
+  s_9b530f08172a54::t_9e34eb2557179e 10-16,20-34,41-43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "5c2ea8e8ab7bdc0425e4b3ba395c151c5edbdfce",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
