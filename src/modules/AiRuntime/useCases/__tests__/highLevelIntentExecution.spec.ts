@@ -587,6 +587,7 @@ describe('high-level intent execution', () => {
             const runBeforeRecovery = agentRunLifecycle.get(runId);
             const recoveryBeforeRecovery = agentRunLifecycle.getPendingEffectRecovery({ runId, batchId });
             expect(recoveryBeforeRecovery).toMatchObject({ checkpoint: 'durable', recovery: 'manual-repair' });
+            const recoveryLedgerBefore = structuredClone(recoveryBeforeRecovery);
             expect(runBeforeRecovery).toMatchObject({ phase: 'partially-completed' });
             const addTrackStepId = `effect:${batchId}:${addTrackCommandId}`;
             const sagaStepBeforeRecovery = runBeforeRecovery?.saga.steps.find((step) => step.stepId === addTrackStepId);
@@ -623,6 +624,7 @@ describe('high-level intent execution', () => {
             const runAfterRecovery = agentRunLifecycle.get(runId);
             expect(runAfterRecovery).toMatchObject({ phase: 'partially-completed' });
             expect(runAfterRecovery?.pendingEffectContinuations).toEqual(continuationBefore);
+            expect(agentRunLifecycle.getPendingEffectRecovery({ runId, batchId })).toEqual(recoveryLedgerBefore);
             const sagaAfterRecovery = (runAfterRecovery?.saga.steps ?? []).map(
                 ({ updatedAt: _updatedAt, ...step }) => step
             );
