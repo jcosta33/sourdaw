@@ -740,7 +740,11 @@ afterEach(() => {
     }
 });
 
-describe('release proof', () => {
+// Every case assembles a release candidate, and the two repository clones plus
+// the zip subprocess in each assembly cost up to 3.6 s on Apple silicon. Hosted
+// runners are roughly three times slower, so the file runs isolated in the
+// static lane rather than in the unit shards, under one declared budget.
+describe('release proof', { timeout: 30_000 }, () => {
     it('passes one inventory object to staging validation, final validation, and the release gate', () => {
         const fixture = createFixture();
         const inventory = readReleaseInventory(fixture.root);
@@ -1583,7 +1587,7 @@ describe('release proof', () => {
         expect(validate(fixture)).toContain('web archive bytes do not match web contents for assets/app.js');
     });
 
-    it('rejects candidates that omit the Qwen legal notice from both packaged surfaces', { timeout: 10_000 }, () => {
+    it('rejects candidates that omit the Qwen legal notice from both packaged surfaces', () => {
         const fixture = cloneDefaultAssembledFixture();
         rmSync(join(fixture.candidate, 'web/contents/legal/Qwen-NOTICE.txt'));
         rewriteDesktopArchive(fixture, (root) => {
@@ -1716,7 +1720,7 @@ describe('release proof', () => {
         expect(() => assemble(fixture)).toThrow(/app\.asar renderer (?:does not match|is missing)/u);
     });
 
-    it('preserves contained package symlinks and rejects package link escapes', { timeout: 10_000 }, () => {
+    it('preserves contained package symlinks and rejects package link escapes', () => {
         const valid = createFixture({ symlink: 'contained' });
         assemble(valid);
         expect(validate(valid)).toBe('');
@@ -3019,7 +3023,7 @@ with open(early, "r+b", buffering=0) as file:
         expect(errors).not.toContain('desktop artifact: file is missing');
     });
 
-    it('rejects relocation of every canonical desktop material path', { timeout: 10_000 }, () => {
+    it('rejects relocation of every canonical desktop material path', () => {
         const fixture = cloneDefaultAssembledFixture();
         const value = proof(fixture);
         const desktop = desktopProof(value);
@@ -3046,22 +3050,18 @@ with open(early, "r+b", buffering=0) as file:
         }
     });
 
-    it(
-        'fails validation closed when the repository is dirty or no longer at the expected revision',
-        { timeout: 10_000 },
-        () => {
-            const dirty = cloneDefaultAssembledFixture();
-            write(join(dirty.root, 'untracked-release-input.txt'), 'dirty');
-            expect(validate(dirty)).toContain('release proof validation requires a clean worktree');
+    it('fails validation closed when the repository is dirty or no longer at the expected revision', () => {
+        const dirty = cloneDefaultAssembledFixture();
+        write(join(dirty.root, 'untracked-release-input.txt'), 'dirty');
+        expect(validate(dirty)).toContain('release proof validation requires a clean worktree');
 
-            const moved = cloneDefaultAssembledFixture();
-            write(join(moved.root, 'next-revision.txt'), 'next');
-            commit(moved.root, 'advance fixture revision');
-            expect(validate(moved)).toContain(
-                'release proof validation checkout HEAD does not match the expected revision'
-            );
-        }
-    );
+        const moved = cloneDefaultAssembledFixture();
+        write(join(moved.root, 'next-revision.txt'), 'next');
+        commit(moved.root, 'advance fixture revision');
+        expect(validate(moved)).toContain(
+            'release proof validation checkout HEAD does not match the expected revision'
+        );
+    });
 
     it.each(['.git', '.GIT'])('rejects %s archive metadata before reconstructed Git execution', (directory) => {
         const fixture = cloneDefaultAssembledFixture();
@@ -3071,7 +3071,7 @@ with open(early, "r+b", buffering=0) as file:
         expect(existsSync(marker)).toBe(false);
     });
 
-    it('rejects ZIP archive resource metadata without expanding hostile payloads', { timeout: 20_000 }, () => {
+    it('rejects ZIP archive resource metadata without expanding hostile payloads', () => {
         const tar = cloneDefaultAssembledFixture();
         const file = cloneDefaultAssembledFixture();
         const entry = cloneDefaultAssembledFixture();
