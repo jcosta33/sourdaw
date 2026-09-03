@@ -59,7 +59,20 @@ const INCIDENT_3437: MissingReceiptIncident = {
     },
 };
 
-const INCIDENTS: readonly RecoveryIncident[] = [INCIDENT_3344, INCIDENT_3437];
+// A parallel session's delivery crashed after the first incident's recovery, retaining a
+// second lock on the same PR; same missing-receipt proof class.
+const INCIDENT_3437_SECOND: MissingReceiptIncident = {
+    kind: 'missing-receipt',
+    number: 3437,
+    ownerOid: '4d5a9fed9640e4b074b79c8a9fa3f6708ad3538e',
+    owner: {
+        version: 1,
+        pid: 45432,
+        token: '8cd2556c-c162-45d7-bc73-17a019c581b1',
+    },
+};
+
+const INCIDENTS: readonly RecoveryIncident[] = [INCIDENT_3344, INCIDENT_3437, INCIDENT_3437_SECOND];
 
 const usage = `usage: ${INCIDENTS.map(
     (incident) => `pnpm deliver --recover-lock ${incident.number} --owner ${incident.ownerOid}`
@@ -308,13 +321,10 @@ export function parseRecoverDeliveryLockArgs(args: string[]): RecoverDeliveryLoc
         }
         return { help: true };
     }
-    const incident = INCIDENTS.find((candidate) => args[0] === String(candidate.number));
-    if (
-        args.length !== 3 ||
-        incident === undefined ||
-        args[1] !== '--owner' ||
-        args[2]?.toLowerCase() !== incident.ownerOid
-    ) {
+    const incident = INCIDENTS.find(
+        (candidate) => args[0] === String(candidate.number) && args[2]?.toLowerCase() === candidate.ownerOid
+    );
+    if (args.length !== 3 || incident === undefined || args[1] !== '--owner') {
         fail(usage);
     }
     return { help: false, number: incident.number, ownerOid: incident.ownerOid };
@@ -449,8 +459,10 @@ export async function runRecoverDeliveryLockCli(
         console.log(`Usage: ${usage.slice('usage: '.length)}`);
         return 0;
     }
-    const incident = INCIDENTS.find((candidate) => candidate.number === parsed.number);
-    if (incident === undefined || parsed.ownerOid !== incident.ownerOid) {
+    const incident = INCIDENTS.find(
+        (candidate) => candidate.number === parsed.number && candidate.ownerOid === parsed.ownerOid
+    );
+    if (incident === undefined) {
         fail(usage);
     }
     const resolved = resolveDependencies(dependencies);
