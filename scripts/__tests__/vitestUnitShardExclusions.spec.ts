@@ -27,10 +27,25 @@ describe('appendUnitShardExclusions', () => {
         ]);
     });
 
-    it('does not duplicate the exclude when the census spec is run directly', () => {
+    it('leaves a non-sharded invocation naming the census spec unchanged', () => {
         expect(appendUnitShardExclusions([DEVICE_WRITE_BOUNDARY_CENSUS_SPEC])).toEqual([
             DEVICE_WRITE_BOUNDARY_CENSUS_SPEC,
         ]);
+    });
+
+    it('does not duplicate the exclude when the sharded census spec names itself', () => {
+        const args = ['--shard=2/4', DEVICE_WRITE_BOUNDARY_CENSUS_SPEC] as const;
+        expect(appendUnitShardExclusions(args)).toEqual(args);
+    });
+
+    it('does not duplicate the exclude when it is already present as separate --exclude arguments', () => {
+        const args = ['--shard=2/4', '--exclude', DEVICE_WRITE_BOUNDARY_CENSUS_EXCLUDE_GLOB] as const;
+        expect(appendUnitShardExclusions(args)).toEqual(args);
+    });
+
+    it('does not duplicate the exclude when it is already present as a single --exclude= argument', () => {
+        const args = ['--shard=2/4', '--exclude=**/deviceWriteBoundaryClosure.spec.ts'] as const;
+        expect(appendUnitShardExclusions(args)).toEqual(args);
     });
 });
 

@@ -677,6 +677,10 @@ expect(
     'nightly unit Run shard must stay blocking'
 );
 expect(
+    stepNamed(nightlyUnit, 'Run shard')?.run === 'pnpm run test:run --shard=${{ matrix.shard }}/4',
+    'nightly unit Run shard must run through the test:run wrapper that applies the census exclusion'
+);
+expect(
     unitFailureWarning?.if === shardFailureCondition,
     'unit shard failure warning must observe the failed Run shard outcome'
 );
