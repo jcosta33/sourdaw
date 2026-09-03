@@ -21,11 +21,18 @@ use std::ptr;
 /// The `Tone` behind a `clap_plugin`'s `plugin_data`, or `None` for a null
 /// plugin or an instance the factory never attached one to.
 ///
+/// Shared, never exclusive: the main thread can call `clap.params.get_value`
+/// at the same moment the audio thread is inside `process`, so this returns
+/// `&Tone` rather than `&mut Tone` and no caller may claim exclusivity over
+/// it — `Tone`'s own methods already serialise the state that needs it
+/// (`Cell` for the audio-thread-only fields) or share it safely (`AtomicU64`
+/// for `level`).
+///
 /// # Safety
 /// `plugin`, when non-null, must point to a live `clap_plugin` created by
-/// `factory::create_plugin`, whose `plugin_data` is a live `Box<Tone>` this
-/// call is the only live reference to.
-pub(crate) unsafe fn tone_from_plugin<'a>(plugin: *const clap_plugin) -> Option<&'a mut Tone> {
+/// `factory::create_plugin`, whose `plugin_data` is a live `Box<Tone>` for
+/// the duration of this reference.
+pub(crate) unsafe fn tone_from_plugin<'a>(plugin: *const clap_plugin) -> Option<&'a Tone> {
     if plugin.is_null() {
         return None;
     }
@@ -33,7 +40,7 @@ pub(crate) unsafe fn tone_from_plugin<'a>(plugin: *const clap_plugin) -> Option<
     if data.is_null() {
         return None;
     }
-    Some(&mut *(data as *mut Tone))
+    Some(&*(data as *const Tone))
 }
 
 pub(crate) unsafe extern "C" fn init(_plugin: *const clap_plugin) -> bool {
@@ -136,7 +143,7 @@ pub(crate) unsafe extern "C" fn process(
 /// `in_events`, when non-null, must be a live `clap_input_events` whose
 /// `size`/`get` callbacks are valid for the duration of this call — the
 /// contract `process` and `clap.params.flush` both receive it under.
-pub(crate) unsafe fn apply_parameter_events(tone: &mut Tone, in_events: *const clap_input_events) {
+pub(crate) unsafe fn apply_parameter_events(tone: &Tone, in_events: *const clap_input_events) {
     if in_events.is_null() {
         return;
     }
@@ -161,7 +168,7 @@ pub(crate) unsafe fn apply_parameter_events(tone: &mut Tone, in_events: *const c
         }
         let event = &*(header as *const clap_event_param_value);
         if event.param_id == LEVEL_PARAM_ID {
-            tone.level = event.value.clamp(LEVEL_MIN, LEVEL_MAX);
+            tone.set_level(event.value.clamp(LEVEL_MIN, LEVEL_MAX));
         }
     }
 }
@@ -169,7 +176,7 @@ pub(crate) unsafe fn apply_parameter_events(tone: &mut Tone, in_events: *const c
 /// Write the tone into every channel of the first declared output bus. No
 /// allocation: only pointer arithmetic over host-owned buffers, as CLAP's
 /// `[audio-thread]` contract on `process` requires.
-unsafe fn render_block(tone: &mut Tone, process: &clap_process) {
+unsafe fn render_block(tone: &Tone, process: &clap_process) {
     if process.audio_outputs.is_null() || process.audio_outputs_count == 0 {
         return;
     }
@@ -258,14 +265,14 @@ mod tests {
             )],
         };
         let events = input_events(&mut fixture);
-        let mut tone = Tone::new();
-        tone.level = starting_level;
+        let tone = Tone::new();
+        tone.set_level(starting_level);
 
         unsafe {
-            apply_parameter_events(&mut tone, &events);
+            apply_parameter_events(&tone, &events);
         }
 
-        assert_eq!(tone.level, 0.9);
+        assert_eq!(tone.level(), 0.9);
     }
 
     #[test]
@@ -276,15 +283,16 @@ mod tests {
             events: vec![param_value_event(foreign_space_id, LEVEL_PARAM_ID, 0.9)],
         };
         let events = input_events(&mut fixture);
-        let mut tone = Tone::new();
-        tone.level = starting_level;
+        let tone = Tone::new();
+        tone.set_level(starting_level);
 
         unsafe {
-            apply_parameter_events(&mut tone, &events);
+            apply_parameter_events(&tone, &events);
         }
 
         assert_eq!(
-            tone.level, starting_level,
+            tone.level(),
+            starting_level,
             "an event outside the core event space must not be read as a clap_event_param_value"
         );
     }

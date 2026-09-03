@@ -22,7 +22,7 @@ describe('harness plugin install', () => {
     });
 
     it('should install win32 at the literal machine-wide root the policy reads no env var for', () => {
-        // `plugin_scan_policy.rs:156` roots win32 at the literal
+        // `default_plugin_scan_roots` roots win32 at the literal
         // `C:\Program Files\Common Files\CLAP`, not a `home`/env-derived
         // path — so a `home` argument the policy would never see must not
         // change the destination.

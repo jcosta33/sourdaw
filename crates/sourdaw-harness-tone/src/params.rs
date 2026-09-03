@@ -64,7 +64,7 @@ unsafe extern "C" fn get_value(
     }
     match tone_from_plugin(plugin) {
         Some(tone) => {
-            *out_value = tone.level;
+            *out_value = tone.level();
             true
         }
         None => false,

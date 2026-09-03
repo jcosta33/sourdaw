@@ -32,7 +32,7 @@ export function cdylibFileName(platform: NodeJS.Platform): string {
  * The per-user CLAP root's `Sourdaw Harness Tone.clap` destination for
  * `platform`, matching `crates/sourdaw-native/src/host/plugin_scan_policy.rs`'s
  * `default_plugin_scan_roots`: darwin and linux root under `home`. win32 is
- * not per-user there — `plugin_scan_policy.rs:156` roots it at the literal
+ * not per-user there — `default_plugin_scan_roots` roots it at the literal
  * `C:\Program Files\Common Files\CLAP`, reading no environment variable, so
  * this returns that same literal and `home` goes unused on that branch.
  *
