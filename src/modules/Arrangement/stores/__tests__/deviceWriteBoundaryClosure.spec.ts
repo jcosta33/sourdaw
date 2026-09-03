@@ -605,11 +605,9 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/Toaster/useCases/toasterParamBridge/setPadEngineImmediate.ts': 1,
         'src/modules/Toaster/useCases/toasterSubscriber.ts': 2,
         'src/modules/Toaster/useCases/trigger16Level.ts': 5,
-        // Count provenance (#3471, #3476): measured 7 — 2 from `loadToasterKitPreset`
-        // (import and preset load call) plus 5 from `setPadParamImmediate`
-        // (2 lexical from import identifier and module path, 3 runtime immediate
-        // parameter writes for 16-levels note repeat auditioning on tune, decay,
-        // and filterCutoff).
+        // Count provenance: was 2 (loadToasterKitPreset import + call). Raised to
+        // 7 in #3471 when 16-levels mode wired live pad tuning/decay/tone sliders
+        // via setPadParamImmediate (2 in import statement + 3 immediate call sites).
         'src/modules/Toaster/presentations/views/ToasterPanel.tsx': 7,
         // Count provenance: 0 in code, was 1 lexical — a doc-comment
         // cross-reference to the sibling offline compiler
