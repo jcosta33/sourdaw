@@ -1,0 +1,20 @@
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_ac03a4ebaa3f6e::t_a6f6a744b36b07 1166
+  s_ac03a4ebaa3f6e::t_036afdcbc01197 1165
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "48dc0c02c89efa927619d43d71b2c307b139ab61",
+  "prompts": {},
+  "sessions": {
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": null
+    }
+  }
+}
