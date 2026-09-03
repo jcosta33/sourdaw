@@ -3,7 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
 import {
@@ -1966,6 +1966,59 @@ describe('shellPort postReview state verification', () => {
         }
     });
 
+    it('keeps the prepared twin and 422 attestation on the adopted legacy owner when recovery is interrupted before the receipt', async () => {
+        const fixture = createTrustedIncidentRecoveryFixture();
+        let inspections = 0;
+        try {
+            await expect(
+                runRecoverPublishReviewLockCli([String(fixture.incident.number), '--owner', fixture.ownerOid], {
+                    ...recoveryDependencies(fixture.root, (expectedHead) => {
+                        inspections += 1;
+                        if (inspections === 2) {
+                            throw new Error('remote read failed');
+                        }
+                        return { state: 'OPEN', head: expectedHead, reviews: [] };
+                    }),
+                    isLegacyOwnerLive: () => false,
+                })
+            ).rejects.toThrow(
+                /remote read failed; PR #3342 review-publication recovery preserved exact lock owner [0-9a-f]{40}/
+            );
+            const adoptedOid = readPullRequestMutationLockOid(
+                fixture.root,
+                pullRequestMutationLockRef(fixture.incident.number),
+                fixture.incident.number
+            );
+            expect(adoptedOid).toMatch(/^[0-9a-f]{40}$/);
+            expect(adoptedOid).not.toBe(fixture.ownerOid);
+            expect(readPullRequestMutationLockOwner(fixture.root, adoptedOid!, fixture.incident.number)).toMatchObject({
+                mutation: { phase: 'prepared', epoch: 1 },
+                recovery: { legacyOwnerOid: fixture.ownerOid, definitiveNoMutationHttpStatus: 422 },
+            });
+
+            let retries = 0;
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.incident.number), '--owner', adoptedOid!],
+                    recoveryDependencies(fixture.root, (expectedHead) => {
+                        retries += 1;
+                        return { state: 'OPEN', head: expectedHead, reviews: [] };
+                    })
+                )
+            ).resolves.toBe(0);
+            expect(retries).toBe(2);
+            expect(
+                readPullRequestMutationLockOid(
+                    fixture.root,
+                    pullRequestMutationLockRef(fixture.incident.number),
+                    fixture.incident.number
+                )
+            ).toBeUndefined();
+        } finally {
+            rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
     it('retains the adopted lock after an injected crash following exact receipt persistence', async () => {
         const fixture = createJournaledRecoveryFixture('prepared');
         let persistedReceipt:
@@ -2442,6 +2495,129 @@ describe('shellPort postReview state verification', () => {
         }
     });
 
+    it('retains a live legacy incident owner without inspecting or adopting it', async () => {
+        const fixture = createTrustedIncidentRecoveryFixture();
+        let inspections = 0;
+        try {
+            await expect(
+                runRecoverPublishReviewLockCli([String(fixture.incident.number), '--owner', fixture.ownerOid], {
+                    ...recoveryDependencies(fixture.root, (expectedHead) => {
+                        inspections += 1;
+                        return { state: 'OPEN', head: expectedHead, reviews: [] };
+                    }),
+                    isLegacyOwnerLive: () => true,
+                })
+            ).rejects.toThrow(/legacy review-publication lock is still held by a live process/);
+            expect(inspections).toBe(0);
+            expect(
+                readPullRequestMutationLockOid(
+                    fixture.root,
+                    pullRequestMutationLockRef(fixture.incident.number),
+                    fixture.incident.number
+                )
+            ).toBe(fixture.ownerOid);
+        } finally {
+            rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
+    // The trusted incident pins the legacy owner's pid, so no real process can exercise the default
+    // `process.kill(pid, 0)` probe's branches deterministically on macOS or Linux (pid 1 would give
+    // EPERM but is unreachable through the pinned fixture). Spying on `process.kill` pins the branch
+    // contract directly on every platform: ESRCH proceeds, EPERM rethrows, a live process refuses.
+    it('continues trusted incident recovery when the default legacy liveness probe reports ESRCH', async () => {
+        const fixture = createTrustedIncidentRecoveryFixture();
+        const kill = vi.spyOn(process, 'kill').mockImplementation(() => {
+            throw Object.assign(new Error('kill ESRCH'), { code: 'ESRCH' });
+        });
+        let inspections = 0;
+        try {
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.incident.number), '--owner', fixture.ownerOid],
+                    recoveryDependencies(fixture.root, (expectedHead) => {
+                        inspections += 1;
+                        return { state: 'OPEN', head: expectedHead, reviews: [] };
+                    })
+                )
+            ).resolves.toBe(0);
+            expect(kill).toHaveBeenCalledTimes(1);
+            expect(kill).toHaveBeenCalledWith(fixture.incident.owner.pid, 0);
+            expect(inspections).toBe(2);
+            expect(
+                readPullRequestMutationLockOid(
+                    fixture.root,
+                    pullRequestMutationLockRef(fixture.incident.number),
+                    fixture.incident.number
+                )
+            ).toBeUndefined();
+        } finally {
+            kill.mockRestore();
+            rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
+    it('rethrows when the default legacy liveness probe reports EPERM', async () => {
+        const fixture = createTrustedIncidentRecoveryFixture();
+        const eperm = Object.assign(new Error('kill EPERM'), { code: 'EPERM' });
+        const kill = vi.spyOn(process, 'kill').mockImplementation(() => {
+            throw eperm;
+        });
+        try {
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.incident.number), '--owner', fixture.ownerOid],
+                    recoveryDependencies(fixture.root, (expectedHead) => ({
+                        state: 'OPEN',
+                        head: expectedHead,
+                        reviews: [],
+                    }))
+                )
+            ).rejects.toBe(eperm);
+            expect(kill).toHaveBeenCalledTimes(1);
+            expect(kill).toHaveBeenCalledWith(fixture.incident.owner.pid, 0);
+            expect(
+                readPullRequestMutationLockOid(
+                    fixture.root,
+                    pullRequestMutationLockRef(fixture.incident.number),
+                    fixture.incident.number
+                )
+            ).toBe(fixture.ownerOid);
+        } finally {
+            kill.mockRestore();
+            rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
+    it('refuses trusted incident recovery when the default legacy liveness probe finds the process alive', async () => {
+        const fixture = createTrustedIncidentRecoveryFixture();
+        const kill = vi.spyOn(process, 'kill').mockImplementation(() => true);
+        try {
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.incident.number), '--owner', fixture.ownerOid],
+                    recoveryDependencies(fixture.root, (expectedHead) => ({
+                        state: 'OPEN',
+                        head: expectedHead,
+                        reviews: [],
+                    }))
+                )
+            ).rejects.toThrow(/legacy review-publication lock is still held by a live process/);
+            expect(kill).toHaveBeenCalledTimes(1);
+            expect(kill).toHaveBeenCalledWith(fixture.incident.owner.pid, 0);
+            expect(
+                readPullRequestMutationLockOid(
+                    fixture.root,
+                    pullRequestMutationLockRef(fixture.incident.number),
+                    fixture.incident.number
+                )
+            ).toBe(fixture.ownerOid);
+        } finally {
+            kill.mockRestore();
+            rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
     it('fails closed when the exact-owner adoption CAS loses the shared ref', async () => {
         const fixture = createJournaledRecoveryFixture();
         let replacementOid: string | undefined;
@@ -2497,6 +2673,35 @@ describe('shellPort postReview state verification', () => {
                         state: 'OPEN',
                         head: expectedHead,
                         reviews: [exact, { ...exact, id: 2 }],
+                    }))
+                )
+            ).rejects.toThrow(/ambiguous or non-exact remote review evidence/);
+            expect(
+                readPullRequestMutationLockOid(fixture.root, pullRequestMutationLockRef(fixture.number), fixture.number)
+            ).toBe(fixture.ownerOid);
+        } finally {
+            rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
+    it('retains the original owner when a single landed reviewer review drifts from the exact document', async () => {
+        const fixture = createJournaledRecoveryFixture();
+        const drifted = {
+            id: 1,
+            state: 'APPROVED',
+            body: 'drifted body',
+            commitId: fixture.head,
+            actorNodeId: REVIEWER_BOT_NODE_ID,
+            comments: [],
+        };
+        try {
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.number), '--owner', fixture.ownerOid],
+                    recoveryDependencies(fixture.root, (expectedHead) => ({
+                        state: 'OPEN',
+                        head: expectedHead,
+                        reviews: [drifted],
                     }))
                 )
             ).rejects.toThrow(/ambiguous or non-exact remote review evidence/);
@@ -2600,6 +2805,34 @@ describe('shellPort postReview state verification', () => {
                     recoveryDependencies(fixture.root, (expectedHead) => {
                         calls += 1;
                         return { state: calls === 1 ? 'OPEN' : 'CLOSED', head: expectedHead, reviews: [] };
+                    })
+                )
+            ).rejects.toThrow(
+                /remote state changed during reconciliation; PR #42 review-publication recovery preserved exact lock owner/
+            );
+            expect(calls).toBe(2);
+            const retainedOid = readPullRequestMutationLockOid(
+                fixture.root,
+                pullRequestMutationLockRef(fixture.number),
+                fixture.number
+            );
+            expect(retainedOid).toMatch(/^[0-9a-f]{40}$/);
+            expect(retainedOid).not.toBe(fixture.ownerOid);
+        } finally {
+            rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
+    it('retains the adopted owner when the pull request head advances between reconciliation reads', async () => {
+        const fixture = createJournaledRecoveryFixture();
+        let calls = 0;
+        try {
+            await expect(
+                runRecoverPublishReviewLockCli(
+                    [String(fixture.number), '--owner', fixture.ownerOid],
+                    recoveryDependencies(fixture.root, () => {
+                        calls += 1;
+                        return { state: 'OPEN', head: calls === 1 ? 'b'.repeat(40) : 'c'.repeat(40), reviews: [] };
                     })
                 )
             ).rejects.toThrow(
