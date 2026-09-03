@@ -20,6 +20,7 @@ import {
     asScanWorkerRequest,
     handleScanRequest,
     nativeCommand,
+    publishScanWorkerLaunch,
     SCAN_WORKER_COMMAND_ENV,
     scanWorkerCommand,
     scanWorkerLaunchEnvironment,
@@ -84,6 +85,38 @@ describe('the launch contract with the Rust policy', () => {
         expect(Object.keys(launchEnvironment)).toEqual([SCAN_WORKER_COMMAND_ENV]);
         const declared: unknown = JSON.parse(launchEnvironment[SCAN_WORKER_COMMAND_ENV]);
         expect(declared).toEqual({
+            program: '/resources/sourdaw-plugin-scan-helper',
+            args: [],
+            env: {},
+        });
+    });
+});
+
+describe('publishing the launch command into a process environment', () => {
+    // The main process's own `process.env` is where its singular `nativeHost`
+    // reads the launch command from, for the targeted rescan path that never
+    // goes through the forked supervisor's fork-time `env`. A `main.ts` that
+    // dropped this call, or called it with the wrong path, would leave that
+    // path falling back to re-executing the application binary — with every
+    // electron test still green, because nothing else observes this handoff.
+    it('writes the one key the policy reads, parsed as the launch command', () => {
+        const env: NodeJS.ProcessEnv = {};
+
+        publishScanWorkerLaunch(env, '/resources/sourdaw-plugin-scan-helper');
+
+        expect(JSON.parse(env[SCAN_WORKER_COMMAND_ENV] ?? 'null')).toEqual({
+            program: '/resources/sourdaw-plugin-scan-helper',
+            args: [],
+            env: {},
+        });
+    });
+
+    it('overwrites a stale value already at that key', () => {
+        const env: NodeJS.ProcessEnv = { [SCAN_WORKER_COMMAND_ENV]: 'stale' };
+
+        publishScanWorkerLaunch(env, '/resources/sourdaw-plugin-scan-helper');
+
+        expect(JSON.parse(env[SCAN_WORKER_COMMAND_ENV] ?? 'null')).toEqual({
             program: '/resources/sourdaw-plugin-scan-helper',
             args: [],
             env: {},

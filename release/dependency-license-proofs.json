@@ -53,11 +53,11 @@
             },
             {
                 "path": "crates/sourdaw-native/Cargo.toml",
-                "sha256": "4fd533f37449bc6dc51aff27c2e5b657cf412e9cdf093ff910c6306d435e2086"
+                "sha256": "4c20de3c423b5fbc468a39ec32c57fa2db34a5c44314ba8559f508a6e03bdebe"
             },
             {
                 "path": "electron-builder.yml",
-                "sha256": "4ae43ed8914a152334e111eff309daaf330d8ef3bc408f20d87b9eac387310ed"
+                "sha256": "6c0fc543587be211dc9e41bd04ccf05f36b9f74180d117eea83b6141df11e14b"
             },
             {
                 "path": "package.json",
@@ -69,7 +69,7 @@
             },
             {
                 "path": "scripts/buildNativeAddon.ts",
-                "sha256": "f3246c1034fcd2bebd109649810faa6e5373507832194b542a2a7e133e9f31b7"
+                "sha256": "229b3f82ff399b9b7690f8a4d18c47de629e5c37133c988bd82627fd15160d50"
             }
         ],
         "featureSelection": {

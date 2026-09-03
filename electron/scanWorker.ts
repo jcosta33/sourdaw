@@ -40,7 +40,7 @@ import { loadNativeAddon, resolveNativeAddonPath, type NativeCommand, type Nativ
  * contract, and `scanWorker.spec.ts` pins them against each other so a rename
  * on one side cannot land alone.
  */
-export const SCAN_WORKER_COMMAND_ENV = 'SOURDAW_PLUGIN_SCAN_WORKER_COMMAND';
+export const SCAN_WORKER_COMMAND_ENV = 'SOURDAW_PLUGIN_SCAN_WORKER_COMMAND' as const;
 
 export type ScanWorkerCommand = {
     readonly program: string;
@@ -68,14 +68,34 @@ export const scanWorkerCommand = (helperPath: string): ScanWorkerCommand => ({
  * The environment variable assignment that hands the leaf launch command to
  * the Rust scan policy.
  *
- * A plain object rather than a side effect on `process.env`: the caller —
- * `main.ts`, building the utility process's fork environment — decides where
- * this lands, and a function that mutated the ambient environment instead
- * would race whichever other setup runs before the fork.
+ * A plain object rather than a side effect on `process.env`: this is the pure
+ * core {@link publishScanWorkerLaunch} applies to the main process's own
+ * environment, and it is also what the utility fork's env is built from —
+ * one function computes the command, in one shape, for both callers.
  */
-export const scanWorkerLaunchEnvironment = (helperPath: string): Record<string, string> => ({
+export const scanWorkerLaunchEnvironment = (helperPath: string): { readonly [SCAN_WORKER_COMMAND_ENV]: string } => ({
     [SCAN_WORKER_COMMAND_ENV]: JSON.stringify(scanWorkerCommand(helperPath)),
 });
+
+/**
+ * Publish the leaf launch command into a process environment, in place.
+ *
+ * The Rust scan policy (`ScanWorkerCommand::resolve`) reads
+ * `SCAN_WORKER_COMMAND_ENV` from whichever OS process environment the caller
+ * making the native call actually runs under. The forked scan-supervisor
+ * process gets it through its own `env` at fork time, but the main process's
+ * singular `nativeHost` reaches the same policy directly — through
+ * `load_plugin`'s targeted rescan, not just the supervisor's batch scan — and
+ * nothing was ever setting the key on the main process's own `process.env`.
+ * That left the policy falling back to re-executing the application binary
+ * as the leaf for that path: the exact re-entry this file exists to avoid,
+ * just reached from a caller that never went through `main.ts`'s fork setup.
+ * `main.ts` calls this once, before `nativeHost` is built, so every native
+ * call afterward — forked or not — finds the same command already in place.
+ */
+export const publishScanWorkerLaunch = (env: NodeJS.ProcessEnv, helperPath: string): void => {
+    Object.assign(env, scanWorkerLaunchEnvironment(helperPath));
+};
 
 export type ScanWorkerRequest = {
     readonly paths: readonly string[];

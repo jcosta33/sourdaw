@@ -75,7 +75,7 @@ import { completeMacCloseAfterSessionQuiesce, createRendererSessionQuiescer } fr
 import { activateRendererWindow } from './rendererWindowActivation.js';
 import { registerCommandRouter } from './router.js';
 import { createScanSupervisor, type ScanSupervisor } from './scan.js';
-import { scanWorkerLaunchEnvironment } from './scanWorker.js';
+import { publishScanWorkerLaunch } from './scanWorker.js';
 import { applyPermissionPolicy, decideWindowOpen, isNavigationAllowed, trustedFrameGuard } from './security.js';
 import { createProductionShellComposition, requestApprovedWindowClose } from './shellComposition.js';
 import { runBeforeQuitCascade, type QuitPreparationOutcome, type ShutdownOutcome } from './shutdown.js';
@@ -566,19 +566,19 @@ shellComposition = createProductionShellComposition({
  * without an Electron process, and this is the only code that has to know what
  * Electron calls those two signals.
  */
-const createUtilityScanSupervisor = (addonPath: string): ScanSupervisor => {
-    // Resolved once per supervisor, for the same reason the addon path is
-    // passed in rather than re-derived: the utility process has no `app` and
-    // cannot ask whether this is a packaged build.
-    const helperPath = scanHelperPath();
-    return createScanSupervisor({
+const createUtilityScanSupervisor = (addonPath: string): ScanSupervisor =>
+    createScanSupervisor({
         timers: systemTimers,
         fork: () => {
+            // The fork inherits the leaf launch command through `...process.env`
+            // rather than recomputing it: `startNativeSurface` publishes it into
+            // the main process's own environment once, before this supervisor is
+            // built, and that one publish is the only place the command is
+            // computed.
             const child = utilityProcess.fork(join(import.meta.dirname, 'scanWorker.js'), [], {
                 env: {
                     ...process.env,
                     [NATIVE_ADDON_PATH_ENV]: addonPath,
-                    ...scanWorkerLaunchEnvironment(helperPath),
                 },
                 stdio: 'ignore',
             });
@@ -596,7 +596,6 @@ const createUtilityScanSupervisor = (addonPath: string): ScanSupervisor => {
             };
         },
     });
-};
 
 /**
  * The scale of the display a plugin editor window is on.
@@ -647,6 +646,13 @@ const startNativeSurface = (): void => {
         schedule: queueMicrotask,
         channel: EVENT_CHANNEL,
     });
+
+    // Published before the addon loads: the main process's own `nativeHost`,
+    // built below, reaches the Rust scan policy directly through
+    // `load_plugin`'s targeted rescan, not only through the forked
+    // supervisor's batch scan — so the launch command has to be in this
+    // process's own environment before any native call can run.
+    publishScanWorkerLaunch(process.env, scanHelperPath());
 
     const addonPath = nativeAddonPath();
     try {
