@@ -12,7 +12,13 @@ const CREATION_VERB_PATTERN = /\b(?:create|add|build|make|start|compose|write|pr
  * a little more bass" would read as creation; only `bass line` names the part.
  */
 const INTRODUCED_OBJECT_PATTERN =
-    /\b(?:a|an|new|some|another|\d+)\s+(?:\w+\s+){0,2}(?:tracks?|clips?|song|session|project|arrangement|composition|piece|demo|jingle|melody|beat|groove|loop|riff|comp|progression|chords?|drums|bass\s?lines?|drum\s+parts?)\b/iu;
+    /\b(?:a|an|new|some|another|\d+)\s+((?:\w+\s+){0,2})(?:tracks?|clips?|song|session|project|arrangement|composition|piece|demo|jingle|melody|beat|groove|loop|riff|comp|progression|chords?|drums|bass\s?lines?|drum\s+parts?)\b/giu;
+
+/** A preposition right before the determiner makes the phrase an edit's destination. */
+const PRECEDING_PREPOSITION_PATTERN = /\b(?:to|on|onto|into|over|across|of|for|under|behind|through|with)\s+$/iu;
+
+/** The same words, or a definite article, between determiner and noun point back at what exists. */
+const REFERRING_GAP_PATTERN = /\b(?:to|on|onto|into|over|across|of|for|under|behind|through|with|the)\b/iu;
 
 /** Separators a request writes between one instruction and the next. */
 const CLAUSE_SEPARATOR_PATTERN = /[,;.!?]|\bthen\b|\band\b/iu;
@@ -30,8 +36,25 @@ function hasUnnegatedCreationVerb(clause: string): boolean {
     return lastVerb?.index !== undefined && !NEGATION_PATTERN.test(clause.slice(0, lastVerb.index));
 }
 
+/**
+ * An object the clause introduces rather than one it reaches for. A determiner alone does not
+ * decide it, because an edit names its destination the same way: what disqualifies a match is a
+ * preposition immediately before the determiner, as in "add reverb to a few tracks", or a
+ * preposition or definite article between the determiner and the noun, as in "make some of the
+ * tracks louder". Both say the objects already exist. Every match in the clause is tried, so one
+ * disqualified phrase cannot hide a genuine introduction elsewhere in the same clause.
+ */
+function introducesSomethingNew(clause: string): boolean {
+    return [...clause.matchAll(INTRODUCED_OBJECT_PATTERN)].some(
+        (match) =>
+            match.index !== undefined &&
+            !PRECEDING_PREPOSITION_PATTERN.test(clause.slice(0, match.index)) &&
+            !REFERRING_GAP_PATTERN.test(match[1] ?? '')
+    );
+}
+
 function namesSomethingToCreate(clause: string): boolean {
-    return MUSICAL_GENRE_PATTERN.test(clause) || INTRODUCED_OBJECT_PATTERN.test(clause);
+    return MUSICAL_GENRE_PATTERN.test(clause) || introducesSomethingNew(clause);
 }
 
 /**

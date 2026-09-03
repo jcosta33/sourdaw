@@ -569,7 +569,9 @@ describe('high-level intent adversarial planning', () => {
             );
 
             expect(result.actions).toEqual([]);
-            expect(result.rejectionReason).toContain('ends past the clip');
+            expect(result.rejectionReason).toContain(
+                'Plan-created note 0 falls outside the clip content window of beats 0 to 8'
+            );
         });
 
         it('refuses a note that runs past the end of the clip the batch declared', async () => {
@@ -579,7 +581,9 @@ describe('high-level intent adversarial planning', () => {
             );
 
             expect(result.actions).toEqual([]);
-            expect(result.rejectionReason).toContain('ends past the clip');
+            expect(result.rejectionReason).toContain(
+                'Plan-created note 0 falls outside the clip content window of beats 0 to 8'
+            );
         });
 
         it('admits a note that ends exactly on the clip boundary', async () => {

@@ -124,7 +124,10 @@ that text: a stored track named like a creative request would otherwise buy a wa
 asked for, which turns a project field into an authority escalation.
 
 Two classes of text carry that evidence: a musical genre term, and an object a determiner
-introduces. Every noun stands behind that determiner, whole works included, because a request
+introduces. A determiner alone does not settle the second, because an edit names its destination
+the same way: a preposition before the determiner, or a preposition or definite article between it
+and the noun, says the objects already exist, so "add reverb to a few tracks" and "make some of the
+tracks louder" carry no evidence while "add a bass track to the session" does. Every noun stands behind that determiner, whole works included, because a request
 reaches for a song it already has as readily as for one it wants written — the determiner is what
 separates writing a song from mixing one. A word that names a mix quality as readily as a part
 carries no evidence at all: bare "bass" is a frequency range as often as an instrument, so only

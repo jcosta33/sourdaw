@@ -4400,5 +4400,21 @@ describe('bridgeLlmToolCalls', () => {
             expect(result.actions).toEqual([]);
             expect(result.rejections[0]?.reason).toBe('Note 0 falls outside the clip content window of beats 0 to 4');
         });
+
+        it('refuses the call when the clip cannot say where its content is', () => {
+            // Every comparison against a non-finite bound is false, so an unguarded window would
+            // admit the very note a finite one refuses outright.
+            const result = addNotes(
+                { pitch: 60, startBeat: 1e15, duration: 1, velocity: 96 },
+                {
+                    midiOffsetBeats: Number.NaN,
+                }
+            );
+
+            expect(result.actions).toEqual([]);
+            expect(result.rejections[0]?.reason).toBe(
+                'Clip clip-midi reports a content window that is not a finite range of beats'
+            );
+        });
     });
 });

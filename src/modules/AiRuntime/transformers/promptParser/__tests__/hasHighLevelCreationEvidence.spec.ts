@@ -28,6 +28,10 @@ describe('hasHighLevelCreationEvidence', () => {
         // Nouns a mixing request reaches for just as often, and the determiner is what separates them.
         'add some drums',
         'lay down some chords',
+        // A preposition further along does not reach back: these still introduce their object.
+        'create a song for a friend',
+        'add some chords under the melody',
+        'add a bass track to the session',
     ])('reads a request for something new as creation evidence: %s', (request) => {
         expect(hasHighLevelCreationEvidence(request)).toBe(true);
     });
@@ -73,6 +77,19 @@ describe('hasHighLevelCreationEvidence', () => {
         'make the session louder',
         'build out the arrangement',
     ])('refuses a mixing or editing request that names an object the project already holds: %s', (request) => {
+        expect(hasHighLevelCreationEvidence(request)).toBe(false);
+    });
+
+    it.each([
+        // A preposition before the determiner makes the phrase the destination of an edit.
+        'add reverb to a few tracks',
+        'add an eq to a couple of tracks',
+        'add a plugin to some tracks',
+        'add a send on some tracks',
+        // Here it sits inside the phrase instead, where a definite article says the same thing.
+        'make some of the tracks louder',
+        'make some of the clips shorter',
+    ])('refuses an edit that names existing objects behind a determiner: %s', (request) => {
         expect(hasHighLevelCreationEvidence(request)).toBe(false);
     });
 });
