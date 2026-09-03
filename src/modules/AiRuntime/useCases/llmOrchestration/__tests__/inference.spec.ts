@@ -104,12 +104,12 @@ const toolSchemas: ToolSchema[] = [
     },
 ];
 
-function toolSchema(name: string): ToolSchema {
+function toolSchema(name: string, description?: string): ToolSchema {
     return {
         type: 'function',
         function: {
             name,
-            description: `${name} tool.`,
+            description: description ?? `${name} tool.`,
             parameters: { type: 'object', additionalProperties: false, properties: {}, required: [] },
         },
     };
@@ -214,17 +214,22 @@ describe('generateToolPlanningOutcome', () => {
         });
     });
 
-    it('keeps both catalog tools available to WebLLM under 30-tool selection pressure', async () => {
+    it('keeps the five application tools available to WebLLM under 30-tool selection pressure', async () => {
         mocks.backendChain.value = ['webllm'];
         mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
-        const competingTools = Array.from({ length: 30 }, (_, index) => toolSchema(`competingTool${String(index)}`));
+        // 120 competing tools whose names and descriptions match the "plan a command" prompt,
+        // ensuring decline loses selection if it is not in the mandatory set. Positioned after
+        // competing tools so prompt selection fills available slots with competing tools first.
+        const competingTools = Array.from({ length: 120 }, (_, index) =>
+            toolSchema(`planAction${String(index)}`, 'plan a command')
+        );
         const schemas = [
             toolSchema('project.query'),
             toolSchema('command.batch.propose'),
-            ...competingTools,
-            toolSchema('command.batch.decline'),
             toolSchema('agent.command-index.search'),
             toolSchema('agent.catalog.discover'),
+            ...competingTools,
+            toolSchema('command.batch.decline'),
         ];
 
         await expect(generateToolPlanningOutcome('system', 'plan a command', schemas)).resolves.toMatchObject({
