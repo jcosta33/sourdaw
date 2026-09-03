@@ -13,6 +13,8 @@ import {
 } from '../../tests/e2e/browserAiHardware';
 import browserAiWebGpuAdmissionConfig from '../../tests/e2e/browserAiWebGpuAdmission.playwright.config';
 
+import { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } from '../deployWebWorkflowContract';
+
 type UnknownRecord = Record<string, unknown>;
 type JobResult = 'cancelled' | 'failure' | 'skipped' | 'success';
 
@@ -871,19 +873,8 @@ function assertDailyDeployTrain(candidate: UnknownRecord): DeployTrainScripts {
         throw new Error('the daily deploy train must record the deployed revision on the deployment');
     }
     const buildStep = stepNamed(job, 'Build the validated revision');
-    const buildRun = stringAt(buildStep, 'run');
-    if (!buildRun.includes('pnpm build')) {
-        throw new Error('Build the validated revision must build with pnpm, not the Vercel CLI');
-    }
-    if (!buildRun.includes('scripts/writeVercelPrebuiltOutput.ts')) {
-        throw new Error('Build the validated revision must write the prebuilt output locally');
-    }
-    if (buildRun.includes('$VERCEL_CLI') || buildRun.includes('vercel')) {
-        throw new Error('Build the validated revision must not invoke the Vercel CLI');
-    }
-    if (arrayAt(job, 'steps').some((candidate: unknown) => asRecord(candidate, 'step').name === VERCEL_PULL_STEP)) {
-        throw new Error('the daily deploy train must not pull the production environment through the Vercel CLI');
-    }
+    assertDeployWebBuildRun(stringAt(buildStep, 'run'));
+    assertDeployWebJobNoVercelPull(arrayAt(job, 'steps'));
     if (buildStep.env !== undefined) {
         const buildEnv = recordAt(buildStep, 'env');
         if (
@@ -1651,6 +1642,23 @@ describe('health gates workflow contract', () => {
             run: 'pnpm dlx "$VERCEL_CLI" pull --environment=production',
         });
         expect(() => assertDailyDeployTrain(vercelCliPull)).toThrow(
+            'the daily deploy train must not pull the production environment through the Vercel CLI'
+        );
+
+        const echoOnlyBuild = asRecord(structuredClone(nightly), 'echo-only build deploy train');
+        stepNamed(jobAt(echoOnlyBuild, DEPLOY_WEB_JOB), 'Build the validated revision').run =
+            'set -euo pipefail\necho "pnpm build"\necho "node scripts/writeVercelPrebuiltOutput.ts"';
+        expect(() => assertDailyDeployTrain(echoOnlyBuild)).toThrow(
+            'Build the validated revision must execute pnpm build'
+        );
+
+        const pullOnLinkStep = asRecord(structuredClone(nightly), 'link-step pull deploy train');
+        const linkStep = stepNamed(
+            jobAt(pullOnLinkStep, DEPLOY_WEB_JOB),
+            'Link the Vercel CLI to the production project'
+        );
+        linkStep.run = `${stringAt(linkStep, 'run')}\npnpm dlx "$VERCEL_CLI" pull --environment=production`;
+        expect(() => assertDailyDeployTrain(pullOnLinkStep)).toThrow(
             'the daily deploy train must not pull the production environment through the Vercel CLI'
         );
 

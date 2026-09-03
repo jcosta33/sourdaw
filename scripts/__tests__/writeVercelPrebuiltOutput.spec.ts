@@ -77,6 +77,7 @@ describe('writeVercelPrebuiltOutput', () => {
             rootDirectory,
             [
                 { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+                { key: 'Cross-Origin-Embedder-Policy', value: 'require-corp' },
                 { key: probeName, value: probeValue },
             ],
             headerSource
@@ -103,6 +104,7 @@ describe('writeVercelPrebuiltOutput', () => {
                 src: headerSource,
                 headers: {
                     'Cross-Origin-Opener-Policy': 'same-origin',
+                    'Cross-Origin-Embedder-Policy': 'require-corp',
                     [probeName]: probeValue,
                 },
                 continue: true,

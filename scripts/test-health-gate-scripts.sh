@@ -178,11 +178,14 @@ fi
 SH
 chmod +x "$git_tip_bin/git"
 
-WORKFLOW_PATH="$repo_root/.github/workflows/health-gates.yml" NIGHTLY_PATH="$repo_root/.github/workflows/nightly.yml" REPO_ROOT="$repo_root" TEST_TEMP_ROOT="$temp_root" FAKE_BIN="$fake_bin" GIT_TIP_BIN="$git_tip_bin" node --input-type=module <<'NODE'
+WORKFLOW_PATH="$repo_root/.github/workflows/health-gates.yml" NIGHTLY_PATH="$repo_root/.github/workflows/nightly.yml" REPO_ROOT="$repo_root" TEST_TEMP_ROOT="$temp_root" FAKE_BIN="$fake_bin" GIT_TIP_BIN="$git_tip_bin" pnpm exec tsx --input-type=module <<'NODE'
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { parse } from 'yaml';
 
+const { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } = await import(
+    `${process.env.REPO_ROOT}/scripts/deployWebWorkflowContract.ts`
+);
 const workflow = parse(readFileSync(process.env.WORKFLOW_PATH, 'utf8'));
 const nightly = parse(readFileSync(process.env.NIGHTLY_PATH, 'utf8'));
 const gitleaksHelper = readFileSync(`${process.env.REPO_ROOT}/scripts/run-gitleaks-history-scan.sh`, 'utf8');
@@ -786,17 +789,16 @@ for (const stepName of ['Deploy the prebuilt revision']) {
     );
 }
 const deployWebBuildRun = stepNamed(deployWeb, 'Build the validated revision')?.run ?? '';
-expect(
-    deployWebBuildRun.includes('pnpm build') &&
-        deployWebBuildRun.includes('scripts/writeVercelPrebuiltOutput.ts') &&
-        !deployWebBuildRun.includes('$VERCEL_CLI') &&
-        !deployWebBuildRun.includes('vercel'),
-    'the daily web deploy must build locally rather than through the Vercel CLI'
-);
-expect(
-    stepNamed(deployWeb, 'Pull the production environment') === undefined,
-    'the daily web deploy must not pull the production environment through the Vercel CLI'
-);
+try {
+    assertDeployWebBuildRun(deployWebBuildRun);
+} catch (error) {
+    expect(false, error instanceof Error ? error.message : String(error));
+}
+try {
+    assertDeployWebJobNoVercelPull(deployWeb?.steps ?? []);
+} catch (error) {
+    expect(false, error instanceof Error ? error.message : String(error));
+}
 expect(
     deployWeb?.environment === 'Production',
     'the daily web deploy must draw its credential from the Production environment'
