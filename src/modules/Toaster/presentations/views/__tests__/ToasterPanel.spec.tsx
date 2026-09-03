@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     startNoteRepeat: vi.fn(),
     stopNoteRepeat: vi.fn(),
     triggerToasterPad: vi.fn(),
+    setPadParamImmediate: vi.fn(),
 }));
 
 import { ToasterPanel } from '../ToasterPanel';
@@ -24,6 +25,9 @@ vi.mock('../../../useCases/enter16Levels', () => ({
 }));
 vi.mock('../../../useCases/exit16Levels', () => ({
     exit16Levels: mocks.exit16Levels,
+}));
+vi.mock('../../../useCases/setPadParamImmediate', () => ({
+    setPadParamImmediate: mocks.setPadParamImmediate,
 }));
 vi.mock('../../../useCases/trigger16Level', () => ({
     trigger16Level: mocks.trigger16Level,
@@ -188,10 +192,16 @@ describe('ToasterPanel', () => {
         fireEvent.click(screen.getByRole('button', { name: '16 Levels mode' }));
         fireEvent.click(screen.getByRole('button', { name: 'Note repeat mode' }));
 
-        // Tune target (default): trigger16Level called, then startNoteRepeat with 127
+        // Tune target (default): setPadParamImmediate called without trigger16Level, then startNoteRepeat with 127
         const pad2 = screen.getByTestId('toaster-pad-2');
         fireEvent.mouseDown(pad2, { button: 0 });
-        expect(mocks.trigger16Level).toHaveBeenCalledWith(2, 'toaster-test');
+        expect(mocks.trigger16Level).not.toHaveBeenCalled();
+        expect(mocks.setPadParamImmediate).toHaveBeenCalledWith({
+            deviceId: 'toaster-test',
+            padIndex: 0,
+            key: 'tune',
+            value: -24 + (3 / 16) * 48,
+        });
         expect(mocks.startNoteRepeat).toHaveBeenCalledWith('toaster-test', 0, 127, 120, '1/16');
 
         // Switch to velocity target
@@ -199,9 +209,11 @@ describe('ToasterPanel', () => {
         fireEvent.change(targetSelect, { target: { value: 'velocity' } });
 
         mocks.startNoteRepeat.mockClear();
-        // Pad 15: velocity round(16/16 * 127) = 127
-        const pad15 = screen.getByTestId('toaster-pad-15');
-        fireEvent.mouseDown(pad15, { button: 0 });
-        expect(mocks.startNoteRepeat).toHaveBeenCalledWith('toaster-test', 0, 127, 120, '1/16');
+        mocks.trigger16Level.mockClear();
+        // Pad 7: velocity round(8/16 * 127) = 64
+        const pad7 = screen.getByTestId('toaster-pad-7');
+        fireEvent.mouseDown(pad7, { button: 0 });
+        expect(mocks.startNoteRepeat).toHaveBeenCalledWith('toaster-test', 0, 64, 120, '1/16');
+        expect(mocks.trigger16Level).not.toHaveBeenCalled();
     });
 });

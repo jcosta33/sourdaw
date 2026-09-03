@@ -94,9 +94,11 @@ export const PadGrid = ({
     return (
         <Grid cols={4} gap={1.5}>
             {pads.slice(0, 16).map((pad, index) => {
+                const targetPad = pads[selectedIndex] ?? pads[0];
+                const activeColor = sixteenLevelsTarget ? (targetPad?.color ?? pad.color) : pad.color;
                 const isSelected = index === selectedIndex;
                 const isFlashing = flashingPads.has(index);
-                const baseGlow = isSelected ? `${pad.color}55` : `${pad.color}22`;
+                const baseGlow = isSelected ? `${activeColor}55` : `${activeColor}22`;
                 const effectivePadName = targetPadName ?? pad.name;
                 const levelText = sixteenLevelsTarget ? getLevelText(sixteenLevelsTarget, index) : null;
                 const ariaLabel = sixteenLevelsTarget
@@ -112,19 +114,23 @@ export const PadGrid = ({
                         data-testid={`toaster-pad-${index}`}
                         className="relative aspect-square rounded-[16px] border transition-all select-none"
                         aria-label={ariaLabel}
-                        aria-pressed={isSelected}
+                        aria-pressed={sixteenLevelsTarget ? undefined : isSelected}
                         style={{
                             background: isFlashing
-                                ? `linear-gradient(180deg, ${pad.color}, rgba(255,255,255,0.16))`
-                                : `linear-gradient(180deg, ${pad.color}26, rgba(0,0,0,0.18))`,
-                            borderColor: isSelected ? `${pad.color}88` : `${pad.color}33`,
-                            boxShadow: isSelected
-                                ? `inset 0 1px 0 rgba(255,255,255,0.12), 0 0 22px ${baseGlow}`
-                                : `inset 0 1px 0 rgba(255,255,255,0.08), 0 0 12px ${pad.color}12`,
+                                ? `linear-gradient(180deg, ${activeColor}, rgba(255,255,255,0.16))`
+                                : `linear-gradient(180deg, ${activeColor}26, rgba(0,0,0,0.18))`,
+                            borderColor: isSelected && !sixteenLevelsTarget ? `${activeColor}88` : `${activeColor}33`,
+                            boxShadow:
+                                isSelected && !sixteenLevelsTarget
+                                    ? `inset 0 1px 0 rgba(255,255,255,0.12), 0 0 22px ${baseGlow}`
+                                    : `inset 0 1px 0 rgba(255,255,255,0.08), 0 0 12px ${activeColor}12`,
                             transform: isFlashing ? 'scale(0.97)' : 'scale(1)',
                         }}
                         onClick={() => {
-                            if (!sixteenLevelsTarget) {
+                            if (sixteenLevelsTarget) {
+                                onTriggerPad(index);
+                                triggerFlash(index);
+                            } else {
                                 onSelectPad(index);
                             }
                         }}
@@ -172,7 +178,7 @@ export const PadGrid = ({
                                     <Stack gap={0.5} className="min-w-0">
                                         <span
                                             className="text-[10px] font-semibold leading-tight tracking-[0.02em]"
-                                            style={{ color: isFlashing ? '#fff' : `${pad.color}ee` }}
+                                            style={{ color: isFlashing ? '#fff' : `${activeColor}ee` }}
                                         >
                                             {levelText}
                                         </span>
@@ -183,15 +189,15 @@ export const PadGrid = ({
                                 ) : (
                                     <span
                                         className="text-[10px] font-semibold leading-tight tracking-[0.02em]"
-                                        style={{ color: isFlashing ? '#fff' : `${pad.color}ee` }}
+                                        style={{ color: isFlashing ? '#fff' : `${activeColor}ee` }}
                                     >
                                         {pad.name}
                                     </span>
                                 )}
-                                {pad.chokeGroup > 0 ? (
+                                {!sixteenLevelsTarget && pad.chokeGroup > 0 ? (
                                     <span
                                         className="rounded-full border px-1 py-0.5 text-[7px] font-medium text-white/55"
-                                        style={{ borderColor: `${pad.color}55` }}
+                                        style={{ borderColor: `${activeColor}55` }}
                                     >
                                         C{pad.chokeGroup}
                                     </span>
@@ -204,15 +210,29 @@ export const PadGrid = ({
                                     gap={2}
                                     className="text-[7px] uppercase tracking-[0.18em] text-white/45"
                                 >
-                                    <span>{pad.engineType.replace(/^(kick|snare|hihat|modal)-/, '').slice(0, 8)}</span>
-                                    <span>{Math.round(pad.volume * 100)}%</span>
+                                    <span>
+                                        {(sixteenLevelsTarget
+                                            ? (targetPad?.engineType ?? pad.engineType)
+                                            : pad.engineType
+                                        )
+                                            .replace(/^(kick|snare|hihat|modal)-/, '')
+                                            .slice(0, 8)}
+                                    </span>
+                                    <span>
+                                        {Math.round(
+                                            (sixteenLevelsTarget ? (targetPad?.volume ?? pad.volume) : pad.volume) * 100
+                                        )}
+                                        %
+                                    </span>
                                 </Row>
                                 <div className="h-1.5 rounded-full bg-white/8">
                                     <div
                                         className="h-full rounded-full"
                                         style={{
-                                            width: `${Math.round(pad.volume * 100)}%`,
-                                            backgroundColor: pad.color,
+                                            width: sixteenLevelsTarget
+                                                ? `${Math.round(((index + 1) / 16) * 100)}%`
+                                                : `${Math.round(pad.volume * 100)}%`,
+                                            backgroundColor: activeColor,
                                             opacity: isFlashing ? 1 : 0.85,
                                         }}
                                     />
@@ -220,7 +240,7 @@ export const PadGrid = ({
                             </Stack>
                         </Stack>
 
-                        {pad.muted ? (
+                        {!sixteenLevelsTarget && pad.muted ? (
                             <Row justify="center" className="absolute inset-0 z-20 rounded-[16px] bg-black/56">
                                 <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/55">
                                     Mute

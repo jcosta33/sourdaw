@@ -38,6 +38,7 @@ import { getToasterPresetKit } from '../../useCases/getToasterPresetKit';
 import { getToasterPresetSummaries } from '../../useCases/getToasterPresetSummaries';
 import { loadToasterKitPreset } from '../../useCases/loadToasterKit';
 import { type NoteRepeatRate } from '../../useCases/noteRepeat';
+import { setPadParamImmediate } from '../../useCases/setPadParamImmediate';
 import { type SixteenLevelsTarget } from '../../useCases/sixteenLevels';
 import { startNoteRepeat } from '../../useCases/startNoteRepeat';
 import { startSequencer } from '../../useCases/startSequencer';
@@ -273,7 +274,29 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                     const velocity = Math.round(((index + 1) / 16) * 127);
                     startNoteRepeat(deviceId, selectedPadIndex, velocity, bpm, repeatRate);
                 } else {
-                    trigger16Level(index, deviceId);
+                    const fraction = (index + 1) / 16;
+                    if (sixteenLevelsTarget === 'tune') {
+                        setPadParamImmediate({
+                            deviceId,
+                            padIndex: selectedPadIndex,
+                            key: 'tune',
+                            value: -24 + fraction * 48,
+                        });
+                    } else if (sixteenLevelsTarget === 'decay') {
+                        setPadParamImmediate({
+                            deviceId,
+                            padIndex: selectedPadIndex,
+                            key: 'decay',
+                            value: fraction,
+                        });
+                    } else if (sixteenLevelsTarget === 'filter') {
+                        setPadParamImmediate({
+                            deviceId,
+                            padIndex: selectedPadIndex,
+                            key: 'filterCutoff',
+                            value: 20 * (20000 / 20) ** fraction,
+                        });
+                    }
                     startNoteRepeat(deviceId, selectedPadIndex, 127, bpm, repeatRate);
                 }
             } else {

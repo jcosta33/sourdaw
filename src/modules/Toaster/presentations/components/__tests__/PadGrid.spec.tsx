@@ -177,15 +177,16 @@ describe('PadGrid — 16 Levels mode', () => {
         expect(screen.getByText(level15)).toBeTruthy();
     });
 
-    it('does not fire onSelectPad on pad click when sixteenLevelsTarget is set', () => {
+    it('triggers pad and does not fire onSelectPad on pad click when sixteenLevelsTarget is set', () => {
         const onSelectPad = vi.fn();
+        const onTriggerPad = vi.fn();
         const pads = Array.from({ length: 16 }, (_, index) => makePad(index));
         render(
             <PadGrid
                 pads={pads}
                 selectedIndex={0}
                 onSelectPad={onSelectPad}
-                onTriggerPad={vi.fn()}
+                onTriggerPad={onTriggerPad}
                 sixteenLevelsTarget="tune"
             />
         );
@@ -194,6 +195,44 @@ describe('PadGrid — 16 Levels mode', () => {
         fireEvent.click(pad2);
 
         expect(onSelectPad).not.toHaveBeenCalled();
+        expect(onTriggerPad).toHaveBeenCalledWith(2);
+    });
+
+    it('omits aria-pressed in 16-levels mode', () => {
+        const pads = Array.from({ length: 4 }, (_, index) => makePad(index));
+        render(
+            <PadGrid
+                pads={pads}
+                selectedIndex={0}
+                onSelectPad={vi.fn()}
+                onTriggerPad={vi.fn()}
+                sixteenLevelsTarget="tune"
+            />
+        );
+
+        const pad0 = screen.getByRole('button', { name: /trigger level 1/i });
+        expect(pad0).not.toHaveAttribute('aria-pressed');
+    });
+
+    it('suppresses choke group badges and mute overlays in 16-levels mode', () => {
+        const pads = [
+            makePad(0, { chokeGroup: 2, muted: true, color: '#112233' }),
+            makePad(1, { chokeGroup: 1, muted: true, color: '#445566' }),
+        ];
+        render(
+            <PadGrid
+                pads={pads}
+                selectedIndex={0}
+                onSelectPad={vi.fn()}
+                onTriggerPad={vi.fn()}
+                sixteenLevelsTarget="decay"
+            />
+        );
+
+        expect(screen.queryByText('Mute')).toBeNull();
+        expect(screen.queryByText('C2')).toBeNull();
+        expect(screen.queryByText('C1')).toBeNull();
+        expect(screen.getByText('6%')).toBeTruthy();
     });
 });
 
