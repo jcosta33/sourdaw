@@ -52,4 +52,11 @@ regexes = [
   # Audited 2026-09-03; Nightly `--all` still sees commit af09038c855e655b01dde6d723f185f4c13937d4
   # on PR #3437 / `agent/recover-3437-lock`.
   '''f515a71d-c25a-4714-b725-ef6e9b141005''',
+
+  # Delivery-lock owner token of the second retained PR #3437 incident: a crashed
+  # delivery's v1 fencing nonce (pid 45432, dead), pinned byte-exact in
+  # `scripts/recoverDeliveryLock.ts` and its spec so the scripted recovery can prove
+  # exact ownership. A compare-and-swap nonce, never an issued credential.
+  # Audited 2026-09-03; Nightly `--all` sees the retained ref `refs/sourdaw/delivery/pr-3437`.
+  '''8cd2556c-c162-45d7-bc73-17a019c581b1''',
 ]
