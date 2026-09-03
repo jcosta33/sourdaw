@@ -1,0 +1,21 @@
+crates/daw-dsp/benches/quantum-cost-table.json
+  s_fe1f9d81e9e8a1::t_dc5294ced0c017 12,17,22
+crates/daw-dsp/benches/quantum-cost-table.md
+  s_fe1f9d81e9e8a1::t_36a6f49ca3d17f 152,165
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d40bfe4ce41399d85a3f0158dc0e14642307dc1b",
+  "prompts": {},
+  "sessions": {
+    "s_fe1f9d81e9e8a1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a3c6f339e56691ca3",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
