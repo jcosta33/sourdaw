@@ -1,0 +1,33 @@
+src/modules/AiRuntime/presentations/components/__tests__/ChatComposer.spec.tsx
+  s_9b530f08172a54::t_39e1e651e82695 3,31-59
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/KneadEditor.spec.tsx
+  s_9b530f08172a54::t_f14069024db8df 351-352,354-357,360
+src/modules/AiRuntime/presentations/components/ChatComposer.tsx
+  s_723634e6e6ad95::t_aa458b9f7db9de 5,68,71,73-74,84
+src/modules/TimelineEditor/presentations/views/ClipView/KneadEditor.tsx
+  s_723634e6e6ad95::t_5e06c7bc039235 6,746-748,751,762-765,768-769,776
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "18fae4af821f9c33ebd2a5164ea428c3232a3cfe",
+  "prompts": {},
+  "sessions": {
+    "s_723634e6e6ad95": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a807b79b0636ee843",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
