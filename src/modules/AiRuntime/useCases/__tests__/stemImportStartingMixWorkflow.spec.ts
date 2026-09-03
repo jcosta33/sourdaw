@@ -984,7 +984,10 @@ describe('stem import and starting mix workflow', () => {
 
         const confirmResult = await confirmPendingChatActions({ confirmationId: confirmation!.id });
 
-        expect(confirmResult).toMatchObject({ status: 'invalidated' });
+        expect(confirmResult).toMatchObject({
+            status: 'invalidated',
+            divergence: { kind: 'ambiguous-same-object' },
+        });
         expect(trackStore.value?.tracks.map((track) => track.id)).toContain('track-collaborator');
         expect(undoStore.value?.past).toHaveLength(0);
         expectPreparedStemResourcesReleased(1);
