@@ -1,0 +1,81 @@
+src/modules/CrdtDocument/useCases/__tests__/replaceCrdtDocInLineage.spec.ts
+  s_ac03a4ebaa3f6e::t_3465f0cf370902 1-63
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_ac03a4ebaa3f6e::t_910294c414bf1f 32
+  s_ac03a4ebaa3f6e::t_5f8ec56b2f5c0f 963-989
+src/modules/Collaboration/useCases/collaboration/__tests__/sessionManagement.spec.ts
+  s_ac03a4ebaa3f6e::t_b50565d73ca30a 275
+  s_ac03a4ebaa3f6e::t_c432f2d69e9a60 124
+src/modules/Collaboration/useCases/automergeSync.ts
+  s_ac03a4ebaa3f6e::t_ed1fc14502a676 636
+  s_ac03a4ebaa3f6e::t_5824291235cb16 23
+  s_ac03a4ebaa3f6e::t_d501bd9cadee52 830
+src/modules/CrdtDocument/useCases/captureProjectIdentity.ts
+  s_ac03a4ebaa3f6e::t_5f04ed243ebb97 6-11
+src/modules/CrdtDocument/repositories/automergeRepository.ts
+  s_ac03a4ebaa3f6e::t_4a4dc10a7db2af 418-435
+  s_9b530f08172a54::t_084c078def7a9e 417
+src/modules/CrdtDocument/useCases/index.ts
+  s_ac03a4ebaa3f6e::t_998ea27fdccc3b 44
+src/modules/CrdtDocument/useCases/replaceCrdtDoc.ts
+  s_ac03a4ebaa3f6e::t_30afda758bcc9b 13-16
+src/modules/CrdtDocument/useCases/replaceCrdtDocInLineage.ts
+  s_ac03a4ebaa3f6e::t_415dbfb0e75e55 22
+  s_ac03a4ebaa3f6e::t_2c76753714e3e5 1-21,23
+src/modules/AiRuntime/useCases/__tests__/executePlannedActions.spec.ts
+  s_ac03a4ebaa3f6e::t_52936b4b62c2ab 48
+src/modules/AiRuntime/useCases/__tests__/planPromptActions.spec.ts
+  s_ac03a4ebaa3f6e::t_b7af3f9a692f81 35
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  s_ac03a4ebaa3f6e::t_8b55d0531fcfd1 42
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeImmediatePromptCommand.spec.ts
+  s_ac03a4ebaa3f6e::t_d971daf6615a4a 46
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/orchestratePromptChatRequest.spec.ts
+  s_ac03a4ebaa3f6e::t_715a7bfff8a467 60
+src/modules/Collaboration/useCases/__tests__/automergeSync.spec.ts
+  s_ac03a4ebaa3f6e::t_da213ef9e85e25 24,64,90,162,197,206,218,250,287,347,373,445,483,596,635,696,728,770,848,879,919,924,947,961,977,1124,1382,1701,1722,1786,1796,1807,1809,1861,1870,1882,1891
+src/modules/Collaboration/useCases/__tests__/automergeSyncMessageSize.spec.ts
+  s_ac03a4ebaa3f6e::t_7d2b3f57cf705d 9,25,193
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_ac03a4ebaa3f6e::t_52020ab3ec5c79 87
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  s_ac03a4ebaa3f6e::t_b76226a15b68ad 114
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  s_ac03a4ebaa3f6e::t_351b188eeb4f71 132
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectDirtyTracking.integration.spec.ts
+  s_ac03a4ebaa3f6e::t_30109484653cae 105
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectPreservesSessionUndo.spec.ts
+  s_ac03a4ebaa3f6e::t_60fa5ce9d98f22 123
+src/modules/Project/useCases/projectPersistence/__tests__/missingMediaOnLoad.spec.ts
+  s_ac03a4ebaa3f6e::t_74aee58aba344f 119
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  s_ac03a4ebaa3f6e::t_4ef840107e070f 146
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_ac03a4ebaa3f6e::t_e2c53cfc680d61 186
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_ac03a4ebaa3f6e::t_d8a3fd43ee7590 139
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "3a47f9c3ddf458a3893b248ecd2d6f2c54fd7652",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
