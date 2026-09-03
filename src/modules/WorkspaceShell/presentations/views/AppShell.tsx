@@ -699,8 +699,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                         {levainDeviceId !== null ? (
                             <InstrumentBottomPanel
                                 label="Levain"
-                                labelColor="text-amber-400"
-                                borderColor="border-amber-500/20"
+                                labelColor="text-[var(--color-accent-amber)]"
+                                borderColor="border-[var(--color-accent-amber)]/20"
                                 height={levainHeight}
                                 onResize={setLevainHeight}
                                 onClose={closeActivePanel}
@@ -744,8 +744,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                         {bacteriaDeviceId !== null ? (
                             <InstrumentBottomPanel
                                 label="Bacteria"
-                                labelColor="text-rose-400"
-                                borderColor="border-rose-500/20"
+                                labelColor="text-[var(--color-accent-rose)]"
+                                borderColor="border-[var(--color-accent-rose)]/20"
                                 height={bacteriaHeight}
                                 onResize={setBacteriaHeight}
                                 onClose={closeActivePanel}
@@ -759,8 +759,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                         {grinderDeviceId !== null ? (
                             <InstrumentBottomPanel
                                 label="Grinder"
-                                labelColor="text-amber-500"
-                                borderColor="border-amber-600/20"
+                                labelColor="text-[var(--color-accent-copper)]"
+                                borderColor="border-[var(--color-accent-copper)]/20"
                                 height={grinderHeight}
                                 onResize={setGrinderHeight}
                                 onClose={closeActivePanel}
@@ -849,8 +849,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                         {grandBouleDeviceId !== null ? (
                             <InstrumentBottomPanel
                                 label="Grand Boule"
-                                labelColor="text-amber-400"
-                                borderColor="border-amber-500/20"
+                                labelColor="text-[var(--color-accent-amber)]"
+                                borderColor="border-[var(--color-accent-amber)]/20"
                                 height={grandBouleHeight}
                                 onResize={setGrandBouleHeight}
                                 onClose={closeActivePanel}
