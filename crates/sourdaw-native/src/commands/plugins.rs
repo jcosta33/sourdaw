@@ -598,6 +598,13 @@ pub async fn get_default_plugin_paths() -> Result<Vec<String>, String> {
 /// machine-wide, then network — not to the order a caller happened to list them.
 /// The sort is stable, so roots the platform does not list keep the caller's
 /// order among themselves and come last.
+///
+/// A platform default root that is not a directory is skipped in silence,
+/// because every scan requests all of them and a machine that has never
+/// installed a format has none of that format's folders. Reporting those would
+/// make the ordinary state of a machine look like a failed scan. A root under
+/// one — a folder the user added — is still refused by name: the user typed it,
+/// so its absence is theirs to see and fix.
 fn authorize_scan_roots(
     policy: &PluginScanPolicy,
     requested: Vec<PathBuf>,
@@ -614,7 +621,9 @@ fn authorize_scan_roots(
             }
         };
         if !canonical.is_dir() {
-            errors.push(format!("Not a directory: {}", path.display()));
+            if !policy.is_platform_default_root(&canonical) {
+                errors.push(format!("Not a directory: {}", path.display()));
+            }
             continue;
         }
         authorized.push(canonical);
@@ -4005,6 +4014,41 @@ mod tests {
             errors
                 .iter()
                 .any(|error| error.contains("Unauthorized plugin scan path")),
+            "{errors:?}"
+        );
+    }
+
+    /// Every scan requests all of the platform's default roots, and an ordinary
+    /// machine has never created most of them. Reported as errors they made a
+    /// scan that enumerated everything look like a failed one (#3497). The root
+    /// that is there is still scanned, which is the unchanged half.
+    #[test]
+    fn an_absent_default_root_is_skipped_without_an_error() {
+        let present = created_temp_scan_root("absent-default-present");
+        let absent = unique_temp_scan_root("absent-default-missing");
+        let policy = PluginScanPolicy::with_allowed_roots(vec![present.clone(), absent.clone()]);
+
+        let (ordered, errors) = authorize_scan_roots(&policy, vec![absent, present.clone()]);
+
+        let _ = std::fs::remove_dir_all(&present);
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(ordered, vec![present]);
+    }
+
+    /// A folder the user added under a default root is theirs, so its absence
+    /// is a mistake they can see and fix — the settings panel shows it red.
+    #[test]
+    fn an_absent_user_added_root_is_still_an_error() {
+        let root = created_temp_scan_root("absent-user-added");
+        let missing_child = root.join("Vendor");
+        let policy = PluginScanPolicy::with_allowed_roots(vec![root.clone()]);
+
+        let (ordered, errors) = authorize_scan_roots(&policy, vec![missing_child]);
+
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(ordered.is_empty(), "{ordered:?}");
+        assert!(
+            errors.iter().any(|error| error.contains("Not a directory")),
             "{errors:?}"
         );
     }
