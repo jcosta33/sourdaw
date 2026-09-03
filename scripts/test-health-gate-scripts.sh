@@ -574,12 +574,20 @@ expect(
     'static device write boundary census must not continue on error'
 );
 expect(
+    stepNamed(staticJob, 'Device write boundary census')?.if === undefined,
+    'static device write boundary census must stay unconditional'
+);
+expect(
     stepNamed(nightly.jobs?.static, 'Device write boundary census')?.run === deviceWriteBoundaryCensusRun,
     'nightly static must run the device write boundary census outside unit shards'
 );
 expect(
     stepNamed(nightly.jobs?.static, 'Device write boundary census')?.['continue-on-error'] === undefined,
     'nightly static device write boundary census must not continue on error'
+);
+expect(
+    stepNamed(nightly.jobs?.static, 'Device write boundary census')?.if === undefined,
+    'nightly static device write boundary census must stay unconditional'
 );
 expect(
     smoke?.if === "github.event.pull_request != null && needs.decide.outputs.e2e == 'true'",
@@ -912,6 +920,25 @@ expect(!gateNeeds.includes('browser-ai-webgpu'), 'Gate must not depend on browse
 expect(
     gate?.if === '${{ !cancelled() }}',
     'Gate must cancel with superseded runs and must report on every pull_request'
+);
+// Job-level continue-on-error concludes the required check success over red
+// needs, and a conditional guard step can skip the only refusal the summary
+// has — either softening still reports a green Gate.
+expect(
+    gate?.['continue-on-error'] === undefined,
+    'the Gate job must not continue on error, which would conclude success over failed needs'
+);
+expect(
+    stepNamed(gate, 'Require every job to have succeeded or been skipped')?.if === undefined,
+    'the Gate guard step must stay unconditional, since a skipped guard lets the job succeed unconditionally'
+);
+expect(
+    heavyGate?.['continue-on-error'] === undefined,
+    'the HeavyGate job must not continue on error, which would conclude success over failed needs'
+);
+expect(
+    stepNamed(heavyGate, 'Require every job to have succeeded or been skipped')?.if === undefined,
+    'the HeavyGate guard step must stay unconditional, since a skipped guard lets the job succeed unconditionally'
 );
 expect(
     Array.isArray(gateNeeds) &&

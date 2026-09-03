@@ -138,7 +138,12 @@ function parserGatingCheckNames(workflowSource: string, calledSources: Record<st
     return [...new Set(names)];
 }
 
-/** The matrix reading, derived here from the parsed strategy rather than from the gate's code. */
+/**
+ * The matrix reading, re-derived here from the parsed strategy rather than
+ * from the gate's code. It keeps the gate's literal-substitution semantics —
+ * the replacement is a function, so a `$` pattern in a matrix value cannot
+ * collapse — while sharing none of the gate's implementation.
+ */
 function parserMatrixNames(template: string, strategy: unknown): string[] {
     if (!template.includes('${{')) {
         return [template];
@@ -156,7 +161,7 @@ function parserMatrixNames(template: string, strategy: unknown): string[] {
             continue;
         }
         const reference = new RegExp(`\\$\\{\\{\\s*matrix\\.${dimension}\\s*\\}\\}`, 'g');
-        resolved = resolved.flatMap((name) => values.map((value) => name.replace(reference, String(value))));
+        resolved = resolved.flatMap((name) => values.map((value) => name.replace(reference, () => String(value))));
     }
     return resolved;
 }

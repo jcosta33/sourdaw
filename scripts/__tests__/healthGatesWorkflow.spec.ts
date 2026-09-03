@@ -908,7 +908,10 @@ function assertJobGraph(set: WorkflowSet): void {
 
 // Both trains run the census once, in their static contract job, and a
 // `continue-on-error` on either step would report a failing census as a green
-// step while the device-write-boundary proof stops deciding the merge.
+// step while the device-write-boundary proof stops deciding the merge. An
+// `if` on either step retires the same proof more quietly: this spec is
+// excluded from the sharded unit runs, so the static step is its only
+// execution point, and a conditional census may never execute at all.
 function assertDeviceWriteBoundaryCensus(set: WorkflowSet): void {
     const censusJobs: ReadonlyArray<readonly [string, UnknownRecord]> = [
         ['validation.yml static', jobAt(set.validation, 'static')],
@@ -921,6 +924,9 @@ function assertDeviceWriteBoundaryCensus(set: WorkflowSet): void {
         }
         if (step['continue-on-error'] !== undefined) {
             throw new Error(`${label} device write boundary census must not continue on error`);
+        }
+        if (step.if !== undefined) {
+            throw new Error(`${label} device write boundary census must stay unconditional`);
         }
     }
 }
@@ -1272,7 +1278,17 @@ function assertGateContract(candidate: UnknownRecord, jobId: string, expectedNam
     if (gate.name !== expectedName || gate.if !== expectedIf) {
         throw new Error(`the ${expectedName} job must always report under its stable name`);
     }
+    // Job-level `continue-on-error` concludes the required check success over
+    // red needs: GitHub reports the job successful whatever the guard ran.
+    if (gate['continue-on-error'] !== undefined) {
+        throw new Error(`the ${expectedName} job must not continue on error`);
+    }
     const step = stepNamed(gate, 'Require every job to have succeeded or been skipped');
+    // A conditional guard step can skip, and a skipped step fails nothing:
+    // the summary job then succeeds unconditionally.
+    if (step.if !== undefined) {
+        throw new Error(`the ${jobId} guard step must stay unconditional`);
+    }
     if (recordAt(step, 'env').RESULTS !== '${{ toJSON(needs) }}') {
         throw new Error(`${jobId} must receive all dependency results through its environment`);
     }
@@ -1697,6 +1713,14 @@ describe('health gates workflow contract', () => {
             'validation.yml static device write boundary census must not continue on error'
         );
 
+        // Mutation-kill: a census behind a condition can be retired by
+        // flipping that condition, while every other pin here stays green.
+        const conditionalCensus = cloneWorkflows('conditional device census');
+        stepNamed(jobAt(conditionalCensus.validation, 'static'), DEVICE_WRITE_BOUNDARY_CENSUS_STEP).if = false;
+        expect(() => assertJobGraph(conditionalCensus)).toThrow(
+            'validation.yml static device write boundary census must stay unconditional'
+        );
+
         const widenedSummary = cloneWorkflows('widened summary');
         arrayAt(jobAt(widenedSummary.health, 'gate'), 'needs').push('nightly-report');
         expect(() => assertJobGraph(widenedSummary)).toThrow('gate must depend on exactly the pinned member list');
@@ -2007,6 +2031,24 @@ describe('health gates workflow contract', () => {
             'the Gate job must always report under its stable name'
         );
 
+        // A job-level continue-on-error concludes the required check success
+        // over red needs: GitHub reports the job successful whatever the
+        // guard observed.
+        const softenedGate = asRecord(structuredClone(workflow), 'softened gate workflow');
+        jobAt(softenedGate, 'gate')['continue-on-error'] = true;
+        expect(() => assertGateContract(softenedGate, 'gate', 'Gate', GATE_CONDITION)).toThrow(
+            'the Gate job must not continue on error'
+        );
+
+        // A conditional guard step can skip, and a skipped step fails
+        // nothing: the job then succeeds unconditionally.
+        const conditionalGateGuard = asRecord(structuredClone(workflow), 'conditional-guard gate workflow');
+        stepNamed(jobAt(conditionalGateGuard, 'gate'), 'Require every job to have succeeded or been skipped').if =
+            'false';
+        expect(() => assertGateContract(conditionalGateGuard, 'gate', 'Gate', GATE_CONDITION)).toThrow(
+            'the gate guard step must stay unconditional'
+        );
+
         const heavyGateScript = assertGateContract(heavyWorkflow, 'heavy-gate', 'HeavyGate', HEAVY_GATE_CONDITION);
         expect(runResultsGuard(heavyGateScript, needsResults(heavyWorkflow, 'heavy-gate', 'success'))).toBe(0);
         expect(runResultsGuard(heavyGateScript, needsResults(heavyWorkflow, 'heavy-gate', 'skipped'))).toBe(0);
@@ -2027,6 +2069,27 @@ describe('health gates workflow contract', () => {
         expect(() => assertGateContract(weakenedHeavyFilter, 'heavy-gate', 'HeavyGate', HEAVY_GATE_CONDITION)).toThrow(
             'heavy-gate must reject every result other than success or skipped'
         );
+
+        // The same two softenings on the heavy summary: HeavyGate is not
+        // ruleset-required, but it is the only verdict an approving review
+        // run mints for the heavy lane.
+        const softenedHeavyGate = asRecord(structuredClone(heavyWorkflow), 'softened heavy gate heavyWorkflow');
+        jobAt(softenedHeavyGate, 'heavy-gate')['continue-on-error'] = true;
+        expect(() => assertGateContract(softenedHeavyGate, 'heavy-gate', 'HeavyGate', HEAVY_GATE_CONDITION)).toThrow(
+            'the HeavyGate job must not continue on error'
+        );
+
+        const conditionalHeavyGateGuard = asRecord(
+            structuredClone(heavyWorkflow),
+            'conditional-guard heavy gate heavyWorkflow'
+        );
+        stepNamed(
+            jobAt(conditionalHeavyGateGuard, 'heavy-gate'),
+            'Require every job to have succeeded or been skipped'
+        ).if = 'false';
+        expect(() =>
+            assertGateContract(conditionalHeavyGateGuard, 'heavy-gate', 'HeavyGate', HEAVY_GATE_CONDITION)
+        ).toThrow('the heavy-gate guard step must stay unconditional');
     });
 
     it('runs a trusted, credentialless scanner over the untrusted target history', () => {
