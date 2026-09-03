@@ -237,8 +237,6 @@ impl VibratoDetector {
 // ---------------------------------------------------------------------------
 
 pub struct ScoringEngine {
-    sample_rate: f32,
-
     // Preprocessing
     dc_blocker: DcBlocker,
     bandpass: Bandpass,
@@ -281,7 +279,6 @@ impl ScoringEngine {
         let window = yin::max_analysis_window(sample_rate, ANALYSIS_FMIN);
 
         Self {
-            sample_rate,
             dc_blocker: DcBlocker::new(sample_rate),
             bandpass: Bandpass::new(500.0, 0.5, sample_rate), // wide bandpass
             rms: RmsTracker::new(sample_rate, 0.03),

@@ -34,12 +34,10 @@ const C42_NOM: f32 = 15e-9; // F
 // Decay range
 const DECAY_MIN_S: f32 = 0.05;
 const DECAY_MAX_S: f32 = 0.8;
-const DECAY_CENTER_S: f32 = 0.3;
 
 /// TR-808 kick drum engine.
 pub struct Kick808Engine {
     // Component values (may be jittered by tolerance seed)
-    r166: f32,
     r167: f32,
     c41: f32,
     c42: f32,
@@ -107,7 +105,6 @@ impl Kick808Engine {
         let r_eff_rest = r165 + r166;
 
         let mut engine = Self {
-            r166,
             r167,
             c41,
             c42,
