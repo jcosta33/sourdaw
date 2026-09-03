@@ -67,10 +67,7 @@ pub struct LinearPhaseEq {
     // Overlap-add state
     input_buffer_l: Vec<f32>,
     input_buffer_r: Vec<f32>,
-    overlap_l: Vec<f32>,
-    overlap_r: Vec<f32>,
     write_pos: usize,
-    block_size: usize,
     sample_rate: f64,
     bypassed: bool,
     /// True until a FIR has actually been designed. While set, `process` is a
@@ -91,10 +88,7 @@ impl LinearPhaseEq {
             fir_r: vec![0.0; FIR_SIZE],
             input_buffer_l: vec![0.0; FIR_SIZE],
             input_buffer_r: vec![0.0; FIR_SIZE],
-            overlap_l: vec![0.0; HALF_FIR],
-            overlap_r: vec![0.0; HALF_FIR],
             write_pos: 0,
-            block_size: HALF_FIR,
             sample_rate: sr,
             bypassed: false,
             needs_rebuild: true,
