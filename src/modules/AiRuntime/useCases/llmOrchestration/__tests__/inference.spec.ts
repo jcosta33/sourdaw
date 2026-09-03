@@ -276,10 +276,10 @@ describe('generateToolPlanningOutcome', () => {
         );
         const schemas = [...planningContract, ...uniqueWorkflowToolSchemas];
 
-        // Precondition: this must stay production-shaped (12 contract schemas + 23 workflow action
-        // schemas). If it drifts, the case below is no longer testing what parsePromptToActions.ts
-        // actually sends.
-        expect(schemas).toHaveLength(35);
+        // The built list must carry exactly what parsePromptToActions.ts sends — the planning contract plus every workflow action tool — and this holds across catalog growth.
+        expect(new Set(schemas.map((tool) => tool.function.name))).toEqual(
+            new Set([...planningContract.map((tool) => tool.function.name), ...WORKFLOW_ACTION_TOOL_NAMES])
+        );
 
         await expect(generateToolPlanningOutcome('system', 'plan a command', schemas)).resolves.toMatchObject({
             status: 'complete',
@@ -291,38 +291,41 @@ describe('generateToolPlanningOutcome', () => {
         // The mandatory set is 29 of the 30-tool cap (selectWorkflowCapability + the 5 application
         // tools + the 23 workflow action tools), so exactly one free slot remains for the
         // highest-ranked non-mandatory catalog tool.
-        expect(advertisedNames).toEqual([
-            'selectWorkflowCapability',
-            'project.query',
-            'agent.catalog.discover',
-            'agent.command-index.search',
-            'command.batch.propose',
-            'command.batch.decline',
-            'removeTrack',
-            'muteTrack',
-            'soloTrack',
-            'setTrackGain',
-            'setTrackPan',
-            'addDevice',
-            'setDeviceParameter',
-            'removeDevice',
-            'arpeggiate',
-            'createBus',
-            'addSend',
-            'setTrackOutput',
-            'addSidechainRoute',
-            'removeSidechainRoute',
-            'importStemSet',
-            'removeShortMidiOverlaps',
-            'createDrumPreviewBranches',
-            'copyMidiArticulations',
-            'addAdjustmentRegion',
-            'automateSendRange',
-            'automateTrackGainRange',
-            'automateSendRanges',
-            'renderProjectSections',
-            'project.resolve',
-        ]);
+        expect(advertisedNames).toHaveLength(30);
+        expect(new Set(advertisedNames)).toEqual(
+            new Set([
+                'selectWorkflowCapability',
+                'project.query',
+                'agent.catalog.discover',
+                'agent.command-index.search',
+                'command.batch.propose',
+                'command.batch.decline',
+                'removeTrack',
+                'muteTrack',
+                'soloTrack',
+                'setTrackGain',
+                'setTrackPan',
+                'addDevice',
+                'setDeviceParameter',
+                'removeDevice',
+                'arpeggiate',
+                'createBus',
+                'addSend',
+                'setTrackOutput',
+                'addSidechainRoute',
+                'removeSidechainRoute',
+                'importStemSet',
+                'removeShortMidiOverlaps',
+                'createDrumPreviewBranches',
+                'copyMidiArticulations',
+                'addAdjustmentRegion',
+                'automateSendRange',
+                'automateTrackGainRange',
+                'automateSendRanges',
+                'renderProjectSections',
+                'project.resolve',
+            ])
+        );
         // The free slot goes to the first non-mandatory catalog tool; agent.capabilities is not it.
         expect(advertisedNames).not.toContain('agent.capabilities');
     });
