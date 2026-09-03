@@ -1,0 +1,102 @@
+release/open-source-inventory.json
+  s_9b530f08172a54::t_88cb36e7231026 165
+  s_7dab9af76ff572::t_88f58571ded4e0 1690
+.github/workflows/nightly.yml
+  s_9b530f08172a54::t_fa4ba8e7b4b64e 677,796-801
+AGENTS.md
+  s_9b530f08172a54::t_bd9f33028c2fcc 337-339,350
+crates/sourdaw-native/src/commands/pitch_edit.rs
+  s_9b530f08172a54::t_fe66299e98fef9 243
+crates/sourdaw-native/src/commands/plugins.rs
+  s_9b530f08172a54::t_ec3e9a3fb296b7 601-607,624-626,4021-4055
+crates/sourdaw-native/src/host/plugin_scan_policy.rs
+  s_9b530f08172a54::t_845ffe95a8f0da 43,48-59,128-134,365-379
+package.json
+  s_9b530f08172a54::t_9062fb3e7cdd8e 52
+release/dependency-license-proofs.json
+  s_9b530f08172a54::t_d45b848d3c1ff6 64
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_9b530f08172a54::t_b89b5df44d4c59 66-69,171,800,1197,1232,1332,1354,1365,1423,1488,1544,1627,1640,1720,1790,1899,1944,1975,2041,2074,2103,2138,2167,2192,2219,2237,2442,2467,2487,2503,2638,2663,2684,2710,2741,2776,2837-2838
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_9b530f08172a54::t_623b7c50b28dd9 15,145-146,874-886,1615-1616,1618-1619,1622,1624,1627-1661
+scripts/__tests__/pruneRemoteBranches.spec.ts
+  s_9b530f08172a54::t_e0b5effb65a9f3 1-486
+scripts/__tests__/writeVercelPrebuiltOutput.spec.ts
+  s_9b530f08172a54::t_73fac6c2a7bdf6 1-204
+scripts/deployWebWorkflowContract.ts
+  s_9b530f08172a54::t_d361847feae194 1,3-19,21-23,25-32,34-42,44-45,47-58,60-61,63-65,67-68,70-71,73,75-77,80-89,91
+scripts/pruneRemoteBranches.ts
+  s_9b530f08172a54::t_57dfd72c574667 1-52,54-62,64-72,75-76,79-99,102-107,110-119,122,125-130,133-137,139,142-149,151-154,157-174,179-186,191-204,207-210,212-234,236-238,240-282,284-285,287-315,317,319-321,323-326,328-329,331-351,353-367,369,371-382,384-392,394-397,399-400,402-404,406-408,410-417,419-421,423-424,426-433,435-437,439-440,442-443,445-455,457,459-471,473-495,497-499,502-510
+scripts/test-health-gate-scripts.sh
+  s_9b530f08172a54::t_6af5011e304cc0 181,186-188,785,791-801,885
+scripts/writeVercelPrebuiltOutput.ts
+  s_9b530f08172a54::t_31eb5b65fe143e 1-27,29,31-33,36-71,73,75,79-156
+src/components/daw/DawPluginMetricTile.tsx
+  s_9b530f08172a54::t_9e44998cb703d5 10,20,27-38,41-49,51-59
+src/components/daw/__tests__/DawPluginMetricTile.spec.tsx
+  s_9b530f08172a54::t_ce0abd7943eb35 13-21
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_9b530f08172a54::t_e9f397bb71b625 608-613
+src/modules/Fermenter/presentations/components/PresetBrowser.tsx
+  s_9b530f08172a54::t_cb1d766007fec8 108-114,129-130,172
+src/modules/Fermenter/presentations/components/__tests__/PresetBrowser.spec.tsx
+  s_9b530f08172a54::t_9ba43cda066247 110-120
+src/modules/Fermenter/presentations/views/FermenterPanel.tsx
+  s_9b530f08172a54::t_c23debe5f21b5b 8-9,129-131,133-134,136,534,627-638,640-674,678,714,729-730
+src/modules/Fermenter/presentations/views/__tests__/FermenterPanel.spec.tsx
+  s_9b530f08172a54::t_df52f5d8fae075 567-589
+src/modules/Grinder/repositories/neuralLibraryPersistence/__tests__/neuralLibraryPersistence.spec.ts
+  s_9b530f08172a54::t_1d4e22a16a9040 143-145,151-152,156,158
+src/modules/Grinder/repositories/neuralLibraryPersistence/downloadGrinderNeuralModelFile.ts
+  s_9b530f08172a54::t_e52ffad696bb57 1-2,9
+src/modules/MIDI/repositories/downloadFile.ts
+  s_9b530f08172a54::t_0c2b4f18689b81 1
+src/modules/PluginHost/useCases/pluginScan/scanning/__tests__/startPluginScan.spec.ts
+  s_9b530f08172a54::t_1205652a7e419c 212-221,223,229,243-244,247-248,394-416
+src/modules/PluginHost/useCases/pluginScan/scanning/startPluginScan.ts
+  s_9b530f08172a54::t_4d1e781c0431c6 109-120
+src/modules/Project/repositories/nativeFileDialog/__tests__/nativeFileDialog.spec.ts
+  s_9b530f08172a54::t_0d7f3ab351a1c6 3
+src/modules/Project/repositories/project/downloadProjectFile.ts
+  s_9b530f08172a54::t_7905622bc55c69 3,94
+src/modules/Toaster/presentations/components/StepSequencer.tsx
+  s_9b530f08172a54::t_4382745439d04a 1,3-4,7,16,21-36,44,47-52,55-57,63-66,93,133-134,146-156,161-175,195-203,229-270
+src/modules/Toaster/presentations/components/__tests__/StepSequencer.spec.tsx
+  s_9b530f08172a54::t_9e14b2de0e87d4 186-204,229-340
+src/modules/Toaster/presentations/views/ToasterPanel.tsx
+  s_9b530f08172a54::t_007967ca74c8fb 43,664-666
+src/modules/Toaster/presentations/views/__tests__/ToasterPanel.spec.tsx
+  s_9b530f08172a54::t_6f683da18ff2e2 13,33-35,256-268
+src/modules/WorkspaceShell/presentations/components/InstrumentBottomPanel.tsx
+  s_9b530f08172a54::t_2aaba3d69dbb9e 36-40,46-51
+src/modules/WorkspaceShell/presentations/components/__tests__/InstrumentBottomPanel.spec.tsx
+  s_9b530f08172a54::t_f10764c192f924 95-113
+src/utils/__tests__/downloadFile.spec.ts
+  s_9b530f08172a54::t_db0ddb8a5ff566 1-21,23-26,28-30,32-37,40-44,47-50,53-55,57-61,64-66,68,70-74,76-77,79-80,83-85,87-93,96-98,100-105,108-110,112-118,121-125,128-132
+src/utils/downloadFile.ts
+  s_9b530f08172a54::t_c50a6465602aba 2,4-13,15-34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "42bc29e3f514e6a985eb4c0caa62572ed47da651",
+  "prompts": {},
+  "sessions": {
+    "s_7dab9af76ff572": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a306c9e6a5a59f806",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
