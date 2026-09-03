@@ -12,7 +12,6 @@ import {
     requireBrowserWebGpuHardware,
 } from '../../tests/e2e/browserAiHardware';
 import browserAiWebGpuAdmissionConfig from '../../tests/e2e/browserAiWebGpuAdmission.playwright.config';
-
 import { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } from '../deployWebWorkflowContract';
 
 type UnknownRecord = Record<string, unknown>;
