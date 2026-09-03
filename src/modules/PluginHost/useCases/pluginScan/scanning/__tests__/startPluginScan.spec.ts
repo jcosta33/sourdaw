@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { type ScannedPlugin } from '../../../../models/ScannedPlugin';
 import { type PluginScanAttempt } from '../../../../repositories/pluginBridge/scanPlugins';
+import { type ScanResult } from '../../../../repositories/pluginBridge/types';
 import { type PluginScanState } from '../../../../stores/pluginScanStore';
 import { startPluginScan } from '../startPluginScan';
 
@@ -32,6 +33,24 @@ function create_plugin_scan_state(overrides: Partial<PluginScanState> = {}): Plu
         notices: [],
         lastScanTime: null,
         quarantined: [],
+        ...overrides,
+    };
+}
+
+/**
+ * A scan result that completed. `complete: true` is the ordinary case — the
+ * walk reached every candidate — and a test about an interrupted walk says so
+ * by overriding it alongside the `scanned_paths` it did reach.
+ */
+function create_scan_result(overrides: Partial<ScanResult> = {}): ScanResult {
+    return {
+        plugins: [],
+        errors: [],
+        notices: [],
+        scan_duration_ms: 0,
+        quarantined: [],
+        complete: true,
+        scanned_paths: [],
         ...overrides,
     };
 }
@@ -112,7 +131,7 @@ describe('startPluginScan', () => {
         const mockPlugins = [create_scanned_plugin({ id: 'p1', name: 'Synth' })];
         mocks.scanPlugins.mockResolvedValue({
             ran: true,
-            result: { plugins: mockPlugins, errors: [], notices: [], scan_duration_ms: 0, quarantined: [] },
+            result: create_scan_result({ plugins: mockPlugins }),
         });
 
         await startPluginScan();
@@ -139,13 +158,10 @@ describe('startPluginScan', () => {
         const refusal = 'VST2 plugins are not loaded and never will be.';
         mocks.scanPlugins.mockResolvedValue({
             ran: true,
-            result: {
+            result: create_scan_result({
                 plugins: [create_scanned_plugin({ id: 'p1', format: 'clap' })],
-                errors: [],
                 notices: [refusal],
-                scan_duration_ms: 0,
-                quarantined: [],
-            },
+            }),
         });
 
         await startPluginScan();
@@ -165,13 +181,10 @@ describe('startPluginScan', () => {
         // which is which.
         mocks.scanPlugins.mockResolvedValue({
             ran: true,
-            result: {
-                plugins: [],
+            result: create_scan_result({
                 errors: ['Cannot read /default/path: permission denied'],
                 notices: ['Audio Unit plugins are not loaded.'],
-                scan_duration_ms: 0,
-                quarantined: [],
-            },
+            }),
         });
 
         await startPluginScan();
@@ -225,13 +238,10 @@ describe('startPluginScan', () => {
         });
         mocks.scanPlugins.mockResolvedValue({
             ran: true,
-            result: {
+            result: create_scan_result({
                 plugins: scanned_plugins,
                 errors: ['Cannot read /default/path: permission denied'],
-                notices: [],
-                scan_duration_ms: 0,
-                quarantined: [],
-            },
+            }),
         });
 
         await startPluginScan();
@@ -248,6 +258,66 @@ describe('startPluginScan', () => {
         expect(published?.lastScanTime).toBeGreaterThan(1_000);
     });
 
+    it('keeps rows under roots an incomplete scan never reached', async () => {
+        // An interrupted walk enumerated only the candidates it reached, and
+        // the native registry keeps every row under a root it never got to.
+        // Writing its plugins wholesale would drop those rows here while the
+        // registry still holds them, so the browser would stop offering a
+        // plugin the host can still load.
+        const reached = create_scanned_plugin({ id: 'a', name: 'A', path: '/r1/a' });
+        const never_reached = create_scanned_plugin({ id: 'b', name: 'B', path: '/r2/b' });
+        const rescanned = create_scanned_plugin({ id: 'a', name: 'A renamed', path: '/r1/a' });
+        mocks.pluginScanStoreValue.value = create_plugin_scan_state({
+            scannedPlugins: [reached, never_reached],
+            lastScanTime: 1_000,
+        });
+        mocks.scanPlugins.mockResolvedValue({
+            ran: true,
+            result: create_scan_result({
+                plugins: [rescanned],
+                errors: ['Plugin scan time limit exceeded'],
+                complete: false,
+                scanned_paths: ['/r1/a'],
+            }),
+        });
+
+        await startPluginScan();
+
+        expect(mocks.pluginScanStoreSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                isScanning: false,
+                errors: ['Plugin scan time limit exceeded'],
+                scannedPlugins: [never_reached, rescanned],
+            })
+        );
+    });
+
+    it('replaces the whole list when the scan completed', async () => {
+        // The other half: a complete walk enumerated everything installed, so
+        // a row it did not report is a plugin that is gone. Keeping rows on a
+        // complete result would let an uninstalled plugin survive forever.
+        const stale = create_scanned_plugin({ id: 'a', name: 'A', path: '/r1/a' });
+        const uninstalled = create_scanned_plugin({ id: 'b', name: 'B', path: '/r2/b' });
+        const rescanned = create_scanned_plugin({ id: 'a', name: 'A renamed', path: '/r1/a' });
+        mocks.pluginScanStoreValue.value = create_plugin_scan_state({
+            scannedPlugins: [stale, uninstalled],
+            lastScanTime: 1_000,
+        });
+        mocks.scanPlugins.mockResolvedValue({
+            ran: true,
+            result: create_scan_result({ plugins: [rescanned], scanned_paths: ['/r1/a'] }),
+        });
+
+        await startPluginScan();
+
+        expect(mocks.pluginScanStoreSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                isScanning: false,
+                scannedPlugins: [rescanned],
+            })
+        );
+    });
+
     it('replaces the list with a clean scan that genuinely found nothing', async () => {
         // Pins the distinction the keep-on-failure rules run on: an empty
         // result from a scan that ran cleanly is a valid enumeration — the
@@ -260,7 +330,7 @@ describe('startPluginScan', () => {
         });
         mocks.scanPlugins.mockResolvedValue({
             ran: true,
-            result: { plugins: [], errors: [], notices: [], scan_duration_ms: 0, quarantined: [] },
+            result: create_scan_result(),
         });
 
         await startPluginScan();
@@ -280,7 +350,7 @@ describe('startPluginScan', () => {
         mocks.getDefaultPluginPaths.mockResolvedValue(['/default/path']);
         mocks.scanPlugins.mockResolvedValue({
             ran: true,
-            result: { plugins: [], errors: [], notices: [], scan_duration_ms: 0, quarantined: [] },
+            result: create_scan_result(),
         });
 
         await startPluginScan();
@@ -300,7 +370,7 @@ describe('startPluginScan', () => {
         mocks.isScanPathAuthorized.mockImplementation((path: string) => Promise.resolve(path === '/granted/path'));
         mocks.scanPlugins.mockResolvedValue({
             ran: true,
-            result: { plugins: [], errors: [], notices: [], scan_duration_ms: 0, quarantined: [] },
+            result: create_scan_result(),
         });
 
         await startPluginScan();
@@ -353,7 +423,7 @@ describe('startPluginScan', () => {
         };
         scan_deferred.resolve({
             ran: true,
-            result: { plugins: [], errors: [], notices: [], scan_duration_ms: 0, quarantined: [] },
+            result: create_scan_result(),
         });
         await scan_promise;
 
@@ -429,7 +499,7 @@ describe('startPluginScan', () => {
     it('calls the repository with a single argument on the default scan, matching every call site before this flag existed', async () => {
         mocks.scanPlugins.mockResolvedValue({
             ran: true,
-            result: { plugins: [], errors: [], notices: [], scan_duration_ms: 0, quarantined: [] },
+            result: create_scan_result(),
         });
 
         await startPluginScan();
@@ -440,7 +510,7 @@ describe('startPluginScan', () => {
     it('forwards an explicit retry flag to the repository', async () => {
         mocks.scanPlugins.mockResolvedValue({
             ran: true,
-            result: { plugins: [], errors: [], notices: [], scan_duration_ms: 0, quarantined: [] },
+            result: create_scan_result(),
         });
 
         await startPluginScan({ retryQuarantined: true });
@@ -462,7 +532,7 @@ describe('startPluginScan', () => {
         ];
         mocks.scanPlugins.mockResolvedValue({
             ran: true,
-            result: { plugins: [], errors: [], notices: [], scan_duration_ms: 0, quarantined: fresh_quarantine },
+            result: create_scan_result({ quarantined: fresh_quarantine }),
         });
 
         await startPluginScan();

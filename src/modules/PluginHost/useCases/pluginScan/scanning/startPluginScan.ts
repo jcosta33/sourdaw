@@ -1,9 +1,28 @@
+import { type ScannedPlugin } from '../../../models/ScannedPlugin';
 import { getDefaultPluginPaths } from '../../../repositories/pluginBridge/getDefaultPluginPaths';
 import { isScanPathAuthorized } from '../../../repositories/pluginBridge/isScanPathAuthorized';
 import { scanPlugins } from '../../../repositories/pluginBridge/scanPlugins';
+import { type ScanResult } from '../../../repositories/pluginBridge/types';
 import { pluginScanStore } from '../../../stores/pluginScanStore';
 
 import { getState } from './helpers';
+
+/**
+ * The rows the browser holds once this result is applied.
+ *
+ * A complete walk enumerated everything installed, so it replaces the list. An
+ * incomplete one is authoritative only for the candidates it reached, so a row
+ * under a path it never got to is kept — the same retention the native
+ * registry applies to its own rows, which is what keeps the browser and the
+ * registry from disagreeing about an installed plugin.
+ */
+function mergeScanResultIntoList(previous: ScannedPlugin[], result: ScanResult): ScannedPlugin[] {
+    if (result.complete) {
+        return result.plugins;
+    }
+    const reachedPaths = new Set(result.scanned_paths);
+    return [...previous.filter((plugin) => !reachedPaths.has(plugin.path)), ...result.plugins];
+}
 
 export type StartPluginScanOptions = {
     /**
@@ -106,18 +125,18 @@ export async function startPluginScan(options: StartPluginScanOptions = {}): Pro
                 // is authoritative for what is quarantined right now, whether
                 // this scan reported errors or not.
                 quarantined: result.quarantined,
-                // A result in hand is authoritative for what the walk reached,
-                // and it has already rebuilt the registry activation reads
-                // from. An incomplete walk is a result too: it carries the
-                // plugins it found beside a time- or candidate-limit entry in
-                // `errors`, and the native registry keeps the rows of the roots
-                // that walk never reached. A candidate that failed is reported
+                // A complete result is authoritative for everything installed
+                // and replaces the list. An incomplete one is authoritative
+                // only for the paths it reached, so a row under a path it
+                // never got to survives — exactly the row the native registry
+                // keeps, and the registry activation reads from is already
+                // rebuilt on that rule. A candidate that failed is reported
                 // beside the list, never in front of it — withholding the list
                 // over one error hid every other plugin the scan found (#3497).
                 // A scan that did not run or threw leaves the list alone, above
                 // and below. `lastScanTime` dates the list the store holds, so
                 // it advances with this write.
-                scannedPlugins: result.plugins,
+                scannedPlugins: mergeScanResultIntoList(currentState.scannedPlugins, result),
                 lastScanTime: Date.now(),
             };
         });

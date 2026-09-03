@@ -620,6 +620,14 @@ async fn scan_plugins_with_backend(
         notices,
         scan_duration_ms: start.elapsed().as_millis() as u64,
         quarantined,
+        complete: scan_complete,
+        // The same paths the registry retention above ran against, so a caller
+        // merging this result into an older list applies the rule the registry
+        // already applied to its own rows.
+        scanned_paths: scanned_paths
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect(),
     })
 }
 
@@ -3877,6 +3885,15 @@ mod tests {
             result.plugins
         );
         assert!(
+            result.complete,
+            "a walk that reached every candidate is authoritative for the whole root"
+        );
+        assert_eq!(
+            result.scanned_paths,
+            vec![plugin_path.display().to_string()],
+            "a complete walk names every candidate it reached"
+        );
+        assert!(
             state
                 .plugin_registry_store
                 .is_quarantined(&plugin_path)
@@ -3989,6 +4006,16 @@ mod tests {
             1,
             "the limit belongs on the failures channel, exactly once: {:?}",
             result.errors
+        );
+        assert!(
+            !result.complete,
+            "a walk that stopped at its limit must say so, or the caller cannot tell how far \
+             this result reaches"
+        );
+        assert_eq!(
+            result.scanned_paths,
+            vec![first.display().to_string()],
+            "the result is authoritative for the candidates the walk reached, and no others"
         );
         assert_eq!(scan_calls_for(&descriptor_calls, &first), 1);
         assert_eq!(
