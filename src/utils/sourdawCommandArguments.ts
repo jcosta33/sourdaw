@@ -34,7 +34,7 @@ export const SOURDAW_COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> =
     ['collab_merge_bundle', ['path']],
     ['collab_save_bundle', ['path']],
     ['commit_pitch_edit', ['request']],
-    ['create_crumbs', ['instance_id', 'sample_rate']],
+    ['create_crumbs', ['instance_id']],
     ['crumbs_all_sound_off', ['instance_id']],
     ['crumbs_note_off', ['instance_id', 'note']],
     ['crumbs_note_on', ['instance_id', 'note', 'velocity']],

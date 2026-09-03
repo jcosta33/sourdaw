@@ -228,14 +228,13 @@ fn ensure_crumbs_capture_headroom(
 
 /// Create a new crumbs engine instance.
 ///
-/// `sample_rate` is ignored: the sampler records the engine's own input tap
-/// and renders on the engine's master chain, so its only correct rate is the
-/// device's, read from the engine handle. A rate supplied here would stamp
-/// every committed take — and clamp `record_max_samples` — against a number
-/// the device never ran at.
+/// Takes no sample rate: the sampler records the engine's own input tap and
+/// renders on the engine's master chain, so its only correct rate is the
+/// device's, read from the engine handle. A rate supplied by a caller would
+/// stamp every committed take — and clamp `record_max_samples` — against a
+/// number the device never ran at.
 pub async fn create_crumbs(
     instance_id: String,
-    _sample_rate: f32,
     state: &CrumbsState,
     app_state: &AppState,
 ) -> Result<(), String> {
@@ -990,7 +989,6 @@ mod tests {
         let app_state = AppState::default();
         let refusal = crate::block_on_test(create_crumbs(
             "instance-overflow".to_string(),
-            48_000.0,
             &state,
             &app_state,
         ))
@@ -1062,13 +1060,8 @@ mod tests {
         }
 
         let instance_id = "duplicate-crumbs";
-        crate::block_on_test(create_crumbs(
-            instance_id.to_string(),
-            48_000.0,
-            &state,
-            &app_state,
-        ))
-        .expect("the first create should register its runtime");
+        crate::block_on_test(create_crumbs(instance_id.to_string(), &state, &app_state))
+            .expect("the first create should register its runtime");
 
         let original_engine_plugin_id = state
             .instances
@@ -1087,13 +1080,9 @@ mod tests {
             "one successful create must queue exactly the slot and its capture registration"
         );
 
-        let refusal = crate::block_on_test(create_crumbs(
-            instance_id.to_string(),
-            48_000.0,
-            &state,
-            &app_state,
-        ))
-        .expect_err("a duplicate create must be refused");
+        let refusal =
+            crate::block_on_test(create_crumbs(instance_id.to_string(), &state, &app_state))
+                .expect_err("a duplicate create must be refused");
         assert_eq!(
             refusal,
             format!("Crumbs instance '{instance_id}' already exists")
@@ -1163,13 +1152,8 @@ mod tests {
             .lock()
             .expect("engine lock should be available") = Some(engine);
 
-        crate::block_on_test(create_crumbs(
-            INSTANCE_ID.to_string(),
-            48_000.0,
-            &state,
-            &app_state,
-        ))
-        .expect("create should fill the scheduler ring");
+        crate::block_on_test(create_crumbs(INSTANCE_ID.to_string(), &state, &app_state))
+            .expect("create should fill the scheduler ring");
 
         let original_engine_plugin_id = state
             .instances
@@ -1256,7 +1240,6 @@ mod tests {
         let first_create = std::thread::spawn(move || {
             crate::block_on_test(create_crumbs(
                 INSTANCE_ID.to_string(),
-                48_000.0,
                 &first_state,
                 &first_app_state,
             ))
@@ -1283,7 +1266,6 @@ mod tests {
                 .expect("second-create start receiver should remain alive");
             crate::block_on_test(create_crumbs(
                 INSTANCE_ID.to_string(),
-                48_000.0,
                 &second_state,
                 &second_app_state,
             ))
@@ -1571,16 +1553,11 @@ mod tests {
             .lock()
             .expect("engine lock should be available") = Some(engine);
 
-        // A caller rate the device never runs at: the engine handle's rate is
-        // the one the slot must be built at, or the take is stamped — and its
-        // length clamped — against a number nothing else in the path uses.
-        crate::block_on_test(create_crumbs(
-            "tap-sampler".to_string(),
-            44_100.0,
-            &state,
-            &app_state,
-        ))
-        .expect("a create with capture headroom should register its runtime");
+        // The engine handle's own rate is the one the slot is built at: a
+        // take is stamped, and `record_max_samples` clamped, against that
+        // number and no other.
+        crate::block_on_test(create_crumbs("tap-sampler".to_string(), &state, &app_state))
+            .expect("a create with capture headroom should register its runtime");
 
         match command_rx.pop() {
             Ok(GraphCommand::BeginBatch { commands }) => assert_eq!(commands, 2),
@@ -1654,7 +1631,6 @@ mod tests {
 
         let refusal = crate::block_on_test(create_crumbs(
             "refused-sampler".to_string(),
-            48_000.0,
             &state,
             &app_state,
         ))

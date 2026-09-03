@@ -13,12 +13,12 @@ import { ensureCrumbsInstanceFromProject } from './ensureCrumbsInstanceFromProje
  * populated-but-dead instance whose param writes silently no-op. The rejection is
  * re-thrown so callers can surface an engine-unavailable state.
  */
-export async function initCrumbsEngine(instanceId: string, sampleRate: number): Promise<void> {
+export async function initCrumbsEngine(instanceId: string): Promise<void> {
     ensureCrumbsInstanceFromProject(instanceId);
     ensurePadInstance(instanceId);
     ensureSliceInstance(instanceId);
     try {
-        await createCrumbsInstance(instanceId, sampleRate);
+        await createCrumbsInstance(instanceId);
     } catch (error) {
         removeInstance(instanceId);
         removePadInstance(instanceId);

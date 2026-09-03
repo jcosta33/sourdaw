@@ -34,6 +34,10 @@ function diagnostics(overrides: Partial<EngineRtDiagnostics> = {}): EngineRtDiag
         bridgeBacklogBlocksShed: 0,
         callbackFramesOverBridgeReach: 0,
         bridgeInputBlocksRefused: 0,
+        captureConsumerRefusals: 0,
+        captureBlocksDropped: 0,
+        captureInputUnderruns: 0,
+        inputLatencyFrames: 0,
         events: [],
         ...overrides,
     };
