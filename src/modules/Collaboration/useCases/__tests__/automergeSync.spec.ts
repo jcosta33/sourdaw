@@ -8,6 +8,7 @@ import {
     generateSyncMessage,
     getChanges,
     getHeads,
+    getMissingDeps,
     load,
     receiveSyncMessage,
     save,
@@ -1310,6 +1311,49 @@ describe('AutomergeSync', () => {
         }
 
         /**
+         * Report the sync state a delivery left behind instead of a bare
+         * vitest timeout, so a future non-apply names its own cause: what
+         * the peer's message actually carried, what this side ended up
+         * holding, and how many times each install/uninstall mock ran.
+         */
+        function describeUnappliedDelivery(decoded: ReturnType<typeof decodeSyncMessage>): string {
+            const liveHeads = live === undefined ? 'no live document' : getHeads(live).join(',');
+            const missingDeps = live === undefined ? [] : getMissingDeps(live, getHeads(peer.document()));
+            return [
+                'deliverPeerEdit: the peer edit never applied within the diagnostic bound',
+                `decoded changes=${decoded.changes.length} heads=${decoded.heads.join(',')}`,
+                `live heads=${liveHeads}`,
+                `missing deps=${missingDeps.join(',')}`,
+                `replace=${vi.mocked(replaceCrdtDocInLineage).mock.calls.length} remove=${vi.mocked(removeCrdtDoc).mock.calls.length} create=${vi.mocked(createCrdtDoc).mock.calls.length}`,
+                `onSyncQuarantine=${onSyncQuarantine.mock.calls.length}`,
+                `protocol_sequence=${JSON.stringify(protocol_sequence)}`,
+            ].join('\n');
+        }
+
+        /**
+         * Wait for the peer edit to actually apply, bounded by a real timer
+         * so a delivery that never applies fails with the sync state that
+         * produced that instead of a generic vitest timeout. The bound only
+         * ever settles the race when the apply genuinely never arrives — the
+         * happy path still resolves off `applied` alone, with no macrotask
+         * on that route.
+         */
+        function raceAppliedOrDiagnose(
+            applied: Promise<void>,
+            decoded: ReturnType<typeof decodeSyncMessage>
+        ): Promise<void> {
+            return new Promise((resolve, reject) => {
+                const timer = setTimeout(() => {
+                    reject(new Error(describeUnappliedDelivery(decoded)));
+                }, 2000);
+                applied.then(() => {
+                    clearTimeout(timer);
+                    resolve();
+                });
+            });
+        }
+
+        /**
          * Deliver the peer's edit and wait for `onSyncApplied` to actually
          * fire for `doc_id`, not just for `receiveSync` to return — that
          * call returns `void` and, behind a persistence barrier or a
@@ -1324,10 +1368,11 @@ describe('AutomergeSync', () => {
             if (!message) {
                 return false;
             }
+            const decoded = decodeSyncMessage(message);
             const applied = waitForNextAppliedSync();
             sync.receiveSync({ peerId: 'editor', docId: doc_id, syncMessageBase64: bytesToBase64(message) });
             change_cb?.(doc_id);
-            await applied;
+            await raceAppliedOrDiagnose(applied, decoded);
             protocol_sequence.push('peer-edit-delivered');
             return true;
         }
@@ -1431,14 +1476,15 @@ describe('AutomergeSync', () => {
     });
 
     /**
-     * Turns red on the same `AssertionError: expected undefined to be 'peer
-     * edit'` this file's target case escaped once on a hosted shard:
-     * `receiveAcceptedSync` takes the `holdsRootPersistenceBarrier` route
-     * whenever a persistence barrier holds the delivery, and `publish()` —
-     * the only place `onSyncApplied` fires and the live document is
-     * replaced — does not run until that barrier resolves on a later
-     * macrotask. `deliverPeerEdit()` must observe that, not just that
-     * `receiveSync` returned.
+     * A witness, not a reproduction: `receiveAcceptedSync` takes the
+     * `holdsRootPersistenceBarrier` route whenever a persistence barrier
+     * holds the delivery, and `publish()` — the only place `onSyncApplied`
+     * fires and the live document is replaced — does not run until that
+     * barrier resolves on a later macrotask. This proves `deliverPeerEdit()`
+     * observes that real apply rather than just `receiveSync` returning. It
+     * does not exercise the route the hosted escape actually took — the
+     * escaped case never wires `prepareSyncPersistence`, so it never enters
+     * this barrier at all.
      */
     it('reports peer-edit delivery only after the live document carries the edit when application is deferred', async () => {
         const exchange = setupLiveExchange({ deferApplicationBehindPersistenceBarrier: true });
