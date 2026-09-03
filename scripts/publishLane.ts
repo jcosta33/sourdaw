@@ -567,8 +567,10 @@ function pullRequestWrite(
     if (existing !== undefined && typeof existingTitle !== 'string') {
         fail('existing pull-request title is unreadable');
     }
+    // An explicit --relates/--closes needs nothing recovered from the existing body, so a body
+    // with no line naming the lane issue (an umbrella-carried extra, say) does not block it.
     const existingRelationship =
-        existing === undefined
+        existing === undefined || relationship !== undefined
             ? undefined
             : issueRelationshipFromBody(existing.body as string, laneIssue, REQUIRED_REPOSITORY);
     const resolvedRelationship = relationship ?? existingRelationship ?? 'closes';

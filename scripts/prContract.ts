@@ -183,11 +183,7 @@ const DELIVERY_RECEIPT_V2_PATTERN =
 type ClosingReference = { issue: string; repository?: string };
 type IssueReference = ClosingReference & { label: 'Closes' | 'Related' };
 
-function isExpectedClosingReference(
-    reference: ClosingReference,
-    issue: number,
-    repository: string | undefined
-): boolean {
+function referencesIssue(reference: ClosingReference, issue: number, repository: string | undefined): boolean {
     return (
         reference.issue === String(issue) &&
         (reference.repository === undefined ||
@@ -209,7 +205,7 @@ function assertIssueClosingReferences(
     for (const match of matches) {
         const reference: ClosingReference =
             match[1] === undefined ? { repository: match[2], issue: match[3] ?? '' } : { issue: match[1] };
-        if (expected !== undefined && !matchedExpected && isExpectedClosingReference(reference, expected, repository)) {
+        if (expected !== undefined && !matchedExpected && referencesIssue(reference, expected, repository)) {
             matchedExpected = true;
         } else {
             unexpectedPhrases.push(match[0]);
@@ -411,7 +407,7 @@ function relationshipsForIssue(
     issue: number,
     repository: string | undefined
 ): IssueReference[] {
-    return relationships.filter((reference) => isExpectedClosingReference(reference, issue, repository));
+    return relationships.filter((reference) => referencesIssue(reference, issue, repository));
 }
 
 export function issueRelationshipFromBody(
