@@ -1,0 +1,51 @@
+scripts/desktopLatencyReadings.ts
+  s_9b530f08172a54::t_b6c5fda23612a4 183-184,186-195,199-202,208-210
+scripts/desktopLatencyRecord.ts
+  s_9b530f08172a54::t_adf776b28296cf 58-59
+  s_9b530f08172a54::t_103cda741fbb7f 238
+  s_9b530f08172a54::t_a49ced441a7383 258-260
+  s_9b530f08172a54::t_6b9b5cc4e7a1e3 169
+  s_9b530f08172a54::t_1df45f68fc58f6 100-110
+  s_9b530f08172a54::t_3c509cf551f331 151-168,170-176,179-184,186-226,229-231
+scripts/desktopLatencyProcess.ts
+  s_9b530f08172a54::t_efc29554726a74 107-118,121,130-133,139
+scripts/__tests__/desktopLatencyRecord.spec.ts
+  s_9b530f08172a54::t_a931c8ebc99758 1-36
+scripts/__tests__/desktopLatencyReadings.spec.ts
+  s_9b530f08172a54::t_3e858a59fd6205 3,11,13
+  s_9b530f08172a54::t_3be63b2faea262 226-231
+  s_9b530f08172a54::t_378a4ea4267880 180
+  s_28abfd94826e36::t_ea93a8362c69eb 232-234
+scripts/desktopLatencyConnect.ts
+  s_9b530f08172a54::t_4d0ced44194312 162-170,172,175-177
+  s_9b530f08172a54::t_9e91af5bc6a57d 575-576,578
+scripts/measureDesktopLatency.ts
+  s_9b530f08172a54::t_d9abbeeb299851 84-88
+  s_9b530f08172a54::t_dc5c08781caec3 103,106
+  s_9b530f08172a54::t_757d703c2aed26 156,158,162-164
+  s_9b530f08172a54::t_a38a882745abb1 220
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "443a62c43e5202d0735a55ba1a61e374c9c4547c",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
