@@ -141,22 +141,21 @@ export const RecentProjectsMenu = (): ReactElement => {
     return (
         <div className="relative shrink-0">
             <Popover open={open} onOpenChange={setOpen}>
-                <PopoverTrigger asChild>
-                    <Tooltip>
-                        <TooltipTrigger asChild>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <PopoverTrigger asChild>
                             <Button
                                 variant="ghost"
                                 size="icon-sm"
                                 className="daw-readout-well rounded-l-none rounded-r-sm border-l-[rgba(255,249,242,0.1)] hover:bg-white/[0.04] hover:brightness-[1.06]"
                                 aria-label="Project menu"
-                                aria-haspopup="menu"
                             >
                                 <ChevronDown data-testid="project-menu-chevron" className="size-3" aria-hidden="true" />
                             </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Project menu</TooltipContent>
-                    </Tooltip>
-                </PopoverTrigger>
+                        </PopoverTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>Project menu</TooltipContent>
+                </Tooltip>
                 <PopoverContent
                     align="start"
                     sideOffset={4}

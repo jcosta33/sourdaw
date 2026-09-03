@@ -71,21 +71,9 @@ vi.mock('#/components/ui/button', () => ({
 }));
 
 vi.mock('#/components/ui/tooltip', () => ({
-    Tooltip: ({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) => (
-        <>
-            {React.Children.map(children, (child) =>
-                React.isValidElement(child) ? React.cloneElement(child, props) : child
-            )}
-        </>
-    ),
+    Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     TooltipContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-    TooltipTrigger: ({ children, asChild: _asChild, ...props }: React.PropsWithChildren<{ asChild?: boolean }>) => (
-        <>
-            {React.Children.map(children, (child) =>
-                React.isValidElement(child) ? React.cloneElement(child, props) : child
-            )}
-        </>
-    ),
+    TooltipTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
 vi.mock('../TemplateChooser', () => ({

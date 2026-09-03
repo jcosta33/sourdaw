@@ -146,7 +146,8 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                 <PopoverContent
                     align="end"
                     sideOffset={8}
-                    className="daw-floating-surface w-[260px] p-0 overflow-hidden rounded-xl"
+                    aria-label="AI Model Setup"
+                    className="daw-floating-surface w-[260px] p-0 overflow-y-auto rounded-xl"
                 >
                     <div className="px-3 pt-3 pb-2 border-b border-border/50 bg-surface-raised/50">
                         <Row justify="between" gap={2}>
@@ -251,7 +252,8 @@ export const LlmStatusBadge = ({ status, onLoad }: LlmStatusBadgeProps): ReactEl
                 <PopoverContent
                     align="end"
                     sideOffset={8}
-                    className="daw-floating-surface w-[260px] p-0 overflow-hidden rounded-xl"
+                    aria-label="AI Model Status"
+                    className="daw-floating-surface w-[260px] p-0 overflow-y-auto rounded-xl"
                 >
                     <div className="px-3 pt-3 pb-2 border-b border-border/50 bg-surface-raised/50">
                         <Row justify="between" gap={2}>
