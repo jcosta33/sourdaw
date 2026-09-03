@@ -1,6 +1,7 @@
 import { takeLaneStore } from '#/modules/Arrangement/stores';
 import { modulationStore } from '#/modules/Automation/stores';
 import { compileVersionedCommandBatchEnvelope, parseVersionedCommandEnvelope } from '#/modules/Command/useCases';
+import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { type AppAction } from '#/utils/handlerContract';
@@ -367,7 +368,7 @@ export function compilePlannedActionCommandBatch(input: CompilePlannedActionComm
             autoCommitApproval: input.autoCommitApproval,
             runId: input.runId,
             batchId: input.group.groupId,
-            projectId: input.projectRevision,
+            projectId: captureProjectIdentity(),
             baseRevision: input.projectRevision,
             batchLocalBindings,
             intent: input.intent,

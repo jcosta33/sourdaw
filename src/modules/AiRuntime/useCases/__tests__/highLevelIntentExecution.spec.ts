@@ -19,6 +19,7 @@ import {
 import {
     clearUndoHistory,
     commandTrackDefaultsPort,
+    executeAppAction,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -269,6 +270,48 @@ describe('high-level intent execution', () => {
         expectCommittedBluesSong();
         const past = undoStore.value?.past ?? [];
         expect(past).toHaveLength(2 + deriveBluesTransformCommands().length);
+    });
+
+    it('asks for reapproval instead of discarding the proposal after an unrelated edit, then commits the unchanged plan on the second confirm', async () => {
+        await sendChatMessage(BLUES_PROMPT);
+        const confirmation = requireConfirmation();
+
+        // An edit with no relationship to the blues plan's targets: a brand new track, not one of
+        // the ids the plan creates or touches.
+        executeAppAction({ type: 'addTrack', payload: { name: 'Unrelated Track', kind: 'audio' } });
+
+        const firstConfirm = await confirmPendingChatActions({ confirmationId: confirmation.id });
+        expect(firstConfirm).toMatchObject({
+            status: 'reapproval_required',
+            divergence: { kind: 'non-overlapping' },
+        });
+
+        const reapprovalMessage = chatStore.value?.messages.find(
+            (message) => message.pendingActionConfirmationId === confirmation.id
+        );
+        expect(reapprovalMessage?.pendingActionConfirmationStatus).toBe('proposed');
+        expect(reapprovalMessage?.content).toContain(
+            'The project changed after the prior approval. Divergence was classified as non-overlapping; the unchanged command plan was revalidated and rebound to the current project revision. Review and confirm again:'
+        );
+        expect(getPendingActionConfirmation(confirmation.id)?.status).toBe('proposed');
+
+        const secondConfirm = await confirmPendingChatActions({ confirmationId: confirmation.id });
+        expect(secondConfirm).toEqual({ status: 'executed' });
+
+        // The unrelated edit survives alongside the committed blues song rather than blocking it:
+        // expectCommittedBluesSong assumes a lone track, which the unrelated addTrack invalidates.
+        const bluesTrack = getCreatedTracks().find((track) => track.id.match(GENERATED_TRACK_ID));
+        expect(bluesTrack).toMatchObject({ kind: 'midi' });
+        const bluesClip = bluesTrack?.clips[0];
+        expect(bluesClip).toMatchObject({
+            id: expect.stringMatching(GENERATED_CLIP_ID),
+            startBeat: BLUES_CLIP_START_BEAT,
+            endBeat: BLUES_CLIP_END_BEAT,
+        });
+        expect(getMusicalNotes(bluesClip!.id)).toEqual(deriveBluesNotes());
+        expect(getCreatedTracks().find((track) => track.kind === 'audio')).toMatchObject({
+            name: 'Unrelated Track',
+        });
     });
 
     it('cancels a pending blues proposal and refuses a later confirm of the same confirmation', async () => {
