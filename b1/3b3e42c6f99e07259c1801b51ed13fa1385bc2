@@ -1,0 +1,64 @@
+crates/sourdaw-native/src/commands/engine_transport.rs
+  s_9b530f08172a54::t_8ac6353f696ecf 526,545,571
+  s_a376311edc69b0::t_de14e87213442d 502
+crates/sourdaw-native/AGENTS.md
+  s_9b530f08172a54::t_addec1319f4658 53-55
+crates/sourdaw-native/src/commands/graph.rs
+  s_9b530f08172a54::t_2b6f4f446806d0 2417-2421
+  s_9b530f08172a54::t_e2772a37d8d781 2454-2463
+  s_9b530f08172a54::t_d00a413ae231f9 4576-4626
+  s_9b530f08172a54::t_9ee4d58026c1a6 148
+  s_9b530f08172a54::t_12f1d42c7e01c2 4525,4564,4638,4651-4656,4979-4984
+crates/sourdaw-native/src/commands/crumbs.rs
+  s_9b530f08172a54::t_bbcfc579a1666f 1075,1839-2040
+  s_9b530f08172a54::t_d6d9a3aac59fcf 440,449,455-462,465-469,473,476
+  s_9b530f08172a54::t_f50c9aa08ad66b 1047-1058
+  s_9b530f08172a54::t_9d82609e8ff970 497-504
+  s_9b530f08172a54::t_a0d9b02ac2e024 29-79,84
+  s_9b530f08172a54::t_2ea0d980bc7b0f 870
+  s_9b530f08172a54::t_7fd8732a882569 1038,1059-1074
+  s_9b530f08172a54::t_af8595ea0dd8b6 940
+  s_9b530f08172a54::t_a192c5113b26db 283-355,360-398,406-411
+  s_9b530f08172a54::t_1dba9d6e2e32ea 977-989
+  s_9b530f08172a54::t_9a0d256d6963b6 634
+  s_9b530f08172a54::t_084ad39573f967 656
+  s_9b530f08172a54::t_bdc2fc15aa95f9 254-260
+  s_9b530f08172a54::t_53092c427d6fc8 1166-1168
+  s_9b530f08172a54::t_ab7863f5ecdc2b 1260
+  s_9b530f08172a54::t_04a116c472311e 1615-1618
+  s_9b530f08172a54::t_fc330ecf9b00b4 1280-1289
+  s_9b530f08172a54::t_4951138dc7b40c 1475-1485
+  s_9b530f08172a54::t_9588be4aaf36f3 1642
+  s_9b530f08172a54::t_f589a3786cad12 1777-1779
+  s_9b530f08172a54::t_dd1d4f9c1d3fb4 966
+  s_9b530f08172a54::t_56f91f23ae83b8 356-359
+  s_9b530f08172a54::t_a8f9b9362615d2 21
+  s_9b530f08172a54::t_fa8cd8a48740a6 1346,1353-1355
+  s_9b530f08172a54::t_dbfa23259dc74b 1076
+crates/sourdaw-native/src/addon/mod.rs
+  s_9b530f08172a54::t_8b200b39e04f69 592-599
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b13b3e42c6f99e07259c1801b51ed13fa1385bc2",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_a376311edc69b0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a909e1ce02fe9e63c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
