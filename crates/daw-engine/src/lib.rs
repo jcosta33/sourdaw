@@ -236,11 +236,22 @@ impl EngineHandle {
             // attempt (`spawn_with_fallback`, above): an input device whose
             // open hangs fails the whole engine start exactly as a hung
             // output would, and there is no in-session engine restart that
-            // could reopen it later. On macOS a denied microphone permission
-            // does not surface as a refusal at all — CoreAudio opens the
-            // stream and delivers silence in place of real input rather than
-            // an error, so a denial reads as capture that opened but never
-            // carries audio.
+            // could reopen it later. A hung input open strands the owner
+            // thread that already started this output stream — `open.start`
+            // returned before this input open began, so the stream is live,
+            // but the factory building it is now blocked past the point the
+            // startup timeout gives up on it — and the fallback attempt then
+            // opens a second output stream on the same device, on a fresh
+            // owner thread, while the first stays stranded. Both render an
+            // empty graph, so nothing is audible either way, but two output
+            // streams exist on the device for as long as the hang lasts: the
+            // stranded thread's factory call only returns once the input
+            // open resolves, at which point it drops its own stream unheard,
+            // because nothing is still waiting on its readiness. On macOS a
+            // denied microphone permission does not surface as a refusal at
+            // all — CoreAudio opens the stream and delivers silence in place
+            // of real input rather than an error, so a denial reads as
+            // capture that opened but never carries audio.
             Some(capture_event_tx),
             force_default_buffer,
         )?;
@@ -937,10 +948,12 @@ impl EngineHandle {
     ///
     /// `GraphCommand` and [`EngineHandle::send_graph_batch`] are both public,
     /// so a batch is a second door onto the bus beside
-    /// [`EngineHandle::register_capture_consumer`]. Without this the batch
-    /// would fill the callback's bus while the ledger stayed empty, and the
-    /// next typed registration would answer `Ok` to a caller the callback then
-    /// refuses in silence.
+    /// [`EngineHandle::register_capture_consumer`]. This walk exists for the
+    /// same reason [`EngineHandle::admit_effect_registrations`] does: whole-batch
+    /// admission, so a batch that would overflow the bus partway through is
+    /// refused whole by [`EngineHandle::send_graph_batch`] rather than
+    /// reported as [`GraphBatchError::Partial`] once some of it already
+    /// reached the ring.
     ///
     /// Order matters and netting does not, for the reason given on
     /// [`EngineHandle::admit_effect_registrations`]; the walk carries the
@@ -979,11 +992,20 @@ impl EngineHandle {
     /// reports success, and passes dry audio forever with nothing saying it was
     /// refused.
     ///
-    /// The typed methods and [`Self::send_graph_batch`] check the same ceilings
-    /// earlier, where a caller can be told before it builds state it now has to
-    /// unwind, and a batch is checked whole so it stays atomic. Neither is what
-    /// makes a ceiling hold: this is, because every command reaches the ring
-    /// through here.
+    /// [`Self::send_graph_batch`] admits both ledgers whole before it pushes
+    /// anything, so a batch that would overflow either one is refused whole
+    /// rather than reported as [`GraphBatchError::Partial`] after part of it
+    /// already crossed the ring. The effect-table pre-check belongs to the
+    /// caller that builds other state before it pushes — a plugin instance,
+    /// a bridge — not to the typed method:
+    /// [`Self::ensure_effect_table_headroom`] has to run before that id and
+    /// that bridge exist, so `commands/plugins.rs` is the route that calls
+    /// it today, ahead of [`Self::reserve_plugin_id`] and the bridge it
+    /// builds from the id. [`Self::add_plugin_with_id`] and
+    /// [`Self::add_plugin_with_bridge`] push straight through with no check
+    /// of their own, exactly as [`Self::register_capture_consumer`] does;
+    /// all three rely on this push as the ceiling, regardless of whether a
+    /// caller checked first.
     fn push(&mut self, command: GraphCommand) -> Result<(), String> {
         let delta = command.effect_table_delta();
         if delta > 0 && self.effect_registrations + delta as usize > EFFECT_TABLE_CAPACITY {

@@ -31,6 +31,10 @@ const nativePayload = {
     bridgeBacklogBlocksShed: 8,
     callbackFramesOverBridgeReach: 9,
     bridgeInputBlocksRefused: 10,
+    captureConsumerRefusals: 11,
+    captureBlocksDropped: 12,
+    captureInputUnderruns: 13,
+    inputLatencyFrames: 14,
     events: [{ type: 'streamError', side: 'input', kind: 'deviceNotAvailable' }],
 };
 

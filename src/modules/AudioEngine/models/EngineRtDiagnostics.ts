@@ -43,6 +43,17 @@ export type EngineRtDiagnostics = {
     bridgeBacklogBlocksShed: number;
     callbackFramesOverBridgeReach: number;
     bridgeInputBlocksRefused: number;
+    captureConsumerRefusals: number;
+    captureBlocksDropped: number;
+    captureInputUnderruns: number;
+    /**
+     * Frames of latency the capture path is currently adding, or zero while
+     * capture is not serving. Zero means no figure, not no delay: it reads
+     * zero when capture was refused, when no input device is open, and while
+     * the ring has not yet settled on a cadence — see
+     * `audio_thread::new_input_latency_slot` (`crates/daw-engine`).
+     */
+    inputLatencyFrames: number;
     /**
      * Events drained by this read. The engine hands each event out exactly
      * once, so a reader that discards them loses them.
@@ -63,5 +74,9 @@ export const notRunningEngineRtDiagnostics: EngineRtDiagnostics = {
     bridgeBacklogBlocksShed: 0,
     callbackFramesOverBridgeReach: 0,
     bridgeInputBlocksRefused: 0,
+    captureConsumerRefusals: 0,
+    captureBlocksDropped: 0,
+    captureInputUnderruns: 0,
+    inputLatencyFrames: 0,
     events: [],
 };

@@ -110,7 +110,7 @@ export const CrumbsPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
         ensurePadInstance(deviceId);
         ensureSliceInstance(deviceId);
 
-        initCrumbsEngine(deviceId, 44100)
+        initCrumbsEngine(deviceId)
             .then(() => {
                 if (!cancelled) {
                     setEngineReady(true);

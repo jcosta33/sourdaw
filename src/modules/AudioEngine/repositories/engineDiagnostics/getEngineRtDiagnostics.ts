@@ -81,6 +81,10 @@ function toEngineRtDiagnostics(response: unknown): EngineRtDiagnostics {
         bridgeBacklogBlocksShed: readCounter(payload, 'bridgeBacklogBlocksShed'),
         callbackFramesOverBridgeReach: readCounter(payload, 'callbackFramesOverBridgeReach'),
         bridgeInputBlocksRefused: readCounter(payload, 'bridgeInputBlocksRefused'),
+        captureConsumerRefusals: readCounter(payload, 'captureConsumerRefusals'),
+        captureBlocksDropped: readCounter(payload, 'captureBlocksDropped'),
+        captureInputUnderruns: readCounter(payload, 'captureInputUnderruns'),
+        inputLatencyFrames: readCounter(payload, 'inputLatencyFrames'),
         events,
     };
 }
