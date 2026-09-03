@@ -100,6 +100,13 @@ note written into a created clip must start inside it, last at least one sixty-f
 before the clip does. The clip the notes go into does not exist in any snapshot yet, so the span
 its own item declared is the only dimension available to bound them against.
 
+A note beat is a coordinate in the clip's own content, never a position on the timeline, so what
+bounds it on either route is the window that clip actually sounds: the window opens at the clip's
+MIDI offset and runs for the clip's loop length, which for a clip that does not loop is its own
+duration. Bounding notes by the clip's rectangle instead would refuse every note a slipped clip
+plays and admit notes a looped one discards unheard. A clip a batch creates carries no offset and
+does not loop, so its window is the span its item declared, counted from zero.
+
 Which commands the route admits is decided by what a command changes, never by what it targets.
 Accepting a batch-local target is not confinement: soloing a created track silences every other
 track, live and on export; arming it changes what the next take records; duplicating or reordering
@@ -115,6 +122,13 @@ therefore still cannot set one.
 Creation evidence is read from the user request and from nothing else. Project data must never reach
 that text: a stored track named like a creative request would otherwise buy a waiver the user never
 asked for, which turns a project field into an authority escalation.
+
+Two classes of text carry that evidence: a musical genre term, and an object a determiner
+introduces. Every noun stands behind that determiner, whole works included, because a request
+reaches for a song it already has as readily as for one it wants written — the determiner is what
+separates writing a song from mixing one. A word that names a mix quality as readily as a part
+carries no evidence at all: bare "bass" is a frequency range as often as an instrument, so only
+"bass line" names something to create.
 
 ## Consequences
 

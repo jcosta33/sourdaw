@@ -22,6 +22,12 @@ describe('hasHighLevelCreationEvidence', () => {
         'add another loop',
         'write a chord progression',
         'add a bass line',
+        // A whole work stands behind the determiner like anything else a project can hold.
+        'write a song',
+        'set up a new project',
+        // Nouns a mixing request reaches for just as often, and the determiner is what separates them.
+        'add some drums',
+        'lay down some chords',
     ])('reads a request for something new as creation evidence: %s', (request) => {
         expect(hasHighLevelCreationEvidence(request)).toBe(true);
     });
@@ -61,8 +67,11 @@ describe('hasHighLevelCreationEvidence', () => {
         'can you add a fade in to the loop',
         'make the loop 8 bars',
         'make the beat harder',
-        // Bare `drums` names the kit already in the project as readily as one to be created.
-        'add some drums',
+        // A request reaches for a song it already has as readily as for one it wants written, so the
+        // word alone decides nothing; without a determiner these all point at what the project holds.
+        'add reverb to the song',
+        'make the session louder',
+        'build out the arrangement',
     ])('refuses a mixing or editing request that names an object the project already holds: %s', (request) => {
         expect(hasHighLevelCreationEvidence(request)).toBe(false);
     });

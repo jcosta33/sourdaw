@@ -3,21 +3,16 @@ import { MUSICAL_GENRE_PATTERN } from './musicalGenreVocabulary';
 const CREATION_VERB_PATTERN = /\b(?:create|add|build|make|start|compose|write|produce|set\s?up|lay\s+down)\b/giu;
 
 /**
- * Words that name a whole work rather than anything inside one. A project holds tracks, clips and
- * parts; it is not itself something a request can point at as an edit target, so asking for one of
- * these is always asking for it to exist. Anything a project can already contain belongs in
- * `INTRODUCED_OBJECT_PATTERN` instead, where a determiner has to do the work.
- */
-const SONG_LEVEL_NOUN_PATTERN = /\b(?:song|session|project|arrangement|composition|piece|demo|jingle)\b/iu;
-
-/**
  * An object introduced rather than referred to. The determiner is what carries the meaning: "a bass
- * track" asks for one to exist, "the bass track" points at one that already does. Every noun a
- * project can already hold lives here, because "add a delay to the loop" edits the loop it names
- * and only "add another loop" asks for one.
+ * track" asks for one to exist, "the bass track" points at one that already does. Every noun stands
+ * behind that determiner, whole works included, because a request reaches for a song it already has
+ * as readily as for one it wants written: "add reverb to the song" edits, "write a song" creates.
+ *
+ * Bare `bass` is deliberately absent. It names a frequency range as often as an instrument, so "add
+ * a little more bass" would read as creation; only `bass line` names the part.
  */
 const INTRODUCED_OBJECT_PATTERN =
-    /\b(?:a|an|new|some|another|\d+)\s+(?:\w+\s+){0,2}(?:tracks?|clips?|melody|beat|groove|loop|riff|comp|progression|bass\s?lines?|drum\s+parts?)\b/iu;
+    /\b(?:a|an|new|some|another|\d+)\s+(?:\w+\s+){0,2}(?:tracks?|clips?|song|session|project|arrangement|composition|piece|demo|jingle|melody|beat|groove|loop|riff|comp|progression|chords?|drums|bass\s?lines?|drum\s+parts?)\b/iu;
 
 /** Separators a request writes between one instruction and the next. */
 const CLAUSE_SEPARATOR_PATTERN = /[,;.!?]|\bthen\b|\band\b/iu;
@@ -36,11 +31,7 @@ function hasUnnegatedCreationVerb(clause: string): boolean {
 }
 
 function namesSomethingToCreate(clause: string): boolean {
-    return (
-        MUSICAL_GENRE_PATTERN.test(clause) ||
-        SONG_LEVEL_NOUN_PATTERN.test(clause) ||
-        INTRODUCED_OBJECT_PATTERN.test(clause)
-    );
+    return MUSICAL_GENRE_PATTERN.test(clause) || INTRODUCED_OBJECT_PATTERN.test(clause);
 }
 
 /**

@@ -18,7 +18,7 @@ import {
 } from '../../transformers/llmActionBridge';
 import { hasHighLevelCreationEvidence } from '../../transformers/promptParser/hasHighLevelCreationEvidence';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
-import { validateNotesWithinClipSpan } from '../../transformers/validateNotesWithinClipSpan';
+import { validateNotesWithinClipWindow } from '../../transformers/validateNotesWithinClipWindow';
 import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
 import { type ArbitraryCommandListEvidence } from '../compileArbitraryCommandList';
 import {
@@ -3735,7 +3735,8 @@ function validatePlanCreatedClipSpan(argumentsRecord: Readonly<Record<string, un
  * Every note an admitted `addNotes` writes must land inside the clip the same batch declared. The
  * ordinary route would have read those beats out of the request; on this route nothing did, and the
  * clip does not exist in any snapshot yet, so the span its producing item declared is the only
- * dimension available to bound them against.
+ * dimension available to bound them against. A clip this batch creates carries no MIDI offset and
+ * does not loop, so its content window is that span counted from beat zero.
  */
 function validatePlanCreatedNotes(
     argumentsRecord: Readonly<Record<string, unknown>>,
@@ -3748,7 +3749,7 @@ function validatePlanCreatedNotes(
     if (clipSpanBeats === undefined) {
         return 'Plan-created notes require a clip whose batch item declares its span';
     }
-    return validateNotesWithinClipSpan(notes, clipSpanBeats, 'Plan-created note');
+    return validateNotesWithinClipWindow(notes, { endBeat: clipSpanBeats, startBeat: 0 }, 'Plan-created note');
 }
 
 /**

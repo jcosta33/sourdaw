@@ -4,7 +4,7 @@ import { getPluginById } from '#/modules/Arrangement/useCases';
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
-import { type ProjectContext } from '../../models/ProjectContext';
+import { type ProjectContext, type ProjectContextClip } from '../../models/ProjectContext';
 import { bridgeLlmToolCalls, buildLlmActionSystemPrompt, buildLlmActionUserMessage } from '../llmActionBridge';
 
 const projectContext: ProjectContext = {
@@ -3608,7 +3608,7 @@ describe('bridgeLlmToolCalls', () => {
         );
         expect(userMessage).toContain('<user_request>\nmute the vocals\n</user_request>');
         expect(userMessage).toContain(
-            '"clips":[{"id":"clip-verse","name":"Verse","type":"audio","startBeat":0,"endBeat":8,"gain":1,"locked":false,"muted":false,"color":"#112233","fadeInBeats":0,"fadeOutBeats":0,"loopEnabled":false}]'
+            '"clips":[{"id":"clip-verse","name":"Verse","type":"audio","startBeat":0,"endBeat":8,"gain":1,"locked":false,"muted":false,"color":"#112233","fadeInBeats":0,"fadeOutBeats":0,"loopEnabled":false,"midiOffsetBeats":0}]'
         );
         expect(userMessage).not.toContain('"noteCount"');
         expect(userMessage).toContain('"devices"');
@@ -4302,33 +4302,42 @@ describe('bridgeLlmToolCalls', () => {
         }
     });
 
-    describe('addNotes bounds every note to the span of the clip it writes into', () => {
-        // Notes are clip-relative, so a start beat past the end of the clip is otherwise a
-        // well-formed note: finite, non-negative, in pitch range, and long enough to hear.
-        const sixteenBeatClipContext = (): ProjectContext => {
+    describe('addNotes bounds every note to the window of clip content that sounds', () => {
+        // Note beats are the clip's own media coordinates, not offsets into its rectangle on the
+        // timeline: the scheduler reads them at `note.startBeat - midiOffsetBeats` and drops
+        // whatever lands at or past the clip's loop length. Bounding by the rectangle instead would
+        // refuse every note a slipped clip plays and admit notes a looped one silently discards.
+        const clipContext = (clip: Partial<ProjectContextClip>): ProjectContext => {
             const context = createMidiClipContext();
             const track = context.tracks[0]!;
-            const clip = { ...track.clips[0]!, startBeat: 0, endBeat: 16 };
-            return { ...context, tracks: [{ ...track, clips: [clip] }, ...context.tracks.slice(1)] };
+            const target = { ...track.clips[0]!, startBeat: 0, endBeat: 16, ...clip };
+            return { ...context, tracks: [{ ...track, clips: [target] }, ...context.tracks.slice(1)] };
         };
-        const addNotes = (note: Record<string, unknown>) =>
+        const addNotes = (note: Record<string, unknown>, clip: Partial<ProjectContextClip> = {}) =>
             bridge({
-                context: sixteenBeatClipContext(),
+                context: clipContext(clip),
                 calls: [{ name: 'addNotes', arguments: { clipId: 'clip-midi', notes: [note] } }],
             });
+        const slipped: Partial<ProjectContextClip> = { startBeat: 16, endBeat: 20, midiOffsetBeats: 8 };
+        const looped: Partial<ProjectContextClip> = {
+            endBeat: 32,
+            loopEnabled: true,
+            loopLength: 4,
+            startBeat: 0,
+        };
 
         it('refuses a note parked past any musical timeline', () => {
             const result = addNotes({ pitch: 60, startBeat: 1e15, duration: 1, velocity: 96 });
 
             expect(result.actions).toEqual([]);
-            expect(result.rejections[0]?.reason).toBe('Note 0 of a clip spanning 16 beats ends past the clip');
+            expect(result.rejections[0]?.reason).toBe('Note 0 falls outside the clip content window of beats 0 to 16');
         });
 
         it('refuses a note that runs past the end of the clip', () => {
             const result = addNotes({ pitch: 60, startBeat: 15, duration: 2, velocity: 96 });
 
             expect(result.actions).toEqual([]);
-            expect(result.rejections[0]?.reason).toBe('Note 0 of a clip spanning 16 beats ends past the clip');
+            expect(result.rejections[0]?.reason).toBe('Note 0 falls outside the clip content window of beats 0 to 16');
         });
 
         it('admits a note that ends exactly on the clip boundary', () => {
@@ -4341,6 +4350,55 @@ describe('bridgeLlmToolCalls', () => {
                     payload: { clipId: 'clip-midi', notes: [{ pitch: 60, startBeat: 15, duration: 1, velocity: 96 }] },
                 },
             ]);
+        });
+
+        it('admits a note at the media offset of a slipped clip', () => {
+            const result = addNotes({ pitch: 60, startBeat: 8, duration: 1, velocity: 96 }, slipped);
+
+            expect(result.rejections).toEqual([]);
+            expect(result.actions).toEqual([
+                {
+                    type: 'addNotes',
+                    payload: { clipId: 'clip-midi', notes: [{ pitch: 60, startBeat: 8, duration: 1, velocity: 96 }] },
+                },
+            ]);
+        });
+
+        it('refuses a note written at the timeline start of a slipped clip', () => {
+            // Beat 0 is where the clip's rectangle begins reading, and it sounds nothing: the
+            // content the clip plays starts at its offset.
+            const result = addNotes({ pitch: 60, startBeat: 0, duration: 1, velocity: 96 }, slipped);
+
+            expect(result.actions).toEqual([]);
+            expect(result.rejections[0]?.reason).toBe('Note 0 falls outside the clip content window of beats 8 to 12');
+        });
+
+        it('refuses a note that runs past the content a slipped clip reaches', () => {
+            const result = addNotes({ pitch: 60, startBeat: 11, duration: 2, velocity: 96 }, slipped);
+
+            expect(result.actions).toEqual([]);
+            expect(result.rejections[0]?.reason).toBe('Note 0 falls outside the clip content window of beats 8 to 12');
+        });
+
+        it('admits a note inside the loop a looped clip repeats', () => {
+            const result = addNotes({ pitch: 60, startBeat: 3, duration: 1, velocity: 96 }, looped);
+
+            expect(result.rejections).toEqual([]);
+            expect(result.actions).toEqual([
+                {
+                    type: 'addNotes',
+                    payload: { clipId: 'clip-midi', notes: [{ pitch: 60, startBeat: 3, duration: 1, velocity: 96 }] },
+                },
+            ]);
+        });
+
+        it('refuses a note past the loop length though it sits inside the looped rectangle', () => {
+            // Beat 5 is well inside beats 0 to 32 on the timeline, and the scheduler never reaches
+            // it: a four-beat loop wraps before it, so the note would be written and never sound.
+            const result = addNotes({ pitch: 60, startBeat: 5, duration: 1, velocity: 96 }, looped);
+
+            expect(result.actions).toEqual([]);
+            expect(result.rejections[0]?.reason).toBe('Note 0 falls outside the clip content window of beats 0 to 4');
         });
     });
 });
