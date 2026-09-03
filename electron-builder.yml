@@ -78,16 +78,20 @@ extraResources:
     - from: public/samples
       to: samples
     # `resolveNativeAddonPath()` in `electron/native.ts` reads the packaged
-    # addon from `<Resources>/sourdaw-native.node`. The artifact itself is
-    # guaranteed by `scripts/buildNativeAddon.ts` earlier in the
+    # addon from `<Resources>/sourdaw-native.node`, and `resolveScanHelperPath()`
+    # reads the packaged plugin-scan leaf helper from
+    # `<Resources>/sourdaw-plugin-scan-helper` (`.exe` on Windows). Both
+    # artifacts are guaranteed by `scripts/buildNativeAddon.ts` earlier in the
     # `desktop:build` chain, which fails the build when it cannot produce
-    # one; this glob only carries it (and any addon-adjacent dylib) into
+    # either; this glob only carries them (and any addon-adjacent dylib) into
     # Resources.
     - from: crates/sourdaw-native
       to: .
       filter:
           - '*.node'
           - '*.dylib'
+          - 'sourdaw-plugin-scan-helper'
+          - 'sourdaw-plugin-scan-helper.exe'
 
 # Capture the target Electron archive's exact legal files before the mac packager
 # removes them. Flip and read back the fuses after packaging. Both hooks run

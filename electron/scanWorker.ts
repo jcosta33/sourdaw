@@ -1,30 +1,31 @@
 /**
  * The plugin-scan `utilityProcess` entry point (REQ-007).
  *
- * This file runs in two roles, and which one it is in is decided by the process
- * arguments the addon reads:
+ * This process is the scan supervisor, and only the supervisor: forked once
+ * by the main process, it runs the scan through the native addon's
+ * `scanPlugins` command and answers with the result. It never becomes a leaf
+ * worker itself, and no CLAP or VST3 entry point is ever loaded here.
  *
- * 1. **Leaf worker.** Started by the Rust scan policy, once per plugin, with
- *    `--sourdaw-plugin-scan-worker <format> <plugin> <response>`.
- *    `runPluginScanWorker` extracts the descriptor and returns the exit code
- *    this process must end with. This is the only place a CLAP entry point is
- *    ever loaded.
- * 2. **Supervisor.** Forked by the main process. It runs the scan and answers
- *    with the result.
+ * ## Why the leaf never re-enters this process
  *
- * The leaf check is first, before anything else is set up, because in that role
- * the process exists only to load one hostile library and die.
+ * The Rust scan policy (`crates/sourdaw-native/src/host/plugin_scan_worker.rs`)
+ * launches one bounded child process per candidate plugin and needs a program
+ * to launch it as. That leaf used to be this same script, re-entered by
+ * re-executing the Electron binary in its Node role
+ * (`ELECTRON_RUN_AS_NODE=1 <electron> scanWorker.js`) — but a packaged build
+ * fuses `RunAsNode` off (`scripts/flipElectronFuses.ts`), so that child
+ * silently started the full Electron application instead of this script: it
+ * never wrote its response, every candidate burned its leaf bound, and the
+ * scan budget expired before a musician's plugin was ever reached.
  *
- * ## Why the spawn command has to be declared
- *
- * The Rust policy launches a leaf by re-executing `current_exe()` with the
- * worker arguments. Under Tauri that was the app binary, which scanned its own
- * argv on startup. Under Electron `current_exe()` is the Electron binary, and
- * handing it a bare `--sourdaw-plugin-scan-worker` argument starts neither a
- * worker nor a usable process. So this file publishes the command that *does*
- * re-enter it — Electron in its Node role, running this script — and the policy
- * uses it. The bounded child process, its timeout, its process-group kill and
- * the path authorization are all unchanged.
+ * The leaf now runs in `sourdaw-plugin-scan-helper`
+ * (`crates/sourdaw-native/src/bin/sourdaw-plugin-scan-helper.rs`), a native
+ * executable the application ships and builds with no napi or Electron
+ * surface at all. `scanWorkerLaunchEnvironment` names it to the Rust policy
+ * through `SCAN_WORKER_COMMAND_ENV`, and the policy launches it directly — no
+ * runtime, Electron or otherwise, is ever re-entered to inspect a plugin. The
+ * bounded child process, its timeout, its process-group kill and the path
+ * authorization are all unchanged.
  */
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
@@ -39,7 +40,7 @@ import { loadNativeAddon, resolveNativeAddonPath, type NativeCommand, type Nativ
  * contract, and `scanWorker.spec.ts` pins them against each other so a rename
  * on one side cannot land alone.
  */
-export const SCAN_WORKER_COMMAND_ENV = 'SOURDAW_PLUGIN_SCAN_WORKER_COMMAND';
+export const SCAN_WORKER_COMMAND_ENV = 'SOURDAW_PLUGIN_SCAN_WORKER_COMMAND' as const;
 
 export type ScanWorkerCommand = {
     readonly program: string;
@@ -48,17 +49,49 @@ export type ScanWorkerCommand = {
 };
 
 /**
- * The command that re-enters this script as a leaf worker.
+ * The command that launches the native scan helper as a leaf worker.
  *
- * `ELECTRON_RUN_AS_NODE` is what makes the Electron binary behave as plain
- * Node: without it the child would try to start as an Electron application,
- * with a browser process and a window, for every plugin on the machine.
+ * No arguments and no environment beyond what the Rust policy itself appends:
+ * `sourdaw-plugin-scan-helper` is a plain executable, not a runtime that needs
+ * telling how to behave. There is deliberately no `ELECTRON_RUN_AS_NODE` or
+ * any other Electron-shaped entry here — the whole point of a dedicated
+ * helper is that no runtime re-entry, fused on or off, is ever in the launch
+ * path again.
  */
-export const scanWorkerCommand = (execPath: string, scriptPath: string): ScanWorkerCommand => ({
-    program: execPath,
-    args: [scriptPath],
-    env: { ELECTRON_RUN_AS_NODE: '1' },
+export const scanWorkerCommand = (helperPath: string): ScanWorkerCommand => ({
+    program: helperPath,
+    args: [],
+    env: {},
 });
+
+/**
+ * The environment variable assignment that hands the leaf launch command to
+ * the Rust scan policy.
+ *
+ * A plain object rather than a side effect on `process.env`: this is the pure
+ * core {@link publishScanWorkerLaunch}, its one caller, applies to the main
+ * process's own environment. The forked scan-supervisor process never calls
+ * this directly — it inherits the published key through `main.ts`'s
+ * `...process.env` spread when it forks.
+ */
+export const scanWorkerLaunchEnvironment = (helperPath: string): { readonly [SCAN_WORKER_COMMAND_ENV]: string } => ({
+    [SCAN_WORKER_COMMAND_ENV]: JSON.stringify(scanWorkerCommand(helperPath)),
+});
+
+/**
+ * Publish the leaf launch command into a process environment, in place.
+ *
+ * The Rust scan policy (`ScanWorkerCommand::resolve`) reads
+ * `SCAN_WORKER_COMMAND_ENV` from whichever OS process environment the caller
+ * making the native call actually runs under. The main process's own
+ * `nativeHost` reaches that policy directly through `load_plugin`'s targeted
+ * rescan, not only through the forked supervisor's batch scan, so the key
+ * has to be in this process's own environment too. `main.ts` calls this
+ * once, before `nativeHost` is built.
+ */
+export const publishScanWorkerLaunch = (env: NodeJS.ProcessEnv, helperPath: string): void => {
+    Object.assign(env, scanWorkerLaunchEnvironment(helperPath));
+};
 
 export type ScanWorkerRequest = {
     readonly paths: readonly string[];
@@ -146,13 +179,6 @@ const main = (): void => {
         }),
         load: createRequire(import.meta.url),
     });
-
-    const workerExitCode = addon.runPluginScanWorker();
-    if (workerExitCode !== null) {
-        process.exit(workerExitCode);
-    }
-
-    process.env[SCAN_WORKER_COMMAND_ENV] = JSON.stringify(scanWorkerCommand(process.execPath, import.meta.filename));
 
     const host = new addon.SourdawNative(() => {
         // The scan path pushes no events, and this process has no renderer to
