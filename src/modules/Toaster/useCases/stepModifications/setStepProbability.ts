@@ -1,11 +1,6 @@
 import { toasterStore } from '../../stores/toasterStore';
 
-export function setStepProbability(
-    deviceId: string,
-    padIndex: number,
-    stepIndex: number,
-    probability: number
-): void {
+export function setStepProbability(deviceId: string, padIndex: number, stepIndex: number, probability: number): void {
     const instances = toasterStore.value ?? {};
     const state = instances[deviceId];
     if (!state) {

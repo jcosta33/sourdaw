@@ -540,4 +540,3 @@ describe('StepSequencer — sound locks', () => {
         expect(screen.queryByText('Probability')).not.toBeInTheDocument();
     });
 });
-
