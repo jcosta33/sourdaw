@@ -106,16 +106,17 @@ export async function startPluginScan(options: StartPluginScanOptions = {}): Pro
                 // is authoritative for what is quarantined right now, whether
                 // this scan reported errors or not.
                 quarantined: result.quarantined,
-                // A result in hand is a completed enumeration, and a completed
-                // enumeration is authoritative for what is installed: the
-                // native side answers an incomplete one with a failure the
-                // repository throws, and it has already rebuilt the registry
-                // activation reads from this very result. A candidate that
-                // failed is reported beside the list, never in front of it —
-                // withholding the list over one error hid every other plugin
-                // the scan found (#3497). A scan that did not run or threw
-                // leaves the list alone, above and below. `lastScanTime` dates
-                // the list the store holds, so it advances with this write.
+                // A result in hand is authoritative for what the walk reached,
+                // and it has already rebuilt the registry activation reads
+                // from. An incomplete walk is a result too: it carries the
+                // plugins it found beside a time- or candidate-limit entry in
+                // `errors`, and the native registry keeps the rows of the roots
+                // that walk never reached. A candidate that failed is reported
+                // beside the list, never in front of it — withholding the list
+                // over one error hid every other plugin the scan found (#3497).
+                // A scan that did not run or threw leaves the list alone, above
+                // and below. `lastScanTime` dates the list the store holds, so
+                // it advances with this write.
                 scannedPlugins: result.plugins,
                 lastScanTime: Date.now(),
             };

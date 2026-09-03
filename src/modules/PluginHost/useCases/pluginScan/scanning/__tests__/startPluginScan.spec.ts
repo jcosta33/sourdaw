@@ -392,22 +392,23 @@ describe('startPluginScan', () => {
     });
 
     it('leaves the plugin list untouched when the scan throws', async () => {
-        // A throw is the native side saying the enumeration never completed —
-        // there is no result, so nothing may restate the list the user's
-        // browser is showing.
+        // A throw means no result reached the renderer at all. A scan that ran
+        // out of its own budget is not one of these: it answers with the
+        // plugins it found and names the limit in `errors`. With no result,
+        // nothing may restate the list the user's browser is showing.
         const previous_plugins = [create_scanned_plugin({ id: 'kept', name: 'Kept' })];
         mocks.pluginScanStoreValue.value = create_plugin_scan_state({
             scannedPlugins: previous_plugins,
             lastScanTime: 1_000,
         });
-        mocks.scanPlugins.mockRejectedValue(new Error('Plugin scan did not complete within safety limits'));
+        mocks.scanPlugins.mockRejectedValue(new Error('Plugin scan task failed: the native host went away'));
 
         await startPluginScan();
 
         expect(mocks.pluginScanStoreSet).toHaveBeenLastCalledWith(
             expect.objectContaining({
                 isScanning: false,
-                errors: ['Plugin scan did not complete within safety limits'],
+                errors: ['Plugin scan task failed: the native host went away'],
                 scannedPlugins: previous_plugins,
                 lastScanTime: 1_000,
             })
