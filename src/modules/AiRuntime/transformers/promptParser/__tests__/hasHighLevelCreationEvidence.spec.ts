@@ -32,8 +32,28 @@ describe('hasHighLevelCreationEvidence', () => {
         'create a song for a friend',
         'add some chords under the melody',
         'add a bass track to the session',
+        // A quantifier reaches its noun through a preposition; the phrase still introduces it.
+        'create a track of drums',
+        'create a couple of tracks',
+        'add a bunch of drums',
+        'make a set of chords',
+        // 'with' names what a piece starts from, not a destination inside one.
+        'start with a drum track',
+        'begin with a new session',
+        // The shortest reading of the phrase decides: a referring word further along belongs to the
+        // next clause, and swallowing it would discard an introduction the request plainly makes.
+        'write a melody the chords follow',
+        'make a beat these drums sit on',
     ])('reads a request for something new as creation evidence: %s', (request) => {
         expect(hasHighLevelCreationEvidence(request)).toBe(true);
+    });
+
+    it('reads a determiner on the verb own object as creation, which is accepted looseness', () => {
+        // "make some tracks louder" is an edit, and separating it from "make some tracks" would cost
+        // the plain creation requests this gate exists for. The evidence opens a route that admits
+        // only commands confined to objects the same batch creates, so the false positive buys no
+        // authority over anything that already exists.
+        expect(hasHighLevelCreationEvidence('make some tracks louder')).toBe(true);
     });
 
     it('treats a genre word as creation evidence even when the clause edits a named track', () => {
@@ -81,15 +101,23 @@ describe('hasHighLevelCreationEvidence', () => {
     });
 
     it.each([
-        // A preposition before the determiner makes the phrase the destination of an edit.
         'add reverb to a few tracks',
         'add an eq to a couple of tracks',
         'add a plugin to some tracks',
         'add a send on some tracks',
-        // Here it sits inside the phrase instead, where a definite article says the same thing.
+    ])('refuses an edit whose preposition makes the phrase its destination: %s', (request) => {
+        // Every gap here is clean, so the preceding preposition is the only thing refusing them.
+        expect(hasHighLevelCreationEvidence(request)).toBe(false);
+    });
+
+    it.each([
         'make some of the tracks louder',
         'make some of the clips shorter',
-    ])('refuses an edit that names existing objects behind a determiner: %s', (request) => {
+        'make some of my tracks louder',
+        'make some of these clips shorter',
+    ])('refuses an edit that reaches its object through a referring word: %s', (request) => {
+        // No preposition precedes the determiner in any of these; the article, possessive or
+        // demonstrative inside the phrase is what names objects the project already holds.
         expect(hasHighLevelCreationEvidence(request)).toBe(false);
     });
 });

@@ -102,8 +102,9 @@ its own item declared is the only dimension available to bound them against.
 
 A note beat is a coordinate in the clip's own content, never a position on the timeline, so what
 bounds it on either route is the window that clip actually sounds: the window opens at the clip's
-MIDI offset and runs for the clip's loop length, which for a clip that does not loop is its own
-duration. Bounding notes by the clip's rectangle instead would refuse every note a slipped clip
+MIDI offset and runs for the shorter of the clip's loop length and its own duration, because every
+scheduler truncates an iteration at the clip end and a clip shorter than its loop never plays a
+whole one. Bounding notes by the clip's rectangle instead would refuse every note a slipped clip
 plays and admit notes a looped one discards unheard. A clip a batch creates carries no offset and
 does not loop, so its window is the span its item declared, counted from zero.
 
@@ -125,9 +126,17 @@ asked for, which turns a project field into an authority escalation.
 
 Two classes of text carry that evidence: a musical genre term, and an object a determiner
 introduces. A determiner alone does not settle the second, because an edit names its destination
-the same way: a preposition before the determiner, or a preposition or definite article between it
-and the noun, says the objects already exist, so "add reverb to a few tracks" and "make some of the
-tracks louder" carry no evidence while "add a bass track to the session" does. Every noun stands behind that determiner, whole works included, because a request
+the same way: a preposition before the determiner, or a referring word — article, possessive or
+demonstrative — between it and the noun, says the objects already exist, so "add reverb to a few
+tracks" and "make some of the tracks louder" carry no evidence while "add a bass track to the
+session" does. A preposition inside the phrase decides nothing, because a quantifier reaches its
+noun through one and "create a couple of tracks" asks for new tracks.
+
+What a determiner does to the verb's own direct object is deliberately left alone: "make some tracks
+louder" reads as creation. Separating that from "make some tracks" would cost the plain creation
+requests the gate exists for, and the route the evidence opens admits only commands confined to
+objects the same batch creates — so the false positive buys no authority over anything that already
+exists, exactly as the genre term does not. Every noun stands behind that determiner, whole works included, because a request
 reaches for a song it already has as readily as for one it wants written — the determiner is what
 separates writing a song from mixing one. A word that names a mix quality as readily as a part
 carries no evidence at all: bare "bass" is a frequency range as often as an instrument, so only

@@ -4319,6 +4319,12 @@ describe('bridgeLlmToolCalls', () => {
                 calls: [{ name: 'addNotes', arguments: { clipId: 'clip-midi', notes: [note] } }],
             });
         const slipped: Partial<ProjectContextClip> = { startBeat: 16, endBeat: 20, midiOffsetBeats: 8 };
+        const loopLongerThanClip: Partial<ProjectContextClip> = {
+            endBeat: 4,
+            loopEnabled: true,
+            loopLength: 64,
+            startBeat: 0,
+        };
         const looped: Partial<ProjectContextClip> = {
             endBeat: 32,
             loopEnabled: true,
@@ -4399,6 +4405,25 @@ describe('bridgeLlmToolCalls', () => {
 
             expect(result.actions).toEqual([]);
             expect(result.rejections[0]?.reason).toBe('Note 0 falls outside the clip content window of beats 0 to 4');
+        });
+
+        it('bounds a clip shorter than its own loop by the clip, not the loop', () => {
+            // Every scheduler truncates an iteration at the clip end, so a four-beat clip looping
+            // every sixty-four beats sounds four beats. Beat 10 is inside the loop and never plays.
+            const parked = addNotes({ pitch: 60, startBeat: 10, duration: 1, velocity: 96 }, loopLongerThanClip);
+
+            expect(parked.actions).toEqual([]);
+            expect(parked.rejections[0]?.reason).toBe('Note 0 falls outside the clip content window of beats 0 to 4');
+
+            const sounding = addNotes({ pitch: 60, startBeat: 3, duration: 1, velocity: 96 }, loopLongerThanClip);
+
+            expect(sounding.rejections).toEqual([]);
+            expect(sounding.actions).toEqual([
+                {
+                    type: 'addNotes',
+                    payload: { clipId: 'clip-midi', notes: [{ pitch: 60, startBeat: 3, duration: 1, velocity: 96 }] },
+                },
+            ]);
         });
 
         it('refuses the call when the clip cannot say where its content is', () => {
