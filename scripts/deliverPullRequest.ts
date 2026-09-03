@@ -842,7 +842,22 @@ function resolveMatrixName(jobId: string, name: string, strategy: unknown, workf
             );
         }
         const reference = new RegExp(`\\$\\{\\{\\s*matrix\\.${dimension}\\s*\\}\\}`, 'g');
-        resolved = resolved.flatMap((template) => values.map((value) => template.replace(reference, String(value))));
+        // A replacement function, never a replacement string: `String.replace` would read `$`
+        // patterns out of the value, so `a$$b` would arrive as `a$b` and `a$&b` would re-insert
+        // the reference — neither is the name GitHub mints.
+        resolved = resolved.flatMap((template) =>
+            values.map((value) => template.replace(reference, () => String(value)))
+        );
+    }
+    // Substitution only removes matrix references. A name that still opens an expression — one that
+    // mixed a matrix reference with `github.event_name`, or one whose matrix value was itself an
+    // expression — names a check GitHub never mints, and deriving it would tolerate every real
+    // cancellation on the leg.
+    if (resolved.some((resolvedName) => resolvedName.includes(EXPRESSION_OPENER))) {
+        fail(
+            `the ${jobId} job in ${workflowPath} names its check ${name}, ` +
+                `which references something other than its matrix dimensions`
+        );
     }
     return resolved;
 }

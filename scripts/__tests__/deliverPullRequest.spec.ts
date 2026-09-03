@@ -7156,6 +7156,29 @@ describe('gating check names', () => {
         ]);
     });
 
+    /**
+     * `String.replace` reads `$` patterns out of a replacement string, so a matrix value carrying
+     * one must be substituted with a replacement function: GitHub mints `Unit a$$b` literally, and
+     * a derivation that collapses it to `Unit a$b` names a check that never exists.
+     */
+    it('substitutes a dollar-carrying matrix value literally', async () => {
+        const dollarCalled = [
+            'name: Validation',
+            'jobs:',
+            '  unit:',
+            '    name: Unit ${{ matrix.shard }}',
+            '    strategy:',
+            '      matrix:',
+            '        shard: [a$$b]',
+        ].join('\n');
+
+        const names = await gatingNamesFor(workflow(releaseCall, gateNeeding('release')), {
+            './.github/workflows/release.yml': dollarCalled,
+        });
+
+        expect([...names]).toEqual(['Release / Unit a$$b']);
+    });
+
     it.each<{ label: string; call: string; called: Record<string, string>; message: string }>([
         {
             label: 'a reusable call the launcher did not carry',
@@ -7219,6 +7242,43 @@ describe('gating check names', () => {
             },
             message:
                 'Error: the build job in ./.github/workflows/release.yml names its check Build ${{ github.event_name }}, ' +
+                'which references something other than its matrix dimensions',
+        },
+        {
+            label: 'a matrix reference mixed with another expression',
+            call: releaseCall,
+            called: {
+                './.github/workflows/release.yml': [
+                    'name: Mixed',
+                    'jobs:',
+                    '  unit:',
+                    '    name: Unit suite ${{ matrix.shard }}/4 (${{ github.event_name }})',
+                    '    strategy:',
+                    '      matrix:',
+                    '        shard: [1, 2]',
+                ].join('\n'),
+            },
+            message:
+                'Error: the unit job in ./.github/workflows/release.yml names its check ' +
+                'Unit suite ${{ matrix.shard }}/4 (${{ github.event_name }}), ' +
+                'which references something other than its matrix dimensions',
+        },
+        {
+            label: 'an expression-valued matrix entry',
+            call: releaseCall,
+            called: {
+                './.github/workflows/release.yml': [
+                    'name: Valued',
+                    'jobs:',
+                    '  unit:',
+                    '    name: Unit suite ${{ matrix.shard }}/4',
+                    '    strategy:',
+                    '      matrix:',
+                    "        shard: [1, '${{ matrix.shard }}']",
+                ].join('\n'),
+            },
+            message:
+                'Error: the unit job in ./.github/workflows/release.yml names its check Unit suite ${{ matrix.shard }}/4, ' +
                 'which references something other than its matrix dimensions',
         },
         {
