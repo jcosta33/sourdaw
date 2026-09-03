@@ -1,0 +1,37 @@
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentWorkflowFixture.ts
+  s_ac03a4ebaa3f6e::t_69a04cc145cd18 205-207
+src/modules/AiGeneration/useCases/midiTransforms/__tests__/midiTransformImplementations.spec.ts
+  s_ac03a4ebaa3f6e::t_163ccf71b6fb1f 88-110
+  s_ac03a4ebaa3f6e::t_fbd0ada00dae36 85-87
+  s_ac03a4ebaa3f6e::t_4cd356b5d1f3a2 111-112
+  s_e4748c6d719c3e::t_1b3913db1e009e 174-189
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentExecution.spec.ts
+  s_ac03a4ebaa3f6e::t_1f605008c2b800 329-333,335,337,340-341
+  s_ac03a4ebaa3f6e::t_15371ef5e656c1 303
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentConformance.spec.ts
+  s_ac03a4ebaa3f6e::t_89cf793f0e9ae4 400-405,411
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "ba2db61f50c30ad461a395ad508a134af1360805",
+  "prompts": {},
+  "sessions": {
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_e4748c6d719c3e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-acc29b4e0e2361d83",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
