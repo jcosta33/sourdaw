@@ -196,4 +196,11 @@ describe('CrustPanel', () => {
         // The controls it holds are still there — this is a tag change, not a delete.
         expect(screen.getByRole('button', { name: 'Reset' })).toBeInTheDocument();
     });
+
+    it('applies minimum height floor and does not clip overflow at root', () => {
+        const { container } = render(<CrustPanel deviceId="crust-1" />);
+        const faceplate = container.querySelector('.crust-faceplate');
+        expect(faceplate).toHaveClass('min-h-[440px]');
+        expect(faceplate).not.toHaveClass('overflow-hidden');
+    });
 });
