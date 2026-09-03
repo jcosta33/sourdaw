@@ -572,7 +572,7 @@ describe('FermenterPanel', () => {
 
             const faceplate = container.querySelector('.fermenter-faceplate');
             expect(faceplate).toHaveClass('min-h-[460px]');
-            expect(faceplate).toHaveClass('h-auto');
+            expect(faceplate).toHaveClass('h-full');
 
             const header = container.querySelector('header');
             expect(header).toHaveClass('min-h-[32px]');

@@ -531,7 +531,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
     }
 
     return (
-        <Row align="stretch" gap={2.5} className="fermenter-faceplate min-h-full h-auto min-h-[460px] p-2.5">
+        <Row align="stretch" gap={2.5} className="fermenter-faceplate h-full min-h-[460px] p-2.5">
             <Stack
                 as="aside"
                 gap={2.5}

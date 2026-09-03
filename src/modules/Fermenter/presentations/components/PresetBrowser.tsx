@@ -126,6 +126,7 @@ export const PresetBrowser = ({
                             size="bare"
                             key={cat.id}
                             type="button"
+                            aria-pressed={category === cat.id}
                             className={`shrink-0 whitespace-nowrap px-1.5 py-0.5 rounded text-[7px] font-medium transition-colors ${
                                 category === cat.id ? 'text-white' : 'text-muted-foreground/60 hover:text-foreground'
                             }`}
