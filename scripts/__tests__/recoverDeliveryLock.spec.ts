@@ -94,7 +94,7 @@ describe('deliver --recover-lock', () => {
             ).resolves.toBe(0);
             expect(() => git(root, ['rev-parse', '--verify', REF])).toThrow();
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
         }
     });
 
@@ -109,7 +109,7 @@ describe('deliver --recover-lock', () => {
             ).resolves.toBe(0);
             expect(() => git(root, ['rev-parse', '--verify', REF])).toThrow();
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
         }
     });
 
@@ -179,7 +179,7 @@ describe('deliver --recover-lock', () => {
             );
             expect(git(root, ['rev-parse', '--verify', REF])).toBe(OWNER_OID);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
         }
     });
 
@@ -205,7 +205,7 @@ describe('deliver --recover-lock', () => {
             );
             expect(git(root, ['rev-parse', '--verify', REF])).toBe(OWNER_OID);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
         }
     });
 
@@ -221,7 +221,7 @@ describe('deliver --recover-lock', () => {
             ).rejects.toThrow(/remote state changed/);
             expect(git(root, ['rev-parse', '--verify', REF])).toBe(OWNER_OID);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
         }
     });
 
@@ -246,7 +246,7 @@ describe('deliver --recover-lock', () => {
             ).rejects.toThrow(/remote state changed/);
             expect(git(root, ['rev-parse', '--verify', REF])).toBe(OWNER_OID);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
         }
     });
 
@@ -265,7 +265,7 @@ describe('deliver --recover-lock', () => {
             expect(git(root, ['symbolic-ref', '-q', REF])).toBe(targetRef);
             expect(git(root, ['rev-parse', '--verify', targetRef])).toBe(OWNER_OID);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
         }
     });
 
@@ -297,7 +297,7 @@ describe('deliver --recover-lock', () => {
             );
             expect(git(root, ['rev-parse', '--verify', REF])).toBe(replacement);
         } finally {
-            rmSync(root, { recursive: true, force: true });
+            rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
         }
     });
 });
