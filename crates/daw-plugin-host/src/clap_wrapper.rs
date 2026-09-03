@@ -38,7 +38,7 @@ use crate::parameter_events::{
     PluginParameterEvent, PluginParameterEventKind, PluginParameterEventQueue,
 };
 use crate::params::PluginParameter;
-use crate::scanner::{category_from_clap_features, owned_feature_list};
+use crate::scanner::{category_from_clap_features, clap_library_path, owned_feature_list};
 use crate::traits::{
     signal_pending_process_refusal, AudioPlugin, EditorWindowResizer, HostParameterUpdate,
     HostTransport, HostedPluginRuntime, PluginHostRequestNotifier, ProcessingGate,
@@ -82,6 +82,7 @@ use clap_sys::stream::{clap_istream, clap_ostream};
 use libloading::Library;
 use std::ffi::{c_void, CStr, CString};
 use std::mem;
+use std::path::Path;
 use std::ptr;
 use std::sync::Arc;
 #[cfg(feature = "engine-owned-command-fixture")]
@@ -628,9 +629,11 @@ impl ClapWrapper {
     ///   differ, and the plugin only ever sees engine-rendered audio, so
     ///   activating on the device's clock detunes everything the plugin does.
     pub fn new(plugin_path: &str, plugin_id: &str, sample_rate: f64) -> Result<Self, String> {
+        let path = Path::new(plugin_path);
+        let library_path = clap_library_path(path)?;
         unsafe {
             // 1. Load the shared library
-            let library = Library::new(plugin_path)
+            let library = Library::new(&library_path)
                 .map_err(|e| format!("Failed to load CLAP plugin at {}: {}", plugin_path, e))?;
 
             // 2. Get the clap_entry symbol
