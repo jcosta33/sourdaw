@@ -1,0 +1,105 @@
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentExecution.spec.ts
+  s_ac03a4ebaa3f6e::t_c6ef6c813fa961 50
+  s_ac03a4ebaa3f6e::t_879032006becc5 1-6,8-39,41-49,51-64,66-187,189-233,242-371
+  s_ac03a4ebaa3f6e::t_6c311235dbed5b 7
+  s_ac03a4ebaa3f6e::t_428b6ddb76255b 40
+  s_ac03a4ebaa3f6e::t_c3d15c9409f1ca 234-241
+  s_ac03a4ebaa3f6e::t_32f8fe8b5a9af9 65
+  s_ac03a4ebaa3f6e::t_661c855e3fa680 188
+src/modules/AiRuntime/useCases/__tests__/bassCompressorPromptWorkflow.spec.ts
+  s_ac03a4ebaa3f6e::t_9b2fe0d5c85f86 1097
+  s_ac03a4ebaa3f6e::t_527a3663a5d0f9 1080-1081
+  s_ac03a4ebaa3f6e::t_95313f43b415e1 48-50,1051-1052
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentWorkflowFixture.ts
+  s_ac03a4ebaa3f6e::t_f7f5586b0d0f38 149-151
+  s_ac03a4ebaa3f6e::t_b26ed2bbd6797e 293-297,301
+  s_ac03a4ebaa3f6e::t_240152888055c4 1,13-37,40-148,152-214,216-252,300,302-340
+  s_ac03a4ebaa3f6e::t_5280d2246f82f2 215
+  s_ac03a4ebaa3f6e::t_36903965c4f2f9 271-292
+  s_ac03a4ebaa3f6e::t_c5538a8c44f0ad 38-39
+  s_ac03a4ebaa3f6e::t_7896c976672443 298-299
+  s_ac03a4ebaa3f6e::t_0f09c8138ff661 253-270
+  s_ac03a4ebaa3f6e::t_50589a2bd5c397 2-12
+src/modules/AiRuntime/transformers/describePlanningOutcome.ts
+  s_ac03a4ebaa3f6e::t_c189dd4de35b97 4-9
+  s_ac03a4ebaa3f6e::t_b2e6ee95dbe1a0 21-22
+  s_ac03a4ebaa3f6e::t_c309fa673c6f5b 3
+  s_ac03a4ebaa3f6e::t_c3615dcd8ebf2c 23
+src/modules/AiRuntime/useCases/__tests__/aiWorkflowCommandPreflightFixture.ts
+  s_ac03a4ebaa3f6e::t_3b72517aec827c 54-57,59
+  s_ac03a4ebaa3f6e::t_37cc8fb18e2406 87-89
+  s_ac03a4ebaa3f6e::t_296cf7821f1d1a 60,62-81
+  s_ac03a4ebaa3f6e::t_1232c1da9aa427 58
+  s_ac03a4ebaa3f6e::t_6780c0a16377b1 1,7-19
+  s_ac03a4ebaa3f6e::t_fa74f9a96fa278 61
+src/modules/AiRuntime/useCases/__tests__/midiOverlapPromptWorkflow.spec.ts
+  s_ac03a4ebaa3f6e::t_81a2aa2f2368c6 811,824,826
+  s_ac03a4ebaa3f6e::t_a97e437b107b34 891-897
+  s_ac03a4ebaa3f6e::t_b058abd92dc405 910
+  s_ac03a4ebaa3f6e::t_5192e591cc29ba 836-837
+  s_ac03a4ebaa3f6e::t_8f09ea76eebe17 827-835,838-852
+  s_ac03a4ebaa3f6e::t_2eb8ae108edc1d 50-52
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentConformance.spec.ts
+  s_ac03a4ebaa3f6e::t_51716430962bc7 359-361
+  s_ac03a4ebaa3f6e::t_4380e134d6bf98 89
+  s_ac03a4ebaa3f6e::t_3f18c2a7a18164 404,410,412-414
+  s_ac03a4ebaa3f6e::t_18fb6d6e9d4f92 72,75,77
+  s_ac03a4ebaa3f6e::t_c4572d6dac7b99 108-111
+  s_ac03a4ebaa3f6e::t_5ecf294080dff7 1-59,61-63,65-71,73-74,76,78-88,90-107,112-337,340-358,362-380,382,385-386,388-392,396-403,405-409,416-418,422-472,476-482
+  s_ac03a4ebaa3f6e::t_38abd63f840e86 411,415,419-421
+  s_ac03a4ebaa3f6e::t_caf247207da16e 60
+  s_ac03a4ebaa3f6e::t_a7cfe5d6a07278 473-475
+  s_ac03a4ebaa3f6e::t_146e1340a7e294 393-395
+  s_ac03a4ebaa3f6e::t_0c5dd4df395c50 338-339
+  s_ac03a4ebaa3f6e::t_f9eed92b272f0c 381,383-384,387
+  s_ac03a4ebaa3f6e::t_59ea897cc8265d 64
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_ac03a4ebaa3f6e::t_da317dbbf049d1 4712-4715
+  s_ac03a4ebaa3f6e::t_93dadb572c9f63 4778-4781,4784-4787,4789-4790
+src/modules/AiRuntime/useCases/__tests__/verseHallAutomationWorkflow.spec.ts
+  s_ac03a4ebaa3f6e::t_7fc0fd5dc63cb8 724-725
+  s_ac03a4ebaa3f6e::t_37a881cd3e7878 45-47,685-686,707-708,721,739-740,752
+src/modules/AiRuntime/useCases/__tests__/mixPromptWorkflow.spec.ts
+  s_ac03a4ebaa3f6e::t_8124364428748a 738
+  s_ac03a4ebaa3f6e::t_098df0881766fb 722-723
+  s_ac03a4ebaa3f6e::t_1ec4c3b8d0cf66 700-702
+  s_e4748c6d719c3e::t_4cbd86f1fae7aa 45-47
+src/modules/AiRuntime/useCases/__tests__/drumPreviewBranchesPromptWorkflow.spec.ts
+  s_ac03a4ebaa3f6e::t_5f0a035b5d47c3 839-840
+  s_ac03a4ebaa3f6e::t_70e75074a20c45 849
+  s_ac03a4ebaa3f6e::t_3ff117c4a6d0e5 55-57,821-822
+src/modules/AiRuntime/useCases/__tests__/articulationTransferPromptWorkflow.spec.ts
+  s_ac03a4ebaa3f6e::t_deb2e157f45015 1160-1161
+  s_ac03a4ebaa3f6e::t_3495decad17190 1179
+  s_ac03a4ebaa3f6e::t_ead83d6b472c1b 37-39,912-913,1139-1140
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/orchestratePromptChatRequest.spec.ts
+  s_ac03a4ebaa3f6e::t_48746ae840a698 524-550
+src/modules/AiRuntime/useCases/__tests__/wholeProjectVibeMixPlan.spec.ts
+  s_ac03a4ebaa3f6e::t_50919497f71e2e 47-49,895-896,912-913,924
+src/modules/AiRuntime/useCases/__tests__/syncopatedArpeggioPromptWorkflow.spec.ts
+  s_e4748c6d719c3e::t_5ccb1787779612 45-46,628-629
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "793220ce94041b848ce1d0cec0f55724606ff0db",
+  "prompts": {},
+  "sessions": {
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_e4748c6d719c3e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-acc29b4e0e2361d83",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
