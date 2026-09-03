@@ -779,12 +779,19 @@ expect(
     deployWebIsolationStep?.env?.DEPLOYMENT_URL === '${{ steps.deployment.outputs.url }}',
     'the daily web deploy must assert isolation against the deployment it just created, not against a fixed alias'
 );
-for (const stepName of ['Pull the production environment', 'Build the validated revision', 'Deploy the prebuilt revision']) {
+for (const stepName of ['Deploy the prebuilt revision']) {
     expect(
         stepNamed(deployWeb, stepName)?.env?.VERCEL_TOKEN === '${{ secrets.VERCEL_TOKEN }}',
         `${stepName} must authenticate the Vercel CLI from the environment`
     );
 }
+const deployWebBuildRun = stepNamed(deployWeb, 'Build the validated revision')?.run ?? '';
+expect(
+    deployWebBuildRun.includes('pnpm build') &&
+        deployWebBuildRun.includes('scripts/writeVercelPrebuiltOutput.ts') &&
+        !deployWebBuildRun.includes('vercel'),
+    'the daily web deploy must build locally rather than through the Vercel CLI'
+);
 expect(
     deployWeb?.environment === 'Production',
     'the daily web deploy must draw its credential from the Production environment'
@@ -868,7 +875,7 @@ for (const stepName of [
 }
 for (const stepName of [
     'Install dependencies',
-    'Pull the production environment',
+    'Link the Vercel CLI to the production project',
     'Build the validated revision',
     'Deploy the prebuilt revision',
     'Assert cross-origin isolation on the deployment',

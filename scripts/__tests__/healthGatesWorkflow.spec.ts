@@ -141,11 +141,7 @@ const DEPLOY_ARMING_PRECONDITIONS = [
 ] as const;
 const DEPLOYMENT_URL_REFERENCE = '${{ steps.deployment.outputs.url }}';
 const VERCEL_TOKEN_REFERENCE = '${{ secrets.VERCEL_TOKEN }}';
-const VERCEL_CLI_STEPS = [
-    'Pull the production environment',
-    'Build the validated revision',
-    'Deploy the prebuilt revision',
-] as const;
+const VERCEL_CLI_STEPS = ['Deploy the prebuilt revision'] as const;
 // Every leg a scheduled run performs. The train promotes a revision only once
 // each of them has reported success on that same revision.
 const DEPLOY_WEB_NEEDS = [
@@ -181,7 +177,6 @@ const DEPLOY_FRESH_GATED_STEPS = [
 const DEPLOY_REVISION_GATED_STEPS = [
     'Install dependencies',
     'Link the Vercel CLI to the production project',
-    'Pull the production environment',
     'Build the validated revision',
     'Deploy the prebuilt revision',
     'Assert cross-origin isolation on the deployment',
@@ -873,6 +868,27 @@ function assertDailyDeployTrain(candidate: UnknownRecord): DeployTrainScripts {
     }
     if (!deployment.includes('--meta githubCommitSha="$GITHUB_SHA"')) {
         throw new Error('the daily deploy train must record the deployed revision on the deployment');
+    }
+    const buildStep = stepNamed(job, 'Build the validated revision');
+    const buildRun = stringAt(buildStep, 'run');
+    if (!buildRun.includes('pnpm build')) {
+        throw new Error('Build the validated revision must build with pnpm, not the Vercel CLI');
+    }
+    if (!buildRun.includes('scripts/writeVercelPrebuiltOutput.ts')) {
+        throw new Error('Build the validated revision must write the prebuilt output locally');
+    }
+    if (buildRun.includes('vercel')) {
+        throw new Error('Build the validated revision must not invoke the Vercel CLI');
+    }
+    if (buildStep.env !== undefined) {
+        const buildEnv = recordAt(buildStep, 'env');
+        if (
+            buildEnv.VERCEL_TOKEN !== undefined ||
+            buildEnv.VERCEL_ORG_ID !== undefined ||
+            buildEnv.VERCEL_PROJECT_ID !== undefined
+        ) {
+            throw new Error('Build the validated revision must not set Vercel CLI credentials');
+        }
     }
     for (const name of VERCEL_CLI_STEPS) {
         const env = recordAt(stepNamed(job, name), 'env');
@@ -1602,20 +1618,20 @@ describe('health gates workflow contract', () => {
             'the daily deploy train must queue behind a running deploy rather than cancel it'
         );
 
-        const unauthenticatedBuild = asRecord(structuredClone(nightly), 'unauthenticated deploy train');
-        delete recordAt(stepNamed(jobAt(unauthenticatedBuild, DEPLOY_WEB_JOB), 'Build the validated revision'), 'env')
+        const unauthenticatedDeploy = asRecord(structuredClone(nightly), 'unauthenticated deploy train');
+        delete recordAt(stepNamed(jobAt(unauthenticatedDeploy, DEPLOY_WEB_JOB), 'Deploy the prebuilt revision'), 'env')
             .VERCEL_TOKEN;
-        expect(() => assertDailyDeployTrain(unauthenticatedBuild)).toThrow(
-            'Build the validated revision must authenticate from the environment rather than an echoed argument'
+        expect(() => assertDailyDeployTrain(unauthenticatedDeploy)).toThrow(
+            'Deploy the prebuilt revision must authenticate from the environment rather than an echoed argument'
         );
 
-        const envLinkedPull = asRecord(structuredClone(nightly), 'env-linked pull deploy train');
+        const envLinkedDeploy = asRecord(structuredClone(nightly), 'env-linked deploy train');
         recordAt(
-            stepNamed(jobAt(envLinkedPull, DEPLOY_WEB_JOB), 'Pull the production environment'),
+            stepNamed(jobAt(envLinkedDeploy, DEPLOY_WEB_JOB), 'Deploy the prebuilt revision'),
             'env'
         ).VERCEL_ORG_ID = '${{ secrets.VERCEL_ORG_ID }}';
-        expect(() => assertDailyDeployTrain(envLinkedPull)).toThrow(
-            'Pull the production environment must not pass VERCEL_ORG_ID to the CLI'
+        expect(() => assertDailyDeployTrain(envLinkedDeploy)).toThrow(
+            'Deploy the prebuilt revision must not pass VERCEL_ORG_ID to the CLI'
         );
 
         const reboundIsolation = asRecord(structuredClone(nightly), 'rebound-isolation deploy train');
