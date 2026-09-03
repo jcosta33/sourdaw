@@ -1,0 +1,29 @@
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClip.spec.ts
+  s_ac03a4ebaa3f6e::t_a9137b1d7cb832 394-486
+src/modules/Arrangement/useCases/clipEditing/prepareClipSplit.ts
+  s_28abfd94826e36::t_411d794f00e8a9 71-75,79-80,95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "77dd6f5f24d8b8a9b3d9715a85b17d42c6164e7f",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
