@@ -1,0 +1,24 @@
+crates/sourdaw-native/src/commands/crumbs.rs
+  s_9b530f08172a54::t_8e0b4cb3b78a3a 204
+  s_9b530f08172a54::t_828f0ad81ecca1 108-112
+  s_9b530f08172a54::t_48d9f4408774e4 237-240
+  s_9b530f08172a54::t_d92bad1cf21f19 206,241,244-245,1712-1756
+  s_9b530f08172a54::t_1700d18428fc59 200-203
+  s_9b530f08172a54::t_4f4ffb919a5dcc 205,207-210,242-243,246,1757-1764
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "0421df423b76623c99cd0bdddc81642c15b1dd25",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
