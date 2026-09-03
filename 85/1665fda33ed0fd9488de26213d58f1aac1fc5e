@@ -1,0 +1,22 @@
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchSwitchProjectIdentity.integration.spec.ts
+  s_ac03a4ebaa3f6e::t_5194b0ba984b95 1,17-27,34-36,46-48
+  s_ac03a4ebaa3f6e::t_7e524f02ae8f1b 16,28-33,37-45
+  s_ac03a4ebaa3f6e::t_33580847776ede 14-15
+  s_ac03a4ebaa3f6e::t_13447d7d2bb8ea 78-81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "851665fda33ed0fd9488de26213d58f1aac1fc5e",
+  "prompts": {},
+  "sessions": {
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
