@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_ac03a4ebaa3f6e::t_131c2c3a02a645 260-262,265-275,277,279-282,291-300,308,310-311,313-314,320,324-327
+  s_ac03a4ebaa3f6e::t_178025bebf2e54 301-307,309,312,315-319,321-323
+  s_ac03a4ebaa3f6e::t_e06d99dd9fff3d 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "3fa77c28dcefd25162ac2fdee1eac2f8e1fc763a",
+  "prompts": {},
+  "sessions": {
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
