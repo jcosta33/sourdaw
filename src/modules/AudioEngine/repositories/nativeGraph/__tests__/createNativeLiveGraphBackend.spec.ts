@@ -98,6 +98,39 @@ describe('createNativeLiveGraphBackend', () => {
             runtimeRevision: 4,
             admittedBatch: 6,
             reports: [{ kind: 'track', id: 'audio-1', deviceIds: ['device-a'] }],
+            // A batch that attached no dormant plugin instance says so, rather
+            // than leaving the caller to tell "attached none" from "did not
+            // answer".
+            attachedPlugins: [],
+        });
+    });
+
+    // The list exists because the load that created these instances already
+    // told their devices there was no engine, and nothing else ever revises
+    // that. A payload without the field attached nothing — it is not a defect
+    // the way an unreadable outcome is — and an entry missing either half is
+    // dropped, because the bridge depth is added to a latency figure and a
+    // substituted zero is a compensation error nobody can see.
+    it('reads the instances an engine start took over, and drops an entry it cannot read', async () => {
+        const transport = stubTransport(() =>
+            Promise.resolve({
+                acceptance: 'accepted',
+                application: 'applied',
+                runtimeRevision: 4,
+                reports: [],
+                attachedPlugins: [
+                    { instanceId: 'inst-1', bridgeRoundTripFrames: 512 },
+                    { instanceId: 'inst-2' },
+                    { bridgeRoundTripFrames: 512 },
+                    { instanceId: 'inst-3', bridgeRoundTripFrames: 'soon' },
+                ],
+            })
+        );
+
+        const result = await createNativeLiveGraphBackend({ transport }).apply(BATCH);
+
+        expect(result).toMatchObject({
+            attachedPlugins: [{ instanceId: 'inst-1', bridgeRoundTripFrames: 512 }],
         });
     });
 

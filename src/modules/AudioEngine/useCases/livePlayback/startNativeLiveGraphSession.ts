@@ -42,6 +42,7 @@ import {
     trackStore,
     type Track,
 } from '#/modules/Arrangement/stores';
+import { markExternalPluginEngineAttached } from '#/modules/PluginHost/useCases';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 import { type AudioGraphStripReport } from '../../models/AudioGraphBackend';
@@ -281,6 +282,18 @@ export function startNativeLiveGraphSession(
             // command it could not hold, a partial application names what it
             // could not finish. Neither leaves a session worth keeping.
             return { outcome: 'declined', reason: result.reason };
+        }
+        // This batch is what starts the native engine, so it is also what takes
+        // over every plugin instance loaded before there was one — those
+        // instances were reported to their devices as loaded but processing no
+        // audio, and this result is the only correction that report ever gets.
+        // Before the session bookkeeping below, because a device that is told
+        // late has already been read as degraded.
+        for (const attached of result.attachedPlugins ?? []) {
+            markExternalPluginEngineAttached({
+                instanceId: attached.instanceId,
+                bridgeRoundTripFrames: attached.bridgeRoundTripFrames,
+            });
         }
         // The previous session's handle is closed only once its replacement is
         // applied: a decline must leave the engine reachable through the handle

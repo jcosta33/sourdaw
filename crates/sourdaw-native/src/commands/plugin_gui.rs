@@ -91,7 +91,8 @@ fn call_plugin_on_ui_thread<Answer: Send + 'static>(
             .lock()
             .map_err(|e| format!("Failed to lock plugins: {}", e))?;
         if let Some(instance) = plugins.get_mut(instance_id) {
-            return lend_on_ui_thread(windows_host, instance.plugin.as_mut(), call);
+            let plugin: &mut dyn AudioPlugin = &mut instance.plugin;
+            return lend_on_ui_thread(windows_host, plugin, call);
         }
     }
 
@@ -167,7 +168,7 @@ pub async fn is_plugin_gui_supported(
             .map_err(|e| format!("Failed to lock plugins: {}", e))?;
 
         if let Some(instance) = plugins.get(&instance_id) {
-            return Ok(instance.has_gui());
+            return Ok(instance.has_gui);
         }
     }
 
@@ -258,11 +259,11 @@ pub async fn open_plugin_gui(
             .map_err(|e| format!("Failed to lock plugins: {}", e))?;
         match plugins.get(&instance_id) {
             Some(instance) => {
-                if !instance.has_gui() {
+                if !instance.has_gui {
                     return Err("Plugin does not support GUI".to_string());
                 }
 
-                (instance.get_name().to_string(), None)
+                (instance.name.clone(), None)
             }
             None => {
                 let engine_plugins = state
@@ -345,21 +346,7 @@ pub async fn open_plugin_gui(
     // it in for the same reason.
     let handle = handle_ptr as usize;
     let open_editor = move |plugin: &mut dyn AudioPlugin| -> Result<OpenedEditor, String> {
-        let size = open_editor_or_release_host_window(
-            plugin,
-            |plugin| {
-                plugin.set_editor_window_resizer(resize_window);
-                plugin.set_editor_content_scale(scale_factor);
-            },
-            |plugin| plugin.open_gui(handle as *mut std::ffi::c_void),
-        )?;
-
-        // Asked here, on the thread the editor lives on and while its view is
-        // still open, because that is the only place the question has an answer.
-        Ok(OpenedEditor {
-            size,
-            can_resize: plugin.editor_can_resize(),
-        })
+        open_editor_reporting_resizability(plugin, resize_window, scale_factor, handle)
     };
     let gui_size_result = if let Some(runtime) = engine_runtime.as_ref() {
         runtime
@@ -376,7 +363,7 @@ pub async fn open_plugin_gui(
             .get_mut(&instance_id)
             .ok_or_else(|| format!("No plugin instance: {}", instance_id))?;
 
-        lend_on_ui_thread(windows_host, instance.plugin.as_mut(), move |plugin| {
+        lend_on_ui_thread(windows_host, &mut instance.plugin, move |plugin| {
             open_editor(plugin)
         })
         .and_then(|opened| opened)
@@ -451,7 +438,9 @@ pub async fn open_plugin_gui(
         // open is refused for.
         if let Ok(mut plugins) = state.plugins.lock() {
             if let Some(instance) = plugins.get_mut(&instance_id) {
-                let _ = lend_on_ui_thread(windows_host, instance, |instance| instance.close_gui());
+                let _ = lend_on_ui_thread(windows_host, &mut instance.plugin, |plugin| {
+                    plugin.close_gui()
+                });
             }
         }
         plugin_window.destroy();
@@ -463,6 +452,37 @@ pub async fn open_plugin_gui(
         is_open: true,
         width,
         height,
+    })
+}
+
+/// Open one plugin's editor onto the host window, and report — from inside the
+/// same visit — whether that editor accepts a size the host chooses.
+///
+/// Standing alone rather than inlined in [`open_plugin_gui`] because the second
+/// answer is the whole reason the question is asked here: `editor_can_resize`
+/// is defined only while a view is open, on the thread it opened on, so the one
+/// visit that opens the editor is the only place it can be read. A host that
+/// decided for itself gives every fixed-layout editor a draggable frame, or
+/// freezes every resizable one — and that is a per-plugin answer no store here
+/// holds.
+fn open_editor_reporting_resizability(
+    plugin: &mut dyn AudioPlugin,
+    resize_window: EditorWindowResizer,
+    scale_factor: f64,
+    handle: usize,
+) -> Result<OpenedEditor, String> {
+    let size = open_editor_or_release_host_window(
+        plugin,
+        |plugin| {
+            plugin.set_editor_window_resizer(resize_window);
+            plugin.set_editor_content_scale(scale_factor);
+        },
+        |plugin| plugin.open_gui(handle as *mut std::ffi::c_void),
+    )?;
+
+    Ok(OpenedEditor {
+        size,
+        can_resize: plugin.editor_can_resize(),
     })
 }
 
@@ -657,7 +677,9 @@ fn close_owning_plugin_gui(
     let closed_command_owned = match state.plugins.lock() {
         Ok(mut plugins) => match plugins.get_mut(instance_id) {
             Some(instance) => {
-                let _ = lend_on_ui_thread(windows_host, instance, |instance| instance.close_gui());
+                let _ = lend_on_ui_thread(windows_host, &mut instance.plugin, |plugin| {
+                    plugin.close_gui()
+                });
                 true
             }
             None => false,
@@ -772,7 +794,9 @@ pub async fn close_plugin_gui(
             .lock()
             .map_err(|e| format!("Failed to lock plugins: {}", e))?;
         if let Some(instance) = plugins.get_mut(&instance_id) {
-            lend_on_ui_thread(windows_host, instance, |instance| instance.close_gui())?;
+            lend_on_ui_thread(windows_host, &mut instance.plugin, |plugin| {
+                plugin.close_gui()
+            })?;
             true
         } else {
             false
@@ -938,7 +962,9 @@ pub fn close_every_plugin_gui(
                 if !instances_with_editors.contains(instance_id) {
                     continue;
                 }
-                let _ = lend_on_ui_thread(editor_thread, instance, |instance| instance.close_gui());
+                let _ = lend_on_ui_thread(editor_thread, &mut instance.plugin, |plugin| {
+                    plugin.close_gui()
+                });
                 report.0.push(instance_id.clone());
             }
         }
@@ -1226,31 +1252,48 @@ mod tests {
     /// freezes every resizable one.
     #[test]
     fn the_window_is_told_whether_the_plugins_own_editor_accepts_a_host_size() {
-        for can_resize in [true, false] {
-            let state = AppState::default();
-            state.plugins.lock().expect("plugins lock").insert(
-                "command-instance".into(),
-                PluginInstanceData {
-                    plugin: Box::new(RecordingPlugin {
-                        opens: Ok((640, 480)),
-                        calls: Vec::new(),
-                        can_resize,
-                    }),
-                },
-            );
-            let windows = DedicatedUiWindowHost::start();
+        let state = AppState::default();
+        insert_engine_owned_fixture(&state, "engine-owned-fixture", true);
+        let windows = DedicatedUiWindowHost::start();
 
-            crate::block_on_test(open_plugin_gui(
-                "command-instance".to_string(),
-                &windows,
-                &state,
-            ))
+        crate::block_on_test(open_plugin_gui(
+            "engine-owned-fixture".to_string(),
+            &windows,
+            &state,
+        ))
+        .expect("the fixture editor should open");
+
+        assert_eq!(
+            windows.editor_resizable(),
+            Some(true),
+            "the window must be told the plugin's own answer"
+        );
+    }
+
+    /// Where that answer comes from. The plugin is asked while its view is open
+    /// — the only state in which either format defines the answer — so a host
+    /// that read it before the open, or after the close, would report a default
+    /// for every plugin.
+    #[test]
+    fn an_opened_editor_reports_the_plugins_own_resize_answer() {
+        for can_resize in [true, false] {
+            let mut plugin = RecordingPlugin {
+                opens: Ok((640, 480)),
+                calls: Vec::new(),
+                can_resize,
+            };
+
+            let opened = open_editor_reporting_resizability(
+                &mut plugin,
+                Arc::new(|_, _| {}),
+                1.0,
+                std::ptr::null_mut::<std::ffi::c_void>() as usize,
+            )
             .expect("the recording plugin's editor should open");
 
             assert_eq!(
-                windows.editor_resizable(),
-                Some(can_resize),
-                "the window must be told the plugin's own answer"
+                opened.can_resize, can_resize,
+                "the opened editor must report the plugin's own answer"
             );
         }
     }
@@ -1791,13 +1834,10 @@ mod tests {
         insert_engine_owned_fixture(&state, "engine-without-editor", true);
         state.plugins.lock().expect("plugins lock").insert(
             "command-without-editor".into(),
-            crate::state::PluginInstanceData {
-                plugin: Box::new(ClapWrapper::new_engine_owned_command_fixture(
-                    "Command Fixture",
-                    vec![],
-                    true,
-                )),
-            },
+            crate::state::PluginInstanceData::dormant_fixture(
+                ClapWrapper::new_engine_owned_command_fixture("Command Fixture", vec![], true)
+                    .into(),
+            ),
         );
         state
             .plugin_windows
@@ -2455,13 +2495,10 @@ mod tests {
         let state = Arc::new(AppState::default());
         state.plugins.lock().expect("plugins lock").insert(
             "command-instance".into(),
-            PluginInstanceData {
-                plugin: Box::new(ClapWrapper::new_engine_owned_command_fixture(
-                    "Command Fixture",
-                    vec![],
-                    true,
-                )),
-            },
+            PluginInstanceData::dormant_fixture(
+                ClapWrapper::new_engine_owned_command_fixture("Command Fixture", vec![], true)
+                    .into(),
+            ),
         );
         state
             .plugin_windows

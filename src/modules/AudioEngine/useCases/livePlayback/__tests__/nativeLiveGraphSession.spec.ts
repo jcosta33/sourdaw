@@ -78,6 +78,12 @@ const mocks = vi.hoisted(() => ({
     warn: vi.fn<(message: string) => void>(),
     /** Every bridge call this session made, in order. */
     wireCalls: [] as string[],
+    /**
+     * PluginHost's correction for an instance the engine has just taken over.
+     * Doubled because what this file owns is which instances the session
+     * forwards, not what PluginHost then writes.
+     */
+    markExternalPluginEngineAttached: vi.fn<(input: { instanceId: string; bridgeRoundTripFrames: number }) => void>(),
 }));
 
 vi.mock('../../../repositories/nativeGraph/probeNativeGraphTransport', () => ({
@@ -98,6 +104,10 @@ vi.mock('../stopNativeEnginePlayheadFeed', () => ({
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: { error: vi.fn(), warn: mocks.warn, info: vi.fn(), debug: vi.fn() },
 }));
+vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/PluginHost/useCases')>();
+    return { ...actual, markExternalPluginEngineAttached: mocks.markExternalPluginEngineAttached };
+});
 vi.mock('../readLiveGraphProgramme', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../readLiveGraphProgramme')>();
     return {
@@ -250,6 +260,7 @@ beforeEach(() => {
     mocks.topologyOverride = null;
     mocks.programmeOverride = null;
     mocks.warn.mockClear();
+    mocks.markExternalPluginEngineAttached.mockClear();
     mocks.wireCalls = [];
     // The pool memo is module state and process-wide by design, so a case that
     // inherited the previous one's belief would see no registration at all.
@@ -291,6 +302,41 @@ describe('startNativeLiveGraphSession', () => {
 
         expect(result).toEqual({ outcome: 'declined', reason: 'no desktop bridge (browser runtime)' });
         expect(mocks.applyGraphCommands).not.toHaveBeenCalled();
+    });
+
+    // This batch is what starts the native engine, so it is also what takes over
+    // every plugin instance loaded before there was one. Those instances were
+    // reported to their devices as loaded but processing no audio, and this
+    // result is the only correction that report ever gets.
+    it('forwards every instance the engine start took over', async () => {
+        mocks.applyGraphCommands.mockResolvedValueOnce({
+            ...APPLIED,
+            attachedPlugins: [
+                { instanceId: 'inst-1', bridgeRoundTripFrames: 512 },
+                { instanceId: 'inst-2', bridgeRoundTripFrames: 1024 },
+            ],
+        });
+
+        await startNativeLiveGraphSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        expect(mocks.markExternalPluginEngineAttached.mock.calls).toEqual([
+            [{ instanceId: 'inst-1', bridgeRoundTripFrames: 512 }],
+            [{ instanceId: 'inst-2', bridgeRoundTripFrames: 1024 }],
+        ]);
+    });
+
+    it('corrects nothing when the start attached no instances', async () => {
+        await startNativeLiveGraphSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        expect(mocks.markExternalPluginEngineAttached).not.toHaveBeenCalled();
     });
 
     it('starts the engine on desktop by applying the session topology', async () => {

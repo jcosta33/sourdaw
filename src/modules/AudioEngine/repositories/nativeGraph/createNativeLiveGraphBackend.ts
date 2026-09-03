@@ -42,6 +42,7 @@
 
 import {
     type AudioGraphApplyResult,
+    type AudioGraphAttachedPlugin,
     type AudioGraphBackend,
     type AudioGraphCommandBatch,
 } from '../../models/AudioGraphBackend';
@@ -74,6 +75,33 @@ function readNumber(value: unknown, field: string): number {
         throw new TypeError(`apply_graph_commands answered a malformed ${field}: ${JSON.stringify(value)}`);
     }
     return value;
+}
+
+/**
+ * Read the instances `apply_graph_commands` says its engine start took over.
+ *
+ * Absent is empty, not malformed: the field is carried only by an applied batch
+ * that ran a start, and a payload without one attached nothing. An entry that
+ * does not name an instance and a bridge depth is dropped rather than guessed
+ * at — the depth is added to a latency figure, and a substituted zero is a
+ * compensation error nothing downstream can see.
+ */
+function readAttachedPlugins(value: unknown): readonly AudioGraphAttachedPlugin[] {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    return value.flatMap((entry) => {
+        const attached = typeof entry === 'object' && entry !== null ? (entry as Record<string, unknown>) : null;
+        const instanceId = attached?.instanceId;
+        const bridgeRoundTripFrames = attached?.bridgeRoundTripFrames;
+        if (typeof instanceId !== 'string' || typeof bridgeRoundTripFrames !== 'number') {
+            return [];
+        }
+        if (!Number.isFinite(bridgeRoundTripFrames)) {
+            return [];
+        }
+        return [{ instanceId, bridgeRoundTripFrames }];
+    });
 }
 
 /**
@@ -115,6 +143,7 @@ function readAppliedResult(value: unknown, batch: AudioGraphCommandBatch): Audio
             runtimeRevision,
             ...admittedBatch,
             reports,
+            attachedPlugins: readAttachedPlugins(payload.attachedPlugins),
         };
     }
     const reason = payload.reason;

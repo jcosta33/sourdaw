@@ -114,6 +114,22 @@ async fn lock_plugin_lifecycle(instance_id: &str) -> PluginLifecycleLease {
         _guard: guard,
     }
 }
+/// The same lease, refused rather than waited for.
+///
+/// For [`attach_dormant_plugins`], which runs inside a graph batch holding the
+/// registry guard and so cannot await anything. A lease it cannot take means a
+/// load or unload owns this instance right now: the attach leaves it dormant
+/// and the next batch tries again, which is the same answer an engine refusal
+/// gets.
+fn try_lock_plugin_lifecycle(instance_id: &str) -> Option<PluginLifecycleLease> {
+    let gate = plugin_lifecycle_gate(instance_id);
+    let guard = Arc::clone(&gate).try_lock_owned().ok()?;
+    Some(PluginLifecycleLease {
+        instance_id: instance_id.to_string(),
+        gate,
+        _guard: guard,
+    })
+}
 fn remove_engine_plugin_record_after_scheduler_removal<EnginePluginRecord>(
     engine_plugins: &mut HashMap<String, EnginePluginRecord>,
     instance_id: &str,
@@ -1254,113 +1270,45 @@ async fn load_plugin_with_backend(
             .engine
             .lock()
             .map_err(|e| format!("Failed to lock engine: {}", e))?;
-        if let Some(ref mut engine) = *engine_guard {
-            if !wrapper.is_activated() {
-                return Err(format!(
-                    "{} plugin '{}' failed to activate for engine-owned runtime",
-                    backend.display_name(),
-                    name
-                ));
-            }
-
-            // The scheduler's effect table is shared with the project's
-            // native devices and the crumbs capture slot, so a plugin
-            // can be refused by a table this path never populated.
-            // Refuse before anything is registered: past this point
-            // the id is reserved, the instance is in `engine_plugins`
-            // with its GUI and parameters, and the load reports
-            // success — while the audio thread's own refusal is a
-            // counter it cannot return to the user, leaving a plugin
-            // in the rack that passes dry audio forever.
-            engine.ensure_effect_table_headroom(1)?;
-
-            let id = engine.reserve_plugin_id();
-            let (bridge, bridge_handle) = create_audio_bridge(id);
-
-            // Mark this instance as one whose plugin-initiated asks get carried
-            // off the calling thread — the watcher wakes for the `[main-thread]`
-            // asks (a state change, a parameter rescan), and the drain thread
-            // answers the `[thread-safe]` ones (an editor resize, a flush).
-            //
-            // Engine-owned only, because both carriers reach an instance
-            // through `engine_plugins`: one the engine never took is not
-            // reachable from there, and installing the wake on one would have
-            // the plugin told its resize was accepted by a follow-up that could
-            // never run. No wake is the honest answer — `request_resize` then
-            // returns false, and a plugin that is refused can lay itself out to
-            // the size it has.
-            //
-            // The answer is discarded rather than reported, because a refusal
-            // means a second install: CLAP routes an editor resize, a parameter
-            // rescan and a state change back through the host, and VST3 a state
-            // change through `IComponentHandler2::setDirty`.
-            let requesting_instance_id = instance_id.0.clone();
-            let _ = wrapper.set_plugin_host_request_notifier(Box::new(move |request| {
-                crate::host::plugin_host_requests::notify_plugin_host_request(
-                    &requesting_instance_id,
-                    request,
-                );
-            }));
-
-            // Take the parameter-event queue before the wrapper is handed to
-            // the audio thread. Held on the record so the drain reaches it
-            // without the control seam — see `EnginePluginInstanceData`.
-            let parameter_events = AudioPlugin::parameter_event_queue(&wrapper);
-
-            let shared_plugin = Arc::new(SharedHostedPlugin::new(wrapper));
-
-            // The record insert re-decides the session ceiling
-            // inside its own critical section — see
-            // `insert_engine_plugin_record`. A refusal there leaves
-            // nothing behind: the id above is a burned monotonic
-            // counter, the rings drop with the return, and no engine
-            // command has been pushed yet.
-            insert_engine_plugin_record(
-                state,
-                &instance_id.0,
-                crate::state::EnginePluginInstanceData {
-                    engine_plugin_id: id,
-                    runtime: Arc::clone(&shared_plugin),
-                    name: name.clone(),
-                    parameters: params.clone(),
+        match engine_guard.as_mut() {
+            Some(engine) => {
+                let registration = register_runtime_with_engine(
+                    engine,
+                    state,
+                    &instance_id.0,
+                    wrapper,
+                    &name,
+                    &params,
                     has_gui,
-                    bridge: Some(bridge_handle),
-                    relay_scratch: crate::state::PluginRelayScratch::default(),
-                    parameter_events,
-                },
-            )?;
-
-            if let Err(error) = engine.add_plugin_with_bridge(
-                id,
-                Box::new(HostedPluginSlot::new(shared_plugin)),
-                bridge,
-            ) {
-                // The engine refused the registration (a full effect
-                // table, or the ring): unwind the record under a
-                // fresh acquisition, same order as every other
-                // engine-then-map path, so the map never carries an
-                // instance the engine never took.
-                state
-                    .engine_plugins
-                    .lock()
-                    .map_err(|e| format!("Failed to lock engine_plugins: {}", e))?
-                    .remove(&instance_id.0);
-                return Err(error);
+                )
+                .map_err(|refusal| refusal.reason)?;
+                (
+                    Some(registration.engine_plugin_id),
+                    registration.bridge_round_trip_frames,
+                )
             }
-            (Some(id), bridge_round_trip_frames(Some(engine)))
-        } else {
-            eprintln!("[Plugin] Warning: native engine not running, plugin won't process audio");
-            let mut plugins = state
-                .plugins
-                .lock()
-                .map_err(|e| format!("Failed to lock plugins: {}", e))?;
-            plugins.insert(
-                instance_id.0.clone(),
-                PluginInstanceData {
-                    plugin: Box::new(wrapper),
-                },
-            );
-            (None, bridge_round_trip_frames(None))
+            None => {
+                eprintln!(
+                    "[Plugin] Warning: native engine not running, plugin won't process audio"
+                );
+                // Dormant, not lost: `attach_dormant_plugins` registers this
+                // instance on the engine's first graph batch, from the very
+                // record written here.
+                let mut plugins = state
+                    .plugins
+                    .lock()
+                    .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+                plugins.insert(
+                    instance_id.0.clone(),
+                    PluginInstanceData {
+                        plugin: wrapper,
+                        name: name.clone(),
+                        parameters: params.clone(),
+                        has_gui,
+                    },
+                );
+                (None, bridge_round_trip_frames(None))
+            }
         }
     };
 
@@ -1464,6 +1412,313 @@ fn insert_engine_plugin_record(
     Ok(())
 }
 
+/// What the engine took, for the caller to report.
+struct EngineRegistration {
+    engine_plugin_id: usize,
+    bridge_round_trip_frames: u32,
+}
+
+/// A registration the engine would not take.
+struct RegistrationRefusal {
+    reason: String,
+    /// The runtime, handed back whenever the refusal happened before it was
+    /// moved into the shared owner the audio thread reads through. That is what
+    /// lets [`attach_dormant_plugins`] park the instance again and retry on the
+    /// next batch. `None` once the move has happened, because a caller cannot
+    /// park a runtime it no longer owns.
+    runtime: Option<HostedRuntime>,
+}
+
+impl RegistrationRefusal {
+    fn parked(reason: String, runtime: HostedRuntime) -> Self {
+        Self {
+            reason,
+            runtime: Some(runtime),
+        }
+    }
+
+    fn spent(reason: String) -> Self {
+        Self {
+            reason,
+            runtime: None,
+        }
+    }
+}
+
+/// Hand one runtime to a running engine: reserve its id, build its bridge,
+/// install the host-request wake, record the instance, and register the slot.
+///
+/// The one copy of that sequence. A load reaches it with a runtime it has just
+/// built ([`load_plugin_with_backend`]); the engine's first graph batch reaches
+/// it with a runtime that has been sitting dormant since a load found no engine
+/// ([`attach_dormant_plugins`]). Two copies would let the two paths drift, and
+/// the dormant one is exactly the path nobody exercises by hand.
+///
+/// Takes the runtime by value because registering it moves it into the shared
+/// owner the audio thread reads through; a refusal reports whether it survived
+/// that move (see [`RegistrationRefusal::runtime`]).
+///
+/// Called with the engine lock held, and takes `engine_plugins` under it, which
+/// is the load path's order and the only order any engine-then-map path here
+/// uses.
+fn register_runtime_with_engine(
+    engine: &mut daw_engine::EngineHandle,
+    state: &AppState,
+    instance_id: &str,
+    runtime: HostedRuntime,
+    name: &str,
+    parameters: &[PluginParameter],
+    has_gui: bool,
+) -> Result<EngineRegistration, RegistrationRefusal> {
+    // The format is behind us: `create_hosted_runtime` was the last step that
+    // knew one, so this refusal names the plugin rather than its backend.
+    if !runtime.is_activated() {
+        return Err(RegistrationRefusal::parked(
+            format!("plugin '{name}' failed to activate for engine-owned runtime"),
+            runtime,
+        ));
+    }
+
+    // The scheduler's effect table is shared with the project's native devices
+    // and the crumbs capture slot, so a plugin can be refused by a table this
+    // path never populated. Refuse before anything is registered: past this
+    // point the id is reserved, the instance is in `engine_plugins` with its
+    // GUI and parameters, and the load reports success — while the audio
+    // thread's own refusal is a counter it cannot return to the user, leaving a
+    // plugin in the rack that passes dry audio forever.
+    if let Err(reason) = engine.ensure_effect_table_headroom(1) {
+        return Err(RegistrationRefusal::parked(reason, runtime));
+    }
+
+    let id = engine.reserve_plugin_id();
+    let (bridge, bridge_handle) = create_audio_bridge(id);
+
+    // Mark this instance as one whose plugin-initiated asks get carried off the
+    // calling thread — the watcher wakes for the `[main-thread]` asks (a state
+    // change, a parameter rescan), and the drain thread answers the
+    // `[thread-safe]` ones (an editor resize, a flush).
+    //
+    // Engine-owned only, because both carriers reach an instance through
+    // `engine_plugins`: one the engine never took is not reachable from there,
+    // and installing the wake on one would have the plugin told its resize was
+    // accepted by a follow-up that could never run. No wake is the honest
+    // answer — `request_resize` then returns false, and a plugin that is
+    // refused can lay itself out to the size it has.
+    //
+    // The answer is discarded rather than reported, because a refusal means a
+    // second install: CLAP routes an editor resize, a parameter rescan and a
+    // state change back through the host, and VST3 a state change through
+    // `IComponentHandler2::setDirty`.
+    let requesting_instance_id = instance_id.to_string();
+    let _ = runtime.set_plugin_host_request_notifier(Box::new(move |request| {
+        crate::host::plugin_host_requests::notify_plugin_host_request(
+            &requesting_instance_id,
+            request,
+        );
+    }));
+
+    // Take the parameter-event queue before the runtime is handed to the audio
+    // thread. Held on the record so the drain reaches it without the control
+    // seam — see `EnginePluginInstanceData`.
+    let parameter_events = AudioPlugin::parameter_event_queue(&runtime);
+
+    let shared_plugin = Arc::new(SharedHostedPlugin::new(runtime));
+
+    // The record insert re-decides the session ceiling inside its own critical
+    // section — see `insert_engine_plugin_record`. A refusal there leaves
+    // nothing behind: the id above is a burned monotonic counter, the rings
+    // drop with the return, and no engine command has been pushed yet.
+    if let Err(reason) = insert_engine_plugin_record(
+        state,
+        instance_id,
+        crate::state::EnginePluginInstanceData {
+            engine_plugin_id: id,
+            runtime: Arc::clone(&shared_plugin),
+            name: name.to_string(),
+            parameters: parameters.to_vec(),
+            has_gui,
+            bridge: Some(bridge_handle),
+            relay_scratch: crate::state::PluginRelayScratch::default(),
+            parameter_events,
+        },
+    ) {
+        return Err(RegistrationRefusal::spent(reason));
+    }
+
+    if let Err(error) =
+        engine.add_plugin_with_bridge(id, Box::new(HostedPluginSlot::new(shared_plugin)), bridge)
+    {
+        // The engine refused the registration (a full effect table, or the
+        // ring): unwind the record under a fresh acquisition, same order as
+        // every other engine-then-map path, so the map never carries an
+        // instance the engine never took.
+        match state.engine_plugins.lock() {
+            Ok(mut engine_plugins) => {
+                engine_plugins.remove(instance_id);
+            }
+            Err(lock_error) => {
+                return Err(RegistrationRefusal::spent(format!(
+                    "Failed to lock engine_plugins: {lock_error}"
+                )));
+            }
+        }
+        return Err(RegistrationRefusal::spent(error));
+    }
+
+    Ok(EngineRegistration {
+        engine_plugin_id: id,
+        bridge_round_trip_frames: bridge_round_trip_frames(Some(engine)),
+    })
+}
+
+/// One instance the engine has just taken, for the batch that started it to
+/// report back.
+pub struct AttachedPlugin {
+    pub instance_id: String,
+    pub engine_plugin_id: usize,
+    pub bridge_round_trip_frames: u32,
+}
+
+/// Register every instance that was loaded while no engine was running.
+///
+/// The engine starts lazily, on the first graph batch, so a plugin loaded
+/// before the first Play is parked in `state.plugins` with no engine plugin id.
+/// Nothing used to move it out again: it stayed dormant for the rest of the
+/// session, and the relay answered every block for it with "No engine plugin
+/// for instance". This is what moves it, called by `apply_graph_commands` right
+/// after the crumbs slot it mirrors.
+///
+/// Synchronous, unlike every other lifecycle path here, because its caller
+/// holds the graph registry guard across its own body and so cannot await: the
+/// two lifecycle gates are therefore *tried* rather than waited on, and a gate
+/// held by a concurrent load or unload leaves the instance dormant for the next
+/// batch — the same answer an engine refusal gets.
+///
+/// Locks in the load path's order, `PLUGIN_RUNTIME_GATE` then the per-instance
+/// lifecycle gate then `plugins` then `engine` then `engine_plugins`, and never
+/// holds `plugins` across the engine lock: the load path's dormant branch takes
+/// `engine` before `plugins`, so holding them the other way round here is the
+/// one arrangement that would close a cycle.
+pub fn attach_dormant_plugins(state: &AppState) -> Result<Vec<AttachedPlugin>, String> {
+    let Ok(_runtime_guard) = PLUGIN_RUNTIME_GATE.try_read() else {
+        return Err("the plugin runtime gate is held by another operation".to_string());
+    };
+
+    let dormant_instance_ids: Vec<String> = {
+        let plugins = state
+            .plugins
+            .lock()
+            .map_err(|error| format!("Failed to lock plugins: {error}"))?;
+        plugins.keys().cloned().collect()
+    };
+
+    let mut attached = Vec::new();
+    for instance_id in dormant_instance_ids {
+        match attach_one_dormant_plugin(state, &instance_id) {
+            Ok(Some(plugin)) => attached.push(plugin),
+            Ok(None) => {}
+            Err(reason) => {
+                eprintln!(
+                    "[Plugin] instance '{instance_id}' could not attach to the engine: {reason}"
+                );
+            }
+        }
+    }
+
+    Ok(attached)
+}
+
+/// `Ok(None)` when there was nothing left to do: the instance was unloaded
+/// between the scan above and this acquisition of its lifecycle gate.
+fn attach_one_dormant_plugin(
+    state: &AppState,
+    instance_id: &str,
+) -> Result<Option<AttachedPlugin>, String> {
+    let Some(_lifecycle_guard) = try_lock_plugin_lifecycle(instance_id) else {
+        return Err("a load or unload holds this instance".to_string());
+    };
+
+    // The same ergonomic check the load path makes for the same reason: refuse
+    // a hopeless registration before the runtime leaves the dormant map, so a
+    // session already at its ceiling parks the instance rather than spending
+    // it. `insert_engine_plugin_record` is still the ceiling.
+    {
+        let engine_plugins = state
+            .engine_plugins
+            .lock()
+            .map_err(|error| format!("Failed to lock engine_plugins: {error}"))?;
+        ensure_hosted_plugin_session_headroom(&engine_plugins)?;
+    }
+
+    let Some(dormant) = ({
+        let mut plugins = state
+            .plugins
+            .lock()
+            .map_err(|error| format!("Failed to lock plugins: {error}"))?;
+        plugins.remove(instance_id)
+    }) else {
+        return Ok(None);
+    };
+    let PluginInstanceData {
+        plugin,
+        name,
+        parameters,
+        has_gui,
+    } = dormant;
+
+    let registration = {
+        let mut engine_guard = state
+            .engine
+            .lock()
+            .map_err(|error| format!("Failed to lock engine: {error}"))?;
+        match engine_guard.as_mut() {
+            Some(engine) => register_runtime_with_engine(
+                engine,
+                state,
+                instance_id,
+                plugin,
+                &name,
+                &parameters,
+                has_gui,
+            ),
+            None => Err(RegistrationRefusal::parked(
+                "no native engine is running".to_string(),
+                plugin,
+            )),
+        }
+    };
+
+    match registration {
+        Ok(registration) => Ok(Some(AttachedPlugin {
+            instance_id: instance_id.to_string(),
+            engine_plugin_id: registration.engine_plugin_id,
+            bridge_round_trip_frames: registration.bridge_round_trip_frames,
+        })),
+        Err(refusal) => {
+            // Park it again, outside the engine lock, so the next batch tries
+            // it once more. A runtime the refusal could not hand back is gone
+            // with the instance: it was moved into the shared owner and then
+            // rejected, and no path can reconstruct it.
+            if let Some(runtime) = refusal.runtime {
+                state
+                    .plugins
+                    .lock()
+                    .map_err(|error| format!("Failed to lock plugins: {error}"))?
+                    .insert(
+                        instance_id.to_string(),
+                        PluginInstanceData {
+                            plugin: runtime,
+                            name,
+                            parameters,
+                            has_gui,
+                        },
+                    );
+            }
+            Err(refusal.reason)
+        }
+    }
+}
+
 fn remove_plugin_window(
     instance_id: &str,
     windows_host: Option<&dyn PluginWindowHost>,
@@ -1554,9 +1809,11 @@ async fn unload_plugin_runtime(
         // thread-affine lifecycle a GUI command runs: `close_gui` reaches VST3
         // `removed` and CLAP `gui.destroy`, and running them on this worker
         // un-parents an NSView off the main thread.
-        let _ = lend_on_ui_thread(editor_thread(windows_host), &mut instance, |instance| {
-            instance.close_gui()
-        });
+        let _ = lend_on_ui_thread(
+            editor_thread(windows_host),
+            &mut instance.plugin,
+            |plugin| plugin.close_gui(),
+        );
         remove_plugin_window(instance_id, windows_host, state);
         return Ok(());
     }
@@ -4639,9 +4896,7 @@ mod tests {
         insert_engine_owned_fixture(&state, "active-instance", vec![1, 2, 3]);
         let wrapper =
             ClapWrapper::new_engine_owned_command_fixture("Command Fixture", vec![], true);
-        let instance = PluginInstanceData {
-            plugin: Box::new(wrapper),
-        };
+        let instance = PluginInstanceData::dormant_fixture(HostedRuntime::from(wrapper));
         state
             .plugins
             .lock()
@@ -4676,9 +4931,7 @@ mod tests {
             .expect("the command fixture records its editor lifecycle threads");
         state.plugins.lock().expect("plugins lock").insert(
             "command-instance".into(),
-            PluginInstanceData {
-                plugin: Box::new(wrapper),
-            },
+            PluginInstanceData::dormant_fixture(HostedRuntime::from(wrapper)),
         );
         let windows = DedicatedUiWindowHost::start();
 
@@ -4708,9 +4961,7 @@ mod tests {
             ClapWrapper::new_engine_owned_command_fixture("Command Fixture", vec![], true);
         state.plugins.lock().expect("plugins lock").insert(
             "command-instance".into(),
-            PluginInstanceData {
-                plugin: Box::new(wrapper),
-            },
+            PluginInstanceData::dormant_fixture(HostedRuntime::from(wrapper)),
         );
 
         let first = crate::block_on_test(unload_plugin_runtime("command-instance", None, &state));

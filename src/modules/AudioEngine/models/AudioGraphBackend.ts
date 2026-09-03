@@ -584,6 +584,19 @@ export type AudioGraphStripReport = Readonly<{
 }>;
 
 /**
+ * One external plugin instance a batch's engine start took over.
+ *
+ * The bridge round trip is the reason the caller is given anything beyond the
+ * id: it is frames the worklet↔plugin bridge adds on top of the plugin's own
+ * latency, known only to the engine that took the instance, and the caller adds
+ * it when compensating that device.
+ */
+export type AudioGraphAttachedPlugin = Readonly<{
+    instanceId: string;
+    bridgeRoundTripFrames: number;
+}>;
+
+/**
  * The outcome vocabulary of `RuntimeGraphDeltaResult`, applied to a batch.
  *
  * The three states mean exactly what they mean there — `rejected` is refused
@@ -617,6 +630,20 @@ export type AudioGraphApplyResult =
            */
           admittedBatch?: number;
           reports: readonly AudioGraphStripReport[];
+          /**
+           * External plugin instances this batch's engine start took over.
+           *
+           * A native engine starts lazily, on the first batch, and a plugin
+           * loaded before that is held by the command layer with no engine
+           * behind it — it passes silence. The batch that starts the engine
+           * registers those instances, and this is the only report of it: the
+           * load that created them already answered "no engine", and nothing
+           * later revises that answer.
+           *
+           * Empty when the start took none. Absent from a backend that starts
+           * no engine at all, and from one whose payload predates the field.
+           */
+          attachedPlugins?: readonly AudioGraphAttachedPlugin[];
       }>
     | Readonly<{
           acceptance: 'accepted';

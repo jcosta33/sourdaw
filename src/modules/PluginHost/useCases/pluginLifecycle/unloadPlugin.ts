@@ -6,6 +6,7 @@ import {
 import { dropExternalPluginParameterSnapshot } from '../../stores/externalPluginParameterStore';
 import { defaultPluginGuiState, pluginGuiStore } from '../../stores/pluginGuiStore';
 
+import { externalBridgeFramesReporters } from './externalBridgeFramesReporters';
 import { externalLatencyReporters } from './externalLatencyReporters';
 import { externalPluginActivationOutcomes, externalPluginActivationTasks } from './externalPluginActivationTasks';
 import { loadedExternalInstances } from './loadedExternalInstances';
@@ -14,6 +15,7 @@ import { serializePluginLifecycle } from './serializePluginLifecycle';
 function forgetPluginInstance(instanceId: string): void {
     loadedExternalInstances.delete(instanceId);
     externalLatencyReporters.delete(instanceId);
+    externalBridgeFramesReporters.delete(instanceId);
     externalPluginActivationTasks.delete(instanceId);
     externalPluginActivationOutcomes.delete(instanceId);
     // The parameters described an instance that no longer exists; leaving them
