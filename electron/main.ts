@@ -647,11 +647,10 @@ const startNativeSurface = (): void => {
         channel: EVENT_CHANNEL,
     });
 
-    // Published before the addon loads: the main process's own `nativeHost`,
-    // built below, reaches the Rust scan policy directly through
-    // `load_plugin`'s targeted rescan, not only through the forked
-    // supervisor's batch scan — so the launch command has to be in this
-    // process's own environment before any native call can run.
+    // Published before nativeHost is built, so it is in place before either
+    // scanning call that can follow: the batch scan through the forked
+    // supervisor and the targeted rescan `load_plugin` runs directly on this
+    // host. The addon load itself does not depend on it.
     publishScanWorkerLaunch(process.env, scanHelperPath());
 
     const addonPath = nativeAddonPath();

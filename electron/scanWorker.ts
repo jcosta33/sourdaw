@@ -69,9 +69,10 @@ export const scanWorkerCommand = (helperPath: string): ScanWorkerCommand => ({
  * the Rust scan policy.
  *
  * A plain object rather than a side effect on `process.env`: this is the pure
- * core {@link publishScanWorkerLaunch} applies to the main process's own
- * environment, and it is also what the utility fork's env is built from —
- * one function computes the command, in one shape, for both callers.
+ * core {@link publishScanWorkerLaunch}, its one caller, applies to the main
+ * process's own environment. The forked scan-supervisor process never calls
+ * this directly — it inherits the published key through `main.ts`'s
+ * `...process.env` spread when it forks.
  */
 export const scanWorkerLaunchEnvironment = (helperPath: string): { readonly [SCAN_WORKER_COMMAND_ENV]: string } => ({
     [SCAN_WORKER_COMMAND_ENV]: JSON.stringify(scanWorkerCommand(helperPath)),
@@ -82,16 +83,11 @@ export const scanWorkerLaunchEnvironment = (helperPath: string): { readonly [SCA
  *
  * The Rust scan policy (`ScanWorkerCommand::resolve`) reads
  * `SCAN_WORKER_COMMAND_ENV` from whichever OS process environment the caller
- * making the native call actually runs under. The forked scan-supervisor
- * process gets it through its own `env` at fork time, but the main process's
- * singular `nativeHost` reaches the same policy directly — through
- * `load_plugin`'s targeted rescan, not just the supervisor's batch scan — and
- * nothing was ever setting the key on the main process's own `process.env`.
- * That left the policy falling back to re-executing the application binary
- * as the leaf for that path: the exact re-entry this file exists to avoid,
- * just reached from a caller that never went through `main.ts`'s fork setup.
- * `main.ts` calls this once, before `nativeHost` is built, so every native
- * call afterward — forked or not — finds the same command already in place.
+ * making the native call actually runs under. The main process's own
+ * `nativeHost` reaches that policy directly through `load_plugin`'s targeted
+ * rescan, not only through the forked supervisor's batch scan, so the key
+ * has to be in this process's own environment too. `main.ts` calls this
+ * once, before `nativeHost` is built.
  */
 export const publishScanWorkerLaunch = (env: NodeJS.ProcessEnv, helperPath: string): void => {
     Object.assign(env, scanWorkerLaunchEnvironment(helperPath));
