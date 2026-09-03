@@ -995,13 +995,17 @@ impl EngineHandle {
     /// [`Self::send_graph_batch`] admits both ledgers whole before it pushes
     /// anything, so a batch that would overflow either one is refused whole
     /// rather than reported as [`GraphBatchError::Partial`] after part of it
-    /// already crossed the ring. The effect-table typed paths that carry
-    /// other state to set up before they push — a plugin instance, a bridge
-    /// — call [`Self::ensure_effect_table_headroom`] first, so a caller is
-    /// told before it builds state it now has to unwind.
-    /// [`Self::register_capture_consumer`] carries no other state and does
-    /// not pre-check; it does not need to, because this push is what holds
-    /// both ceilings regardless of whether a caller checked first.
+    /// already crossed the ring. The effect-table pre-check belongs to the
+    /// caller that builds other state before it pushes — a plugin instance,
+    /// a bridge — not to the typed method:
+    /// [`Self::ensure_effect_table_headroom`] has to run before that id and
+    /// that bridge exist, so `commands/plugins.rs` is the route that calls
+    /// it today, ahead of [`Self::reserve_plugin_id`] and the bridge it
+    /// builds from the id. [`Self::add_plugin_with_id`] and
+    /// [`Self::add_plugin_with_bridge`] push straight through with no check
+    /// of their own, exactly as [`Self::register_capture_consumer`] does;
+    /// all three rely on this push as the ceiling, regardless of whether a
+    /// caller checked first.
     fn push(&mut self, command: GraphCommand) -> Result<(), String> {
         let delta = command.effect_table_delta();
         if delta > 0 && self.effect_registrations + delta as usize > EFFECT_TABLE_CAPACITY {
