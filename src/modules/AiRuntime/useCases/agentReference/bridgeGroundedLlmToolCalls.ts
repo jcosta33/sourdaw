@@ -3,6 +3,7 @@ import {
     getExecutableAppActionGroundingRules,
 } from '#/modules/Command/useCases';
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
+import { MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
 
 import { type ActionCommandGraph } from '../../models/ActionCommandGraph';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../../models/LlmActionLimits';
@@ -3698,37 +3699,6 @@ function buildWholePromptActionScope(prompt: string, context: ProjectContext): A
 }
 
 /**
- * Every prompt-evidence rule the plan-created object route replaces, named in one place. Each one
- * asks the request for vocabulary describing an object the request never named, so none of them can
- * hold for a created object; stating them together is what keeps the route's reach reviewable
- * instead of scattering it through the grounding path as five unrelated conditions.
- */
-type PlanCreatedRouteSkips = {
-    /** The literal name and explicit beat range an `addClip` clause would have to state. */
-    addClipPromptEvidence: boolean;
-    /** The anaphora tying a batch-local target back to a clause that introduced it. */
-    batchLocalTargetEvidence: boolean;
-    /** The per-action intent phrase that selects the clause this call is read against. */
-    perActionPromptScope: boolean;
-    /** The value rules, replaced by the route's own structural bounds on names and spans. */
-    valueRules: boolean;
-};
-
-const PLAN_CREATED_ROUTE_SKIPS: PlanCreatedRouteSkips = {
-    addClipPromptEvidence: true,
-    batchLocalTargetEvidence: true,
-    perActionPromptScope: true,
-    valueRules: true,
-};
-
-const ORDINARY_ROUTE_EVIDENCE_REQUIRED: PlanCreatedRouteSkips = {
-    addClipPromptEvidence: false,
-    batchLocalTargetEvidence: false,
-    perActionPromptScope: false,
-    valueRules: false,
-};
-
-/**
  * Whether one call may take the plan-created object route, and what refuses it outright.
  *
  * `ordinary` is not a refusal: it says this call keeps the per-action prompt-evidence rules, which
@@ -3761,6 +3731,47 @@ function validatePlanCreatedClipSpan(argumentsRecord: Readonly<Record<string, un
     return null;
 }
 
+function isNoteRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Every note an admitted `addNotes` writes must land inside the clip the same batch declared. The
+ * ordinary route would have read those beats out of the request; on this route nothing did, so a
+ * plan is otherwise free to park a note past any timeline or make one too short to hear, inside a
+ * clip whose only stated dimension is the span its producing item declared.
+ */
+function validatePlanCreatedNotes(
+    argumentsRecord: Readonly<Record<string, unknown>>,
+    clipSpanBeats: number | undefined
+): string | null {
+    const { notes } = argumentsRecord;
+    if (!Array.isArray(notes)) {
+        return null;
+    }
+    const span = clipSpanBeats;
+    if (span === undefined) {
+        return 'Plan-created notes require a clip whose batch item declares its span';
+    }
+    for (const [noteIndex, note] of notes.entries()) {
+        if (!isNoteRecord(note)) {
+            continue;
+        }
+        const { startBeat, duration } = note;
+        const position = `note ${String(noteIndex)} of a plan-created clip spanning ${String(span)} beats`;
+        if (typeof startBeat !== 'number' || !Number.isFinite(startBeat) || startBeat < 0) {
+            return `Plan-created ${position} starts outside the clip`;
+        }
+        if (typeof duration !== 'number' || !Number.isFinite(duration) || duration < MIDI_NOTE_MIN_DURATION_BEATS) {
+            return `Plan-created ${position} is shorter than ${String(MIDI_NOTE_MIN_DURATION_BEATS)} beats`;
+        }
+        if (startBeat + duration > span) {
+            return `Plan-created ${position} ends past the clip`;
+        }
+    }
+    return null;
+}
+
 /**
  * The plan-created object route. A creative request never names the objects a plan invents, so the
  * per-action name and beat evidence can never be satisfied — but the authority that evidence
@@ -3787,6 +3798,7 @@ function resolvePlanCreatedObjectAdmission({
         return { status: 'ordinary' };
     }
     let batchLocalTargetCount = 0;
+    let targetClipSpanBeats: number | undefined;
     for (const targetRule of groundingRules.targetRules) {
         const assertedValue = call.arguments[targetRule.argument];
         if (targetRule.optional && assertedValue === undefined) {
@@ -3801,6 +3813,7 @@ function resolvePlanCreatedObjectAdmission({
         if (reference.status !== 'resolved') {
             return { status: 'ordinary' };
         }
+        targetClipSpanBeats ??= reference.binding.createdClipSpanBeats;
         batchLocalTargetCount += 1;
     }
     if (batchLocalTargetCount === 0 && !declaredBindingsByCallIndex.has(index)) {
@@ -3812,6 +3825,10 @@ function resolvePlanCreatedObjectAdmission({
     const spanRejection = validatePlanCreatedClipSpan(call.arguments);
     if (spanRejection) {
         return { status: 'rejected', reason: spanRejection };
+    }
+    const noteRejection = validatePlanCreatedNotes(call.arguments, targetClipSpanBeats);
+    if (noteRejection) {
+        return { status: 'rejected', reason: noteRejection };
     }
     return { status: 'admitted' };
 }
@@ -3868,8 +3885,9 @@ function groundToolCall({
     if (planCreatedAdmission.status === 'rejected') {
         return rejection(index, call.name, planCreatedAdmission.reason);
     }
-    const skips =
-        planCreatedAdmission.status === 'admitted' ? PLAN_CREATED_ROUTE_SKIPS : ORDINARY_ROUTE_EVIDENCE_REQUIRED;
+    // One route, one switch. Every prompt-evidence rule below asks the request for vocabulary
+    // describing an object it never named, so on this route they are all unsatisfiable together.
+    const admitsPlanCreatedObject = planCreatedAdmission.status === 'admitted';
     const resolvedActionScope = resolveActionPromptScope({
         actionName: call.name,
         actionOrdinal,
@@ -3884,7 +3902,7 @@ function groundToolCall({
         workflowCapabilityId,
     });
     const actionScope =
-        resolvedActionScope ?? (skips.perActionPromptScope ? buildWholePromptActionScope(prompt, context) : null);
+        resolvedActionScope ?? (admitsPlanCreatedObject ? buildWholePromptActionScope(prompt, context) : null);
     if (!actionScope) {
         return rejection(index, call.name, 'Provider action is not grounded in the user request');
     }
@@ -3914,7 +3932,7 @@ function groundToolCall({
     }
     if (
         call.name === 'addClip' &&
-        !skips.addClipPromptEvidence &&
+        !admitsPlanCreatedObject &&
         !hasGroundedAddClipAssertions({
             catalog,
             context,
@@ -4134,7 +4152,7 @@ function groundToolCall({
                 continue;
             }
             if (
-                !skips.batchLocalTargetEvidence &&
+                !admitsPlanCreatedObject &&
                 !containsBatchLocalCreationEvidence(
                     targetPrompt,
                     batchLocalReference.binding,
@@ -4217,7 +4235,7 @@ function groundToolCall({
     if (call.name === 'splitClip' && !isDirectSplitClipScope(actionScope, groundedArguments.clipId, context)) {
         return rejection(index, call.name, 'Provider clip split is not scoped to the whole clip');
     }
-    if (call.name === 'addClip' && !skips.addClipPromptEvidence) {
+    if (call.name === 'addClip' && !admitsPlanCreatedObject) {
         const evidence = getAddClipPromptEvidence(actionScope);
         if (
             !evidence ||
@@ -4252,7 +4270,7 @@ function groundToolCall({
     if (scopeAdmissionRejection) {
         return rejection(index, call.name, scopeAdmissionRejection);
     }
-    const valueRejection = skips.valueRules
+    const valueRejection = admitsPlanCreatedObject
         ? null
         : validateGroundedValues(groundingRules, groundedArguments, actionScope, context);
     if (valueRejection) {

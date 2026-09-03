@@ -27,10 +27,14 @@ export const PLAN_CREATED_OBJECT_COMMANDS: ReadonlySet<string> = new Set([
 ] as const);
 
 /**
- * Every command that leaves a new track, clip or bus in the project, whether it mints one outright
- * or copies an existing one. The creation budget counts these: what it bounds is how much a single
- * accepted proposal can put in front of a musician to review and undo, and a duplicate costs a
- * reviewer exactly what a fresh creation costs.
+ * What the creation budget counts: commands that leave one more track or clip in the project than
+ * it held before, whether by minting one, copying one, or dividing one. The budget bounds how much
+ * a single accepted proposal can put in front of a musician to review and undo, and by that measure
+ * a copy and a split cost exactly what a fresh creation costs.
+ *
+ * Two creating commands are deliberately outside it. `importStemSet` answers to its own asset
+ * budget, which bounds the same work in the unit that actually constrains it. `createVcaGroup`
+ * groups tracks that already exist and leaves no new track or clip behind.
  */
 export const PROJECT_OBJECT_CREATING_COMMANDS: ReadonlySet<string> = new Set([
     ...BATCH_LOCAL_BINDING_PRODUCER_NAME_LIST,
@@ -38,6 +42,7 @@ export const PROJECT_OBJECT_CREATING_COMMANDS: ReadonlySet<string> = new Set([
     'duplicateClip',
     'duplicateClipToNextBar',
     'createDrumPreviewBranches',
+    'splitClip',
 ]);
 
 export type BatchLocalCreatedTrackKind = 'audio' | 'midi' | 'folder' | 'bus';
@@ -49,6 +54,12 @@ export type BatchLocalBindingProducer = {
      * derive the owning track without a project snapshot that does not contain it yet.
      */
     parentTrackReference?: string;
+    /**
+     * The span the producing `addClip` item declared, in beats, kept so a later item writing into
+     * the clip can be bounded by it. The clip does not exist in any snapshot yet, so this record is
+     * the only place its dimensions are stated.
+     */
+    createdClipSpanBeats?: number;
     producerArgument: string;
     trackKind?: BatchLocalCreatedTrackKind;
 };
@@ -128,6 +139,16 @@ function acceptsCreatedClip(parent: CreatedClipParent | null): boolean {
     return parent !== null && parent.kind === 'midi' && !parent.frozen;
 }
 
+/** The declared span, or nothing when the item did not state a usable one. */
+function resolveDeclaredClipSpan(argumentsRecord: Readonly<Record<string, unknown>>): number | undefined {
+    const { startBeat, endBeat } = argumentsRecord;
+    if (typeof startBeat !== 'number' || typeof endBeat !== 'number') {
+        return undefined;
+    }
+    const span = endBeat - startBeat;
+    return Number.isFinite(span) && span > 0 ? span : undefined;
+}
+
 function resolveCreatedClipProducer(input: {
     arguments: Readonly<Record<string, unknown>>;
     context: ProjectContext;
@@ -147,6 +168,7 @@ function resolveCreatedClipProducer(input: {
     }
     return {
         capabilities: BATCH_LOCAL_CLIP_CAPABILITIES,
+        createdClipSpanBeats: resolveDeclaredClipSpan(input.arguments),
         parentTrackReference: trackReference,
         producerArgument: 'id',
     };

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ADD_NOTES_MAX_NOTES_PER_COMMAND } from '#/utils/midiNoteBatchLimits';
+import { ADD_NOTES_MAX_NOTES_PER_COMMAND, MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
 
 import { type ProjectContext, type ProjectContextTrack } from '../../models/ProjectContext';
 import {
@@ -165,10 +165,15 @@ describe('high-level intent adversarial planning', () => {
                     id: 'write-notes',
                     name: 'addNotes',
                     arguments: {
+                        // Packed at the shortest admissible duration so every note fits the clip:
+                        // the count is then the only bound this input can break.
                         clipId: '$chorus',
-                        notes: Array.from({ length: ADD_NOTES_MAX_NOTES_PER_COMMAND + 1 }, (_unused, index) =>
-                            note(index)
-                        ),
+                        notes: Array.from({ length: ADD_NOTES_MAX_NOTES_PER_COMMAND + 1 }, (_unused, index) => ({
+                            pitch: 60,
+                            startBeat: index * MIDI_NOTE_MIN_DURATION_BEATS,
+                            duration: MIDI_NOTE_MIN_DURATION_BEATS,
+                            velocity: 96,
+                        })),
                     },
                     dependsOn: ['make-clip'],
                 },
@@ -529,6 +534,93 @@ describe('high-level intent adversarial planning', () => {
 
         const result = await planWith(
             proposalRunFor(['addTrack', 'duplicateTrack'], [...originals, ...copies]),
+            CREATIVE_PROMPT
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toBe(
+            `Provider action rejected: Semantic command list creates more than ${String(SEMANTIC_COMMAND_LIST_MAX_CREATIONS)} project objects`
+        );
+    });
+
+    describe('(s) bounds every note an admitted addNotes writes into a plan-created clip', () => {
+        const eightBeatClip = {
+            id: 'make-clip',
+            name: 'addClip',
+            arguments: { trackId: '$comp', startBeat: 0, endBeat: 8, name: 'Twelve Bar', binding: 'chorus' },
+            dependsOn: ['make-track'],
+        };
+        const notesRun = (notes: ReadonlyArray<Record<string, unknown>>) =>
+            proposalRun([
+                makeTrack,
+                eightBeatClip,
+                {
+                    id: 'write-notes',
+                    name: 'addNotes',
+                    arguments: { clipId: '$chorus', notes },
+                    dependsOn: ['make-clip'],
+                },
+            ]);
+
+        it('refuses a note parked past any musical timeline', async () => {
+            const result = await planWith(
+                notesRun([{ pitch: 60, startBeat: 4.5e15, duration: 1, velocity: 96 }]),
+                CREATIVE_PROMPT
+            );
+
+            expect(result.actions).toEqual([]);
+            expect(result.rejectionReason).toContain('ends past the clip');
+        });
+
+        it('refuses a note that runs past the end of the clip the batch declared', async () => {
+            const result = await planWith(
+                notesRun([{ pitch: 60, startBeat: 7, duration: 2, velocity: 96 }]),
+                CREATIVE_PROMPT
+            );
+
+            expect(result.actions).toEqual([]);
+            expect(result.rejectionReason).toContain('ends past the clip');
+        });
+
+        it('admits a note that ends exactly on the clip boundary', async () => {
+            const result = await planWith(
+                notesRun([{ pitch: 60, startBeat: 7, duration: 1, velocity: 96 }]),
+                CREATIVE_PROMPT
+            );
+
+            expect(result.rejectionReason).toBeUndefined();
+            expect(result.actions.map((action) => action.type)).toEqual(['addTrack', 'addClip', 'addNotes']);
+        });
+    });
+
+    it('(t) counts a split against the creation budget, because it leaves one more clip behind', async () => {
+        const clips = Array.from({ length: SEMANTIC_COMMAND_LIST_MAX_CREATIONS }, (_unused, index) => ({
+            id: `make-clip-${String(index)}`,
+            name: 'addClip',
+            arguments: {
+                trackId: '$comp',
+                startBeat: index * 4,
+                endBeat: index * 4 + 4,
+                name: `Bar ${String(index)}`,
+                binding: `bar${String(index)}`,
+            },
+            dependsOn: ['make-track'],
+        }));
+
+        const result = await planWith(
+            proposalRunFor(
+                ['addTrack', 'addClip', 'splitClip'],
+                [
+                    makeTrack,
+                    ...clips,
+                    {
+                        id: 'split',
+                        name: 'splitClip',
+                        arguments: { clipId: '$bar0', beat: 2 },
+                        dependsOn: ['make-clip-0'],
+                    },
+                ]
+            ),
             CREATIVE_PROMPT
         );
 

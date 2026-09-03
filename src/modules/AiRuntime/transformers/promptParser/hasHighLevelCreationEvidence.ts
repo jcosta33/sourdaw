@@ -1,6 +1,6 @@
 import { MUSICAL_GENRE_PATTERN } from './musicalGenreVocabulary';
 
-const CREATION_VERB_PATTERN = /\b(?:create|build|make|start|compose|write|produce|set\s?up|lay\s+down)\b/iu;
+const CREATION_VERB_PATTERN = /\b(?:create|add|build|make|start|compose|write|produce|set\s?up|lay\s+down)\b/giu;
 
 /**
  * Words that cannot name something the project already holds, so asking for one is asking for it to
@@ -22,10 +22,14 @@ const CLAUSE_SEPARATOR_PATTERN = /[,;.!?]|\bthen\b|\band\b/iu;
 
 const NEGATION_PATTERN = /\b(?:not|never|no|without|cannot|don'?t|doesn'?t|won'?t)\b/iu;
 
-/** A creation verb the clause does not take back before it reaches it. */
+/**
+ * A creation verb the clause does not take back before it reaches it. The last verb in the clause
+ * decides, because a negation only reaches forward: "make sure you never create a track" opens on an
+ * unqualified verb and is still a refusal, and reading the first verb's prefix would admit it.
+ */
 function hasUnnegatedCreationVerb(clause: string): boolean {
-    const verb = CREATION_VERB_PATTERN.exec(clause);
-    return verb !== null && !NEGATION_PATTERN.test(clause.slice(0, verb.index));
+    const lastVerb = [...clause.matchAll(CREATION_VERB_PATTERN)].at(-1);
+    return lastVerb?.index !== undefined && !NEGATION_PATTERN.test(clause.slice(0, lastVerb.index));
 }
 
 function namesSomethingToCreate(clause: string): boolean {

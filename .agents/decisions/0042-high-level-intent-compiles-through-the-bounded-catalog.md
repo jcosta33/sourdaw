@@ -54,7 +54,8 @@ one question — a clarification that asks nothing is indistinguishable from a r
 means no command exists for a required capability, and it is refused unless the run actually
 searched the command index, because a provider that declines over vocabulary it never looked up is
 guessing about the product's capabilities. A decline may not ride alongside a call that produces a
-batch: the outcome of a turn is either a proposal or a refusal, never both.
+batch: the outcome of a turn is either a proposal or a refusal, never both, and a turn carries at
+most one proposal, because everything downstream reads one and a second would pass unexamined.
 
 What that gate enforces is a prior successful search, and nothing more. Nothing checks that the
 intents searched were related to the request, and nothing could: relatedness is the judgement the
@@ -93,8 +94,11 @@ whose whole effect lands inside an object the same batch creates therefore takes
 admitted when the request carries creation evidence, the batch arrived as a normalized plan, and
 every target the command names resolves to a batch-local binding this batch produced. On that route
 the per-action intent phrase, the literal name and the explicit beat range are replaced by
-structural bounds: a provider-chosen name must be a safe project name, and a clip may exceed neither
-the batch clip span budget nor the batch timeline budget that bounds where it is placed.
+structural bounds: a provider-chosen name must be a safe project name, a clip may exceed neither
+the batch clip span budget nor the batch timeline budget that bounds where it is placed, and every
+note written into a created clip must start inside it, last at least one sixty-fourth note, and end
+before the clip does. The clip the notes go into does not exist in any snapshot yet, so the span
+its own item declared is the only dimension available to bound them against.
 
 Which commands the route admits is decided by what a command changes, never by what it targets.
 Accepting a batch-local target is not confinement: soloing a created track silences every other

@@ -861,8 +861,13 @@ export function compileArbitraryCommandList(input: {
     revision: string;
 }): ArbitraryCommandListCompilation {
     const proposalCalls = input.calls.filter((call) => call.name === 'command.batch.propose');
-    if (proposalCalls.length !== 1) {
+    if (proposalCalls.length === 0) {
         return { status: 'accepted', calls: [...input.calls], evidence: [], snapshotRevision: input.revision };
+    }
+    // Everything below reads one proposal. Accepting a turn that carried two would apply the budget
+    // and the target rules to the first and let the second through unexamined.
+    if (proposalCalls.length > 1) {
+        return { status: 'rejected', reason: 'Provider returned more than one command batch proposal in one turn.' };
     }
     const proposal = proposalCalls[0]!;
     if (!isRecord(proposal.arguments) || proposal.arguments.list === undefined) {

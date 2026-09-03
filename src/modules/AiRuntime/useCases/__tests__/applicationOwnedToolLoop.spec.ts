@@ -454,6 +454,29 @@ describe('application-owned tool loop', () => {
         });
     });
 
+    it('refuses a turn that returns more than one command batch proposal', async () => {
+        const requestTurn = vi.fn().mockResolvedValue({
+            status: 'complete',
+            toolCalls: [
+                { id: 'propose-1', name: 'command.batch.propose', arguments: { commands: [] } },
+                { id: 'propose-2', name: 'command.batch.propose', arguments: { commands: [] } },
+            ],
+        });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-two-proposals',
+            terminalToolNames: new Set(['command.batch.propose', 'command.batch.decline']),
+            requestTurn,
+        });
+
+        expect(result).toMatchObject({
+            status: 'rejected',
+            reason: 'Provider returned more than one command batch proposal in one turn.',
+        });
+        // The turn is refused whole, so neither proposal reaches the compiler that reads one.
+        expect(result.status === 'rejected' && result.receipts).toEqual([]);
+    });
+
     it('carries no decline when the run ended without one', async () => {
         const result = await runApplicationOwnedToolLoop({
             loopId: 'loop-no-decline',
