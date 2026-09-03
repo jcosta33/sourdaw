@@ -21,7 +21,7 @@ import {
     subscribeToCrdtChanges,
     getCrdtDoc,
     createCrdtDoc,
-    replaceCrdtDoc,
+    replaceCrdtDocInLineage,
     removeCrdtDoc,
     sanitizeIncomingCrdtDocument,
     hasCrdtDoc,
@@ -61,7 +61,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     subscribeToCrdtChanges: vi.fn(),
     getCrdtDoc: vi.fn(),
     createCrdtDoc: vi.fn(),
-    replaceCrdtDoc: vi.fn(),
+    replaceCrdtDocInLineage: vi.fn(),
     removeCrdtDoc: vi.fn(),
     hasCrdtDoc: vi.fn(),
     getCrdtDocIds: vi.fn().mockReturnValue([]),
@@ -87,7 +87,7 @@ function makePeerManager() {
 }
 
 /** A real base64 Automerge sync message for the `root` doc (so receiveSync's
- *  receiveSyncMessage decode succeeds and we reach replaceCrdtDoc). */
+ *  receiveSyncMessage decode succeeds and we reach replaceCrdtDocInLineage). */
 function makeRealSyncMessage(): string {
     const doc = createAmDoc();
     const [, message] = generateSyncMessage(doc, initSyncState());
@@ -159,7 +159,7 @@ describe('AutomergeSync', () => {
             .mockReturnValue(() => {});
         vi.mocked(getCrdtDoc).mockReset();
         vi.mocked(createCrdtDoc).mockReset();
-        vi.mocked(replaceCrdtDoc).mockReset();
+        vi.mocked(replaceCrdtDocInLineage).mockReset();
         vi.mocked(removeCrdtDoc).mockReset();
         vi.mocked(hasCrdtDoc).mockReset().mockReturnValue(false);
         vi.mocked(getCrdtDocIds).mockReset().mockReturnValue([]);
@@ -194,7 +194,7 @@ describe('AutomergeSync', () => {
         sync.receiveSync({ peerId: 'p1', docId: 'evil-doc', syncMessageBase64: makeRealSyncMessage() });
 
         expect(createCrdtDoc).not.toHaveBeenCalled();
-        expect(replaceCrdtDoc).not.toHaveBeenCalled();
+        expect(replaceCrdtDocInLineage).not.toHaveBeenCalled();
     });
 
     it('§fix-5 accepts a sync for a known docId (root)', () => {
@@ -203,7 +203,7 @@ describe('AutomergeSync', () => {
 
         sync.receiveSync({ peerId: 'p1', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
 
-        expect(replaceCrdtDoc).toHaveBeenCalledWith(expect.objectContaining({ id: 'root' }));
+        expect(replaceCrdtDocInLineage).toHaveBeenCalledWith(expect.objectContaining({ id: 'root' }));
     });
 
     it.each([
@@ -215,7 +215,7 @@ describe('AutomergeSync', () => {
             const { live: initialLive, remoteSeed } = forkPeerDocs();
             let live: Doc<unknown> = initialLive;
             vi.mocked(getCrdtDoc).mockImplementation(() => live);
-            vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+            vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
                 live = doc;
             });
             const onSyncApplied = vi.fn();
@@ -247,7 +247,7 @@ describe('AutomergeSync', () => {
         const { live: initialLive, remoteSeed } = forkPeerDocs();
         let live: Doc<unknown> = initialLive;
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
-        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             live = doc;
             order.push('publish-root');
         });
@@ -284,7 +284,7 @@ describe('AutomergeSync', () => {
         const { live: initialLive, remoteSeed } = forkPeerDocs();
         let live: Doc<unknown> = initialLive;
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
-        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             live = doc;
         });
         const peer = makePeerManager() as unknown as PeerConnectionManager;
@@ -344,7 +344,7 @@ describe('AutomergeSync', () => {
         let live: Doc<unknown> = clone(canonical, 'aaaaaaaaaaaaaaaa');
         const remote = clone(canonical, 'bbbbbbbbbbbbbbbb');
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
-        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             live = doc;
         });
         const commitHandoff = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
@@ -370,7 +370,7 @@ describe('AutomergeSync', () => {
             senderIsHost: true,
         });
         expect(commitHandoff).toHaveBeenCalledOnce();
-        expect(replaceCrdtDoc).not.toHaveBeenCalled();
+        expect(replaceCrdtDocInLineage).not.toHaveBeenCalled();
         expect(persistCrdtProject).toHaveBeenCalledExactlyOnceWith([...getHeads(canonical)].map(String).toSorted());
     });
 
@@ -442,7 +442,7 @@ describe('AutomergeSync', () => {
         let live: Doc<unknown> = initialLive;
         let handoffPrepared = false;
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
-        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             live = doc;
         });
         vi.mocked(persistCrdtProject).mockImplementation(async () => {
@@ -480,7 +480,7 @@ describe('AutomergeSync', () => {
         const { live: initialLive, remoteSeed } = forkPeerDocs();
         let live: Doc<unknown> = initialLive;
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
-        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             live = doc;
         });
         const peer = makePeerManager() as unknown as PeerConnectionManager;
@@ -593,7 +593,7 @@ describe('AutomergeSync', () => {
         const { live: initialLive, remoteSeed } = forkPeerDocs();
         let live: Doc<unknown> = initialLive;
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
-        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             live = doc;
         });
         const prepareSyncPersistence = vi.fn().mockResolvedValue(undefined);
@@ -632,7 +632,7 @@ describe('AutomergeSync', () => {
         const { live: initialLive, remoteSeed } = forkPeerDocs();
         let live: Doc<unknown> = initialLive;
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
-        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             live = doc;
         });
         let releasePrepare: (() => void) | undefined;
@@ -693,7 +693,7 @@ describe('AutomergeSync', () => {
         const { live: initialLive, remoteSeed } = forkPeerDocs();
         let live: Doc<unknown> = initialLive;
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
-        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             live = doc;
         });
         let releasePrepare: (() => void) | undefined;
@@ -725,7 +725,7 @@ describe('AutomergeSync', () => {
         const { live: initialLive, remoteSeed } = forkPeerDocs();
         let live: Doc<unknown> = initialLive;
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
-        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             live = doc;
         });
         let prepareCount = 0;
@@ -767,7 +767,7 @@ describe('AutomergeSync', () => {
         const { live: initialLive, remoteSeed } = forkPeerDocs();
         let live: Doc<unknown> = initialLive;
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
-        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             live = doc;
         });
         const peer = makePeerManager() as unknown as PeerConnectionManager;
@@ -845,7 +845,7 @@ describe('AutomergeSync', () => {
         let live: Doc<unknown> = clone(canonical, 'aaaaaaaaaaaaaaaa');
         const remoteSeed = clone(canonical, 'bbbbbbbbbbbbbbbb');
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
-        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             live = doc;
         });
         const sync = new AutomergeSync(makePeerManager(), {
@@ -876,7 +876,7 @@ describe('AutomergeSync', () => {
         let live: Doc<unknown> = clone(canonical, 'aaaaaaaaaaaaaaaa');
         const remoteSeed = clone(canonical, 'bbbbbbbbbbbbbbbb');
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
-        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             live = doc;
         });
         const sync = new AutomergeSync(makePeerManager(), {
@@ -916,12 +916,12 @@ describe('AutomergeSync', () => {
             syncMessageBase64: makeRealSyncMessage(),
         });
 
-        expect(replaceCrdtDoc).not.toHaveBeenCalled();
+        expect(replaceCrdtDocInLineage).not.toHaveBeenCalled();
         releaseTransition?.('committed');
         await transition;
         await Promise.resolve();
 
-        expect(replaceCrdtDoc).toHaveBeenCalledWith(expect.objectContaining({ id: 'branch_candidate' }));
+        expect(replaceCrdtDocInLineage).toHaveBeenCalledWith(expect.objectContaining({ id: 'branch_candidate' }));
     });
 
     it('drops a deferred branch-document sync when its owning transition aborts', async () => {
@@ -944,7 +944,7 @@ describe('AutomergeSync', () => {
         await Promise.resolve();
 
         expect(createCrdtDoc).not.toHaveBeenCalled();
-        expect(replaceCrdtDoc).not.toHaveBeenCalled();
+        expect(replaceCrdtDocInLineage).not.toHaveBeenCalled();
     });
 
     it.each(['root', 'branch_feature'])('sanitizes and persists an authorized peer document: %s', async (doc_id) => {
@@ -958,7 +958,7 @@ describe('AutomergeSync', () => {
         await sync.flushPersistence();
 
         expect(sanitizeIncomingCrdtDocument).toHaveBeenCalledTimes(1);
-        expect(replaceCrdtDoc).toHaveBeenCalledWith({ id: doc_id, doc: sanitized_document });
+        expect(replaceCrdtDocInLineage).toHaveBeenCalledWith({ id: doc_id, doc: sanitized_document });
         expect(persistCrdtProject).toHaveBeenCalledTimes(1);
     });
 
@@ -974,7 +974,7 @@ describe('AutomergeSync', () => {
         const { live: initial_live, remoteSeed } = forkPeerDocs();
         let live = initial_live;
         vi.mocked(getCrdtDoc).mockImplementation(() => live);
-        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             order.push('replace-document');
             live = doc;
         });
@@ -1121,7 +1121,7 @@ describe('AutomergeSync', () => {
         vi.mocked(createCrdtDoc).mockImplementation(() => {
             live = automergeInit();
         });
-        vi.mocked(replaceCrdtDoc).mockImplementation(({ doc }) => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(({ doc }) => {
             live = doc;
             // The real repository notifies subscribers on a replace; the
             // isApplyingRemoteSync guard is what keeps that from echoing.
@@ -1379,7 +1379,7 @@ describe('AutomergeSync', () => {
     }
 
     /**
-     * Turns red on: the `replaceCrdtDoc({ id: docId, doc: restored_doc })`
+     * Turns red on: the `replaceCrdtDocInLineage({ id: docId, doc: restored_doc })`
      * rollback in `rollBackSyncedDocument`. Without it the repository keeps
      * the document `receiveSyncMessage` merged the peer's changes into and
      * then outdated, so it is no longer at its pre-sync heads.
@@ -1698,7 +1698,7 @@ describe('AutomergeSync', () => {
      * `RangeError: Attempting to change an outdated document`. One failed
      * message from one peer would stop the user editing their own project.
      *
-     * Turns red on: the `replaceCrdtDoc` rollback in `rollBackSyncedDocument`.
+     * Turns red on: the `replaceCrdtDocInLineage` rollback in `rollBackSyncedDocument`.
      */
     it('keeps the document writable after a peer fails sanitation', async () => {
         const exchange = setupLiveExchange();
@@ -1719,7 +1719,7 @@ describe('AutomergeSync', () => {
      * An outdated handle left in the repository kills every later sync for
      * that document, from any peer, inside `receiveSyncMessage`.
      *
-     * Turns red on: the `replaceCrdtDoc` rollback in `rollBackSyncedDocument`.
+     * Turns red on: the `replaceCrdtDocInLineage` rollback in `rollBackSyncedDocument`.
      */
     it('keeps the document syncable by other peers after one peer fails sanitation', async () => {
         const exchange = setupLiveExchange();
@@ -1783,7 +1783,7 @@ describe('AutomergeSync', () => {
         sync.receiveSync({ peerId: 'peer-1', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
 
         expect(canApplySync).toHaveBeenCalledWith('peer-1', 'root');
-        expect(replaceCrdtDoc).not.toHaveBeenCalled();
+        expect(replaceCrdtDocInLineage).not.toHaveBeenCalled();
     });
 
     it('applies a sync the canApplySync hook accepts', () => {
@@ -1793,7 +1793,7 @@ describe('AutomergeSync', () => {
 
         sync.receiveSync({ peerId: 'peer-1', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
 
-        expect(replaceCrdtDoc).toHaveBeenCalled();
+        expect(replaceCrdtDocInLineage).toHaveBeenCalled();
     });
 
     it('§fix-4 does not re-broadcast the repository change triggered while applying a remote sync', () => {
@@ -1804,9 +1804,9 @@ describe('AutomergeSync', () => {
             return () => {};
         });
         vi.mocked(getCrdtDoc).mockReturnValue(createAmDoc());
-        // replaceCrdtDoc re-enters the change subscription synchronously, the
+        // replaceCrdtDocInLineage re-enters the change subscription synchronously, the
         // way the real repository does on a doc replace.
-        vi.mocked(replaceCrdtDoc).mockImplementation(() => {
+        vi.mocked(replaceCrdtDocInLineage).mockImplementation(() => {
             changeCb?.('root');
         });
 
@@ -1858,7 +1858,7 @@ describe('AutomergeSync', () => {
         sync.receiveSync({ peerId: 'editor', docId: 'root', syncMessageBase64: makeRealSyncMessage() });
 
         expect(createCrdtDoc).toHaveBeenCalledWith('root');
-        expect(replaceCrdtDoc).toHaveBeenCalledWith({ id: 'root', doc });
+        expect(replaceCrdtDocInLineage).toHaveBeenCalledWith({ id: 'root', doc });
     });
 
     it('drops a malformed sync message from a peer without throwing', () => {
@@ -1867,7 +1867,7 @@ describe('AutomergeSync', () => {
         const garbage = bytesToBase64(new Uint8Array([1, 2, 3]));
 
         expect(() => sync.receiveSync({ peerId: 'editor', docId: 'root', syncMessageBase64: garbage })).not.toThrow();
-        expect(replaceCrdtDoc).not.toHaveBeenCalled();
+        expect(replaceCrdtDocInLineage).not.toHaveBeenCalled();
     });
 
     it('handlePeerMessage forwards a crdt-sync message to receiveSync', () => {
@@ -1879,7 +1879,7 @@ describe('AutomergeSync', () => {
             message: { type: 'crdt-sync', docId: 'root', data: makeRealSyncMessage() },
         });
 
-        expect(replaceCrdtDoc).toHaveBeenCalledWith(expect.objectContaining({ id: 'root' }));
+        expect(replaceCrdtDocInLineage).toHaveBeenCalledWith(expect.objectContaining({ id: 'root' }));
     });
 
     it('handlePeerMessage ignores non crdt-sync message types', () => {
@@ -1888,7 +1888,7 @@ describe('AutomergeSync', () => {
         expect(() =>
             sync.handlePeerMessage({ peerId: 'p2', message: { type: 'peer-leave', peerId: 'p2' } })
         ).not.toThrow();
-        expect(replaceCrdtDoc).not.toHaveBeenCalled();
+        expect(replaceCrdtDocInLineage).not.toHaveBeenCalled();
     });
 
     it('addPeer sends the initial sync for the root doc to the new peer', async () => {
