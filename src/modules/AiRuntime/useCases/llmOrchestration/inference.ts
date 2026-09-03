@@ -504,6 +504,7 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             providerSystemPrompt,
                             providerUserMessage,
                             providerTools,
+                            providerRequest.limits.maxOutputTokens,
                             signal,
                         ])
                     );

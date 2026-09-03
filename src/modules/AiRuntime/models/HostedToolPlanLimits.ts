@@ -6,10 +6,9 @@
  * legitimate plan is never cut mid-call.
  *
  * Both the compiled provider request that admits a tool-planning attempt
- * (`llmOrchestration/inference.ts`) and the wire request that actually executes it
- * (`generateAnthropicToolCalls.ts`, reached through `generateCloudToolCalls`) must derive
- * `max_tokens` from this constant. Two independently declared numbers can only stay equal
- * by coincidence — the admission ceiling and the request that runs would otherwise be free
- * to drift apart.
+ * (`llmOrchestration/inference.ts`) and wire requests across Anthropic, OpenAI-compatible,
+ * and WebLLM must derive their output token limit from this constant. Two independently
+ * declared numbers can only stay equal by coincidence — the admission ceiling and the
+ * request that runs would otherwise be free to drift apart.
  */
 export const TOOL_PLAN_MAX_OUTPUT_TOKENS = 8192;

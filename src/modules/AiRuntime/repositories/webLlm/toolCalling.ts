@@ -18,8 +18,11 @@ export const generateWebLlmToolCalls = inject({ logger })(
             systemPrompt: string,
             userMessage: string,
             tools: ChatCompletionTool[],
+            maxOutputTokensOrSignal?: number | AbortSignal,
             signal?: AbortSignal
         ): Promise<ToolPlanningOutcome> {
+            const maxTokens = typeof maxOutputTokensOrSignal === 'number' ? maxOutputTokensOrSignal : undefined;
+            const actualSignal = maxOutputTokensOrSignal instanceof AbortSignal ? maxOutputTokensOrSignal : signal;
             const toolDescriptions = tools
                 .map((time) => {
                     const params = time.function.parameters;
@@ -40,7 +43,8 @@ export const generateWebLlmToolCalls = inject({ logger })(
 
             const response = await generateWebLlmCompletion(fullSystemPrompt, userMessage, {
                 temperature: 0.1,
-                signal,
+                maxTokens,
+                signal: actualSignal,
                 requireComplete: true,
             });
             logger.info(`[WebLLM] Response (${String(response.length)} chars): ${response.slice(0, 200)}`);

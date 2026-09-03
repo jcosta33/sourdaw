@@ -72,6 +72,36 @@ describe('generateWebLlmToolCalls', () => {
 
         expect(vi.mocked(generateWebLlmCompletion).mock.calls[0]?.[2]).toEqual({
             temperature: 0.1,
+            maxTokens: undefined,
+            signal: controller.signal,
+            requireComplete: true,
+        });
+    });
+
+    it('passes maxTokens to WebLLM completion when provided', async () => {
+        vi.mocked(generateWebLlmCompletion).mockResolvedValue('[]');
+        const tools = [{ type: 'function' as const, function: { name: 'addTrack', description: '', parameters: {} } }];
+
+        await generateWebLlmToolCalls('sys', 'user', tools, 8192);
+
+        expect(vi.mocked(generateWebLlmCompletion).mock.calls[0]?.[2]).toEqual({
+            temperature: 0.1,
+            maxTokens: 8192,
+            signal: undefined,
+            requireComplete: true,
+        });
+    });
+
+    it('passes maxTokens and signal to WebLLM completion when both provided', async () => {
+        vi.mocked(generateWebLlmCompletion).mockResolvedValue('[]');
+        const tools = [{ type: 'function' as const, function: { name: 'addTrack', description: '', parameters: {} } }];
+        const controller = new AbortController();
+
+        await generateWebLlmToolCalls('sys', 'user', tools, 8192, controller.signal);
+
+        expect(vi.mocked(generateWebLlmCompletion).mock.calls[0]?.[2]).toEqual({
+            temperature: 0.1,
+            maxTokens: 8192,
             signal: controller.signal,
             requireComplete: true,
         });
