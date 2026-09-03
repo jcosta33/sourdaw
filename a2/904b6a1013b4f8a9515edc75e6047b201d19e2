@@ -1,0 +1,55 @@
+.agents/skills/review-stances/test-validity.md
+  s_9b530f08172a54::t_50a81c7e3c4182 22-29,73-107
+.github/workflows/validation.yml
+  s_ac03a4ebaa3f6e::t_772c470989d78b 5-6,98,525-593
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_9b530f08172a54::t_e4683490f888b0 2,4,57-58,64-103,124,143,181-195,260,473-704,707,716,755,764,769-774,804,813-814,817,887-908,942-944,1097-1107,1234,1238,1240,1242-1245,1264,1266-1276,1279-1315,1346-1355,1358,1372-1379,1509-1510,1515-1530,1599-1680,1702,1782-1787,1819,1839-1840,1863,1869,1878,1902,1911,1918,1924,1930,1936,1943,1952,1957,1963,1969,1975,1982,1989,1999,2011,2018,2024,2031,2038,2045,2052,2061-2063
+.github/workflows/health-gates.yml
+  s_387bb8a9f0d7f9::t_27e6183834bc6e 6-7,17-20
+.github/workflows/heavy-gates.yml
+  s_387bb8a9f0d7f9::t_2a6e70bf244ec0 3-8,10-11,40-41,74-78,129-133,177-181,335
+AGENTS.md
+  s_3a591a0a76593d::t_94788d34c5527b 54-60,384,396-404,409-415,534-539
+scripts/test-health-gate-scripts.sh
+  s_387bb8a9f0d7f9::t_75a34cebe757b6 181,195,198,207-224,229-244,323-325,331,333-334,370,388-390,393-394,401-404,443-446,451-464,469-482,598,641-695,777-784,818-822,835-837,858,860-873,936,953-972,1002,1090-1091
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "a2904b6a1013b4f8a9515edc75e6047b201d19e2",
+  "prompts": {},
+  "sessions": {
+    "s_387bb8a9f0d7f9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a3eed1bfec46b1e68",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_3a591a0a76593d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a7b68d0b9ae44202c",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
