@@ -1,0 +1,42 @@
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_dfb65312e8705b::t_34987be2cd1b84 134,136,146-147,150-153,167,170-173,178,187
+  s_dfb65312e8705b::t_5295ef9ed1665a 1478
+  s_dfb65312e8705b::t_66c33ee4a4fa8a 1623-1631,1638-1646,1654,1657,1660-1667,1670-1673,1675-1680,1683-1689,1692-1704
+  s_dfb65312e8705b::t_f43d7521eea664 922-924,926-928,930-944,946-947,949
+  s_dfb65312e8705b::t_53415966c7881d 814,838-839
+  s_dfb65312e8705b::t_22f75615e30c0c 2
+scripts/resolveVercelProductionDeployment.ts
+  s_dfb65312e8705b::t_ec2fb8489d07bb 3-5,7-20,23-29,46-50,54-69,72,79-80,118-130,148-175,180-204,215-246,248,254-270,274-275,277-282,284-298
+  s_dfb65312e8705b::t_7eef2375db336c 176-179
+  s_dfb65312e8705b::t_967543d2102ab7 299-300
+scripts/test-health-gate-scripts.sh
+  s_dfb65312e8705b::t_6bb36997a036ae 789-791
+  s_dfb65312e8705b::t_18ecc76e844af1 842-844,846-847,850-851,854-855,857-863,872-873,884-885,888-895
+  s_dfb65312e8705b::t_e67fd88bc70549 167
+  s_dfb65312e8705b::t_0b149b90e4e0ea 719-721,735-736
+.github/workflows/nightly.yml
+  s_dfb65312e8705b::t_204c8606583bc8 721,731,735,741,749,755,758-761,764-777,780,784,792,802
+  s_dfb65312e8705b::t_42162cd8595930 825
+  s_dfb65312e8705b::t_955dbd31439b38 652-658
+  s_dfb65312e8705b::t_81c60509c108be 609-615
+  s_dfb65312e8705b::t_f51d26a6c64136 667-670
+scripts/__tests__/resolveVercelProductionDeployment.spec.ts
+  s_dfb65312e8705b::t_863c8daf2d44ff 2-11,21,23-24,27,29,35,50-53,98-100,103-136,138,140,142-150,154-165,169-173,188-193,200,209-295,301,310-325,333,338,347-348
+  s_dfb65312e8705b::t_4e466512f29c45 345-346,349-355,358-362
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "82a9cd59db543679d5a036049d2b8af978c678b1",
+  "prompts": {},
+  "sessions": {
+    "s_dfb65312e8705b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "293bb5fa-b660-405b-a86a-ce1ae9d0d147",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
