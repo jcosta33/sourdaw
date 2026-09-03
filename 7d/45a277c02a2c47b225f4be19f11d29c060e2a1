@@ -1,0 +1,66 @@
+src/modules/AiRuntime/useCases/__tests__/aiWorkflowCommandPreflightFixture.ts
+  s_ac03a4ebaa3f6e::t_b1db42276f08bb 50
+  s_ac03a4ebaa3f6e::t_abe0a8b6bb02b6 15
+src/modules/CrdtDocument/useCases/index.ts
+  s_ac03a4ebaa3f6e::t_4e5030358671e7 4
+src/modules/CrdtDocument/useCases/captureProjectIdentity.ts
+  s_ac03a4ebaa3f6e::t_a7526af8c53ba2 1-12
+src/modules/AiRuntime/useCases/__tests__/agentRiskApproval.spec.ts
+  s_ac03a4ebaa3f6e::t_1f942d8714e2f7 107
+  s_ac03a4ebaa3f6e::t_d54e45bb3a0c41 11
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_ac03a4ebaa3f6e::t_6fcc002146c415 23
+  s_ac03a4ebaa3f6e::t_c0791239cb7562 921-922,930-937,939-940,942-954
+  s_ac03a4ebaa3f6e::t_773e1fb33d410a 625
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_ac03a4ebaa3f6e::t_9e33976c339651 3164-3165
+  s_ac03a4ebaa3f6e::t_f6bf47307ad9d3 3166,3174
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_ac03a4ebaa3f6e::t_8da165c9a40658 2205
+  s_ac03a4ebaa3f6e::t_4d7f45fd469610 13
+  s_ac03a4ebaa3f6e::t_c57962b2d35a02 4111
+  s_ac03a4ebaa3f6e::t_7497879b26849c 5116
+src/modules/AiRuntime/useCases/compilePlannedActionCommandBatch.ts
+  s_ac03a4ebaa3f6e::t_f25303fe1c7861 4
+  s_ac03a4ebaa3f6e::t_d5327730fbf2eb 371
+src/app/captureCommandBatchPreflightState.ts
+  s_ac03a4ebaa3f6e::t_23b3e25ae37f23 8
+  s_ac03a4ebaa3f6e::t_6e8b2b2a848e40 498
+  s_ac03a4ebaa3f6e::t_62a92478c049a4 559
+src/modules/AiRuntime/useCases/__tests__/compilePlannedActionCommandBatch.spec.ts
+  s_ac03a4ebaa3f6e::t_b447b68c0c98c0 11
+  s_ac03a4ebaa3f6e::t_0d445f220531f9 119,125-129,131-132,134-135
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentExecution.spec.ts
+  s_ac03a4ebaa3f6e::t_34cb64d473015a 301-311
+  s_ac03a4ebaa3f6e::t_4107179ac2db4d 22
+  s_ac03a4ebaa3f6e::t_0106793767b781 275-300,312-316
+src/modules/AiRuntime/useCases/__tests__/articulationTransferPromptWorkflow.spec.ts
+  s_ac03a4ebaa3f6e::t_b130fc093fecbc 941-979
+src/modules/CrdtDocument/useCases/__tests__/captureProjectIdentity.spec.ts
+  s_ac03a4ebaa3f6e::t_5d34bd2d26e456 1-36
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_ac03a4ebaa3f6e::t_b582020d7e8539 67
+  s_ac03a4ebaa3f6e::t_1ed658a437dc16 18
+  s_ac03a4ebaa3f6e::t_98725b9edc852e 159
+  s_ac03a4ebaa3f6e::t_32507458d3cb4d 471,473-474,477,480-485
+src/modules/AiRuntime/useCases/__tests__/promptStemImportRecovery.spec.ts
+  s_ac03a4ebaa3f6e::t_5d6767a9f046a8 287
+  s_ac03a4ebaa3f6e::t_c5559343e09767 15
+  s_ac03a4ebaa3f6e::t_911cb0cecbf1be 50,56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "7d45a277c02a2c47b225f4be19f11d29c060e2a1",
+  "prompts": {},
+  "sessions": {
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
