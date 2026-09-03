@@ -19,22 +19,17 @@
  * translation is somewhere the two runtimes can drift. A contract of commands
  * maps onto it mechanically.
  *
- * It is deliberately **larger** than today's `GraphCommand`, because the web
- * strip expresses four behaviors the native timeline cannot yet
- * (jcosta33/sourdaw#2085), and a contract sized to the smaller of the two would
- * make the native backend's gaps invisible until the null test failed:
+ * It aligns the web audio strip and the native timeline
+ * (`crates/daw-engine/src/timeline.rs`) across the four timeline behaviors
+ * delivered in jcosta33/sourdaw#2085:
  *
  *   1. A **pre-fader solo gate** distinct from the post-fader mute gate
- *      ({@link AudioGraphParameterTarget}). The native strip has one `muted`
- *      flag applied post-fader; folding solo into it puts the gate downstream
- *      of the pre-fader send tap, so a non-soloed track keeps feeding its cue
- *      bus.
- *   2. **Bus device chains** ({@link AudioGraphCreateBusStripCommand}). A send
- *      bus that cannot host a reverb defeats the purpose of a send bus.
+ *      ({@link AudioGraphParameterTarget}). Placed ahead of send taps and the
+ *      fader, so a non-soloed track does not feed its cue bus or reverb tail.
+ *   2. **Bus device chains** ({@link AudioGraphCreateBusStripCommand}). A bus
+ *      hosts its own insert chain ahead of the bus fader.
  *   3. **Cancel-and-replace automation** ({@link AudioGraphParameterWrite}).
- *      The web write path re-anchors and replaces the pending ramp on every
- *      interactive tick; an append-only queue of fixed slots cannot receive
- *      that, and there is no equivalent of holding a param on transport stop.
+ *      Pending ramps re-anchor and replace on interactive parameter writes.
  *   4. **Per-clip fades, the anti-click micro-fade, and playback rate**
  *      ({@link AudioGraphClipPlayback}).
  *
@@ -303,8 +298,10 @@ export type AudioGraphClipPlayback = Readonly<{
     durationSeconds: number;
     /**
      * Source frames consumed per destination frame. `1` is unmodified;
-     * anything else is the clip's stretch or its transposition, and the native
-     * `TimelineClip` has nowhere to put it today (#2085 §4).
+     * anything else is varispeed resampling (transposition/speed), matching
+     * native `ClipPlayback::playback_rate` in `crates/daw-engine/src/timeline.rs`
+     * (pitch-preserving stretch is a device-shaped transform, not a clip
+     * attribute).
      */
     playbackRate: number;
     /** The clip's own level, as a linear amplitude. */
@@ -366,11 +363,11 @@ export type AudioGraphCreateTrackStripCommand = Readonly<{
 /**
  * A bus strip: a summing input, its own device chain, and an output.
  *
- * Identical in kind to a track strip, and that is the point — #2085 §2 records
- * the native bus as gain-plus-routing with nowhere to put an insert, which
- * makes a reverb bus unrepresentable. The command is separate from
- * {@link AudioGraphCreateTrackStripCommand} because **creation** differs — a
- * bus sums its inputs — not because a bus is addressed differently afterwards.
+ * Identical in kind to a track strip, matching the native timeline bus which
+ * hosts its own device chain ahead of the bus fader (delivered in #2085). The
+ * command is separate from {@link AudioGraphCreateTrackStripCommand} because
+ * **creation** differs — a bus sums its inputs — not because a bus is addressed
+ * differently afterwards.
  * Once built, a bus is reached by putting `busId` in the `trackId` of every
  * other command: one strip id space, stated as law in this file's header.
  */

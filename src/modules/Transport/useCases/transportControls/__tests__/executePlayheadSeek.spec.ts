@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { audioEngine } from '#/modules/AudioEngine/useCases';
+
 const {
     mockGetTransportState,
     mockUpdateTransportState,
@@ -11,6 +13,7 @@ const {
     mockResetMidiState,
     mockStopActiveRecording,
     mockReposition,
+    mockSetTransportInfo,
     mockLogger,
 } = vi.hoisted(() => ({
     mockGetTransportState: vi.fn(),
@@ -23,6 +26,7 @@ const {
     mockResetMidiState: vi.fn(),
     mockStopActiveRecording: vi.fn(() => Promise.resolve()),
     mockReposition: vi.fn(() => Promise.resolve({ outcome: 'declined', reason: 'no session' })),
+    mockSetTransportInfo: vi.fn(),
     mockLogger: { warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
@@ -41,6 +45,9 @@ vi.mock('../../playheadScheduler/stopPlayheadScheduler', () => ({ stopPlayheadSc
 vi.mock('../panicYeastRuntime', () => ({ panicYeastRuntime: mockPanicYeast }));
 vi.mock('../stopActiveRecording', () => ({ stopActiveRecording: mockStopActiveRecording }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    audioEngine: {
+        setTransportInfo: mockSetTransportInfo,
+    },
     stopAllScheduled: mockStopAllScheduled,
     repositionNativeLiveGraphSession: mockReposition,
 }));
@@ -53,6 +60,30 @@ import { recordingLifecycle } from '../recordingLifecycle';
 describe('executePlayheadSeek', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.mocked(audioEngine.setTransportInfo).mockClear();
+    });
+
+    it('publishes isPlaying: false and target position to audioEngine.setTransportInfo when seeking while stopped', async () => {
+        mockGetTransportState.mockReturnValue({
+            isPlaying: false,
+            isRecording: false,
+            tempo: 120,
+            loopStart: 2,
+            loopEnd: 10,
+            isLooping: true,
+        });
+
+        await executePlayheadSeek(6);
+
+        expect(audioEngine.setTransportInfo).toHaveBeenCalledWith(
+            6,
+            3, // 6 beats at 120 BPM = 3 seconds
+            120,
+            false,
+            2,
+            10,
+            true
+        );
     });
 
     it('resolves immediately when transport state is unavailable', async () => {

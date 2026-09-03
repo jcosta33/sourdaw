@@ -19,7 +19,6 @@ pub struct KneadEngine {
     window_scratchpad: Vec<f32>,
     psola_l_buffer: Vec<f32>,
     psola_r_buffer: Vec<f32>,
-    psola_work_buffer: Vec<f32>,
     // Cross-frame continuity state. Each analysis frame is rendered from a
     // span of `t` history samples ++ the current frame, with synthesis
     // covering a margin of `t` samples before the frame start. The last `t`
@@ -114,7 +113,6 @@ impl KneadEngine {
             window_scratchpad: vec![0.0; scratch_size],
             psola_l_buffer: vec![0.0; frame_size + 2 * tail_capacity],
             psola_r_buffer: vec![0.0; frame_size + 2 * tail_capacity],
-            psola_work_buffer: vec![0.0; frame_size],
             hist_l: vec![0.0; tail_capacity],
             hist_r: vec![0.0; tail_capacity],
             span_l: vec![0.0; frame_size + tail_capacity],

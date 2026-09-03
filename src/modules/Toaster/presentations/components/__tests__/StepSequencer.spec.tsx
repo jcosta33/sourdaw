@@ -183,6 +183,25 @@ describe('StepSequencer — pointer interaction', () => {
         expect(onToggleStep).toHaveBeenCalledWith(0, 0);
     });
 
+    it('ignores non-primary pointerdown events (e.g. right-click) so steps are not toggled', () => {
+        const onToggleStep = vi.fn();
+        const pads = [makePad(0)];
+        const pattern = makePattern(1, 2);
+        render(
+            <StepSequencer
+                pattern={pattern}
+                pads={pads}
+                currentStep={0}
+                isPlaying={false}
+                onToggleStep={onToggleStep}
+                onSetVelocity={vi.fn()}
+            />
+        );
+        const cell = screen.getAllByRole('checkbox')[0]!;
+        fireEvent.pointerDown(cell, { button: 2 });
+        expect(onToggleStep).not.toHaveBeenCalled();
+    });
+
     it('fires onSetVelocity on alt-drag pointer move', () => {
         const onSetVelocity = vi.fn();
         const pads = [makePad(0)];
@@ -205,5 +224,117 @@ describe('StepSequencer — pointer interaction', () => {
         expect(padIdx).toBe(0);
         expect(stepIdx).toBe(1);
         expect(velocity).toBeGreaterThan(0.5);
+    });
+});
+
+describe('StepSequencer — sound locks', () => {
+    it('renders sound lock badge and accessible name with ", sound lock kick-808" when step has soundLock', () => {
+        const pads = [makePad(0)];
+        const pattern = makePattern(1, 4);
+        pattern.tracks[0]!.steps[0] = { ...baseStep, active: true, soundLock: 'kick-808' };
+
+        render(
+            <StepSequencer
+                pattern={pattern}
+                pads={pads}
+                currentStep={0}
+                isPlaying={false}
+                onToggleStep={vi.fn()}
+                onSetVelocity={vi.fn()}
+            />
+        );
+
+        const cell = screen.getAllByRole('checkbox')[0]!;
+        expect(cell).toHaveAccessibleName(/sound lock kick-808/i);
+        const badge = screen.getByTestId('toaster-step-soundlock-0-0');
+        expect(badge).toHaveTextContent('kick');
+    });
+
+    it('opens sound lock menu on contextmenu / right-click and calls onSetSoundLock when an engine is selected', () => {
+        const onSetSoundLock = vi.fn();
+        const onToggleStep = vi.fn();
+        const pads = [makePad(0)];
+        const pattern = makePattern(1, 4);
+
+        render(
+            <StepSequencer
+                pattern={pattern}
+                pads={pads}
+                currentStep={0}
+                isPlaying={false}
+                onToggleStep={onToggleStep}
+                onSetVelocity={vi.fn()}
+                onSetSoundLock={onSetSoundLock}
+            />
+        );
+
+        const cell = screen.getAllByRole('checkbox')[1]!;
+        fireEvent.pointerDown(cell, { button: 2 });
+        fireEvent.contextMenu(cell, { clientX: 120, clientY: 240 });
+
+        expect(onToggleStep).not.toHaveBeenCalled();
+        expect(screen.getByText('Sound Lock Engine')).toBeInTheDocument();
+        const engineButton = screen.getByRole('menuitem', { name: 'hihat-closed' });
+        fireEvent.click(engineButton);
+
+        expect(onSetSoundLock).toHaveBeenCalledWith(0, 1, 'hihat-closed');
+        expect(screen.queryByText('Sound Lock Engine')).not.toBeInTheDocument();
+    });
+
+    it('calls onSetSoundLock(padIndex, stepIndex, null) when clearing an active sound lock', () => {
+        const onSetSoundLock = vi.fn();
+        const pads = [makePad(0)];
+        const pattern = makePattern(1, 4);
+        pattern.tracks[0]!.steps[2] = { ...baseStep, active: true, soundLock: 'snare-808' };
+
+        render(
+            <StepSequencer
+                pattern={pattern}
+                pads={pads}
+                currentStep={0}
+                isPlaying={false}
+                onToggleStep={vi.fn()}
+                onSetVelocity={vi.fn()}
+                onSetSoundLock={onSetSoundLock}
+            />
+        );
+
+        const cell = screen.getAllByRole('checkbox')[2]!;
+        fireEvent.contextMenu(cell, { clientX: 100, clientY: 200 });
+
+        const clearButton = screen.getByRole('menuitem', { name: 'Clear Sound Lock' });
+        fireEvent.click(clearButton);
+
+        expect(onSetSoundLock).toHaveBeenCalledWith(0, 2, null);
+        expect(screen.queryByText('Sound Lock Engine')).not.toBeInTheDocument();
+    });
+
+    it('opens sound lock menu via keyboard ("l" or "L")', () => {
+        const onSetSoundLock = vi.fn();
+        const pads = [makePad(0)];
+        const pattern = makePattern(1, 4);
+
+        render(
+            <StepSequencer
+                pattern={pattern}
+                pads={pads}
+                currentStep={0}
+                isPlaying={false}
+                onToggleStep={vi.fn()}
+                onSetVelocity={vi.fn()}
+                onSetSoundLock={onSetSoundLock}
+            />
+        );
+
+        const cell = screen.getAllByRole('checkbox')[0]!;
+        fireEvent.keyDown(cell, { key: 'l' });
+
+        expect(screen.getByText('Sound Lock Engine')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('menuitem', { name: 'cowbell' }));
+        expect(onSetSoundLock).toHaveBeenCalledWith(0, 0, 'cowbell');
+
+        onSetSoundLock.mockClear();
+        fireEvent.keyDown(cell, { key: 'L' });
+        expect(screen.getByText('Sound Lock Engine')).toBeInTheDocument();
     });
 });

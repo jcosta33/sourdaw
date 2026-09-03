@@ -25,9 +25,6 @@ use crate::primitives::sanitize_block;
 use chain::ProofChain;
 use wasm_bindgen::prelude::*;
 
-const NUM_MODULES: usize = 5;
-const NUM_TAPS: usize = 6;
-
 /// Bring a wire parameter value into `[min, max]`, answering `fallback` when it
 /// is not finite.
 ///

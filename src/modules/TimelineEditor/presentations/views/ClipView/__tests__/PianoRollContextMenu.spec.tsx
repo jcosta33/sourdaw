@@ -366,4 +366,38 @@ describe('PianoRollContextMenu', () => {
         redo();
         expect(removeMidiNote).toHaveBeenCalledWith('clip-1', 'n1');
     });
+
+    it('should disable Invert Pitch and Reverse (Retrograde) when notes is empty', () => {
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} notes={[]} />);
+        expect(screen.getByText('Invert Pitch')).toBeDisabled();
+        expect(screen.getByText('Reverse (Retrograde)')).toBeDisabled();
+    });
+
+    it('should call executeAppAction with invertNotes and close menu when Invert Pitch is clicked', () => {
+        const notes = [{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }];
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} notes={notes} />);
+        const button = screen.getByText('Invert Pitch');
+        expect(button).not.toBeDisabled();
+        fireEvent.click(button);
+
+        expect(executeAppAction).toHaveBeenCalledWith({
+            type: 'invertNotes',
+            payload: { clipId: 'clip-1' },
+        });
+        expect(defaultProps.onClose).toHaveBeenCalled();
+    });
+
+    it('should call executeAppAction with retrogradeNotes and close menu when Reverse (Retrograde) is clicked', () => {
+        const notes = [{ id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 }];
+        renderWithTooltip(<PianoRollContextMenu {...defaultProps} notes={notes} />);
+        const button = screen.getByText('Reverse (Retrograde)');
+        expect(button).not.toBeDisabled();
+        fireEvent.click(button);
+
+        expect(executeAppAction).toHaveBeenCalledWith({
+            type: 'retrogradeNotes',
+            payload: { clipId: 'clip-1' },
+        });
+        expect(defaultProps.onClose).toHaveBeenCalled();
+    });
 });

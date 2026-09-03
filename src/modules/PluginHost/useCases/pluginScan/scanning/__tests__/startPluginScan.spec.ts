@@ -209,21 +209,24 @@ describe('startPluginScan', () => {
         );
     });
 
-    it('leaves the plugin list untouched when the scan ran but reported failures', async () => {
-        // Regression (#2305): a desktop scan whose roots all failed used to
-        // replace the list with its empty partial output. The native contract
-        // calls a non-empty error list "a scan the user has a problem with";
-        // its plugins are what a failed run managed to read, not the user's
-        // plugins. The list survives and the failure is reported.
-        const previous_plugins = [create_scanned_plugin({ id: 'kept', name: 'Kept' })];
+    it('publishes the scanned list when a candidate failed', async () => {
+        // Regression (#3497): the list used to be withheld whenever the result
+        // carried any error, so one unreadable candidate — or one default root
+        // the machine has never created — hid every plugin the scan did find.
+        // The enumeration completed, so it is authoritative; the failure is
+        // reported beside the list.
+        const scanned_plugins = [
+            create_scanned_plugin({ id: 'found-1', name: 'Found One' }),
+            create_scanned_plugin({ id: 'found-2', name: 'Found Two' }),
+        ];
         mocks.pluginScanStoreValue.value = create_plugin_scan_state({
-            scannedPlugins: previous_plugins,
+            scannedPlugins: [create_scanned_plugin({ id: 'stale', name: 'Stale' })],
             lastScanTime: 1_000,
         });
         mocks.scanPlugins.mockResolvedValue({
             ran: true,
             result: {
-                plugins: [],
+                plugins: scanned_plugins,
                 errors: ['Cannot read /default/path: permission denied'],
                 notices: [],
                 scan_duration_ms: 0,
@@ -237,10 +240,12 @@ describe('startPluginScan', () => {
             expect.objectContaining({
                 isScanning: false,
                 errors: ['Cannot read /default/path: permission denied'],
-                scannedPlugins: previous_plugins,
-                lastScanTime: 1_000,
+                scannedPlugins: scanned_plugins,
+                lastScanTime: expect.any(Number),
             })
         );
+        const published = mocks.pluginScanStoreSet.mock.calls.at(-1)?.[0];
+        expect(published?.lastScanTime).toBeGreaterThan(1_000);
     });
 
     it('replaces the list with a clean scan that genuinely found nothing', async () => {
@@ -382,6 +387,29 @@ describe('startPluginScan', () => {
             expect.objectContaining({
                 isScanning: false,
                 errors: ['IPC Failure'],
+            })
+        );
+    });
+
+    it('leaves the plugin list untouched when the scan throws', async () => {
+        // A throw is the native side saying the enumeration never completed —
+        // there is no result, so nothing may restate the list the user's
+        // browser is showing.
+        const previous_plugins = [create_scanned_plugin({ id: 'kept', name: 'Kept' })];
+        mocks.pluginScanStoreValue.value = create_plugin_scan_state({
+            scannedPlugins: previous_plugins,
+            lastScanTime: 1_000,
+        });
+        mocks.scanPlugins.mockRejectedValue(new Error('Plugin scan did not complete within safety limits'));
+
+        await startPluginScan();
+
+        expect(mocks.pluginScanStoreSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                isScanning: false,
+                errors: ['Plugin scan did not complete within safety limits'],
+                scannedPlugins: previous_plugins,
+                lastScanTime: 1_000,
             })
         );
     });

@@ -163,7 +163,6 @@ impl DynEqBand {
 
 pub struct DynamicEq {
     bands: [DynEqBand; MAX_DYN_BANDS],
-    sample_rate: f64,
     bypassed: bool,
 }
 
@@ -172,7 +171,6 @@ impl DynamicEq {
         let default_freqs = [200.0, 1000.0, 3000.0, 8000.0];
         Self {
             bands: core::array::from_fn(|i| DynEqBand::new(default_freqs[i], sr)),
-            sample_rate: sr,
             bypassed: false,
         }
     }

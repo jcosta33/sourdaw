@@ -5,7 +5,8 @@ import { Cpu, RotateCcw, Save, Shuffle } from 'lucide-react';
 
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginLed } from '#/components/daw/DawPluginLed';
-import { Grid, Row, Stack } from '#/components/layout';
+import { DawPluginMetricTile } from '#/components/daw/DawPluginMetricTile';
+import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
 import { Slider } from '#/components/ui/slider';
@@ -114,14 +115,6 @@ function getSectionMeta(section: FermenterSection): {
     };
 }
 
-const MetricTile = ({ label, value, detail }: { label: string; value: string; detail: string }): ReactElement => (
-    <Stack gap={1} className="fermenter-window min-w-[92px] px-3 py-2">
-        <span className="text-[8px] uppercase tracking-[0.24em] text-muted-foreground/55">{label}</span>
-        <span className="font-mono text-[13px] text-foreground">{value}</span>
-        <span className="text-[9px] text-muted-foreground/55">{detail}</span>
-    </Stack>
-);
-
 const SectionHeader = ({
     eyebrow,
     title,
@@ -133,14 +126,14 @@ const SectionHeader = ({
     description: string;
     detail?: string;
 }): ReactElement => (
-    <Row align="start" justify="between" gap={3}>
-        <Stack gap={1}>
-            <div className="text-[8px] font-semibold uppercase tracking-[0.28em] text-[var(--color-accent-sage)]/70">
+    <Row align="center" justify="between" gap={2} shrink={false}>
+        <Row align="center" gap={1.5} className="min-w-0">
+            <span className="text-[8px] font-semibold uppercase tracking-[0.28em] text-[var(--color-accent-sage)]/70 shrink-0">
                 {eyebrow}
-            </div>
-            <div className="text-[13px] font-semibold text-foreground">{title}</div>
+            </span>
+            <span className="text-[13px] font-semibold text-foreground truncate">{title}</span>
             <span className="sr-only">{description}</span>
-        </Stack>
+        </Row>
         {detail ? (
             <DawPluginLed tone="sage" className="shrink-0">
                 {detail}
@@ -538,7 +531,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
     }
 
     return (
-        <Row align="stretch" gap={2.5} className="fermenter-faceplate h-full min-h-0 overflow-hidden p-2.5">
+        <Row align="stretch" gap={2.5} className="fermenter-faceplate h-full min-h-[460px] p-2.5">
             <Stack
                 as="aside"
                 gap={2.5}
@@ -631,46 +624,60 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
             </Stack>
 
             <Stack grow gap={2.5} className="min-w-0">
-                <Row as="header" wrap gap={2.5} shrink={false} className="fermenter-window px-3 py-2">
-                    <Stack gap={1}>
-                        <div className="text-[8px] uppercase tracking-[0.28em] text-[var(--color-accent-sage)]/70">
-                            {LEVELS.find((level) => level.id === uiLevel)?.eyebrow ?? 'Voice'}
-                        </div>
-                        <div className="text-[13px] font-semibold text-foreground">Fermenter</div>
-                    </Stack>
-
-                    <Row gap={2} className="ml-auto">
+                <Row
+                    as="header"
+                    align="center"
+                    justify="between"
+                    gap={2}
+                    shrink={false}
+                    className="fermenter-window min-h-[32px] px-2.5 py-1"
+                >
+                    <Row align="center" gap={1.5} shrink={false}>
+                        <DawPluginChip active tone="sage" size="xs">
+                            {LEVELS.find((level) => level.id === uiLevel)?.eyebrow ?? 'Scene'}
+                        </DawPluginChip>
                         <DawPluginLed tone="sage">{ENGINE_NAMES[patch.oscEngine] ?? 'Wavetable'}</DawPluginLed>
-                        <Row gap={1} className="text-[10px] text-muted-foreground">
+                    </Row>
+
+                    <Row align="center" gap={1.5} className="min-w-0 overflow-x-auto no-scrollbar">
+                        <DawPluginMetricTile
+                            compact
+                            className="fermenter-window shrink-0"
+                            label="Engine"
+                            value={ENGINE_NAMES[patch.oscEngine] ?? 'Wavetable'}
+                            detail={`Wave ${patch.oscWaveform + 1}`}
+                        />
+                        <DawPluginMetricTile
+                            compact
+                            className="fermenter-window shrink-0"
+                            label="Cutoff"
+                            value={`${Math.round(patch.filterCutoff)} Hz`}
+                            detail={`Res ${patch.filterResonance.toFixed(1)}`}
+                        />
+                        <DawPluginMetricTile
+                            compact
+                            className="fermenter-window shrink-0"
+                            label="Motion"
+                            value={`${patch.lfoRate.toFixed(2)} Hz`}
+                            detail={`Macro A ${formatPercent(patch.macros[0])}`}
+                        />
+                        <DawPluginMetricTile
+                            compact
+                            className="fermenter-window shrink-0"
+                            label="Width"
+                            value={patch.stereoWidth.toFixed(2)}
+                            detail={`${patch.numLayers} ${patch.numLayers === 1 ? 'layer' : 'layers'}`}
+                        />
+                    </Row>
+
+                    <Row align="center" gap={2} shrink={false} className="ml-auto">
+                        <Row align="center" gap={1} className="text-[10px] text-muted-foreground">
                             <Cpu className="size-3" />
                             <span>{activeVoices} voices</span>
                         </Row>
-                        <OutputMeter deviceId={deviceId} height={20} />
+                        <OutputMeter deviceId={deviceId} height={18} />
                     </Row>
                 </Row>
-
-                <Grid cols={4} gap={2.5} className="shrink-0">
-                    <MetricTile
-                        label="Engine"
-                        value={ENGINE_NAMES[patch.oscEngine] ?? 'Wavetable'}
-                        detail={`Wave ${patch.oscWaveform + 1}`}
-                    />
-                    <MetricTile
-                        label="Cutoff"
-                        value={`${Math.round(patch.filterCutoff)} Hz`}
-                        detail={`Res ${patch.filterResonance.toFixed(1)}`}
-                    />
-                    <MetricTile
-                        label="Motion"
-                        value={`${patch.lfoRate.toFixed(2)} Hz`}
-                        detail={`Macro A ${formatPercent(patch.macros[0])}`}
-                    />
-                    <MetricTile
-                        label="Width"
-                        value={patch.stereoWidth.toFixed(2)}
-                        detail={`${patch.numLayers} layer${patch.numLayers === 1 ? '' : 's'}`}
-                    />
-                </Grid>
 
                 <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.45fr)_260px] gap-2.5 overflow-hidden">
                     <Stack as="section" gap={2.5} className="fermenter-window overflow-hidden p-2.5">
@@ -704,7 +711,7 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                             </div>
                         </Stack>
 
-                        <div className="min-h-0 flex-1 overflow-y-auto px-1">
+                        <div className="min-h-[180px] flex-1 overflow-y-auto px-1">
                             <div className="pb-2">{renderSectionContent(section, patch, onParam)}</div>
                             {uiLevel >= 4 ? (
                                 <div className="mt-3 border-t border-border/15 pt-3">
@@ -719,8 +726,8 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
                         </div>
                     </Stack>
 
-                    <Stack as="aside" gap={2.5} className="fermenter-window overflow-y-auto p-2.5">
-                        <Stack gap={3} className="fermenter-window p-3">
+                    <Stack as="aside" gap={2.5} className="fermenter-window min-h-[220px] overflow-y-auto p-2.5">
+                        <Stack gap={3} className="fermenter-window min-h-[220px] p-3">
                             <SectionHeader
                                 eyebrow="Performance"
                                 title="Macro rig"

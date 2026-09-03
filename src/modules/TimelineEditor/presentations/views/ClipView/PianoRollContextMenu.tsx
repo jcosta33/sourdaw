@@ -212,6 +212,35 @@ export const PianoRollContextMenu = ({
             >
                 Snap to Scale
             </DawMenuButton>
+            {/* Transform */}
+            <DawMenuSeparator className="border-border/50" />
+            <DawMenuSectionLabel className="text-[10px] font-normal normal-case tracking-normal">
+                Transform
+            </DawMenuSectionLabel>
+            <DawMenuButton
+                role="menuitem"
+                disabled={notes.length === 0}
+                onClick={act(() => {
+                    void executeAppAction({
+                        type: 'invertNotes',
+                        payload: { clipId },
+                    }).catch(() => logger.warn('Could not invert notes'));
+                })}
+            >
+                Invert Pitch
+            </DawMenuButton>
+            <DawMenuButton
+                role="menuitem"
+                disabled={notes.length === 0}
+                onClick={act(() => {
+                    void executeAppAction({
+                        type: 'retrogradeNotes',
+                        payload: { clipId },
+                    }).catch(() => logger.warn('Could not retrograde notes'));
+                })}
+            >
+                Reverse (Retrograde)
+            </DawMenuButton>
             {/* Humanize */}
             <DawMenuSeparator className="border-border/50" />
             {(
