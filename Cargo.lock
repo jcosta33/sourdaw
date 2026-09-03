@@ -2528,6 +2528,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "sourdaw-harness-tone"
+version = "0.1.0"
+dependencies = [
+ "clap-sys",
+ "daw-plugin-host",
+]
+
+[[package]]
 name = "sourdaw-native"
 version = "0.1.0"
 dependencies = [
