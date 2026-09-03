@@ -207,6 +207,68 @@ describe('prepareAgentRunPendingEffectContinuation', () => {
         expect(continuation ? 'sourceRevision' in continuation : true).toBe(false);
     });
 
+    it('decides render-only-ness from the promoted receipt, not the prepared one', () => {
+        const runId = 'run-promoted-decision-continuation-promotion';
+        const batchId = 'batch-promoted-decision-continuation-promotion';
+        const commandBatch = buildCommandBatch({ runId, batchId });
+        const preparedRenderEffect: FixturePendingEffect = {
+            commandId: 'command-promoted-decision-render-continuation-promotion',
+            kind: 'external-effect',
+            operation: 'renderProjectSections',
+            reason: 'Post-commit effect has not completed',
+            remediation: 'reconcile',
+            state: 'pending',
+        };
+        const preparedGenericEffect: FixturePendingEffect = {
+            commandId: 'command-promoted-decision-generic-continuation-promotion',
+            kind: 'external-effect',
+            operation: 'addTrack',
+            reason: 'Post-commit effect has not completed',
+            remediation: 'reconcile',
+            state: 'pending',
+        };
+        const promotedRenderEffect: FixturePendingEffect = {
+            ...preparedRenderEffect,
+            reason: 'Renderer stopped before completion.',
+        };
+        const prepareReceipt = buildReceipt({
+            runId,
+            batchId,
+            pendingEffects: [preparedRenderEffect, preparedGenericEffect],
+        });
+        const promoteReceipt = buildReceipt({ runId, batchId, pendingEffects: [promotedRenderEffect] });
+        createAgentRun({
+            runId,
+            request: 'Render a section through a batch whose checkpoint narrowed after preparation.',
+            mode: 'apply',
+            createdRevision: 'revision-continuation-base',
+            createdAt: 1,
+        });
+
+        const { promote } = prepareAgentRunPendingEffectContinuation({
+            runId,
+            receipt: prepareReceipt,
+            commandBatch,
+            getFinalizedRevision: () => 'revision-finalized',
+        });
+
+        expect(() => promote({ receipt: promoteReceipt })).not.toThrow();
+
+        const ledger = readAgentRunState().pendingEffectRecoveryLedger ?? [];
+        expect(ledger).toHaveLength(1);
+        const [ledgerEntry] = ledger;
+        expect(ledgerEntry?.checkpoint).toBe('durable');
+        expect(ledgerEntry?.effects).toEqual(promoteReceipt.pendingEffects);
+        expect(ledgerEntry?.sourceRevision).toBe('revision-finalized');
+        expect(ledgerEntry?.recovery).toBe('reconcile-batch');
+
+        const continuations = getAgentRun(runId)?.pendingEffectContinuations ?? [];
+        expect(continuations).toHaveLength(1);
+        const [continuation] = continuations;
+        expect(continuation?.effects).toEqual(promoteReceipt.pendingEffects);
+        expect(continuation?.sourceRevision).toBe('revision-finalized');
+    });
+
     it('keeps its source revision when every pending effect is a section render', () => {
         const runId = 'run-render-continuation-promotion';
         const batchId = 'batch-render-continuation-promotion';
