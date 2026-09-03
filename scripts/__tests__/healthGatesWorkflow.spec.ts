@@ -180,6 +180,7 @@ const DEPLOY_FRESH_GATED_STEPS = [
 ] as const;
 const DEPLOY_REVISION_GATED_STEPS = [
     'Install dependencies',
+    'Link the Vercel CLI to the production project',
     'Pull the production environment',
     'Build the validated revision',
     'Deploy the prebuilt revision',
@@ -874,8 +875,15 @@ function assertDailyDeployTrain(candidate: UnknownRecord): DeployTrainScripts {
         throw new Error('the daily deploy train must record the deployed revision on the deployment');
     }
     for (const name of VERCEL_CLI_STEPS) {
-        if (recordAt(stepNamed(job, name), 'env').VERCEL_TOKEN !== VERCEL_TOKEN_REFERENCE) {
+        const env = recordAt(stepNamed(job, name), 'env');
+        if (env.VERCEL_TOKEN !== VERCEL_TOKEN_REFERENCE) {
             throw new Error(`${name} must authenticate from the environment rather than an echoed argument`);
+        }
+        if (env.VERCEL_ORG_ID !== undefined) {
+            throw new Error(`${name} must not pass VERCEL_ORG_ID to the CLI`);
+        }
+        if (env.VERCEL_PROJECT_ID !== undefined) {
+            throw new Error(`${name} must not pass VERCEL_PROJECT_ID to the CLI`);
         }
     }
     const isolationStep = stepNamed(job, 'Assert cross-origin isolation on the deployment');
@@ -1599,6 +1607,15 @@ describe('health gates workflow contract', () => {
             .VERCEL_TOKEN;
         expect(() => assertDailyDeployTrain(unauthenticatedBuild)).toThrow(
             'Build the validated revision must authenticate from the environment rather than an echoed argument'
+        );
+
+        const envLinkedPull = asRecord(structuredClone(nightly), 'env-linked pull deploy train');
+        recordAt(
+            stepNamed(jobAt(envLinkedPull, DEPLOY_WEB_JOB), 'Pull the production environment'),
+            'env'
+        ).VERCEL_ORG_ID = '${{ secrets.VERCEL_ORG_ID }}';
+        expect(() => assertDailyDeployTrain(envLinkedPull)).toThrow(
+            'Pull the production environment must not pass VERCEL_ORG_ID to the CLI'
         );
 
         const reboundIsolation = asRecord(structuredClone(nightly), 'rebound-isolation deploy train');

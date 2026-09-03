@@ -2036,6 +2036,11 @@
         },
         {
             "surface": "project-source",
+            "file": "scripts/linkVercelCliProject.ts",
+            "value": "https://api.vercel.com/v9/projects"
+        },
+        {
+            "surface": "project-source",
             "file": "scripts/reconcileTrackerIssue.ts",
             "value": "https://api.github.com/repos/${slot}",
             "templateSha256": "b200795ec386588f72569a22bd8ff94aaf898396a8579b7c0c3862e985fba22d"
