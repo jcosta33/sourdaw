@@ -1,0 +1,152 @@
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_ac03a4ebaa3f6e::t_bd9cda04c1fde1 17
+  s_ac03a4ebaa3f6e::t_bbbe9640f89484 853-876,882,884
+  s_ac03a4ebaa3f6e::t_bb07a64d7df30d 28
+  s_ac03a4ebaa3f6e::t_00165b721d2ddc 12,64-65,877,881,883,885,892,895,1032-1033,1036,1045
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_ac03a4ebaa3f6e::t_3fa0a6fa7d6ea7 8-9
+  s_ac03a4ebaa3f6e::t_20cd920dc363ca 836
+  s_ac03a4ebaa3f6e::t_06537c958a24fa 505-512
+  s_ac03a4ebaa3f6e::t_40cde9e3793f0a 837-856
+  s_ac03a4ebaa3f6e::t_cb3a7ad7420e61 165-203
+  s_ac03a4ebaa3f6e::t_6411ab76190b93 10,13,51,53,252,254,390,502-504,830-835
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_ac03a4ebaa3f6e::t_8c08fcf5170c8a 190-195
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_ac03a4ebaa3f6e::t_b5dc9ffa9218bf 3-16
+  s_ac03a4ebaa3f6e::t_22031f35935174 27-40
+  s_ac03a4ebaa3f6e::t_d0abd4111736ff 106,119,137
+  s_ac03a4ebaa3f6e::t_bc493a1458d4aa 17-22
+  s_ac03a4ebaa3f6e::t_b2a7478ef8a3bd 248-261
+.agents/decisions/README.md
+  s_ac03a4ebaa3f6e::t_7afc533068bf5f 58
+  s_ac03a4ebaa3f6e::t_704f70bdba83d8 17-57
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_ac03a4ebaa3f6e::t_15deac11376e12 380-467
+  s_ac03a4ebaa3f6e::t_1b7fb754668de3 353
+src/modules/Command/useCases/__tests__/addNotesCommandRegistration.spec.ts
+  s_ac03a4ebaa3f6e::t_a4c9f69443698e 237-240,249-250,257
+  s_ac03a4ebaa3f6e::t_6f19d4ce29a67b 241-248
+  s_ac03a4ebaa3f6e::t_275e09e84774cb 279-281,286
+  s_ac03a4ebaa3f6e::t_f899eda0eb70cd 168,176
+  s_ac03a4ebaa3f6e::t_b8c88d5a89a775 26
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/orchestratePromptChatRequest.spec.ts
+  s_ac03a4ebaa3f6e::t_71d0399a3989f4 524-582
+src/utils/midiNoteBatchLimits.ts
+  s_ac03a4ebaa3f6e::t_6a8b754bcfba13 1-8
+src/modules/AiRuntime/models/SemanticCommandList.ts
+  s_ac03a4ebaa3f6e::t_1ef9f22b324e4d 7-12
+  s_ac03a4ebaa3f6e::t_34a9de75264afd 13-15
+  s_55916eec834fd4::t_bf1a1a83696ba4 16-17
+src/modules/AiRuntime/useCases/__tests__/compileArbitraryCommandList.spec.ts
+  s_ac03a4ebaa3f6e::t_1e2802f7af6d75 14
+  s_ac03a4ebaa3f6e::t_669b98ea4c81a3 4965-5020
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_ac03a4ebaa3f6e::t_1acbd22795baf2 168-176,181-184,186,190,193-196,198-200
+  s_ac03a4ebaa3f6e::t_67fe486eee5cc2 6-12
+  s_ac03a4ebaa3f6e::t_63873f38a29dcf 553-560,562-566,568-583
+  s_ac03a4ebaa3f6e::t_a48075530e453e 23-28
+  s_ac03a4ebaa3f6e::t_1cc0d3e739a461 3
+  s_ac03a4ebaa3f6e::t_8d0418d0e988b5 2580-2581,2583
+  s_ac03a4ebaa3f6e::t_ac657536c1941c 561
+  s_ac03a4ebaa3f6e::t_75cb6c703f8bc2 50
+  s_ac03a4ebaa3f6e::t_13253f1fa3a707 2582
+  s_ac03a4ebaa3f6e::t_8b3de719cbe359 567
+  s_ac03a4ebaa3f6e::t_f60f02f97e5f51 177-180,185,187-189,191-192,197
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentAdversarial.spec.ts
+  s_ac03a4ebaa3f6e::t_9ed46bc99bae0b 1-86,88-100,102-163,165-330
+  s_ac03a4ebaa3f6e::t_9c10c00a524f4b 87
+  s_ac03a4ebaa3f6e::t_8946b60c6b9a51 164
+  s_ac03a4ebaa3f6e::t_4f8398721125fa 101
+  s_ac03a4ebaa3f6e::t_05c7bc3ec3e322 331-478
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_ac03a4ebaa3f6e::t_2dc02b29f414d7 3574-3575
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentCompilation.spec.ts
+  s_ac03a4ebaa3f6e::t_b0c4040c0c5ac5 47-51
+  s_ac03a4ebaa3f6e::t_d4ead12798d15c 178,190,193-196
+  s_ac03a4ebaa3f6e::t_c3a0bea45b15ea 1-46,53-57,59-155,157-177,179-189,191-192,197-260
+  s_ac03a4ebaa3f6e::t_f1cbe641452378 58
+  s_ac03a4ebaa3f6e::t_80ba1add336651 52
+  s_ac03a4ebaa3f6e::t_88689203eab8db 156
+  s_ac03a4ebaa3f6e::t_477ed91e8993d3 261-305
+src/modules/AiRuntime/transformers/describePlanningOutcome.ts
+  s_ac03a4ebaa3f6e::t_59addaab014ddc 1-17
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  s_ac03a4ebaa3f6e::t_b9be0ee4a31827 214
+  s_ac03a4ebaa3f6e::t_003fca15795f1c 11
+  s_ac03a4ebaa3f6e::t_8a5dcc9095e2b9 147-169
+.agents/decisions/0042-high-level-intent-compiles-through-the-bounded-catalog.md
+  s_ac03a4ebaa3f6e::t_fc6267117965a9 1-115
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_ac03a4ebaa3f6e::t_da5106b1e8ff75 892
+  s_ac03a4ebaa3f6e::t_3d056b1d3b6d88 2149-2152
+  s_ac03a4ebaa3f6e::t_c5b54036a86efc 2191-2194
+  s_ac03a4ebaa3f6e::t_3e2a885fa76145 2213
+  s_ac03a4ebaa3f6e::t_b80a3ca5fce847 911-914
+  s_ac03a4ebaa3f6e::t_37d1b0003156ad 2229
+  s_ac03a4ebaa3f6e::t_3cd073d5707c0b 875-878
+src/modules/AiRuntime/useCases/compileArbitraryCommandList.ts
+  s_ac03a4ebaa3f6e::t_d02de57c691935 1132-1138
+  s_ac03a4ebaa3f6e::t_24482ad5e201c6 8
+src/modules/AiRuntime/models/PlanningOutcome.ts
+  s_ac03a4ebaa3f6e::t_39fafd06e0fdf8 1-11
+src/modules/AiRuntime/transformers/__tests__/parseCommandBatchDecline.spec.ts
+  s_ac03a4ebaa3f6e::t_30afe95b6a2225 1-66
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  s_ac03a4ebaa3f6e::t_0438416c7b275f 278-325
+src/modules/AiRuntime/models/IntentResult.ts
+  s_ac03a4ebaa3f6e::t_a330816836c38e 5
+  s_ac03a4ebaa3f6e::t_8b91548fdfaaa7 32-34
+  s_ac03a4ebaa3f6e::t_9366de2af010f0 15-16
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_ac03a4ebaa3f6e::t_eeff5f69f807c6 4
+  s_ac03a4ebaa3f6e::t_f84b52c7972ddf 933
+src/modules/MIDI/transformers/isMaterializedAddNotesArguments.ts
+  s_ac03a4ebaa3f6e::t_6decf92d5a4f43 1-2
+  s_ac03a4ebaa3f6e::t_8a21f6a2c1cf40 66
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_ac03a4ebaa3f6e::t_1c89dd59df8d33 262
+  s_ac03a4ebaa3f6e::t_6584eadb0d24fc 298-302
+  s_ac03a4ebaa3f6e::t_b274aca6c921a6 8
+src/modules/AiRuntime/models/CommandBatchDecline.ts
+  s_ac03a4ebaa3f6e::t_2cf9bbc8a3a81d 1-11
+src/modules/AiRuntime/models/AgentToolCatalogNames.ts
+  s_ac03a4ebaa3f6e::t_8309fbc83959d1 1-19
+src/modules/AiRuntime/transformers/parseCommandBatchDecline.ts
+  s_ac03a4ebaa3f6e::t_b62f38ac9430a0 1-49
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_ac03a4ebaa3f6e::t_6dffb6fd266c31 364,368,370
+  s_ac03a4ebaa3f6e::t_4a22979ffd5d43 14
+src/modules/AiRuntime/transformers/promptParser/hasHighLevelCreationEvidence.ts
+  s_ac03a4ebaa3f6e::t_cfab8031c01b24 1-26
+src/modules/AiRuntime/transformers/promptParser/musicalGenreVocabulary.ts
+  s_ac03a4ebaa3f6e::t_2f1e7b737becdd 1-6
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_ac03a4ebaa3f6e::t_d8eb26d344628d 10,19,88-89,95,3686-3780,3783,3789,3820-3834,3847-3848,3878,4098,4181,4216-4218,4965-4970,4994,5000
+src/modules/AiRuntime/transformers/promptParser/parsing.ts
+  s_55916eec834fd4::t_89e9aaddb0894d 14-15,56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "bca9f6b2de335062c0319efa1f00f99f490af482",
+  "prompts": {},
+  "sessions": {
+    "s_55916eec834fd4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a82b0370a0cde5723",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
