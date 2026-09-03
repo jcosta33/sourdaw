@@ -1,0 +1,50 @@
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentExecution.spec.ts
+  s_28abfd94826e36::t_66bb23eab390b3 77
+  s_28abfd94826e36::t_c4b47651835172 374-376
+src/modules/AiRuntime/useCases/__tests__/articulationTransferPromptWorkflow.spec.ts
+  s_28abfd94826e36::t_fa82c05b44e04a 43
+  s_28abfd94826e36::t_cc7afee05b3328 906-916
+  s_28abfd94826e36::t_c8301815c43198 1176-1186
+  s_28abfd94826e36::t_2230bfad8aa92e 728,1015,1108,1173
+  s_28abfd94826e36::t_4edb35b70aca9e 515-521,523-549
+  s_28abfd94826e36::t_4393f2ebcc1c4f 938-949
+src/modules/AiRuntime/useCases/__tests__/wholeProjectVibeMixPlan.spec.ts
+  s_28abfd94826e36::t_39939221cc203f 905-911
+  s_28abfd94826e36::t_b8a4525f56aa61 53
+  s_28abfd94826e36::t_4a4d6d5811eb9c 519-541
+  s_28abfd94826e36::t_f3c2ad3afaf54b 614-621
+src/modules/AiRuntime/useCases/__tests__/landProjectEdit.ts
+  s_28abfd94826e36::t_26dd63ec12624f 13
+  s_28abfd94826e36::t_846db53e085f8d 1-12,14
+src/modules/AiRuntime/useCases/__tests__/drumPreviewBranchesPromptWorkflow.spec.ts
+  s_28abfd94826e36::t_9868939c078dca 58
+  s_28abfd94826e36::t_5d135442bacb57 572-624,626-628
+  s_28abfd94826e36::t_af8b1faf854219 3
+  s_28abfd94826e36::t_d0645b6ff5003c 826-838
+src/modules/AiRuntime/useCases/__tests__/deleteMutedEmptyTracksPromptWorkflow.spec.ts
+  s_28abfd94826e36::t_c435fcd1b63672 893
+  s_28abfd94826e36::t_68f19316b8439b 842-848
+  s_28abfd94826e36::t_472bad5de82cac 853
+  s_28abfd94826e36::t_0140d5ae149046 870-887
+  s_28abfd94826e36::t_2e0148ad7656a5 835,854,863
+  s_28abfd94826e36::t_27360fdb698022 44-45
+  s_28abfd94826e36::t_d2d11e6ada8e71 892
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_28abfd94826e36::t_23e3dad8d8645d 934
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "8886b18e1a752c8c1f10a2639871513a6f64018c",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": null
+    }
+  }
+}
