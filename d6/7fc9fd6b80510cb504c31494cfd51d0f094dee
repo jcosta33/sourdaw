@@ -1,0 +1,27 @@
+.agents/skills/review-stances/correctness.md
+  s_ac03a4ebaa3f6e::t_ac7a212c65dc76 48-64
+src/modules/AiRuntime/useCases/__tests__/prepareAgentRunPendingEffectContinuation.spec.ts
+  s_ac03a4ebaa3f6e::t_e3ac69cdbf218f 1-2,5-99,102-225
+  s_ac03a4ebaa3f6e::t_f65c84963c2017 3-4
+  s_ac03a4ebaa3f6e::t_125b8def222f50 100-101
+src/modules/AiRuntime/useCases/prepareAgentRunPendingEffectContinuation.ts
+  s_ac03a4ebaa3f6e::t_30b542cd2924ad 29-30,34,42
+  s_ac03a4ebaa3f6e::t_c0e05597a2ba71 31
+  s_ac03a4ebaa3f6e::t_6e93ecffdebdd7 35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "d67fc9fd6b80510cb504c31494cfd51d0f094dee",
+  "prompts": {},
+  "sessions": {
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
