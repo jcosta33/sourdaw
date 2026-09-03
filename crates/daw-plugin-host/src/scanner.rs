@@ -479,7 +479,7 @@ fn detect_format(path: &Path, is_dir: bool) -> Option<PluginFormat> {
     let ext = path.extension()?.to_str()?;
     match (ext, is_dir) {
         ("vst3", true) => Some(PluginFormat::Vst3),
-        ("clap", false) => Some(PluginFormat::Clap),
+        ("clap", false) | ("clap", true) => Some(PluginFormat::Clap),
         ("component", true) => Some(PluginFormat::AudioUnit),
         // A `.vst` *directory*: the bundle shape VST2 ships in on macOS and
         // Linux, recognised so a bundle misplaced into an authorized root is
@@ -1077,6 +1077,28 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_clap_bundle_directory_is_recognised_as_clap() {
+        assert_eq!(
+            detect_format(Path::new("/plugins/Vendor.clap"), true),
+            Some(PluginFormat::Clap)
+        );
+    }
+
+    #[test]
+    fn clap_bundle_executable_path_resolves_contents_macos() {
+        assert_eq!(
+            clap_bundle_executable_path(Path::new("/Library/Audio/Plug-Ins/CLAP/Surge XT.clap"))
+                .expect("a named bundle should resolve"),
+            PathBuf::from("/Library/Audio/Plug-Ins/CLAP/Surge XT.clap/Contents/MacOS/Surge XT")
+        );
+    }
+
+    #[test]
+    fn clap_bundle_executable_path_fails_for_root() {
+        assert!(clap_bundle_executable_path(Path::new("/")).is_err());
+    }
+
     // ── Category derived from CLAP features ─────────────────────────────
     //
     // Every scanned plugin used to be reported as an "effect". The plugin
@@ -1156,6 +1178,50 @@ mod tests {
 
 // ── CLAP metadata extraction ────────────────────────────────────────────
 
+/// `Contents/MacOS/<name>` — the CLAP bundle's executable.
+pub fn clap_bundle_executable_path(bundle: &Path) -> Result<PathBuf, String> {
+    let stem = bundle
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .ok_or_else(|| format!("CLAP bundle has no usable name: {}", bundle.display()))?;
+    Ok(bundle.join("Contents").join("MacOS").join(stem))
+}
+
+/// Resolve the dynamic library path for a CLAP candidate.
+///
+/// On macOS, if `path` is a directory bundle, returns its `Contents/MacOS/<name>`
+/// executable binary. If `path` is a flat file (or on other platforms), returns `path`.
+pub fn clap_library_path(path: &Path) -> Result<PathBuf, String> {
+    if path.is_dir() {
+        #[cfg(target_os = "macos")]
+        {
+            let exe = clap_bundle_executable_path(path)?;
+            if exe.exists() {
+                return Ok(exe);
+            }
+            let macos_dir = path.join("Contents").join("MacOS");
+            if let Ok(entries) = std::fs::read_dir(&macos_dir) {
+                for entry in entries.flatten() {
+                    let entry_path = entry.path();
+                    if entry_path.is_file() {
+                        return Ok(entry_path);
+                    }
+                }
+            }
+            Ok(exe)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            Err(format!(
+                "CLAP directory bundles are not supported on this platform: {}",
+                path.display()
+            ))
+        }
+    } else {
+        Ok(path.to_path_buf())
+    }
+}
+
 /// Load a CLAP plugin temporarily to read the descriptors of every plugin its
 /// factory declares.
 ///
@@ -1169,9 +1235,10 @@ mod tests {
 /// # Safety
 /// Calls into native CLAP plugin entry points.
 pub fn extract_clap_metadata(path: &Path) -> Result<Vec<ClapDescriptorMetadata>, String> {
+    let library_path = clap_library_path(path)?;
     unsafe {
-        let lib =
-            Library::new(path).map_err(|error| format!("Cannot load CLAP candidate: {error}"))?;
+        let lib = Library::new(&library_path)
+            .map_err(|error| format!("Cannot load CLAP candidate: {error}"))?;
 
         let entry: libloading::Symbol<*const clap_plugin_entry> = lib
             .get(b"clap_entry\0")
@@ -1216,9 +1283,10 @@ pub fn extract_clap_instance_metadata(
     path: &Path,
     plugin_id: &str,
 ) -> Result<ScannedInstance, String> {
+    let library_path = clap_library_path(path)?;
     unsafe {
-        let library =
-            Library::new(path).map_err(|error| format!("Cannot load CLAP candidate: {error}"))?;
+        let library = Library::new(&library_path)
+            .map_err(|error| format!("Cannot load CLAP candidate: {error}"))?;
         let entry: libloading::Symbol<*const clap_plugin_entry> = library
             .get(b"clap_entry\0")
             .map_err(|error| format!("CLAP candidate has no clap_entry: {error}"))?;
