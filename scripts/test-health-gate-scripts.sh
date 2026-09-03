@@ -490,14 +490,19 @@ expect(
 );
 // A job-level `concurrency` is its own group, independent of the
 // workflow-level one: a constant group with cancellation on a matrix job
-// would let queued shards cancel in-progress ones. Nightly is exempt — its
-// deploy-web block stays pinned below.
-for (const [file, parsed] of [
+// would let queued shards cancel in-progress ones. Nightly is swept with the
+// rest; its deploy-web job is the single allowlisted exception, and that
+// block stays pinned below.
+for (const [file, parsed, exempt] of [
     ['health-gates.yml', workflow],
     ['validation.yml', validationWorkflow],
     ['heavy-gates.yml', heavyWorkflow],
+    ['nightly.yml', nightly, 'deploy-web'],
 ]) {
     for (const [id, job] of Object.entries(parsed.jobs ?? {})) {
+        if (id === exempt) {
+            continue;
+        }
         expect(
             job?.concurrency === undefined,
             `${file} job ${id} must not carry job-level concurrency; the workflow-level group is the only serialization`

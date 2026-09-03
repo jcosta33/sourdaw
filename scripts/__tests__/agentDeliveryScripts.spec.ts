@@ -1662,6 +1662,29 @@ describe('package scripts and gitignore', () => {
     it('pins one origin commit and executes only that snapshot while origin advances', async () => {
         const paths = trustedDependencyPaths('deliver');
         const trusted = new Map(paths.map((path) => [path, `trusted:${path}`]));
+        // A gate workflow whose validation job calls a reusable workflow: the launcher must follow
+        // the `uses` at that same pinned commit, so the gate sees the inner jobs GitHub reports.
+        const workflowSources = new Map([
+            [
+                '.github/workflows/health-gates.yml',
+                [
+                    'name: Health gates',
+                    'on:',
+                    '  pull_request:',
+                    'jobs:',
+                    '  validation:',
+                    '    name: Validation',
+                    '    uses: ./.github/workflows/validation.yml',
+                    '  gate:',
+                    '    name: Gate',
+                    '    needs: validation',
+                ].join('\n'),
+            ],
+            [
+                './.github/workflows/validation.yml',
+                ['name: Validation', 'on:', '  workflow_call:', 'jobs:', '  static:', '    name: Types'].join('\n'),
+            ],
+        ]);
         const originReads: string[] = [];
         let resolves = 0;
         let liveOrigin = 'pinned-sha';
@@ -1676,25 +1699,42 @@ describe('package scripts and gitignore', () => {
             readOriginSource: (commit, path) => {
                 expect(liveOrigin).toBe('advanced-sha');
                 originReads.push(`${commit}:${path}`);
-                return trusted.get(path) ?? '';
+                return trusted.get(path) ?? workflowSources.get(path) ?? '';
             },
             executeSnapshot: async (command, args, snapshot) => {
                 expect(command).toBe('deliver');
                 expect(args).toEqual(['2495']);
                 expect(snapshot.commit).toBe('pinned-sha');
                 expect(snapshot.sources).toEqual(trusted);
+                expect(snapshot.gateWorkflow).toEqual({
+                    jobs: {
+                        validation: { name: 'Validation', uses: './.github/workflows/validation.yml' },
+                        gate: { name: 'Gate', needs: 'validation' },
+                    },
+                    called: {
+                        './.github/workflows/validation.yml': {
+                            name: 'Validation',
+                            jobs: { static: { name: 'Types' } },
+                        },
+                    },
+                });
+                expect(trustedSnapshotEnv(snapshot).SOURDAW_TRUSTED_GATE_WORKFLOW).toBe(
+                    JSON.stringify(snapshot.gateWorkflow)
+                );
                 return 17;
             },
         });
 
         expect(result).toBe(17);
         expect(resolves).toBe(1);
-        // The gating workflow is read at that same pinned commit, and only for `deliver`. Reading it
-        // at a ref, a `HEAD`, or a second resolution would let the merge gate be decided by a commit
-        // other than the one this closure was snapshotted from.
+        // The gating workflow is read at that same pinned commit, and only for `deliver`, and the
+        // workflow its validation job calls is read there too. Reading either at a ref, a `HEAD`,
+        // or a second resolution would let the merge gate be decided by a commit other than the one
+        // this closure was snapshotted from.
         expect(originReads).toEqual([
             ...paths.map((path) => `pinned-sha:${path}`),
             'pinned-sha:.github/workflows/health-gates.yml',
+            'pinned-sha:./.github/workflows/validation.yml',
         ]);
     });
 
