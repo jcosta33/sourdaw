@@ -62,3 +62,19 @@ violation from every test on the path.
 Probe that would have caught it: when a diff narrows what a store or sanitizer admits, list every
 producer of that record at head and drive each through the new clause. When a diff adds or keeps an
 empty catch around a persistence call, name the throw it hides and construct the input that throws.
+
+### 2026-09-03 — a changed durable record whose other witnesses were never run (escaped via PR #3506)
+
+The fix made generic pending-effect continuation promotion succeed, so the persisted continuation
+started carrying the receipt's real effects instead of the placeholder. `confirmPendingChatActions.spec.ts`
+asserted the placeholder and failed deterministically on every nightly shard, hidden on the pull
+request by the continue-on-error unit step; the pull request named three regression specs to run and
+this one was not among them.
+
+Blind spot: when a change alters what a durable record contains, every spec that asserts that
+record's fields is a witness, and the stance accepted the author's named regression set instead of
+deriving the set from the record.
+
+Probe that would have caught it: grep `src/**/__tests__` for the record's field or type name
+(`pendingEffectContinuations` here) and for the literal placeholder values the change retires, name
+every spec that hits, and require the author's evidence to include a run of each.
