@@ -128,6 +128,7 @@ describe('ToasterPanel', () => {
         expect(toggleButton).toHaveAttribute('aria-pressed', 'false');
 
         fireEvent.click(toggleButton);
+        expect(mocks.enter16Levels).toHaveBeenCalledTimes(1);
         expect(mocks.enter16Levels).toHaveBeenCalledWith('toaster-test', 0, 'tune');
         expect(toggleButton).toHaveAttribute('aria-pressed', 'true');
 
@@ -156,7 +157,10 @@ describe('ToasterPanel', () => {
 
         const pad4 = screen.getByTestId('toaster-pad-3');
         fireEvent.mouseDown(pad4, { button: 0 });
+        fireEvent.mouseUp(pad4);
+        fireEvent.click(pad4);
 
+        expect(mocks.trigger16Level).toHaveBeenCalledTimes(1);
         expect(mocks.trigger16Level).toHaveBeenCalledWith(3, 'toaster-test');
     });
 

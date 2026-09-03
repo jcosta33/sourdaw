@@ -157,6 +157,7 @@ export const PadGrid = ({
                             }
                         }}
                         onMouseLeave={() => {
+                            handledActivationRef.current = false;
                             if (pressedPadRef.current === index) {
                                 pressedPadRef.current = null;
                                 onReleasePad?.(index);

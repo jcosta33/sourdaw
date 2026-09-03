@@ -106,7 +106,9 @@ describe('PadGrid — selection and aria', () => {
         fireEvent.mouseDown(pad2, { button: 0 });
         fireEvent.mouseUp(pad2);
         fireEvent.click(pad2);
+        expect(onTriggerPad).toHaveBeenCalledTimes(1);
         expect(onTriggerPad).toHaveBeenCalledWith(2);
+        expect(onSelectPad).toHaveBeenCalledTimes(1);
         expect(onSelectPad).toHaveBeenCalledWith(2);
     });
 

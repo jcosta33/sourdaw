@@ -251,9 +251,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
     function handleToggle16Levels(): void {
         const next = !is16Levels;
         setIs16Levels(next);
-        if (next) {
-            enter16Levels(deviceId, selectedPadIndex, sixteenLevelsTarget);
-        } else {
+        if (!next) {
             exit16Levels(deviceId);
         }
     }
