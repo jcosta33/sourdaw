@@ -55,8 +55,8 @@ export type MachineRecord = {
      * `.app` back to the commit that produced it, so a checkout that has
      * since moved on (or a binary copied in from elsewhere) makes this
      * value describe the wrong thing if read as the build's sha. `app.
-     * asarSha256` on the record is the artefact's own identity; this field
-     * is the operator checkout's.
+     * payloadSha256` on the record is the artefact's own identity; this
+     * field is the operator checkout's.
      */
     checkoutGitSha: string;
     workingTree: 'clean' | 'dirty';
@@ -97,10 +97,17 @@ export type DesktopLatencyRecord = {
     app: {
         path: string;
         bundleVersion: string;
-        /** SHA-256 of `<path>/Contents/Resources/app.asar` — the measured artefact's own identity, not the checkout's. */
-        asarSha256: string;
-        /** `app.asar`'s own mtime, ISO 8601 — read alongside `asarSha256` so a rebuilt-but-identical asar is still visible as a different file. */
-        asarMtime: string;
+        /**
+         * SHA-256 folding together `app.asar`, the native addon, and the
+         * plugin-scan helper — the measured artefact's own identity, not the
+         * checkout's. See {@link readPayloadIdentity} for why `app.asar` alone
+         * cannot serve this purpose.
+         */
+        payloadSha256: string;
+        /** The newest mtime among `payloadFiles`, ISO 8601 — read alongside `payloadSha256` so a rebuilt-but-identical payload is still visible as a different one. */
+        payloadMtime: string;
+        /** The files folded into `payloadSha256`, relative to `path`, in the fixed sorted order they were hashed. */
+        payloadFiles: string[];
         browser: string;
         userAgent: string;
         startedAt: AppStartedAt;
@@ -141,31 +148,94 @@ export function readBundleVersion(appPath: string): string {
     return match?.[1] ?? 'unavailable';
 }
 
-export type AsarIdentity = { sha256: string; mtime: string };
+/** One file folded into a payload identity, with its own bytes already read. */
+export type PayloadComponent = { readonly path: string; readonly bytes: Buffer };
+
+export type PayloadIdentity = { sha256: string; mtime: string; files: string[] };
 
 /**
- * `<app>/Contents/Resources/app.asar` — the packaged renderer bundle
- * `electron-builder` produces. Its own hash and mtime are the measured
- * artefact's identity; `MachineRecord.checkoutGitSha` cannot serve that
- * purpose because nothing ties a checkout's HEAD to whatever binary
- * actually sits at `--app` — a stale or hand-copied `.app` would silently
- * borrow the checkout's sha as if it described the build that produced it.
+ * Digests a fixed list of components as one identity. Each component's own
+ * path is folded into the hash ahead of its bytes — with a NUL separator, so
+ * no path/bytes split can collide with another — meaning a byte-identical
+ * file at a different path digests differently. The list is sorted by path
+ * before hashing, so the caller's own argument order never changes the
+ * result.
+ *
+ * Pure: takes every byte as an argument rather than reading any file itself,
+ * which is what lets a spec exercise it without a packaged app on disk.
  */
-export function readAsarIdentity(appPath: string): AsarIdentity {
-    const asarPath = resolve(appPath, 'Contents/Resources/app.asar');
-    if (!existsSync(asarPath)) {
-        throw new Error(`there is no app.asar at ${asarPath}. Run \`pnpm desktop:build\`.`);
+export function digestPayloadComponents(components: readonly PayloadComponent[]): string {
+    const hash = createHash('sha256');
+    const sorted = [...components].sort((a, b) => a.path.localeCompare(b.path));
+    for (const component of sorted) {
+        hash.update(component.path);
+        hash.update('\0');
+        hash.update(component.bytes);
+    }
+    return hash.digest('hex');
+}
+
+/**
+ * The native addon's and plugin-scan helper's packaged file names — the same
+ * convention `resolveNativeAddonPath`/`resolveScanHelperPath` in
+ * `electron/native.ts` resolve to when `isPackaged`, reimplemented here
+ * rather than imported so this script does not compile through the Electron
+ * shell's own tsconfig (see `scripts/buildNativeAddon.ts`, which reimplements
+ * the same file names for the same reason).
+ */
+const NATIVE_ADDON_FILE = 'sourdaw-native.node';
+const SCAN_HELPER_FILE = (platform: NodeJS.Platform): string =>
+    platform === 'win32' ? 'sourdaw-plugin-scan-helper.exe' : 'sourdaw-plugin-scan-helper';
+
+/**
+ * The files a run actually loads and can sound through, relative to the app
+ * bundle, in the fixed sorted order `readPayloadIdentity` hashes them in.
+ * `electron-builder.yml`'s `extraResources` filter carries the native addon
+ * and the plugin-scan helper unpacked into `Resources` beside `app.asar`; a
+ * native-only rebuild — exactly what the #3070 cutover is — packs a
+ * byte-identical `app.asar`, so these two are what actually changes.
+ */
+function payloadRelativePaths(platform: NodeJS.Platform): string[] {
+    return [
+        'Contents/Resources/app.asar',
+        `Contents/Resources/${NATIVE_ADDON_FILE}`,
+        `Contents/Resources/${SCAN_HELPER_FILE(platform)}`,
+    ].sort();
+}
+
+/**
+ * The measured artefact's own identity: a digest folding in every file the
+ * run loads, not just the renderer bundle inside `app.asar`. `MachineRecord.
+ * checkoutGitSha` cannot serve that purpose because nothing ties a
+ * checkout's HEAD to whatever binary actually sits at `--app`; hashing
+ * `app.asar` alone cannot either, because a native-only rebuild packs a
+ * byte-identical `app.asar` while the addon and the scan helper it ships
+ * beside it change — either would silently make two different builds report
+ * the same identity.
+ */
+export function readPayloadIdentity(appPath: string, platform: NodeJS.Platform): PayloadIdentity {
+    const relativePaths = payloadRelativePaths(platform);
+    const components: PayloadComponent[] = [];
+    let newestMtimeMs = 0;
+    for (const relativePath of relativePaths) {
+        const absolute = resolve(appPath, relativePath);
+        if (!existsSync(absolute)) {
+            throw new Error(`there is no ${relativePath} at ${absolute}. Run \`pnpm desktop:build\`.`);
+        }
+        components.push({ path: relativePath, bytes: readFileSync(absolute) });
+        newestMtimeMs = Math.max(newestMtimeMs, statSync(absolute).mtimeMs);
     }
     return {
-        sha256: createHash('sha256').update(readFileSync(asarPath)).digest('hex'),
-        mtime: statSync(asarPath).mtime.toISOString(),
+        sha256: digestPayloadComponents(components),
+        mtime: new Date(newestMtimeMs).toISOString(),
+        files: relativePaths,
     };
 }
 
 export type BuildRecordInput = {
     machine: MachineRecord;
     appPath: string;
-    asar: AsarIdentity;
+    payload: PayloadIdentity;
     browser: string;
     userAgent: string;
     startedAt: AppStartedAt;
@@ -185,8 +255,9 @@ export function buildRecord(input: BuildRecordInput): DesktopLatencyRecord {
         app: {
             path: input.appPath,
             bundleVersion: readBundleVersion(input.appPath),
-            asarSha256: input.asar.sha256,
-            asarMtime: input.asar.mtime,
+            payloadSha256: input.payload.sha256,
+            payloadMtime: input.payload.mtime,
+            payloadFiles: input.payload.files,
             browser: input.browser,
             userAgent: input.userAgent,
             startedAt: input.startedAt,

@@ -81,9 +81,11 @@
  *
  * Usage: `pnpm desktop:measure [--app <path>] [--seconds <n>] [--json <path>]`.
  * A number without its machine is not a measurement, so the record carries the
- * operator checkout's git sha, the measured artefact's own `app.asar` hash,
- * whether the checkout tree was clean, the host, and the packaged app's own
- * Chromium and Electron versions.
+ * operator checkout's git sha, the measured artefact's own payload hash —
+ * `app.asar`, the native addon, and the plugin-scan helper folded together,
+ * because a native-only rebuild packs a byte-identical `app.asar` — whether
+ * the checkout tree was clean, the host, and the packaged app's own Chromium
+ * and Electron versions.
  */
 
 import { existsSync, mkdtempSync, realpathSync } from 'node:fs';
@@ -98,10 +100,10 @@ import { decideVerdict, describeAudibleFloor, parseArgs, type DesktopLatencyArgs
 import {
     buildRecord,
     machineProvenance,
-    readAsarIdentity,
+    readPayloadIdentity,
     reportLeg,
     writeRecord,
-    type AsarIdentity,
+    type PayloadIdentity,
 } from './desktopLatencyRecord.ts';
 import { harnessPluginDestination } from './installHarnessPlugin.ts';
 
@@ -151,13 +153,15 @@ async function main(): Promise<number> {
             args.jsonPath
         );
     }
-    let asar: AsarIdentity;
+    let payload: PayloadIdentity;
     try {
-        asar = readAsarIdentity(args.appPath);
+        payload = readPayloadIdentity(args.appPath, process.platform);
     } catch (error) {
         return notMeasured(error instanceof Error ? error.message : String(error), args.jsonPath);
     }
-    process.stdout.write(`app.asar          sha256:${asar.sha256} mtime:${asar.mtime}\n`);
+    process.stdout.write(
+        `app payload       sha256:${payload.sha256} mtime:${payload.mtime} (${String(payload.files.length)} files: ${payload.files.join(', ')})\n`
+    );
 
     // Never the operator's own `~/Library/Application Support/sourdaw`: that
     // profile can carry a project persisted by an earlier build, on which the
@@ -213,7 +217,7 @@ async function main(): Promise<number> {
         const record = buildRecord({
             machine,
             appPath: args.appPath,
-            asar,
+            payload,
             browser: measured.version.browser,
             userAgent: measured.version.userAgent,
             startedAt: measured.startedAt,

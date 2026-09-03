@@ -104,8 +104,21 @@ export async function launchAndMeasure(
     // arrives after the race has already settled — the app starts fine,
     // then `child` reports an error much later — is still a handled
     // rejection, not an unhandled one.
+    //
+    // The race alone only decides which error is reported; it does not stop
+    // the losing side from still running. Without `abortController`, a
+    // spawn failure that wins the race still leaves `connectAndMeasure`
+    // polling a debug port that will never open for the rest of
+    // `APP_READY_TIMEOUT_MS`, so the process only actually exits about 30 s
+    // after printing NOT MEASURED. Aborting on the spawn-failure path — and
+    // again in `finally`, so a normal run or a connect failure also releases
+    // the signal — cuts that poll short. `Promise.race` has already settled
+    // on the spawn error by the time the aborted poll's own rejection
+    // arrives, so aborting never masks it.
+    const abortController = new AbortController();
     const spawnFailure = new Promise<never>((_resolve, reject) => {
         child.once('error', (error) => {
+            abortController.abort();
             reject(new Error(`the packaged app process reported an error: ${error.message}`));
         });
     });
@@ -114,12 +127,16 @@ export async function launchAndMeasure(
     const removeSigtermTeardown = installTeardownOnSignal('SIGTERM', child, profileDir);
 
     try {
-        return await Promise.race([connectAndMeasure(port, seconds, pluginPath, diagnostics), spawnFailure]);
+        return await Promise.race([
+            connectAndMeasure(port, seconds, pluginPath, diagnostics, abortController.signal),
+            spawnFailure,
+        ]);
     } catch (error) {
         process.stdout.write(`\n--- packaged app output ---\n${output.join('').trim()}\n`);
         printDiagnostics(diagnostics);
         throw error;
     } finally {
+        abortController.abort();
         await quitApp(child);
         rmSync(profileDir, { recursive: true, force: true });
         removeSigintTeardown();

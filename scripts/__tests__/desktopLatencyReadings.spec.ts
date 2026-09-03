@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { notRunningEngineRtDiagnostics } from '../../src/modules/AudioEngine/models/EngineRtDiagnostics.ts';
 import {
     computeCounterDeltas,
     computeGaugeReadings,
@@ -7,7 +8,9 @@ import {
     describeAudibleFloor,
     findAppPageTarget,
     findQuarantineReason,
+    GAUGE_NAMES,
     hasLivePluginOnTrack,
+    MONOTONIC_COUNTER_NAMES,
     parseArgs,
     parseEngineTitle,
     parseLatencyMs,
@@ -174,14 +177,7 @@ describe('hasLivePluginOnTrack', () => {
     });
 });
 
-const zeroedCounterDeltas = {
-    schedulerEventBufferOverflows: 0,
-    bridgeOutputBlocksDropped: 0,
-    unmatchedBridgeBlocks: 0,
-    bridgeBacklogBlocksShed: 0,
-    callbackFramesOverBridgeReach: 0,
-    bridgeInputBlocksRefused: 0,
-};
+const zeroedCounterDeltas = Object.fromEntries(MONOTONIC_COUNTER_NAMES.map((name) => [name, 0]));
 
 describe('computeCounterDeltas', () => {
     it('subtracts the first reading from the last for every named monotonic counter', () => {
@@ -224,6 +220,15 @@ describe('computeGaugeReadings', () => {
 describe('describeAudibleFloor', () => {
     it('names the floor decideVerdict judges against', () => {
         expect(describeAudibleFloor()).toBe('-40 dBFS');
+    });
+});
+
+describe('MONOTONIC_COUNTER_NAMES and GAUGE_NAMES', () => {
+    it('together name every numeric field engine_rt_diagnostics reports, so a field added later cannot fall through uncovered', () => {
+        const { running, events, ...numericFields } = notRunningEngineRtDiagnostics;
+        expect(running).toBe(false);
+        expect(events).toEqual([]);
+        expect(new Set([...MONOTONIC_COUNTER_NAMES, ...GAUGE_NAMES])).toEqual(new Set(Object.keys(numericFields)));
     });
 });
 

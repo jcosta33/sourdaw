@@ -159,10 +159,22 @@ function asCdpVersion(payload: unknown): CdpVersion {
  * about 50 ms instead. Polling this cheap, connect-free endpoint until the
  * page is actually there is what keeps `connectOverCDP` from ever attaching to
  * a target still mid-creation.
+ *
+ * `signal`, when given, is checked at the top of every iteration: if the
+ * packaged process has already failed to spawn, the debug port this polls
+ * will never open, and without a way to cut the loop short it would keep
+ * polling a dead port for the rest of `APP_READY_TIMEOUT_MS` regardless.
+ * `launchAndMeasure` aborts as soon as it has the spawn error in hand, so
+ * this loop's own timeout error, thrown here after that, never reaches a
+ * caller — `Promise.race` there has already settled on the spawn error by
+ * the time this rejection arrives.
  */
-async function waitForAppPageTarget(port: number): Promise<AppPageTarget> {
+async function waitForAppPageTarget(port: number, signal?: AbortSignal): Promise<AppPageTarget> {
     const deadline = Date.now() + APP_READY_TIMEOUT_MS;
     while (Date.now() < deadline) {
+        if (signal?.aborted === true) {
+            throw new Error('the packaged app process failed before its page target ever appeared');
+        }
         try {
             const response = await fetch(`http://127.0.0.1:${String(port)}/json/list`);
             if (response.ok) {
@@ -560,9 +572,10 @@ export async function connectAndMeasure(
     port: number,
     seconds: number,
     harnessPluginPath: string,
-    diagnostics: Diagnostics
+    diagnostics: Diagnostics,
+    signal?: AbortSignal
 ): Promise<MeasuredLegs> {
-    const target = await waitForAppPageTarget(port);
+    const target = await waitForAppPageTarget(port, signal);
     process.stdout.write(`page              ${target.url} "${target.title}"\n`);
 
     const version = await readCdpVersion(port);

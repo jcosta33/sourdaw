@@ -180,23 +180,34 @@ export function hasLivePluginOnTrack(engineTitle: string): boolean {
 export type EngineCounters = Readonly<Record<string, number>>;
 
 /**
- * `engine_rt_diagnostics`'s cumulative-since-engine-start counters this
- * harness differences across a leg. Confirmed against
+ * Every one of `engine_rt_diagnostics`'s cumulative-since-engine-start
+ * counters this harness differences across a leg. Confirmed against
  * `EngineRtDiagnostics` in
- * `crates/sourdaw-native/src/commands/engine_diagnostics.rs` at this head —
- * the six fields whose bridge/scheduler backlog this pre-cutover baseline
- * exists to see move. `inputLatencyFrames` is deliberately excluded: it is a
- * gauge (the capture path's current added latency, or zero while capture is
- * not serving), not a running total, and differencing it would read like a
- * counter increment when it is really two unrelated snapshots.
+ * `crates/sourdaw-native/src/commands/engine_diagnostics.rs` and its TS
+ * mirror `src/modules/AudioEngine/models/EngineRtDiagnostics.ts` at this
+ * head — every numeric field except `inputLatencyFrames`, which is
+ * deliberately excluded: it is a gauge (the capture path's current added
+ * latency, or zero while capture is not serving), not a running total, and
+ * differencing it would read like a counter increment when it is really two
+ * unrelated snapshots. `desktopLatencyReadings.spec.ts`'s
+ * `MONOTONIC_COUNTER_NAMES ∪ GAUGE_NAMES` spec asserts this set against
+ * `notRunningEngineRtDiagnostics`'s own numeric keys, so a field added to
+ * either side later cannot fall through uncovered.
  */
 export const MONOTONIC_COUNTER_NAMES = [
     'schedulerEventBufferOverflows',
+    'arpeggiatorActiveNoteExhaustions',
+    'effectIdCollisions',
+    'unsupportedEffectAdditions',
+    'unmappedSetParamCalls',
     'bridgeOutputBlocksDropped',
     'unmatchedBridgeBlocks',
     'bridgeBacklogBlocksShed',
     'callbackFramesOverBridgeReach',
     'bridgeInputBlocksRefused',
+    'captureConsumerRefusals',
+    'captureBlocksDropped',
+    'captureInputUnderruns',
 ] as const;
 
 /** `engine_rt_diagnostics`'s one gauge — see `MONOTONIC_COUNTER_NAMES`. */
