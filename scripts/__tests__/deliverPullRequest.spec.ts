@@ -6236,6 +6236,37 @@ describe('pull-request delivery', () => {
         }
     });
 
+    // An attempt GitHub reports no start for supersedes nothing: the green
+    // attempt cannot be proven newer than the settled failure beside it, so
+    // the context stays unsatisfied and the refusal names the check rather
+    // than reading the head as satisfied.
+    it('refuses a BLOCKED head whose only green attempt reports no start beside a settled failure, naming the check', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-startless-green-lock-'));
+        initializeDeliveryLockRepository(root);
+        const { port, calls, tracker } = fakePort({
+            primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
+            headCheckRuns: [
+                checkRun({ conclusion: 'FAILURE', startedAt: PUSH_RUN_START }),
+                checkRun({ startedAt: null }),
+            ],
+            requiredStatusCheckContexts: ['Gate'],
+        });
+
+        try {
+            await expect(
+                withPullRequestDeliveryLock(root, 42, async ({ markRemoteMutationKnownAbsent }) => {
+                    deliverPullRequest(42, port, tracker, markRemoteMutationKnownAbsent);
+                })
+            ).rejects.toThrow('PR #42 merge state is BLOCKED on required check(s): Gate');
+
+            expect(calls).not.toContain('add-receipt:42');
+            expect(calls).not.toContain('merge:42:head');
+            expect(deliveryLockExists(root, 42)).toBe(false);
+        } finally {
+            removeTemporaryGitRepository(root);
+        }
+    });
+
     it('refuses a BLOCKED head even when the live ruleset cannot be read, naming the check(s) as unlistable', () => {
         const { port, calls } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
@@ -7426,6 +7457,18 @@ describe('gating check names', () => {
             message:
                 `Error: cannot read ./.github/workflows/release.yml to determine which checks gate the merge: ` +
                 'it declares no jobs mapping',
+        },
+        {
+            label: 'a called workflow that is not valid YAML',
+            call: releaseCall,
+            called: {
+                './.github/workflows/release.yml': ['name: Broken', 'jobs:', '  build:', '   - "unterminated'].join(
+                    '\n'
+                ),
+            },
+            message:
+                `Error: cannot read ./.github/workflows/release.yml to determine which checks gate the merge: ` +
+                'it is not valid YAML: Missing closing "quote at line 4, column 19:\n\n   - "unterminated\n                  ^\n',
         },
         {
             label: 'a called workflow whose jobs mapping is empty',

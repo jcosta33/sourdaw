@@ -563,6 +563,26 @@ expect(
     'lint and boundaries must skip a head that carries only prose'
 );
 expect(staticJob?.if === undefined, 'static must stay unconditional so release inventory observes prose changes too');
+// The four scope conditions no other pin reads. Each is the whole definition
+// of when its job may legitimately skip: widening one runs the leg where it
+// proves nothing, and narrowing or dropping one retires the proof while every
+// other pin stays green.
+expect(
+    validationWorkflow.jobs?.build?.if === "needs.decide.outputs.web == 'true'",
+    'the production build must answer to the web scope alone'
+);
+expect(
+    validationWorkflow.jobs?.rust?.if === "needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'",
+    'the Rust workspace leg must answer to the Rust and server scopes'
+);
+expect(
+    validationWorkflow.jobs?.['native-macos']?.if === "needs.decide.outputs.rust == 'true'",
+    'the native macOS leg must answer to the Rust scope alone'
+);
+expect(
+    validationWorkflow.jobs?.['native-windows']?.if === "needs.decide.outputs.rust == 'true'",
+    'the native Windows leg must answer to the Rust scope alone'
+);
 const deviceWriteBoundaryCensusRun =
     'pnpm test:run src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts';
 expect(
@@ -678,6 +698,16 @@ expect(
     heavyCodeql?.if ===
         "needs.validation.outputs.heavy == 'true' && github.event.pull_request.head.repo.full_name == github.repository",
     'CodeQL must refuse fork pull requests, whose read-only token cannot write the SARIF result'
+);
+// The SARIF upload is the only write this job needs: `contents: write` would
+// hand a review-triggered workflow a token that can push, and dropping
+// `security-events: write` would fail the upload on the head.
+expect(
+    heavyCodeql?.permissions?.contents === 'read' &&
+        heavyCodeql?.permissions?.['security-events'] === 'write' &&
+        heavyCodeql?.permissions?.actions === 'read' &&
+        Object.keys(heavyCodeql?.permissions ?? {}).length === 3,
+    'the heavy CodeQL job must grant exactly contents: read, security-events: write, and actions: read'
 );
 expect(secrets?.if === "needs.validation.outputs.heavy == 'true'", 'secrets job must remain on the heavy path');
 expect(nightlySecrets?.if === "needs.decide.outputs.heavy == 'true'", 'nightly secrets job must remain on the heavy path');
@@ -879,6 +909,30 @@ expect(
     stepNamed(nightlyE2e, 'Run shard')?.['continue-on-error'] === undefined,
     'nightly end-to-end Run shard must stay blocking'
 );
+// A `continue-on-error` on any job concludes it success whatever its steps
+// proved, and one on any step reports that step green whatever it ran. The
+// pins above each cover one named job or step; this sweep covers every job in
+// every file, because a softened leg reports a failing proof as a passing
+// summary wherever it lands.
+for (const [file, parsed] of [
+    ['health-gates.yml', workflow],
+    ['validation.yml', validationWorkflow],
+    ['heavy-gates.yml', heavyWorkflow],
+    ['nightly.yml', nightly],
+]) {
+    for (const [id, job] of Object.entries(parsed.jobs ?? {})) {
+        expect(
+            job?.['continue-on-error'] === undefined,
+            `${file} job ${id} must not continue on error, which would conclude the leg success whatever it proved`
+        );
+        for (const step of job?.steps ?? []) {
+            expect(
+                step?.['continue-on-error'] === undefined,
+                `${file} job ${id} step ${step?.name ?? '<unnamed>'} must not continue on error, which would report the step green whatever it ran`
+            );
+        }
+    }
+}
 expect(
     stepNamed(nightlyUnit, 'Run shard')?.run === 'pnpm run test:run --shard=${{ matrix.shard }}/4',
     'nightly unit Run shard must run through the test:run wrapper that applies the census exclusion'
@@ -1195,6 +1249,94 @@ expect(
     deployWebSkipReportStep?.env?.REASON === "${{ steps.production.outputs.reason }}",
     'the skip report must read the decision reason the production-revision step published'
 );
+// A step-level `if` can skip, and a skipped step fails nothing: the job then
+// succeeds having never run the proof. Every step condition in the four
+// workflows must be one of these exact, individually pinned exceptions — the
+// shard-failure reporters and blob uploads above, and the deploy legs pinned
+// beside their job. An `if` anywhere else retires a proof by flipping the
+// condition while every other pin stays green.
+const allowedStepConditions = [
+    ['validation.yml', 'unit', 'Report shard failure', shardFailureCondition],
+    ['heavy-gates.yml', 'e2e', 'Report shard failure', shardFailureCondition],
+    ['heavy-gates.yml', 'e2e', 'Upload blob report', '${{ !cancelled() }}'],
+    ['nightly.yml', 'unit', 'Report shard failure', shardFailureCondition],
+    ['nightly.yml', 'e2e', 'Report shard failure', shardFailureCondition],
+    ['nightly.yml', 'e2e', 'Upload blob report', '${{ !cancelled() }}'],
+    ['nightly.yml', 'deploy-web', 'Report the missing deployment credential', "env.DEPLOY_CREDENTIAL_PRESENT != 'true'"],
+    ['nightly.yml', 'deploy-web', 'Checkout the validated revision', credentialCondition],
+    ['nightly.yml', 'deploy-web', 'Enable Corepack', credentialCondition],
+    ['nightly.yml', 'deploy-web', 'Set up pnpm', credentialCondition],
+    ['nightly.yml', 'deploy-web', 'Set up Node', credentialCondition],
+    ['nightly.yml', 'deploy-web', 'Resolve the current production revision', credentialCondition],
+    [
+        'nightly.yml',
+        'deploy-web',
+        'Report why nothing was deployed',
+        `${credentialCondition} && steps.production.outputs.deploy != 'true'`,
+    ],
+    [
+        'nightly.yml',
+        'deploy-web',
+        'Install dependencies',
+        `${credentialCondition} && steps.production.outputs.deploy == 'true'`,
+    ],
+    [
+        'nightly.yml',
+        'deploy-web',
+        'Link the Vercel CLI to the production project',
+        `${credentialCondition} && steps.production.outputs.deploy == 'true'`,
+    ],
+    [
+        'nightly.yml',
+        'deploy-web',
+        'Build the validated revision',
+        `${credentialCondition} && steps.production.outputs.deploy == 'true'`,
+    ],
+    [
+        'nightly.yml',
+        'deploy-web',
+        'Deploy the prebuilt revision',
+        `${credentialCondition} && steps.production.outputs.deploy == 'true'`,
+    ],
+    [
+        'nightly.yml',
+        'deploy-web',
+        'Assert cross-origin isolation on the deployment',
+        `${credentialCondition} && steps.production.outputs.deploy == 'true'`,
+    ],
+];
+const seenAllowedSteps = new Set();
+for (const [file, parsed] of [
+    ['health-gates.yml', workflow],
+    ['validation.yml', validationWorkflow],
+    ['heavy-gates.yml', heavyWorkflow],
+    ['nightly.yml', nightly],
+]) {
+    for (const [id, job] of Object.entries(parsed.jobs ?? {})) {
+        for (const step of job?.steps ?? []) {
+            if (step?.if === undefined) {
+                continue;
+            }
+            const label = `${file} job ${id} step ${step?.name ?? '<unnamed>'}`;
+            const pin = allowedStepConditions.find(
+                ([pinFile, pinJob, pinStep]) => pinFile === file && pinJob === id && pinStep === step?.name
+            );
+            expect(pin !== undefined, `${label} must stay unconditional`);
+            if (pin !== undefined) {
+                expect(step?.if === pin[3], `${label} must retain its pinned condition`);
+                seenAllowedSteps.add(`${file}${id}${step?.name}`);
+            }
+        }
+    }
+}
+// An allowlist entry that matches no live step is a condition nobody pins any
+// more, so the sweep refuses the orphan rather than letting the list rot.
+for (const [pinFile, pinJob, pinStep] of allowedStepConditions) {
+    expect(
+        seenAllowedSteps.has(`${pinFile}${pinJob}${pinStep}`),
+        `${pinFile} job ${pinJob} step ${pinStep} must carry its pinned condition`
+    );
+}
 for (const precondition of [
     'VERCEL_TOKEN',
     'VERCEL_ORG_ID',

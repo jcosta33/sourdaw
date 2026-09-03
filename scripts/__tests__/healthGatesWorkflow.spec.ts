@@ -269,6 +269,70 @@ const SUITE_JOB_WIRING = {
         if: "needs.validation.outputs.heavy == 'true' && needs.validation.outputs.e2e == 'true'",
     },
 } satisfies Record<string, Readonly<{ workflow: 'validation' | 'heavy'; needs: string; if: string }>>;
+// The four scope conditions no other pin reads. Each is the whole definition
+// of when its job may legitimately skip: widening one runs the leg where it
+// proves nothing, and narrowing or dropping one retires the proof while every
+// other pin stays green.
+const BUILD_CONDITION = "needs.decide.outputs.web == 'true'";
+const RUST_CONDITION = "needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'";
+const NATIVE_MACOS_CONDITION = "needs.decide.outputs.rust == 'true'";
+const NATIVE_WINDOWS_CONDITION = "needs.decide.outputs.rust == 'true'";
+// The failed shard is already fatal, so these reporters are the one reason a
+// step may carry a condition at all; `!cancelled()` replaces the implicit
+// `success()` that would skip the annotation over the very failure it names.
+const SHARD_FAILURE_REPORT_CONDITION = "${{ !cancelled() && steps.run_shard.outcome == 'failure' }}";
+const E2E_BLOB_UPLOAD_CONDITION = '${{ !cancelled() }}';
+const DEPLOY_MISSING_CREDENTIAL_REPORT_CONDITION = "env.DEPLOY_CREDENTIAL_PRESENT != 'true'";
+const DEPLOY_SKIP_REPORT_CONDITION = `${DEPLOY_CREDENTIAL_CONDITION} && steps.production.outputs.deploy != 'true'`;
+// Every step condition in the four workflows, keyed by file, job, and step
+// name. A step condition is legitimate only when it is one of these exact,
+// individually pinned exceptions — the shard-failure reporters, the blob
+// uploads that must outlive their shard, and the deploy legs already pinned
+// beside the job that owns them. An `if` anywhere else retires a proof by
+// flipping the condition while every other pin stays green.
+type ConditionalStepPin = Readonly<{ workflow: string; job: string; step: string; condition: string }>;
+const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
+    {
+        workflow: 'validation.yml',
+        job: 'unit',
+        step: 'Report shard failure',
+        condition: SHARD_FAILURE_REPORT_CONDITION,
+    },
+    {
+        workflow: 'heavy-gates.yml',
+        job: 'e2e',
+        step: 'Report shard failure',
+        condition: SHARD_FAILURE_REPORT_CONDITION,
+    },
+    { workflow: 'heavy-gates.yml', job: 'e2e', step: 'Upload blob report', condition: E2E_BLOB_UPLOAD_CONDITION },
+    { workflow: 'nightly.yml', job: 'unit', step: 'Report shard failure', condition: SHARD_FAILURE_REPORT_CONDITION },
+    { workflow: 'nightly.yml', job: 'e2e', step: 'Report shard failure', condition: SHARD_FAILURE_REPORT_CONDITION },
+    { workflow: 'nightly.yml', job: 'e2e', step: 'Upload blob report', condition: E2E_BLOB_UPLOAD_CONDITION },
+    {
+        workflow: 'nightly.yml',
+        job: DEPLOY_WEB_JOB,
+        step: DEPLOY_WEB_CREDENTIAL_REPORT_STEP,
+        condition: DEPLOY_MISSING_CREDENTIAL_REPORT_CONDITION,
+    },
+    ...DEPLOY_CREDENTIAL_GATED_STEPS.map((step) => ({
+        workflow: 'nightly.yml',
+        job: DEPLOY_WEB_JOB,
+        step,
+        condition: DEPLOY_CREDENTIAL_CONDITION,
+    })),
+    {
+        workflow: 'nightly.yml',
+        job: DEPLOY_WEB_JOB,
+        step: DEPLOY_WEB_SKIP_REPORT_STEP,
+        condition: DEPLOY_SKIP_REPORT_CONDITION,
+    },
+    ...DEPLOY_REVISION_GATED_STEPS.map((step) => ({
+        workflow: 'nightly.yml',
+        job: DEPLOY_WEB_JOB,
+        step,
+        condition: DEPLOY_CHANGED_REVISION_CONDITION,
+    })),
+];
 // A softened shard step reports a failing suite as a passing required check.
 const SUITE_SHARD_STEP = 'Run shard';
 // The census walks production sources once per train, outside the unit shards,
@@ -816,6 +880,115 @@ function assertBlockingSuites(set: WorkflowSet): void {
         if (suite['continue-on-error'] !== undefined) {
             throw new Error(`${job} must not use job-level continue-on-error`);
         }
+    }
+}
+
+function workflowFiles(set: WorkflowSet): ReadonlyArray<readonly [string, UnknownRecord]> {
+    return [
+        ['health-gates.yml', set.health],
+        ['validation.yml', set.validation],
+        ['heavy-gates.yml', set.heavy],
+        ['nightly.yml', set.nightly],
+    ];
+}
+
+function jobSteps(file: string, jobId: string, job: UnknownRecord): UnknownRecord[] {
+    return job.steps === undefined
+        ? []
+        : arrayAt(job, 'steps').map((step) => asRecord(step, `${file} job ${jobId} step`));
+}
+
+function stepLabel(file: string, jobId: string, step: UnknownRecord): string {
+    const name = typeof step.name === 'string' ? step.name : '<unnamed>';
+    return `${file} job ${jobId} step ${name}`;
+}
+
+// A `continue-on-error` on any job concludes it success whatever its steps
+// proved, and one on any step reports that step green whatever it ran. The
+// position-enumerated pins above each cover one named job or step; the sweep
+// covers every job in every file, because a softened leg reports a failing
+// proof as a passing summary wherever it lands.
+function assertNoContinueOnError(set: WorkflowSet): void {
+    for (const [file, candidate] of workflowFiles(set)) {
+        for (const [jobId, jobValue] of Object.entries(recordAt(candidate, 'jobs'))) {
+            const job = asRecord(jobValue, `${file} job ${jobId}`);
+            if (job['continue-on-error'] !== undefined) {
+                throw new Error(`${file} job ${jobId} must not continue on error`);
+            }
+            for (const step of jobSteps(file, jobId, job)) {
+                if (step['continue-on-error'] !== undefined) {
+                    throw new Error(`${stepLabel(file, jobId, step)} must not continue on error`);
+                }
+            }
+        }
+    }
+}
+
+// A step-level `if` can skip, and a skipped step fails nothing: the job then
+// succeeds having never run the proof. Only the allowlisted reporters and
+// deploy legs may carry one, each pinned to its exact condition; an allowlist
+// entry that matches no live step is a condition nobody pins any more, so the
+// sweep refuses that too rather than letting the list rot beside the file.
+function assertUnconditionalSteps(set: WorkflowSet): void {
+    const pinned = new Map(
+        CONDITIONAL_STEP_ALLOWLIST.map((entry) => [`${entry.workflow}${entry.job}${entry.step}`, entry] as const)
+    );
+    const seen = new Set<string>();
+    for (const [file, candidate] of workflowFiles(set)) {
+        for (const [jobId, jobValue] of Object.entries(recordAt(candidate, 'jobs'))) {
+            const job = asRecord(jobValue, `${file} job ${jobId}`);
+            for (const step of jobSteps(file, jobId, job)) {
+                if (step.if === undefined) {
+                    continue;
+                }
+                const label = stepLabel(file, jobId, step);
+                const pin = pinned.get(`${file}${jobId}${typeof step.name === 'string' ? step.name : ''}`);
+                if (pin === undefined) {
+                    throw new Error(`${label} must stay unconditional`);
+                }
+                if (step.if !== pin.condition) {
+                    throw new Error(`${label} must retain its pinned condition`);
+                }
+                seen.add(`${pin.workflow}${pin.job}${pin.step}`);
+            }
+        }
+    }
+    for (const entry of CONDITIONAL_STEP_ALLOWLIST) {
+        if (!seen.has(`${entry.workflow}${entry.job}${entry.step}`)) {
+            throw new Error(`${entry.workflow} job ${entry.job} step ${entry.step} must carry its pinned condition`);
+        }
+    }
+}
+
+// The SARIF upload is the only write this job needs: `contents: write` would
+// hand a workflow that runs on review of foreign code a token that can push,
+// and dropping `security-events: write` would fail the upload on the head.
+function assertHeavyCodeQlPermissions(candidate: UnknownRecord): void {
+    const permissions = recordAt(jobAt(candidate, 'codeql'), 'permissions');
+    if (
+        permissions.contents !== 'read' ||
+        permissions['security-events'] !== 'write' ||
+        permissions.actions !== 'read' ||
+        Object.keys(permissions).length !== 3
+    ) {
+        throw new Error(
+            'the heavy CodeQL job must grant exactly contents: read, security-events: write, and actions: read'
+        );
+    }
+}
+
+function assertValidationScopeConditions(candidate: UnknownRecord): void {
+    if (jobAt(candidate, 'build').if !== BUILD_CONDITION) {
+        throw new Error('the production build must answer to the web scope alone');
+    }
+    if (jobAt(candidate, 'rust').if !== RUST_CONDITION) {
+        throw new Error('the Rust workspace leg must answer to the Rust and server scopes');
+    }
+    if (jobAt(candidate, 'native-macos').if !== NATIVE_MACOS_CONDITION) {
+        throw new Error('the native macOS leg must answer to the Rust scope alone');
+    }
+    if (jobAt(candidate, 'native-windows').if !== NATIVE_WINDOWS_CONDITION) {
+        throw new Error('the native Windows leg must answer to the Rust scope alone');
     }
 }
 
@@ -1810,6 +1983,89 @@ describe('health gates workflow contract', () => {
             jobAt(softenedJob[wiring.workflow], suite)['continue-on-error'] = true;
             expect(() => assertJobGraph(softenedJob)).toThrow(`${suite} must not use job-level continue-on-error`);
         }
+    });
+
+    it('sweeps every job and step for softening, with only the pinned conditional steps', () => {
+        expect(() => assertNoContinueOnError(workflowSet())).not.toThrow();
+        expect(() => assertUnconditionalSteps(workflowSet())).not.toThrow();
+        expect(() => assertValidationScopeConditions(validationWorkflow)).not.toThrow();
+        expect(() => assertHeavyCodeQlPermissions(heavyWorkflow)).not.toThrow();
+
+        // Mutation-kill: a job-level softening anywhere reports that leg green
+        // whatever it proved — the review-found hole, on the lint job.
+        const softenedLint = cloneWorkflows('softened lint job');
+        jobAt(softenedLint.validation, 'lint')['continue-on-error'] = true;
+        expect(() => assertNoContinueOnError(softenedLint)).toThrow(
+            'validation.yml job lint must not continue on error'
+        );
+
+        // Mutation-kill: the same softening one level down, on a step the
+        // position-enumerated pins never named.
+        const softenedLintStep = cloneWorkflows('softened lint step');
+        stepNamed(jobAt(softenedLintStep.validation, 'lint'), 'Lint')['continue-on-error'] = true;
+        expect(() => assertNoContinueOnError(softenedLintStep)).toThrow(
+            'validation.yml job lint step Lint must not continue on error'
+        );
+
+        // Mutation-kill: a conditional Run shard step can skip, and a skipped
+        // step fails nothing — the second review-found hole.
+        const gatedShard = cloneWorkflows('gated unit shard step');
+        stepNamed(jobAt(gatedShard.validation, 'unit'), SUITE_SHARD_STEP).if = 'false';
+        expect(() => assertUnconditionalSteps(gatedShard)).toThrow(
+            'validation.yml job unit step Run shard must stay unconditional'
+        );
+
+        // Mutation-kill: an added condition on a step that must always run.
+        const gatedLintStep = cloneWorkflows('gated lint step');
+        stepNamed(jobAt(gatedLintStep.validation, 'lint'), 'Lint').if = CODE_CONDITION;
+        expect(() => assertUnconditionalSteps(gatedLintStep)).toThrow(
+            'validation.yml job lint step Lint must stay unconditional'
+        );
+
+        // Mutation-kill: an allowlisted reporter whose condition drifts from
+        // its pin is the same hole wearing an allowlisted name.
+        const widenedShardReport = cloneWorkflows('widened shard report condition');
+        stepNamed(jobAt(widenedShardReport.validation, 'unit'), 'Report shard failure').if = E2E_BLOB_UPLOAD_CONDITION;
+        expect(() => assertUnconditionalSteps(widenedShardReport)).toThrow(
+            'validation.yml job unit step Report shard failure must retain its pinned condition'
+        );
+
+        // Mutation-kill: an allowlist entry matching no live step leaves that
+        // condition unpinned, so the sweep refuses the orphan rather than
+        // letting the list rot beside the file.
+        const orphanedPin = cloneWorkflows('orphaned shard report pin');
+        removeStepNamed(jobAt(orphanedPin.validation, 'unit'), 'Report shard failure');
+        expect(() => assertUnconditionalSteps(orphanedPin)).toThrow(
+            'validation.yml job unit step Report shard failure must carry its pinned condition'
+        );
+
+        // Mutation-kill: widening the build condition runs the production
+        // build where it proves nothing — and dropping it retires the proof.
+        const widenedBuild = cloneWorkflows('widened build condition');
+        jobAt(widenedBuild.validation, 'build').if = CODE_CONDITION;
+        expect(() => assertValidationScopeConditions(widenedBuild.validation)).toThrow(
+            'the production build must answer to the web scope alone'
+        );
+
+        const droppedRustScope = cloneWorkflows('dropped rust scope condition');
+        delete jobAt(droppedRustScope.validation, 'rust').if;
+        expect(() => assertValidationScopeConditions(droppedRustScope.validation)).toThrow(
+            'the Rust workspace leg must answer to the Rust and server scopes'
+        );
+
+        // Mutation-kill: `contents: write` hands a review-triggered workflow a
+        // token that can push; dropping the SARIF write fails the upload.
+        const widenedCodeQl = cloneWorkflows('widened codeql permissions');
+        recordAt(jobAt(widenedCodeQl.heavy, 'codeql'), 'permissions').contents = 'write';
+        expect(() => assertHeavyCodeQlPermissions(widenedCodeQl.heavy)).toThrow(
+            'the heavy CodeQL job must grant exactly contents: read, security-events: write, and actions: read'
+        );
+
+        const narrowedCodeQl = cloneWorkflows('narrowed codeql permissions');
+        delete recordAt(jobAt(narrowedCodeQl.heavy, 'codeql'), 'permissions')['security-events'];
+        expect(() => assertHeavyCodeQlPermissions(narrowedCodeQl.heavy)).toThrow(
+            'the heavy CodeQL job must grant exactly contents: read, security-events: write, and actions: read'
+        );
     });
 
     it('requires Set up pnpm immediately before Set up Node on every pnpm-cached nightly and heavy-lane job', () => {
