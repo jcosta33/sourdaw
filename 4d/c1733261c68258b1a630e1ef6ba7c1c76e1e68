@@ -1,0 +1,21 @@
+scripts/__tests__/vitestUnitShardExclusions.spec.ts
+  s_28abfd94826e36::t_77e9ca2411dad7 58-68
+scripts/test-health-gate-scripts.sh
+  s_28abfd94826e36::t_407fd2ccca2e29 411-414,419-422,428-431,436-439
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "4dc1733261c68258b1a630e1ef6ba7c1c76e1e68",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
