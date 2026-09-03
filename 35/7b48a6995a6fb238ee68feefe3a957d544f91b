@@ -1,0 +1,23 @@
+crates/sourdaw-harness-tone/src/tone.rs
+  s_9b530f08172a54::t_18a92f4ff417b7 21-38
+crates/sourdaw-harness-tone/src/plugin.rs
+  s_9b530f08172a54::t_1ff70208d542c4 28-29
+crates/sourdaw-harness-tone/src/params.rs
+  s_9b530f08172a54::t_46c46738a41f50 117-124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "357b48a6995a6fb238ee68feefe3a957d544f91b",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
