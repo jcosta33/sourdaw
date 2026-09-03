@@ -1,0 +1,29 @@
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_ac03a4ebaa3f6e::t_009a66cdbf9f54 7159-7181,7247-7283
+scripts/deliverPullRequest.ts
+  s_9b530f08172a54::t_4320284f1ff368 845-860
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "9e0c97868d923a2a093b9216b7c62601e2580ce2",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
