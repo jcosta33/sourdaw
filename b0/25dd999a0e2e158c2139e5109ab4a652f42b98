@@ -1,0 +1,21 @@
+crates/daw-dsp/src/toaster/engines/clap_808.rs
+  s_d9913c6e4b8d5e::t_59d5a770b128c2 16,94,129,151
+crates/daw-dsp/src/toaster/sp1200.rs
+  s_d9913c6e4b8d5e::t_0d189d7f340cd0 72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "b025dd999a0e2e158c2139e5109ab4a652f42b98",
+  "prompts": {},
+  "sessions": {
+    "s_d9913c6e4b8d5e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-af616de497693cb55",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
