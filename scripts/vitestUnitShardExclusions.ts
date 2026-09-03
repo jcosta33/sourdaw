@@ -13,8 +13,7 @@ export const DEVICE_WRITE_BOUNDARY_CENSUS_EXCLUDE_GLOB =
     `**/${DEVICE_WRITE_BOUNDARY_CENSUS_SPEC.split('/').at(-1)}` as const;
 
 function hasVitestShardArgument(args: readonly string[]): boolean {
-    for (let index = 0; index < args.length; index += 1) {
-        const argument = args[index];
+    for (const argument of args) {
         if (argument.startsWith('--shard=') || argument === '--shard') {
             return true;
         }
