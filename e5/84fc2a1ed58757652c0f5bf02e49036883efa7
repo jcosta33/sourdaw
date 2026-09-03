@@ -1,0 +1,53 @@
+crates/sourdaw-harness-tone/src/plugin.rs
+  s_9b530f08172a54::t_ef657b1940b1a1 145
+  s_9b530f08172a54::t_048a7ef0a699b5 1-144,146-154
+crates/sourdaw-harness-tone/src/descriptor.rs
+  s_9b530f08172a54::t_161c854113d15d 1-10,14-25,39-41,43-53,55
+  s_9b530f08172a54::t_d465193a1913dc 11-13,26-38,42,54
+crates/sourdaw-harness-tone/src/audio_ports.rs
+  s_9b530f08172a54::t_9b87f8b68fd1f3 1-49
+crates/sourdaw-harness-tone/src/tone.rs
+  s_9b530f08172a54::t_dfb19f31a59cd1 69-72,74-75
+  s_9b530f08172a54::t_7a8085118442ab 1-68,73,76-87
+crates/sourdaw-harness-tone/src/factory.rs
+  s_9b530f08172a54::t_a51387766aaa50 1-62
+package.json
+  s_9b530f08172a54::t_0a3ad86777a280 20
+crates/sourdaw-harness-tone/Cargo.toml
+  s_9b530f08172a54::t_54078fa9a77beb 11-18
+  s_9b530f08172a54::t_c538ad38a53009 1-10,19-24
+scripts/installHarnessPlugin.ts
+  s_9b530f08172a54::t_4273f799072150 1-17,19-37,42-47,49-95
+  s_9b530f08172a54::t_e42a654adbf5b7 18
+  s_9b530f08172a54::t_a7d75bd9a5810b 38-41,48
+Cargo.toml
+  s_9b530f08172a54::t_6c66d5abcee511 12
+crates/sourdaw-harness-tone/src/params.rs
+  s_9b530f08172a54::t_234758ae3dfd20 1-124
+scripts/__tests__/installHarnessPlugin.spec.ts
+  s_9b530f08172a54::t_f5439cfe175441 1-27
+crates/sourdaw-harness-tone/src/lib.rs
+  s_9b530f08172a54::t_09cee53aceeff5 1-48
+crates/sourdaw-harness-tone/tests/renders_through_the_host.rs
+  s_9b530f08172a54::t_1fa6b9dd31d820 1-18,28-35,41-199
+  s_9b530f08172a54::t_51baf0aa383949 19-27,36-40
+  s_9b530f08172a54::t_28e2aa8a3bf247 200-213
+Cargo.lock
+  s_9b530f08172a54::t_424bcfc09110f9 2530-2537
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "e584fc2a1ed58757652c0f5bf02e49036883efa7",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
