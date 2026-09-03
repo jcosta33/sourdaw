@@ -1265,50 +1265,67 @@ async fn load_plugin_with_backend(
     // The bridge's round trip is read under this same lock, from the engine
     // that is taking the instance: it is what the caller has to compensate on
     // top of the plugin's own latency, and only the render callback knows it.
-    let (engine_plugin_id, bridge_frames) = {
+    // The engine lock is held for the registration and for nothing else. Both
+    // of the other outcomes carry the runtime out of the block untouched,
+    // because dropping one destroys the plugin: CLAP and VST3 both run
+    // deactivate, destroy and the entry point's deinit on the calling thread,
+    // and the quit cascade takes this same lock from the shell's JS thread
+    // (`shutdown::remove_runtimes_from_scheduler`). A teardown that long, under
+    // this lock, is the shell's whole UI thread waiting on a plugin's own
+    // shutdown.
+    let outcome = {
         let mut engine_guard = state
             .engine
             .lock()
             .map_err(|e| format!("Failed to lock engine: {}", e))?;
         match engine_guard.as_mut() {
-            Some(engine) => {
-                let registration = register_runtime_with_engine(
-                    engine,
-                    state,
-                    &instance_id.0,
-                    wrapper,
-                    &name,
-                    &params,
+            Some(engine) => match register_runtime_with_engine(
+                engine,
+                state,
+                &instance_id.0,
+                wrapper,
+                &name,
+                &params,
+                has_gui,
+            ) {
+                Ok(registration) => EngineHandover::Registered(registration),
+                Err(refusal) => EngineHandover::Refused(refusal),
+            },
+            None => EngineHandover::NoEngine(wrapper),
+        }
+    };
+
+    let (engine_plugin_id, bridge_frames) = match outcome {
+        EngineHandover::Registered(registration) => (
+            Some(registration.engine_plugin_id),
+            registration.bridge_round_trip_frames,
+        ),
+        EngineHandover::Refused(refusal) => {
+            // Explicit, and before the return, so the order this whole block
+            // exists to get right is the order the code states: the engine lock
+            // went out of scope above, and the plugin's teardown runs here.
+            drop(refusal.runtime);
+            return Err(refusal.reason);
+        }
+        EngineHandover::NoEngine(wrapper) => {
+            eprintln!("[Plugin] Warning: native engine not running, plugin won't process audio");
+            // Dormant, not lost: `attach_dormant_plugins` registers this
+            // instance on the engine's first graph batch, from the very
+            // record written here.
+            let mut plugins = state
+                .plugins
+                .lock()
+                .map_err(|e| format!("Failed to lock plugins: {}", e))?;
+            plugins.insert(
+                instance_id.0.clone(),
+                PluginInstanceData {
+                    plugin: wrapper,
+                    name: name.clone(),
+                    parameters: params.clone(),
                     has_gui,
-                )
-                .map_err(|refusal| refusal.reason)?;
-                (
-                    Some(registration.engine_plugin_id),
-                    registration.bridge_round_trip_frames,
-                )
-            }
-            None => {
-                eprintln!(
-                    "[Plugin] Warning: native engine not running, plugin won't process audio"
-                );
-                // Dormant, not lost: `attach_dormant_plugins` registers this
-                // instance on the engine's first graph batch, from the very
-                // record written here.
-                let mut plugins = state
-                    .plugins
-                    .lock()
-                    .map_err(|e| format!("Failed to lock plugins: {}", e))?;
-                plugins.insert(
-                    instance_id.0.clone(),
-                    PluginInstanceData {
-                        plugin: wrapper,
-                        name: name.clone(),
-                        parameters: params.clone(),
-                        has_gui,
-                    },
-                );
-                (None, bridge_round_trip_frames(None))
-            }
+                },
+            );
+            (None, bridge_round_trip_frames(None))
         }
     };
 
@@ -1418,18 +1435,34 @@ struct EngineRegistration {
     bridge_round_trip_frames: u32,
 }
 
+/// How a load's visit to the engine ended, carried out of the engine lock's
+/// scope before it is acted on.
+///
+/// Every variant that still owns a runtime exists so that owning it is the
+/// caller's problem outside the lock: dropping a runtime destroys the plugin,
+/// and parking one takes a second lock. Neither belongs inside the engine's
+/// critical section — see the block in [`load_plugin_with_backend`].
+enum EngineHandover {
+    Registered(EngineRegistration),
+    Refused(RegistrationRefusal),
+    NoEngine(HostedRuntime),
+}
+
 /// A registration the engine would not take.
 struct RegistrationRefusal {
     reason: String,
-    /// The runtime, handed back whenever the refusal happened before it was
-    /// moved into the shared owner the audio thread reads through. That is what
-    /// lets [`attach_dormant_plugins`] park the instance again and retry on the
-    /// next batch. `None` once the move has happened, because a caller cannot
-    /// park a runtime it no longer owns.
+    /// The runtime, handed back so the caller can park the instance again and
+    /// retry on the next batch ([`attach_dormant_plugins`]) or drop it clear of
+    /// the engine lock ([`load_plugin_with_backend`]).
+    ///
+    /// `None` only when the runtime could not be got back at all: see
+    /// [`RegistrationRefusal::recovered`].
     runtime: Option<HostedRuntime>,
 }
 
 impl RegistrationRefusal {
+    /// A refusal that arrived before the runtime moved into the shared owner,
+    /// so it never left the caller's hands.
     fn parked(reason: String, runtime: HostedRuntime) -> Self {
         Self {
             reason,
@@ -1437,10 +1470,30 @@ impl RegistrationRefusal {
         }
     }
 
-    fn spent(reason: String) -> Self {
-        Self {
-            reason,
-            runtime: None,
+    /// A refusal that arrived after the move, taking the runtime back out of
+    /// the owner.
+    ///
+    /// The engine holds nothing on either of these paths: the record insert
+    /// refuses before any command is pushed and drops the record it was handed,
+    /// and a refused `add_plugin_with_bridge` drops the slot with the command it
+    /// could not push. So the owner is sole-held by the time this runs, and the
+    /// instance is recoverable rather than spent — the alternative is a device
+    /// the renderer still shows whose native instance is gone.
+    ///
+    /// Sole ownership is proven rather than assumed. A `try_unwrap` that fails
+    /// means some other holder is still inside the wrapper, and handing that
+    /// runtime to a second owner would be the real defect; the refusal then says
+    /// the instance is gone, which is at least true.
+    fn recovered(reason: String, shared: Arc<SharedHostedPlugin>) -> Self {
+        match Arc::try_unwrap(shared) {
+            Ok(owner) => Self {
+                reason,
+                runtime: Some(owner.into_inner()),
+            },
+            Err(_) => Self {
+                reason,
+                runtime: None,
+            },
         }
     }
 }
@@ -1455,8 +1508,10 @@ impl RegistrationRefusal {
 /// the dormant one is exactly the path nobody exercises by hand.
 ///
 /// Takes the runtime by value because registering it moves it into the shared
-/// owner the audio thread reads through; a refusal reports whether it survived
-/// that move (see [`RegistrationRefusal::runtime`]).
+/// owner the audio thread reads through. Every refusal hands it back — before
+/// the move it was never given away, and after the move it is taken back out of
+/// an owner nothing else holds (see [`RegistrationRefusal::recovered`]) — so a
+/// refused registration costs the caller a retry rather than the instance.
 ///
 /// Called with the engine lock held, and takes `engine_plugins` under it, which
 /// is the load path's order and the only order any engine-then-map path here
@@ -1527,7 +1582,9 @@ fn register_runtime_with_engine(
     // The record insert re-decides the session ceiling inside its own critical
     // section — see `insert_engine_plugin_record`. A refusal there leaves
     // nothing behind: the id above is a burned monotonic counter, the rings
-    // drop with the return, and no engine command has been pushed yet.
+    // drop with the return, and no engine command has been pushed yet. The
+    // record it could not insert is dropped inside, which is what leaves the
+    // owner sole-held for the recovery below.
     if let Err(reason) = insert_engine_plugin_record(
         state,
         instance_id,
@@ -1542,27 +1599,35 @@ fn register_runtime_with_engine(
             parameter_events,
         },
     ) {
-        return Err(RegistrationRefusal::spent(reason));
+        return Err(RegistrationRefusal::recovered(reason, shared_plugin));
     }
 
-    if let Err(error) =
-        engine.add_plugin_with_bridge(id, Box::new(HostedPluginSlot::new(shared_plugin)), bridge)
-    {
+    // The slot gets a clone rather than the owner itself: a refused push drops
+    // the slot it was handed, and with it the last reference, so an owner given
+    // away here would take the runtime down with a refusal the caller was about
+    // to recover from.
+    if let Err(error) = engine.add_plugin_with_bridge(
+        id,
+        Box::new(HostedPluginSlot::new(Arc::clone(&shared_plugin))),
+        bridge,
+    ) {
         // The engine refused the registration (a full effect table, or the
         // ring): unwind the record under a fresh acquisition, same order as
         // every other engine-then-map path, so the map never carries an
-        // instance the engine never took.
+        // instance the engine never took. Unwound before the recovery below,
+        // because the record holds a reference of its own.
         match state.engine_plugins.lock() {
             Ok(mut engine_plugins) => {
                 engine_plugins.remove(instance_id);
             }
             Err(lock_error) => {
-                return Err(RegistrationRefusal::spent(format!(
-                    "Failed to lock engine_plugins: {lock_error}"
-                )));
+                return Err(RegistrationRefusal::recovered(
+                    format!("Failed to lock engine_plugins: {lock_error}"),
+                    shared_plugin,
+                ));
             }
         }
-        return Err(RegistrationRefusal::spent(error));
+        return Err(RegistrationRefusal::recovered(error, shared_plugin));
     }
 
     Ok(EngineRegistration {
@@ -1596,9 +1661,9 @@ pub struct AttachedPlugin {
 ///
 /// Locks in the load path's order, `PLUGIN_RUNTIME_GATE` then the per-instance
 /// lifecycle gate then `plugins` then `engine` then `engine_plugins`, and never
-/// holds `plugins` across the engine lock: the load path's dormant branch takes
-/// `engine` before `plugins`, so holding them the other way round here is the
-/// one arrangement that would close a cycle.
+/// holds `plugins` across the engine lock — nor `engine` across anything else.
+/// No path here nests those two at all, which is what leaves no order for a
+/// cycle to close.
 pub fn attach_dormant_plugins(state: &AppState) -> Result<Vec<AttachedPlugin>, String> {
     let Ok(_runtime_guard) = PLUGIN_RUNTIME_GATE.try_read() else {
         return Err("the plugin runtime gate is held by another operation".to_string());
@@ -1696,9 +1761,10 @@ fn attach_one_dormant_plugin(
         })),
         Err(refusal) => {
             // Park it again, outside the engine lock, so the next batch tries
-            // it once more. A runtime the refusal could not hand back is gone
-            // with the instance: it was moved into the shared owner and then
-            // rejected, and no path can reconstruct it.
+            // it once more. A refusal hands the runtime back whether or not it
+            // had already moved into the shared owner; the one case that cannot
+            // is an owner some other holder is still inside, and there the
+            // instance really is gone.
             if let Some(runtime) = refusal.runtime {
                 state
                     .plugins
@@ -3476,6 +3542,64 @@ mod tests {
             .lock()
             .expect("engine_plugins lock should be available")
             .contains_key("instance-room"));
+    }
+
+    /// A refusal that arrives after the runtime has already moved into the
+    /// shared owner still hands it back. The engine took nothing — the insert
+    /// refused before a single command was pushed — so the alternative is a
+    /// device the renderer still shows with no native instance behind it, for
+    /// the rest of the session.
+    ///
+    /// Driven at this seam because it is the only refusal past the move a test
+    /// can reach: `attach_one_dormant_plugin` checks the same ceiling before it
+    /// removes the instance, so the attach path refuses one step earlier.
+    #[test]
+    fn a_registration_refused_after_the_move_hands_the_runtime_back() {
+        let state = AppState::default();
+        for index in 0..HOSTED_PLUGIN_RESERVE {
+            insert_engine_owned_fixture(&state, &format!("instance-{index}"), Vec::new());
+        }
+
+        let (mut engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(8);
+        let runtime: HostedRuntime =
+            ClapWrapper::new_engine_owned_command_fixture("Recovered Fixture", Vec::new(), false)
+                .into();
+
+        let refusal = register_runtime_with_engine(
+            &mut engine,
+            &state,
+            "recovered-instance",
+            runtime,
+            "Recovered Fixture",
+            &[],
+            false,
+        )
+        .err()
+        .expect("a session at its ceiling must refuse the record insert");
+
+        assert_eq!(
+            refusal.reason,
+            format!(
+                "the session hosts its maximum of {HOSTED_PLUGIN_RESERVE} native plugin instances"
+            )
+        );
+        let recovered = refusal
+            .runtime
+            .expect("a refusal the engine never acted on gives the runtime back to be parked");
+        assert_eq!(
+            AudioPlugin::get_name(&recovered),
+            "Recovered Fixture",
+            "the runtime handed back is the one that was handed in"
+        );
+        assert!(
+            !state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock should be available")
+                .contains_key("recovered-instance"),
+            "a refused registration leaves no record behind either"
+        );
     }
 
     /// The activation rate is the caller's, not this machine's. A plugin is fed

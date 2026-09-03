@@ -186,6 +186,15 @@ pub struct ClapWrapper {
 struct EngineOwnedCommandFixture {
     state: Vec<u8>,
     has_gui: bool,
+    /// The answer the fixture's open editor gives to "do you accept a size the
+    /// host chose".
+    ///
+    /// Separate from `has_gui` because the two are independent in every real
+    /// plugin — a fixed-layout editor has a GUI and refuses host sizing — and a
+    /// fixture that derived one from the other could only ever be driven through
+    /// the arm that says yes. Defaults to `has_gui`, so a fixture nobody
+    /// configures answers exactly as it did before this knob existed.
+    editor_resizable: bool,
     /// Values the fixture answers `get_parameters` with. Writable so a test can
     /// stage a change the host never made — the plugin-side edit a user performs
     /// in the plugin's own editor.
@@ -884,6 +893,7 @@ impl ClapWrapper {
             command_fixture: Some(EngineOwnedCommandFixture {
                 state,
                 has_gui,
+                editor_resizable: has_gui,
                 parameters: Vec::new(),
                 gui_lifecycle_threads: Arc::new(Mutex::new(Vec::new())),
                 editor_support_threads: Arc::new(Mutex::new(Vec::new())),
@@ -931,6 +941,35 @@ impl ClapWrapper {
     ) {
         if let Some(fixture) = self.command_fixture.as_mut() {
             fixture.parameters = parameters;
+        }
+    }
+
+    /// Stage the answer the fixture's open editor gives to a host-chosen size.
+    ///
+    /// Stands in for a fixed-layout editor, which is the arm no fixture could
+    /// otherwise reach: `open_gui` refuses a fixture with no GUI, so a host
+    /// driving the open path end to end could only ever see the resizable
+    /// answer, and a window told the wrong thing gives every fixed editor a
+    /// draggable frame the plugin will refuse.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn set_engine_owned_command_fixture_editor_resizable(&mut self, editor_resizable: bool) {
+        if let Some(fixture) = self.command_fixture.as_mut() {
+            fixture.editor_resizable = editor_resizable;
+        }
+    }
+
+    /// Leave a fixture unactivated, as a plugin whose `activate` failed is.
+    ///
+    /// A fixture has no plugin to fail an activation, and a host cannot make one
+    /// fail from outside: the wrapper activates during construction. This is the
+    /// only way a downstream host can drive the path that refuses to register an
+    /// unactivated runtime with the engine.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn deactivate_engine_owned_command_fixture(&mut self) {
+        if self.command_fixture.is_some() {
+            self.activated = false;
         }
     }
 
@@ -1367,7 +1406,7 @@ impl ClapWrapper {
     pub fn editor_can_resize(&self) -> bool {
         #[cfg(feature = "engine-owned-command-fixture")]
         if let Some(fixture) = self.command_fixture.as_ref() {
-            return fixture.has_gui && self.gui_open;
+            return fixture.editor_resizable && self.gui_open;
         }
 
         // SAFETY: control path only; the extension outlives this borrow.

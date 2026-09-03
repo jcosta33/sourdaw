@@ -123,6 +123,13 @@ describe('createNativeLiveGraphBackend', () => {
                     { instanceId: 'inst-2' },
                     { bridgeRoundTripFrames: 512 },
                     { instanceId: 'inst-3', bridgeRoundTripFrames: 'soon' },
+                    // A number that is not a figure. Both survive `typeof
+                    // 'number'` and both poison the latency sum they are added
+                    // to — NaN erases it, Infinity pins it — so the reader has
+                    // to ask whether the depth is finite, not whether it is
+                    // numeric.
+                    { instanceId: 'inst-4', bridgeRoundTripFrames: Number.NaN },
+                    { instanceId: 'inst-5', bridgeRoundTripFrames: Number.POSITIVE_INFINITY },
                 ],
             })
         );

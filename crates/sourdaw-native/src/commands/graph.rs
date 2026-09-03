@@ -528,15 +528,19 @@ pub struct GraphApplyResultPayload {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reports: Option<Vec<StripReportPayload>>,
     /// Instances that were loaded before any engine was running and that this
-    /// batch's engine start took over — see
+    /// batch took over — see
     /// [`crate::commands::plugins::attach_dormant_plugins`].
     ///
-    /// Present on an applied batch, empty when the start attached nothing, and
-    /// absent everywhere else: no other outcome starts an engine, so no other
-    /// outcome has an answer to give. The caller needs it because nothing else
-    /// tells it a plugin it loaded into silence is now processing audio — its
-    /// own load reported no engine plugin id and no bridge round trip, and
-    /// there is no later event.
+    /// Present on an applied batch and empty when it attached nothing. Absent
+    /// everywhere else, and that absence is a rule about when the attach runs,
+    /// not just about what is serialized: the attach happens only once the
+    /// batch is fenced and `applied` is the answer, so no other outcome ever has
+    /// an instance to report. A rejected batch leaves every dormant instance
+    /// dormant, which is what lets the next batch report it.
+    ///
+    /// The caller needs it because nothing else tells it a plugin it loaded into
+    /// silence is now processing audio — its own load reported no engine plugin
+    /// id and no bridge round trip, and there is no later event.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attached_plugins: Option<Vec<AttachedPluginPayload>>,
 }
@@ -2498,27 +2502,6 @@ pub async fn apply_graph_commands(
         Err(error) => eprintln!("[Crumbs] dormant instances could not be attached: {error}"),
     }
 
-    // And the same for a hosted plugin loaded before the engine ran. Same
-    // reasoning as the crumbs slot above, and the same shape of answer: a
-    // refusal is that instance's to carry and leaves it dormant for the next
-    // batch, never this batch's to fail on. Unlike crumbs, the caller is told
-    // which instances were taken — the load told it the plugin had no engine,
-    // and this result is the only correction it will get.
-    let attached_plugins = match crate::commands::plugins::attach_dormant_plugins(state) {
-        Ok(attached) => attached,
-        Err(error) => {
-            eprintln!("[Plugin] dormant instances could not be attached: {error}");
-            Vec::new()
-        }
-    };
-    let attached_plugins: Vec<AttachedPluginPayload> = attached_plugins
-        .into_iter()
-        .map(|attached| AttachedPluginPayload {
-            instance_id: attached.instance_id,
-            bridge_round_trip_frames: attached.bridge_round_trip_frames,
-        })
-        .collect();
-
     let mut engine_guard = state
         .engine
         .lock()
@@ -2586,6 +2569,40 @@ pub async fn apply_graph_commands(
             ));
         }
     }
+
+    // The batch is fenced, so this call is `applied` and nothing below can turn
+    // it into anything else. That is the whole reason a hosted plugin loaded
+    // before the engine ran attaches *here* rather than beside the crumbs slot
+    // above: only the applied payload carries `attachedPlugins`, so an attach
+    // that ran before `map_batch` or `send_graph_batch` had decided could hand
+    // the engine an instance and then report a `rejected` result that says
+    // nothing about it — engine-owned and rendering on this side, still pending
+    // and degraded on the caller's, and gone from `state.plugins` so no later
+    // batch would ever mention it again.
+    //
+    // Same shape of answer as the crumbs slot: a refusal is that instance's to
+    // carry and leaves it dormant for the next batch, never this batch's to
+    // fail on. Unlike crumbs, the caller is told which instances were taken —
+    // the load told it the plugin had no engine, and this result is the only
+    // correction it will get.
+    //
+    // The engine lock goes first: `attach_dormant_plugins` takes it itself, and
+    // this one is not reentrant.
+    drop(engine_guard);
+    let attached_plugins = match crate::commands::plugins::attach_dormant_plugins(state) {
+        Ok(attached) => attached,
+        Err(error) => {
+            eprintln!("[Plugin] dormant instances could not be attached: {error}");
+            Vec::new()
+        }
+    };
+    let attached_plugins: Vec<AttachedPluginPayload> = attached_plugins
+        .into_iter()
+        .map(|attached| AttachedPluginPayload {
+            instance_id: attached.instance_id,
+            bridge_round_trip_frames: attached.bridge_round_trip_frames,
+        })
+        .collect();
 
     working.runtime_revision = registry_guard.runtime_revision + 1;
     let revision = working.runtime_revision;
@@ -4703,6 +4720,25 @@ mod tests {
         );
     }
 
+    /// A dormant record whose runtime never activated — a plugin whose
+    /// `activate` failed at load, parked all the same.
+    ///
+    /// Its refusal lands *inside* the registration, past the ergonomic ceiling
+    /// check and past the removal from the command-owned store, which is the
+    /// only route to the re-parking branch.
+    fn park_unactivated_dormant_plugin(state: &AppState, instance_id: &str) {
+        let mut wrapper = daw_plugin_host::ClapWrapper::new_engine_owned_command_fixture(
+            "Unactivated Fixture",
+            vec![],
+            false,
+        );
+        wrapper.deactivate_engine_owned_command_fixture();
+        state.plugins.lock().expect("plugins lock").insert(
+            instance_id.to_string(),
+            crate::state::PluginInstanceData::dormant_fixture(wrapper.into()),
+        );
+    }
+
     /// Leave the session with no room for another engine-owned instance, so the
     /// next attach is refused by the session ceiling rather than by anything
     /// about the instance itself.
@@ -4822,6 +4858,125 @@ mod tests {
                 .expect("plugins lock")
                 .contains_key("refused-on-first-play"),
             "a refused instance stays dormant, runtime and all, for the next batch"
+        );
+    }
+
+    /// A batch the engine never took must not take a plugin either. The attach
+    /// hands the instance to the engine and removes it from the command-owned
+    /// store, and only an applied result carries `attachedPlugins` — so an
+    /// attach that ran before the batch was decided would leave a rejected
+    /// caller with a plugin that is engine-owned and rendering here, still
+    /// pending and degraded there, and absent from every later batch's answer.
+    #[test]
+    fn a_rejected_batch_leaves_a_dormant_plugin_for_the_next_one() {
+        let state = AppState::default();
+        park_dormant_plugin(&state, "attached-after-a-refused-batch");
+
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        // Refused by the mapping, with the engine already running: the batch
+        // names a track no strip ever created.
+        let rejected = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": [
+                { "kind": "set-track-output", "trackId": "missing",
+                  "target": { "kind": "master" } }
+            ] }),
+            &state,
+            &CrumbsState::default(),
+        ))
+        .expect("a refusal resolves to a result");
+
+        assert_eq!(rejected["acceptance"], "rejected");
+        assert!(
+            rejected.get("attachedPlugins").is_none(),
+            "only an applied batch answers about attachments: {rejected:?}"
+        );
+        assert!(
+            state
+                .plugins
+                .lock()
+                .expect("plugins lock")
+                .contains_key("attached-after-a-refused-batch"),
+            "a batch that applied nothing must leave the instance dormant"
+        );
+        assert!(
+            !state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock")
+                .contains_key("attached-after-a-refused-batch"),
+            "and must not have handed it to the engine on the way"
+        );
+
+        let applied = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": [track_strip("t1")] }),
+            &state,
+            &CrumbsState::default(),
+        ))
+        .expect("the batch resolves to a result");
+
+        assert_eq!(applied["application"], "applied");
+        let attached = applied["attachedPlugins"]
+            .as_array()
+            .expect("an applied batch always carries the list");
+        assert_eq!(attached.len(), 1, "got: {attached:?}");
+        assert_eq!(attached[0]["instanceId"], "attached-after-a-refused-batch");
+        assert!(
+            state.plugins.lock().expect("plugins lock").is_empty(),
+            "the batch that applied is the one that took the instance"
+        );
+    }
+
+    /// The refusal that arrives after the instance has left the command-owned
+    /// store. The runtime comes back out of the registration and the instance is
+    /// parked again, so the next batch tries it once more — the alternative is
+    /// an instance that exists in neither map, with a device in the rack and
+    /// nothing behind it.
+    ///
+    /// Distinct from the ceiling refusal above, which is decided before the
+    /// removal and never reaches this branch at all.
+    #[test]
+    fn an_instance_refused_after_it_leaves_the_store_is_parked_again() {
+        let state = AppState::default();
+        park_unactivated_dormant_plugin(&state, "reparked-on-first-play");
+
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let result = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": [track_strip("t1")] }),
+            &state,
+            &CrumbsState::default(),
+        ))
+        .expect("the batch resolves to a result");
+
+        assert_eq!(
+            result["application"], "applied",
+            "a refused attach must not fail the batch"
+        );
+        assert_eq!(
+            result["attachedPlugins"],
+            json!([]),
+            "nothing was attached, and the caller must not be told otherwise"
+        );
+        assert!(
+            state
+                .plugins
+                .lock()
+                .expect("plugins lock")
+                .contains_key("reparked-on-first-play"),
+            "the instance is parked again, runtime and all, for the next batch"
+        );
+        assert!(
+            !state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock")
+                .contains_key("reparked-on-first-play"),
+            "and the engine holds no record of the registration it refused"
         );
     }
 

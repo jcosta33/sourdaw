@@ -1113,6 +1113,39 @@ mod tests {
         gui_threads
     }
 
+    /// An engine-owned fixture with an editor and a stated answer about whether
+    /// it accepts a host-chosen size.
+    ///
+    /// The two are independent: a real fixed-layout editor has a GUI and still
+    /// refuses host sizing, and the open path has to carry whichever answer the
+    /// plugin gives.
+    fn insert_engine_owned_fixture_with_resize_answer(
+        state: &AppState,
+        instance_id: &str,
+        editor_resizable: bool,
+    ) {
+        let mut wrapper =
+            ClapWrapper::new_engine_owned_command_fixture("Engine Owned Fixture", vec![], true);
+        wrapper.set_engine_owned_command_fixture_editor_resizable(editor_resizable);
+        let mut engine_plugins = state
+            .engine_plugins
+            .lock()
+            .expect("engine_plugins lock should be available");
+        engine_plugins.insert(
+            instance_id.to_string(),
+            EnginePluginInstanceData {
+                engine_plugin_id: 17,
+                runtime: Arc::new(SharedHostedPlugin::new(wrapper.into())),
+                name: "Engine Owned Fixture".to_string(),
+                parameters: Vec::new(),
+                has_gui: true,
+                bridge: None,
+                relay_scratch: crate::state::PluginRelayScratch::default(),
+                parameter_events: None,
+            },
+        );
+    }
+
     fn engine_fixture_runtime(state: &AppState, instance_id: &str) -> Arc<SharedHostedPlugin> {
         let engine_plugins = state.engine_plugins.lock().expect("engine_plugins lock");
         Arc::clone(
@@ -1252,22 +1285,28 @@ mod tests {
     /// freezes every resizable one.
     #[test]
     fn the_window_is_told_whether_the_plugins_own_editor_accepts_a_host_size() {
-        let state = AppState::default();
-        insert_engine_owned_fixture(&state, "engine-owned-fixture", true);
-        let windows = DedicatedUiWindowHost::start();
+        for editor_resizable in [true, false] {
+            let state = AppState::default();
+            insert_engine_owned_fixture_with_resize_answer(
+                &state,
+                "engine-owned-fixture",
+                editor_resizable,
+            );
+            let windows = DedicatedUiWindowHost::start();
 
-        crate::block_on_test(open_plugin_gui(
-            "engine-owned-fixture".to_string(),
-            &windows,
-            &state,
-        ))
-        .expect("the fixture editor should open");
+            crate::block_on_test(open_plugin_gui(
+                "engine-owned-fixture".to_string(),
+                &windows,
+                &state,
+            ))
+            .expect("the fixture editor should open");
 
-        assert_eq!(
-            windows.editor_resizable(),
-            Some(true),
-            "the window must be told the plugin's own answer"
-        );
+            assert_eq!(
+                windows.editor_resizable(),
+                Some(editor_resizable),
+                "the window must be told the plugin's own answer"
+            );
+        }
     }
 
     /// Where that answer comes from. The plugin is asked while its view is open
