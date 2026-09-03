@@ -2,6 +2,7 @@
 // instances into module-owned dependency ports before runtime subscribers start.
 import { setRuntimeLogger } from '#/infra/logger/runtimeLogger';
 import { flushDeferredStorageNotice } from '#/infra/store/storage/storageFullNotice';
+import { MIDI_TRANSFORM_IMPLEMENTATIONS } from '#/modules/AiGeneration/useCases';
 import {
     beginMixAnalysis,
     assertCanonicalLlmActionStrategies,
@@ -70,6 +71,7 @@ import {
     getAssetTransfer,
     leaveSession,
 } from '#/modules/Collaboration/useCases';
+import { registerMidiTransforms } from '#/modules/Command/stores';
 import {
     commandBatchPreflightPort,
     commandBatchPreviewPort,
@@ -465,6 +467,7 @@ configureAudioDeviceRuntimeSink({
 
 assertCanonicalLlmActionStrategies(getExecutableAppActionGroundingCatalog());
 registerProductionCommandHandlers(getProductionCommandHandlerMaps({ canMutateBranchMetadata }));
+registerMidiTransforms(MIDI_TRANSFORM_IMPLEMENTATIONS);
 
 initToasterSubscribers({ eventBus, logger });
 // Registered after the lifecycle subscriber so a device's first appearance is

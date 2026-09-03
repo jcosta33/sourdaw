@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { clearMidiTransformRegistry, registerMidiTransforms } from '../../stores/midiTransformRegistry';
 import { getExecutableAppActionIntentCatalog } from '../getExecutableAppActionIntentCatalog';
 import * as executableCommandRegistrations from '../getExecutableCommandRegistrations';
 
@@ -183,5 +184,38 @@ describe('getExecutableAppActionIntentCatalog', () => {
 
         expect(firstPage.intent).toBe(`operation ${'ﬀ'.repeat(502)}`);
         expect(nextPage.page.offset).toBe(1);
+    });
+});
+
+describe('getExecutableAppActionIntentCatalog with registered MIDI transforms', () => {
+    const oneNote = () => [{ pitch: 60, startBeat: 0, duration: 1, velocity: 90 }];
+
+    beforeEach(() => {
+        clearMidiTransformRegistry();
+        registerMidiTransforms({ chordProgression: oneNote, drumPattern: oneNote, melody: oneNote });
+    });
+
+    afterEach(() => {
+        clearMidiTransformRegistry();
+    });
+
+    it.each([
+        { intent: 'twelve bar blues progression', name: 'chordProgression' },
+        { intent: 'chord progression', name: 'chordProgression' },
+        { intent: 'drum beat', name: 'drumPattern' },
+        { intent: 'drum pattern', name: 'drumPattern' },
+        { intent: 'melody line', name: 'melody' },
+    ])('finds $name from the intent "$intent"', ({ intent, name }) => {
+        const page = getExecutableAppActionIntentCatalog({ intent });
+
+        expect(page.items.map((item) => item.name)).toContain(name);
+    });
+
+    it('publishes no transform entry while nothing is registered', () => {
+        clearMidiTransformRegistry();
+
+        expect(
+            getExecutableAppActionIntentCatalog({ intent: 'chord progression' }).items.map((item) => item.name)
+        ).not.toContain('chordProgression');
     });
 });

@@ -8,5 +8,12 @@ export { undoStore } from './undo-store-facade';
 export type { UndoStoreState } from './undo-store-facade';
 
 export { registerHandlerMap, getHandlerMap, clearHandlerRegistry } from './handlerRegistry';
+export {
+    clearMidiTransformRegistry,
+    getMidiTransform,
+    getMidiTransformDescriptors,
+    getMidiTransformNames,
+    registerMidiTransforms,
+} from './midiTransformRegistry';
 export { actionReplayRevisionStore } from './actionReplayRevisionStore';
 export { commandBatchIdempotencyStore } from './commandBatchIdempotencyStore';

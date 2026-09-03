@@ -1,4 +1,5 @@
 import { getProjectProtocolContracts } from '#/modules/Project/useCases';
+import { MIDI_TRANSFORM_MAX_NOTES } from '#/utils/midiNoteBatchLimits';
 
 import {
     AGENT_CAPABILITIES_TOOL_NAME,
@@ -177,7 +178,7 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
         ),
         tool(
             COMMAND_BATCH_PROPOSAL_TOOL_NAME,
-            'Propose one ordered command batch. The application validates and grounds each discovered command before preview or approval; this tool cannot commit.',
+            `Propose one ordered command batch. The application validates and grounds each discovered command before preview or approval; this tool cannot commit. A discovered MIDI transform is a list item like any other: it names a clip and a seed, and the application expands it into the addNotes commands that carry its notes, up to ${String(MIDI_TRANSFORM_MAX_NOTES)} notes in total.`,
             {
                 commands: {
                     type: 'array',

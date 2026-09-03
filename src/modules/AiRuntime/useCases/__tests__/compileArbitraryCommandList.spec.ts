@@ -3966,6 +3966,7 @@ describe('compileArbitraryCommandList', () => {
             providerKnownTargetIds: [],
             selectors: [],
             commands: [createBusCommand, addNotesCommand],
+            expandedMidiTransforms: [],
             items: [
                 {
                     canonicalStableIds: [],

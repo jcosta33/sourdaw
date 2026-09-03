@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
+import { getMidiTransform, getMidiTransformDescriptors, getMidiTransformNames } from '#/modules/Command/stores';
+
 import { captureAgentProjectInspectionState } from '../captureCommandBatchPreflightState';
 
 import type { setArrangementEventBus } from '#/modules/Arrangement/useCases';
@@ -191,6 +193,9 @@ vi.mock('#/infra/logger/runtimeLogger', () => ({ setRuntimeLogger: noop }));
 vi.mock('#/modules/AiGeneration/useCases', () => ({
     getGenerationHandlers: sentinelHandlers('AiGeneration'),
     getAiMidiHandlers: sentinelHandlers('AiMidi'),
+    // One stub per published descriptor: the registry refuses a map that does not cover the
+    // contract, so this stands in for the real generators without pulling their graph in.
+    MIDI_TRANSFORM_IMPLEMENTATIONS: Object.fromEntries(getMidiTransformNames().map((name) => [name, () => []])),
 }));
 
 vi.mock('#/modules/AiRuntime/useCases', () => ({
@@ -900,6 +905,15 @@ describe('bootstrap', () => {
         expect(loggerMock.error).toHaveBeenCalledExactlyOnceWith(
             expect.objectContaining({ message: 'Interrupted AI runs could not be recovered during startup' })
         );
+    });
+
+    it('registers a MIDI transform implementation for every published transform descriptor', () => {
+        // A descriptor the planner can discover but nothing can run would reject the batch at
+        // expansion time, after the plan was already proposed.
+        const names = getMidiTransformNames();
+        expect(names.length).toBeGreaterThan(0);
+        expect(getMidiTransformDescriptors().map((descriptor) => descriptor.name)).toEqual([...names]);
+        expect(names.filter((name) => getMidiTransform(name) === undefined)).toEqual([]);
     });
 
     it('probes OPFS for RAVE model weights exactly once as a non-blocking boot step', () => {
