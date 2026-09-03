@@ -1092,6 +1092,16 @@ describe('AutomergeSync', () => {
         docId?: string;
         /** Start with no local document under `docId`, so `createCrdtDoc` runs. */
         absentLocally?: boolean;
+        /**
+         * Wire `prepareSyncPersistence` so a documentChanged root delivery
+         * takes `receiveAcceptedSync`'s `holdsRootPersistenceBarrier` route
+         * and defers `publish()` — and with it `onSyncApplied` — behind a
+         * persistence barrier that only resolves on a later macrotask.
+         * Exercises the same deferred-application timing production takes
+         * when a persistence barrier or a pending
+         * `waitForCrdtDocumentTransition` is already held.
+         */
+        deferApplicationBehindPersistenceBarrier?: boolean;
     };
 
     /**
@@ -1184,7 +1194,60 @@ describe('AutomergeSync', () => {
         };
         const onSyncQuarantine = vi.fn();
         const onSyncQuarantineLifted = vi.fn();
-        const sync = new AutomergeSync(peerManager, { onSyncQuarantine, onSyncQuarantineLifted });
+
+        /**
+         * Resolvers waiting on the next `onSyncApplied` for `doc_id`.
+         *
+         * Registering one before a message is handed to `receiveSync` also
+         * catches a synchronous application: `onSyncApplied` fires inside
+         * `publish()`, and a resolver already queued at that point still
+         * resolves, whether `publish()` runs in this call stack or on a
+         * later microtask/macrotask behind a persistence barrier.
+         */
+        let pending_applied_resolvers: Array<() => void> = [];
+
+        function waitForNextAppliedSync(): Promise<void> {
+            return new Promise((resolve) => {
+                pending_applied_resolvers.push(resolve);
+            });
+        }
+
+        function onSyncApplied({ docId: applied_doc_id }: { peerId: PeerId; docId: string }): void {
+            if (applied_doc_id !== doc_id) {
+                return;
+            }
+            protocol_sequence.push('peer-edit-applied');
+            const resolvers = pending_applied_resolvers;
+            pending_applied_resolvers = [];
+            for (const resolve of resolvers) {
+                resolve();
+            }
+        }
+
+        /**
+         * Holds a persistence barrier open across a real macrotask before
+         * resolving, so `receiveAcceptedSync` takes the deferred
+         * `holdsRootPersistenceBarrier` route instead of publishing inline.
+         */
+        function deferredPrepareSyncPersistence(): Promise<{
+            commit: () => Promise<void>;
+            abort: () => Promise<void>;
+        }> {
+            return new Promise((resolve) => {
+                setTimeout(() => {
+                    resolve({ commit: async () => {}, abort: async () => {} });
+                }, 0);
+            });
+        }
+
+        const sync = new AutomergeSync(peerManager, {
+            onSyncQuarantine,
+            onSyncQuarantineLifted,
+            onSyncApplied,
+            prepareSyncPersistence: options.deferApplicationBehindPersistenceBarrier
+                ? deferredPrepareSyncPersistence
+                : undefined,
+        });
         sync.start();
 
         /** Deliver the bidirectional handshake before either side makes an edit. */
@@ -1213,8 +1276,10 @@ describe('AutomergeSync', () => {
                 return;
             }
             await completeHandshake();
+            // `onSyncApplied` records `'peer-edit-applied'` once this edit is
+            // actually delivered and installed — not here, where the peer
+            // only prepares it locally.
             peer.applyPeerEdit();
-            protocol_sequence.push('peer-edit-applied');
         }
 
         /**
@@ -1244,8 +1309,27 @@ describe('AutomergeSync', () => {
             }
         }
 
+        /**
+         * Deliver the peer's edit and wait for `onSyncApplied` to actually
+         * fire for `doc_id`, not just for `receiveSync` to return — that
+         * call returns `void` and, behind a persistence barrier or a
+         * pending document transition, `receiveAcceptedSync` defers
+         * `publish()` past this call stack. `'peer-edit-delivered'` is
+         * pushed only after the applied wait resolves, so the recorded
+         * order — `'peer-edit-applied'` then `'peer-edit-delivered'` — is
+         * produced by the actual apply, not by push order alone.
+         */
         async function deliverPeerEdit(): Promise<boolean> {
-            return deliverOne('peer-edit-delivered');
+            const message = peer.send();
+            if (!message) {
+                return false;
+            }
+            const applied = waitForNextAppliedSync();
+            sync.receiveSync({ peerId: 'editor', docId: doc_id, syncMessageBase64: bytesToBase64(message) });
+            change_cb?.(doc_id);
+            await applied;
+            protocol_sequence.push('peer-edit-delivered');
+            return true;
         }
 
         /**
@@ -1332,6 +1416,32 @@ describe('AutomergeSync', () => {
 
     it('commits the outbound handshake before delivering the peer edit', async () => {
         const exchange = setupLiveExchange();
+        await exchange.connect();
+
+        expect(await exchange.deliverPeerEdit()).toBe(true);
+
+        expect(exchange.probeValue()).toBe(PEER_EDIT);
+        expect(exchange.protocolSequence()).toEqual([
+            'outbound-handshake',
+            'outbound-handshake-committed',
+            'peer-handshake-delivered',
+            'peer-edit-applied',
+            'peer-edit-delivered',
+        ]);
+    });
+
+    /**
+     * Turns red on the same `AssertionError: expected undefined to be 'peer
+     * edit'` this file's target case escaped once on a hosted shard:
+     * `receiveAcceptedSync` takes the `holdsRootPersistenceBarrier` route
+     * whenever a persistence barrier holds the delivery, and `publish()` —
+     * the only place `onSyncApplied` fires and the live document is
+     * replaced — does not run until that barrier resolves on a later
+     * macrotask. `deliverPeerEdit()` must observe that, not just that
+     * `receiveSync` returned.
+     */
+    it('reports peer-edit delivery only after the live document carries the edit when application is deferred', async () => {
+        const exchange = setupLiveExchange({ deferApplicationBehindPersistenceBarrier: true });
         await exchange.connect();
 
         expect(await exchange.deliverPeerEdit()).toBe(true);
