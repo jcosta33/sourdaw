@@ -78,7 +78,10 @@ function readVercelJson(rootDirectory: string): unknown {
 
 function compileHeaderRoute(rule: unknown): HeaderRoute {
     const record = asRecord(rule);
-    const source = typeof record?.source === 'string' ? record.source : '';
+    if (record === null) {
+        throw new TypeError('vercel.json is malformed');
+    }
+    const source = typeof record.source === 'string' ? record.source : '';
     if (source === '') {
         throw new TypeError('vercel.json is malformed');
     }
