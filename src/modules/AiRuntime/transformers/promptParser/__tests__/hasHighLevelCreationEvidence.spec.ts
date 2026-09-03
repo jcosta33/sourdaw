@@ -44,6 +44,12 @@ describe('hasHighLevelCreationEvidence', () => {
         // next clause, and swallowing it would discard an introduction the request plainly makes.
         'write a melody the chords follow',
         'make a beat these drums sit on',
+        // Plural forms of introduced objects.
+        'add some loops',
+        'write some melodies',
+        'create a few grooves',
+        'make some riffs',
+        'lay down some progressions',
     ])('reads a request for something new as creation evidence: %s', (request) => {
         expect(hasHighLevelCreationEvidence(request)).toBe(true);
     });
@@ -96,6 +102,13 @@ describe('hasHighLevelCreationEvidence', () => {
         'add reverb to the song',
         'make the session louder',
         'build out the arrangement',
+        // A partitive gap ending in "of" paired with a numbered tail names an existing object by
+        // kind and identifier: these duplicate or bounce it rather than create something new.
+        'make a copy of track 3',
+        'make a duplicate of clip 4',
+        'produce a bounce of track 2',
+        'make a stem of track 5',
+        'make a copy of the drums',
     ])('refuses a mixing or editing request that names an object the project already holds: %s', (request) => {
         expect(hasHighLevelCreationEvidence(request)).toBe(false);
     });

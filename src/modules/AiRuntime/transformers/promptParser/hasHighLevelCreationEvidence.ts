@@ -12,7 +12,7 @@ const CREATION_VERB_PATTERN = /\b(?:create|add|begin|build|make|start|compose|wr
  * a little more bass" would read as creation; only `bass line` names the part.
  */
 const INTRODUCED_OBJECT_PATTERN =
-    /\b(?:a|an|new|some|another|\d+)\s+((?:\w+\s+){0,2}?)(?:tracks?|clips?|song|session|project|arrangement|composition|piece|demo|jingle|melody|beat|groove|loop|riff|comp|progression|chords?|drums|bass\s?lines?|drum\s+parts?)\b/giu;
+    /\b(?:a|an|new|some|another|\d+)\s+((?:\w+\s+){0,2}?)(?:tracks?|clips?|song|session|project|arrangement|composition|piece|demo|jingle|melod(?:y|ies)|beats?|grooves?|loops?|riffs?|comps?|progressions?|chords?|drums|bass\s?lines?|drum\s+parts?)\b/giu;
 
 /**
  * A preposition right before the determiner makes the phrase an edit's destination. `with` is
@@ -26,6 +26,26 @@ const PRECEDING_PREPOSITION_PATTERN = /\b(?:to|on|onto|into|over|across|of|for|u
  * quantifier reaches its noun through one, and "create a couple of tracks" asks for new tracks.
  */
 const REFERRING_GAP_PATTERN = /\b(?:the|my|our|your|its|their|this|that|these|those)\b/iu;
+
+/**
+ * The gap between the determiner and the noun ending in a bare "of", as in "a copy of", "a
+ * duplicate of", "a bounce of", "a stem of". The qualifier alone does not decide it: "a couple of
+ * tracks" and "a bunch of drums" end the same way and still introduce something new. This pattern
+ * only disqualifies a match when paired with OBJECT_IDENTIFIER_PATTERN below, which reads the text
+ * right after the noun for the numbered tail that turns "of" into a reference to one specific
+ * object the project already holds.
+ */
+const PARTITIVE_GAP_PATTERN = /\bof\s*$/iu;
+
+/**
+ * An identifier number immediately after the matched noun, as in "track 3" or "clip 4". Paired with
+ * PARTITIVE_GAP_PATTERN, it turns "make a copy of track 3" into a reference to an existing object:
+ * the object named by kind and identifier is what is duplicated or bounced, not created. Accepted
+ * edge: "create a couple of tracks 8 bars long" reads its numbered tail the same way and is
+ * refused, even though the tail describes new tracks rather than picking one out; the plain
+ * "create a couple of tracks", with no numbered tail, still counts as creation.
+ */
+const OBJECT_IDENTIFIER_PATTERN = /^\s+\d+\b/u;
 
 /** Separators a request writes between one instruction and the next. */
 const CLAUSE_SEPARATOR_PATTERN = /[,;.!?]|\bthen\b|\band\b/iu;
@@ -46,9 +66,10 @@ function hasUnnegatedCreationVerb(clause: string): boolean {
 /**
  * An object the clause introduces rather than one it reaches for. A determiner alone does not
  * decide it, because an edit names its destination the same way: what disqualifies a match is a
- * preposition immediately before the determiner, as in "add reverb to a few tracks", or a referring
- * word between the determiner and the noun, as in "make some of the tracks louder". Both say the
- * objects already exist.
+ * preposition immediately before the determiner, as in "add reverb to a few tracks"; a referring
+ * word between the determiner and the noun, as in "make some of the tracks louder"; or a partitive
+ * gap paired with a numbered tail, as in "make a copy of track 3". All three say the objects
+ * already exist.
  *
  * The gap is lazy so the shortest reading of each phrase is tried first: "a track of drums"
  * introduces a track, and a greedy gap would instead read it as reaching for drums and discard the
@@ -66,7 +87,11 @@ function introducesSomethingNew(clause: string): boolean {
         (match) =>
             match.index !== undefined &&
             !PRECEDING_PREPOSITION_PATTERN.test(clause.slice(0, match.index)) &&
-            !REFERRING_GAP_PATTERN.test(match[1] ?? '')
+            !REFERRING_GAP_PATTERN.test(match[1] ?? '') &&
+            !(
+                PARTITIVE_GAP_PATTERN.test(match[1] ?? '') &&
+                OBJECT_IDENTIFIER_PATTERN.test(clause.slice(match.index + match[0].length))
+            )
     );
 }
 
