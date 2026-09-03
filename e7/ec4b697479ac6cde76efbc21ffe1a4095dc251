@@ -1,0 +1,27 @@
+.agents/decisions/0042-high-level-intent-compiles-through-the-bounded-catalog.md
+  s_ac03a4ebaa3f6e::t_ae75accdb12619 105-107,129-139
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_ac03a4ebaa3f6e::t_4e5c17e80978a1 4322-4327,4410-4428
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_ac03a4ebaa3f6e::t_1c2ee8cd0b0d74 186-190,199,2625
+src/modules/AiRuntime/transformers/promptParser/__tests__/hasHighLevelCreationEvidence.spec.ts
+  s_ac03a4ebaa3f6e::t_3fb75dc5755d88 35-46,51-58,108-113,116-120
+src/modules/AiRuntime/transformers/promptParser/hasHighLevelCreationEvidence.ts
+  s_ac03a4ebaa3f6e::t_b9f3b4d3e1d0bf 3,15,17-21,23-28,49-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "e7ec4b697479ac6cde76efbc21ffe1a4095dc251",
+  "prompts": {},
+  "sessions": {
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
