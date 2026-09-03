@@ -1,0 +1,25 @@
+.agents/decisions/0011-ddd-module-boundary-redraw.md
+  s_f6b0a5e7b91b63::t_b9483efc1f765c 9-13,16
+.agents/decisions/0012-neither-target-degrades-the-other.md
+  s_f6b0a5e7b91b63::t_2c4c86ecf6ac6a 9,12,84-89
+.agents/decisions/0014-project-persistence-architecture.md
+  s_f6b0a5e7b91b63::t_9fea436579cc14 10-12,15,18,20,110-121,143-154,161,163,165,172-173,199,221-234,239-243,245,247-250,252-256,263-264,266-269,271-277,279-283,298-305
+.agents/decisions/0016-ultracode-session-scope-and-standard.md
+  s_f6b0a5e7b91b63::t_75f2a1b746add9 9-10,13,31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "f60954b439cb05d9d3e80f6136e98b2a30f99e37",
+  "prompts": {},
+  "sessions": {
+    "s_f6b0a5e7b91b63": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a31f839de50da40a5",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
