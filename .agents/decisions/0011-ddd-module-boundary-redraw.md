@@ -6,14 +6,14 @@ status: accepted
 date: 2026-07-17
 owner: The Sourdaw team
 sources:
-  - src/modules (34-module structural index, 2026-07-17)
-  - .dependency-cruiser.cjs
-  - CLAUDE.md
-  - "~/.agents/artifacts/sourdaw/INV-module-boundaries.md (working inventory)"
-  - "~/.agents/artifacts/sourdaw/CHANGE-module-decomposition.md (working change plan)"
+    - src/modules (34-module structural index, 2026-07-17)
+    - .dependency-cruiser.cjs
+    - CLAUDE.md
+    - '~/.agents/artifacts/sourdaw/INV-module-boundaries.md (working inventory)'
+    - '~/.agents/artifacts/sourdaw/CHANGE-module-decomposition.md (working change plan)'
 ---
 
-# 0011 — DDD module boundary redraw
+# 0011 — DDD module boundary redraw — decompose god-modules into a 54 bounded-context set
 
 ## Context
 
