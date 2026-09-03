@@ -26,11 +26,13 @@ describe('replaceCrdtDocInLineage', () => {
         });
 
         const initialIdentityEpoch = automergeRepository.getDocumentIdentityEpoch();
+        const initialMutationEpoch = automergeRepository.getMutationEpoch();
         const initialRevision = captureProjectRevision();
 
         replaceCrdtDocInLineage({ id: 'root', doc: changedDoc });
 
         expect(automergeRepository.getDocumentIdentityEpoch()).toBe(initialIdentityEpoch);
+        expect(automergeRepository.getMutationEpoch()).toBe(initialMutationEpoch + 1);
         expect(captureProjectRevision()).not.toBe(initialRevision);
     });
 

@@ -1,9 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { DOC_PREFIX_ROOT } from '../../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../../repositories/automergeRepository';
 import { branchStore } from '../../../stores/branchStore';
-import { captureProjectIdentity } from '../../captureProjectIdentity';
 import { forkProjectBranch } from '../forkProjectBranch';
 import { switchBranch } from '../switchBranch';
 
@@ -35,20 +34,28 @@ describe('branch switch moves project identity', () => {
 
     afterEach(() => {
         vi.restoreAllMocks();
+        automergeRepository.reset();
     });
 
     it('moves when a branch switch replaces the root document', async () => {
         await forkProjectBranch('feature');
-        const identityBeforeSwitch = captureProjectIdentity();
-        const replaceDoc = vi.spyOn(automergeRepository, 'replaceDoc');
+
+        // The outgoing snapshot write (saveActiveBranchSnapshot.ts:24) also calls
+        // replaceDoc, on the branch's own backing doc, before switchBranch.ts:76
+        // runs — so the epoch has to be read around the root call itself, not
+        // taken as a single before/after snapshot around the whole switch.
+        const original = automergeRepository.replaceDoc.bind(automergeRepository);
+        const epochMoves: Array<{ id: string; before: number; after: number }> = [];
+        vi.spyOn(automergeRepository, 'replaceDoc').mockImplementation((id, doc, tx) => {
+            const before = automergeRepository.getDocumentIdentityEpoch();
+            original(id, doc, tx);
+            epochMoves.push({ id, before, after: automergeRepository.getDocumentIdentityEpoch() });
+        });
 
         await switchBranch('main');
 
-        // The root swap at switchBranch.ts:76 is the identity-moving replacement
-        // the AI batch's projectId reads; the outgoing snapshot write targets the
-        // branch's backing doc, not the root, so the root-id filter isolates the
-        // swap.
-        expect(replaceDoc).toHaveBeenCalledWith(DOC_PREFIX_ROOT, expect.anything());
-        expect(captureProjectIdentity()).not.toBe(identityBeforeSwitch);
+        const rootSwap = epochMoves.find(({ id }) => id === DOC_PREFIX_ROOT);
+        expect(rootSwap).toBeDefined();
+        expect(rootSwap!.after).toBe(rootSwap!.before + 1);
     });
 });
