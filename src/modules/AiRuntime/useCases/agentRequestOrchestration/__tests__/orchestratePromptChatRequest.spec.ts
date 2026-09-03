@@ -521,6 +521,33 @@ describe('orchestratePromptChatRequest', () => {
         expect(releaseProviderCancellation).toHaveBeenCalledOnce();
     });
 
+    // The case above carries no outcome at all, and the fallback above is what an absent decision
+    // reads as. A run that searched and matched nothing did decide, so it must not borrow that text.
+    it('distinguishes a decided no-match from a plan that reported no outcome', async () => {
+        mocks.planPromptActions.mockResolvedValue({
+            context: {},
+            result: { actions: [], planningOutcome: { kind: 'no-match' } },
+            projectRevision: 'revision-planned',
+        });
+
+        await orchestratePromptChatRequest({
+            userText: 'create a blues song with this chord progression',
+            requestedRoute: 'auto',
+            backend: 'webllm',
+            interactionMode: 'apply',
+            options: undefined,
+        });
+
+        expect(mocks.appendChatMessage).toHaveBeenNthCalledWith(
+            2,
+            expect.objectContaining({
+                role: 'assistant',
+                content: 'No command matched the request.',
+                error: 'No command matched the request.',
+            })
+        );
+    });
+
     it('writes the provider clarify questions into the chat instead of the generic no-match message', async () => {
         mocks.planPromptActions.mockResolvedValue({
             context: {},
