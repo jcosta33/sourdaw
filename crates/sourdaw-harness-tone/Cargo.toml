@@ -1,0 +1,24 @@
+[package]
+name = "sourdaw-harness-tone"
+version = "0.1.0"
+edition = "2021"
+description = "Self-sounding CLAP test plugin for the packaged-app latency harness."
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+# `cdylib` is the artifact the harness actually loads. `rlib` is added
+# alongside it only so `cargo test` has a linkable crate to build for the
+# integration test's implicit lib dependency slot: with `cdylib` alone,
+# Cargo's pipelined compilation emits interface metadata but skips full
+# codegen (nothing in the graph links against it), so `cargo test` never
+# writes the `.dylib`/`.so`/`.dll` the acceptance test dlopens. Requesting
+# both crate-types is one `rustc` invocation that emits both artifacts.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+clap-sys = "0.5"
+
+[dev-dependencies]
+daw-plugin-host = { path = "../daw-plugin-host" }
