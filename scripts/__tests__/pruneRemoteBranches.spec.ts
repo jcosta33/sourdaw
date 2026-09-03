@@ -6,11 +6,13 @@ import {
     deleteRemoteBranch,
     encodeBranchRefPath,
     parsePruneRemoteBranchesArgs,
+    parsePullRequestListing,
     pruneRemoteBranches,
     type BranchPullRequest,
     type DeleteOutcome,
     type PruneRemoteBranchesArgs,
     type PruneRemoteBranchesPort,
+    type PullRequestListing,
     type RemoteBranch,
 } from '../pruneRemoteBranches.ts';
 
@@ -30,32 +32,32 @@ function openPr(number: number, headRefOid: string): BranchPullRequest {
 describe('classifyRemoteBranch', () => {
     it('should classify main as protected even with a merged pull request whose head equals the tip', () => {
         const value = branch('main', 'tip-main');
-        expect(classifyRemoteBranch(value, [mergedPr(1, 'tip-main')])).toBe('protected');
+        expect(classifyRemoteBranch(value, [mergedPr(1, 'tip-main')], true)).toBe('protected');
     });
 
     it('should classify a branch with any OPEN pull request as open when a MERGED pull request also exists', () => {
         const value = branch('feature', 'tip-feature');
-        expect(classifyRemoteBranch(value, [mergedPr(1, 'other-tip'), openPr(2, 'tip-feature')])).toBe('open');
+        expect(classifyRemoteBranch(value, [mergedPr(1, 'other-tip'), openPr(2, 'tip-feature')], true)).toBe('open');
     });
 
     it('should classify a branch with no pull requests as unpublished', () => {
         const value = branch('stray', 'tip-stray');
-        expect(classifyRemoteBranch(value, [])).toBe('unpublished');
+        expect(classifyRemoteBranch(value, [], true)).toBe('unpublished');
     });
 
     it('should classify a branch whose tip matches no pull-request head as moved', () => {
         const value = branch('drift', 'tip-now');
-        expect(classifyRemoteBranch(value, [mergedPr(1, 'tip-then')])).toBe('moved');
+        expect(classifyRemoteBranch(value, [mergedPr(1, 'tip-then')], true)).toBe('moved');
     });
 
     it('should classify a branch whose tip matches a MERGED pull-request head as spent', () => {
         const value = branch('alpha', 'tip-alpha');
-        expect(classifyRemoteBranch(value, [mergedPr(1, 'tip-alpha')])).toBe('spent');
+        expect(classifyRemoteBranch(value, [mergedPr(1, 'tip-alpha')], true)).toBe('spent');
     });
 
     it('should classify a branch whose tip matches a CLOSED pull-request head as spent', () => {
         const value = branch('beta', 'tip-beta');
-        expect(classifyRemoteBranch(value, [closedPr(2, 'tip-beta')])).toBe('spent');
+        expect(classifyRemoteBranch(value, [closedPr(2, 'tip-beta')], true)).toBe('spent');
     });
 
     it('should classify an incompletely listed branch as unlisted even when a fetched node is OPEN', () => {
@@ -68,6 +70,38 @@ describe('classifyRemoteBranch', () => {
         const pullRequests = Array.from({ length: 9 }, (_unused, index) => closedPr(index + 1, `old-tip-${index}`));
         pullRequests.push(mergedPr(10, 'tip-delta'));
         expect(classifyRemoteBranch(value, pullRequests, true)).toBe('spent');
+    });
+});
+
+describe('parsePullRequestListing', () => {
+    it('should mark a listing incomplete when totalCount exceeds the fetched node count', () => {
+        const nodes = Array.from({ length: 10 }, (_unused, index) => mergedPr(index + 1, 'tip-busy'));
+        const listing = parsePullRequestListing({ nodes, totalCount: 11 }, 'busy');
+        expect(listing.complete).toBe(false);
+        expect(listing.pullRequests).toHaveLength(10);
+    });
+
+    it('should mark a listing complete when totalCount equals the fetched node count', () => {
+        const nodes = Array.from({ length: 10 }, (_unused, index) => mergedPr(index + 1, 'tip-busy'));
+        const listing = parsePullRequestListing({ nodes, totalCount: 10 }, 'busy');
+        expect(listing.complete).toBe(true);
+    });
+
+    it('should mark an empty listing complete with zero fetched nodes of zero total', () => {
+        const listing = parsePullRequestListing({ nodes: [], totalCount: 0 }, 'stray');
+        expect(listing).toEqual({ pullRequests: [], complete: true });
+    });
+
+    it('should throw naming the branch when totalCount is missing', () => {
+        expect(() => parsePullRequestListing({ nodes: [] }, 'gamma')).toThrow(
+            'invalid pull-request total count for gamma'
+        );
+    });
+
+    it('should throw the missing-alias message when nodes is not an array', () => {
+        expect(() => parsePullRequestListing({ totalCount: 0 }, 'delta')).toThrow(
+            'missing pull-request alias for delta'
+        );
     });
 });
 
@@ -103,12 +137,19 @@ describe('parsePruneRemoteBranchesArgs', () => {
     });
 });
 
+type FakePullRequestsResult = BranchPullRequest[] | PullRequestListing;
 type FakePortInput = {
     branches: RemoteBranch[];
-    pullRequestsFor: (names: string[]) => Map<string, BranchPullRequest[]>;
+    pullRequestsFor: (names: string[]) => Map<string, FakePullRequestsResult>;
     branchTip?: (name: string) => string | undefined;
     deleteBranch?: (name: string) => DeleteOutcome;
 };
+function toListing(value: FakePullRequestsResult | undefined): PullRequestListing {
+    if (value === undefined) {
+        return { pullRequests: [], complete: true };
+    }
+    return Array.isArray(value) ? { pullRequests: value, complete: true } : value;
+}
 function fakePort(input: FakePortInput): {
     port: PruneRemoteBranchesPort;
     deleteCalls: string[];
@@ -125,7 +166,7 @@ function fakePort(input: FakePortInput): {
         pullRequestsFor: (names) => {
             pullRequestBatchSizes.push(names.length);
             const raw = input.pullRequestsFor(names);
-            return new Map(names.map((name) => [name, { pullRequests: raw.get(name) ?? [], complete: true }]));
+            return new Map(names.map((name) => [name, toListing(raw.get(name))]));
         },
         branchTip: (name) => {
             branchTipCalls.push(name);
@@ -362,6 +403,31 @@ describe('pruneRemoteBranches', () => {
         expect(code).toBe(0);
         expect(deleteCalls).toEqual([]);
         expect(lines).toContain('kept busy: pull requests not fully listed');
+    });
+
+    it('should keep a branch at re-check whose fresh listing is incomplete, even with a merged pull request at the tip', () => {
+        // The plan sees a complete listing with a single MERGED pull request at the tip, so the branch
+        // is spent. By delete time the branch has ten-plus open pull requests and the re-check only
+        // fetches the newest ten, so pullRequestsFor reports complete: false even though the same
+        // MERGED pull request is still present in the fetched page. The branch must be kept rather than
+        // deleted out from under whatever pull request the re-check could not see.
+        const target = branch('busy', 'tip-busy');
+        const mergedAtTip = mergedPr(7, 'tip-busy');
+        let pullRequestCalls = 0;
+        const { port, deleteCalls } = fakePort({
+            branches: [target],
+            pullRequestsFor: (names) => {
+                pullRequestCalls += 1;
+                const listing: FakePullRequestsResult =
+                    pullRequestCalls === 1 ? [mergedAtTip] : { pullRequests: [mergedAtTip], complete: false };
+                return new Map(names.map((name) => [name, listing]));
+            },
+        });
+        const { log, lines } = collectingLog();
+        const code = pruneRemoteBranches(applyArgs(), port, log);
+        expect(code).toBe(0);
+        expect(deleteCalls).toEqual([]);
+        expect(lines).toContain('kept busy: unlisted at re-check');
     });
 });
 

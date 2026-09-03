@@ -79,7 +79,7 @@ export function encodeBranchRefPath(name: string): string {
 export function classifyRemoteBranch(
     branch: RemoteBranch,
     pullRequests: BranchPullRequest[],
-    complete: boolean = true
+    complete: boolean
 ): BranchClass {
     if (branch.name === REQUIRED_BASE_BRANCH) {
         return 'protected';
@@ -122,11 +122,19 @@ function fetchPullRequestsInBatches(names: string[], port: PruneRemoteBranchesPo
     return result;
 }
 
+function requireListing(prMap: Map<string, PullRequestListing>, name: string): PullRequestListing {
+    const listing = prMap.get(name);
+    if (listing === undefined) {
+        fail(`missing pull-request listing for ${name}`);
+    }
+    return listing;
+}
+
 function classifyBranches(branches: RemoteBranch[], prMap: Map<string, PullRequestListing>): Map<string, BranchClass> {
     const classes = new Map<string, BranchClass>();
     for (const branch of branches) {
-        const listing = prMap.get(branch.name);
-        classes.set(branch.name, classifyRemoteBranch(branch, listing?.pullRequests ?? [], listing?.complete ?? true));
+        const listing = requireListing(prMap, branch.name);
+        classes.set(branch.name, classifyRemoteBranch(branch, listing.pullRequests, listing.complete));
     }
     return classes;
 }
@@ -192,7 +200,7 @@ function printPlan(
     }
     for (const branch of branches) {
         if (classes.get(branch.name) === 'spent') {
-            const pr = matchingPullRequest(branch, prMap.get(branch.name)?.pullRequests ?? []);
+            const pr = matchingPullRequest(branch, requireListing(prMap, branch.name).pullRequests);
             log(`spent ${branch.name} ${branch.tip.slice(0, 9)} #${pr.number}:${pr.state}`);
         }
     }
@@ -246,12 +254,12 @@ function applySpentBranches(
             log(`already gone ${branch.name}`);
             continue;
         }
-        const freshListing = port.pullRequestsFor([branch.name]).get(branch.name);
-        const freshPullRequests = freshListing?.pullRequests ?? [];
+        const freshListing = requireListing(port.pullRequestsFor([branch.name]), branch.name);
+        const freshPullRequests = freshListing.pullRequests;
         const recheckClass = classifyRemoteBranch(
             { name: branch.name, tip: freshTip },
             freshPullRequests,
-            freshListing?.complete ?? true
+            freshListing.complete
         );
         const tipMoved = freshTip !== branch.tip;
         if (recheckClass !== 'spent' || tipMoved) {
@@ -383,6 +391,18 @@ function pullRequestBatchQuery(size: number): string {
     return `query(${params}){repository(owner:"${REQUIRED_OWNER}",name:"${REQUIRED_NAME}"){${aliases}}}`;
 }
 
+export function parsePullRequestListing(alias: unknown, name: string): PullRequestListing {
+    const node = alias as { nodes?: unknown; totalCount?: unknown } | undefined;
+    if (node === undefined || !Array.isArray(node.nodes)) {
+        fail(`missing pull-request alias for ${name}`);
+    }
+    if (typeof node.totalCount !== 'number') {
+        fail(`invalid pull-request total count for ${name}`);
+    }
+    const pullRequests = node.nodes.map(toBranchPullRequest);
+    return { pullRequests, complete: pullRequests.length === node.totalCount };
+}
+
 function pullRequestsForBranches(names: string[], gh: Gh): Map<string, PullRequestListing> {
     if (names.length === 0) {
         return new Map();
@@ -390,7 +410,7 @@ function pullRequestsForBranches(names: string[], gh: Gh): Map<string, PullReque
     const query = pullRequestBatchQuery(names.length);
     const fields = names.flatMap((name, index) => ['-f', `n${index}=${name}`]);
     const response = graphql(gh, query, fields, 'branch pull requests') as {
-        data?: { repository?: Record<string, { nodes?: unknown; totalCount?: unknown } | undefined> };
+        data?: { repository?: Record<string, unknown> };
     };
     const repository = response.data?.repository;
     if (repository === undefined) {
@@ -398,15 +418,7 @@ function pullRequestsForBranches(names: string[], gh: Gh): Map<string, PullReque
     }
     const result = new Map<string, PullRequestListing>();
     for (const [index, name] of names.entries()) {
-        const alias = repository[`b${index}`];
-        if (alias === undefined || !Array.isArray(alias.nodes)) {
-            fail(`missing pull-request alias for ${name}`);
-        }
-        if (typeof alias.totalCount !== 'number') {
-            fail(`invalid pull-request total count for ${name}`);
-        }
-        const pullRequests = alias.nodes.map(toBranchPullRequest);
-        result.set(name, { pullRequests, complete: pullRequests.length === alias.totalCount });
+        result.set(name, parsePullRequestListing(repository[`b${index}`], name));
     }
     return result;
 }
