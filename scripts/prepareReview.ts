@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -158,6 +158,45 @@ function preserveCallerFiles(
     }
 }
 
+export function isProcessAlive(pid: number): boolean {
+    if (!Number.isSafeInteger(pid) || pid <= 0) {
+        return false;
+    }
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch (error) {
+        return (error as NodeJS.ErrnoException).code === 'EPERM';
+    }
+}
+
+export function sweepStaleBundleSiblings(
+    destination: string,
+    checkProcessAlive: (pid: number) => boolean = isProcessAlive
+): void {
+    const parentDir = dirname(destination);
+    if (!existsSync(parentDir)) {
+        return;
+    }
+    for (const entry of readdirSync(parentDir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) {
+            continue;
+        }
+        const match = entry.name.match(/\.(?:staging|previous)-(\d+)-\d+$/);
+        if (!match) {
+            continue;
+        }
+        const pid = Number(match[1]);
+        if (!checkProcessAlive(pid)) {
+            try {
+                rmSync(join(parentDir, entry.name), { recursive: true, force: true });
+            } catch {
+                // Ignore cleanup race if concurrently removed.
+            }
+        }
+    }
+}
+
 /**
  * Preservation reads directly from the live `destination` before either rename, so a failure there
  * leaves `destination` exactly as it was — it was never touched. That makes the swap itself two
@@ -165,7 +204,12 @@ function preserveCallerFiles(
  * existed: no window where the bundle directory is provably absent, and no rollback branch to keep
  * correct, because none is reachable.
  */
-export function installBundleAtomically(destination: string, files: Record<string, string>): void {
+export function installBundleAtomically(
+    destination: string,
+    files: Record<string, string>,
+    checkProcessAlive?: (pid: number) => boolean
+): void {
+    sweepStaleBundleSiblings(destination, checkProcessAlive);
     const staging = `${destination}.staging-${process.pid}-${Date.now()}`;
     const previous = `${destination}.previous-${process.pid}-${Date.now()}`;
     mkdirSync(staging, { recursive: true });
