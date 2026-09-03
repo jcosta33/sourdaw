@@ -264,9 +264,22 @@ describe('startPluginScan', () => {
         // Writing its plugins wholesale would drop those rows here while the
         // registry still holds them, so the browser would stop offering a
         // plugin the host can still load.
-        const reached = create_scanned_plugin({ id: 'a', name: 'A', path: '/r1/a' });
-        const never_reached = create_scanned_plugin({ id: 'b', name: 'B', path: '/r2/b' });
-        const rescanned = create_scanned_plugin({ id: 'a', name: 'A renamed', path: '/r1/a' });
+        // Distinct identities, as two different plugins always have: rows
+        // sharing one are the same plugin, and the identity rule below covers
+        // that case.
+        const reached = create_scanned_plugin({ id: 'a', name: 'A', descriptor_id: 'com.vendor.a', path: '/r1/a' });
+        const never_reached = create_scanned_plugin({
+            id: 'b',
+            name: 'B',
+            descriptor_id: 'com.vendor.b',
+            path: '/r2/b',
+        });
+        const rescanned = create_scanned_plugin({
+            id: 'a',
+            name: 'A renamed',
+            descriptor_id: 'com.vendor.a',
+            path: '/r1/a',
+        });
         mocks.pluginScanStoreValue.value = create_plugin_scan_state({
             scannedPlugins: [reached, never_reached],
             lastScanTime: 1_000,
@@ -288,6 +301,64 @@ describe('startPluginScan', () => {
                 isScanning: false,
                 errors: ['Plugin scan time limit exceeded'],
                 scannedPlugins: [never_reached, rescanned],
+            })
+        );
+    });
+
+    it('keeps one row per plugin identity when an incomplete scan reaches a second copy', async () => {
+        // The same plugin installed twice is still one plugin: the native list
+        // carries one row per format-scoped identity, and a browser holding
+        // two would list it twice, resolve a descriptor-addressed load to the
+        // stale copy, and make the agent device manifest refuse the identity
+        // as conflicting. The walk reached the per-user copy and stopped before
+        // the machine-wide root, so the path rule alone cannot drop the old row.
+        const machine_wide = create_scanned_plugin({
+            id: 'machine-wide',
+            name: 'X 1.5',
+            format: 'clap',
+            descriptor_id: 'com.vendor.x',
+            path: '/Library/Audio/Plug-Ins/CLAP/X.clap',
+        });
+        const unrelated = create_scanned_plugin({
+            id: 'b',
+            name: 'B',
+            descriptor_id: 'com.vendor.b',
+            path: '/r2/b',
+        });
+        // No identity of its own, so nothing this scan found can claim it.
+        const without_identity = create_scanned_plugin({
+            id: 'e',
+            name: 'E',
+            format: 'clap',
+            descriptor_id: '',
+            path: '/r3/e',
+        });
+        const per_user = create_scanned_plugin({
+            id: 'per-user',
+            name: 'X 2.0',
+            format: 'clap',
+            descriptor_id: 'com.vendor.x',
+            path: '/Users/u/Library/Audio/Plug-Ins/CLAP/X.clap',
+        });
+        mocks.pluginScanStoreValue.value = create_plugin_scan_state({
+            scannedPlugins: [machine_wide, unrelated, without_identity],
+            lastScanTime: 1_000,
+        });
+        mocks.scanPlugins.mockResolvedValue({
+            ran: true,
+            result: create_scan_result({
+                plugins: [per_user],
+                errors: ['Plugin scan time limit exceeded'],
+                complete: false,
+                scanned_paths: ['/Users/u/Library/Audio/Plug-Ins/CLAP/X.clap'],
+            }),
+        });
+
+        await startPluginScan();
+
+        expect(mocks.pluginScanStoreSet).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                scannedPlugins: [unrelated, without_identity, per_user],
             })
         );
     });

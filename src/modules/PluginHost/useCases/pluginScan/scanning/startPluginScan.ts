@@ -7,21 +7,42 @@ import { pluginScanStore } from '../../../stores/pluginScanStore';
 
 import { getState } from './helpers';
 
+/** A plugin's format-scoped identity, the key the native list is unique on. */
+function pluginIdentity(plugin: ScannedPlugin): string {
+    // NUL cannot appear in either field, so no two pairs can collide by
+    // concatenation — the separator the native bundle keys use, for the reason.
+    return `${plugin.format}\u0000${plugin.descriptor_id}`;
+}
+
 /**
  * The rows the browser holds once this result is applied.
  *
- * A complete walk enumerated everything installed, so it replaces the list. An
- * incomplete one is authoritative only for the candidates it reached, so a row
- * under a path it never got to is kept — the same retention the native
- * registry applies to its own rows, which is what keeps the browser and the
- * registry from disagreeing about an installed plugin.
+ * A complete walk enumerated everything installed, so it replaces the list.
+ *
+ * An incomplete one is authoritative only for the candidates it reached, so a
+ * previous row survives it — the retention the native registry applies to its
+ * own rows, which is what keeps the browser and the registry from disagreeing
+ * about an installed plugin. Two things end that survival. The walk reached
+ * the row's path, so this result restated it. Or a fresh row claims the row's
+ * format-scoped identity, which is the same plugin found under another root:
+ * the native list never carries two rows for one identity, and consumers rely
+ * on that — a descriptor- or name-addressed load resolves the first row of an
+ * identity, and the agent device manifest refuses two records for one factory
+ * identity. Fresh rows win either way.
+ *
+ * An empty descriptor id is never an identity: an absent id is no evidence
+ * that two files are the same plugin.
  */
 function mergeScanResultIntoList(previous: ScannedPlugin[], result: ScanResult): ScannedPlugin[] {
     if (result.complete) {
         return result.plugins;
     }
     const reachedPaths = new Set(result.scanned_paths);
-    return [...previous.filter((plugin) => !reachedPaths.has(plugin.path)), ...result.plugins];
+    const freshIdentities = new Set(result.plugins.filter((plugin) => plugin.descriptor_id !== '').map(pluginIdentity));
+    const survivors = previous.filter(
+        (plugin) => !reachedPaths.has(plugin.path) && !freshIdentities.has(pluginIdentity(plugin))
+    );
+    return [...survivors, ...result.plugins];
 }
 
 export type StartPluginScanOptions = {
