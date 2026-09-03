@@ -1,0 +1,45 @@
+src/modules/Transport/useCases/transportControls/__tests__/executePlayheadSeek.spec.ts
+  s_ac03a4ebaa3f6e::t_5c72edd382008c 3-4,16,29,48-50,63-86
+src/modules/Transport/useCases/transportControls/__tests__/stopPlayback.spec.ts
+  s_9b530f08172a54::t_4d68cf5a76e455 4,21-23,61,65-88
+src/modules/Transport/useCases/transportControls/executePlayheadSeek.ts
+  s_ac03a4ebaa3f6e::t_8a8e2e5494f0a3 2,5,92-107
+src/modules/Transport/useCases/transportControls/__tests__/pausePlayback.spec.ts
+  s_88d02ce44764cb::t_8081d7b1abb833 3,28-30,70,76-100
+src/modules/Transport/useCases/transportControls/pausePlayback.ts
+  s_88d02ce44764cb::t_f2cc0b9693848b 2,5,50-51,54,73-83
+src/modules/Transport/useCases/transportControls/stopPlayback.ts
+  s_88d02ce44764cb::t_f79f00f75accad 2,5,57-58,61,67-77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "338370cbb84e566a270edd650b1fd3e91aaf3402",
+  "prompts": {},
+  "sessions": {
+    "s_88d02ce44764cb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a45533e8a190b9515",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_ac03a4ebaa3f6e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e76e32be-e0c5-4e37-aeca-c64fb9a96ff8",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
