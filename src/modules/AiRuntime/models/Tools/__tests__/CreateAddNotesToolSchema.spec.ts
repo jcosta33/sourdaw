@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { getExecutableAppActionProviderSchema } from '#/modules/Command/useCases';
+import { ADD_NOTES_MAX_NOTES_PER_COMMAND, MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
 
 import { createAddNotesToolSchema } from '../CreateAddNotesToolSchema';
 import { type ToolSchema } from '../Types';
@@ -64,12 +65,14 @@ describe('createAddNotesToolSchema', () => {
             const notes = schema.function.parameters.properties.notes as Record<string, unknown>;
             expect(notes.type).toBe('array');
             expect(notes.minItems).toBe(1);
+            expect(notes.maxItems).toBe(ADD_NOTES_MAX_NOTES_PER_COMMAND);
 
             const props = noteItemProperties(schema);
             expect(noteItems(schema).required).toEqual(['pitch', 'startBeat', 'duration']);
             expect(props.pitch!.minimum).toBe(0);
             expect(props.pitch!.maximum).toBe(127);
-            expect(props.duration!.exclusiveMinimum).toBe(0);
+            expect(props.duration!.minimum).toBe(MIDI_NOTE_MIN_DURATION_BEATS);
+            expect(Object.hasOwn(props.duration!, 'exclusiveMinimum')).toBe(false);
             expect(props.velocity!.minimum).toBe(1);
             expect(props.velocity!.maximum).toBe(127);
         }

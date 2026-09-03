@@ -7,6 +7,7 @@ import { getDrumPreviewBranchHandlers } from '#/modules/CrdtDocument/useCases';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { FADER_GAIN_RANGE_DESCRIPTION, FADER_MAX_GAIN_LABEL } from '#/utils/audioLevelLaw';
+import { ADD_NOTES_MAX_NOTES_PER_COMMAND, MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
 
 import { getAppActionExecutionPolicy } from '../getAppActionExecutionPolicy';
 import { getExecutableAppActionGroundingRules } from '../getExecutableAppActionGroundingRules';
@@ -400,6 +401,32 @@ const EXPECTED_COMMANDS = [
         ['clipId', 'targetBeats'],
         'broad-reversible',
         true
+    ),
+    expectedCommand(
+        'addNotes',
+        'Add one or more MIDI notes to one unlocked MIDI clip.',
+        {
+            clipId: { type: 'string' },
+            notes: {
+                type: 'array',
+                minItems: 1,
+                maxItems: ADD_NOTES_MAX_NOTES_PER_COMMAND,
+                items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: {
+                        pitch: { type: 'number', minimum: 0, maximum: 127 },
+                        startBeat: { type: 'number', minimum: 0 },
+                        duration: { type: 'number', minimum: MIDI_NOTE_MIN_DURATION_BEATS },
+                        velocity: { type: 'number', minimum: 1, maximum: 127 },
+                    },
+                    required: ['pitch', 'startBeat', 'duration'],
+                },
+            },
+        },
+        ['clipId', 'notes'],
+        'bounded-reversible',
+        false
     ),
     expectedCommand(
         'quantizeNotes',
@@ -1609,6 +1636,12 @@ const EXPECTED_GROUNDING = [
                 unit: 'beat-duration',
             },
         ],
+    },
+    {
+        actionType: 'addNotes',
+        intentPhrases: ['add notes', 'add midi notes'],
+        targetRules: [{ argument: 'clipId', capability: 'writable-midi-clip' }],
+        valueRules: [],
     },
     {
         actionType: 'quantizeNotes',

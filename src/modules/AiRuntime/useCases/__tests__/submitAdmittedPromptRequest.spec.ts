@@ -275,6 +275,58 @@ describe('submitAdmittedPromptRequest', () => {
         );
     });
 
+    it('asks the provider questions back to the user instead of the generic no-match advice', async () => {
+        mocks.planPromptActions.mockResolvedValue({
+            context: { tracks: [] },
+            result: {
+                actions: [],
+                rawText: 'Make it sound better',
+                requiresConfirmation: false,
+                planningOutcome: {
+                    kind: 'clarify',
+                    reason: 'The request does not say which part of the mix to change.',
+                    questions: ['Which tracks should change?', 'Louder or brighter?'],
+                },
+            },
+            projectRevision: 'revision-1',
+        });
+
+        await expect(
+            submitAdmittedPromptRequest({ prompt: 'Make it sound better', source: 'prompt-bar' })
+        ).resolves.toEqual({ status: 'no-op', runId: RUN_ID });
+
+        expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(
+            'The request does not say which part of the mix to change. 1. Which tracks should change? 2. Louder or brighter?',
+            []
+        );
+    });
+
+    it('says a searched-for capability is unsupported instead of the generic no-match advice', async () => {
+        mocks.planPromptActions.mockResolvedValue({
+            context: { tracks: [] },
+            result: {
+                actions: [],
+                rawText: 'Master this for vinyl',
+                requiresConfirmation: false,
+                planningOutcome: {
+                    kind: 'unsupported',
+                    reason: 'No command in this project masters for vinyl.',
+                    searchedIntents: ['master for vinyl'],
+                },
+            },
+            projectRevision: 'revision-1',
+        });
+
+        await expect(
+            submitAdmittedPromptRequest({ prompt: 'Master this for vinyl', source: 'prompt-bar' })
+        ).resolves.toEqual({ status: 'no-op', runId: RUN_ID });
+
+        expect(mocks.notifyAiChange).toHaveBeenCalledExactlyOnceWith(
+            'Not supported: No command in this project masters for vinyl. Searched: master for vinyl',
+            []
+        );
+    });
+
     it('does not record or expose a plan after cancellation wins provider settlement', async () => {
         const controller = new AbortController();
         mocks.planPromptActions.mockImplementation(async (input) => {

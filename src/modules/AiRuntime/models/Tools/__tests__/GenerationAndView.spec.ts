@@ -4,7 +4,7 @@ import { DAW_TOOL_SCHEMAS } from '../../ToolDefinitions';
 import { markerTools } from '../GenerationAndView';
 
 describe('GenerationAndView tools', () => {
-    it('keeps the hidden addNotes command out of the general tool collection', () => {
+    it('keeps the addNotes command out of the general tool collection', () => {
         expect(DAW_TOOL_SCHEMAS.map((tool) => tool.function.name)).not.toContain('addNotes');
     });
 

@@ -11,6 +11,7 @@ import {
     parseVersionedCommandBatchEnvelope,
 } from '#/modules/Command/useCases';
 
+import { SEMANTIC_COMMAND_LIST_MAX_CREATIONS } from '../../models/SemanticCommandList';
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
 import { materializeBatchLocalActionIdentities } from '../agentReference/materializeBatchLocalActionIdentities';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
@@ -4958,6 +4959,62 @@ describe('compileArbitraryCommandList', () => {
         expect(result).toMatchObject({
             status: 'rejected',
             reason: 'Structured command list contains contradictory mutation resources.',
+        });
+    });
+
+    const trackCreationItems = (count: number) =>
+        Array.from({ length: count }, (_unused, index) => ({
+            id: `make-track-${String(index)}`,
+            name: 'addTrack',
+            arguments: { name: `Layer ${String(index)}`, kind: 'midi', binding: `layer${String(index)}` },
+        }));
+
+    it('accepts a list that creates exactly as many project objects as the creation budget allows', () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-creation-budget',
+            calls: [creationProposal(trackCreationItems(SEMANTIC_COMMAND_LIST_MAX_CREATIONS))],
+        });
+
+        expect(result).toMatchObject({ status: 'accepted' });
+    });
+
+    it('refuses a list that creates one more project object than the creation budget allows', () => {
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-creation-budget',
+            calls: [creationProposal(trackCreationItems(SEMANTIC_COMMAND_LIST_MAX_CREATIONS + 1))],
+        });
+
+        expect(result).toMatchObject({
+            status: 'rejected',
+            reason: `Semantic command list creates more than ${String(SEMANTIC_COMMAND_LIST_MAX_CREATIONS)} project objects`,
+        });
+    });
+
+    it('counts every command a repeat expands to against the creation budget', () => {
+        const repeatCount = 3;
+        const items = [
+            ...trackCreationItems(SEMANTIC_COMMAND_LIST_MAX_CREATIONS - repeatCount + 1),
+            {
+                id: 'make-repeated',
+                name: 'addTrack',
+                arguments: { name: 'Repeated', kind: 'midi' },
+                repeat: { count: repeatCount },
+            },
+        ];
+
+        const result = compileArbitraryCommandList({
+            context,
+            revision: 'revision-creation-budget',
+            calls: [creationProposal(items)],
+        });
+
+        // The unexpanded list holds fewer items than the budget; only the expansion exceeds it.
+        expect(items.length).toBeLessThanOrEqual(SEMANTIC_COMMAND_LIST_MAX_CREATIONS);
+        expect(result).toMatchObject({
+            status: 'rejected',
+            reason: `Semantic command list creates more than ${String(SEMANTIC_COMMAND_LIST_MAX_CREATIONS)} project objects`,
         });
     });
 

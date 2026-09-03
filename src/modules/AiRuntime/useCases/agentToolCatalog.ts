@@ -1,19 +1,43 @@
 import { getProjectProtocolContracts } from '#/modules/Project/useCases';
 
+import {
+    AGENT_CAPABILITIES_TOOL_NAME,
+    AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+    AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+    AGENT_DEVICE_MANIFEST_TOOL_NAME,
+    ANALYSIS_REQUEST_TOOL_NAME,
+    COMMAND_BATCH_DECLINE_TOOL_NAME,
+    COMMAND_BATCH_PROPOSAL_TOOL_NAME,
+    COMMAND_HISTORY_TOOL_NAME,
+    MAX_DISCOVERED_COMMAND_SCHEMAS,
+    PROJECT_QUERY_TOOL_NAME,
+    PROJECT_RESOLVE_TOOL_NAME,
+    RENDER_REQUEST_TOOL_NAME,
+} from '../models/AgentToolCatalogNames';
+import {
+    COMMAND_BATCH_DECLINE_KINDS,
+    COMMAND_BATCH_DECLINE_MAX_QUESTION_LENGTH,
+    COMMAND_BATCH_DECLINE_MAX_QUESTIONS,
+    COMMAND_BATCH_DECLINE_MAX_REASON_LENGTH,
+} from '../models/CommandBatchDecline';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA } from '../models/SemanticCommandList';
 import { type ToolSchema } from '../models/ToolDefinitions';
 
-export const PROJECT_QUERY_TOOL_NAME = 'project.query';
-export const PROJECT_RESOLVE_TOOL_NAME = 'project.resolve';
-export const AGENT_CAPABILITIES_TOOL_NAME = 'agent.capabilities';
-export const AGENT_CATALOG_DISCOVERY_TOOL_NAME = 'agent.catalog.discover';
-export const AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME = 'agent.command-index.search';
-export const AGENT_DEVICE_MANIFEST_TOOL_NAME = 'device.factory-manifest.read';
-export const COMMAND_BATCH_PROPOSAL_TOOL_NAME = 'command.batch.propose';
-export const COMMAND_HISTORY_TOOL_NAME = 'command.history';
-export const RENDER_REQUEST_TOOL_NAME = 'render.request';
-export const ANALYSIS_REQUEST_TOOL_NAME = 'analysis.request';
+export {
+    AGENT_CAPABILITIES_TOOL_NAME,
+    AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+    AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
+    AGENT_DEVICE_MANIFEST_TOOL_NAME,
+    ANALYSIS_REQUEST_TOOL_NAME,
+    COMMAND_BATCH_DECLINE_TOOL_NAME,
+    COMMAND_BATCH_PROPOSAL_TOOL_NAME,
+    COMMAND_HISTORY_TOOL_NAME,
+    PROJECT_QUERY_TOOL_NAME,
+    PROJECT_RESOLVE_TOOL_NAME,
+    RENDER_REQUEST_TOOL_NAME,
+} from '../models/AgentToolCatalogNames';
+
 export const AGENT_CATALOG_CURSOR_MAX_LENGTH = 2048;
 export const AGENT_CATALOG_CURSOR_PATTERN = '^[A-Za-z0-9_-]+$';
 export const AGENT_CATALOG_CURSOR_JSON_SCHEMA = {
@@ -23,7 +47,6 @@ export const AGENT_CATALOG_CURSOR_JSON_SCHEMA = {
     pattern: AGENT_CATALOG_CURSOR_PATTERN,
 } as const;
 
-const MAX_DISCOVERED_SCHEMAS = 8;
 const EXACT_CATALOG_CATEGORIES = [
     'query',
     'resolve',
@@ -80,7 +103,7 @@ function getCatalogDiscoverySchema(): ToolSchema {
     const page = {
         type: 'object',
         properties: {
-            limit: { type: 'integer', minimum: 1, maximum: MAX_DISCOVERED_SCHEMAS },
+            limit: { type: 'integer', minimum: 1, maximum: MAX_DISCOVERED_COMMAND_SCHEMAS },
             cursor: { ...AGENT_CATALOG_CURSOR_JSON_SCHEMA },
         },
         additionalProperties: false,
@@ -93,7 +116,7 @@ function getCatalogDiscoverySchema(): ToolSchema {
             names: {
                 type: 'array',
                 minItems: 1,
-                maxItems: MAX_DISCOVERED_SCHEMAS,
+                maxItems: MAX_DISCOVERED_COMMAND_SCHEMAS,
                 items: { type: 'string', minLength: 1, maxLength: 128 },
             },
             page,
@@ -111,7 +134,7 @@ function getCommandIndexSearchSchema(): ToolSchema {
             page: {
                 type: 'object',
                 properties: {
-                    limit: { type: 'integer', minimum: 1, maximum: MAX_DISCOVERED_SCHEMAS },
+                    limit: { type: 'integer', minimum: 1, maximum: MAX_DISCOVERED_COMMAND_SCHEMAS },
                     cursor: { ...AGENT_CATALOG_CURSOR_JSON_SCHEMA },
                 },
                 additionalProperties: false,
@@ -221,6 +244,20 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
                 },
             },
             []
+        ),
+        tool(
+            COMMAND_BATCH_DECLINE_TOOL_NAME,
+            `Decline to propose a batch, and say why. Use kind "clarify" only when the request is ambiguous about authority, target, or scope and that ambiguity cannot be resolved from project evidence; supply the concrete questions that would resolve it. Use kind "unsupported" only after ${AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME} found no command for the required capability. Return this call alone in its turn.`,
+            {
+                kind: { type: 'string', enum: [...COMMAND_BATCH_DECLINE_KINDS] },
+                reason: { type: 'string', minLength: 1, maxLength: COMMAND_BATCH_DECLINE_MAX_REASON_LENGTH },
+                questions: {
+                    type: 'array',
+                    maxItems: COMMAND_BATCH_DECLINE_MAX_QUESTIONS,
+                    items: { type: 'string', minLength: 1, maxLength: COMMAND_BATCH_DECLINE_MAX_QUESTION_LENGTH },
+                },
+            },
+            ['kind', 'reason', 'questions']
         ),
         tool(COMMAND_HISTORY_TOOL_NAME, 'Read bounded, revision-bearing command history.', {
             page: {

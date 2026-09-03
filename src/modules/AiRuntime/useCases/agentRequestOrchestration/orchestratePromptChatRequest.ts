@@ -11,6 +11,7 @@ import { type ModelProviderName } from '../../models/ModelProviderProtocol';
 import { getCloudProviderInfo } from '../../repositories/cloudLlm/getCloudProviderInfo';
 import { getActiveModelId } from '../../repositories/webLlm/getActiveModelId';
 import { appendChatMessage, setActiveAborter, setChatGenerating, updateChatMessage } from '../../stores/chatStore';
+import { describePlanningOutcome } from '../../transformers/describePlanningOutcome';
 import { normalizeAgentFailure } from '../agentErrorAndSaga';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
@@ -360,12 +361,13 @@ async function dispatchPromptPlan(input: {
         timestamp: Date.now(),
         isCommandAction: true,
     });
+    const declineText = describePlanningOutcome(result.planningOutcome);
     appendChatMessage({
         id: `msg-${crypto.randomUUID()}`,
         role: 'assistant',
-        content: 'No actions were matched or executed for your command.',
+        content: declineText ?? 'No actions were matched or executed for your command.',
         timestamp: Date.now(),
-        error: 'No actions matched',
+        error: declineText ?? 'No actions matched',
     });
     return undefined;
 }

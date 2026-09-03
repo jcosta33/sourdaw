@@ -5,6 +5,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { type AgentExecutionMode } from '../models/AgentExecutionMode';
 import { type ModelProviderResult } from '../models/ModelProviderProtocol';
+import { describePlanningOutcome } from '../transformers/describePlanningOutcome';
 
 import { preparedStemImportResources } from './agentReference/registerPreparedStemImportResources';
 import {
@@ -20,7 +21,7 @@ import { describePlannedAction } from './describePlannedAction';
 import { executePromptActionGroup } from './executePromptActionGroup';
 import { getProjectContext } from './getProjectContext';
 import { notifyAiChange } from './notifyAiChange';
-import { planPromptActions } from './planPromptActions';
+import { type PlannedPromptActions, planPromptActions } from './planPromptActions';
 import { recordAgentProviderUsage } from './recordAgentProviderUsage';
 
 export type PromptRequestSource = 'prompt-bar' | 'preset';
@@ -224,7 +225,7 @@ export async function submitAdmittedPromptRequest(
             return { status: 'rejected', runId };
         }
 
-        const planned =
+        const planned: PlannedPromptActions =
             input.actions === undefined
                 ? await planPromptActions({
                       prompt,
@@ -258,6 +259,7 @@ export async function submitAdmittedPromptRequest(
                           actions: [...input.actions],
                           rawText: prompt,
                           requiresConfirmation: false,
+                          planningOutcome: { kind: 'proposal' as const },
                       },
                       projectRevision: createdRevision,
                   };
@@ -293,7 +295,11 @@ export async function submitAdmittedPromptRequest(
         if (planned.result.actions.length === 0) {
             transitionTerminalRun(runId, 'completed');
             await releasePlanOwnedStemResources();
-            notifyAiChange('No actions matched. Try rephrasing, or use the AI Chat panel for open-ended help.', []);
+            notifyAiChange(
+                describePlanningOutcome(planned.result.planningOutcome) ??
+                    'No actions matched. Try rephrasing, or use the AI Chat panel for open-ended help.',
+                []
+            );
             return { status: 'no-op', runId };
         }
 

@@ -12,6 +12,39 @@ export type BatchLocalBindingProducerName = (typeof BATCH_LOCAL_BINDING_PRODUCER
 /** The catalog commands whose plan item may mint a batch-local `$binding`. */
 export const BATCH_LOCAL_BINDING_PRODUCER_NAMES: ReadonlySet<string> = new Set(BATCH_LOCAL_BINDING_PRODUCER_NAME_LIST);
 
+/**
+ * The only commands the plan-created object route may admit. Membership is about what a command
+ * changes, not what it targets: every effect of these lands inside the object being created.
+ * A command that merely accepts a batch-local target can still reach the rest of the project
+ * through it — soloing a created track silences every other track, live and on export — so target
+ * identity is not a safe admission test, and this set is stated explicitly rather than derived.
+ */
+export const PLAN_CREATED_OBJECT_COMMANDS: ReadonlySet<string> = new Set([
+    'addTrack',
+    'addClip',
+    'createBus',
+    'addNotes',
+] as const);
+
+/**
+ * What the creation budget counts: commands that leave one more track or clip in the project than
+ * it held before, whether by minting one, copying one, or dividing one. The budget bounds how much
+ * a single accepted proposal can put in front of a musician to review and undo, and by that measure
+ * a copy and a split cost exactly what a fresh creation costs.
+ *
+ * Two creating commands are deliberately outside it. `importStemSet` answers to its own asset
+ * budget, which bounds the same work in the unit that actually constrains it. `createVcaGroup`
+ * groups tracks that already exist and leaves no new track or clip behind.
+ */
+export const PROJECT_OBJECT_CREATING_COMMANDS: ReadonlySet<string> = new Set([
+    ...BATCH_LOCAL_BINDING_PRODUCER_NAME_LIST,
+    'duplicateTrack',
+    'duplicateClip',
+    'duplicateClipToNextBar',
+    'createDrumPreviewBranches',
+    'splitClip',
+]);
+
 export type BatchLocalCreatedTrackKind = 'audio' | 'midi' | 'folder' | 'bus';
 
 export type BatchLocalBindingProducer = {
@@ -21,6 +54,12 @@ export type BatchLocalBindingProducer = {
      * derive the owning track without a project snapshot that does not contain it yet.
      */
     parentTrackReference?: string;
+    /**
+     * The span the producing `addClip` item declared, in beats, kept so a later item writing into
+     * the clip can be bounded by it. The clip does not exist in any snapshot yet, so this record is
+     * the only place its dimensions are stated.
+     */
+    createdClipSpanBeats?: number;
     producerArgument: string;
     trackKind?: BatchLocalCreatedTrackKind;
 };
@@ -100,6 +139,16 @@ function acceptsCreatedClip(parent: CreatedClipParent | null): boolean {
     return parent !== null && parent.kind === 'midi' && !parent.frozen;
 }
 
+/** The declared span, or nothing when the item did not state a usable one. */
+function resolveDeclaredClipSpan(argumentsRecord: Readonly<Record<string, unknown>>): number | undefined {
+    const { startBeat, endBeat } = argumentsRecord;
+    if (typeof startBeat !== 'number' || typeof endBeat !== 'number') {
+        return undefined;
+    }
+    const span = endBeat - startBeat;
+    return Number.isFinite(span) && span > 0 ? span : undefined;
+}
+
 function resolveCreatedClipProducer(input: {
     arguments: Readonly<Record<string, unknown>>;
     context: ProjectContext;
@@ -119,6 +168,7 @@ function resolveCreatedClipProducer(input: {
     }
     return {
         capabilities: BATCH_LOCAL_CLIP_CAPABILITIES,
+        createdClipSpanBeats: resolveDeclaredClipSpan(input.arguments),
         parentTrackReference: trackReference,
         producerArgument: 'id',
     };

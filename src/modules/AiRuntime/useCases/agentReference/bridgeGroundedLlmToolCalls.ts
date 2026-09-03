@@ -7,6 +7,7 @@ import { createPunchRegionPatch } from '#/modules/Transport/useCases';
 import { type ActionCommandGraph } from '../../models/ActionCommandGraph';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../../models/LlmActionLimits';
 import { type ProjectContext } from '../../models/ProjectContext';
+import { SEMANTIC_CLIP_MAX_BEATS, SEMANTIC_CLIP_MAX_END_BEAT } from '../../models/SemanticCommandList';
 import { type WorkflowCapabilityId } from '../../models/WorkflowCapability';
 import {
     bridgeLlmToolCalls,
@@ -15,7 +16,9 @@ import {
     type MarkerPlanningSignature,
     type SectionPlanningSignature,
 } from '../../transformers/llmActionBridge';
+import { hasHighLevelCreationEvidence } from '../../transformers/promptParser/hasHighLevelCreationEvidence';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
+import { validateNotesWithinClipWindow } from '../../transformers/validateNotesWithinClipWindow';
 import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectName';
 import { type ArbitraryCommandListEvidence } from '../compileArbitraryCommandList';
 import {
@@ -27,6 +30,7 @@ import { type BatchLocalActionIdentity } from './BatchLocalActionIdentity';
 import {
     BATCH_LOCAL_BINDING_PATTERN,
     BATCH_LOCAL_BINDING_PRODUCER_NAMES,
+    PLAN_CREATED_OBJECT_COMMANDS,
     BATCH_LOCAL_BUS_CAPABILITIES,
     BATCH_LOCAL_CLIP_CAPABILITIES,
     BATCH_LOCAL_TRACK_PRODUCERS_BY_KIND,
@@ -83,11 +87,14 @@ type BridgeGroundedLlmToolCallsInput = {
 
 type GroundToolCallInput = {
     actionOrdinal: number;
+    /** Whether the batch as a whole may take the plan-created object evidence route. */
+    admitsPlanCreatedObjects: boolean;
     batchLocalCreationBindings: ReadonlyMap<string, BatchLocalCreationBinding>;
     call: ToolCallResult;
     catalog: GroundingCatalog;
     context: ProjectContext;
     declaredBatchLocalCreationBindings: ReadonlyMap<string, BatchLocalCreationBinding>;
+    declaredBindingsByCallIndex: ReadonlyMap<number, BatchLocalCreationBinding>;
     index: number;
     prompt: string;
     plannedActionNames: readonly string[];
@@ -3678,13 +3685,143 @@ function admitsCompilerResolvedTrackControlTarget(actionName: string, prompt: st
     );
 }
 
+/**
+ * The scope a plan-created call is read against. No clause named this action, so the whole request
+ * stands in: it carries the creation evidence that admitted the call, and nothing narrower exists.
+ */
+function buildWholePromptActionScope(prompt: string, context: ProjectContext): ActionPromptScope {
+    return {
+        directional: false,
+        masked: maskQuotedLabels(maskProjectReferences(prompt, context)),
+        matchedIntentPhrase: '',
+        text: prompt,
+    };
+}
+
+/**
+ * Whether one call may take the plan-created object route, and what refuses it outright.
+ *
+ * `ordinary` is not a refusal: it says this call keeps the per-action prompt-evidence rules, which
+ * is what stops the waiver from reaching an action that names anything already in the project.
+ */
+type PlanCreatedObjectAdmission =
+    { status: 'admitted' } | { status: 'ordinary' } | { status: 'rejected'; reason: string };
+
+function validatePlanCreatedClipSpan(argumentsRecord: Readonly<Record<string, unknown>>): string | null {
+    const { startBeat, endBeat } = argumentsRecord;
+    if (startBeat === undefined && endBeat === undefined) {
+        return null;
+    }
+    if (
+        typeof startBeat !== 'number' ||
+        typeof endBeat !== 'number' ||
+        !Number.isFinite(startBeat) ||
+        !Number.isFinite(endBeat) ||
+        startBeat < 0 ||
+        endBeat <= startBeat
+    ) {
+        return 'Plan-created clip requires a finite beat range starting at or after zero';
+    }
+    if (endBeat - startBeat > SEMANTIC_CLIP_MAX_BEATS) {
+        return `Plan-created clip exceeds the batch clip span budget of ${String(SEMANTIC_CLIP_MAX_BEATS)} beats`;
+    }
+    if (endBeat > SEMANTIC_CLIP_MAX_END_BEAT) {
+        return `Plan-created clip ends past the batch timeline budget of ${String(SEMANTIC_CLIP_MAX_END_BEAT)} beats`;
+    }
+    return null;
+}
+
+/**
+ * Every note an admitted `addNotes` writes must land inside the clip the same batch declared. The
+ * ordinary route would have read those beats out of the request; on this route nothing did, and the
+ * clip does not exist in any snapshot yet, so the span its producing item declared is the only
+ * dimension available to bound them against. A clip this batch creates carries no MIDI offset and
+ * does not loop, so its content window is that span counted from beat zero.
+ */
+function validatePlanCreatedNotes(
+    argumentsRecord: Readonly<Record<string, unknown>>,
+    clipSpanBeats: number | undefined
+): string | null {
+    const { notes } = argumentsRecord;
+    if (!Array.isArray(notes)) {
+        return null;
+    }
+    if (clipSpanBeats === undefined) {
+        return 'Plan-created notes require a clip whose batch item declares its span';
+    }
+    return validateNotesWithinClipWindow(notes, { endBeat: clipSpanBeats, startBeat: 0 }, 'Plan-created note');
+}
+
+/**
+ * The plan-created object route. A creative request never names the objects a plan invents, so the
+ * per-action name and beat evidence can never be satisfied — but the authority that evidence
+ * protects is authority over things that already exist. A call that touches only objects this same
+ * batch creates therefore trades prompt vocabulary for structural bounds: a safe name, and a clip
+ * span the user can still inspect and undo.
+ */
+function resolvePlanCreatedObjectAdmission({
+    batchLocalCreationBindings,
+    call,
+    declaredBatchLocalCreationBindings,
+    declaredBindingsByCallIndex,
+    groundingRules,
+    index,
+}: {
+    batchLocalCreationBindings: ReadonlyMap<string, BatchLocalCreationBinding>;
+    call: ToolCallResult;
+    declaredBatchLocalCreationBindings: ReadonlyMap<string, BatchLocalCreationBinding>;
+    declaredBindingsByCallIndex: ReadonlyMap<number, BatchLocalCreationBinding>;
+    groundingRules: GroundingRules;
+    index: number;
+}): PlanCreatedObjectAdmission {
+    if (!PLAN_CREATED_OBJECT_COMMANDS.has(call.name)) {
+        return { status: 'ordinary' };
+    }
+    let batchLocalTargetCount = 0;
+    let targetClipSpanBeats: number | undefined;
+    for (const targetRule of groundingRules.targetRules) {
+        const assertedValue = call.arguments[targetRule.argument];
+        if (targetRule.optional && assertedValue === undefined) {
+            continue;
+        }
+        const reference = resolveBatchLocalCreationReference(
+            assertedValue,
+            index,
+            batchLocalCreationBindings,
+            declaredBatchLocalCreationBindings
+        );
+        if (reference.status !== 'resolved') {
+            return { status: 'ordinary' };
+        }
+        targetClipSpanBeats ??= reference.binding.createdClipSpanBeats;
+        batchLocalTargetCount += 1;
+    }
+    if (batchLocalTargetCount === 0 && !declaredBindingsByCallIndex.has(index)) {
+        return { status: 'ordinary' };
+    }
+    if (call.arguments.name !== undefined && normalizeSafeProjectName(call.arguments.name) === null) {
+        return { status: 'rejected', reason: 'Plan-created object name is not a safe project name' };
+    }
+    const spanRejection = validatePlanCreatedClipSpan(call.arguments);
+    if (spanRejection) {
+        return { status: 'rejected', reason: spanRejection };
+    }
+    const noteRejection = validatePlanCreatedNotes(call.arguments, targetClipSpanBeats);
+    if (noteRejection) {
+        return { status: 'rejected', reason: noteRejection };
+    }
+    return { status: 'admitted' };
+}
+
 function groundToolCall({
     actionOrdinal,
+    admitsPlanCreatedObjects,
     batchLocalCreationBindings,
     call,
     catalog,
     context,
     declaredBatchLocalCreationBindings,
+    declaredBindingsByCallIndex,
     index,
     prompt,
     plannedActionNames,
@@ -3715,7 +3852,23 @@ function groundToolCall({
     if (!groundingRules) {
         return call;
     }
-    const actionScope = resolveActionPromptScope({
+    const planCreatedAdmission: PlanCreatedObjectAdmission = admitsPlanCreatedObjects
+        ? resolvePlanCreatedObjectAdmission({
+              batchLocalCreationBindings,
+              call,
+              declaredBatchLocalCreationBindings,
+              declaredBindingsByCallIndex,
+              groundingRules,
+              index,
+          })
+        : { status: 'ordinary' };
+    if (planCreatedAdmission.status === 'rejected') {
+        return rejection(index, call.name, planCreatedAdmission.reason);
+    }
+    // One route, one switch. Every prompt-evidence rule below asks the request for vocabulary
+    // describing an object it never named, so on this route they are all unsatisfiable together.
+    const admitsPlanCreatedObject = planCreatedAdmission.status === 'admitted';
+    const resolvedActionScope = resolveActionPromptScope({
         actionName: call.name,
         actionOrdinal,
         assertedArguments: call.arguments,
@@ -3728,6 +3881,8 @@ function groundToolCall({
         sameActionCallCount,
         workflowCapabilityId,
     });
+    const actionScope =
+        resolvedActionScope ?? (admitsPlanCreatedObject ? buildWholePromptActionScope(prompt, context) : null);
     if (!actionScope) {
         return rejection(index, call.name, 'Provider action is not grounded in the user request');
     }
@@ -3757,6 +3912,7 @@ function groundToolCall({
     }
     if (
         call.name === 'addClip' &&
+        !admitsPlanCreatedObject &&
         !hasGroundedAddClipAssertions({
             catalog,
             context,
@@ -3976,6 +4132,7 @@ function groundToolCall({
                 continue;
             }
             if (
+                !admitsPlanCreatedObject &&
                 !containsBatchLocalCreationEvidence(
                     targetPrompt,
                     batchLocalReference.binding,
@@ -4058,7 +4215,7 @@ function groundToolCall({
     if (call.name === 'splitClip' && !isDirectSplitClipScope(actionScope, groundedArguments.clipId, context)) {
         return rejection(index, call.name, 'Provider clip split is not scoped to the whole clip');
     }
-    if (call.name === 'addClip') {
+    if (call.name === 'addClip' && !admitsPlanCreatedObject) {
         const evidence = getAddClipPromptEvidence(actionScope);
         if (
             !evidence ||
@@ -4093,7 +4250,9 @@ function groundToolCall({
     if (scopeAdmissionRejection) {
         return rejection(index, call.name, scopeAdmissionRejection);
     }
-    const valueRejection = validateGroundedValues(groundingRules, groundedArguments, actionScope, context);
+    const valueRejection = admitsPlanCreatedObject
+        ? null
+        : validateGroundedValues(groundingRules, groundedArguments, actionScope, context);
     if (valueRejection) {
         return rejection(index, call.name, valueRejection);
     }
@@ -4840,6 +4999,12 @@ export function bridgeGroundedLlmToolCalls({
             rejections: [collectedBindings.rejection],
         };
     }
+    /**
+     * What the batch as a whole must show before any single call may take the plan-created object
+     * route. `compilerEvidence` is present only for a normalized plan, whose objective the plan
+     * contract already requires to be non-empty, so it is the plan signal rather than a second one.
+     */
+    const admitsPlanCreatedObjects = compilerEvidence !== undefined && hasHighLevelCreationEvidence(prompt);
     const groundingRejections = new Map<number, LlmActionRejection>();
     const groundedCalls: ToolCallResult[] = [];
     const acceptedGroundedCalls: ToolCallResult[] = [];
@@ -4863,11 +5028,13 @@ export function bridgeGroundedLlmToolCalls({
         } else {
             grounded = groundToolCall({
                 actionOrdinal,
+                admitsPlanCreatedObjects,
                 batchLocalCreationBindings: visibleBindings,
                 call,
                 catalog,
                 context: prospectiveContext,
                 declaredBatchLocalCreationBindings: collectedBindings.bindingsByName,
+                declaredBindingsByCallIndex: collectedBindings.bindingsByCallIndex,
                 index,
                 prompt,
                 plannedActionNames: effectiveCalls.map((candidate) => candidate.name),
