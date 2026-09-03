@@ -60,13 +60,39 @@ export type MachineRecord = {
  */
 export type AppStartedAt = 'workspace' | 'launch-screen';
 
+/**
+ * `'isolated'` is the only value today: the driver always launches against a
+ * fresh, temporary `--user-data-dir` rather than the operator's own Electron
+ * profile, which can carry a project persisted by an earlier build and
+ * refuse every project mutation the driver performs. Kept as a union of one
+ * so a future profile mode that deliberately reuses a persisted profile has
+ * somewhere to add its own tag rather than overloading this one.
+ */
+export type AppProfile = 'isolated';
+
+/** One `console` (warning/error) or `pageerror` observation, timestamped and attributed to the step running when it fired. */
+export type DiagnosticsEntry = { at: string; step: string; text: string };
+
+export type DiagnosticsRecord = {
+    pageErrors: DiagnosticsEntry[];
+    consoleWarningsAndErrors: DiagnosticsEntry[];
+};
+
 export type DesktopLatencyRecord = {
     schemaVersion: 1;
     measuredAt: string;
     machine: MachineRecord;
-    app: { path: string; bundleVersion: string; browser: string; userAgent: string; startedAt: AppStartedAt };
+    app: {
+        path: string;
+        bundleVersion: string;
+        browser: string;
+        userAgent: string;
+        startedAt: AppStartedAt;
+        profile: AppProfile;
+    };
     plugin: { path: string };
     legs: LegRecord[];
+    diagnostics: DiagnosticsRecord;
     verdict: Verdict;
     reason: string;
 };

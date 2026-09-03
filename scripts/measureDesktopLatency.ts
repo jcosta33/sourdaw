@@ -21,6 +21,23 @@
  * the preload bridge. Nothing here recomputes a quantity the app computes,
  * because a harness that recomputes the readout measures the harness.
  *
+ * Launch and preconditions
+ * ------------------------
+ * The app is launched against a fresh, temporary `--user-data-dir` rather than
+ * the operator's own Electron profile: a shared profile can hold a project
+ * persisted by an earlier build, and every project mutation this harness
+ * performs — adding a track, loading a plugin — is refused against a project
+ * already on disk. A fresh profile always lands on the launch screen, so the
+ * driver waits for `#launch-new-project` and, after clicking it, waits for the
+ * launch overlay (`AppShell.tsx`'s `[role="dialog"][aria-label="Sourdaw — start
+ * a project"]`) to leave the DOM — the workspace renders underneath that
+ * overlay, so the status bar existing is not by itself proof the overlay is
+ * gone. Loading the harness plugin is likewise not trusted on the click alone:
+ * the driver polls the engine dot's own title until it reports both a ready
+ * device instance and an audio track strip, because the next gate — a running
+ * meter — holds on an empty project too and would otherwise pass on a plugin
+ * that was never loaded.
+ *
  * Why jsdom and Vitest cannot answer any of this
  * ----------------------------------------------
  * The quantities are properties of the shipped runtime, not of our source.
@@ -68,14 +85,22 @@
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
-import { homedir } from 'node:os';
-import { resolve } from 'node:path';
+import { homedir, tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { chromium, type Browser, type Page } from 'playwright';
 
+import {
+    emptyDiagnostics,
+    printDiagnostics,
+    subscribeDiagnostics,
+    waitForLivePluginOnTrack,
+    type Diagnostics,
+} from './desktopLatencyDiagnostics.ts';
+import { openNewProjectFromLaunchScreen, waitForWorkspaceOrLaunchScreen } from './desktopLatencyLaunch.ts';
 import { recoverQuarantinedHarnessPlugin } from './desktopLatencyPreferencesRecovery.ts';
 import {
     computeCounterDeltas,
@@ -96,10 +121,18 @@ import {
     writeRecord,
     type AppStartedAt,
     type DesktopLatencyRecord,
+    type DiagnosticsEntry,
     type EngineEventRecord,
     type LegRecord,
     type SampleRecord,
 } from './desktopLatencyRecord.ts';
+import {
+    startUiLoad,
+    stopUiLoad,
+    UI_LOAD_BURST_MS,
+    UI_LOAD_BURST_PERIOD_MS,
+    UI_LOAD_SPIN_MS,
+} from './desktopLatencyUiLoad.ts';
 import { harnessPluginDestination } from './installHarnessPlugin.ts';
 
 const EXIT_MEASURED = 0;
@@ -113,11 +146,6 @@ const QUIT_GRACE_MS = 10_000;
 
 /** `electron/scan.ts`'s own `SCAN_TIMEOUT_MS` bounds a scan at 120 s; this adds margin on top of it. */
 const SCAN_STEP_TIMEOUT_MS = 150_000;
-
-/** The UI load. Named and recorded, because "under load" without the load stated is not a measurement. */
-const UI_LOAD_SPIN_MS = 6;
-const UI_LOAD_BURST_MS = 40;
-const UI_LOAD_BURST_PERIOD_MS = 500;
 
 const APP_URL_PREFIX = 'app://sourdaw/';
 
@@ -134,7 +162,9 @@ const HARNESS_PLUGIN_NAME = 'Sourdaw Harness Tone';
 const STREAM_ERROR_MARKER = '[AudioEngine] native engine streamError';
 
 const STATUS_BAR_SELECTOR = 'footer[aria-label="Application status"]';
-const LOAD_HANDLE_KEY = '__desktopLatencyUiLoad';
+
+/** A fresh, per-run Electron profile — never the operator's own `~/Library/Application Support/sourdaw`. */
+const PROFILE_DIR_PREFIX = 'sourdaw-desktop-measure-';
 
 type EngineDiagnosticsReading = {
     running: boolean;
@@ -171,6 +201,13 @@ async function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * The name of the step currently running, read by the `console`/`pageerror`
+ * listeners in `connectAndMeasure` so a diagnostics entry can say what the
+ * driver was doing when it fired, not just when.
+ */
+let activeStep = '';
+
+/**
  * Every UI step is bounded. Without this a selector that never appears hangs
  * the run instead of reporting which step did not hold, and an unattributed
  * hang teaches nothing.
@@ -180,6 +217,8 @@ async function step<Result>(
     run: () => Promise<Result>,
     timeoutMs: number = STEP_TIMEOUT_MS
 ): Promise<Result> {
+    activeStep = name;
+    const startedAt = Date.now();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const expiry = new Promise<never>((_resolve, reject) => {
         timer = setTimeout(() => {
@@ -187,9 +226,15 @@ async function step<Result>(
         }, timeoutMs);
     });
     try {
-        return await Promise.race([run(), expiry]);
+        const result = await Promise.race([run(), expiry]);
+        process.stdout.write(`  step: ${name} … ${String(Date.now() - startedAt)} ms\n`);
+        return result;
+    } catch (error) {
+        process.stdout.write(`  step: ${name} FAILED after ${String(Date.now() - startedAt)} ms\n`);
+        throw error;
     } finally {
         clearTimeout(timer);
+        activeStep = '';
     }
 }
 
@@ -347,53 +392,6 @@ async function readEngineDiagnostics(page: Page): Promise<EngineDiagnosticsReadi
     });
 }
 
-async function startUiLoad(page: Page): Promise<void> {
-    await page.evaluate(
-        (input: { key: string; spinMs: number; burstMs: number; burstPeriodMs: number }) => {
-            const spin = (ms: number): void => {
-                const until = performance.now() + ms;
-                // A deliberate synchronous burn. Spinning on the clock is the
-                // only portable way to hold the main thread for a known span.
-                while (performance.now() < until) {
-                    /* hold the thread */
-                }
-            };
-            // The stop handle is a flag on `globalThis` rather than a closure:
-            // the frame callback reads it, so `stopUiLoad` only has to write a
-            // boolean across the evaluate boundary that separates the two.
-            Reflect.set(globalThis, input.key, true);
-            let lastBurst = performance.now();
-            const frame = (): void => {
-                if (Reflect.get(globalThis, input.key) !== true) {
-                    return;
-                }
-                spin(input.spinMs);
-                if (performance.now() - lastBurst >= input.burstPeriodMs) {
-                    lastBurst = performance.now();
-                    spin(input.burstMs);
-                }
-                requestAnimationFrame(frame);
-            };
-            requestAnimationFrame(frame);
-        },
-        {
-            key: LOAD_HANDLE_KEY,
-            spinMs: UI_LOAD_SPIN_MS,
-            burstMs: UI_LOAD_BURST_MS,
-            burstPeriodMs: UI_LOAD_BURST_PERIOD_MS,
-        }
-    );
-}
-
-async function stopUiLoad(page: Page): Promise<void> {
-    await page.evaluate((key: string) => {
-        if (Reflect.get(globalThis, key) !== true) {
-            throw new Error('the UI load generator was not running');
-        }
-        Reflect.set(globalThis, key, false);
-    }, LOAD_HANDLE_KEY);
-}
-
 async function sample(page: Page, t: number): Promise<{ record: SampleRecord; events: EngineEventRecord[] }> {
     const status = await readStatusBar(page);
     const diagnostics = await readEngineDiagnostics(page);
@@ -463,28 +461,6 @@ async function runLeg({ page, name, load, seconds, consoleLog }: LegInput): Prom
 }
 
 /**
- * The packaged app does not always land on the launch screen: a restored
- * workspace opens straight to the status bar. Waiting for whichever of the two
- * appears first — rather than assuming the launch screen — is what lets the
- * same harness drive both, and which one it saw is recorded rather than
- * inferred, because a baseline that guessed wrong here would silently skip or
- * misplace the "new project" click.
- */
-async function waitForWorkspaceOrLaunchScreen(page: Page): Promise<AppStartedAt> {
-    const deadline = Date.now() + STEP_TIMEOUT_MS;
-    while (Date.now() < deadline) {
-        if ((await page.locator(STATUS_BAR_SELECTOR).count()) > 0) {
-            return 'workspace';
-        }
-        if ((await page.locator('#launch-new-project').count()) > 0) {
-            return 'launch-screen';
-        }
-        await sleep(250);
-    }
-    throw new Error('neither the workspace status bar nor the launch screen appeared');
-}
-
-/**
  * `PluginBrowser`'s scan trigger has two shapes: its empty-state branch shows
  * a plain "Scan Plugins" button (no `aria-label`), and only once
  * `supportedPlugins.length > 0` does it switch to the icon-only
@@ -526,16 +502,19 @@ async function waitForScanToFinish(page: Page): Promise<number> {
     throw new Error(`the plugin scan did not finish within ${SCAN_STEP_TIMEOUT_MS} ms`);
 }
 
-async function driveToPlayingProject(page: Page, harnessPluginPath: string): Promise<AppStartedAt> {
+async function driveToPlayingProject(
+    page: Page,
+    harnessPluginPath: string,
+    pageErrors: readonly DiagnosticsEntry[]
+): Promise<AppStartedAt> {
     const startedAt = await step('wait for the workspace or the launch screen', () =>
-        waitForWorkspaceOrLaunchScreen(page)
+        waitForWorkspaceOrLaunchScreen(page, STEP_TIMEOUT_MS)
     );
 
     if (startedAt === 'launch-screen') {
-        await step('open a new project from the launch screen', async () => {
-            await page.locator('#launch-new-project').click({ timeout: STEP_TIMEOUT_MS });
-            await page.locator(STATUS_BAR_SELECTOR).waitFor({ state: 'visible', timeout: STEP_TIMEOUT_MS });
-        });
+        await step('open a new project from the launch screen', () =>
+            openNewProjectFromLaunchScreen(page, STEP_TIMEOUT_MS)
+        );
     }
 
     await step('show the browser panel', async () => {
@@ -598,6 +577,10 @@ async function driveToPlayingProject(page: Page, harnessPluginPath: string): Pro
         await page.getByText(HARNESS_PLUGIN_NAME, { exact: true }).first().click({ timeout: STEP_TIMEOUT_MS });
     });
 
+    await step('confirm the plugin is live on a track', () =>
+        waitForLivePluginOnTrack(page, pageErrors, STEP_TIMEOUT_MS)
+    );
+
     await step('wait for the engine to report a running meter', async () => {
         const deadline = Date.now() + STEP_TIMEOUT_MS;
         while (Date.now() < deadline) {
@@ -650,9 +633,10 @@ async function measureLegs(
     page: Page,
     seconds: number,
     consoleLog: readonly string[],
-    harnessPluginPath: string
+    harnessPluginPath: string,
+    pageErrors: readonly DiagnosticsEntry[]
 ): Promise<MeasuredLegsAndStart> {
-    const startedAt = await driveToPlayingProject(page, harnessPluginPath);
+    const startedAt = await driveToPlayingProject(page, harnessPluginPath, pageErrors);
 
     const idle = await runLeg({
         page,
@@ -684,7 +668,12 @@ function notMeasured(reason: string, jsonPath: string | null): number {
     return EXIT_NOT_MEASURED;
 }
 
-async function connectAndMeasure(port: number, seconds: number, harnessPluginPath: string): Promise<MeasuredLegs> {
+async function connectAndMeasure(
+    port: number,
+    seconds: number,
+    harnessPluginPath: string,
+    diagnostics: Diagnostics
+): Promise<MeasuredLegs> {
     const target = await waitForAppPageTarget(port);
     process.stdout.write(`page              ${target.url} "${target.title}"\n`);
 
@@ -695,6 +684,7 @@ async function connectAndMeasure(port: number, seconds: number, harnessPluginPat
     const browser = await chromium.connectOverCDP(`http://127.0.0.1:${String(port)}`);
     try {
         const page = await findAppPage(browser);
+        subscribeDiagnostics(page, diagnostics, () => activeStep);
         const consoleLog: string[] = [];
         page.on('console', (message) => {
             const text = message.text();
@@ -702,7 +692,13 @@ async function connectAndMeasure(port: number, seconds: number, harnessPluginPat
                 consoleLog.push(text);
             }
         });
-        const { legs, startedAt } = await measureLegs(page, seconds, consoleLog, harnessPluginPath);
+        const { legs, startedAt } = await measureLegs(
+            page,
+            seconds,
+            consoleLog,
+            harnessPluginPath,
+            diagnostics.pageErrors
+        );
         return { legs, version, startedAt };
     } finally {
         await browser.close();
@@ -730,8 +726,6 @@ async function main(): Promise<number> {
     process.stdout.write(`load average (1m) ${machine.loadAverage1m.toFixed(2)}\n`);
     process.stdout.write(`git               ${machine.gitSha} (${machine.workingTree})\n`);
     process.stdout.write(`app               ${args.appPath}\n`);
-    process.stdout.write(`plugin            ${pluginPath}\n`);
-    process.stdout.write(`legs              idle and ui-load, ${String(args.seconds)} s each\n`);
 
     if (!existsSync(binary)) {
         return notMeasured(`there is no packaged app binary at ${binary}. Run \`pnpm desktop:build\`.`, args.jsonPath);
@@ -743,29 +737,42 @@ async function main(): Promise<number> {
         );
     }
 
+    // Never the operator's own `~/Library/Application Support/sourdaw`: that
+    // profile can carry a project persisted by an earlier build, on which the
+    // driver's own project mutations (adding a track, loading a plugin) are
+    // refused.
+    const profileDir = mkdtempSync(join(tmpdir(), PROFILE_DIR_PREFIX));
+    process.stdout.write(`profile           isolated (${profileDir})\n`);
+    process.stdout.write(`plugin            ${pluginPath}\n`);
+    process.stdout.write(`legs              idle and ui-load, ${String(args.seconds)} s each\n`);
+
     const port = await pickFreePort();
-    const child = spawn(binary, [`--remote-debugging-port=${String(port)}`], {
+    const child = spawn(binary, [`--remote-debugging-port=${String(port)}`, `--user-data-dir=${profileDir}`], {
         stdio: ['ignore', 'pipe', 'pipe'],
     });
     const output: string[] = [];
     child.stdout?.on('data', (chunk: Buffer) => output.push(chunk.toString('utf8')));
     child.stderr?.on('data', (chunk: Buffer) => output.push(chunk.toString('utf8')));
 
+    const diagnostics = emptyDiagnostics();
     let measured: MeasuredLegs;
     try {
-        measured = await connectAndMeasure(port, args.seconds, pluginPath);
+        measured = await connectAndMeasure(port, args.seconds, pluginPath, diagnostics);
     } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         process.stdout.write(`\n--- packaged app output ---\n${output.join('').trim()}\n`);
+        printDiagnostics(diagnostics);
         return notMeasured(reason, args.jsonPath);
     } finally {
         await quitApp(child);
+        rmSync(profileDir, { recursive: true, force: true });
     }
 
     process.stdout.write(`started at        ${measured.startedAt}\n`);
     for (const leg of measured.legs) {
         reportLeg(leg);
     }
+    printDiagnostics(diagnostics);
 
     const verdict = decideVerdict(measured.legs);
     const reason =
@@ -783,9 +790,11 @@ async function main(): Promise<number> {
             browser: measured.version.browser,
             userAgent: measured.version.userAgent,
             startedAt: measured.startedAt,
+            profile: 'isolated',
         },
         plugin: { path: pluginPath },
         legs: measured.legs,
+        diagnostics,
         verdict,
         reason,
     };

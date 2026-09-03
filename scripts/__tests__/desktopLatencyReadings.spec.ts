@@ -5,6 +5,7 @@ import {
     decideVerdict,
     findAppPageTarget,
     findQuarantineReason,
+    hasLivePluginOnTrack,
     parseArgs,
     parseEngineTitle,
     parseLatencyMs,
@@ -138,6 +139,30 @@ describe('parseMasterLevelDb', () => {
 
     it('refuses text that is neither', () => {
         expect(() => parseMasterLevelDb('-12.3')).toThrow('not a level');
+    });
+});
+
+describe('hasLivePluginOnTrack', () => {
+    const running =
+        'Engine: running · audio track strips: 1 · bus strips: 0 · sends: 0 · sidechains: 0' +
+        ' · ready device instances: 1 (clap: 1) · pending device instances: 0';
+
+    it('returns true only when both a ready device instance and an audio track strip are exactly one', () => {
+        expect(hasLivePluginOnTrack(running)).toBe(true);
+    });
+
+    it('returns false when no device instance is ready', () => {
+        expect(hasLivePluginOnTrack('Engine: running · audio track strips: 1 · ready device instances: 0')).toBe(false);
+    });
+
+    it('does not read ten ready device instances as a match for one', () => {
+        expect(hasLivePluginOnTrack('Engine: running · audio track strips: 1 · ready device instances: 10')).toBe(
+            false
+        );
+    });
+
+    it('returns false for an empty title', () => {
+        expect(hasLivePluginOnTrack('')).toBe(false);
     });
 });
 

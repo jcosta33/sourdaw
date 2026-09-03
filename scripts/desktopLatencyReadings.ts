@@ -161,6 +161,22 @@ export function parseMasterLevelDb(text: string): number | null {
     return Number(match[1]);
 }
 
+/**
+ * `useStatusBarMetrics.ts:125,129` writes both segments into the same engine
+ * dot title the "wait for a running meter" gate already reads. That gate
+ * alone cannot tell an empty project from one carrying the loaded plugin — a
+ * master meter worklet exists regardless — so this checks the two counts
+ * that only move once a device is actually instantiated on a track.
+ *
+ * Matched with a trailing `(?!\d)` rather than a plain substring: "ready
+ * device instances: 1" is itself a substring of "ready device instances: 10",
+ * and a plain `includes` would misread ten ready instances as a single live
+ * one.
+ */
+export function hasLivePluginOnTrack(engineTitle: string): boolean {
+    return /ready device instances: 1(?!\d)/.test(engineTitle) && /audio track strips: 1(?!\d)/.test(engineTitle);
+}
+
 export type EngineCounters = Readonly<Record<string, number>>;
 
 /** A counter absent from one reading started or ended at zero — it is never dropped from the delta. */
