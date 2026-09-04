@@ -1,7 +1,8 @@
-import { createHash } from 'crypto';
-import { readFileSync, writeFileSync } from 'fs';
-import { resolve } from 'path';
-import { deflateSync, inflateSync } from 'zlib';
+import { createHash } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { deflateSync, inflateSync } from 'node:zlib';
 
 type DecodedPng = {
     readonly height: number;
@@ -332,12 +333,45 @@ function compositeBackgroundAndMark(
     return pixels;
 }
 
+function scaleBilinear(srcPixels: Buffer, srcW: number, srcH: number, dstW: number, dstH: number): Buffer {
+    const dst = Buffer.alloc(dstW * dstH * 4);
+    const xRatio = (srcW - 1) / (dstW - 1);
+    const yRatio = (srcH - 1) / (dstH - 1);
+
+    for (let dy = 0; dy < dstH; dy += 1) {
+        const sy = dy * yRatio;
+        const yLow = Math.floor(sy);
+        const yHigh = Math.min(srcH - 1, Math.ceil(sy));
+        const yWeight = sy - yLow;
+
+        for (let dx = 0; dx < dstW; dx += 1) {
+            const sx = dx * xRatio;
+            const xLow = Math.floor(sx);
+            const xHigh = Math.min(srcW - 1, Math.ceil(sx));
+            const xWeight = sx - xLow;
+
+            const idx00 = (yLow * srcW + xLow) * 4;
+            const idx10 = (yLow * srcW + xHigh) * 4;
+            const idx01 = (yHigh * srcW + xLow) * 4;
+            const idx11 = (yHigh * srcW + xHigh) * 4;
+
+            const dstOff = (dy * dstW + dx) * 4;
+            for (let c = 0; c < 4; c += 1) {
+                const top = srcPixels[idx00 + c]! * (1 - xWeight) + srcPixels[idx10 + c]! * xWeight;
+                const btm = srcPixels[idx01 + c]! * (1 - xWeight) + srcPixels[idx11 + c]! * xWeight;
+                dst[dstOff + c] = Math.round(top * (1 - yWeight) + btm * yWeight);
+            }
+        }
+    }
+    return dst;
+}
+
 export function renderCanonical480(authority: DecodedPng): Buffer {
     const shadowMap = computeShadowMap(authority.pixels, authority.width, authority.height, 480, 480, 66, 30, 6, 0.75);
     return compositeBackgroundAndMark(480, 480, authority.pixels, authority.width, authority.height, 66, 24, shadowMap);
 }
 
-export function renderMaster1024(highResMark: DecodedPng): Buffer {
+export function renderMaster1024(authority: DecodedPng): Buffer {
     const scale = 1024 / 480;
     const targetMarkW = Math.round(346 * scale);
     const targetMarkH = Math.round(427 * scale);
@@ -346,10 +380,10 @@ export function renderMaster1024(highResMark: DecodedPng): Buffer {
     const shadowOffsetY = Math.round(6 * scale);
     const shadowBlur = Math.round(6 * scale);
 
-    const scaledMarkPixels = downscaleAreaAverage(
-        highResMark.pixels,
-        highResMark.width,
-        highResMark.height,
+    const scaledMarkPixels = scaleBilinear(
+        authority.pixels,
+        authority.width,
+        authority.height,
         targetMarkW,
         targetMarkH
     );
@@ -569,7 +603,7 @@ function logVerificationHashes(getPixels: (sz: number) => Buffer): void {
 }
 
 export function main(): void {
-    const root = process.cwd();
+    const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
     const authorityBuf = readFileSync(resolve(root, 'public/icon-transparent.png'));
     const authority = decodePng(authorityBuf);
 
@@ -581,9 +615,8 @@ export function main(): void {
     writeFileSync(resolve(root, 'public/icon.png'), canonical480Png);
     writeFileSync(resolve(root, 'sourdaw.png'), canonical480Png);
 
-    // Decode existing 1024 transparent mark to render master 1024
-    const highResMark = decodePng(readFileSync(resolve(root, 'build/icons/1024x1024.png')));
-    const master1024Pixels = renderMaster1024(highResMark);
+    // Render master 1024 directly from the transparent authority mark
+    const master1024Pixels = renderMaster1024(authority);
 
     // Size pixel cache for high-precision area-averaging
     const pixelCache = new Map<number, Buffer>();
@@ -617,4 +650,6 @@ export function main(): void {
     logVerificationHashes(getPixels);
 }
 
-main();
+if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+    main();
+}

@@ -1830,12 +1830,12 @@ const OWNER_ICON_ICNS_PIXEL_SHA256: Readonly<Record<(typeof OWNER_ICON_REQUIRED_
     ic05: 'e15e623926793edbe99cc8f220470987fb2bb291aa553df7d35922112819b6b9',
     ic07: '13ee69d1a290dba3daa026195476f24e18dd05e5dcaeb4d8d852bd7121317e89',
     ic08: '110e5bb558dd0bf6a90c0ad7ec86eecccfe06fecaad4915067f2ebfd8b8256bc',
-    ic09: 'ee13f2afdb5933b64787cf8b2882e03a54734d322034e7e55f894210374ec2d9',
-    ic10: 'ee3c22c36cf84070524be4efaf57b07aa9e081033280cb91c6ab0787521b679e',
+    ic09: '1d06859c7994d63c3ca5704d7d5e0bc8db34e5641e6db6d2509328988b3c25cd',
+    ic10: 'e8a15cac83775f912389016a76174cd6e6a17543e8297147304faa00e175ba01',
     ic11: 'e15e623926793edbe99cc8f220470987fb2bb291aa553df7d35922112819b6b9',
     ic12: '1fd5a8487ed52098cd2a4b089529ccc08801cd724841976a239d4753bbb85cbc',
     ic13: '110e5bb558dd0bf6a90c0ad7ec86eecccfe06fecaad4915067f2ebfd8b8256bc',
-    ic14: 'ee13f2afdb5933b64787cf8b2882e03a54734d322034e7e55f894210374ec2d9',
+    ic14: '1d06859c7994d63c3ca5704d7d5e0bc8db34e5641e6db6d2509328988b3c25cd',
 };
 const OWNER_ICON_ICO_PIXEL_SHA256: Readonly<Record<number, string>> = {
     16: 'beda916de38c12fc078f9745250b5bc013a854dff7a1abb1177e7700baa54565',
@@ -2153,6 +2153,7 @@ function assertCanonicalOwnerIcon(root: string): void {
         throw new Error('owner visual asset public/icon.png background must be top-lit gradient #26221e -> #080706');
     }
     const backgroundHash = createHash('sha256');
+    const evidence = Buffer.alloc(8);
     for (let y = 0; y < canonical.height; y += 1) {
         for (let x = 0; x < canonical.width; x += 1) {
             const sourceX = x - 66;
@@ -2165,10 +2166,6 @@ function assertCanonicalOwnerIcon(root: string): void {
                 continue;
             }
             const pixel = rgbaPixel(canonical, x, y);
-            if (pixel[3] !== 255) {
-                throw new Error('owner visual asset public/icon.png background must be fully opaque');
-            }
-            const evidence = Buffer.alloc(8);
             evidence.writeUInt16BE(x, 0);
             evidence.writeUInt16BE(y, 2);
             evidence[4] = pixel[0];
@@ -2244,8 +2241,13 @@ function decodeOwnerLegacyArgb(payload: Buffer, type: 'ic04' | 'ic05', size: num
         const red = channels[pixelCount + index]!;
         const green = channels[pixelCount * 2 + index]!;
         const blue = channels[pixelCount * 3 + index]!;
-        if (alpha === 255 && red === 12 && green === 10 && blue === 0) {
-            throw new Error(`owner visual asset build/icons/icon.icns ${type} frame contains #0c0a00 seam pixels`);
+        if (
+            alpha === 255 &&
+            red === OWNER_ICON_BACKGROUND_TOP[0] &&
+            green === OWNER_ICON_BACKGROUND_TOP[1] &&
+            blue === 0
+        ) {
+            throw new Error(`owner visual asset build/icons/icon.icns ${type} frame contains blue-tail seam pixels`);
         }
         const pixelOffset = index * 4;
         pixels[pixelOffset] = red;

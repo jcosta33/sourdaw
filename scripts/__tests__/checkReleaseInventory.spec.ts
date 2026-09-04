@@ -130,7 +130,7 @@ function sha256(value: string): string {
 
 type Rgba = readonly [red: number, green: number, blue: number, alpha: number];
 
-const ownerIconBackground: Rgba = [12, 10, 9, 255];
+const ownerIconBackground: Rgba = [38, 34, 30, 255];
 const ownerIcnsFrames = ['ic04', 'ic05', 'ic07', 'ic08', 'ic09', 'ic10', 'ic11', 'ic12', 'ic13', 'ic14'] as const;
 const ownerPngIcnsFrames = ['ic07', 'ic08', 'ic09', 'ic10', 'ic11', 'ic12', 'ic13', 'ic14'] as const;
 const ownerIcoFrames = [16, 24, 32, 48, 64, 256] as const;
@@ -3924,7 +3924,7 @@ describe('release inventory', () => {
             writeOwnerVisualAssetFixture(root, { seamIcnsFrame: seamFrame });
 
             expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
-                `owner visual asset build/icons/icon.icns ${seamFrame} frame contains #0c0a00 seam pixels`
+                `owner visual asset build/icons/icon.icns ${seamFrame} frame contains blue-tail seam pixels`
             );
         } finally {
             removeTemporaryDirectory(root);
