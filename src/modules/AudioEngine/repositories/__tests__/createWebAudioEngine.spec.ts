@@ -32,9 +32,10 @@ vi.mock('#/infra/release/deviceReleaseAdmission', async (importOriginal) => {
 });
 
 // Mock TrackNode and BusNode to avoid deep dependencies. The strip exposes the
-// nodes that AudioEngineImpl reads directly (preFaderTap / analyserNode for
-// sends and sidechain, deviceNodes for note-off fan-out, meterNode for the
-// dispose shutdown sweep) so the engine's own routing logic is exercised.
+// nodes that AudioEngineImpl reads directly (the two carrier gates for sends
+// and the destination edge, analyserNode for the ungated sidechain key,
+// deviceNodes for note-off fan-out, meterNode for the dispose shutdown sweep)
+// so the engine's own routing logic is exercised.
 function makeStripNode() {
     return {
         connect: vi.fn(),
@@ -75,6 +76,8 @@ vi.mock('../../engine/TrackNode', () => {
             gainNode: ReturnType<typeof makeStripNode>;
             preFaderTap: ReturnType<typeof makeStripNode>;
             analyserNode: ReturnType<typeof makeStripNode>;
+            carrierGate: ReturnType<typeof makeStripNode>;
+            preFaderSendGate: ReturnType<typeof makeStripNode>;
             meterNode: ReturnType<typeof makeStripNode> | null;
             deviceNodes: unknown[];
             outputId?: string;
@@ -97,12 +100,13 @@ vi.mock('../../engine/TrackNode', () => {
         setGain = vi.fn();
         setPan = vi.fn();
         setMute = vi.fn();
+        setNativeCarried = vi.fn();
         setOutput = vi.fn((outputId: string) => {
             const changed = this.strip.outputId !== outputId;
             this.strip.outputId = outputId;
-            this.strip.analyserNode.disconnect(this.outputDestination);
+            this.strip.carrierGate.disconnect(this.outputDestination);
             const destination = outputId === 'hw_out' ? this.deps.masterGainNode : this.deps.getTrackGainNode(outputId);
-            this.strip.analyserNode.connect(destination ?? this.deps.masterGainNode);
+            this.strip.carrierGate.connect(destination ?? this.deps.masterGainNode);
             this.outputDestination = destination ?? this.deps.masterGainNode;
             return changed;
         });
@@ -291,6 +295,8 @@ vi.mock('../../engine/TrackNode', () => {
                 gainNode: makeStripNode(),
                 preFaderTap: makeStripNode(),
                 analyserNode: makeStripNode(),
+                carrierGate: makeStripNode(),
+                preFaderSendGate: makeStripNode(),
                 meterNode: makeStripNode(),
                 deviceNodes: [],
             };
@@ -749,7 +755,7 @@ describe('AudioEngine', () => {
         engine.setSend('source', 'ordinary-bus', 0.4, false);
         const ordinarySendGain = mockCtx.createGain.mock.results.at(-1)!.value as { connect: Mock };
 
-        expect(source.analyserNode.connect).toHaveBeenCalledWith(deviceSendGain);
+        expect(source.carrierGate.connect).toHaveBeenCalledWith(deviceSendGain);
         expect(deviceSendGain.connect).toHaveBeenCalledWith(deviceBus.gainNode);
         expect(ordinarySendGain.connect).toHaveBeenCalledWith(ordinaryBus.gainNode);
     });
@@ -760,7 +766,7 @@ describe('AudioEngine', () => {
         engine.setTrackOutput('source', 'missing-runtime-destination');
 
         expect(source.outputId).not.toBe('missing-runtime-destination');
-        expect(source.analyserNode.connect).not.toHaveBeenCalledWith(engine.masterGainNode);
+        expect(source.carrierGate.connect).not.toHaveBeenCalledWith(engine.masterGainNode);
     });
 
     it('applies a revision-correlated immutable output delta once and rejects its stale replay', () => {
@@ -1474,8 +1480,8 @@ describe('AudioEngine', () => {
         expect(firstControls.connectPadOutput.mock.invocationCallOrder[0]).toBeLessThan(
             firstControls.setPadDryRouted.mock.invocationCallOrder[0]!
         );
-        expect(child.preFaderTap.connect).toHaveBeenCalledWith(preSendGain);
-        expect(child.analyserNode.connect).toHaveBeenCalledWith(postSendGain);
+        expect(child.preFaderSendGate.connect).toHaveBeenCalledWith(preSendGain);
+        expect(child.carrierGate.connect).toHaveBeenCalledWith(postSendGain);
         expect(child.analyserNode.connect).toHaveBeenCalledWith(sidechainKeyDelay);
         expect(sidechainKeyDelay.connect).toHaveBeenCalledWith(sidechainGain);
 
@@ -1484,11 +1490,12 @@ describe('AudioEngine', () => {
         expect(firstControls.connectPadOutput).toHaveBeenCalledTimes(1);
         expect(child.outputId).toBe('post-bus');
 
-        vi.mocked(child.preFaderTap.connect).mockClear();
+        vi.mocked(child.preFaderSendGate.connect).mockClear();
+        vi.mocked(child.carrierGate.connect).mockClear();
         vi.mocked(child.analyserNode.connect).mockClear();
         getMockTrackNode(engine, 'pad-track').rebuildChain();
-        expect(child.preFaderTap.connect).toHaveBeenCalledWith(preSendGain);
-        expect(child.analyserNode.connect).toHaveBeenCalledWith(postSendGain);
+        expect(child.preFaderSendGate.connect).toHaveBeenCalledWith(preSendGain);
+        expect(child.carrierGate.connect).toHaveBeenCalledWith(postSendGain);
         expect(child.analyserNode.connect).toHaveBeenCalledWith(sidechainKeyDelay);
 
         const replacementControls = {
@@ -1565,16 +1572,16 @@ describe('AudioEngine', () => {
             } as never);
             engine.wireSidechainRoute('inbound-a', 'unrelated-sidechain-target', 'unrelated-sidechain-device');
             const unrelatedSidechainGain = mockCtx.createGain.mock.results.at(-1)!.value as { disconnect: Mock };
-            vi.mocked(inboundA.analyserNode.disconnect).mockClear();
+            vi.mocked(inboundA.carrierGate.disconnect).mockClear();
 
             engine.removeTrackStrip('target');
 
             expect(inboundA.outputId).toBe('hw_out');
             expect(inboundB.outputId).toBe('hw_out');
-            expect(inboundA.analyserNode.disconnect).toHaveBeenCalledWith(target.gainNode);
-            expect(inboundA.analyserNode.disconnect).not.toHaveBeenCalledWith();
-            expect(inboundA.analyserNode.connect).toHaveBeenLastCalledWith(engine.masterGainNode);
-            expect(inboundB.analyserNode.connect).toHaveBeenLastCalledWith(engine.masterGainNode);
+            expect(inboundA.carrierGate.disconnect).toHaveBeenCalledWith(target.gainNode);
+            expect(inboundA.carrierGate.disconnect).not.toHaveBeenCalledWith();
+            expect(inboundA.carrierGate.connect).toHaveBeenLastCalledWith(engine.masterGainNode);
+            expect(inboundB.carrierGate.connect).toHaveBeenLastCalledWith(engine.masterGainNode);
             expect(unrelatedSendGain.disconnect).not.toHaveBeenCalled();
             expect(unrelatedSidechainGain.disconnect).not.toHaveBeenCalled();
         });

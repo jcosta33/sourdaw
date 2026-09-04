@@ -13,9 +13,9 @@ import type { AudioEngine } from '../../models/AudioEngineState';
 
 /**
  * Node double shared across the TrackNode / BusNode mocks below. The strip
- * exposes the nodes AudioEngineImpl reads directly (preFaderTap / analyserNode
- * for sends and sidechain, deviceNodes for note-off fan-out, meterNode for the
- * dispose shutdown sweep).
+ * exposes the nodes AudioEngineImpl reads directly (the two carrier gates for
+ * sends and the destination edge, analyserNode for the ungated sidechain key,
+ * deviceNodes for note-off fan-out, meterNode for the dispose shutdown sweep).
  */
 function makeNode() {
     return { connect: vi.fn(), disconnect: vi.fn(), port: { postMessage: vi.fn(), close: vi.fn() } };
@@ -31,6 +31,8 @@ vi.mock('../../engine/TrackNode', () => ({
             gainNode: ReturnType<typeof makeNode>;
             preFaderTap: ReturnType<typeof makeNode>;
             analyserNode: ReturnType<typeof makeNode>;
+            carrierGate: ReturnType<typeof makeNode>;
+            preFaderSendGate: ReturnType<typeof makeNode>;
             meterNode: ReturnType<typeof makeNode> | null;
             deviceNodes: unknown[];
             outputId?: string;
@@ -47,11 +49,12 @@ vi.mock('../../engine/TrackNode', () => ({
         setGain = vi.fn();
         setPan = vi.fn();
         setMute = vi.fn();
+        setNativeCarried = vi.fn();
         setOutput = vi.fn((outputId: string) => {
             this.strip.outputId = outputId;
-            this.strip.analyserNode.disconnect(this.outputDestination);
+            this.strip.carrierGate.disconnect(this.outputDestination);
             const destination = outputId === 'hw_out' ? this.deps.masterGainNode : this.deps.getTrackGainNode(outputId);
-            this.strip.analyserNode.connect(destination ?? this.deps.masterGainNode);
+            this.strip.carrierGate.connect(destination ?? this.deps.masterGainNode);
             this.outputDestination = destination ?? this.deps.masterGainNode;
         });
         getPeakLevel = vi.fn().mockReturnValue(0.5);
@@ -94,6 +97,8 @@ vi.mock('../../engine/TrackNode', () => ({
                 gainNode: makeNode(),
                 preFaderTap: makeNode(),
                 analyserNode: makeNode(),
+                carrierGate: makeNode(),
+                preFaderSendGate: makeNode(),
                 meterNode: makeNode(),
                 deviceNodes: [],
             };
@@ -374,15 +379,18 @@ describe('AudioEngineImpl — residual branch coverage', () => {
             } as never);
             engine.wireSidechainRoute('rebuild-src', 'sc-tgt', 'sc-dev');
 
+            vi.mocked(srcStrip.carrierGate.connect).mockClear();
             vi.mocked(srcStrip.analyserNode.connect).mockClear();
-            vi.mocked(otherStrip.preFaderTap.connect).mockClear();
+            vi.mocked(otherStrip.preFaderSendGate.connect).mockClear();
 
             getMockTrackNode(engine, 'rebuild-src').rebuildChain();
 
-            // Only the matching send (analyserNode) and sidechain re-attached.
+            // The matching post-fader send re-attached from the carrier gate,
+            // and the sidechain key from the ungated analyser.
+            expect(srcStrip.carrierGate.connect).toHaveBeenCalled();
             expect(srcStrip.analyserNode.connect).toHaveBeenCalled();
-            // The other track's pre-fader tap was NOT re-attached by this rebuild.
-            expect(otherStrip.preFaderTap.connect).not.toHaveBeenCalled();
+            // The other track's pre-fader send gate was NOT re-attached here.
+            expect(otherStrip.preFaderSendGate.connect).not.toHaveBeenCalled();
         });
     });
 
@@ -562,20 +570,20 @@ describe('AudioEngineImpl — residual branch coverage', () => {
             }
         });
 
-        it('selects the post-fader tap (analyserNode) when toggling pre → post', () => {
+        it('selects the post-fader tap (carrierGate) when toggling pre → post', () => {
             vi.useFakeTimers();
             try {
                 const strip = engine.ensureTrackStrip('psrc');
                 engine.setSend('psrc', 'busP', 0.5, true); // pre first
-                vi.mocked(strip.analyserNode.connect).mockClear();
-                vi.mocked(strip.preFaderTap.connect).mockClear();
+                vi.mocked(strip.carrierGate.connect).mockClear();
+                vi.mocked(strip.preFaderSendGate.connect).mockClear();
 
                 engine.setSend('psrc', 'busP', 0.5, false); // toggle to post
 
-                // The new tap is the post-fader analyserNode (the false arm of
-                // `preFader ? preFaderTap : analyserNode`).
-                expect(strip.analyserNode.connect).toHaveBeenCalled();
-                expect(strip.preFaderTap.connect).not.toHaveBeenCalled();
+                // The new tap is the post-fader carrierGate (the false arm of
+                // `preFader ? preFaderSendGate : carrierGate`).
+                expect(strip.carrierGate.connect).toHaveBeenCalled();
+                expect(strip.preFaderSendGate.connect).not.toHaveBeenCalled();
             } finally {
                 vi.useRealTimers();
             }
