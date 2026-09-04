@@ -176,7 +176,7 @@ function withGitFixture(fn: (context: { repository: string; git: (args: string[]
         git(['commit', '-m', 'fixture']);
         fn({ repository, git });
     } finally {
-        rmSync(repository, { recursive: true, force: true });
+        rmSync(repository, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
     }
 }
 
