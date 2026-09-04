@@ -1,0 +1,18 @@
+crates/sourdaw-native/src/commands/graph.rs
+  h_1228e573df1f42 149,1463,1576,2241,2896,3076,3128,3203,3209-3210,3814,3848,4385,5779-5952,6059
+crates/sourdaw-native/src/state.rs
+  h_1228e573df1f42 306,339,346-486,568
+src/modules/AudioEngine/repositories/nativeGraph/createNativeOfflineGraphBackend.ts
+  h_1228e573df1f42 345-346
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "1b31e0767d83da12a2c2730cf62d04fc89741150",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
