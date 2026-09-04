@@ -1,0 +1,23 @@
+crates/daw-dsp/benches/quantum-cost-table.json
+  s_9b530f08172a54::t_c8e6746f4a274a 12,17,22
+crates/daw-dsp/benches/quantum-cost-table.md
+  s_9b530f08172a54::t_df0b834c5f020f 152,165
+release/open-source-inventory.json
+  s_9b530f08172a54::t_5180ce3b166d38 1198,1329
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "4a58c8d1a2e08fe32fc047c2ecb09c3d47e61da0",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
