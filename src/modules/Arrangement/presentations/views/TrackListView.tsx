@@ -181,6 +181,11 @@ export const TrackListView = ({
                 event.preventDefault();
                 const track = visibleTracks.find((time) => time.id === selectedTrackId);
                 if (track) {
+                    // Cut the bubble path synchronously: the global shortcut
+                    // layer listens on window and would delete the selected
+                    // clips no matter how the confirmation below resolves, and
+                    // stopPropagation cannot be called after the await.
+                    event.stopPropagation();
                     void (async () => {
                         const ok = await confirmUser({
                             title: `Delete "${track.name}"?`,

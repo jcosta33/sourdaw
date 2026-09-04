@@ -412,6 +412,43 @@ describe('TrackListView', () => {
         expect(executeAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
     });
 
+    it('stops the Delete keydown from reaching window before the confirmation resolves (#3602)', async () => {
+        const { executeAppAction } = await import('#/modules/Command/useCases');
+        const { confirmUser } = await import('#/utils/Notification/confirmUser');
+        vi.mocked(confirmUser).mockResolvedValue(true);
+        const windowKeyDown = vi.fn();
+        window.addEventListener('keydown', windowKeyDown);
+        renderWithTooltip(<TrackListView />);
+        fireEvent.keyDown(screen.getByRole('grid'), { key: 'Delete' });
+        // Asserted before any await: claiming the key must cut the bubble
+        // path to window synchronously, so the global clip-delete shortcut
+        // cannot fire whatever the confirmation later resolves to.
+        expect(windowKeyDown).not.toHaveBeenCalled();
+        window.removeEventListener('keydown', windowKeyDown);
+        await Promise.resolve();
+        await Promise.resolve();
+        // The track deletion itself still runs once the user confirms.
+        expect(executeAppAction).toHaveBeenCalledWith({ type: 'removeTrack', payload: { trackId: 't1' } });
+    });
+
+    it('stops the Backspace keydown from reaching window when deletion is cancelled (#3602)', async () => {
+        const { executeAppAction } = await import('#/modules/Command/useCases');
+        const { confirmUser } = await import('#/utils/Notification/confirmUser');
+        vi.mocked(confirmUser).mockResolvedValue(false);
+        const windowKeyDown = vi.fn();
+        window.addEventListener('keydown', windowKeyDown);
+        renderWithTooltip(<TrackListView />);
+        fireEvent.keyDown(screen.getByRole('grid'), { key: 'Backspace' });
+        // Same synchronous claim as the confirmed flow: cancelling the
+        // confirmation must not free the keydown to reach the global
+        // clip-delete shortcut on window.
+        expect(windowKeyDown).not.toHaveBeenCalled();
+        window.removeEventListener('keydown', windowKeyDown);
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(executeAppAction).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'removeTrack' }));
+    });
+
     it('reorders a track via drag and drop', async () => {
         const { reorderTrack } = await import('../../../useCases/toggleTrackState/reorderTrack');
         const { container } = renderWithTooltip(<TrackListView />);
