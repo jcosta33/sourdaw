@@ -91,7 +91,7 @@ export const XYMorphPad = ({ x, y, onChangeX, onChangeY, snapshots, width, heigh
                 return (
                     <span
                         key={snap.id}
-                        className="absolute text-[8px] font-bold text-rose-400/40 pointer-events-none"
+                        className="absolute text-micro font-bold text-rose-400/40 pointer-events-none"
                         style={corners[i]}
                     >
                         {labels[i]}

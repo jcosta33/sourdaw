@@ -218,7 +218,7 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                     variant="bare"
                     size="bare"
                     type="button"
-                    className="flex items-center justify-center text-[8px] text-muted-foreground/40 hover:text-muted-foreground border border-dashed border-border/20 rounded cursor-pointer"
+                    className="flex items-center justify-center text-micro text-muted-foreground/40 hover:text-muted-foreground border border-dashed border-border/20 rounded cursor-pointer"
                     style={{ width: STEP_WIDTH, height: STEP_HEIGHT }}
                     onClick={() => onLengthChange(steps.length + 1)}
                 >
@@ -227,12 +227,12 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
             </Row>
             {/* Length control */}
             <Row gap={2} className="px-1">
-                <span className="text-[7px] text-muted-foreground">Steps: {steps.length}</span>
+                <span className="text-nano text-muted-foreground">Steps: {steps.length}</span>
                 <Button
                     variant="bare"
                     size="bare"
                     type="button"
-                    className="text-[7px] text-muted-foreground hover:text-foreground cursor-pointer"
+                    className="text-nano text-muted-foreground hover:text-foreground cursor-pointer"
                     onClick={() => onLengthChange(Math.max(1, steps.length - 1))}
                 >
                     −
@@ -241,7 +241,7 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                     variant="bare"
                     size="bare"
                     type="button"
-                    className="text-[7px] text-muted-foreground hover:text-foreground cursor-pointer"
+                    className="text-nano text-muted-foreground hover:text-foreground cursor-pointer"
                     onClick={() => onLengthChange(steps.length + 1)}
                 >
                     +
@@ -252,7 +252,7 @@ export const StepPatternEditor = ({ steps, currentStep, onStepChange, onLengthCh
                         size="bare"
                         key={len}
                         type="button"
-                        className={`text-[7px] px-1 rounded cursor-pointer ${steps.length === len ? 'text-[var(--color-accent-peach)]' : 'text-muted-foreground/50 hover:text-muted-foreground'}`}
+                        className={`text-nano px-1 rounded cursor-pointer ${steps.length === len ? 'text-[var(--color-accent-peach)]' : 'text-muted-foreground/50 hover:text-muted-foreground'}`}
                         onClick={() => onLengthChange(len)}
                     >
                         {len}

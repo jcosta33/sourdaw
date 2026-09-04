@@ -185,7 +185,7 @@ export const SpectralBinEditor = ({
                 onPointerUp={handlePointerUp}
                 onPointerCancel={handlePointerCancel}
             />
-            <span className="absolute top-1 left-1 text-[7px] text-muted-foreground/30 font-mono">
+            <span className="absolute top-1 left-1 text-nano text-muted-foreground/30 font-mono">
                 Spectral {mode === 'gate' ? 'Gate' : 'Blur'}
             </span>
         </div>

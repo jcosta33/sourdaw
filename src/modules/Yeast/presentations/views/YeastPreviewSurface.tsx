@@ -294,10 +294,10 @@ export function YeastPreviewSurface({
         <section className="yeast-window p-3" aria-label="Scheduled event preview">
             <Row align="start" justify="between" gap={3} className="mb-2">
                 <div>
-                    <div className="text-[10px] font-medium text-foreground">Phrase view</div>
-                    <div className="text-[9px] text-muted-foreground">Read-only preview of upcoming rack output.</div>
+                    <div className="text-dense font-medium text-foreground">Phrase view</div>
+                    <div className="text-caption text-muted-foreground">Read-only preview of upcoming rack output.</div>
                 </div>
-                <dl className="flex flex-wrap justify-end gap-3 text-[8px] text-muted-foreground">
+                <dl className="flex flex-wrap justify-end gap-3 text-micro text-muted-foreground">
                     <div>
                         <dt>Preview</dt>
                         <dd className="text-foreground">{status.label}</dd>
@@ -325,7 +325,7 @@ export function YeastPreviewSurface({
                 {feedback.summary}. Preview {status.label.toLowerCase()}. Scheduling latency {latency}.
             </div>
             {status.reason ? (
-                <div className="mt-2 text-[9px] text-muted-foreground" data-reason-code={status.reason.code}>
+                <div className="mt-2 text-caption text-muted-foreground" data-reason-code={status.reason.code}>
                     {status.reason.message}
                 </div>
             ) : null}

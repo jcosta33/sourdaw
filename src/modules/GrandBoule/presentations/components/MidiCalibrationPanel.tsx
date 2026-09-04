@@ -126,8 +126,8 @@ const Knob = ({
             aria-label={label}
         />
         <div className="text-center">
-            <div className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/60">{label}</div>
-            <div className="font-mono text-[9px] text-foreground/85">{readout}</div>
+            <div className="text-micro uppercase tracking-[0.2em] text-muted-foreground/60">{label}</div>
+            <div className="font-mono text-caption text-foreground/85">{readout}</div>
         </div>
     </Stack>
 );
@@ -309,7 +309,9 @@ export const MidiCalibrationPanel = ({
                         <VelocityHistogram samples={samplesView} />
                     ) : (
                         <Row justify="center" className="h-full">
-                            <span className="text-[9px] italic text-muted-foreground/50">Play notes to calibrate</span>
+                            <span className="text-caption italic text-muted-foreground/50">
+                                Play notes to calibrate
+                            </span>
                         </Row>
                     )}
                 </div>

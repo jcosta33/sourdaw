@@ -171,7 +171,7 @@ export const ExpressionPanel = ({
                         size="lg"
                         tone="amber"
                     />
-                    <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Xfade</span>
+                    <span className="text-nano text-muted-foreground/60 uppercase tracking-wider">Xfade</span>
                     <span className="text-[6px] text-muted-foreground/40 tabular-nums">
                         {Math.round(expression.dynamicCrossfadeTime * 1000)}ms
                     </span>
@@ -189,7 +189,7 @@ export const ExpressionPanel = ({
                             size="lg"
                             tone="amber"
                         />
-                        <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Vib Depth</span>
+                        <span className="text-nano text-muted-foreground/60 uppercase tracking-wider">Vib Depth</span>
                         <span className="text-[6px] text-muted-foreground/40 tabular-nums">
                             {expression.vibratoDepthMax.toFixed(0)}ct
                         </span>
@@ -211,7 +211,7 @@ export const ExpressionPanel = ({
                             size="md"
                             tone="amber"
                         />
-                        <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Rate Min</span>
+                        <span className="text-nano text-muted-foreground/60 uppercase tracking-wider">Rate Min</span>
                         <span className="text-[6px] text-muted-foreground/40 tabular-nums">
                             {expression.vibratoRateMin.toFixed(1)}Hz
                         </span>
@@ -227,7 +227,7 @@ export const ExpressionPanel = ({
                             size="md"
                             tone="amber"
                         />
-                        <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Rate Max</span>
+                        <span className="text-nano text-muted-foreground/60 uppercase tracking-wider">Rate Max</span>
                         <span className="text-[6px] text-muted-foreground/40 tabular-nums">
                             {expression.vibratoRateMax.toFixed(1)}Hz
                         </span>
@@ -244,7 +244,7 @@ export const ExpressionPanel = ({
                             size="md"
                             tone="amber"
                         />
-                        <span className="text-[7px] text-muted-foreground/60 uppercase tracking-wider">Onset</span>
+                        <span className="text-nano text-muted-foreground/60 uppercase tracking-wider">Onset</span>
                         <span className="text-[6px] text-muted-foreground/40 tabular-nums">
                             {Math.round(expression.vibratoOnsetDelay * 1000)}ms
                         </span>

@@ -42,9 +42,9 @@ export const ArticulationList = ({ articulations, current, grid, onSelect }: Art
                             className="flex flex-col gap-0.5 px-2 py-2"
                             onClick={() => onSelect(art.type)}
                         >
-                            <span className="text-[10px] font-medium leading-tight">{art.name}</span>
+                            <span className="text-dense font-medium leading-tight">{art.name}</span>
                             {art.keyswitch !== null ? (
-                                <span className="text-[7px] text-muted-foreground/50 tabular-nums">
+                                <span className="text-nano text-muted-foreground/50 tabular-nums">
                                     {midiNoteToName(art.keyswitch)}
                                 </span>
                             ) : null}
@@ -58,7 +58,7 @@ export const ArticulationList = ({ articulations, current, grid, onSelect }: Art
     // Compact sidebar list
     return (
         <Stack className="p-1">
-            <span className="text-[8px] text-muted-foreground/50 uppercase tracking-wider px-2 py-1">
+            <span className="text-micro text-muted-foreground/50 uppercase tracking-wider px-2 py-1">
                 Articulations
             </span>
             {enabled.map((art) => {
@@ -69,12 +69,12 @@ export const ArticulationList = ({ articulations, current, grid, onSelect }: Art
                         active={isActive}
                         tone="amber"
                         caps={false}
-                        className="flex w-full items-center justify-between px-2 py-1 text-[10px]"
+                        className="flex w-full items-center justify-between px-2 py-1 text-dense"
                         onClick={() => onSelect(art.type)}
                     >
                         <span>{art.name}</span>
                         {art.keyswitch !== null ? (
-                            <span className="text-[8px] text-muted-foreground/40 tabular-nums">
+                            <span className="text-micro text-muted-foreground/40 tabular-nums">
                                 {midiNoteToName(art.keyswitch)}
                             </span>
                         ) : null}

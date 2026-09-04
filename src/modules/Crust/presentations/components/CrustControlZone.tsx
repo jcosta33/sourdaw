@@ -40,7 +40,7 @@ type Props = {
 // ── Shared primitives ─────────────────────────────────────────────────────────
 
 const SectionLabel = ({ children }: { children: string }): ReactElement => (
-    <div className="text-[7px] font-semibold text-muted-foreground/40 uppercase tracking-widest mb-1.5">{children}</div>
+    <div className="text-nano font-semibold text-muted-foreground/40 uppercase tracking-widest mb-1.5">{children}</div>
 );
 
 function fmtKnob(v: number, unit?: string): string {
@@ -94,7 +94,7 @@ const Knob = ({
             size="sm"
             tone="copper"
         />
-        <span className="text-[7px] text-muted-foreground/60 leading-none">{label}</span>
+        <span className="text-nano text-muted-foreground/60 leading-none">{label}</span>
         {unit !== undefined ? (
             <span className="text-[6px] font-mono text-muted-foreground/40">{fmtKnob(value, unit)}</span>
         ) : null}
@@ -139,7 +139,7 @@ const AutoKnob = ({
             size="sm"
             tone="copper"
         />
-        <span className="text-[7px] text-muted-foreground/60 leading-none">{label}</span>
+        <span className="text-nano text-muted-foreground/60 leading-none">{label}</span>
         <span className="text-[6px] font-mono text-muted-foreground/40">{auto ? 'Auto' : `${value.toFixed(0)}ms`}</span>
         <DawPluginToggle
             id={toggleId}
@@ -166,7 +166,7 @@ const SliderRow = ({
     onChange: (value: number) => void;
 }): ReactElement => (
     <Row gap={2}>
-        <span className="w-14 shrink-0 text-[7px] text-muted-foreground/40">{label}</span>
+        <span className="w-14 shrink-0 text-nano text-muted-foreground/40">{label}</span>
         <Slider
             value={[value]}
             min={0}
@@ -181,7 +181,7 @@ const SliderRow = ({
                 }
             }}
         />
-        <span className="w-8 shrink-0 text-right text-[7px] font-mono text-muted-foreground/50">{value}%</span>
+        <span className="w-8 shrink-0 text-right text-nano font-mono text-muted-foreground/50">{value}%</span>
     </Row>
 );
 
@@ -243,8 +243,8 @@ const LevelTile = ({
         onClick={onClick}
         aria-pressed={active}
     >
-        <span className="text-[11px] font-semibold leading-tight">{label}</span>
-        <span className="mt-1 whitespace-pre-line text-center text-[8px] leading-snug text-muted-foreground/45">
+        <span className="text-compact font-semibold leading-tight">{label}</span>
+        <span className="mt-1 whitespace-pre-line text-center text-micro leading-snug text-muted-foreground/45">
             {subtitle}
         </span>
     </Button>
@@ -285,7 +285,7 @@ const Level2Core = ({ patch, setParam }: { patch: CrustPatch; setParam: Setter }
                     </DawPluginChip>
                 ))}
             </Row>
-            <div className="text-[7px] text-muted-foreground/40 mt-0.5 min-h-[10px]">
+            <div className="text-nano text-muted-foreground/40 mt-0.5 min-h-[10px]">
                 {ALGORITHMS.find((a) => a.id === patch.algorithm)?.desc ?? ''}
             </div>
         </div>
@@ -592,8 +592,8 @@ const Level5Stats = ({
                     label={label}
                     value={value}
                     className="gap-2"
-                    labelClassName="text-[7px] text-muted-foreground/40"
-                    valueClassName="text-[8px] text-foreground/70"
+                    labelClassName="text-nano text-muted-foreground/40"
+                    valueClassName="text-micro text-foreground/70"
                 />
             ))}
         </Grid>

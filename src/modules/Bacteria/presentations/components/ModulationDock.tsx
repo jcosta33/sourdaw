@@ -43,7 +43,7 @@ const MOD_SOURCES = [
 export const ModulationDock = ({ patch, modValues, onAssignmentRemove }: ModulationDockProps): ReactElement => {
     return (
         <Stack gap={2} className="p-2">
-            <div className="text-[8px] text-muted-foreground/50 font-medium uppercase tracking-wider">
+            <div className="text-micro text-muted-foreground/50 font-medium uppercase tracking-wider">
                 Modulation Sources
             </div>
 
@@ -56,7 +56,7 @@ export const ModulationDock = ({ patch, modValues, onAssignmentRemove }: Modulat
                     return (
                         <Row
                             gap={1}
-                            className="px-1.5 py-0.5 rounded text-[7px] font-medium border"
+                            className="px-1.5 py-0.5 rounded text-nano font-medium border"
                             key={source.id}
                             style={{
                                 borderColor: `${source.color}40`,
@@ -64,7 +64,7 @@ export const ModulationDock = ({ patch, modValues, onAssignmentRemove }: Modulat
                                 color: source.color,
                             }}
                         >
-                            <span className="text-[8px] font-bold opacity-60">{source.icon}</span>
+                            <span className="text-micro font-bold opacity-60">{source.icon}</span>
                             <span>{source.label}</span>
                             {/* Activity indicator */}
                             <div
@@ -86,11 +86,11 @@ export const ModulationDock = ({ patch, modValues, onAssignmentRemove }: Modulat
             {/* Active assignments list */}
             {patch.modAssignments.length > 0 ? (
                 <Stack gap={0.5} className="mt-1">
-                    <div className="text-[7px] text-muted-foreground/40 uppercase">Active Assignments</div>
+                    <div className="text-nano text-muted-foreground/40 uppercase">Active Assignments</div>
                     {patch.modAssignments.map((assignment, idx) => {
                         const source = MOD_SOURCES.find((s) => s.id === assignment.sourceId);
                         return (
-                            <Row gap={1} className="text-[7px]" key={idx}>
+                            <Row gap={1} className="text-nano" key={idx}>
                                 <span style={{ color: source?.color ?? 'white' }}>
                                     {source?.label ?? assignment.sourceId}
                                 </span>

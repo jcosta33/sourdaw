@@ -254,7 +254,7 @@ const GrooveAwareProcessorParams = ({ processor }: { processor: YeastProcessorIn
             />
             {processor.type === 'groove' ? (
                 <Stack gap={1} className="px-1">
-                    <Row as="label" justify="between" gap={1} className="text-[7px] text-muted-foreground">
+                    <Row as="label" justify="between" gap={1} className="text-nano text-muted-foreground">
                         Extraction subdivision
                         <DawCompactSelect
                             aria-label="Groove extraction subdivision"
@@ -309,14 +309,14 @@ const ProcessorRackChain = ({
                     className="px-2 py-1.5 cursor-pointer"
                     onClick={() => onToggleExpanded(proc.id)}
                 >
-                    <span className="text-[7px] text-muted-foreground/50 w-3">{index + 1}</span>
+                    <span className="text-nano text-muted-foreground/50 w-3">{index + 1}</span>
                     <span
                         className={`text-[6px] ${expandedId === proc.id ? 'text-[var(--color-accent-peach)]' : 'text-muted-foreground/30'}`}
                     >
                         {expandedId === proc.id ? '▼' : '▶'}
                     </span>
                     <span
-                        className={`text-[10px] font-medium flex-1 ${proc.bypassed ? 'text-muted-foreground/40 line-through' : 'text-foreground'}`}
+                        className={`text-dense font-medium flex-1 ${proc.bypassed ? 'text-muted-foreground/40 line-through' : 'text-foreground'}`}
                     >
                         {proc.name}
                     </span>
@@ -326,7 +326,7 @@ const ProcessorRackChain = ({
                         type="button"
                         aria-label={`Move ${proc.name} up`}
                         disabled={index === 0}
-                        className="text-[8px] leading-none text-muted-foreground hover:text-[var(--color-accent-peach)] disabled:pointer-events-none disabled:opacity-25 cursor-pointer"
+                        className="text-micro leading-none text-muted-foreground hover:text-[var(--color-accent-peach)] disabled:pointer-events-none disabled:opacity-25 cursor-pointer"
                         onClick={(event) => {
                             event.stopPropagation();
                             reorderYeastProcessor(index, index - 1);
@@ -340,7 +340,7 @@ const ProcessorRackChain = ({
                         type="button"
                         aria-label={`Move ${proc.name} down`}
                         disabled={index === processors.length - 1}
-                        className="text-[8px] leading-none text-muted-foreground hover:text-[var(--color-accent-peach)] disabled:pointer-events-none disabled:opacity-25 cursor-pointer"
+                        className="text-micro leading-none text-muted-foreground hover:text-[var(--color-accent-peach)] disabled:pointer-events-none disabled:opacity-25 cursor-pointer"
                         onClick={(event) => {
                             event.stopPropagation();
                             reorderYeastProcessor(index, index + 1);
@@ -364,7 +364,7 @@ const ProcessorRackChain = ({
                         variant="bare"
                         size="bare"
                         type="button"
-                        className="text-[7px] text-muted-foreground hover:text-[var(--color-state-danger)] cursor-pointer"
+                        className="text-nano text-muted-foreground hover:text-[var(--color-state-danger)] cursor-pointer"
                         onClick={(event) => {
                             event.stopPropagation();
                             removeYeastProcessor(proc.id);
@@ -396,7 +396,7 @@ const ArpPatternDeck = ({ state }: { state: YeastState }): ReactElement => {
     const arp = state.processors.find((processor) => processor.type === 'arpeggiator');
     if (!arp) {
         return (
-            <div className="text-[8px] leading-3 text-muted-foreground/60">
+            <div className="text-micro leading-3 text-muted-foreground/60">
                 Add an Arpeggiator to program a step pattern.
             </div>
         );
@@ -411,7 +411,7 @@ const ArpPatternDeck = ({ state }: { state: YeastState }): ReactElement => {
         // The deck binds the FIRST arpeggiator. Naming it is the only way a rack
         // with two of them can tell whose persisted pattern is on screen.
         <div role="group" aria-label={`Arp pattern — ${arp.name}`}>
-            <div className="text-[7px] text-muted-foreground/60">{arp.name}</div>
+            <div className="text-nano text-muted-foreground/60">{arp.name}</div>
             <StepPatternEditor
                 steps={steps}
                 currentStep={0}
@@ -482,10 +482,10 @@ export const YeastPanel = ({ deviceId = null }: { deviceId?: string | null }): R
                                             }`}
                                             onClick={() => setYeastUiLevel(entry.level)}
                                         >
-                                            <span className="text-[11px] font-medium text-foreground">
+                                            <span className="text-compact font-medium text-foreground">
                                                 {entry.label}
                                             </span>
-                                            <span className="text-[8px] uppercase tracking-[0.2em] text-muted-foreground/45">
+                                            <span className="text-micro uppercase tracking-[0.2em] text-muted-foreground/45">
                                                 {entry.detail}
                                             </span>
                                         </Row>
@@ -510,7 +510,7 @@ export const YeastPanel = ({ deviceId = null }: { deviceId?: string | null }): R
                     <div className="yeast-window p-3">
                         <Row justify="between" align="start" gap={3}>
                             <Stack gap={2}>
-                                <div className="text-[8px] uppercase tracking-[0.26em] text-[var(--color-accent-peach)]/70">
+                                <div className="text-micro uppercase tracking-[0.26em] text-[var(--color-accent-peach)]/70">
                                     Note rack
                                 </div>
                                 <div className="text-[16px] font-semibold text-foreground">{levelMeta.title}</div>
@@ -565,10 +565,10 @@ export const YeastPanel = ({ deviceId = null }: { deviceId?: string | null }): R
                                         className="yeast-window px-3 py-2"
                                     >
                                         <Stack>
-                                            <div className="text-[11px] font-medium text-foreground">
+                                            <div className="text-compact font-medium text-foreground">
                                                 {processor.name}
                                             </div>
-                                            <div className="text-[8px] uppercase tracking-[0.18em] text-muted-foreground/45">
+                                            <div className="text-micro uppercase tracking-[0.18em] text-muted-foreground/45">
                                                 {processor.type}
                                             </div>
                                         </Stack>
@@ -578,7 +578,7 @@ export const YeastPanel = ({ deviceId = null }: { deviceId?: string | null }): R
                                     </Row>
                                 ))
                             ) : (
-                                <div className="yeast-window px-3 py-3 text-[10px] leading-4 text-muted-foreground">
+                                <div className="yeast-window px-3 py-3 text-dense leading-4 text-muted-foreground">
                                     No processors yet. Add one from the sprout shelf and the note lanes will wake up.
                                 </div>
                             )}
@@ -623,7 +623,7 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
             </DawPluginToggle>
             {/* Mode */}
             <Stack align="center" gap={1}>
-                <span className="text-[8px] text-muted-foreground uppercase tracking-widest">Mode</span>
+                <span className="text-micro text-muted-foreground uppercase tracking-widest">Mode</span>
                 <DawCompactSelect
                     size="micro"
                     tone="inset"
@@ -648,7 +648,7 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
             </Stack>
             {/* Rate */}
             <Stack align="center" gap={1}>
-                <span className="text-[8px] text-muted-foreground uppercase tracking-widest">Rate</span>
+                <span className="text-micro text-muted-foreground uppercase tracking-widest">Rate</span>
                 <YeastKnob
                     aria-label="Rate"
                     value={arp?.params?.rate_denom ?? PROCESSOR_PARAM_DEFAULTS.arpeggiator.rate_denom!}
@@ -663,7 +663,7 @@ const Level1Play = ({ state }: { state: YeastState }): ReactElement => {
                     defaultValue={PROCESSOR_PARAM_DEFAULTS.arpeggiator.rate_denom}
                     size="lg"
                 />
-                <span className="text-[8px] text-muted-foreground font-mono">
+                <span className="text-micro text-muted-foreground font-mono">
                     1/{arp?.params?.rate_denom ?? PROCESSOR_PARAM_DEFAULTS.arpeggiator.rate_denom!}
                 </span>
             </Stack>
@@ -777,7 +777,7 @@ const Level3Build = ({ state }: { state: YeastState }): ReactElement => {
             {/* Arp pattern editor (when arp is present) */}
             {hasArpPattern ? (
                 <Stack gap={1} className="border-t border-border/20 pt-2">
-                    <span className="text-[7px] text-muted-foreground/60 uppercase tracking-widest block">
+                    <span className="text-nano text-muted-foreground/60 uppercase tracking-widest block">
                         Arp Pattern
                     </span>
                     <ArpPatternDeck state={state} />
@@ -810,7 +810,7 @@ const Level4Route = ({
         <Stack gap={2} className="flex-1 px-3 py-2 overflow-y-auto">
             {/* Keyboard visualization */}
             <Stack gap={1}>
-                <span className="text-[7px] text-muted-foreground/60 uppercase tracking-widest block">Keyboard</span>
+                <span className="text-nano text-muted-foreground/60 uppercase tracking-widest block">Keyboard</span>
                 <KeyboardSplit width={500} height={32} soundingNotes={soundingNotes} />
             </Stack>
             {/* Rack chain with params */}
@@ -849,7 +849,7 @@ const Level5Lab = ({ state, soundingNotes }: { state: YeastState; soundingNotes:
 
                 {/* All processors */}
                 <Stack gap={1} className="pt-1 border-t border-border/20">
-                    <span className="w-full text-[7px] text-muted-foreground/50 uppercase tracking-widest">
+                    <span className="w-full text-nano text-muted-foreground/50 uppercase tracking-widest">
                         Generative
                     </span>
                     <Row wrap gap={1}>
@@ -864,7 +864,7 @@ const Level5Lab = ({ state, soundingNotes }: { state: YeastState; soundingNotes:
                             </YeastChip>
                         ))}
                     </Row>
-                    <span className="w-full text-[7px] text-muted-foreground/50 uppercase tracking-widest mt-1">
+                    <span className="w-full text-nano text-muted-foreground/50 uppercase tracking-widest mt-1">
                         Standard
                     </span>
                     <Row wrap gap={1}>
@@ -878,10 +878,10 @@ const Level5Lab = ({ state, soundingNotes }: { state: YeastState; soundingNotes:
             </Stack>
             {/* Right: Pattern editor + keyboard */}
             <Stack gap={2} className="w-[280px] shrink-0 border-l border-border/20 p-2 overflow-y-auto">
-                <span className="text-[7px] text-muted-foreground/60 uppercase tracking-widest">Pattern Editor</span>
+                <span className="text-nano text-muted-foreground/60 uppercase tracking-widest">Pattern Editor</span>
                 <ArpPatternDeck state={state} />
 
-                <span className="text-[7px] text-muted-foreground/60 uppercase tracking-widest mt-2">Keyboard</span>
+                <span className="text-nano text-muted-foreground/60 uppercase tracking-widest mt-2">Keyboard</span>
                 <KeyboardSplit width={260} height={28} soundingNotes={soundingNotes} />
             </Stack>
         </Row>
@@ -922,7 +922,7 @@ const KnobCol = ({
     defaultValue: number;
 }): ReactElement => (
     <Stack align="center" gap={1}>
-        <span className="text-[8px] text-muted-foreground uppercase tracking-widest">{label}</span>
+        <span className="text-micro text-muted-foreground uppercase tracking-widest">{label}</span>
         <YeastKnob
             aria-label={label}
             value={value}
@@ -933,6 +933,6 @@ const KnobCol = ({
             defaultValue={defaultValue}
             size="md"
         />
-        <span className="text-[7px] text-muted-foreground font-mono">{formatKnobReadout(value, unit, step)}</span>
+        <span className="text-nano text-muted-foreground font-mono">{formatKnobReadout(value, unit, step)}</span>
     </Stack>
 );

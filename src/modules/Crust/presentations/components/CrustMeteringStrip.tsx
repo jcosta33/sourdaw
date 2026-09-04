@@ -146,15 +146,15 @@ export const CrustMeteringStrip = ({
                     </div>
                 </Row>
                 <Row align="stretch" justify="between" className="mt-0.5">
-                    <span className="text-[7px] font-mono text-muted-foreground/50">L</span>
+                    <span className="text-nano font-mono text-muted-foreground/50">L</span>
                     <span
-                        className="text-[7px] font-mono"
+                        className="text-nano font-mono"
                         style={{ color: grc }}
                         aria-label={`Gain reduction: ${Math.abs(grDb).toFixed(1)} dB`}
                     >
                         GR
                     </span>
-                    <span className="text-[7px] font-mono text-muted-foreground/50">R</span>
+                    <span className="text-nano font-mono text-muted-foreground/50">R</span>
                 </Row>
             </MeterSection>
 
@@ -167,10 +167,10 @@ export const CrustMeteringStrip = ({
                     >
                         {lufsIntegrated > -99 ? lufsIntegrated.toFixed(1) : '—'}
                     </span>
-                    <span className="text-[8px] text-muted-foreground/50 ml-1">LUFS</span>
+                    <span className="text-micro text-muted-foreground/50 ml-1">LUFS</span>
                     {targetDiff !== null ? (
                         <span
-                            className="text-[8px] font-mono ml-1"
+                            className="text-micro font-mono ml-1"
                             style={{
                                 color: targetDiffColor,
                             }}
@@ -186,14 +186,14 @@ export const CrustMeteringStrip = ({
                         label="ST"
                         value={lufsShortTerm > -99 ? lufsShortTerm.toFixed(1) : '—'}
                         aria-label={`Short-term LUFS: ${lufsShortTerm.toFixed(1)}`}
-                        labelClassName="text-[7px] text-muted-foreground/40"
+                        labelClassName="text-nano text-muted-foreground/40"
                         valueClassName="text-[12px] tabular-nums text-foreground/70"
                     />
                     <DawReadoutRow
                         label="MOM"
                         value={lufsMomentary > -99 ? lufsMomentary.toFixed(1) : '—'}
                         aria-label={`Momentary LUFS: ${lufsMomentary.toFixed(1)}`}
-                        labelClassName="text-[7px] text-muted-foreground/40"
+                        labelClassName="text-nano text-muted-foreground/40"
                         valueClassName="text-[12px] tabular-nums text-foreground/70"
                     />
                 </DawPluginReadoutList>
@@ -203,8 +203,8 @@ export const CrustMeteringStrip = ({
                         label="LRA"
                         value={`${lra.toFixed(1)} LU`}
                         aria-label={`Loudness range: ${lra.toFixed(1)} LU`}
-                        labelClassName="text-[7px] text-muted-foreground/40"
-                        valueClassName="text-[10px] text-foreground/60"
+                        labelClassName="text-nano text-muted-foreground/40"
+                        valueClassName="text-dense text-foreground/60"
                     />
                 </div>
             </MeterSection>
@@ -230,7 +230,7 @@ export const CrustMeteringStrip = ({
                 <Row justify="between">
                     <Row gap={1}>
                         <span
-                            className="text-[9px] font-mono"
+                            className="text-caption font-mono"
                             style={{
                                 color: truepeakExceeded ? 'var(--color-state-clip)' : 'var(--color-text-primary)',
                             }}

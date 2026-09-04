@@ -41,12 +41,12 @@ export function ImportedNeuralLibraryCard({
                 >
                     <Row justify="between" gap={3}>
                         <span className="text-sm font-medium text-white/88">{entry.name}</span>
-                        <span className="text-[10px] uppercase tracking-[0.18em] text-white/34">
+                        <span className="text-dense uppercase tracking-[0.18em] text-white/34">
                             {entry.profile.sourceSampleRate} Hz
                         </span>
                     </Row>
                     <div className="mt-1 text-xs text-white/44">{entry.family}</div>
-                    <div className="mt-2 text-[11px] text-white/34">{entry.description}</div>
+                    <div className="mt-2 text-compact text-white/34">{entry.description}</div>
                 </Button>
                 <Row align="stretch" gap={2} shrink={false}>
                     {has_library_source ? (
@@ -55,7 +55,7 @@ export function ImportedNeuralLibraryCard({
                                 variant="bare"
                                 size="bare"
                                 type="button"
-                                className="rounded-[12px] border border-[var(--color-accent-cyan)]/30 bg-[var(--color-accent-cyan)]/10 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-[var(--color-accent-cyan)]"
+                                className="rounded-[12px] border border-[var(--color-accent-cyan)]/30 bg-[var(--color-accent-cyan)]/10 px-2 py-1 text-dense uppercase tracking-[0.16em] text-[var(--color-accent-cyan)]"
                                 onClick={() => on_export(entry)}
                             >
                                 Export NAM
@@ -64,14 +64,14 @@ export function ImportedNeuralLibraryCard({
                                 variant="bare"
                                 size="bare"
                                 type="button"
-                                className="rounded-[12px] border border-white/12 bg-black/24 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-white/58"
+                                className="rounded-[12px] border border-white/12 bg-black/24 px-2 py-1 text-dense uppercase tracking-[0.16em] text-white/58"
                                 onClick={() => on_remove(entry)}
                             >
                                 Remove capture
                             </Button>
                         </>
                     ) : (
-                        <span className="rounded-[12px] border border-white/10 bg-black/18 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-white/40">
+                        <span className="rounded-[12px] border border-white/10 bg-black/18 px-2 py-1 text-dense uppercase tracking-[0.16em] text-white/40">
                             Patch only
                         </span>
                     )}
