@@ -710,13 +710,43 @@ describe('handleKeydown', () => {
             trackStoreMock.value.tracks = [{ id: 't1', clips: [{ id: 'clip-1', startBeat: 0, endBeat: 2 }] }];
             const clipPrevent = handleKeydown(descriptor({ key: 'F1' }));
             expect(clipPrevent).toBe(true);
-            expect(removeClip).toHaveBeenCalledWith('clip-1');
+            expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'removeClip', payload: { clipId: 'clip-1' } });
             expect(clearClipSelection).toHaveBeenCalled();
-            expect(pushUndoEntry).toHaveBeenCalledWith('Delete 1 clip', expect.any(Function), expect.any(Function));
+            expect(removeClip).not.toHaveBeenCalled();
+            expect(pushUndoEntry).not.toHaveBeenCalled();
 
             clipSelectionStoreMock.value.selectedClipIds = [];
+            vi.mocked(executeUserAppAction).mockClear();
             const nonePrevent = handleKeydown(descriptor({ key: 'F1' }));
             expect(nonePrevent).toBe(false);
+            expect(executeUserAppAction).not.toHaveBeenCalled();
+        });
+
+        it('dispatches one registered removeClip per selected clip, in selection order, and no raw mutation', () => {
+            shortcutStoreMock.value.definitions = [
+                callbackDefinition({ id: 'editing.deleteSelection', key: 'F1', callbackId: 'deleteSelection' }),
+            ];
+            clipSelectionStoreMock.value.selectedClipIds = ['clip-2', 'clip-1'];
+            trackStoreMock.value.tracks = [
+                { id: 't1', clips: [{ id: 'clip-1', startBeat: 0, endBeat: 2 }] },
+                { id: 't2', clips: [{ id: 'clip-2', startBeat: 4, endBeat: 6 }] },
+            ];
+
+            const prevent = handleKeydown(descriptor({ key: 'F1' }));
+
+            expect(prevent).toBe(true);
+            expect(executeUserAppAction).toHaveBeenCalledTimes(2);
+            expect(executeUserAppAction).toHaveBeenNthCalledWith(1, {
+                type: 'removeClip',
+                payload: { clipId: 'clip-2' },
+            });
+            expect(executeUserAppAction).toHaveBeenNthCalledWith(2, {
+                type: 'removeClip',
+                payload: { clipId: 'clip-1' },
+            });
+            expect(removeClip).not.toHaveBeenCalled();
+            expect(pushUndoEntry).not.toHaveBeenCalled();
+            expect(clearClipSelection).toHaveBeenCalled();
         });
 
         it('does nothing when the selected clip ids no longer resolve to real clips', () => {
@@ -730,6 +760,8 @@ describe('handleKeydown', () => {
 
             expect(prevent).toBe(false);
             expect(pushUndoEntry).not.toHaveBeenCalled();
+            expect(executeUserAppAction).not.toHaveBeenCalled();
+            expect(removeClip).not.toHaveBeenCalled();
         });
 
         it('prefers the marquee, then multi-clip span, then a single clip for the loop region', () => {
