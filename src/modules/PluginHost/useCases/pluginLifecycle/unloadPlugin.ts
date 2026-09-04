@@ -134,10 +134,7 @@ async function unloadWithRetractedMirror(instanceId?: string): Promise<void> {
         markExternalPluginParameterSnapshotDetached(instanceId);
     }
     try {
-        // The bulk command names no instance at all, rather than naming an
-        // undefined one: `unload_plugin` reads an absent key as "retire
-        // everything" and a present one as a target.
-        const unloaded = instanceId === undefined ? await unloadPluginRepo() : await unloadPluginRepo(instanceId);
+        const unloaded = await unloadPluginRepo(instanceId);
         reconcileUnloadResult(unloaded, instanceId);
     } catch (error) {
         markExternalPluginParameterSnapshotsAttached(attached);

@@ -219,7 +219,7 @@ describe('activateExternalPlugin', () => {
         });
         expect(mocks.loadPluginRepo).toHaveBeenNthCalledWith(1, 'p', 'inst-1', ENGINE_SAMPLE_RATE);
         expect(mocks.loadPluginRepo).toHaveBeenNthCalledWith(2, 'p', 'inst-1', ENGINE_SAMPLE_RATE);
-        expect(mocks.unloadPluginRepo).toHaveBeenCalledWith();
+        expect(mocks.unloadPluginRepo).toHaveBeenCalledWith(undefined);
     });
 
     it('leaves the activation entry unqualified when the plugin is engine-attached', async () => {
