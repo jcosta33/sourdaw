@@ -413,13 +413,29 @@ jobs:
 
       # A hosted runner has no audio output device, and the run is only a
       # measurement if the plugin actually sounds into the master meter.
-      # BlackHole is a HAL plugin: coreaudiod picks it up as soon as the cask
-      # lands it, so nothing here reboots.
+      # BlackHole is a HAL plugin, and coreaudiod reads
+      # /Library/Audio/Plug-Ins/HAL only when it starts: the cask's installer
+      # declares a restart requirement and then restarts nothing itself, so
+      # the driver sits on disk unseen until coreaudiod is restarted here.
+      # Enumeration lags that restart, so this step holds until the device is
+      # listed rather than leaving the next one to select a device that has
+      # not appeared yet.
       - name: Install a virtual audio output device
         run: |
           set -euo pipefail
           brew install --cask blackhole-2ch
           brew install switchaudio-osx
+          sudo killall coreaudiod
+          for _ in $(seq 1 30); do
+            if SwitchAudioSource -a -t output | grep -qx "BlackHole 2ch"; then
+              SwitchAudioSource -a -t output
+              exit 0
+            fi
+            sleep 1
+          done
+          SwitchAudioSource -a -t output
+          echo "BlackHole 2ch never appeared as an output device" >&2
+          exit 1
 
       - name: Select the virtual device as the output
         run: |
