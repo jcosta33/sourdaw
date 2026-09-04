@@ -72,11 +72,20 @@ type SnapshotRunner = (
     command: TrustedGithubWriteCommand
 ) => Promise<number>;
 
+/**
+ * These commands fence their lock owner on the process identity that holds it, so the launcher must
+ * put the whole command tree in one process group: a surviving child is then what keeps the fence
+ * live, and recovery can prove the crashed owner gone.
+ */
+function commandFencesItsLockOwner(command: TrustedGithubWriteCommand | undefined): boolean {
+    return command === 'deliver' || command === 'review:publish' || command === 'review:publish:recover';
+}
+
 export function trustedSnapshotRunsDetached(
     command: TrustedGithubWriteCommand,
     platform: NodeJS.Platform = process.platform
 ): boolean {
-    return platform !== 'win32' && (command === 'review:publish' || command === 'review:publish:recover');
+    return platform !== 'win32' && commandFencesItsLockOwner(command);
 }
 
 export function trustedSnapshotSignalTarget(
@@ -110,6 +119,8 @@ const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly string
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/deliverPullRequest.ts',
         'scripts/recoverDeliveryLock.ts',
+        'scripts/deliveryLockLegacyIncidents.ts',
+        'scripts/deliveryRemoteInspection.ts',
         'scripts/pullRequestMutationLock.ts',
         'scripts/reconcileTrackerIssue.ts',
         'scripts/trackerIssueReconciliation.ts',
@@ -990,14 +1001,14 @@ export function resolveTrustedLauncherBinding(
 }
 
 function commandRequiresTrustedPs(command: TrustedGithubWriteCommand | undefined, platform: NodeJS.Platform): boolean {
-    return platform !== 'win32' && (command === 'review:publish' || command === 'review:publish:recover');
+    return platform !== 'win32' && commandFencesItsLockOwner(command);
 }
 
 function commandRequiresTrustedPowerShell(
     command: TrustedGithubWriteCommand | undefined,
     platform: NodeJS.Platform
 ): boolean {
-    return platform === 'win32' && (command === 'review:publish' || command === 'review:publish:recover');
+    return platform === 'win32' && commandFencesItsLockOwner(command);
 }
 
 function defaultPort(binding: TrustedLauncherBinding): TrustedSourcePort {

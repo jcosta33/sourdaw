@@ -337,9 +337,12 @@ describe('deliver --recover-lock 3437', () => {
         }
     });
 
-    it('refuses a 3437 owner matching no incident and lists both retained 3437 commands', async () => {
+    it('refuses a retained pre-journal owner matching no incident and lists the retained commands', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-recovery-'));
-        initialize(root);
+        const unknownOwner = '{"version":1,"pid":9111,"token":"123e4567-e89b-12d3-a456-426614174001"}';
+        git(root, ['init', '--quiet']);
+        const unknownOwnerOid = git(root, ['hash-object', '-w', '--stdin'], unknownOwner);
+        git(root, ['update-ref', REF, unknownOwnerOid]);
         const state = remoteState();
         const usageListing = new RegExp(
             [
@@ -351,9 +354,9 @@ describe('deliver --recover-lock 3437', () => {
 
         try {
             await expect(
-                runRecoverDeliveryLockCli(['3437', '--owner', 'e'.repeat(40)], dependencies(root, [state, state]))
+                runRecoverDeliveryLockCli(['3437', '--owner', unknownOwnerOid], dependencies(root, [state, state]))
             ).rejects.toThrow(usageListing);
-            expect(git(root, ['rev-parse', '--verify', REF])).toBe(OWNER_OID);
+            expect(git(root, ['rev-parse', '--verify', REF])).toBe(unknownOwnerOid);
         } finally {
             rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
         }
@@ -393,7 +396,7 @@ describe('deliver --recover-lock 3437', () => {
 
         try {
             await expect(runRecoverDeliveryLockCli(args, dependencies(root, [state, state]))).rejects.toThrow(
-                /usage: pnpm deliver --recover-lock/
+                /owner does not match this recovery incident/
             );
             expect(git(root, ['rev-parse', '--verify', REF])).toBe(OWNER_OID);
         } finally {

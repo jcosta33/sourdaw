@@ -881,6 +881,43 @@ function initializeDeliveryLockRepository(root: string): void {
 }
 
 /**
+ * Acquiring a delivery lock records the owner's process fence, which the lock module reads through
+ * the launcher-resolved `ps`. These cases run outside that launcher, so they supply their own.
+ */
+function writeTrustedPsFixture(root: string): () => void {
+    const executable = join(root, 'ps');
+    const previous = process.env.SOURDAW_TRUSTED_PS_PATH;
+    writeFileSync(
+        executable,
+        '#!/bin/sh\nif [ "$2" = "pgid=" ]; then printf "%s\\n" "$4"; else printf "%s\\n" "owner-process-start"; fi\n'
+    );
+    chmodSync(executable, 0o700);
+    process.env.SOURDAW_TRUSTED_PS_PATH = executable;
+    return () => {
+        if (previous === undefined) {
+            delete process.env.SOURDAW_TRUSTED_PS_PATH;
+        } else {
+            process.env.SOURDAW_TRUSTED_PS_PATH = previous;
+        }
+    };
+}
+
+function readDeliveryLockOid(root: string, number: number): string {
+    return execFileSync('git', ['rev-parse', '--verify', `refs/sourdaw/delivery/pr-${number}`], {
+        cwd: root,
+        encoding: 'utf8',
+    }).trim();
+}
+
+function readDeliveryLockOwner(root: string, number: number): Record<string, unknown> {
+    const blob = execFileSync('git', ['cat-file', 'blob', readDeliveryLockOid(root, number)], {
+        cwd: root,
+        encoding: 'utf8',
+    });
+    return JSON.parse(blob) as Record<string, unknown>;
+}
+
+/**
  * A `git init`-backed temp repository can leave file handles closing asynchronously on some
  * platforms, so a bare `rmSync` on its directory can race an in-flight close and throw `ENOTEMPTY`.
  * Retrying, as the rest of the suite already does for its own temp-dir cleanups, absorbs that race
@@ -933,12 +970,48 @@ function shellMergeRejection(status: '409' | '422'): DeliveryMergeRejectedError 
 }
 
 describe('pull-request delivery', () => {
+    it('journals a fenced delivery owner and records the first remote mutation attempt', async () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-owner-journal-'));
+        initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
+
+        try {
+            await withPullRequestDeliveryLock(root, 42, async ({ markRemoteMutationAttempt }) => {
+                const prepared = readDeliveryLockOid(root, 42);
+                expect(readDeliveryLockOwner(root, 42)).toMatchObject({
+                    version: 4,
+                    operation: 'delivery',
+                    number: 42,
+                    pid: process.pid,
+                    ownerFence: { kind: 'pgid', pgid: process.pid, leaderStartedAt: 'owner-process-start' },
+                    mutation: { phase: 'prepared', epoch: 0 },
+                });
+
+                markRemoteMutationAttempt();
+
+                expect(readDeliveryLockOid(root, 42)).not.toBe(prepared);
+                expect(readDeliveryLockOwner(root, 42)).toMatchObject({
+                    version: 4,
+                    operation: 'delivery',
+                    number: 42,
+                    pid: process.pid,
+                    ownerFence: { kind: 'pgid', pgid: process.pid, leaderStartedAt: 'owner-process-start' },
+                    mutation: { phase: 'remote-mutation-attempted', epoch: 1 },
+                });
+            });
+        } finally {
+            restorePs();
+            removeTemporaryGitRepository(root);
+        }
+    });
+
     it.each([
         ['releases the lock after definitive HTTP 422', '422', false],
         ['retains the lock and refuses reacquisition after ambiguous HTTP 409', '409', true],
     ] as const)('%s', async (_label, status, retainsLock) => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-rejection-lock-'));
         initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
         const { port, tracker } = fakePort({ dependentSets: [[], []] });
         const rejection = shellMergeRejection(status);
         port.merge = () => {
@@ -963,6 +1036,7 @@ describe('pull-request delivery', () => {
                 );
             }
         } finally {
+            restorePs();
             removeTemporaryGitRepository(root);
         }
     });
@@ -5876,6 +5950,7 @@ describe('pull-request delivery', () => {
     it('refuses a BLOCKED head before any remote write, naming the pending required check, and releases the lock', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-lock-'));
         initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
         const { port, calls, tracker } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
             headCheckRuns: [checkRun({ status: 'IN_PROGRESS', conclusion: null })],
@@ -5895,6 +5970,7 @@ describe('pull-request delivery', () => {
             // absence here is what proves the refusal happened before any remote mutation.
             expect(deliveryLockExists(root, 42)).toBe(false);
         } finally {
+            restorePs();
             removeTemporaryGitRepository(root);
         }
     });
@@ -5902,6 +5978,7 @@ describe('pull-request delivery', () => {
     it('refuses a BLOCKED head whose required checks are all green, blaming a review thread or another ruleset rule rather than a check', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-blocked-green-lock-'));
         initializeDeliveryLockRepository(root);
+        const restorePs = writeTrustedPsFixture(root);
         const { port, calls, tracker } = fakePort({
             primary: [pullRequest({ mergeStateStatus: 'BLOCKED' })],
             headCheckRuns: [checkRun({ status: 'COMPLETED', conclusion: 'SUCCESS' })],
@@ -5922,6 +5999,7 @@ describe('pull-request delivery', () => {
             expect(calls).not.toContain('merge:42:head');
             expect(deliveryLockExists(root, 42)).toBe(false);
         } finally {
+            restorePs();
             removeTemporaryGitRepository(root);
         }
     });

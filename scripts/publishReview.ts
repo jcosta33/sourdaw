@@ -20,7 +20,7 @@ import {
     type PullRequestRemoteMutationBoundary,
     type PullRequestReviewPublicationMutationBoundary,
     type PullRequestReviewPublicationMutationSerialization,
-    currentReviewPublicationOwnerFence,
+    currentMutationOwnerFence,
     isReviewPublicationPullRequestMutationLockOwner,
     pullRequestMutationLockRef,
     readPullRequestMutationLockOid,
@@ -433,7 +433,7 @@ export async function coordinatePublishReview(
                         expectedHead: prepared.head,
                         payloadDigest: prepared.payloadDigest,
                         reviewerActorNodeId: auth.minted.actorNodeId,
-                        ownerFence: currentReviewPublicationOwnerFence,
+                        ownerFence: currentMutationOwnerFence,
                     },
                 }
             );
