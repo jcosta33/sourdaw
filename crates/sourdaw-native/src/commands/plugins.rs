@@ -1429,6 +1429,14 @@ fn insert_engine_plugin_record(
     Ok(())
 }
 
+/// How long the registration waits for the RT seam to install the plugin's
+/// host-request wake.
+///
+/// The same bound every other control visit uses. The wait is normally nothing
+/// — the instance was registered a moment ago — and the deadline is there for
+/// an audio thread already inside a block that never completes.
+const HOST_REQUEST_WAKE_INSTALL_TIMEOUT: Duration = Duration::from_secs(2);
+
 /// What the engine took, for the caller to report.
 struct EngineRegistration {
     engine_plugin_id: usize,
@@ -1548,30 +1556,6 @@ fn register_runtime_with_engine(
     let id = engine.reserve_plugin_id();
     let (bridge, bridge_handle) = create_audio_bridge(id);
 
-    // Mark this instance as one whose plugin-initiated asks get carried off the
-    // calling thread — the watcher wakes for the `[main-thread]` asks (a state
-    // change, a parameter rescan), and the drain thread answers the
-    // `[thread-safe]` ones (an editor resize, a flush).
-    //
-    // Engine-owned only, because both carriers reach an instance through
-    // `engine_plugins`: one the engine never took is not reachable from there,
-    // and installing the wake on one would have the plugin told its resize was
-    // accepted by a follow-up that could never run. No wake is the honest
-    // answer — `request_resize` then returns false, and a plugin that is
-    // refused can lay itself out to the size it has.
-    //
-    // The answer is discarded rather than reported, because a refusal means a
-    // second install: CLAP routes an editor resize, a parameter rescan and a
-    // state change back through the host, and VST3 a state change through
-    // `IComponentHandler2::setDirty`.
-    let requesting_instance_id = instance_id.to_string();
-    let _ = runtime.set_plugin_host_request_notifier(Box::new(move |request| {
-        crate::host::plugin_host_requests::notify_plugin_host_request(
-            &requesting_instance_id,
-            request,
-        );
-    }));
-
     // Take the parameter-event queue before the runtime is handed to the audio
     // thread. Held on the record so the drain reaches it without the control
     // seam — see `EnginePluginInstanceData`.
@@ -1628,6 +1612,46 @@ fn register_runtime_with_engine(
             }
         }
         return Err(RegistrationRefusal::recovered(error, shared_plugin));
+    }
+
+    // Mark this instance as one whose plugin-initiated asks get carried off the
+    // calling thread — the watcher wakes for the `[main-thread]` asks (a state
+    // change, a parameter rescan), and the drain thread answers the
+    // `[thread-safe]` ones (an editor resize, a flush).
+    //
+    // Engine-owned only, because both carriers reach an instance through
+    // `engine_plugins`: one the engine never took is not reachable from there,
+    // and installing the wake on one would have the plugin told its resize was
+    // accepted by a follow-up that could never run.
+    //
+    // Which is why it is installed *here*, past every refusal, rather than on
+    // the runtime before it moved. A refusal hands the runtime back to be
+    // parked, and the wake is a `OnceLock` — first install wins for the
+    // instance's whole life, and nothing can take it off again. A parked
+    // instance carrying one answers `request_resize` with true while
+    // `apply_pending_editor_resizes` walks only `engine_plugins`, so the plugin
+    // lays its editor out to a size no window will ever take. No wake is the
+    // honest answer for a parked instance: `request_resize` returns false, and a
+    // plugin that is refused can lay itself out to the size it has.
+    //
+    // Through the access seam because the engine may already be processing this
+    // slot — the push above is visible to the audio thread the moment it drains.
+    // A wake that could not be installed is reported and nothing else: the
+    // registration itself succeeded, and the plugin simply gets the answer a
+    // host with no follow-up gives.
+    let requesting_instance_id = instance_id.to_string();
+    if let Err(error) = shared_plugin.with_control(HOST_REQUEST_WAKE_INSTALL_TIMEOUT, |plugin| {
+        plugin.set_plugin_host_request_notifier(Box::new(move |request| {
+            crate::host::plugin_host_requests::notify_plugin_host_request(
+                &requesting_instance_id,
+                request,
+            );
+        }));
+        Ok(())
+    }) {
+        eprintln!(
+            "[Plugin] instance '{instance_id}' will not carry its own host requests: {error}"
+        );
     }
 
     Ok(EngineRegistration {
@@ -3599,6 +3623,107 @@ mod tests {
                 .expect("engine_plugins lock should be available")
                 .contains_key("recovered-instance"),
             "a refused registration leaves no record behind either"
+        );
+        // And it comes back clean. The host-request wake is a `OnceLock` — one
+        // install for the instance's whole life, with no way to take it off —
+        // and a parked instance carrying one answers `request_resize` with true
+        // while the follow-up that would honour it walks only `engine_plugins`,
+        // so the plugin lays its editor out to a size no window ever takes. A
+        // successful install here is the proof that nothing was installed
+        // before.
+        assert!(
+            recovered.set_plugin_host_request_notifier(Box::new(|_| {})),
+            "a runtime handed back to be parked must carry no host-request wake"
+        );
+    }
+
+    /// The refusal the load path takes when the engine is running: the plugin
+    /// activated badly, so nothing is registered and nothing is parked either —
+    /// the caller is told, and the instance exists in neither map.
+    ///
+    /// And the refused runtime is torn down clear of the engine lock. Destroying
+    /// a plugin runs its own `deactivate`, `destroy` and `deinit` on this
+    /// thread, for as long as the plugin takes; the quit cascade takes the
+    /// engine lock from the shell's JS thread, so a teardown under it is that
+    /// thread waiting on third-party code. The fixture reports what this thread
+    /// still held when it went down.
+    ///
+    /// Driven through `load_plugin_with_backend`'s injected constructor, which
+    /// is the only way to put a chosen runtime in front of the real load path.
+    #[test]
+    fn a_load_whose_plugin_never_activated_refuses_and_leaves_no_instance_behind() {
+        let state = Arc::new(AppState::default());
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+        publish_scan_results_in_registry(
+            &state.plugin_registry,
+            &state.plugin_registry_store,
+            &[],
+            &[],
+            true,
+            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
+        );
+
+        let torn_down = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let engine_free_at_teardown = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        let error = crate::block_on_test(load_plugin_with_backend(
+            PluginId("aaaa1111".to_string()),
+            PluginInstanceId("never-activated".to_string()),
+            TEST_ENGINE_SAMPLE_RATE,
+            &NoWindowHost,
+            &state,
+            |_backend, _path, _descriptor_id, _sample_rate| {
+                let mut wrapper = ClapWrapper::new_engine_owned_command_fixture(
+                    "Never Activated",
+                    Vec::new(),
+                    false,
+                );
+                wrapper.deactivate_engine_owned_command_fixture();
+                let observed_state = Arc::clone(&state);
+                let torn_down = Arc::clone(&torn_down);
+                let engine_free = Arc::clone(&engine_free_at_teardown);
+                wrapper.observe_engine_owned_command_fixture_teardown(Box::new(move || {
+                    torn_down.store(true, std::sync::atomic::Ordering::SeqCst);
+                    engine_free.store(
+                        observed_state.engine.try_lock().is_ok(),
+                        std::sync::atomic::Ordering::SeqCst,
+                    );
+                }));
+                Ok(HostedRuntime::from(wrapper))
+            },
+        ))
+        .expect_err("a plugin that never activated must not load");
+
+        assert!(
+            error.contains("failed to activate for engine-owned runtime"),
+            "the caller is told what the plugin did, got: {error}"
+        );
+        assert!(
+            !state
+                .plugins
+                .lock()
+                .expect("plugins lock should be available")
+                .contains_key("never-activated"),
+            "a refused load parks nothing: the caller owns no instance to retry"
+        );
+        assert!(
+            !state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock should be available")
+                .contains_key("never-activated"),
+            "and the engine was never given one"
+        );
+        assert!(
+            torn_down.load(std::sync::atomic::Ordering::SeqCst),
+            "the refused runtime must actually have been torn down, not leaked"
+        );
+        assert!(
+            engine_free_at_teardown.load(std::sync::atomic::Ordering::SeqCst),
+            "a plugin's teardown must not run under the engine lock: the quit \
+             cascade takes it from the shell's UI thread"
         );
     }
 

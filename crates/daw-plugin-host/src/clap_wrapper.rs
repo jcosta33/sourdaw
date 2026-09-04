@@ -212,6 +212,16 @@ struct EngineOwnedCommandFixture {
     /// capability commands, the lifecycle only by the open/close path, and a
     /// host may be wrong about one and right about the other.
     editor_support_threads: Arc<Mutex<Vec<std::thread::ThreadId>>>,
+    /// Run at the top of this wrapper's teardown, standing in for the plugin
+    /// calls a real drop makes — `deactivate`, `destroy`, the entry point's
+    /// `deinit`.
+    ///
+    /// Which is third-party code of unbounded duration, so *when* a host drops a
+    /// runtime is a contract and not an implementation detail: dropping one
+    /// inside a lock the rest of the app takes stalls everything behind it. A
+    /// fixture has no plugin to be slow, so the only way a host can prove it
+    /// drops in the clear is to be told the moment it does.
+    teardown_observer: Option<Box<dyn Fn() + Send + Sync>>,
 }
 
 #[cfg(feature = "engine-owned-command-fixture")]
@@ -897,6 +907,7 @@ impl ClapWrapper {
                 parameters: Vec::new(),
                 gui_lifecycle_threads: Arc::new(Mutex::new(Vec::new())),
                 editor_support_threads: Arc::new(Mutex::new(Vec::new())),
+                teardown_observer: None,
             }),
         }
     }
@@ -956,6 +967,25 @@ impl ClapWrapper {
     pub fn set_engine_owned_command_fixture_editor_resizable(&mut self, editor_resizable: bool) {
         if let Some(fixture) = self.command_fixture.as_mut() {
             fixture.editor_resizable = editor_resizable;
+        }
+    }
+
+    /// Be told the moment this fixture is torn down.
+    ///
+    /// Stands in for the plugin's own `deactivate`/`destroy`/`deinit`, which is
+    /// where a host pays for dropping a runtime in the wrong place: those calls
+    /// run on the dropping thread, take as long as the plugin takes, and a host
+    /// that makes them inside a lock another thread needs has hung that thread
+    /// for the duration. The observer runs at the top of the teardown, so it can
+    /// read what the dropping thread still holds.
+    #[cfg(feature = "engine-owned-command-fixture")]
+    #[doc(hidden)]
+    pub fn observe_engine_owned_command_fixture_teardown(
+        &mut self,
+        observe: Box<dyn Fn() + Send + Sync>,
+    ) {
+        if let Some(fixture) = self.command_fixture.as_mut() {
+            fixture.teardown_observer = Some(observe);
         }
     }
 
@@ -5928,6 +5958,17 @@ mod tests {
 
 impl Drop for ClapWrapper {
     fn drop(&mut self) {
+        // First, so the observer sees what the dropping thread holds before any
+        // of the teardown below has run.
+        #[cfg(feature = "engine-owned-command-fixture")]
+        if let Some(observe) = self
+            .command_fixture
+            .as_ref()
+            .and_then(|fixture| fixture.teardown_observer.as_ref())
+        {
+            observe();
+        }
+
         // Close GUI if it's still open
         if self.gui_open {
             self.close_gui();

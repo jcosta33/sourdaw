@@ -349,6 +349,31 @@ impl EngineHandle {
     /// variant exists so that even an impossible failure never reports a
     /// partial application as whole.
     pub fn send_graph_batch(&mut self, ops: Vec<GraphCommand>) -> Result<(), GraphBatchError> {
+        self.send_graph_batch_with_headroom(ops, 0)
+    }
+
+    /// [`Self::send_graph_batch`], leaving `headroom` slots free behind the
+    /// batch for pushes the caller makes immediately afterwards.
+    ///
+    /// A batch sizes the ring to exactly itself — fence plus body — and then
+    /// fills every slot of it, so the next single push onto a ring this batch
+    /// provisioned is refused as "queue full" whatever it is. That is a real
+    /// outcome, not a theoretical one: the boot ring holds 256, so any batch
+    /// from about sixty tracks upwards lands exactly full, and the graph
+    /// apply's own follow-up push — the dormant plugin an engine start takes
+    /// over — is refused on precisely the projects large enough for a musician
+    /// to notice the plugin going silent.
+    ///
+    /// Reserving is the caller's to ask for, because only the caller knows how
+    /// many pushes it is about to make. The reservation changes the provision
+    /// arithmetic and nothing else: the batch still pushes fence plus body, so
+    /// a caller that asks for headroom it does not use has only made the ring
+    /// slightly larger.
+    pub fn send_graph_batch_with_headroom(
+        &mut self,
+        ops: Vec<GraphCommand>,
+        headroom: usize,
+    ) -> Result<(), GraphBatchError> {
         // Effect-table admission comes before the ring is provisioned, so a
         // batch that cannot fit the shared table never reallocates a channel
         // to carry commands that will be refused one at a time on the way in.
@@ -357,8 +382,9 @@ impl EngineHandle {
         self.admit_capture_registrations(&ops)
             .map_err(GraphBatchError::Refused)?;
 
-        // The fence occupies a slot of its own alongside the body.
-        let needed = ops.len() + 1;
+        // The fence occupies a slot of its own alongside the body, and the
+        // caller's reservation sits behind both.
+        let needed = ops.len() + 1 + headroom;
         if self.command_tx.slots() < needed {
             self.provision_command_channel(needed)
                 .map_err(GraphBatchError::Refused)?;
@@ -1367,6 +1393,35 @@ mod tests {
             retirements += 1;
         }
         assert_eq!(retirements, 151);
+    }
+
+    /// A batch sizes the ring to exactly itself and then fills it, so the next
+    /// single push onto that ring is refused however small it is. A caller with
+    /// a push of its own to make immediately afterwards — the graph apply, which
+    /// hands the engine every plugin loaded before it started — asks for the
+    /// slot up front, and the reservation is provisioned rather than pushed.
+    #[test]
+    fn a_batch_leaves_the_headroom_its_caller_reserved() {
+        let boot_capacity = 256;
+        let (mut engine, _command_rx, _retired_adoption_rx) =
+            engine_handle_for_command_capture(boot_capacity);
+
+        // Fence plus body is exactly the boot ring: without a reservation this
+        // batch fits without provisioning and leaves nothing behind it.
+        let ops: Vec<GraphCommand> = (0..255usize)
+            .map(|id| GraphCommand::AddTrack(TimelineTrack::new(id)))
+            .collect();
+        assert_eq!(ops.len() + 1, boot_capacity);
+
+        engine
+            .send_graph_batch_with_headroom(ops, 1)
+            .expect("capacity must be provisioned, not refused");
+
+        assert!(
+            engine.command_tx.slots() >= 1,
+            "the caller's reserved slot must survive the batch, got {}",
+            engine.command_tx.slots()
+        );
     }
 
     /// The typed handle resolves effect type and parameter names to

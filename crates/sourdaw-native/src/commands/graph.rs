@@ -2502,6 +2502,24 @@ pub async fn apply_graph_commands(
         Err(error) => eprintln!("[Crumbs] dormant instances could not be attached: {error}"),
     }
 
+    // How many command slots this batch has to leave free behind it: the
+    // attach below pushes one `AddPluginWithBridge` per dormant instance, and a
+    // batch sizes the ring to exactly itself and then fills it, so without this
+    // every dormant plugin is refused as "queue full" on any batch from about
+    // sixty tracks upwards — the plugin this attach exists to unmute going
+    // silent on exactly the projects big enough to care.
+    //
+    // Read before the batch is sent and outside the engine lock, in the load
+    // path's order. The count can only shrink between here and the attach: the
+    // engine is installed above, so a load that arrives after this read takes
+    // the engine-present branch and never parks anything. Over-reserving costs
+    // a slightly larger ring.
+    let dormant_plugin_count = state
+        .plugins
+        .lock()
+        .map_err(|error| format!("Failed to lock plugins: {error}"))?
+        .len();
+
     let mut engine_guard = state
         .engine
         .lock()
@@ -2538,7 +2556,7 @@ pub async fn apply_graph_commands(
     // refuses to drain past until every command is visible — the engine
     // applies the batch whole or does not observe it at all. Only this
     // thread pushes onto the ring (the engine mutex is held).
-    match engine.send_graph_batch(mapped.ops) {
+    match engine.send_graph_batch_with_headroom(mapped.ops, dormant_plugin_count) {
         Ok(()) => {}
         Err(GraphBatchError::Refused(reason)) => {
             // Nothing was pushed: a refusal here is a clean rejection.
@@ -4926,6 +4944,58 @@ mod tests {
         assert!(
             state.plugins.lock().expect("plugins lock").is_empty(),
             "the batch that applied is the one that took the instance"
+        );
+    }
+
+    /// A batch big enough to resize the command ring must still leave room for
+    /// the attach it is about to make.
+    ///
+    /// `send_graph_batch` provisions exactly fence plus body and then fills every
+    /// slot, so on a ring it sized the following single push is refused as
+    /// "queue full" whatever it is. In production that is the 256-slot boot ring
+    /// and a project of some sixty tracks on its first Play; here the ring is
+    /// small and the batch modest, because the arithmetic that breaks is
+    /// `capacity == needed`, not the size either of them happens to be. The
+    /// plugin this whole path exists to unmute would go silent on exactly the
+    /// sessions large enough to notice.
+    #[test]
+    fn a_batch_that_fills_the_command_ring_still_attaches_its_dormant_plugin() {
+        let state = AppState::default();
+        park_dormant_plugin(&state, "attached-behind-a-full-batch");
+
+        // Smaller than the batch below, so that batch is the one that sizes the
+        // ring it then fills.
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(8);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        let commands: Vec<Value> = (0..64)
+            .map(|index| track_strip(&format!("t{index}")))
+            .collect();
+        let result = block_on_test(apply_graph_commands(
+            json!({ "schemaVersion": 1, "commands": commands }),
+            &state,
+            &CrumbsState::default(),
+        ))
+        .expect("the batch resolves to a result");
+
+        assert_eq!(result["application"], "applied", "got: {result:?}");
+        let attached = result["attachedPlugins"]
+            .as_array()
+            .expect("an applied batch always carries the list");
+        assert_eq!(
+            attached.len(),
+            1,
+            "the ring the batch sized must have held a slot for the attach: {attached:?}"
+        );
+        assert_eq!(attached[0]["instanceId"], "attached-behind-a-full-batch");
+        assert!(
+            state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock")
+                .contains_key("attached-behind-a-full-batch"),
+            "and the engine must actually hold it"
         );
     }
 
