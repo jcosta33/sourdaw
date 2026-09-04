@@ -1,0 +1,20 @@
+src/modules/AiRuntime/transformers/promptParser/__tests__/parsingDeep.spec.ts
+  h_1228e573df1f42 97-104
+src/modules/AiRuntime/transformers/promptParser/parsing.ts
+  h_1228e573df1f42 118,122,127,139,149,154,160,167,177,182,194,207,231,244,247,268,274,280,286,293,326-327,338-339,345,351,357,364,371,377,383,386,392
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  h_1228e573df1f42 117-119,456-486
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  h_1228e573df1f42 265,285,291
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "ae9197c884c1581b0e30ef633f49aa8e362ba3ab",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
