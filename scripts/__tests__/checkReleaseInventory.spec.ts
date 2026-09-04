@@ -3240,7 +3240,7 @@ describe('release inventory', () => {
         }
     });
 
-    // Captures the error message once instead of recomputing the contract repeatedly; ~3.1 s on an idle machine.
+    // Rebuilds the Grand Boule fixture repository four times; ~3.1 s on an idle machine.
     it('rejects stale Grand Boule revisions and digests through the Grand Boule assertion', { timeout: 20_000 }, () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-grand-boule-assertion-'));
         writeGrandBouleReleaseFixture(root);
