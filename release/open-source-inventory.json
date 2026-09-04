@@ -18,6 +18,7 @@
                 ".github/**",
                 "crates/**",
                 "docs/**",
+                "measurements/**",
                 "release/desktop-runtime-material.json",
                 "release/open-source-inventory.json",
                 "release/web-artifact-manifest.json",
