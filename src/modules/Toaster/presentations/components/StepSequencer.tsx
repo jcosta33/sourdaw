@@ -17,6 +17,7 @@ type StepSequencerProps = {
     onSetRetrigger?: (padIndex: number, stepIndex: number, count: number) => void;
     onSetCondition?: (padIndex: number, stepIndex: number, condition: StepCondition) => void;
     onSetProbability?: (padIndex: number, stepIndex: number, probability: number) => void;
+    onSetMicroTiming?: (padIndex: number, stepIndex: number, microTiming: number) => void;
 };
 
 const STEP_HEIGHT = 28;
@@ -37,6 +38,14 @@ const PROBABILITY_OPTIONS: Array<{ value: number; label: string }> = [
     { value: 0.5, label: '50%' },
     { value: 0.25, label: '25%' },
     { value: 0.1, label: '10%' },
+];
+
+const MICRO_TIMING_OPTIONS: Array<{ value: number; label: string }> = [
+    { value: -0.25, label: '-25%' },
+    { value: -0.1, label: '-10%' },
+    { value: 0, label: 'On Beat' },
+    { value: 0.1, label: '+10%' },
+    { value: 0.25, label: '+25%' },
 ];
 
 const SOUND_LOCK_ENGINES: DrumEngineType[] = [
@@ -66,6 +75,7 @@ export const StepSequencer = ({
     onSetRetrigger,
     onSetCondition,
     onSetProbability,
+    onSetMicroTiming,
 }: StepSequencerProps): ReactElement => {
     const dragRef = useRef<{ padIndex: number; stepIndex: number; startY: number } | null>(null);
     const [menuState, setMenuState] = useState<{
@@ -75,7 +85,9 @@ export const StepSequencer = ({
         y: number;
     } | null>(null);
     const stepCount = pattern.stepsPerBar * pattern.bars;
-    const hasContextMenu = Boolean(onSetSoundLock || onSetRetrigger || onSetCondition || onSetProbability);
+    const hasContextMenu = Boolean(
+        onSetSoundLock || onSetRetrigger || onSetCondition || onSetProbability || onSetMicroTiming
+    );
 
     const targetTrack = menuState ? pattern.tracks.find((track) => track.padIndex === menuState.padIndex) : undefined;
     const targetStep = menuState ? targetTrack?.steps[menuState.stepIndex] : undefined;
@@ -164,6 +176,10 @@ export const StepSequencer = ({
                                         }${
                                             step.probability < 1
                                                 ? `, probability ${Math.round(step.probability * 100)}%`
+                                                : ''
+                                        }${
+                                            step.microTiming !== 0
+                                                ? `, nudge ${Math.round(step.microTiming * 100)}%`
                                                 : ''
                                         }`}
                                         title="Click to toggle · Alt-drag up/down to set velocity · Right-click or press L to sound-lock"
@@ -297,7 +313,9 @@ export const StepSequencer = ({
                                     {label}
                                 </DawMenuButton>
                             ))}
-                            {onSetCondition || onSetProbability || onSetSoundLock ? <DawMenuSeparator /> : null}
+                            {onSetCondition || onSetProbability || onSetMicroTiming || onSetSoundLock ? (
+                                <DawMenuSeparator />
+                            ) : null}
                         </>
                     ) : null}
 
@@ -317,7 +335,7 @@ export const StepSequencer = ({
                                     {cond}
                                 </DawMenuButton>
                             ))}
-                            {onSetProbability || onSetSoundLock ? <DawMenuSeparator /> : null}
+                            {onSetProbability || onSetMicroTiming || onSetSoundLock ? <DawMenuSeparator /> : null}
                         </>
                     ) : null}
 
@@ -331,6 +349,26 @@ export const StepSequencer = ({
                                     active={targetStep?.probability === value}
                                     onClick={() => {
                                         onSetProbability(menuState.padIndex, menuState.stepIndex, value);
+                                        setMenuState(null);
+                                    }}
+                                >
+                                    {label}
+                                </DawMenuButton>
+                            ))}
+                            {onSetMicroTiming || onSetSoundLock ? <DawMenuSeparator /> : null}
+                        </>
+                    ) : null}
+
+                    {onSetMicroTiming ? (
+                        <>
+                            <DawMenuSectionLabel>Micro-timing</DawMenuSectionLabel>
+                            {MICRO_TIMING_OPTIONS.map(({ value, label }) => (
+                                <DawMenuButton
+                                    key={value}
+                                    role="menuitem"
+                                    active={targetStep?.microTiming === value}
+                                    onClick={() => {
+                                        onSetMicroTiming(menuState.padIndex, menuState.stepIndex, value);
                                         setMenuState(null);
                                     }}
                                 >
