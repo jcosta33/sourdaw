@@ -65,13 +65,13 @@ describe('carryQueuedStamps', () => {
                 target: TARGET_A,
                 writes: [],
                 cursor: 0,
-                queued: [stamp(100), stamp(200), stamp(500)],
+                queued: [stamp(100), stamp(200), stamp(300), stamp(500)],
             },
             {
                 target: TARGET_B,
                 writes: [],
                 cursor: 0,
-                queued: [stamp(150), stamp(600)],
+                queued: [stamp(150), stamp(300), stamp(600)],
             },
         ];
         const to: LiveAutomationWriterTarget[] = [

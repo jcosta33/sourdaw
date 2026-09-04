@@ -1158,6 +1158,7 @@ describe('the live automation writer', () => {
             step(0, 0.1),
             step(0.02, 0.2),
             step(0.04, 0.3),
+            step(0.05, 0.35),
             step(0.06, 0.4),
             step(0.08, 0.5),
             step(0.18, 0.6),
@@ -1169,11 +1170,12 @@ describe('the live automation writer', () => {
 
         const passBefore = nativeLiveAutomationWriter.pass!;
         const queuedBefore = passBefore.targets[0]?.queued ?? [];
-        expect(queuedBefore).toHaveLength(5);
+        expect(queuedBefore).toHaveLength(6);
         expect(queuedBefore.map((stamp) => stamp.startFrame)).toEqual([
             0,
             Math.round(0.02 * SAMPLE_RATE),
             Math.round(0.04 * SAMPLE_RATE),
+            Math.round(0.05 * SAMPLE_RATE),
             Math.round(0.06 * SAMPLE_RATE),
             Math.round(0.08 * SAMPLE_RATE),
         ]);
@@ -1208,6 +1210,7 @@ describe('the live automation writer', () => {
             step(0, 0.1),
             step(0.02, 0.2),
             step(0.04, 0.3),
+            step(0.05, 0.35),
             step(0.06, 0.4),
             step(0.08, 0.5),
             step(0.18, 0.6),
@@ -1218,7 +1221,16 @@ describe('the live automation writer', () => {
         await flush();
 
         const passBefore = nativeLiveAutomationWriter.pass!;
-        expect(passBefore.targets[0]?.queued).toHaveLength(5);
+        const queuedBefore = passBefore.targets[0]?.queued ?? [];
+        expect(queuedBefore).toHaveLength(6);
+        expect(queuedBefore.map((stamp) => stamp.startFrame)).toEqual([
+            0,
+            Math.round(0.02 * SAMPLE_RATE),
+            Math.round(0.04 * SAMPLE_RATE),
+            Math.round(0.05 * SAMPLE_RATE),
+            Math.round(0.06 * SAMPLE_RATE),
+            Math.round(0.08 * SAMPLE_RATE),
+        ]);
 
         await repositionNativeLiveGraphSession({ positionSeconds: 0.05 });
 
