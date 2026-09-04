@@ -108,7 +108,7 @@
  * the sample rate it actually got.
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 import { arch, cpus, loadavg, platform, release } from 'node:os';
 import { basename, dirname, resolve } from 'node:path';
@@ -116,9 +116,14 @@ import { fileURLToPath } from 'node:url';
 
 import { chromium, type Browser, type Page } from 'playwright';
 
-import { machineProvenance } from './desktopLatencyRecord.ts';
+import { machineProvenance, writeRecord } from './desktopLatencyRecord.ts';
 import { launchRenderDeadlineBrowser } from './renderDeadlineBrowser.ts';
-import { buildTransportClockRecord, percentiles, type Percentiles } from './transportClockRecord.ts';
+import {
+    buildTransportClockRecord,
+    percentiles,
+    recordPathFromArgv,
+    type Percentiles,
+} from './transportClockRecord.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCHEDULER_WORKER_SOURCE = resolve(HERE, '../src/modules/Transport/workers/schedulerWorker.ts');
@@ -597,8 +602,14 @@ function reportClamp(run: TickRun, stallMs: number): void {
 async function main(): Promise<void> {
     const headed = process.argv.includes('--headed');
     const emitJson = process.argv.includes('--json');
-    const recordArgIndex = process.argv.indexOf('--record');
-    const recordPath = recordArgIndex === -1 ? undefined : process.argv[recordArgIndex + 1];
+    let recordPath: string | undefined;
+    try {
+        recordPath = recordPathFromArgv(process.argv);
+    } catch (error) {
+        process.stdout.write(`NOT MEASURED: ${error instanceof Error ? error.message : String(error)}\n`);
+        process.exitCode = EXIT_NOT_MEASURED;
+        return;
+    }
 
     const cores = cpus().length;
     const [load1] = loadavg();
@@ -758,9 +769,7 @@ async function main(): Promise<void> {
                 granularity,
                 runs: [idle, uiLoad, ...stallRuns],
             });
-            mkdirSync(dirname(resolve(recordPath)), { recursive: true });
-            writeFileSync(resolve(recordPath), `${JSON.stringify(record, null, 2)}\n`);
-            process.stdout.write(`record written ${recordPath}\n`);
+            writeRecord(recordPath, record);
         }
     } finally {
         await browser.close();

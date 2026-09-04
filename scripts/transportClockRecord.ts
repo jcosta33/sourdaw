@@ -176,3 +176,24 @@ export function buildTransportClockRecord(input: BuildTransportClockRecordInput)
         runs: input.runs.map((run) => summarizeTickRun(run, input.lookAheadMs)),
     };
 }
+
+/**
+ * `--record` is a value flag, not a boolean one: `indexOf('--record')` alone
+ * cannot tell "absent" from "present with no path" from "present but the
+ * next argument is actually the next flag" (for example a trailing
+ * `--record --headed`, which would otherwise silently try to write to a file
+ * named `--headed`). Read at the very top of `main`, before anything
+ * launches, so a malformed invocation fails as NOT MEASURED instead of after
+ * the browser and worker have already run.
+ */
+export function recordPathFromArgv(argv: readonly string[]): string | undefined {
+    const index = argv.indexOf('--record');
+    if (index === -1) {
+        return undefined;
+    }
+    const path = argv[index + 1];
+    if (path === undefined || path.startsWith('-')) {
+        throw new Error('--record needs a file path');
+    }
+    return path;
+}

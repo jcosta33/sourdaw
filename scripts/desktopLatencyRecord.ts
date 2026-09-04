@@ -346,7 +346,13 @@ function jsonSafe(_key: string, value: unknown): unknown {
     return value;
 }
 
-export function writeRecord(jsonPath: string, record: DesktopLatencyRecord): void {
+/**
+ * Generic over the record shape so every driver's baseline — desktop latency,
+ * transport clock, and any later addition — shares one writer, the same
+ * `jsonSafe` non-finite replacer, and the same printed confirmation line,
+ * rather than each driver growing its own copy of `mkdirSync`/`writeFileSync`.
+ */
+export function writeRecord<TRecord extends object>(jsonPath: string, record: TRecord): void {
     mkdirSync(dirname(resolve(jsonPath)), { recursive: true });
     writeFileSync(resolve(jsonPath), `${JSON.stringify(record, jsonSafe, 4)}\n`);
     process.stdout.write(`\nrecord written to ${jsonPath}\n`);
