@@ -878,17 +878,16 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
         assert_eq!(error, "Plugin scan helper timed out");
     }
     #[cfg(unix)]
-    /// A killed process stays visible to `kill -0` until its parent reaps it,
-    /// so "the group was killed" is only provable over a reap window.
-    fn process_is_gone_within(pid: &str, window: Duration) -> bool {
+    /// A killed process stays visible to `kill(pid, 0)` until its parent
+    /// reaps it, so "the group was killed" is only provable over a reap
+    /// window: keep polling until the signal probe reports ESRCH.
+    fn process_is_gone_within(pid: i32, window: Duration) -> bool {
         let deadline = Instant::now() + window;
         loop {
-            let still_alive = Command::new("kill")
-                .args(["-0", pid])
-                .status()
-                .map(|status| status.success())
-                .unwrap_or(false);
-            if !still_alive {
+            let probe = unsafe { libc::kill(pid, 0) };
+            let gone =
+                probe == -1 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH);
+            if gone {
                 return true;
             }
             if Instant::now() >= deadline {
@@ -902,6 +901,9 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
     fn timeout_kills_the_helper_process_group() {
         let pid_path =
             std::env::temp_dir().join(format!("sourdaw-scan-child-{}", std::process::id()));
+        // A stale file from an earlier run under the same test-binary pid
+        // must never be mistaken for this run's helper.
+        let _ = fs::remove_file(&pid_path);
         let mut command = Command::new("sh");
         command.args([
             "-c",
@@ -915,8 +917,11 @@ unsafe extern "C" fn init(_: *const c_char)->bool{
             "the helper must write its child's pid before the deadline; \
              a missing file means the deadline fired first",
         );
-        let _ = fs::remove_file(pid_path);
-        let pid = pid.trim();
+        let _ = fs::remove_file(&pid_path);
+        let pid: i32 = pid.trim().parse().expect(
+            "the helper's pid file must hold the child's pid; an empty file means the \
+             deadline fired between creating and writing it",
+        );
         assert!(
             process_is_gone_within(pid, Duration::from_secs(2)),
             "sleep {pid} is still alive after the group kill's reap window"
