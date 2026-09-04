@@ -168,7 +168,9 @@ describe('AdjustmentLayerStrip', () => {
         renderStrip();
         const layerRow = screen.getByText('EQ Layer').closest('div[class*="absolute"]')!.parentElement!;
         fireEvent.contextMenu(layerRow, { clientX: 100, clientY: 100 });
-        expect(within(screen.getByRole('menu')).getByText(/disable layer|enable layer/i)).toBeInTheDocument();
+        expect(
+            within(screen.getByTestId('adjustment-layer-context-menu')).getByText(/disable layer|enable layer/i)
+        ).toBeInTheDocument();
     });
 
     it('should open the Add menu when the add button is clicked', () => {

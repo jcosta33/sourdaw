@@ -482,10 +482,9 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordT
                                     ? 'bg-[var(--color-accent-peach)]/20 text-[var(--color-accent-peach)] hover:bg-[var(--color-accent-peach)]/30'
                                     : 'text-muted-foreground/40 hover:text-muted-foreground/60 hover:bg-white/5'
                             )}
-                            aria-label={state.enabled ? 'Disable harmonic following' : 'Enable harmonic following'}
+                            aria-label="Harmonic following"
                             aria-pressed={state.enabled}
                             disabled={pending}
-                            title={state.enabled ? 'Harmonic following ON' : 'Harmonic following OFF'}
                             onClick={() => {
                                 void dispatchAction({
                                     type: 'toggleChordTrack',

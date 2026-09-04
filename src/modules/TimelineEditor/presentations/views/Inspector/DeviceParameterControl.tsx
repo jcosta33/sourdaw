@@ -385,7 +385,12 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                                                 addAutomationLane(trackId, targetId, param.name);
                                             }
                                         }}
-                                        aria-label={`Automate ${param.name}`}
+                                        aria-label={
+                                            hasAutomation
+                                                ? `Remove automation for ${param.name}`
+                                                : `Automate ${param.name}`
+                                        }
+                                        aria-pressed={hasAutomation}
                                     />
                                 </TooltipTrigger>
                                 <TooltipContent side="top">
@@ -433,7 +438,12 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                                                 addAutomationLane(trackId, targetId, param.name);
                                             }
                                         }}
-                                        aria-label={`Automate ${param.name}`}
+                                        aria-label={
+                                            hasAutomation
+                                                ? `Remove automation for ${param.name}`
+                                                : `Automate ${param.name}`
+                                        }
+                                        aria-pressed={hasAutomation}
                                     />
                                 </TooltipTrigger>
                                 <TooltipContent side="top">

@@ -467,7 +467,7 @@ export const AdjustmentLayerStrip = ({ pixelsPerBeat, scrollX }: AdjustmentLayer
             {contextMenu.kind !== 'none' ? (
                 <div
                     ref={menuRef}
-                    role="menu"
+                    data-testid="adjustment-layer-context-menu"
                     className="daw-floating-surface fixed z-50 min-w-[180px] rounded-md p-1"
                     style={{ left: contextMenu.x, top: contextMenu.y }}
                 >
