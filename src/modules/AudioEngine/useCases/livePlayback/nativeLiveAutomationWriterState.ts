@@ -93,7 +93,9 @@ export type LiveAutomationQueuedStamp = {
      * carried this stamp, read off the apply result's `admittedBatch` — what a
      * snapshot's `batchesApplied` reaches once that batch has drained. `null`
      * when the backend reports no fence (a mapping or an in-process renderer
-     * has none), which is what the anchor's fallback answers for.
+     * has none), which is what the anchor's fallback answers for. Both the
+     * playhead and seam release proofs in `provenPopped` require `batchesApplied >=
+     * admittedBatch` (matching `crates/sourdaw-native/src/commands/graph.rs:913-920, 950`).
      */
     admittedBatch: number | null;
     /**

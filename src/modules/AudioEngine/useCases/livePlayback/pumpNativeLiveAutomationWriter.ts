@@ -200,6 +200,12 @@ function carryQueuedStamps(
  * Drop what the engine's echo proves popped — `proven_popped` in `graph.rs`,
  * both halves.
  *
+ * Both the playhead proof and the seam proof first require the write's admitting
+ * fenced batch to be at or behind the echoed batch horizon (`batchesApplied >=
+ * stamp.admittedBatch`, matching `crates/sourdaw-native/src/commands/graph.rs:913-920, 950`).
+ * Until then the engine has not even drained that batch (or has not yet been
+ * handed it), so neither proof may release the stamp.
+ *
  * The playhead half: a stamp strictly below the echoed playhead is popped. The
  * seam half: a loop pins the playhead below the region's end — the block that
  * straddles the seam publishes the wrapped position, never the frames it
@@ -210,7 +216,7 @@ function carryQueuedStamps(
  *
  * The anchor is the half's delicate piece. The engine sets it
  * (`landed_wraps`'s `get_or_insert`) only from `release_landed`, which runs
- * only as a batch is admitted (graph.rs:2465) — and only once the stamp's own
+ * only as a batch is admitted (graph.rs:2671) — and only once the stamp's own
  * batch has drained, because `admitted_batch > batches_applied` returns
  * unproven before the anchor is read. The mirror holds the same two facts per
  * stamp — the fence its batch was admitted at rides the apply result, and a
@@ -222,20 +228,35 @@ function carryQueuedStamps(
  * then fires one pass early: the mirror believes a slot the ledger still
  * charges, and the engine refuses the batch that believed it.
  */
-function releaseLanded(pass: LiveAutomationWriterPass, positionSeconds: number, loopWraps: number | null): void {
+function releaseLanded(
+    pass: LiveAutomationWriterPass,
+    positionSeconds: number,
+    loopWraps: number | null,
+    batchesApplied: number | null
+): void {
     const playheadFrame = frameAt(positionSeconds, pass.sampleRate);
     for (const slot of pass.targets) {
-        slot.queued = slot.queued.filter((stamp) => !provenPopped(pass, stamp, playheadFrame, loopWraps));
+        slot.queued = slot.queued.filter(
+            (stamp) => !provenPopped(pass, stamp, playheadFrame, loopWraps, batchesApplied)
+        );
     }
 }
 
-/** `proven_popped` in `graph.rs`: the playhead proof, then the seam proof. */
+/**
+ * `proven_popped` in `graph.rs`: both proofs gate on `admittedBatch <= batchesApplied`
+ * (`crates/sourdaw-native/src/commands/graph.rs:913-920, 950`), followed by the
+ * playhead proof and the seam proof.
+ */
 function provenPopped(
     pass: LiveAutomationWriterPass,
     stamp: LiveAutomationQueuedStamp,
     playheadFrame: number,
-    loopWraps: number | null
+    loopWraps: number | null,
+    batchesApplied: number | null
 ): boolean {
+    if (stamp.admittedBatch !== null && (batchesApplied === null || batchesApplied < stamp.admittedBatch)) {
+        return false;
+    }
     if (stamp.startFrame < playheadFrame) {
         return true;
     }
@@ -347,7 +368,7 @@ export async function pumpNativeLiveAutomationWriter(input: PumpNativeLiveAutoma
     }
 
     takeLoopSeam({ pass, positionSeconds: input.positionSeconds, loopWraps: input.loopWraps });
-    releaseLanded(pass, input.positionSeconds, input.loopWraps);
+    releaseLanded(pass, input.positionSeconds, input.loopWraps, input.batchesApplied);
 
     const admissions = admitWindow({ pass, positionSeconds: input.positionSeconds });
     if (admissions.length === 0) {

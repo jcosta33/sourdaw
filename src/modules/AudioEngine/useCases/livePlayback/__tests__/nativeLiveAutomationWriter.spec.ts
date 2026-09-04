@@ -205,26 +205,37 @@ function deferApply(): { settle: (result: AudioGraphApplyResult) => void } {
     return { settle: (result) => settle(result) };
 }
 
-type QueuedStamp = { startFrame: number; landFrame: number; seamAnchor: number | null };
+type QueuedStamp = {
+    startFrame: number;
+    landFrame: number;
+    seamAnchor: number | null;
+    admittedBatch: number;
+};
 
 /**
  * The engine's ledger, on this side of the wire: `QueueBudgets` from
  * `graph.rs`. A stamp releases on either half of `proven_popped` — the echoed
  * playhead passing its start frame, or `SEAMS_PROVING_A_WHOLE_PASS` seams
  * closing since the wrap count the stamp anchored at with its start frame
- * below the last wrap frame — a write that is not a step first drops every
- * stamp landing at or after its own start (`RampedParam::cancel_stale`), and a
- * batch that would take a parameter past the capacity refuses whole.
+ * below the last wrap frame, both gated on `admitted_batch <= batches_applied`
+ * (`crates/sourdaw-native/src/commands/graph.rs:913-920, 950`) — a write that is
+ * not a step first drops every stamp landing at or after its own start
+ * (`RampedParam::cancel_stale`), and a batch that would take a parameter past the
+ * capacity refuses whole.
  */
 function engineQueueBackend(): { apply: (batch: AudioGraphCommandBatch) => Promise<AudioGraphApplyResult> } {
     const queues = new Map<string, QueuedStamp[]>();
     return {
         apply: (batch) => {
             const echoFrame = Math.round(engineEchoSeconds * SAMPLE_RATE);
+            const echoBatches = engineEchoBatchesApplied ?? engineBatches;
             for (const [key, stamps] of queues) {
                 queues.set(
                     key,
                     stamps.filter((stamp) => {
+                        if (stamp.admittedBatch > echoBatches) {
+                            return true;
+                        }
                         if (stamp.startFrame < echoFrame) {
                             return false;
                         }
@@ -253,7 +264,10 @@ function engineQueueBackend(): { apply: (batch: AudioGraphCommandBatch) => Promi
                 if (surviving.length === AUTOMATION_QUEUE_CAPACITY) {
                     return Promise.resolve(QUEUE_FULL);
                 }
-                charged.set(key, [...surviving, { startFrame, landFrame, seamAnchor: null }]);
+                charged.set(key, [
+                    ...surviving,
+                    { startFrame, landFrame, seamAnchor: null, admittedBatch: engineBatches + 1 },
+                ]);
             }
             for (const [key, stamps] of charged) {
                 queues.set(key, stamps);
@@ -278,6 +292,11 @@ let engineEchoLastWrapFrame = 0;
  * snapshot would report, bumped by the ledger fake on every batch it applies.
  */
 let engineBatches = 0;
+/**
+ * Fenced batches the fake's world has drained when simulating an engine
+ * audio thread lagging behind admissions. Defaults to `engineBatches` when null.
+ */
+let engineEchoBatchesApplied: number | null = null;
 
 beforeEach(() => {
     mocks.apply.mockReset();
@@ -292,6 +311,7 @@ beforeEach(() => {
     engineEchoWraps = 0;
     engineEchoLastWrapFrame = 0;
     engineBatches = 0;
+    engineEchoBatchesApplied = null;
     nativeLiveAutomationWriter.epoch += 1;
     nativeLiveAutomationWriter.inFlightEpoch = null;
     nativeLiveAutomationWriter.pass = null;
@@ -500,7 +520,7 @@ describe('the live automation writer', () => {
         await flush();
         for (let tick = 1; tick <= 60; tick++) {
             engineEchoSeconds = tick * 0.01;
-            await pump(engineEchoSeconds, 0);
+            await pump(engineEchoSeconds, 0, engineBatches);
         }
 
         const refusals = mocks.warn.mock.calls.filter(([message]) => String(message).includes('refused'));
@@ -991,5 +1011,99 @@ describe('the live automation writer', () => {
         // The set moved, so it is worth saying again — and it is the new lane
         // that has to be readable, which is what repeating the old one buries.
         expect(mocks.warn.mock.calls.filter(([message]) => String(message).includes('excluded'))).toHaveLength(3);
+    });
+
+    it('withholds playhead release for a stamp whose admitting batch has not yet drained', async () => {
+        mocks.curve = [{ target: FADER, writes: [step(1.02, 0.5)] }];
+        mocks.apply.mockResolvedValueOnce({ ...APPLIED, admittedBatch: 5 });
+
+        arm(1.0);
+        await flush();
+
+        const pass = nativeLiveAutomationWriter.pass;
+        expect(pass?.targets[0]?.queued).toHaveLength(1);
+        expect(pass?.targets[0]?.queued[0]?.admittedBatch).toBe(5);
+
+        // Playhead crosses startFrame (1.02 s), but batchesApplied is null: release withheld.
+        await pump(1.05, 0, null);
+        expect(pass?.targets[0]?.queued).toHaveLength(1);
+        expect(pass?.targets[0]?.queued[0]?.admittedBatch).toBe(5);
+
+        // Playhead crosses startFrame, but batchesApplied is behind admittedBatch (4 < 5): release withheld.
+        await pump(1.05, 0, 4);
+        expect(pass?.targets[0]?.queued).toHaveLength(1);
+        expect(pass?.targets[0]?.queued[0]?.admittedBatch).toBe(5);
+
+        // Once batchesApplied reaches admittedBatch (5 >= 5), the playhead release fires.
+        await pump(1.05, 0, 5);
+        expect(pass?.targets[0]?.queued).toHaveLength(0);
+    });
+
+    it('prevents over-admission and whole-batch queue capacity refusals when writes occur across pre-seam lookahead before the batch has drained', async () => {
+        // When a dense lane approaches a loop seam within the lookahead window,
+        // a batch is admitted up to the queue margin. If playhead release were
+        // ungated by admittedBatch, ticks across the lookahead where startFrame < playheadFrame
+        // would drop the stamps while the engine ledger still charges them (admitted_batch >
+        // progress.batches_applied). The mirror would then over-admit following writes and
+        // provoke whole-batch automation-queue-capacity refusals.
+        const engine = engineQueueBackend();
+        mocks.apply.mockImplementation((batch) => engine.apply(batch));
+        nativeLiveGraphSession.loopRegion = { enabled: true, startSeconds: 2, endSeconds: 4 };
+        nativeLiveGraphSession.loopEnabled = true;
+
+        // 9 steps within the pre-seam lookahead [3.90, 4.00).
+        // Capacity is 8, margin 1 => ceiling 7.
+        // The first pump at 3.90 admits 7 writes (3.91 to 3.97) into batch 1.
+        // Writes 3.98 and 3.99 remain unadmitted.
+        const denseWrites = [
+            step(3.91, 0.1),
+            step(3.92, 0.2),
+            step(3.93, 0.3),
+            step(3.94, 0.4),
+            step(3.95, 0.5),
+            step(3.96, 0.6),
+            step(3.97, 0.7),
+            step(3.98, 0.8),
+            step(3.99, 0.9),
+        ];
+        mocks.curve = [{ target: FADER, writes: denseWrites }];
+
+        arm(3.9);
+        await flush();
+
+        expect(writesOf(0)).toHaveLength(7);
+        expect(engineBatches).toBe(1);
+
+        // Playhead advances to 3.94 (past 3.91, 3.92, 3.93), but batch 1 has not drained
+        // on the engine audio thread (batchesApplied = 0).
+        engineEchoSeconds = 3.94;
+        engineEchoWraps = 0;
+        engineEchoBatchesApplied = 0;
+        await pump(3.94, 0, 0);
+
+        // The mirror withholds playhead release because batch 1 has not drained.
+        // It does not over-admit writes 3.98-3.99, avoiding an engine queue capacity refusal.
+        const pass = nativeLiveAutomationWriter.pass;
+        expect(pass?.targets[0]?.queued).toHaveLength(7);
+        const refusals = mocks.warn.mock.calls.filter(([message]) => String(message).includes('refused'));
+        expect(refusals).toEqual([]);
+
+        // Once batch 1 drains (batchesApplied = 1), playhead release pops the passed stamps (3.91-3.94),
+        // freeing queue slots so the next pump admits the remaining writes without exceeding capacity.
+        engineEchoSeconds = 3.95;
+        engineEchoBatchesApplied = 1;
+        await pump(3.95, 0, 1);
+
+        expect(writesOf(1)).toEqual([step(3.98, 0.8), step(3.99, 0.9)]);
+        expect(mocks.warn.mock.calls.filter(([message]) => String(message).includes('refused'))).toEqual([]);
+
+        // Drive across the seam: the loop continues cleanly without refusals.
+        engineEchoLastWrapFrame = Math.round(4 * SAMPLE_RATE);
+        engineEchoSeconds = 2.05;
+        engineEchoWraps = 1;
+        engineEchoBatchesApplied = 2;
+        await pump(2.05, 1, 2);
+
+        expect(mocks.warn.mock.calls.filter(([message]) => String(message).includes('refused'))).toEqual([]);
     });
 });
