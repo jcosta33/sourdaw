@@ -77,14 +77,7 @@ type Write = (&'static str, f32);
 /// Render the burst through the plate with `writes` applied, at `mix = 1.0` so
 /// the measurement is the engine's wet output and not the dry signal passing
 /// through it.
-fn render(writes: &[Write]) -> Vec<f32> {
-    let mut instance = ProofChamberInstance::new(SAMPLE_RATE);
-    instance.set_param("algorithm", PLATE);
-    instance.set_param("mix", 1.0);
-    for &(name, value) in writes {
-        instance.set_param(name, value);
-    }
-
+fn render_instance(instance: &mut ProofChamberInstance) -> Vec<f32> {
     let mut output = Vec::with_capacity(RENDER_FRAMES);
     let mut index = 0;
     while index < RENDER_FRAMES {
@@ -105,6 +98,16 @@ fn render(writes: &[Write]) -> Vec<f32> {
         );
     }
     output
+}
+
+fn render(writes: &[Write]) -> Vec<f32> {
+    let mut instance = ProofChamberInstance::new(SAMPLE_RATE);
+    instance.set_param("algorithm", PLATE);
+    instance.set_param("mix", 1.0);
+    for &(name, value) in writes {
+        instance.set_param(name, value);
+    }
+    render_instance(&mut instance)
 }
 
 fn rms(window: &[f32]) -> f32 {
@@ -227,19 +230,24 @@ fn identical(a: &[f32], b: &[f32]) -> bool {
 /// selection parity. Those distinct instruments own Plate character and path
 /// identity; this file keeps its parameter/default contract narrow.
 ///
-/// `onset: 0` is measured, not a placeholder, and it is the weakest of the
+/// `onset: 1` is measured, not a placeholder, and it is the weakest of the
 /// three. Both this render and the sibling's are at `mix = 1`, and both measure
-/// 0 anyway: `mix` is smoothed from its constructor 0.3 with a 30 ms one-pole,
+/// early anyway: `mix` is smoothed from its constructor 0.3 with a 30 ms one-pole,
 /// so the dry burst is still most of the opening samples and the first sample
-/// above 1e-6 is the first sample. Neither can therefore reproduce #1547's
+/// above 1e-6 is at the start. Neither can therefore reproduce #1547's
 /// shape — the dry path was never silent — and nothing here should be read as
 /// covering it. What this scalar does catch is a render that stops sounding or
 /// starts wholesale late. `wet_onset_follows_predelay.rs` is the file that
 /// carries the #1547 shape, on a stimulus with the ramp pre-rolled away.
+///
+/// Updated for #2292: seeding `EarlyReflections` at 0.75 instead of 0.5 shifts
+/// early reflection tap arrivals to match the documented plate room size, moving
+/// the measured peak from 8.290293e-1 to 9.8297787e-1 and RMS from 1.0719928e-1
+/// to 1.2425283e-1 on this stimulus.
 const UNTOUCHED_PLATE_SHAPE: RenderShape = RenderShape {
-    peak: 8.290293e-1,
-    rms: 1.0719928e-1,
-    onset: 0,
+    peak: 9.8297787e-1,
+    rms: 1.2425283e-1,
+    onset: 1,
 };
 
 // ---------------------------------------------------------------------------
@@ -450,28 +458,11 @@ fn size_renders_differently_at_interior_settings() {
 /// uses: an engine nobody wrote to must render as the engine's own documented
 /// default.
 ///
-/// # Why this test is `#[ignore]`d
-///
-/// It is red against the shipped engine, and it is red because the plate seeds
-/// its two copies of the room size from different numbers.
-/// `ProofChamber::new` stores `size: 0.75` in the field
-/// (`src/proof_chamber.rs:550`) and builds its reflection network with
-/// `EarlyReflections::new(sample_rate, 0.5)` (`:614`). Nothing reconciles them:
-/// `update_room_size` only runs from the `"size"` arm, so an untouched plate
-/// renders a 0.5 room while reporting a 0.75 one.
-///
-/// What that costs is not abstract. Writing Size the value the engine already
-/// claims to be at moves the render by 0.856 peak on this stimulus — an
-/// automation lane that writes its own default at frame 0, a preset that stores
-/// it, or a project reload that replays `parameterValues` all change what the
-/// user was hearing, and each one is a different sound from the last.
-///
-/// Un-ignore this when the constructor seeds `EarlyReflections` from the field
-/// it also stores. Note the direction of that fix: seeding from 0.75 changes
-/// what an untouched Plate renders, so it must still satisfy
-/// `UNTOUCHED_PLATE_SHAPE` and the independent character specs cited above.
+/// The plate constructor and `reset` seed `EarlyReflections` at 0.75, matching
+/// the documented default and the `size` field. An engine nobody wrote to
+/// renders bit-identically to one explicitly set to `size = 0.75`, and
+/// renders differently from `size = 0.5`.
 #[test]
-#[ignore = "pins the plate's split Size default — the field is seeded 0.75 (src/proof_chamber.rs:550) while EarlyReflections is built at 0.5 (:614), so an untouched plate renders a room it does not report. Red until the plate Size default lane lands."]
 fn size_defaults_to_the_documented_value() {
     let untouched = render(&[]);
     let explicit = render(&[("size", 0.75)]);
@@ -485,8 +476,33 @@ fn size_defaults_to_the_documented_value() {
     let half = render(&[("size", 0.5)]);
     assert!(
         !identical(&untouched, &half),
-        "the shipped default renders identically to size=0.5, which is what the constructor \
-         hands `EarlyReflections` rather than what it stores"
+        "the shipped default renders differently from size=0.5, since the constructor \
+         hands `EarlyReflections` 0.75 matching the field"
+    );
+}
+
+#[test]
+fn size_reset_restores_the_documented_default() {
+    let mut instance = ProofChamberInstance::new(SAMPLE_RATE);
+    instance.set_param("size", 0.2);
+    instance.reset();
+    instance.set_param("mix", 1.0);
+
+    let reset_render = render_instance(&mut instance);
+    let untouched = render(&[]);
+    let explicit = render(&[("size", 0.75)]);
+
+    assert!(
+        identical(&reset_render, &untouched),
+        "an engine reset after writing size=0.2 should render identically to the untouched default; \
+         peak difference {:e}",
+        max_delta(&reset_render, &untouched)
+    );
+    assert!(
+        identical(&reset_render, &explicit),
+        "an engine reset after writing size=0.2 should render identically to explicit size=0.75; \
+         peak difference {:e}",
+        max_delta(&reset_render, &explicit)
     );
 }
 

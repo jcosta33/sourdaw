@@ -650,6 +650,17 @@ impl ProofChamberInstance {
             self.forward_to_engine(entry.name(), entry.value);
         }
     }
+
+    /// Return the active engine to its constructor defaults, clear the parameter
+    /// cache, and clear output buffers.
+    pub fn reset(&mut self) {
+        self.reset_active_engine();
+        self.apply_fdn_damping_version();
+        self.params = ParameterCache::new();
+        self.out_left.fill(0.0);
+        self.out_right.fill(0.0);
+        self.nan_flush_count = 0;
+    }
 }
 
 #[cfg(test)]
