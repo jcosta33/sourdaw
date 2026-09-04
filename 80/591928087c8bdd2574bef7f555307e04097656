@@ -1,0 +1,19 @@
+src/modules/Collaboration/useCases/__tests__/automergeSync.spec.ts
+  s_28abfd94826e36::t_79115ba4a53554 1660-1670,1675-1678
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "80591928087c8bdd2574bef7f555307e04097656",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
