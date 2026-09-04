@@ -15,14 +15,7 @@ import {
     selectClipWithFocus,
     setMarqueeSelection,
 } from '#/modules/Arrangement/useCases';
-import {
-    CommandEventBus,
-    executeAppAction,
-    executeUserAppAction,
-    pushUndoEntry,
-    redo,
-    undo,
-} from '#/modules/Command/useCases';
+import { CommandEventBus, executeUserAppAction, pushUndoEntry, redo, undo } from '#/modules/Command/useCases';
 import { loopStationStore } from '#/modules/SessionLauncher/stores';
 import { stopAllSlots, triggerPad } from '#/modules/SessionLauncher/useCases';
 import { panicAllNotes, stopPlayback, seekPlayhead, setLoopRegion } from '#/modules/Transport/useCases';
@@ -84,20 +77,23 @@ function dispatchAiChord(key: string): boolean {
     const normalized = key.toLowerCase();
     switch (normalized) {
         case 'd':
-            void executeAppAction({ type: 'generateDrumPattern', payload: { style: 'rock' } });
+            void executeUserAppAction({ type: 'generateDrumPattern', payload: { style: 'rock' } });
             return true;
         case 'm':
-            void executeAppAction({ type: 'generateMelody', payload: { style: 'simple' } });
+            void executeUserAppAction({ type: 'generateMelody', payload: { style: 'simple' } });
             return true;
         case 'c':
-            void executeAppAction({ type: 'generateChordProgression', payload: { style: 'pop' } });
+            void executeUserAppAction({ type: 'generateChordProgression', payload: { style: 'pop' } });
             return true;
         case 'b': {
             const selectedId = clipSelectionStore.value?.selectedClipId;
             if (!selectedId) {
                 return true;
             }
-            void executeAppAction({ type: 'generateBassline', payload: { clipId: selectedId, style: 'root-fifth' } });
+            void executeUserAppAction({
+                type: 'generateBassline',
+                payload: { clipId: selectedId, style: 'root-fifth' },
+            });
             return true;
         }
         default:
@@ -210,7 +206,7 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                 } else {
                     const selectedClipId = clipSelectionStore.value?.selectedClipId;
                     if (selectedClipId) {
-                        void executeAppAction({ type: 'duplicateClip', payload: { clipId: selectedClipId } });
+                        void executeUserAppAction({ type: 'duplicateClip', payload: { clipId: selectedClipId } });
                     }
                 }
                 return true;
@@ -218,7 +214,7 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
             if (appAction.type === 'duplicateClipToNextBar' && appAction.payload.clipId === 'selected') {
                 const selectedClipId = clipSelectionStore.value?.selectedClipId;
                 if (selectedClipId) {
-                    void executeAppAction({ type: 'duplicateClipToNextBar', payload: { clipId: selectedClipId } });
+                    void executeUserAppAction({ type: 'duplicateClipToNextBar', payload: { clipId: selectedClipId } });
                 }
                 return true;
             }

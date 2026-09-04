@@ -49,6 +49,26 @@ describe('deriveProjectMutationRefusal', () => {
         ).toEqual({
             audioGraphValid: false,
             conflictCount: 2,
+            inspectionAvailable: true,
+            invariantsValid: false,
+            kind: 'repair-required',
+        });
+    });
+
+    it('carries inspectionAvailable through so an unrun inspection is never reported as an invalid project', () => {
+        expect(
+            deriveProjectMutationRefusal(
+                repairState({
+                    audioGraphValid: false,
+                    inspectionAvailable: false,
+                    projectInvariantsValid: false,
+                }),
+                null
+            )
+        ).toEqual({
+            audioGraphValid: false,
+            conflictCount: 0,
+            inspectionAvailable: false,
             invariantsValid: false,
             kind: 'repair-required',
         });

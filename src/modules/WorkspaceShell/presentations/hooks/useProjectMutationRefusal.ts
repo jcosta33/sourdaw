@@ -10,6 +10,7 @@ export type ProjectMutationRefusal =
     | {
           audioGraphValid: boolean;
           conflictCount: number;
+          inspectionAvailable: boolean;
           invariantsValid: boolean;
           kind: 'repair-required';
       }
@@ -34,6 +35,7 @@ export function deriveProjectMutationRefusal(
         return {
             audioGraphValid: repairState.audioGraphValid,
             conflictCount: countUnresolvedConflicts(repairState),
+            inspectionAvailable: repairState.inspectionAvailable,
             invariantsValid: repairState.projectInvariantsValid,
             kind: 'repair-required',
         };

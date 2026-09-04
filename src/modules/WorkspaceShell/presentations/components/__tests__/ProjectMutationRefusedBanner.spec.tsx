@@ -12,7 +12,12 @@ describe('ProjectMutationRefusedBanner', () => {
     it('names every unresolved conflict and the broken project structure', () => {
         render(
             <ProjectMutationRefusedBanner
-                refusal={repairRefusal({ audioGraphValid: false, conflictCount: 3, invariantsValid: false })}
+                refusal={repairRefusal({
+                    audioGraphValid: false,
+                    conflictCount: 3,
+                    inspectionAvailable: true,
+                    invariantsValid: false,
+                })}
             />
         );
 
@@ -27,7 +32,12 @@ describe('ProjectMutationRefusedBanner', () => {
     it('names a single conflict in the singular', () => {
         render(
             <ProjectMutationRefusedBanner
-                refusal={repairRefusal({ audioGraphValid: true, conflictCount: 1, invariantsValid: true })}
+                refusal={repairRefusal({
+                    audioGraphValid: true,
+                    conflictCount: 1,
+                    inspectionAvailable: true,
+                    invariantsValid: true,
+                })}
             />
         );
 
@@ -41,7 +51,12 @@ describe('ProjectMutationRefusedBanner', () => {
     it('names invalid audio routing when the project structure is intact', () => {
         render(
             <ProjectMutationRefusedBanner
-                refusal={repairRefusal({ audioGraphValid: false, conflictCount: 0, invariantsValid: true })}
+                refusal={repairRefusal({
+                    audioGraphValid: false,
+                    conflictCount: 0,
+                    inspectionAvailable: true,
+                    invariantsValid: true,
+                })}
             />
         );
 
@@ -55,7 +70,12 @@ describe('ProjectMutationRefusedBanner', () => {
     it('falls back to unreadable project data when nothing else is known', () => {
         render(
             <ProjectMutationRefusedBanner
-                refusal={repairRefusal({ audioGraphValid: true, conflictCount: 0, invariantsValid: true })}
+                refusal={repairRefusal({
+                    audioGraphValid: true,
+                    conflictCount: 0,
+                    inspectionAvailable: true,
+                    invariantsValid: true,
+                })}
             />
         );
 
@@ -64,6 +84,26 @@ describe('ProjectMutationRefusedBanner', () => {
                 "Sourdaw found a problem in the project's data and paused edits to protect it (unreadable project data). Ask the assistant to repair the project."
             )
         ).toBeInTheDocument();
+    });
+
+    it('reports an unrun inspection honestly instead of claiming the project structure is invalid', () => {
+        render(
+            <ProjectMutationRefusedBanner
+                refusal={repairRefusal({
+                    audioGraphValid: false,
+                    conflictCount: 0,
+                    inspectionAvailable: false,
+                    invariantsValid: false,
+                })}
+            />
+        );
+
+        expect(
+            screen.getByText(
+                "Sourdaw found a problem in the project's data and paused edits to protect it (the project could not be inspected). Ask the assistant to repair the project."
+            )
+        ).toBeInTheDocument();
+        expect(screen.queryByText(/invalid project structure/)).not.toBeInTheDocument();
     });
 
     it('quotes the locking statement from the production brief', () => {
@@ -84,7 +124,12 @@ describe('ProjectMutationRefusedBanner', () => {
     it('announces itself politely and offers no control that would dismiss it', () => {
         render(
             <ProjectMutationRefusedBanner
-                refusal={repairRefusal({ audioGraphValid: true, conflictCount: 1, invariantsValid: true })}
+                refusal={repairRefusal({
+                    audioGraphValid: true,
+                    conflictCount: 1,
+                    inspectionAvailable: true,
+                    invariantsValid: true,
+                })}
             />
         );
 

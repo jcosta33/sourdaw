@@ -18,6 +18,9 @@ type RefusalCopy = {
 };
 
 function listRepairReasons(refusal: RepairRequiredRefusal): readonly string[] {
+    if (!refusal.inspectionAvailable) {
+        return ['the project could not be inspected'];
+    }
     const reasons: string[] = [];
     if (refusal.conflictCount > 0) {
         reasons.push(`${refusal.conflictCount} unresolved conflict${refusal.conflictCount === 1 ? '' : 's'}`);

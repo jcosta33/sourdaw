@@ -54,5 +54,26 @@ snapshot section whose sanitizer modeled three keys and dropped the fourth.
    incident leaves the class armed (see issue #3162).
 
 Changing or adding a slot sanitizer runs `pnpm test:run` for that store's spec plus
-`src/infra/store/storage/__tests__/createAutomergeStorage.rawProjectionLossReorder.spec.ts`; the
+`src/infra/store/storage/__tests__/createAutomergeStorage.rawProjectionLossReorder.spec.ts`,
+`src/infra/store/storage/__tests__/createAutomergeStorage.rawProjectionLossDeclaredDiscards.spec.ts`,
+and `src/modules/Project/stores/__tests__/arrangementDiscardedKeyRawProjectionLoss.spec.ts`; the
 detector's contract is pinned there.
+
+## Amended 2026-09-04
+
+`ownsCrdtEncoding` is not the only opt-out from the raw-side verdict in §3. A store may also declare,
+beside its sanitizer, the keys it strips from a slot on purpose — content an older build persisted
+that the current sanitizer no longer models, e.g. a retired field or transient view state that never
+belonged in the document. Content a store discards by contract is not loss: nothing the sanitizer
+ever returns was going to contain it, so its absence from the projection reports nothing wrong.
+
+`discardsRaw` is that declaration (`createAutomergeStorage.ts`'s slot options; wired for arrangements
+as `discard_arrangements_raw_keys` in `src/modules/Project/stores/arrangementStore.ts`).
+`findAutomergeStorageRawProjectionLosses` runs it over the raw slot value only, before comparing
+containment against the sanitized projection — never over the projection itself, which would hide a
+real loss instead of excusing a declared one. A discard therefore may never remove more than the
+slot's own sanitizer already strips: widening it past that would launder an undeclared, real
+projection defect as a declared discard, exactly the false-negative §3 exists to prevent. A key the
+discard does not name still reports, which is the mechanism doing its job. The verification clause
+above now runs both specs that pin this: the detector's `discardsRaw` contract in general, and the
+arrangement store's own declared discards against its sanitizer.
