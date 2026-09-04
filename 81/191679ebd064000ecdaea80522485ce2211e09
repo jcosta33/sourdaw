@@ -1,0 +1,71 @@
+src/modules/AiRuntime/presentations/components/__tests__/AiTaskResultCard.spec.tsx
+  s_28abfd94826e36::t_c0507898f1bea6 24,67-68,74-75
+src/modules/AiRuntime/presentations/views/ChatPanel.tsx
+  s_28abfd94826e36::t_68949678c33224 449,460
+src/modules/AiRuntime/presentations/views/GenerativeAiPanel.tsx
+  s_28abfd94826e36::t_44b5a564983875 100-106
+src/modules/Collaboration/presentations/components/InviteCodeRow.tsx
+  s_28abfd94826e36::t_d15a9acd38ee52 25-31
+src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx
+  s_28abfd94826e36::t_302b492608d320 548
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/InstrumentsTab.spec.tsx
+  s_28abfd94826e36::t_e8ee91647d04ca 535
+src/modules/Fermenter/presentations/components/LayerStack.tsx
+  s_9b530f08172a54::t_0255ff8723be93 55,65
+src/modules/Fermenter/presentations/views/FermenterPanel.tsx
+  s_28abfd94826e36::t_1d032f72123fc9 588-594,608,612-618,621-627
+src/modules/AiRuntime/presentations/components/AiTaskResultCard.tsx
+  s_9b530f08172a54::t_a0746538c773e1 51,76-82,90
+src/modules/AiRuntime/presentations/views/AiActionHistoryPanel.tsx
+  s_6572febca9378b::t_8dcace864bd360 176,195-196
+src/modules/AiRuntime/presentations/views/__tests__/AiActionHistoryPanel.spec.tsx
+  s_28abfd94826e36::t_335dfc32c0ff78 135-159
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  s_6572febca9378b::t_53927630eea068 288,294
+src/modules/AiRuntime/presentations/views/__tests__/GenerativeAiPanel.spec.tsx
+  s_6572febca9378b::t_531583d409b661 137-138
+src/modules/Collaboration/presentations/components/__tests__/InviteCodeRow.spec.tsx
+  s_6572febca9378b::t_9d26753939ac81 10,26
+src/modules/ContentBrowser/presentations/components/Sidebar/RailBackBar.tsx
+  s_6572febca9378b::t_ea2cd903ab9519 20
+src/modules/ContentBrowser/presentations/components/Sidebar/__tests__/RailBackBar.spec.tsx
+  s_6572febca9378b::t_4429fbe557d292 12
+src/modules/ContentBrowser/presentations/components/Sidebar/__tests__/RailBackBarBranches.spec.tsx
+  s_28abfd94826e36::t_38844f2f38d272 15
+src/modules/Fermenter/presentations/components/__tests__/LayerStack.spec.tsx
+  s_9b530f08172a54::t_f15bda3bb18d76 25,31,38,46
+src/modules/Fermenter/presentations/views/__tests__/FermenterPanel.spec.tsx
+  s_6572febca9378b::t_51e63710dfbacf 507-508,590-601
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "81191679ebd064000ecdaea80522485ce2211e09",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_6572febca9378b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad414577034294cfd",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
