@@ -203,6 +203,7 @@ export const MONOTONIC_COUNTER_NAMES = [
     'bridgeOutputBlocksDropped',
     'unmatchedBridgeBlocks',
     'bridgeBacklogBlocksShed',
+    'bridgeBlocksPassedChainBound',
     'callbackFramesOverBridgeReach',
     'bridgeInputBlocksRefused',
     'captureConsumerRefusals',

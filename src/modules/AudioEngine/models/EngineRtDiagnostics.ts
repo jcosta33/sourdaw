@@ -41,6 +41,14 @@ export type EngineRtDiagnostics = {
     bridgeOutputBlocksDropped: number;
     unmatchedBridgeBlocks: number;
     bridgeBacklogBlocksShed: number;
+    /**
+     * Blocks a bridge returned unprocessed because the plugin it names is on a
+     * track or bus device chain and the monitor is audible: that chain runs the
+     * instance over the strip's own signal, so the bridge's blocks are drained
+     * rather than processed. Expected to climb whenever a plugin is spliced into
+     * a chain and audible, and to stay flat while the monitor is shadowed.
+     */
+    bridgeBlocksPassedChainBound: number;
     callbackFramesOverBridgeReach: number;
     bridgeInputBlocksRefused: number;
     captureConsumerRefusals: number;
@@ -72,6 +80,7 @@ export const notRunningEngineRtDiagnostics: EngineRtDiagnostics = {
     bridgeOutputBlocksDropped: 0,
     unmatchedBridgeBlocks: 0,
     bridgeBacklogBlocksShed: 0,
+    bridgeBlocksPassedChainBound: 0,
     callbackFramesOverBridgeReach: 0,
     bridgeInputBlocksRefused: 0,
     captureConsumerRefusals: 0,
