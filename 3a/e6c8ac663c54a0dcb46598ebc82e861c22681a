@@ -1,0 +1,52 @@
+scripts/test-health-gate-scripts.sh
+  s_28abfd94826e36::t_e7d6258b551dca 1192
+  s_28abfd94826e36::t_1242d6fcb6b1b4 1214
+  s_28abfd94826e36::t_fe9153adc7bd2f 1215-1220
+  s_28abfd94826e36::t_e5ce0cf6f02ddf 1196
+  s_28abfd94826e36::t_ccbc0de8f21279 27
+  s_28abfd94826e36::t_e81625bf0c1a18 834-847
+  s_28abfd94826e36::t_2bcf31ba9d11b9 818
+  s_28abfd94826e36::t_8a1f6f7599e853 1189-1191
+  s_28abfd94826e36::t_57a0c735f17d54 1193-1195
+  s_28abfd94826e36::t_a653aeaa4db955 1197-1199,1211-1213
+  s_28abfd94826e36::t_538719b7dbaf67 1221-1223
+  s_56ad55eea839e4::t_4e12e8172c6107 1151-1188,1200-1210,1224-1279,1530-1535
+scripts/assert-deployment-isolation.sh
+  s_28abfd94826e36::t_47dd2d08a147bf 1-82
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_28abfd94826e36::t_050581384381be 225
+  s_28abfd94826e36::t_9ee9d8376776ce 1648-1650
+  s_28abfd94826e36::t_decfb73f9ceae8 153
+  s_28abfd94826e36::t_04ca66f0c983a2 928-934,936-939,943
+  s_28abfd94826e36::t_2777deb4d83353 1841-1843,1848
+scripts/__tests__/resolveVercelDeploymentAliases.spec.ts
+  s_28abfd94826e36::t_97c2ad898b22eb 113-114
+.github/workflows/nightly.yml
+  s_28abfd94826e36::t_f263779032afe3 951-954,957
+release/open-source-inventory.json
+  s_28abfd94826e36::t_3e6179b458a013 2028-2067
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "3ae6c8ac663c54a0dcb46598ebc82e861c22681a",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_56ad55eea839e4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a4ea760e9cf85c098",
+        "model": "unknown"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
