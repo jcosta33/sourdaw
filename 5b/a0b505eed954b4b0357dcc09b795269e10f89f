@@ -1,0 +1,24 @@
+src/components/daw/DawDialogFooter.tsx
+  h_1228e573df1f42 13
+src/components/daw/DawDialogSection.tsx
+  h_1228e573df1f42 19
+src/components/daw/__tests__/DawDialogFooter.spec.tsx
+  h_1228e573df1f42 57
+src/components/daw/__tests__/DawDialogSection.spec.tsx
+  h_1228e573df1f42 66
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  h_1228e573df1f42 774,844,872,998,1000,1002,1034,1062,1071,1076,1092,1095,1107-1108,1119,1122,1134-1135,1146,1149,1166-1167,1176,1182,1185,1203-1204,1213,1220,1223,1235-1236,1283
+src/modules/Project/presentations/views/MissingMediaPanel.tsx
+  h_1228e573df1f42 66,68,71,76-77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "5ba0b505eed954b4b0357dcc09b795269e10f89f",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
