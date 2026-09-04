@@ -9,7 +9,7 @@
  * correct while the handler forwards none of the request details is a check
  * that passes blind.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
     ALLOWED_PERMISSIONS,
@@ -72,6 +72,24 @@ vi.mock('electron', () => {
         utilityProcess: { fork: vi.fn() },
         protocol: { handle: vi.fn(), registerSchemesAsPrivileged: vi.fn() },
         net: { fetch: vi.fn() },
+    };
+});
+
+// `startNativeSurface` (inside `main.ts`'s `whenReady` callback) resolves
+// `resolveNativeAddonPath` for real and hands it to `loadNativeAddon`, which
+// otherwise `require`s whatever that path names — a build artifact this unit
+// spec must not depend on, and a path an operator's `SOURDAW_NATIVE_ADDON`
+// env var could point anywhere. Only the loader is stubbed; every other
+// export — the path resolution, the env constants — stays real through
+// `importOriginal`, so this spec still exercises the seam main.ts actually
+// calls through.
+vi.mock('../native.js', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../native.js')>();
+    return {
+        ...actual,
+        loadNativeAddon: (): never => {
+            throw new Error('stubbed: no native addon in this unit spec');
+        },
     };
 });
 
@@ -289,13 +307,27 @@ describe('applyPermissionPolicy', () => {
 });
 
 describe('main window webPreferences', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
     it('pins sandbox, contextIsolation, nodeIntegration and backgroundThrottling for the real main window', async () => {
+        // The stubbed `loadNativeAddon` throws inside `startNativeSurface`'s
+        // own try/catch, which reports through `console.error`. Spying on it
+        // proves the addon seam was actually reached and stubbed, rather than
+        // skipped for an unrelated reason — a spec that never checks this
+        // could stay green even if the mock above silently stopped applying.
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
         // `main.ts` creates its one window inside `app.whenReady().then(...)`,
         // which our mocked `app.whenReady()` resolves immediately; importing
         // it here drives the real `createWindow` and the real `BrowserWindow`
         // constructor call, not a re-implementation of either.
         await import('../main.js');
         await new Promise((resolve) => setImmediate(resolve));
+
+        expect(consoleError).toHaveBeenCalledOnce();
+        expect(consoleError.mock.calls[0]?.[0]).toContain('did not load');
 
         const [options] = mainWindowConstructorCalls;
         const webPreferences = options?.webPreferences as Record<string, unknown> | undefined;

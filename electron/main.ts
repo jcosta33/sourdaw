@@ -327,9 +327,11 @@ const createWindow = (): BrowserWindow => {
             // when the window is behind another app. Chromium's background
             // timer throttling would stall them — unacceptable while recording.
             // The native-engine playhead feed's animation-frame poll is the
-            // same clock the live automation writer is pumped from
-            // (`nativeEnginePlayheadFeedState.ts`), so this option is also
-            // what keeps automation moving while the window is hidden.
+            // live automation writer's only steady-state clock — arm itself
+            // pumps once more, from `armNativeLiveAutomationWriter.ts`, to
+            // prime the first write (`nativeEnginePlayheadFeedState.ts`) — so
+            // this option is also what keeps automation moving while the
+            // window is hidden.
             backgroundThrottling: false,
             // The bundle from `scripts/buildElectronPreload.ts`, not `tsc`'s
             // `preload.js`. A sandboxed preload is CommonJS and its `require`
