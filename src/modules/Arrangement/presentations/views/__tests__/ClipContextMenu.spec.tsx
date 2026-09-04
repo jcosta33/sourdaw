@@ -9,6 +9,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { clipSelectionStore, defaultClipSelectionState } from '../../../stores/clipSelectionStore';
 import { duplicateClip } from '../../../useCases/clip/duplicateClip';
 import { removeClip } from '../../../useCases/clip/removeClip';
+import { cutSelectedClip } from '../../../useCases/clipboard/cutSelectedClip';
 import { normalizeClip } from '../../../useCases/clipEditing/normalizeClip';
 import { renameClip } from '../../../useCases/clipEditing/renameClip';
 import { reverseClip } from '../../../useCases/clipEditing/reverseClip';
@@ -137,6 +138,10 @@ vi.mock('../../../useCases/clip/removeClip', () => ({
 
 vi.mock('../../../useCases/clip/duplicateClip', () => ({
     duplicateClip: vi.fn(),
+}));
+
+vi.mock('../../../useCases/clipboard/cutSelectedClip', () => ({
+    cutSelectedClip: vi.fn(),
 }));
 
 vi.mock('../../../useCases/clipEditing/renameClip', () => ({
@@ -420,8 +425,9 @@ describe('ClipContextMenu', () => {
         });
         render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
         fireEvent.click(screen.getByRole('button', { name: /^Delete/ }));
-        expect(removeClip).toHaveBeenCalledWith('clip1');
-        expect(removeClip).toHaveBeenCalledWith('clip2');
+        expect(executeAppAction).toHaveBeenCalledWith({ type: 'removeClip', payload: { clipId: 'clip1' } });
+        expect(executeAppAction).toHaveBeenCalledWith({ type: 'removeClip', payload: { clipId: 'clip2' } });
+        expect(removeClip).not.toHaveBeenCalled();
     });
 
     it('duplicates every selected clip on multi-select duplicate', () => {
@@ -431,8 +437,9 @@ describe('ClipContextMenu', () => {
         });
         render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
         fireEvent.click(screen.getByRole('button', { name: /^Duplicate/ }));
-        expect(duplicateClip).toHaveBeenCalledWith('clip1');
-        expect(duplicateClip).toHaveBeenCalledWith('clip2');
+        expect(executeAppAction).toHaveBeenCalledWith({ type: 'duplicateClip', payload: { clipId: 'clip1' } });
+        expect(executeAppAction).toHaveBeenCalledWith({ type: 'duplicateClip', payload: { clipId: 'clip2' } });
+        expect(duplicateClip).not.toHaveBeenCalled();
     });
 
     it('notifies the detected tempo when detectTempo returns a bpm', () => {
@@ -560,9 +567,10 @@ describe('ClipContextMenu', () => {
     it('deletes only the targeted clip when a single clip is selected', () => {
         render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
         fireEvent.click(screen.getByRole('button', { name: /^Delete/ }));
-        // Single selection → the else branch removes just the one clip.
-        expect(removeClip).toHaveBeenCalledTimes(1);
-        expect(removeClip).toHaveBeenCalledWith('clip1');
+        // Single selection → the else branch dispatches just the one clip.
+        expect(executeAppAction).toHaveBeenCalledTimes(1);
+        expect(executeAppAction).toHaveBeenCalledWith({ type: 'removeClip', payload: { clipId: 'clip1' } });
+        expect(removeClip).not.toHaveBeenCalled();
     });
 
     it('duplicates only the targeted clip when a single clip is selected', () => {
@@ -570,8 +578,22 @@ describe('ClipContextMenu', () => {
         // "Duplicate to Next Bar" also renders in single-select, so target the
         // main Duplicate button by its exact accessible name.
         fireEvent.click(screen.getByRole('button', { name: 'Duplicate' }));
-        expect(duplicateClip).toHaveBeenCalledTimes(1);
-        expect(duplicateClip).toHaveBeenCalledWith('clip1');
+        expect(executeAppAction).toHaveBeenCalledTimes(1);
+        expect(executeAppAction).toHaveBeenCalledWith({ type: 'duplicateClip', payload: { clipId: 'clip1' } });
+        expect(duplicateClip).not.toHaveBeenCalled();
+    });
+
+    it('routes Cut through the undoable command path, not the bare use case', () => {
+        render(<ClipContextMenu x={0} y={0} clipId="clip1" splitBeat={4} onClose={mockOnClose} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Cut' }));
+
+        // The payload-less cutClip handler resolves the context clip from the
+        // selection, so the menu must select it first.
+        expect(clipSelectionStore.value?.selectedClipId).toBe('clip1');
+        expect(executeAppAction).toHaveBeenCalledWith({ type: 'cutClip' });
+        expect(cutSelectedClip).not.toHaveBeenCalled();
+        expect(mockOnClose).toHaveBeenCalled();
     });
 
     it('skips tempo and key detection for a clip without an audioBufferId', () => {

@@ -17,11 +17,8 @@ import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 import { CLIP_COLOR_OPTIONS } from '../../models/ColorPalette';
 import { clipSelectionStore, defaultClipSelectionState } from '../../stores/clipSelectionStore';
 import { trackStore, defaultTrackState } from '../../stores/trackStore';
-import { duplicateClip } from '../../useCases/clip/duplicateClip';
 import { duplicateClipToNextBar } from '../../useCases/clip/duplicateClipToNextBar';
-import { removeClip } from '../../useCases/clip/removeClip';
 import { copySelectedClip } from '../../useCases/clipboard/copySelectedClip';
-import { cutSelectedClip } from '../../useCases/clipboard/cutSelectedClip';
 import { pasteClip } from '../../useCases/clipboard/pasteClip';
 import { lockClip } from '../../useCases/clipEditing/lockClip';
 import { muteClip } from '../../useCases/clipEditing/muteClip';
@@ -63,23 +60,26 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
         onClose();
     };
 
+    // Cut, Delete, and Duplicate ride the registered action boundary, like
+    // Normalize/Reverse, so semantic undo/history and collaboration semantics
+    // stay centralized.
     const deleteSelected = () => {
         if (multiSelected) {
             for (const id of selectedIds) {
-                removeClip(id);
+                void executeAppAction({ type: 'removeClip', payload: { clipId: id } });
             }
         } else {
-            removeClip(clipId);
+            void executeAppAction({ type: 'removeClip', payload: { clipId } });
         }
     };
 
     const duplicateSelected = () => {
         if (multiSelected) {
             for (const id of selectedIds) {
-                duplicateClip(id);
+                void executeAppAction({ type: 'duplicateClip', payload: { clipId: id } });
             }
         } else {
-            duplicateClip(clipId);
+            void executeAppAction({ type: 'duplicateClip', payload: { clipId } });
         }
     };
 
@@ -359,7 +359,7 @@ export const ClipContextMenu = ({ x, y, clipId, splitBeat, onClose }: ClipContex
                         shortcut="⌘X"
                         onClick={act(() => {
                             selectClip(clipId);
-                            cutSelectedClip();
+                            void executeAppAction({ type: 'cutClip' });
                         })}
                     >
                         Cut
