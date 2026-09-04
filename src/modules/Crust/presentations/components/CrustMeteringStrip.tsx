@@ -55,8 +55,7 @@ const MeterBar = ({ value, id }: { value: number; id: string }): ReactElement =>
     return (
         <div
             id={id}
-            className="relative flex-1"
-            style={{ background: '#1E1E22', borderRadius: 2, overflow: 'hidden', minHeight: 60 }}
+            className="relative flex-1 bg-surface-raised rounded-[2px] overflow-hidden min-h-[60px]"
             role="meter"
             aria-valuenow={Math.round(value * 100)}
             aria-valuemin={0}
@@ -128,8 +127,8 @@ export const CrustMeteringStrip = ({
             style={{
                 width: 160,
                 minWidth: 160,
-                background: '#0E0E10',
-                borderLeft: '1px solid rgba(46,46,54,0.5)',
+                background: 'var(--surface-default)',
+                borderLeft: '1px solid var(--color-border-soft)',
             }}
         >
             <MeterSection title="Output">
@@ -137,8 +136,7 @@ export const CrustMeteringStrip = ({
                     <MeterBar value={outNorm} id="crust-meter-l" />
                     <MeterBar value={outNorm * 0.97} id="crust-meter-r" />
                     <div
-                        className="relative"
-                        style={{ width: 12, background: '#1E1E22', borderRadius: 2, overflow: 'hidden' }}
+                        className="relative w-3 bg-surface-raised rounded-[2px] overflow-hidden"
                         title={`GR: ${grDb.toFixed(1)} dB`}
                     >
                         <div
@@ -222,7 +220,10 @@ export const CrustMeteringStrip = ({
                         aria-label="Reset true peak indicator"
                         title="Reset true peak indicator"
                         className="size-2 rounded-full border-0 bg-[var(--color-state-success)] p-0"
-                        style={{ background: truepeakExceeded ? '#C44030' : '#4A7C6F', cursor: 'pointer' }}
+                        style={{
+                            background: truepeakExceeded ? 'var(--color-state-clip)' : 'var(--color-state-success)',
+                            cursor: 'pointer',
+                        }}
                     />
                 }
             >
@@ -230,7 +231,9 @@ export const CrustMeteringStrip = ({
                     <Row gap={1}>
                         <span
                             className="text-[9px] font-mono"
-                            style={{ color: truepeakExceeded ? '#C44030' : '#E8E6E0' }}
+                            style={{
+                                color: truepeakExceeded ? 'var(--color-state-clip)' : 'var(--color-text-primary)',
+                            }}
                         >
                             {truepeakMax > -99 ? truepeakMax.toFixed(1) : '—'}
                         </span>

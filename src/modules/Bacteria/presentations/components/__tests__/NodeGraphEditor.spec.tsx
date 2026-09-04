@@ -33,7 +33,7 @@ describe('NodeGraphEditor', () => {
             const svg = container.querySelector('svg')!;
             expect(svg.getAttribute('width')).toBe('320');
             expect(svg.getAttribute('height')).toBe('200');
-            expect(svg.style.background).toBe('rgb(8, 8, 8)');
+            expect(svg).toHaveClass('bg-surface-deep');
         });
 
         it('renders the routing-mode label as the right-aligned text', () => {
