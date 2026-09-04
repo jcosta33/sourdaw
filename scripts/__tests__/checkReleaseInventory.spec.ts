@@ -3720,7 +3720,7 @@ describe('release inventory', () => {
         }
     });
 
-    it('rejects a canonical owner icon with drifted gradient or shadow pixels', () => {
+    it('rejects a canonical owner icon with drifted gradient pixels', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-gradient-drift-'));
 
         try {
@@ -3729,6 +3729,23 @@ describe('release inventory', () => {
 
             expect(() => ownerVisualAssetReleaseInventoryContract(root)).toThrow(
                 'owner visual asset public/icon.png background does not match top-lit gradient'
+            );
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it('rejects a canonical owner icon with drifted tactile shadow pixels', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-shadow-drift-'));
+
+        try {
+            const authority = decodePngFixture(repositoryOwnerAuthority);
+            expect(authority.pixels[(26 * authority.width + 231) * 4 + 3]).toBe(3);
+            const canonical = incrementPngPixelChannel(repositoryOwnerCanonical, 231, 26, 0);
+            writeOwnerVisualAssetFixture(root, { canonical });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(
+                'owner visual asset public/icon.png partial edges do not match public/icon-transparent.png authority'
             );
         } finally {
             removeTemporaryDirectory(root);
@@ -3752,6 +3769,40 @@ describe('release inventory', () => {
 
         try {
             writeOwnerVisualAssetFixture(root, { canonical });
+
+            expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(`owner visual asset ${failure}`);
+        } finally {
+            removeTemporaryDirectory(root);
+        }
+    });
+
+    it.each([
+        ['wrong geometry', rgbaPng(1, 1, () => [0, 0, 0, 0]), 'public/icon-transparent.png must be 480x480 RGBA'],
+        [
+            'non-transparent top border',
+            mutatePngPixel(repositoryOwnerAuthority, 10, 0, [0, 0, 0, 1]),
+            'public/icon-transparent.png borders must be fully transparent',
+        ],
+        [
+            'non-transparent bottom border',
+            mutatePngPixel(repositoryOwnerAuthority, 10, 479, [0, 0, 0, 1]),
+            'public/icon-transparent.png borders must be fully transparent',
+        ],
+        [
+            'non-transparent left border',
+            mutatePngPixel(repositoryOwnerAuthority, 0, 10, [0, 0, 0, 1]),
+            'public/icon-transparent.png borders must be fully transparent',
+        ],
+        [
+            'non-transparent right border',
+            mutatePngPixel(repositoryOwnerAuthority, 479, 10, [0, 0, 0, 1]),
+            'public/icon-transparent.png borders must be fully transparent',
+        ],
+    ] as const)('rejects authority owner icon %s', (_label, authority, failure) => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-owner-assets-authority-'));
+
+        try {
+            writeOwnerVisualAssetFixture(root, { authority });
 
             expect(() => assertOwnerVisualAssetIntegrity(root)).toThrow(`owner visual asset ${failure}`);
         } finally {
