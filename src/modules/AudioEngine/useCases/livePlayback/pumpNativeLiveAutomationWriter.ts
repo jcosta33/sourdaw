@@ -51,6 +51,7 @@ import {
     type LiveAutomationWriterTarget,
 } from './nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
+import { reportAttachedPlugins } from './reportAttachedPlugins';
 
 export type PumpNativeLiveAutomationWriterInput = Readonly<{
     /** The engine's own clock, as of the snapshot this pump answers. */
@@ -379,6 +380,7 @@ export async function pumpNativeLiveAutomationWriter(input: PumpNativeLiveAutoma
         if (result === null || nativeLiveAutomationWriter.epoch !== epoch) {
             return;
         }
+        reportAttachedPlugins(result);
         if (result.application !== 'applied') {
             // Nothing moves. The engine took none of it — a refusal is
             // whole-batch, before anything is pushed — so the next tick offers

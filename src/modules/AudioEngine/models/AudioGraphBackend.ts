@@ -631,17 +631,22 @@ export type AudioGraphApplyResult =
           admittedBatch?: number;
           reports: readonly AudioGraphStripReport[];
           /**
-           * External plugin instances this batch's engine start took over.
+           * External plugin instances this batch handed to the engine.
            *
            * A native engine starts lazily, on the first batch, and a plugin
            * loaded before that is held by the command layer with no engine
-           * behind it — it passes silence. The batch that starts the engine
-           * registers those instances, and this is the only report of it: the
-           * load that created them already answered "no engine", and nothing
-           * later revises that answer.
+           * behind it — it passes silence. Batches register those instances,
+           * and this is the only report of it: the load that created them
+           * already answered "no engine", and nothing else revises that answer.
            *
-           * Empty when the start took none. Absent from a backend that starts
-           * no engine at all, and from one whose payload predates the field.
+           * Any applied batch may carry one, not only the batch that started
+           * the engine, because a batch takes only the instances it reserved
+           * room for and leaves the rest to its successor. A caller that reads
+           * this on one route and not another leaves an instance the engine is
+           * running reported as degraded for the session's whole life.
+           *
+           * Empty when the batch took none. Absent from a backend that hosts no
+           * engine at all, and from one whose payload predates the field.
            */
           attachedPlugins?: readonly AudioGraphAttachedPlugin[];
       }>

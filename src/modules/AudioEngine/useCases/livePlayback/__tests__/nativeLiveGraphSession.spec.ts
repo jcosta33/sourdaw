@@ -329,6 +329,28 @@ describe('startNativeLiveGraphSession', () => {
         ]);
     });
 
+    // A batch takes only the instances it reserved command-ring slots for, so
+    // one loaded while the topology was in flight is taken by the next batch —
+    // within a start sequence, the roll. Read on the topology alone, that
+    // instance runs natively and stays reported as degraded for the whole
+    // session.
+    it('forwards the instances the roll took, not only the topology’s', async () => {
+        mocks.applyGraphCommands.mockResolvedValueOnce(APPLIED).mockResolvedValueOnce({
+            ...APPLIED,
+            attachedPlugins: [{ instanceId: 'inst-rolled', bridgeRoundTripFrames: 256 }],
+        });
+
+        await startNativeLiveGraphSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        expect(mocks.markExternalPluginEngineAttached.mock.calls).toEqual([
+            [{ instanceId: 'inst-rolled', bridgeRoundTripFrames: 256 }],
+        ]);
+    });
+
     it('corrects nothing when the start attached no instances', async () => {
         await startNativeLiveGraphSession({
             positionSeconds: 0,
@@ -945,6 +967,25 @@ describe('repositionNativeLiveGraphSession', () => {
         // A locate that replaced would tear down the topology the plugin
         // runtimes are standing on to move the playhead a few beats.
         expect(appliedBatches().at(-1)?.replaceTopology).toBeUndefined();
+    });
+
+    // Every route that applies a batch carries the correction, because any
+    // batch may be the one that finds an instance parked: a plugin loaded while
+    // the session was already rolling is taken by whatever batch comes next,
+    // and a locate is a batch.
+    it('forwards the instances a locate’s batch took over', async () => {
+        await startNativeLiveGraphSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+        mocks.markExternalPluginEngineAttached.mockClear();
+        mocks.applyGraphCommands.mockResolvedValueOnce({
+            ...APPLIED,
+            attachedPlugins: [{ instanceId: 'inst-located', bridgeRoundTripFrames: 128 }],
+        });
+
+        await repositionNativeLiveGraphSession({ positionSeconds: 12.5 });
+
+        expect(mocks.markExternalPluginEngineAttached.mock.calls).toEqual([
+            [{ instanceId: 'inst-located', bridgeRoundTripFrames: 128 }],
+        ]);
     });
 
     it('refuses to roll an engine the session parked because its maps were declined', async () => {

@@ -1219,6 +1219,18 @@ async fn load_plugin_with_backend(
 
     let mut wrapper = create_runtime(backend, &entry.path, &descriptor_id, sample_rate)?;
     let name = wrapper.get_name().to_string();
+    // A wrapper is built even when the plugin's own `activate` says no, so this
+    // is where a load learns it. Refused whether or not an engine is running,
+    // because nothing ever activates a parked runtime afterwards: the flag is
+    // written at construction and by the engine-owned latency restart, so an
+    // instance parked in this state is refused by every attach for the rest of
+    // the session — each one paying a lifecycle lease, two map locks and the
+    // engine lock under the graph registry, every batch, forever. Reported to
+    // the caller instead, exactly as the engine path reports it, and the runtime
+    // goes down here with no lock of the app's held.
+    if !wrapper.is_activated() {
+        return Err(activation_refusal_reason(&name));
+    }
     let params = wrapper.get_parameters();
     // Asked on the shell's UI thread because, for VST3, the question is a real
     // `createView` — the only "has an editor" query the format has — and this
@@ -1440,6 +1452,17 @@ fn insert_engine_plugin_record(
 /// an audio thread already inside a block that never completes.
 const HOST_REQUEST_WAKE_INSTALL_TIMEOUT: Duration = Duration::from_secs(2);
 
+/// Why a plugin that would not activate is refused.
+///
+/// One wording for both the load's own check and the engine registration's
+/// guard, because they are the same refusal reaching a caller by two routes and
+/// a caller that matched on one of them would miss the other. The format is
+/// behind both: `create_hosted_runtime` was the last step that knew one, so this
+/// names the plugin rather than its backend.
+fn activation_refusal_reason(name: &str) -> String {
+    format!("plugin '{name}' failed to activate for engine-owned runtime")
+}
+
 /// What the engine took, for the caller to report.
 struct EngineRegistration {
     engine_plugin_id: usize,
@@ -1541,11 +1564,13 @@ fn register_runtime_with_engine(
     parameters: &[PluginParameter],
     has_gui: bool,
 ) -> Result<EngineRegistration, RegistrationRefusal> {
-    // The format is behind us: `create_hosted_runtime` was the last step that
-    // knew one, so this refusal names the plugin rather than its backend.
+    // The load refuses an unactivated plugin before anything is parked, so
+    // reaching this is a runtime that lost its activation after it was built.
+    // Kept as a guard because handing one to the engine is unrecoverable: it
+    // renders nothing and answers no parameter for the rest of the session.
     if !runtime.is_activated() {
         return Err(RegistrationRefusal::parked(
-            format!("plugin '{name}' failed to activate for engine-owned runtime"),
+            activation_refusal_reason(name),
             runtime,
         ));
     }
@@ -1723,12 +1748,18 @@ pub fn attach_dormant_plugins(
         return Err("the plugin runtime gate is held by another operation".to_string());
     };
 
+    // Sorted, because the map's own order is arbitrary and a short reservation
+    // is exactly when the order decides who waits: the same session, played
+    // twice, must not attach a different subset. Instance ids are stable, so
+    // this is a total order the caller can predict.
     let dormant_instance_ids: Vec<String> = {
         let plugins = state
             .plugins
             .lock()
             .map_err(|error| format!("Failed to lock plugins: {error}"))?;
-        plugins.keys().cloned().collect()
+        let mut ids: Vec<String> = plugins.keys().cloned().collect();
+        ids.sort();
+        ids
     };
 
     let mut attached = Vec::new();
@@ -3970,6 +4001,133 @@ mod tests {
             engine_plugins.len(),
             1,
             "and nothing else was handed over on the way"
+        );
+    }
+
+    /// A plugin that never activated is refused with no engine running too,
+    /// rather than parked for an attach that can only ever refuse it.
+    ///
+    /// Nothing re-activates a parked runtime: the flag is written when the
+    /// wrapper is built and by the engine-owned latency restart, which a parked
+    /// instance never reaches. Parked, it would be picked up by every batch for
+    /// the rest of the session — a lifecycle lease, both plugin maps and the
+    /// engine lock, taken under the graph registry, on every apply — and refused
+    /// each time. The caller is told at the load instead, where it can show the
+    /// failure to the musician.
+    #[test]
+    fn a_load_with_no_engine_refuses_a_plugin_that_never_activated_rather_than_parking_it() {
+        let state = Arc::new(AppState::default());
+        publish_scan_results_in_registry(
+            &state.plugin_registry,
+            &state.plugin_registry_store,
+            &[],
+            &[],
+            true,
+            &[scanned("aaaa1111", "com.vendor.reverb", "clap")],
+        );
+
+        let error = crate::block_on_test(load_plugin_with_backend(
+            PluginId("aaaa1111".to_string()),
+            PluginInstanceId("never-activated-dormant".to_string()),
+            TEST_ENGINE_SAMPLE_RATE,
+            &NoWindowHost,
+            &state,
+            |_backend, _path, _descriptor_id, _sample_rate| {
+                let mut wrapper = ClapWrapper::new_engine_owned_command_fixture(
+                    "Never Activated",
+                    Vec::new(),
+                    false,
+                );
+                wrapper.deactivate_engine_owned_command_fixture();
+                Ok(HostedRuntime::from(wrapper))
+            },
+        ))
+        .expect_err("a plugin that never activated must not load, engine or no engine");
+
+        assert!(
+            state
+                .engine
+                .lock()
+                .expect("the engine slot is readable")
+                .is_none(),
+            "the refusal under test is the one a load takes with no engine running"
+        );
+        assert!(
+            error.contains("failed to activate"),
+            "the caller is told what the plugin did, got: {error}"
+        );
+        assert!(
+            !state
+                .plugins
+                .lock()
+                .expect("plugins lock should be available")
+                .contains_key("never-activated-dormant"),
+            "and nothing is parked: an attach could only refuse it, once per batch, forever"
+        );
+    }
+
+    /// The reservation counts instances the engine took, not instances tried.
+    ///
+    /// A refusal pushes no command and spends no reserved slot, so an instance
+    /// the engine turns down must not cost the one behind it its place. The two
+    /// are told apart by attaching in id order with a refusing instance first:
+    /// a limit that counted attempts would stop on the refusal and leave the
+    /// engine holding nothing, on a batch that reserved room for one.
+    #[test]
+    fn a_refused_instance_does_not_spend_the_slot_reserved_for_another() {
+        let state = AppState::default();
+        let (engine, _command_rx, _retired_adoption_rx) =
+            daw_engine::engine_handle_for_command_capture(64);
+        *state.engine.lock().expect("the engine slot is free") = Some(engine);
+
+        // Sorts first, and never activated, so the attach reaches it first and
+        // refuses it.
+        let mut refusing =
+            ClapWrapper::new_engine_owned_command_fixture("Unactivated Fixture", Vec::new(), false);
+        refusing.deactivate_engine_owned_command_fixture();
+        let mut plugins = state
+            .plugins
+            .lock()
+            .expect("plugins lock should be available");
+        plugins.insert(
+            "a-refuses-to-attach".to_string(),
+            crate::state::PluginInstanceData::dormant_fixture(HostedRuntime::from(refusing)),
+        );
+        plugins.insert(
+            "b-attaches".to_string(),
+            crate::state::PluginInstanceData::dormant_fixture(HostedRuntime::from(
+                ClapWrapper::new_engine_owned_command_fixture("Dormant Fixture", Vec::new(), false),
+            )),
+        );
+        drop(plugins);
+
+        let attached = attach_dormant_plugins(&state, 1)
+            .expect("a refused instance is that instance's problem, not the attach's");
+
+        let taken: Vec<&str> = attached
+            .iter()
+            .map(|plugin| plugin.instance_id.as_str())
+            .collect();
+        assert_eq!(
+            taken,
+            ["b-attaches"],
+            "the refusal ahead of it must not have spent the reserved slot"
+        );
+        assert!(
+            state
+                .plugins
+                .lock()
+                .expect("plugins lock should be available")
+                .contains_key("a-refuses-to-attach"),
+            "and the refused instance stays parked for a later batch to retry"
+        );
+        assert!(
+            state
+                .engine_plugins
+                .lock()
+                .expect("engine_plugins lock should be available")
+                .contains_key("b-attaches"),
+            "the engine holds the instance the attach reported"
         );
     }
 

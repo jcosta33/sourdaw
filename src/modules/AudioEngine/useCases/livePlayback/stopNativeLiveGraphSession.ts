@@ -14,6 +14,7 @@
 
 import { disarmNativeLiveAutomationWriter } from './disarmNativeLiveAutomationWriter';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
+import { reportAttachedPlugins } from './reportAttachedPlugins';
 import { stopNativeEnginePlayheadFeed } from './stopNativeEnginePlayheadFeed';
 
 export type StopNativeLiveGraphSessionInput = Readonly<{
@@ -46,6 +47,7 @@ export function stopNativeLiveGraphSession(
             schemaVersion: 1,
             commands: [{ kind: 'set-transport', playing: false, positionSeconds: input.positionSeconds }],
         });
+        reportAttachedPlugins(result);
         if (result.application !== 'applied') {
             // The session stays: a refused stop means the engine did not take
             // the command, not that the graph it holds went away, and dropping

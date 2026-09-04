@@ -42,7 +42,6 @@ import {
     trackStore,
     type Track,
 } from '#/modules/Arrangement/stores';
-import { markExternalPluginEngineAttached } from '#/modules/PluginHost/useCases';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 import { type AudioGraphStripReport } from '../../models/AudioGraphBackend';
@@ -59,6 +58,7 @@ import { type LiveGraphProgramme } from './projectLiveGraphProgramme';
 import { projectLiveGraphTopology, type LiveGraphMonitorMode } from './projectLiveGraphTopology';
 import { readLiveGraphProgramme } from './readLiveGraphProgramme';
 import { readLiveStripTracks } from './readLiveStripTracks';
+import { reportAttachedPlugins } from './reportAttachedPlugins';
 import { startNativeEnginePlayheadFeed } from './startNativeEnginePlayheadFeed';
 
 /**
@@ -209,6 +209,7 @@ async function rollNativeTransport(
         schemaVersion: 1,
         commands: [{ kind: 'set-transport', playing: true, positionSeconds, locate: false }],
     });
+    reportAttachedPlugins(rolling);
     if (rolling.application !== 'applied') {
         logger.warn(`[AudioEngine] native transport did not start rolling: ${rolling.reason}`);
         return { rolling: false, provenAfterBatch: null };
@@ -284,17 +285,13 @@ export function startNativeLiveGraphSession(
             return { outcome: 'declined', reason: result.reason };
         }
         // This batch is what starts the native engine, so it is also what takes
-        // over every plugin instance loaded before there was one — those
-        // instances were reported to their devices as loaded but processing no
-        // audio, and this result is the only correction that report ever gets.
-        // Before the session bookkeeping below, because a device that is told
-        // late has already been read as degraded.
-        for (const attached of result.attachedPlugins ?? []) {
-            markExternalPluginEngineAttached({
-                instanceId: attached.instanceId,
-                bridgeRoundTripFrames: attached.bridgeRoundTripFrames,
-            });
-        }
+        // over the plugin instances loaded before there was one — reported to
+        // their devices as loaded but processing no audio, and corrected
+        // nowhere else. It takes as many as it reserved ring slots for, so the
+        // roll below may carry the rest; every route reports, and this one
+        // reports before the session bookkeeping, because a device told late has
+        // already been read as degraded.
+        reportAttachedPlugins(result);
         // The previous session's handle is closed only once its replacement is
         // applied: a decline must leave the engine reachable through the handle
         // that was already working.
