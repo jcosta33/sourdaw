@@ -24,6 +24,7 @@ mkdir -p \
 cp "$repo_root/scripts/health-gates-web.sh" "$temp_root/scripts/health-gates-web.sh"
 cp "$repo_root/scripts/health-gates-server.sh" "$temp_root/scripts/health-gates-server.sh"
 cp "$repo_root/scripts/run-gitleaks-history-scan.sh" "$temp_root/scripts/run-gitleaks-history-scan.sh"
+cp "$repo_root/scripts/assert-deployment-isolation.sh" "$temp_root/scripts/assert-deployment-isolation.sh"
 cp "$repo_root/.gitleaks.toml" "$temp_root/.gitleaks.toml"
 cp "$repo_root/.gitleaksignore" "$temp_root/.gitleaksignore"
 cp "$repo_root/scripts/run-gitleaks-history-scan.sh" "$temp_root/trusted-scanner/scripts/run-gitleaks-history-scan.sh"
@@ -778,6 +779,7 @@ const deployWebGuardRun = deployWebGuardStep?.run ?? '';
 const deployWebResolveStep = stepNamed(deployWeb, 'Resolve the current production revision');
 const deployWebSkipReportStep = stepNamed(deployWeb, 'Report why nothing was deployed');
 const deployWebDeployRun = stepNamed(deployWeb, 'Deploy the prebuilt revision')?.run ?? '';
+const deployWebAliasStep = stepNamed(deployWeb, 'Resolve the aliases of the deployment');
 const deployWebIsolationStep = stepNamed(deployWeb, 'Assert cross-origin isolation on the deployment');
 const deployWebArmingReport = stepNamed(deployWeb, 'Report the missing deployment credential')?.run ?? '';
 const vercelConfig = JSON.parse(readFileSync(`${process.env.REPO_ROOT}/vercel.json`, 'utf8'));
@@ -808,8 +810,41 @@ expect(
     'the daily web deploy must queue behind a running deploy rather than cancel one mid-alias'
 );
 expect(
-    deployWebIsolationStep?.env?.DEPLOYMENT_URL === '${{ steps.deployment.outputs.url }}',
-    'the daily web deploy must assert isolation against the deployment it just created, not against a fixed alias'
+    deployWebAliasStep?.id === 'aliases',
+    'the daily web deploy must publish the aliases of the deployment under a stable step id'
+);
+expect(
+    deployWebAliasStep?.env?.DEPLOYMENT_URL === '${{ steps.deployment.outputs.url }}',
+    'the alias step must read the aliases off the deployment this run just created, which is what proves the deployment took the domains being graded so no domain it never reached is graded'
+);
+expect(
+    deployWebAliasStep?.env?.VERCEL_TOKEN === '${{ secrets.VERCEL_TOKEN }}' &&
+        deployWebAliasStep?.env?.VERCEL_ORG_ID === '${{ secrets.VERCEL_ORG_ID }}',
+    'the alias step must authenticate its Vercel query from the environment'
+);
+expect(
+    deployWebAliasStep?.run === 'node scripts/resolveVercelDeploymentAliases.ts',
+    'the daily web deploy must resolve its aliases through scripts/resolveVercelDeploymentAliases.ts, which is what validates every hostname before it reaches GITHUB_OUTPUT'
+);
+expect(
+    deployWebIsolationStep?.env?.ALIASES === '${{ steps.aliases.outputs.aliases }}',
+    'the daily web deploy must assert isolation against the public aliases of the deployment it just created; Standard Protection restricts the generated deployment URL behind Vercel Authentication, so grading that URL grades the vercel.com login page'
+);
+expect(
+    deployWebIsolationStep?.run === 'sh scripts/assert-deployment-isolation.sh',
+    'the daily web deploy must grade isolation through scripts/assert-deployment-isolation.sh, which is the only form of that check anything executes'
+);
+const isolationScript = readFileSync(`${process.env.REPO_ROOT}/scripts/assert-deployment-isolation.sh`, 'utf8');
+expect(
+    isolationScript.includes('cross-origin-opener-policy') &&
+        isolationScript.includes('same-origin') &&
+        isolationScript.includes('cross-origin-embedder-policy') &&
+        isolationScript.includes('require-corp'),
+    'the isolation script must name both headers cross-origin isolation needs'
+);
+expect(
+    !isolationScript.includes('--location'),
+    'the isolation script must not follow a redirect off the domain it is grading, since a restricted deployment URL redirects to vercel.com and those headers are not this deployment headers'
 );
 for (const stepName of ['Deploy the prebuilt revision']) {
     expect(
@@ -925,6 +960,7 @@ for (const stepName of [
     'Link the Vercel CLI to the production project',
     'Build the validated revision',
     'Deploy the prebuilt revision',
+    'Resolve the aliases of the deployment',
     'Assert cross-origin isolation on the deployment',
 ]) {
     expect(
@@ -1111,6 +1147,135 @@ printf '%s\n' \
     "sha256sum stdin: $gitleaks_sha256  $bad_checksum_archive" \
     > "$temp_root/expected-gitleaks-bad-checksum.log"
 diff -u "$temp_root/expected-gitleaks-bad-checksum.log" "$temp_root/gitleaks-bad-checksum.log"
+
+# The isolation grader the daily web train runs after it deploys. The whole
+# point of the check is which response it grades and which it refuses, so it is
+# executed here against a fake curl answering fixture responses per hostname —
+# real `curl --head` framing, CRLF line endings and all — rather than read for
+# substrings.
+isolation_bin="$temp_root/bin-isolation"
+isolation_responses="$temp_root/isolation-responses"
+mkdir -p "$isolation_bin" "$isolation_responses"
+cat > "$isolation_bin/curl" <<'SH'
+#!/bin/sh
+set -eu
+url=
+for argument in "$@"; do
+    case "$argument" in
+        https://*)
+            url=$argument
+            ;;
+    esac
+done
+host=${url#https://}
+host=${host%/}
+if [ ! -f "$ISOLATION_RESPONSES/$host" ]; then
+    printf 'no fixture response for %s\n' "$host" >&2
+    exit 6
+fi
+cat "$ISOLATION_RESPONSES/$host"
+SH
+chmod +x "$isolation_bin/curl"
+
+write_isolation_response() {
+    response_host=$1
+    shift
+    : > "$isolation_responses/$response_host"
+    for response_line in "$@"; do
+        printf '%s\r\n' "$response_line" >> "$isolation_responses/$response_host"
+    done
+    printf '\r\n' >> "$isolation_responses/$response_host"
+}
+
+write_isolation_response 'restricted.vercel.app' \
+    'HTTP/2 302 ' \
+    'location: https://vercel.com/sso-api?url=https%3A%2F%2Frestricted.vercel.app%2F' \
+    'content-length: 0'
+write_isolation_response 'also-restricted.vercel.app' \
+    'HTTP/2 302 ' \
+    'location: https://vercel.com/sso-api?url=https%3A%2F%2Falso-restricted.vercel.app%2F' \
+    'content-length: 0'
+write_isolation_response 'app.sourdaw.studio' \
+    'HTTP/2 200 ' \
+    'content-type: text/html; charset=utf-8' \
+    'cross-origin-opener-policy: same-origin' \
+    'cross-origin-embedder-policy: require-corp'
+write_isolation_response 'no-coep.sourdaw.studio' \
+    'HTTP/2 200 ' \
+    'content-type: text/html; charset=utf-8' \
+    'cross-origin-opener-policy: same-origin'
+# `same-origin-allow-popups` contains `same-origin` and is not cross-origin
+# isolated: the whole reason both header matches are anchored to the line.
+write_isolation_response 'popups.sourdaw.studio' \
+    'HTTP/2 200 ' \
+    'content-type: text/html; charset=utf-8' \
+    'cross-origin-opener-policy: same-origin-allow-popups' \
+    'cross-origin-embedder-policy: require-corp'
+# A redirect that is not the Vercel Authentication one is not a reason to skip
+# a domain: it is a domain that did not answer, and the run fails on it. The
+# location is on vercel.com but is not `/sso-api`, so a skip condition widened
+# to the host alone would wrongly pass this domain over.
+write_isolation_response 'moved.sourdaw.studio' \
+    'HTTP/2 301 ' \
+    'location: https://vercel.com/login' \
+    'content-length: 0'
+
+run_isolation_case() {
+    isolation_case=$1
+    isolation_aliases=$2
+    set +e
+    PATH="$isolation_bin:$PATH" \
+        ISOLATION_RESPONSES="$isolation_responses" \
+        RUNNER_TEMP="$temp_root/isolation-runner-$isolation_case" \
+        ALIASES="$isolation_aliases" \
+        sh "$temp_root/scripts/assert-deployment-isolation.sh" \
+        > "$temp_root/isolation-$isolation_case.out" 2>&1
+    isolation_status=$?
+    set -e
+}
+
+run_isolation_case skipped-then-graded 'restricted.vercel.app app.sourdaw.studio'
+isolation_skipped_then_graded_status=$isolation_status
+test "$isolation_skipped_then_graded_status" -eq 0
+grep -qF 'https://restricted.vercel.app/ is behind Vercel Authentication; not a public production domain' \
+    "$temp_root/isolation-skipped-then-graded.out"
+grep -qF 'https://app.sourdaw.studio/ is cross-origin isolated' "$temp_root/isolation-skipped-then-graded.out"
+
+run_isolation_case all-restricted 'restricted.vercel.app also-restricted.vercel.app'
+isolation_all_restricted_status=$isolation_status
+test "$isolation_all_restricted_status" -eq 1
+grep -qF 'no public production domain answered for this deployment' "$temp_root/isolation-all-restricted.out"
+if grep -qF 'is cross-origin isolated' "$temp_root/isolation-all-restricted.out"; then
+    printf 'a run in which every alias was restricted must grade no domain\n' >&2
+    exit 1
+fi
+
+run_isolation_case missing-coep 'no-coep.sourdaw.studio'
+isolation_missing_coep_status=$isolation_status
+test "$isolation_missing_coep_status" -eq 1
+grep -qF 'https://no-coep.sourdaw.studio/ is missing cross-origin-embedder-policy: require-corp' \
+    "$temp_root/isolation-missing-coep.out"
+
+run_isolation_case allow-popups 'popups.sourdaw.studio'
+isolation_allow_popups_status=$isolation_status
+test "$isolation_allow_popups_status" -eq 1
+grep -qF 'https://popups.sourdaw.studio/ is missing cross-origin-opener-policy: same-origin' \
+    "$temp_root/isolation-allow-popups.out"
+
+run_isolation_case foreign-redirect 'moved.sourdaw.studio'
+isolation_foreign_redirect_status=$isolation_status
+test "$isolation_foreign_redirect_status" -eq 1
+grep -qF 'https://moved.sourdaw.studio/ answered 301' "$temp_root/isolation-foreign-redirect.out"
+
+set +e
+PATH="$isolation_bin:$PATH" \
+    ISOLATION_RESPONSES="$isolation_responses" \
+    RUNNER_TEMP="$temp_root/isolation-runner-unset" \
+    sh "$temp_root/scripts/assert-deployment-isolation.sh" > "$temp_root/isolation-unset.out" 2>&1
+isolation_unset_status=$?
+set -e
+test "$isolation_unset_status" -ne 0
+grep -qF 'ALIASES must be set to the public production aliases to grade' "$temp_root/isolation-unset.out"
 
 # A PATH that has the fake npm but no cargo at all, used to prove the missing
 # toolchain precondition. `sh` and `dirname` are the only external commands
@@ -1362,4 +1527,10 @@ printf '%s\n' \
     'gitleaks helper scan argv: PASS' \
     "gitleaks helper bad checksum exit: $bad_checksum_status" \
     'gitleaks helper bad checksum stops before extract/scan: PASS' \
+    "isolation grader skipped-then-graded exit: $isolation_skipped_then_graded_status" \
+    "isolation grader all-restricted exit: $isolation_all_restricted_status" \
+    "isolation grader missing-COEP exit: $isolation_missing_coep_status" \
+    "isolation grader same-origin-allow-popups exit: $isolation_allow_popups_status" \
+    "isolation grader foreign-redirect exit: $isolation_foreign_redirect_status" \
+    "isolation grader unset ALIASES exit: $isolation_unset_status" \
     'rust workspace gate failure propagation: PASS'

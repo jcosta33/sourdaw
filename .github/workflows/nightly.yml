@@ -937,27 +937,24 @@ jobs:
           printf 'url=%s\n' "$deployment_url" >> "$GITHUB_OUTPUT"
           printf '### Web deployed\n\n`%s` is live at %s\n' "$GITHUB_SHA" "$deployment_url" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Assert cross-origin isolation on the deployment
+      - name: Resolve the aliases of the deployment
+        id: aliases
         if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.production.outputs.deploy == 'true'
         env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           DEPLOYMENT_URL: ${{ steps.deployment.outputs.url }}
-        run: |
-          set -euo pipefail
-          # SharedArrayBuffer — and therefore the audio engine's shared memory —
-          # is unavailable to a document that is not cross-origin isolated, and
-          # these two headers are the whole of what makes it so. They are
-          # configured in `vercel.json`; this reads them back off the deployment
-          # that was actually served.
-          headers="$RUNNER_TEMP/deployment-headers.txt"
-          curl --fail --location --silent --show-error --head "$DEPLOYMENT_URL" > "$headers"
-          cat "$headers"
-          for header in 'cross-origin-opener-policy: same-origin' 'cross-origin-embedder-policy: require-corp'; do
-            if ! grep -iq "$header" "$headers"; then
-              printf 'the deployment is missing %s\n' "$header" >&2
-              exit 1
-            fi
-          done
-          printf 'the deployment is cross-origin isolated\n'
+        run: node scripts/resolveVercelDeploymentAliases.ts
+
+      - name: Assert cross-origin isolation on the deployment
+        if: env.DEPLOY_CREDENTIAL_PRESENT == 'true' && steps.production.outputs.deploy == 'true'
+        # Proves every public production domain this deployment took still
+        # serves the two headers cross-origin isolation needs. Why only
+        # those domains are graded, and what the alias list does and does
+        # not prove, is in the script's header comment.
+        env:
+          ALIASES: ${{ steps.aliases.outputs.aliases }}
+        run: sh scripts/assert-deployment-isolation.sh
 
   nightly-report:
     name: Nightly failure report
