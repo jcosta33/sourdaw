@@ -339,7 +339,7 @@ describe('deliver --recover-lock 3437', () => {
 
     it('refuses a retained pre-journal owner matching no incident and lists the retained commands', async () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-delivery-lock-recovery-'));
-        const unknownOwner = '{"version":1,"pid":9111,"token":"11111111-1111-4111-8111-111111111111"}';
+        const unknownOwner = '{"version":1,"pid":9111,"token":"123e4567-e89b-12d3-a456-426614174001"}';
         git(root, ['init', '--quiet']);
         const unknownOwnerOid = git(root, ['hash-object', '-w', '--stdin'], unknownOwner);
         git(root, ['update-ref', REF, unknownOwnerOid]);

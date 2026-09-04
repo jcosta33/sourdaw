@@ -33,7 +33,7 @@ function journaledOwner(phase: 'prepared' | 'remote-mutation-attempted', epoch: 
     return JSON.stringify({
         version: 4,
         pid: CRASHED_PID,
-        token: '2b3c4d5e-6f70-4182-9394-a5b6c7d8e9f0',
+        token: '123e4567-e89b-12d3-a456-426614174000',
         operation: 'delivery',
         number: NUMBER,
         ownerFence: { kind: 'pgid', pgid: CRASHED_PID, leaderStartedAt: 'crashed-delivery-start' },
