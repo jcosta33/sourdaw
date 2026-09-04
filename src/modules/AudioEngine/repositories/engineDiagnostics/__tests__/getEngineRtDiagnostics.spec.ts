@@ -29,6 +29,7 @@ const nativePayload = {
     bridgeOutputBlocksDropped: 6,
     unmatchedBridgeBlocks: 7,
     bridgeBacklogBlocksShed: 8,
+    bridgeBlocksPassedChainBound: 15,
     callbackFramesOverBridgeReach: 9,
     bridgeInputBlocksRefused: 10,
     captureConsumerRefusals: 11,

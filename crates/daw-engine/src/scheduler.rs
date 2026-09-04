@@ -404,7 +404,10 @@ pub enum GraphCommand {
         index: usize,
     },
     /// Take an effect out of a track's chain. The effect stays registered and
-    /// returns to the master insert chain.
+    /// returns to its home placement — the master insert chain for everything
+    /// the engine owns end to end, and detached for a hosted plugin, whose
+    /// lifetime belongs to the load that registered it and which must not land
+    /// on the whole mix because the user took it off one track.
     RemoveTrackDevice {
         track_id: usize,
         effect_id: usize,
@@ -432,6 +435,9 @@ pub enum GraphCommand {
         entry: ChainEntry,
         index: usize,
     },
+    /// Take an effect out of a bus's chain, on the same contract as
+    /// [`GraphCommand::RemoveTrackDevice`]: the effect stays registered and
+    /// returns to its home placement.
     RemoveBusDevice {
         bus_id: usize,
         effect_id: usize,
@@ -693,7 +699,9 @@ fn apply_knead_param(engine: &mut KneadEngine, param: DeviceParam, value: f32) {
 enum EffectPlacement {
     /// No track claims it, so it runs on the master insert chain over the
     /// engine's stereo pair — the crate's behaviour before the timeline
-    /// existed, and where an effect returns when it leaves a track.
+    /// existed, and where an engine-owned effect returns when it leaves a
+    /// strip. It is not where *every* effect returns: an effect returns to its
+    /// own home, and a hosted plugin's home is `Detached`.
     MasterChain,
     /// A member of the named track's device chain, processed with that track's
     /// signal instead.
@@ -723,6 +731,15 @@ struct ActiveEffect {
     /// Pending MIDI events for this block (drained each process_block call).
     pending_midi: MidiEventBuffer,
     placement: EffectPlacement,
+    /// Where a strip returns this effect when it releases it.
+    ///
+    /// The master chain is home for everything the engine itself owns end to
+    /// end, which is the crate's behaviour before the timeline existed. An
+    /// engine-owned hosted plugin is not one of those: its lifetime belongs to
+    /// the load that registered it, and the strip that borrowed it must be able
+    /// to give it back without putting a plugin the user took off one track
+    /// onto the whole mix.
+    home: EffectPlacement,
     /// Time-stamped parameter changes waiting for the playhead. Fixed
     /// capacity and held inline, so queuing one neither allocates nor is
     /// freed on the audio thread.
@@ -1288,7 +1305,31 @@ impl ActiveEffect {
         Self::with_placement(id, instance, EffectPlacement::MasterChain)
     }
 
+    /// An effect placed somewhere other than the master chain, but still homed
+    /// there: a built-in the graph registers detached is the engine's own, and
+    /// the master chain is where it belongs once no strip holds it.
     fn with_placement(id: usize, instance: PluginCore, placement: EffectPlacement) -> Self {
+        Self::homed(id, instance, placement, EffectPlacement::MasterChain)
+    }
+
+    /// An effect that runs nowhere until a chain claims it, and runs nowhere
+    /// again once one releases it — the registration a hosted plugin gets, for
+    /// the reason on [`Self::home`].
+    fn detached(id: usize, instance: PluginCore) -> Self {
+        Self::homed(
+            id,
+            instance,
+            EffectPlacement::Detached,
+            EffectPlacement::Detached,
+        )
+    }
+
+    fn homed(
+        id: usize,
+        instance: PluginCore,
+        placement: EffectPlacement,
+        home: EffectPlacement,
+    ) -> Self {
         Self {
             id,
             instance,
@@ -1297,6 +1338,7 @@ impl ActiveEffect {
             midi_fx: MidiFxChain::new(),
             pending_midi: MidiEventBuffer::new(),
             placement,
+            home,
             pending_params: DeviceParamQueue::new(),
         }
     }
@@ -1727,11 +1769,17 @@ impl AudioScheduler {
                         None
                     }
                 }
+                // The registration is detached and homed detached. A hosted
+                // plugin belongs to the load that created it, not to the master
+                // insert chain: placed there it would render the whole mix
+                // through an instance the app is also driving over its bridge,
+                // and released there it would do the same the moment a user
+                // took it off a strip.
                 GraphCommand::AddPluginWithBridge(id, plugin, bridge) => {
                     if self.effect_id_exists(id) {
                         self.midi_rt_diagnostics.record_effect_id_collision(1);
                         RetiredGraphObjects::effect_with_bridge(
-                            Some(ActiveEffect::new(id, PluginCore::Native(plugin))),
+                            Some(ActiveEffect::detached(id, PluginCore::Native(plugin))),
                             Some(bridge),
                         )
                     } else if self.effects.len() == EFFECT_TABLE_CAPACITY
@@ -1743,11 +1791,11 @@ impl AudioScheduler {
                         // returns blocks nothing processes.
                         self.timeline.record_capacity_refusal();
                         RetiredGraphObjects::effect_with_bridge(
-                            Some(ActiveEffect::new(id, PluginCore::Native(plugin))),
+                            Some(ActiveEffect::detached(id, PluginCore::Native(plugin))),
                             Some(bridge),
                         )
                     } else {
-                        self.push_effect(ActiveEffect::new(id, PluginCore::Native(plugin)));
+                        self.push_effect(ActiveEffect::detached(id, PluginCore::Native(plugin)));
                         self.push_bridge(bridge);
                         None
                     }
@@ -2205,15 +2253,18 @@ impl AudioScheduler {
         }
     }
 
-    /// Return an effect to the master insert chain, but only when it is the
-    /// named chain that still holds it: an effect's placement is single-valued,
-    /// so releasing one some other chain is running would move a live device.
+    /// Return an effect to its home ([`ActiveEffect::home`]), but only when it
+    /// is the named chain that still holds it: an effect's placement is
+    /// single-valued, so releasing one some other chain is running would move a
+    /// live device.
     fn release_effect(&mut self, effect_id: usize, held_by: EffectPlacement) {
         let Some(slot) = self.effect_index.lookup(effect_id) else {
             return;
         };
-        if self.effects[slot].placement == held_by {
-            self.place_effect(effect_id, EffectPlacement::MasterChain);
+        let effect = &self.effects[slot];
+        if effect.placement == held_by {
+            let home = effect.home;
+            self.place_effect(effect_id, home);
         }
     }
 
@@ -2441,6 +2492,33 @@ impl AudioScheduler {
                 continue;
             };
 
+            // While the monitor is audible, a plugin a track or bus chain holds
+            // is processed inline by that chain over the strip's own signal
+            // (`TrackDeviceChain::run_device`). Its bridge still has to move —
+            // an input ring left to fill refuses every later push for good — so
+            // the blocks are returned exactly as they arrived. `pending_midi` is
+            // deliberately left alone: the chain is what consumes it this
+            // callback, and clearing it here would take the events away from the
+            // path that is going to deliver them.
+            if !self.monitor_shadowed
+                && matches!(
+                    effect.placement,
+                    EffectPlacement::Track(_) | EffectPlacement::Bus(_)
+                )
+            {
+                let drain =
+                    bridge.drain_process(frame_budget, target_depth_blocks, |left, right, n| {
+                        let _ = (left, right, n);
+                    });
+                self.midi_rt_diagnostics
+                    .record_bridge_blocks_passed_chain_bound(drain.blocks_processed as u64);
+                self.midi_rt_diagnostics
+                    .record_bridge_output_blocks_dropped(drain.output_blocks_dropped as u64);
+                self.midi_rt_diagnostics
+                    .record_bridge_backlog_blocks_shed(drain.blocks_shed as u64);
+                continue;
+            }
+
             if effect.bypassed {
                 // Drain input without processing (passthrough)
                 let drain =
@@ -2632,6 +2710,7 @@ impl AudioScheduler {
             midi_rt_diagnostics,
             transport,
             sample_rate,
+            monitor_shadowed,
             ..
         } = self;
         let mut devices = TrackDeviceChain {
@@ -2642,6 +2721,7 @@ impl AudioScheduler {
             midi_rt_diagnostics,
             transport: *transport,
             sample_rate: *sample_rate,
+            monitor_shadowed: *monitor_shadowed,
         };
 
         timeline.render(
@@ -2967,14 +3047,21 @@ struct TrackDeviceChain<'a> {
     midi_rt_diagnostics: &'a mut ActiveMidiRtDiagnostics,
     transport: TransportState,
     sample_rate: f32,
+    /// Whether the app is still monitoring its own Web Audio graph, read as a
+    /// plain flag rather than looked up: it decides which of the two paths owns
+    /// a bridged plugin this block, once per device per callback.
+    monitor_shadowed: bool,
 }
 
 impl DeviceChain for TrackDeviceChain<'_> {
     fn run_device(&mut self, effect_id: usize, left: &mut [f32], right: &mut [f32], frames: usize) {
-        // A bridged plugin is driven from the app's own audio in
+        // While the monitor is shadowed the app is what the user hears, and a
+        // bridged plugin is driven from the app's own audio in
         // `process_audio_bridges`. Running it here as well would push the
-        // track's signal through the same stateful instance on a second path.
-        if self.bridge_index.lookup(effect_id).is_some() {
+        // strip's signal through the same stateful instance on a second path.
+        // Once the monitor is audible this chain owns the instance instead, and
+        // the bridge returns its blocks untouched.
+        if self.monitor_shadowed && self.bridge_index.lookup(effect_id).is_some() {
             return;
         }
 
@@ -5858,6 +5945,112 @@ mod timeline_tests {
         }
     }
 
+    /// Adds a constant to whatever it is handed and counts every process call
+    /// and every MIDI event delivered, so which path drove the instance — and
+    /// how many times per block — is readable in the mix and in the counts.
+    struct CountingOffsetPlugin {
+        offset: f32,
+        calls: Arc<AtomicUsize>,
+        midi_events: Arc<AtomicUsize>,
+    }
+
+    impl NativePlugin for CountingOffsetPlugin {
+        fn process_audio(&mut self, left: &mut [f32], right: &mut [f32], num_samples: usize) {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            for index in 0..num_samples {
+                left[index] += self.offset;
+                right[index] += self.offset;
+            }
+        }
+
+        fn process_with_events(
+            &mut self,
+            left: &mut [f32],
+            right: &mut [f32],
+            num_samples: usize,
+            midi_events: &[MidiNoteEvent],
+            _transport: &TransportState,
+        ) {
+            self.midi_events
+                .fetch_add(midi_events.len(), Ordering::Relaxed);
+            self.process_audio(left, right, num_samples);
+        }
+
+        fn name(&self) -> &str {
+            "counting-offset-plugin"
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
+    }
+
+    /// One engine-owned hosted plugin, its bridge, and its call counters,
+    /// spliced onto a track that plays a constant.
+    struct ChainBoundPlugin {
+        handle: crate::audio_bridge::PluginAudioBridgeHandle,
+        calls: Arc<AtomicUsize>,
+        midi_events: Arc<AtomicUsize>,
+    }
+
+    /// A track playing a constant `1.0`, carrying an engine-owned plugin
+    /// registered exactly as `register_runtime_with_engine` registers one:
+    /// `AddPluginWithBridge`, then a chain splice.
+    fn track_carrying_a_bridged_plugin(
+        harness: &mut Harness,
+        track_id: usize,
+        effect_id: usize,
+        offset: f32,
+    ) -> ChainBoundPlugin {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let midi_events = Arc::new(AtomicUsize::new(0));
+        let (bridge, handle) = crate::audio_bridge::create_audio_bridge(effect_id);
+
+        track_with_constant_clip(harness, track_id, track_id + 100, 1.0, 4);
+        harness.send(GraphCommand::AddPluginWithBridge(
+            effect_id,
+            Box::new(CountingOffsetPlugin {
+                offset,
+                calls: Arc::clone(&calls),
+                midi_events: Arc::clone(&midi_events),
+            }),
+            bridge,
+        ));
+        harness.send(GraphCommand::InsertTrackDevice {
+            track_id,
+            entry: effect(effect_id),
+            index: 0,
+        });
+
+        ChainBoundPlugin {
+            handle,
+            calls,
+            midi_events,
+        }
+    }
+
+    fn bridge_blocks_passed_chain_bound(harness: &Harness) -> u64 {
+        harness
+            .scheduler
+            .midi_rt_diagnostics
+            .snapshot()
+            .bridge_blocks_passed_chain_bound
+    }
+
+    /// Push one block of `value` over the bridge and let the callback's bridge
+    /// pass run, the way a render callback does before it renders the graph.
+    fn relay_one_block(plugin: &mut ChainBoundPlugin, harness: &mut Harness, value: f32) {
+        assert!(
+            plugin.handle.push_input(&[value; 4], &[value; 4]),
+            "the bridge input ring should have room"
+        );
+        harness.scheduler.process_audio_bridges(512);
+    }
+
     fn note_on(note: u8) -> MidiNoteEvent {
         MidiNoteEvent {
             note,
@@ -6847,6 +7040,222 @@ mod timeline_tests {
         harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
         harness.render(4);
         assert_eq!(received.load(Ordering::Relaxed), 1);
+    }
+
+    /// The shadowed default: the app is what the user hears, the relay drives
+    /// the plugin from the app's own audio, and the strip chain must leave the
+    /// instance alone. Anything else runs one stateful plugin twice a block and
+    /// emits its output on a path the app is not monitoring.
+    #[test]
+    fn a_shadowed_monitor_leaves_a_chain_bound_plugin_to_its_bridge() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::SetMonitorShadow(true));
+        let mut plugin = track_carrying_a_bridged_plugin(&mut harness, 1, 7, 0.5);
+
+        relay_one_block(&mut plugin, &mut harness, 0.25);
+        let bridged = plugin
+            .handle
+            .pop_output()
+            .expect("the bridge returns a block");
+        assert_eq!(
+            &bridged.left[..4],
+            &[0.75; 4],
+            "the relay path must still process the app's audio while shadowed"
+        );
+        let after_the_bridge = plugin.calls.load(Ordering::Relaxed);
+        assert_eq!(after_the_bridge, 1);
+
+        let (left, right) = harness.render(4);
+        assert_eq!(
+            left,
+            vec![1.0; 4],
+            "a shadowed monitor must leave the track's own output untouched"
+        );
+        assert_eq!(right, left);
+        assert_eq!(
+            plugin.calls.load(Ordering::Relaxed),
+            after_the_bridge,
+            "the chain must make no inline call while the monitor is shadowed"
+        );
+        assert_eq!(bridge_blocks_passed_chain_bound(&harness), 0);
+    }
+
+    /// The audible side of the same session: the chain owns the instance, the
+    /// bridge keeps moving but returns its blocks exactly as they arrived, and
+    /// the plugin is driven once — not once per path.
+    #[test]
+    fn an_audible_monitor_runs_a_chain_bound_plugin_inline_and_passes_its_bridge_through() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::SetMonitorShadow(false));
+        let mut plugin = track_carrying_a_bridged_plugin(&mut harness, 1, 7, 0.5);
+
+        relay_one_block(&mut plugin, &mut harness, 0.25);
+        assert_eq!(
+            plugin.calls.load(Ordering::Relaxed),
+            0,
+            "the relay must not process a plugin the chain is going to run"
+        );
+        let passed = plugin
+            .handle
+            .pop_output()
+            .expect("the bridge returns a block");
+        assert_eq!(
+            &passed.left[..4],
+            &[0.25; 4],
+            "a passed-through block is the app's own audio, unprocessed"
+        );
+        assert_eq!(bridge_blocks_passed_chain_bound(&harness), 1);
+
+        let (left, right) = harness.render(4);
+        assert_eq!(
+            left,
+            vec![1.5; 4],
+            "an audible monitor renders the plugin over the track's own signal"
+        );
+        assert_eq!(right, left);
+        assert_eq!(
+            plugin.calls.load(Ordering::Relaxed),
+            1,
+            "exactly one process call for the block that was rendered"
+        );
+    }
+
+    /// The switch itself. A plugin driven twice in the block the gate moves —
+    /// or not at all — is a click on the cutover, so the count is checked per
+    /// block on both sides of the toggle rather than only at the ends.
+    #[test]
+    fn toggling_the_monitor_shadow_hands_a_bridged_plugin_over_one_block_at_a_time() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::SetMonitorShadow(true));
+        let mut plugin = track_carrying_a_bridged_plugin(&mut harness, 1, 7, 0.5);
+
+        let mut expected_calls = 0;
+        for block in 0..6 {
+            if block == 3 {
+                harness.send(GraphCommand::SetMonitorShadow(false));
+            }
+            let shadowed = block < 3;
+
+            relay_one_block(&mut plugin, &mut harness, 0.25);
+            harness.send(GraphCommand::SeekFrames(0));
+            let (left, _) = harness.render(4);
+
+            expected_calls += 1;
+            assert_eq!(
+                plugin.calls.load(Ordering::Relaxed),
+                expected_calls,
+                "block {block} must drive the plugin exactly once, on one path"
+            );
+            let expected_output = if shadowed { 1.0 } else { 1.5 };
+            assert_eq!(
+                left,
+                vec![expected_output; 4],
+                "block {block} must be rendered by the path the gate names"
+            );
+            let returned = plugin
+                .handle
+                .pop_output()
+                .expect("the bridge returns a block");
+            let expected_return = if shadowed { 0.75 } else { 0.25 };
+            assert_eq!(
+                &returned.left[..4],
+                &[expected_return; 4],
+                "block {block} must return the app's audio from the path the gate names"
+            );
+        }
+
+        assert_eq!(bridge_blocks_passed_chain_bound(&harness), 3);
+    }
+
+    /// A hosted plugin taken off a strip goes back to running nowhere, not onto
+    /// the master insert chain: its lifetime belongs to the load that created
+    /// it, and the master chain is the whole mix.
+    #[test]
+    fn a_bridged_plugin_taken_off_a_chain_runs_nowhere_rather_than_on_the_master_mix() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::SetMonitorShadow(true));
+        let mut plugin = track_carrying_a_bridged_plugin(&mut harness, 1, 7, 0.5);
+
+        harness.send(GraphCommand::RemoveTrackDevice {
+            track_id: 1,
+            effect_id: 7,
+        });
+        let slot = harness
+            .scheduler
+            .effect_index
+            .lookup(7)
+            .expect("the removal must not unload the plugin");
+        assert_eq!(
+            harness.scheduler.effects[slot].placement,
+            EffectPlacement::Detached
+        );
+
+        // The mix is guarded twice over, and the placement above is the guard
+        // this test owns: the master walk also skips a bridged effect, so these
+        // two renders hold the same law from the other side — the whole mix
+        // stays the track's own signal on either side of the gate.
+        harness.send(GraphCommand::SeekFrames(0));
+        let (shadowed, _) = harness.render(4);
+        assert_eq!(shadowed, vec![1.0; 4]);
+
+        harness.send(GraphCommand::SetMonitorShadow(false));
+        harness.send(GraphCommand::SeekFrames(0));
+        let (audible, _) = harness.render(4);
+        assert_eq!(
+            audible,
+            vec![1.0; 4],
+            "a released hosted plugin must not process the master mix"
+        );
+
+        // Its bridge still drains, so the app keeps its audio and the ring
+        // keeps moving for a plugin no chain holds.
+        relay_one_block(&mut plugin, &mut harness, 0.25);
+        assert!(plugin.handle.pop_output().is_some());
+    }
+
+    /// Bypass is the professional convention on the inline path too: the
+    /// instance keeps its state, passes the strip's signal through untouched,
+    /// and discards MIDI queued while it was bypassed rather than banking a
+    /// burst of stale note-ons for the moment it is enabled.
+    #[test]
+    fn a_bypassed_chain_bound_plugin_passes_the_strip_through_and_discards_queued_midi() {
+        let mut harness = Harness::new(32);
+        harness.playing();
+        harness.send(GraphCommand::SetMonitorShadow(false));
+        let plugin = track_carrying_a_bridged_plugin(&mut harness, 1, 7, 0.5);
+        harness.send(GraphCommand::SetBypass(7, true));
+        harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
+
+        let (left, _) = harness.render(4);
+        assert_eq!(
+            left,
+            vec![1.0; 4],
+            "a bypassed device passes the strip's signal through untouched"
+        );
+        assert_eq!(plugin.calls.load(Ordering::Relaxed), 0);
+        assert_eq!(plugin.midi_events.load(Ordering::Relaxed), 0);
+
+        // Un-bypassed, the note queued while bypassed must not arrive late.
+        harness.send(GraphCommand::SetBypass(7, false));
+        harness.send(GraphCommand::SeekFrames(0));
+        let (enabled, _) = harness.render(4);
+        assert_eq!(enabled, vec![1.5; 4]);
+        assert_eq!(
+            plugin.midi_events.load(Ordering::Relaxed),
+            0,
+            "MIDI queued while bypassed is discarded, never banked"
+        );
+
+        // A note sent while it is enabled still reaches it, so the silence
+        // above is the discard and not a device nothing addresses.
+        harness.send(GraphCommand::SendMidiNote(7, note_on(60)));
+        harness.send(GraphCommand::SeekFrames(0));
+        harness.render(4);
+        assert_eq!(plugin.midi_events.load(Ordering::Relaxed), 1);
     }
 
     #[test]
