@@ -1,0 +1,23 @@
+src/modules/PluginHost/stores/externalPluginParameterStore.ts
+  s_9b530f08172a54::t_9d8f79d38c91d7 162-165,169,175-211
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/unloadPlugin.spec.ts
+  s_9b530f08172a54::t_235164c4205907 15-36,156-257
+src/modules/PluginHost/useCases/pluginLifecycle/unloadPlugin.ts
+  s_9b530f08172a54::t_8a6683a616d030 21,30-45,55,58,108-130,133-150,152,154,156
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "83b28b8c17f85dda3d699a9e4de96073a21fd0e4",
+  "prompts": {},
+  "sessions": {
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
