@@ -1,0 +1,26 @@
+crates/daw-dsp/src/crust/engine.rs
+  h_1228e573df1f42 178,234,429-439,468-470,567-569,572-573,1273-1319
+docs/manual/devices/08-crust.md
+  h_1228e573df1f42 141-142
+public/wasm/daw-dsp/daw_dsp.d.ts
+  h_1228e573df1f42 1,848-883,983-1012
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  h_1228e573df1f42 1,5-40,140-169
+public/wasm/manifest.json
+  h_1228e573df1f42 12,16-18,21
+release/open-source-inventory.json
+  h_1228e573df1f42 1331,1337,1721
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  h_1228e573df1f42 1,848-883,983-1012
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "403a94d7b0b97ed3b6f00f16d9efb5498e74bf67",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
