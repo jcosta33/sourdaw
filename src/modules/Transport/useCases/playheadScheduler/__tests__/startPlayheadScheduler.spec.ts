@@ -628,18 +628,30 @@ describe('startPlayheadScheduler', () => {
 
     it('pairs each loop-wrap take with the recording clip of its own armed track, not a pre-existing clip or a clip of another track', async () => {
         // Two armed tracks recording the same session, each with a distinct
-        // active clip, and each carrying a pre-existing clip that sits FIRST in
-        // its clips array. Resolving against the wrong track (the first armed
-        // track's clips) or falling back to clips[0] while anything records
-        // both mint takes this spec rejects: the id-to-track pairing must be
-        // exact for comp resolution to find the clip.
+        // active clip sitting MIDWAY in its clips array between two pre-existing
+        // clips, and the ref holder listing them in the OPPOSITE order to the
+        // armed tracks. Resolving against the wrong track, zipping the ref
+        // array against track order, or falling back to clips[0] / clips.at(-1)
+        // while anything records all mint takes this spec rejects: the
+        // id-to-track pairing must be exact for comp resolution to find the
+        // clip.
         trackStoreState.value = {
             tracks: [
-                { id: 'rec-a', armed: true, kind: 'audio', clips: [{ id: 'clip-old-a' }, { id: 'clip-rec-a' }] },
-                { id: 'rec-b', armed: true, kind: 'midi', clips: [{ id: 'clip-old-b' }, { id: 'clip-rec-b' }] },
+                {
+                    id: 'rec-a',
+                    armed: true,
+                    kind: 'audio',
+                    clips: [{ id: 'clip-old-a1' }, { id: 'clip-rec-a' }, { id: 'clip-old-a2' }],
+                },
+                {
+                    id: 'rec-b',
+                    armed: true,
+                    kind: 'midi',
+                    clips: [{ id: 'clip-old-b1' }, { id: 'clip-rec-b' }, { id: 'clip-old-b2' }],
+                },
             ],
         };
-        activeRecordingRefState.current = ['clip-rec-a', 'clip-rec-b'];
+        activeRecordingRefState.current = ['clip-rec-b', 'clip-rec-a'];
         takeLaneStoreState.value = null;
         transportStoreState.value = playingState({
             playheadPosition: 3.9,
@@ -657,6 +669,11 @@ describe('startPlayheadScheduler', () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 
+        expect(arrangementMocks.addTakeLane).toHaveBeenCalledTimes(2);
+        const laneCalls = arrangementMocks.addTakeLane.mock.calls as unknown as [string][];
+        // One lane per armed track, in either call order.
+        expect(laneCalls).toContainEqual(['rec-a']);
+        expect(laneCalls).toContainEqual(['rec-b']);
         expect(arrangementMocks.addTake).toHaveBeenCalledTimes(2);
         const takeCalls = arrangementMocks.addTake.mock.calls as unknown as [string, string, string, number, number][];
         // Exact id-to-track pairing, in either call order.
