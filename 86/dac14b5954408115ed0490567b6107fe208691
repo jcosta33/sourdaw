@@ -1,0 +1,18 @@
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveAutomationWriter.spec.ts
+  h_1228e573df1f42 208-213,220-224,231,236-238,267-270,295-299,314,523,1015-1108
+src/modules/AudioEngine/useCases/livePlayback/nativeLiveAutomationWriterState.ts
+  h_1228e573df1f42 96-98
+src/modules/AudioEngine/useCases/livePlayback/pumpNativeLiveAutomationWriter.ts
+  h_1228e573df1f42 203-208,219,231-236,239-241,245-249,254-255,257-259,371
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "86dac14b5954408115ed0490567b6107fe208691",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
