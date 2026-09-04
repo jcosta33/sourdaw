@@ -13,6 +13,14 @@ import {
 } from '../../tests/e2e/browserAiHardware';
 import browserAiWebGpuAdmissionConfig from '../../tests/e2e/browserAiWebGpuAdmission.playwright.config';
 import { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } from '../deployWebWorkflowContract';
+import {
+    assertWorkflowSnapshotMatch,
+    JOB_LEVEL_PERMISSION_FREE_FILES,
+    parseHealthGateWorkflows,
+    readRecordedWorkflowSnapshot,
+    SHARD_MATRIX_JOBS,
+    STEP_INVENTORY,
+} from '../healthGateWorkflowContract';
 
 type UnknownRecord = Record<string, unknown>;
 type JobResult = 'cancelled' | 'failure' | 'skipped' | 'success';
@@ -956,6 +964,82 @@ function assertUnconditionalSteps(set: WorkflowSet): void {
     for (const entry of CONDITIONAL_STEP_ALLOWLIST) {
         if (!seen.has(`${entry.workflow}${entry.job}${entry.step}`)) {
             throw new Error(`${entry.workflow} job ${entry.job} step ${entry.step} must carry its pinned condition`);
+        }
+    }
+}
+
+function workflowByFile(set: WorkflowSet, file: string): UnknownRecord {
+    const entry = workflowFiles(set).find(([name]) => name === file);
+    if (entry === undefined) {
+        throw new Error(`${file} missing from the workflow set`);
+    }
+    return entry[1];
+}
+
+// A shrunk shard list still reports green: every shard that ran passed, and
+// the dropped shards never ran at all. The unit suite decides the required
+// Gate and the e2e suite decides HeavyGate, so both pin their full inventory.
+function assertShardMatrices(set: WorkflowSet): void {
+    for (const [file, jobId, shards] of SHARD_MATRIX_JOBS) {
+        const matrix = recordAt(recordAt(jobAt(workflowByFile(set, file), jobId), 'strategy'), 'matrix');
+        const actual = arrayAt(matrix, 'shard');
+        if (actual.length !== shards.length || actual.some((shard, index) => shard !== shards[index])) {
+            throw new Error(`${file} job ${jobId} must shard across exactly ${shards.join(', ')}`);
+        }
+    }
+}
+
+// A job-level `permissions` block reshapes one leg's token away from the
+// workflow-level pin the permission assertions verify, and no pin read it:
+// `contents: write` on a validation leg would hand every pull request a token
+// that can push. The heavy and nightly files keep their own exact job-level
+// pins (CodeQL, the nightly reporter); these two files must grant nothing.
+function assertNoJobLevelPermissions(set: WorkflowSet): void {
+    for (const file of JOB_LEVEL_PERMISSION_FREE_FILES) {
+        for (const [jobId, jobValue] of Object.entries(recordAt(workflowByFile(set, file), 'jobs'))) {
+            const job = asRecord(jobValue, `${file} job ${jobId}`);
+            if (job.permissions !== undefined) {
+                throw new Error(`${file} job ${jobId} must inherit the workflow-level permissions`);
+            }
+        }
+    }
+}
+
+// A deleted step fails nothing: the job goes green having never run the
+// proof, and step presence was the one dimension the named pins never
+// enumerated. The inventory pins every job to its exact ordered step names
+// and refuses jobs the inventory does not know, in both directions.
+function assertStepInventory(set: WorkflowSet): void {
+    for (const [file, candidate] of workflowFiles(set)) {
+        const inventory = STEP_INVENTORY[file];
+        if (inventory === undefined) {
+            throw new Error(`${file} has no pinned step inventory`);
+        }
+        const jobs = recordAt(candidate, 'jobs');
+        for (const jobId of Object.keys(jobs)) {
+            if (!(jobId in inventory)) {
+                throw new Error(`${file} job ${jobId} is not in the pinned step inventory`);
+            }
+        }
+        for (const [jobId, expectedSteps] of Object.entries(inventory)) {
+            const jobValue = jobs[jobId];
+            if (jobValue === undefined) {
+                throw new Error(`${file} job ${jobId} must exist`);
+            }
+            const job = asRecord(jobValue, `${file} job ${jobId}`);
+            if (expectedSteps === null) {
+                if (job.steps !== undefined) {
+                    throw new Error(`${file} job ${jobId} must not declare steps`);
+                }
+                continue;
+            }
+            const actualSteps = jobSteps(file, jobId, job).map((step) => step.name);
+            if (
+                actualSteps.length !== expectedSteps.length ||
+                actualSteps.some((name, index) => name !== expectedSteps[index])
+            ) {
+                throw new Error(`${file} job ${jobId} steps drifted from the pinned inventory`);
+            }
         }
     }
 }
@@ -2065,6 +2149,52 @@ describe('health gates workflow contract', () => {
         delete recordAt(jobAt(narrowedCodeQl.heavy, 'codeql'), 'permissions')['security-events'];
         expect(() => assertHeavyCodeQlPermissions(narrowedCodeQl.heavy)).toThrow(
             'the heavy CodeQL job must grant exactly contents: read, security-events: write, and actions: read'
+        );
+    });
+
+    it('pins the recorded workflow snapshot, the shard matrices, job-level permissions, and every step inventory', () => {
+        expect(() =>
+            assertWorkflowSnapshotMatch(
+                readRecordedWorkflowSnapshot(repositoryRoot),
+                parseHealthGateWorkflows(repositoryRoot)
+            )
+        ).not.toThrow();
+        expect(() => assertShardMatrices(workflowSet())).not.toThrow();
+        expect(() => assertNoJobLevelPermissions(workflowSet())).not.toThrow();
+        expect(() => assertStepInventory(workflowSet())).not.toThrow();
+
+        // Mutation-kill: an edit to a key no named pin reads — here the gate
+        // timeout — still fails the harness, because the snapshot pins the
+        // whole parsed file rather than the keys someone enumerated.
+        const driftedTimeout = parseHealthGateWorkflows(repositoryRoot);
+        jobAt(asRecord(driftedTimeout['health-gates.yml'], 'drifted health-gates'), 'gate')['timeout-minutes'] = 10;
+        expect(() => assertWorkflowSnapshotMatch(readRecordedWorkflowSnapshot(repositoryRoot), driftedTimeout)).toThrow(
+            'health-gates.yml drifted from the recorded workflow snapshot'
+        );
+
+        // Mutation-kill: a shrunk unit matrix reports green while a quarter of
+        // the suite never runs — the review-found hole.
+        const shrunkMatrix = cloneWorkflows('shrunk unit shard matrix');
+        recordAt(recordAt(jobAt(shrunkMatrix.validation, 'unit'), 'strategy'), 'matrix').shard = [1, 2, 3];
+        expect(() => assertShardMatrices(shrunkMatrix)).toThrow(
+            'validation.yml job unit must shard across exactly 1, 2, 3, 4'
+        );
+
+        // Mutation-kill: a job-level permissions block widens one leg's token
+        // away from the workflow-level pin — the second review-found hole.
+        const widenedUnit = cloneWorkflows('widened unit job permissions');
+        jobAt(widenedUnit.validation, 'unit').permissions = { contents: 'write' };
+        expect(() => assertNoJobLevelPermissions(widenedUnit)).toThrow(
+            'validation.yml job unit must inherit the workflow-level permissions'
+        );
+
+        // Mutation-kill: deleting the health-gate self-check step leaves the
+        // static leg green while this harness never runs — the third
+        // review-found hole.
+        const deletedStep = cloneWorkflows('deleted infrastructure step');
+        removeStepNamed(jobAt(deletedStep.validation, 'static'), 'Health gate infrastructure');
+        expect(() => assertStepInventory(deletedStep)).toThrow(
+            'validation.yml job static steps drifted from the pinned inventory'
         );
     });
 

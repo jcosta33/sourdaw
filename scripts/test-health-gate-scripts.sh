@@ -178,6 +178,17 @@ import { parse } from 'yaml';
 const { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } = await import(
     `${process.env.REPO_ROOT}/scripts/deployWebWorkflowContract.ts`
 );
+// The structural pins live in one shared module so this harness and the
+// vitest spec can never drift apart: the whole-file snapshot, the shard
+// matrices, the permission-free files, and every job's step inventory.
+const {
+    assertWorkflowSnapshotMatch,
+    JOB_LEVEL_PERMISSION_FREE_FILES,
+    parseHealthGateWorkflows,
+    readRecordedWorkflowSnapshot,
+    SHARD_MATRIX_JOBS,
+    STEP_INVENTORY,
+} = await import(`${process.env.REPO_ROOT}/scripts/healthGateWorkflowContract.ts`);
 const workflow = parse(readFileSync(process.env.WORKFLOW_PATH, 'utf8'));
 const validationWorkflow = parse(readFileSync(process.env.VALIDATION_WORKFLOW_PATH, 'utf8'));
 const heavyWorkflow = parse(readFileSync(process.env.HEAVY_WORKFLOW_PATH, 'utf8'));
@@ -931,6 +942,71 @@ for (const [file, parsed] of [
                 `${file} job ${id} step ${step?.name ?? '<unnamed>'} must not continue on error, which would report the step green whatever it ran`
             );
         }
+    }
+}
+// The whole-file snapshot closes the class the named pins kept missing one
+// dimension of: any edit to any key — pinned or never yet named — fails here
+// until the record is regenerated and the diff reviewed.
+let snapshotError;
+try {
+    assertWorkflowSnapshotMatch(
+        readRecordedWorkflowSnapshot(process.env.REPO_ROOT),
+        parseHealthGateWorkflows(process.env.REPO_ROOT)
+    );
+} catch (error) {
+    snapshotError = error;
+}
+expect(
+    snapshotError === undefined,
+    `the four gate workflows must match the recorded snapshot: ${snapshotError?.message ?? ''}`
+);
+
+const workflowsByFile = {
+    'health-gates.yml': workflow,
+    'validation.yml': validationWorkflow,
+    'heavy-gates.yml': heavyWorkflow,
+    'nightly.yml': nightly,
+};
+// A shrunk shard list still reports green: every shard that ran passed, and
+// the dropped shards never ran at all.
+for (const [file, jobId, shards] of SHARD_MATRIX_JOBS) {
+    const actual = workflowsByFile[file]?.jobs?.[jobId]?.strategy?.matrix?.shard;
+    expect(
+        Array.isArray(actual) &&
+            actual.length === shards.length &&
+            actual.every((shard, index) => shard === shards[index]),
+        `${file} job ${jobId} must shard across exactly ${shards.join(', ')}`
+    );
+}
+// A job-level permissions block reshapes one leg's token away from the
+// workflow-level pin; these two files must grant nothing at job level.
+for (const file of JOB_LEVEL_PERMISSION_FREE_FILES) {
+    for (const [jobId, job] of Object.entries(workflowsByFile[file]?.jobs ?? {})) {
+        expect(job?.permissions === undefined, `${file} job ${jobId} must inherit the workflow-level permissions`);
+    }
+}
+// A deleted proof step leaves its job green while the proof never runs, and
+// an added one runs unpinned; the inventory refuses both directions.
+for (const [file, parsed] of Object.entries(workflowsByFile)) {
+    const inventory = STEP_INVENTORY[file];
+    expect(inventory !== undefined, `${file} must have a pinned step inventory`);
+    const jobs = parsed.jobs ?? {};
+    for (const jobId of Object.keys(jobs)) {
+        expect(jobId in (inventory ?? {}), `${file} job ${jobId} must be in the pinned step inventory`);
+    }
+    for (const [jobId, expectedSteps] of Object.entries(inventory ?? {})) {
+        const job = jobs[jobId];
+        expect(job !== undefined, `${file} job ${jobId} must exist`);
+        if (expectedSteps === null) {
+            expect(job?.steps === undefined, `${file} job ${jobId} must not declare steps`);
+            continue;
+        }
+        const actualSteps = (job?.steps ?? []).map((step) => step?.name);
+        expect(
+            actualSteps.length === expectedSteps.length &&
+                actualSteps.every((name, index) => name === expectedSteps[index]),
+            `${file} job ${jobId} steps must match the pinned inventory in order`
+        );
     }
 }
 expect(

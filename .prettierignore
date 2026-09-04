@@ -30,6 +30,11 @@ release/*.json
 # its bytes against the canonical serialisation and fails on any difference, so
 # only `--write` may produce it and the formatter must never rewrite it.
 scripts/ui-restatement-census.json
+
+# Recorded health-gate workflow pin. The record script's serialisation is
+# canonical — the pin is reviewed as a structural diff and both harnesses parse
+# it — so the formatter must never rewrite it between records.
+scripts/__tests__/fixtures/*.snapshot.json
 .github
 .git
 .vscode
