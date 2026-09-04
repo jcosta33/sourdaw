@@ -237,4 +237,11 @@
     --color-pink-500: #885060;
     --color-gray-400: #808080;
     --color-gray-500: #686868;
+
+    /* == Layer 12: DAW Micro-Typography Scale == */
+    --text-nano: 7px;
+    --text-micro: 8px;
+    --text-caption: 9px;
+    --text-dense: 10px;
+    --text-compact: 11px;
 }
