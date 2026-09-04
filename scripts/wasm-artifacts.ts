@@ -431,12 +431,19 @@ function lockClosureFingerprint(crateName: string): string {
  * the resolved dependency closure (the registry + path deps it actually builds
  * against — not the whole lock), and the workspace-root `Cargo.toml`. The root
  * manifest contributes only its profile tables, its workspace package table,
- * and the workspace dependency entries the closure resolves, from a canonical
- * rendering (`workspaceManifestFingerprintInput`) — so `[workspace].members`,
- * comments, and unrelated entries there do not move this hash.
+ * any patch/replace table, the resolver line, and the workspace dependency
+ * entries the closure resolves, from a canonical rendering
+ * (`workspaceManifestFingerprintInput`) — so `[workspace].members`, comments,
+ * and unrelated entries there do not move this hash.
+ * `workspaceManifestText` defaults to the live root `Cargo.toml` and exists so
+ * tests can pin the rendering against fixture text without touching the repo's
+ * own manifest; every production caller omits it.
  * `tests/`/`benches/` are excluded — they never reach the cdylib.
  */
-function hashCrateClosure(crateDir: string): string {
+function hashCrateClosure(
+    crateDir: string,
+    workspaceManifestText: string = readFileSync(absolute('Cargo.toml'), 'utf8')
+): string {
     const files: string[] = [];
     const usedWorkspaceDependencies = new Set<string>();
     for (const dir of pathDepClosure(crateDir)) {
@@ -462,12 +469,7 @@ function hashCrateClosure(crateDir: string): string {
     digest.update('workspace manifest\0');
     digest.update(
         createHash('sha256')
-            .update(
-                workspaceManifestFingerprintInput(
-                    readFileSync(absolute('Cargo.toml'), 'utf8'),
-                    usedWorkspaceDependencies
-                )
-            )
+            .update(workspaceManifestFingerprintInput(workspaceManifestText, usedWorkspaceDependencies))
             .digest('hex')
     );
     digest.update('\n');
