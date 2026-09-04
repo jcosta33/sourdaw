@@ -1,0 +1,96 @@
+scripts/__tests__/recoverDeliveryLock3437.spec.ts
+  s_28abfd94826e36::t_12e10ada3f1d8e 399
+  s_28abfd94826e36::t_ce9e7d01ec9e5e 340,343-345,357,359
+  s_9b530f08172a54::t_969a597b98bb96 342
+scripts/recoverDeliveryLock.ts
+  s_28abfd94826e36::t_5c72fcdec78df5 154-158
+  s_28abfd94826e36::t_3cc255b85c2aa1 236,240-242,250-251,256,260-261,266-279,281-286,290-303,305-308,310-311,314-352,362,366-371,373-393,412,413-414,416-417,457-465,468,472,486,488-489,495-514
+  s_28abfd94826e36::t_672e6580f56e21 1-19,30-31,37,41,56
+  s_28abfd94826e36::t_88f0e1720d60b0 83
+  s_28abfd94826e36::t_4b88859b3e7009 47-49
+  s_28abfd94826e36::t_41ca159e571592 32,34,39,44-46,50,53,55,57-58,62-63,84-88,90-91,135,137-138,153,159,162-166,229-235,239,243-249,252-253,257-259,262-265,515-525
+  s_28abfd94826e36::t_1f87bd4a7bef00 95,394-411,418-454
+  s_28abfd94826e36::t_11f5a08ec3ef17 353-361
+  s_28abfd94826e36::t_c6fa4473a75646 96,99-100,142,455-456
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_28abfd94826e36::t_39236ca41bd694 1645-1652
+  s_28abfd94826e36::t_774eb365fb21d2 81-102
+  s_28abfd94826e36::t_10c183e6794613 1628
+  s_28abfd94826e36::t_a2d9d0ec887257 178,194,923-924,950-951,1593,1992,2017,2189,2211,2219,2238,2246,2267,2275,2287,2432,2494,2502,2521,2529,2543,2551,2561
+  s_28abfd94826e36::t_87e8b9d3a98b79 1046,1049-1065
+scripts/trustedGithubWriteBootstrap.ts
+  s_28abfd94826e36::t_7017ef3c4efba2 1004,1011
+  s_28abfd94826e36::t_9b5aab7892e804 75-83,88
+  s_28abfd94826e36::t_ccd30c7307c346 122-123
+scripts/pullRequestMutationLock.ts
+  s_28abfd94826e36::t_48d72c7ae8469c 870
+  s_28abfd94826e36::t_711e7e9988651f 938
+  s_28abfd94826e36::t_67f37256943949 70,883-926
+  s_28abfd94826e36::t_6a711f992567c4 1111,1113
+  s_28abfd94826e36::t_af9578f69732bf 45-56,58-60,68
+  s_28abfd94826e36::t_f76b8e2906b5d2 477,482-483,492,497-504,506-512,521-534
+  s_28abfd94826e36::t_0cd38bfc2a3cfc 376-381
+  s_28abfd94826e36::t_f5481fdbce451c 222-223,226
+  s_28abfd94826e36::t_2c90cfdd36ca48 120-124
+  s_28abfd94826e36::t_fd2da978b85ab7 313-315
+  s_28abfd94826e36::t_98c9bc0f67fd31 1041-1045
+  s_28abfd94826e36::t_a42334186ec5b7 538
+  s_28abfd94826e36::t_b77819b239822c 259-298
+  s_28abfd94826e36::t_7fa666cf7c577c 69,181,227,333,537,550,555,559,566,574,583,591,599,607,611,619,623,645,651,667,680,694,712,800,839,847,853,1035-1040
+  s_28abfd94826e36::t_1cb44b3e626341 804-822,824-826,828-829
+scripts/__tests__/recoverDeliveryLockGeneral.spec.ts
+  s_28abfd94826e36::t_d0de09e54f7ea9 24-29
+  s_28abfd94826e36::t_a28433cea9b0cb 1-23,30-35,37-81,88-109,111-212,221-225,227-231,238-239,242-255,316-343
+  s_28abfd94826e36::t_209eac5dfb1f2e 82-87,110,213-220,226,232-237,240-241,256-315
+  s_9b530f08172a54::t_96529163e6b696 36
+scripts/__tests__/trustedGithubWriteBootstrap.spec.ts
+  s_28abfd94826e36::t_008ec250e35e2d 150
+  s_28abfd94826e36::t_f89065c05a72ba 142
+scripts/__tests__/publishReview.spec.ts
+  s_28abfd94826e36::t_ac213cedbfc00b 1584
+  s_28abfd94826e36::t_5b3ee93893fdf2 1542
+  s_28abfd94826e36::t_65c7d638feda9b 25,31,261,640,3230,3232,3234,3236,3238,3242,3244,3246,3275,3287,3294,3301,3305,3307
+  s_28abfd94826e36::t_e9e6a9f17877a6 3276-3277,3281-3283
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_28abfd94826e36::t_f958fc7e083eb8 1039
+  s_28abfd94826e36::t_35b31a6ca29add 973-994,999-1007,1014,5973
+  s_28abfd94826e36::t_2ab10f1897e496 884-919
+  s_28abfd94826e36::t_41dd17d784603e 883,5953,5981,6002
+  s_28abfd94826e36::t_6d50fb82139a8b 995-998
+AGENTS.md
+  s_28abfd94826e36::t_0ee8daa93e31f3 369-374
+  s_28abfd94826e36::t_dc2b9b9d9bf7a0 350
+scripts/deliveryLockLegacyIncidents.ts
+  s_28abfd94826e36::t_f50a35ab82387e 1-68
+scripts/deliveryRemoteInspection.ts
+  s_28abfd94826e36::t_0dd19612de3dbe 1-5,7-44,45-74,76-79,81-94,96-99,101-135,137-141,143-269
+  s_28abfd94826e36::t_9a201000c7226c 6,75,80,95,100,136,142
+scripts/publishReview.ts
+  s_28abfd94826e36::t_81867a18018de6 23,436
+scripts/recoverPublishReviewLock.ts
+  s_28abfd94826e36::t_b7d9fda02641cc 24,33,120,305,473
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "0df7b6a1df5dd8ba3d666331b3db4e4ac0319b14",
+  "prompts": {},
+  "sessions": {
+    "s_28abfd94826e36": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8bb5d6e7-a6e0-4dcb-a357-2d96647f9eac",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    },
+    "s_9b530f08172a54": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0860028f-d31d-4abf-b71d-48ad1af2085e",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
