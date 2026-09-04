@@ -446,6 +446,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                             onClick={clearChatMessages}
                             className="text-muted-foreground hover:text-foreground hover:bg-muted"
                             title="Clear Chat History"
+                            aria-label="Clear chat history"
                             disabled={chatState.isGenerating || chatState.messages.length === 0}
                         >
                             <Trash2 className="size-3.5" />
@@ -456,6 +457,7 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                             onClick={toggleChat}
                             className="text-muted-foreground hover:text-foreground hover:bg-muted"
                             title="Close Chat Panel"
+                            aria-label="Close chat panel"
                         >
                             <X className="size-3.5" />
                         </Button>

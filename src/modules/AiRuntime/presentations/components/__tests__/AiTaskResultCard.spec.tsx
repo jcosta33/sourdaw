@@ -21,7 +21,7 @@ describe('AiTaskResultCard', () => {
         render(<AiTaskResultCard task={task({ prompt: 'Make a beat' })} onRemove={onRemoveMock} />);
         expect(screen.getByText(/denoise/i)).toBeInTheDocument();
         expect(screen.getByText(/Make a beat/)).toBeInTheDocument();
-        fireEvent.click(screen.getByRole('button', { name: 'Remove task' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Remove task result' }));
         expect(onRemoveMock).toHaveBeenCalledWith('t1');
     });
 });
@@ -64,10 +64,14 @@ describe('AiTaskResultCard — status branches', () => {
     it('shows duration in seconds when status is success and durationMs is set', () => {
         render(<AiTaskResultCard task={task({ status: 'success', durationMs: 3500 })} onRemove={vi.fn()} />);
         expect(screen.getByText('3.5s')).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Preview task result' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Add task result to arrangement' })).toBeInTheDocument();
     });
 
     it('shows Done when status is success and no durationMs', () => {
         render(<AiTaskResultCard task={task({ status: 'success', durationMs: undefined })} onRemove={vi.fn()} />);
         expect(screen.getByText('Done')).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Preview task result' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Add task result to arrangement' })).toBeInTheDocument();
     });
 });

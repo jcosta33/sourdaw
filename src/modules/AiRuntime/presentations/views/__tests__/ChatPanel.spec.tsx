@@ -285,13 +285,13 @@ describe('ChatPanel', () => {
 
     it('should render clear chat button', () => {
         render(<ChatPanel />);
-        const clearButton = screen.getByTitle('Clear Chat History');
+        const clearButton = screen.getByRole('button', { name: 'Clear chat history' });
         expect(clearButton).toBeInTheDocument();
     });
 
     it('should render close chat button', () => {
         render(<ChatPanel />);
-        const closeButton = screen.getByTitle('Close Chat Panel');
+        const closeButton = screen.getByRole('button', { name: 'Close chat panel' });
         expect(closeButton).toBeInTheDocument();
         fireEvent.click(closeButton);
         expect(toggleChat).toHaveBeenCalled();

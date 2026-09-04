@@ -545,6 +545,7 @@ export const InstrumentsTab = ({
                                 className="h-9 w-9 border border-border/20 bg-surface-raised hover:border-border/40 text-muted-foreground hover:text-foreground shadow-sm"
                                 onClick={() => setShowSaveForm(true)}
                                 title={`Save "${selectedTrack.name}" as preset`}
+                                aria-label={`Save "${selectedTrack.name}" as preset`}
                             >
                                 <Save className="size-4" aria-hidden="true" />
                             </Button>

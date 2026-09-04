@@ -97,7 +97,13 @@ export const GenerativeAiPanel = (): ReactElement | null => {
                 title="Generate"
                 titleClassName="text-xs font-semibold normal-case tracking-tight text-foreground"
                 actions={
-                    <Button variant="ghost" size="icon-xs" onClick={toggleAiPanel} className="h-6 w-6">
+                    <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={toggleAiPanel}
+                        className="h-6 w-6"
+                        aria-label="Close generate panel"
+                    >
                         <X className="size-3.5" />
                     </Button>
                 }

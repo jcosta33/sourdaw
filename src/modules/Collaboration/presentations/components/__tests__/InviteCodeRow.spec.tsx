@@ -7,7 +7,7 @@ describe('InviteCodeRow', () => {
     it('should render', () => {
         const onCopy = vi.fn();
         render(<InviteCodeRow value="abc-123" copied={false} onCopy={onCopy} />);
-        fireEvent.click(screen.getByRole('button'));
+        fireEvent.click(screen.getByRole('button', { name: 'Copy invite code' }));
         expect(onCopy).toHaveBeenCalled();
     });
 
@@ -23,6 +23,7 @@ describe('InviteCodeRow', () => {
 
     it('shows a check icon once copied is true', () => {
         const { container } = render(<InviteCodeRow value="abc-123" copied onCopy={vi.fn()} />);
+        expect(screen.getByRole('button', { name: 'Copied invite code' })).toBeInTheDocument();
         expect(container.querySelector('svg.lucide-check')).toBeInTheDocument();
         expect(container.querySelector('svg.lucide-copy')).not.toBeInTheDocument();
     });
