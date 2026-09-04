@@ -1,0 +1,42 @@
+src/components/daw/DawCompactTextarea.tsx
+  h_1228e573df1f42 16
+src/components/daw/RotaryKnob.tsx
+  h_1228e573df1f42 442
+src/components/daw/ValueField.tsx
+  h_1228e573df1f42 432
+src/components/daw/__tests__/DawCompactTextarea.spec.tsx
+  h_1228e573df1f42 11-18
+src/components/daw/__tests__/RotaryKnob.spec.tsx
+  h_1228e573df1f42 655-660
+src/components/daw/__tests__/ValueField.spec.tsx
+  h_1228e573df1f42 731-736
+src/modules/AiRuntime/presentations/components/ChatComposer.tsx
+  h_1228e573df1f42 108,118
+src/modules/Arrangement/presentations/views/BounceOptionsDialog.tsx
+  h_1228e573df1f42 145,161
+src/modules/Arrangement/presentations/views/TrackListView.tsx
+  h_1228e573df1f42 313-315
+src/modules/Fermenter/presentations/components/PresetBrowser.tsx
+  h_1228e573df1f42 104
+src/modules/Fermenter/presentations/views/FermenterPanel.tsx
+  h_1228e573df1f42 585
+src/modules/TimelineEditor/presentations/views/AutomationView/AutomationLaneRow.tsx
+  h_1228e573df1f42 402-405
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx
+  h_1228e573df1f42 464
+src/modules/TimelineEditor/presentations/views/Inspector/TrackMidiFxSection.tsx
+  h_1228e573df1f42 113
+src/modules/WorkspaceShell/presentations/views/VirtualKeyboard.tsx
+  h_1228e573df1f42 559
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "38b8ed27cf717ed45dbc5cff80b0d37e248dace6",
+  "prompts": {},
+  "humans": {
+    "h_1228e573df1f42": {
+      "author": "José Costa <j.costa.3394@gmail.com>"
+    }
+  }
+}
